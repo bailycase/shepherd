@@ -637,9 +637,10 @@ final class PadDesignCanvas {
     private(set) var systemSwatches: [DesignSystemPresentation.Swatch] = []
     @ObservationIgnored private var systemRead: String?
 
-    /// The chip's name: the design system, else the project's stylesheets ("design").
-    func systemName(_ design: Design?) -> String {
-        design?.systemNamespace ?? snapshot?.index.designSystems?.first?.namespace ?? "design"
+    /// The chip's name: the design's system; nil while it is drawn in none (no chip, as on the
+    /// Mac: a design belongs to no project).
+    func systemName(_ design: Design?) -> String? {
+        design?.systemNamespace ?? snapshot?.index.designSystems?.first?.namespace
     }
 
     func loadSystem(_ namespace: String?) async {

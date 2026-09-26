@@ -40,7 +40,7 @@ struct DesignTests {
         let space = Fixture.space()
         let worker = Fixture.agent(in: space)
         try await h.seed(Fixture.workspace([worker], space: space))
-        let design = Design(name: "Checkout funnel", spaceID: space.id, createdAt: 1_000)
+        let design = Design(name: "Checkout funnel", createdAt: 1_000)
         _ = try await h.server.createDesign(design)
         await drainMainQueue()
         h.broadcasts.withValue { $0.removeAll() }
@@ -115,7 +115,7 @@ struct DesignTests {
         defer { h.stop() }
         let space = Fixture.space()
         try await h.seed(ShepherdState(spaces: [space]))
-        let design = Design(name: "  Checkout funnel ", spaceID: space.id, systemNamespace: "acme-web", createdAt: 1_000)
+        let design = Design(name: "  Checkout funnel ", systemNamespace: "acme-web", createdAt: 1_000)
 
         let snapshot = try await h.server.createDesign(design)
 
@@ -133,7 +133,7 @@ struct DesignTests {
         #expect(project.path.hasPrefix(h.dir.appendingPathComponent("designs").path), "designs live in the support directory")
     }
 
-    enum BadCreate: String, CaseIterable, Sendable { case unknownSpace, unknownAgent, sameID, noName }
+    enum BadCreate: String, CaseIterable, Sendable { case unknownSource, unknownAgent, sameID, noName }
 
     @Test(arguments: BadCreate.allCases)
     func aDesignThatCantBeMadeLeavesNothingBehind(_ bad: BadCreate) async throws {
@@ -141,19 +141,22 @@ struct DesignTests {
         defer { h.stop() }
         let space = Fixture.space()
         try await h.seed(ShepherdState(spaces: [space]))
-        let existing = Design(name: "Existing", spaceID: space.id, createdAt: 1)
+        let existing = Design(name: "Existing", createdAt: 1)
         _ = try await h.server.createDesign(existing)
         await drainMainQueue()
         h.broadcasts.withValue { $0.removeAll() }
         let before = h.server.state
         let onDisk = try? Data(contentsOf: h.stateURL)
 
-        var design = Design(name: "New", spaceID: space.id, createdAt: 1)
+        var design = Design(name: "New", createdAt: 1)
         let expected: SessionServerError
         switch bad {
-        case .unknownSpace:
-            design.spaceID = SpaceID()
-            expected = .noSuchSpace(design.spaceID)
+        case .unknownSource:
+            // A system build reads a project that must exist; a design has none.
+            let source = SpaceID()
+            design.buildsSystem = true
+            design.sourceSpaceID = source
+            expected = .noSuchSpace(source)
         case .unknownAgent:
             let agentID = AgentID()
             design.agentID = agentID
@@ -445,21 +448,33 @@ struct DesignTests {
         #expect(try await committed(h).designs.first?.agentID == nil)
     }
 
-    @Test func deletingADesignRemovesItsFolderAndFreesItsAgent() async throws {
-        let (h, design, agent) = try await serverWithDesign()
+    /// Deleting a design takes the agent that drew it, its layout and its processes: a design's
+    /// chat never becomes a thread. Other agents stay.
+    @Test func deletingADesignRemovesItsFolderAndItsAgent() async throws {
+        let (h, design, worker) = try await serverWithDesign()
         defer { h.stop() }
-        var drawing = agent
-        drawing.designID = design.id
-        try await h.server.updateAgent(drawing)
-        try await h.server.setDesignAgent(design.id, agentID: agent.id)
+        let callbacks = Callbacks(h.server)
+        let session = try await h.shell("sleep 30")
+        let space = try #require(h.server.state.spaces.first)
+        let agentID = AgentID()
+        let pane = LeafPane(sessionID: session.id, cwd: space.path, agentID: agentID)
+        let tab = Tab(spaceID: space.id, order: 1, layout: .leaf(pane))
+        let drawer = Agent(id: agentID, name: design.name, spaceID: space.id, tabID: tab.id, paneID: pane.id, designID: design.id)
+        var state = h.server.state
+        state.tabs.append(tab)
+        state.agents.append(drawer)
+        try await h.server.putState(state)
+        try await h.server.setDesignAgent(design.id, agentID: agentID)
         await drainMainQueue()
         h.broadcasts.withValue { $0.removeAll() }
 
         try await h.server.deleteDesign(design.id)
 
-        let state = try await committed(h)
-        #expect(state.designs.isEmpty)
-        #expect(state.agents.first?.designID == nil, "the agent stays, drawing nothing")
+        let after = try await committed(h)
+        #expect(after.designs.isEmpty)
+        #expect(after.agents.map(\.id) == [worker.id], "the design's agent goes; the thread stays")
+        #expect(!after.tabs.contains { $0.id == tab.id })
+        try await eventually("the design agent's session to be killed") { callbacks.exited(session.id) }
         #expect(!FileManager.default.fileExists(atPath: try #require(h.server.designs.folder(for: design.id)).path))
         let again = await #expect(throws: SessionServerError.self) { try await h.server.deleteDesign(design.id) }
         #expect(again?.description == SessionServerError.noSuchDesign(design.id).description)
@@ -479,21 +494,6 @@ struct DesignTests {
         #expect(state.designs.first?.agentID == nil, "opening it starts a fresh agent")
     }
 
-    @Test func deletingADesignsSpaceKeepsTheDesign() async throws {
-        let (h, design, agent) = try await serverWithDesign()
-        defer { h.stop() }
-        try await h.server.setDesignAgent(design.id, agentID: agent.id)
-        await drainMainQueue()
-        h.broadcasts.withValue { $0.removeAll() }
-
-        try await h.server.deleteSpace(design.spaceID)
-
-        let state = try await committed(h)
-        #expect(state.agents.isEmpty && state.spaces.isEmpty)
-        #expect(state.designs.map(\.id) == [design.id] && state.designs.first?.agentID == nil)
-        #expect(try await h.server.designSnapshot(design.id).index.title == "Checkout funnel", "its files stay")
-    }
-
     // MARK: Revision pushes
 
     /// A watched design's write reaches the app once, on the main queue, for that design alone; a
@@ -501,7 +501,7 @@ struct DesignTests {
     @Test func aWriteToAWatchedDesignPushesItsRevisionOnce() async throws {
         let (h, design, _) = try await serverWithDesign()
         defer { h.stop() }
-        let other = Design(name: "Onboarding", spaceID: design.spaceID, createdAt: 2_000)
+        let other = Design(name: "Onboarding", createdAt: 2_000)
         _ = try await h.server.createDesign(other)
         let pushes = Locked<[DesignID]>([])
         h.server.onDesignRevision = { id in
@@ -573,14 +573,14 @@ struct DesignTests {
         }
     }
 
-    /// Startup forgets a design whose folder is gone and clears references to what no longer
-    /// exists: an agent's design, a design's agent.
+    /// Startup forgets a design whose folder is gone, with the agent that drew it, and clears a
+    /// design's agent that no longer exists.
     @Test func startupClearsDanglingDesigns() async throws {
         let first = try ScratchServer.fresh()
         let space = Fixture.space()
         var worker = Fixture.agent(in: space)
-        let kept = Design(name: "Kept", spaceID: space.id, createdAt: 1)
-        let lost = Design(name: "Lost", spaceID: space.id, createdAt: 1)
+        let kept = Design(name: "Kept", createdAt: 1)
+        let lost = Design(name: "Lost", createdAt: 1)
         try await first.server.putState(Fixture.workspace([worker], space: space))
         _ = try await first.server.createDesign(kept)
         _ = try await first.server.createDesign(lost)
@@ -600,8 +600,10 @@ struct DesignTests {
         let restored = h.server.state
         #expect(restored.designs.map(\.id) == [kept.id])
         #expect(restored.designs.first?.agentID == nil)
-        #expect(restored.agents.first?.designID == nil)
+        #expect(restored.agents.isEmpty, "the lost design's agent goes with it, never kept as a thread")
+        #expect(!restored.tabs.contains { $0.id == worker.tab.id })
         #expect(try h.persisted().designs.map(\.id) == [kept.id], "the cleared state is written")
+        #expect(try h.persisted().agents.isEmpty)
     }
 
     /// A canvas.json that is there but unreadable (a bad hand edit) never costs the design.

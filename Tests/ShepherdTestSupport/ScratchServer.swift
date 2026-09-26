@@ -16,8 +16,11 @@ public final class ScratchServer: @unchecked Sendable {
     /// What a remote `listModels` answers unless a test passes its own catalog: never pi's.
     public static let standInModels = ModelListing(models: ["stub/model-a", "stub/model-b"], defaultModel: "stub/model-a")
 
-    /// Starts on a fresh directory, or on `dir` to restart over an existing state file.
-    public init(dir: URL? = nil, modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels }) throws {
+    /// Starts on a fresh directory, or on `dir` to restart over an existing state file. The
+    /// skills pi loads from elsewhere come from `piSkills`: none unless a test passes a reader,
+    /// never this machine's pi.
+    public init(dir: URL? = nil, modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels },
+                piSkills: SkillsStore.PiSkillsReader? = nil) throws {
         self.dir = try dir ?? makeScratchDirectory("srv")
         // An Undo's trashed files land in the scratch directory, never the user's Trash.
         let trash = self.dir.appendingPathComponent("Trash", isDirectory: true)
@@ -25,6 +28,7 @@ public final class ScratchServer: @unchecked Sendable {
                                stateURL: self.dir.appendingPathComponent("state.json"),
                                modelCatalog: modelCatalog,
                                skillsDirectory: self.dir.appendingPathComponent("agent-skills", isDirectory: true),
+                               piSkills: piSkills,
                                trash: { url in try ScratchServer.moveToTrash(url, trash: trash) })
         let broadcasts = broadcasts
         server.onStateChanged = { state in broadcasts.withValue { $0.append(state) } }

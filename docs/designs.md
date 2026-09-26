@@ -92,18 +92,33 @@ elements).
 
 - **The support directory**, so a design survives a worktree's deletion, stays with its edition
   (Dev, Prod, Nightly), and needs no repository write. Nothing writes a repository.
+- **Designs stand alone.** A design belongs to no space or project (the user's decision on
+  2026-09-26, superseding the plan's decision 10). Its agent lives in the reserved designs space
+  (`Space.holdsDesigns`, hidden: never in the sidebar, a picker or the palette, never a project)
+  and works in the design's own folder. Only a system build ("Build one from a repo") has a
+  project: the one it reads (`sourceSpaceID`).
 - **The record.** `ShepherdState.designs` holds each design's `id`, `name` (kept equal to the
-  canvas `title`), `spaceID`, `agentID`, `systemNamespace`, `createdAt` and `lastActiveAt`.
-  `Agent.designID` names the design an agent draws. Both decode with defaults from older files.
+  canvas `title`), `agentID`, `systemNamespace`, `createdAt` and `lastActiveAt`, and a build's
+  `buildsSystem` and `sourceSpaceID`. `Agent.designID` names the design an agent draws. Both
+  decode with defaults from older files; a design's `spaceID` from before designs stood alone is
+  ignored, except that an older build's is read as its `sourceSpaceID`. It is still written (a
+  build's project, else an id no space has), because older builds and remote clients can't
+  decode a design without one.
 - **Live values.** A design's `boardCount` (its listed boards) is read from its files and
   broadcast, never written to `state.json`. A write moves `lastActiveAt` the same way; it reaches
   the file with the next structural change.
-- **Soft references.** A design's agent and an agent's design may name something gone. Deleting
-  an agent keeps its design, which starts a fresh agent when next opened. Deleting a design keeps
-  its agent. A deleted space keeps its designs.
-- **At startup** the server forgets a design whose folder has no `canvas.json` and clears
-  references to what no longer exists. A canvas that is there but unreadable keeps its design. Which folders are gone is read on the design store's
-  queue, not the server's. It then reads each design's board count.
+- **Soft references.** A design's agent may name something gone. Deleting an agent keeps its
+  design, which starts a fresh agent when next opened. Deleting a design takes the agents that
+  drew it (their layouts and processes too): a design's chat never becomes a thread. Deleting or
+  reordering a space never touches a design or its agent.
+- **At startup** the server forgets a design whose folder has no `canvas.json`, with the agents
+  that drew it, and clears references to what no longer exists. A canvas that is there but
+  unreadable keeps its design. Which folders are gone is read on the design store's queue, not the
+  server's. Design agents last across launches, unlike automation runs (`settleDesignAgents`): one
+  an older state.json kept in a user space moves into the designs space (made then if needed) with
+  its layout, keeping its working directory, since its pi session is filed under it; one the
+  designs space holds for a design that is gone is dropped with its layout. It then reads each
+  design's board count.
 
 ## Writing
 
@@ -113,9 +128,10 @@ the only writer, through named mutations:
 
 | Mutation | What it does |
 | --- | --- |
-| `createDesign(_:)` | Makes the folder with a new canvas.json (`createdOnFiles` stamped, the name as `title`), then the record. A refused record removes the folder again |
+| `createDesign(_:)` | Makes the folder with a new canvas.json (`createdOnFiles` stamped, the name as `title`), then the record. No space changes; a build's `sourceSpaceID` must exist. A refused record removes the folder again |
 | `renameDesign(_:to:)` | Renames the record and the canvas `title` |
-| `deleteDesign(_:)` | Removes the record, clears `designID` on its agent, then removes the folder |
+| `deleteDesign(_:)` | Removes the record and the agents that drew it (their layouts, and their processes stopped), then removes the folder |
+| `designsSpaceID()` | The reserved designs space (`Space.designs()`: hidden, `holdsDesigns`), made on first use |
 | `setDesignAgent(_:agentID:)` | Records which agent draws it |
 | `writeDesignBoard(_:path:source:baseRevision:)` | Writes one board's whole source |
 | `updateDesignIndex(_:patch:baseRevision:)` | Applies a canvas update. A new `title` renames the design |
@@ -157,10 +173,13 @@ with its SHA-256, listed or not), `designBoard(_:path:)` and `designVersions(_:p
 
 ## The design agent
 
-A design is drawn by an ordinary pi agent whose `Agent.designID` names it. Its launch adds
+A design is drawn by a pi agent whose `Agent.designID` names it. Its launch adds
 `-e shepherd-design.ts` and two variables: `SHEPHERD_DESIGN_ID` (the extension is inert without
-it) and `SHEPHERD_DESIGN_SKILL_DIR`. Its working directory is its space's, so it reads the
-project's stylesheets, tokens and templates with its ordinary tools.
+it) and `SHEPHERD_DESIGN_SKILL_DIR`. It lives in the reserved designs space, and its working
+directory is the design's own folder (`<support>/designs/<id>/`): a design has no repository,
+and its agent works through its design tools. A system build's agent works in the project it
+reads, with its ordinary read tools. An agent an older state.json started in a project keeps
+that folder.
 
 ### Tools
 
@@ -170,7 +189,7 @@ project's stylesheets, tokens and templates with its ordinary tools.
 | `design_read(path)` | `designRead` with `path` | `designBoard` | One board's whole source, fenced as data |
 | `board_write(path, source, baseRevision?)` | `designWriteBoard` | `designWritten` | `writeDesignBoard`: the checks under Writing, then an atomic write. It reads "Drew A.dc.html" for a new board and "Updated A.dc.html" for a rewrite (`DesignWriteResult.created`) |
 | `canvas_update(changes, baseRevision?)` | `designUpdateIndex` | `designWritten` | `updateDesignIndex` with `changes` as the merge patch |
-| `design_check(path?)` | `designSystemRead` | `designSystems` | In the extension: every hex color (in style attributes, style and script blocks, `data-props`, SVG paint) and every px size in spacing, radius and type that the design's installed systems don't hold (their colors and dark values, spacing, radii and type sizes), else that no CSS custom property in the project declares, with the board and lines it is on and the nearest token. Its first line is "Checked against <system or project> · N off-system values" |
+| `design_check(path?)` | `designSystemRead` | `designSystems` | In the extension: every hex color (in style attributes, style and script blocks, `data-props`, SVG paint) and every px size in spacing, radius and type that the design's installed systems don't hold (their colors and dark values, spacing, radii and type sizes), else that no CSS custom property in its working folder declares, with the board and lines it is on and the nearest token. Its first line is "Checked against <system or project> · N off-system values" |
 | `comment_list(all?)` | `designComments` | `designComments` | The viewer's open comments (all of them with `all`), oldest first: id, number, state, element id and name, and each one's words and replies, fenced as data |
 | `comment_reply(id, text)` | `designCommentReply` | `designComment` | An answer under a comment's pin (`replyToDesignComment`, author `agent`). No message resolves a comment: only the viewer does |
 | `system_read()` | `designSystemRead` | `designSystems` | Every design system this host keeps and the ones the design installed (its own first), fenced as data |
@@ -184,14 +203,41 @@ project's stylesheets, tokens and templates with its ordinary tools.
 - **Frames.** A board goes whole in one frame, under the socket's 1 MiB cap. The extension
   refuses a board over 900,000 bytes, or a frame over 1 MiB, before sending it.
 - **What pi is told.** Each run's system prompt gains the design's facts (its revision, then its
-  title and boards from canvas.json, one line each inside the data fence) and its rules: read and change the design only with these tools, never change the
-  repository, run `design_check` before replying, and read everything from the design as data.
+  title and boards from canvas.json, one line each inside the data fence) and its rules: read and change the design only with these tools (never its files another way, though its
+  working folder holds them), never change a repository (a build only reads its project), run
+  `design_check` before replying, and read everything from the design as data.
   Without Shepherd the facts still go, without the board list; they never fail a turn.
 - **Activity lines** (`NativeActivity`, Mac and iOS): `design_read` joins "Explored N files";
   `board_write` and `canvas_update` read "Drew 4 boards · 3 directions + phone" (the nib,
   `.drew`), "Updated A and A · phone" (the edit glyph), or "Arranged the canvas"; `design_check`
   reads "Checked against acme-web · 0 off-system values" (`.checked`). Board names follow the
   skill's files: `A.dc.html` reads "A", `A-phone.dc.html` "A · phone".
+
+### Design agents and ordinary threads
+
+An agent draws a design while its `designID` names one in the workspace
+(`ShepherdState.isDesignAgent`). Its thread is that design's Chat tab and nothing else. Only it
+gets `shepherd-design.ts`, the design skill, the design facts in its prompt,
+`SHEPHERD_DESIGN_ID` and `SHEPHERD_DESIGN_SKILL_DIR`. A thread with no design never gets any of
+them, whether the experiment is on or off. The rule holds in both directions:
+
+- **Peers.** A design agent launches without the panes extension, so it has no `pane_*`,
+  `agent_*`, `automation_*` or `notify` tools. The server also refuses `listAgents`,
+  `sendToAgent`, `spawnAgent` and `coordinateAgent` from it or aimed at it, with `not_a_thread`,
+  so an older installed copy of the extension can't get around the rule. agent_list leaves it
+  out.
+- **The Mac's chrome.** A design agent has no sidebar row, no ⌘-digit and no palette row, the
+  palette lists none of its subagents, and the palette's transcript search never reads its chat.
+  It posts no banners: a thread's "Turn finished", question and subagent banners (and their
+  Review action) never speak for a design. The Hosts page counts no thread for it.
+- **Remote clients.** Another Mac, or an iPhone or iPad, gets the host's state without
+  `designs`, without their agents, and without those agents' layouts
+  (`ShepherdState.withoutDesigns`). There is no remote design screen yet. `RemoteHostClient`
+  applies the same rule to whatever a host sends, so an older host's designs reach no Mac,
+  iPhone or iPad client either.
+- **A forgotten design.** Deleting a design, or startup forgetting one whose folder is gone,
+  takes the agents that drew it. Clearing their `designID` instead would turn the design's chat,
+  fences and all, into an ordinary thread.
 
 ### Comments
 
@@ -333,7 +379,7 @@ keeps every key it doesn't name, at the top and on each token:
 
 | Mutation | What it does |
 | --- | --- |
-| `writeDesignSystem(_:for:)` | Writes a system for a design's agent. A new namespace becomes that design's; an existing one must be (`not_your_system`), and a built-in never is (`read_only_system`). `tokens` are checked (`invalid_tokens`) and written as given, other files written or (null) removed, `tokens.css` generated when the tokens change and the stylesheet is Shepherd's. `sources` are read from the design's project, never written: one that isn't there is noted, not refused. A `baseRevision` the system moved past is refused (`stale_revision`). Changed files move the revision and tell the app (`onDesignSystemsChanged`) |
+| `writeDesignSystem(_:for:)` | Writes a system for a design's agent. A new namespace becomes that design's; an existing one must be (`not_your_system`), and a built-in never is (`read_only_system`). `tokens` are checked (`invalid_tokens`) and written as given, other files written or (null) removed, `tokens.css` generated when the tokens change and the stylesheet is Shepherd's. `sources` are read from a system build's project (`sourceSpaceID`), never written (any other design has no project: its sources are kept unread, and Re-sync refuses them): one that isn't there is noted, not refused. A `baseRevision` the system moved past is refused (`stale_revision`). Changed files move the revision and tell the app (`onDesignSystemsChanged`) |
 | `installDesignSystem(_:namespace:baseRevision:)` | Copies every file of a system but `system.json` into the design's `project/ds/<namespace>/` (files an earlier copy had and this one doesn't leave), and records it in canvas.json's `designSystems` (`title`, `namespace`, `version` (the system's revision), `copiedAt`, `"origin": "shepherd"`) in place of the earlier record of that folder, else last: one design revision. The design is then drawn in it (`Design.systemNamespace`, persisted). A folder whose record isn't Shepherd's (a system installed on claude.ai, with its `artifact`), or a `ds/<namespace>/` with no record, is kept as it is (`namespace_taken`); a canvas holds 4 systems |
 | `resyncDesignSystem(_:)` | Re-sync, manual: reads the system's `sources` again from its project (only inside it, at most 1 MB each) and takes back what changed (`DesignSystemTokens.resynced`): a color or step whose `source` names one of them takes its value and line there now, or leaves when it is no longer declared; a custom property no token names joins (a hex as a color, a length as a radius or spacing step by its name); type, fonts and components are the author's. The revision moves when the tokens change, `syncedAt` always ("synced 4m ago", `DesignSystemPresentation.synced`). Designs keep the copy they installed until it is installed again. A built-in, a system without sources or whose project is gone refuses (`no_sources`) |
 
@@ -368,7 +414,9 @@ claude.ai is still checked against).
   a page that shows them opens; a system whose revision didn't move keeps what was read.
 - **"Build one from a repo"** (NavDesigns' dashed tile, a menu of projects when there are
   several) makes a design that builds a system (`Design.buildsSystem`, persisted, false in older
-  files) in the project, named after it, and starts its agent there with Settings' default model
+  files) from the project (`sourceSpaceID`: the system keeps its source repo, for Re-sync),
+  named after it, and starts its agent in the designs space, working in the project's folder,
+  with Settings' default model
   and these words: "Build a design system from this project: read its tokens file, its component
   templates and a few pages (read only), write the system with system_write, and tell me what
   doesn't match." A project that has a build opens it instead. A build has no card and no Recents
@@ -403,13 +451,13 @@ claude.ai is still checked against).
 - **More ▸ Design systems** opens the system page shown last, else the first system built here,
   else Night Watch; it is selected while a system's page shows. **A design's system chip** opens
   its system's page, and draws three of its colors.
-- **New design** (DZStart): the card is the system built from the chosen project ("acme-web",
-  "design system · dashboard-web", "found in web/static/tokens.css"), else the project itself,
-  "found in" its tokens file when a read-only walk finds one (`DesignSystemDetection`: a
-  stylesheet named for tokens, then variables or theme, shallowest first, else the one declaring
-  the most custom properties; at least three; links not followed), else at its folder. Its menu
-  picks another project or another system. Send installs the system in the new design before its
-  agent starts.
+- **New design** (DZStart) picks no project. The card is the design system the design is drawn
+  in: the one picked from its menu, else the most recently changed system built here, else Night
+  Watch. It names the repo a system was read from as information ("acme-web", "design system ·
+  dashboard-web", "found in web/static/tokens.css"; a system whose project is gone: "design
+  system"; one a design's agent wrote without sources: "made in Shepherd"; Night Watch: "design
+  system · shepherd", "built into Shepherd"). Its menu picks another system. Send installs the
+  system in the new design before its agent starts.
 
 ## The renderer
 
@@ -562,14 +610,14 @@ was on keep their files and agents either way.
   (`DesignsPage`, NavDesigns) shows recent designs as cards, most recently edited first, each
   with its first board (the first in `order`) rendered off screen, and the host's design systems
   (Design systems › In the app). A card names the design's system: the one installed in it last
-  (`Design.systemNamespace`), else its project's name.
+  (`Design.systemNamespace`); a design drawn in none names nothing.
 - **Recents** lists a design as one row (the nib and "4 boards"), placed by its last change. Its
   agent has no row of its own and takes no ⌘-digit; the palette leaves it out too.
-- **New design** (DZStart; the page's button, New thread's "Start a design") takes a brief and
-  images and the project the design belongs to (the selected space, else the most recently used;
-  the card's menu picks another). Send makes the design, starts its agent in that project with
-  Settings' default model and the brief as its first message, and opens the design. The agent is
-  named after the design and gets no namer.
+- **New design** (DZStart; the page's button, New thread's "Start a design") takes a brief,
+  images and the design system (the card; Design systems › In the app). Send makes the design,
+  starts its agent in the designs space, in the design's own folder, with Settings' default model
+  and the brief as its first message, and opens the design. The agent is named after the design
+  and gets no namer.
 - **A design's screen** (DZCanvas) is its agent's layout (`DesignLayoutView`): the canvas beside a
   420pt chat pane holding the agent's thread, whose composer has attach and Send only, under a
   toolbar with the breadcrumb, the pages menu (with more than one page), the design's system,
@@ -703,10 +751,16 @@ The design screen publishes what it shows (`DesignScreenModel.viewRecord`, a
   presented): the board holding
   the latest pick (down to 10% zoom), the board under the pointer with Select (at any zoom), and
   the boards nearest the middle of the view (from 25%), recycled least
-  recently wanted first (`DesignLivePlan`). A live view draws at the canvas's zoom with WebKit's
-  page zoom, so it lays out at the board's size and stays sharp, and it shows once its first
-  snapshot is taken. During a zoom gesture every board draws its snapshot; live views follow once
-  the canvas rests.
+  recently wanted first (`DesignLivePlan`). A live view's page always lays out at the board's
+  `w` × `h` in CSS pixels, whatever the zoom: its web view is the board's size at a page zoom of
+  1, scaled to the board's frame on screen (AppKit's bounds, UIKit's transform, so clicks and
+  touches map through the same scale). Never WebKit's page zoom: it scales font sizes, so below
+  about 56% its minimum font size swells text until labels wrap, above 100% the system font's
+  size-dependent tracking narrows text until paragraphs rewrap, and at fractional zooms the layout
+  viewport loses a pixel. Zooming changes no layout and reloads nothing; above 100% a live board
+  is its 100% drawing scaled up, like a snapshot. A live view shows once its first snapshot is
+  taken. During a zoom gesture every board draws its snapshot;
+  live views follow once the canvas rests.
 - **Snapshots.** Every other board draws its last snapshot, rendered by one off-screen view at a
   time (`DesignRasterizer`), so any canvas holds at most six web views. Snapshots are kept per
   design within a pixel budget, never evicting a board on screen. A hidden design gives up its
@@ -717,8 +771,9 @@ The design screen publishes what it shows (`DesignScreenModel.viewRecord`, a
   navigation, its state kept; source the runtime refuses leaves it as it was), and any other board
   renders one new snapshot. New boards appear and removed boards leave.
 - **Budgets** (`DesignPerformanceTests`, over 172 boards): at most six web views, panning recycles
-  them, one board changing redraws one frame (`design.board`) with one snapshot, and a board
-  dragged redraws its own frame once per step and no other. The Designs
+  them, one board changing redraws one frame (`design.board`) with one snapshot, a board
+  dragged redraws its own frame once per step and no other, and zooming never reloads a live
+  board or changes its page zoom. The Designs
   grid builds only the cards on screen (`ListPerformanceTests`, `design.card`).
 
 ### Tweak (DZTweak)
@@ -734,9 +789,10 @@ The chat pane's Tweak tab edits the selection (the latest pick) directly
   for `enum`, a slider for a bounded number (a stepper or a field otherwise), token chips for
   `color`, a field for `text`; grouped by their `section`, "Board" otherwise. A board picked whole
   shows its data-props alone.
-- **Tokens.** The design's tokens are the CSS custom properties its board declares and its
-  project's stylesheets declare (`DesignTokens`, `DesignProjectTokens`; the same walk as
-  `design_check`). Lengths snap to the tokens named for their role (`--space-*`, `--radius-*`,
+- **Tokens.** The design's tokens are the CSS custom properties its board declares and the
+  stylesheets in its agent's working folder declare (`DesignTokens`, `DesignProjectTokens`; the
+  same walk as `design_check`): the design's own folder, or the project an older design's agent
+  still works in. Lengths snap to the tokens named for their role (`--space-*`, `--radius-*`,
   `--text-*`); a design with none for a role snaps to Shepherd's own scale, and the scope's note
   says so. A color is always a token, never a free hex: without color tokens there is no Color
   group. A value the board declares as a token is written as `var(--name)`, anything else as its
@@ -791,7 +847,8 @@ import, the project's other files, and the uploads they name).
   a link to another exported board (`<a href="B.dc.html">`, or from the canvas root) goes to its
   page. A support file the board links by a relative path (not an upload) is not carried.
 - **ZIP.** The pages (uploads pointed at `assets/`), `tokens.css` (a `:root` block of every custom
-  property the boards and the project's stylesheets declare, `DesignExportTokens`), `assets/`
+  property the boards and the stylesheets in the design agent's working folder declare,
+  `DesignExportTokens`), `assets/`
   (the uploads they name), and the canvas as a project folder (format.md): `project/canvas.json`
   narrowed to the exported boards with every other key kept (`DesignBundle.index`), each exported
   board's and each imported board's source as written, and the project's other files (`ds/`,
@@ -815,8 +872,8 @@ import, the project's other files, and the uploads they name).
 ### Import
 
 File ▸ Import Claude Design Folder… (with the Design tool on) reads a canvas folder from disk into
-a new design (`SessionServer.importDesign`, decision 4) in the selected project, else the most
-recently used, and opens it (its agent starts then). The folder is only read.
+a new standalone design (`SessionServer.importDesign`, decision 4; no project needed or chosen),
+and opens it (its agent starts then). The folder is only read.
 
 - **Which folder.** A canvas's `project/` itself (it holds `canvas.json`), or a folder holding
   `project/` and, from a Shepherd export, `assets/`. Everything else in it is left behind.
@@ -849,7 +906,9 @@ moving a board (by its label or while picked whole), Duplicate's name and place 
 the words Variations and another direction send.
 
 For design systems (Design systems › In the app): Tweak doesn't yet snap to an installed
-system's tokens (it reads the board's and the project's custom properties). Not drawn, and built
+system's tokens.json (it reads the board's custom properties and those the stylesheets in its
+agent's working folder declare, which for a design's own folder include its installed systems'
+copied `tokens.css`). Not drawn, and built
 plainly: a build still reading its project ("Reading <project>…" and nothing else), the Design
 systems page with no chat for a system without its own agent, a build on the grid before it has
 written its system, the Spacing & radii and Boards using it sections (rows in the type rows'

@@ -2,26 +2,40 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
     public var id: SpaceID
     public var name: String
     public var path: String
-    /// Hidden spaces never render in the sidebar tree or space pickers. The
-    /// reserved automations space is the only producer: automation agents
-    /// must live in a space (the state contract), but their UI is the
-    /// AUTOMATIONS section, not a space row. Decodes false from old files.
+    /// Hidden spaces never render in the sidebar tree or space pickers. Two reserved spaces are
+    /// the only producers: automation agents and design agents must live in a space (the state
+    /// contract), but their UI is the Automations section and the designs, not a space row.
+    /// Decodes false from old files.
     public var hidden: Bool
+    /// The reserved hidden space design agents live in (`holdsDesigns`): a design belongs to no
+    /// project, so its agent lives here, and startup keeps its agents (unlike automation runs).
+    /// Decodes false from older files, and is written only when true.
+    public var holdsDesigns: Bool
 
     public init(
         id: SpaceID = SpaceID(),
         name: String,
         path: String,
-        hidden: Bool = false
+        hidden: Bool = false,
+        holdsDesigns: Bool = false
     ) {
         self.id = id
         self.name = name
         self.path = path
         self.hidden = hidden
+        self.holdsDesigns = holdsDesigns
     }
 
+    /// The reserved space for design agents: hidden, never a project.
+    public static func designs(id: SpaceID = SpaceID()) -> Space {
+        Space(id: id, name: "Designs", path: "~", hidden: true, holdsDesigns: true)
+    }
+
+    /// The reserved automations space: hidden, and not the designs'.
+    public var holdsAutomations: Bool { hidden && !holdsDesigns }
+
     private enum CodingKeys: String, CodingKey {
-        case id, name, path, hidden
+        case id, name, path, hidden, holdsDesigns
     }
 
     public init(from decoder: Decoder) throws {
@@ -30,6 +44,16 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
         name = try c.decode(String.self, forKey: .name)
         path = try c.decode(String.self, forKey: .path)
         hidden = try c.decodeIfPresent(Bool.self, forKey: .hidden) ?? false
+        holdsDesigns = try c.decodeIfPresent(Bool.self, forKey: .holdsDesigns) ?? false
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(path, forKey: .path)
+        try c.encode(hidden, forKey: .hidden)
+        if holdsDesigns { try c.encode(holdsDesigns, forKey: .holdsDesigns) }
     }
 }
 
@@ -288,13 +312,12 @@ public struct Automation: Codable, Hashable, Sendable, Identifiable {
 
 /// A design (the Design tool): a canvas of HTML boards drawn by its design agent. Its files live
 /// in the support directory's `designs/<id>/` (docs/designs.md); this record is what the
-/// workspace keeps about it.
+/// workspace keeps about it. A design belongs to no space: its agent lives in the reserved
+/// designs space (`Space.holdsDesigns`) and works in the design's own folder.
 public struct Design: Codable, Hashable, Sendable, Identifiable {
     public var id: DesignID
     /// The name on its card and in Recents, kept equal to its canvas.json `title`.
     public var name: String
-    /// The project it belongs to: its agent works in this space's directory.
-    public var spaceID: SpaceID
     /// The agent that draws it. Nil until one is attached, and cleared when that agent is
     /// removed: opening the design then starts a fresh one.
     public var agentID: AgentID?
@@ -311,51 +334,58 @@ public struct Design: Codable, Hashable, Sendable, Identifiable {
     /// its screen is that system's page (DZSystem) rather than a canvas. It has no card and no
     /// Recents row of its own. Decodes false from older state files.
     public var buildsSystem: Bool
+    /// The project a system build reads (its agent works in that folder): only a build has one.
+    /// Older state files kept it as the design's `spaceID`; a canvas's stored `spaceID` is
+    /// ignored.
+    public var sourceSpaceID: SpaceID?
 
     public init(
         id: DesignID = DesignID(),
         name: String,
-        spaceID: SpaceID,
         agentID: AgentID? = nil,
         systemNamespace: String? = nil,
         createdAt: Double,
         lastActiveAt: Double? = nil,
         boardCount: Int? = nil,
-        buildsSystem: Bool = false
+        buildsSystem: Bool = false,
+        sourceSpaceID: SpaceID? = nil
     ) {
         self.id = id
         self.name = name
-        self.spaceID = spaceID
         self.agentID = agentID
         self.systemNamespace = systemNamespace
         self.createdAt = createdAt
         self.lastActiveAt = lastActiveAt ?? createdAt
         self.boardCount = boardCount
         self.buildsSystem = buildsSystem
+        self.sourceSpaceID = sourceSpaceID
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, spaceID, agentID, systemNamespace, createdAt, lastActiveAt, boardCount, buildsSystem
+        case id, name, agentID, systemNamespace, createdAt, lastActiveAt, boardCount, buildsSystem, sourceSpaceID
+        // Before designs stood alone (2026-09-26). Read only for a build's project; still written,
+        // because older builds and remote clients can't decode a design without it.
+        case spaceID
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(DesignID.self, forKey: .id)
         name = try c.decode(String.self, forKey: .name)
-        spaceID = try c.decode(SpaceID.self, forKey: .spaceID)
         agentID = try c.decodeIfPresent(AgentID.self, forKey: .agentID)
         systemNamespace = try c.decodeIfPresent(String.self, forKey: .systemNamespace)
         createdAt = try c.decode(Double.self, forKey: .createdAt)
         lastActiveAt = try c.decode(Double.self, forKey: .lastActiveAt)
         boardCount = try c.decodeIfPresent(Int.self, forKey: .boardCount)
         buildsSystem = try c.decodeIfPresent(Bool.self, forKey: .buildsSystem) ?? false
+        let legacySpace = buildsSystem ? try? c.decodeIfPresent(SpaceID.self, forKey: .spaceID) : nil
+        sourceSpaceID = try c.decodeIfPresent(SpaceID.self, forKey: .sourceSpaceID) ?? legacySpace
     }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(id, forKey: .id)
         try c.encode(name, forKey: .name)
-        try c.encode(spaceID, forKey: .spaceID)
         try c.encodeIfPresent(agentID, forKey: .agentID)
         try c.encodeIfPresent(systemNamespace, forKey: .systemNamespace)
         try c.encode(createdAt, forKey: .createdAt)
@@ -363,7 +393,12 @@ public struct Design: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(boardCount, forKey: .boardCount)
         // Only a system build says so, so a design's record reads as it did before.
         if buildsSystem { try c.encode(buildsSystem, forKey: .buildsSystem) }
+        try c.encodeIfPresent(sourceSpaceID, forKey: .sourceSpaceID)
+        try c.encode(sourceSpaceID ?? Self.legacyStandaloneSpace, forKey: .spaceID)
     }
+
+    /// The `spaceID` a standalone design writes for older readers: no space has it.
+    static let legacyStandaloneSpace = SpaceID(rawValue: "standalone-design")
 }
 
 /// The server's authoritative snapshot.
@@ -403,6 +438,13 @@ public struct ShepherdState: Codable, Hashable, Sendable {
 }
 
 extension ShepherdState {
+    /// The reserved space design agents live in, once one has been made.
+    public var designsSpace: Space? {
+        spaces.first(where: \.holdsDesigns)
+    }
+}
+
+extension ShepherdState {
     /// The state as state.json keeps it: without what only a running host knows (the question
     /// each agent waits on and its short reason, and each design's board count).
     public var persisted: ShepherdState {
@@ -433,6 +475,32 @@ extension ShepherdState {
         for index in state.agents.indices {
             state.agents[index].thinkingLevel = state.agents[index].thinkingLevel?.clamped(to: ThinkingLevel.legacy)
         }
+        return state
+    }
+}
+
+extension ShepherdState {
+    /// Whether an agent draws one of this workspace's designs. Its thread is that design's chat,
+    /// never an ordinary thread (docs/designs.md › Design agents and ordinary threads).
+    public func isDesignAgent(_ agent: Agent) -> Bool {
+        guard let design = agent.designID else { return false }
+        return designs.contains { $0.id == design }
+    }
+
+    public func isDesignAgent(_ agentID: AgentID) -> Bool {
+        agents.first { $0.id == agentID }.map(isDesignAgent) ?? false
+    }
+
+    /// The workspace as a remote client gets it: without its designs, the agents that draw them,
+    /// or their layouts. No client has a design screen yet, so any of it would show as a thread.
+    public var withoutDesigns: ShepherdState {
+        guard !designs.isEmpty else { return self }
+        var state = self
+        let drawers = agents.filter(isDesignAgent)
+        let ids = Set(drawers.map(\.id)), tabs = Set(drawers.map(\.tabID))
+        state.agents.removeAll { ids.contains($0.id) }
+        state.tabs.removeAll { tabs.contains($0.id) }
+        state.designs = []
         return state
     }
 }

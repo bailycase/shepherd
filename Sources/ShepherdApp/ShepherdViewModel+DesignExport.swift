@@ -101,13 +101,14 @@ extension ShepherdViewModel {
         }
     }
 
-    /// The tokens the design's boards declare, then its project's (read-only).
+    /// The tokens the design's boards declare, then those its agent's folder declares (read-only):
+    /// the design's own folder, or the project an older design's agent still works in.
     private func designTokens(_ id: DesignID, files: DesignExportFiles) async -> DesignTokens {
         var tokens = DesignTokens()
         for path in files.members {
             if let source = files.sources[path] { tokens = tokens.merged(with: DesignTokens.read(board: source)) }
         }
-        let project = design(id).flatMap { design in state.spaces.first { $0.id == design.spaceID } }.map { URL(fileURLWithPath: $0.path) }
+        let project = design(id).flatMap(designWorkingFolder)
         return tokens.merged(with: await DesignProjectTokens.read(project))
     }
 
@@ -129,18 +130,14 @@ extension ShepherdViewModel {
         if let window = NSApp.keyWindow { panel.beginSheetModal(for: window, completionHandler: done) } else { panel.begin(completionHandler: done) }
     }
 
-    /// Reads a Claude Design folder into a new design in the selected project (else the most
-    /// recently used), and opens it. The folder is only read.
+    /// Reads a Claude Design folder into a new standalone design, and opens it. The folder is
+    /// only read.
     func importDesignFolder(_ url: URL) {
-        guard let space = designImportSpace else {
-            remoteActionError = "Add a project before importing a design."
-            return
-        }
         Task {
             let scoped = url.startAccessingSecurityScopedResource()
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
             do {
-                let design = try await server.importDesign(from: url, spaceID: space)
+                let design = try await server.importDesign(from: url)
                 adopt(server.state)
                 openDestination(.designs)
                 openDesign(design.id)
@@ -148,14 +145,5 @@ extension ShepherdViewModel {
                 remoteActionError = "Couldn't import \(url.lastPathComponent): \((error as? LocalizedError)?.errorDescription ?? "\(error)")"
             }
         }
-    }
-
-    /// The project an imported design joins: the selected space, else the most recently used.
-    var designImportSpace: SpaceID? {
-        let spaces = visibleSpaces
-        if let selected = selectedSpaceID, spaces.contains(where: { $0.id == selected }) { return selected }
-        let recent = state.agents.filter { agent in spaces.contains { $0.id == agent.spaceID } }
-            .max { ($0.lastActiveAt ?? -1) < ($1.lastActiveAt ?? -1) }?.spaceID
-        return recent ?? spaces.first?.id
     }
 }

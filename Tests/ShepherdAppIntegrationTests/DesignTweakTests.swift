@@ -56,7 +56,7 @@ struct DesignTweakTests {
         let space = Fixture.space(path: app.dir.path)
         let vm = try await app.start(with: ShepherdState(spaces: [space]))
         vm.designNetwork = .none
-        let design = Design(name: "Checkout funnel", spaceID: space.id, createdAt: 1_000)
+        let design = Design(name: "Checkout funnel", createdAt: 1_000)
         _ = try await app.server.createDesign(design)
         _ = try await app.server.writeDesignBoards(design.id, sources: [Self.a: Self.board("A"), Self.phone: Self.board("A · phone")])
         _ = try await app.server.updateDesignIndex(design.id, patch: .object([

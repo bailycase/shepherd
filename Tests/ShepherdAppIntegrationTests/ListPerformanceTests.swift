@@ -150,7 +150,7 @@ struct ListPerformanceTests {
         let vm = try await app.start(with: ShepherdState(spaces: [space]))
         vm.designNetwork = .none
         for index in 0..<120 {
-            _ = try await app.server.createDesign(Design(name: "Design \(index)", spaceID: space.id, createdAt: Double(1_000 + index)))
+            _ = try await app.server.createDesign(Design(name: "Design \(index)", createdAt: Double(1_000 + index)))
         }
         try await eventuallyOnMain("the designs to arrive") { vm.state.designs.count == 120 }
         vm.openDestination(.designs)
@@ -201,7 +201,7 @@ struct ListPerformanceTests {
         let space = Fixture.space(path: remote.host.dir.path)
         try await remote.host.start(with: ShepherdState(spaces: [space]))
         for index in 0..<120 {
-            _ = try await remote.host.server.createDesign(Design(name: "Design \(index)", spaceID: space.id, createdAt: Double(1_000 + index)))
+            _ = try await remote.host.server.createDesign(Design(name: "Design \(index)", createdAt: Double(1_000 + index)))
         }
         _ = try await remote.connect(app.remoteHosts)
         await vm.loadRemoteDesigns()
@@ -230,7 +230,7 @@ struct ListPerformanceTests {
         let space = Fixture.space(path: app.dir.path)
         let vm = try await app.start(with: ShepherdState(spaces: [space]))
         vm.designNetwork = .none
-        let design = Design(name: "Large", spaceID: space.id, createdAt: 1_000)
+        let design = Design(name: "Large", createdAt: 1_000)
         _ = try await app.server.createDesign(design)
         try await DesignFixtures.draw(DesignFixtures.grid(172), in: design.id, on: app.server, perRow: 12)
         try await eventuallyOnMain("the design to arrive") { vm.state.designs.count == 1 }
@@ -967,6 +967,38 @@ struct ListPerformanceTests {
 
         var snapshot = try #require(vm.skills.state(of: vm.skillsHosts[0]).snapshot)
         snapshot.skills[0].isOn = false
+        let changed = ListPerf.counting {
+            ListPerf.time(window) { vm.skills.hostChanged(ShepherdViewModel.thisMacSkills, snapshot) }
+        }
+        #expect(changed["skills.row", default: 0] <= 2, "\(changed)")
+    }
+
+    /// The read-only groups are lazy too: 200 skills from pi's own setup and packages build only
+    /// the rows on screen, and one changing redraws its row alone.
+    @Test func onePiSkillChangingRedrawsOnlyItsRow() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let vm = try await app.start()
+        let pi = PiSkills(agentDirectory: "~/.pi/agent", skills: (0..<200).map { index in
+            let name = "pi-skill-\(index + 100)"
+            return index < 100
+                ? PiSkill(name: name, summary: "Skill number \(index).", path: "~/.pi/agent/skills/\(name)/SKILL.md", origin: .agentDirectory)
+                : PiSkill(name: name, summary: "Skill number \(index).", path: "~/.pi/agent/npm/node_modules/@acme/skills/\(name)/SKILL.md",
+                          origin: .package, package: "@acme/skills")
+        })
+        app.server.skills.piSkills = { _ in pi }
+        await vm.skills.refresh(vm.skillsHosts)
+        let size = CGSize(width: 1200, height: 800)
+        var window: OffscreenWindow!
+        let opened = ListPerf.counting {
+            window = OffscreenWindow(size: size, dark: true, SkillsSettings(vm: vm, model: vm.skills))
+            ListPerf.settle(window)
+        }
+        defer { window.close() }
+        #expect(opened["skills.row", default: 0] <= 80, "\(opened)")
+
+        var snapshot = try #require(vm.skills.state(of: vm.skillsHosts[0]).snapshot)
+        snapshot.pi?.skills[0].summary = "Changed by hand."
         let changed = ListPerf.counting {
             ListPerf.time(window) { vm.skills.hostChanged(ShepherdViewModel.thisMacSkills, snapshot) }
         }

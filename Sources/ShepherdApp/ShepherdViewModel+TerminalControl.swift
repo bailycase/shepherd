@@ -4,10 +4,9 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-/// The terminal panel's own actions (NewTerminalMenu, Run in terminal): name a tab, kill what a
-/// tab runs, and open a command in a new tab typed out but not run. A local agent's go to this
-/// Mac's server; a remote agent's to its host (`terminalControlCapability`), which serves them
-/// here for its own agents with the same rules.
+/// The terminal panel's own actions (NewTerminalMenu): name a tab and kill what a tab runs. A
+/// local agent's go to this Mac's server; a remote agent's to its host
+/// (`terminalControlCapability`), which serves them here for its own agents with the same rules.
 extension ShepherdViewModel {
     struct TerminalControlError: Error, CustomStringConvertible {
         let description: String
@@ -38,15 +37,6 @@ extension ShepherdViewModel {
         guard let session = leaf.sessionID, await server.killForegroundCommand(sessionID: session) else {
             throw TerminalControlError("Nothing is running in that terminal.")
         }
-    }
-
-    /// Types `text` at a pane's prompt once its shell reads, without running it.
-    func typeInTerminal(_ paneID: PaneID, of agentID: AgentID, text: String) async throws {
-        _ = try terminalLeaf(paneID, of: agentID)
-        guard let session = await sessions.awaitSession(forPane: paneID, timeout: .seconds(10)) else {
-            throw TerminalControlError("That terminal's shell did not start.")
-        }
-        server.typeCommand(text, sessionID: session, submit: false)
     }
 
     // MARK: From the panel
@@ -99,35 +89,6 @@ extension ShepherdViewModel {
     func terminalTabIsRunning(_ tab: TerminalPanelTab, target: TerminalTarget) -> Bool {
         let pane = TerminalPanel.focusedPane(in: tab, focused: target.focused)
         return terminalPanels.activity[target.key]?[pane]?.isRunning == true
-    }
-
-    /// Run in terminal (TerminalStates): a new tab in the thread's folder on its host, with
-    /// `command` typed after the prompt and nothing run. The new tab takes the keyboard.
-    func runInTerminal(_ command: String) {
-        guard let target = terminalTarget, terminalControlAvailable(target) else { NSSound.beep(); return }
-        let anchor = TerminalPanel.newTabAnchor(in: target.layout, thread: target.thread)
-        if let remote = target.remote {
-            Task {
-                do {
-                    let pane = try await remoteHosts.openPane(hostID: remote.hostID, agentID: remote.agentID,
-                                                              relativeTo: anchor.pane, axis: anchor.axis)
-                    remoteFocusedPaneID = pane
-                    try await remoteHosts.agentAction(remote, action: .typeInTerminal(paneID: pane, text: command))
-                } catch { NSSound.beep() }
-            }
-            return
-        }
-        guard let tab = state.tabs.first(where: { $0.id == target.key.tab }), let leaf = tab.layout.leaf(withID: anchor.pane) else { return }
-        do { try verifyCheckoutAvailable(leaf.cwd) }
-        catch { remoteActionError = String(describing: error); return }
-        let pane = LeafPane(cwd: leaf.cwd)
-        guard let layout = tab.layout.splitting(pane: anchor.pane, axis: anchor.axis, newPane: pane) else { return }
-        setLayout(layout, forTab: tab.id)
-        focusedPaneID = pane.id
-        Task {
-            guard let session = await sessions.awaitSession(forPane: pane.id, timeout: .seconds(10)) else { return }
-            server.typeCommand(command, sessionID: session, submit: false)
-        }
     }
 
     /// Where a new tab opens, for the menu: "<space> on <host>" ("payments on build-01").

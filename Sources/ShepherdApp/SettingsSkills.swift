@@ -6,8 +6,10 @@ import ShepherdRemote
 /// Settings ▸ Skills (SettingsSkills, SkillsStates): the agent skills every thread and
 /// automation on every host can use, kept in each host's ~/.agents/skills. A wide page: the
 /// installed skills (a filter, All / On / Updates, when This Mac last checked, Update N; a row
-/// opens in place, one at a time) beside a 280pt rail (how the agent uses skills, what they cost
-/// in every prompt, the options, and each host). Browse skills.sh and Add from repo open sheets.
+/// opens in place, one at a time), then read-only the skills pi loads from the user's own pi setup
+/// and from pi packages (the user's decision of 2026-09-26), beside a 280pt rail (how the agent
+/// uses skills, what they cost in every prompt, the options, and each host). Browse skills.sh and
+/// Add from repo open sheets.
 struct SkillsSettings: View {
     var vm: ShepherdViewModel
     var model: ClientSkills
@@ -20,6 +22,7 @@ struct SkillsSettings: View {
     var body: some View {
         let hosts = vm.skillsHosts
         let rows = model.rows(in: hosts, filter: filter, query: query)
+        let groups = model.piGroups(in: hosts, filter: filter, query: query)
         VStack(alignment: .leading, spacing: AppLayout.skillsBlockSpacing) {
             header
             HStack(alignment: .top, spacing: AppLayout.skillsColumnSpacing) {
@@ -33,7 +36,9 @@ struct SkillsSettings: View {
                         .nwTransition(.disclosure)
                     }
                     ScrollView(.vertical) {
-                        SkillsList(vm: vm, model: model, hosts: hosts, rows: rows, expanded: $expanded,
+                        SkillsList(vm: vm, model: model, hosts: hosts, rows: rows,
+                                   showsInstalled: !rows.isEmpty || groups.isEmpty || (filter == .all && query.isEmpty),
+                                   outside: outsideItems(hosts, groups: groups), expanded: $expanded,
                                    empty: emptyMessage(hosts))
                     }
                     .scrollIndicators(.hidden)
@@ -50,6 +55,7 @@ struct SkillsSettings: View {
         }
         .nwAnimation(.disclosure, value: expanded)
         .nwAnimation(.list, value: rows.map(\.id))
+        .nwAnimation(.list, value: groups.map { $0.rows.map(\.id) })
         .nwAnimation(.disclosure, value: model.problem)
         .task { await model.refresh(vm.skillsHosts) }
         .sheet(item: $sheet) { sheet in
@@ -72,8 +78,9 @@ struct SkillsSettings: View {
     private var header: some View {
         HStack(alignment: .bottom, spacing: NW.Space.xl) {
             SettingsHeader(title: "Skills",
-                           explanation: "Instructions and scripts the agent picks up when a task calls for them. Skills are global: "
-                               + "every thread and automation on every host gets the same set.")
+                           explanation: "Instructions and scripts the agent picks up when a task calls for them. Installed skills are "
+                               + "global: every thread and automation on every host gets the same set. Skills from your pi setup "
+                               + "and pi packages are listed read-only.")
                 .frame(maxWidth: AppLayout.skillsExplanationWidth, alignment: .leading)
             Spacer(minLength: NW.Space.l)
             HStack(spacing: NW.Space.m) {
@@ -89,7 +96,7 @@ struct SkillsSettings: View {
     private func toolbar(_ hosts: [SkillsHost]) -> some View {
         let updates = model.count(.updates, in: hosts)
         return HStack(spacing: NW.Space.m + NW.Space.xxs) {
-            NWSearchField("Filter installed skills", text: $query)
+            NWSearchField("Filter skills", text: $query)
                 .frame(width: AppLayout.skillsFilterWidth)
             NWSegmentedPicker("Show", selection: $filter, options: [
                 (.all, "All \(model.count(.all, in: hosts))"),
@@ -112,6 +119,32 @@ struct SkillsSettings: View {
             }
         }
         .nwAnimation(.disclosure, value: updates > 0)
+    }
+
+    /// The read-only part of the list: each group's title and rows, why pi's skills couldn't be
+    /// read, and where a repository's own skills are.
+    private func outsideItems(_ hosts: [SkillsHost], groups: [PiSkillGroup]) -> [OutsideItem] {
+        guard let reference = model.reference(in: hosts) else { return [] }
+        guard let pi = model.pi(in: hosts) else {
+            // This Mac always reports them (tests may not); a remote host too old to says so.
+            return reference.id == ShepherdViewModel.thisMacSkills ? [] : [.note(SkillsPresentation.piNotReported(reference.name))]
+        }
+        let local = pi.host.id == ShepherdViewModel.thisMacSkills
+        var items: [OutsideItem] = []
+        for group in groups {
+            items.append(.group(OutsideGroupTitle(kind: group.kind, count: group.rows.count,
+                                                  folder: group.kind == .setup ? pi.skills.agentDirectory + "/skills" : nil,
+                                                  opensFolder: local && group.kind == .setup)))
+            for row in group.rows {
+                items.append(.skill(row, local: local))
+            }
+        }
+        if let problem = pi.skills.problem {
+            items.append(.group(OutsideGroupTitle(kind: .setup, count: nil, folder: nil, opensFolder: false)))
+            items.append(.problem(SkillsPresentation.piProblem(problem)))
+        }
+        if filter == .all { items.append(.note(SkillsPresentation.repositorySkillsNote)) }
+        return items
     }
 
     private func emptyMessage(_ hosts: [SkillsHost]) -> String {
@@ -150,6 +183,10 @@ private struct SkillsList: View {
     var model: ClientSkills
     let hosts: [SkillsHost]
     let rows: [SkillRow]
+    /// Whether the Installed group shows: always unfiltered, else only while it keeps a row or
+    /// nothing else does.
+    let showsInstalled: Bool
+    let outside: [OutsideItem]
     @Binding var expanded: String?
     let empty: String
 
@@ -157,21 +194,57 @@ private struct SkillsList: View {
         let nw = Color.nw
         LazyVStack(spacing: 0) {
             SkillsListHeader()
-            if rows.isEmpty {
-                Text(empty)
-                    .font(.nwSans(AppLayout.skillsSummarySize))
-                    .foregroundStyle(nw.textTertiary)
-                    .frame(maxWidth: .infinity, minHeight: AppLayout.skillsRowMinHeight)
-                    .nwTransition(.disclosure)
+            if showsInstalled {
+                SkillsGroupTitle(title: "Installed", count: rows.count, trailing: model.directory(in: hosts), readOnly: false,
+                                 rule: false, help: "Shepherd installs, updates and removes these, on every host.", open: nil)
+                    .equatable()
+                if rows.isEmpty {
+                    Text(empty)
+                        .font(.nwSans(AppLayout.skillsSummarySize))
+                        .foregroundStyle(nw.textTertiary)
+                        .frame(maxWidth: .infinity, minHeight: AppLayout.skillsRowMinHeight)
+                        .overlay(alignment: .top) { NWHairline() }
+                        .nwTransition(.disclosure)
+                }
+                ForEach(rows) { row in
+                    let open = expanded == row.id
+                    VStack(spacing: 0) {
+                        SkillsListRow(row: row, open: open, actions: actions(for: row))
+                            .equatable()
+                        if open {
+                            SkillDetail(vm: vm, model: model, hosts: hosts, row: row)
+                                .nwTransition(.disclosure)
+                        }
+                    }
+                }
             }
-            ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                let open = expanded == row.id
+            ForEach(outside) { item in
                 VStack(spacing: 0) {
-                    SkillsListRow(row: row, open: open, first: index == 0, actions: actions(for: row))
-                        .equatable()
-                    if open {
-                        SkillDetail(vm: vm, model: model, hosts: hosts, row: row)
-                            .nwTransition(.disclosure)
+                    switch item {
+                    case .group(let title):
+                        SkillsGroupTitle(title: SkillsPresentation.groupTitle(title.kind), count: title.count, trailing: title.folder,
+                                         readOnly: true, rule: showsInstalled || item.id != outside.first?.id,
+                                         help: SkillsPresentation.groupNote(title.kind),
+                                         open: title.opensFolder ? { vm.showPiSkillsFolder() } : nil)
+                            .equatable()
+                    case .skill(let row, let local):
+                        PiSkillsListRow(row: row, actions: local ? piActions(for: row) : nil)
+                            .equatable()
+                    case .problem(let text):
+                        NWInlineProblem(text)
+                            .frame(maxWidth: .infinity, minHeight: AppLayout.skillsRowMinHeight, alignment: .leading)
+                            .padding(.horizontal, NW.Space.xl)
+                            .overlay(alignment: .top) { NWHairline() }
+                    case .note(let text):
+                        Text(text)
+                            .nwText(size: AppLayout.skillsNoteSize, lineHeight: AppLayout.skillsNoteLineHeight)
+                            .foregroundStyle(nw.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, NW.Space.l)
+                            .padding(.horizontal, NW.Space.xl)
+                            .background(nw.bgSunken)
+                            .overlay(alignment: .top) { NWHairline() }
                     }
                 }
             }
@@ -186,6 +259,186 @@ private struct SkillsList: View {
             toggle: { on in model.setOn(row.name, on, in: vm.skillsHosts) },
             open: { expanded = expanded == row.id ? nil : row.id },
             update: { Task { await model.update(row.name, in: vm.skillsHosts) } })
+    }
+
+    private func piActions(for row: PiSkillRow) -> PiSkillsListRow.Actions {
+        PiSkillsListRow.Actions(open: { vm.openPiSkillFile(row.skill.path) }, reveal: { vm.showPiSkillFile(row.skill.path) })
+    }
+}
+
+/// One line of the list's read-only part: a group's title, one of pi's skills, why pi's skills
+/// couldn't be read, or a note.
+enum OutsideItem: Identifiable, Equatable {
+    case group(OutsideGroupTitle)
+    case skill(PiSkillRow, local: Bool)
+    case problem(String)
+    case note(String)
+
+    var id: String {
+        switch self {
+        case .group(let title): "group:\(title.kind.rawValue):\(title.count == nil ? "problem" : "")"
+        case .skill(let row, _): "skill:\(row.id)"
+        case .problem: "problem"
+        case .note(let text): "note:\(text)"
+        }
+    }
+}
+
+/// A read-only group's title: its kind, how many it holds, the folder it names, and whether Show
+/// folder acts (This Mac's own setup only).
+struct OutsideGroupTitle: Equatable {
+    let kind: PiSkillGroup.Kind
+    let count: Int?
+    let folder: String?
+    let opensFolder: Bool
+}
+
+/// A group's title row: "Installed 8", "From your pi setup 3" with a lock (read-only), and the
+/// folder or Show folder trailing.
+private struct SkillsGroupTitle: View, Equatable {
+    let title: String
+    let count: Int?
+    let trailing: String?
+    let readOnly: Bool
+    /// A hairline above: every title but one straight under the column labels.
+    let rule: Bool
+    let help: String
+    let open: (() -> Void)?
+
+    nonisolated static func == (a: SkillsGroupTitle, b: SkillsGroupTitle) -> Bool {
+        a.title == b.title && a.count == b.count && a.trailing == b.trailing && a.readOnly == b.readOnly && a.rule == b.rule
+            && (a.open == nil) == (b.open == nil)
+    }
+
+    var body: some View {
+        let nw = Color.nw
+        HStack(spacing: NW.Space.s) {
+            if readOnly {
+                Image(systemName: "lock")
+                    .font(.nwSans(AppLayout.skillsLabelSize, .semibold))
+                    .foregroundStyle(nw.textTertiary)
+                    .frame(width: AppLayout.skillsSwitchColumn)
+                    .padding(.trailing, AppLayout.skillsColumnGap - NW.Space.s)
+                    .accessibilityHidden(true)
+            }
+            Text(title)
+                .font(.nwSans(AppLayout.skillsNoteSize, .semibold))
+                .foregroundStyle(nw.textSecondary)
+                .lineLimit(1)
+            if let count {
+                Text("\(count)")
+                    .font(.nwMono(AppLayout.skillsMetaSize))
+                    .foregroundStyle(nw.textTertiary)
+            }
+            Spacer(minLength: NW.Space.m)
+            if let trailing {
+                Text(trailing)
+                    .font(.nwMono(AppLayout.skillsMetaSize - 0.5))
+                    .foregroundStyle(nw.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            if let open {
+                Button("Show folder", action: open)
+                    .buttonStyle(.nw(.ghost, size: .s))
+                    .help("Show pi’s skills folder in Finder")
+            }
+        }
+        .padding(.horizontal, NW.Space.xl)
+        .frame(minHeight: AppLayout.skillsGroupHeight)
+        .overlay(alignment: .top) { if rule { NWHairline() } }
+        .help(help)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// One of the skills pi loads from outside Shepherd's folder: read-only, with no switch (a lock
+/// in its column), its name and description, where it comes from, and how it's used. One a
+/// skill of the same name shadows says "not used". On This Mac, its menu opens its SKILL.md or
+/// shows it in Finder.
+private struct PiSkillsListRow: View, Equatable {
+    struct Actions {
+        let open: () -> Void
+        let reveal: () -> Void
+    }
+
+    let row: PiSkillRow
+    let actions: Actions?
+
+    nonisolated static func == (a: PiSkillsListRow, b: PiSkillsListRow) -> Bool {
+        a.row == b.row && (a.actions == nil) == (b.actions == nil)
+    }
+
+    var body: some View {
+        let _ = NWRenderProbe.tick("skills.row")
+        let nw = Color.nw
+        let skill = row.skill
+        HStack(spacing: AppLayout.skillsColumnGap) {
+            Color.clear.frame(width: AppLayout.skillsSwitchColumn)
+            VStack(alignment: .leading, spacing: NW.Space.xxs + 1) {
+                HStack(spacing: NW.Space.s) {
+                    Text(skill.name)
+                        .font(.nwMono(AppLayout.skillsNameSize, .semibold))
+                        .foregroundStyle(skill.isUsed ? nw.textPrimary : nw.textSecondary)
+                        .lineLimit(1)
+                    if !skill.isUsed { NWTag("not used") }
+                }
+                Text(skill.shadowedBy.map(SkillsPresentation.shadowNote) ?? skill.summary)
+                    .font(.nwSans(AppLayout.skillsSummarySize))
+                    .foregroundStyle(skill.isUsed ? nw.textSecondary : nw.textTertiary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Text(SkillsPresentation.source(skill))
+                .font(.nwMono(AppLayout.skillsMetaSize))
+                .foregroundStyle(nw.textSecondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(skill.path)
+                .frame(width: AppLayout.skillsSourceColumn, alignment: .leading)
+            SkillUseTag(invocation: skill.invocation)
+                .frame(width: AppLayout.skillsUseColumn, alignment: .leading)
+            Color.clear.frame(width: AppLayout.skillsUpdatedColumn + AppLayout.skillsColumnGap + AppLayout.skillsChevronColumn)
+        }
+        .padding(.vertical, NW.Space.m)
+        .padding(.horizontal, NW.Space.xl)
+        .frame(minHeight: AppLayout.skillsRowMinHeight)
+        .overlay(alignment: .top) { NWHairline() }
+        .contentShape(Rectangle())
+        .help(skill.shadowedBy.map { _ in skill.summary } ?? "")
+        .contextMenu {
+            if let actions {
+                Button("Open SKILL.md", action: actions.open)
+                Button("Show in Finder", action: actions.reveal)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The Use column: "Auto" in a bordered tag, or "/skill only" in mono on `bgSelected`.
+private struct SkillUseTag: View {
+    let invocation: SkillInvocation
+
+    var body: some View {
+        let nw = Color.nw
+        let text = Text(SkillsPresentation.use(invocation)).lineLimit(1)
+        if invocation == .automatic {
+            text.font(.nwSans(AppLayout.skillsMetaSize))
+                .foregroundStyle(nw.textSecondary)
+                .padding(.horizontal, NW.Space.s + 1)
+                .frame(height: AppLayout.skillsTagHeight)
+                .nwBorder(nw.lineStrong, radius: NW.Radius.xs)
+                .fixedSize()
+        } else {
+            text.font(.nwMono(AppLayout.skillsMetaSize - 0.5))
+                .foregroundStyle(nw.textSecondary)
+                .padding(.horizontal, NW.Space.s + 1)
+                .frame(height: AppLayout.skillsTagHeight)
+                .background(nw.bgSelected, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
+                .fixedSize()
+        }
     }
 }
 
@@ -225,12 +478,11 @@ private struct SkillsListRow: View, Equatable {
 
     let row: SkillRow
     let open: Bool
-    let first: Bool
     let actions: Actions
     @State private var hovering = false
 
     nonisolated static func == (a: SkillsListRow, b: SkillsListRow) -> Bool {
-        a.row == b.row && a.open == b.open && a.first == b.first
+        a.row == b.row && a.open == b.open
     }
 
     var body: some View {
@@ -243,10 +495,15 @@ private struct SkillsListRow: View, Equatable {
                 .labelsHidden()
                 .frame(width: AppLayout.skillsSwitchColumn)
             VStack(alignment: .leading, spacing: NW.Space.xxs + 1) {
-                Text(skill.name)
-                    .font(.nwMono(AppLayout.skillsNameSize, .semibold))
-                    .foregroundStyle(skill.isOn ? nw.textPrimary : nw.textSecondary)
-                    .lineLimit(1)
+                HStack(spacing: NW.Space.s) {
+                    Text(skill.name)
+                        .font(.nwMono(AppLayout.skillsNameSize, .semibold))
+                        .foregroundStyle(skill.isOn && row.shadowedBy == nil ? nw.textPrimary : nw.textSecondary)
+                        .lineLimit(1)
+                    if let winner = row.shadowedBy {
+                        NWTag("not used").help(SkillsPresentation.shadowNote(winner))
+                    }
+                }
                 Text(skill.summary)
                     .font(.nwSans(AppLayout.skillsSummarySize))
                     .foregroundStyle(nw.textSecondary)
@@ -254,7 +511,7 @@ private struct SkillsListRow: View, Equatable {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             source(skill).frame(width: AppLayout.skillsSourceColumn, alignment: .leading)
-            use(skill.invocation).frame(width: AppLayout.skillsUseColumn, alignment: .leading)
+            SkillUseTag(invocation: skill.invocation).frame(width: AppLayout.skillsUseColumn, alignment: .leading)
             updated.frame(width: AppLayout.skillsUpdatedColumn, alignment: .leading)
             Image(systemName: open ? "chevron.down" : "chevron.right")
                 .font(.nwSans(AppLayout.skillsMetaSize, .semibold))
@@ -266,7 +523,7 @@ private struct SkillsListRow: View, Equatable {
         .padding(.horizontal, NW.Space.xl)
         .frame(minHeight: AppLayout.skillsRowMinHeight)
         .background(open || hovering ? nw.bgHover : Color.clear)
-        .overlay(alignment: .top) { if !first { NWHairline() } }
+        .overlay(alignment: .top) { NWHairline() }
         .contentShape(Rectangle())
         .onTapGesture(perform: actions.open)
         .onHover { hovering = $0 }
@@ -288,26 +545,6 @@ private struct SkillsListRow: View, Equatable {
                 .foregroundStyle(nw.textTertiary)
                 .labelStyle(.titleAndIcon)
                 .help("Copied into ~/.agents/skills by hand. It never updates.")
-        }
-    }
-
-    @ViewBuilder private func use(_ invocation: SkillInvocation) -> some View {
-        let nw = Color.nw
-        let text = Text(SkillsPresentation.use(invocation)).lineLimit(1)
-        if invocation == .automatic {
-            text.font(.nwSans(AppLayout.skillsMetaSize))
-                .foregroundStyle(nw.textSecondary)
-                .padding(.horizontal, NW.Space.s + 1)
-                .frame(height: AppLayout.skillsTagHeight)
-                .nwBorder(nw.lineStrong, radius: NW.Radius.xs)
-                .fixedSize()
-        } else {
-            text.font(.nwMono(AppLayout.skillsMetaSize - 0.5))
-                .foregroundStyle(nw.textSecondary)
-                .padding(.horizontal, NW.Space.s + 1)
-                .frame(height: AppLayout.skillsTagHeight)
-                .background(nw.bgSelected, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
-                .fixedSize()
         }
     }
 
@@ -483,7 +720,7 @@ private struct SkillsRail: View {
 
     var body: some View {
         let nw = Color.nw
-        let skills = model.reference(in: hosts).flatMap { model.state(of: $0).snapshot?.skills } ?? []
+        let loaded = model.loadedSkills(in: hosts)
         VStack(alignment: .leading, spacing: AppLayout.skillsRailSpacing) {
             VStack(alignment: .leading, spacing: NW.Space.m) {
                 NWSectionHeader("How the agent uses them", style: .settings).padding(.horizontal, NW.Space.xxs)
@@ -504,8 +741,8 @@ private struct SkillsRail: View {
                             .font(.nwMono(AppLayout.skillsNoteSize))
                             .foregroundStyle(nw.textSecondary)
                     }
-                    NWBudgetBar(skills.filter(\.isOn).map { $0.invocation == .automatic })
-                    Text(SkillsPresentation.automaticCount(skills))
+                    NWBudgetBar(loaded.map { $0.invocation == .automatic })
+                    Text(SkillsPresentation.automaticCount(loaded.filter { $0.invocation == .automatic }.count))
                         .nwText(size: AppLayout.skillsNoteSize, lineHeight: AppLayout.skillsNoteLineHeight)
                         .foregroundStyle(nw.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
