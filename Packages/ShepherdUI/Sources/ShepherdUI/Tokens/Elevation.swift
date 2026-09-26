@@ -19,10 +19,11 @@ extension View {
         shadow(color: floating ? .nw.popoverShadow : .clear, radius: NWPopoverModifier.shadowRadius)
     }
 
-    /// An opaque pane's fill, casting the popover's shadow while `floating`. Cast by the fill
-    /// rather than the content: Core Animation redraws a content shadow from every layer inside
-    /// as it changes, a scrolling list each frame, and a clear one still shadows them all.
-    public func nwFloatBackground(_ fill: Color, floating: Bool = true) -> some View {
+    /// An opaque pane's fill (a color, or one that reaches under the safe area), casting the
+    /// popover's shadow while `floating`. Cast by the fill rather than the content: Core
+    /// Animation redraws a content shadow from every layer inside as it changes, a scrolling
+    /// list each frame, and a clear one still shadows them all.
+    public func nwFloatBackground(_ fill: some View, floating: Bool = true) -> some View {
         background {
             if floating {
                 fill.shadow(color: .nw.popoverShadow, radius: NWPopoverModifier.shadowRadius)

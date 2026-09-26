@@ -134,9 +134,9 @@ struct RootView: View {
                     .accessibilityHidden(true)
                 SidebarView(vm: vm)
                     .frame(width: width)
-                    .background(Color.nw.bgBase.ignoresSafeArea())
+                    // The shadow from the fill, never from the scrolling list over it.
+                    .nwFloatBackground(Color.nw.bgBase.ignoresSafeArea())
                     .overlay(alignment: .trailing) { NWHairline(.vertical) }
-                    .nwFloatShadow()
                     .nwTransition(.pane, edge: .leading)
             }
         }

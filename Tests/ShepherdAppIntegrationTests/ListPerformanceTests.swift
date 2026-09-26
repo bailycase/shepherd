@@ -783,6 +783,32 @@ struct ListPerformanceTests {
         #expect(shadows.allSatisfy { $0.subtree == 1 }, "a shadow over the pane's content: \(shadows.map(\.subtree))")
     }
 
+    /// The sidebar overlaid on a narrow window casts its shadow from its fill alone: on the
+    /// sidebar itself, Core Animation redrew the shadow from the scrolling list on every step.
+    @Test func theOverlaidSidebarCastsItsShadowFromItsFillAlone() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let vm = try await app.start(with: ListFixtures.fleet(in: app.dir))
+        let window = OffscreenWindow(size: CGSize(width: AppLayout.windowMinWidth, height: 700), dark: true,
+                                     RootView(vm: vm).environment(\._accessibilityReduceMotion, true))
+        defer { window.close() }
+        try await eventuallyOnMain("the narrow window to hide the sidebar") {
+            ListPerf.settle(window)
+            return vm.sidebarAutoHidden
+        }
+        #expect(ListPerf.shadowedLayers(in: window).isEmpty)
+
+        vm.toggleSidebar()
+        try await eventuallyOnMain("the sidebar to overlay the workspace") {
+            ListPerf.settle(window)
+            return vm.sidebarOverlayShown && !ListPerf.shadowedLayers(in: window).isEmpty
+        }
+
+        let shadows = ListPerf.shadowedLayers(in: window)
+        #expect(shadows.count == 1, "\(shadows.map(\.layer))")
+        #expect(shadows.allSatisfy { $0.subtree == 1 }, "a shadow over the sidebar's list: \(shadows.map(\.subtree))")
+    }
+
     // MARK: Palette
 
     private func palette(_ items: [PaletteItem], query: String, highlight: PaletteHighlight = PaletteHighlight()) -> OffscreenWindow {
