@@ -111,3 +111,14 @@ import SwiftUI
         .frame(width: 360)
     }
 }
+
+#Preview("Host rows") {
+    NWPreviewBoth {
+        VStack(spacing: NW.Space.xxs) {
+            NWHostRow(name: "Studio", detail: "3 threads · 2 running", state: .done, selected: true)
+            NWHostRow(name: "build-01", detail: "1 thread", state: .done)
+            NWHostRow(name: "horizon", detail: "Offline · last seen 7:12 AM", state: .failed)
+        }
+        .frame(width: 320)
+    }
+}
