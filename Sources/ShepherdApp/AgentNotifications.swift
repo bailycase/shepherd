@@ -64,7 +64,7 @@ final class AgentNotifications: NSObject, UNUserNotificationCenterDelegate {
         content.threadIdentifier = banner.group
         content.categoryIdentifier = register(banner.actions)
         content.userInfo = Self.userInfo(banner)
-        posted[banner.identifier] = banner.actions
+        if !banner.actions.isEmpty { posted[banner.identifier] = banner.actions }
         center.add(UNNotificationRequest(identifier: banner.identifier, content: content, trigger: nil))
     }
 
