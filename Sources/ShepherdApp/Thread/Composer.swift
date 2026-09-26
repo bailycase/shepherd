@@ -6,13 +6,6 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 
-/// A menu the command center asks the composer to open (⇧⌘M's model picker).
-struct ComposerMenuRequest: Equatable {
-    enum Menu: Equatable { case models, thinking }
-    let menu: Menu
-    let id = UUID()
-}
-
 /// The composer (NWComposer board): pinned under the thread in the same 820pt column, a fade
 /// above it, the `NWComposer` card with the field (or a pending question) and one row of
 /// controls: attach · / commands · model · thinking · Send or Stop. Menus float over the thread
@@ -36,8 +29,9 @@ struct Composer: View {
     let gutter: CGFloat
     /// Another host's catalog; nil for this Mac's (`ModelCatalog.loadLocal`).
     var listModels: (() async -> ModelCatalog)?
-    /// Set by the command center: open that menu.
-    var menuRequest: ComposerMenuRequest?
+    /// This thread's key in the command center: ⇧⌘M's model picker and the thinking menu come
+    /// to the composer by it, and open with one redraw of the composer alone.
+    var commandKey: String? = nil
     /// Set while the thread is detached from its tail: what "Jump to latest" does.
     var jumpToLatest: (() -> Void)? = nil
     /// Brings an entry into view (the context details' Largest and Show summary).
@@ -60,6 +54,8 @@ struct Composer: View {
     @State private var commandIndex = 0
     /// Esc closes the slash menu for the draft as typed; typing more reopens it.
     @State private var dismissedQuery: String?
+    /// The slash menu's matches for the draft, derived once per change (never while drawing).
+    @State private var slash = SlashMatchCache()
     @State private var menu: Menu?
     /// The models this agent's host offers, derived for the picker; nil until loaded.
     @State private var catalog: ModelCatalog?
@@ -144,14 +140,9 @@ struct Composer: View {
               store.draft != dismissedQuery else { return nil }
         return String(store.draft.dropFirst()).lowercased()
     }
-    private var commandMatches: [NativeCommand] {
-        guard let query = commandQuery else { return [] }
-        guard !query.isEmpty else { return commands }
-        let prefix = commands.filter { $0.name.lowercased().hasPrefix(query) }
-        let rest = commands.filter { !$0.name.lowercased().hasPrefix(query) }
-            .filter { $0.name.lowercased().contains(query) || ($0.description ?? "").lowercased().contains(query) }
-        return prefix + rest
-    }
+    /// The commands the slash menu lists for the draft, as `body` last derived them: every key
+    /// press comes after the render that saw the draft change.
+    private var commandMatches: [NativeCommand] { commandQuery == nil ? [] : slash.matches }
     private var menuOpen: Bool { commandQuery != nil || menu != nil }
 
     private var openMenu: OpenMenu {
@@ -208,6 +199,7 @@ struct Composer: View {
         let catchingUp = catchUp.catchingUp(caughtUpAt: store.catchUp?.chrome, version: store.chromeVersion)
         let widgets = store.widgets
         let query = commandQuery
+        let _ = slash.update(query: query, commands: commands)
         VStack(alignment: .leading, spacing: AppLayout.menuGap) {
             if !widgets.isEmpty {
                 VStack(alignment: .leading, spacing: NW.Space.xs) {
@@ -348,13 +340,8 @@ struct Composer: View {
         .task { if contextDetailsOpen { menu = .context } }
         // The catalog decides whether the thinking chip applies; this Mac's is asked once per process.
         .task { if catalog?.isEmpty != false { await loadModels() } }
-        .onChange(of: menuRequest) { _, request in
-            switch request?.menu {
-            case .models: openModels()
-            case .thinking: toggleThinking()
-            case nil: break
-            }
-        }
+        // ⇧⌘M and the thinking menu's command, watched apart from the thread and the composer.
+        .modifier(ThreadCommandHandler(key: commandKey, active: active, handle: handleCommand))
         .fileImporter(isPresented: $picking, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result else { return }
             attachmentError = nil
@@ -371,9 +358,13 @@ struct Composer: View {
         }
     }
 
-    private static func slashCommand(_ command: NativeCommand) -> NWSlashCommand {
-        NWSlashCommand(name: command.name, description: command.description,
-                       tag: command.source.flatMap { $0 == "extension" ? nil : $0 })
+    /// The command center's menu commands; the thread handles the rest.
+    private func handleCommand(_ command: ThreadCommandCenter.Command) {
+        switch command {
+        case .modelPicker: openModels()
+        case .thinkingMenu: toggleThinking()
+        case .previousTurn, .nextTurn, .inspectSubagent: break
+        }
     }
 
     /// The levels pi offers the thread's model, with the board's notes.
@@ -392,13 +383,14 @@ struct Composer: View {
         let room = openMenu == .none ? nil : cardTop.map { max(0, $0 - AppLayout.menuGap - AppLayout.menuMargin) }
         return ZStack(alignment: .bottomLeading) {
             if let query {
-                let matches = commandMatches
-                NWSlashMenu(commands: matches.map(Self.slashCommand), total: commands.count, query: query,
-                            selection: $commandIndex, maxHeight: room) { command in
-                    if let match = matches.first(where: { $0.name == command.name }) { choose(match) }
+                let slash = slash
+                NWSlashMenu(commands: slash.rows, total: commands.count, query: query, selection: $commandIndex, maxHeight: room) { command in
+                    if let match = slash.matches.first(where: { $0.name == command.name }) { choose(match) }
                 }
                 .nwTransition(.overlay, anchor: .bottomLeading)
             }
+            // The picker and the thinking menu compare what they draw, so a composer redraw for
+            // something else (the field losing focus to them, a keystroke) leaves their rows alone.
             if menu == .models, let picker {
                 ModelPicker(state: picker, maxHeight: room) { model in
                     menu = nil
@@ -406,14 +398,16 @@ struct Composer: View {
                     RecentModels.record(model, thread: agentName)
                     Task { await store.setModel(model) }
                 } close: { menu = nil; composing = true }
+                .equatable()
                 .nwTransition(.overlay, anchor: .bottomLeading)
             }
             if menu == .thinking, let thinking = store.thinking {
-                NWThinkingMenu(options: thinkingOptions, current: thinking) { level in
+                ThinkingMenu(options: thinkingOptions, current: thinking) { level in
                     menu = nil
                     composing = true
                     Task { await store.setThinking(level.id) }
-                } onClose: { menu = nil; composing = true }
+                } close: { menu = nil; composing = true }
+                .equatable()
                 .nwTransition(.overlay, anchor: .bottomLeading)
             }
         }
@@ -491,7 +485,7 @@ struct Composer: View {
                 field.nwEntrance(.content)
             }
         } controls: {
-            actionRow
+            ComposerControls(model: controlsModel, actions: controlsActions, store: store).equatable()
         }
         .coordinateSpace(.named(Self.cardSpace))
         .onDrop(of: [.image, .fileURL], isTargeted: canAttach ? $dropTargeted : nil) { providers in
@@ -567,119 +561,50 @@ struct Composer: View {
             .accessibilityLabel("Message the agent")
     }
 
-    /// Full chip labels when they fit; in a narrow thread (a docked right pane) the chips drop
-    /// their words ("/", the thinking level alone) instead of truncating mid-word.
-    private var actionRow: some View {
-        HStack(spacing: NW.Space.xxs) {
-            ViewThatFits(in: .horizontal) {
-                actionChips(compact: false, startingLabel: true)
-                // "Starting…" gives up its words before the chips do.
-                actionChips(compact: false, startingLabel: false)
-                actionChips(compact: true, startingLabel: false)
-            }
-            // A new model or level cross-fades. Only these: typing and width changes stay instant.
-            .nwAnimation(.content, value: [store.model, store.thinking])
-            // The ring and the action, 6pt apart, keep their place whatever the chips drop; out of
-            // the fitting candidates, each is built once (a streamed chunk redraws neither).
-            HStack(spacing: NW.Space.s) {
-                ContextMeterButton(store: store, expanded: menu == .context) {
-                    menu = menu == .context ? nil : .context
-                }
-                .equatable()
-                .onGeometryChange(for: CGFloat.self) { proxy in
-                    (proxy.bounds(of: .named(Self.cardSpace))?.width ?? 0) - proxy.frame(in: .named(Self.cardSpace)).maxX
-                } action: { meterInset = max(0, $0) }
-                primary
-            }
-        }
-    }
+    // MARK: Controls
 
-    private func actionChips(compact: Bool, startingLabel: Bool) -> some View {
-        let _ = NWRenderProbe.tick("composer.chips")
-        return HStack(spacing: NW.Space.xxs) {
-            if canAttach {
-                Button { picking = true } label: { Image(systemName: "paperclip") }
-                    .buttonStyle(.nwIcon(size: NWComposerMetrics.chipHeight))
-                    .disabled(attachments.count >= NativeImage.maxPerSend)
-                    .help("Attach images (drop or paste also works), up to \(NativeImage.maxPerSend)")
-                    .accessibilityLabel("Attach file")
-            }
-            if !commands.isEmpty {
-                Button {
-                    store.draft = "/"
-                    dismissedQuery = nil
-                    menu = nil
-                    composing = true
-                } label: {
-                    HStack(spacing: NW.Space.s) {
-                        Text("/").font(Font.nw(.code))
-                        if !compact { Text("commands") }
-                    }
-                }
-                .buttonStyle(.nwComposerChip(active: commandQuery != nil))
-                .help("Commands")
-                .accessibilityLabel("Commands")
-            }
-            modelChip
-            thinkingChip(compact: compact)
-            Spacer(minLength: NW.Space.m)
-            if startingShown { startingIndicator(label: startingLabel).nwTransition(.content) }
-        }
-        .nwAnimation(.content, value: startingShown)
-    }
-
-    /// "Starting…" beside the action, quiet and in the row it never resizes. Its spinner
-    /// gives way to Send's own while a message waits for the agent.
-    private func startingIndicator(label: Bool) -> some View {
-        HStack(spacing: AppLayout.startingSpacing) {
-            if !store.busy {
-                ProgressView().progressViewStyle(.nwSpinner(size: AppLayout.startingSpinner, color: Color.nw.textTertiary))
-            }
-            if label { Text("Starting…").font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary) }
-        }
-        .padding(.trailing, NW.Space.s)
-        .help("The agent is starting. A message sent now goes once it is ready.")
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Starting the agent")
-    }
-
-    /// Send and Stop are one button that morphs; the spinner cross-fades over it while pi
-    /// accepts a message. While pi works with a draft, Stop steps aside outlined and Send takes
-    /// the corner; right-clicking or holding Send then opens the Send menu.
-    private var primary: some View {
+    /// What the control row draws, gathered once per composer render so the row can compare it
+    /// before redrawing (`ComposerControls`): past the first character, typing changes none of
+    /// it, and neither does the field losing focus to a menu.
+    private var controlsModel: ComposerControlsModel {
         let working = running && dialogs.isEmpty
-        let stops = working && store.draft.isEmpty
-        let beside = working && !store.draft.isEmpty && !store.busy
-        return HStack(spacing: NW.Space.s) {
-            if beside {
-                NWComposerActionButton(.stop, outlined: true, enabled: active && store.supports("abort")) { stop() }
-                    .help(stopHelp)
-                    .nwTransition(.content)
-            }
-            ZStack {
-                if store.busy {
-                    ProgressView().progressViewStyle(.nwSpinner(color: Color.nw.textTertiary))
-                        .frame(width: NWComposerMetrics.actionSize, height: NWComposerMetrics.actionSize)
-                        .accessibilityLabel("Waiting for the agent")
-                        .nwTransition(.content)
-                } else {
-                    NWComposerActionButton(stops ? .stop : .send, ringed: menu == .send,
-                                           enabled: stops ? active && store.supports("abort") : canSend && dialogs.isEmpty) {
-                        if stops { stop() } else if sendHeld { sendHeld = false } else { sendDraft(.primary) }
-                    }
-                    .help(stops ? stopHelp : !dialogs.isEmpty ? "Answer the question first" : sendHelp(working: working))
-                    .overlay { if beside { SecondaryClick { openSendMenu() } } }
-                    .simultaneousGesture(LongPressGesture(minimumDuration: AppLayout.sendHoldDelay / .seconds(1)).onEnded { _ in
-                        guard beside else { return }
-                        sendHeld = true
-                        openSendMenu()
-                    }, isEnabled: beside)
-                    .nwTransition(.content)
-                }
-            }
-        }
-        .nwAnimation(.content, value: store.busy)
-        .nwAnimation(.content, value: beside)
+        let draftEmpty = store.draft.isEmpty
+        let stops = working && draftEmpty
+        return ComposerControlsModel(
+            active: active, canAttach: canAttach, attachFull: attachments.count >= NativeImage.maxPerSend,
+            hasCommands: !commands.isEmpty, commandsActive: commandQuery != nil,
+            model: store.model, modelChangeable: store.supportedActions.contains("setModel"), modelEnabled: store.supports("setModel"),
+            modelsOpen: menu == .models,
+            thinking: store.thinking, thinkingShown: thinkingAvailable, thinkingEnabled: store.supports("setThinking"),
+            thinkingOpen: menu == .thinking,
+            startingShown: startingShown, busy: store.busy, stops: stops, beside: working && !draftEmpty && !store.busy,
+            sendRinged: menu == .send, contextOpen: menu == .context, stopEnabled: active && store.supports("abort"),
+            actionEnabled: stops ? active && store.supports("abort") : canSend && dialogs.isEmpty,
+            stopHelp: stopHelp, actionHelp: stops ? stopHelp : !dialogs.isEmpty ? "Answer the question first" : sendHelp(working: working))
+    }
+
+    /// What the row's controls do. Each reads the store and the composer's own state as it runs,
+    /// never a value of the render that made it, so the row keeps them while its model holds.
+    private var controlsActions: ComposerControlsActions {
+        ComposerControlsActions(
+            attach: { picking = true },
+            commands: {
+                store.draft = "/"
+                dismissedQuery = nil
+                menu = nil
+                composing = true
+            },
+            models: { openModels() },
+            thinking: { toggleThinking() },
+            stop: { stop() },
+            send: { if sendHeld { sendHeld = false } else { sendDraft(.primary) } },
+            sendMenu: { openSendMenu() },
+            holdSend: {
+                sendHeld = true
+                openSendMenu()
+            },
+            context: { menu = menu == .context ? nil : .context },
+            meterInset: { meterInset = max(0, $0) })
     }
 
     private var stopHelp: String {
@@ -705,47 +630,7 @@ struct Composer: View {
         else { Task { await store.abortAll() } }
     }
 
-    // MARK: Chips
-
-    @ViewBuilder private var modelChip: some View {
-        if let model = store.model {
-            let settable = store.supportedActions.contains("setModel")
-            Button { openModels() } label: {
-                HStack(spacing: NW.Space.s) {
-                    // A long id keeps both ends: the provider prefix and the model's tail.
-                    Text(nativeModelShortName(model)).font(Font.nw(.code)).lineLimit(1).truncationMode(.middle)
-                        .nwContentTransition(.crossFade)
-                    if settable { NWChipChevron() }
-                }
-            }
-            .buttonStyle(.nwComposerChip(active: menu == .models))
-            .disabled(!settable || !store.supports("setModel"))
-            .help("Model: \(model)")
-            .accessibilityLabel("Model \(model)")
-        }
-    }
-
-    /// The level pi runs at, opening the levels pi offers the model; hidden when the model takes
-    /// no thinking level.
-    @ViewBuilder private func thinkingChip(compact: Bool) -> some View {
-        if thinkingAvailable, let thinking = store.thinking {
-            Button {
-                toggleThinking()
-            } label: {
-                HStack(spacing: NW.Space.s) {
-                    Image(systemName: "lightbulb").font(.system(size: AppLayout.chipSymbol, weight: .medium)).foregroundStyle(Color.nw.textSecondary)
-                    if !compact { Text("Thinking") }
-                    Text(NativeThinkingLevel.title(thinking)).foregroundStyle(Color.nw.textPrimary).fontWeight(.medium)
-                        .nwContentTransition(.crossFade)
-                    NWChipChevron()
-                }
-            }
-            .buttonStyle(.nwComposerChip(active: menu == .thinking))
-            .disabled(!store.supports("setThinking"))
-            .accessibilityLabel("Thinking level: \(NativeThinkingLevel.title(thinking))")
-        }
-    }
-
+    /// The thinking chip shows while pi reports a level it can set and the model takes one.
     private var thinkingAvailable: Bool {
         store.thinking != nil && store.supportedActions.contains("setThinking") && reasoningAvailable
             && NativeThinkingLevel.reasons(store.thinkingLevels)
@@ -914,6 +799,313 @@ struct Composer: View {
             }
             attachments.append(attachment)
         }
+    }
+}
+
+// MARK: The control row
+
+/// What the composer's control row draws (`ComposerControls`), compared before the row redraws.
+struct ComposerControlsModel: Equatable {
+    var active: Bool
+    var canAttach: Bool
+    var attachFull: Bool
+    var hasCommands: Bool
+    var commandsActive: Bool
+    var model: String?
+    /// The host lets the model change (the chevron); `modelEnabled` is whether it can right now.
+    var modelChangeable: Bool
+    var modelEnabled: Bool
+    var modelsOpen: Bool
+    var thinking: String?
+    var thinkingShown: Bool
+    var thinkingEnabled: Bool
+    var thinkingOpen: Bool
+    var startingShown: Bool
+    var busy: Bool
+    /// Stop takes the corner: pi works and the field is empty.
+    var stops: Bool
+    /// Stop stands aside outlined: pi works, with a draft to send.
+    var beside: Bool
+    var sendRinged: Bool
+    /// The context ring's details are open.
+    var contextOpen: Bool
+    var stopEnabled: Bool
+    var actionEnabled: Bool
+    var stopHelp: String
+    var actionHelp: String
+}
+
+/// What the control row's controls do, kept apart from the model so they never count as a change.
+struct ComposerControlsActions {
+    var attach: () -> Void
+    var commands: () -> Void
+    var models: () -> Void
+    var thinking: () -> Void
+    var stop: () -> Void
+    var send: () -> Void
+    var sendMenu: () -> Void
+    var holdSend: () -> Void
+    var context: () -> Void
+    /// How far the ring's trailing edge sits in from the card's.
+    var meterInset: (CGFloat) -> Void
+}
+
+/// The composer's control row: attach · / commands · model · thinking, then the context ring and
+/// Send or Stop, with full chip labels when they fit; in a narrow thread (a docked right pane) the chips drop their words
+/// ("/", the thinking level alone) instead of truncating mid-word, after "Starting…" drops
+/// its own. `ViewThatFits` builds and measures every alternative, each with its tooltips and
+/// accessibility, whenever the row is rebuilt, so the row compares what it draws first: a
+/// keystroke past the first character and the field losing focus to a menu rebuild the field,
+/// never the chips.
+struct ComposerControls: View, Equatable {
+    let model: ComposerControlsModel
+    let actions: ComposerControlsActions
+    /// Handed to the ring, which reads its meter; the row itself reads nothing from it.
+    let store: NativeThreadStore
+
+    static func == (a: Self, b: Self) -> Bool { a.model == b.model && a.store === b.store }
+
+    var body: some View {
+        ComposerControlsMinimum {
+            HStack(spacing: NW.Space.xxs) {
+                ViewThatFits(in: .horizontal) {
+                    chips(compact: false, startingLabel: true)
+                    // "Starting…" gives up its words before the chips do.
+                    chips(compact: false, startingLabel: false)
+                    chips(compact: true, startingLabel: false)
+                }
+                // A new model or level cross-fades. Only these: typing and width changes stay instant.
+                .nwAnimation(.content, value: [model.model, model.thinking])
+                // The ring and the action, 6pt apart, keep their place whatever the chips drop; out
+                // of the fitting candidates, each is built once (a streamed chunk redraws neither).
+                HStack(spacing: NW.Space.s) {
+                    ContextMeterButton(store: store, expanded: model.contextOpen, toggle: actions.context)
+                        .equatable()
+                        .onGeometryChange(for: CGFloat.self) { proxy in
+                            (proxy.bounds(of: .named(Composer.cardSpace))?.width ?? 0)
+                                - proxy.frame(in: .named(Composer.cardSpace)).maxX
+                        } action: { actions.meterInset($0) }
+                    primary
+                }
+            }
+        }
+    }
+
+    private func chips(compact: Bool, startingLabel: Bool) -> some View {
+        let _ = NWRenderProbe.tick("composer.chips")
+        return HStack(spacing: NW.Space.xxs) {
+            if model.canAttach {
+                Button(action: actions.attach) { Image(systemName: "paperclip") }
+                    .buttonStyle(.nwIcon(size: NWComposerMetrics.chipHeight))
+                    .disabled(model.attachFull)
+                    .help("Attach images (drop or paste also works), up to \(NativeImage.maxPerSend)")
+                    .accessibilityLabel("Attach file")
+            }
+            if model.hasCommands {
+                Button(action: actions.commands) {
+                    HStack(spacing: NW.Space.s) {
+                        Text("/").font(Font.nw(.code))
+                        if !compact { Text("commands") }
+                    }
+                }
+                .buttonStyle(.nwComposerChip(active: model.commandsActive))
+                .help("Commands")
+                .accessibilityLabel("Commands")
+            }
+            modelChip
+            thinkingChip(compact: compact)
+            Spacer(minLength: NW.Space.m)
+            if model.startingShown { startingIndicator(label: startingLabel).nwTransition(.content) }
+        }
+        .nwAnimation(.content, value: model.startingShown)
+    }
+
+    @ViewBuilder private var modelChip: some View {
+        if let name = model.model {
+            Button(action: actions.models) {
+                HStack(spacing: NW.Space.s) {
+                    // A long id keeps both ends: the provider prefix and the model's tail.
+                    Text(nativeModelShortName(name)).font(Font.nw(.code)).lineLimit(1).truncationMode(.middle)
+                        .nwContentTransition(.crossFade)
+                    if model.modelChangeable { NWChipChevron() }
+                }
+            }
+            .buttonStyle(.nwComposerChip(active: model.modelsOpen))
+            .disabled(!model.modelEnabled)
+            .help("Model: \(name)")
+            .accessibilityLabel("Model \(name)")
+        }
+    }
+
+    /// The level pi runs at, opening the levels pi offers the model; hidden when the model takes
+    /// no thinking level.
+    @ViewBuilder private func thinkingChip(compact: Bool) -> some View {
+        if model.thinkingShown, let thinking = model.thinking {
+            Button(action: actions.thinking) {
+                HStack(spacing: NW.Space.s) {
+                    Image(systemName: "lightbulb").font(.system(size: AppLayout.chipSymbol, weight: .medium)).foregroundStyle(Color.nw.textSecondary)
+                    if !compact { Text("Thinking") }
+                    Text(NativeThinkingLevel.title(thinking)).foregroundStyle(Color.nw.textPrimary).fontWeight(.medium)
+                        .nwContentTransition(.crossFade)
+                    NWChipChevron()
+                }
+            }
+            .buttonStyle(.nwComposerChip(active: model.thinkingOpen))
+            .disabled(!model.thinkingEnabled)
+            .accessibilityLabel("Thinking level: \(NativeThinkingLevel.title(thinking))")
+        }
+    }
+
+    /// "Starting…" beside the action, quiet and in the row it never resizes. Its spinner
+    /// gives way to Send's own while a message waits for the agent.
+    private func startingIndicator(label: Bool) -> some View {
+        HStack(spacing: AppLayout.startingSpacing) {
+            if !model.busy {
+                ProgressView().progressViewStyle(.nwSpinner(size: AppLayout.startingSpinner, color: Color.nw.textTertiary))
+            }
+            if label { Text("Starting…").font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary) }
+        }
+        .padding(.trailing, NW.Space.s)
+        .help("The agent is starting. A message sent now goes once it is ready.")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Starting the agent")
+    }
+
+    /// Send and Stop are one button that morphs; the spinner cross-fades over it while pi
+    /// accepts a message. While pi works with a draft, Stop steps aside outlined and Send takes
+    /// the corner; right-clicking or holding Send then opens the Send menu.
+    private var primary: some View {
+        let beside = model.beside
+        return HStack(spacing: NW.Space.s) {
+            if beside {
+                NWComposerActionButton(.stop, outlined: true, enabled: model.stopEnabled, action: actions.stop)
+                    .help(model.stopHelp)
+                    .nwTransition(.content)
+            }
+            ZStack {
+                if model.busy {
+                    ProgressView().progressViewStyle(.nwSpinner(color: Color.nw.textTertiary))
+                        .frame(width: NWComposerMetrics.actionSize, height: NWComposerMetrics.actionSize)
+                        .accessibilityLabel("Waiting for the agent")
+                        .nwTransition(.content)
+                } else {
+                    NWComposerActionButton(model.stops ? .stop : .send, ringed: model.sendRinged, enabled: model.actionEnabled,
+                                           action: model.stops ? actions.stop : actions.send)
+                    .help(model.actionHelp)
+                    .overlay { if beside { SecondaryClick(action: actions.sendMenu) } }
+                    .simultaneousGesture(LongPressGesture(minimumDuration: AppLayout.sendHoldDelay / .seconds(1)).onEnded { _ in
+                        guard beside else { return }
+                        actions.holdSend()
+                    }, isEnabled: beside)
+                    .nwTransition(.content)
+                }
+            }
+        }
+        .nwAnimation(.content, value: model.busy)
+        .nwAnimation(.content, value: beside)
+    }
+}
+
+/// Answers the window's minimum-size pass for the control row without measuring it. The window
+/// sizes to its content's minimum (`windowResizability(.contentMinSize)`), so after every change
+/// that could move it (each keystroke in the field, whose text field reports a new intrinsic
+/// size) the scene's hosting view measures the whole view tree from a zero-width proposal: the
+/// row is asked at no width, at the width of its paddings, and again at its own minimum as the
+/// pass places it. At each of those `ViewThatFits` measures every alternative, building the two
+/// it does not show, with their tooltips and accessibility: half of a keystroke's main-thread
+/// time. A real layout never proposes the row less than `AppLayout.composerControlsNarrowest`,
+/// and the row's minimum is never the window's (`AppLayout.windowMinWidth` on the root and the
+/// thread column's `threadMinWidth` are both wider than the compact row), so a narrower proposal
+/// is answered with the width offered (the row's spacer takes all of any width it fits in) and
+/// the row's height, and every other proposal reaches the row as it is. Placed, the row gets the
+/// width it answered, as a stack would have proposed it.
+struct ComposerControlsMinimum: Layout {
+    // Its probes count layout passes, not bodies, so they stay out of "composer." (which the
+    // redraw budgets read as the composer drawing).
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let row = subviews.first else { return .zero }
+        if let width = proposal.width, width < AppLayout.composerControlsNarrowest {
+            MainActor.assumeIsolated { NWRenderProbe.tick("layout.composerControlsMinimum") }
+            return CGSize(width: max(0, width), height: NWComposerMetrics.actionSize)
+        }
+        MainActor.assumeIsolated { NWRenderProbe.tick("layout.composerControlsMeasured") }
+        return row.sizeThatFits(proposal)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, anchor: .topLeading, proposal: ProposedViewSize(bounds.size))
+    }
+
+    // The pass asks for the row's alignment guides too, and `Layout`'s own answer places the
+    // subviews to find them, which at those widths measures every alternative after all. The
+    // row sets no explicit guide (its chips use none, and nothing above it aligns to a
+    // baseline), so it aligns by its frame, as the stack it wraps did.
+    func explicitAlignment(of guide: HorizontalAlignment, in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews,
+                           cache: inout ()) -> CGFloat? { nil }
+
+    func explicitAlignment(of guide: VerticalAlignment, in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews,
+                           cache: inout ()) -> CGFloat? { nil }
+}
+
+/// The slash menu's rows for the draft, derived once per draft and command list (a keystroke,
+/// pi's registry changing), never while drawing or on a key press. A reference read in `body`,
+/// so keeping it current re-renders nothing. `NWRenderProbe` counts each derivation
+/// ("composer.slashMatches").
+@MainActor
+final class SlashMatchCache {
+    private var query: String?
+    private var commands: [NativeCommand] = []
+    /// The commands matching the query, in the menu's order.
+    private(set) var matches: [NativeCommand] = []
+    /// The same as the menu draws them.
+    private(set) var rows: [NWSlashCommand] = []
+
+    /// `query` is the draft after "/" (nil while the menu is closed).
+    func update(query: String?, commands: [NativeCommand]) {
+        guard query != self.query || commands != self.commands else { return }
+        self.query = query
+        self.commands = commands
+        matches = Self.matches(query: query, in: commands)
+        rows = matches.map(Self.row)
+        NWRenderProbe.tick("composer.slashMatches")
+    }
+
+    /// Commands whose name starts with `query` first, then those whose name or description
+    /// contains it, each in pi's order; all of them for an empty query.
+    static func matches(query: String?, in commands: [NativeCommand]) -> [NativeCommand] {
+        guard let query else { return [] }
+        guard !query.isEmpty else { return commands }
+        var prefixed: [NativeCommand] = []
+        var containing: [NativeCommand] = []
+        for command in commands {
+            let name = command.name.lowercased()
+            if name.hasPrefix(query) {
+                prefixed.append(command)
+            } else if name.contains(query) || (command.description ?? "").lowercased().contains(query) {
+                containing.append(command)
+            }
+        }
+        return prefixed + containing
+    }
+
+    static func row(_ command: NativeCommand) -> NWSlashCommand {
+        NWSlashCommand(name: command.name, description: command.description,
+                       tag: command.source.flatMap { $0 == "extension" ? nil : $0 })
+    }
+}
+
+/// The thinking menu over `NWThinkingMenu`, compared on the levels it offers and the current
+/// one, so a composer redraw for something else leaves its rows alone.
+private struct ThinkingMenu: View, Equatable {
+    let options: [NWThinkingOption]
+    let current: String
+    let choose: (NWThinkingOption) -> Void
+    let close: () -> Void
+
+    static func == (a: Self, b: Self) -> Bool { a.options == b.options && a.current == b.current }
+
+    var body: some View {
+        NWThinkingMenu(options: options, current: current, onChoose: choose, onClose: close)
     }
 }
 
