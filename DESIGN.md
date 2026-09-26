@@ -3315,7 +3315,7 @@ Save or Apply (the one exception is Instructions, which edits files and saves wi
     row. The card row's default style is the compact one sheets and the phone's forms use.
   - inside a description, a flag, file or tool name is inline code: mono 11.5 on `bgSunken`, radius
     `xs`, `NW.Space.xs` side padding and no line, lighter than the standalone `NWInlineCode`
-    ("passes no `--model` at all", "with `review_diff`", "Runs `pi update` once a day"). Where a
+    ("passes no `--model` at all", "with `review_diff`", "Needs pi 0.85.1+"). Where a
     description explains the options, their names are set at medium (500) weight, a step brighter
     than the text around them (`textPrimary`; the board's #c1c5cb is off the palette): "**Remote
     default** starts clean…". Descriptions and page explanations are written with that markup
@@ -3481,20 +3481,10 @@ automated step of the worktree flows can be turned off here.
   - Context, "Start each child fresh, or fork the parent's conversation.": Fresh · Fork.
   - Agent discovery, "Project profiles require pi project trust. Files stay the source of truth.":
     User + project · User · Project · Bundled only.
-- **Updates** (footnote "Updating never restarts running agents."):
-  - Update pi daily, "Runs `pi update` once a day.", and Update extensions daily, "Runs `pi update
-    --extensions` once a day.": switches; turning one on applies it at once.
-  - the version row (`SettingsActionRow`): "pi 0.87.1" in the title's style, and under it a 6pt
-    `NWStatusDot` and the status in its state's text color, then " · uses the pi resolved from your
-    login shell" in `textSecondary`. The status is one of Checking… (running) · Updating pi… /
-    Updating extensions… / Updating pi and extensions… (running) · Update available · x.y.z
-    (attention) · the error, in words (failed) · Not checked yet (idle) · Up to date, plus " ·
-    extensions updated" once they have been (done). The words and the dot cross-fade (`content`).
-    Actions: Check now ("Checking…" while it runs) and Update now ("Updating…" while it runs),
-    disabled until there is something to update. Update now runs whatever there is in one run
-    (`PiUpdateManager.updateNow`): `pi update` when a check found pi out of date or none has run
-    yet, and `pi update --extensions` until the extensions have been updated, since nothing tells
-    Shepherd whether they are current.
+- **No Updates group** (a departure from SettingsPi, which draws Update pi daily, Update extensions
+  daily and a version row with Check now and Update now): Shepherd runs its own pi, which ships
+  inside the app and updates only with it, so nothing on the page runs `pi update` or checks npm
+  (the "Bundled pi, isolated home" plan). Remote clients' two update switches are ignored.
 
 #### Remote (SettingsRemote)
 

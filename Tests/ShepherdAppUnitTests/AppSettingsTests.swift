@@ -18,7 +18,6 @@ struct AppSettingsTests {
         #expect(settings.autoNameAgents)
         #expect(settings.piPanesExtension && settings.piReviewExtension)
         #expect(settings.piSubagentsExtension && settings.piNativeSubagents)
-        #expect(!settings.autoUpdatePi && !settings.autoUpdateExtensions)
         #expect(settings.uiDensity == 1 && settings.uiTextScale == 1)
         #expect(settings.sidebarWidth == AppSettings.defaultSidebarWidth)
         #expect(!settings.remoteListenerEnabled && settings.remoteListenerPort == 7433)
@@ -77,8 +76,6 @@ struct AppSettingsTests {
         settings.piReviewExtension = false
         settings.piSubagentsExtension = false
         settings.piNativeSubagents = false
-        settings.autoUpdatePi = true
-        settings.autoUpdateExtensions = true
         settings.shellPath = "/bin/bash"
         settings.uiDensity = 1.2
         settings.uiTextScale = 1.1
@@ -99,7 +96,6 @@ struct AppSettingsTests {
         #expect(!reloaded.autoNameAgents)
         #expect(!reloaded.piPanesExtension && !reloaded.piReviewExtension)
         #expect(!reloaded.piSubagentsExtension && !reloaded.piNativeSubagents)
-        #expect(reloaded.autoUpdatePi && reloaded.autoUpdateExtensions)
         #expect(reloaded.shellPath == "/bin/bash")
         #expect(reloaded.uiDensity == 1.2 && reloaded.uiTextScale == 1.1 && reloaded.sidebarWidth == 275)
         #expect(reloaded.remoteListenerEnabled && reloaded.remoteListenerPort == 9000)
@@ -220,13 +216,6 @@ struct AppSettingsTests {
         ])
     }
 
-    /// The former combined toggle ran both updates; that intent survives the split.
-    @Test func theLegacyCombinedPiUpdateSettingEnablesExtensionUpdates() {
-        let store = Fixture.defaults()
-        store.set(true, forKey: AppSettings.Key.autoUpdatePi)
-        #expect(AppSettings(store: store).autoUpdateExtensions)
-    }
-
     @Test func aShellThatIsNotExecutableFallsBackToTheDefault() {
         let settings = AppSettings(store: Fixture.defaults())
         settings.shellPath = "/definitely/not/a/shell"
@@ -266,50 +255,5 @@ struct LegacyPreferencesTests {
             #expect(defaults.object(forKey: key) == nil)
         }
         #expect(defaults.stringArray(forKey: "shepherd.collapsedSpaces") == ["space"])
-    }
-}
-
-@Suite("Pi updates")
-@MainActor
-struct PiUpdateTests {
-    @Test(arguments: [
-        (false, false, [[String]]()),
-        (true, false, [["update"]]),
-        (false, true, [["update", "--extensions"]]),
-        (true, true, [["update"], ["update", "--extensions"]]),
-    ])
-    func automaticUpdatesRunOnlyTheEnabledCommands(pi: Bool, extensions: Bool, commands: [[String]]) {
-        #expect(PiUpdateManager.automaticUpdateArguments(updatePi: pi, updateExtensions: extensions) == commands)
-    }
-
-    @Test(arguments: [
-        (false, false, [[String]]()),
-        (true, false, [["update"]]),
-        (false, true, [["update", "--extensions"]]),
-        (true, true, [["update"], ["update", "--extensions"]]),
-    ])
-    func updateNowRunsWhateverThereIsToUpdateInOneRun(pi: Bool, extensions: Bool, commands: [[String]]) {
-        #expect(PiUpdateManager.updateNowArguments(pi: pi, extensions: extensions) == commands)
-    }
-
-    @Test func updatingIsOfferedUntilCheckedOrWhenOutdatedButNeverWhileBusy() {
-        #expect(PiUpdateManager.canUpdatePi(lastChecked: nil, isOutdated: false, isBusy: false))
-        #expect(PiUpdateManager.canUpdatePi(lastChecked: Date(), isOutdated: true, isBusy: false))
-        #expect(!PiUpdateManager.canUpdatePi(lastChecked: Date(), isOutdated: false, isBusy: false))
-        #expect(!PiUpdateManager.canUpdatePi(lastChecked: nil, isOutdated: true, isBusy: true))
-    }
-
-    @Test(arguments: [
-        ("1.2.3", "1.2.4", true),
-        ("1.2.9", "1.3.0", true),
-        ("v1.2", "1.2.0", false),       // missing components are zero; the prefix is ignored
-        ("1.3.0", "1.2.9", false),
-        ("1.2.3", "1.2.3", false),
-        ("1.2.3-beta.1", "1.2.4", true),
-        ("not-a-version", "1.2.0", false),
-        ("1.0.0", "", false),
-    ])
-    func versionComparisonIsNumericPerComponent(current: String, latest: String, older: Bool) {
-        #expect(PiUpdateManager.isVersion(current, olderThan: latest) == older)
     }
 }

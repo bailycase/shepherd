@@ -12,7 +12,6 @@ import ShepherdProtocol
 struct SettingsView: View {
     var vm: ShepherdViewModel
     private var themes: ThemeManager { .shared }
-    private var piUpdates: PiUpdateManager { .shared }
     @State private var searchText = ""
     @FocusState private var searchFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -146,7 +145,7 @@ struct SettingsView: View {
 
     private var versions: String {
         let app = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
-        return Self.versions(app: "\(ShepherdEdition.current.displayName) \(app)", agent: piUpdates.currentVersion,
+        return Self.versions(app: "\(ShepherdEdition.current.displayName) \(app)", agent: nil,
                              on: vm.settingsSection)
     }
 
@@ -259,7 +258,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .terminal: ["Font family", "Font size", "Shell"]
         case .agents: ["Default model", "Default thinking level", "Return while the agent is working", "When a turn ends, send the queue"]
         case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically"]
-        case .pi: ["Name agents automatically", "Panes and agent tools", "Diff review tool", "Native subagents", "Subagent display", "MCP servers", "Concurrency", "Update pi daily", "Update extensions daily", "Check now"]
+        case .pi: ["Name agents automatically", "Panes and agent tools", "Diff review tool", "Native subagents", "Subagent display", "MCP servers", "Concurrency"]
         case .instructions: ["Same on every host", "AGENTS.md", "APPEND_SYSTEM.md", "History"]
         case .skills: ["Installed skills", "From your pi setup", "From pi packages", "Browse skills.sh", "Add from repo",
                        "Skills in the / menu", "Same skills on every host", "Update automatically"]
@@ -282,7 +281,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                        "Return while the agent is working": ["steer", "queue", "enter", "follow-up"],
                        "When a turn ends, send the queue": ["queue", "follow-up", "one per turn", "all at once"]]
         case .worktrees: ["Base branch": ["git", "origin"], "Merge PR automatically": ["github", "pull request"]]
-        case .pi: ["Native subagents": ["children", "workflows"], "Update pi daily": ["version", "upgrade"]]
+        case .pi: ["Native subagents": ["children", "workflows"]]
         case .instructions: ["Same on every host": ["sync", "hosts"], "AGENTS.md": ["system prompt", "how you work", "context"],
                              "APPEND_SYSTEM.md": ["system prompt", "override"], "History": ["restore", "undo"]]
         case .skills: ["Installed skills": ["SKILL.md", ".agents", "agent skills"],

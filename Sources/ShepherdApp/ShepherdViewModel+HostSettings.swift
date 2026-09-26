@@ -18,7 +18,7 @@ extension ShepherdViewModel {
                 let settings = HostSettingsMapping.settings(
                     from: self.settings,
                     shepherdVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
-                    piVersion: PiUpdateManager.shared.currentVersion
+                    piVersion: nil
                 )
                 let piHome = self.server.pi.home
                 Task.detached(priority: .userInitiated) {
@@ -60,9 +60,10 @@ enum HostSettingsMapping {
             deleteLocalBranch: app.worktreeDeleteLocalBranch,
             mergePRAutomatically: app.worktreeAutoMergePR,
             mergeMethod: HostSettings.MergeMethod(rawValue: app.worktreeMergeMethod.rawValue) ?? .squash,
+            // Shepherd's pi updates with Shepherd: nothing runs `pi update` any more.
             bundledExtensions: bundled.map { HostSettings.BundledExtension(id: $0.id, name: $0.name, on: app[keyPath: $0.keyPath]) },
-            updatePiDaily: app.autoUpdatePi,
-            updateExtensionsDaily: app.autoUpdateExtensions
+            updatePiDaily: false,
+            updateExtensionsDaily: false
         )
     }
 
@@ -81,12 +82,9 @@ enum HostSettingsMapping {
         case .bundledExtension(let id, let on):
             guard let keyPath = bundled.first(where: { $0.id == id })?.keyPath else { return }
             app[keyPath: keyPath] = on
-        case .updatePiDaily(let on):
-            app.autoUpdatePi = on
-            if on { PiUpdateManager.shared.applyAutoUpdateSetting() }
-        case .updateExtensionsDaily(let on):
-            app.autoUpdateExtensions = on
-            if on { PiUpdateManager.shared.applyAutoUpdateSetting() }
+        case .updatePiDaily, .updateExtensionsDaily:
+            // An older client's switches: Shepherd's pi updates only with Shepherd.
+            break
         }
     }
 }

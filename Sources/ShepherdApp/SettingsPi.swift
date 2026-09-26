@@ -6,12 +6,11 @@ struct PiSettings: View {
     /// This Mac's pi, whose models.json names the subagent model choices.
     let pi: PiSetup
     @Bindable private var settings = AppSettings.shared
-    private var updates: PiUpdateManager { .shared }
     @State private var modelOptions: [String] = []
 
     var body: some View {
         SettingsPage(title: "Pi",
-                     explanation: "Extensions Shepherd bundles into pi, defaults for native subagents, and keeping pi up to date.") {
+                     explanation: "Extensions Shepherd bundles into pi, and defaults for native subagents.") {
             SettingsGroup(title: "Bundled extensions",
                           footnote: "Applies to agents launched on this Mac, including automations and remote agents. Running agents keep their extensions until restarted. Status and session tracking are always on.") {
                 SettingsRow(title: "Name agents automatically",
@@ -86,36 +85,8 @@ struct PiSettings: View {
                 }
                 .nwTransition(.disclosure)
             }
-
-            SettingsGroup(title: "Updates", footnote: "Updating never restarts running agents.") {
-                SettingsRow(title: "Update pi daily", subtitle: "Runs `pi update` once a day.") {
-                    updateSwitch("Update pi daily", $settings.autoUpdatePi)
-                }
-                SettingsRow(title: "Update extensions daily", subtitle: "Runs `pi update --extensions` once a day.") {
-                    updateSwitch("Update extensions daily", $settings.autoUpdateExtensions)
-                }
-                SettingsActionRow {
-                    VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                        Text("pi \(updates.currentVersion ?? "—")")
-                            .font(.nw(.body, weight: .medium))
-                            .foregroundStyle(Color.nw.textPrimary)
-                        status
-                    }
-                } actions: {
-                    Button(updates.isChecking ? "Checking…" : "Check now") { updates.checkNow() }
-                        .buttonStyle(.nw(.secondary, size: .s))
-                        .disabled(updates.isBusy)
-                    Button(updates.isUpdating ? "Updating…" : "Update now") { updates.updateNow() }
-                        .buttonStyle(.nw(.secondary, size: .s))
-                        .disabled(!updates.canUpdate)
-                }
-            }
         }
         .nwAnimation(.disclosure, value: settings.piNativeSubagents)
-        // Checking → up to date, updating → updated: the words, the dot and the buttons' titles
-        // fade in place.
-        .nwAnimation(.content, value: statusLine.text)
-        .nwAnimation(.content, value: updates.isUpdating)
     }
 
     /// The configured subagent model always stays listed, even when pi's catalog lacks it.
@@ -125,43 +96,4 @@ struct PiSettings: View {
     }
 
     private static let scopes: [(String, String)] = [("both", "User + project"), ("user", "User"), ("project", "Project"), ("bundled", "Bundled only")]
-
-    private func updateSwitch(_ label: String, _ binding: Binding<Bool>) -> some View {
-        SettingsSwitch(label: label, isOn: Binding(
-            get: { binding.wrappedValue },
-            set: {
-                binding.wrappedValue = $0
-                if $0 { updates.applyAutoUpdateSetting() }
-            }
-        ))
-    }
-
-    /// What the updates row reports, and the dot beside it.
-    private var statusLine: (text: String, state: AgentState) {
-        if updates.isChecking { return ("Checking…", .running) }
-        switch updates.activeUpdate {
-        case .pi: return ("Updating pi…", .running)
-        case .extensions: return ("Updating extensions…", .running)
-        case .both: return ("Updating pi and extensions…", .running)
-        case nil: break
-        }
-        if updates.isOutdated { return ("Update available · \(updates.latestVersion ?? "newer version")", .attention) }
-        if let error = updates.lastError { return (error, .failed) }
-        if updates.lastChecked == nil { return ("Not checked yet", .idle) }
-        return ("Up to date" + (updates.extensionsUpdatedAt == nil ? "" : " · extensions updated"), .done)
-    }
-
-    /// "● Up to date · extensions updated · uses the pi resolved from your login shell", in the
-    /// description's size.
-    private var status: some View {
-        let (text, state) = statusLine
-        return HStack(spacing: NW.Space.s) {
-            NWStatusDot(state)
-            Text("\(Text(text).foregroundStyle(state.textColor))\(Text(" · uses the pi resolved from your login shell").foregroundStyle(Color.nw.textSecondary))")
-                .fixedSize(horizontal: false, vertical: true)
-                .nwContentTransition(.crossFade)
-        }
-        .nwText(size: NWTextStyle.ui.size, lineHeight: NWCardRowMetrics.settingsDescriptionLineHeight)
-        .accessibilityElement(children: .combine)
-    }
 }
