@@ -29,7 +29,8 @@ public struct NativeContextMeter: Equatable, Sendable {
     public var ring: Ring
     /// The hover text: "42k of 200k · 21%", or "about 23k of 200k" with `tooltipNote`.
     public var tooltip: String
-    /// "exact after the next reply", drawn quieter after the tooltip.
+    /// "exact after the next reply" ("this reply" while the agent replies), drawn quieter after
+    /// the tooltip.
     public var tooltipNote: String?
     public var accessibilityLabel: String
 
@@ -49,7 +50,7 @@ public struct NativeContextMeter: Equatable, Sendable {
     }
 
     /// nil from a host that reports no context (an older one): no ring at all.
-    public init?(_ context: NativeThreadContext?) {
+    public init?(_ context: NativeThreadContext?, replying: Bool = false) {
         guard let context else { return nil }
         let window = context.window.map(nativeContextTokens)
         if let run = context.compacting {
@@ -62,7 +63,7 @@ public struct NativeContextMeter: Equatable, Sendable {
                       accessibilityLabel: "Context \(Int(percent.rounded()))% full")
         } else if let estimate = context.estimate {
             self.init(ring: .estimated, tooltip: "about \(nativeContextTokens(estimate))" + (window.map { " of \($0)" } ?? ""),
-                      tooltipNote: "exact after the next reply", accessibilityLabel: "Context: updating after compaction")
+                      tooltipNote: replying ? "exact after this reply" : "exact after the next reply", accessibilityLabel: "Context: updating after compaction")
         } else {
             self.init(ring: .empty, tooltip: window.map { "Nothing yet of \($0)" } ?? "Nothing yet",
                       tooltipNote: "the agent hasn't replied", accessibilityLabel: "Context: nothing yet")

@@ -2006,10 +2006,10 @@ none, and the row has no ring.
   next reply gives a real number. It redraws only when the usage changes, never with a streamed
   chunk or a keystroke (`ListPerformanceTests`).
 - **Hover** (`.help`): "42k of 200k · 21%", or "about 23k of 200k · exact after the next reply"
-  after a compaction; "Compacting 184k…"; before any reply, "Nothing yet of 200k · the agent
-  hasn't replied". VoiceOver: "Context 21% full", "Context: compacting", "Context: updating after
-  compaction", "Context: nothing yet". Sizes round to the nearest thousand ("184k" is a 200k
-  window less pi's 16,384 reserve).
+  after a compaction ("exact after this reply" while the agent replies); "Compacting 184k…";
+  before any reply, "Nothing yet of 200k · the agent hasn't replied". VoiceOver: "Context 21%
+  full", "Context: compacting", "Context: updating after compaction", "Context: nothing yet".
+  Sizes round to the nearest thousand ("184k" is a 200k window less pi's 16,384 reserve).
 - **Click for details:** a popover above the ring, 8pt over the card with its trailing edge on the
   ring's (`.overlay`, like the composer's menus: it never moves the card or the thread); Esc or a
   click outside closes it, and so does a click on an item it finds. `bgRaised`, radius 12, the
