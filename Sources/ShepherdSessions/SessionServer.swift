@@ -17,6 +17,7 @@ public enum SessionServerError: Error, CustomStringConvertible {
     case tabInUse(TabID)
     case noSuchAgent(AgentID)
     case noSuchAutomation(AutomationID)
+    case noSuchDesign(DesignID)
     case conflict(String)
     case persistFailed(String)
 
@@ -42,6 +43,8 @@ public enum SessionServerError: Error, CustomStringConvertible {
             return "unknown agent \(id)"
         case .noSuchAutomation(let id):
             return "unknown automation \(id)"
+        case .noSuchDesign(let id):
+            return "unknown design \(id)"
         case .conflict(let message):
             return message
         case .persistFailed(let message):
@@ -270,6 +273,10 @@ public final class SessionServer: @unchecked Sendable {
     /// A remote client changed this host's skills: the GUI's Skills page follows. Delivered on
     /// the main actor.
     public var onSkillsChanged: ((SkillsSnapshot) -> Void)?
+    /// The files of every design (the Design tool), in the support directory's `designs/`. Reads
+    /// go to it directly; writes go through the server's design mutations, which commit and
+    /// broadcast what they changed.
+    public let designs: DesignStore
     /// Skills requests fetch from git, so they run here, one at a time, never on the server's
     /// queue.
     private let skillsQueue = DispatchQueue(label: "shepherd.skills", qos: .userInitiated)
@@ -474,6 +481,7 @@ public final class SessionServer: @unchecked Sendable {
                                   stateDirectory: stateURL.deletingLastPathComponent().appendingPathComponent("skills", isDirectory: true))
         self.changes = ChangesService(directory: stateURL.deletingLastPathComponent().appendingPathComponent("changes", isDirectory: true),
                                       trash: trash)
+        self.designs = DesignStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("designs", isDirectory: true))
         installChanges()
     }
 
@@ -495,7 +503,10 @@ public final class SessionServer: @unchecked Sendable {
     /// previous run (sessions died with the app; agent statuses no longer
     /// mean anything until pi reports fresh ones).
     public func start() throws {
-        try queue.sync { try startOnQueue() }
+        // Which designs lost their folders is read on the store's queue, not the server's.
+        let missingDesigns = designs.missingDesigns(among: store.committed.designs.map(\.id))
+        try queue.sync { try startOnQueue(missingDesigns: missingDesigns) }
+        countDesignBoards()
     }
 
     /// Kill every session and close the extension socket. Called when the app
@@ -523,7 +534,31 @@ public final class SessionServer: @unchecked Sendable {
             .union(state.automations.compactMap(\.agentID))
     }
 
-    private func startOnQueue() throws {
+    /// Whether startup must forget designs whose folders are gone, or clear references between
+    /// designs and agents that no longer exist (`removedAgents`: those startup drops anyway).
+    static func designsNeedReconciling(in state: ShepherdState, missing: Set<DesignID>, removedAgents: Set<AgentID>) -> Bool {
+        let designs = Set(state.designs.map(\.id)).subtracting(missing)
+        let agents = Set(state.agents.map(\.id)).subtracting(removedAgents)
+        return !missing.isEmpty
+            || state.agents.contains { $0.designID.map { !designs.contains($0) } == true }
+            || state.designs.contains { $0.agentID.map { !agents.contains($0) } == true }
+    }
+
+    /// Forgets designs whose folders are gone, and clears an agent's design or a design's agent
+    /// that no longer exists: opening such a design starts a fresh agent.
+    static func reconcileDesigns(_ state: inout ShepherdState, missing: Set<DesignID>) {
+        state.designs.removeAll { missing.contains($0.id) }
+        let designs = Set(state.designs.map(\.id))
+        for i in state.agents.indices where state.agents[i].designID.map({ !designs.contains($0) }) == true {
+            state.agents[i].designID = nil
+        }
+        let agents = Set(state.agents.map(\.id))
+        for i in state.designs.indices where state.designs[i].agentID.map({ !agents.contains($0) }) == true {
+            state.designs[i].agentID = nil
+        }
+    }
+
+    private func startOnQueue(missingDesigns: Set<DesignID> = []) throws {
         let stale = store.state.agents.filter { $0.status != .idle }.map(\.id)
         let deadInspectors = store.state.tabs.contains { $0.inspectorFor != nil }
         let deadReviews = store.state.tabs.contains { tab in
@@ -532,7 +567,9 @@ public final class SessionServer: @unchecked Sendable {
         let staleRuns = store.state.automations.contains { $0.agentID != nil }
         let shellTabs = Self.shellTabIDs(in: store.state)
         let runAgents = Self.automationRunAgentIDs(in: store.state)
-        if !stale.isEmpty || deadInspectors || deadReviews || staleRuns || !shellTabs.isEmpty || !runAgents.isEmpty {
+        let staleDesigns = Self.designsNeedReconciling(in: store.state, missing: missingDesigns, removedAgents: runAgents)
+        if !stale.isEmpty || deadInspectors || deadReviews || staleRuns || !shellTabs.isEmpty || !runAgents.isEmpty
+            || staleDesigns {
             do {
                 try store.update { state in
                     for id in stale {
@@ -570,6 +607,7 @@ public final class SessionServer: @unchecked Sendable {
                     for i in state.automations.indices {
                         state.automations[i].agentID = nil
                     }
+                    Self.reconcileDesigns(&state, missing: missingDesigns)
                 }
             } catch {
                 throw SessionServerError.persistFailed(String(describing: error))
@@ -2396,6 +2434,10 @@ public final class SessionServer: @unchecked Sendable {
                 for i in $0.automations.indices where $0.automations[i].agentID.map(doomedAgents.contains) == true {
                     $0.automations[i].agentID = nil
                 }
+                // Designs outlive their agents (and their space): opening one starts a fresh agent.
+                for i in $0.designs.indices where $0.designs[i].agentID.map(doomedAgents.contains) == true {
+                    $0.designs[i].agentID = nil
+                }
             }
             for sessionID in sessions {
                 self.killSessionOnQueue(sessionID)
@@ -2554,6 +2596,9 @@ public final class SessionServer: @unchecked Sendable {
                 for i in $0.automations.indices where $0.automations[i].agentID == agentID {
                     $0.automations[i].agentID = nil
                 }
+                for i in $0.designs.indices where $0.designs[i].agentID == agentID {
+                    $0.designs[i].agentID = nil
+                }
             }
         }
     }
@@ -2632,10 +2677,169 @@ public final class SessionServer: @unchecked Sendable {
                 for i in $0.automations.indices where $0.automations[i].agentID == agentID {
                     $0.automations[i].agentID = nil
                 }
+                // The design stays; opening it starts a fresh agent.
+                for i in $0.designs.indices where $0.designs[i].agentID == agentID {
+                    $0.designs[i].agentID = nil
+                }
             }
 
             for sessionID in layoutSessions {
                 self.killSessionOnQueue(sessionID)
+            }
+        }
+    }
+
+    // MARK: - Designs
+
+    /// Makes a design: its folder with a new canvas.json titled with its name, then its record.
+    /// Its space must exist, and its agent when it names one.
+    public func createDesign(_ design: Design) async throws -> DesignSnapshot {
+        var design = design
+        design.name = design.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !design.name.isEmpty else { throw SessionServerError.conflict("a design needs a name") }
+        try await enqueue { try self.checkNewDesign(design) }
+        let created = Date(timeIntervalSince1970: design.createdAt / 1000)
+        let snapshot = try await designs.create(design.id, title: design.name, at: created)
+        design.boardCount = snapshot.index.boards.count
+        do {
+            try await enqueue {
+                try self.checkNewDesign(design)
+                try self.mutateState { $0.designs.append(design) }
+            }
+        } catch {
+            try? await designs.delete(design.id)
+            throw error
+        }
+        return snapshot
+    }
+
+    private func checkNewDesign(_ design: Design) throws {
+        guard !store.state.designs.contains(where: { $0.id == design.id }) else {
+            throw SessionServerError.conflict("design \(design.id) already exists")
+        }
+        guard store.state.spaces.contains(where: { $0.id == design.spaceID }) else {
+            throw SessionServerError.noSuchSpace(design.spaceID)
+        }
+        if let agentID = design.agentID, !store.state.agents.contains(where: { $0.id == agentID }) {
+            throw SessionServerError.noSuchAgent(agentID)
+        }
+    }
+
+    /// Renames a design: its record and its canvas's `title`.
+    public func renameDesign(_ designID: DesignID, to name: String) async throws {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw SessionServerError.conflict("a design needs a name") }
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        let result = try await designs.updateIndex(designID, patch: .object(["title": .string(trimmed)]), baseRevision: nil)
+        try await enqueue { try self.commitDesignWrite(designID, result) }
+    }
+
+    /// Forgets a design and removes its folder. Its agent stays an ordinary agent.
+    public func deleteDesign(_ designID: DesignID) async throws {
+        try await enqueue {
+            guard self.store.state.designs.contains(where: { $0.id == designID }) else {
+                throw SessionServerError.noSuchDesign(designID)
+            }
+            try self.mutateState {
+                $0.designs.removeAll { $0.id == designID }
+                for i in $0.agents.indices where $0.agents[i].designID == designID {
+                    $0.agents[i].designID = nil
+                }
+            }
+        }
+        try await designs.delete(designID)
+    }
+
+    /// Records which agent draws a design (nil: none; opening it starts one).
+    public func setDesignAgent(_ designID: DesignID, agentID: AgentID?) async throws {
+        try await enqueue {
+            guard let index = self.store.state.designs.firstIndex(where: { $0.id == designID }) else {
+                throw SessionServerError.noSuchDesign(designID)
+            }
+            if let agentID, !self.store.state.agents.contains(where: { $0.id == agentID }) {
+                throw SessionServerError.noSuchAgent(agentID)
+            }
+            guard self.store.state.designs[index].agentID != agentID else { return }
+            try self.mutateState { $0.designs[index].agentID = agentID }
+        }
+    }
+
+    /// A design's index, revision and board hashes.
+    public func designSnapshot(_ designID: DesignID) async throws -> DesignSnapshot {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        return try await designs.snapshot(designID)
+    }
+
+    /// One board's source.
+    public func designBoard(_ designID: DesignID, path: DesignPath) async throws -> DesignBoardSource {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        return try await designs.board(designID, path: path)
+    }
+
+    /// Writes a board's whole source (`DesignBoardCheck` first), when the design is still at
+    /// `baseRevision` (nil: whatever it is at). A write that changes the files moves the design
+    /// up Recents and broadcasts.
+    public func writeDesignBoard(_ designID: DesignID, path: DesignPath, source: String,
+                                 baseRevision: UInt64? = nil) async throws -> DesignWriteResult {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        let result = try await designs.writeBoard(designID, path: path, source: source, baseRevision: baseRevision)
+        try await enqueue { try self.commitDesignWrite(designID, result) }
+        return result
+    }
+
+    /// Applies a canvas_update to the design's index (`DesignIndex.merging`: a JSON merge patch
+    /// that keeps every key it doesn't name), when the design is still at `baseRevision`. A new
+    /// `title` renames the design.
+    public func updateDesignIndex(_ designID: DesignID, patch: JSONValue,
+                                  baseRevision: UInt64? = nil) async throws -> DesignWriteResult {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        let result = try await designs.updateIndex(designID, patch: patch, baseRevision: baseRevision)
+        try await enqueue { try self.commitDesignWrite(designID, result) }
+        return result
+    }
+
+    /// Server queue: what a write to a design's files changes in its record. A new title is
+    /// persisted; the board count and `lastActiveAt` are live, like an agent's status.
+    private func commitDesignWrite(_ designID: DesignID, _ result: DesignWriteResult) throws {
+        guard result.changed, let index = store.state.designs.firstIndex(where: { $0.id == designID }) else { return }
+        let now = Self.nowMilliseconds()
+        let title = result.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !title.isEmpty, store.state.designs[index].name != title {
+            try mutateState {
+                $0.designs[index].name = title
+                $0.designs[index].boardCount = result.boardCount
+                $0.designs[index].lastActiveAt = now
+            }
+            return
+        }
+        store.updateLive {
+            $0.designs[index].boardCount = result.boardCount
+            $0.designs[index].lastActiveAt = now
+        }
+        let committedState = store.state
+        broadcastRemoteState(committedState)
+        hopToMain { [weak self] in self?.onStateChanged?(committedState) }
+    }
+
+    /// Reads each design's board count off the server's queue after startup, then publishes the
+    /// counts that changed as live state.
+    private func countDesignBoards() {
+        let ids = store.committed.designs.map(\.id)
+        guard !ids.isEmpty else { return }
+        Task {
+            let counts = await designs.boardCounts(ids)
+            queue.async {
+                let changed = self.store.state.designs.indices.filter {
+                    let design = self.store.state.designs[$0]
+                    return counts[design.id].map { $0 != design.boardCount } == true
+                }
+                guard !changed.isEmpty else { return }
+                self.store.updateLive { state in
+                    for i in changed { state.designs[i].boardCount = counts[state.designs[i].id] }
+                }
+                let committedState = self.store.state
+                self.broadcastRemoteState(committedState)
+                self.hopToMain { [weak self] in self?.onStateChanged?(committedState) }
             }
         }
     }
