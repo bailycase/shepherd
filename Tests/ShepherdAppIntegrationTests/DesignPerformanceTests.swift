@@ -10,8 +10,9 @@ import Testing
 @testable import ShepherdUI
 
 /// The design canvas's budgets (docs/designs.md › Performance), as counts over a synthesized
-/// 172-board canvas in an off-screen window: opening it holds at most six web views, and panning
-/// recycles them within that. Counts hold on a slow machine; timings would not.
+/// 172-board canvas in an off-screen window: opening it holds at most six web views, panning
+/// recycles them within that, and one board changing redraws that board's frame once with one
+/// snapshot. Counts hold on a slow machine; timings would not.
 @Suite("Design performance", .mainActorExclusive)
 @MainActor
 struct DesignPerformanceTests {
@@ -86,6 +87,31 @@ struct DesignPerformanceTests {
         #expect(rasterizer.peakWebViews <= Self.webViewBudget)
         #expect(host.liveBoards.isDisjoint(with: first), "the first boards' views went to the boards now on screen")
         #expect(seen.count > DesignLivePlan.liveCap * 2)
+    }
+
+    /// One board changing on a canvas of 172: that board's frame redraws once and one snapshot is
+    /// taken, whether it drew from a snapshot or a live view.
+    @Test(arguments: [false, true])
+    func oneBoardChangingRedrawsThatBoardAlone(live: Bool) async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (_, window, screen, host) = try await openLargeCanvas(app)
+        defer { window.close() }
+        let design = screen.designID
+        let target = try #require(screen.visibleBoards.first { host.liveBoards.contains($0) == live })
+        let board = try #require(Self.boards.first { $0.path == target.rawValue })
+        let snapshots = host.snapshotsTaken
+
+        let counts = try await ListPerf.countingAsync {
+            let written = try await app.server.writeDesignBoard(design, path: target, source: DesignFixtures.source(board, note: "changed"))
+            try await eventuallyOnMain("\(target) to show the change", timeout: .seconds(30)) {
+                window.layout()
+                return screen.snapshot?.boards[target] == written.sha256 && host.isDrawn([target]) && host.snapshotsTaken > snapshots
+            }
+            window.layout()
+        }
+        #expect(counts["design.board", default: 0] == 1, "\(counts)")
+        #expect(host.snapshotsTaken == snapshots + 1)
     }
 }
 
