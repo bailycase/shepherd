@@ -561,13 +561,13 @@ struct ListPerformanceTests {
 
     // MARK: Skills
 
-    /// Settings ▸ Skills over 120 skills: opening builds only the rows on screen, and one skill
-    /// turning off redraws its row alone.
+    /// Settings ▸ Skills over 200 skills: opening builds the rows on screen and some ahead of them,
+    /// never the whole list, and one skill turning off redraws its row alone.
     @Test func oneSkillChangingRedrawsOnlyItsRow() async throws {
         let app = try AppHarness()
         defer { app.stop() }
         let vm = try await app.start()
-        for index in 0..<120 {
+        for index in 0..<200 {
             let name = "skill-\(index + 100)"
             let text = "---\nname: \(name)\ndescription: Skill number \(index).\n---\n"
             try app.server.skills.installFiles(name: name, files: [SkillFile(path: "SKILL.md", contents: Data(text.utf8))],
@@ -581,7 +581,9 @@ struct ListPerformanceTests {
             ListPerf.settle(window)
         }
         defer { window.close() }
-        #expect(opened["skills.row", default: 0] <= 2 * (Int(size.height / AppLayout.skillsRowMinHeight) + 1), "\(opened)")
+        // About a dozen rows fit under the page's header; the lazy stack builds some ahead of
+        // them (50 here, at any speed), as the ledger's does. All 200 would mean it isn't lazy.
+        #expect(opened["skills.row", default: 0] <= 80, "\(opened)")
 
         var snapshot = try #require(vm.skills.state(of: vm.skillsHosts[0]).snapshot)
         snapshot.skills[0].isOn = false
