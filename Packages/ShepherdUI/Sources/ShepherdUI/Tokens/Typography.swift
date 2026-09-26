@@ -228,12 +228,12 @@ extension View {
             .lineSpacing(NWLineSpacing.extra(size: size, weight: weight, mono: mono, lineHeight: lineHeight))
     }
 
-    /// The section label treatment ("THIS MAC", "AUTOMATIONS"): micro mono, uppercase, tracked,
-    /// tertiary.
+    /// The section label treatment ("THIS MAC", "AUTOMATIONS"): micro mono, uppercase, tracked 6%
+    /// (the Foundations board's 0.06em), tertiary.
     @MainActor public func nwSectionLabel() -> some View {
         font(.nw(.micro))
             .textCase(.uppercase)
-            .tracking(NWTextStyle.micro.size * 0.05)
+            .tracking(NWTextStyle.micro.size * 0.06)
             .foregroundStyle(.nw.textTertiary)
     }
 }

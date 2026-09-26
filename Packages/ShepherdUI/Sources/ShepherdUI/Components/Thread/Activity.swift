@@ -66,7 +66,7 @@ public struct NWActivityLine: View {
         return switch kind {
         case .explore: "magnifyingglass"
         case .edit: "pencil"
-        case .run: "apple.terminal"
+        case .run: "terminal"
         case .subagents: "arrow.triangle.branch"
         case .other: "wrench.adjustable"
         }
