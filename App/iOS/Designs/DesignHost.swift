@@ -211,7 +211,7 @@ private final class RenderStage {
     }
 }
 
-/// The one board on screen, live: it draws the board sharp at the canvas's zoom, answers what an
+/// The one board on screen, live: it lays the board out at its own size, scaled to the canvas's zoom, answers what an
 /// element under a tap is and where a comment's element is now, and takes a new source in place
 /// when the host's copy changes.
 @MainActor
