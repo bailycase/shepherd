@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdProtocol
 
 /// A failed request to the model as the thread draws it (TurnErrors, ThreadError): a plain
 /// title from the status and type, the provider's own words cleaned (keys cut to their ends,
@@ -203,7 +204,7 @@ public struct NativeTurnError: Equatable, Hashable, Sendable {
 
     /// "45s", "1m 40s", "2m", "31m", "1h 5m".
     static func spanText(_ seconds: Double) -> String {
-        let whole = max(1, Int(seconds.rounded()))
+        let whole = max(1, Int(reportedCount: seconds.rounded()) ?? 0)
         if whole < 60 { return "\(whole)s" }
         if whole < 3600 {
             let rest = whole % 60
