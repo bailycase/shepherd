@@ -71,6 +71,8 @@ final class PadDesignCanvas {
     @ObservationIgnored private(set) var isActive = false
     @ObservationIgnored private var labelRooms: [String: NWLabelRoom] = [:]
     @ObservationIgnored private var picking: Task<Void, Never>?
+    /// Pins kept with no place drawn are being found (`placeUnplacedPins`).
+    @ObservationIgnored private var placingPins = false
     /// The Tweak tab's model (DZTweak's, shared with the Mac): its writes go to the host.
     @ObservationIgnored let tweak: DesignTweakModel
     /// The Pencil markup over the canvas (`PadDesignMarkupLayer`).
@@ -89,6 +91,7 @@ final class PadDesignCanvas {
         tweak = DesignTweakModel(designID: ref.design, io: Self.tweakIO(library, source: source, design: ref.design), host: host)
         host.source = { path in try await source.source(path) }
         host.redrawn = { [weak self] path in self?.relocate(on: path) }
+        host.rasterized = { [weak self] _ in self?.placeUnplacedPins() }
         host.linked = { [weak self] from, to in self?.follow(link: to, from: from) }
         tweak.previewed = { [weak self] path in self?.remeasure(path) }
     }
@@ -539,6 +542,7 @@ final class PadDesignCanvas {
         if next.comments != comments { comments = next.comments }
         if let id = openComment, comments.first(where: { $0.id == id })?.isOpen != true { openComment = nil }
         for board in Set(openComments.map(\.board)) { locatePins(on: board) }
+        placeUnplacedPins()
     }
 
     private func replace(_ comment: DesignComment) {
@@ -546,17 +550,45 @@ final class PadDesignCanvas {
         if comments[index] != comment { comments[index] = comment }
     }
 
+    /// Comments the host kept with no place drawn (the design agent's proposals from Pencil
+    /// markup) are found on the boards on screen that draw a current snapshot, one board at a time,
+    /// since asking a board makes it live and the canvas keeps few live. (A board asked before it
+    /// has a snapshot would take its first one on the stage.) A live board's pins are found as it
+    /// draws (`locatePins`); the rest wait until their board is on screen and drawn.
+    func placeUnplacedPins() {
+        guard !placingPins, !host.zooming else { return }
+        let unplaced = openComments.filter { !$0.detached && $0.rect == nil && pinRects[$0.id] == nil }
+        guard !unplaced.isEmpty else { return }
+        let onScreen = Set(visibleBoards)
+        let boards = Set(unplaced.map(\.board))
+            .filter { onScreen.contains($0) && !host.liveBoards.contains($0) && host.hasCurrentSnapshot($0) }
+            .sorted { $0.rawValue < $1.rawValue }
+        guard !boards.isEmpty else { return }
+        placingPins = true
+        Task {
+            var placed = false
+            for board in boards {
+                let onBoard = openComments.filter { $0.board == board && !$0.detached }
+                guard !onBoard.isEmpty, let found = await host.measure(board, tids: onBoard.map(\.tid)) else { continue }
+                var next = pinRects
+                for comment in onBoard {
+                    if let pick = found[comment.tid], pick.id.path == comment.path { next[comment.id] = pick.rect }
+                }
+                if next != pinRects {
+                    pinRects = next
+                    placed = true
+                }
+            }
+            placingPins = false
+            if placed { placeUnplacedPins() }
+        }
+    }
+
     private func locatePins(on board: DesignPath) {
         let onBoard = openComments.filter { $0.board == board && !$0.detached }
-        guard !onBoard.isEmpty else { return }
-        let live = host.liveBoards.contains(board)
-        // A comment the host kept with no place drawn (the design agent's proposals from Pencil
-        // markup) is found on its board even while the board isn't live.
-        let unplaced = onBoard.contains { $0.rect == nil && pinRects[$0.id] == nil }
-        guard live || unplaced else { return }
+        guard !onBoard.isEmpty, host.liveBoards.contains(board) else { return }
         Task {
-            let tids = onBoard.map(\.tid)
-            guard let found = live ? await host.locate(board, tids: tids) : await host.measure(board, tids: tids) else { return }
+            guard let found = await host.locate(board, tids: onBoard.map(\.tid)) else { return }
             var next = pinRects
             for comment in onBoard {
                 if let pick = found[comment.tid], pick.id.path == comment.path { next[comment.id] = pick.rect }
@@ -776,6 +808,7 @@ final class PadDesignCanvas {
     func planLive() {
         guard isActive, !host.zooming, canvasSize.width > 0 else { return }
         host.show(visible: visibleBoards, selected: focusBoard, zoom: viewport.zoom)
+        placeUnplacedPins()
     }
 
     // MARK: Errors
