@@ -219,6 +219,8 @@ struct DesignToolTests {
         var drafts: [(draft: DesignCommentDraft, base: UInt64?)] = []
         var reports: [String] = []
         var undelivered: String?
+        /// Runs once a change is kept and before its answer, as the host's push can.
+        var beforeAnswer: (() async -> Void)?
 
         func actions() -> DesignCommentActions {
             DesignCommentActions(
@@ -230,18 +232,21 @@ struct DesignToolTests {
                                                 createdAt: Date().timeIntervalSince1970 * 1000)
                     file.comments.append(comment)
                     file.revision += 1
+                    await beforeAnswer?()
                     return (comment, undelivered)
                 },
                 reply: { [self] _, id, text, _ in
                     let index = try #require(file.comments.firstIndex { $0.id == id })
                     file.comments[index].replies.append(DesignCommentReply(author: .user, text: text, createdAt: 0))
                     file.revision += 1
+                    await beforeAnswer?()
                     return (file.comments[index], nil)
                 },
                 resolve: { [self] _, id, _ in
                     let index = try #require(file.comments.firstIndex { $0.id == id })
                     file.comments[index].resolvedAt = 1
                     file.revision += 1
+                    await beforeAnswer?()
                     return file.comments[index]
                 },
                 report: { [self] in reports.append($0) })
@@ -347,6 +352,93 @@ struct DesignToolTests {
         screen.replyText = "And on the phone."
         await screen.sendReply()?.value
         #expect(screen.openThread?.replies.map(\.text) == ["And on the phone."] && screen.replyText.isEmpty)
+    }
+
+    /// The host pushes its revision before the agent has the comment, so the canvas can read the
+    /// comment before `add` answers (Shepherd Nightly 132 trapped building the cards).
+    @Test func aCommentThePushBroughtFirstIsKeptOnce() async throws {
+        let host = CommentHost()
+        let screen = try await commentScreen(host)
+        host.beforeAnswer = { await screen.refreshComments() }
+        let element = Self.element("A.dc.html", 12, [1, 0, 2])
+        screen.beginComment(on: element)
+        screen.draftText = "Show the absolute counts."
+        await screen.submitComment()?.value
+        let comment = try #require(host.file.comments.first)
+        #expect(screen.comments.map(\.id) == [comment.id])
+        #expect(screen.openCards.map(\.id) == [comment.id] && screen.pins.map(\.id) == [comment.id.uuidString])
+        #expect(screen.openComment == comment.id && screen.draftElement == nil)
+        #expect(host.reports.isEmpty)
+    }
+
+    /// A reply or a resolve the push brought before the answer leaves one copy of the comment.
+    @Test(arguments: [false, true])
+    func aChangeThePushBroughtFirstLeavesOneCopy(resolving: Bool) async throws {
+        let host = CommentHost()
+        host.file = DesignComments(revision: 1, comments: [
+            DesignComment(number: 1, board: Self.path("A.dc.html"), tid: 12, path: [1, 0, 2], text: "Hi", createdAt: 0),
+        ])
+        let screen = try await commentScreen(host)
+        let id = host.file.comments[0].id
+        host.beforeAnswer = { await screen.refreshComments() }
+        screen.openThread(id.uuidString)
+        if resolving {
+            await screen.resolve(id)?.value
+            #expect(screen.comments.map(\.id) == [id] && screen.openCards.isEmpty)
+        } else {
+            screen.replyText = "And on the phone."
+            await screen.sendReply()?.value
+            #expect(screen.comments.map(\.id) == [id])
+            #expect(screen.openThread?.replies.map(\.text) == ["And on the phone."])
+        }
+    }
+
+    /// An answer for a comment no read has brought yet joins the list rather than going missing.
+    @Test func anAnsweredCommentTheCanvasDidNotHoldJoinsIt() async throws {
+        let host = CommentHost()
+        let comment = DesignComment(number: 1, board: Self.path("A.dc.html"), tid: 12, path: [1, 0, 2], text: "Hi", createdAt: 0)
+        host.file = DesignComments(revision: 1, comments: [comment])
+        let actions = host.actions()
+        var reachable = false
+        // Reads fail until the answer is in.
+        let gated = DesignCommentActions(
+            list: { id in
+                guard reachable else { throw CancellationError() }
+                return try await actions.list(id)
+            },
+            add: actions.add, reply: actions.reply, resolve: actions.resolve, report: actions.report)
+        let screen = DesignScreenModel(designID: DesignID(), host: nil, snapshot: { _ in throw CancellationError() },
+                                       source: { _, _ in "" }, comments: gated)
+        await screen.resolve(comment.id)?.value
+        #expect(screen.comments.map(\.id) == [comment.id] && screen.comments.first?.isOpen == false)
+        reachable = true
+        await screen.refreshComments()
+        #expect(screen.comments.map(\.id) == [comment.id])
+    }
+
+    /// A list holding a comment twice (a hand-edited comments.json) draws it once, as its later
+    /// copy says, where it first appears.
+    @Test func aServedListWithARepeatedCommentDrawsItOnce() async throws {
+        let host = CommentHost()
+        let a = Self.path("A.dc.html")
+        let first = DesignComment(number: 1, board: a, tid: 12, path: [1, 0, 2], text: "Old words", createdAt: 0)
+        var again = first
+        again.text = "New words"
+        let second = DesignComment(number: 2, board: a, tid: 3, path: [0], text: "Two", createdAt: 0)
+        host.file = DesignComments(revision: 4, comments: [first, second, again])
+        let screen = try await commentScreen(host)
+        #expect(screen.comments.map(\.id) == [first.id, second.id])
+        #expect(screen.comments.first?.text == "New words")
+        #expect(screen.openCards.map(\.text) == ["New words", "Two"])
+        #expect(screen.pins.map(\.number) == [1, 2])
+    }
+
+    @Test func cardsForARepeatedCommentKeepItsLaterCopy() {
+        let first = DesignComment(number: 1, board: Self.path("A.dc.html"), tid: 12, path: [1, 0, 2], text: "Old", createdAt: 0)
+        var later = first
+        later.text = "New"
+        let cards = DesignScreenModel.cards([first, later], now: Date(timeIntervalSince1970: 0))
+        #expect(cards.count == 1 && cards[first.id]?.text == "New")
     }
 
     @Test(arguments: [

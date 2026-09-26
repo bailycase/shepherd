@@ -597,7 +597,9 @@ final class DesignScreenModel {
             defer { sendingComment = false }
             do {
                 let (comment, undelivered) = try await actions.add(designID, draft, commentsRevision)
-                comments.append(comment)
+                // The host pushes its revision before the agent has the comment, so the list
+                // may hold it already, read after it was kept: that copy is as new as this one.
+                if !comments.contains(where: { $0.id == comment.id }) { comments.append(comment) }
                 pinRects[comment.id] = element.rect
                 if draftElement == element { draftElement = nil }
                 draftText = ""
@@ -659,7 +661,8 @@ final class DesignScreenModel {
         // An answer older than one already applied (two reads crossing) changes nothing.
         guard next.revision >= commentsRevision else { return }
         commentsRevision = next.revision
-        if next.comments != comments { comments = next.comments }
+        let served = Self.unique(next.comments)
+        if served != comments { comments = served }
         if let id = openComment, comments.first(where: { $0.id == id })?.isOpen != true { openComment = nil }
         let known = Set(comments.map(\.id))
         if pinRects.keys.contains(where: { !known.contains($0) }) { pinRects = pinRects.filter { known.contains($0.key) } }
@@ -667,10 +670,31 @@ final class DesignScreenModel {
         for board in Set(openComments.map(\.board)) { locatePins(on: board) }
     }
 
+    /// A comment the host answered takes the place of the one held, or joins the list when no
+    /// read has brought it yet.
     private func replace(_ comment: DesignComment) {
-        guard let index = comments.firstIndex(where: { $0.id == comment.id }) else { return }
-        if comments[index] != comment { comments[index] = comment }
+        if let index = comments.firstIndex(where: { $0.id == comment.id }) {
+            if comments[index] != comment { comments[index] = comment }
+        } else {
+            comments.append(comment)
+        }
         rebuildCards()
+    }
+
+    /// Each comment once, where it first appears, as its last copy has it.
+    static func unique(_ comments: [DesignComment]) -> [DesignComment] {
+        var seen: [UUID: Int] = [:]
+        var out: [DesignComment] = []
+        out.reserveCapacity(comments.count)
+        for comment in comments {
+            if let at = seen[comment.id] {
+                out[at] = comment
+            } else {
+                seen[comment.id] = out.count
+                out.append(comment)
+            }
+        }
+        return out
     }
 
     /// Asks a live board where its open comments' elements are drawn now.
@@ -689,7 +713,13 @@ final class DesignScreenModel {
 
     /// The chat's and the Comments tab's cards.
     private func rebuildCards(now: Date = Date()) {
-        commentCards.set(Dictionary(uniqueKeysWithValues: comments.map { ($0.id, Self.card($0, now: now)) }))
+        commentCards.set(Self.cards(comments, now: now))
+    }
+
+    /// The cards by comment. A comment listed twice draws its later copy: a display pass never
+    /// traps on what a push brought.
+    static func cards(_ comments: [DesignComment], now: Date = Date()) -> [UUID: DesignCommentCardValue] {
+        Dictionary(comments.map { ($0.id, card($0, now: now)) }, uniquingKeysWith: { _, later in later })
     }
 
     /// "on A · Checkout funnel", "You · 2m", and a detached comment's "element changed".
