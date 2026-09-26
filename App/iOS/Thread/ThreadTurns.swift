@@ -100,7 +100,7 @@ struct AgentTurnView: View, Equatable {
             if thinking { NWThinking.live() }
             if !live, !presentation.items.isEmpty {
                 if let changes { changesCard(changes) }
-                footer
+                if !presentation.endsInError { footer }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -131,9 +131,10 @@ struct AgentTurnView: View, Equatable {
                 .lineLimit(3).truncationMode(.tail).textSelection(.enabled)
                 .padding(.leading, MobileLayout.noteIndent)
                 .overlay(alignment: .leading) { Color.nw.lineStrong.frame(width: NWThreadMetrics.ruleWidth) }
-        case .error(_, let text, let count, let final):
-            NWTurnError(final ? nativeTurnErrorText(text, toolCalls: presentation.toolCalls) : text,
-                        count: count, retry: final ? actions.retry : nil)
+        case .error(_, let error, let final, let folded):
+            TurnErrorItem(error: error, folded: folded, retry: final ? actions.retry : nil)
+        case .retrying(_, let line):
+            RetryLineItem(line: line)
         case .steer(_, let text, let sentAt, let images):
             NWUserBubble(text, attachments: Array(repeating: "Image", count: images), timestamp: sentAt.map { nativeClockText($0) },
                          origin: .steered)

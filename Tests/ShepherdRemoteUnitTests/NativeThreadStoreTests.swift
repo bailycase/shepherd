@@ -128,6 +128,29 @@ struct NativeThreadStoreTests {
         #expect(store.rows.last?.recordedTurn?.state == .undone)
     }
 
+    // MARK: Turn errors
+
+    /// A thread whose last reply failed reads failed until a new turn starts; while pi retries,
+    /// the live turn ends in the retry line and the thread does not.
+    @Test func aLastReplyThatFailedReadsFailedUntilTheNextTurn() async {
+        let failed = F.assistant("529 overloaded", status: "error", id: "e")
+        let (store, host, task) = await started(F.snapshot(messages: [F.user("go", id: "u"), failed]))
+        defer { task.cancel() }
+        #expect(store.lastTurnFailed)
+
+        var retrying = F.snapshot(revision: 2, messages: [F.user("go", id: "u"), failed])
+        retrying.running = true
+        retrying.retry = NativeThreadRetry(attempt: 1, maxAttempts: 3, retryAt: 8_000)
+        host.snapshot = retrying
+        await store.refresh()
+        #expect(!store.lastTurnFailed)
+        guard case .retrying? = store.rows.last?.presentation?.items.last else { Issue.record("expected the retry line"); return }
+
+        host.snapshot = F.snapshot(revision: 3, messages: [F.user("go", id: "u"), failed, F.user("again", id: "u2")])
+        await store.refresh()
+        #expect(!store.lastTurnFailed)
+    }
+
     // MARK: Loading
 
     @Test func theFirstRequestIsAFreshSnapshot() async throws {

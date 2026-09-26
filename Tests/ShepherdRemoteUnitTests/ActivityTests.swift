@@ -290,7 +290,8 @@ struct TurnPresentationTests {
             case .activity(_, let bursts): "lines:" + bursts.map { "\($0.calls.count)" }.joined(separator: "+")
             case .subagents(_, let lines): "record:" + lines.map(\.title).joined(separator: "|")
             case .note: "note"
-            case .error(_, _, _, let final): final ? "error:final" : "error"
+            case .error(_, _, let final, let folded): final ? "error:final" : folded ? "error:folded" : "error"
+            case .retrying: "retrying"
             case .steer(_, let text, _, _): "steer:" + text
             case .compaction(let row): "compaction:" + row.title
             }
@@ -502,10 +503,9 @@ struct TurnPresentationTests {
         let failed = { F.assistant("Model overloaded", status: "error") }
         let finished = nativeTurnPresentation([tool("read", "r"), failed(), failed()], live: false)
         #expect(kinds(finished) == ["lines:1", "error:final"])
-        guard case .error(_, let text, let count, _) = finished.items.last else { return }
-        #expect(text == "Model overloaded" && count == 2)
-        #expect(nativeTurnErrorText(text, toolCalls: finished.toolCalls) == "Model overloaded — the turn stopped after 1 tool call.")
-        #expect(kinds(nativeTurnPresentation([failed(), F.assistant("Recovered.")], live: false)) == ["error", "prose"])
+        guard case .error(_, let error, _, _) = finished.items.last else { return }
+        #expect(error.title == "The provider is overloaded" && error.tries == "Tried 2 times")
+        #expect(kinds(nativeTurnPresentation([failed(), F.assistant("Recovered.")], live: false)) == ["error:folded", "prose"])
         #expect(kinds(nativeTurnPresentation([failed()], live: true)) == ["error"])
     }
 

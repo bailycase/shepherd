@@ -159,6 +159,7 @@ private struct ThreadTranscript: View {
                 // Which compactions show what the agent kept: its own object, so a toggle
                 // redraws only the compaction lines.
                 .environment(\.compactionExpansion, store.compactions)
+                .environment(\.turnErrorExpansion, store.errors)
             }
             // Open at the tail and stay pinned while it grows; only the reader's own drag
             // detaches, and sending re-attaches.
@@ -300,6 +301,7 @@ struct ThreadTitle: View {
             if store.loadError != nil { state = .failed; label = "Error" }
             else if !store.dialogs.isEmpty { state = .attention; label = AgentState.attention.label }
             else if store.running { state = .running; label = AgentState.running.label }
+            else if store.lastTurnFailed { state = .failed; label = AgentState.failed.label }
             else if let agent { state = AgentState(agent.status); label = state.label }
             else { state = .idle; label = AgentState.idle.label }
             runningSince = store.running && store.dialogs.isEmpty ? store.lastPromptAt : nil
