@@ -336,8 +336,8 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
 - **Core:** the status transition table, `PaneNode` operations, and state validation.
 - **Migration:** terminal-era `runtime` keys, global shells and space shells dropped at startup,
   and review leaves.
-- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all thirteen, and the
-  design skill's two files).
+- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all fourteen files, and
+  the design skill's two files).
 - **Themes:** every theme variant complete, and the WCAG contrast rules met.
 - **App logic:** keybindings (defaults, validation, stored overrides for removed actions
   ignored), palette and settings search, workspace selection and parking, sidebar ordering and
@@ -461,7 +461,9 @@ Sources/
                        InstructionsStore (Settings ▸ Instructions' files and their history),
                        SuggestionsStore (Suggested instructions: settings, waiting, added),
                        SkillsStore (a host's skills in ~/.agents/skills; docs/skills.md),
-                       SkillsGit (the partial clones skills install from),
+                       SkillsGit (the partial clones skills install from), PiSkillsLoader
+                       (the skills pi loads from elsewhere, asked of pi's own loader on node;
+                       read-only in Settings ▸ Skills),
                        Changes/ (ChangesService: the Changes pane's engine — scopes, snapshots,
                        diffs, the base picker, each agent's turns and their Undo; docs/changes.md),
                        DesignStore (each design's files in the support directory's designs/, on
@@ -576,6 +578,9 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
                           design_check, comment_list, comment_reply, system_read and
                           system_write; hands pi the design skill
                           (design-skill/: SKILL.md, format.md); see docs/designs.md
+  shepherd-pi-skills.mjs  not an extension: Settings ▸ Skills runs it on node to ask pi's own
+                          loader which skills pi loads from outside ~/.agents/skills
+                          (PiSkillsLoader; docs/skills.md › Outside skills)
 Tests/
   <Module>UnitTests/, *IntegrationTests/, ShepherdPreviewTests/   the tiers above
   ShepherdTestIsolation/  C, run when a test bundle loads: scratch root, PATH, ZDOTDIR
@@ -732,9 +737,10 @@ variables are blanked.
     (`HostSettingChange`), applied as the Mac's own Settings would
   - `skills` (`skills.v1`): Settings ▸ Skills on the host (fetch, look up a repository, install
     from one or from files, on or off, how it's used, remove and restore, check for updates,
-    Update automatically), answered with the host's skills or the repository's. The server runs
-    them on its own queue (they fetch with git) and tells the host's page about each change
-    (docs/skills.md)
+    Update automatically), answered with the host's skills or the repository's, and beside them
+    the skills its pi loads from elsewhere (`SkillsSnapshot.pi`, `skills.pi.v1`, read-only). The
+    server runs them on its own queue (they fetch with git) and tells the host's page about each
+    change (docs/skills.md)
 
   Capabilities gate newer features. The client falls back (raw bracketed paste) or refuses (pane
   control) against older hosts. A host answers an authenticated request it cannot decode (a kind
@@ -773,8 +779,10 @@ the same change.
 - A new `SessionServer` mutation needs an integration test.
 - New persisted fields decode with defaults, so older `state.json` files keep loading.
 
-**Embedded extensions have one canonical copy.** The thirteen files in `Extensions/` are canonical,
-and so is the design skill in `Extensions/design-skill/`.
+**Embedded extensions have one canonical copy.** The fourteen files in `Extensions/` are canonical,
+and so is the design skill in `Extensions/design-skill/`. One is not an extension:
+`shepherd-pi-skills.mjs` is embedded in `Sources/ShepherdSessions/PiSkillsLoader.swift`
+(`scriptSource`) and run on node, never loaded by pi.
 pi loads the copies that the nine `Sources/ShepherdApp/*Extension.swift` files write to the
 support directory from embedded string literals. `installedPath()` rewrites an installed copy
 whenever its content differs, so drift ships bugs. `ChildrenExtension.swift` carries children,
@@ -783,7 +791,7 @@ children-config, children-ui, workflow, and missions, and installs `InspectExten
 `format.md` to the support directory's `design-skill/`.
 
 - Edit a `.ts`/`.mjs` file (or a design skill file) and its literal in the same change, with
-  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all thirteen pairs
+  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all fourteen pairs
   and the skill's two files.
 - Extensions stay dependency-free and inert without their environment variables.
 - They must never throw into pi or keep the process alive (unref'd sockets and timers).
@@ -1214,7 +1222,10 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   loss.
 - **Skills live in `~/.agents/skills`,** the folder pi reads skills from, not `~/.pi/agent`.
   Settings ▸ Skills is the only thing that writes there; everything else it keeps (skills that
-  are off, just removed, git caches, records) is in the support directory's `skills/`.
+  are off, just removed, git caches, records) is in the support directory's `skills/`. The
+  skills pi loads from its own setup and packages are listed read-only, read by
+  `PiSkillsLoader` without writing anything (no settings lock, no install); tests give
+  `ScratchServer` a reader of their own and never ask this machine's pi.
 - **pi's trust prompt:** interactive pi asks to trust project `.pi/` directories, but `-e` loads
   our extensions without one. Never install anything into `~/.pi/agent/`. `PiSessionFile` writes
   only session files, which pi treats as data. Settings ▸ Instructions keeps its root files in

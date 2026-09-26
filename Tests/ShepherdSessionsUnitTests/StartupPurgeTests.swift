@@ -109,7 +109,9 @@ struct StartupPurgeTests {
         let orphan = Agent(name: "Lost", spaceID: designs.id, tabID: TabID(), designID: lost)
         let orphanTab = Tab(id: orphan.tabID, spaceID: designs.id, order: 0, layout: .leaf(LeafPane(cwd: "~")))
         var state = ShepherdState(spaces: [space, designs], tabs: [orphanTab], agents: [drawer, orphan], designs: [kept])
-        #expect(SessionServer.designAgentsNeedSettling(in: state, missing: []))
+        // Reconciling already drops an agent whose design is gone; startup rewrites for either.
+        #expect(SessionServer.designsNeedReconciling(in: state, missing: [], removedAgents: [])
+            || SessionServer.designAgentsNeedSettling(in: state, missing: []))
 
         SessionServer.reconcileDesigns(&state, missing: [])
         SessionServer.settleDesignAgents(&state)
