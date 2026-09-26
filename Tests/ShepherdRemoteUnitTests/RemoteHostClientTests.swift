@@ -32,9 +32,12 @@ struct RemoteHostClientTests {
         #expect(error.description == description)
     }
 
-    /// An older host still sends its designs and their agents; this client shows them nowhere,
-    /// on a Mac, an iPhone or an iPad, since it has no design screen and would draw a thread.
-    @Test func aHostsDesignsAndTheirAgentsNeverReachTheClientsState() {
+    /// A host that sends its designs and their agents without serving designs (one from before
+    /// the rule) shows them nowhere, on a Mac, an iPhone or an iPad: there is no design screen for
+    /// them, and a design's agent would draw as a thread. A host serving `designs.v1` keeps them,
+    /// for its designs' screens.
+    @Test(arguments: [false, true])
+    func aHostsDesignsAndTheirAgentsReachTheClientsStateOnlyWhereItServesDesigns(serves: Bool) {
         let space = Space(name: "web", path: "/tmp/web")
         let threadTab = Tab(spaceID: space.id, order: 0, layout: .leaf(LeafPane(cwd: space.path)))
         let drawerTab = Tab(spaceID: space.id, order: 1, layout: .leaf(LeafPane(cwd: space.path)))
@@ -44,10 +47,12 @@ struct RemoteHostClientTests {
         let sent = ShepherdState(spaces: [space], tabs: [threadTab, drawerTab], agents: [thread, drawer],
                                  designs: [Design(id: designID, name: "Landing hero", agentID: drawer.id, createdAt: 1)])
 
-        let shown = RemoteHostClient.shown(sent)
-        #expect(shown.agents.map(\.id) == [thread.id])
-        #expect(shown.tabs.map(\.id) == [threadTab.id])
-        #expect(shown.designs.isEmpty)
+        let capabilities: Set<String> = serves ? [RemoteProtocol.nativeThreadCapability, RemoteProtocol.designsCapability]
+            : [RemoteProtocol.nativeThreadCapability]
+        let shown = RemoteHostClient.shown(sent, capabilities: capabilities)
+        #expect(shown.agents.map(\.id) == (serves ? [thread.id, drawer.id] : [thread.id]))
+        #expect(shown.tabs.map(\.id) == (serves ? [threadTab.id, drawerTab.id] : [threadTab.id]))
+        #expect(shown.designs.map(\.id) == (serves ? [designID] : []))
     }
 
     @Test func aNewClientAdvertisesNoCapabilities() {

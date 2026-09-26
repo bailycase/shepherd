@@ -230,11 +230,14 @@ them, whether the experiment is on or off. The rule holds in both directions:
   palette lists none of its subagents, and the palette's transcript search never reads its chat.
   It posts no banners: a thread's "Turn finished", question and subagent banners (and their
   Review action) never speak for a design. The Hosts page counts no thread for it.
-- **Remote clients.** Another Mac, or an iPhone or iPad, gets the host's state without
-  `designs`, without their agents, and without those agents' layouts
-  (`ShepherdState.withoutDesigns`). There is no remote design screen yet. `RemoteHostClient`
-  applies the same rule to whatever a host sends, so an older host's designs reach no Mac,
-  iPhone or iPad client either.
+- **Remote clients.** A client that reads designs (`designs.v1` in its hello) gets the host's
+  designs and the agents that draw them while the host serves designs (its experiment on): its
+  design screens show them, and it applies the same chrome rules. Any other client, and every
+  client while the experiment is off, gets the host's state without `designs`, without their
+  agents, and without those agents' layouts (`ShepherdState.withoutDesigns`); turning the
+  experiment on or off sends reading clients the state again. `RemoteHostClient` applies the
+  same rule to whatever a host sends, keeping designs only from a host that offers `designs.v1`,
+  so an older host's designs reach no Mac, iPhone or iPad client that has no screen for them.
 - **A forgotten design.** Deleting a design, or startup forgetting one whose folder is gone,
   takes the agents that drew it. Clearing their `designID` instead would turn the design's chat,
   fences and all, into an ordinary thread.
