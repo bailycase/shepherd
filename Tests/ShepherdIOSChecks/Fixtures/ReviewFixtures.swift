@@ -209,9 +209,10 @@ enum ReviewFixture {
     static func hosts(files: [DiffFile] = files, worktree: Bool = false, checksPass: Bool = true,
                       operation: RemoteWorktreeOperation? = nil, reviewError: String? = nil) -> [FixtureHostData] {
         var hosts = FixtureData.hosts()
-        if worktree, let index = hosts[0].state.agents.firstIndex(where: { $0.id == FixtureData.preview }) {
-            hosts[0].state.agents[index].worktreeBranch = branch
-            hosts[0].state.agents[index].worktreeBase = "origin/nightly"
+        if let index = hosts[0].state.agents.firstIndex(where: { $0.id == FixtureData.preview }) {
+            // The review screens choose: the shared fixture's worktree only where they ask for one.
+            hosts[0].state.agents[index].worktreeBranch = worktree ? branch : nil
+            hosts[0].state.agents[index].worktreeBase = worktree ? "origin/nightly" : nil
         }
         let working = (try? JSONEncoder().encode(files)) ?? Data("[]".utf8)
         let pr = (try? JSONEncoder().encode(files.isEmpty ? [] : prFiles)) ?? Data("[]".utf8)

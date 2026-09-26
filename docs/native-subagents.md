@@ -303,10 +303,10 @@ is what they do.
 - **Turn footer:** reads "time · duration · N tool calls · n subagents". The subagent count
   links to the first child. Like the rest of the footer, it shows while the turn is hovered.
 
-**Inspector.** It opens in the right pane beside the thread (`RightPaneSplit`: 600pt by default,
-at least 480pt, at most half the main column, the width remembered; it overlays the thread when
-the column is too narrow). It shares that slot with the review, and the inspector wins when both
-are open. Clicking the inspected tray row again closes it; a palette pick always opens
+**Inspector.** It opens in the side pane beside the thread (`RightPaneSplit`: 600pt by default,
+at least 380pt, at most half the main column, the width remembered; it overlays the thread when
+the column is too narrow). It takes the pane over from its tabs (Changes), and closing it goes
+back to them when the pane was open. Clicking the inspected tray row again closes it; a palette pick always opens
 it.
 
 - **Header:** the name and "k of n", above a line with the model, the thinking level (live runs

@@ -350,7 +350,8 @@ Sources/
                        host and client),
                        TerminalPanel (a layout's terminal tabs, the key row's bytes, the panel's
                        height, RemoteTerminalLink), AutomationPresentation (automation rows, runs
-                       and what a client may do), ShepherdLog. Shared with the iOS client.
+                       and what a client may do), AgentBranchPresentation (the header's branch
+                       chip), ShepherdLog. Shared with the iOS client.
   ShepherdPTYSpawn/    The PTY child side (fork → exec) in C: no Swift runs between the two.
   ShepherdSessions/    SessionServer (state, sessions, extension socket, remote listener),
                        RPCSession, RPCThreadState (+Queue: the queue of messages sent while pi
@@ -363,7 +364,9 @@ Sources/
   ShepherdApp/         The Mac app:
     ShepherdApp.swift (the Window scene, AppDelegate), RootView (+ WorkspaceHeaderView),
       SidebarView, RemoteSidebarSection, ThreadHeader, WorkspaceView, WorkspaceSelection,
-      RightPaneSplit, AppCommands (menus, MenuState), AppDialogs (every sheet)
+      RightPaneSplit and SidePane (the side pane and its tabs), CheckoutMonitor (each agent's
+      branch and changed files, read off the main thread), AppCommands (menus, MenuState),
+      AppDialogs (every sheet)
     AppLayout (+Navigation, +Thread, +Agents, +Settings; ShellLayout's adaptive rules live in
       +Navigation), AgentStateMapping (app lifecycles → AgentState)
     ShepherdViewModel(+Navigation, +Creation, +Workspace, +Spaces, +Reorder, +Palette, +Shell,
@@ -409,7 +412,7 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
   shepherd-status.ts      status + active pi session       shepherd-namer.ts   agent titles
   shepherd-panes.ts       pane_*, agent_* (list/send/spawn/read/steer/interrupt/wait/delete),
                           automation_*, notify; see docs/agent-coordination.md
-  shepherd-review.ts      review_diff (opens the review pane)
+  shepherd-review.ts      review_diff (readies the side pane's Changes tab)
   shepherd-subagents.ts   setAgentChildren (native + pi-subagents runs)
   shepherd-children.ts (+ -config, -ui, shepherd-workflow, shepherd-missions, shepherd-inspect.mjs)
                           native subagent runtime; see docs/native-subagents.md
@@ -433,7 +436,7 @@ Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
 - **The in-process `SessionServer` is the single source of truth** for spaces, per-agent layout
   tabs, agents, and automations (persisted to `state.json`). It owns every PTY and RPC process.
 - **The local GUI** calls the server directly, with no socket, and adopts `onStateChanged`
-  broadcasts. It owns only view state: selection, focus, collapsed spaces, the right pane,
+  broadcasts. It owns only view state: selection, focus, collapsed spaces, the side pane,
   sheets, appearance, and keybindings.
 - **Remote clients** reach the same server over TCP.
 - **Tabs** survive only as per-agent layout containers, plus `inspectorFor` utility terminals the
@@ -607,7 +610,7 @@ from ShepherdUI (Night Watch) or `AppLayout`:
 - spacing, radii, and heights from `NW.Space`, `NW.Radius`, and `NW.Height` (rows scale with
   Density; controls don't)
 - a Mac screen's own dimensions from `AppLayout`, in the file for its domain:
-  `AppLayout+Navigation.swift` (window, sidebar, toolbar, right pane, palette),
+  `AppLayout+Navigation.swift` (window, sidebar, toolbar, side pane, palette),
   `AppLayout+Thread.swift` (thread, composer), `AppLayout+Agents.swift` (subagent stack,
   inspector), `AppLayout+Settings.swift` (Settings, sheet sizes), and `AppLayout.swift` for
   anything else. A component's own measures stay with it in ShepherdUI (`NWThreadMetrics`,
@@ -807,8 +810,11 @@ agent and its auxiliary processes while the app runs, and quitting the app termi
 Nothing else mutates repository state, and Shepherd never prunes worktrees.
 
 **Reviews dock; they don't split.** A review (`ReviewSession`, `ShepherdViewModel+Review.swift`)
-lives in the agent's right pane beside its whole layout (thread and terminal panes), in the slot
-shared with the subagent inspector (the inspector wins). It never touches the persisted layout.
+is the Changes tab of the agent's side pane beside its whole layout (thread and terminal panes);
+an inspected subagent takes the pane over and closing it goes back to Changes. It never touches
+the persisted layout. **Nothing opens the pane by itself:** an agent's `review_diff` readies the
+review and marks the Changes tab, and with the pane closed the header's side-pane button, with a
+dot; only the user shows it (⇧⌘B, ⌃1, the button, a link).
 Request changes and Ask agent to commit (plain Commit on a host without commit from review) send
 the agent a follow-up turn, and the review closes only once the send succeeds, so comments survive
 a failed send. Commit… commits directly (above) and reloads the review once it finishes. A

@@ -37,14 +37,18 @@ final class AppHarness {
     /// Seeds `state` (if any), then builds the view model and waits until it has adopted the
     /// server's snapshot. `restoringAgents` starts every seeded agent's pi at once, as a launch
     /// does; otherwise an agent's pi starts when a test asks for its pane's session (most tests
-    /// seed agents only to look at them, with no pi on PATH).
+    /// seed agents only to look at them, with no pi on PATH). `readingCheckouts` turns on the
+    /// header's checkout reads, which would otherwise change the workspace under a test that
+    /// seeded a repository.
     @discardableResult
-    func start(with state: ShepherdState? = nil, restoringAgents: Bool = false) async throws -> ShepherdViewModel {
+    func start(with state: ShepherdState? = nil, restoringAgents: Bool = false,
+               readingCheckouts: Bool = false) async throws -> ShepherdViewModel {
         if let state { try await server.putState(state) }
         let vm = ShepherdViewModel(
             server: server, settings: settings, keybindings: keybindings, themeManager: themeManager,
             remoteHosts: remoteHosts, sidebarDefaults: defaults, themeInstaller: { _ in },
-            restoresAgentsAtLaunch: restoringAgents
+            restoresAgentsAtLaunch: restoringAgents,
+            checkoutReader: readingCheckouts ? CheckoutMonitor.git : nil
         )
         self.vm = vm
         let server = server
