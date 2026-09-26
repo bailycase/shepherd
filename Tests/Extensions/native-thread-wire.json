@@ -469,6 +469,80 @@
   {
     "type": "nativeThread",
     "id": 20,
+    "result": {
+      "snapshot": {
+        "value": {
+          "piSessionID": "session",
+          "generation": "generation",
+          "revision": 10,
+          "running": false,
+          "supportedActions": [
+            "send"
+          ],
+          "dialogsSupported": true,
+          "dialogs": [],
+          "messages": [],
+          "provisional": [],
+          "clipped": false,
+          "runtime": "rpc",
+          "turnChanges": [
+            {
+              "id": "00000000-0000-0000-0000-000000000031",
+              "messageTimestamp": 1790281446000,
+              "prompt": "Wrap errors with context",
+              "startedAt": 1790281446100,
+              "endedAt": 1790281686000,
+              "state": "ready",
+              "files": [
+                {
+                  "path": "ledger/outbox.go",
+                  "status": "M",
+                  "added": 9,
+                  "removed": 3,
+                  "isBinary": false
+                },
+                {
+                  "path": "ledger/refund.go",
+                  "status": "A",
+                  "added": 3,
+                  "removed": 0,
+                  "isBinary": false
+                },
+                {
+                  "path": "ledger/codec.go",
+                  "oldPath": "ledger/json.go",
+                  "status": "R",
+                  "added": 0,
+                  "removed": 0,
+                  "isBinary": false
+                }
+              ],
+              "fileCount": 3,
+              "added": 12,
+              "removed": 3,
+              "canUndo": true,
+              "canRedo": false
+            },
+            {
+              "id": "00000000-0000-0000-0000-000000000032",
+              "startedAt": 1790281700000,
+              "state": "unavailable",
+              "reason": "Shepherd quit before this turn ended.",
+              "files": [],
+              "fileCount": 0,
+              "added": 0,
+              "removed": 0,
+              "canUndo": false,
+              "canRedo": false
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "type": "nativeThread",
+    "id": 21,
     "agentID": "agent",
     "request": {
       "compact": {
@@ -481,7 +555,7 @@
   },
   {
     "type": "nativeThread",
-    "id": 21,
+    "id": 22,
     "result": {
       "snapshot": {
         "value": {

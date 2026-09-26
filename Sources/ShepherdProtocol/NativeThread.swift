@@ -368,6 +368,10 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
     /// v4: what fills the model's context window (`native.context.v1`). nil from older hosts,
     /// which get no context meter.
     public var context: NativeThreadContext?
+    /// The agent's recent turns as the host recorded them in its working tree, oldest first: the
+    /// "Edited N files" cards and their Undo (`RemoteProtocol.changesCapability`). nil from older
+    /// hosts, and for an agent outside a git repository.
+    public var turnChanges: [ChangesTurn]?
 
     public var isRPC: Bool { runtime == "rpc" }
 
@@ -377,7 +381,7 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         widgets: [NativeThreadWidget]? = nil, messages: [NativeThreadMessage], olderCursor: String? = nil,
         provisional: [NativeThreadMessage], clipped: Bool, runtime: String? = nil, stats: NativeThreadStats? = nil,
         commands: [NativeCommand]? = nil, subagents: [NativeSubagent]? = nil, queue: NativeQueue? = nil,
-        context: NativeThreadContext? = nil
+        context: NativeThreadContext? = nil, turnChanges: [ChangesTurn]? = nil
     ) {
         self.piSessionID = piSessionID
         self.generation = generation
@@ -400,6 +404,7 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         self.subagents = subagents
         self.queue = queue
         self.context = context
+        self.turnChanges = turnChanges
     }
 }
 

@@ -225,17 +225,21 @@ public struct NWSidePaneTabs<Options: View>: View {
     let select: (String) -> Void
     let closeShortcut: String?
     let close: () -> Void
+    /// While the pane is maximized (ChangesWide): Restore the thread, a bordered circle before the
+    /// options.
+    let restore: (() -> Void)?
     @ViewBuilder let options: () -> Options
     @State private var showsLabels = true
 
     public init(_ tabs: [NWSidePaneTab], selection: String, select: @escaping (String) -> Void,
-                closeShortcut: String? = nil, close: @escaping () -> Void,
+                closeShortcut: String? = nil, close: @escaping () -> Void, restore: (() -> Void)? = nil,
                 @ViewBuilder options: @escaping () -> Options) {
         self.tabs = tabs
         self.selection = selection
         self.select = select
         self.closeShortcut = closeShortcut
         self.close = close
+        self.restore = restore
         self.options = options
     }
 
@@ -246,6 +250,12 @@ public struct NWSidePaneTabs<Options: View>: View {
             }
             Spacer(minLength: NW.Space.m)
             HStack(spacing: NW.Space.xs) {
+                if let restore {
+                    Button(action: restore) { Image(systemName: "arrow.down.right.and.arrow.up.left") }
+                        .buttonStyle(.nwIcon(bordered: true))
+                        .nwHelp("Restore the thread")
+                        .accessibilityLabel("Restore the thread")
+                }
                 NWOptionsMenu("Pane options", content: options)
                 Button(action: close) { Image(systemName: "xmark") }
                     .buttonStyle(.nwIcon)

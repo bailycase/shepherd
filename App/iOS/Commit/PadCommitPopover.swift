@@ -37,8 +37,10 @@ private struct PadCommitPopoverPresenter: ViewModifier {
     }
 }
 
-/// The popover: "Commit 3 files", the message drafted from the diff, the files, the options,
-/// then Cancel and Commit & push; once it runs, the host's steps.
+/// The popover (iPadCommit): "Commit 5 files to agent/refund-events", the message drafted from
+/// the diff, Push to origin and Open a pull request as checkboxes, then Cancel and Commit & push;
+/// once it runs, the host's steps. Every changed file goes in: the phone's sheet is where files
+/// are ticked off.
 struct PadCommitPopover: View {
     let ref: AgentRef
     let close: () -> Void
@@ -48,10 +50,7 @@ struct PadCommitPopover: View {
         let store = CommitStores.shared.store(for: ref, hosts: hosts)
         ScrollView {
             VStack(alignment: .leading, spacing: NW.Space.l) {
-                Text(commitTitle(store))
-                    .font(.nw(.headline))
-                    .foregroundStyle(Color.nw.textPrimary)
-                    .accessibilityAddTraits(.isHeader)
+                PadCommitTitle(store: store)
                 switch store.stage {
                 case .loading:
                     HStack(spacing: NW.Space.m) {
@@ -64,17 +63,8 @@ struct PadCommitPopover: View {
                 case .form:
                     CommitNotices(store: store)
                     CommitMessageCard(store: store, fill: Color.nw.bgWindow)
-                    ScrollView {
-                        CommitFileList(store: store)
-                    }
-                    .scrollBounceBehavior(.basedOnSize)
-                    .frame(maxHeight: MobileLayout.commitPopoverFilesHeight)
-                    .fixedSize(horizontal: false, vertical: true)
-                    VStack(spacing: 0) {
-                        NWHairline()
-                        CommitOptions(store: store)
-                    }
-                    .disabled(store.info?.blocked != nil)
+                    PadCommitChecks(store: store)
+                        .disabled(store.info?.blocked != nil)
                 case .operation:
                     CommitProgress(store: store)
                 }
@@ -135,5 +125,51 @@ struct PadCommitPopover: View {
                 CommitStores.shared.store(for: ref, hosts: hosts).error = review.actionError
             }
         }
+    }
+}
+
+/// "Commit 5 files" and, in mono `textTertiary`, "to agent/refund-events".
+private struct PadCommitTitle: View {
+    let store: ReviewCommitStore
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
+            Text(commitTitle(store))
+                .font(.nw(.headline))
+                .foregroundStyle(Color.nw.textPrimary)
+            if store.outcome == nil, let branch = store.info?.branch {
+                Text("to \(branch)").font(.nw(.mono)).foregroundStyle(Color.nw.textTertiary).lineLimit(1).truncationMode(.middle)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// Push to origin and Open a pull request, as the board's checkboxes, each over what it does.
+private struct PadCommitChecks: View {
+    @Bindable var store: ReviewCommitStore
+
+    var body: some View {
+        if let info = store.info {
+            VStack(alignment: .leading, spacing: NW.Space.m) {
+                check("Push to \(info.pushRemote ?? "origin")", detail: reviewCommitPushDetail(info),
+                      isOn: Binding(get: { store.push || store.pullRequest }, set: { store.push = $0 }))
+                    .disabled(store.pullRequest || !reviewCommitCanPush(info))
+                check("Open a pull request", detail: reviewCommitPullRequestDetail(info, title: store.title), isOn: $store.pullRequest)
+                    .disabled(!reviewCommitCanOpenPullRequest(info))
+            }
+        }
+    }
+
+    private func check(_ title: String, detail: String, isOn: Binding<Bool>) -> some View {
+        Toggle(isOn: isOn) {
+            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+                Text(title).font(.nw(.ui)).foregroundStyle(Color.nw.textPrimary)
+                Text(detail).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .toggleStyle(.nwCheckbox)
+        .frame(minHeight: NW.Height.touch, alignment: .leading)
     }
 }

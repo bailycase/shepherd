@@ -58,6 +58,7 @@ struct ThreadScreen: View {
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
             // iPad: the terminal panel under the thread and its composer (Terminal/).
             .threadTerminal(ref)
+            .turnUndoAlert()
             // A thread takes the whole screen on iPhone (MobileThread board): no tab bar under the composer.
             .toolbar(.hidden, for: .tabBar)
             .navigationTitle(agent?.name ?? "Thread")
@@ -106,6 +107,8 @@ private struct ThreadTranscript: View {
     let store: NativeThreadStore
     let banner: String?
     @Environment(MobileNavigator.self) private var navigator
+    @Environment(MobileHosts.self) private var hosts
+    @Environment(ThreadStores.self) private var threads
     @Environment(\.horizontalSizeClass) private var sizeClass
     /// Follows the tail until the reader drags away from it (DESIGN.md › Thread › Following).
     @State private var follower = NativeScrollFollower()
@@ -249,6 +252,8 @@ private struct ThreadTranscript: View {
             AgentTurnView(thread: ref, presentation: presentation, live: row.live,
                           subagents: store.placements[row.id]?.all.count ?? 0,
                           startedAt: row.startedAt, thinking: thinking,
+                          changes: row.changes,
+                          changesBusy: row.changes?.turnID.map { TurnUndoStore.shared.busy.contains($0) } ?? false,
                           actions: actions(row, running: running))
                 .equatable()
         }
@@ -264,6 +269,14 @@ private struct ThreadTranscript: View {
         }
         actions.review = { path in ReviewHooks.open(thread: ref, file: path, navigator: navigator) }
         actions.reviewChanges = { ReviewHooks.open(thread: ref, file: nil, navigator: navigator) }
+        if let turn = row.changes?.turnID {
+            let hosts = hosts
+            let threads = threads
+            actions.review = { path in ReviewHooks.open(thread: ref, turn: turn, file: path, navigator: navigator) }
+            actions.reviewTurn = { id in ReviewHooks.open(thread: ref, turn: id, navigator: navigator) }
+            actions.undo = { id in TurnUndoStore.shared.undo(id, ref: ref, hosts: hosts, threads: threads) }
+            actions.redo = { id in TurnUndoStore.shared.redo(id, ref: ref, hosts: hosts, threads: threads) }
+        }
         if store.placements[row.id]?.isEmpty == false {
             actions.subagents = { navigator.open(SubagentHooks.list(thread: ref)) }
         }
