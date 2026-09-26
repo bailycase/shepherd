@@ -47,8 +47,15 @@ struct FixtureHostData {
     var skills: SkillsSnapshot? = FixtureData.skills()
     var repoSkills: RepoSkills? = nil
     /// What the host says it understands; nil is everything this build knows (an older host
-    /// leaves some out).
+    /// leaves some out), less `designs.v1` unless the host serves designs.
     var capabilities: [String]? = nil
+    /// The designs the host serves (`designs.v1`, its Design tool on); nil: the tool is off.
+    var designs: FixtureDesigns? = nil
+
+    /// Everything this build knows, `designs.v1` only while the host has designs to serve.
+    var defaultCapabilities: [String] {
+        designs == nil ? RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.designsCapability } : RemoteProtocol.capabilities
+    }
 }
 
 /// Fixed ids and builders every track's fixtures share, so screens agree with each other.
@@ -179,6 +186,7 @@ enum FixtureData {
 enum FixtureCatalog {
     static var all: [FixtureScreen] {
         home + thread + context + newThread + subagents + review + changes + commit + search + settings + automations + windows + terminal
+            + designPad
     }
 
     static func screen(named name: String) -> FixtureScreen? {
