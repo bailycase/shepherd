@@ -209,6 +209,52 @@ extension ShepherdViewModel {
         }
     }
 
+    /// Turns an automation on (it starts a run when Shepherd launches) or off. A refusal shows
+    /// the failed-action dialog.
+    func setAutomationEnabled(_ id: AutomationID, _ enabled: Bool) {
+        guard var automation = state.automations.first(where: { $0.id == id }), automation.enabled != enabled else { return }
+        automation.enabled = enabled
+        Task { @MainActor in
+            do {
+                try await server.updateAutomation(automation)
+                adoptCanonical()
+            } catch {
+                remoteActionError = "Couldn't turn the automation \(enabled ? "on" : "off"): \(error)"
+            }
+        }
+    }
+
+    /// Saves a new automation (`id` nil) or replaces an existing one's name, prompt, folder and
+    /// switch, as the agents' `automation_*` tools do. A new one starts no run. Returns its id.
+    @discardableResult
+    func saveAutomation(_ id: AutomationID?, draft: RemoteAutomationDraft) async throws -> AutomationID {
+        if let id {
+            guard var automation = state.automations.first(where: { $0.id == id }) else {
+                throw AgentStartFailure(message: "The automation no longer exists")
+            }
+            automation.name = draft.name
+            automation.prompt = draft.prompt
+            automation.cwd = draft.cwd
+            automation.enabled = draft.enabled
+            try await server.updateAutomation(automation)
+            adoptCanonical()
+            return id
+        }
+        let automation = Automation(name: draft.name, prompt: draft.prompt, cwd: draft.cwd, enabled: draft.enabled)
+        try await server.addAutomation(automation)
+        adoptCanonical()
+        return automation.id
+    }
+
+    /// Reads each of this Mac's automations' runs from the run log (the Automations page).
+    func loadLocalAutomationRuns() async {
+        var runs: [AutomationID: [AutomationRun]] = [:]
+        for automation in state.automations {
+            runs[automation.id] = await server.automationRuns(automation.id)
+        }
+        if runs != localAutomationRuns { localAutomationRuns = runs }
+    }
+
     private func adoptCanonical() {
         let canonical = server.state
         sessions.stateDidChange(canonical)

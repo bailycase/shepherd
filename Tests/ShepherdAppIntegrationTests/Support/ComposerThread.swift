@@ -22,9 +22,10 @@ final class ComposerThread {
     private(set) var threadScroll: NSScrollView?
     private var hosted: () -> AnyView = { AnyView(EmptyView()) }
 
+    /// `focused` gives the thread the keyboard, so its field takes it as the app's does.
     init(messages: Int = 40, size: CGSize = CGSize(width: 900, height: 600), models: [PiModelCatalog.Entry] = ModelCatalogFixture.entries,
          commands: [NativeCommand] = ModelCatalogFixture.commands, dialogs: [NativeThreadDialog] = [], dark: Bool = false,
-         animated: Bool = true) {
+         focused: Bool = false, animated: Bool = true) {
         self.size = size
         snapshot = Self.snapshot(messages: messages, commands: commands, dialogs: dialogs)
         window = OffscreenWindow(size: size, dark: dark)
@@ -36,7 +37,7 @@ final class ComposerThread {
             }
         }
         hosted = { [store, commands = self.commands] in
-            AnyView(ThreadView(store: store, active: true, isFocused: false, request: request, commandKey: Self.key, listModels: { ModelCatalog(models) })
+            AnyView(ThreadView(store: store, active: true, isFocused: focused, request: request, commandKey: Self.key, listModels: { ModelCatalog(models) })
                 .environment(\.threadCommands, commands)
                 // Without motion, a change's first frame is all of its work.
                 .transaction { if !animated { $0.disablesAnimations = true } })

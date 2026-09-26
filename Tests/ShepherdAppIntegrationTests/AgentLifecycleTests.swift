@@ -233,7 +233,7 @@ struct AgentLaunchTests {
         defer { try? FileManager.default.removeItem(at: repo); try? FileManager.default.removeItem(at: worktree) }
         try git(["worktree", "add", "-q", "-b", "worktree/imported", worktree.path], in: repo)
         let vm = try await app.start()
-        let spaceID = try #require(await vm.addSpace(at: repo, createInitialAgent: false))
+        let spaceID = try #require(await vm.addSpace(at: repo))
 
         let id = try #require(await vm.importExistingCheckout(at: worktree, into: spaceID))
 

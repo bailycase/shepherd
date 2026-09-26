@@ -139,11 +139,16 @@ final class FakeThread {
 /// one-file diff.
 @MainActor
 enum MountedWorkspace {
-    /// The workspace restored, the first agent selected, and no window yet.
+    /// The workspace restored, the first agent selected, and no window yet. The first agent is
+    /// the most recently active, so it is the one the launch shows.
     static func start(_ count: Int, in app: AppHarness) async throws -> (ShepherdViewModel, [AgentFixture]) {
         let space = Fixture.space(path: app.dir.path)
         var agents: [AgentFixture] = []
-        for index in 0..<count { agents.append(try await app.liveAgent("agent \(index)", in: space, order: index)) }
+        for index in 0..<count {
+            var agent = try await app.liveAgent("agent \(index)", in: space, order: index)
+            agent.agent.lastActiveAt = Double(count - index)
+            agents.append(agent)
+        }
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents))
         let files = [ListFixtures.diffFile("Sources/A.swift", lines: 12)]
         vm.changesEngineOverride = { _, _ in .fixed(files) }

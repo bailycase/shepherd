@@ -32,18 +32,31 @@ extension AppLayout {
     static let sidebarDefaultWidth: CGFloat = 232
     static let sidebarMinWidth: CGFloat = 190
     static let sidebarMaxWidth: CGFloat = 340
-    static let sidebarPadding: CGFloat = NWSidebarMetrics.treeInset
-    static let sidebarIndent: CGFloat = NWSidebarMetrics.indentStep
+    static let sidebarPadding: CGFloat = NWSidebarMetrics.listInset
     static let sidebarRowSpacing: CGFloat = NWSidebarMetrics.rowSpacing
-    /// The hover `+` in section and space headers, and its glyph.
-    static let sidebarPlusSize: CGFloat = 18
-    static let sidebarPlusGlyph: CGFloat = 11
     /// An overlaid sidebar leaves this much of the window uncovered.
     static let sidebarOverlayMargin: CGFloat = 48
 
+    // Destination pages (NavNewThread, NavAutomations, NavHosts); the header is `NWPageMetrics`'.
+    /// New thread: the column's gaps and padding, the heading (Geist 26 semibold, tracked −2%),
+    /// the 720pt composer and the Continue card's row under it.
+    static let newThreadGap: CGFloat = 24
+    static let newThreadSidePadding: CGFloat = 40
+    static let newThreadBottomPadding: CGFloat = 80
+    static let newThreadHeadingSize: CGFloat = 26
+    static let newThreadHeadingTracking: CGFloat = -0.52
+    static let newThreadComposerWidth: CGFloat = 720
+    /// The suggestion cards: three to the row, 10pt apart, 14pt below the column's gap.
+    static let newThreadCardsGap: CGFloat = 10
+    static let newThreadCardsTop: CGFloat = 14
+    static let newThreadCardsPerRow: CGFloat = 3
+    /// A card: padded 12pt above and below and 14 at the sides, an 11.5 kicker, a 13 title and
+    /// an 11 detail 5pt apart.
+    static let newThreadCardHeight: CGFloat = 82
+    static let newThreadCardPadding: CGFloat = 14
+    static let newThreadCardSpacing: CGFloat = 5
+
     // Workspace
-    /// The empty workspace's measure (no agent on screen).
-    static let emptyWorkspaceMaxWidth: CGFloat = 420
     /// How far a terminal pane's placeholder ("starting session…") sits from its corner.
     static let panePlaceholderPadding: CGFloat = 10
 
