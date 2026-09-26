@@ -40,12 +40,19 @@ extension RPCThreadState {
         /// Sent by an older remote client, which finds its message in the thread by the text it
         /// sent: it goes to pi on its own, never joined with others.
         var goesAlone = false
+        /// The sender's design view record, fenced (`DesignViewRecord.fenced`): pi reads it
+        /// ahead of the message, and the thread and the queue show the message alone.
+        var context: String?
+
+        /// What pi is handed for it: the fenced record, then the message.
+        var promptText: String { RPCThreadState.prompt(entry.text, context: context) }
     }
 
     /// A prompt handed to pi that it has not started as a user message yet.
     struct Dispatch {
         /// The send's operation id, or the first queued item's.
         let id: UUID
+        /// What pi was handed: a design record's fence, if any, then the message.
         let text: String
         /// From the queue: its parts, and the items to put back if pi refuses it.
         let parts: [NativeQueuePart]?
@@ -83,14 +90,15 @@ extension RPCThreadState {
     // MARK: - Sending
 
     /// A new message: to pi now when it is idle, else into the queue (or steered in). `alone`
-    /// keeps a queued message from being joined with others (`QueueItem.goesAlone`).
+    /// keeps a queued message from being joined with others (`QueueItem.goesAlone`). `context`
+    /// is a fenced design view record that goes to pi ahead of the message (`QueueItem.context`).
     func send(id: UUID, text: String, delivery: NativeThreadDelivery, images: [NativeImage], alone: Bool = false,
-              completion: @escaping (NativeThreadResult) -> Void) {
+              context: String? = nil, completion: @escaping (NativeThreadResult) -> Void) {
         guard piBusy else {
             // A new message resumes a paused queue: it drains after this turn.
             paused = false
             queueNotice = nil
-            dispatch(id: id, text: text, images: images, parts: nil, items: [], completion: completion)
+            dispatch(id: id, text: text, context: context, images: images, parts: nil, items: [], completion: completion)
             return
         }
         guard items.count < Self.queueItemLimit,
@@ -101,7 +109,7 @@ extension RPCThreadState {
         let item = QueueItem(
             entry: NativeQueuedMessage(id: id, text: text, images: images.map { NativeQueuedImage(mimeType: $0.mimeType, name: $0.name) },
                                        sentAt: Date().timeIntervalSince1970 * 1000),
-            images: images, goesAlone: alone)
+            images: images, goesAlone: alone, context: context)
         items.append(item)
         // Only a running pi can take a steer: one of our prompts still on its way has not
         // started a run, so the message goes first after it instead.
@@ -258,7 +266,10 @@ extension RPCThreadState {
         guard !batch.isEmpty else { return }
         items.removeAll { item in batch.contains { $0.entry.id == item.entry.id } }
         let parts = NativeQueueRules.parts(batch)
-        dispatch(id: batch[0].entry.id, text: NativeQueueRules.joined(batch), images: batch.flatMap(\.images), parts: parts, items: batch) { [weak self] result in
+        // The latest record among them is the viewer's screen as the batch leaves.
+        let context = batch.last { $0.context != nil }?.context
+        dispatch(id: batch[0].entry.id, text: NativeQueueRules.joined(batch), context: context, images: batch.flatMap(\.images),
+                 parts: parts, items: batch) { [weak self] result in
             // pi refused the delivery: the items return to the head, and the queue waits.
             guard let self, case .failure(let code, let message) = result, code != "outcome_unknown" else { return }
             NativeQueueRules.insert(batch, atQueuedIndex: 0, into: &self.items)
@@ -273,11 +284,12 @@ extension RPCThreadState {
     /// Sends one prompt pi is expected to start as a user message, showing it as a pending row
     /// until pi does. `streamingBehavior` is always given, so a pi that started a run on its
     /// own (an extension, a child's report) queues it instead of refusing it; while idle pi
-    /// treats it as a plain prompt.
-    func dispatch(id: UUID, text: String, images: [NativeImage], parts: [NativeQueuePart]?, items batch: [QueueItem],
+    /// treats it as a plain prompt. A fenced design record (`context`) goes ahead of the text.
+    func dispatch(id: UUID, text: String, context: String? = nil, images: [NativeImage], parts: [NativeQueuePart]?, items batch: [QueueItem],
                   completion: @escaping (NativeThreadResult) -> Void) {
         let expectsMessage = !isExtensionCommand(text)
-        dispatches.append(Dispatch(id: id, text: text, parts: parts, items: batch, expectsMessage: expectsMessage))
+        let prompt = Self.prompt(text, context: context)
+        dispatches.append(Dispatch(id: id, text: prompt, parts: parts, items: batch, expectsMessage: expectsMessage))
         if expectsMessage {
             var row = NativeThreadMessage.pendingSend(operationID: id, text: text, images: images.count,
                                                       timestamp: Date().timeIntervalSince1970 * 1000)
@@ -286,7 +298,7 @@ extension RPCThreadState {
         }
         commit()
         let rpcImages = images.map { RPCImage(data: $0.data.base64EncodedString(), mimeType: $0.mimeType) }
-        session.request(.prompt(message: text, images: rpcImages, streamingBehavior: .followUp), timeout: Self.promptTimeout) { [weak self] result in
+        session.request(.prompt(message: prompt, images: rpcImages, streamingBehavior: .followUp), timeout: Self.promptTimeout) { [weak self] result in
             guard let self else { return }
             let failure = Self.dispatchFailure(result)
             if let failure, case .failure(let code, _) = failure, code != "outcome_unknown" {
@@ -320,6 +332,13 @@ extension RPCThreadState {
         live.removeAll { $0.kind == .pending(id) }
     }
 
+    /// The fenced design record ahead of the text, except for a command, which pi reads only at
+    /// the start of a message.
+    static func prompt(_ text: String, context: String?) -> String {
+        guard let context, !text.hasPrefix("/") else { return text }
+        return context + text
+    }
+
     private func isExtensionCommand(_ text: String) -> Bool {
         guard text.hasPrefix("/") else { return false }
         let name = text.dropFirst().prefix { !$0.isWhitespace }
@@ -335,7 +354,7 @@ extension RPCThreadState {
         unboundSteers.append(id)
         steersInFlight += 1
         let rpcImages = item.images.map { RPCImage(data: $0.data.base64EncodedString(), mimeType: $0.mimeType) }
-        session.request(.prompt(message: item.entry.text, images: rpcImages, streamingBehavior: .steer), timeout: Self.promptTimeout) { [weak self] result in
+        session.request(.prompt(message: item.promptText, images: rpcImages, streamingBehavior: .steer), timeout: Self.promptTimeout) { [weak self] result in
             guard let self else { return }
             self.unboundSteers.removeAll { $0 == id }
             self.steersInFlight -= 1
@@ -366,7 +385,7 @@ extension RPCThreadState {
             if let index = previous.firstIndex(of: text) { previous.remove(at: index) } else { added.append(text) }
         }
         for text in added {
-            let exact = unboundSteers.first { id in items.first { $0.entry.id == id }?.entry.text == text }
+            let exact = unboundSteers.first { id in items.first { $0.entry.id == id }?.promptText == text }
             // pi expands a template or skill before queueing it.
             let expanded = unboundSteers.first { id in items.first { $0.entry.id == id }?.entry.text.hasPrefix("/") == true }
             guard let id = exact ?? expanded, let index = items.firstIndex(where: { $0.entry.id == id }) else { continue }
@@ -387,7 +406,7 @@ extension RPCThreadState {
             var remaining = steering
             var returned = false
             // The item is still pi's to read: it returns to the head of the queue.
-            if let item = self.items.first(where: { $0.entry.id == id }), let index = remaining.firstIndex(of: item.piText ?? item.entry.text) {
+            if let item = self.items.first(where: { $0.entry.id == id }), let index = remaining.firstIndex(of: item.piText ?? item.promptText) {
                 remaining.remove(at: index)
                 if let at = self.items.firstIndex(where: { $0.entry.id == id }) { self.items[at].piText = nil }
                 NativeQueueRules.unsteer(id, in: &self.items)
@@ -403,7 +422,7 @@ extension RPCThreadState {
     /// are steered again, anything else pi had queued (an extension's) is re-sent as it was.
     private func restorePiQueue(steering: [String], followUp: [String]) {
         for text in steering {
-            if let item = items.first(where: { $0.entry.state == .steering && ($0.piText ?? $0.entry.text) == text }) {
+            if let item = items.first(where: { $0.entry.state == .steering && ($0.piText ?? $0.promptText) == text }) {
                 let id = item.entry.id
                 if let index = items.firstIndex(where: { $0.entry.id == id }) { items[index].piText = nil }
                 steerDispatch(id) { _ in }
@@ -432,7 +451,7 @@ extension RPCThreadState {
         var remaining = steering
         var back: [QueueItem] = []
         for item in items where item.entry.state == .steering {
-            guard let index = remaining.firstIndex(of: item.piText ?? item.entry.text) else { continue }
+            guard let index = remaining.firstIndex(of: item.piText ?? item.promptText) else { continue }
             remaining.remove(at: index)
             var returned = item
             returned.piText = nil
@@ -505,7 +524,7 @@ extension RPCThreadState {
         }.joined()
         var origin: NativeMessageOrigin?
         var operationID: UUID?
-        if let index = items.firstIndex(where: { $0.entry.state == .steering && ($0.piText ?? $0.entry.text) == text }) {
+        if let index = items.firstIndex(where: { $0.entry.state == .steering && ($0.piText ?? $0.promptText) == text }) {
             let item = items.remove(at: index)
             unboundSteers.removeAll { $0 == item.entry.id }
             origin = .steered
