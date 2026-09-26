@@ -531,17 +531,21 @@ final class PadDesignRasterizer {
 }
 
 /// Where web views wait while no canvas holds them: a view at the back of the key window, under
-/// the app's content. WebKit draws a page only in a window, and a snapshot needs one drawn.
+/// the app's content. WebKit draws a page only in a window, and a snapshot needs one drawn; it
+/// sits below the status bar and the window's top inset, where iOS paints tiles at low resolution.
 @MainActor
 final class PadDesignStage {
     static let shared = PadDesignStage()
     private let stage: UIView = {
-        let view = UIView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
+        let view = UIView(frame: CGRect(x: 0, y: PadDesignStage.top, width: 1, height: 1))
         view.isUserInteractionEnabled = false
         view.clipsToBounds = false
         view.accessibilityElementsHidden = true
         return view
     }()
+
+    /// Clear of the window's top inset.
+    static let top: CGFloat = 160
 
     func hold(_ view: UIView) {
         attach()
