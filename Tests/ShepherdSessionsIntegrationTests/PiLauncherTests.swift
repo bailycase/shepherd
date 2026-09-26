@@ -208,4 +208,29 @@ struct PiLauncherTests {
         #expect(setup.prepare() != nil)
         #expect(try FileManager.default.contentsOfDirectory(atPath: theirs.path).isEmpty)
     }
+
+    /// The MCP probe runs Shepherd's node after a login shell: the startup files' pi, jiti and
+    /// Node settings (the test isolation's decoys) never reach it, and corporate CAs do.
+    @Test func theMCPProbeDropsTheStartupFilesPiAndNodeSettings() throws {
+        let dir = try makeScratchDirectory("probe-env")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let node = dir.appendingPathComponent("node")
+        try """
+            #!/bin/sh
+            printf 'arg=%s\\n' "$@"
+            env | grep -E '^(PI_|JITI_|NODE_|OPENSSL_CONF)' | sort
+
+            """.write(to: node, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: node.path)
+        let engine = PiEngine(command: ["/nonexistent/pi"], packageDirectory: nil, version: nil, node: .executable(node.path))
+        var environment = ProcessInfo.processInfo.environment
+        environment["NODE_EXTRA_CA_CERTS"] = "/their/ca.pem"
+        environment["OPENSSL_CONF"] = "/their/openssl.cnf"
+
+        let line = PiLaunch.mcpProbe(engine: engine, client: "/c.mjs")
+        let run = try Self.run(line.argv[0], Array(line.argv.dropFirst()), environment: environment)
+
+        #expect(run.status == 0, "\(run.err)")
+        #expect(run.out == ["arg=/c.mjs", "arg=probe", "NODE_EXTRA_CA_CERTS=/their/ca.pem"])
+    }
 }
