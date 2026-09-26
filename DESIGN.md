@@ -827,8 +827,8 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
   handle centred on it (`resizeHandleWidth`). There is no tab bar and no status line. An agent's
   layout is its thread with its terminal panel under it (Terminal panel, below). The thread column
   is at most 820pt (prose 640, bubbles 600), and the composer is exactly as wide as the column
-  (Thread). Pane dividers are 1pt `lineSubtle`, tinted `focusDivider` where they border the focused
-  pane (between split terminals the TerminalPane board draws `lineStrong`; Known gaps); dragging one
+  (Thread). Pane dividers between split terminals are 1pt `lineStrong` (TerminalPane), tinted
+  `focusDivider` where they border the focused pane; dragging one
   keeps each side at least 160pt (`splitPaneMinSpan`), between 15% and 85%.
 - **Switching agents flips visibility; it never remounts.** Every mounted layout stays in the
   view tree, each in a hosting view of its own, and hidden ones are hidden views. This is what
@@ -3011,7 +3011,7 @@ splits.
   hidden remote terminal is detached and never counts toward the host's smallest-viewer size.
 - **A layout with no thread** (a host's utility terminal) keeps the plain split tree.
 - **Split panes** (TerminalPane): a tab's panes sit side by side (Split right) or stacked, with 1pt
-  dividers the board draws in `lineStrong`. **Not built yet:** in a tab of more than one pane, each
+  `lineStrong` dividers. **Not built yet:** in a tab of more than one pane, each
   pane has a 26pt header on the terminal's surface with a `lineSubtle` hairline under it, 10pt side
   padding and 6pt gaps: the 11pt terminal glyph, the pane's running command or program in Geist Mono
   11, and at the trailing end its host (`desktopcomputer` at 10pt and the host's name, 3pt apart).
@@ -4340,10 +4340,8 @@ below collects the rest, and the places those sentences point here.
     them; ToolRows and Running draw 4pt.
   - A Run (bash) activity line draws `apple.terminal` (`Components/Thread/Activity.swift`); the
     board's symbol is `terminal`.
-  - The terminal's cursor is `lantern` and its selection `running` at 18% dark and 28% light
-    (`NightWatch.swift`); the boards draw a `textPrimary` block cursor and a 13% selection. The
-    terminal font defaults to SF Mono 12.5 (`AppSettings`); the boards set Geist Mono 12 at 1.6.
-  - Split terminals' dividers are `lineSubtle`, the TerminalPane board's `lineStrong`.
+  - The terminal font defaults to SF Mono 12.5 (`AppSettings`); the boards set Geist Mono 12 at
+    1.6.
 - **Sidebar and New thread** (NWNavigation, NavNewThread against `SidebarView.swift` and
   `NewThreadPage.swift`):
   - The New thread composer has no "/ commands" chip, and its placeholder drops ", or / for
