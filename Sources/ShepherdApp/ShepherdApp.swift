@@ -63,7 +63,6 @@ public struct ShepherdMacApp: App {
                 // ordering against server.start() does not matter.
                 .task {
                     vm.applyRemoteListenerSetting()
-                    PiUpdateManager.shared.start()
                     vm.startSkillChecks()
                 }
         }
