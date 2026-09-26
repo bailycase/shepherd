@@ -3689,7 +3689,8 @@ update, switch and removal goes to every host, and a host that is offline catche
 back. The page sits between Instructions and Remote in the nav, with `graduationcap`.
 
 - **Header:** "Skills", then "Instructions and scripts the agent picks up when a task calls for
-  them. Skills are global: every thread and automation on every host gets the same set." (capped at
+  them. Installed skills are global: every thread and automation on every host gets the same set.
+  Skills from your pi setup and pi packages are listed read-only." (capped at
   700pt), and trailing, bottom-aligned: Add from repo… (secondary, `plus`) and Browse skills.sh
   (primary, a glass). Both open sheets (below). The blocks are 18pt apart, the list and the 280pt
   rail 28pt apart.
