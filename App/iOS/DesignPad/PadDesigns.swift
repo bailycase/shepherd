@@ -4,11 +4,11 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-/// Every host's designs on this device (docs/designs.md › Remote): one `RemoteDesignLibrary` per
-/// host over one shared file cache, connected while its host is and offers `designs.v1` (the
-/// host's Design tool experiment on), and each design's canvas, kept for the app's run so coming
-/// back to a design finds it as it was left. A host that doesn't offer designs shows none: the
-/// iOS gate follows the host.
+/// Every host's designs on this device (docs/designs.md › Remote): each host's
+/// `RemoteDesignLibrary` (shared with the iPhone's designs, `HostDesignLibraries`), connected
+/// while its host is and offers `designs.v1` (the host's Design tool experiment on), and each
+/// design's canvas, kept for the app's run so coming back to a design finds it as it was left.
+/// A host that doesn't offer designs shows none: the iOS gate follows the host.
 @MainActor
 @Observable
 final class PadDesigns {
@@ -31,12 +31,9 @@ final class PadDesigns {
     private(set) var rows: [Row] = []
     /// Some connected host offers designs: the sidebar's Designs row shows.
     private(set) var available = false
-    /// The design agents' threads, never listed among the threads (the design is the row).
-    private(set) var designAgents: Set<AgentRef> = []
 
-    @ObservationIgnored let cache: RemoteDesignCache
     @ObservationIgnored private let hosts: MobileHosts
-    @ObservationIgnored private var libraries: [UUID: RemoteDesignLibrary] = [:]
+    @ObservationIgnored private let libraries: HostDesignLibraries
     @ObservationIgnored private var sessions: [UUID: UUID?] = [:]
     @ObservationIgnored private var canvases: [PadDesignRef: PadDesignCanvas] = [:]
     /// Designs on screen, by host: their hosts push changes for these alone.
@@ -56,9 +53,10 @@ final class PadDesigns {
 
     private init(hosts: MobileHosts) {
         self.hosts = hosts
-        let folder = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("ShepherdDesigns", isDirectory: true)
-        cache = RemoteDesignCache(directory: folder, memoryBudget: 48 * 1024 * 1024)
+        libraries = HostDesignLibraries.of(hosts)
+        libraries.observe("pad") { [weak self] host, design, revision, comments in
+            self?.changed(PadDesignRef(host: host, design: design), revision: revision, comments: comments)
+        }
         track()
     }
 
@@ -71,27 +69,22 @@ final class PadDesigns {
             hosts.hosts.map { host in
                 Input(id: host.id, name: host.name, session: host.session, offers: host.phase.isConnected
                         && host.supports(RemoteProtocol.designsCapability),
-                      designs: host.state.designs, agents: host.state.agents.compactMap { agent in agent.designID.map { (agent.id, $0) } })
+                      designs: host.state.designs)
             }
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in self?.track() }
         }
         let live = Set(inputs.map(\.id))
-        for id in Set(libraries.keys).subtracting(live) {
-            libraries.removeValue(forKey: id)
+        for id in Set(sessions.keys).subtracting(live) {
+            libraries.forget(id)
             sessions.removeValue(forKey: id)
         }
         for input in inputs {
-            let library = library(input.id)
+            if let host = hosts.host(input.id) { libraries.connect(host) }
             let connection = input.offers ? input.session : nil
             guard sessions[input.id] != .some(connection) else { continue }
             sessions[input.id] = connection
-            let host = hosts.host(input.id)
-            library.connect(input.offers ? host?.connectedClient : nil, available: input.offers)
             if input.offers {
-                host?.onDesignChanged = { [weak self] design, revision, comments in
-                    self?.changed(PadDesignRef(host: input.id, design: design), revision: revision, comments: comments)
-                }
                 // A new connection: canvases on screen read what changed while it was away.
                 for ref in canvases.keys where ref.host == input.id && onScreen[ref, default: 0] > 0 {
                     Task { await canvases[ref]?.refresh() }
@@ -107,15 +100,11 @@ final class PadDesigns {
         var session: UUID?
         var offers: Bool
         var designs: [Design]
-        var agents: [(AgentID, DesignID)]
     }
 
     private func derive(_ inputs: [Input]) {
         var next: [Row] = []
-        var agents: Set<AgentRef> = []
         for input in inputs {
-            // A host's design agents are its designs' chats wherever the host serves them or not.
-            for (agent, _) in input.agents { agents.insert(AgentRef(host: input.id, agent: agent)) }
             guard input.offers else { continue }
             for design in input.designs where !design.buildsSystem {
                 next.append(Row(ref: PadDesignRef(host: input.id, design: design.id), name: design.name,
@@ -125,7 +114,6 @@ final class PadDesigns {
         }
         next.sort { $0.lastActive != $1.lastActive ? $0.lastActive > $1.lastActive : $0.name < $1.name }
         if next != rows { rows = next }
-        if agents != designAgents { designAgents = agents }
         let offers = inputs.contains(where: \.offers)
         if offers != available { available = offers }
         PadDesignRendering.shared.prune(keeping: Set(next.map(\.ref)).union(canvases.keys.filter { onScreen[$0, default: 0] > 0 }))
@@ -139,12 +127,7 @@ final class PadDesigns {
         hosts.host(ref.host)?.state.designs.first { $0.id == ref.design }
     }
 
-    func library(_ host: UUID) -> RemoteDesignLibrary {
-        if let library = libraries[host] { return library }
-        let library = RemoteDesignLibrary(hostID: host, cache: cache)
-        libraries[host] = library
-        return library
-    }
+    func library(_ host: UUID) -> RemoteDesignLibrary { libraries.library(host) }
 
     // MARK: Canvases
 
@@ -162,7 +145,7 @@ final class PadDesigns {
         let count = max(0, onScreen[ref, default: 0] + (visible ? 1 : -1))
         onScreen[ref] = count == 0 ? nil : count
         canvas(ref).setActive(count > 0)
-        library(ref.host).watch(Set(onScreen.keys.filter { $0.host == ref.host }.map(\.design)))
+        libraries.watch(Set(onScreen.keys.filter { $0.host == ref.host }.map(\.design)), on: ref.host, for: "pad")
     }
 
     /// The host pushed a change to a design on screen: its canvas pulls what changed.
@@ -175,9 +158,8 @@ final class PadDesigns {
 
     /// Lists every serving host's designs again (the Designs list's pull).
     func refresh() async {
-        for (id, library) in libraries {
-            guard case .some(.some) = sessions[id] else { continue }
-            await library.refresh()
+        for (id, session) in sessions where session != nil {
+            await library(id).refresh()
         }
     }
 }
@@ -190,11 +172,12 @@ typealias PadRecent = DesignRecents.Entry<PadDesigns.Row>
 
 extension PadDesigns {
     /// Recents with the designs among the threads, derived once per change of either list. A
-    /// design agent's thread is never listed: the design is its row (decision 6).
+    /// design agent is never a thread (FleetModel); the row Fleet gives its design is the
+    /// phone's, and here the design is this store's row (decision 6).
     func recents(_ threads: [FleetThreadRow]) -> [PadRecent] {
-        let input = RecentsInput(threads: threads, designs: rows, agents: designAgents)
+        let input = RecentsInput(threads: threads, designs: rows)
         if let cached = recentsCache, cached.input == input { return cached.output }
-        let output = DesignRecents.merge(threads: threads.filter { !designAgents.contains($0.ref.agentRef) }, designs: rows) { $0.lastActive }
+        let output = DesignRecents.merge(threads: threads.filter { $0.design == nil }, designs: rows) { $0.lastActive }
         recentsCache = (input, output)
         return output
     }
@@ -202,6 +185,5 @@ extension PadDesigns {
     struct RecentsInput: Equatable {
         var threads: [FleetThreadRow]
         var designs: [Row]
-        var agents: Set<AgentRef>
     }
 }

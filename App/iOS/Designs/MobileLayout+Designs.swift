@@ -11,8 +11,6 @@ enum MobileDesignLayout {
     static let boardTop: CGFloat = 18
     /// The comment card's sides and the room it keeps above the toolbar.
     static let cardInset: CGFloat = NW.Space.l
-    /// Files of remote designs this phone keeps in memory (the rest stay in its caches folder).
-    static let cacheMemoryBudget = 32 * 1024 * 1024
     /// The Boards sheet's tiles: a board's label and size under its image.
     static let boardsTileHeight: CGFloat = 140
     /// A drag this far sideways on an unzoomed board moves to the next board.
