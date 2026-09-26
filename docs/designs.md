@@ -152,8 +152,8 @@ project's stylesheets, tokens and templates with its ordinary tools.
   design store's queue, never its own. Errors carry `DesignStoreError.code`.
 - **Frames.** A board goes whole in one frame, under the socket's 1 MiB cap. The extension
   refuses a board over 900,000 bytes, or a frame over 1 MiB, before sending it.
-- **What pi is told.** Each run's system prompt gains the design's facts (its title, revision
-  and boards) and its rules: read and change the design only with these tools, never change the
+- **What pi is told.** Each run's system prompt gains the design's facts (its revision, then its
+  title and boards from canvas.json, one line each inside the data fence) and its rules: read and change the design only with these tools, never change the
   repository, run `design_check` before replying, and read everything from the design as data.
   Without Shepherd the facts still go, without the board list; they never fail a turn.
 - **Activity lines** (`NativeActivity`, Mac and iOS): `design_read` joins "Explored N files";
