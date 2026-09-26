@@ -387,9 +387,9 @@ struct ThreadMotionTests {
         #expect(recording.inBetween.isEmpty)
     }
 
-    /// A question takes the field's place: the card grows upward over frames while its control
-    /// row stays exactly where it was.
-    @Test(.timingSensitive) func aQuestionGrowsTheCardUpwardWhileItsControlsStayPut() async throws {
+    /// A question takes the composer's place: the dock fades in over frames where the card sat,
+    /// its bottom edge never moving.
+    @Test(.timingSensitive) func aQuestionDockFadesInWhereTheCardSat() async throws {
         let thread = MotionThread(Fixtures.snapshot([]))
         defer { thread.close() }
         try await thread.waitUntilReady()
@@ -400,14 +400,11 @@ struct ThreadMotionTests {
             thread.serve(Fixtures.snapshot([], dialogs: [dialog], revision: 2))
         }
 
-        // The fade over the card sits a level off the window's background: read the card's edge
-        // by a visible difference.
-        let top = try #require(recording.settled.firstRow(differingFrom: recording.before, by: 0.02), "the card grew")
+        #expect(recording.settled.firstRow(differingFrom: recording.before, by: 0.02) != nil, "the dock came")
+        #expect(!recording.inBetween.isEmpty, "it fades in over frames")
         let bottom = try #require(recording.settled.lastRow(differingFrom: recording.before))
-        let tops = recording.inBetween.compactMap { $0.firstRow(differingFrom: recording.before, by: 0.02) }
-        #expect(tops.contains { $0 > top + 4 }, "caught growing: \(tops) toward \(top)")
         let bottoms = recording.frames.compactMap { $0.lastRow(differingFrom: recording.before) }
-        #expect(bottoms.allSatisfy { $0 <= bottom }, "nothing below the field moved: \(bottoms), field ends at \(bottom)")
+        #expect(bottoms.allSatisfy { $0 <= bottom }, "nothing below the card's bottom edge moved: \(bottoms), the dock ends at \(bottom)")
     }
 
     /// Send and Stop are one button: when a turn starts, the glyph and the fill blend in place

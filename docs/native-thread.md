@@ -176,6 +176,9 @@ events come out on stdout, one record per LF.
   - A question with a timeout disappears when pi resolves it on its own.
   - The first answer wins, whether it comes from this Mac or a remote client. A second answer
     gets `dialog_unavailable`.
+  - `abort` refuses every question pi waits on first (an `extension_ui_response` with
+    `cancelled`), then stops the turn: a question has no Dismiss, and a turn waiting on an
+    answer would not stop.
   - Questions need no pi patch; they are part of pi's RPC protocol.
 - **Widgets:** `setWidget` text (ANSI stripped) becomes a `NativeThreadWidget`: at most 16, 4 KiB
   of text each, 32 KiB in total. Machine payloads, `notify`, `setStatus`, and `setTitle` are
@@ -574,7 +577,8 @@ components ([DESIGN.md](../DESIGN.md) specifies their look):
     (`QueueStackState`: the editor, Undo rows, expansion, a drag) around `NativeQueueRules`
   - the Send menu, and the keys that send while pi works (↩ per Settings, ⌘↩ the other)
   - the slash menu, fed from pi's command registry
-  - the question panel and extension widgets
+  - the question dock (`QuestionDock`, pi's question or a subagent's in the card's place, from
+    `NativeQuestionPrompt`) and extension widgets
 - **`Subagents`** and **`SubagentPresentation`:** the tray above the composer, with the store's
   tray (`NativeSubagentTray`) mapped onto the components' values.
 - **`SubagentInspector`:** the inspector, hosted over the side pane's tabs
