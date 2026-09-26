@@ -6,21 +6,24 @@ import ShepherdProtocol
 /// before the thread answers anything, so the first snapshot every client gets already shows it
 /// as a pending row. Its send's operation id is the agent's id, so a client that created the
 /// agent draws that same row (`preview`) while pi starts, and the row keeps its identity when
-/// the host's lands and when pi starts the turn.
+/// the host's lands and when pi starts the turn. Images attached on the New thread page go to pi
+/// with it.
 public struct OpeningPrompt: Equatable, Sendable {
     public let text: String
+    public let images: [NativeImage]
     public let operationID: UUID
 
-    /// Nil for a blank prompt, which is never sent.
-    public init?(_ text: String?, agentID: AgentID) {
+    /// Nil for a blank prompt, which is never sent (nor are images without one).
+    public init?(_ text: String?, images: [NativeImage] = [], agentID: AgentID) {
         guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         self.text = text
+        self.images = images
         operationID = UUID(uuidString: agentID.rawValue) ?? UUID()
     }
 
     /// The pending row the host's snapshot carries for it once pi serves.
     public func pendingRow(at timestamp: Double) -> NativeThreadMessage {
-        .pendingSend(operationID: operationID, text: text, images: 0, timestamp: timestamp)
+        .pendingSend(operationID: operationID, text: text, images: images.count, timestamp: timestamp)
     }
 
     /// A new agent's thread while its pi starts: nothing but this prompt, waiting for pi. `base`

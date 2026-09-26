@@ -604,7 +604,8 @@ variables are blanked.
   - native thread requests, with the context and Compact now behind `native.context.v1`
   - attach, detach, input, resize, and acknowledged paste
   - pane open, close, and split resize
-  - `listDir`, `listModels`, `addSpace`, and `createAgent` with `creationOptions`
+  - `listDir`, `listModels`, `addSpace`, and `createAgent` with `creationOptions` (and the
+    opening prompt's images behind `agent.create.images.v1`)
   - chunked uploads (32 MiB per file)
   - `agentQuery`/`agentAction`: rename, delete, reorder, review, subagents, search, worktree
     info/setup/finalize/delete, `terminals` (what each terminal pane runs; answered by the

@@ -77,13 +77,28 @@ enum NewThreadPlaces {
     static func host(of section: NWPlaceSection) -> UUID? {
         section.id == "local" ? nil : UUID(uuidString: section.id)
     }
+
+    /// Why the attached images cannot go with a new thread there, or nil: a host from before
+    /// `createAgentImagesCapability` would drop them, and one send takes only so much. `host` is
+    /// nil for This Mac.
+    static func imagesRefusal(_ images: [NativeImage], host: (name: String, takesImages: Bool)?) -> String? {
+        guard !images.isEmpty else { return nil }
+        if let host, !host.takesImages { return "Update Shepherd on \(host.name) to start a thread with images." }
+        guard NativeImage.fitOneSend(images) else {
+            return "The images come to over \(NativeImage.maxBytesPerSend / 1024 / 1024) MiB together. Remove one to send."
+        }
+        return nil
+    }
 }
 
-/// The New thread page's draft (NavNewThread): what to do, where, with which model and level,
-/// and whether in a new worktree. Owned by the view model, so it survives the page going away.
+/// The New thread page's draft (NavNewThread): what to do, with which images, where, with which
+/// model and level, and whether in a new worktree. Owned by the view model, so it survives the
+/// page going away.
 @MainActor @Observable
 final class NewThreadState {
     var prompt = ""
+    /// Go to pi with the opening prompt, as a thread's composer sends them.
+    var attachments = ComposerAttachments()
     private(set) var place: NewThreadPlace?
     var worktree = false
     /// The model and level the thread starts with; a blank model is the target's default.
@@ -131,6 +146,34 @@ final class NewThreadState {
         error = nil
         if host != nil, vm.remoteHosts.connections.first(where: { $0.id == host })?.supportsWorktreeCreation != true { worktree = false }
         loadDefaults(vm)
+    }
+
+    /// Dropped or pasted images, resized on the way in as the thread's composer does.
+    func attach(_ providers: [NSItemProvider]) {
+        attachments.clearError()
+        Task {
+            let urls = await AppImageDrop.resolve(providers)
+            attachments.add(urls: urls)
+        }
+    }
+
+    /// Images from the file importer.
+    func attach(urls: [URL]) {
+        attach(urls.map { NSItemProvider(contentsOf: $0) ?? NSItemProvider() })
+    }
+
+    /// Why the attached images cannot go where the thread would start, or nil.
+    func imagesRefusal(_ vm: ShepherdViewModel) -> String? {
+        let host: (name: String, takesImages: Bool)? = place?.host.flatMap { id in
+            vm.remoteHosts.connections.first { $0.id == id }.map { ($0.config.name, $0.supportsCreateAgentImages) }
+        }
+        return NewThreadPlaces.imagesRefusal(attachments.images, host: host)
+    }
+
+    /// What the line under the card says: a failed start, an image left out, or why the images
+    /// cannot go.
+    func notice(_ vm: ShepherdViewModel) -> String? {
+        error ?? attachments.error ?? imagesRefusal(vm)
     }
 
     func setModel(_ id: String) {
@@ -218,7 +261,7 @@ final class NewThreadState {
             if loadingDefaults { return "Loading \(connection.config.name)'s defaults…" }
         }
         if prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Describe the task first." }
-        return nil
+        return imagesRefusal(vm)
     }
 
     /// Send: creates the agent with the prompt as its opening message, in a new worktree when
@@ -229,6 +272,7 @@ final class NewThreadState {
         let chosenModel = model.trimmingCharacters(in: .whitespaces)
         let level = thinking.clamped(to: thinkingLevels(vm))
         let useWorktree = worktree && offersWorktree(vm)
+        let images = attachments.images
         starting = true
         error = nil
         Task {
@@ -245,13 +289,14 @@ final class NewThreadState {
                         hostID: host, spaceID: space.id, cwd: space.path, model: chosenModel.isEmpty ? nil : chosenModel,
                         thinking: level, initialPrompt: text,
                         worktreeBranch: useWorktree ? NewThreadRules.generatedBranch() : nil,
-                        worktreeBase: base?.base, worktreeFetchFirst: base?.fetchFirst)
+                        worktreeBase: base?.base, worktreeFetchFirst: base?.fetchFirst, initialImages: images)
                 } else {
                     guard let space = vm.state.spaces.first(where: { $0.id == place.space }) else {
                         throw AgentStartFailure(message: "That project is gone.")
                     }
                     var config = NewAgentConfig(spaceID: space.id, workingDirectory: space.path,
                                                 model: chosenModel.isEmpty ? nil : chosenModel, thinking: level, initialPrompt: text)
+                    config.initialImages = images
                     if useWorktree {
                         let repo = space.path
                         let branch = GitWorktree.generatedBranch()
@@ -266,10 +311,13 @@ final class NewThreadState {
                         config.worktreeBase = base
                         config.worktreePath = path
                     }
-                    try await vm.startAgent(config)
+                    try await vm.startAgent(config, focusWindow: false)
                 }
                 prompt = ""
+                attachments.removeAll()
                 worktree = false
+            } catch RemoteHostClientError.rejected(_, let message) {
+                self.error = message
             } catch {
                 self.error = (error as? LocalizedError)?.errorDescription ?? "\(error)"
             }

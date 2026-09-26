@@ -332,6 +332,27 @@ extension PreviewTests {
         }
     }
 
+    /// The New thread composer with two images attached (drop, paste or the paperclip), and with
+    /// a fifth refused ("At most 4 images per message.") under the card.
+    @Test(arguments: ["new-thread-attachments", "new-thread-attachments-full"])
+    func newThreadWithAttachments(surface: String) async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        try await workspace.seed(ShepherdState(spaces: [Space(name: "shepherd", path: workspace.dir.path)]))
+        vm.openNewThread()
+        vm.newThread.prompt = "Match the sidebar to these screenshots"
+        let names = surface == "new-thread-attachments" ? ["sidebar-light.png", "sidebar-dark.png"]
+            : ["sidebar-light.png", "sidebar-dark.png", "needs-you.png", "recents.png", "hosts.png"]
+        vm.newThread.attachments.add(names.map { name in
+            (name, ImageAttachment(name: name, image: NativeImage(mimeType: "image/png", data: Data(count: 8)),
+                                   thumbnail: Image(systemName: "photo")))
+        })
+        try await Preview.render(surface, size: CGSize(width: 1280, height: 760)) {
+            RootView(vm: vm)
+        }
+    }
+
     /// The workplace chip's menu: This Mac's projects (nested ones flat), a host's, Add folder…
     /// on each, and the worktree option.
     @Test func newThreadPlaceMenu() async throws {

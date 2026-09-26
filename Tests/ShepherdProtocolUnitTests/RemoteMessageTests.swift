@@ -292,7 +292,8 @@ struct RemoteRequestTests {
         .addSpace(id: 5, path: "/Users/demo/Developer/project"),
         .createAgent(id: 6, spaceID: S.space, cwd: "/tmp/checkout", model: "anthropic/claude-4", thinking: .high,
                      initialPrompt: "fix the \"thing\"\nplease", worktreeBranch: "worktree/a", worktreeBase: "origin/release",
-                     worktreeFetchFirst: false),
+                     worktreeFetchFirst: false,
+                     initialImages: [NativeImage(mimeType: "image/png", data: Data([0x89, 0x50]), name: "shot.png")]),
         .upload(id: 50, action: .begin(sessionID: S.session, name: "image.png", size: 20)),
         .creationOptions(id: 54, spaceID: S.space, cwd: "/host/repo", fetchFirst: false),
         .agentQuery(id: 31, agentID: S.agent, query: .children),
@@ -375,6 +376,17 @@ struct RemoteRequestTests {
         let object = try Wire.object(RemoteRequest.automation(id: 1, automationID: S.automation, request: .run))
         #expect(object["automationID"] as? String == "automation")
         #expect(object["type"] as? String == "automation")
+    }
+
+    /// An older host decodes a createAgent with images as one without them, so a client asks
+    /// for `createAgentImagesCapability` first; the images travel as base64 under their own key.
+    @Test func aCreateAgentsImagesTravelUnderTheirOwnKey() throws {
+        let image = NativeImage(mimeType: "image/jpeg", data: Data([1, 2, 3]))
+        let request = RemoteRequest.createAgent(id: 7, spaceID: S.space, cwd: nil, model: nil, thinking: nil,
+                                                initialPrompt: "look", initialImages: [image])
+        let images = try #require(try Wire.object(request)["initialImages"] as? [[String: Any]])
+        #expect(images.map { $0["mimeType"] as? String } == ["image/jpeg"])
+        #expect(images.first?["data"] as? String == Data([1, 2, 3]).base64EncodedString())
     }
 
     @Test func aMinimalCreateAgentOmitsEveryOptional() throws {
@@ -668,6 +680,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.thinkingLevelsCapability,
             RemoteProtocol.changesCapability,
             RemoteProtocol.nativeContextCapability,
+            RemoteProtocol.createAgentImagesCapability,
             RemoteProtocol.instructionsCapability, RemoteProtocol.suggestionsCapability,
             RemoteProtocol.hostSettingsCapability, RemoteProtocol.skillsCapability,
         ]
@@ -690,6 +703,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.automationsCapability == "automations.v1")
         #expect(RemoteProtocol.thinkingLevelsCapability == "thinking.levels.v1")
         #expect(RemoteProtocol.nativeContextCapability == "native.context.v1")
+        #expect(RemoteProtocol.createAgentImagesCapability == "agent.create.images.v1")
         #expect(RemoteProtocol.instructionsCapability == "instructions.v1")
         #expect(RemoteProtocol.suggestionsCapability == "suggestions.v1")
         #expect(RemoteProtocol.hostSettingsCapability == "hostSettings.v1")

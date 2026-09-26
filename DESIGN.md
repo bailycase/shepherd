@@ -1092,11 +1092,21 @@ one. The New agent sheet (⇧⌘T) stays for its directory and base fields.
 - **Heading:** "What should the agent work on?" in Geist 26 semibold, tracked −2%. This is outside
   the ramp; set it with `Font.nwSans`.
 - **Composer:** the thread's `NWComposer`, 720pt wide, drawn focused (a `textTertiary` border and a
-  3pt `bgSelected` ring). The placeholder is "Describe the task…". Its control row is the workplace
-  chip, the model chip, Thinking with its level (only while the model takes one), and Send, a 28pt
-  `lantern` circle at 35% until there is a prompt and a project. ↩ sends and ⇧↩ adds a line. Why
-  Send cannot go is its tooltip ("Describe the task first.", "Add a project to start a thread.",
-  "Loading build-01's defaults…"), and a failure shows under the card in `failed`.
+  3pt `bgSelected` ring). The placeholder is "Describe the task…". Its control row is attach, the
+  workplace chip, the model chip, Thinking with its level (only while the model takes one), and
+  Send, a 28pt `lantern` circle at 35% until there is a prompt and a project. ↩ sends and ⇧↩ adds a
+  line. Why Send cannot go is its tooltip ("Describe the task first.", "Add a project to start a
+  thread.", "Loading build-01's defaults…"), and a failure shows under the card in `failed`.
+- **Images** (the user's decision, 2026-09-25: "Build it (Recommended)") attach as in a thread's
+  composer (Composer › Images, `ComposerAttachments`): by drop, paste, or the paperclip, the
+  composer's attach button, always shown here; resized on the way in, at most four of 2 MiB each,
+  as chips above the field. They go to pi in the opening prompt itself, on this Mac and on a host
+  (`createAgent`'s images, docs/native-thread.md). What cannot go shows under the card in `failed`
+  and holds Send: the composer's own messages, "The images come to over 5 MiB together. Remove one
+  to send.", and on a host from before `agent.create.images.v1` "Update Shepherd on build-01 to
+  start a thread with images.", which would otherwise drop them; nothing is created. Images too
+  big for one remote request fail the send the same way ("Images exceed the remote payload
+  limit. Send fewer or smaller images.").
 - **Workplace chip** (`NWPlaceChipLabel`): a 12pt `textSecondary` folder glyph and the project in
   mono ("shepherd"), a `textTertiary` "·", a display glyph and the host in mono ("This Mac"), and a
   10pt `textTertiary` chevron, as a 26pt chip in 12 `textSecondary`. It picks where the thread runs,
@@ -1116,8 +1126,8 @@ one. The New agent sheet (⇧⌘T) stays for its directory and base fields.
 - **Model and Thinking:** the target's defaults (Settings ▸ Agents on this Mac, the host's
   `creationOptions` on a host), changed through the model picker (ModelPicker) and the thinking menu,
   which open under the card, over what is beneath.
-- **Send** creates the agent with the prompt as its opening message (on this Mac `startAgent`, on a
-  host `createAgent`), opens its thread, and clears the draft.
+- **Send** creates the agent with the prompt and its images as its opening message (on this Mac
+  `startAgent`, on a host `createAgent`), opens its thread, and clears the draft.
 - **Suggestions:** the cards under the composer, 38pt below it (the column's 24pt gap plus 14),
   three to the 720pt row, 10pt apart. Each is padded 12pt above and below and 14pt at the sides,
   radius 8, with a 1pt `lineSubtle` border, hover `bgHover`, and 5pt gaps: a kicker in 11.5
@@ -4301,9 +4311,8 @@ below collects the rest, and the places those sentences point here.
   - Split terminals' dividers are `lineSubtle`, the TerminalPane board's `lineStrong`.
 - **Sidebar and New thread** (NWNavigation, NavNewThread against `SidebarView.swift` and
   `NewThreadPage.swift`):
-  - The New thread composer has no attach button and no "/ commands" chip, and its placeholder
-    drops ", or / for commands": no pi runs before the thread exists to list its commands, and the
-    opening prompt carries no images.
+  - The New thread composer has no "/ commands" chip, and its placeholder drops ", or / for
+    commands": no pi runs before the thread exists to list its commands.
 - **A pi dialog posts no notification** (Notifications and Live Activities › The catalog):
   a confirm, select, input or editor dialog shows in the thread, but only a tool named like
   `ask` or `question` sets `blocked`, so any other question reaches no one outside the window

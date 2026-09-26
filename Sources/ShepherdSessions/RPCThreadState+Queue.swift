@@ -20,7 +20,7 @@ import ShepherdRemote
 ///   position, with pi's id. Until then a prompt Shepherd sent shows as a pending row.
 extension RPCThreadState {
     /// Images in one prompt, before base64 (RPCSession's stdin queue holds 8 MiB).
-    static let imageBytesLimit = 5 * 1024 * 1024
+    static let imageBytesLimit = NativeImage.maxBytesPerSend
     /// The queue's text in one snapshot; a send past it is refused.
     static let queueTextLimit = 64 * 1024
     static let queueItemLimit = 32
