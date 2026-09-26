@@ -82,8 +82,9 @@ struct ModelCatalog: Sendable {
 
     // MARK: This Mac's catalog
 
-    /// Each pi catalog's derived catalog, and the derivation in flight, by the catalog's identity.
-    @MainActor private static var local: [ObjectIdentifier: ModelCatalog] = [:]
+    /// Each pi catalog's derived catalog, and the derivation in flight, by the catalog's identity
+    /// (the source is kept with its result, so an identity is never reused).
+    @MainActor private static var local: [ObjectIdentifier: (source: PiModelCatalog, catalog: ModelCatalog)] = [:]
     @MainActor private static var loadingLocal: [ObjectIdentifier: Task<ModelCatalog, Never>] = [:]
 
     /// `pi --list-models` on this Mac (`source`, a `PiSetup`'s catalog), asked once per catalog
@@ -92,7 +93,7 @@ struct ModelCatalog: Sendable {
     @MainActor
     static func loadLocal(from source: PiModelCatalog) async -> ModelCatalog {
         let key = ObjectIdentifier(source)
-        if let cached = local[key] { return cached }
+        if let cached = local[key] { return cached.catalog }
         let task = loadingLocal[key] ?? Task.detached(priority: .utility) {
             let entries = source.entries()
             return ModelCatalog(entries, levels: ModelListing(entries: entries, defaultModel: nil,
@@ -101,7 +102,7 @@ struct ModelCatalog: Sendable {
         loadingLocal[key] = task
         let catalog = await task.value
         loadingLocal[key] = nil
-        if !catalog.isEmpty { local[key] = catalog }
+        if !catalog.isEmpty { local[key] = (source, catalog) }
         return catalog
     }
 
