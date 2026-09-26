@@ -502,8 +502,10 @@ extension TerminalConfiguration {
         "alt+cmd+left", "alt+cmd+right",
         // ⌘↑/↓: previous/next agent in sidebar order. ⌥⌘↑/↓: turn jumps.
         "cmd+up", "cmd+down", "alt+cmd+up", "alt+cmd+down",
-        // ⇧⌘S sidebar · ⇧⌘B review pane · ⇧⌘M model picker · ⌘. stop · ⌘I inspect.
+        // ⇧⌘S sidebar · ⇧⌘B side pane · ⇧⌘M model picker · ⌘. stop · ⌘I inspect.
         "shift+cmd+s", "shift+cmd+b", "shift+cmd+m", "cmd+period", "cmd+i",
+        // ⌃1: the side pane's Changes tab (⌃2–4 wait for its other tabs).
+        "ctrl+one", "ctrl+physical:one",
         // ⌘1–9: the first nine Recents rows.
         "cmd+one", "cmd+two", "cmd+three", "cmd+four", "cmd+five",
         "cmd+six", "cmd+seven", "cmd+eight", "cmd+nine",

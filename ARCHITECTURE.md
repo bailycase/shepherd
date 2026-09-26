@@ -76,7 +76,7 @@ decodes on a concurrent queue while its session holds its later records in order
 
 - selection and focus
 - collapsed spaces
-- the right pane (inspector or review)
+- the side pane (its Changes tab, or the subagent inspector over it) and pi's dots on it
 - sheets, settings, appearance, and remote hosts
 
 It calls the server directly, with no socket, and adopts its `onStateChanged` snapshots. A
@@ -114,18 +114,18 @@ SwiftUI's appearance by itself: Ghostty surfaces (a live `setTheme`) and the
 `shepherd-active-theme` variant marker watched by external editors such as Neovim.
 
 **Layout.** `RootView` lays the window out itself: the sidebar, the toolbar, the workspace, and
-the right pane (`RightPaneSplit`). A destination page (New thread, Automations, Hosts;
-`MainDestination`) covers the whole main column while every mounted layout stays mounted and
-hidden under it, as when switching agents.
+the side pane (`RightPaneSplit`, `SidePaneView`). A destination page (New thread, Automations,
+Hosts; `MainDestination`) covers the whole main column while every mounted layout stays mounted
+and hidden under it, as when switching agents.
 
 **Sidebar.** `SidebarDerivation` (`SidebarModel.swift`) derives Needs you and Recents from This
-Mac's state and each connected host's, once per change (`sidebarLists`). Recents are ordered by
+Mac's state and each host's, once per change (`sidebarLists`). Recents are ordered by
 `Agent.lastActiveAt`, which the host sets when a turn starts or ends or a message is sent; Needs you
 reads `Agent.waitingOn`, the question the agent's thread asks, which the host sets from its thread
 state. Both are live state: broadcast to remote clients, and `waitingOn` is never written to
-state.json. `ShellLayout` (`AppLayout+Navigation.swift`) is the pure
-function that decides, from the window's width, whether the sidebar docks or overlays and
-whether the right pane docks or overlays the agent's layout. The right pane wraps the whole
+state.json. `ShellLayout` (`AppLayout+Navigation.swift`) is the pure function that decides, from
+the window's width, whether the sidebar docks or overlays and whether the side pane docks or
+overlays the agent's layout. The side pane wraps the whole
 layout (`AgentLayoutView` in `WorkspaceView.swift`), never one of its panes, so a terminal split
 beside the thread never narrows what the dock rule measures.
 
@@ -209,7 +209,8 @@ authentication boundary ([SECURITY.md](SECURITY.md)).
     only after the dialog claims the token ([docs/agent-coordination.md](docs/agent-coordination.md))
   - `automation_*`, through `onAutomationRequest`
   - `notify`
-- **`shepherd-review.ts`:** `review_diff`, which opens the review pane.
+- **`shepherd-review.ts`:** `review_diff`, which readies the side pane's Changes tab (the user
+  opens it; the tab and the header's button take a dot).
 - **`shepherd-subagents.ts`:** publishes subagent runs with `setAgentChildren`.
 - **`shepherd-children.ts`:** opens a `helloChildren` control connection for subagent commands.
 

@@ -31,7 +31,9 @@ final class FakeThread {
         var body: some View {
             VStack(spacing: 0) {
                 if header {
-                    ThreadHeader(store: store, project: "project", title: "Thread", toggleReview: {}, toggleSubagents: {}, rename: {})
+                    ThreadHeader(store: store, project: "project", title: "Thread",
+                                 branch: AgentBranchLabel(kind: .worktree, branch: "pi/thread", changedFiles: 2),
+                                 togglePane: {}, showChanges: {}, rename: {})
                 }
                 ThreadView(store: store, active: visibility.active, isFocused: visibility.focused, request: request, commandKey: "fake")
             }

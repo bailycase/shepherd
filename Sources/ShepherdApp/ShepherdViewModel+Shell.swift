@@ -25,32 +25,8 @@ extension ShepherdViewModel {
     }
 }
 
-/// The toolbar's pane toggles: each lights up while its own pane is showing.
+/// The side pane's state, as the toolbar and tests read it.
 extension ShepherdViewModel {
+    /// The Changes tab is on screen.
     var isReviewPaneShowing: Bool { rightPaneContent == .review }
-
-    var isInspectorShowing: Bool {
-        if case .inspector = rightPaneContent { return true }
-        return false
-    }
-
-    /// Review toggle: closes the review when it is showing; otherwise shows it (closing an
-    /// inspector that covers it, or opening a review).
-    func toggleReviewPane() {
-        if isInspectorShowing {
-            closeInspector()
-            if rightPaneContent == .review { return }
-        }
-        openUserReview()
-    }
-
-    /// Subagents toggle: closes the inspector, or inspects the thread's current subagent (⌘I).
-    func toggleSubagentPane() {
-        if isInspectorShowing { closeInspector() } else { sendThreadCommand(.inspectSubagent) }
-    }
-
-    private func closeInspector() {
-        if let remote = selectedRemoteAgent { subagentInspector.remoteRuns.removeValue(forKey: remote) }
-        else if let id = selectedAgentID { subagentInspector.runByAgent.removeValue(forKey: id) }
-    }
 }

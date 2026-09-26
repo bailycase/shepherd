@@ -36,7 +36,7 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .focusNextPane: return "Focus Next Pane"
         case .focusPreviousPane: return "Focus Previous Pane"
         case .toggleSidebar: return "Show or Hide Sidebar"
-        case .toggleRightPane: return "Show or Hide Review Pane"
+        case .toggleRightPane: return "Show or Hide Side Pane"
         case .modelPicker: return "Choose Model…"
         case .stopAgent: return "Stop Agent"
         case .previousTurn: return "Previous Turn"

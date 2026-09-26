@@ -9,7 +9,7 @@ import Testing
 @testable import ShepherdApp
 
 /// The toolbar's and workspace's motion, recorded from off-screen windows: the status pill
-/// easing between states while its clock ticks without motion, the counters rolling, the
+/// easing between states while its clock ticks without motion, the branch chip's count rolling, the
 /// toolbar replaced at once when switching agents, and the empty workspace cross-fading. Only the
 /// instant rules run on CI: catching a motion mid-way depends on the machine (`.timingSensitive`).
 @Suite("Shell motion", .mainActorExclusive)
@@ -18,28 +18,31 @@ struct ShellMotionTests {
     // MARK: Toolbar
 
     @MainActor @Observable
-    final class Counters {
-        var text: String? = "3 turns · 12k ctx"
+    final class Checkout {
+        var changedFiles = 3
     }
 
-    /// The toolbar's counters roll as the thread reports them.
-    @Test(.timingSensitive) func theToolbarCountersRoll() async {
-        let counters = Counters()
+    /// The branch chip's count of changed files rolls as the host reads the checkout again.
+    @Test(.timingSensitive) func theBranchChipsCountRolls() async {
+        let checkout = Checkout()
         let size = CGSize(width: 600, height: NWToolbarMetrics.height)
-        let window = OffscreenWindow(size: size, dark: false, CountersToolbar(counters: counters))
+        let window = OffscreenWindow(size: size, dark: false, ChipToolbar(checkout: checkout))
         defer { window.close() }
         let row = CGRect(x: 0, y: size.height / 2, width: size.width, height: 1)
 
-        let recording = await MotionProbe.record(window, region: row) { counters.text = "4 turns · 18k ctx" }
+        let recording = await MotionProbe.record(window, region: row) { checkout.changedFiles = 4 }
 
         #expect(!recording.inBetween.isEmpty, "the digits roll")
     }
 
-    private struct CountersToolbar: View {
-        let counters: Counters
+    private struct ChipToolbar: View {
+        let checkout: Checkout
 
         var body: some View {
-            NWThreadToolbar("Title", counters: counters.text, options: { EmptyView() })
+            NWThreadToolbar("Title", project: "Shepherd") {
+                NWBranchChip(kind: .worktree, branch: "pi/branch", changedFiles: checkout.changedFiles)
+                    .nwAnimation(.content, value: checkout.changedFiles)
+            } trailing: { EmptyView() }
         }
     }
 
@@ -91,7 +94,7 @@ struct ShellMotionTests {
             let store = vm.threadStores.store(for: agent.agent.id)
             try await eventuallyOnMain("\(agent.agent.name)'s thread to load", timeout: .seconds(20)) { store.ready }
         }
-        vm.toggleReviewPane()
+        vm.toggleRightPane()
         #expect(vm.isReviewPaneShowing)
         _ = await MotionProbe.record(window, timeout: 1) {}
 
