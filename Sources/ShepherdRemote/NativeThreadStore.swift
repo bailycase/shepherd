@@ -39,6 +39,12 @@ public struct NativeThreadRow: Equatable, Identifiable, Sendable {
     public var designComment: UUID? = nil
     /// A user row carrying a comment with the reply to it below.
     public var commentAnswered = false
+    /// Pencil markup (`NativeMessageOrigin.designMarkup`): on a user row, the marks and notes its
+    /// one message carried, which a design's chat draws as "Read your markup · 2 strokes · 2 notes".
+    public var designMarkup: NativeMarkupCounts? = nil
+    /// On a reply, the comments the design agent proposed from markup (`markup_propose`), which a
+    /// design's chat draws as cards with Apply and Keep as comments.
+    public var markupProposals: NativeMarkupProposals? = nil
 
     public var id: String { turn.id }
     public var isUser: Bool { turn.isUser }
@@ -419,6 +425,7 @@ public final class NativeThreadStore {
                 var row = NativeThreadRow(turn: turn, presentation: nil, live: false, promptText: nil, startedAt: nil)
                 row.designComment = Self.designComment(turn)
                 row.commentAnswered = row.designComment != nil && turns.indices.contains(index + 1) && !turns[index + 1].isUser
+                row.designMarkup = Self.designMarkup(turn)
                 rows.append(row)
                 continue
             }
@@ -442,6 +449,7 @@ public final class NativeThreadStore {
             var row = NativeThreadRow(turn: turn, presentation: presentation, live: isLive, promptText: prompt,
                                       startedAt: startedAt, recordedTurn: recordedTurn, changes: card)
             row.designComment = opener.flatMap(Self.designComment)
+            row.markupProposals = NativeMarkupProposals(turn)
             rows.append(row)
         }
         if presentationCache.count > kept.count { presentationCache = presentationCache.filter { kept.contains($0.key) } }
@@ -454,6 +462,12 @@ public final class NativeThreadStore {
     static func designComment(_ turn: NativeTurn) -> UUID? {
         guard turn.messages.count == 1 else { return nil }
         return turn.messages[0].origin?.designComment
+    }
+
+    /// The Pencil markup a user turn carried: its one message's origin.
+    static func designMarkup(_ turn: NativeTurn) -> NativeMarkupCounts? {
+        guard turn.messages.count == 1, let counts = turn.messages[0].origin?.designMarkup else { return nil }
+        return NativeMarkupCounts(strokes: counts.strokes, notes: counts.notes)
     }
 
     /// A reply that ended in an error the next reply failed with again folds to a line

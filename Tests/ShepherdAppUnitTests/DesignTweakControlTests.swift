@@ -2,6 +2,7 @@ import Foundation
 import ShepherdProtocol
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdRemote
 
 /// The Tweak tab's controls (DZTweak): which rows an element's style offers, how they snap to
 /// the design's tokens, what they write, and the rows a board's data-props give.

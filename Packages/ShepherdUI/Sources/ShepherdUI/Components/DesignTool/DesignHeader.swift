@@ -115,7 +115,13 @@ extension NWDesignHeader where Trailing == EmptyView {
 /// The design's chat pane tabs (DZCanvas): a 40pt row (18pt leading, 12pt trailing padding) with
 /// a hairline under it; tabs 18pt apart in 12.5, the current one `textPrimary` semibold over a
 /// 2pt `textPrimary` underline, the others `textSecondary`, a count in mono 10 `textTertiary`.
+/// On iPad (`.touch`, iPadDesign) the tabs are 44pt tall in 14, 16pt in, their counts in the
+/// tab's own type ("Comments 3").
 public struct NWDesignPaneTabs: View {
+    public enum Size: Sendable {
+        case regular, touch
+    }
+
     public struct Tab: Identifiable, Equatable, Sendable {
         public let id: String
         public let title: String
@@ -130,30 +136,40 @@ public struct NWDesignPaneTabs: View {
 
     let tabs: [Tab]
     let selection: String
+    let size: Size
     let select: (String) -> Void
 
-    public init(_ tabs: [Tab], selection: String, select: @escaping (String) -> Void = { _ in }) {
+    public init(_ tabs: [Tab], selection: String, size: Size = .regular, select: @escaping (String) -> Void = { _ in }) {
         self.tabs = tabs
         self.selection = selection
+        self.size = size
         self.select = select
     }
 
     public var body: some View {
+        let touch = size == .touch
         HStack(spacing: NWDesignMetrics.paneTabSpacing) {
             ForEach(tabs) { tab in
                 let current = tab.id == selection
                 Button { select(tab.id) } label: {
                     HStack(spacing: NW.Space.xs) {
-                        Text(tab.title)
-                            .font(.nwSans(NWDesignMetrics.paneTabTextSize, current ? .semibold : .regular))
-                            .foregroundStyle(current ? Color.nw.textPrimary : Color.nw.textSecondary)
-                        if let count = tab.count {
-                            Text("\(count)")
-                                .font(.nwMono(NWDesignMetrics.paneTabCountSize))
-                                .foregroundStyle(Color.nw.textTertiary)
+                        if touch {
+                            Text(tab.count.map { "\(tab.title) \($0)" } ?? tab.title)
+                                .font(.nwSans(NWDesignMetrics.touchPaneTabTextSize, current ? .semibold : .regular))
+                                .foregroundStyle(current ? Color.nw.textPrimary : Color.nw.textSecondary)
+                        } else {
+                            Text(tab.title)
+                                .font(.nwSans(NWDesignMetrics.paneTabTextSize, current ? .semibold : .regular))
+                                .foregroundStyle(current ? Color.nw.textPrimary : Color.nw.textSecondary)
+                            if let count = tab.count {
+                                Text("\(count)")
+                                    .font(.nwMono(NWDesignMetrics.paneTabCountSize))
+                                    .foregroundStyle(Color.nw.textTertiary)
+                            }
                         }
                     }
-                    .frame(maxHeight: .infinity)
+                    .frame(height: touch ? NWDesignMetrics.touchPaneTabHeight : nil)
+                    .frame(maxHeight: touch ? nil : .infinity)
                     .overlay(alignment: .bottom) {
                         if current {
                             Rectangle().fill(Color.nw.textPrimary).frame(height: NWDesignMetrics.paneTabUnderline)
@@ -166,9 +182,9 @@ public struct NWDesignPaneTabs: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.leading, NWDesignMetrics.paneTabsLeading)
-        .padding(.trailing, NW.Space.l)
-        .frame(height: NWDesignMetrics.paneTabsHeight)
+        .padding(.leading, touch ? NWDesignMetrics.touchPaneTabsLeading : NWDesignMetrics.paneTabsLeading)
+        .padding(.trailing, touch ? NWDesignMetrics.touchPaneTabsLeading : NW.Space.l)
+        .frame(height: touch ? nil : NWDesignMetrics.paneTabsHeight, alignment: .bottom)
         .overlay(alignment: .bottom) { NWHairline() }
     }
 }

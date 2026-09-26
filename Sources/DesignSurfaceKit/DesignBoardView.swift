@@ -88,7 +88,8 @@ public final class DesignBoardView: DesignPlatformView {
     /// font sizes, so below about 0.56 its minimum font size swells 16px text until it wraps, and
     /// above 1 the system font's size-dependent tracking narrows text until lines rewrap; at
     /// fractional zooms the layout viewport also loses a pixel. Zoomed in, the page is drawn at
-    /// the board's size and scaled up.
+    /// the board's size and scaled up. On iOS the web view is the view's size instead, and the
+    /// page's viewport keeps it laid out at the board's width, drawn sharp at the zoom.
     public var zoom: CGFloat = 1 {
         didSet {
             guard zoom.isFinite, zoom > 0 else {
@@ -97,6 +98,9 @@ public final class DesignBoardView: DesignPlatformView {
             }
             guard zoom != oldValue else { return }
             frame.size = scaledSize
+            #if !(canImport(AppKit) && !targetEnvironment(macCatalyst))
+            fitScale()
+            #endif
         }
     }
 
@@ -112,6 +116,8 @@ public final class DesignBoardView: DesignPlatformView {
     private var bootWaiter: CheckedContinuation<CGSize, any Error>?
     private var loadURL: URL?
     private var rulesInstalled = false
+    /// The viewport the page was last told (iOS).
+    private var appliedViewport: String?
 
     static let bridgeWorld = WKContentWorld.world(name: "shepherd-design-bridge")
     static let messageName = "shepherdDesign"
@@ -125,6 +131,12 @@ public final class DesignBoardView: DesignPlatformView {
         controller.addUserScript(WKUserScript(source: DesignRuntime.bridgeScript, injectionTime: .atDocumentStart,
                                               forMainFrameOnly: true, in: Self.bridgeWorld))
         controller.add(delegate, contentWorld: Self.bridgeWorld, name: Self.messageName)
+        #if !(canImport(AppKit) && !targetEnvironment(macCatalyst))
+        // iOS lays a page out 980px wide unless it says otherwise: the board says its own width,
+        // and the scroll view's scale draws it at the canvas's zoom, re-rasterized sharp.
+        controller.addUserScript(WKUserScript(source: Self.viewportScript(width: size.width, scale: 1), injectionTime: .atDocumentStart,
+                                              forMainFrameOnly: true, in: Self.bridgeWorld))
+        #endif
         webView = WKWebView(frame: CGRect(origin: .zero, size: size), configuration: configuration)
         super.init(frame: CGRect(origin: .zero, size: size))
         delegate.owner = self
@@ -137,10 +149,50 @@ public final class DesignBoardView: DesignPlatformView {
         webView.allowsMagnification = false
         #else
         webView.scrollView.isScrollEnabled = false
+        webView.scrollView.bouncesZoom = false
+        webView.scrollView.pinchGestureRecognizer?.isEnabled = false
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
         #endif
         addSubview(webView)
         layOutPage()
     }
+
+    #if !(canImport(AppKit) && !targetEnvironment(macCatalyst))
+    /// A `<meta name="viewport">` with the board's width at the canvas's zoom, added before the
+    /// page parses and again once its head exists. iOS draws the page at that scale, sharp.
+    static func viewportScript(width: CGFloat, scale: CGFloat) -> String {
+        """
+        (function () {
+          window.__shepherdViewport = function (content) {
+            var meta = document.querySelector('meta[name="viewport"][data-shepherd]') || document.createElement('meta');
+            meta.setAttribute('name', 'viewport');
+            meta.setAttribute('data-shepherd', '');
+            meta.setAttribute('content', content);
+            if (meta.parentNode !== (document.head || document.documentElement)) {
+              (document.head || document.documentElement).appendChild(meta);
+            }
+          };
+          var content = '\(viewportContent(width: width, scale: scale))';
+          window.__shepherdViewport(content);
+          document.addEventListener('DOMContentLoaded', function () { window.__shepherdViewport(content); });
+        })();
+        """
+    }
+
+    static func viewportContent(width: CGFloat, scale: CGFloat) -> String {
+        let zoom = String(format: "%.4f", Double(scale))
+        return "width=\(Int(width.rounded())), initial-scale=\(zoom), minimum-scale=\(zoom), maximum-scale=\(zoom), user-scalable=no"
+    }
+
+    /// The page drawn at the canvas's zoom: its viewport says the new scale.
+    private func fitScale() {
+        let content = Self.viewportContent(width: boardSize.width, scale: zoom)
+        guard content != appliedViewport else { return }
+        appliedViewport = content
+        webView.evaluateJavaScript("window.__shepherdViewport && window.__shepherdViewport('\(content)')", in: nil,
+                                   in: Self.bridgeWorld, completionHandler: nil)
+    }
+    #endif
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -154,6 +206,7 @@ public final class DesignBoardView: DesignPlatformView {
         scaleToFrame()
         #else
         placeWebView()
+        fitScale()
         #endif
     }
 
@@ -176,16 +229,12 @@ public final class DesignBoardView: DesignPlatformView {
         placeWebView()
     }
 
-    /// The web view at the board's size, centred and scaled to the view's bounds: UIKit converts
-    /// touches through the transform.
+    /// The web view fills the view. Its page still lays out at the board's width: the viewport
+    /// says that width at the canvas's zoom (`fitScale`), so iOS draws it sharp at every zoom
+    /// rather than scaling a picture of it.
     private func placeWebView() {
-        let page = boardSize
-        guard page.width > 0, page.height > 0 else { return }
         webView.transform = .identity
-        webView.bounds = CGRect(origin: .zero, size: page)
-        webView.center = CGPoint(x: bounds.midX, y: bounds.midY)
-        guard bounds.width > 0, bounds.height > 0 else { return }
-        webView.transform = CGAffineTransform(scaleX: bounds.width / page.width, y: bounds.height / page.height)
+        if webView.frame != bounds { webView.frame = bounds }
     }
     #endif
 
@@ -203,6 +252,18 @@ public final class DesignBoardView: DesignPlatformView {
         }
         finishBoot(.failure(CancellationError()))
         contentSize = nil
+        #if !(canImport(AppKit) && !targetEnvironment(macCatalyst))
+        // The page parses at the zoom it is shown at: it boots (and answers hit tests) before
+        // WebKit finishes the navigation, and at another scale its viewport would hold only
+        // part of the board.
+        let controller = webView.configuration.userContentController
+        controller.removeAllUserScripts()
+        controller.addUserScript(WKUserScript(source: DesignRuntime.bridgeScript, injectionTime: .atDocumentStart,
+                                              forMainFrameOnly: true, in: Self.bridgeWorld))
+        controller.addUserScript(WKUserScript(source: Self.viewportScript(width: boardSize.width, scale: zoom),
+                                              injectionTime: .atDocumentStart, forMainFrameOnly: true, in: Self.bridgeWorld))
+        appliedViewport = Self.viewportContent(width: boardSize.width, scale: zoom)
+        #endif
         let url = surface.url(for: board)
         loadURL = url
         return try await withTaskCancellationHandler {
@@ -241,8 +302,20 @@ public final class DesignBoardView: DesignPlatformView {
     /// width unless given) at the view's backing scale, whatever the zoom.
     public func snapshot(width: CGFloat? = nil) async throws -> CGImage {
         guard contentSize != nil else { throw DesignBoardError.notBooted }
+        #if !(canImport(AppKit) && !targetEnvironment(macCatalyst))
+        // iOS paints a page's tiles over a few frames after it lays out: wait for two, so the
+        // snapshot never keeps a tile still drawn at low resolution.
+        _ = try? await webView.callAsyncJavaScript(
+            "await new Promise(function (done) { requestAnimationFrame(function () { requestAnimationFrame(done); }); }); return true;",
+            arguments: [:], in: nil, contentWorld: Self.bridgeWorld)
+        #endif
         let configuration = WKSnapshotConfiguration()
+        #if canImport(AppKit) && !targetEnvironment(macCatalyst)
         configuration.rect = CGRect(origin: .zero, size: boardSize)
+        #else
+        // iOS's web view is the view's size, its page drawn at the zoom.
+        configuration.rect = CGRect(origin: .zero, size: scaledSize)
+        #endif
         configuration.snapshotWidth = NSNumber(value: Double(width ?? boardSize.width))
         configuration.afterScreenUpdates = true
         let image = try await webView.takeSnapshot(configuration: configuration)
@@ -396,6 +469,11 @@ public final class DesignBoardView: DesignPlatformView {
     }
 
     fileprivate func finished() {
+        #if !(canImport(AppKit) && !targetEnvironment(macCatalyst))
+        // The page is new: tell it its scale again.
+        appliedViewport = nil
+        fitScale()
+        #endif
         guard bootWaiter != nil else { return }
         Task {
             let kind = try? await webView.evaluateJavaScript("typeof window.__shepherdDC", in: nil, contentWorld: .page) as? String
