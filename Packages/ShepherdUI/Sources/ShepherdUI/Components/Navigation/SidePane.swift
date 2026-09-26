@@ -13,7 +13,7 @@ public enum NWSidePaneMetrics {
     public static let chipChevron: CGFloat = 9
     public static let chipLabelSize: CGFloat = 11
     public static let chipHostSize: CGFloat = 10.5
-    /// The "pi opened something" tip under the header button.
+    /// The "Agent opened something" tip under the header button.
     public static let tipWidth: CGFloat = 330
     /// A tab's glyph and side padding (a little tighter without its label).
     public static let tabGlyph: CGFloat = 14
