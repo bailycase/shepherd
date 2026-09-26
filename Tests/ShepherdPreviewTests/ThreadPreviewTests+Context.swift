@@ -142,6 +142,41 @@ extension ThreadPreviewTests {
         }
     }
 
+    /// iPad and iPhone: a tap on the ring opens the details as a sheet, as wide as the sheet, with
+    /// touch-sized rows and buttons ("tap to find in thread"); and the compaction lines at a
+    /// phone's width, where the rules go and Show summary moves under the words.
+    @Test func contextTouch() async throws {
+        let split = NativeContextDetails(context: Self.context(tokens: 42_000), model: "anthropic/claude-opus")
+        let full = NativeContextDetails(context: Self.context(tokens: 178_000, split: NativeContextSplit(
+            system: 6_800, instructions: 1_400, messages: 31_600, toolResults: 138_200, instructionFiles: ["AGENTS.md"])), model: "anthropic/claude-opus")
+        let rows = [
+            NativeCompaction(phase: .done, reason: .threshold, tokensBefore: 184_000, tokensAfter: 23_000, summary: "## Goal\nx"),
+            NativeCompaction(phase: .done, reason: .overflow, tokensBefore: 203_000, tokensAfter: 21_000, summary: "## Goal\nx", willRetry: true),
+        ].enumerated().map { NativeCompactionRow(entryID: "c\($0.offset)", compaction: $0.element) }
+        let summary = NativeCompactionRow(entryID: "open", compaction: NativeCompaction(
+            phase: .done, reason: .threshold, tokensBefore: 184_000, tokensAfter: 23_000,
+            summary: "## Goal\nMake native thread rows match the spec: no speaker labels, tool rows show a command or path."))
+        let expansion = NativeCompactionExpansion()
+        expansion.expand("open")
+        try await Preview.render("context-touch", size: CGSize(width: 1240, height: 720)) {
+            HStack(alignment: .top, spacing: 28) {
+                NWContextDetails(NWContextDetailsModel(split), actions: NWContextDetailsActions(), presentation: .sheet)
+                    .frame(width: 390).background(Color.nw.bgRaised)
+                NWContextDetails(NWContextDetailsModel(full), actions: NWContextDetailsActions(), presentation: .sheet)
+                    .frame(width: 390).background(Color.nw.bgRaised)
+                VStack(alignment: .leading, spacing: 18) {
+                    ForEach(rows, id: \.id) { CompactionItem(row: $0) }
+                    CompactionItem(row: summary)
+                }
+                .environment(\.compactionExpansion, expansion)
+                .frame(width: 330)
+            }
+            .padding(28)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(Color.nw.bgWindow)
+        }
+    }
+
     /// ContextIdeas › In the thread: every compaction line, and what the agent kept.
     @Test func compactionLines() async throws {
         let rows = [
