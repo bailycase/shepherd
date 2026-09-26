@@ -21,11 +21,11 @@ struct ExtensionMessageTests {
              .coordinateAgent, .agentResponse, .cancelAgentRequest, .createAutomation, .listAutomations,
              .updateAutomation, .deleteAutomation, .startAutomation, .stopAutomation, .suggestInstruction,
              .designRead, .designWriteBoard, .designUpdateIndex, .designComments, .designCommentReply,
-             .designSystemRead, .designSystemWrite:
+             .designSystemRead, .designSystemWrite, .mcpCredentials, .mcpReport:
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 35
+    static let caseCount = 37
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
@@ -82,6 +82,12 @@ struct ExtensionMessageTests {
                                                         "source": .object(["file": .string("web/static/tokens.css"), "line": .number(8)])])])]),
             files: ["README.md": .string("# acme-web\n"), "components/old.html": .null],
             sources: ["web/static/tokens.css"], install: true, baseRevision: 2)),
+        .mcpCredentials(id: 28, agentID: agent, server: "notion", reason: .unauthorized,
+                        challenge: #"Bearer resource_metadata="https://mcp.notion.com/.well-known/oauth-protected-resource/mcp""#),
+        .mcpReport(agentID: agent, report: MCPServerReport(
+            server: "linear", status: MCPServerStatus(state: .needsScopes, scopes: ["issues:write"]), transport: .streamableHTTP,
+            serverName: "Linear", tools: [MCPToolInfo(name: "create_issue", title: "Create issue", description: "Creates an issue.",
+                                                      inputSchema: .object(["type": .string("object")]))])),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -168,6 +174,12 @@ struct ExtensionMessageTests {
          .designSystemRead(id: 9, agentID: agent, designID: design, namespace: "Acme Web")),
         (#"{"type":"designSystemWrite","system":{"namespace":"night-watch","install":true},"id":10,"agentID":"a1","designID":"d1"}"#,
          .designSystemWrite(id: 10, agentID: agent, designID: design, system: DesignSystemWrite(namespace: "night-watch", install: true))),
+        // What the MCP extension writes: no challenge at connect, a report without tools.
+        (#"{"type":"mcpCredentials","id":11,"agentID":"a1","server":"grafana","reason":"connect"}"#,
+         .mcpCredentials(id: 11, agentID: agent, server: "grafana", reason: .connect, challenge: nil)),
+        (#"{"type":"mcpReport","agentID":"a1","report":{"server":"grafana","status":{"state":"error","message":"spawn mcp-grafana ENOENT"}}}"#,
+         .mcpReport(agentID: agent, report: MCPServerReport(server: "grafana",
+                                                             status: MCPServerStatus(state: .error, message: "spawn mcp-grafana ENOENT")))),
     ]
 
     @Test(arguments: handWritten)
@@ -209,11 +221,11 @@ struct ExtensionReplyTests {
         switch reply {
         case .childCommand, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .automations,
              .agents, .message, .agentRequest, .agentResult, .suggestion, .design, .designBoard, .designWritten,
-             .designComments, .designComment, .designSystems, .designSystem, .designSystemWritten:
+             .designComments, .designComment, .designSystems, .designSystem, .designSystemWritten, .mcpCredentials:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 21
+    static let caseCount = 22
     static let system = DesignSystemSummary(
         info: DesignSystemInfo(namespace: "acme-web", title: "acme-web", revision: 3, createdAt: 1_000, updatedAt: 2_000,
                                syncedAt: 2_000, ownerDesignID: DesignID(rawValue: "d1"), spaceID: SpaceID(rawValue: "s1"),
@@ -282,6 +294,8 @@ struct ExtensionReplyTests {
         .designSystemWritten(id: 28, result: DesignSystemWriteResult(
             summary: system, changed: true, installed: DesignWriteResult(revision: 9, changed: true, title: "Checkout", boardCount: 4),
             notes: ["tokens.css is the one you wrote"])),
+        .mcpCredentials(id: 29, credentials: MCPCredentials(bearer: "tok", headers: ["X-Team": "acme"],
+                                                            env: ["DATABASE_URI": "postgres://x"], expiresAtMs: 1_790_000_000_000)),
     ]
 
     @Test func samplesCoverEveryCase() {
