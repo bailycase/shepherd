@@ -238,7 +238,7 @@ public struct NWDesignSystemChip: View {
 /// A design system or starting point on New design (DZStart): 12×14 padding, radius 8, a
 /// hairline, 6pt between its lines, the hover fill. A 13pt glyph and a title in mono 12
 /// semibold; a line in 12.5 `textPrimary`; a note in 11 `textTertiary`. The chosen card is
-/// `lanternTint` with a `lanternText` line and glyph.
+/// `lanternTint` with a `lanternText` border and glyph.
 public struct NWDesignStartCard: View {
     let symbol: String
     let title: String
@@ -270,7 +270,7 @@ public struct NWDesignStartCard: View {
             }
             Text(line)
                 .font(.nwSans(NWDesignMetrics.startLineSize))
-                .foregroundStyle(chosen ? Color.nw.lanternText : Color.nw.textPrimary)
+                .foregroundStyle(Color.nw.textPrimary)
                 .lineLimit(1)
             Text(note)
                 .font(.nwSans(NWDesignMetrics.startNoteSize))
@@ -282,7 +282,7 @@ public struct NWDesignStartCard: View {
         .padding(.horizontal, NWDesignMetrics.cardPaddingHorizontal)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(chosen ? Color.nw.lanternTint : hovering ? Color.nw.bgHover : .clear, in: shape)
-        .nwBorder(Color.nw.lineSubtle, radius: NW.Radius.m)
+        .nwBorder(chosen ? Color.nw.lanternText : Color.nw.lineSubtle, radius: NW.Radius.m)
         .contentShape(shape)
         .onHover { hovering = $0 }
         .nwAnimation(.hover, value: hovering)
