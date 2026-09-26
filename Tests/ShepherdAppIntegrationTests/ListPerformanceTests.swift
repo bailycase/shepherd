@@ -911,9 +911,14 @@ struct ListPerformanceTests {
                                      RightPaneSplit(state: RightPaneState(), showPane: true) { Color.clear } pane: { ReviewPaneContent(model: model) })
         defer { window.close() }
         ListPerf.settle(window)
-        let shadows = ListPerf.shadowedLayers(in: window)
+        let all = ListPerf.shadowedLayers(in: window)
+        // The file header pinned at the top of the diff casts its own short shadow (ChangesSplit),
+        // from its fill too.
+        let headers = all.filter { $0.layer.bounds.height == NWFileHeader.height }
+        let shadows = all.filter { $0.layer.bounds.height != NWFileHeader.height }
         #expect(shadows.count == (floating ? 1 : 0), "\(shadows.map(\.layer))")
-        #expect(shadows.allSatisfy { $0.subtree == 1 }, "a shadow over the pane's content: \(shadows.map(\.subtree))")
+        #expect(headers.count == 1, "\(headers.map(\.layer))")
+        #expect(all.allSatisfy { $0.subtree == 1 }, "a shadow over the pane's content: \(all.map(\.subtree))")
     }
 
     /// The sidebar overlaid on a narrow window casts its shadow from its fill alone: on the

@@ -89,6 +89,8 @@ public enum NWChangesMenuTrailing: Equatable, Sendable {
     case stat(added: Int, removed: Int)
     /// Mono 11 tertiary: "4", "#31 draft", "a1c9f2e · 12m", "worktree", "origin/main".
     case text(String)
+    /// A chord as keycaps ("⌘D"; NewTerminalMenu).
+    case chord(String)
 }
 
 /// One row of a Changes menu.
@@ -102,14 +104,17 @@ public struct NWChangesMenuRow: View {
     let hasSubmenu: Bool
     let highlighted: Bool
     let enabled: Bool
+    let tallHeight: CGFloat
     let action: () -> Void
     @State private var hovering = false
 
     /// `systemImage` nil leaves the glyph's slot empty (Unstaged and Staged sit under
-    /// Uncommitted); `highlighted` keeps the fill (the row whose submenu is open).
+    /// Uncommitted); `highlighted` keeps the fill (the row whose submenu is open). `tallHeight` is a
+    /// row with a subtitle's least height (the terminal's menu draws 36).
     public init(_ title: String, subtitle: String? = nil, systemImage: String?, titleIsMono: Bool = false,
                 trailing: NWChangesMenuTrailing = .none, checked: Bool = false, hasSubmenu: Bool = false,
-                highlighted: Bool = false, enabled: Bool = true, action: @escaping () -> Void) {
+                highlighted: Bool = false, enabled: Bool = true, tallHeight: CGFloat = NWChangesMenuMetrics.tallRowHeight,
+                action: @escaping () -> Void) {
         self.title = title
         self.subtitle = subtitle
         self.systemImage = systemImage
@@ -119,6 +124,7 @@ public struct NWChangesMenuRow: View {
         self.hasSubmenu = hasSubmenu
         self.highlighted = highlighted
         self.enabled = enabled
+        self.tallHeight = tallHeight
         self.action = action
     }
 
@@ -149,6 +155,7 @@ public struct NWChangesMenuRow: View {
                 case .none: EmptyView()
                 case .stat(let added, let removed): NWDiffStat(added: added, removed: removed, font: .nwMono(11))
                 case .text(let text): Text(text).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary).lineLimit(1)
+                case .chord(let chord): NWKeycap(chord)
                 }
                 if checked {
                     Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(nw.textPrimary)
@@ -160,7 +167,7 @@ public struct NWChangesMenuRow: View {
             .fixedSize()
         }
         .padding(.horizontal, NW.Space.m)
-        .frame(minHeight: subtitle == nil ? NWChangesMenuMetrics.rowHeight : NWChangesMenuMetrics.tallRowHeight)
+        .frame(minHeight: subtitle == nil ? NWChangesMenuMetrics.rowHeight : tallHeight)
         .background(fill(nw), in: RoundedRectangle(cornerRadius: NW.Radius.s))
         .contentShape(RoundedRectangle(cornerRadius: NW.Radius.s))
         .onHover { hovering = $0 && enabled }

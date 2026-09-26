@@ -131,19 +131,22 @@ struct RenameDialog: View {
     var caption: String?
     let onRename: (String) -> Void
     let onCancel: () -> Void
+    /// A blank name is a choice (a terminal tab goes back to naming itself).
+    var allowsEmpty = false
     @State private var name: String
     @FocusState private var focused: Bool
 
-    init(title: String, caption: String? = nil, name: String, onRename: @escaping (String) -> Void,
+    init(title: String, caption: String? = nil, name: String, allowsEmpty: Bool = false, onRename: @escaping (String) -> Void,
          onCancel: @escaping () -> Void) {
         self.title = title
         self.caption = caption
+        self.allowsEmpty = allowsEmpty
         self.onRename = onRename
         self.onCancel = onCancel
         _name = State(initialValue: name)
     }
 
-    private var canRename: Bool { !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var canRename: Bool { allowsEmpty || !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
         DialogSheet(

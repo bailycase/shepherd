@@ -101,6 +101,17 @@ struct ActivityTests {
         #expect((written.added, written.removed) == (3, 0))
     }
 
+    /// Run in terminal opens a shell call's whole command line, not its first line; no other
+    /// call has one.
+    @Test func aShellCallCarriesItsWholeCommandLine() {
+        #expect(bash("go test ./ledger/... -count=1").command == "go test ./ledger/... -count=1")
+        let script = "cd ledger\nmake migrate-status"
+        #expect(bash(script).command == script && bash(script).detail == "cd ledger")
+        #expect(call("read", ["path": "Sources/A.swift"]).command == nil)
+        #expect(call("bash", ["cmd": "ls"]).command == nil, "no command argument")
+        #expect(bash("  ").command == nil, "a blank command")
+    }
+
     @Test func aRunningCallKeepsItsLastThreeOutputLines() {
         let running = call("bash", ["command": "git push"], output: "one\ntwo\n\nthree\nfour\n", status: "running")
         #expect(running.running && running.tail == ["two", "three", "four"])

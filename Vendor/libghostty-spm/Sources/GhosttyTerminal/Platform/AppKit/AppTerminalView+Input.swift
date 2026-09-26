@@ -24,6 +24,7 @@
     extension AppTerminalView {
         override open func keyDown(with event: NSEvent) {
             inputHandler?.handleKeyDown(with: event)
+            onSelectionChange?()
         }
 
         override open func performKeyEquivalent(with event: NSEvent) -> Bool {
@@ -133,6 +134,7 @@
 
         @IBAction override open func selectAll(_: Any?) {
             _ = surface?.performBindingAction("select_all")
+            onSelectionChange?()
         }
 
         internal func mousePoint(from event: NSEvent) -> (x: CGFloat, y: CGFloat) {
@@ -164,6 +166,7 @@
                 mods: mods.ghosttyMods
             )
             finishPointerSelection(at: CGPoint(x: x, y: y))
+            onSelectionChange?()
         }
 
         override open func rightMouseDown(with event: NSEvent) {

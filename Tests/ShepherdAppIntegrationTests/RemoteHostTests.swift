@@ -44,6 +44,40 @@ struct RemoteHostTests {
         #expect(local.server.state == original && vm.state == original)
     }
 
+    /// The terminal panel's Rename tab on a host's agent names the tab in the host's layout
+    /// (`terminalControlCapability`); the host refuses its thread's pane, and Kill process on a
+    /// shell at its prompt.
+    @Test func renamingAHostsTerminalTabNamesItOnTheHost() async throws {
+        let local = try AppHarness(), remote = try RemoteHostHarness()
+        defer { local.stop(); remote.stop() }
+        let space = Fixture.space(path: local.dir.path)
+        let agent = Fixture.agent(in: space, auxiliary: 1)
+        let vm = try await local.start(with: Fixture.state(spaces: [space], agents: []))
+        try await remote.host.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        let connection = try await remote.connect(local.remoteHosts)
+        #expect(connection.supportsTerminalControl)
+        let target = RemoteAgentRef(hostID: connection.id, agentID: agent.agent.id)
+        let shell = agent.auxiliary[0].id
+
+        try await local.remoteHosts.agentAction(target, action: .renameTerminal(paneID: shell, title: " logs "))
+        let hostLayout = { remote.host.server.state.tabs.first { $0.id == agent.tab.id }?.layout }
+        try await eventuallyOnMain("the host to name the tab") { hostLayout()?.leaf(withID: shell)?.title == "logs" }
+        try await eventuallyOnMain("the client to see the name") {
+            connection.state.tabs.first { $0.id == agent.tab.id }?.layout.leaf(withID: shell)?.title == "logs"
+        }
+        try await local.remoteHosts.agentAction(target, action: .renameTerminal(paneID: shell, title: ""))
+        try await eventuallyOnMain("a blank name to clear it") { hostLayout()?.leaf(withID: shell)?.title == nil }
+
+        await #expect(throws: (any Error).self, "the thread is not a terminal") {
+            try await local.remoteHosts.agentAction(target, action: .renameTerminal(paneID: agent.piPane.id, title: "x"))
+        }
+        await #expect(throws: (any Error).self, "nothing runs at a prompt") {
+            try await local.remoteHosts.agentAction(target, action: .killTerminalProcess(paneID: shell))
+        }
+        #expect(hostLayout()?.leaf(withID: agent.piPane.id)?.title == nil)
+        _ = vm
+    }
+
     @Test(arguments: ["available", "hostRemoved", "agentGone"])
     func agentCommandsWhileARemoteAgentIsSelectedLeaveTheLocalWorkspaceAlone(remoteState: String) async throws {
         let local = try AppHarness(), remote = try RemoteHostHarness()
