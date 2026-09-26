@@ -121,9 +121,11 @@ and hidden under it, as when switching agents.
 **Sidebar.** `SidebarDerivation` (`SidebarModel.swift`) derives Needs you and Recents from This
 Mac's state and each host's, once per change (`sidebarLists`). Recents are ordered by
 `Agent.lastActiveAt`, which the host sets when a turn starts or ends or a message is sent; Needs you
-reads `Agent.waitingOn`, the question the agent's thread asks, which the host sets from its thread
-state. Both are live state: broadcast to remote clients, and `waitingOn` is never written to
-state.json. `ShellLayout` (`AppLayout+Navigation.swift`) is the pure function that decides, from
+reads `Agent.waitingOn`, the question the agent's thread asks, and `Agent.waitingReason`, the
+agent's word or two for it: the `short` argument the status extension adds to asking tools, which
+`RPCThreadState` reads from the call that opened the dialog. The host sets both from its thread
+state. All three are live state: broadcast to remote clients, and `waitingOn` and `waitingReason`
+are never written to state.json. `ShellLayout` (`AppLayout+Navigation.swift`) is the pure function that decides, from
 the window's width, whether the sidebar docks or overlays and whether the side pane docks or
 overlays the agent's layout. The side pane wraps the whole
 layout (`AgentLayoutView` in `WorkspaceView.swift`), never one of its panes, so a terminal split
