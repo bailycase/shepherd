@@ -147,6 +147,24 @@ struct DesignToolTests {
         #expect(boards[2].frame == CGRect(x: 0, y: 920, width: 390, height: 844))
     }
 
+    /// canvas.json's `order` is read as written, so a board it lists twice (an imported or
+    /// hand-edited canvas) is still one board: one frame, and one live view at most.
+    @Test func aBoardTheOrderListsTwiceIsDrawnOnce() throws {
+        let index = try DesignIndex.decode(Data("""
+        {"v":3,"title":"Checkout","boards":{
+          "A.dc.html":{"x":0,"y":0,"w":1280,"h":800},
+          "B.dc.html":{"x":1360,"y":0,"w":1280,"h":800},
+          "C.dc.html":{"x":0,"y":920,"w":390,"h":844}},
+         "order":["B.dc.html","A.dc.html","B.dc.html","A.dc.html"]}
+        """.utf8))
+        #expect(DesignScreenModel.canvasOrder(index).map(\.rawValue) == ["B.dc.html", "A.dc.html", "C.dc.html"])
+        let boards = DesignScreenModel.boards(index, selected: [], tokens: [:])
+        #expect(boards.map(\.id) == ["B.dc.html", "A.dc.html", "C.dc.html"])
+        let visible = DesignScreenModel.visible(boards, viewport: NWCanvasViewport(offset: .zero, zoom: 0.25),
+                                                size: CGSize(width: 1600, height: 800))
+        #expect(visible.count == Set(visible).count)
+    }
+
     @Test func theBoardsOnScreenAreNearestTheMiddleFirst() throws {
         let boards = DesignScreenModel.boards(try Self.index(), selected: [], tokens: [:])
         let viewport = NWCanvasViewport(offset: .zero, zoom: 0.5)
