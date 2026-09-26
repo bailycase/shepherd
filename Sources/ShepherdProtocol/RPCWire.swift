@@ -318,7 +318,7 @@ public enum RPCContentBlock: Codable, Hashable, Sendable {
     /// OpenAI Responses reasoning item) is read from there.
     static func readableThinking(_ text: String, signature: String?, redacted: Bool) -> String {
         if redacted { return "" }
-        if text.contains(where: { !$0.isWhitespace }) { return text }
+        if text.contains(where: { !$0.isWhitespace }) { return normalizedThinking(text) }
         guard let signature, let first = signature.first(where: { !$0.isWhitespace }), first == "[" || first == "{",
               let json = try? JSONSerialization.jsonObject(with: Data(signature.utf8)) else { return "" }
         let parts: [String]
@@ -339,7 +339,32 @@ public enum RPCContentBlock: Codable, Hashable, Sendable {
         } else {
             parts = []
         }
-        return parts.filter { $0.contains(where: { !$0.isWhitespace }) }.joined(separator: "\n\n")
+        return normalizedThinking(parts.joined(separator: "\n\n"))
+    }
+
+    /// Thinking text as a reader sees it: no whitespace before or after it, and no more than one
+    /// blank line anywhere in it (a whitespace-only line counts as blank), so empty summary parts
+    /// leave no gap. pi-ai closes every OpenAI Responses summary part with a blank line as it
+    /// streams, and joins a finished item's parts with one, empty parts included.
+    ///
+    /// Growing text only grows its normalized form (it is a prefix-preserving map): a trailing
+    /// space it drops mid-stream comes back once the next word follows it.
+    public static func normalizedThinking(_ text: String) -> String {
+        var result = ""
+        var blank = false
+        // Split on the UTF-16 newline: it splits "\r\n" too, which is one Character.
+        for line in text.components(separatedBy: "\n") {
+            if line.allSatisfy(\.isWhitespace) {
+                blank = true
+                continue
+            }
+            if !result.isEmpty { result += blank ? "\n\n" : "\n" }
+            result += line
+            blank = false
+        }
+        guard let first = result.firstIndex(where: { !$0.isWhitespace }),
+              let last = result.lastIndex(where: { !$0.isWhitespace }) else { return "" }
+        return first == result.startIndex && result.index(after: last) == result.endIndex ? result : String(result[first...last])
     }
 
     public func encode(to encoder: Encoder) throws {

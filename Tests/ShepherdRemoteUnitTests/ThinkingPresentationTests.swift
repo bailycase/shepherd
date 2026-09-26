@@ -1,6 +1,6 @@
 import Foundation
 import ShepherdProtocol
-import ShepherdRemote
+@testable import ShepherdRemote
 import Testing
 
 /// Thinking the thread can show (DESIGN.md › Thread, Thinking): a disclosure when there is text
@@ -72,7 +72,7 @@ struct ThinkingPresentationTests {
 
     private static func row(_ presentation: NativeTurnPresentation) -> Row {
         for item in presentation.items {
-            guard case .thinking(_, let text, let seconds, let live, _) = item else { continue }
+            guard case .thinking(_, let text, _, let seconds, let live, _) = item else { continue }
             if live { return .live(text) }
             if text.isEmpty { return .plain(seconds: seconds ?? -1) }
             return .disclosure(text, seconds: seconds)
@@ -121,5 +121,87 @@ struct ThinkingPresentationTests {
     @Test(arguments: [("", false), (" \n\t", false), ("a", true), ("\n x", true)])
     func readableThinkingIsAnythingButWhitespace(text: String, readable: Bool) {
         #expect(nativeThinkingIsReadable(text) == readable)
+    }
+
+    // MARK: Markdown
+
+    struct MarkdownCase: CustomTestStringConvertible, Sendable {
+        let name: String
+        let parts: [String]
+        let blocks: [NativeMarkdownBlock]
+        var testDescription: String { name }
+    }
+
+    /// Finished thinking is Markdown, parsed once in the presentation: a reasoning summary's
+    /// bold title and its body are two paragraphs, with no gap left by the blank lines pi-ai
+    /// closes each summary part with (an older host sends them as they streamed).
+    static let markdownCases: [MarkdownCase] = [
+        MarkdownCase(name: "a GPT summary as it streamed",
+                     parts: ["**Inspecting SSH config**\n\nChecking ~/.ssh/config for the runner host…\n\n"],
+                     blocks: [.paragraph("**Inspecting SSH config**"), .paragraph("Checking ~/.ssh/config for the runner host…")]),
+        MarkdownCase(name: "a title and an empty part", parts: ["**Inspecting SSH config**\n\n\n\n"],
+                     blocks: [.paragraph("**Inspecting SSH config**")]),
+        MarkdownCase(name: "folded summaries", parts: ["**Plan**\n\n", "- read `a.swift`\n- run the tests"],
+                     blocks: [.paragraph("**Plan**"), .list(ordered: false, start: 1, items: [
+                         NativeMarkdownListItem(text: "read `a.swift`"), NativeMarkdownListItem(text: "run the tests"),
+                     ])]),
+        MarkdownCase(name: "plain reasoning", parts: ["Check the tests first."], blocks: [.paragraph("Check the tests first.")]),
+    ]
+
+    @Test(arguments: markdownCases)
+    func finishedThinkingIsParsedAsMarkdown(_ test: MarkdownCase) {
+        let presentation = nativeTurnPresentation(Self.messages(test.parts.map { ($0, 2) }, live: false), live: false)
+        let thinking = presentation.items.compactMap { item -> [NativeMarkdownBlock]? in
+            guard case .thinking(_, _, let blocks, _, false, _) = item else { return nil }
+            return blocks
+        }
+        #expect(thinking == [test.blocks])
+    }
+
+    /// Only finished thinking with text is parsed: live thinking shows no text, and a plain
+    /// "Thought for Ns" line has none.
+    @Test func onlyFinishedThinkingWithTextIsParsed() {
+        var parsed: [String] = []
+        let messages = Self.messages([("", 3), ("**Plan**\n\n", 1), ("still thinking", 1)], live: true)
+        let presentation = nativeTurnPresentation(messages, live: true, thinking: { text in
+            parsed.append(text)
+            return nativeThinkingBlocks(text)
+        })
+        #expect(parsed == ["**Plan**"])
+        guard case .thinking(_, let text, let blocks, _, true, _)? = presentation.items.last else {
+            Issue.record("no live thinking")
+            return
+        }
+        #expect(text == "still thinking" && blocks.isEmpty)
+    }
+}
+
+/// The store parses a thought once: a reply streaming under it rebuilds its turn, not the thought.
+@Suite("Thinking in the store", .timeLimit(.minutes(1)))
+@MainActor
+struct ThinkingStoreTests {
+    typealias F = Fixture
+
+    @Test func aStreamingReplyNeverParsesAFinishedThoughtAgain() async {
+        var thought = F.assistant("", thinking: "**Inspecting SSH config**\n\nChecking ~/.ssh/config.\n\n", id: "a")
+        thought.thinkingSeconds = 3
+        let messages = [F.user("check the runner", id: "u"), thought, F.tool("read", args: #"{"path":"config"}"#, id: "r", callID: "r")]
+        func snapshot(_ revision: UInt64, _ reply: String) -> NativeThreadSnapshot {
+            F.snapshot(revision: revision, running: true, messages: messages, provisional: [F.assistant(reply, status: "streaming", id: "live")])
+        }
+        let host = FakeHost(snapshot(1, "It"))
+        let store = manualStore()
+        let task = await start(store, host)
+        defer { task.cancel() }
+        for index in 2...6 {
+            host.snapshot = snapshot(UInt64(index), "It" + String(repeating: " points at the runner", count: index))
+            await store.refresh()
+        }
+        #expect(store.rows.last?.presentation?.items.contains { if case .prose = $0 { true } else { false } } == true, "the reply streamed")
+        let blocks = store.rows.last?.presentation?.items.compactMap { item -> [NativeMarkdownBlock]? in
+            if case .thinking(_, _, let blocks, _, _, _) = item { blocks } else { nil }
+        }
+        #expect(blocks == [[.paragraph("**Inspecting SSH config**"), .paragraph("Checking ~/.ssh/config.")]])
+        #expect(store.thinkingParses == 1)
     }
 }

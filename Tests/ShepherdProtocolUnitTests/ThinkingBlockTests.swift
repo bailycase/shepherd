@@ -34,6 +34,17 @@ struct ThinkingBlockTests {
          "Read the config."),
         ("chat completions text beside its field name",
          #"{"type":"thinking","thinking":"Looking at main.","thinkingSignature":"reasoning_content"}"#, "Looking at main."),
+        // openai-responses as it streamed: every summary part closed with a blank line.
+        ("openai responses streamed summary",
+         #"{"type":"thinking","thinking":"**Inspecting SSH config**\n\nChecking the runner host.\n\n"}"#,
+         "**Inspecting SSH config**\n\nChecking the runner host."),
+        // openai-responses finished: its parts joined with a blank line, an empty part included.
+        ("openai responses empty summary parts",
+         #"{"type":"thinking","thinking":"**Inspecting SSH config**\n\n\n\n","thinkingSignature":"{\"type\":\"reasoning\",\"id\":\"rs_1\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"**Inspecting SSH config**\"},{\"type\":\"summary_text\",\"text\":\"\"}]}"}"#,
+         "**Inspecting SSH config**"),
+        ("openai responses empty parts only in the item",
+         #"{"type":"thinking","thinking":"","thinkingSignature":"{\"type\":\"reasoning\",\"id\":\"rs_1\",\"summary\":[{\"type\":\"summary_text\",\"text\":\"**Title**\\n\\n\"},{\"type\":\"summary_text\",\"text\":\" \"},{\"type\":\"summary_text\",\"text\":\"Body.\"}]}"}"#,
+         "**Title**\n\nBody."),
         ("whitespace", #"{"type":"thinking","thinking":"\n  \n"}"#, ""),
         ("no thinking key", #"{"type":"thinking"}"#, ""),
     ]
@@ -42,6 +53,39 @@ struct ThinkingBlockTests {
     func aThinkingBlockDecodesToWhatAReaderCanRead(name: String, json: String, readable: String) throws {
         let block = try JSONDecoder().decode(RPCContentBlock.self, from: Data(json.utf8))
         #expect(block == .thinking(readable), "\(name)")
+    }
+
+    /// What a reader sees of thinking: trimmed, one blank line at most, whitespace-only lines
+    /// blank, single line breaks and the spaces inside a line kept.
+    @Test(arguments: [
+        ("plain", "Plan the fix.", "Plan the fix."),
+        ("trailing blank part", "**Title**\n\n", "**Title**"),
+        ("leading and trailing whitespace", "  \n Plan.\t\n", "Plan."),
+        ("three newlines", "a\n\n\nb", "a\n\nb"),
+        ("an empty part between", "a\n\n\n\nb", "a\n\nb"),
+        ("a whitespace-only line", "a\n  \n \t\nb", "a\n\nb"),
+        ("carriage returns", "a\r\n\r\n\r\nb\r\n", "a\r\n\nb"),
+        ("single breaks and inner spaces", "- one\n- two  words\n\nNext.", "- one\n- two  words\n\nNext."),
+        ("whitespace only", " \n\t\n ", ""),
+        ("empty", "", ""),
+    ] as [(String, String, String)])
+    func thinkingIsNormalizedForReading(name: String, raw: String, normalized: String) {
+        #expect(RPCContentBlock.normalizedThinking(raw) == normalized, "\(name)")
+    }
+
+    /// Streaming, the normalized text only grows: each chunk's is a prefix of the next's, so no
+    /// word loses a space it had once the next word arrives.
+    @Test func streamedThinkingOnlyGrowsWhenNormalized() {
+        let chunks = ["**Inspecting", " SSH config**", "\n\n", "Checking ", "~/.ssh/config", " for the", "\n\n", "\n\n", " ", "runner host.", "\n\n"]
+        var raw = ""
+        var last = ""
+        for chunk in chunks {
+            raw += chunk
+            let next = RPCContentBlock.normalizedThinking(raw)
+            #expect(next.hasPrefix(last), "\(last.debugDescription) → \(next.debugDescription)")
+            last = next
+        }
+        #expect(last == "**Inspecting SSH config**\n\nChecking ~/.ssh/config for the\n\n runner host.")
     }
 
     /// A redacted block in a whole message, as get_messages and message_end carry it.

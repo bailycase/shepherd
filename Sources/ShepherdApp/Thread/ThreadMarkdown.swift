@@ -83,6 +83,30 @@ struct Prose: View, Equatable {
     }
 }
 
+/// A turn's thinking (`NWThinking`): live, or finished with its Markdown, parsed once per
+/// change (`NativeTurnPresentation`), styled here only when this row's own inputs change, so a
+/// reply streaming under it leaves it alone. One view for both, so "Thinking…" settles into
+/// "Thought for Ns" in place.
+struct ThinkingRow: View, Equatable {
+    let seconds: Double?
+    let blocks: [NativeMarkdownBlock]
+    let live: Bool
+    let isExpanded: Bool
+    let toggle: () -> Void
+
+    static func == (lhs: ThinkingRow, rhs: ThinkingRow) -> Bool {
+        lhs.seconds == rhs.seconds && lhs.live == rhs.live && lhs.isExpanded == rhs.isExpanded && lhs.blocks == rhs.blocks
+    }
+
+    var body: some View {
+        live
+            ? NWThinking.live()
+            : NWThinking(nativeThoughtText(seconds), blocks: Prose.proseBlocks(blocks),
+                         isExpanded: Binding(get: { isExpanded }, set: { if $0 != isExpanded { toggle() } }),
+                         spokenTitle: nativeThoughtSpokenText(seconds))
+    }
+}
+
 /// A fenced block, plain on its first frame and syntax colored once tree-sitter has run off the
 /// main actor in the block's task. Results are cached, so a block that scrolls back in is
 /// colored at once. A block a reply is still writing (`writing`) is colored again at most every
