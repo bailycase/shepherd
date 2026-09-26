@@ -512,6 +512,54 @@ struct ListPerformanceTests {
         #expect(rows["layout.agentLayout", default: 0] <= 1, "\(rows)")
     }
 
+    /// What updates in the visible layout set off: each kind's probe counts, and what of the
+    /// window AppKit walks.
+    struct VisibleUpdates {
+        var census = HiddenAgentsWorkspace.Census()
+        var counts: [String: [String: Int]] = [:]
+    }
+
+    static func visibleUpdates(hidden: Int) async throws -> VisibleUpdates {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let workspace = try await HiddenAgentsWorkspace.open(hidden: hidden, in: app)
+        defer { workspace.close() }
+        var result = VisibleUpdates(census: workspace.census())
+        result.counts["1 pt steps"] = ListPerf.counting { _ = workspace.scroll(step: 1, steps: 40) }
+        result.counts["40 pt steps"] = ListPerf.counting { _ = workspace.scroll(step: 40, steps: 40) }
+        result.counts["keystrokes"] = ListPerf.counting { workspace.type(24) }
+        result.counts["status reports"] = ListPerf.counting { workspace.reportStatus(20) }
+        NWRenderProbe.start()
+        try await workspace.stream()
+        result.counts["a streamed reply"] = NWRenderProbe.stop()
+        return result
+    }
+
+    /// Every mounted layout has a hosting view of its own (`AgentLayoutDeck`), so an update in
+    /// the visible one costs the same beside thirty hidden agents as beside none: no hidden
+    /// layout is laid out or runs a body, the deck itself takes no update, and AppKit walks the
+    /// same views, layers and tracking areas (a hidden layout is an `isHidden` view). In one
+    /// view graph, each hidden agent added about 0.4 M instructions to a scroll step and 1.2 M
+    /// to a status report (`HiddenAgentsReport` prints them).
+    @Test func anUpdateInTheVisibleLayoutCostsTheSameBesideThirtyHiddenAgents() async throws {
+        let alone = try await Self.visibleUpdates(hidden: 0)
+        let crowded = try await Self.visibleUpdates(hidden: 30)
+
+        #expect(crowded.census == alone.census, "AppKit walks \(crowded.census) beside 30 hidden agents, \(alone.census) alone")
+        for (update, counts) in crowded.counts.sorted(by: { $0.key < $1.key }) {
+            #expect(counts["deck.hiddenLayout", default: 0] == 0, "\(update): \(counts)")
+            #expect(counts["deck.update", default: 0] == 0, "\(update): \(counts)")
+            // A reply's pulls land as the server's pushes come, differently each run.
+            guard update != "a streamed reply" else { continue }
+            let own = alone.counts[update] ?? [:]
+            for key in Set(counts.keys).union(own.keys) {
+                let (a, b) = (own[key, default: 0], counts[key, default: 0])
+                #expect(abs(a - b) <= max(2, a / 20), "\(update), \(key): \(a) alone, \(b) beside 30 hidden agents")
+            }
+        }
+        #expect((crowded.counts["a streamed reply"]?["deck.layout"] ?? 0) > 0, "the reply reached the screen")
+    }
+
     // MARK: Subagents
 
     /// A turn whose spawn calls started `runs`, as the thread shows it.

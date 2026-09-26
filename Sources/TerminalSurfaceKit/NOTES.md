@@ -122,8 +122,9 @@ which is one reason the app imports only TerminalSurfaceKit, and only in `Termin
 
 ## Hidden-pane rendering (`setRenderingActive`)
 
-Every mounted layout stays in the view tree. Hidden terminal panes are `opacity(0)` with their
-surfaces alive, until cold parking drops them. `setRenderingActive` drives Ghostty's display
+Every mounted layout stays in the view tree: a hidden agent's layout is a hidden hosting view
+(`AgentLayoutDeck`), and a hidden pane inside a layout is `opacity(0)`. Their surfaces stay alive
+until cold parking drops them. `setRenderingActive` drives Ghostty's display
 visibility, which handles occlusion and stops or restarts the display link.
 
 Two rules came out of real switching artifacts:
