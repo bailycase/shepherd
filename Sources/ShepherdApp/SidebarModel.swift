@@ -155,7 +155,8 @@ enum SidebarDerivation {
         }
         for (hostIndex, host) in source.hosts.enumerated() {
             let runs = Set(host.state.automations.compactMap(\.agentID))
-            for (index, agent) in host.state.agents.enumerated() {
+            // A host sends no design's agent (`withoutDesigns`); one from before that is no thread either.
+            for (index, agent) in host.state.agents.enumerated() where !host.state.isDesignAgent(agent) {
                 let children = host.offline ? [] : host.children[agent.id] ?? []
                 // Nothing on an offline host can be answered, so none of it waits on you here.
                 let needsYou = !host.offline && (agent.status == .blocked || children.contains(where: \.needsAttention))

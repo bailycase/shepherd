@@ -445,21 +445,33 @@ struct DesignTests {
         #expect(try await committed(h).designs.first?.agentID == nil)
     }
 
-    @Test func deletingADesignRemovesItsFolderAndFreesItsAgent() async throws {
-        let (h, design, agent) = try await serverWithDesign()
+    /// Deleting a design takes the agent that drew it, its layout and its processes: a design's
+    /// chat never becomes a thread. Other agents stay.
+    @Test func deletingADesignRemovesItsFolderAndItsAgent() async throws {
+        let (h, design, worker) = try await serverWithDesign()
         defer { h.stop() }
-        var drawing = agent
-        drawing.designID = design.id
-        try await h.server.updateAgent(drawing)
-        try await h.server.setDesignAgent(design.id, agentID: agent.id)
+        let callbacks = Callbacks(h.server)
+        let session = try await h.shell("sleep 30")
+        let space = try #require(h.server.state.spaces.first)
+        let agentID = AgentID()
+        let pane = LeafPane(sessionID: session.id, cwd: space.path, agentID: agentID)
+        let tab = Tab(spaceID: space.id, order: 1, layout: .leaf(pane))
+        let drawer = Agent(id: agentID, name: design.name, spaceID: space.id, tabID: tab.id, paneID: pane.id, designID: design.id)
+        var state = h.server.state
+        state.tabs.append(tab)
+        state.agents.append(drawer)
+        try await h.server.putState(state)
+        try await h.server.setDesignAgent(design.id, agentID: agentID)
         await drainMainQueue()
         h.broadcasts.withValue { $0.removeAll() }
 
         try await h.server.deleteDesign(design.id)
 
-        let state = try await committed(h)
-        #expect(state.designs.isEmpty)
-        #expect(state.agents.first?.designID == nil, "the agent stays, drawing nothing")
+        let after = try await committed(h)
+        #expect(after.designs.isEmpty)
+        #expect(after.agents.map(\.id) == [worker.id], "the design's agent goes; the thread stays")
+        #expect(!after.tabs.contains { $0.id == tab.id })
+        try await eventually("the design agent's session to be killed") { callbacks.exited(session.id) }
         #expect(!FileManager.default.fileExists(atPath: try #require(h.server.designs.folder(for: design.id)).path))
         let again = await #expect(throws: SessionServerError.self) { try await h.server.deleteDesign(design.id) }
         #expect(again?.description == SessionServerError.noSuchDesign(design.id).description)
@@ -573,8 +585,8 @@ struct DesignTests {
         }
     }
 
-    /// Startup forgets a design whose folder is gone and clears references to what no longer
-    /// exists: an agent's design, a design's agent.
+    /// Startup forgets a design whose folder is gone, with the agent that drew it, and clears a
+    /// design's agent that no longer exists.
     @Test func startupClearsDanglingDesigns() async throws {
         let first = try ScratchServer.fresh()
         let space = Fixture.space()
@@ -600,8 +612,10 @@ struct DesignTests {
         let restored = h.server.state
         #expect(restored.designs.map(\.id) == [kept.id])
         #expect(restored.designs.first?.agentID == nil)
-        #expect(restored.agents.first?.designID == nil)
+        #expect(restored.agents.isEmpty, "the lost design's agent goes with it, never kept as a thread")
+        #expect(!restored.tabs.contains { $0.id == worker.tab.id })
         #expect(try h.persisted().designs.map(\.id) == [kept.id], "the cleared state is written")
+        #expect(try h.persisted().agents.isEmpty)
     }
 
     /// A canvas.json that is there but unreadable (a bad hand edit) never costs the design.
