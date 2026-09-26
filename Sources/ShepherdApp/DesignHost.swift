@@ -368,11 +368,11 @@ final class DesignHost {
                 slot.ready = true
                 self.reload(path, slot: slot)
             } else {
-                self.redrawn?(path)
                 // Its snapshot first, so the board never swaps to an older picture later.
                 await self.snapshot(path, slot: slot)
                 guard self.slots[path] === slot else { return }
                 slot.ready = true
+                self.redrawn?(path)
             }
             self.bump(path)
         }
