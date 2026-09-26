@@ -16,7 +16,7 @@ struct RecentsScreen: View {
                 ForEach(rows) { row in
                     VStack(spacing: 0) {
                         if row.id != rows.first?.id { NWHairline() }
-                        Button { navigator.open(.thread(row.ref.agentRef)) } label: {
+                        Button { navigator.open(row.route) } label: {
                             ThreadRow(row: row, selected: row.ref.agentRef == selected).equatable()
                         }
                         .buttonStyle(.nwRow(radius: 0))

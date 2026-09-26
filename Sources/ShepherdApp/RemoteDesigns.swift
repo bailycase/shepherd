@@ -249,6 +249,7 @@ extension ShepherdViewModel {
             let query = designsPageFilter.trimmingCharacters(in: .whitespacesAndNewlines)
             let cards = listing.designs.compactMap { summary -> DesignsPageModel.Card? in
                 let design = summary.design
+                // A design belongs to no project: its card names its system alone.
                 let system = design.systemNamespace
                 guard query.isEmpty || design.name.localizedCaseInsensitiveContains(query)
                         || system?.localizedCaseInsensitiveContains(query) == true else { return nil }

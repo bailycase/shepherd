@@ -946,6 +946,7 @@ a VPN or trusted network is the transport boundary, as for everything else it se
 | `sendMarkup(id, markup)` | `markupSent` | Pencil markup (`design.markup.v1`): the record checked against the canvas and the boards' sources, then handed to the design agent fenced, as a turn of its own; why it didn't reach the agent, or nil. Nothing is kept |
 | `settleProposals(id, proposals, deliver, base)` | `proposalsSettled` | The viewer's answer to the agent's proposals, which the host kept as comments when the agent made them (`design.markup.v1`): each named proposal's comment settled (`proposalSettledAt`), all or none, at the comments' revision, once; with `deliver` each one settled now goes to the agent as a comment does |
 | `watch(ids)` | `ok` | The designs this client shows; replaces the last set |
+| `create(brief, systemNamespace)` | `created(designID, agentID)` | New design from another device (a design belongs to no project): the host checks the brief (trimmed, at most 8 KB) and the system's name on its queue, then its app makes the design as its own New design does (`SessionServer.onRemoteCreateDesign`), selecting nothing there. A host with no app to make it refuses (`unsupported`) |
 
 - **Pushed:** `designChanged(id, revision, commentsRevision)` after each change to a watched
   design, one per write: a hint to pull, carrying no files. `capabilitiesChanged` goes to a
@@ -1003,17 +1004,59 @@ a VPN or trusted network is the transport boundary, as for everything else it se
   design agent is a plain thread in Recents rather than a design row, and a host's design
   systems aren't on the page.
 
+### On iPhone
+
+The iOS client's designs track (`App/iOS/Designs`; docs/ios/CONTRACTS.md) shows a host's designs
+only while that host offers `designs.v1`, and follows its Design tool as it turns on and off
+(`capabilitiesChanged`). Boards render on the phone from the files each host served by hash
+(`RemoteDesignCache` in the app's caches folder, shared with the iPad's store through
+`HostDesignLibraries`); nothing renders on the host. In the iPad's split view a design found in
+search opens on its canvas (On iPad, below).
+
+- **Rendering.** `DesignHost.swift` is the phone's one file that imports DesignSurfaceKit (the
+  iPad's is `PadDesignRenderer.swift`). At most two web views live: the board on screen, and one
+  off-screen renderer that draws tiles and the Boards sheet into images (cached by hash) and
+  exports, one board at a time. A board view on iOS gets a viewport of the board's width at the
+  zoom it is shown at, as on iPad, so it lays out as on the Mac, and it never scrolls inside its
+  frame.
+- **Where designs show:** Home's Designs row with its count, a design's agent as its design's
+  Recents row ("design · 4 boards", opening the design; never a running, Needs you or finished
+  thread, nor counted among a host's threads, and a system build's agent has no row), the
+  Designs screen (MobileDesigns: tiles
+  from each design's first board, then the design systems), search's Designs section and its "New
+  design" action, and More ▸ Design systems.
+- **A design** opens on its boards (a grid; not drawn), watched while on screen so new boards
+  land, and a board opens full screen
+  (MobileDesignBoard): pinch zooms (the board lays out at its own size, scaled to fit, as on the
+  Mac; above its own size it is its 100% drawing scaled up), a drag pans a zoomed
+  board, a sideways swipe moves between boards, and pins sit on their elements' top-trailing
+  corners, found again by tid in the live board. A tapped pin raises its card, with "Design agent
+  is updating <board>" while the design agent works and hasn't answered it, else its answer.
+  - **Comment** on, a tap names the element under it (the bridge's hit test) and the review's
+    comment editor pins a comment there through `addComment`, as the Mac's canvas does.
+  - **Ask the agent** opens the design agent's thread, and the board's view record (the board on
+    screen, and the element being commented on) rides the next send (`design.context.v1`).
+  - **Boards** is a sheet of every board; **Export** and Share render the board at zoom 1 as a
+    PNG (twice its size) or a PDF (print.md) and hand it to the share sheet.
+- **New design** (not drawn) is a form: the brief, the host to make it on (only when several
+  serve designs), and a design system; no project, since a design stands alone. The host makes
+  it (`create`) and it opens.
+- **Not yet:** replies, Resolve and a detached pin's note on the phone; a board's interactive
+  Play and links; Tweak, moves and Duplicate; a design without an agent in Recents; Pencil
+  markup (iPad only, below); push notifications and Live Activities (they need the push relay).
+
 ### On iPad
 
 `App/iOS/DesignPad/` (docs/ios/README.md › Designs), for every connected host that offers
 `designs.v1`: a host that stops offering it (its experiment off) takes its designs away at once,
 through `capabilitiesChanged`.
 
-- **The store** (`PadDesigns`) keeps one `RemoteDesignLibrary` per host over one
-  `RemoteDesignCache` (48 MB in memory, files also under the app's Caches), each design's canvas
-  for the app's run, and which designs are on screen in any window: their hosts push changes for
-  those alone.
-- **Rendering** (`PadDesignRenderer.swift`, the only iOS file that imports DesignSurfaceKit):
+- **The store** (`PadDesigns`) keeps each design's canvas for the app's run, and which designs
+  are on screen in any window: their hosts push changes for those alone. It shares each host's
+  `RemoteDesignLibrary` and the one `RemoteDesignCache` (48 MB in memory, files also under the
+  app's Caches) with the iPhone's store (`HostDesignLibraries`), which tells a host the designs
+  either has on screen, since a connection keeps one watched set, and hands its pushes to both.
+- **Rendering** (`PadDesignRenderer.swift`, the iPad's one file that imports DesignSurfaceKit):
   one live board in the app (`DesignTouchLivePlan`: the board a tap asks about, then the
   selected one, then the one nearest the middle; a design taking it takes it from any other on
   screen) and one off-screen view that draws every other board's snapshot in turn, two web views

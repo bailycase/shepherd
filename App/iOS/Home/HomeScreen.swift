@@ -46,9 +46,18 @@ private struct HomeSections: View {
     let model: FleetModel
     let selected: AgentRef?
     @Environment(MobileNavigator.self) private var navigator
+    @Environment(MobileHosts.self) private var hosts
 
     var body: some View {
+        let designs = MobileDesigns.of(hosts).model
         NWListCard {
+            // Designs, while a host serves them (MobileAgents: between Missions and Automations).
+            if designs.available {
+                Button { navigator.open(.designs(.list)) } label: {
+                    NWListRow("Designs", leading: .symbol("pencil.tip"), trailing: designs.count.map { .value($0) } ?? .none)
+                }
+                .buttonStyle(.nwRow(radius: 0))
+            }
             destination("Automations", symbol: "bolt", trailing: model.automations.isEmpty ? .none : .value(String(model.automations.count)), route: .automations)
             destination("More", symbol: "ellipsis", trailing: model.offlineSummary.map { .alert($0) } ?? .none, route: .more)
         }
@@ -80,7 +89,7 @@ private struct HomeSections: View {
             } else {
                 NWListCard {
                     ForEach(model.recents.prefix(HomeLimits.recents)) { row in
-                        Button { navigator.open(.thread(row.ref.agentRef)) } label: {
+                        Button { navigator.open(row.route) } label: {
                             ThreadRow(row: row, selected: row.ref.agentRef == selected).equatable()
                         }
                         .buttonStyle(.nwRow(radius: 0))
