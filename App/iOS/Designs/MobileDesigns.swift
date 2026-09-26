@@ -31,7 +31,8 @@ final class MobileDesigns {
     @ObservationIgnored private var libraries: [UUID: RemoteDesignLibrary] = [:]
     @ObservationIgnored private var sessions: [UUID: UUID] = [:]
     @ObservationIgnored private var signatures: [UUID: String] = [:]
-    @ObservationIgnored private var watched: [UUID: Set<DesignID>] = [:]
+    /// The screens watching each design, by their tokens: a design is watched while any is.
+    @ObservationIgnored private var watchers: [HostDesignRef: Set<UUID>] = [:]
     @ObservationIgnored private var listing: Set<UUID> = []
     @ObservationIgnored private var again: Set<UUID> = []
     /// Called when a watched design changed on its host, with what moved.
@@ -210,11 +211,18 @@ final class MobileDesigns {
 
     /// A design came on screen (`on`) or left it: its host pushes changes for the designs on
     /// screen alone, and `observer` hears them.
+    /// Screens stack (a design, its board over it), so a design stays watched until the last
+    /// screen showing it leaves.
     func watch(_ ref: HostDesignRef, on: Bool, token: UUID, observer: ((HostDesignRef, Bool, Bool) -> Void)? = nil) {
-        var set = watched[ref.host] ?? []
-        if on { set.insert(ref.design); observers[token] = observer } else { set.remove(ref.design); observers[token] = nil }
-        watched[ref.host] = set
-        library(ref.host)?.watch(set)
+        if on {
+            watchers[ref, default: []].insert(token)
+            observers[token] = observer
+        } else {
+            watchers[ref]?.remove(token)
+            if watchers[ref]?.isEmpty == true { watchers[ref] = nil }
+            observers[token] = nil
+        }
+        libraries[ref.host]?.watch(Set(watchers.keys.filter { $0.host == ref.host }.map(\.design)))
     }
 
     private func changed(_ ref: HostDesignRef, files: Bool, comments: Bool) {
