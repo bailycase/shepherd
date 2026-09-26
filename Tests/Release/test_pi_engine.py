@@ -450,6 +450,54 @@ class VerifyTests(unittest.TestCase):
             self.assertIn("Resources/pi-engine is missing", problems)
 
 
+class LayoutContractTests(unittest.TestCase):
+    """The engine's paths are a contract between the staging script, the Xcode phase that
+    embeds it and the Swift locator that will start it."""
+
+    def phase(self):
+        project = read("Shepherd.xcodeproj", "project.pbxproj")
+        m = re.search(r"/\* Embed pi engine \*/ = \{\n(.*?)\n\t\t\};", project, re.S)
+        self.assertIsNotNone(m, "the Mac target has an Embed pi engine phase")
+        return m.group(1)
+
+    def test_the_mac_target_runs_the_phase_after_its_resources_in_every_configuration(self):
+        project = read("Shepherd.xcodeproj", "project.pbxproj")
+        target = re.search(r"/\* Shepherd \*/ = \{\n\t\t\tisa = PBXNativeTarget;.*?buildPhases = \((.*?)\);", project, re.S)
+        phases = re.findall(r"/\* (.*?) \*/", target.group(1))
+        self.assertEqual(phases[-1], "Embed pi engine")
+        self.assertLess(phases.index("Resources"), phases.index("Embed pi engine"))
+        # A target's phases run in every configuration; only a deployment-postprocessing phase
+        # would skip Debug.
+        self.assertIn("runOnlyForDeploymentPostprocessing = 0;", self.phase())
+
+    def test_script_sandboxing_stays_on_and_the_phase_declares_what_it_touches(self):
+        project = read("Shepherd.xcodeproj", "project.pbxproj")
+        mac = [b for b in re.findall(r"isa = XCBuildConfiguration;\n(.*?)\n\t\t\};", project, re.S)
+               if "INFOPLIST_FILE = App/Info.plist;" in b]
+        self.assertEqual(len(mac), 3)
+        for block in mac:
+            self.assertIn("ENABLE_USER_SCRIPT_SANDBOXING = YES;", block)
+        phase = self.phase()
+        self.assertIn('"$(SRCROOT)/.build/pi-engine/inputs.xcfilelist"', phase)
+        self.assertIn('"$(SRCROOT)/.build/pi-engine/outputs.xcfilelist"', phase)
+        for path in ("scripts/pi-engine-pin.json", "scripts/sign-engine.sh", "App/Engine.entitlements",
+                     "App/Engine-x86_64.entitlements"):
+            self.assertIn(f'"$(SRCROOT)/{path}"', phase)
+        self.assertEqual(pi_engine.STAGED_IN_XCODE, "$(SRCROOT)/.build/pi-engine")
+        self.assertEqual(pi_engine.DEFAULT_STAGED, os.path.join(pi_engine.ROOT, ".build", "pi-engine"))
+
+    def test_the_phase_copies_the_staged_layout_checks_the_stamp_and_never_downloads(self):
+        script = self.phase()
+        self.assertIn(f'staged}}/{pi_engine.ENGINE}\\"', script)
+        self.assertIn(f'staged}}/{pi_engine.NODE}\\"', script)
+        self.assertIn('cmp -s \\"${SRCROOT}/scripts/pi-engine-pin.json\\" \\"${staged}/pin.json\\"', script)
+        self.assertIn("scripts/sign-engine.sh", script)
+        commands = [line for line in script.split("shellScript = ", 1)[1].split("\\n") if not line.startswith("#")]
+        for fetcher in ("curl", "wget", "http", "npm ", "pi_engine.py stage\\\" ", "python3 scripts/pi_engine.py stage;"):
+            for line in commands:
+                self.assertNotIn(fetcher, line.replace("Run: python3 scripts/pi_engine.py stage", ""))
+
+
 class EntitlementsTests(unittest.TestCase):
     """What node may do under the hardened runtime: JIT everywhere, and unsigned executable
     memory on x86_64 only, which V8 there needs to start. Nothing else."""
