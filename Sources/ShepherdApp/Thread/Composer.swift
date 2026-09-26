@@ -959,15 +959,16 @@ struct ComposerControls: View, Equatable {
 /// it does not show, with their tooltips and accessibility: half of a keystroke's main-thread
 /// time. A real layout never proposes the row less than `AppLayout.composerControlsNarrowest`,
 /// and the row's minimum is never the window's (`AppLayout.windowMinWidth` on the root and the
-/// thread column's `threadMinWidth` are both several times the compact row's width), so a
-/// narrower proposal is answered with no width and the row's height, and every other proposal
-/// reaches the row as it is.
+/// thread column's `threadMinWidth` are both wider than the compact row), so a narrower proposal
+/// is answered with the width offered (the row's spacer takes all of any width it fits in) and
+/// the row's height, and every other proposal reaches the row as it is. Placed, the row gets the
+/// width it answered, as a stack would have proposed it.
 struct ComposerControlsMinimum: Layout {
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         guard let row = subviews.first else { return .zero }
         if let width = proposal.width, width < AppLayout.composerControlsNarrowest {
             MainActor.assumeIsolated { NWRenderProbe.tick("composer.controlsMinimum") }
-            return CGSize(width: 0, height: NWComposerMetrics.actionSize)
+            return CGSize(width: max(0, width), height: NWComposerMetrics.actionSize)
         }
         MainActor.assumeIsolated { NWRenderProbe.tick("composer.controlsMeasured") }
         return row.sizeThatFits(proposal)
