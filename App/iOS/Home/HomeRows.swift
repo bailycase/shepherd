@@ -140,7 +140,7 @@ struct AttentionReplies: View {
         switch item.reply {
         case .choose(let options):
             ForEach(Array(options.enumerated()), id: \.offset) { index, option in
-                Button(option) { Task { await feed.answer(item, .select(value: option)) } }
+                Button(option) { Task { await feed.choose(item, option) } }
                     .buttonStyle(.nw(index == 0 ? .primary : .secondary, size: size))
                     .disabled(busy)
             }
