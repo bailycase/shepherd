@@ -90,8 +90,8 @@ public struct NWTerminalTabBar<Trailing: View>: View {
     let newTabHelp: String
     let menu: ((_ tab: String?, _ anchor: CGFloat) -> Void)?
     @ViewBuilder let trailing: () -> Trailing
-    /// Where + and each tab start along the strip, for the menu to hang from.
-    @State private var anchors: [String: CGFloat] = [:]
+    /// Where + and each tab sit along the strip, for the menu to hang from.
+    @State private var anchors: [String: CGRect] = [:]
 
     /// `menu`, where given, opens the new terminal menu (NewTerminalMenu) from + (`tab` nil) and
     /// from a right-click on a tab, at `anchor` along the strip; + then opens the menu rather
@@ -121,13 +121,10 @@ public struct NWTerminalTabBar<Trailing: View>: View {
                         NWTerminalTabView(tab: tab, isSelected: tab.id == selection, select: { select(tab.id) },
                                           close: close.map { close in { close(tab.id) } })
                             .modifier(AnchorReader(id: tab.id, anchors: $anchors))
-                            #if os(macOS)
-                            .nwSecondaryClick(enabled: menu != nil) { menu?(tab.id, anchors[tab.id] ?? 0) }
-                            #endif
                     }
                     if let newTab {
                         Button {
-                            if let menu { menu(nil, anchors[Self.plusAnchor] ?? 0) } else { newTab() }
+                            if let menu { menu(nil, anchors[Self.plusAnchor]?.minX ?? 0) } else { newTab() }
                         } label: { Image(systemName: "plus") }
                             .buttonStyle(.nwIcon(size: NWTerminalMetrics.buttonSize))
                             .nwHelp(newTabHelp)
@@ -151,6 +148,16 @@ public struct NWTerminalTabBar<Trailing: View>: View {
         .background(Color.nw.bgWindow)
         .overlay(alignment: .top) { NWHairline(color: .nw.lineStrong) }
         .overlay(alignment: .bottom) { NWHairline() }
+        #if os(macOS)
+        // A right-click (or ⌃-click) on a tab opens the menu from it.
+        .background {
+            if let menu {
+                NWSecondaryClickRegions(regions: tabs.compactMap { tab in anchors[tab.id].map { (tab.id, $0) } }) { id in
+                    menu(id, anchors[id]?.minX ?? 0)
+                }
+            }
+        }
+        #endif
         .coordinateSpace(.named(Self.space))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Terminal tabs")
@@ -159,10 +166,10 @@ public struct NWTerminalTabBar<Trailing: View>: View {
     /// Notes where a tab or + starts along the strip, scrolled or not.
     private struct AnchorReader: ViewModifier {
         let id: String
-        @Binding var anchors: [String: CGFloat]
+        @Binding var anchors: [String: CGRect]
 
         func body(content: Content) -> some View {
-            content.onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(NWTerminalTabBar.space)).minX } action: {
+            content.onGeometryChange(for: CGRect.self) { $0.frame(in: .named(NWTerminalTabBar.space)) } action: {
                 anchors[id] = $0
             }
         }
@@ -529,38 +536,54 @@ public struct NWTerminalMenu<Content: View>: View {
 #if os(macOS)
 import AppKit
 
-extension View {
-    /// A right-click (or a Control-click) on the view calls `action`; every other click passes
-    /// through to the view as before.
-    public func nwSecondaryClick(enabled: Bool = true, _ action: @escaping () -> Void) -> some View {
-        overlay { if enabled { NWSecondaryClickCatcher(action: action) } }
-    }
-}
+/// Secondary clicks (right-click, ⌃-click) on regions of the view it backs, found by an event
+/// monitor while the view is on screen: nothing sits over the regions, so every other click
+/// reaches them as before. `regions` are in the backed view's space, top-left origin.
+struct NWSecondaryClickRegions: NSViewRepresentable {
+    let regions: [(String, CGRect)]
+    let action: (String) -> Void
 
-private struct NWSecondaryClickCatcher: NSViewRepresentable {
-    let action: () -> Void
+    func makeNSView(context: Context) -> Monitor { Monitor() }
 
-    func makeNSView(context: Context) -> Catcher {
-        let view = Catcher()
+    func updateNSView(_ view: Monitor, context: Context) {
+        view.regions = regions
         view.action = action
-        return view
     }
 
-    func updateNSView(_ view: Catcher, context: Context) { view.action = action }
+    static func dismantleNSView(_ view: Monitor, coordinator: ()) { view.stop() }
 
-    final class Catcher: NSView {
-        var action: (() -> Void)?
+    final class Monitor: NSView {
+        var regions: [(String, CGRect)] = []
+        var action: ((String) -> Void)?
+        private var monitor: Any?
 
-        /// Only a secondary click lands here; everything else falls to the views under it.
-        override func hitTest(_ point: NSPoint) -> NSView? {
-            guard let event = NSApp.currentEvent else { return nil }
-            let secondary = event.type == .rightMouseDown
-                || (event.type == .leftMouseDown && event.modifierFlags.contains(.control))
-            return secondary ? super.hitTest(point) : nil
+        override var isFlipped: Bool { true }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            stop()
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown, .leftMouseDown]) { [weak self] event in
+                guard let self, let id = self.region(for: event) else { return event }
+                self.action?(id)
+                return nil
+            }
         }
 
-        override func rightMouseDown(with event: NSEvent) { action?() }
-        override func mouseDown(with event: NSEvent) { action?() }
+        /// The region a secondary click in this view's window lands in, while it shows.
+        func region(for event: NSEvent) -> String? {
+            let secondary = event.type == .rightMouseDown || (event.type == .leftMouseDown && event.modifierFlags.contains(.control))
+            guard secondary, event.window === window, !isHiddenOrHasHiddenAncestor else { return nil }
+            let point = convert(event.locationInWindow, from: nil)
+            return regions.first { $0.1.contains(point) }?.0
+        }
+
+        func stop() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+        }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 }
 #endif
