@@ -180,22 +180,24 @@ enum PiSessionFile {
         var description: String { message }
     }
 
-    /// Copy a session file (a native child's transcript) into `cwd`'s project directory under a
-    /// fresh session id so `pi --session-id` resumes it as a first-class agent. Every entry is
-    /// kept; only the header's id, cwd, and timestamp change. Returns the new id.
+    /// Copy a session file (a native child's transcript, or an agent's own session) into `cwd`'s
+    /// project directory under a fresh session id so `pi --session-id` resumes it as a
+    /// first-class agent. Every whole entry is kept (a line pi is still writing is left out);
+    /// only the header's id, cwd, and timestamp change. Returns the new id.
     static func fork(
         sessionFile: String,
         cwd: String,
         sessionsRoot: URL = defaultSessionsRoot
     ) throws -> String {
-        guard let data = FileManager.default.contents(atPath: sessionFile), !data.isEmpty else {
-            throw ForkFailure(message: "The subagent's session file is missing or unreadable.")
+        guard var data = FileManager.default.contents(atPath: sessionFile), !data.isEmpty else {
+            throw ForkFailure(message: "The session file is missing or unreadable.")
         }
         guard let newline = data.firstIndex(of: UInt8(ascii: "\n")),
               var header = try? JSONSerialization.jsonObject(with: data[..<newline]) as? [String: Any],
               header["type"] as? String == "session" else {
-            throw ForkFailure(message: "The subagent's session file has no session header.")
+            throw ForkFailure(message: "The session file has no session header.")
         }
+        if let last = data.lastIndex(of: UInt8(ascii: "\n")) { data = data[...last] }
         let sessionID = UUID().uuidString.lowercased()
         let now = Date()
         header["id"] = sessionID
@@ -212,6 +214,48 @@ enum PiSessionFile {
             throw ForkFailure(message: "Could not copy the transcript: \(error.localizedDescription)")
         }
         return sessionID
+    }
+
+    /// What was said in a session, oldest first, as "user: …" and "assistant: …" paragraphs: the
+    /// user's and the assistant's text along the branch pi is on (walked back from its last
+    /// entry by `parentId`), never thinking, tool calls or their results. Nil when the file
+    /// is missing or holds nothing said. File work: call it off the main actor.
+    static func transcript(file: URL) -> String? {
+        guard let data = FileManager.default.contents(atPath: file.path) else { return nil }
+        var entries: [String: [String: Any]] = [:]
+        var order: [String] = []
+        for line in data.split(separator: UInt8(ascii: "\n")) {
+            guard let entry = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+                  entry["type"] as? String != "session" else { continue }
+            let id = entry["id"] as? String ?? "#\(order.count)"
+            entries[id] = entry
+            order.append(id)
+        }
+        // pi's entries form a tree once the conversation has branched; older files carry no
+        // parent links, and then every entry is on the one branch.
+        var branch: [String] = []
+        var cursor = order.last
+        var seen: Set<String> = []
+        while let id = cursor, let entry = entries[id], seen.insert(id).inserted {
+            branch.append(id)
+            cursor = entry["parentId"] as? String
+        }
+        if branch.count < order.count, !order.contains(where: { entries[$0]?["parentId"] is String }) { branch = order.reversed() }
+        let paragraphs = branch.reversed().compactMap { id -> String? in
+            guard let entry = entries[id], entry["type"] as? String == "message",
+                  let message = entry["message"] as? [String: Any],
+                  let role = message["role"] as? String, role == "user" || role == "assistant" else { return nil }
+            let text: String
+            if let plain = message["content"] as? String {
+                text = plain
+            } else {
+                let blocks = message["content"] as? [[String: Any]] ?? []
+                text = blocks.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }.joined(separator: "\n")
+            }
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : "\(role): \(trimmed)"
+        }
+        return paragraphs.isEmpty ? nil : paragraphs.joined(separator: "\n\n")
     }
 
     /// `2026-08-22T01:34:01.750Z`
