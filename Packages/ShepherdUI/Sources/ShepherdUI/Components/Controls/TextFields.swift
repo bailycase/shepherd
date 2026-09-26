@@ -76,8 +76,8 @@ extension View {
         .nwAnimation(.disclosure, value: message)
     }
 
-    fileprivate func nwFieldChrome(focused: Bool, error: Bool, mono: Bool) -> some View {
-        modifier(NWFieldChrome(focused: focused, error: error, mono: mono))
+    fileprivate func nwFieldChrome(focused: Bool, error: Bool, mono: Bool, search: Bool = false) -> some View {
+        modifier(NWFieldChrome(focused: focused, error: error, mono: mono, search: search))
     }
 }
 
@@ -85,26 +85,34 @@ private struct NWFieldChrome: ViewModifier {
     let focused: Bool
     let error: Bool
     let mono: Bool
+    var search = false
     @Environment(\.isEnabled) private var enabled
+    @Environment(\.nwControlScale) private var scale
 
     func body(content: Content) -> some View {
         let nw = Color.nw
-        let shape = RoundedRectangle(cornerRadius: NW.Radius.s)
+        // The Settings boards' fields: 30pt at radius 7, 10pt in, 12.5 whether mono or not; their
+        // search field is 34pt at radius 8 in Geist 13.
+        let settings = scale == .settings
+        let M = NWSettingsControlMetrics.self
+        let radius = settings ? (search ? M.segmentTrackRadius : M.radius) : NW.Radius.s
+        let shape = RoundedRectangle(cornerRadius: radius)
         content
             .textFieldStyle(.plain)
-            .font(mono ? .nwMono(12) : .nwSans(12.5))
+            .font(settings ? (mono ? .nwMono(M.fieldTextSize) : .nwSans(search ? M.textSize : M.fieldTextSize))
+                  : mono ? .nwMono(12) : .nwSans(12.5))
             .foregroundStyle(nw.textPrimary)
             .tint(nw.lantern)
-            .padding(.horizontal, NW.Space.m)
+            .padding(.horizontal, settings ? M.fieldPadding : NW.Space.m)
             .padding(.vertical, NW.Space.xs)
-            .frame(minHeight: NW.Height.controlM)
+            .frame(minHeight: settings ? (search ? M.controlHeight + 2 : M.fieldHeight) : NW.Height.controlM)
             .background(nw.bgRaised, in: shape)
             .overlay {
                 // The line and the ring fade on their own layer, so focusing a field or
                 // flagging it never animates the text inside.
                 Color.clear
-                    .nwBorder(error ? nw.failed : nw.lineStrong, radius: NW.Radius.s)
-                    .nwFocusRing(focused, radius: NW.Radius.s)
+                    .nwBorder(error ? nw.failed : nw.lineStrong, radius: radius)
+                    .nwFocusRing(focused, radius: radius)
                     .nwComponentAnimation(.hover, value: focused)
                     .nwComponentAnimation(.hover, value: error)
                     .allowsHitTesting(false)
@@ -132,6 +140,7 @@ public struct NWSearchField: View {
     let shortcut: String?
     let large: Bool
     @FocusState private var focused: Bool
+    @Environment(\.nwControlScale) private var scale
 
     public init(_ placeholder: String, text: Binding<String>, shortcut: String? = nil, large: Bool = false) {
         self.placeholder = placeholder
@@ -141,16 +150,24 @@ public struct NWSearchField: View {
     }
 
     public var body: some View {
-        let row = HStack(spacing: large ? NW.Space.m : NW.Space.s) {
+        let settings = scale == .settings && !large
+        let row = HStack(spacing: large || settings ? NW.Space.m : NW.Space.s) {
             NWSearchGlyph(size: large ? 16 : 13)
             TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
-                .font(large ? .nwSans(16) : .nwSans(12.5))
+                .font(large ? .nwSans(16) : .nwSans(settings ? NWSettingsControlMetrics.textSize : 12.5))
                 .foregroundStyle(.nw.textPrimary)
                 .tint(.nw.lantern)
                 .focused($focused)
             if text.isEmpty {
-                if let shortcut { NWKeycap(shortcut) }
+                if let shortcut {
+                    // The Settings boards write the hint as plain mono text ("⌘F").
+                    if settings {
+                        Text(shortcut).font(.nwMono(11)).foregroundStyle(.nw.textTertiary).accessibilityHidden(true)
+                    } else {
+                        NWKeycap(shortcut)
+                    }
+                }
             } else if !large {
                 Button { text = "" } label: {
                     Image(systemName: "xmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(.nw.textTertiary)
@@ -164,7 +181,7 @@ public struct NWSearchField: View {
         if large {
             row.padding(.horizontal, NW.Space.xl).frame(height: 56)
         } else {
-            row.nwFieldChrome(focused: focused, error: false, mono: false)
+            row.nwFieldChrome(focused: focused, error: false, mono: false, search: true)
         }
     }
 }

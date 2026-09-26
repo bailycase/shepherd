@@ -168,6 +168,38 @@ struct StateCodingTests {
     }
 }
 
+@Suite("Design model")
+struct DesignModelTests {
+    @Test func stateAndAgentsFromBeforeDesignsDecodeWithout() throws {
+        let state = try Fixture.decode(ShepherdState.self, #"{"spaces":[],"tabs":[],"agents":[],"automations":[]}"#)
+        #expect(state.designs.isEmpty)
+        let agent = try Fixture.decode(Agent.self, #"{"id":"a1","name":"n","spaceID":"s","tabID":"t","status":"idle"}"#)
+        #expect(agent.designID == nil)
+        #expect(try Fixture.encodeObject(agent)["designID"] == nil, "an agent that draws nothing writes no designID")
+    }
+
+    @Test func aDesignAndItsAgentRoundTrip() throws {
+        let design = Design(name: "Checkout", spaceID: SpaceID(), agentID: AgentID(), systemNamespace: "acme-web",
+                            createdAt: 1_000, lastActiveAt: 2_000, boardCount: 4)
+        #expect(try Fixture.roundTrip(design) == design)
+        let bare = Design(name: "Bare", spaceID: SpaceID(), createdAt: 5)
+        #expect(bare.lastActiveAt == 5, "a new design was last active when it was made")
+        #expect(try Fixture.roundTrip(bare) == bare)
+        let agent = Agent(name: "designer", spaceID: SpaceID(), tabID: TabID(), designID: design.id)
+        #expect(try Fixture.roundTrip(agent).designID == design.id)
+    }
+
+    /// The board count is what the host reads from the design's files: never written to state.json.
+    @Test func thePersistedStateDropsBoardCounts() {
+        let design = Design(name: "Checkout", spaceID: SpaceID(), createdAt: 1, boardCount: 4)
+        let state = ShepherdState(designs: [design])
+        #expect(state.persisted.designs.first?.boardCount == nil)
+        #expect(state.persisted.designs.first?.name == "Checkout")
+        let uncounted = ShepherdState(designs: [Design(name: "New", spaceID: SpaceID(), createdAt: 1)])
+        #expect(uncounted.persisted == uncounted)
+    }
+}
+
 @Suite("Automation model")
 struct AutomationModelTests {
     @Test func newAutomationsAreEnabledAndStopped() {

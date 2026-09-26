@@ -172,7 +172,8 @@ struct RemoteListenerFailure: Equatable {
     }
 }
 
-/// "horizon" over "horizon.internal:7433 · connected · 5 agents", with Edit, Reconnect, Remove.
+/// "horizon" over "horizon.internal:7433 · connected · 5 agents" (the word in its state's text
+/// color), with Edit, Reconnect, Remove.
 /// A failed connection's word says why ("unreachable", "token refused"), its sentence sits
 /// under it as the row's problem, and the client's own reason is the problem's tooltip.
 struct RemoteHostRow: View {
@@ -197,9 +198,9 @@ struct RemoteHostRow: View {
         SettingsActionRow {
             VStack(alignment: .leading, spacing: NW.Space.xxs) {
                 Text(config.name).font(.nw(.body, weight: .medium)).foregroundStyle(Color.nw.textPrimary)
-                HStack(spacing: NW.Space.s) {
-                    NWStatusDot(state)
-                    // The address in mono; the rest in the description's Geist.
+                // The address in mono, then the connection's word in its state's color (no dot, as
+                // SettingsRemote draws it); the rest in the description's Geist.
+                Group {
                     Text("\(Text(verbatim: "\(config.host):\(String(config.port))").font(.nwMono(AppLayout.settingsAddressSize)))\(Text(verbatim: " · "))\(Text(word).foregroundStyle(state.textColor))\(Text(agents))")
                         .foregroundStyle(Color.nw.textSecondary)
                         .nwText(size: NWTextStyle.ui.size, lineHeight: NWCardRowMetrics.settingsDescriptionLineHeight)
@@ -207,7 +208,7 @@ struct RemoteHostRow: View {
                         .truncationMode(.middle)
                         .nwContentTransition(.crossFade)
                 }
-                // Connecting… → connected · 5 agents, or unreachable: the word and dot fade.
+                // Connecting… → connected · 5 agents, or unreachable: the words fade.
                 .nwComponentAnimation(.content, value: state)
                 if let failure = connection.phase.failure {
                     NWInlineProblem(failure.message(host: config.name), help: failure.detail)

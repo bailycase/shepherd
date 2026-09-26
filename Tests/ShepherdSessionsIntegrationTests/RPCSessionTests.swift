@@ -57,6 +57,8 @@ struct RPCSessionTests {
             case .extensionError: "extension_error"
             case .compactionStart: "compaction_start"
             case .compactionEnd: "compaction_end"
+            case .autoRetryStart: "auto_retry_start"
+            case .autoRetryEnd: "auto_retry_end"
             case .unknown(let type): "unknown:\(type)"
             }
         }
