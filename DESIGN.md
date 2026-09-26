@@ -1991,7 +1991,7 @@ ContextFull, ContextCompacted; `ContextMeterButton` and `ContextDetailsPopover` 
 `Thread/ContextMeter.swift`, on ShepherdUI's `NWContextMeterButton`, `NWContextRing` and
 `NWContextDetails`; sizes are `NWContextMetrics`). What fills the model's context window is a
 small ring in the control row, just before Send (and before Stop while pi works); the composer
-never shows text for it, and the toolbar's counters are not where it lives. The ring comes from
+never shows text for it, and the header has no counters (Toolbar). The ring comes from
 the host (`NativeThreadSnapshot.context`, docs/native-thread.md); a host from before it reports
 none, and the row has no ring.
 
