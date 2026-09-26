@@ -40,7 +40,8 @@ struct PadDesignScreen: View {
                                     back: back,
                                     chat: wide ? nil : { showingChat = true },
                                     export: canvas.canPresent ? { Task { exporting = await canvas.exportPNGs(name: name) } } : nil)
-                    PadDesignCanvasView(canvas: canvas, reply: wide ? nil : agent)
+                    PadDesignCanvasView(canvas: canvas, reply: wide ? nil : agent,
+                                        markupAvailable: hosts.host(ref.host)?.supports(RemoteProtocol.designMarkupCapability) == true)
                         .onChange(of: wide, initial: true) { _, wide in canvas.column = !wide }
                 }
                 .background { PadDesignCanvasBackground(wide: wide) }
@@ -181,12 +182,14 @@ private struct PadDesignCanvasBackground: View {
 /// The canvas: the design's boards and notes, the tool and zoom, the selection ringed over the
 /// boards, and the comments' pins. The Comment tool's tap on an element opens the editor beside
 /// it; a pin opens its thread. The board actions float over the board picked whole. A presented
-/// board (Play) covers it all. Over it sits the Pencil markup seam (`PadDesignMarkupLayer`), and
-/// in a narrow window the design agent's latest reply.
+/// board (Play) covers it all. Over it sits the Pencil markup (`PadDesignMarkupLayer`), and in a
+/// narrow window the design agent's latest reply.
 struct PadDesignCanvasView: View {
     @Bindable var canvas: PadDesignCanvas
     /// The design agent, whose latest reply floats over a narrow window's canvas; nil for none.
     let reply: AgentRef?
+    /// The host takes Pencil markup (`design.markup.v1`).
+    var markupAvailable = false
 
     var body: some View {
         let host = canvas.host
@@ -206,10 +209,7 @@ struct PadDesignCanvasView: View {
             PadDesignCommentPopover(canvas: canvas)
         }
         .overlay {
-            PadDesignMarkupLayer(context: PadDesignMarkupContext(
-                design: canvas.ref, viewport: canvas.viewport,
-                boards: Dictionary(boards.compactMap { board in DesignPath(board.id).map { ($0, board.frame) } }, uniquingKeysWith: { a, _ in a }),
-                presented: canvas.presented))
+            PadDesignMarkupLayer(canvas: canvas, available: markupAvailable)
         }
         .overlay(alignment: .bottomTrailing) {
             if let reply {

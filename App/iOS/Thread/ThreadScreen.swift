@@ -124,6 +124,7 @@ struct ThreadTranscript: View {
     @Environment(ThreadStores.self) private var threads
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.composerDesignChat) private var designChat
+    @Environment(\.designMarkupCanvas) private var markupCanvas
     /// Follows the tail until the reader drags away from it (DESIGN.md › Thread › Following).
     @State private var follower = NativeScrollFollower()
 
@@ -264,15 +265,26 @@ struct ThreadTranscript: View {
 
     @ViewBuilder private func turn(_ row: NativeThreadRow, running: Bool, thinking: Bool) -> some View {
         if row.isUser {
-            UserTurnView(turn: row.turn).equatable()
+            // A design's chat reads Pencil markup as the line the agent read it with (iPadDesign).
+            if designChat, let counts = row.designMarkup {
+                PadMarkupReadLine(counts: counts).equatable()
+            } else {
+                UserTurnView(turn: row.turn).equatable()
+            }
         } else if let presentation = row.presentation {
+            let proposals = designChat ? row.markupProposals : nil
             AgentTurnView(thread: ref, presentation: presentation, live: row.live,
                           subagents: store.placements[row.id]?.all.count ?? 0,
                           startedAt: row.startedAt, thinking: thinking,
                           changes: row.changes,
                           changesBusy: row.changes?.turnID.map { TurnUndoStore.shared.busy.contains($0) } ?? false,
-                          actions: actions(row, running: running))
-                .equatable()
+                          proposals: proposals,
+                          actions: actions(row, running: running)) {
+                if let proposals, let markupCanvas {
+                    PadMarkupProposalsView(canvas: markupCanvas, proposals: proposals)
+                }
+            }
+            .equatable()
         }
     }
 

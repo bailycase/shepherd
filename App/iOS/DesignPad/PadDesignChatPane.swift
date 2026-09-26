@@ -33,6 +33,7 @@ struct PadDesignChatPane: View {
                 Group {
                     if let agent {
                         PadDesignChat(ref: agent)
+                            .environment(\.designMarkupCanvas, canvas)
                     } else {
                         // Not drawn on any board: the least that is honest.
                         Text("This design has no agent\(hostName.map { " on \($0)" } ?? ""). Open it there to start one.")
