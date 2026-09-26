@@ -195,11 +195,15 @@ public enum RemoteDesignPresentation {
     }
 
     /// The scale a tile of `tile` draws a board of `board` at: its width across the tile for a
-    /// board wider than tall (top-leading), its height for a phone board (centered).
+    /// board wider than tall (top-leading); a phone board shows its top, centered, as wide as
+    /// `phoneTileWidth` of the tile's height (MobileDesigns: 90pt in a 110pt tile).
     public static func tileScale(_ board: CGSize, in tile: CGSize) -> CGFloat {
         guard board.width > 0, board.height > 0 else { return 1 }
-        return board.height > board.width ? tile.height / board.height : tile.width / board.width
+        return board.height > board.width ? tile.height * phoneTileWidth / board.width : tile.width / board.width
     }
+
+    /// How wide a phone board is drawn in a tile, as a share of the tile's height.
+    public static let phoneTileWidth: CGFloat = 90.0 / 110.0
 
     /// Clamps a zoom the viewer pinched to (a multiple of the fitted scale).
     public static func clampZoom(_ zoom: CGFloat) -> CGFloat {

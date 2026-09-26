@@ -141,10 +141,11 @@ struct RemoteDesignPresentationTests {
         #expect(abs(RemoteDesignPresentation.fit(board, in: space) - scale) < 0.0001)
     }
 
-    @Test func aTileFitsAWideBoardAcrossAndAPhoneBoardDown() {
+    /// MobileDesigns: a 1280pt board across a 170pt tile; a phone board's top, 90pt wide.
+    @Test func aTileFitsAWideBoardAcrossAndShowsAPhoneBoardsTop() {
         let tile = CGSize(width: 170, height: 110)
         #expect(abs(RemoteDesignPresentation.tileScale(CGSize(width: 1280, height: 800), in: tile) - 170.0 / 1280) < 0.0001)
-        #expect(abs(RemoteDesignPresentation.tileScale(CGSize(width: 390, height: 844), in: tile) - 110.0 / 844) < 0.0001)
+        #expect(abs(RemoteDesignPresentation.tileScale(CGSize(width: 390, height: 844), in: tile) - 90.0 / 390) < 0.0001)
     }
 
     @Test func aZoomAndAPanStayInBounds() {
