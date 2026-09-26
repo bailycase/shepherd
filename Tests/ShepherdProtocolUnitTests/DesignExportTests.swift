@@ -71,6 +71,31 @@ struct DesignExportTests {
         #expect(DesignExportNames.fileName(name) == file)
     }
 
+    static let destinations: [(DesignExportFormat, [String], String, Bool)] = [
+        (.zip, ["A.dc.html", "B.dc.html"], "Checkout.zip", false),
+        (.pdf, ["A.dc.html"], "Checkout.pdf", false),
+        (.html, ["flows/Cart.dc.html"], "Cart.html", false),
+        (.png, ["A.dc.html"], "A@2x.png", false),
+        (.html, ["A.dc.html", "B.dc.html"], "Checkout", true),
+        (.png, ["A.dc.html", "B.dc.html"], "Checkout", true),
+    ]
+
+    @Test(arguments: destinations)
+    func theSavePanelSuggestsAFileOrAFolder(_ format: DesignExportFormat, _ boards: [String], _ name: String, _ folder: Bool) {
+        let destination = DesignExportNames.destination(format, boards: boards.map(Self.path), design: "Checkout")
+        #expect(destination.name == name && destination.isFolder == folder)
+    }
+
+    @Test func aPagesLinksToExportedBoardsPointAtTheirPages() {
+        let html = #"<a href="B.dc.html">B</a><a href="/flows/Cart.dc.html#top">Cart</a><a href="Gone.dc.html">x</a><a href="https://x.dev/A.dc.html">y</a><a href="../A.dc.html">z</a>"#
+        let exported: Set<DesignPath> = [Self.path("A.dc.html"), Self.path("B.dc.html"), Self.path("flows/Cart.dc.html")]
+        #expect(DesignBundle.rewritingBoardLinks(html, page: Self.path("A.dc.html"), exported: exported)
+                == #"<a href="B.html">B</a><a href="flows/Cart.html#top">Cart</a><a href="Gone.dc.html">x</a><a href="https://x.dev/A.dc.html">y</a><a href="../A.dc.html">z</a>"#)
+        let nested = #"<a href="../B.dc.html">B</a><a href="Cart.dc.html">self</a>"#
+        #expect(DesignBundle.rewritingBoardLinks(nested, page: Self.path("flows/Cart.dc.html"), exported: exported)
+                == #"<a href="../B.html">B</a><a href="../flows/Cart.html">self</a>"#)
+    }
+
     @Test func aZipCarriesTheBoardsTheExportedOnesImport() {
         let sources: [String: String] = [
             "A.dc.html": #"<x-dc><dc-import name="Card" hint-size="1,1"></dc-import><dc-import hint-size="1" name='Chart'></dc-import></x-dc>"#,
