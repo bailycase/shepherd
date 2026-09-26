@@ -335,7 +335,9 @@ struct RemoteRequestTests {
         #expect(try Wire.roundTrip(RemoteRequest.upload(id: 1, action: action)) == .upload(id: 1, action: action))
     }
 
-    @Test(arguments: [RemoteAgentAction.rename(name: "x"), .deleteKeepingWorktree, .reorder(target: AgentID(rawValue: "b"))])
+    @Test(arguments: [RemoteAgentAction.rename(name: "x"), .deleteKeepingWorktree, .reorder(target: AgentID(rawValue: "b")),
+                      .renameTerminal(paneID: PaneID(rawValue: "p"), title: "logs"), .renameTerminal(paneID: PaneID(rawValue: "p"), title: nil),
+                      .killTerminalProcess(paneID: PaneID(rawValue: "p")), .typeInTerminal(paneID: PaneID(rawValue: "p"), text: "go test ./...")])
     func everyAgentActionRoundTrips(_ action: RemoteAgentAction) throws {
         #expect(try Wire.roundTrip(RemoteRequest.agentAction(id: 1, agentID: S.agent, action: action))
             == .agentAction(id: 1, agentID: S.agent, action: action))
@@ -683,6 +685,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.createAgentImagesCapability,
             RemoteProtocol.instructionsCapability, RemoteProtocol.suggestionsCapability,
             RemoteProtocol.hostSettingsCapability, RemoteProtocol.skillsCapability,
+            RemoteProtocol.terminalControlCapability,
         ]
         #expect(Set(RemoteProtocol.capabilities) == Set(named))
         #expect(RemoteProtocol.capabilities.count == named.count)

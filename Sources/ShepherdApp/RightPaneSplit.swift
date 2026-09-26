@@ -121,7 +121,8 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
         .coordinateSpace(.named("right-pane"))
     }
 
-    /// The pane's leading edge and drag handle (adjustable with VoiceOver).
+    /// The pane's leading edge and drag handle (adjustable with VoiceOver); a double-click takes
+    /// the pane to half the column.
     private func handle(total: CGFloat, width: CGFloat) -> some View {
         Color.nw.lineSubtle
             .frame(width: AppLayout.dividerWidth)
@@ -138,6 +139,8 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
                             }
                             liveWidth = nil
                         })
+                    // Double-click: as wide as the pane goes, half the column (PaneStates).
+                    .simultaneousGesture(TapGesture(count: 2).onEnded { state.width = ShellLayout.widestRightPane(containerWidth: total) })
             }
             .zIndex(1)
             .accessibilityElement()

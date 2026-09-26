@@ -46,7 +46,9 @@ struct TerminalPanelGeometryTests {
         #expect(g.tabs.map(\.id) == [shell.id, psql.id])
         let shellLeaf = try leaf(shell, g), logsLeaf = try leaf(logs, g)
         #expect(shellLeaf.shown && logsLeaf.shown)
-        #expect(shellLeaf.rect.minY == top && logsLeaf.rect.minX > shellLeaf.rect.maxX)
+        // A tab of two panes heads each one; its terminal starts under the header.
+        #expect(shellLeaf.header == CGRect(x: 0, y: top, width: shellLeaf.rect.width, height: NWTerminalMetrics.paneHeaderHeight))
+        #expect(shellLeaf.rect.minY == top + NWTerminalMetrics.paneHeaderHeight && logsLeaf.rect.minX > shellLeaf.rect.maxX)
         #expect(g.separators.count == 1 && g.separators[0].rect.minY == top)
         #expect(try leaf(psql, g).shown == false)
         #expect(try leaf(thread, g).shown)
@@ -56,8 +58,11 @@ struct TerminalPanelGeometryTests {
         let g = geometry(selected: psql.id)
         #expect(try leaf(psql, g).shown)
         #expect(try !leaf(shell, g).shown && !leaf(logs, g).shown)
-        // A hidden tab keeps the panel's content size, so its grid never changes on a switch.
-        #expect(try leaf(psql, g).rect.height == leaf(shell, g).rect.height)
+        // A hidden tab keeps its place, so its grid never changes on a switch; a tab of one pane
+        // has no header (the tab names it).
+        #expect(try leaf(psql, g).header == nil && leaf(shell, g).header != nil)
+        #expect(try leaf(psql, g).rect.height == leaf(shell, g).rect.height + NWTerminalMetrics.paneHeaderHeight)
+        #expect(try leaf(shell, g).rect == leaf(shell, geometry()).rect)
         #expect(g.separators.isEmpty)
     }
 
@@ -71,8 +76,11 @@ struct TerminalPanelGeometryTests {
 
     @Test func maximizedThePanelTakesTheLayoutAndTheThreadFoldsAwayAtItsSize() throws {
         let g = geometry(maximized: true)
-        #expect(g.tabBar?.minY == 0)
-        #expect(g.content?.height == 900 - NWTerminalMetrics.tabBarHeight)
+        // The thread keeps one line above the strip (TerminalStates).
+        #expect(g.fold == CGRect(x: 0, y: 0, width: 1000, height: NWTerminalMetrics.foldedThreadHeight))
+        #expect(g.tabBar?.minY == NWTerminalMetrics.foldedThreadHeight)
+        #expect(g.content?.height == 900 - NWTerminalMetrics.foldedThreadHeight - NWTerminalMetrics.tabBarHeight)
+        #expect(geometry().fold == nil && geometry(shown: false, maximized: true).fold == nil)
         let threadLeaf = try leaf(thread, g)
         #expect(!threadLeaf.shown && threadLeaf.rect.height == 570)
     }
@@ -183,5 +191,39 @@ struct TerminalPanelsTests {
         let pane = LeafPane(cwd: cwd)
         let row = RemoteTerminalActivity(paneID: pane.id, sessionID: SessionID(), process: process, command: command, outputSequence: 0)
         #expect(TerminalPanels.title(row: command == nil && process == nil ? nil : row, pane: pane) == title)
+    }
+
+    /// Rename tab names it whatever it runs; a blank name goes back to what it runs.
+    @Test(arguments: [("logs", "logs"), ("  ", "make dev")])
+    func aRenamedTabKeepsItsName(name: String, title: String) {
+        let pane = LeafPane(cwd: "/tmp/repo", title: name)
+        let row = RemoteTerminalActivity(paneID: pane.id, sessionID: SessionID(), process: "make", command: "make dev", outputSequence: 0)
+        #expect(TerminalPanels.title(row: row, pane: pane) == title)
+    }
+}
+
+/// Add to message (TerminalPane): where the bar hangs, and what the composer gets.
+@Suite("Terminal selection")
+@MainActor
+struct TerminalSelectionTests {
+    /// Under the selection's last line with room below, else over its first, inside the pane.
+    @Test(arguments: [
+        (CGFloat(40), "a\nb", CGFloat(400), CGFloat(40 + 2 * 18 + 4)),
+        (CGFloat(360), "a\nb", CGFloat(400), CGFloat(360 - 32 - 4)),
+        (CGFloat(10), "a", CGFloat(40), CGFloat(0)),
+    ] as [(CGFloat, String, CGFloat, CGFloat)])
+    func theBarHangsBesideTheSelection(originY: CGFloat, text: String, height: CGFloat, top: CGFloat) {
+        let selection = AppTerminalModel.Selection(text: text, origin: CGPoint(x: 20, y: originY), lineHeight: 18)
+        #expect(TerminalSelectionOverlay.top(selection, barHeight: 32, in: height) == top)
+    }
+
+    @Test(arguments: [
+        ("", "FAIL x\n", "```\nFAIL x\n```\n"),
+        ("Why does this fail?", "FAIL x", "Why does this fail?\n\n```\nFAIL x\n```\n"),
+        ("look:\n", "FAIL x", "look:\n\n```\nFAIL x\n```\n"),
+        ("keep", "\n", "keep"),
+    ])
+    func aSelectionJoinsTheDraftAsACodeBlock(draft: String, selection: String, result: String) {
+        #expect(ShepherdViewModel.draft(draft, adding: selection) == result)
     }
 }

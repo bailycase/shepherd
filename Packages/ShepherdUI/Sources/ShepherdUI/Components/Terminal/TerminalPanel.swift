@@ -28,6 +28,24 @@ public enum NWTerminalMetrics {
     /// The key row (touch only): 34pt keycaps at least 44 wide.
     public static let keyHeight: CGFloat = 34
     public static let keyMinWidth: CGFloat = 44
+    /// The thread folded to one line over a maximized panel (TerminalStates): 40pt, 14pt in
+    /// before and 10 after, 10pt gaps.
+    public static let foldedThreadHeight: CGFloat = 40
+    public static let foldedThreadLeading: CGFloat = 14
+    public static let foldedThreadTrailing: CGFloat = 10
+    public static let foldedThreadGap: CGFloat = 10
+    /// A pane's header in a tab of several panes (TerminalPane): 26pt, 10pt in at both sides.
+    public static let paneHeaderHeight: CGFloat = 26
+    public static let paneHeaderPadding: CGFloat = 10
+    /// The bar that sends a selection to the agent (TerminalPane): 4pt in, 4pt apart, and this
+    /// far from the selection and the pane's edge.
+    public static let selectionBarPadding: CGFloat = 4
+    public static let selectionBarRadius: CGFloat = 9
+    public static let selectionBarInset: CGFloat = 8
+    /// The new terminal menu (NewTerminalMenu).
+    public static let menuWidth: CGFloat = 290
+    public static let menuTallRowHeight: CGFloat = 36
+    public static let menuRadius: CGFloat = 10
 }
 
 /// One tab in the panel (TerminalTab · states board).
@@ -70,10 +88,19 @@ public struct NWTerminalTabBar<Trailing: View>: View {
     let close: ((String) -> Void)?
     let newTab: (() -> Void)?
     let newTabHelp: String
+    let menu: ((_ tab: String?, _ anchor: CGFloat) -> Void)?
     @ViewBuilder let trailing: () -> Trailing
+    /// Where + and each tab sit along the strip, for the menu to hang from.
+    @State private var anchors: [String: CGRect] = [:]
+    /// The part of the strip the tabs scroll in: a tab scrolled out of it takes no right-click.
+    @State private var visibleTabs: CGRect = .null
 
+    /// `menu`, where given, opens the new terminal menu (NewTerminalMenu) from + (`tab` nil) and
+    /// from a right-click on a tab, at `anchor` along the strip; + then opens the menu rather
+    /// than a tab.
     public init(_ tabs: [NWTerminalTab], selection: String?, select: @escaping (String) -> Void,
                 close: ((String) -> Void)? = nil, newTab: (() -> Void)? = nil, newTabHelp: String = "New terminal",
+                menu: ((_ tab: String?, _ anchor: CGFloat) -> Void)? = nil,
                 @ViewBuilder trailing: @escaping () -> Trailing) {
         self.tabs = tabs
         self.selection = selection
@@ -81,8 +108,12 @@ public struct NWTerminalTabBar<Trailing: View>: View {
         self.close = close
         self.newTab = newTab
         self.newTabHelp = newTabHelp
+        self.menu = menu
         self.trailing = trailing
     }
+
+    private static var space: String { "nwTerminalTabBar" }
+    private static var plusAnchor: String { "+" }
 
     public var body: some View {
         HStack(spacing: NW.Space.xxs) {
@@ -91,17 +122,22 @@ public struct NWTerminalTabBar<Trailing: View>: View {
                     ForEach(tabs) { tab in
                         NWTerminalTabView(tab: tab, isSelected: tab.id == selection, select: { select(tab.id) },
                                           close: close.map { close in { close(tab.id) } })
+                            .modifier(AnchorReader(id: tab.id, anchors: $anchors))
                     }
                     if let newTab {
-                        Button(action: newTab) { Image(systemName: "plus") }
+                        Button {
+                            if let menu { menu(nil, anchors[Self.plusAnchor]?.minX ?? 0) } else { newTab() }
+                        } label: { Image(systemName: "plus") }
                             .buttonStyle(.nwIcon(size: NWTerminalMetrics.buttonSize))
                             .nwHelp(newTabHelp)
                             .accessibilityLabel(newTabHelp)
+                            .modifier(AnchorReader(id: Self.plusAnchor, anchors: $anchors))
                     }
                 }
             }
             .scrollIndicators(.hidden)
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { visibleTabs = $0 }
             Spacer(minLength: NW.Space.m)
             HStack(spacing: NW.Space.xxs) { trailing() }
                 .buttonStyle(.nwIcon(size: NWTerminalMetrics.buttonSize))
@@ -115,8 +151,33 @@ public struct NWTerminalTabBar<Trailing: View>: View {
         .background(Color.nw.bgWindow)
         .overlay(alignment: .top) { NWHairline(color: .nw.lineStrong) }
         .overlay(alignment: .bottom) { NWHairline() }
+        #if os(macOS)
+        // A right-click (or ⌃-click) on a tab opens the menu from it.
+        .background {
+            if let menu {
+                NWSecondaryClickRegions(regions: tabs.compactMap { tab in
+                    anchors[tab.id].map { (tab.id, $0.intersection(visibleTabs)) }.flatMap { $0.1.isNull ? nil : $0 }
+                }) { id in
+                    menu(id, anchors[id]?.minX ?? 0)
+                }
+            }
+        }
+        #endif
+        .coordinateSpace(.named(Self.space))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Terminal tabs")
+    }
+
+    /// Notes where a tab or + starts along the strip, scrolled or not.
+    private struct AnchorReader: ViewModifier {
+        let id: String
+        @Binding var anchors: [String: CGRect]
+
+        func body(content: Content) -> some View {
+            content.onGeometryChange(for: CGRect.self) { $0.frame(in: .named(NWTerminalTabBar.space)) } action: {
+                anchors[id] = $0
+            }
+        }
     }
 }
 
@@ -340,3 +401,194 @@ public struct NWTerminalNotice: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
+
+/// The thread folded to one line while the panel is maximized (TerminalStates › TerminalPanel ·
+/// maximized): its title, its state, and Show the thread, which restores the panel.
+public struct NWTerminalFoldedThread: View {
+    let title: String
+    let state: AgentState
+    let restore: () -> Void
+    let restoreShortcut: String?
+
+    /// `restoreShortcut` is the chord that restores too, for the button's tooltip.
+    public init(title: String, state: AgentState, restoreShortcut: String? = nil, restore: @escaping () -> Void) {
+        self.title = title
+        self.state = state
+        self.restoreShortcut = restoreShortcut
+        self.restore = restore
+    }
+
+    public var body: some View {
+        HStack(spacing: NWTerminalMetrics.foldedThreadGap) {
+            Text(title)
+                .font(.nwSans(12.5, .semibold))
+                .foregroundStyle(Color.nw.textPrimary)
+                .lineLimit(1)
+            NWStatusPill(state)
+            Spacer(minLength: 0)
+            Button(action: restore) { Image(systemName: "chevron.down") }
+                .buttonStyle(.nwIcon(size: NWTerminalMetrics.buttonSize))
+                .nwHelp("Show the thread", shortcut: restoreShortcut)
+                .accessibilityLabel("Show the thread")
+        }
+        .padding(.leading, NWTerminalMetrics.foldedThreadLeading)
+        .padding(.trailing, NWTerminalMetrics.foldedThreadTrailing)
+        .frame(height: NWTerminalMetrics.foldedThreadHeight)
+        .frame(maxWidth: .infinity)
+        .background(Color.nw.bgWindow)
+        .overlay(alignment: .bottom) { NWHairline() }
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// A pane's header in a tab split into several panes (TerminalPane): the terminal glyph, what
+/// the pane runs in mono, and its host at the trailing end. The focused pane's reads in
+/// `textPrimary`; the others' are quiet. A tab of one pane has none: the tab names it.
+public struct NWTerminalPaneHeader: View {
+    let title: String
+    let host: String?
+    let isFocused: Bool
+
+    public init(title: String, host: String? = nil, isFocused: Bool) {
+        self.title = title
+        self.host = host
+        self.isFocused = isFocused
+    }
+
+    public var body: some View {
+        let nw = Color.nw
+        let color = isFocused ? nw.textPrimary : nw.textTertiary
+        HStack(spacing: NW.Space.s) {
+            Image(systemName: "terminal")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(color)
+            Text(title)
+                .font(.nwMono(11))
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: NW.Space.s)
+            if let host {
+                HStack(spacing: 3) {
+                    Image(systemName: "desktopcomputer")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(nw.textTertiary)
+                    Text(host)
+                        .font(.nw(.micro, weight: .regular))
+                        .foregroundStyle(color)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .padding(.horizontal, NWTerminalMetrics.paneHeaderPadding)
+        .frame(height: NWTerminalMetrics.paneHeaderHeight)
+        .frame(maxWidth: .infinity)
+        .background(Color.nw.bgWindow)
+        .overlay(alignment: .bottom) { NWHairline() }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(host.map { "\(title), on \($0)" } ?? title)
+    }
+}
+
+/// Beside a selection in a terminal (TerminalPane): Add to message puts the selection in the
+/// thread's composer, and Copy copies it.
+public struct NWTerminalSelectionBar: View {
+    let add: () -> Void
+    let copy: () -> Void
+
+    public init(add: @escaping () -> Void, copy: @escaping () -> Void) {
+        self.add = add
+        self.copy = copy
+    }
+
+    public var body: some View {
+        HStack(spacing: NWTerminalMetrics.selectionBarPadding) {
+            Button(action: add) { Label("Add to message", systemImage: "plus") }
+                .buttonStyle(.nw(.primary, size: .s))
+                .help("Add the selection to your message")
+            Button(action: copy) { Label("Copy", systemImage: "doc.on.doc") }
+                .buttonStyle(.nw(.ghost, size: .s))
+                .help("Copy the selection")
+        }
+        .padding(NWTerminalMetrics.selectionBarPadding)
+        .fixedSize()
+        .nwPopover(radius: NWTerminalMetrics.selectionBarRadius)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Selection")
+    }
+}
+
+/// The new terminal menu (NewTerminalMenu: + or a right-click on a tab): 290pt, 6pt in, radius
+/// 10, the popover's fill, line and shadow. Its rows are the Changes menus' rows
+/// (`NWChangesMenuRow`), two-line ones at least 36pt, with their chords as keycaps.
+public struct NWTerminalMenu<Content: View>: View {
+    let content: Content
+
+    public init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 0) { content }
+            .padding(NW.Space.s)
+            .frame(width: NWTerminalMetrics.menuWidth)
+            .nwPopover(radius: NWTerminalMetrics.menuRadius)
+            .accessibilityElement(children: .contain)
+            .accessibilityAddTraits(.isModal)
+    }
+}
+
+#if os(macOS)
+import AppKit
+
+/// Secondary clicks (right-click, ⌃-click) on regions of the view it backs, found by an event
+/// monitor while the view is on screen: nothing sits over the regions, so every other click
+/// reaches them as before. `regions` are in the backed view's space, top-left origin.
+struct NWSecondaryClickRegions: NSViewRepresentable {
+    let regions: [(String, CGRect)]
+    let action: (String) -> Void
+
+    func makeNSView(context: Context) -> Monitor { Monitor() }
+
+    func updateNSView(_ view: Monitor, context: Context) {
+        view.regions = regions
+        view.action = action
+    }
+
+    static func dismantleNSView(_ view: Monitor, coordinator: ()) { view.stop() }
+
+    final class Monitor: NSView {
+        var regions: [(String, CGRect)] = []
+        var action: ((String) -> Void)?
+        private var monitor: Any?
+
+        override var isFlipped: Bool { true }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            stop()
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown, .leftMouseDown]) { [weak self] event in
+                guard let self, let id = self.region(for: event) else { return event }
+                self.action?(id)
+                return nil
+            }
+        }
+
+        /// The region a secondary click in this view's window lands in, while it shows.
+        func region(for event: NSEvent) -> String? {
+            let secondary = event.type == .rightMouseDown || (event.type == .leftMouseDown && event.modifierFlags.contains(.control))
+            guard secondary, event.window === window, !isHiddenOrHasHiddenAncestor else { return nil }
+            let point = convert(event.locationInWindow, from: nil)
+            return regions.first { $0.1.contains(point) }?.0
+        }
+
+        func stop() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+        }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+}
+#endif
