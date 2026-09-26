@@ -53,8 +53,8 @@ import SwiftUI
         VStack(spacing: NW.Space.xl) {
             NWTouchCommandList(commands: [
                 NWTouchCommand(name: "review", description: "Open the review pane on working-tree changes"),
-                NWTouchCommand(name: "resume", description: "Pick a previous session to continue"),
-                NWTouchCommand(name: "release-notes", description: "Draft release notes since the last tag", tag: "prompt"),
+                NWTouchCommand(name: "resume", description: "Pick a previous session to continue", arguments: "[session]"),
+                NWTouchCommand(name: "release-notes", description: "Draft release notes since the last tag", arguments: "[tag]", tag: "prompt"),
             ], total: 23, query: "re", wide: false) { _ in }
             NWTouchCommandList(commands: [
                 NWTouchCommand(name: "reload", description: "Reload extensions, skills and prompt templates"),
