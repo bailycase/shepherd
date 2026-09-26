@@ -61,10 +61,12 @@ private struct NeedsYouSplit: View {
         let current = items.first { $0.id == chosen } ?? items[0]
         HStack(spacing: 0) {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
+                // Flat items, 2pt apart, the chosen one filled (iPadInbox).
+                LazyVStack(alignment: .leading, spacing: NW.Space.xxs) {
                     Text(NeedsYouScreen.waiting(items.count))
                         .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
-                        .padding(.horizontal, NW.Space.xs)
+                        .padding(.horizontal, NW.Space.l)
+                        .padding(.bottom, NW.Space.s)
                     ForEach(items) { item in
                         Button { chosen = item.id } label: {
                             AttentionCard(item: item, busy: answering.contains(item.id), failure: nil,
@@ -74,7 +76,7 @@ private struct NeedsYouSplit: View {
                         .accessibilityAddTraits(item.id == current.id ? .isSelected : [])
                     }
                 }
-                .padding(MobileLayout.gutter)
+                .padding(NW.Space.m)
             }
             .frame(width: MobileLayout.inboxListWidth)
             NWHairline(.vertical)
@@ -98,7 +100,14 @@ private struct NeedsYouDetail: View {
                 VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
                     HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
                         Text(item.title).font(.nw(.headline)).foregroundStyle(nw.textPrimary)
-                        NWStatusPill(.attention)
+                        // "Needs you · 2m": how long it has waited.
+                        if let since = item.since.map(Date.init(milliseconds:)) {
+                            TimelineView(NWElapsedSchedule(start: since)) { context in
+                                NWStatusPill(.attention, label: "\(AgentState.attention.label) · \(NWDuration.text(context.date.timeIntervalSince(since)))")
+                            }
+                        } else {
+                            NWStatusPill(.attention)
+                        }
                     }
                     Text(item.question).nwText(.body).foregroundStyle(nw.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -120,7 +129,8 @@ private struct NeedsYouDetail: View {
                     VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
                         NWSectionHeader("Where it came from")
                         NWListCard {
-                            NWListRow(item.thread, subtitle: item.kind, subtitleMono: false, leading: item.leading,
+                            NWListRow(item.thread, subtitle: item.kind, subtitleMono: false,
+                                      clock: item.since.map { .ago(Date(milliseconds: $0)) }, leading: item.leading,
                                       trailing: .host(item.hostName), chevron: false)
                         }
                     }
@@ -138,7 +148,7 @@ private struct NeedsYouDetail: View {
                     Text(failure).font(.nw(.caption)).foregroundStyle(nw.failed).lineLimit(2)
                 }
                 NWWrapStack(spacing: NW.Space.m) {
-                    AttentionReplies(item: item, busy: busy, size: .l)
+                    AttentionReplies(item: item, busy: busy, size: .l, pickLast: true)
                 }
                 .fixedSize(horizontal: false, vertical: true)
             }

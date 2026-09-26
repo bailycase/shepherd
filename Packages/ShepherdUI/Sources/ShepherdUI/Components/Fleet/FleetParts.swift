@@ -8,6 +8,10 @@ import SwiftUI
 public enum NWListMetrics {
     /// A one-line row (the boards' 48pt, over the touch minimum).
     public static let rowHeight: CGFloat = 48
+    /// A one-line row in the iPad sidebar (iPadThread: 44pt, the touch minimum).
+    public static let compactRowHeight: CGFloat = NW.Height.touch
+    /// The iPad sidebar's New thread badge: its glyph in a `bgSelected` circle.
+    public static let badge: CGFloat = 20
     /// A title over a status line: the boards' 52pt in thread and search lists (Home, Search,
     /// More). Choice lists (56), review files (58) and automations (64) have their own rows.
     public static let twoLineRowHeight: CGFloat = 52
@@ -40,21 +44,30 @@ public enum NWRowClock: Equatable, Sendable {
 /// A list section's head (13/600): "Needs you  4" in lantern, "Recents" in secondary, with an
 /// optional trailing count (mono, tertiary) or action.
 public struct NWListHeader<Trailing: View>: View {
+    /// A list's head (the phone boards': 13/600 in `textSecondary`), or the iPad sidebar's
+    /// quieter one (iPadThread: 13/500, a plain head in `textTertiary`).
+    public enum Style: Sendable {
+        case list, sidebar
+    }
+
     let title: String
     let attention: Bool
+    let style: Style
     @ViewBuilder let trailing: () -> Trailing
 
-    public init(_ title: String, attention: Bool = false, @ViewBuilder trailing: @escaping () -> Trailing) {
+    public init(_ title: String, attention: Bool = false, style: Style = .list, @ViewBuilder trailing: @escaping () -> Trailing) {
         self.title = title
         self.attention = attention
+        self.style = style
         self.trailing = trailing
     }
 
     public var body: some View {
+        let sidebar = style == .sidebar
         HStack(spacing: NW.Space.m) {
             Text(title)
-                .font(.nwSans(NWListMetrics.headSize, .semibold))
-                .foregroundStyle(attention ? Color.nw.lanternText : Color.nw.textSecondary)
+                .font(.nwSans(NWListMetrics.headSize, sidebar ? .medium : .semibold))
+                .foregroundStyle(attention ? Color.nw.lanternText : sidebar ? Color.nw.textTertiary : Color.nw.textSecondary)
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: NW.Space.xs)
             trailing()
@@ -64,8 +77,8 @@ public struct NWListHeader<Trailing: View>: View {
 }
 
 extension NWListHeader where Trailing == Text? {
-    public init(_ title: String, attention: Bool = false, count: Int? = nil) {
-        self.init(title, attention: attention) {
+    public init(_ title: String, attention: Bool = false, count: Int? = nil, style: Style = .list) {
+        self.init(title, attention: attention, style: style) {
             count.map {
                 Text("\($0)").font(.nw(.mono))
                     .foregroundStyle(attention ? Color.nw.lanternText : Color.nw.textTertiary)
@@ -102,6 +115,10 @@ public struct NWListRow: View, Equatable {
         case state(AgentState)
         /// An SF Symbol, tinted by a state (lantern for attention) or secondary.
         case symbol(String, AgentState? = nil)
+        /// A symbol in a 20pt `bgSelected` circle (the iPad sidebar's New thread).
+        case badge(String)
+        /// A state's 14pt glyph (`NWStateGlyph`: the spinner while running; iPadOverview).
+        case glyph(AgentState)
     }
 
     public enum Trailing: Equatable, Sendable {
@@ -114,6 +131,8 @@ public struct NWListRow: View, Equatable {
         case alert(String)
         /// The host it lives on.
         case host(String)
+        /// A quiet word in mono (the iPad sidebar's "failed", "done").
+        case meta(String)
     }
 
     let title: String
@@ -126,11 +145,16 @@ public struct NWListRow: View, Equatable {
     let chevron: Bool
     let selected: Bool
     let dimmed: Bool
+    let compact: Bool
+    let indent: CGFloat
     @Environment(\.dynamicTypeSize) private var typeSize
 
+    /// `compact` rows are 44pt, the iPad sidebar's; others 48 (52 with a status line). `indent`
+    /// moves the content in while the row (and its selection) keeps the full width (the iPad
+    /// sidebar's More sub-rows).
     public init(_ title: String, subtitle: String? = nil, subtitleMono: Bool = true, subtitleTone: AgentState? = nil,
                 clock: NWRowClock? = nil, leading: Leading = .none, trailing: Trailing = .none, chevron: Bool = true,
-                selected: Bool = false, dimmed: Bool = false) {
+                selected: Bool = false, dimmed: Bool = false, compact: Bool = false, indent: CGFloat = 0) {
         self.title = title
         self.subtitle = subtitle
         self.subtitleMono = subtitleMono
@@ -141,12 +165,14 @@ public struct NWListRow: View, Equatable {
         self.chevron = chevron
         self.selected = selected
         self.dimmed = dimmed
+        self.compact = compact
+        self.indent = indent
     }
 
     public nonisolated static func == (a: NWListRow, b: NWListRow) -> Bool {
         a.title == b.title && a.subtitle == b.subtitle && a.subtitleMono == b.subtitleMono && a.subtitleTone == b.subtitleTone
             && a.clock == b.clock && a.leading == b.leading && a.trailing == b.trailing && a.chevron == b.chevron
-            && a.selected == b.selected && a.dimmed == b.dimmed
+            && a.selected == b.selected && a.dimmed == b.dimmed && a.compact == b.compact && a.indent == b.indent
     }
 
     public var body: some View {
@@ -178,10 +204,12 @@ public struct NWListRow: View, Equatable {
                     .accessibilityHidden(true)
             }
         }
-        .padding(.horizontal, NW.Space.l)
+        .padding(.leading, NW.Space.l + indent)
+        .padding(.trailing, NW.Space.l)
         .padding(.vertical, NW.Space.m)
         .frame(maxWidth: .infinity,
-               minHeight: subtitle != nil || clock != nil ? NWListMetrics.twoLineRowHeight : NWListMetrics.rowHeight,
+               minHeight: subtitle != nil || clock != nil ? NWListMetrics.twoLineRowHeight
+                   : compact ? NWListMetrics.compactRowHeight : NWListMetrics.rowHeight,
                alignment: .leading)
         .background(selected ? nw.bgSelected : .clear)
         .opacity(dimmed ? NWListMetrics.dimmedOpacity : 1)
@@ -218,7 +246,31 @@ public struct NWListRow: View, Equatable {
         }
     }
 
-    @ViewBuilder private var leadingView: some View {
+    private var leadingView: some View { NWListLeading(leading: leading) }
+
+    @ViewBuilder private var trailingView: some View {
+        switch trailing {
+        case .none:
+            EmptyView()
+        case .value(let text):
+            Text(text).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary).lineLimit(1)
+        case .reason(let text):
+            Text(text).font(.nw(.micro, weight: .regular)).foregroundStyle(Color.nw.lanternText).lineLimit(1).fixedSize()
+        case .alert(let text):
+            Text(text).font(.nw(.micro, weight: .regular)).foregroundStyle(Color.nw.failed).lineLimit(1).fixedSize()
+        case .host(let name):
+            NWHostBadge(name)
+        case .meta(let text):
+            Text(text).font(.nw(.micro, weight: .regular)).foregroundStyle(Color.nw.textTertiary).lineLimit(1).fixedSize()
+        }
+    }
+}
+
+/// A list row's leading column: a status dot, a symbol, or the New thread badge.
+struct NWListLeading: View {
+    let leading: NWListRow.Leading
+
+    var body: some View {
         switch leading {
         case .none:
             EmptyView()
@@ -236,23 +288,108 @@ public struct NWListRow: View, Equatable {
                 .font(.nw(.ui, weight: .medium))
                 .foregroundStyle(tone == .attention ? Color.nw.lanternText : tone?.color ?? Color.nw.textSecondary)
                 .accessibilityHidden(true)
+        case .glyph(let state):
+            NWStateGlyph(state)
+        case .badge(let name):
+            Image(systemName: name)
+                .font(.nw(.micro, weight: .semibold))
+                .foregroundStyle(Color.nw.textPrimary)
+                .frame(width: NWListMetrics.badge, height: NWListMetrics.badge)
+                .background(Color.nw.bgSelected, in: Circle())
+                .accessibilityHidden(true)
         }
+    }
+}
+
+/// A card's caption band (iPadOverview: "THREADS · 3", "TODAY"): the section label on `bgSunken`,
+/// 8×12 inside, over the card's rows.
+public struct NWCaptionBand: View {
+    let text: String
+
+    public init(_ text: String) { self.text = text }
+
+    public var body: some View {
+        Text(text)
+            .nwSectionLabel()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, NW.Space.l)
+            .padding(.vertical, NW.Space.m)
+            .background(Color.nw.bgSunken)
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// A row of the iPad overview's Running now and Finished cards (iPadOverview): the state in a
+/// 16pt column, the title (14/500, `.ui`) with its time trailing in mono, and a line under it: what
+/// it does now in mono, or how it ended.
+public struct NWOverviewRow: View, Equatable {
+    public enum Time: Equatable, Sendable {
+        case none
+        /// A fixed stamp ("11:02", "Mon").
+        case text(String)
+        /// Counting up from a moment ("4:12", "37m").
+        case elapsed(since: Date)
     }
 
-    @ViewBuilder private var trailingView: some View {
-        switch trailing {
-        case .none:
-            EmptyView()
-        case .value(let text):
-            Text(text).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary).lineLimit(1)
-        case .reason(let text):
-            Text(text).font(.nw(.micro, weight: .regular)).foregroundStyle(Color.nw.lanternText).lineLimit(1).fixedSize()
-        case .alert(let text):
-            Text(text).font(.nw(.micro, weight: .regular)).foregroundStyle(Color.nw.failed).lineLimit(1).fixedSize()
-        case .host(let name):
-            NWHostBadge(name)
+    let title: String
+    let detail: String
+    let detailMono: Bool
+    let leading: NWListRow.Leading
+    let time: Time
+    let dimmed: Bool
+
+    public init(_ title: String, detail: String, detailMono: Bool = true, leading: NWListRow.Leading, time: Time = .none,
+                dimmed: Bool = false) {
+        self.title = title
+        self.detail = detail
+        self.detailMono = detailMono
+        self.leading = leading
+        self.time = time
+        self.dimmed = dimmed
+    }
+
+    public var body: some View {
+        let nw = Color.nw
+        HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
+            NWListLeading(leading: leading)
+                .frame(width: NWOverviewMetrics.leadingWidth)
+                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + NWOverviewMetrics.leadingBaselineOffset }
+            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+                HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
+                    Text(title).font(.nw(.ui, weight: .medium)).foregroundStyle(nw.textPrimary).lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    timeView.font(.nw(.micro, weight: .regular)).foregroundStyle(nw.textTertiary).monospacedDigit()
+                        .lineLimit(1).fixedSize()
+                }
+                Text(detail).font(detailMono ? .nw(.mono) : .nw(.caption)).foregroundStyle(nw.textTertiary).lineLimit(1)
+            }
+        }
+        .padding(.horizontal, NW.Space.l)
+        .padding(.vertical, NW.Space.m)
+        .frame(maxWidth: .infinity, minHeight: NWListMetrics.twoLineRowHeight, alignment: .leading)
+        .opacity(dimmed ? NWListMetrics.dimmedOpacity : 1)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder private var timeView: some View {
+        switch time {
+        case .none: EmptyView()
+        case .text(let text): Text(text)
+        case .elapsed(let since):
+            TimelineView(NWElapsedSchedule(start: since)) { context in
+                Text(NWDuration.text(context.date.timeIntervalSince(since)))
+            }
         }
     }
+}
+
+/// The overview rows' measures (iPadOverview).
+public enum NWOverviewMetrics {
+    /// The state column.
+    public static let leadingWidth: CGFloat = 16
+    /// Lifts a dot or glyph from the title's baseline to its middle.
+    public static let leadingBaselineOffset: CGFloat = NW.Space.xs
 }
 
 /// A card of rows with a 1px rule between them (the boards' 12pt list cards).
@@ -280,6 +417,12 @@ public struct NWListCard<Content: View>: View {
 /// for a subagent, a bolt for an automation run), or, for a thread (`symbol` nil), the glowing
 /// 8pt lantern dot.
 public struct NWAttentionCard<Actions: View>: View {
+    /// A card (MobileInbox, iPadOverview), or a flat item of the iPad inbox's list (iPadInbox:
+    /// no line, `bgSelected` while chosen).
+    public enum Style: Sendable {
+        case card, item
+    }
+
     let symbol: String?
     let origin: String
     let title: String
@@ -288,10 +431,11 @@ public struct NWAttentionCard<Actions: View>: View {
     let since: Date?
     let host: String?
     let selected: Bool
+    let style: Style
     @ViewBuilder let actions: () -> Actions
 
     public init(symbol: String?, origin: String, title: String, question: String, message: String? = nil, since: Date? = nil,
-                host: String? = nil, selected: Bool = false, @ViewBuilder actions: @escaping () -> Actions) {
+                host: String? = nil, selected: Bool = false, style: Style = .card, @ViewBuilder actions: @escaping () -> Actions) {
         self.symbol = symbol
         self.origin = origin
         self.title = title
@@ -300,12 +444,13 @@ public struct NWAttentionCard<Actions: View>: View {
         self.since = since
         self.host = host
         self.selected = selected
+        self.style = style
         self.actions = actions
     }
 
     public var body: some View {
         let nw = Color.nw
-        VStack(alignment: .leading, spacing: NW.Space.s) {
+        let card = VStack(alignment: .leading, spacing: NW.Space.s) {
             // The kind, host and time share a line when they fit; otherwise the host and time drop under.
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: NW.Space.s) {
@@ -330,12 +475,21 @@ public struct NWAttentionCard<Actions: View>: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            NWWrapStack(spacing: NW.Space.m, lineSpacing: NW.Space.xs) { actions() }
-                .padding(.top, NW.Space.xxs)
+            if style == .card {
+                NWWrapStack(spacing: NW.Space.m, lineSpacing: NW.Space.xs) { actions() }
+                    .padding(.top, NW.Space.xxs)
+            }
         }
         .padding(NW.Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .nwCard(radius: NWListMetrics.cardRadius, fill: selected ? nw.bgSelected : nil, line: selected ? nw.lineStrong : nil)
+        Group {
+            switch style {
+            case .card:
+                card.nwCard(radius: NWListMetrics.cardRadius, fill: selected ? nw.bgSelected : nil, line: selected ? nw.lineStrong : nil)
+            case .item:
+                card.background(selected ? nw.bgSelected : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+            }
+        }
         .accessibilityElement(children: .contain)
     }
 
@@ -367,6 +521,49 @@ public struct NWAttentionCard<Actions: View>: View {
             }
         }
     }
+}
+
+/// A host in the iPad Hosts list (iPadHosts): a 16pt `textSecondary` glyph, the name in mono
+/// semibold over what it carries (12 `textTertiary`), and an 8pt status dot trailing; at least
+/// 64pt, the chosen one on `bgSelected`.
+public struct NWHostRow: View, Equatable {
+    let name: String
+    let detail: String
+    let state: AgentState
+    let selected: Bool
+
+    public init(name: String, detail: String, state: AgentState, selected: Bool = false) {
+        self.name = name
+        self.detail = detail
+        self.state = state
+        self.selected = selected
+    }
+
+    public var body: some View {
+        let nw = Color.nw
+        HStack(spacing: NW.Space.l) {
+            Image(systemName: "desktopcomputer")
+                .font(.nw(.ui, weight: .regular))
+                .foregroundStyle(nw.textSecondary)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+                Text(name).font(.nw(.code, weight: .semibold)).foregroundStyle(nw.textPrimary).lineLimit(1)
+                Text(detail).font(.nw(.caption)).foregroundStyle(nw.textTertiary).lineLimit(2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            NWStatusDot(state, size: NWListMetrics.attentionDot)
+        }
+        .padding(.horizontal, NW.Space.l)
+        .padding(.vertical, NW.Space.m)
+        .frame(maxWidth: .infinity, minHeight: NWHostRow.minHeight, alignment: .leading)
+        .background(selected ? nw.bgSelected : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    /// The board's 64pt rows.
+    public static let minHeight: CGFloat = 64
 }
 
 /// A host's card (MobileMore, iPadHosts): the name, its address, the connection, what runs there,

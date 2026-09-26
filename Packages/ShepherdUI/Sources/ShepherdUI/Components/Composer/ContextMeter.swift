@@ -656,7 +656,7 @@ struct NWContextButtonStyle: ButtonStyle {
                 .font(.nwSans(12.5, primary ? .semibold : .medium))
                 .foregroundStyle(primary ? nw.textOnLantern : nw.textPrimary)
                 .frame(maxWidth: .infinity, minHeight: touch ? NW.Height.touch : NWContextMetrics.buttonHeight)
-                .background(primary ? AnyShapeStyle(nw.lantern.mix(with: .white, by: active ? 0.12 : 0))
+                .background(primary ? AnyShapeStyle(configuration.isPressed && enabled ? nw.lanternPressed : active ? nw.lanternHover : nw.lantern)
                                     : AnyShapeStyle(active ? nw.bgHover : nw.bgWindow), in: shape)
                 .overlay { if !primary { shape.strokeBorder(nw.lineStrong, lineWidth: 1) } }
                 .contentShape(shape)

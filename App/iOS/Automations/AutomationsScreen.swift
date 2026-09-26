@@ -56,7 +56,8 @@ struct AutomationsScreen: View {
     }
 }
 
-/// The list: a failure's banner, Running now, All, and why a host's automations are read-only.
+/// The list: a failure's banner, Running now and All (on iPad one flat list), and why a host's
+/// automations are read-only.
 private struct AutomationsList: View {
     let store: AutomationsStore
     let model: AutomationsModel
@@ -71,8 +72,13 @@ private struct AutomationsList: View {
                     Button("OK") { store.failure = nil }.buttonStyle(.nw(.secondary))
                 }
             }
-            if !model.live.isEmpty {
-                if chosen == nil {
+            if chosen != nil {
+                // iPad (iPadAutomations): one flat list, the live runs first, the chosen row filled.
+                VStack(spacing: NW.Space.xxs) {
+                    ForEach(model.live + model.quiet) { row in padRow(row) }
+                }
+            } else {
+                if !model.live.isEmpty {
                     // iPhone (MobileAutomations): each live run is its own card.
                     VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
                         NWListHeader("Running now")
@@ -82,12 +88,10 @@ private struct AutomationsList: View {
                             }
                         }
                     }
-                } else {
-                    section("Running now", count: nil, rows: model.live)
                 }
-            }
-            if !model.quiet.isEmpty {
-                section("All", count: model.rows.count, rows: model.quiet)
+                if !model.quiet.isEmpty {
+                    section("All", count: model.rows.count, rows: model.quiet)
+                }
             }
             if !store.readOnlyNotes.isEmpty {
                 VStack(alignment: .leading, spacing: NW.Space.xs) {
@@ -100,7 +104,15 @@ private struct AutomationsList: View {
         }
     }
 
-    private func section(_ title: String, count: Int?, rows: [AutomationListRow]) -> some View {
+    private func padRow(_ row: AutomationListRow) -> some View {
+        AutomationListRowView(row: row, isOn: store.isOn(row), busy: store.busy.contains(row.key),
+                              selected: row.key == chosen, chevron: false,
+                              toggle: { store.setEnabled(row.key, $0) }, open: { open(row.key) })
+            .equatable()
+            .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+    }
+
+    private func section(_ title: String, count: Int, rows: [AutomationListRow]) -> some View {
         VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
             NWListHeader(title, count: count)
             NWListCard {
@@ -172,7 +184,7 @@ private struct AutomationsSplit: View {
         HStack(spacing: 0) {
             ScrollView {
                 AutomationsList(store: store, model: model, chosen: current) { store.chosen = $0 }
-                    .padding(MobileLayout.gutter)
+                    .padding(NW.Space.m)
             }
             .refreshable { await store.refreshRuns() }
             .frame(width: MobileLayout.automationsListWidth)

@@ -17,6 +17,7 @@ struct QueueSection: View {
     var framed = true
     @ScaledMetric(relativeTo: .body) private var rowsMaxHeight = MobileLayout.queueRowsMaxHeight
     @Environment(\.composerMaxHeight) private var composerMaxHeight
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
         let rows = state.rows
@@ -32,7 +33,7 @@ struct QueueSection: View {
                 VStack(spacing: 0) {
                     ForEach(rows) { row in
                         QueueRowView(row: row, first: row.id == rows.first?.id, steerLabel: NativeQueueStack.steerLabel(running: running),
-                                     enabled: enabled, actions: actions)
+                                     enabled: enabled, wide: sizeClass == .regular, actions: actions)
                     }
                 }
                 .fittedScroll(maxHeight: min(rowsMaxHeight, composerMaxHeight * MobileLayout.queueShare))
@@ -140,10 +141,12 @@ private struct QueueRowView: View, Equatable {
     let first: Bool
     let steerLabel: String
     let enabled: Bool
+    let wide: Bool
     let actions: QueueRowActions
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.row == rhs.row && lhs.first == rhs.first && lhs.steerLabel == rhs.steerLabel && lhs.enabled == rhs.enabled
+            && lhs.wide == rhs.wide
     }
 
     var body: some View {
@@ -154,7 +157,7 @@ private struct QueueRowView: View, Equatable {
         case .cleared(let count): .cleared(count: count)
         }
         let id = row.message
-        NWTouchQueueRow(row.text, images: row.images.count, kind: kind, held: row.held,
+        NWTouchQueueRow(row.text, images: row.images.count, kind: kind, held: row.held, wide: wide,
                         back: id.flatMap { id in enabled ? { actions.back(id) } : nil },
                         undo: row.message == nil && enabled ? { actions.undo(row.id) } : nil)
             .overlay(alignment: .top) { if !first { NWHairline() } }
