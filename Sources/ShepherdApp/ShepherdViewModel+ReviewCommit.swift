@@ -30,7 +30,7 @@ extension ShepherdViewModel {
                 let fallback = reviewCommitFallbackMessage(reviewCommitFiles(files) { _ in "" }.filter { $0.paths.contains(where: wanted.contains) })
                 return .commitMessage(title: fallback.title, body: fallback.body, drafted: false)
             }
-            let message = await ReviewCommitGit.draftMessage(root: root, paths: paths) { await LoginShell.run($0, cwd: $1, timeout: 45) }
+            let message = await ReviewCommitGit.draftMessage(root: root, paths: paths, engine: server.pi.engine) { await LoginShell.run($0, cwd: $1, timeout: 45) }
             return .commitMessage(title: message.title, body: message.body, drafted: message.drafted)
         case .commit(let id, let options):
             if let existing = hostWorktreeOperations[id] {

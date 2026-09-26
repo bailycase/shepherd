@@ -98,7 +98,8 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
 - **Set by the app for pi, never read from the user's environment:**
   - Always: `SHEPHERD_AGENT_ID`, `SHEPHERD_SOCKET`, `SHEPHERD_EXT_STATUS`,
     `SHEPHERD_INSTRUCTIONS_DIR` (where the instructions extension reads Settings ▸ Instructions'
-    `AGENTS.md` and `APPEND_SYSTEM.md`).
+    `AGENTS.md` and `APPEND_SYSTEM.md`), `SHEPHERD_PI_EXECUTABLE` (the engine's pi, which a
+    native child starts when pi's own runtime isn't node or bun; `PiLaunch.childExecutable`).
   - With the matching extension on: `SHEPHERD_EXT_PANES`, `SHEPHERD_NATIVE_CHILDREN`,
     `SHEPHERD_EXT_CHILDREN`, and `SHEPHERD_CHILD_*`; for Settings ▸ Pi ▸ MCP servers,
     `SHEPHERD_EXT_MCP` (the installed `shepherd-mcp.ts`), `SHEPHERD_EXT_MCP_CLIENT` (the installed
@@ -111,6 +112,13 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
     agent that draws a design, `SHEPHERD_DESIGN_ID` and `SHEPHERD_DESIGN_SKILL_DIR` (the design
     skill the app writes to the support directory's `design-skill/`; docs/designs.md).
 - **`SHEPHERD_PR_DESCRIPTION_MODEL`** overrides the model that drafts finalize PR bodies.
+- **`SHEPHERD_NAMER_MODELS`** (`provider/id,provider/id`; an entry without a slash matches any
+  provider) overrides the cheap models the namer tries before the agent's own. The namer reads it
+  from the environment pi was started with, so it comes from the user's shell, not from Shepherd.
+- **`SHEPHERD_PI_ENGINE`** (Debug builds only: `swift test` and the Dev scheme) names one
+  executable that takes pi's arguments, which every pi launch then starts instead of the user's
+  `pi` (`PiEngine`). The tests point it at a stand-in. Release builds ignore it, and a set value is
+  never looked up on PATH.
 - **`SHEPHERD_PREVIEW_DIR`**, **`SHEPHERD_LIVE_MODEL`**, and **`SHEPHERD_PERF_REPORT`** switch on
   the preview renders, the live-model run, and the long-list timing report (see Testing).
   **`SHEPHERD_BENCHMARK`** switches on the benchmarks that print timings: `ComposerMenuBenchmarkTests`
@@ -125,8 +133,11 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
 - **`SHEPHERD_TIMING_TESTS=1`** runs the timing-sensitive tests even where `CI=true` skips them
   (see Testing).
 - **`PI_CODING_AGENT_DIR`** is pi's own: it moves pi's config and sessions away from
-  `~/.pi/agent`. Shepherd follows it (`PiConfig.agentDirectory`) when it seeds session headers
-  and reads pi's models and settings.
+  `~/.pi/agent`. Shepherd follows it once, when the app starts (`PiSetup.resolve`, through
+  `PiConfig.agentDirectory`), and seeds session headers and reads pi's models and settings in
+  the folder it named. Terminal panes blank it, with `PI_CODING_AGENT_SESSION_DIR`,
+  `PI_PACKAGE_DIR`, `PI_OFFLINE` and `PI_SUBAGENTS_TEMP_ROOT`, so a pane's pi takes them from the
+  user's startup files only.
 
 ## Testing
 
@@ -158,10 +169,12 @@ Tests come in tiers, and the switch is `--filter` on target names.
 - `StubPi.command`: runs `Resources/stub-pi.py`, a scripted `pi --mode rpc` driven by prompt
   keywords (`ask`, `select`, `hang`, `die`, `big`, `slow`, `widgets`, `fill`, `newsession`, …).
   `STUB_PI_LOG` records what it received, and `STUB_PI_HISTORY_BYTES` seeds a long history.
-  `STUB_PI_STARTUP_DELAY`/`_GATE`/`_EXIT` hold or fail its boot (`stub-pi-startup.json` in its
-  cwd does the same for a pi launched the way the app launches it).
-  `StubPi.installOnPath()` puts it first on `PATH` as `pi` (answering `--list-models`) for code
-  that launches pi the way the app does.
+  `STUB_PI_STARTUP_DELAY`/`_GATE`/`_EXIT` hold or fail its boot, `_STDERR` is what it says
+  before that exit, and `_NEW_SESSION` prints pi's warning that it found no session for its
+  `--session-id` (`stub-pi-startup.json` in its cwd does the same for a pi launched the way the
+  app launches it).
+  `StubPi.installAsEngine()` installs it as the engine `SHEPHERD_PI_ENGINE` names (answering
+  `--list-models`), for code that launches pi the way the app does (`PiLaunch`).
 - `makeScratchRepo()` and `git(_:in:)`: a git repository with one commit. A failing git call
   throws `CommandFailure` with git's stderr.
 - `makeScratchDirectory()`: a `mkdtemp` directory inside the process's scratch root, short
@@ -187,17 +200,25 @@ Tests come in tiers, and the switch is `--filter` on target names.
 
 - When a test bundle loads, before any test runs, `Tests/ShepherdTestIsolation` (linked through
   `ShepherdTestKit`) points `SHEPHERD_SUPPORT_DIR`, `SHEPHERD_SKILLS_DIR`, `SHEPHERD_MCP_CONFIG`,
-  `PI_CODING_AGENT_DIR`, and `ZDOTDIR` at a scratch root for that process, and clears the agent-only `SHEPHERD_*` variables a run started
-  from a Shepherd agent inherits. It also puts a `bin/` first on `PATH`, holding stand-ins for
-  `gh` and `pi` that refuse to run, and the scratch `ZDOTDIR`'s `.zshenv` and `.zlogin` keep it
-  first in every zsh a test starts. Without them, a login shell from a minimal environment
-  (Xcode, launchd) reaches the user's own `gh` and `pi`, because the system startup files
-  rebuild PATH. The root is removed at exit.
+  `PI_CODING_AGENT_DIR`, and `ZDOTDIR` at a scratch root for that process, and clears the
+  agent-only `SHEPHERD_*` variables a run started from a Shepherd agent inherits. It also puts a
+  `bin/` first on `PATH`, holding stand-ins for `gh` and `pi` that refuse to run, and the scratch
+  `ZDOTDIR`'s `.zshenv` and `.zlogin` keep it first in every zsh a test starts. Without them, a
+  login shell from a minimal environment (Xcode, launchd) reaches the user's own `gh` and `pi`,
+  because the system startup files rebuild PATH. The root is removed at exit.
+- The app's pi in a test is `SHEPHERD_PI_ENGINE`, set to `bin/pi-engine`, which refuses to run
+  until a test installs the stub over it. No app-level test reaches pi through PATH.
+- The scratch startup files also carry decoys, as a user's might: `.zshenv` exports
+  `PI_CODING_AGENT_DIR`, `PI_PACKAGE_DIR`, `NODE_OPTIONS`, `PI_OFFLINE=0`, `JITI_ALIAS` and
+  `PI_EXPERIMENTAL` pointing into `pi-decoy/` (never the scratch `pi-agent/`), and `.zlogin` moves
+  a shell that starts the engine to `/`. They are harmless where they land; a launch line must
+  win over them (`TestIsolationTests`). The live-model run gets neither the engine nor the decoys.
 - A target depends on `ShepherdTestKit` when the code it tests can reach the support directory,
   pi's directory, `UserDefaults`, the drop directory, or a shell. With the swiftbuild build
   system each target is its own test bundle, so a target without it gets no isolation.
 - Otherwise pass state in: `ShepherdPaths.supportDirectory(environment:)`,
-  `PiConfig.agentDirectory(environment:)`, `TerminalImageDrop.resolve(_:directory:)`.
+  `PiConfig.agentDirectory(environment:)`, `TerminalImageDrop.resolve(_:directory:)`. pi's home,
+  engine and catalog come in as a `PiSetup` (`SessionServer(pi:)`, `PiSetup.app` in the app).
 - A test that needs process-wide state anyway (a signal disposition) or blocks the main queue runs
   as an exit test, in its own process: `await #expect(processExitsWith: .success) { … }`.
   Expectations inside the body are reported as usual. Wrap the body in `recordingErrors { … }`:
@@ -464,7 +485,9 @@ Sources/
                        session), AutomationRunLog (each automation's runs), PTYSession,
                        SessionScreen (SwiftTerm), StateStore,
                        PaneRequest (pane/review/automation requests + outcomes), RemoteFileUpload,
-                       PiModelCatalog, PiConfig, PiSessionPreview (a thread from pi's session file),
+                       PiEngine (which pi runs), PiLaunch (every line that starts it), PiSetup
+                       (the engine, pi's home and "your pi", passed in), PiModelCatalog, PiConfig,
+                       PiSessionPreview (a thread from pi's session file),
                        InstructionsStore (Settings ▸ Instructions' files and their history),
                        SuggestionsStore (Suggested instructions: settings, waiting, added),
                        SkillsStore (a host's skills in ~/.agents/skills; docs/skills.md),
@@ -625,9 +648,14 @@ Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
   host opens for a remote client (a remote `gh auth login`). There is no tab UI: the sidebar is
   navigation.
 
-**Agent launch** (`StatusExtension.command`, from `TerminalSessionStore`):
-`/bin/zsh -l -c "exec pi --mode rpc --session-id <id> [--model … --thinking …] -e <extensions>"`.
+**Agent launch** (`StatusExtension.command`, from `TerminalSessionStore`, built by
+`PiLaunch.agent`):
+`/bin/zsh -l -c "cd -- <cwd> && exec <engine> --mode rpc --session-id <id> [--model … --thinking …] -e <extensions>"`.
 
+- `<engine>` is `pi` on the login shell's PATH, or `SHEPHERD_PI_ENGINE` in a Debug build. Every
+  other launch of pi (the catalog, drafts, the updater) and of the node beside it (the Skills
+  reader, the MCP probe) is built by `PiLaunch` too; nothing else names either.
+- The `cd` runs after the login shell's startup files, so a `cd` in them can't move pi.
 - The session ID is the agent's current pi session. `PiSessionFile` seeds a session header if
   pi has none yet.
 - `--model`/`--thinking` go only to a fresh session.
@@ -672,7 +700,8 @@ anything that must survive a relaunch out of that path.
 
 **Terminal panes** run the shell from Settings ▸ Terminal as a login shell, without wrapping
 `pi` or injecting a theme. The user's rc files and pi settings are never edited, and agent-only
-variables are blanked.
+variables are blanked, as are pi's `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR`,
+`PI_PACKAGE_DIR`, `PI_OFFLINE` and `PI_SUBAGENTS_TEMP_ROOT`: `pi` in a pane is the user's own.
 
 **Automations** are saved prompts (`ShepherdState.automations`).
 
@@ -1021,7 +1050,10 @@ history, so returning to it is always a flip. Measurements are in
 [docs/benchmarks](docs/benchmarks/2026-09-03-terminal-baseline.md).
 
 **Sessions and views are separate.** Closing a pane detaches views only. A process that exits on
-its own closes its pane and retires its agent. Delete Agent is the explicit way to terminate an
+its own closes its pane and retires its agent, with one exception: an agent's pi that exits before
+its thread serves (or that Shepherd stops) keeps its agent, which waits with the reason and Retry
+(`SessionExit.keepsAgent`, DESIGN.md › Thread › Can't start). Its pane session stays `.stopped`, so
+the pane never respawns pi on its own. Delete Agent is the explicit way to terminate an
 agent and its auxiliary processes while the app runs, and quitting the app terminates everything.
 
 **Only these paths mutate repositories** ([docs/worktrees.md](docs/worktrees.md)):

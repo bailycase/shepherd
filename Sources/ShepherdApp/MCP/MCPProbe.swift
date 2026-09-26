@@ -1,5 +1,6 @@
 import Foundation
 import ShepherdProtocol
+import ShepherdSessions
 
 /// What one probe of a server found.
 enum MCPProbeResult: Equatable, Sendable {
@@ -34,9 +35,12 @@ protocol MCPProbeRunner: Sendable {
     func run(input: Data, timeout: TimeInterval) async -> Data
 }
 
-/// The real runner: the same client agents use, run with node in a login shell, so it finds
-/// exactly what an agent would: `/bin/zsh -l -c 'exec node "$0" probe' <client.mjs>`.
+/// The real runner: the same client agents use, run with the engine's node in a login shell, so
+/// it finds exactly what an agent would: `/bin/zsh -l -c 'exec node "$0" probe' <client.mjs>`
+/// (`PiLaunch.mcpProbe`).
 struct NodeProbeRunner: MCPProbeRunner {
+    /// Whose node runs the client.
+    var engine: PiEngine
     /// The installed `shepherd-mcp-client.mjs`, or nil when it isn't there.
     var clientPath: @Sendable () -> URL?
 
@@ -46,15 +50,16 @@ struct NodeProbeRunner: MCPProbeRunner {
         }
         return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(returning: Self.runSync(client: client, input: input, timeout: timeout))
+                continuation.resume(returning: Self.runSync(line: PiLaunch.mcpProbe(engine: engine, client: client.path),
+                                                            input: input, timeout: timeout))
             }
         }
     }
 
-    private static func runSync(client: URL, input: Data, timeout: TimeInterval) -> Data {
+    private static func runSync(line: PiLaunch.Line, input: Data, timeout: TimeInterval) -> Data {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        process.arguments = ["-l", "-c", "exec node \"$0\" probe", client.path]
+        process.executableURL = URL(fileURLWithPath: line.argv[0])
+        process.arguments = Array(line.argv.dropFirst())
         var environment = ProcessInfo.processInfo.environment
         for key in environment.keys where key.hasPrefix("SHEPHERD_") && key != "SHEPHERD_SUPPORT_DIR" { environment[key] = nil }
         process.environment = environment

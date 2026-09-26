@@ -215,12 +215,12 @@ final class NewThreadState {
         catalog = nil
         guard let host else {
             loadingDefaults = false
-            if !edited.model { model = vm.settings.agentDefaults.model ?? PiConfig.defaultModel() ?? "" }
+            if !edited.model { model = vm.settings.agentDefaults.model ?? PiConfig.defaultModel(in: vm.server.pi.home) ?? "" }
             if !edited.thinking { thinking = vm.settings.defaultThinking }
             let server = vm.server
             Task {
                 let listing = await Task.detached(priority: .userInitiated) { server.modelListing() }.value
-                let catalog = await ModelCatalog.loadLocal()
+                let catalog = await ModelCatalog.loadLocal(from: server.pi.catalog)
                 guard defaultsRequest == request else { return }
                 self.listing = listing
                 self.catalog = catalog

@@ -100,6 +100,6 @@ enum Preview {
 /// already scratch for the whole test process (ShepherdTestKit).
 enum PreviewEnvironment {
     static func install() throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
     }
 }

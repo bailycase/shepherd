@@ -489,7 +489,7 @@ struct PRDescriptionTests {
     }
 
     private func generator(_ shell: ScriptedShell) -> WorktreePRDescriptionGenerator {
-        var generator = WorktreePRDescriptionGenerator()
+        var generator = WorktreePRDescriptionGenerator(engine: .userPi)
         generator.runner = { script, cwd, _ in shell.run(script, cwd) }
         return generator
     }

@@ -92,6 +92,8 @@ final class Callbacks: @unchecked Sendable {
     let output = Locked<[SessionID: Data]>([:])
     let deliveries = Locked<[SessionID: Int]>([:])
     let exits = Locked<[SessionID: Int32?]>([:])
+    /// Each exit as the server reported it: whether it kept its agent, and why.
+    let sessionExits = Locked<[SessionID: SessionExit]>([:])
     let statuses = Locked<[(AgentID, AgentStatus)]>([])
     /// Each `done` report, with the failure of a turn that ended in an error.
     let dones = Locked<[(AgentID, TurnFailure?)]>([])
@@ -101,7 +103,10 @@ final class Callbacks: @unchecked Sendable {
             output.withValue { $0[id, default: Data()].append(data) }
             deliveries.withValue { $0[id, default: 0] += 1 }
         }
-        server.onSessionExited = { [exits] id, code in exits.withValue { $0[id] = code } }
+        server.onSessionExited = { [exits, sessionExits] id, exit in
+            exits.withValue { $0[id] = exit.code }
+            sessionExits.withValue { $0[id] = exit }
+        }
         server.onAgentStatus = { [statuses, dones] id, status, failure in
             statuses.withValue { $0.append((id, status)) }
             if status == .done { dones.withValue { $0.append((id, failure)) } }

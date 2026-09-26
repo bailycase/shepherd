@@ -17,7 +17,7 @@ struct FinalizeWorktreeSheet: View {
 
     @State private var setup: WorktreeSetupModel
     @State private var finalizer = WorktreeFinalizer()
-    @State private var descriptionGenerator = WorktreePRDescriptionGenerator()
+    @State private var descriptionGenerator: WorktreePRDescriptionGenerator
     @State private var phase: Phase = .checking
     @State private var base = ""
     @State private var title = ""
@@ -58,6 +58,7 @@ struct FinalizeWorktreeSheet: View {
         self.space = space
         self.staged = staged
         _setup = State(initialValue: WorktreeSetupModel(repoPath: space.path))
+        _descriptionGenerator = State(initialValue: WorktreePRDescriptionGenerator(engine: vm.server.pi.engine))
         if let staged {
             _phase = State(initialValue: staged.phase)
             _base = State(initialValue: staged.base)

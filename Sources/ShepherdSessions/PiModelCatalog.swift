@@ -4,10 +4,10 @@ import ShepherdProtocol
 
 /// The live model catalog, asked from pi itself (`pi --list-models`) — models
 /// are dynamic (catalog updates, auth state), so no config file is the truth.
-/// Runs through a login shell exactly like agent spawns, so `pi` resolves
-/// from the user's PATH. Cached per process: the catalog changes on `pi
-/// update`, not mid-session.
-public enum PiModelCatalog {
+/// Runs through a login shell exactly like agent spawns (`PiLaunch.listModels`). One per
+/// `PiSetup`, kept for its lifetime: the catalog changes on `pi update`, not mid-session, and
+/// `invalidate()` forgets it.
+public final class PiModelCatalog: @unchecked Sendable {
     /// One catalog row: `provider/model`, its context window as pi prints it ("200K", "1M"),
     /// and whether it takes a thinking level.
     public struct Entry: Equatable, Sendable {
@@ -24,31 +24,41 @@ public enum PiModelCatalog {
         public var provider: String { id.split(separator: "/", maxSplits: 1).first.map(String.init) ?? id }
     }
 
-    private static let lock = NSLock()
-    nonisolated(unsafe) private static var cached: [Entry]?
+    /// What starts pi.
+    public let engine: PiEngine
+    /// The pi home whose models.json answers when pi can't be asked.
+    public let home: URL
+    private let lock = NSLock()
+    private var cached: [Entry]?
+
+    public init(engine: PiEngine, home: URL) {
+        self.engine = engine
+        self.home = home
+    }
 
     /// `provider/model` ids in catalog order; empty when pi is missing or
     /// errors. Blocking — call off the main thread and off the server queue.
-    public static func modelIDs() -> [String] { entries().map(\.id) }
+    public func modelIDs() -> [String] { entries().map(\.id) }
 
     /// pi's catalog, or models.json's models when pi cannot be asked. Blocking, like `entries()`.
-    public static func entriesOrConfigured() -> [Entry] {
+    public func entriesOrConfigured() -> [Entry] {
         let asked = entries()
-        return asked.isEmpty ? PiConfig.modelEntries() : asked
+        return asked.isEmpty ? PiConfig.modelEntries(in: home) : asked
+    }
+
+    /// Forgets the kept catalog, so the next ask runs pi again.
+    public func invalidate() {
+        lock.withLock { cached = nil }
     }
 
     /// Blocking, like `modelIDs()`.
-    public static func entries() -> [Entry] {
-        lock.lock()
-        if let cached {
-            lock.unlock()
-            return cached
-        }
-        lock.unlock()
+    public func entries() -> [Entry] {
+        if let cached = lock.withLock({ cached }) { return cached }
 
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        process.arguments = ["-l", "-c", "exec pi --list-models"]
+        let line = PiLaunch.listModels(engine: engine)
+        process.executableURL = URL(fileURLWithPath: line.argv[0])
+        process.arguments = Array(line.argv.dropFirst())
         let stdout = Pipe()
         process.standardOutput = stdout
         process.standardError = Pipe()
@@ -61,10 +71,8 @@ public enum PiModelCatalog {
         process.waitUntilExit()
         guard process.terminationStatus == 0 else { return [] }
 
-        let entries = parseEntries(String(decoding: data, as: UTF8.self))
-        lock.lock()
-        cached = entries
-        lock.unlock()
+        let entries = Self.parseEntries(String(decoding: data, as: UTF8.self))
+        lock.withLock { cached = entries }
         return entries
     }
 

@@ -43,8 +43,9 @@ extension ShepherdViewModel {
                     case .children:
                         result = .children(self.children(of: agentID))
                     case .search(let query):
+                        let root = self.server.pi.sessionsRoot
                         let matches = await Task.detached {
-                            PaletteContentSearch.search(query: query, agents: [(agentID, agent.effectivePiSessionID, cwd)])
+                            PaletteContentSearch.search(query: query, agents: [(agentID, agent.effectivePiSessionID, cwd)], sessionsRoot: root)
                         }.value
                         result = .search(snippet: matches.first?.snippet)
                     case .reviewPane(let paneID, let pullRequest):

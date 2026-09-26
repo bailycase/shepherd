@@ -154,9 +154,10 @@ struct ThreadStartupTests {
         #expect(messages.contains { $0.blocks.contains { $0.text == "seeded reply" } }, "the first snapshot carries the history")
     }
 
-    /// A pi that exits while it starts (not installed, a broken config) is gone, with its exit
-    /// code, before and after the app retires its session: never an endless start.
-    @Test func aPiThatExitsWhileStartingIsUnavailableWithItsExitCode() async throws {
+    /// A pi that exits while it starts (not installed, a broken config) is no endless start: its
+    /// thread says why, with the exit code, before and after the app retires its session
+    /// (StartProblemTests has every cause).
+    @Test func aPiThatExitsWhileStartingSaysWhyWithItsExitCode() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let callbacks = Callbacks(h.server)
@@ -165,11 +166,8 @@ struct ThreadStartupTests {
 
         for retired in [false, true] {
             if retired { await h.server.retireSession(sessionID: pi.sessionID) }
-            let error = await #expect(throws: RemoteHostClientError.self) { _ = try await pi.request(.snapshot()) }
-            guard case .rejected(NativeThreadCode.unavailable, let message)? = error else {
-                Issue.record("expected unavailable (retired: \(retired)), got \(String(describing: error))"); return
-            }
-            #expect(message.contains("code 127"))
+            let problem = try await pi.request(.snapshot()).snapshotValue?.startProblem
+            #expect(problem?.kind == .engineMissing && problem?.exitCode == 127, "retired: \(retired)")
         }
     }
 

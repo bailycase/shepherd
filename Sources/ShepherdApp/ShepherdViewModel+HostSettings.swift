@@ -20,10 +20,11 @@ extension ShepherdViewModel {
                     shepherdVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
                     piVersion: PiUpdateManager.shared.currentVersion
                 )
+                let piHome = self.server.pi.home
                 Task.detached(priority: .userInitiated) {
                     // pi's settings.json is read off the main actor.
                     var answer = settings
-                    answer.installedExtensions = PiConfig.installedExtensions()
+                    answer.installedExtensions = PiConfig.installedExtensions(in: piHome)
                     completion(.success(answer))
                 }
             }

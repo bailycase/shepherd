@@ -160,8 +160,8 @@ struct SettingsView: View {
         switch vm.settingsSection {
         case .appearance: AppearanceSettings(vm: vm)
         case .terminal: TerminalSettings(vm: vm)
-        case .agents: AgentSettings()
-        case .pi: PiSettings()
+        case .agents: AgentSettings(pi: vm.server.pi)
+        case .pi: PiSettings(pi: vm.server.pi)
         case .worktrees: WorktreeSettings()
         case .instructions: InstructionsSettings(model: vm.instructions)
         case .skills: SkillsSettings(vm: vm, model: vm.skills)

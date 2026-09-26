@@ -37,7 +37,7 @@ struct NewThreadAttachTests {
     }
 
     @Test func aNewThreadOnThisMacSendsItsImagesWithTheOpeningPrompt() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
@@ -63,7 +63,7 @@ struct NewThreadAttachTests {
     }
 
     @Test func aNewThreadOnAHostSendsItsImagesWithTheOpeningPrompt() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let space = Fixture.space("remote", path: remote.host.dir.path)

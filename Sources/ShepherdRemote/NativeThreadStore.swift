@@ -76,6 +76,10 @@ public final class NativeThreadStore {
     /// not a snapshot pi served: nothing can be done with it yet, and pi's first snapshot
     /// replaces it in place (its entries carry the ids pi's will).
     public private(set) var previewing = false { didSet { bothVersions() } }
+    /// The agent's pi stopped before it served (`NativeThreadSnapshot.startProblem`), and why: the
+    /// host keeps the agent, and the composer says so with Retry (DESIGN.md › Thread › Can't
+    /// start). Not ready, not starting, and not an error; the thread keeps what it drew.
+    public private(set) var startProblem: NativeStartProblem? { didSet { bothVersions() } }
     public private(set) var busy = false { didSet { bothVersions() } }
     public private(set) var loadError: String? { didSet { bothVersions() } }
     public private(set) var notice: String? { didSet { chromeVersion &+= 1 } }
@@ -360,14 +364,14 @@ public final class NativeThreadStore {
     /// The thread is waiting for its pi: starting, shown from disk, or its first pull still on
     /// its way. Not an error, and not a thread kept from before that is refreshing.
     public var awaitingPi: Bool {
-        !ready && loadError == nil && (starting || previewing || session == nil)
+        !ready && loadError == nil && startProblem == nil && (starting || previewing || session == nil)
     }
 
     /// Send is offered: the thread supports it now, or it is not ready yet (pi starting, the
     /// first pull still on its way, a thread shown from disk) and the send will wait for it
     /// (every pi thread takes sends).
     public var acceptsSend: Bool {
-        supports("send") || (!ready && !busy && loadError == nil)
+        supports("send") || (!ready && !busy && loadError == nil && startProblem == nil)
     }
 
     // MARK: Derived state
@@ -698,6 +702,7 @@ public final class NativeThreadStore {
         if ready { ready = false }
         // Unknown until the thread polls again.
         endStarting()
+        clearStartProblem()
         settleTask?.cancel()
         settleTask = nil
         if settledRunning {
@@ -741,6 +746,8 @@ public final class NativeThreadStore {
             ))
             guard !Task.isCancelled, epoch == run, recentRequest == ticket else { return }
             switch result {
+            case .snapshot(let value) where value.startProblem != nil:
+                noteStartProblem(value.startProblem!)
             case .snapshot(let value):
                 let sameSession = previous?.piSessionID == value.piSessionID && previous?.generation == value.generation
                 if sameSession, let previous, value.revision < previous.revision { return }
@@ -761,6 +768,7 @@ public final class NativeThreadStore {
                 if previewing { previewing = false }
                 if !ready { ready = true }
                 endStarting()
+                clearStartProblem()
                 if loadError != nil { loadError = nil }
                 deriveQueue()
                 derive()
@@ -773,6 +781,7 @@ public final class NativeThreadStore {
                 } else {
                     if !ready { ready = true }
                     endStarting()
+                    clearStartProblem()
                     // Nothing changed on the host: whatever this client changed before it asked
                     // is in the snapshot it already has, or was refused.
                     let before = overlays.count
@@ -808,6 +817,7 @@ public final class NativeThreadStore {
     /// Any failure but `native_starting`: the thread is not starting, it is in trouble.
     private func setLoadError(_ message: String) {
         endStarting()
+        clearStartProblem()
         resumeStartWaiters(false)
         guard loadError != message else { return }
         loadError = message
@@ -818,6 +828,7 @@ public final class NativeThreadStore {
     /// error, until it has taken longer than `startingLimit`.
     private func noteStarting() {
         if ready { ready = false }
+        clearStartProblem()
         let now = ContinuousClock.now
         let since = startingSince ?? now
         startingSince = since
@@ -850,6 +861,38 @@ public final class NativeThreadStore {
             loadError = nil
             derive()
         }
+    }
+
+    /// The host says the agent's pi stopped before it served: nothing waits for it, and the thread
+    /// keeps what it drew (a preview from disk, or what it last showed).
+    private func noteStartProblem(_ problem: NativeStartProblem) {
+        if ready { ready = false }
+        endStarting()
+        if loadError != nil {
+            loadError = nil
+            derive()
+        }
+        if settledRunning {
+            settleTask?.cancel()
+            settleTask = nil
+            settledRunning = false
+            derive()
+        }
+        resumeStartWaiters(false)
+        if startProblem != problem { startProblem = problem }
+        caughtUp()
+    }
+
+    private func clearStartProblem() {
+        if startProblem != nil { startProblem = nil }
+    }
+
+    /// Retry: the host is starting the agent's pi again. The problem goes at once and the thread is
+    /// starting, as the host will say on the next poll.
+    public func restarting() {
+        guard startProblem != nil else { return }
+        noteStarting()
+        revisionAvailable()
     }
 
     private func endStarting() {

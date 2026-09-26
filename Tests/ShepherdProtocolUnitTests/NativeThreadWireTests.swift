@@ -22,7 +22,7 @@ struct NativeThreadWireTests {
             .deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Extensions/native-thread-wire.json")
         let frames = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [[String: Any]])
-        #expect(frames.count >= 17)
+        #expect(frames.count >= 24)
         for frame in frames {
             let json = try JSONSerialization.data(withJSONObject: frame)
             let reencoded = frame["request"] != nil
@@ -224,6 +224,36 @@ struct NativeThreadWireTests {
     @Test(arguments: results)
     func resultsRoundTrip(_ result: NativeThreadResult) throws {
         #expect(try Wire.roundTrip(result) == result)
+    }
+
+    // MARK: Start problems
+
+    /// Every cause, with and without an exit code, as a host answers an agent whose pi stopped
+    /// before it served.
+    static let startProblems: [NativeStartProblem] = NativeStartProblem.Kind.allCases.map {
+        NativeStartProblem(kind: $0, exitCode: 1, lines: ["No models available."])
+    } + [NativeStartProblem(kind: .resumedAsNew), NativeStartProblem(kind: .exited, exitCode: 127, lines: [])]
+
+    @Test(arguments: startProblems)
+    func aStartProblemRoundTripsOnItsSnapshot(_ problem: NativeStartProblem) throws {
+        let snapshot = NativeThreadSnapshot(piSessionID: "s", generation: "start-problem", revision: 0, running: false, supportedActions: [],
+                                            dialogsSupported: false, dialogs: [], messages: [], provisional: [], clipped: false,
+                                            runtime: "rpc", startProblem: problem)
+        #expect(try Wire.roundTrip(NativeThreadResult.snapshot(value: snapshot)) == .snapshot(value: snapshot))
+    }
+
+    /// An older host names no problem; a newer host's cause reads as `exited`, and missing or
+    /// malformed parts never fail the snapshot.
+    @Test func startProblemsDecodeLeniently() throws {
+        #expect(try Wire.decode(NativeThreadSnapshot.self, Self.v1Snapshot).startProblem == nil)
+        #expect((try Wire.object(Wire.decode(NativeThreadSnapshot.self, Self.v1Snapshot)))["startProblem"] == nil)
+        let newer = try Self.snapshot(adding: ["startProblem": ["kind": "quotaExceeded", "exitCode": "one", "lines": 3]])
+        #expect(newer.startProblem == NativeStartProblem(kind: .exited))
+        #expect(try Self.snapshot(adding: ["startProblem": [String: Any]()]).startProblem == NativeStartProblem(kind: .exited))
+    }
+
+    @Test func startProblemSpellingsAreStable() {
+        #expect(NativeStartProblem.Kind.allCases.map(\.rawValue) == ["notSignedIn", "extensionFailed", "engineMissing", "resumedAsNew", "exited"])
     }
 
     /// Hosts and clients of different versions compare these; they must never be renamed.

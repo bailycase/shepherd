@@ -69,7 +69,7 @@ extension ShepherdViewModel {
     /// What Needs you and Recents are derived from.
     var sidebarSource: SidebarSource {
         SidebarSource(
-            local: state, localChildren: childRuns.rows, failedTurns: failedTurns, statusSince: statusSince,
+            local: state, localChildren: childRuns.rows, failedTurns: failedTurns, cannotStart: cannotStart, statusSince: statusSince,
             openRuns: openAutomationRuns,
             hosts: remoteHosts.connections.map {
                 SidebarSource.Host(id: $0.id, name: $0.config.name, state: $0.state, children: $0.children,

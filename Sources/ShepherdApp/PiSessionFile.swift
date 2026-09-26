@@ -22,10 +22,6 @@ enum PiSessionFile {
     /// never a broken session.
     private static let version = 3
 
-    /// Pi's sessions root: `~/.pi/agent/sessions`, or under `PI_CODING_AGENT_DIR`
-    /// when that moves pi's agent directory.
-    static var defaultSessionsRoot: URL { PiConfig.sessionsDirectory() }
-
     /// The path as pi sees it: `realpath(3)`, like Node's `fs.realpathSync`. Foundation's
     /// `resolvingSymlinksInPath` is not a substitute: it maps /private/tmp back to /tmp.
     static func realPath(_ path: String) -> String {
@@ -36,18 +32,19 @@ enum PiSessionFile {
     }
 
     /// `sessionsRoot/<mangled cwd>/` — pi derives the directory name from the
-    /// absolute cwd, replacing each path separator with `-` and wrapping the
+    /// absolute cwd, replacing each `/`, `\` and `:` with `-` and wrapping the
     /// result in `--`.
-    static func projectDirectory(forCwd cwd: String, sessionsRoot: URL = defaultSessionsRoot) -> URL {
+    static func projectDirectory(forCwd cwd: String, sessionsRoot: URL) -> URL {
         sessionsRoot.appendingPathComponent("--\(mangled(cwd))--", isDirectory: true)
     }
 
     /// Pi resolves the real path first (so /tmp and /private/tmp agree), then
-    /// mangles it.
+    /// mangles it as pi's session manager does: one leading `/` or `\` dropped, then every
+    /// `/`, `\` and `:` replaced with `-`.
     static func mangled(_ cwd: String) -> String {
-        realPath(cwd)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            .replacingOccurrences(of: "/", with: "-")
+        var path = Substring(realPath(cwd))
+        if let first = path.first, first == "/" || first == "\\" { path = path.dropFirst() }
+        return String(path.map { "/\\:".contains($0) ? "-" : $0 })
     }
 
     /// True when pi can already resolve `sessionID` in `cwd` (any file whose
@@ -55,7 +52,7 @@ enum PiSessionFile {
     static func exists(
         sessionID: String,
         cwd: String,
-        sessionsRoot: URL = defaultSessionsRoot
+        sessionsRoot: URL
     ) -> Bool {
         file(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot) != nil
     }
@@ -64,7 +61,7 @@ enum PiSessionFile {
     static func file(
         sessionID: String,
         cwd: String,
-        sessionsRoot: URL = defaultSessionsRoot
+        sessionsRoot: URL
     ) -> URL? {
         let directory = projectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot)
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path),
@@ -85,7 +82,7 @@ enum PiSessionFile {
     static func hasRuntimeState(
         sessionID: String,
         cwd: String,
-        sessionsRoot: URL = defaultSessionsRoot
+        sessionsRoot: URL
     ) -> Bool {
         guard let url = file(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot),
               let handle = try? FileHandle(forReadingFrom: url) else { return false }
@@ -110,7 +107,7 @@ enum PiSessionFile {
     static func preview(
         sessionID: String,
         cwd: String,
-        sessionsRoot: URL = defaultSessionsRoot
+        sessionsRoot: URL
     ) -> NativeThreadSnapshot? {
         guard let url = file(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot) else { return nil }
         return PiSessionPreview.snapshot(file: url, sessionID: sessionID)
@@ -118,10 +115,10 @@ enum PiSessionFile {
 
     /// `preview(sessionID:cwd:)` for a thread's store, read off the main actor, from the cwd pi
     /// is launched in.
-    static func previewLoader(sessionID: String, cwd: String) -> NativeThreadStore.Preview {
+    static func previewLoader(sessionID: String, cwd: String, sessionsRoot: URL) -> NativeThreadStore.Preview {
         {
             await Task.detached(priority: .userInitiated) {
-                preview(sessionID: sessionID, cwd: TerminalSessionStore.resolvedCwd(cwd))
+                preview(sessionID: sessionID, cwd: TerminalSessionStore.resolvedCwd(cwd), sessionsRoot: sessionsRoot)
             }.value
         }
     }
@@ -132,7 +129,7 @@ enum PiSessionFile {
     static func prepareForLaunch(
         sessionID: String,
         cwd: String,
-        sessionsRoot: URL = defaultSessionsRoot
+        sessionsRoot: URL
     ) -> Bool {
         let fresh = !hasRuntimeState(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot)
         seedIfMissing(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot)
@@ -146,7 +143,7 @@ enum PiSessionFile {
     static func seedIfMissing(
         sessionID: String,
         cwd: String,
-        sessionsRoot: URL = defaultSessionsRoot
+        sessionsRoot: URL
     ) -> Bool {
         guard !exists(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot) else { return true }
 
@@ -187,7 +184,7 @@ enum PiSessionFile {
     static func fork(
         sessionFile: String,
         cwd: String,
-        sessionsRoot: URL = defaultSessionsRoot
+        sessionsRoot: URL
     ) throws -> String {
         guard var data = FileManager.default.contents(atPath: sessionFile), !data.isEmpty else {
             throw ForkFailure(message: "The session file is missing or unreadable.")

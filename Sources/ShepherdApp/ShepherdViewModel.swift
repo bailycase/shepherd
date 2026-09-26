@@ -132,6 +132,9 @@ final class ShepherdViewModel {
     /// Agents whose last turn ended in an error: done, but their sidebar row reads failed.
     /// Ephemeral, like the status it qualifies.
     var failedTurns: Set<AgentID> = []
+    /// Agents whose pi stopped before it served, waiting for Retry: their sidebar row reads "can't
+    /// start" (DESIGN.md › Thread › Can't start). Ephemeral: a relaunch starts every pi again.
+    var cannotStart: Set<AgentID> = []
     /// Each automation's run whose agent still exists, as the server's run log keeps it: an
     /// idle run agent is starting until its run has settled (`AutomationRun.isLive`). Read with
     /// every adopted state.
@@ -157,7 +160,7 @@ final class ShepherdViewModel {
     var remoteWorktreeFinalize = false
     var remoteWorktreeOperationEndpoints: [RemoteAgentRef: UUID] = [:]
     var remoteWorktreeOperationIDs: [RemoteAgentRef: UUID] = [:]
-    var hostPRDescriptionGenerator = WorktreePRDescriptionGenerator()
+    var hostPRDescriptionGenerator: WorktreePRDescriptionGenerator
     var hostWorktreeOperations: [UUID: RemoteWorktreeOperation] = [:]
     var hostWorktreeOperationAgents: [UUID: AgentID] = [:]
     var hostBusyWorktrees: Set<String> = []
@@ -426,6 +429,7 @@ final class ShepherdViewModel {
     ) {
         self.state = ShepherdState()
         self.server = server
+        self.hostPRDescriptionGenerator = WorktreePRDescriptionGenerator(engine: server.pi.engine)
         self.restoresAgentsAtLaunch = restoresAgentsAtLaunch
         self.settings = settings ?? .shared
         self.sidebarDefaults = sidebarDefaults
@@ -441,7 +445,7 @@ final class ShepherdViewModel {
         self.suggestions = SuggestionsModel(store: server.suggestions, instructionsStore: server.instructions, instructions: instructions)
         self.skills = ClientSkills(defaults: sidebarDefaults)
         self.localSkills = LocalSkillsClient(store: server.skills)
-        self.mcp = mcp ?? MCPStore(dependencies: .app(clientPath: ShepherdViewModel.mcpClientPath,
+        self.mcp = mcp ?? MCPStore(dependencies: .app(engine: server.pi.engine, clientPath: ShepherdViewModel.mcpClientPath,
                                                       openURL: { NSWorkspace.shared.open($0) },
                                                       copy: ShepherdViewModel.copyToPasteboard))
         self.installThemeMarker = themeInstaller
@@ -545,6 +549,13 @@ final class ShepherdViewModel {
         sessions.onPaneSessionExited = { [weak self] paneID in
             self?.handleSessionExited(paneID: paneID)
         }
+        sessions.onAgentStopped = { [weak self] agentID, problem, stopped in
+            guard let self else { return }
+            let waiting = stopped && problem != nil
+            if waiting != cannotStart.contains(agentID) {
+                if waiting { cannotStart.insert(agentID) } else { cannotStart.remove(agentID) }
+            }
+        }
         sessions.onNotify = { [weak self] agentID, title, body in
             guard let self, let agent = self.state.agents.first(where: { $0.id == agentID }) else { return }
             self.notifications.agentNotify(agent, title: title, body: body)
@@ -612,7 +623,7 @@ final class ShepherdViewModel {
                         : GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetch)
                 }.value
                 completion(.success(.init(base: resolution.display, note: resolution.note, fetchFirst: fetch,
-                                          model: self.settings.agentDefaults.model ?? PiConfig.defaultModel(), thinking: self.settings.defaultThinking)))
+                                          model: self.settings.agentDefaults.model ?? PiConfig.defaultModel(in: self.server.pi.home), thinking: self.settings.defaultThinking)))
             }
         }
         // Remote clients create agents through this host's normal spawn flow.

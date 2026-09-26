@@ -186,12 +186,22 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    /// This Mac's pi, asked for the skills it loads from outside ~/.agents/skills (one loader, so
-    /// one cache).
-    public static let piSkillsReader: SkillsStore.PiSkillsReader = {
-        let loader = PiSkillsLoader()
+    /// Where a server's Settings ▸ Skills reads the skills pi loads from outside ~/.agents/skills.
+    public enum PiSkillsSource {
+        /// Its own pi (`piSkillsReader`).
+        case pi
+        /// Nowhere: the page lists none.
+        case off
+        /// This reader.
+        case reader(SkillsStore.PiSkillsReader)
+    }
+
+    /// This Mac's pi, asked for the skills it loads from outside ~/.agents/skills (one loader per
+    /// server, so one cache).
+    public static func piSkillsReader(_ pi: PiSetup) -> SkillsStore.PiSkillsReader {
+        let loader = PiSkillsLoader(agentDirectory: pi.home, engine: pi.engine)
         return { loader.read(installedDirectory: $0) }
-    }()
+    }
 
     /// Shared instance the app uses; tests construct their own with scratch
     /// paths.
@@ -205,8 +215,9 @@ public final class SessionServer: @unchecked Sendable {
     /// PTY output with the server-queue sequence of the delivery's final
     /// source chunk. Coalesced deliveries retain that end sequence.
     public var onSequencedOutput: ((SessionID, Data, UInt64) -> Void)?
-    /// A session's child process exited. Delivered on the main actor.
-    public var onSessionExited: ((SessionID, Int32?) -> Void)?
+    /// A session's child process exited, and whether its agent stays (`SessionExit`). Delivered
+    /// on the main actor.
+    public var onSessionExited: ((SessionID, SessionExit) -> Void)?
     /// State was persisted. Every mutation broadcasts, including mutations
     /// initiated by the GUI. Delivered on the main actor.
     public var onStateChanged: ((ShepherdState) -> Void)?
@@ -321,6 +332,8 @@ public final class SessionServer: @unchecked Sendable {
     private let socketPath: String
     private let store: StateStore
     private let modelCatalog: ModelCatalog
+    /// Which pi this server's agents run, and its home (`PiSetup`).
+    public let pi: PiSetup
     /// Where each delivered message came from, per pi session (support directory).
     private let originStore: ThreadOriginStore
     /// How each automation's runs went (support directory), for remote clients.
@@ -364,6 +377,21 @@ public final class SessionServer: @unchecked Sendable {
     /// to one ran a pi that is gone, unlike a binding left from the previous run, which the app
     /// is respawning.
     private var retiredRPCSessions: [SessionID: Int32?] = [:]
+    /// Each RPC session's start (`PiStartRecord`), from its spawn until it exits.
+    private var startRecords: [SessionID: PiStartRecord] = [:]
+    /// RPC sessions whose exit kept their agent (DESIGN.md › Thread › Can't start), until another
+    /// session is bound to their pane: their thread answers with why, instead of pi.
+    private var keptStarts: [SessionID: KeptStart] = [:]
+    private struct KeptStart {
+        /// nil for a stop Shepherd asked for.
+        var problem: NativeStartProblem?
+        /// A new agent's opening prompt its pi never read: it goes to the pi Retry starts.
+        var openingPrompt: RPCThreadState.OpeningPrompt?
+        /// Retry is starting pi again: the thread is starting until the new pi is bound.
+        var retrying = false
+    }
+    /// `generation` of the snapshot a kept start answers with.
+    static let startProblemGeneration = "start-problem"
     /// RPC sessions whose thread serves but that no agent's pane is bound to yet
     /// (`onNativeThreadServable` waits for the binding).
     private var unannouncedServable: Set<SessionID> = []
@@ -503,25 +531,30 @@ public final class SessionServer: @unchecked Sendable {
 
     /// pi's own catalog (`pi --list-models`, else models.json) and settings.json's default, all
     /// as "provider/id".
-    public static let piModelCatalog: ModelCatalog = {
-        ModelListing(entries: PiModelCatalog.entriesOrConfigured(), defaultModel: PiConfig.defaultModel(),
-                     levelMaps: PiConfig.thinkingLevelMaps())
+    public static func piModelCatalog(_ pi: PiSetup) -> ModelCatalog {
+        {
+            ModelListing(entries: pi.catalog.entriesOrConfigured(), defaultModel: PiConfig.defaultModel(in: pi.home),
+                         levelMaps: PiConfig.thinkingLevelMaps(in: pi.home))
+        }
     }
 
     /// This Mac's models as a remote client's `listModels` gets them, for the local New Agent
     /// sheet. Blocking (asking pi shells out): call it off the main thread and the server queue.
     public func modelListing() -> ModelListing { modelCatalog() }
 
-    /// `modelCatalog` answers remote model listings; tests pass a stand-in so nothing runs pi.
-    /// `skillsDirectory` is where this host's skills live, ~/.agents/skills unless a test passes
-    /// its own; `piSkills` reads the skills pi loads from elsewhere (tests pass nil, or their own).
+    /// `pi` is which pi the agents run and where it keeps its state (the app's, `PiSetup.app`,
+    /// unless a test passes its own). `modelCatalog` answers remote model listings, `pi`'s own
+    /// when nil; tests pass a stand-in so nothing runs pi. `skillsDirectory` is where this host's
+    /// skills live, ~/.agents/skills unless a test passes its own; `piSkills` reads the skills pi
+    /// loads from elsewhere (tests pass `.off`, or their own reader).
     /// `trash` is where an Undo moves the files a turn created; tests pass their own.
-    public init(socketPath: String, stateURL: URL, modelCatalog: @escaping ModelCatalog = SessionServer.piModelCatalog,
-                skillsDirectory: URL? = nil, piSkills: SkillsStore.PiSkillsReader? = SessionServer.piSkillsReader,
+    public init(socketPath: String, stateURL: URL, pi: PiSetup = .app, modelCatalog: ModelCatalog? = nil,
+                skillsDirectory: URL? = nil, piSkills: PiSkillsSource = .pi,
                 trash: @escaping ChangesService.Trash = ChangesService.systemTrash) {
         self.socketPath = socketPath
         self.store = StateStore(url: stateURL)
-        self.modelCatalog = modelCatalog
+        self.pi = pi
+        self.modelCatalog = modelCatalog ?? SessionServer.piModelCatalog(pi)
         self.originStore = ThreadOriginStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("thread-origins", isDirectory: true))
         self.runLog = AutomationRunLog(url: stateURL.deletingLastPathComponent().appendingPathComponent("automation-runs.json"))
         let instructions = InstructionsStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("instructions", isDirectory: true))
@@ -529,7 +562,13 @@ public final class SessionServer: @unchecked Sendable {
         self.suggestions = SuggestionsStore(url: instructions.directory.appendingPathComponent("suggestions.json"), instructions: instructions)
         self.skills = SkillsStore(directory: skillsDirectory ?? ShepherdPaths.agentSkillsDirectory(),
                                   stateDirectory: stateURL.deletingLastPathComponent().appendingPathComponent("skills", isDirectory: true),
-                                  piSkills: piSkills)
+                                  piSkills: {
+                                      switch piSkills {
+                                      case .pi: SessionServer.piSkillsReader(pi)
+                                      case .off: nil
+                                      case .reader(let reader): reader
+                                      }
+                                  }())
         self.changes = ChangesService(directory: stateURL.deletingLastPathComponent().appendingPathComponent("changes", isDirectory: true),
                                       trash: trash)
         self.designs = DesignStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("designs", isDirectory: true))
@@ -895,6 +934,20 @@ public final class SessionServer: @unchecked Sendable {
             unavailable("The agent has no thread pane.")
             return
         }
+        // A pi that stopped before it served: its agent waits, and says why (or that Retry is
+        // starting it again).
+        if let sessionID = leaf.sessionID, let kept = keptStarts[sessionID], sessions[sessionID]?.isAlive != true {
+            if !kept.retrying, let problem = kept.problem {
+                if case .snapshot = request {
+                    completion(.result(.snapshot(value: Self.startProblemSnapshot(problem, piSessionID: agent.effectivePiSessionID))))
+                } else {
+                    unavailable("pi stopped before it started.")
+                }
+            } else {
+                completion(.failure(code: NativeThreadCode.starting, message: "The agent is starting."))
+            }
+            return
+        }
         guard let sessionID = leaf.sessionID, let session = sessions[sessionID] else {
             if let sessionID = leaf.sessionID, let code = retiredRPCSessions[sessionID] {
                 unavailable(Self.exitMessage(code))
@@ -920,6 +973,14 @@ public final class SessionServer: @unchecked Sendable {
         }
         if case .send = request { noteAgentSend(agentID) }
         thread.handle(request, olderClient: olderClient) { completion(.result($0)) }
+    }
+
+    /// What a kept start answers a snapshot with: the problem alone, with no history and no
+    /// actions, so an older client (which ignores the problem) shows a thread it cannot send to.
+    static func startProblemSnapshot(_ problem: NativeStartProblem, piSessionID: String) -> NativeThreadSnapshot {
+        NativeThreadSnapshot(piSessionID: piSessionID, generation: startProblemGeneration, revision: 0, running: false,
+                             supportedActions: [], dialogsSupported: false, dialogs: [], messages: [], provisional: [],
+                             clipped: false, runtime: "rpc", startProblem: problem)
     }
 
     private static func exitMessage(_ code: Int32?) -> String {
@@ -2761,10 +2822,17 @@ public final class SessionServer: @unchecked Sendable {
             guard self.store.state.tabs[index].layout.contains(paneID) else {
                 throw SessionServerError.noSuchPane(paneID)
             }
+            let previous = self.store.state.tabs[index].layout.leaf(withID: paneID)?.sessionID
             try self.mutateState {
                 $0.tabs[index].layout = $0.tabs[index].layout.updatingLeaf(paneID) {
                     $0.sessionID = sessionID
                 }
+            }
+            // A pi started again in place of one that stopped before it served takes over the
+            // opening prompt that one never read.
+            if let previous, previous != sessionID, let kept = self.keptStarts.removeValue(forKey: previous),
+               let prompt = kept.openingPrompt, let sessionID, let thread = self.sessions[sessionID]?.thread {
+                thread.sendOpeningPrompt(prompt.text, images: prompt.images, id: prompt.id)
             }
             // Revisions pi reached before its pane was bound had no agent to reach.
             if let sessionID, self.sessions[sessionID]?.thread != nil {
@@ -3058,6 +3126,9 @@ public final class SessionServer: @unchecked Sendable {
             }
 
             for sessionID in layoutSessions {
+                // A stopped pi's session is already retired; its kept start (and the opening
+                // prompt it holds) goes with the agent.
+                self.keptStarts.removeValue(forKey: sessionID)
                 self.killSessionOnQueue(sessionID)
             }
         }
@@ -3587,13 +3658,34 @@ public final class SessionServer: @unchecked Sendable {
         await enqueueValue { self.sessions[sessionID]?.thread?.isServable == true }
     }
 
-    public func createSession(params: CreateSessionParams) async throws -> SessionInfo {
+    /// `resuming`: the pi session an agent's pi (an RPC session) is launched to resume. pi's
+    /// warning that it found no such session, and will start a new one under its id, then stops it
+    /// before it writes anything, and its agent waits (`NativeStartProblem.Kind.resumedAsNew`).
+    public func createSession(params: CreateSessionParams, resuming: String? = nil) async throws -> SessionInfo {
         try await enqueue {
-            try self.makeSessionOnQueue(params: params)
+            try self.makeSessionOnQueue(params: params, resuming: resuming)
         }
     }
 
-    private func makeSessionOnQueue(params: CreateSessionParams) throws -> SessionInfo {
+    /// Starting an agent's pi again after it stopped before it served (Retry): its thread says it
+    /// is starting until the new pi is bound to the pane (`updatePaneSession`), which takes the
+    /// opening prompt the stopped pi never read.
+    public func retryStart(sessionID: SessionID) async {
+        await enqueueValue { self.keptStarts[sessionID]?.retrying = true }
+    }
+
+    /// Stops an agent's pi without retiring its agent: its exit keeps the agent, with no problem
+    /// to report (`SessionExit.keepsAgent`).
+    public func stopKeepingAgent(sessionID: SessionID) async {
+        await enqueueValue {
+            guard case .rpc(let session, _)? = self.sessions[sessionID], session.isAlive else { return }
+            self.startRecords[sessionID]?.requestStop()
+            ShepherdLog.info("rpc session \(sessionID) stop requested; its agent stays")
+            session.kill()
+        }
+    }
+
+    private func makeSessionOnQueue(params: CreateSessionParams, resuming: String? = nil) throws -> SessionInfo {
         let server = self
         weak let serverWeak = server
         if params.runtime == .rpc {
@@ -3608,9 +3700,10 @@ public final class SessionServer: @unchecked Sendable {
             session.beforeOffQueueDecode = beforeOffQueueDecode
             let thread = RPCThreadState(session: session, queue: sessionQueue, originStore: originStore)
             thread.defaultQueueMode = defaultQueueMode
-            // pi's compaction settings, as this pi reads them: its agent directory (the app's
-            // environment, or the session's) and the project's own. Read, never written.
-            let piDirectory = PiConfig.agentDirectory(environment: ProcessInfo.processInfo.environment.merging(params.env ?? [:]) { $1 })
+            // pi's compaction settings, as this pi reads them: its agent directory (the server's
+            // pi home, or the one the session's environment names) and the project's own. Read,
+            // never written.
+            let piDirectory = PiConfig.agentDirectory(environment: params.env ?? [:], otherwise: pi.home)
             let cwd = params.cwd
             thread.compactionSettings = { model in PiConfig.compactionSettings(model: model, cwd: cwd, in: piDirectory) }
             // The queue did not go after all (pi refused it, or it paused): pi is idle, so the
@@ -3635,12 +3728,19 @@ public final class SessionServer: @unchecked Sendable {
                 server.hopToMain { [weak server] in server?.onAgentToolFinished?(agentID, name) }
             }
             session.onEvent = { [weak thread] event in thread?.handle(event) }
+            startRecords[sid] = PiStartRecord(resuming: resuming)
             thread.onServable = { [weak serverWeak] in
+                serverWeak?.startRecords[sid]?.served()
                 guard let server = serverWeak, server.sessions[sid] != nil else { return }
                 server.unannouncedServable.insert(sid)
                 server.announceServableThreads()
             }
-            session.onStderr = { line in ShepherdLog.info("rpc session \(sid) stderr: \(line)") }
+            session.onStderr = { [weak serverWeak, weak session] line in
+                ShepherdLog.info("rpc session \(sid) stderr: \(line)")
+                guard serverWeak?.startRecords[sid]?.note(stderr: line) == true else { return }
+                ShepherdLog.warning("rpc session \(sid) would start a new conversation in place of \(resuming ?? "-"); stopping it")
+                session?.kill()
+            }
             session.onExit = { [weak serverWeak] code in
                 serverWeak?.sessionDidExit(sid, code: code)
             }
@@ -3884,6 +3984,10 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             if session.thread != nil { self.retiredRPCSessions.updateValue(session.exitCode, forKey: sessionID) }
+            // A kept start outlives its session only while an agent's pane is bound to it.
+            if self.keptStarts[sessionID] != nil, self.agentID(forSession: sessionID) == nil {
+                self.keptStarts.removeValue(forKey: sessionID)
+            }
             self.unannouncedServable.remove(sessionID)
             self.sessions.removeValue(forKey: sessionID)
             self.attachedSessions.remove(sessionID)
@@ -3978,6 +4082,13 @@ public final class SessionServer: @unchecked Sendable {
 
     private func sessionDidExit(_ sessionID: SessionID, code: Int32?) {
         ShepherdLog.info("session \(sessionID) exited (code \(code.map(String.init) ?? "signal"))")
+        if let record = startRecords.removeValue(forKey: sessionID), record.keepsAgent {
+            let problem = record.problem(exitCode: code)
+            keptStarts[sessionID] = KeptStart(problem: problem, openingPrompt: sessions[sessionID]?.thread?.unreadOpeningPrompt)
+            ShepherdLog.warning("rpc session \(sessionID) stopped before it served; its agent stays: \(problem.map { "\($0.kind.rawValue) \($0.lines.last ?? "")" } ?? "requested")")
+            notifySessionExit(sessionID: sessionID, exit: SessionExit(code: code, keepsAgent: true, startProblem: problem))
+            return
+        }
         if let fds = remoteAttachments[sessionID] {
             for fd in fds {
                 if let client = clients[fd] {
@@ -3988,7 +4099,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         guard let output = outputStates[sessionID],
               output.delivery != nil || !output.pending.isEmpty else {
-            notifySessionExit(sessionID: sessionID, code: code)
+            notifySessionExit(sessionID: sessionID, exit: SessionExit(code: code))
             return
         }
         output.exitPending = true
@@ -4005,11 +4116,11 @@ public final class SessionServer: @unchecked Sendable {
               output.pending.isEmpty else { return }
         let code = output.exitCode
         output.exitPending = false
-        notifySessionExit(sessionID: sessionID, code: code)
+        notifySessionExit(sessionID: sessionID, exit: SessionExit(code: code))
     }
 
-    private func notifySessionExit(sessionID: SessionID, code: Int32?) {
-        hopToMain { [weak self] in self?.onSessionExited?(sessionID, code) }
+    private func notifySessionExit(sessionID: SessionID, exit: SessionExit) {
+        hopToMain { [weak self] in self?.onSessionExited?(sessionID, exit) }
     }
 
     // MARK: - Queue plumbing

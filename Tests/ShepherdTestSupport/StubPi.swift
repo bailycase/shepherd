@@ -9,7 +9,7 @@ public enum StubPi {
 
     public static var command: [String] { ["python3", path] }
 
-    /// What the stub on PATH answers to `pi --list-models`.
+    /// What the stub engine answers to `pi --list-models`.
     public static let modelListing = """
     provider   model                      context  max-out  thinking  images
     anthropic  claude-opus-4-5            200K     64K      yes       yes
@@ -21,11 +21,12 @@ public enum StubPi {
 
     private static let installed = Locked(false)
 
-    /// Puts the stub first on PATH as `pi` (answering `--list-models` with `modelListing`), for
-    /// code that launches pi the way the app does (`zsh -l -c "exec pi …"`). It only writes a file
-    /// into `TestProcess.binDirectory`, which the process put on PATH when it loaded, and stays
-    /// for the rest of the process: every later `pi` a test's shell runs is the stub.
-    public static func installOnPath() throws {
+    /// Installs the stub as the engine every app-level launch starts (`TestProcess.piEngine`,
+    /// which `SHEPHERD_PI_ENGINE` names), answering `--list-models` with `modelListing`, for code
+    /// that launches pi the way the app does (`PiLaunch`). It only writes a file into
+    /// `TestProcess.binDirectory` and stays for the rest of the process: every later launch of
+    /// the engine is the stub. A bare `pi` on PATH still refuses to run.
+    public static func installAsEngine() throws {
         try installed.withValue { installed in
             guard !installed else { return }
             let bin = TestProcess.binDirectory
@@ -34,16 +35,16 @@ public enum StubPi {
             let script = """
             #!/bin/sh
             if [ "$1" = "--list-models" ]; then cat '\(listing.path)'; exit 0; fi
-            exec /usr/bin/env python3 '\(path)'
+            exec /usr/bin/env python3 '\(path)' "$@"
 
             """
             // Written aside and renamed, so a concurrent shell never finds a half-written or
-            // non-executable `pi`.
+            // non-executable engine.
             let staged = bin.appendingPathComponent(".pi-\(UUID().uuidString)")
             try Data(script.utf8).write(to: staged)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: staged.path)
-            guard rename(staged.path, bin.appendingPathComponent("pi").path) == 0 else {
-                throw CommandFailure("rename \(staged.lastPathComponent) pi", String(cString: strerror(errno)))
+            guard rename(staged.path, TestProcess.piEngine.path) == 0 else {
+                throw CommandFailure("rename \(staged.lastPathComponent) pi-engine", String(cString: strerror(errno)))
             }
             installed = true
         }
