@@ -97,11 +97,12 @@ elements).
 - **Live values.** A design's `boardCount` (its listed boards) is read from its files and
   broadcast, never written to `state.json`. A write moves `lastActiveAt` the same way; it reaches
   the file with the next structural change.
-- **Soft references.** A design's agent and an agent's design may name something gone. Deleting
-  an agent keeps its design, which starts a fresh agent when next opened. Deleting a design keeps
-  its agent. A deleted space keeps its designs.
-- **At startup** the server forgets a design whose folder has no `canvas.json` and clears
-  references to what no longer exists. A canvas that is there but unreadable keeps its design. Which folders are gone is read on the design store's
+- **Soft references.** A design's agent may name something gone. Deleting an agent keeps its
+  design, which starts a fresh agent when next opened. Deleting a design takes the agents that
+  drew it (their layouts and processes too): a design's chat never becomes a thread. A deleted
+  space keeps its designs.
+- **At startup** the server forgets a design whose folder has no `canvas.json`, with the agents
+  that drew it, and clears a design's agent that no longer exists. A canvas that is there but unreadable keeps its design. Which folders are gone is read on the design store's
   queue, not the server's. It then reads each design's board count.
 
 ## Writing
@@ -114,7 +115,7 @@ the only writer, through named mutations:
 | --- | --- |
 | `createDesign(_:)` | Makes the folder with a new canvas.json (`createdOnFiles` stamped, the name as `title`), then the record. A refused record removes the folder again |
 | `renameDesign(_:to:)` | Renames the record and the canvas `title` |
-| `deleteDesign(_:)` | Removes the record, clears `designID` on its agent, then removes the folder |
+| `deleteDesign(_:)` | Removes the record and the agents that drew it (their layouts, and their processes stopped), then removes the folder |
 | `setDesignAgent(_:agentID:)` | Records which agent draws it |
 | `writeDesignBoard(_:path:source:baseRevision:)` | Writes one board's whole source |
 | `updateDesignIndex(_:patch:baseRevision:)` | Applies a canvas update. A new `title` renames the design |
@@ -156,7 +157,7 @@ with its SHA-256, listed or not), `designBoard(_:path:)` and `designVersions(_:p
 
 ## The design agent
 
-A design is drawn by an ordinary pi agent whose `Agent.designID` names it. Its launch adds
+A design is drawn by a pi agent whose `Agent.designID` names it. Its launch adds
 `-e shepherd-design.ts` and two variables: `SHEPHERD_DESIGN_ID` (the extension is inert without
 it) and `SHEPHERD_DESIGN_SKILL_DIR`. Its working directory is its space's, so it reads the
 project's stylesheets, tokens and templates with its ordinary tools.
@@ -191,6 +192,32 @@ project's stylesheets, tokens and templates with its ordinary tools.
   `.drew`), "Updated A and A · phone" (the edit glyph), or "Arranged the canvas"; `design_check`
   reads "Checked against acme-web · 0 off-system values" (`.checked`). Board names follow the
   skill's files: `A.dc.html` reads "A", `A-phone.dc.html` "A · phone".
+
+### Design agents and ordinary threads
+
+An agent draws a design while its `designID` names one in the workspace
+(`ShepherdState.isDesignAgent`). Its thread is that design's Chat tab and nothing else. Only it
+gets `shepherd-design.ts`, the design skill, the design facts in its prompt,
+`SHEPHERD_DESIGN_ID` and `SHEPHERD_DESIGN_SKILL_DIR`. A thread with no design never gets any of
+them, whether the experiment is on or off. The rule holds in both directions:
+
+- **Peers.** A design agent launches without the panes extension, so it has no `pane_*`,
+  `agent_*`, `automation_*` or `notify` tools. The server also refuses `listAgents`,
+  `sendToAgent`, `spawnAgent` and `coordinateAgent` from it or aimed at it, with `not_a_thread`,
+  so an older installed copy of the extension can't get around the rule. agent_list leaves it
+  out.
+- **The Mac's chrome.** A design agent has no sidebar row, no ⌘-digit and no palette row, the
+  palette lists none of its subagents, and the palette's transcript search never reads its chat.
+  It posts no banners: a thread's "Turn finished", question and subagent banners (and their
+  Review action) never speak for a design. The Hosts page counts no thread for it.
+- **Remote clients.** Another Mac, or an iPhone or iPad, gets the host's state without
+  `designs`, without their agents, and without those agents' layouts
+  (`ShepherdState.withoutDesigns`). There is no remote design screen yet. `RemoteHostClient`
+  applies the same rule to whatever a host sends, so an older host's designs reach no Mac,
+  iPhone or iPad client either.
+- **A forgotten design.** Deleting a design, or startup forgetting one whose folder is gone,
+  takes the agents that drew it. Clearing their `designID` instead would turn the design's chat,
+  fences and all, into an ordinary thread.
 
 ### Comments
 

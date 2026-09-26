@@ -108,7 +108,8 @@ struct HostsPageModel: Equatable {
     /// Running threads, worktree threads, and the projects (spaces) there.
     static func connectedFacts(_ state: ShepherdState, address: String?) -> [NWHostFact] {
         var facts: [NWHostFact] = []
-        let running = state.agents.count { $0.status == .working }
+        // A design's agent is no thread, so it never counts as one.
+        let running = state.agents.count { $0.status == .working && !state.isDesignAgent($0) }
         facts.append(.init("Running", running == 0 ? "none" : count(running, "thread")))
         let worktrees = state.agents.count { $0.worktreeBranch != nil }
         if worktrees > 0 { facts.append(.init("Worktrees", "\(worktrees)")) }
@@ -124,7 +125,7 @@ struct HostsPageModel: Equatable {
                              locale: Locale) -> [NWHostFact] {
         var facts: [NWHostFact] = []
         let hidden = Set(state.spaces.filter(\.hidden).map(\.id))
-        let threads = state.agents.count { !hidden.contains($0.spaceID) }
+        let threads = state.agents.count { !hidden.contains($0.spaceID) && !state.isDesignAgent($0) }
         let waiting = [threads > 0 ? count(threads, "thread") : nil,
                        state.automations.isEmpty ? nil : count(state.automations.count, "automation")].compactMap { $0 }
         if !waiting.isEmpty { facts.append(.init("Waiting", waiting.joined(separator: ", "))) }
