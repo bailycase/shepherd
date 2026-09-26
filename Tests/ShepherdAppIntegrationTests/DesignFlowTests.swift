@@ -79,14 +79,16 @@ struct DesignFlowTests {
         try await eventuallyOnMain("a fresh agent on screen") { vm.shownDesign?.id == design.id }
         let agent = try #require(vm.selectedAgent)
         #expect(agent.designID == design.id)
-        #expect(vm.state.designs.first?.agentID == agent.id)
         #expect(vm.state.agents.count == 1)
 
-        // Opening it again selects that agent; no second one starts.
+        // Opening it again selects that agent, even before the design records it; no second one
+        // starts.
         vm.openDestination(.designs)
         vm.openDesign(design.id)
         #expect(vm.selectedAgentID == agent.id && vm.shownDestination == nil)
+        try await eventuallyOnMain("the design to record its agent") { vm.state.designs.first?.agentID == agent.id }
         #expect(vm.state.agents.count == 1)
+        #expect(vm.startingDesignAgents.isEmpty)
     }
 
     @Test func theDesignPagesExistOnlyWhileTheToolIsOn() async throws {
@@ -202,5 +204,62 @@ struct DesignFlowTests {
         }
         #expect(host.image(DesignPath("C.dc.html")!) == nil)
         #expect(screen.boards.first { $0.id == "D.dc.html" }?.title == "D · Minimal")
+    }
+
+    /// The design agent's own tools, over the extension socket as `shepherd-design.ts` sends them:
+    /// boards it writes onto an empty canvas on screen draw there, and its rewrite of one board
+    /// reloads that board in place and leaves the other alone.
+    @Test func boardsTheAgentWritesOverItsSocketDrawOnTheCanvasAndARewriteReloadsOnlyThatBoard() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        var drawer = try await app.liveAgent("Checkout", in: space)
+        let design = Design(name: "Checkout", spaceID: space.id, agentID: drawer.agent.id, createdAt: 1_000)
+        drawer.agent.designID = design.id
+        let (vm, _) = try await start(app, agents: [drawer])
+        _ = try await app.server.createDesign(design)
+        vm.selectAgent(drawer.agent.id)
+        let window = OffscreenWindow(size: CGSize(width: 1400, height: 900), dark: true, WorkspaceView(vm: vm))
+        defer { window.close() }
+        let screen = vm.designScreen(design.id)
+        let host = try #require(screen.host)
+        try await eventuallyOnMain("the empty canvas on screen") {
+            window.layout()
+            return host.isActive && screen.snapshot != nil
+        }
+        #expect(screen.boards.isEmpty)
+
+        let boards = Array(DesignFixtures.checkout.prefix(2))
+        let agentID = drawer.agent.id
+        for (index, board) in boards.enumerated() {
+            let reply = try await app.extensionRequest(.designWriteBoard(id: index + 1, agentID: agentID, designID: design.id,
+                                                                         path: board.path, source: DesignFixtures.source(board),
+                                                                         baseRevision: nil))
+            guard case .designWritten(_, let result) = reply, result.changed else { Issue.record("no write: \(reply)"); return }
+        }
+        let placed = try await app.extensionRequest(.designUpdateIndex(id: 3, agentID: agentID, designID: design.id,
+                                                                       changes: DesignFixtures.layout(boards), baseRevision: nil))
+        guard case .designWritten = placed else { Issue.record("no layout: \(placed)"); return }
+
+        let a = DesignPath("A.dc.html")!, b = DesignPath("B.dc.html")!
+        try await eventuallyOnMain("both boards drawn on the canvas", timeout: .seconds(60)) {
+            window.layout()
+            return screen.boards.map(\.id) == [a.rawValue, b.rawValue] && screen.isDrawn
+        }
+        screen.select(a.rawValue)
+        try await eventuallyOnMain("A to go live") { host.liveView(a) != nil }
+        let view = host.liveView(a)
+        let before = (reloads: host.reloads, tokenB: host.tokens[b], shaB: screen.snapshot?.boards[b])
+
+        let rewrite = try await app.extensionRequest(.designWriteBoard(id: 4, agentID: agentID, designID: design.id, path: a.rawValue,
+                                                                       source: DesignFixtures.source(boards[0], note: "revised"),
+                                                                       baseRevision: nil))
+        guard case .designWritten(_, let written) = rewrite, written.changed else { Issue.record("no rewrite: \(rewrite)"); return }
+        try await eventuallyOnMain("A to show the rewrite", timeout: .seconds(30)) {
+            screen.snapshot?.boards[a] == written.sha256 && host.isDrawn([a]) && host.reloads > before.reloads
+        }
+        #expect(host.reloads == before.reloads + 1, "A reloaded in place, once")
+        #expect(host.liveView(a) === view, "no new view: no navigation")
+        #expect(host.tokens[b] == before.tokenB && screen.snapshot?.boards[b] == before.shaB, "B is untouched")
     }
 }

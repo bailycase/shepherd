@@ -82,8 +82,11 @@ extension ShepherdViewModel {
     func openDesign(_ id: DesignID) {
         guard let design = design(id) else { return }
         designsPageSelection = id
-        if let agentID = design.agentID, state.agents.contains(where: { $0.id == agentID }) {
-            selectAgent(agentID)
+        // Its agent, or one that draws it before the design records it (a start whose
+        // `setDesignAgent` hasn't reached this state yet).
+        let agent = state.agents.first { $0.id == design.agentID } ?? state.agents.first { $0.designID == id }
+        if let agent {
+            selectAgent(agent.id)
             return
         }
         guard !startingDesignAgents.contains(id) else { return }
