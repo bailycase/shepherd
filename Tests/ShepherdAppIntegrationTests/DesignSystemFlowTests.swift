@@ -108,8 +108,11 @@ struct DesignSystemFlowTests {
         try await eventuallyOnMain("the build's page to be on screen") { vm.shownDesign?.buildsSystem == true }
         let build = try #require(vm.shownDesign)
         let agent = try #require(vm.selectedAgent)
-        #expect(build.name == "dashboard-web" && build.spaceID == space.id)
+        #expect(build.name == "dashboard-web" && build.sourceSpaceID == space.id)
         #expect(agent.designID == build.id && agent.name == "dashboard-web")
+        // Its agent lives in the reserved designs space, reading the project it builds from.
+        #expect(agent.spaceID == vm.state.designsSpace?.id && vm.visibleSpaces.map(\.id) == [space.id])
+        #expect(vm.state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd == space.path)
         #expect(vm.shownDestination == nil)
         #expect(vm.sidebarLists.all.isEmpty, "a build has no Recents row, and neither has its agent")
         #expect(!vm.designsPage.cards.contains { $0.id == build.id })
@@ -177,7 +180,9 @@ struct DesignSystemFlowTests {
         #expect(try git(["status", "--porcelain"], in: repo).isEmpty)
     }
 
-    @Test func newDesignFindsTheProjectsTokensFileAndInstallsTheSystemPicked() async throws {
+    /// New design picks no project: it starts in a system (Night Watch, with none built here) or
+    /// the one picked, and its agent works in the design's own folder, in the designs space.
+    @Test func newDesignPicksNoProjectAndInstallsTheSystemPicked() async throws {
         try StubPi.installOnPath()
         let app = try AppHarness()
         defer { app.stop() }
@@ -188,9 +193,7 @@ struct DesignSystemFlowTests {
 
         vm.openNewDesign()
         let draft = vm.newDesign
-        await draft.detect(vm)
-        #expect(draft.tokensFiles[space.id] == .some("web/static/tokens.css"))
-        #expect(draft.systemToInstall(vm) == nil, "no system was built from the project yet")
+        #expect(draft.systemToInstall(vm) == "night-watch", "no system was built here yet")
 
         draft.choose(system: "night-watch")
         #expect(draft.systemToInstall(vm) == "night-watch")
@@ -198,7 +201,12 @@ struct DesignSystemFlowTests {
         draft.send(vm)
         try await eventuallyOnMain("the design to open") { vm.shownDesign != nil && !draft.starting }
         let design = try #require(vm.shownDesign)
-        #expect(design.systemNamespace == "night-watch" && !design.buildsSystem)
+        #expect(design.systemNamespace == "night-watch" && !design.buildsSystem && design.sourceSpaceID == nil)
+        let agent = try #require(vm.selectedAgent)
+        #expect(agent.designID == design.id && agent.spaceID == vm.state.designsSpace?.id)
+        let folder = try #require(app.server.designs.folder(for: design.id))
+        #expect(vm.state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd == folder.path)
+        #expect(vm.visibleSpaces.map(\.id) == [space.id], "the projects are as they were")
         let snapshot = try await app.server.designSnapshot(design.id)
         #expect(snapshot.index.designSystems?.map(\.namespace) == ["night-watch"])
         #expect(Self.workingTree(repo) == before)

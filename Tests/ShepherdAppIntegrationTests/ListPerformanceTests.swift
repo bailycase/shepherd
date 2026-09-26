@@ -150,7 +150,7 @@ struct ListPerformanceTests {
         let vm = try await app.start(with: ShepherdState(spaces: [space]))
         vm.designNetwork = .none
         for index in 0..<120 {
-            _ = try await app.server.createDesign(Design(name: "Design \(index)", spaceID: space.id, createdAt: Double(1_000 + index)))
+            _ = try await app.server.createDesign(Design(name: "Design \(index)", createdAt: Double(1_000 + index)))
         }
         try await eventuallyOnMain("the designs to arrive") { vm.state.designs.count == 120 }
         vm.openDestination(.designs)
@@ -200,7 +200,7 @@ struct ListPerformanceTests {
         let space = Fixture.space(path: app.dir.path)
         let vm = try await app.start(with: ShepherdState(spaces: [space]))
         vm.designNetwork = .none
-        let design = Design(name: "Large", spaceID: space.id, createdAt: 1_000)
+        let design = Design(name: "Large", createdAt: 1_000)
         _ = try await app.server.createDesign(design)
         try await DesignFixtures.draw(DesignFixtures.grid(172), in: design.id, on: app.server, perRow: 12)
         try await eventuallyOnMain("the design to arrive") { vm.state.designs.count == 1 }

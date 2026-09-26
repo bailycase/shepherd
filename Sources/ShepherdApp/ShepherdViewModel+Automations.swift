@@ -177,7 +177,7 @@ extension ShepherdViewModel {
     /// The reserved hidden space hosting automation agents whose cwd matches
     /// no user space. Created on first use; never rendered as a space row.
     private func automationsSpaceID() async throws -> SpaceID {
-        if let existing = state.spaces.first(where: { $0.hidden }) {
+        if let existing = state.spaces.first(where: \.holdsAutomations) {
             return existing.id
         }
         let space = Space(name: "Automations", path: "~", hidden: true)

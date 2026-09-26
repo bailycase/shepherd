@@ -112,14 +112,16 @@ extension DesignPreviewTests {
         try FileManager.default.createDirectory(at: stylesheet.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data(Self.acmeStylesheet.utf8).write(to: stylesheet)
         let web = Space(name: "dashboard-web", path: project.path)
-        var (agent, tab) = try await workspace.agent("dashboard-web", in: web, order: 0, live: true)
-        let build = Design(name: "dashboard-web", spaceID: web.id, agentID: agent.id, createdAt: 1_000, buildsSystem: true)
+        // The build's agent lives in the reserved designs space, reading the project it builds from.
+        let designs = Space.designs()
+        var (agent, tab) = try await workspace.agent("dashboard-web", in: designs, order: 0, live: true, cwd: web.path)
+        let build = Design(name: "dashboard-web", agentID: agent.id, createdAt: 1_000, buildsSystem: true, sourceSpaceID: web.id)
         agent.designID = build.id
-        try await workspace.seed(ShepherdState(spaces: [web], tabs: [tab], agents: [agent]))
+        try await workspace.seed(ShepherdState(spaces: [web, designs], tabs: [tab], agents: [agent]))
         _ = try await workspace.server.createDesign(build)
         if written {
             _ = try await workspace.server.writeDesignSystem(Self.acmeWrite, for: build.id)
-            let checkout = Design(name: "Checkout funnel dashboard", spaceID: web.id, createdAt: 2_000)
+            let checkout = Design(name: "Checkout funnel dashboard", createdAt: 2_000)
             _ = try await workspace.server.createDesign(checkout)
             try await DesignFixtures.draw(DesignFixtures.checkout, in: checkout.id, on: workspace.server, perRow: 3)
             _ = try await workspace.server.installDesignSystem(checkout.id, namespace: "acme-web")
@@ -202,13 +204,13 @@ extension DesignPreviewTests {
         }
     }
 
-    /// DZStart: the system built from the project, found in its tokens file.
+    /// DZStart: the system built here, naming the repo it was read from; no project to pick.
     @Test func newDesignFindsTheSystem() async throws {
         let (workspace, _, _) = try await systemWorkspace()
         defer { workspace.stop() }
         let vm = workspace.vm
         vm.openNewDesign()
-        await vm.newDesign.detect(vm)
+        await vm.loadDesignSystems()
         #expect(vm.newDesign.systemToInstall(vm) == "acme-web")
         try await Preview.render("app-window-new-design-system", size: Self.systemWindowSize) {
             RootView(vm: vm)

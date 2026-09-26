@@ -48,12 +48,13 @@ struct DesignImportIntegrationTests {
         let source = try Self.canvasFolder()
         let before = DesignTests.contents(of: source)
 
-        let design = try await h.server.importDesign(from: source, spaceID: space.id)
+        let design = try await h.server.importDesign(from: source)
 
         let index = try DesignIndex.decode(Data(contentsOf: Self.designs.appendingPathComponent("canvas.json")))
-        #expect(design.name == index.title && design.spaceID == space.id && design.agentID == nil)
+        #expect(design.name == index.title && design.agentID == nil && design.sourceSpaceID == nil)
         #expect(design.boardCount == index.boards.count)
         await drainMainQueue()
+        #expect(h.server.state.spaces == [space], "a design stands alone: no space changes")
         #expect(h.server.state.designs == [design])
         #expect(try h.persisted().designs.map(\.id) == [design.id])
         #expect(h.broadcasts.current == [h.server.state], "one broadcast of the new design")
@@ -74,7 +75,7 @@ struct DesignImportIntegrationTests {
     }
 
     @Test func aCanvasFolderItselfImportsAndAnUntitledOneIsNamedAfterIt() async throws {
-        let (h, space) = try await server()
+        let (h, _) = try await server()
         defer { h.stop() }
         let parent = try makeScratchDirectory("menu")
         let source = parent.appendingPathComponent("Spring menu", isDirectory: true)
@@ -84,7 +85,7 @@ struct DesignImportIntegrationTests {
         try FileManager.default.copyItem(at: Self.designs.appendingPathComponent("boards/Minimal.dc.html"),
                                          to: source.appendingPathComponent("Minimal.dc.html"))
 
-        let design = try await h.server.importDesign(from: source, spaceID: space.id)
+        let design = try await h.server.importDesign(from: source)
 
         #expect(design.name == "Spring menu")
         let snapshot = try await h.server.designSnapshot(design.id)
@@ -93,15 +94,14 @@ struct DesignImportIntegrationTests {
         #expect(Set(snapshot.boards.keys) == [try DesignPath.validate("Minimal.dc.html")])
     }
 
-    enum BadFolder: String, CaseIterable, Sendable { case link, linkedProject, noCanvas, badName, oversize, unreadableCanvas, unknownSpace }
+    enum BadFolder: String, CaseIterable, Sendable { case link, linkedProject, noCanvas, badName, oversize, unreadableCanvas }
 
     @Test(arguments: BadFolder.allCases)
     func aFolderThatCantBecomeADesignLeavesNothingBehind(_ bad: BadFolder) async throws {
-        let (h, space) = try await server()
+        let (h, _) = try await server()
         defer { h.stop() }
         let source = try Self.canvasFolder()
         let project = source.appendingPathComponent("project")
-        var spaceID = space.id
         switch bad {
         case .link:
             let outside = try makeScratchDirectory("outside")
@@ -125,13 +125,11 @@ struct DesignImportIntegrationTests {
             try handle.close()
         case .unreadableCanvas:
             try Data(#"{"v":2}"#.utf8).write(to: project.appendingPathComponent("canvas.json"))
-        case .unknownSpace:
-            spaceID = SpaceID()
         }
         let designsFolder = h.server.designs.directory
         let before = (try? FileManager.default.contentsOfDirectory(atPath: designsFolder.path)) ?? []
 
-        await #expect(throws: (any Error).self) { try await h.server.importDesign(from: source, spaceID: spaceID) }
+        await #expect(throws: (any Error).self) { try await h.server.importDesign(from: source) }
 
         await drainMainQueue()
         #expect(h.server.state.designs.isEmpty)
@@ -140,13 +138,13 @@ struct DesignImportIntegrationTests {
     }
 
     @Test func anExportReadsItsBoardsTheirImportsTheProjectsFilesAndTheirUploads() async throws {
-        let (h, space) = try await server()
+        let (h, _) = try await server()
         defer { h.stop() }
         let source = try Self.canvasFolder()
         let project = source.appendingPathComponent("project")
         try Data(DesignTests.board(root: #"<div style="width: 390px; height: 844px"><img src="/_blob/f1"><dc-import name="Minimal"></dc-import></div>"#).utf8)
             .write(to: project.appendingPathComponent("Card.dc.html"))
-        let design = try await h.server.importDesign(from: source, spaceID: space.id)
+        let design = try await h.server.importDesign(from: source)
         let card = try DesignPath.validate("Card.dc.html")
 
         let files = try await h.server.designExportFiles(design.id, boards: [card])
@@ -165,12 +163,12 @@ struct DesignImportIntegrationTests {
     /// `project/canvas.json`) and checks every file of its project came across byte for byte.
     @Test(.enabled(if: ProcessInfo.processInfo.environment["SHEPHERD_DESIGN_CANVAS"] != nil, "set SHEPHERD_DESIGN_CANVAS to a design folder"))
     func aRealCanvasImportsWhole() async throws {
-        let (h, space) = try await server()
+        let (h, _) = try await server()
         defer { h.stop() }
         let real = URL(fileURLWithPath: try #require(ProcessInfo.processInfo.environment["SHEPHERD_DESIGN_CANVAS"]), isDirectory: true)
         let source = try makeScratchDirectory("real")
         try FileManager.default.copyItem(at: real.appendingPathComponent("project"), to: source.appendingPathComponent("project"))
-        let design = try await h.server.importDesign(from: source, spaceID: space.id)
+        let design = try await h.server.importDesign(from: source)
         let original = DesignTests.contents(of: source.appendingPathComponent("project")).filter { !$0.key.hasPrefix(".") && $0.key != "support.js" }
         let copied = DesignTests.contents(of: h.server.designs.projectFolder(for: design.id))
         #expect(copied == original)
