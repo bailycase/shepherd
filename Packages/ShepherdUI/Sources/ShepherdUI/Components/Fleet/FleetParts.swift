@@ -288,6 +288,97 @@ struct NWListLeading: View {
     }
 }
 
+/// A card's caption band (iPadOverview: "THREADS · 3", "TODAY"): the section label on `bgSunken`,
+/// 8×12 inside, over the card's rows.
+public struct NWCaptionBand: View {
+    let text: String
+
+    public init(_ text: String) { self.text = text }
+
+    public var body: some View {
+        Text(text)
+            .nwSectionLabel()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, NW.Space.l)
+            .padding(.vertical, NW.Space.m)
+            .background(Color.nw.bgSunken)
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// A row of the iPad overview's Running now and Finished cards (iPadOverview): the state in a
+/// 16pt column, the title (14/500, `.ui`) with its time trailing in mono, and a line under it: what
+/// it does now in mono, or how it ended.
+public struct NWOverviewRow: View, Equatable {
+    public enum Time: Equatable, Sendable {
+        case none
+        /// A fixed stamp ("11:02", "Mon").
+        case text(String)
+        /// Counting up from a moment ("4:12", "37m").
+        case elapsed(since: Date)
+    }
+
+    let title: String
+    let detail: String
+    let detailMono: Bool
+    let leading: NWListRow.Leading
+    let time: Time
+    let dimmed: Bool
+
+    public init(_ title: String, detail: String, detailMono: Bool = true, leading: NWListRow.Leading, time: Time = .none,
+                dimmed: Bool = false) {
+        self.title = title
+        self.detail = detail
+        self.detailMono = detailMono
+        self.leading = leading
+        self.time = time
+        self.dimmed = dimmed
+    }
+
+    public var body: some View {
+        let nw = Color.nw
+        HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
+            NWListLeading(leading: leading)
+                .frame(width: NWOverviewMetrics.leadingWidth)
+                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + NWOverviewMetrics.leadingBaselineOffset }
+            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+                HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
+                    Text(title).font(.nw(.ui, weight: .medium)).foregroundStyle(nw.textPrimary).lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    timeView.font(.nw(.micro, weight: .regular)).foregroundStyle(nw.textTertiary).monospacedDigit()
+                        .lineLimit(1).fixedSize()
+                }
+                Text(detail).font(detailMono ? .nw(.mono) : .nw(.caption)).foregroundStyle(nw.textTertiary).lineLimit(1)
+            }
+        }
+        .padding(.horizontal, NW.Space.l)
+        .padding(.vertical, NW.Space.m)
+        .frame(maxWidth: .infinity, minHeight: NWListMetrics.twoLineRowHeight, alignment: .leading)
+        .opacity(dimmed ? NWListMetrics.dimmedOpacity : 1)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder private var timeView: some View {
+        switch time {
+        case .none: EmptyView()
+        case .text(let text): Text(text)
+        case .elapsed(let since):
+            TimelineView(NWElapsedSchedule(start: since)) { context in
+                Text(NWDuration.text(context.date.timeIntervalSince(since)))
+            }
+        }
+    }
+}
+
+/// The overview rows' measures (iPadOverview).
+public enum NWOverviewMetrics {
+    /// The state column.
+    public static let leadingWidth: CGFloat = 16
+    /// Lifts a dot or glyph from the title's baseline to its middle.
+    public static let leadingBaselineOffset: CGFloat = NW.Space.xs
+}
+
 /// A card of rows with a 1px rule between them (the boards' 12pt list cards).
 public struct NWListCard<Content: View>: View {
     @ViewBuilder let content: () -> Content
