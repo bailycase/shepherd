@@ -699,6 +699,9 @@ runs, 2,000 folders).
   floats: on its content, Core Animation redrew the shadow from the scrolling diff every step.
   `ListPerformanceTests` pins each: rows per scroll step, one row per comment, no thread row while
   the pane scrolls, no AppKit view for a hovered `+`, no shadowed layer while docked.
+- **The overlaid sidebar casts its shadow from its fill**, as the floating right pane does
+  (`nwFloatBackground`): on the sidebar itself, Core Animation redrew the shadow from its
+  scrolling list every step.
 - **Motion never scales with the list.** A list's motion watches a small key (a layout count, the
   rows' ids), never the rows themselves, and rows scrolled back into a lazy stack are simply
   there: an entrance plays only for what arrives while the list is on screen (`nwArrival`,
