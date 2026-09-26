@@ -28,9 +28,12 @@ public struct NativeCardLayout: Equatable, Hashable, Sendable {
 public struct NativeTurnPresentation: Equatable, Sendable {
     public enum Item: Equatable, Sendable, Identifiable {
         /// Thinking for one stretch of work (merged between prose), or the live block. `text` is
-        /// only what the reader can read, "" when the model shared none: then the finished row is
-        /// a plain "Thought for Ns" line, and it is left out when it was not timed either.
-        case thinking(id: String, text: String, seconds: Double?, live: Bool, since: Double?)
+        /// only what the reader can read, normalized, "" when the model shared none: then the
+        /// finished row is a plain "Thought for Ns" line, and it is left out when it was not
+        /// timed either. `blocks` is finished text parsed as Markdown (reasoning summaries are
+        /// Markdown: "**Inspecting SSH config**"); live thinking is never parsed, since it shows
+        /// no text.
+        case thinking(id: String, text: String, blocks: [NativeMarkdownBlock], seconds: Double?, live: Bool, since: Double?)
         /// `openFence`: the text ends inside a fence still open (the block a reply is writing).
         case prose(id: String, text: String, blocks: [NativeMarkdownBlock], openFence: Bool)
         /// Consecutive activity lines, one per burst of work (NWThread: "one quiet line per
@@ -52,7 +55,7 @@ public struct NativeTurnPresentation: Equatable, Sendable {
 
         public var id: String {
             switch self {
-            case .thinking(let id, _, _, _, _), .prose(let id, _, _, _), .subagents(let id, _), .note(let id, _), .error(let id, _, _, _),
+            case .thinking(let id, _, _, _, _, _), .prose(let id, _, _, _), .subagents(let id, _), .note(let id, _), .error(let id, _, _, _),
                  .steer(let id, _, _, _), .activity(let id, _): id
             case .compaction(let row): "compaction:" + row.id
             }
@@ -87,10 +90,12 @@ public struct NativeTurnPresentation: Equatable, Sendable {
 /// burst; prose and the subagent record split them. Thinking between prose blocks folds into one "Thought for Ns" at the
 /// start of its stretch, so a thinking model's per-call reasoning does not break every line
 /// in two; the block still streaming stays last, live. `call` builds a call from its message
-/// (the store passes a memoised one).
+/// and `thinking` parses a stretch's finished thinking (the store passes memoised ones, so a
+/// reply streaming under a thought never parses it again).
 public func nativeTurnPresentation(
     _ messages: [NativeThreadMessage], live: Bool, cards: NativeCardLayout = .none,
-    call: (NativeThreadMessage) -> NativeActivityCall = NativeActivityCall.init
+    call: (NativeThreadMessage) -> NativeActivityCall = NativeActivityCall.init,
+    thinking: (String) -> [NativeMarkdownBlock] = nativeThinkingBlocks
 ) -> NativeTurnPresentation {
     enum Raw {
         case thinking(String, Double?, message: String, since: Double?)
@@ -191,14 +196,14 @@ public func nativeTurnPresentation(
         if !stretchThinking.isEmpty {
             // The ordinal is spent either way, so leaving an empty row out moves no other id.
             let id = nextID("thinking")
-            let text = stretchThinking.map(\.text).filter(nativeThinkingIsReadable).joined(separator: "\n\n")
+            let text = RPCContentBlock.normalizedThinking(stretchThinking.map(\.text).filter(nativeThinkingIsReadable).joined(separator: "\n\n"))
             var seconds: Double?
             var counted: Set<String> = []
             for part in stretchThinking where counted.insert(part.message).inserted {
                 if let value = part.seconds { seconds = (seconds ?? 0) + value }
             }
             if !text.isEmpty || nativeThoughtIsTimed(seconds) {
-                items.append(.thinking(id: id, text: text, seconds: seconds, live: false, since: nil))
+                items.append(.thinking(id: id, text: text, blocks: text.isEmpty ? [] : thinking(text), seconds: seconds, live: false, since: nil))
             }
         }
         items += stretchItems
@@ -271,7 +276,7 @@ public func nativeTurnPresentation(
     placeFinish()
     flushStretch()
     if case .thinking(let text, let seconds, _, let since)? = liveThinking {
-        items.append(.thinking(id: nextID("thinking"), text: nativeThinkingIsReadable(text) ? text : "", seconds: seconds,
+        items.append(.thinking(id: nextID("thinking"), text: RPCContentBlock.normalizedThinking(text), blocks: [], seconds: seconds,
                                live: true, since: since))
     }
     // An error that ended a finished turn offers Retry.
@@ -288,6 +293,12 @@ public func nativeTurnErrorText(_ text: String, toolCalls: Int) -> String {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard toolCalls > 0 else { return trimmed }
     return "\(trimmed) — the turn stopped after \(nativeCount(toolCalls, "tool call"))."
+}
+
+/// A stretch's thinking as the expanded row draws it: normalized (no gap where an empty
+/// summary part was), then parsed as Markdown.
+public func nativeThinkingBlocks(_ text: String) -> [NativeMarkdownBlock] {
+    nativeMarkdownBlocks(RPCContentBlock.normalizedThinking(text))
 }
 
 /// Thinking a reader can read: anything but whitespace.

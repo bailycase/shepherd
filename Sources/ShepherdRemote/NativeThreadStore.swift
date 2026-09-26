@@ -240,6 +240,10 @@ public final class NativeThreadStore {
     @ObservationIgnored private var presentationCache: [String: (key: PresentationKey, value: NativeTurnPresentation)] = [:]
     /// Calls parse their JSON and output once; a finished call never changes.
     @ObservationIgnored private var callCache: [CallKey: NativeActivityCall] = [:]
+    /// Finished thinking is parsed once: a reply streaming under it rebuilds its turn, not it.
+    @ObservationIgnored private var thinkingCache: [String: [NativeMarkdownBlock]] = [:]
+    /// How many times thinking was parsed (tests).
+    @ObservationIgnored private(set) var thinkingParses = 0
 
     private struct QueueOverlay {
         let id: UUID
@@ -395,7 +399,7 @@ public final class NativeThreadStore {
             if let cached = presentationCache[turn.id], cached.key == key {
                 presentation = cached.value
             } else {
-                presentation = nativeTurnPresentation(turn.messages, live: isLive, cards: key.cards, call: call)
+                presentation = nativeTurnPresentation(turn.messages, live: isLive, cards: key.cards, call: call, thinking: thinkingBlocks)
                 presentationCache[turn.id] = (key, presentation)
             }
             kept.insert(turn.id)
@@ -489,6 +493,15 @@ public final class NativeThreadStore {
         let value = NativeActivityCall(message)
         if callCache.count > 4096 { callCache.removeAll(keepingCapacity: true) }
         callCache[key] = value
+        return value
+    }
+
+    private func thinkingBlocks(_ text: String) -> [NativeMarkdownBlock] {
+        if let cached = thinkingCache[text] { return cached }
+        thinkingParses += 1
+        let value = nativeThinkingBlocks(text)
+        if thinkingCache.count > 1024 { thinkingCache.removeAll(keepingCapacity: true) }
+        thinkingCache[text] = value
         return value
     }
 

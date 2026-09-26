@@ -1402,7 +1402,15 @@ the turn has finished, the changes card and the footer end it. A running turn ha
     italic 12 `textSecondary`, 6pt apart ("Thought for 1m 04s" past a minute; "Thought" when
     shorter than half a second or untimed). The whole label is the button.
   - Expanded: 8pt beneath, the text in italic 12.5 at 1.55 in `textSecondary`, 12pt past a 2pt
-    `lineStrong` rule, at the prose measure. It opens and closes with `disclosure`.
+    `lineStrong` rule, at the prose measure. It opens and closes with `disclosure`. The text is
+    Markdown (reasoning summaries are: GPT's open with a bold title, "**Inspecting SSH
+    config**", then a paragraph), drawn by the prose parts in thinking's voice: bold, italic,
+    code spans and links inline (as in prose); paragraphs, lists and quotes as blocks, 8pt
+    apart; headings semibold at the same size; fenced code as a code block. It is parsed once per
+    change of the turn (`NativeTurnPresentation`, memoised by the store, so a reply streaming
+    under it never parses it again), and live thinking, which shows no text, is never parsed.
+    The host normalizes the text first (docs/native-thread.md › Thinking text), so a summary
+    part pi left empty leaves no gap.
   - Live (LiveText): "Thinking…" in italic `ui` (12.5) shimmering on a 26pt row, with no clock
     and no chevron (nothing opens yet; see the departures), its words where the finished row's
     are. It is the thread's live line between tools (see Live text), and when thinking ends it
