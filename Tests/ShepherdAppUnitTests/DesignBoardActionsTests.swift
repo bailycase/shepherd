@@ -249,6 +249,10 @@ struct DesignBoardActionsTests {
         #expect(screen.presented == Self.b, "only the presented board's links count")
         screen.follow(link: Self.system, from: Self.b)
         #expect(screen.presented == Self.system, "a board on another page is still the design's")
+        let record = try #require(screen.viewRecord)
+        #expect(record.isValid && record.page == "system" && record.pageName == "System", "the record names the presented board's page")
+        screen.showPage("system")
+        #expect(screen.presented == nil, "another page closes the presented board")
         #expect(DesignScreenModel.playTarget(Self.path("Missing.dc.html"), in: try Self.index()) == nil)
     }
 }
