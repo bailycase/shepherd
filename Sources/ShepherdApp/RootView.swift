@@ -299,7 +299,7 @@ struct WorkspaceHeaderView: View {
                 }
             } else if let agent = vm.selectedAgent, vm.activeTabID == agent.tabID, let design = vm.design(drawnBy: agent) {
                 DesignToolbar(name: design.name, system: vm.designSystemName(design), leadingInset: leadingInset,
-                              showSidebar: showSidebar, designs: { vm.openDestination(.designs) })
+                              showSidebar: showSidebar, designs: { vm.openDestination(.designs) }, screen: vm.designScreen(design.id))
                     .equatable()
                     .id(agent.id)
             } else if let agent = vm.selectedAgent, vm.activeTabID == agent.tabID,

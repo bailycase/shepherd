@@ -168,15 +168,41 @@ struct DesignPerformanceTests {
         #expect(dragging["design.board", default: 0] == 0, "\(dragging)")
         #expect(try await app.server.designSnapshot(screen.designID).revision == before, "nothing written while dragging")
 
+        // A live board takes the new source's sha as its reload starts, so wait for the snapshot
+        // the reload ends with too: that is what redraws its frame.
+        let snapshots = host.snapshotsTaken
         let released = try await ListPerf.countingAsync {
             tweak.setStep(.padding, index: min(8, values.count - 1), phase: .ended)
             try await eventuallyOnMain("the tweak to be written and drawn", timeout: .seconds(30)) {
                 window.layout()
                 return tweak.writes == 1 && screen.snapshot?.revision == before + 1 && host.isDrawn([target])
+                    && host.snapshotsTaken > snapshots
             }
             window.layout()
         }
         #expect(released["design.board", default: 0] == 1, "\(released)")
+    }
+
+    /// Dragging a board redraws that board's frame once per step, no other board's, and writes
+    /// nothing until it lands.
+    @Test func aBoardDragRedrawsOnlyTheDraggedBoard() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (_, window, screen, _) = try await openLargeCanvas(app)
+        defer { window.close() }
+        let target = try #require(screen.visibleBoards.first)
+        let before = try await app.server.designSnapshot(screen.designID).revision
+        let steps = 5
+        let dragging = try await ListPerf.countingAsync {
+            for step in 1...steps {
+                screen.move(NWBoardMove(board: target.rawValue, offset: CGSize(width: Double(step) * 12, height: 0), ended: false))
+                window.layout()
+            }
+        }
+        #expect(dragging["design.board", default: 0] == steps, "\(dragging)")
+        #expect(try await app.server.designSnapshot(screen.designID).revision == before, "nothing written while dragging")
+        await screen.move(NWBoardMove(board: target.rawValue, offset: CGSize(width: 60, height: 0), ended: true))?.value
+        #expect(try await app.server.designSnapshot(screen.designID).revision == before + 1)
     }
 }
 

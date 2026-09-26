@@ -28,6 +28,12 @@ public struct DesignTemplateElement: Hashable, Sendable {
 /// formatting tags, which boards don't write.
 public struct DesignTemplate: Sendable {
     public let elements: [DesignTemplateElement]
+    /// Each element's own words by tid, as the board runtime's describe answer gives them: the
+    /// template's text inside it (holes as written, references decoded), `<style>`, `<script>`,
+    /// `<title>` and `<helmet>` inside it left out, an image's `alt`, one line cut to a label
+    /// (`DesignViewRecord.label`); nil for an element with no words. A comment's anchor is found
+    /// again by them when a rewrite moves its element (`DesignCommentAnchor`).
+    public let labels: [String?]
 
     /// Nil when the source has no `<x-dc>` … `</x-dc>` fragment.
     public init?(board source: String) {
@@ -35,6 +41,7 @@ public struct DesignTemplate: Sendable {
         guard let range = Self.fragmentRange(in: bytes) else { return nil }
         var builder = TemplateBuilder(bytes: bytes, range: range)
         elements = builder.build()
+        labels = builder.labels()
     }
 
     /// The element `id` names, when its tid and path agree on one.
@@ -104,6 +111,8 @@ struct HTMLTokenizer {
     let bytes: [UInt8]
     var position: Int
     let end: Int
+    /// Text passed over since the builder last took it (element content, not comments or tags).
+    var texts: [Range<Int>] = []
 
     init(bytes: [UInt8], range: Range<Int>) {
         self.bytes = bytes
@@ -114,9 +123,11 @@ struct HTMLTokenizer {
     mutating func next(foreign: Bool = false) -> HTMLTag? {
         while position < end {
             guard let lt = bytes[position..<end].firstIndex(of: 0x3C) else {
+                texts.append(position..<end)
                 position = end
                 return nil
             }
+            if lt > position { texts.append(position..<lt) }
             position = lt
             guard lt + 1 < end else { position = end; return nil }
             let next = bytes[lt + 1]
@@ -144,6 +155,8 @@ struct HTMLTokenizer {
                 position = lt + 1
                 return readTag(isEnd: false, from: lt)
             } else {
+                // A `<` that opens nothing is text.
+                texts.append(lt..<(lt + 1))
                 position = lt + 1
             }
         }
@@ -159,16 +172,21 @@ struct HTMLTokenizer {
             if HTMLBytes.matches(bytes, at: lt, needle) {
                 let after = lt + needle.count
                 if after >= end || HTMLBytes.isSpace(bytes[after]) || bytes[after] == UInt8(ascii: ">") || bytes[after] == UInt8(ascii: "/") {
+                    if lt > position { texts.append(position..<lt) }
                     position = lt
                     return
                 }
             }
             i = lt + 1
         }
+        if end > position { texts.append(position..<end) }
         position = end
     }
 
-    mutating func skipToEnd() { position = end }
+    mutating func skipToEnd() {
+        if end > position { texts.append(position..<end) }
+        position = end
+    }
 
     private mutating func skipComment() {
         // `<!-->` and `<!--->` end at once, as HTML reads them.
@@ -315,6 +333,9 @@ private struct TemplateBuilder {
     private var stack: [Open] = []
     private var topLevel = 0
     private var elements: [DesignTemplateElement] = []
+    /// Each element's text so far, by tid, and an image's `alt`.
+    private var texts: [String] = []
+    private var alts: [Int: String] = [:]
 
     init(bytes: [UInt8], range: Range<Int>) {
         tokenizer = HTMLTokenizer(bytes: bytes, range: range)
@@ -322,9 +343,38 @@ private struct TemplateBuilder {
 
     mutating func build() -> [DesignTemplateElement] {
         while let tag = tokenizer.next(foreign: inForeignContent) {
+            takeText()
             if tag.isEnd { endTag(tag.name) } else { startTag(tag) }
         }
+        takeText()
         return elements
+    }
+
+    /// Elements whose text their ancestors leave out, as the runtime's describe does.
+    static let silent: Set<String> = ["style", "script", "title", "helmet"]
+    /// Enough of an element's text for a label.
+    static let textLimit = 400
+
+    /// Hands the text the tokenizer passed over to every open element, up to the nearest one
+    /// whose text its ancestors leave out.
+    private mutating func takeText() {
+        guard !tokenizer.texts.isEmpty else { return }
+        for range in tokenizer.texts {
+            let piece = " " + HTMLEntities.decode(String(decoding: tokenizer.bytes[range], as: UTF8.self))
+            for node in stack.reversed() {
+                if texts[node.tid].utf8.count < Self.textLimit { texts[node.tid] += piece }
+                if !node.foreign, Self.silent.contains(node.name) { break }
+            }
+        }
+        tokenizer.texts.removeAll(keepingCapacity: true)
+    }
+
+    /// Each element's label by tid: an image's `alt`, else its text.
+    func labels() -> [String?] {
+        elements.map { element in
+            if element.name == "img" { return alts[element.tid].flatMap(DesignViewRecord.label) }
+            return DesignViewRecord.label(texts[element.tid])
+        }
     }
 
     // MARK: Element sets
@@ -415,6 +465,8 @@ private struct TemplateBuilder {
         let tid = elements.count
         elements.append(DesignTemplateElement(tid: tid, path: parentPath + [index], name: name, parent: stack.last?.tid,
                                               tagRange: tag?.range))
+        texts.append("")
+        if name == "img", let alt = tag?.attribute("alt") { alts[tid] = alt }
         if open { stack.append(Open(name: name, tid: tid, path: parentPath + [index], foreign: foreign)) }
     }
 

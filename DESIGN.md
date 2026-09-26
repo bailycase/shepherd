@@ -4074,7 +4074,7 @@ composing chrome by hand. Debug builds have a **Component Gallery** (View menu,
 | Dialogs | `NWDialog` (`NWDialogMetrics`), `NWDialogStatus`, `NWSheetRow`, `NWChecklistRow`, `NWSettingsNavRow` | `DialogSheet.swift`, `AppDialogs.swift`, the sheets, `QuitConfirmation.swift`, `SettingsView.swift` |
 | Automations | `NWAutomationRow` (a row with its switch), `NWAutomationSwitch`, `NWFactRow` and `NWFactText`, `NWAutomationPrompt`, `NWRunBars`, `NWRunRow`, `NWAutomationMetrics`; the Mac's table: `NWAutomationTableRow`, `NWRunOutcome` and `NWRunOutcomeLabel`, `NWAutomationRunLine` | `Pages/AutomationsPage.swift`; the iOS client's `Automations/` |
 | Pages | `NWPageHeader`, `NWPageFilterField`, `NWTableColumns` and `NWTableHead`, `.nwPageCard()`, `NWPageFact`, `NWPageSectionLabel`, `NWPageQuote`, `NWPageMetrics`; `NWHostPageCard` and `NWHostFact` (`NWHostPageMetrics`, in `Fleet/`) | `Pages/` (the sidebar destinations' pages) |
-| Design tool (not built yet; `Components/DesignTool/`) | `NWDesignCanvas`, `NWBoardFrame`, `NWSelectionRing`, `NWCommentPin`, `NWBoardActions`, `NWCanvasToolbar`, `NWCommentCard`, `NWCommentThread`, `NWTweakRow`, `NWTokenChip`, `NWTweakScope`, `NWDesignSystemChip`, `NWTokenSwatch`, `NWExportFormatCard`, `NWLiveLinkField` (see Design tool). Built: `NWActivityLine`'s `.drew` and `.checked` kinds | `Thread/ThreadTools.swift` (the activity lines); nothing else yet |
+| Design tool (partly built; `Components/DesignTool/`) | `NWDesignCanvas`, `NWBoardFrame`, `NWSelectionRing`, `NWCommentPin`, `NWBoardActions`, `NWCanvasToolbar`, `NWCommentCard`, `NWCommentThread`, `NWTweakRow`, `NWTokenChip`, `NWTweakScope`, `NWDesignSystemChip`, `NWTokenSwatch`, `NWExportFormatCard`, `NWLiveLinkField` (see Design tool). Built: the canvas, frames, selection ring, toolbar, system chip, the comment pin, thread and card, and `NWActivityLine`'s `.drew` and `.checked` kinds | `Thread/ThreadTools.swift` (the activity lines), `DesignScreen.swift`, `Thread/ThreadView.swift` (a comment's card in the chat) |
 | Missions map (not built yet; `Components/MissionMap/`) | `NWMissionMap`, `NWStation`, `NWTerminus`, `NWFlowWire`, `NWDataWire`, `NWForkBar`, `NWJoinBar`, `NWOutcomeChip`, `NWPinRow`, `NWLane`, `NWFog`, `NWFrontierChip` (see Missions: the map) | nothing yet |
 | Mission screens (not built yet; `Components/Missions/`) | `NWMissionHeader`, `NWPhaseBar`, `NWBudgetMeter`, `NWHostChip`, `NWChoiceCard`, the mission question card, `NWPlannerNote`, `NWAttemptRow`, `NWCheckpointRow`, `NWSpendBar`, `NWTrainCard`, `NWTrainGateRow`, `NWTrainRuleRow`, `NWRepoTimeline`, `NWPathLockRow`, `NWContractRow`, `NWDiffAnnotation`, `NWTraceSpan`, `NWMergeActions`, `NWRollbackRow`, `NWTemplateInput`; iPhone: `NWMissionLiveActivity`, `NWMissionNotification`, `NWLaneStrip`; in `Components/Agents`: `NWMissionNode`, `NWInboxItem`, `NWClaimRow` (see Missions: motion, keyboard and parts to build; Mission components) | nothing yet |
 
@@ -7530,11 +7530,15 @@ review pane's.
 
 **Partly built, on the Mac, behind Settings ▸ Experiments ▸ Design tool (off by default).** Built:
 the Designs destination and page, design rows in Recents, New thread's Start a design, New design,
-and a design's canvas beside its chat, with the design agent, live reload, and Select (elements and
+and a design's canvas beside its chat, with the design agent, live reload, Select (elements and
 boards picked on the canvas, their view record sent with each chat message; docs/designs.md),
-and Tweak (its tab, written once per gesture, with Reset and Undo over each board's versions).
-Not built: comments, design systems, export, the live link, Present, and every iPhone and
-iPad part; each subsection below says what of it is built. The iOS
+comments (pins, threads, cards in the chat and the Comments tab, answered by the agent),
+Tweak (its tab, written once per gesture, with Reset and Undo over each board's versions), the
+board actions and "Ask for another direction", boards moved by dragging, Present (decision 11:
+the board focused over a scrim, its links playing) and Play, and pages with title and sticky
+notes. Not built: design systems, export, the live link, Present mode's own board, and every
+iPhone and iPad part;
+each subsection below says what of it is built. The iOS
 client's first release leaves it out until the Mac has it ([docs/ios](docs/ios/README.md)), and its
 search draws no Designs section (`MobileSearchScreen`). The canvas marks the whole page an
 experiment. This section is the spec to build it to, board by board: the Design tool page (DZStart,
@@ -7571,8 +7575,9 @@ tool work reads as activity lines.
 - **Counts are the board's words:** "4 boards", "2 comments", "3 directions + phone",
   "18 tokens · 9 components".
 - **Not drawn on any board**, so design them before building: the Designs page with no designs,
-  a design still loading, a failed drawing or sync, an offline host, Present mode, the
-  contents of the ••• menus, and keyboard shortcuts. Any shortcut added goes through
+  a design still loading, a failed drawing or sync, an offline host, Present mode (until it is,
+  Present shows the board focused: A design, below), the contents of the ••• menus, and keyboard
+  shortcuts. Any shortcut added goes through
   `KeybindingsStore`.
 
 ### Where designs appear
@@ -7694,11 +7699,11 @@ opens this page in the main column, with the sidebar showing and Designs selecte
 ### A design: canvas and chat (DZCanvas)
 
 **Partly built** (`DesignScreen`: a design agent's layout). Built: the header (44pt, the app's
-toolbar; the system chip is a label, Present and Export draw disabled), the canvas with its board
-frames and toolbar (Comment disabled), and the chat pane with its Chat tab alone and the agent's
-thread; its composer is `NWComposer`'s card at radius 8, and Select (Selection, below). Not built:
-Tweak and Comments tabs and the tabs' •••, pins, the board actions bar, and "Ask for another
-direction". A
+toolbar; the system chip is a label, Export draws disabled), the canvas with its board frames and
+toolbar, the chat pane with its Chat, Comments and Tweak tabs and the agent's thread; its
+composer is `NWComposer`'s card at radius 8, Select (Selection, below), comments (Comments,
+below), the board actions and "Ask for another direction", boards moved by dragging, Present and
+Play, and pages with their notes. Not built: the tabs' •••. A
 board frame's outline is `lineStrong` and its shadow the popover's (the board's black 30% and 35%
 are off the tokens). Opening a design fills the main column: the header, then the canvas beside a
 420pt chat pane. The boards draw it with the sidebar hidden.
@@ -7709,7 +7714,16 @@ are off the tokens). Opening a design fills the main column: the header, then th
   `textTertiary`, "/", the design's name in 13 semibold); a spacer; the **design system chip**;
   **Present** (`play.fill`, a 28pt icon button, "Present"); and **Export**
   (`square.and.arrow.up`, a 28pt secondary button). 12pt between the header's groups, 8pt
-  between the trailing controls.
+  between the trailing controls. A canvas with more than one page adds its **pages menu**
+  before the chip (not drawn: `NWPopupMenu` with the page shown, each page by name, the current
+  one checked).
+- **Present** (decision 11, until Present mode is drawn): the board picked last (else the one
+  nearest the middle of the view) focused over the canvas: the `scrim` over it, and the board
+  fitted inside the canvas's 44 and 52pt margins, never over 100%, in its frame, with no label. It
+  is the design's one live view while shown and takes its own clicks, so its handlers run and a
+  link to another board of the design (`<a href="B.dc.html">`, or `/` for the canvas root) shows
+  that board instead; any other link goes nowhere. Present lights up (its `isOn` fill) while a
+  board is shown; Present again, or a click on the scrim, goes back to the canvas.
 - **The design system chip** (`NWDesignSystemChip`): 24pt, 8pt padding, radius 6, a 1px
   `lineSubtle` line, three of the system's colors as 8pt squares (radius 2, 2pt apart), then its
   name in mono 11.5 `textSecondary`. Clicking it opens the system (Design systems, below).
@@ -7726,14 +7740,27 @@ are off the tokens). Opening a design fills the main column: the header, then th
   - **"Ask for another direction"**: after the last board (36pt after it on DZCanvas), a
     300×190 dashed tile (1px `lineStrong`, radius 6), `plus` (16pt) over "Ask for another
     direction" in 12 `textTertiary`, 6pt apart, centered. It asks the agent for one more
-    direction.
+    direction. Built: the tile keeps its size at every zoom (it is chrome), top-aligned with the
+    last board of the page in canvas order, and its words lighten to `textSecondary` on hover.
   - **Board actions** (`NWBoardActions`) float above the selected board: Comment (`text.bubble`),
     Tweak (`slider.horizontal.3`), Variations (`square.grid.2x2`), Duplicate (`doc.on.doc`), and •••
     (a 28pt circle). On NWDesignTool: a `bgRaised` bar with 4pt padding, radius 12, 2pt between
     items, a 1px `lineStrong` line and the popover's shadow; items 28pt tall, 10pt padding, radius
     8, 6pt gap, a 13pt glyph in `textSecondary`, the label in 12.5 `textPrimary`. (DZCanvas draws it
     smaller: a 32pt bar at radius 10 with 26pt items at radius 6 in 12.) Comment pins a comment to
-    the board's element you pick next; Tweak opens the Tweak tab.
+    the board's element you pick next; Tweak opens the Tweak tab. Built as DZCanvas draws it,
+    over the board picked whole last (not an element): its bottom 2pt above the board's label,
+    its leading edge at the frame's middle (DZCanvas: 332 over a board from 44 to 582), kept 16pt
+    inside the canvas's sides and 4pt from its top, where it may cover the label of a board at the
+    very top. Items fill `bgHover` on hover. Variations and Duplicate act on that board; ••• holds
+    Play for an interactive board (`is_interactive`) and is disabled otherwise.
+  - **Moving a board** (not drawn): with Select, a drag that starts on a board's label, or on a
+    board picked whole, moves it; any other drag pans. It follows the pointer and is written
+    once, where it lands.
+  - **Notes** (not drawn): a page's title notes (`title1`) and stickies sit on the canvas under
+    the boards, read-only, scaled with it: a title in 64pt semibold `textPrimary` (canvas points)
+    wrapping at its `maxW`; a sticky's words in 16 on a `bgRaised` card with a `lineStrong` line,
+    radius 8, 16pt padding, 240 wide unless it says. Drawings aren't drawn.
   - **Selection** (built; Select): a click on a board picks the element under it, a click on a
     board's label (or where the board names nothing) picks the board whole, shift adds or takes
     away, and a click on the empty canvas clears. Selected elements wear `NWSelectionRing` (Tweak,
@@ -7778,7 +7805,21 @@ are off the tokens). Opening a design fills the main column: the header, then th
 
 ### Comments (DZCanvas, DZTweak, NWDesignTool)
 
-**Not built yet.**
+**Built on the Mac** (`NWCommentPin`, `NWCommentThread`, `NWCommentCard`; docs/designs.md ›
+Comments), as below, with these choices the boards leave open:
+
+- The pin's shadow is the knob's small shadow role (`knobShadow`, 6pt blur, 4pt down), not the
+  boards' black 40%, and it has no second shadow.
+- A new comment is written in the review's comment editor (`NWCommentEditor`: "Comment for the
+  design agent", "on A · Checkout funnel", Cancel and Add comment) where its thread will open: no
+  board draws a comment being written. The board action (Comment) waits for the board actions bar.
+- In the chat, the agent's reply inside the card has no turn footer.
+- A resolved comment leaves the canvas and the Comments tab (the chat keeps its card); nothing
+  lists resolved comments yet. The Comments tab's count is the open comments', and it shows no
+  count at zero; with none it is blank.
+- A comment whose element a rewrite left nowhere keeps its pin where the element was, and its
+  thread and card add "element changed". Not drawn on any board: design it.
+- A comment that couldn't reach the agent is kept, and the app's error dialog says why. Not drawn.
 
 - **A pin** (`NWCommentPin(number)`): a 26pt `lantern` teardrop, round but for a 4pt bottom-leading
   corner, which is its point, set on the element's top-trailing corner. The number in mono 12 bold
@@ -7931,9 +7972,11 @@ selected on the canvas already ticked.
 
 **Partly built** (`Packages/ShepherdUI/.../Components/DesignTool/`, each with a `#Preview` in both
 appearances): `NWDesignCanvas`, `NWBoardFrame`, `NWCanvasToolbar`, `NWDesignSystemChip`,
-`NWSelectionRing` (with `NWSelectionTag`), the Tweak parts `NWTweakRow` (with `NWTweakHeader`,
-`NWTweakGroup`, `NWTweakNote` and `NWTweakFooter`), `NWTokenChip` (with `NWTokenChipFlow`) and
-`NWTweakScope`, and the page parts `NWDesignCard`, `NWDesignSystemCard`, `NWDesignStartCard`, `NWDesignHeader` and
+`NWSelectionRing` (with `NWSelectionTag`), `NWCommentPin`, `NWCommentThread`, `NWCommentCard`,
+the Tweak parts `NWTweakRow` (with `NWTweakHeader`, `NWTweakGroup`, `NWTweakNote` and
+`NWTweakFooter`), `NWTokenChip` (with `NWTokenChipFlow`) and `NWTweakScope`, `NWBoardActions`
+(with `NWDirectionTile`, `NWCanvasNote` and `NWBoardPresentation`), and the page parts
+`NWDesignCard`, `NWDesignSystemCard`, `NWDesignStartCard`, `NWDesignHeader` and
 `NWDesignPaneTabs`. The rest of the table is not built yet.
 
 Night Watch's Design tool page names these components, dark and light ("Light ·
@@ -7946,11 +7989,11 @@ both appearances:
 | `NWDesignCanvas` | The pannable, zoomable canvas on `bgBase` with its 22pt dot grid, holding the board frames, pins and threads (NWSwift; no specimen on NWDesignTool: see A design: canvas and chat) |
 | `NWBoardFrame(board, isSelected:)` | A board with its label above, its size in mono, and a `running` ring when selected |
 | `NWSelectionRing(element)` | Picks an element inside a board for comments or tweaks (built: `.selected` with its tag, `.hover` the ring alone) |
-| `NWCommentPin(number)` | The numbered pin, lantern "because a pin is something you asked for" |
-| `NWBoardActions(selection)` | Comment, Tweak, Variations, Duplicate, and •••, floating over the selected board |
+| `NWCommentPin(number)` | The numbered pin, lantern "because a pin is something you asked for" (built) |
+| `NWBoardActions(selection)` | Comment, Tweak, Variations, Duplicate, and •••, floating over the selected board (built, `.regular` and DZCanvas's `.compact`; with `NWDirectionTile`, `NWCanvasNote` and `NWBoardPresentation`) |
 | `NWCanvasToolbar(tool:, zoom:)` | Select, comment, pan, and the zoom |
-| `NWCommentCard(comment)` | A comment in the chat pane's Comments tab (and the chat) |
-| `NWCommentThread(comment)` | A comment on the canvas beside its pin, with Resolve and the agent's reply |
+| `NWCommentCard(comment)` | A comment in the chat pane's Comments tab (and the chat) (built) |
+| `NWCommentThread(comment)` | A comment on the canvas beside its pin, with Resolve and the agent's reply (built) |
 | `NWActivityLine(.drew / .checked)` | The thread's activity line with the design verbs; the same component, two more kinds (built: the nib `pencil.tip` and `checkmark.shield`; a burst that only rewrote boards, "Updated A and A · phone", wears `.edit`) |
 | `NWTweakRow(control)` | A slider, segmented picker, or switch: the label leading, the value trailing |
 | `NWTokenChip(token, isSelected:)` | A color from the system's tokens, never a free hex |
@@ -8264,7 +8307,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | Board | Specified in | Status |
 | --- | --- | --- |
 | DZStart | Design tool › New design | Built, without Capture a page and From a screenshot |
-| DZCanvas | Design tool › A design: canvas and chat, Comments | Partly built: header, canvas, board frames, Chat; not comments, actions, Tweak |
+| DZCanvas | Design tool › A design: canvas and chat, Comments | Partly built: header, canvas, board frames, Chat, comments; not actions, Tweak |
 | DZTweak | Design tool › Tweak | Not built yet |
 | DZSystem | Design tool › Design systems | Not built yet |
 | DZExport | Design tool › Export and share | Not built yet |

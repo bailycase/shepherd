@@ -44,6 +44,51 @@ struct ThreadProjectionTests {
         ])
     }
 
+    /// A design comment reaches pi fenced; the thread shows the viewer's words, and the message
+    /// says which comment it carried, so the chat draws its card. A reply under a pin is words
+    /// alone.
+    @Test func aDesignCommentsMessageShowsItsWordsAndNamesItsComment() throws {
+        let id = UUID(uuidString: "7A1C2E7B-39F5-4B0C-9A40-0E8B1F3C5D21")!
+        let fence = DesignCommentFence(comment: id, number: 1, board: "A.dc.html", element: DesignElementID("A.dc.html#2:0/1"),
+                                       label: "48,210 people", target: "Checkout funnel")
+        let comment = RPCMessage(role: "user", content: [.text(fence.fenced() + "Show the counts.")], timestamp: 1)
+        let row = RPCThreadState.project(entryID: "user:1", message: comment)
+        #expect(row.blocks.map(\.text) == ["Show the counts."])
+        #expect(row.origin == .designComment(id: id))
+
+        var reply = fence
+        reply.reply = true
+        let answered = RPCThreadState.project(entryID: "user:2", message: RPCMessage(role: "user", content: [.text(reply.fenced() + "Thanks")]))
+        #expect(answered.blocks.map(\.text) == ["Thanks"] && answered.origin == nil)
+
+        // The agent quoting a fence is not a comment.
+        let quoted = RPCThreadState.project(entryID: "a:1", message: RPCMessage(role: "assistant", content: [.text(fence.fenced() + "x")]))
+        #expect(quoted.origin == nil && quoted.blocks.first?.text.hasPrefix("The text between") == true)
+    }
+
+    /// A view record stays off a command, which pi reads only at the start of a message; a
+    /// comment's fence always goes first, so a comment starting with "/" never runs as one.
+    @Test(arguments: [
+        ("/compact", "record", "/compact"),
+        ("Tighten it", "record", "record + Tighten it"),
+        ("/new tabs look off", "comment", "comment + /new tabs look off"),
+        ("Tighten it", "comment", "comment + Tighten it"),
+        ("/compact", "none", "/compact"),
+    ])
+    func aCommandKeepsNoViewRecordButACommentAlwaysKeepsItsFence(_ text: String, _ kind: String, _ expected: String) {
+        let record = "<design-data nonce=\"0123456789ab\">\n{}\n</design-data nonce=\"0123456789ab\">\n\n"
+        let comment = DesignCommentFence(comment: UUID(), number: 1, board: "A.dc.html", element: nil, label: nil, target: nil)
+            .fenced(nonce: "0123456789ab")
+        let context: String? = switch kind {
+        case "record": record
+        case "comment": comment
+        default: nil
+        }
+        let prompt = RPCThreadState.prompt(text, context: context)
+        let shown = context.map { prompt.hasPrefix($0) ? "\(kind) + " + prompt.dropFirst($0.count) : prompt } ?? prompt
+        #expect(shown == expected)
+    }
+
     @Test func unknownContentBlocksAreDropped() throws {
         let message: RPCMessage = try decode(#"{"role":"assistant","content":[{"type":"hologram"},{"type":"text","text":"hi"}]}"#)
         #expect(RPCThreadState.project(entryID: "m:0", message: message).blocks.map(\.text) == ["hi"])

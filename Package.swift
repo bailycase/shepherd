@@ -134,7 +134,7 @@ let package = Package(
         ),
         .testTarget(
             name: "ShepherdAppIntegrationTests",
-            dependencies: ["ShepherdApp", "TerminalSurfaceKit", "ShepherdTestSupport", .product(name: "ShepherdUI", package: "ShepherdUI")]
+            dependencies: ["ShepherdApp", "TerminalSurfaceKit", "DesignSurfaceKit", "ShepherdTestSupport", .product(name: "ShepherdUI", package: "ShepherdUI")]
         ),
         .testTarget(
             name: "ShepherdPreviewTests",

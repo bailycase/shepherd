@@ -250,6 +250,12 @@ events come out on stdout, one record per LF.
     projection takes the fence off pi's user message (`DesignViewRecord.strippingFence`).
   - Remotely it goes only to a host that advertises `design.context.v1`; a client leaves it off
     for an older host (`RemoteHostClient.outgoing`).
+- **Design comments:** the host hands a design comment to its agent as a message of its own,
+  fenced between `design-comment` markers (`DesignCommentFence`; docs/designs.md › Comments). The
+  projection takes the fence off and gives the message `origin: .designComment(id)` from it (a
+  reply under a pin keeps no origin), so the chat draws the comment's card; older clients read the
+  origin as unknown and show the words. The fence is in pi's session, so the origin comes back
+  after a relaunch without a record in `thread-origins/`; it wins over a queue delivery's parts.
 - **Subagents:** the rows the subagent display extension publishes (`setAgentChildren`) ride the
   snapshot as `subagents`.
 

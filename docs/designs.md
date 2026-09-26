@@ -27,6 +27,11 @@ serves its own runtime there.
 - **Updates** (canvas_update) are JSON merge patches (RFC 7396): objects merge key by key, `null`
   removes a key, anything else replaces. Boards a patch adds join the end of `order` unless it
   sets `order`; boards it removes leave it.
+- **Pages and notes** (`DesignCanvasLayout`): a board or note is on the page it names when the
+  index has that page, else on the first, so nothing listed goes missing; a canvas opens on
+  `launch.page` when it has it, else the first page. A note is a title (`title1` and the other
+  `title*` kinds), a sticky (`sticky`), or a drawing (every other kind), and runs as wide as its
+  `maxW`, else its `w`. Every note round-trips whatever its kind.
 - **Limits a write keeps:** `w` and `h` of 40–8000, stems unique regardless of case, at most 40
   pages and 200 notes with ids of `[A-Za-z0-9_-]{1,40}`, and at most 4 design systems whose
   folders match `[a-z0-9][a-z0-9_-]{0,63}`. Problems an imported index already has don't block
@@ -75,6 +80,7 @@ elements).
   project/canvas.json          the index
   project/<path>.dc.html       one per board
   revision                     Shepherd's revision counter for the design
+  comments.json                the viewer's comments (Comments, below), beside project/
   versions/<path>/<n>.dc.html  each board's last 20 earlier versions
 ```
 
@@ -109,6 +115,7 @@ the only writer, through named mutations:
 | `updateDesignIndex(_:patch:baseRevision:)` | Applies a canvas update. A new `title` renames the design |
 | `writeDesignBoards(_:sources:baseRevision:)` | Writes several boards' whole sources as one change: every source is checked before any is written, and the revision moves once (Tweak's "Every <name>") |
 | `restoreDesignVersions(_:_:ifCurrent:baseRevision:)` | Puts boards back to kept versions as one write, only while each board still has the hash `ifCurrent` names |
+| `duplicateDesignBoard(_:path:baseRevision:)` | Copies a board beside itself as one write: its file byte for byte at `<stem>-copy.dc.html` (then `-copy-2`, …, a stem no board or file has), and its canvas entry titled "<title> copy", `gap` 80 to its right past any board of its page it would come within 80 of, right after it in `order`, with its Tweak values. Its comments and versions stay with the original |
 
 Reads are `designSnapshot(_:)` (the index, the revision, and every board file under `project/`
 with its SHA-256, listed or not), `designBoard(_:path:)` and `designVersions(_:path:)`.
@@ -158,6 +165,8 @@ project's stylesheets, tokens and templates with its ordinary tools.
 | `board_write(path, source, baseRevision?)` | `designWriteBoard` | `designWritten` | `writeDesignBoard`: the checks under Writing, then an atomic write. It reads "Drew A.dc.html" for a new board and "Updated A.dc.html" for a rewrite (`DesignWriteResult.created`) |
 | `canvas_update(changes, baseRevision?)` | `designUpdateIndex` | `designWritten` | `updateDesignIndex` with `changes` as the merge patch |
 | `design_check(path?)` | none | | In the extension: every hex color (in style attributes, style and script blocks, `data-props`, SVG paint) and every px size in spacing, radius and type that no CSS custom property in the project declares, with the nearest token. Its first line is "Checked against <project> · N off-system values" |
+| `comment_list(all?)` | `designComments` | `designComments` | The viewer's open comments (all of them with `all`), oldest first: id, number, state, element id and name, and each one's words and replies, fenced as data |
+| `comment_reply(id, text)` | `designCommentReply` | `designComment` | An answer under a comment's pin (`replyToDesignComment`, author `agent`). No message resolves a comment: only the viewer does |
 
 - **Only the drawing agent.** The server answers a design message only when the sending agent's
   `designID` is that design (`not_your_design` otherwise), checks a board path against the
@@ -174,6 +183,46 @@ project's stylesheets, tokens and templates with its ordinary tools.
   `.drew`), "Updated A and A · phone" (the edit glyph), or "Arranged the canvas"; `design_check`
   reads "Checked against acme-web · 0 off-system values" (`.checked`). Board names follow the
   skill's files: `A.dc.html` reads "A", `A-phone.dc.html` "A · phone".
+
+### Comments
+
+The viewer pins a comment to one element of a board (the canvas's Comment tool). A comment is
+Shepherd's, not the format's: it lives in the design folder's `comments.json`, beside `project/`,
+so an exported canvas carries none.
+
+- **The record** (`DesignComment`, ShepherdProtocol): its id, its pin's `number` (made in order
+  from 1, never reused), its `board`, its element's `tid` and `path`, the element's words as the
+  template gives them (`label`, from `DesignTemplate.labels`: the runtime's describe label, holes
+  as written), what the card calls it (`target`: the element's `data-el` name, else its words),
+  where the board drew it (`rect`, in the board's points), the viewer's words, author and time,
+  the `replies` under it, `resolvedAt`, and `detached`.
+- **Its own revision.** `comments.json` carries a revision that moves with every change to the
+  comments and never with the boards', so a comment never makes the agent's next board write
+  stale. A change naming an older one is refused (`stale_revision`); the canvas reads them again
+  and goes once more.
+- **Making one** (`SessionServer.addDesignComment`): the element must be one the board's source
+  has now (`invalid_comment` otherwise, and `no_such_board` for a board the canvas doesn't hold);
+  its label is read from the source, not taken from the client. Words are 1 to 8 KiB; a design
+  keeps 500 comments and a comment 100 replies.
+- **To the agent.** Kept, a comment goes to the design's agent through the host queue as a message
+  of its own (`goesAlone`), never into the turn pi is working on: at once while pi is idle, else
+  after the running turn. pi reads the viewer's words after a fence (`DesignCommentFence`): a line
+  saying what it is, then one JSON record between `design-comment` markers carrying a nonce new to
+  the message (the comment's id and number, its board by view name, its element id, label and
+  target). The thread shows the words alone, and the message's origin names the comment
+  (`NativeMessageOrigin.designComment`, from the fence, which pi's session keeps, so it survives a
+  relaunch). A reply the viewer writes under the pin goes the same way, marked `"reply": true`,
+  and draws as their words. The fence always goes first, so words starting with "/" never run
+  as a pi command (a view record, by contrast, stays off a command). A comment that can't go (no agent, pi not running or starting) is
+  kept and says why; it doesn't go later on its own.
+- **Answers and resolving.** The agent answers under the pin with `comment_reply` once the change
+  is made. Only the viewer resolves (`resolveDesignComment`), and may open one again.
+- **Drift.** A rewrite renumbers a board's elements, so every write of a board finds its open
+  comments' elements again (`DesignCommentAnchor`): the element at the same path with the same
+  words; else one with the same words, nearest the old path; else the element at the same path
+  (its words changed where it stands, typically the edit the comment asked for); else the comment
+  detaches where it was ("element changed"). A board leaving the canvas detaches its comments;
+  one found again later attaches again.
 
 ### The design skill
 
@@ -334,13 +383,12 @@ was on keep their files and agents either way.
   named after the design and gets no namer.
 - **A design's screen** (DZCanvas) is its agent's layout (`DesignLayoutView`): the canvas beside a
   420pt chat pane holding the agent's thread, whose composer has attach and Send only, under a
-  toolbar with the breadcrumb, the design's system, and Present and Export (disabled until they
-  are built). Opening a design whose agent is gone starts a fresh one. Switching away and back is
+  toolbar with the breadcrumb, the pages menu (with more than one page), the design's system,
+  Present (below) and Export (disabled until it is built). Opening a design whose agent is gone starts a fresh one. Switching away and back is
   a visibility flip, and a design's canvas (where it looks, the tool, the selected board) lasts
   the app's run. A design's screen has no terminal panel.
 - **The canvas** (`NWDesignCanvas`) pans with two fingers, the Pan tool or space-drag, and zooms
-  with a pinch or ⌘-scroll about the pointer. Comment is drawn disabled. It opens fitted to the
-  boards, never above 100%.
+  with a pinch or ⌘-scroll about the pointer. It opens fitted to the boards, never above 100%.
 - **Board labels** sit 24pt above their boards where the boards around them leave room
   (`NWLabelRoom`): where the row above is closer (rows 120 apart are about 20pt at the opening
   17%), a label moves down toward its frame, keeping at least 2pt; where not even that fits, it
@@ -364,13 +412,89 @@ was on keep their files and agents either way.
   are found again where it draws them now (by tid, keeping the path); one it no longer draws
   leaves the selection. The board holding the latest pick stays live.
 
+### Comments (Comment)
+
+- **Making one.** With the Comment tool, a click on a board names the element under it (the same
+  hit test as Select; a board's label or nothing named takes no comment): it takes the selection
+  ring and the next pin, and the review's comment editor opens under it ("Comment for the design
+  agent", "on A · Checkout funnel"; ⏎ keeps it, esc cancels, an empty one is none). The Comment
+  tool rings the element under the pointer as Select does.
+- **Pins** (`NWCommentPin`) sit centered on their elements' top-trailing corners: where a live
+  view of the board draws the element now (found again by tid and path after a write), else where
+  it was when the comment was made. Only open comments have pins.
+- **The thread** (`NWCommentThread`) opens under its element, its trailing edge at the pin's, kept
+  inside the canvas: a click on a pin, or on a card in the Comments tab. It shows who and when,
+  Resolve, the comment, each answer under a hairline ("Design agent · 1m"), and Reply…. A click
+  anywhere on the canvas closes it.
+- **The chat.** A message carrying a comment draws as the comment's card (`NWCommentCard`: the
+  small pin, "on A · Checkout funnel", "You · 2m", the words), and the agent's reply to it sits
+  inside the card under a hairline, without the turn's footer.
+- **The Comments tab** lists the open comments' cards, oldest first (a lazy list, one row per
+  card), and its label counts them. The chat's thread stays mounted under it.
+- **Failures** (a comment kept but not delivered, a refused one) go to the app's error dialog.
+
+### Board actions (DZCanvas)
+
+The board picked whole last (not an element) wears the board actions (`NWBoardActions`, drawn as
+DZCanvas draws it): its bottom 2pt above the board's label, its leading edge at the frame's
+middle, kept inside the canvas. Nothing floats over a presented board.
+
+- **Comment** takes the Comment tool: the element picked next takes the comment.
+- **Tweak** opens the Tweak tab on the board (its data-props).
+- **Variations** sends the design agent "Draw variations of the selected board as new boards
+  beside it.", and **"Ask for another direction"** (the dashed tile 36pt after the page's last
+  board) "Draw another direction as a new board." (`DesignScreenModel.variationsMessage`,
+  `anotherDirectionMessage`). The words are fixed; the board goes as data in the message's view
+  record (its one `selectedBoards` entry for Variations, none for another direction), which the
+  host fences ahead of them like any record. They go like a message typed in the chat
+  (`NativeThreadStore.send(text:designContext:)`), waiting in the queue while pi works. A design
+  whose agent is gone says so.
+- **Duplicate** (`duplicateDesignBoard`, at the revision the canvas read; a stale one is read
+  again and made once more) picks the copy whole once it is there.
+- **•••** holds Play for an interactive board (`is_interactive`) and is disabled otherwise.
+
+### Moving a board
+
+With Select, a drag that starts on a board's label, or anywhere on a board picked whole, moves the
+board; any other drag pans, as before. While it drags, only that board's frame moves (and redraws,
+once per step) and nothing is written. Where it lands is written once, as whole canvas points: a
+canvas update of its `x` and `y` alone, at the revision the canvas read; a stale one is read again
+and written once more. The board stays where it landed while the write goes, and a failure goes
+to the app's error dialog.
+
+### Present and Play
+
+Present (the toolbar's button; decision 11, until Present mode has a board) shows the board picked
+last, else the one nearest the middle of the view, focused over the canvas: the `scrim`, and the
+board fitted inside the canvas's margins, never over 100% (`NWBoardPresentation`). Play (•••, on
+an interactive board) shows that board the same way.
+
+- The presented board is the design's one live view while it is shown (`DesignHost.present`):
+  every other live view is given up and the canvas under the scrim draws snapshots.
+- Its view takes clicks, so its handlers run. A link to another board of the design (relative,
+  or from the canvas root with a leading `/`) comes back from the renderer as `.link` and shows
+  that board instead (`DesignScreenModel.follow(link:from:)`); a link to a board the design
+  doesn't list, or out of the design, goes nowhere, and the board never navigates.
+- Present again, or a click on the scrim, goes back to the canvas. While a board is presented,
+  the chat's record is `focused` on it.
+
+### Pages and notes
+
+A canvas with pages shows one at a time: the page it opens on, then the one picked in the
+toolbar's pages menu (shown with more than one page). A page's boards, its title and sticky notes
+(`NWCanvasNote`, read-only, under the boards and scaled with the canvas), the label rooms and the
+fit are the page's own; switching fits the new page and drops what was selected on the last.
+
 ### The view record
 
 The design screen publishes what it shows (`DesignScreenModel.viewRecord`, a
 `DesignViewRecord` in ShepherdProtocol), and its chat's sends carry it (`NativeThreadStore`'s
 `designContext`, where the host lists `designContext`; docs/native-thread.md › Design context):
 
-- `mode`: `canvas` (`focused` waits for Present).
+- `mode`: `canvas`, or `focused` while a board is presented (Present, Play): `visibleBoards` is
+  that board alone and nothing is selected.
+- `page` and `pageName`: the page shown, by id, and its name cut to 60 characters, on a canvas
+  with pages (a page id outside the grammar goes as neither).
 - `visibleBoards`: up to 20 boards whose frames are on screen, in canvas order.
 - `selectedBoards`: up to 20 boards picked whole or holding a selected element.
 - `selected`: up to 20 element ids, most recent last; `selection`: the last five with their
@@ -386,7 +510,8 @@ The design screen publishes what it shows (`DesignScreenModel.viewRecord`, a
 
 `DesignHost.swift` is the only app file that imports DesignSurfaceKit.
 
-- **Live views.** A design on screen keeps at most five `DesignBoardView`s: the board holding
+- **Live views.** A design on screen keeps at most five `DesignBoardView`s (one while a board is
+  presented): the board holding
   the latest pick (down to 10% zoom), the board under the pointer with Select (at any zoom), and
   the boards nearest the middle of the view (from 25%), recycled least
   recently wanted first (`DesignLivePlan`). A live view draws at the canvas's zoom with WebKit's
@@ -403,7 +528,8 @@ The design screen publishes what it shows (`DesignScreenModel.viewRecord`, a
   navigation, its state kept; source the runtime refuses leaves it as it was), and any other board
   renders one new snapshot. New boards appear and removed boards leave.
 - **Budgets** (`DesignPerformanceTests`, over 172 boards): at most six web views, panning recycles
-  them, and one board changing redraws one frame (`design.board`) with one snapshot. The Designs
+  them, one board changing redraws one frame (`design.board`) with one snapshot, and a board
+  dragged redraws its own frame once per step and no other. The Designs
   grid builds only the cards on screen (`ListPerformanceTests`, `design.card`).
 
 ### Tweak (DZTweak)
@@ -455,8 +581,16 @@ The chat pane's Tweak tab edits the selection (the latest pick) directly
 
 Not drawn on any board, so left out until they are: the Designs page with no designs, a design
 still loading or failing to draw, the design row's and the chat's ••• menus (so no rename or delete
-in the app yet), Present mode, the Capture a page and From a screenshot starting points, zoom
+in the app yet), Present mode's own board (Present shows a board focused meanwhile), the board
+actions' ••• beyond Play, an interactive board's blue mark and Play button on its frame (format.md;
+Play is in •••), closing Present with Escape, a board that asks to fill the window (`expand:
+"fill"`, shown fitted like any), drawing notes, the Capture a page and From a screenshot starting points, zoom
 presets and keyboard shortcuts (so no Escape to clear a selection), a board's list of versions
 (Restore exists on the server, and the app offers only Undo), and a Tweak tab with nothing
-selected (it says to select an element). Comments, Variations
-and the board actions bar come with the rest of this phase.
+selected (it says to select an element). For comments: an empty Comments tab (it is blank), a
+detached pin (it stays where its element was, and its thread and card say "element changed"),
+resolved comments (they leave the canvas and the tab; nothing lists them yet), and a comment that
+couldn't reach the agent (the error dialog says so; it isn't sent again). Not drawn and built
+plainly: the pages menu (a popup in the toolbar), notes (a title's and a sticky's size and look),
+moving a board (by its label or while picked whole), Duplicate's name and place for the copy, and
+the words Variations and another direction send.

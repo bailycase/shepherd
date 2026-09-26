@@ -17,6 +17,10 @@ public enum DesignStoreError: Error, Hashable, Sendable, CustomStringConvertible
     case tooManyFiles
     case invalidIndex([String])
     case missingBoardFile(DesignPath)
+    case noSuchComment(String)
+    /// A comment the store won't keep: why.
+    case invalidComment(String)
+    case tooManyComments
     case noSuchVersion(DesignPath, Int)
     case io(String)
 
@@ -33,6 +37,9 @@ public enum DesignStoreError: Error, Hashable, Sendable, CustomStringConvertible
         case .tooManyFiles: return "too_many_files"
         case .invalidIndex: return "invalid_index"
         case .missingBoardFile: return "missing_board_file"
+        case .noSuchComment: return "no_such_comment"
+        case .invalidComment: return "invalid_comment"
+        case .tooManyComments: return "too_many_comments"
         case .noSuchVersion: return "no_such_version"
         case .io: return "io_failed"
         }
@@ -52,6 +59,9 @@ public enum DesignStoreError: Error, Hashable, Sendable, CustomStringConvertible
         case .tooManyFiles: return "a design holds at most \(DesignStore.maxFiles) files"
         case .invalidIndex(let problems): return "canvas.json: " + problems.joined(separator: "; ")
         case .missingBoardFile(let path): return "\(path) is listed but has no file; write the board first"
+        case .noSuchComment(let id): return "no comment \(id) on this design"
+        case .invalidComment(let why): return why
+        case .tooManyComments: return "a design keeps at most \(DesignComment.maxComments) comments"
         case .noSuchVersion(let path, let number): return "\(path) keeps no version \(number)"
         case .io(let message): return message
         }
@@ -59,8 +69,8 @@ public enum DesignStoreError: Error, Hashable, Sendable, CustomStringConvertible
 }
 
 /// The files of every design, under the support directory's `designs/<id>/`: `project/canvas.json`,
-/// one `project/<path>.dc.html` per board, and Shepherd's `revision` beside `project/`
-/// (docs/designs.md › Storage).
+/// one `project/<path>.dc.html` per board, and Shepherd's `revision` and `comments.json` beside
+/// `project/` (docs/designs.md › Storage).
 ///
 /// Every read and write runs on the store's own serial queue, never the server's, so a compare
 /// and the write it guards are one step. Only `SessionServer` writes: it commits and broadcasts
@@ -80,6 +90,8 @@ public final class DesignStore: @unchecked Sendable {
         var files: [DesignPath: String]?
     }
     private var loaded: [DesignID: Loaded] = [:]
+    /// Each design's comments.json as last read or written. Queue-confined.
+    private var commentFiles: [DesignID: DesignComments] = [:]
 
     public init(directory: URL) {
         self.directory = directory
@@ -171,6 +183,7 @@ public final class DesignStore: @unchecked Sendable {
         try await run {
             guard let folder = self.folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
             self.loaded[id] = nil
+            self.commentFiles[id] = nil
             guard FileManager.default.fileExists(atPath: folder.path) else { return }
             do { try FileManager.default.removeItem(at: folder) } catch {
                 throw DesignStoreError.io("could not delete design \(id): \(error.localizedDescription)")
@@ -293,7 +306,13 @@ public final class DesignStore: @unchecked Sendable {
         }
         let wrote = changed.contains { files[$0.path] == shas[$0.path] }
         design.files = files
-        if wrote { try commit(&design, id) }
+        if wrote {
+            try commit(&design, id)
+            // A rewrite renumbers a board's elements: its comments find theirs again.
+            for (path, _) in changed where !created.contains(path) && files[path] == shas[path] {
+                if let source = sources[path] { reanchorComments(id, board: path, source: source) }
+            }
+        }
         if let failure { throw failure }
         return Written(result: DesignWriteResult(revision: design.revision, changed: true, warnings: warnings,
                                                  title: design.index.title, boardCount: design.index.boards.count),
@@ -406,9 +425,186 @@ public final class DesignStore: @unchecked Sendable {
             design.index = merged
             design.files = files
             try self.commit(&design, id)
+            // A removed board's comments have nothing left to pin to.
+            for path in removed { self.reanchorComments(id, board: path, source: nil) }
             return DesignWriteResult(revision: design.revision, changed: true, title: merged.title,
                                      boardCount: merged.boards.count)
         }
+    }
+
+    /// Copies a board as a new one beside it (`DesignIndex.duplicating`): its file byte for byte
+    /// at a free path, and its entry in canvas.json, as one change, when the design is still at
+    /// `baseRevision` (nil: any). Its comments and versions stay with the original.
+    func duplicateBoard(_ id: DesignID, path: DesignPath, baseRevision: UInt64?) async throws -> DesignDuplicate {
+        try await run {
+            var design = try self.load(id)
+            try Self.compare(baseRevision, design.revision)
+            var files = try self.files(of: id, &design)
+            guard design.index.boards[path] != nil else { throw DesignStoreError.noSuchBoard(path) }
+            guard files[path] != nil else { throw DesignStoreError.missingBoardFile(path) }
+            guard files.count < Self.maxFiles else { throw DesignStoreError.tooManyFiles }
+            let taken = Set(files.keys).union(design.index.boards.keys)
+            guard let copy = DesignIndex.duplicatePath(for: path, taken: taken),
+                  let next = design.index.duplicating(path, as: copy) else {
+                throw DesignStoreError.invalidIndex(["no free name for a copy of \(path)"])
+            }
+            let known = Set(design.index.problems())
+            let problems = next.problems().filter { !known.contains($0) }
+            guard problems.isEmpty else { throw DesignStoreError.invalidIndex(problems) }
+            let data: Data
+            do { data = try Data(contentsOf: self.fileURL(id, path)) } catch {
+                throw DesignStoreError.io("could not read \(path): \(error.localizedDescription)")
+            }
+            try self.writeFile(id, copy, data)
+            do {
+                try next.encoded().write(to: self.indexURL(id), options: .atomic)
+            } catch {
+                if let url = try? self.fileURL(id, copy) { try? FileManager.default.removeItem(at: url) }
+                throw DesignStoreError.io("could not write canvas.json: \(error.localizedDescription)")
+            }
+            files[copy] = Self.sha256(data)
+            design.index = next
+            design.files = files
+            try self.commit(&design, id)
+            let result = DesignWriteResult(revision: design.revision, changed: true, sha256: files[copy], created: true,
+                                           title: next.title, boardCount: next.boards.count)
+            return DesignDuplicate(path: copy, result: result)
+        }
+    }
+
+    // MARK: Comments
+
+    /// The design's comments, open and resolved, in the order they were made.
+    public func comments(_ id: DesignID) async throws -> DesignComments {
+        try await run {
+            _ = try self.load(id)
+            return try self.loadComments(id)
+        }
+    }
+
+    /// Pins a new comment to an element of a board, when the comments are still at
+    /// `baseRevision` (nil: any). The element must be one the board's source has now; its words
+    /// are read from the source, so a later rewrite finds it by what the store saw.
+    func addComment(_ id: DesignID, draft: DesignCommentDraft, baseRevision: UInt64?, at date: Double) async throws -> DesignComment {
+        try await run {
+            var design = try self.load(id)
+            var file = try self.loadComments(id)
+            try Self.compare(baseRevision, file.revision)
+            guard let text = DesignComment.text(draft.text) else {
+                throw DesignStoreError.invalidComment("a comment is 1 to \(DesignComment.maxTextBytes) bytes of text")
+            }
+            guard file.comments.count < DesignComment.maxComments else { throw DesignStoreError.tooManyComments }
+            let files = try self.files(of: id, &design)
+            guard files[draft.board] != nil, design.index.boards[draft.board] != nil else {
+                throw DesignStoreError.noSuchBoard(draft.board)
+            }
+            let data: Data
+            do { data = try Data(contentsOf: try self.fileURL(id, draft.board)) } catch { throw DesignStoreError.noSuchBoard(draft.board) }
+            guard let element = DesignElementID(board: draft.board.viewName, tid: draft.tid, path: draft.path),
+                  let template = DesignTemplate(board: String(decoding: data, as: UTF8.self)),
+                  template.element(for: element) != nil else {
+                throw DesignStoreError.invalidComment("\(draft.board) has no element \(draft.tid):\(draft.path.map(String.init).joined(separator: "/"))")
+            }
+            let comment = DesignComment(number: file.nextNumber, board: draft.board, tid: draft.tid, path: draft.path,
+                                        label: template.labels[draft.tid],
+                                        target: draft.target.flatMap(DesignViewRecord.label),
+                                        rect: draft.rect.flatMap { $0.isValid ? $0 : nil },
+                                        text: text, author: .user, createdAt: date)
+            file.comments.append(comment)
+            try self.saveComments(&file, id)
+            return comment
+        }
+    }
+
+    /// Adds a reply under a comment, when the comments are still at `baseRevision` (nil: any).
+    func replyToComment(_ id: DesignID, commentID: UUID, author: DesignCommentAuthor, text raw: String,
+                        baseRevision: UInt64?, at date: Double) async throws -> DesignComment {
+        try await run {
+            _ = try self.load(id)
+            var file = try self.loadComments(id)
+            try Self.compare(baseRevision, file.revision)
+            guard let index = file.comments.firstIndex(where: { $0.id == commentID }) else {
+                throw DesignStoreError.noSuchComment(commentID.uuidString)
+            }
+            guard let text = DesignComment.text(raw) else {
+                throw DesignStoreError.invalidComment("a reply is 1 to \(DesignComment.maxTextBytes) bytes of text")
+            }
+            guard file.comments[index].replies.count < DesignComment.maxReplies else {
+                throw DesignStoreError.invalidComment("a comment keeps at most \(DesignComment.maxReplies) replies")
+            }
+            file.comments[index].replies.append(DesignCommentReply(author: author, text: text, createdAt: date))
+            try self.saveComments(&file, id)
+            return file.comments[index]
+        }
+    }
+
+    /// Resolves a comment (or opens it again), when the comments are still at `baseRevision`.
+    func setCommentResolved(_ id: DesignID, commentID: UUID, resolved: Bool, baseRevision: UInt64?,
+                            at date: Double) async throws -> DesignComment {
+        try await run {
+            _ = try self.load(id)
+            var file = try self.loadComments(id)
+            try Self.compare(baseRevision, file.revision)
+            guard let index = file.comments.firstIndex(where: { $0.id == commentID }) else {
+                throw DesignStoreError.noSuchComment(commentID.uuidString)
+            }
+            guard file.comments[index].isOpen == resolved else { return file.comments[index] }
+            file.comments[index].resolvedAt = resolved ? date : nil
+            if !resolved {
+                // Open again, it looks for its element in the board as it is now.
+                let comment = file.comments[index]
+                let source = try? String(contentsOf: try self.fileURL(id, comment.board), encoding: .utf8)
+                file.comments[index] = DesignCommentAnchor.reanchor([comment], board: comment.board, source: source)[0]
+            }
+            try self.saveComments(&file, id)
+            return file.comments[index]
+        }
+    }
+
+    /// The design's comments.json; an empty one when there is none yet.
+    private func loadComments(_ id: DesignID) throws -> DesignComments {
+        if let file = commentFiles[id] { return file }
+        let url = try commentsURL(id)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            commentFiles[id] = DesignComments()
+            return DesignComments()
+        }
+        let file: DesignComments
+        do { file = try JSONDecoder().decode(DesignComments.self, from: Data(contentsOf: url)) } catch {
+            throw DesignStoreError.io("comments.json is unreadable: \(error.localizedDescription)")
+        }
+        commentFiles[id] = file
+        return file
+    }
+
+    /// Bumps the comments' revision and writes them atomically.
+    private func saveComments(_ file: inout DesignComments, _ id: DesignID) throws {
+        file.revision += 1
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .prettyPrinted, .withoutEscapingSlashes]
+        do {
+            try encoder.encode(file).write(to: try commentsURL(id), options: .atomic)
+        } catch {
+            file.revision -= 1
+            throw DesignStoreError.io("could not write comments.json: \(error.localizedDescription)")
+        }
+        commentFiles[id] = file
+    }
+
+    /// Queue: the comments on `board` find their elements again in `source` (nil: the board is
+    /// gone), and the file is written when any moved. A comments.json that can't be read or
+    /// written is left for the next change; the board's own write already happened.
+    private func reanchorComments(_ id: DesignID, board: DesignPath, source: String?) {
+        guard var file = try? loadComments(id), file.comments.contains(where: { $0.board == board && $0.isOpen }) else { return }
+        let next = DesignCommentAnchor.reanchor(file.comments, board: board, source: source)
+        guard next != file.comments else { return }
+        file.comments = next
+        try? saveComments(&file, id)
+    }
+
+    private func commentsURL(_ id: DesignID) throws -> URL {
+        guard let folder = folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+        return folder.appendingPathComponent("comments.json")
     }
 
     // MARK: Queue
