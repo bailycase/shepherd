@@ -2020,6 +2020,24 @@ none, and the row has no ring.
     (`SettingsManager.setCompactionEnabled`); Shepherd never writes pi's settings, so the switch
     waits on a decision. The details read pi's `autoCompactionEnabled` for the mark and the
     almost-full text.
+- **iPad and iPhone** (ContextIdeas › A: "same spot on iPad and iPhone, tap opens the details as a
+  sheet"; `App/iOS/Composer/ContextMeter.swift`): the same ring and button just before Send — in
+  the iPad card's control row, and inside the phone's capsule — with a 44pt touch target around
+  its 32pt circle, so it sits 14pt from Send's circle rather than 6pt (the targets never overlap).
+  The ring stays while the agent runs (Stop lives in the header on iOS). Touch has no hover: the
+  numbers are the ring's VoiceOver label and the sheet's; a pointer over it on iPad shows the
+  tooltip. A tap opens the details as a sheet (`NWContextDetails(…, presentation: .sheet)`) on
+  `bgRaised` with a drag indicator, fitted to the details' height (the whole screen when taller;
+  a form sheet as wide as the form on iPad): the same header, total, bar, mark, split, Largest,
+  footnote and buttons as the popover, at the sheet's width, with Largest's rows and the buttons
+  at 44pt and "tap to find in thread". Almost full is the same sheet leading with the problem and
+  the field for what to keep; compacting has nothing to press and the sheet closes itself when
+  pi is done; just compacted offers Show summary. A tap on a Largest item or Show summary closes
+  the sheet and scrolls the thread to it (loading older pages as needed); Esc on a hardware
+  keyboard or a swipe down closes it. The thread's compaction lines are the Mac's (Thread ›
+  Compactions): Show summary opens What the agent kept in place, and Copy puts the summary on
+  the pasteboard. On a phone, or at a large text size, the line drops its rules, then puts Show
+  summary under the words, which wrap; the summary's size goes under its title.
 
 ### Up next (the queue)
 
@@ -4308,7 +4326,9 @@ follows the Mac's rules (Thread) with the phone's measures below.
   works (MobileApproval), which the app follows, since Send queues while pi works. The later
   queue boards (MobileSteer, MobileQueueMenu) keep "Follow up…" while pi works and draw the
   capsule the composer's full width with no paperclip, and 34pt under it; settle which rules
-  before changing either. Holding Send while pi works offers Queue and Steer now. The app adds,
+  before changing either. Holding Send while pi works offers Queue and Steer now. The context
+  ring sits inside the capsule just before Send (Composer › Context meter › iPad and iPhone); a
+  tap opens its details as a sheet. The app adds,
   while the field is in use, a row of "/ commands", model and thinking chips above it (ghost,
   28pt); no phone board draws it.
 - **Following:** as in the iOS list above: only a finger's drag detaches; "↓ Jump to latest" sits
@@ -4834,9 +4854,11 @@ selected thread, or the Overview when none is. Other screens push over the detai
   `textSecondary`), then 40pt chips at radius 10 with 13pt labels in `textSecondary`, 12pt
   inset: "/ commands" (mono, the slash in `textTertiary`), the model (mono, "claude-opus", with a
   10pt chevron), and Thinking (a 14pt `lightbulb`, "Thinking", the level in `textPrimary`
-  medium, a chevron; only for a model that takes a level); then Send, trailing: a 40pt `lantern`
+  medium, a chevron; only for a model that takes a level); then the context ring (Composer ›
+  Context meter › iPad and iPhone) and Send, trailing: a 40pt `lantern`
   circle with `arrow.up` 16 in `textOnLantern`, at 35% while there is nothing to send. Hold Send
-  to Steer now; ⌘↩ sends.
+  to Steer now; ⌘↩ sends. The ring and Send keep their place when the row scrolls at the
+  accessibility text sizes.
 - **Commands** (iPadPortrait): typing "/" opens the list inside the card, above the field: 6pt
   inset, a 1px `lineStrong` line, radius 14, `bgRaised`. Its head (4×8): "COMMANDS" at 11/600,
   uppercase, tracked 6%, `textSecondary`, and "4 of 23" in mono 11 `textTertiary`. Rows at least

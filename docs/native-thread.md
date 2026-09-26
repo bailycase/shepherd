@@ -337,6 +337,10 @@ draw no context meter.
   `SettingsManager.setCompactionEnabled`, which writes `compaction.enabled` into the user's global
   `settings.json` (`~/.pi/agent`, or `PI_CODING_AGENT_DIR`). Shepherd never writes pi's settings, so
   the boards' Compact automatically switch is not built.
+- **Clients** derive the ring and its details once per change in ShepherdRemote
+  (`NativeContextMeter`, `NativeContextDetails`, `NativeCompactionRow`), so the Mac and the iOS
+  client draw the same states from the same snapshot; a host without `native.context.v1` sends no
+  `context`, and neither draws a ring.
 
 ## Serving
 
