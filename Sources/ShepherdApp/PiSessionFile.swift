@@ -32,18 +32,19 @@ enum PiSessionFile {
     }
 
     /// `sessionsRoot/<mangled cwd>/` — pi derives the directory name from the
-    /// absolute cwd, replacing each path separator with `-` and wrapping the
+    /// absolute cwd, replacing each `/`, `\` and `:` with `-` and wrapping the
     /// result in `--`.
     static func projectDirectory(forCwd cwd: String, sessionsRoot: URL) -> URL {
         sessionsRoot.appendingPathComponent("--\(mangled(cwd))--", isDirectory: true)
     }
 
     /// Pi resolves the real path first (so /tmp and /private/tmp agree), then
-    /// mangles it.
+    /// mangles it as pi's session manager does: one leading `/` or `\` dropped, then every
+    /// `/`, `\` and `:` replaced with `-`.
     static func mangled(_ cwd: String) -> String {
-        realPath(cwd)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            .replacingOccurrences(of: "/", with: "-")
+        var path = Substring(realPath(cwd))
+        if let first = path.first, first == "/" || first == "\\" { path = path.dropFirst() }
+        return String(path.map { "/\\:".contains($0) ? "-" : $0 })
     }
 
     /// True when pi can already resolve `sessionID` in `cwd` (any file whose

@@ -40,6 +40,9 @@ struct PiSessionFileTests {
     @Test(arguments: [
         ("/Users/dev/Developer/Shepherd", "Users-dev-Developer-Shepherd"),
         ("/Users/dev/", "Users-dev"),
+        // pi replaces `:` and `\` too, and strips only the leading separator.
+        ("/Users/dev/proj:v2", "Users-dev-proj-v2"),
+        ("/Users/dev/back\\slash", "Users-dev-back-slash"),
     ])
     func projectDirectoriesMangleTheAbsoluteCwd(cwd: String, mangled: String) {
         #expect(PiSessionFile.mangled(cwd) == mangled)
