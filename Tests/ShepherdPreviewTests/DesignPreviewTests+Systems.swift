@@ -9,9 +9,9 @@ import SwiftUI
 import Testing
 @testable import ShepherdApp
 
-/// Design systems (DZSystem, NavDesigns): a system built from a repository on its build's page
-/// beside the build agent's chat, a build still reading its project, Night Watch on the Design
-/// systems page, and the Designs page's systems grid. Specimens are drawn by the board renderer
+/// Design systems (DZSystem, NavDesigns, DZStart): a system built from a repository on its build's
+/// page beside the build agent's chat, a build still reading its project, Night Watch on the
+/// Design systems page, the Designs page's systems grid, and New design's card. Specimens are drawn by the board renderer
 /// off screen and shown from their snapshots.
 extension DesignPreviewTests {
     private static let systemPageSize = CGSize(width: 1440 - AppLayout.sidebarDefaultWidth, height: 848)
@@ -199,6 +199,19 @@ extension DesignPreviewTests {
         #expect(vm.shownDestination == .designSystem)
         try await Preview.render("page-design-system-night-watch", size: Self.systemPageSize) {
             DesignSystemDestination(vm: vm)
+        }
+    }
+
+    /// DZStart: the system built from the project, found in its tokens file.
+    @Test func newDesignFindsTheSystem() async throws {
+        let (workspace, _, _) = try await systemWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        vm.openNewDesign()
+        await vm.newDesign.detect(vm)
+        #expect(vm.newDesign.systemToInstall(vm) == "acme-web")
+        try await Preview.render("app-window-new-design-system", size: Self.systemWindowSize) {
+            RootView(vm: vm)
         }
     }
 
