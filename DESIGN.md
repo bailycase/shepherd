@@ -3962,7 +3962,7 @@ composing chrome by hand. Debug builds have a **Component Gallery** (View menu,
 
 | Domain | Components | Owned in the app by |
 | --- | --- | --- |
-| Controls | `.buttonStyle(.nw(_:size:tint:))` (primary, secondary, ghost, danger, dangerFill; s 24 · m 28 · l 32), `.nwIcon` and `.nwIcon(bordered:isOn:size:tint:)` (a circle, 28pt, 44 on iOS; "on" is lantern tint), `.nwLink`, `.nwRow(selected:)`, `.nwRowBackground(selected:hovering:)`; `.toggleStyle(.nwSwitch)` (30×18) and `.nwCheckbox` (14pt); `NWSegmentedPicker` (m 24, s 20), `NWPopupMenu` and `NWPopupLabel`, `NWValueSlider`, `NWStepper`; `.textFieldStyle(.nw)` and `.nw(mono:error:)` (28pt, radius 6), `.nwField(focused:error:mono:)`, `.textFieldStyle(.nwSearch)`, `NWSearchField`; `NWKeycap`, `NWCountBadge`, `NWTag`, `.nwHelp(_:shortcut:)` | across the app; the radio group is not built |
+| Controls | `.buttonStyle(.nw(_:size:tint:))` (primary, secondary, ghost, danger, dangerFill; s 24 · m 28 · l 32), `.nwIcon` and `.nwIcon(bordered:isOn:size:tint:)` (a circle, 28pt, 44 on iOS; "on" is lantern tint), `.nwLink`, `.nwRow(selected:)`, `.nwRowBackground(selected:hovering:)`; `.toggleStyle(.nwSwitch)` (30×18) and `.nwCheckbox` (14pt); `NWSegmentedPicker` (m 24, s 20), `NWPopupMenu` and `NWPopupLabel`, `NWValueSlider`, `NWStepper`; `.textFieldStyle(.nw)` and `.nw(mono:error:)` (28pt, radius 6), `.nwField(focused:error:mono:)`, `.nwFieldMessage(_:alignment:)`, `.textFieldStyle(.nwSearch)`, `NWSearchField`; `NWButtonTitle` (a title and its chord), `NWRadioGroup`; `NWKeycap`, `NWCountBadge`, `NWTag`, `.nwHelp(_:shortcut:)` | across the app; `NWRadioGroup` has no app use |
 | Status | `NWStatusPill` (20pt, radius 4; a glyph in place of its dot), `NWStatusDot` (6pt), `NWStateGlyph` (14pt), `.progressViewStyle(.nwSpinner)` and `.nwBar` (4pt), `NWStepStrip`, `NWSparkline`, `NWBanner`, `.nwToast(item:)` with `NWToast`, `NWEmptyState`, `.nwShimmer()`, `NWWordmark`, `NWCrook` | across the app; `NWSparkline` and `.nwToast(item:)` have no app use (see departures), and `.nwShimmer()` none yet |
 | Containers | `NWSectionHeader`, `NWGroupCard`, `NWCardRow`, `NWHairline`, `NWChoiceRow` (`NWChoiceRowMetrics`), `NWFlowLayout`, `NWMarkupText` | `SettingsComponents.swift`; hairlines everywhere; `NWMarkupText` for Settings' descriptions (Mac and iOS); `NWChoiceRow` in the iOS client's New thread pickers; `NWFlowLayout` for wrapping chips and answers (iOS) |
 | Navigation | `NWSidebar`, `NWSidebarTopBar`, `NWSidebarDestination`, `NWSidebarSection`, `NWSidebarRow`, `NWSidebarFooter`, `NWDropIndicator`, `NWDensity`; `NWThreadToolbar`, `NWPaneToggle`, `NWOptionsMenu`, `NWPaneHeader`; `.nwCommandPalette(isPresented:)`, `NWPaletteCard`, `NWPaletteSearchRow`, `NWPaletteSectionHeader`, `NWPaletteRow` | `SidebarView.swift`, `ThreadHeader.swift`, `RootView.swift`, `CommandPaletteView.swift`; the review's header (`DiffReviewView.swift`) and the inspector's ⋯ menu (`Thread/SubagentInspector.swift`) |
@@ -4017,9 +4017,9 @@ color is a role.
   the symbol one step smaller than the title and 6pt before it.
 - **With a shortcut:** only on the view's main action. The chord is bound (⌘⏎:
   `.keyboardShortcut(.return, modifiers: .command)`) and drawn after the title in Geist Mono
-  10.5 regular at 60% opacity, 6pt after it ("Land ⌘⏎", "New agent ⌘N"). **Not built yet:** no
-  button draws its chord. The Changes pane's Send to agent binds ⌘↩ and names it in its tooltip
-  (Known gaps). In a sheet the primary
+  10.5 regular at 60% opacity, 6pt after it ("Land ⌘⏎", "New agent ⌘N"): the label is
+  `NWButtonTitle("Land", chord: "⌘↩")`, and VoiceOver hears the title alone. The Changes pane's
+  Send to agent draws ⌘↩ on the Mac (the touch bar has no chord to teach). In a sheet the primary
   is the ⏎ default instead (Dialogs and sheets).
 
 **Icon buttons** (`.buttonStyle(.nwIcon)`, `.nwIcon(bordered:isOn:size:tint:)`): always a
@@ -4055,9 +4055,13 @@ hovered (while pressed on iOS), radius 6.
   off is `bgRaised` with a 1.5pt `lineStrong` border; on is `lantern` with a `textOnLantern`
   checkmark; mixed is `lantern` with a 7×2 `textOnLantern` dash. The label sits 8pt after the
   box, and only the box animates.
-- **Radio group** (Mac: `Picker(…).pickerStyle(.radioGroup).tint(.nw.lantern)`): rare; prefer
-  segmented or a popup. 14pt circles: off `bgRaised` with a 1.5pt `lineStrong` ring, on
-  `lantern` with a 6pt `textOnLantern` center. **Not built yet:** nothing needs one.
+- **Radio group** (`NWRadioGroup(_:selection:options:)`; the board's
+  `Picker(…).pickerStyle(.radioGroup).tint(.nw.lantern)`): rare; prefer segmented or a popup.
+  14pt circles: off `bgRaised` with a 1.5pt `lineStrong` ring, on `lantern` with a 6pt
+  `textOnLantern` center; each label (`ui`, `textPrimary`) 8pt after its circle, options 8pt
+  apart, and only the circle animates. It draws its own circles, because the system's radio
+  ignores the tint, and represents itself to accessibility as a native radio-group `Picker`.
+  Nothing in the app needs one yet (the Component Gallery shows it).
 
 **Inputs** (native `TextField`, `Picker`, `Stepper`, and `Slider` in Night Watch styles; every
 one 28pt, radius 6, on `bgRaised` with a 1px `lineStrong` line):
@@ -4069,8 +4073,10 @@ one 28pt, radius 6, on `bgRaised` with a 1px `lineStrong` line):
   line turns `failed`, and the message sits 6pt under the field in `caption` `failed`: "Socket
   path already in use"); disabled (40%). The line and the ring fade on their own layer, so
   focusing never animates the text. Settings fields are 220pt (`AppLayout.settingsFieldWidth`).
-  **Not built yet:** no field sets the error state. A field whose own value is refused shows it
-  this way; a problem with a whole setting stays its row's problem line (Settings).
+  The message is `.nwFieldMessage(_:)` (trailing-aligned under a field that ends a Settings row).
+  A field whose own value is refused shows it this way: Settings ▸ Remote's port refuses anything
+  outside 1–65535 ("Ports run from 1 to 65535."); a problem with a whole setting stays its row's
+  problem line (Settings).
 - **Search field** (`NWSearchField`; `.textFieldStyle(.nwSearch)` for the glass alone): a 13pt
   `magnifyingglass` in `textTertiary` 6pt before the text; the placeholder names what it
   searches ("Search agents", "Search settings"). While empty, the shortcut's keycaps trail
@@ -4079,8 +4085,8 @@ one 28pt, radius 6, on `bgRaised` with a 1px `lineStrong` line):
 - **Popup** (`NWPopupMenu`, a native `Menu` whose label is `NWPopupLabel`): longer option lists
   ("claude-opus", "Nightly"). 10pt leading and 8pt trailing padding, the value in 12pt (Geist
   Mono for a model id), and a `chevron.down` in `textTertiary` 8pt after it; 200pt wide (the
-  board's; `AppLayout.settingsPopupWidth` in Settings), where `NWPopupMenu`'s default minimum is
-  180 (Known gaps). Its items are real menu items.
+  board's; `NWPopupMenu`'s default minimum, and `AppLayout.settingsPopupWidth` in Settings). Its
+  items are real menu items.
 - **Stepper** (`NWStepper`): small integer settings ("− 3M tok +"). 24pt − and + buttons in
   `textSecondary` either side of the value in Geist Mono 12, at least 52pt wide between 1px
   `lineSubtle` rules. A bound disables its button, and the digits roll (down after −).
@@ -4318,13 +4324,6 @@ it. A sentence elsewhere that states a board's value and adds what the app does 
 uses 6pt today"), or a paragraph marked **Not built yet**, is a gap in its own right; the list
 below collects the rest, and the places those sentences point here.
 
-- **Controls:** sheets draw Cancel as `secondary` (`DialogSheet.swift`, and each creation sheet),
-  where the board's is `ghost`. `dangerFill` lifts on hover like `primary` (`Buttons.swift`); the
-  board's stays put. Primary's and dangerFill's hover and pressed fills are 12% and 10% mixes toward
-  white and black, near but not the board's hexes (dark hover `#f4b352` against `#f7b84f`). No
-  button draws its chord after its title: the Changes pane's Send to agent names ⌘↩ only in its
-  tooltip. `NWPopupMenu`
-  defaults to a 180pt minimum width (`Pickers.swift`); the board's popups are 200.
 - **Agents and review:**
   - A review from an older host (no `changes.v1`) keeps two scopes (Uncommitted and Pull request)
     and compares the working tree against HEAD, or the PR's merge base, the old way.

@@ -53,7 +53,8 @@ public struct NWReviewSendBar: View {
                 Button(action: onSend) {
                     HStack(spacing: NW.Space.s) {
                         if sending { ProgressView().progressViewStyle(.nwSpinner(size: 10)) }
-                        Text("Send to agent")
+                        // The Mac's main action draws its chord; touch has no ⌘↩ to teach.
+                        if size == .regular { NWButtonTitle("Send to agent", chord: "⌘↩") } else { Text("Send to agent") }
                     }
                 }
                 .buttonStyle(.nw(.primary, size: buttons))

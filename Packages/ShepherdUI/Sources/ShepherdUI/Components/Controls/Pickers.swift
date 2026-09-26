@@ -75,7 +75,66 @@ public struct NWSegmentedPicker<Value: Hashable>: View {
     private static var pillID: String { "selection" }
 }
 
-/// The popup for longer option lists (Controls board): raised, 1px strong line, a chevron, 28pt.
+/// A radio group (Controls board): rare, so prefer segmented or a popup. 14pt circles, off
+/// `bgRaised` with a 1.5pt `lineStrong` ring, on `lantern` with a 6pt `textOnLantern` center, each
+/// label 8pt after its circle. Drawn here and represented to accessibility as a native `Picker`
+/// (a radio group on the Mac), since SwiftUI has no public custom `PickerStyle`.
+public struct NWRadioGroup<Value: Hashable>: View {
+    @Binding var selection: Value
+    let label: String
+    let options: [(value: Value, title: String)]
+    @Environment(\.isEnabled) private var enabled
+
+    public init(_ label: String = "", selection: Binding<Value>, options: [(Value, String)]) {
+        _selection = selection
+        self.label = label
+        self.options = options.map { (value: $0.0, title: $0.1) }
+    }
+
+    public var body: some View {
+        let nw = Color.nw
+        VStack(alignment: .leading, spacing: NW.Space.m) {
+            ForEach(options, id: \.value) { option in
+                let on = option.value == selection
+                Button { selection = option.value } label: {
+                    HStack(spacing: NW.Space.m) {
+                        ZStack {
+                            Circle().fill(on ? nw.lantern : nw.bgRaised)
+                            if on {
+                                Circle().fill(nw.textOnLantern).frame(width: 6, height: 6)
+                            } else {
+                                Circle().strokeBorder(nw.lineStrong, lineWidth: 1.5)
+                            }
+                        }
+                        .frame(width: 14, height: 14)
+                        // Only the circle animates; the label never moves.
+                        .nwComponentAnimation(.content, value: on)
+                        .nwFocusRingCircle()
+                        Text(option.title)
+                            .font(.nw(.ui))
+                            .foregroundStyle(nw.textPrimary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .nwEnabledOpacity(enabled)
+        .accessibilityRepresentation {
+            Picker(label, selection: $selection) {
+                ForEach(options, id: \.value) { Text($0.title).tag($0.value) }
+            }
+            #if os(macOS)
+            .pickerStyle(.radioGroup)
+            #else
+            .pickerStyle(.inline)
+            #endif
+        }
+    }
+}
+
+/// The popup for longer option lists (Controls board): raised, 1px strong line, a chevron, 28pt,
+/// at least 200pt wide.
 /// A native `Menu` with a Night Watch label, so its items are real menu items.
 public struct NWPopupMenu<Content: View>: View {
     let title: String
@@ -83,7 +142,7 @@ public struct NWPopupMenu<Content: View>: View {
     let minWidth: CGFloat
     @ViewBuilder let content: () -> Content
 
-    public init(_ title: String, mono: Bool = false, minWidth: CGFloat = 180, @ViewBuilder content: @escaping () -> Content) {
+    public init(_ title: String, mono: Bool = false, minWidth: CGFloat = 200, @ViewBuilder content: @escaping () -> Content) {
         self.title = title
         self.mono = mono
         self.minWidth = minWidth
