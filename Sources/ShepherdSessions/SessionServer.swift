@@ -245,6 +245,14 @@ public final class SessionServer: @unchecked Sendable {
     /// An agent asked to open a native diff-review pane. The GUI owns the
     /// review layout and user interaction; the completion carries the result.
     public var onReviewRequest: ((ReviewRequest, @escaping (ReviewOutcome) -> Void) -> Void)?
+    /// An agent's MCP extension asked for a server's credentials. The app owns the Keychain and
+    /// OAuth, so the request is handed to it like a pane request. Delivered on the main actor;
+    /// the completion may be called from any thread. With no handler the answer is
+    /// `mcp_unavailable`.
+    public var onMCPRequest: ((MCPRequest, @escaping (MCPOutcome) -> Void) -> Void)?
+    /// A server's state or tool list, from one agent's MCP extension (Settings ▸ MCP servers).
+    /// Delivered on the main actor in the order the reports arrived.
+    public var onMCPReport: ((AgentID, MCPServerReport) -> Void)?
     public var onRemotePaneRequest: ((PaneRequest, @escaping (PaneOutcome) -> Void) -> Void)?
     /// A remote client asked to create an agent. Spawning pi (extension
     /// flags, session-file seeding, pane binding) is the GUI's flow, so the
@@ -1849,6 +1857,12 @@ public final class SessionServer: @unchecked Sendable {
             childCommandPending.removeValue(forKey: id)?.completion(error)
         case .notify(let agentID, let title, let body):
             hopToMain { [weak self] in self?.onNotify?(agentID, title, body) }
+        case .mcpCredentials(let id, let agentID, let server, let reason, let challenge):
+            routeMCPRequest(MCPRequest(agentID: agentID, server: server, reason: reason, challenge: challenge),
+                            requestID: id, client: client)
+        case .mcpReport(let agentID, let report):
+            guard store.state.agents.contains(where: { $0.id == agentID }) else { return }
+            hopToMain { [weak self] in self?.onMCPReport?(agentID, report) }
         case .helloAgent(let agentID):
             client.agentID = agentID
         case .coordinateAgent(let id, let agentID, let targetAgentID, let request):
@@ -2163,6 +2177,26 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Hand an MCP credentials request to the GUI and write its reply back to the client. Only a
+    /// live agent may ask: the answer can carry secrets.
+    private func routeMCPRequest(_ request: MCPRequest, requestID: Int, client: ExtensionConnection) {
+        guard store.state.agents.contains(where: { $0.id == request.agentID }) else {
+            reply(.error(id: requestID, code: "no_such_agent", message: "no such agent"), to: client)
+            return
+        }
+        guard let handler = onMCPRequest else {
+            reply(.error(id: requestID, code: "mcp_unavailable",
+                         message: "Shepherd can't hand over \(request.server)'s credentials here."), to: client)
+            return
+        }
+        hopToMain { [weak self, weak client] in
+            handler(request) { outcome in
+                guard let self, let client else { return }
+                self.queue.async { self.reply(outcome.withID(requestID), to: client) }
+            }
+        }
+    }
+
     /// Hand a review request to the GUI and write its reply back to the client.
     private func routeReviewRequest(_ request: ReviewRequest, requestID: Int, client: ExtensionConnection) {
         guard let handler = onReviewRequest else {
@@ -2245,7 +2279,8 @@ public final class SessionServer: @unchecked Sendable {
              .designComment(let id, _),
              .designSystems(let id, _),
              .designSystem(let id, _),
-             .designSystemWritten(let id, _):
+             .designSystemWritten(let id, _),
+             .mcpCredentials(let id, _):
             return id
         }
     }
