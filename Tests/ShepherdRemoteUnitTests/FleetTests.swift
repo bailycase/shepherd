@@ -329,4 +329,23 @@ struct FleetTests {
         #expect(model.hosts.first?.needsYou == 1)
         #expect(FleetModel(hosts: [], digests: [:]).offlineSummary == nil)
     }
+
+    // MARK: Designs
+
+    /// A host serving designs sends the agents that draw them: none is a thread (its design is
+    /// its row on iPad), so none runs, needs you, finishes or counts.
+    @Test func aDesignsAgentIsNeverAThread() {
+        var drawing = Self.agent("designer", .blocked)
+        drawing.designID = DesignID(rawValue: "d1")
+        drawing.waitingReason = "pick a palette"
+        var state = ShepherdState(spaces: [Self.space], agents: [Self.agent("plain", .working), drawing])
+        state.designs = [Design(id: DesignID(rawValue: "d1"), name: "Checkout", agentID: drawing.id, createdAt: 0)]
+        let host = FleetHost(id: Self.studio, name: "Studio", address: "studio.local", port: 7433, phase: .connected, state: state)
+        let model = FleetModel(hosts: [host], digests: [:])
+        #expect(model.recents.map(\.ref) == [Self.ref("plain")])
+        #expect(model.running.map(\.ref) == [Self.ref("plain")])
+        #expect(model.needsYou.isEmpty && model.finished.isEmpty)
+        #expect(model.hosts.first?.threads == 1)
+        #expect(model.hosts.first?.needsYou == 0)
+    }
 }
