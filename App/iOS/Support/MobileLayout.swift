@@ -19,8 +19,12 @@ enum MobileLayout {
     static let threadMaxWidth: CGFloat = 760
     /// A note's indent from its rule.
     static let noteIndent: CGFloat = NW.Space.m
-    /// The iPad sidebar's width.
-    static let sidebarWidth: CGFloat = 320
+    /// The iPad sidebar's width beside the thread, in landscape (iPadThread).
+    static let sidebarWidth: CGFloat = 300
+    /// The iPad sidebar's width as it slides over the thread, in portrait (iPadSidebar).
+    static let sidebarOverlayWidth: CGFloat = 340
+    /// More's sub-rows in the iPad sidebar sit this far in (iPadHosts).
+    static let sidebarSubrowIndent: CGFloat = NW.Space.l
     /// A list row: the boards' 48pt, never under the touch minimum.
     static let rowHeight: CGFloat = 48
     /// A two-line row (a title over a status line).
