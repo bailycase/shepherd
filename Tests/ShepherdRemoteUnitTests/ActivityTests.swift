@@ -293,6 +293,7 @@ struct TurnPresentationTests {
             case .error(_, _, _, let final): final ? "error:final" : "error"
             case .steer(_, let text, _, _): "steer:" + text
             case .compaction(let row): "compaction:" + row.title
+            case .question(let row): "question:" + row.question
             }
         }
     }

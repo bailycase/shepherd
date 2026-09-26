@@ -4,18 +4,6 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
-// MARK: Hiding
-
-/// Which of pi's questions the user hid. Only that one stays hidden: the next question pi asks
-/// arrives open.
-struct QuestionHiding: Equatable {
-    private(set) var hiddenKey: String?
-
-    func isHidden(_ key: String?) -> Bool { key != nil && key == hiddenKey }
-    mutating func hide(_ key: String) { hiddenKey = key }
-    mutating func show() { hiddenKey = nil }
-}
-
 // MARK: Dock
 
 /// A question in the composer's place (the question dock): pi's own (select, confirm, input,

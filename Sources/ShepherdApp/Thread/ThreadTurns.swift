@@ -250,6 +250,9 @@ struct AgentTurn: View, Equatable {
             SteeredBubble(text: text, images: images, time: sentAt.map { nativeClockText($0) }, hover: hover)
         case .compaction(let row):
             CompactionItem(row: row)
+        case .question(let row):
+            // Where pi asked, and the answer as the user's bubble.
+            QuestionRecordItem(row: row, hover: hover)
         }
     }
 
@@ -320,6 +323,20 @@ private struct SteeredBubble: View {
         NWUserBubble(text, attachments: Array(repeating: "Image", count: images), timestamp: time, revealed: hover.hovering,
                      origin: .steered)
             .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+}
+
+/// A question pi asked, where it asked, with the answer's time while the turn is hovered, like
+/// every bubble's. It reads the turn's hover itself.
+private struct QuestionRecordItem: View {
+    let row: NativeQuestionRecordRow
+    let hover: MessageHover
+
+    var body: some View {
+        NWQuestionRecord(question: row.question, title: row.title, text: row.text, answered: row.answered,
+                         timestamp: row.caption(), revealed: hover.hovering)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(row.accessibilityLabel)
     }
 }
 

@@ -32,6 +32,7 @@ public struct NWUserBubble: View {
     static let steeredGlyph: CGFloat = 11
 
     let text: String
+    let title: String?
     let attachments: [String]
     let timestamp: String?
     let note: String?
@@ -42,10 +43,12 @@ public struct NWUserBubble: View {
 
     /// `attachments` name the images sent with the message. `timestamp` shows only while
     /// `revealed` (the pointer is over the message); `note` follows it and always shows ("from
-    /// parent").
-    public init(_ text: String, attachments: [String] = [], timestamp: String? = nil, note: String? = nil,
+    /// parent"). `title` leads the bubble in semibold, `text` 4pt under it: an answer to a
+    /// question (the option chosen, then a note).
+    public init(_ text: String, title: String? = nil, attachments: [String] = [], timestamp: String? = nil, note: String? = nil,
                 revealed: Bool = false, origin: Origin = .sent) {
         self.text = text
+        self.title = title
         self.attachments = attachments
         self.timestamp = timestamp
         self.note = note
@@ -72,13 +75,11 @@ public struct NWUserBubble: View {
                         }
                     }
                 }
-                if !text.isEmpty {
-                    Text(text)
-                        .font(.nw(.body, size: proseSize))
-                        .lineSpacing(max(0, NWTextStyle.body.lineSpacing(proseSize) - 1))
-                        .foregroundStyle(nw.textPrimary)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
+                if title != nil || !text.isEmpty {
+                    VStack(alignment: .leading, spacing: NW.Space.xs) {
+                        if let title { line(title, weight: .semibold) }
+                        if !text.isEmpty { line(text, weight: nil) }
+                    }
                 }
             }
             .padding(.vertical, 10)
@@ -92,6 +93,15 @@ public struct NWUserBubble: View {
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .accessibilityElement(children: .combine)
+    }
+
+    private func line(_ value: String, weight: Font.Weight?) -> some View {
+        Text(value)
+            .font(.nw(.body, weight: weight, size: proseSize))
+            .lineSpacing(max(0, NWTextStyle.body.lineSpacing(proseSize) - 1))
+            .foregroundStyle(Color.nw.textPrimary)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     /// "2:41 PM", or "10:58 · from parent": the time (and its separator) fades in place beside a
