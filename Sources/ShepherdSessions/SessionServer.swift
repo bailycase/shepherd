@@ -1495,9 +1495,6 @@ public final class SessionServer: @unchecked Sendable {
         hopToMain { handler(snapshot) }
     }
 
-    /// A remote client reading or changing this host's skills. Looking up, installing and
-    /// checking for updates fetch from git, so every request runs on the skills queue and its
-    /// answer comes back here; a change tells the GUI, whose Skills page follows.
     /// Server queue: one remote design request (`designs.v1`), answered by the server itself
     /// with no GUI hop, through the same mutations the host's canvas uses. Refused while the
     /// Design tool is off here. Files are read and written on the design store's queue.
@@ -1507,6 +1504,11 @@ public final class SessionServer: @unchecked Sendable {
             return
         }
         if case .watch(let designIDs) = request {
+            // Pushes go only to a client that said it reads them.
+            guard client.knowsDesigns else {
+                send(.error(id: id, code: "update_required", message: "This client doesn't read pushed design changes."), to: client)
+                return
+            }
             client.watchedDesigns = Set(designIDs)
             send(.design(id: id, result: .ok), to: client)
             return
@@ -1522,14 +1524,20 @@ public final class SessionServer: @unchecked Sendable {
                 let refusal = RemoteDesignRefusal(error)
                 answer = .error(id: id, code: refusal.code, message: refusal.message)
             }
+            // Encoded here, not on the server queue: a reply carries up to a chunk of file bytes.
+            let payload: Data
+            if let encoded = try? NDJSON.encode(answer), encoded.count - 1 <= NDJSON.maxPayloadBytes {
+                payload = encoded
+            } else if let refusal = try? NDJSON.encode(RemoteReply.error(id: id, code: "too_large",
+                                                                          message: "The answer exceeds the remote payload limit.")) {
+                payload = refusal
+            } else {
+                return
+            }
             self?.queue.async {
                 let client = connection.value
                 guard let self, self.clients[client.fd] === client else { return }
-                guard let encoded = try? NDJSON.encode(answer), encoded.count - 1 <= NDJSON.maxPayloadBytes else {
-                    self.send(.error(id: id, code: "too_large", message: "The answer exceeds the remote payload limit."), to: client)
-                    return
-                }
-                self.send(answer, to: client)
+                self.enqueuePayload(payload, to: client)
             }
         }
     }
@@ -1538,7 +1546,7 @@ public final class SessionServer: @unchecked Sendable {
     /// `revision`), its comments (at `commentsRevision`), or both.
     private func pushDesignChanged(_ designID: DesignID, revision: UInt64?, commentsRevision: UInt64?) {
         guard designsServed else { return }
-        let watchers = clients.values.filter { $0.isRemote && $0.authenticated && $0.watchedDesigns.contains(designID) }
+        let watchers = clients.values.filter { $0.isRemote && $0.authenticated && $0.knowsDesigns && $0.watchedDesigns.contains(designID) }
         guard !watchers.isEmpty,
               let payload = try? NDJSON.encode(RemoteReply.designChanged(designID: designID, revision: revision,
                                                                          commentsRevision: commentsRevision)) else { return }
@@ -1554,6 +1562,9 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// A remote client reading or changing this host's skills. Looking up, installing and
+    /// checking for updates fetch from git, so every request runs on the skills queue and its
+    /// answer comes back here; a change tells the GUI, whose Skills page follows.
     private func remoteSkills(id: Int, request: RemoteSkillsRequest, client: ExtensionConnection) {
         let skillsStore = self.skills
         skillsQueue.async { [weak self] in

@@ -55,6 +55,13 @@ struct RemoteDesignTests {
         }
     }
 
+    /// A raw client that lists `designs.v1`: it reads pushed design changes.
+    private func designClient(_ host: RemoteHost) async throws -> RawRemote {
+        let raw = try await host.raw(authenticated: false)
+        _ = try await raw.hello(token: host.token, capabilities: RemoteProtocol.clientCapabilities)
+        return raw
+    }
+
     private func refusal(_ raw: RawRemote, _ id: Int, _ request: RemoteDesignRequest) async throws -> String? {
         do {
             _ = try await answer(raw, id, request)
@@ -153,7 +160,7 @@ struct RemoteDesignTests {
         defer { host.stop() }
         host.server.setDesignsServed(true)
         let id = try await design(host)
-        let raw = try await host.raw()
+        let raw = try await designClient(host)
         _ = try await answer(raw, 2, .watch(designIDs: [id]))
 
         let written = try await host.server.writeDesignBoard(id, path: Self.board, source: DesignTests.board(root: Self.card, extra: "<i>x</i>"))
@@ -166,6 +173,37 @@ struct RemoteDesignTests {
         try raw.send(.stateFetch(id: 4))
         let after = try await raw.frames { if case .state(4, _) = $0 { true } else { false } }
         #expect(!after.contains { if case .designChanged = $0 { true } else { false } })
+    }
+
+    /// A client that doesn't list `designs.v1` asked for nothing pushed: it can't watch a design,
+    /// and a change to one is never sent to it.
+    @Test func aClientWithoutTheCapabilityIsNeverPushedDesignFrames() async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        host.server.setDesignsServed(true)
+        let id = try await design(host)
+        let older = try await host.raw()
+        let watcher = try await designClient(host)
+        #expect(try await refusal(older, 2, .watch(designIDs: [id])) == "update_required")
+        _ = try await answer(watcher, 2, .watch(designIDs: [id]))
+
+        host.server.setDesignsServed(false)
+        _ = try await watcher.frames { if case .capabilitiesChanged = $0 { true } else { false } }
+        host.server.setDesignsServed(true)
+        _ = try await watcher.frames { if case .capabilitiesChanged = $0 { true } else { false } }
+        _ = try await answer(watcher, 3, .watch(designIDs: [id]))
+        let written = try await host.server.writeDesignBoard(id, path: Self.board, source: DesignTests.board(root: Self.card, extra: "<i>w</i>"))
+        let pushed = try await watcher.frames { if case .designChanged = $0 { true } else { false } }
+        #expect(pushed.last == .designChanged(designID: id, revision: written.revision, commentsRevision: nil))
+
+        try older.send(.stateFetch(id: 4))
+        let seen = try await older.frames { if case .state(4, _) = $0 { true } else { false } }
+        #expect(!seen.contains {
+            switch $0 {
+            case .designChanged, .capabilitiesChanged: true
+            default: false
+            }
+        })
     }
 
     @Test func anUploadDownloadsInPiecesAndResumesWhereItStopped() async throws {
@@ -198,6 +236,8 @@ struct RemoteDesignTests {
         #expect(data == Self.bytes(size))
         #expect(RemoteDesignService.sha256(data) == head.sha256)
         #expect(try await refusal(second, 20, .asset(designID: id, blobID: "3f2a91c0", offset: size + 1)) == "invalid_offset")
+        #expect(try await refusal(second, 21, .asset(designID: id, blobID: "3f2a91c0", offset: -1)) == "invalid_offset")
+        #expect(try await refusal(second, 22, .asset(designID: id, blobID: "3f2a91c0", offset: .max)) == "invalid_offset")
     }
 
     @Test func aFileTooLargeForOneReplyIsListedAndFetchedInPieces() async throws {
@@ -221,6 +261,7 @@ struct RemoteDesignTests {
             Issue.record("expected chunks"); return
         }
         #expect(head.data + tail.data == font && tail.isLast)
+        #expect(try await refusal(raw, 6, .file(designID: id, path: listed.path, sha256: listed.sha256, offset: font.count + 1)) == "invalid_offset")
         // Its hash moved: the client reads the design again instead of mixing two versions.
         try Data("changed".utf8).write(to: folder.appendingPathComponent("styles/Inter.woff2"))
         #expect(try await refusal(raw, 5, .file(designID: id, path: listed.path, sha256: listed.sha256, offset: head.data.count))
@@ -265,10 +306,18 @@ struct RemoteDesignTests {
         let secret = host.host.dir.appendingPathComponent("secret.txt")
         try Data("secret".utf8).write(to: secret)
         try FileManager.default.createSymbolicLink(at: folder.appendingPathComponent("project/leak.css"), withDestinationURL: secret)
+        // So is a linked folder, and a linked upload.
+        let outside = host.host.dir.appendingPathComponent("outside", isDirectory: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        try Data("secret".utf8).write(to: outside.appendingPathComponent("theme.css"))
+        try FileManager.default.createSymbolicLink(at: folder.appendingPathComponent("project/linked"), withDestinationURL: outside)
+        let assets = folder.appendingPathComponent("assets", isDirectory: true)
+        try FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: assets.appendingPathComponent("abc123.png"), withDestinationURL: secret)
         let raw = try await host.raw()
 
         guard case .index(let index) = try await answer(raw, 2, .index(designID: id)) else { Issue.record("expected an index"); return }
-        #expect(!index.files.contains { $0.path == "leak.css" })
+        #expect(Set(index.files.map(\.path)) == ["A.dc.html", "styles/app.css"], "no linked file or folder")
         guard case .files(let files) = try await answer(raw, 3, .boards(designID: id,
                                                                        paths: ["../comments.json", "leak.css", "canvas.json", "../../state.json"],
                                                                        knownShas: [:])) else {
@@ -279,6 +328,12 @@ struct RemoteDesignTests {
         #expect(try await refusal(raw, 4, .file(designID: id, path: "../revision", sha256: "", offset: 0)) == "invalid_path")
         #expect(try await refusal(raw, 5, .file(designID: id, path: "leak.css", sha256: "", offset: 0)) == RemoteDesignCode.noSuchFile)
         #expect(try await refusal(raw, 6, .asset(designID: id, blobID: "../../state", offset: 0)) == "invalid_path")
+        #expect(try await refusal(raw, 12, .file(designID: id, path: "linked/theme.css", sha256: "", offset: 0)) == RemoteDesignCode.noSuchFile)
+        #expect(try await refusal(raw, 13, .asset(designID: id, blobID: "abc123", offset: 0)) == RemoteDesignCode.noSuchFile)
+        guard case .files(let linked) = try await answer(raw, 14, .boards(designID: id, paths: ["linked/theme.css"], knownShas: [:])) else {
+            Issue.record("expected files"); return
+        }
+        #expect(linked.changed.isEmpty && linked.missing == ["linked/theme.css"])
 
         // Writes go through the host's checks: a path outside the design, a board the lint
         // refuses, a stale base.
@@ -321,7 +376,7 @@ struct RemoteDesignTests {
         let pi = try await PiAgent.launch(on: host.host)
         let id = try await design(host, agentID: pi.agent.id, space: pi.agent.spaceID)
         _ = try await pi.ready()
-        let raw = try await host.raw()
+        let raw = try await designClient(host)
         _ = try await answer(raw, 2, .watch(designIDs: [id]))
 
         let draft = DesignCommentDraft(board: Self.board, tid: 4, path: [1, 1], label: "the client's words", target: "Checkout funnel",
