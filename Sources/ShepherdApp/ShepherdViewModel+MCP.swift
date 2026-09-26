@@ -29,7 +29,11 @@ extension ShepherdViewModel {
             }
         }
         server.onMCPReport = { [weak self] agentID, report in
-            MainActor.assumeIsolated { self?.mcp.receive(report, from: agentID) }
+            MainActor.assumeIsolated {
+                // A report that lands after its agent went would never be dropped.
+                guard let self, self.state.agents.contains(where: { $0.id == agentID }) else { return }
+                self.mcp.receive(report, from: agentID)
+            }
         }
         mcp.onNeedsSignIn = { [weak self] name in
             guard let self, self.settings.mcpOpenSignInPages, self.mcp.signIn == nil else { return }
