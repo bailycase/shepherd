@@ -3680,9 +3680,10 @@ AGENTS.md." (file names in mono; see the departures).
 
   The open file's step is marked: a `lanternText` line on `lanternTint` (step 2 for `AGENTS.md`,
   step 5 for `APPEND_SYSTEM.md`, whose note then leads with "this file · " instead). Under the
-  steps, a 12/1.5 `textTertiary` note: "Later files win. pi's own files in ~/.pi/agent still load,
-  each just before Shepherd's. A session reads them when it starts: running agents keep the
-  version they started with, new agents and automations get this one."
+  steps, a 12/1.5 `textTertiary` note: "Later files win. pi's own files in Shepherd's pi home
+  still load, each just before Shepherd's. A session reads them when it starts: running agents
+  keep the version they started with, new agents and automations get this one." (Shepherd's pi
+  home, not the user's `~/.pi/agent`: agents run Shepherd's own pi, docs/pi-home.md.)
 - **Where it writes:** This Mac's files are the server's `InstructionsStore` (`AGENTS.md`,
   `APPEND_SYSTEM.md` and `history.json` in `instructions/`); a remote host's are its own store,
   read and saved over the remote protocol (`instructions.v1`: fetch, save, restore). A host that is
