@@ -252,13 +252,14 @@ extension ShepherdViewModel {
             // agent's opening prompt, whether that prompt came from the sheet
             // or was typed into the TUI afterwards (⌘N). With auto-naming off
             // the provisional name is what the agent keeps, so it is final.
-            nameIsFinal: !settings.autoNameAgents,
+            nameIsFinal: !settings.autoNameAgents || config.designID != nil,
             piSessionID: config.piSessionID,
             worktreeBranch: config.worktreeBranch,
             worktreeBase: config.worktreeBase,
             worktreePath: config.worktreePath,
             // A new agent leads Recents.
-            lastActiveAt: SessionServer.nowMilliseconds()
+            lastActiveAt: SessionServer.nowMilliseconds(),
+            designID: config.designID
         )
 
         // Reserve before addAgent broadcasts: the broadcast mounts the new

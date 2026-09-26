@@ -42,7 +42,8 @@ private struct SidebarDestinations: View {
     var body: some View {
         let rows = SidebarDerivation.destinations(shown: vm.shownDestination, moreOpen: vm.moreOpen,
                                                   offlineHosts: vm.offlineHostCount,
-                                                  newThreadChord: vm.keybindings.display(.newAgent))
+                                                  newThreadChord: vm.keybindings.display(.newAgent),
+                                                  designs: vm.designToolEnabled)
         VStack(alignment: .leading, spacing: NWSidebarMetrics.rowSpacing) {
             ForEach(rows) { row in
                 NWSidebarDestination(row.title, icon: row.icon, selected: row.selected, child: row.child, trailing: row.trailing) {
@@ -194,6 +195,9 @@ private struct SidebarRowMenu: View {
                     Button("Delete Agent", role: .destructive) { vm.deleteAgent(id) }
                 }
             }
+        case .design:
+            // The design row's menu is not drawn on any board yet.
+            EmptyView()
         case .remote(let ref):
             if row.offline {
                 // Every action goes through the host, which is not connected.
