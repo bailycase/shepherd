@@ -450,7 +450,8 @@ extension ShepherdState {
     }
 
     /// The workspace as a remote client gets it: without its designs, the agents that draw them,
-    /// or their layouts. No client has a design screen yet, so any of it would show as a thread.
+    /// or their layouts: for a client with no design screen for them, where any of it would show as
+    /// a thread (`designs.v1` clients of a host serving designs get them).
     public var withoutDesigns: ShepherdState {
         guard !designs.isEmpty else { return self }
         var state = self

@@ -7,7 +7,8 @@ import ShepherdTestSupport
 
 /// A design's agent is no thread (docs/designs.md › Design agents and ordinary threads). The
 /// server refuses every peer request from or to one, even over a panes connection an older
-/// installed extension opened, and sends remote clients neither designs nor their agents.
+/// installed extension opened, and sends remote clients neither designs nor their agents unless
+/// they read designs (`designs.v1`) while the host serves them.
 @Suite("Design isolation", .integrationTimeLimit)
 struct DesignIsolationTests {
     /// A thread, and a design drawn by its own agent.
@@ -112,5 +113,42 @@ struct DesignIsolationTests {
             #expect(pushed.designs.isEmpty)
         }
         #expect(r.server.state.agents.count == 2, "the host keeps its design's agent")
+    }
+
+    /// A client that reads designs gets them, with the agents that draw them, only while the
+    /// host serves designs; the experiment turning off sends it the threads alone.
+    @Test func aClientThatReadsDesignsIsSentThemOnlyWhileTheHostServesThem() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let (thread, drawer, design) = try await workspace(r.host)
+        let client = try await r.raw(authenticated: false)
+        _ = try await client.hello(token: r.token, capabilities: RemoteProtocol.clientCapabilities)
+        let other = try await r.raw()
+
+        func fetch(_ raw: RawRemote, _ id: Int) async throws -> ShepherdState? {
+            try raw.send(.stateFetch(id: id))
+            let frames = try await raw.frames { if case .state(id, _) = $0 { true } else { false } }
+            if case .state(_, let state)? = frames.last { return state }
+            return nil
+        }
+
+        #expect(try await fetch(client, 2)?.agents.map(\.id) == [thread.id], "served nothing while the experiment is off")
+
+        r.server.setDesignsServed(true)
+        let on = try await client.frames { if case .stateChanged(let state) = $0 { !state.designs.isEmpty } else { false } }
+        guard case .stateChanged(let pushed)? = on.last else { Issue.record("expected a state with designs"); return }
+        #expect(pushed.designs.map(\.id) == [design])
+        #expect(pushed.agents.map(\.id) == [thread.id, drawer.id])
+        #expect(pushed.tabs.contains { $0.id == drawer.tabID })
+        #expect(try await fetch(client, 3)?.designs.map(\.id) == [design])
+        let fetched = try await fetch(other, 4)
+        #expect(fetched?.agents.map(\.id) == [thread.id] && fetched?.designs.isEmpty == true,
+                "a client that doesn't read designs is sent none while they are served")
+
+        r.server.setDesignsServed(false)
+        let off = try await client.frames { if case .stateChanged(let state) = $0 { state.designs.isEmpty } else { false } }
+        guard case .stateChanged(let after)? = off.last else { Issue.record("expected a state without designs"); return }
+        #expect(after.agents.map(\.id) == [thread.id])
+        #expect(!after.tabs.contains { $0.id == drawer.tabID })
     }
 }
