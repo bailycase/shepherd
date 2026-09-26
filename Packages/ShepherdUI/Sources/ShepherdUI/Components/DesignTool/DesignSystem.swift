@@ -105,11 +105,12 @@ public struct NWTokenSwatch: View {
                 .foregroundStyle(Color.nw.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.middle)
+            // The value leads and stays whole; where it came from gives way first.
             Text(detail)
                 .font(.nwMono(NWDesignMetrics.tokenSwatchDetailSize))
                 .foregroundStyle(Color.nw.textTertiary)
                 .lineLimit(1)
-                .truncationMode(.middle)
+                .truncationMode(.tail)
         }
         .help("\(name) \(detail)")
         .accessibilityElement(children: .ignore)
