@@ -3000,24 +3000,28 @@ splits.
 - **Maximized** (⇧⌘↩, or the strip's Maximize): the panel takes the layout and the thread folds away
   at its size, still mounted (its draft, scroll and stream stay). Restore (the same button, or ⇧⌘↩)
   brings it and its composer back, and so does hiding the panel. The divider doesn't drag while
-  maximized. **Not built yet:** the folded thread keeps one line above the strip (TerminalPanel ·
-  maximized: "The thread folds to one line. Its composer comes back when you restore"): 40pt on
-  `bgWindow` with a `lineSubtle` hairline under it, 14pt leading and 10pt trailing padding and 10pt
-  gaps, holding the thread's title in Geist 12.5 semibold, its `NWStatusPill` ("Idle"), and at the
-  trailing end a 24pt "Show the thread" icon button (`chevron.down`, `textSecondary`) that restores.
+  maximized. The folded thread keeps one line above the strip (`NWTerminalFoldedThread`;
+  TerminalPanel · maximized: "The thread folds to one line. Its composer comes back when you
+  restore"): 40pt on `bgWindow` with a `lineSubtle` hairline under it, 14pt leading and 10pt
+  trailing padding and 10pt gaps, holding the thread's title in Geist 12.5 semibold, its
+  `NWStatusPill` ("Idle"), and at the trailing end a 24pt "Show the thread" icon button
+  (`chevron.down`, `textSecondary`, its tooltip with ⇧⌘↩) that restores. Only a maximized layout
+  reads its agent's state, so a status report reruns no other layout.
 - **Nothing remounts:** every pane is placed whether it shows or not (a hidden tab or panel keeps
   its size, so its grid never changes), hidden ones are `opacity(0)` and stop rendering. ⌥⌘←/→
   move only among the panes on screen. A remote agent's panel mounts only its shown panes, so a
   hidden remote terminal is detached and never counts toward the host's smallest-viewer size.
 - **A layout with no thread** (a host's utility terminal) keeps the plain split tree.
 - **Split panes** (TerminalPane): a tab's panes sit side by side (Split right) or stacked, with 1pt
-  `lineStrong` dividers. **Not built yet:** in a tab of more than one pane, each
-  pane has a 26pt header on the terminal's surface with a `lineSubtle` hairline under it, 10pt side
-  padding and 6pt gaps: the 11pt terminal glyph, the pane's running command or program in Geist Mono
-  11, and at the trailing end its host (`desktopcomputer` at 10pt and the host's name, 3pt apart).
-  The focused pane's glyph, title and host name are `textPrimary` (its host glyph stays
-  `textTertiary`); the others' header is `textTertiary`. A tab of one pane has no header
-  (TerminalSplit): the tab names it.
+  `lineStrong` dividers. In a tab of more than one pane, each pane has a 26pt header
+  (`NWTerminalPaneHeader`) on the terminal's surface with a `lineSubtle` hairline under it, 10pt
+  side padding and 6pt gaps: the 11pt terminal glyph, the pane's running command or program in
+  Geist Mono 11 (the tab's title rule, per pane), and at the trailing end a remote pane's host
+  (`desktopcomputer` at 10pt and the host's name, 3pt apart; a pane on this Mac names none, as its
+  tab doesn't). The focused pane's glyph, title and host name are `textPrimary` (its host glyph
+  stays `textTertiary`); the others' header is `textTertiary`. Clicking a header focuses its pane.
+  The header takes its height from the pane, so every pane of a tab keeps its grid whether its tab
+  shows or not. A tab of one pane has no header (TerminalSplit): the tab names it.
 - **Send output to the agent** (TerminalPane; TerminalStates: "anything you select can go to the agent"). **Not
   built yet.** Selecting text in a terminal shows a floating bar beside the selection: `bgRaised`
   with a 1px `lineStrong` border, radius 9 on the board, 4pt padding and 4pt gaps, and the popover's

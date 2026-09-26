@@ -95,6 +95,47 @@ struct TerminalPanelDivider: View {
     }
 }
 
+/// The chrome a panel draws over its panes' places: the thread folded to one line while the
+/// panel is maximized (TerminalStates), and each shown pane's header in a tab of several panes
+/// (TerminalPane), naming what it runs. Its own view, so the activity it reads re-renders it
+/// and not the layout around it.
+struct TerminalPanelChrome: View {
+    var vm: ShepherdViewModel
+    let key: TerminalPanelKey
+    let geometry: TerminalPanelGeometry
+    let focused: PaneID?
+    /// A remote layout's host, named in each pane's header.
+    let host: String?
+    /// The thread's title and state, for its folded line.
+    let threadTitle: String
+    let threadState: AgentState
+    let focus: (PaneID) -> Void
+
+    var body: some View {
+        let rows = vm.terminalPanels.activity[key] ?? [:]
+        ZStack(alignment: .topLeading) {
+            if let fold = geometry.fold {
+                NWTerminalFoldedThread(title: threadTitle, state: threadState,
+                                       restoreShortcut: KeybindingsStore.shared.display(.maximizeTerminal)) { [vm] in
+                    vm.toggleTerminalMaximized()
+                }
+                .frame(width: fold.width, height: fold.height)
+                .offset(x: fold.minX, y: fold.minY)
+            }
+            ForEach(geometry.leaves.filter { $0.shown && $0.header != nil }, id: \.pane.id) { leaf in
+                if let header = leaf.header {
+                    NWTerminalPaneHeader(title: TerminalPanels.title(row: rows[leaf.pane.id], pane: leaf.pane), host: host,
+                                         isFocused: leaf.pane.id == focused)
+                        .contentShape(Rectangle())
+                        .onTapGesture { focus(leaf.pane.id) }
+                        .frame(width: header.width, height: header.height)
+                        .offset(x: header.minX, y: header.minY)
+                }
+            }
+        }
+    }
+}
+
 /// A panel with no terminals yet.
 struct TerminalPanelEmpty: View {
     var vm: ShepherdViewModel
