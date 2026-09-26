@@ -127,6 +127,10 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// `design-systems/<namespace>/` (only by the agent of the design that built it), and with
     /// `install` copied into the agent's design. Answered with `designSystemWritten`.
     case designSystemWrite(id: Int, agentID: AgentID, designID: DesignID, system: DesignSystemWrite)
+    /// `markup_propose`: the comments the design agent proposes from the viewer's Pencil markup,
+    /// each on an element (a view record's id) the host checks against the board's source.
+    /// `call` is the tool call's id, which names each proposal. Answered with `designProposals`.
+    case designProposeComments(id: Int, agentID: AgentID, designID: DesignID, call: String, proposals: [DesignMarkupProposal])
 
     private enum CodingKeys: String, CodingKey {
         case type, id, agentID, status, name, piSessionID, children
@@ -137,6 +141,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case line, reason, file
         case designID, path, source, baseRevision, changes, commentID
         case namespace, system
+        case call, proposals
     }
 
     private enum Kind: String, Codable {
@@ -148,7 +153,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case listAgents, sendToAgent, spawnAgent, coordinateAgent, agentResponse, cancelAgentRequest
         case suggestInstruction
         case designRead, designWriteBoard, designUpdateIndex, designComments, designCommentReply
-        case designSystemRead, designSystemWrite
+        case designSystemRead, designSystemWrite, designProposeComments
     }
 
     public init(from decoder: Decoder) throws {
@@ -342,6 +347,14 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                 id: try c.decode(Int.self, forKey: .id),
                 agentID: try c.decode(AgentID.self, forKey: .agentID),
                 designID: try c.decode(DesignID.self, forKey: .designID)
+            )
+        case .designProposeComments:
+            self = .designProposeComments(
+                id: try c.decode(Int.self, forKey: .id),
+                agentID: try c.decode(AgentID.self, forKey: .agentID),
+                designID: try c.decode(DesignID.self, forKey: .designID),
+                call: try c.decode(String.self, forKey: .call),
+                proposals: try c.decode([DesignMarkupProposal].self, forKey: .proposals)
             )
         case .designCommentReply:
             self = .designCommentReply(
@@ -537,6 +550,13 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(id, forKey: .id)
             try c.encode(agentID, forKey: .agentID)
             try c.encode(designID, forKey: .designID)
+        case .designProposeComments(let id, let agentID, let designID, let call, let proposals):
+            try c.encode(Kind.designProposeComments, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(designID, forKey: .designID)
+            try c.encode(call, forKey: .call)
+            try c.encode(proposals, forKey: .proposals)
         case .designCommentReply(let id, let agentID, let designID, let commentID, let text):
             try c.encode(Kind.designCommentReply, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -904,6 +924,9 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     case designSystem(id: Int, system: DesignSystemRead)
     /// What a `designSystemWrite` left behind.
     case designSystemWritten(id: Int, result: DesignSystemWriteResult)
+    /// A `designProposeComments`: each proposal as the chat offers it, a comment draft the host
+    /// checked, named `<call>#<n>`.
+    case designProposals(id: Int, proposals: [DesignCommentDraft])
 
     private enum CodingKeys: String, CodingKey {
         case requestID, targetAgentID, request, result
@@ -913,6 +936,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case snapshot, board
         case comments, comment
         case listing, system
+        case proposals
     }
 
     private enum Kind: String, Codable {
@@ -920,7 +944,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case ok, error, panes, paneOpened, paneContent, reviewResult, automations, agents, message
         case suggestion
         case design, designBoard, designWritten, designComments, designComment
-        case designSystems, designSystem, designSystemWritten
+        case designSystems, designSystem, designSystemWritten, designProposals
     }
 
     public init(from decoder: Decoder) throws {
@@ -1019,6 +1043,11 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             self = .designComment(
                 id: try c.decode(Int.self, forKey: .id),
                 comment: try c.decode(DesignComment.self, forKey: .comment)
+            )
+        case .designProposals:
+            self = .designProposals(
+                id: try c.decode(Int.self, forKey: .id),
+                proposals: try c.decode([DesignCommentDraft].self, forKey: .proposals)
             )
         case .designSystems:
             self = .designSystems(
@@ -1119,6 +1148,10 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             try c.encode(Kind.designComment, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(comment, forKey: .comment)
+        case .designProposals(let id, let proposals):
+            try c.encode(Kind.designProposals, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(proposals, forKey: .proposals)
         case .designSystems(let id, let listing):
             try c.encode(Kind.designSystems, forKey: .type)
             try c.encode(id, forKey: .id)

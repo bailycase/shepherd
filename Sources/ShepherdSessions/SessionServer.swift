@@ -472,10 +472,13 @@ public final class SessionServer: @unchecked Sendable {
     /// The host's Design tool experiment is on: it serves `designs.v1`. Server queue.
     private var designsServed = false
 
-    /// What this host tells a remote client it can do now: `designs.v1` only while it serves
-    /// designs. Server queue.
+    /// What this host tells a remote client it can do now: `designs.v1` (and Pencil markup with
+    /// it) only while it serves designs. Server queue.
     private var offeredCapabilities: [String] {
-        designsServed ? advertisedCapabilities : advertisedCapabilities.filter { $0 != RemoteProtocol.designsCapability }
+        let designs = advertisedCapabilities.contains(RemoteProtocol.designsCapability)
+        return designsServed && designs ? advertisedCapabilities : advertisedCapabilities.filter {
+            $0 != RemoteProtocol.designsCapability && $0 != RemoteProtocol.designMarkupCapability
+        }
     }
     /// Which agent's own pane runs each session, for the store version it was built from.
     private var sessionAgents: (version: UInt64, agents: [SessionID: AgentID])?
@@ -1586,6 +1589,10 @@ public final class SessionServer: @unchecked Sendable {
             send(.error(id: id, code: RemoteDesignCode.off, message: "The Design tool is off on this host."), to: client)
             return
         }
+        if let needed = request.capability, !advertisedCapabilities.contains(needed) {
+            send(.error(id: id, code: "unsupported", message: "This host doesn't take that design request."), to: client)
+            return
+        }
         if case .watch(let designIDs) = request {
             // Pushes go only to a client that said it reads them.
             guard client.knowsDesigns else {
@@ -2172,6 +2179,10 @@ public final class SessionServer: @unchecked Sendable {
             designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client) { server, _ in
                 .designSystemWritten(id: id, result: try await server.writeDesignSystem(system, for: designID))
             }
+        case .designProposeComments(let id, let agentID, let designID, let call, let proposals):
+            designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client) { server, _ in
+                .designProposals(id: id, proposals: try await server.proposeDesignComments(designID, call: call, proposals: proposals))
+            }
         }
     }
 
@@ -2464,7 +2475,8 @@ public final class SessionServer: @unchecked Sendable {
              .designComment(let id, _),
              .designSystems(let id, _),
              .designSystem(let id, _),
-             .designSystemWritten(let id, _):
+             .designSystemWritten(let id, _),
+             .designProposals(let id, _):
             return id
         }
     }
@@ -3378,8 +3390,57 @@ public final class SessionServer: @unchecked Sendable {
         return comment
     }
 
-    /// Hands a comment (or a reply under one) to the design's agent as its own queued turn: the
-    /// fence, then the viewer's words, going to pi alone. Why it couldn't, or nil.
+    /// What keeping the design agent's proposals left behind: the comments (each proposal once),
+    /// and why any that were to go didn't reach the agent.
+    public struct DesignProposalsOutcome: Sendable {
+        public var comments: [DesignComment]
+        public var undelivered: String?
+    }
+
+    /// Keeps the design agent's proposals from the viewer's markup as comments, all at once at
+    /// the comments' `baseRevision`, each checked as a comment the viewer pins is. A proposal
+    /// the design already keeps a comment for isn't kept again. With `deliver` ("Apply both")
+    /// each new comment goes to the agent as a comment does, a turn of its own; without it
+    /// ("Keep as comments") they stay on the canvas.
+    public func addProposedDesignComments(_ designID: DesignID, drafts: [DesignCommentDraft], deliver: Bool,
+                                          baseRevision: UInt64? = nil) async throws -> DesignProposalsOutcome {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        let kept = try await designs.addComments(designID, drafts: drafts, baseRevision: baseRevision, at: Self.nowMilliseconds())
+        if !kept.added.isEmpty { await designCommentsChanged(designID) }
+        guard deliver else { return DesignProposalsOutcome(comments: kept.comments) }
+        var undelivered: String?
+        for comment in kept.comments where kept.added.contains(comment.id) {
+            if let why = await deliverDesignComment(designID, id: comment.id, text: comment.text, fence: DesignCommentFence(comment).fenced()) {
+                undelivered = why
+                break
+            }
+        }
+        return DesignProposalsOutcome(comments: kept.comments, undelivered: undelivered)
+    }
+
+    // MARK: - Pencil markup
+
+    /// Hands the viewer's Pencil markup to the design's agent as a turn of its own through the
+    /// host queue, never into the turn pi is working on: the record, checked against its grammar
+    /// and the design (`DesignStore.checkMarkup`: boards on the canvas, elements their sources
+    /// have now, labels read from them), fenced as data (`DesignMarkupFence`), then a line saying
+    /// what it is. Nothing is kept: why it couldn't reach the agent, or nil.
+    public func sendDesignMarkup(_ designID: DesignID, markup: DesignMarkup) async throws -> String? {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        let checked = try await designs.checkMarkup(designID, markup)
+        return await deliverDesignComment(designID, id: UUID(), text: checked.message, fence: DesignMarkupFence.fenced(checked))
+    }
+
+    /// The design agent's proposals from the markup (`markup_propose`), checked against the
+    /// design's boards, for the chat to offer: the tool's result carries them.
+    public func proposeDesignComments(_ designID: DesignID, call: String,
+                                      proposals: [DesignMarkupProposal]) async throws -> [DesignCommentDraft] {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        return try await designs.resolveProposals(designID, call: call, proposals)
+    }
+
+    /// Hands a comment (or a reply under one, or Pencil markup) to the design's agent as its own
+    /// queued turn: the fence, then the viewer's words, going to pi alone. Why it couldn't, or nil.
     private func deliverDesignComment(_ designID: DesignID, id: UUID, text: String, fence: String) async -> String? {
         await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
             queue.async {

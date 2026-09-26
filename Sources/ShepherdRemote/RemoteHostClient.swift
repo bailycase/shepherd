@@ -611,6 +611,9 @@ public final class RemoteHostClient: @unchecked Sendable {
         guard capabilities.contains(RemoteProtocol.designsCapability) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: Self.designsRefusal)
         }
+        if let needed = request.capability, !capabilities.contains(needed) {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to send it Pencil markup.")
+        }
         if Self.overFrame(.design(id: 0, request: request)) {
             throw RemoteHostClientError.rejected(code: "too_large", message: "The change exceeds the remote payload limit.")
         }

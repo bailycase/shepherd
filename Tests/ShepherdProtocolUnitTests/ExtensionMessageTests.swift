@@ -21,11 +21,11 @@ struct ExtensionMessageTests {
              .coordinateAgent, .agentResponse, .cancelAgentRequest, .createAutomation, .listAutomations,
              .updateAutomation, .deleteAutomation, .startAutomation, .stopAutomation, .suggestInstruction,
              .designRead, .designWriteBoard, .designUpdateIndex, .designComments, .designCommentReply,
-             .designSystemRead, .designSystemWrite:
+             .designSystemRead, .designSystemWrite, .designProposeComments:
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 35
+    static let caseCount = 36
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
@@ -82,6 +82,9 @@ struct ExtensionMessageTests {
                                                         "source": .object(["file": .string("web/static/tokens.css"), "line": .number(8)])])])]),
             files: ["README.md": .string("# acme-web\n"), "components/old.html": .null],
             sources: ["web/static/tokens.css"], install: true, baseRevision: 2)),
+        .designProposeComments(id: 28, agentID: agent, designID: design, call: "toolu_01",
+                               proposals: [DesignMarkupProposal(element: "A-phone.dc.html#31:1/1/2", text: "Thicker bars on phone."),
+                                           DesignMarkupProposal(element: "not an id", text: "Counts “here” too?")]),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -168,6 +171,11 @@ struct ExtensionMessageTests {
          .designSystemRead(id: 9, agentID: agent, designID: design, namespace: "Acme Web")),
         (#"{"type":"designSystemWrite","system":{"namespace":"night-watch","install":true},"id":10,"agentID":"a1","designID":"d1"}"#,
          .designSystemWrite(id: 10, agentID: agent, designID: design, system: DesignSystemWrite(namespace: "night-watch", install: true))),
+        // markup_propose's frame; an element that isn't an id still decodes, so the server can answer it.
+        (#"{"type":"designProposeComments","call":"call-7","proposals":[{"element":"A.dc.html#18:1/1/1","text":"Counts too"},{"element":"?","text":"x"}],"id":11,"agentID":"a1","designID":"d1"}"#,
+         .designProposeComments(id: 11, agentID: agent, designID: design, call: "call-7",
+                                proposals: [DesignMarkupProposal(element: "A.dc.html#18:1/1/1", text: "Counts too"),
+                                            DesignMarkupProposal(element: "?", text: "x")])),
     ]
 
     @Test(arguments: handWritten)
@@ -209,11 +217,11 @@ struct ExtensionReplyTests {
         switch reply {
         case .childCommand, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .automations,
              .agents, .message, .agentRequest, .agentResult, .suggestion, .design, .designBoard, .designWritten,
-             .designComments, .designComment, .designSystems, .designSystem, .designSystemWritten:
+             .designComments, .designComment, .designSystems, .designSystem, .designSystemWritten, .designProposals:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 21
+    static let caseCount = 22
     static let system = DesignSystemSummary(
         info: DesignSystemInfo(namespace: "acme-web", title: "acme-web", revision: 3, createdAt: 1_000, updatedAt: 2_000,
                                syncedAt: 2_000, ownerDesignID: DesignID(rawValue: "d1"), spaceID: SpaceID(rawValue: "s1"),
@@ -282,7 +290,11 @@ struct ExtensionReplyTests {
         .designSystemWritten(id: 28, result: DesignSystemWriteResult(
             summary: system, changed: true, installed: DesignWriteResult(revision: 9, changed: true, title: "Checkout", boardCount: 4),
             notes: ["tokens.css is the one you wrote"])),
+        .designProposals(id: 29, proposals: [proposal]),
     ]
+
+    static let proposal = DesignCommentDraft(board: DesignPath("A-phone.dc.html")!, tid: 31, path: [1, 1, 2], label: "Steps Cart viewed",
+                                             target: "Steps list", text: "Thicker bars on phone.", proposal: "toolu_01#0")
 
     @Test func samplesCoverEveryCase() {
         #expect(Set(Self.samples.map(Self.caseName)).count == Self.caseCount)
@@ -361,8 +373,19 @@ struct ExtensionReplyTests {
         #expect((one["comment"] as? [String: Any])?["number"] as? Int == 1)
     }
 
+    /// What `markup_propose` reads and hands the chat: each proposal's board by path, the
+    /// element's halves, its names, words and proposal id.
+    @Test func proposalRepliesCarryTheShapeTheExtensionReads() throws {
+        let object = try Wire.object(ExtensionReply.designProposals(id: 3, proposals: [Self.proposal]))
+        let first = try #require((object["proposals"] as? [[String: Any]])?.first)
+        #expect(first["board"] as? String == "A-phone.dc.html" && first["tid"] as? Int == 31 && first["path"] as? [Int] == [1, 1, 2])
+        #expect(first["target"] as? String == "Steps list" && first["text"] as? String == "Thicker bars on phone.")
+        #expect(first["proposal"] as? String == "toolu_01#0")
+    }
+
     @Test func emptyCollectionsRoundTrip() throws {
-        for reply in [ExtensionReply.agents(id: 2, agents: []), .automations(id: 2, automations: []), .panes(id: 2, panes: [])] {
+        for reply in [ExtensionReply.agents(id: 2, agents: []), .automations(id: 2, automations: []), .panes(id: 2, panes: []),
+                      .designProposals(id: 2, proposals: [])] {
             #expect(try Wire.roundTrip(reply) == reply)
         }
     }

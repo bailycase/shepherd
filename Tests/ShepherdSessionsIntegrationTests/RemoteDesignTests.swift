@@ -108,6 +108,52 @@ struct RemoteDesignTests {
         #expect(try await refusal(raw, 2, .list) == RemoteDesignCode.off)
     }
 
+    // MARK: Pencil markup
+
+    /// Markup and the agent's proposals go through the host's own checks: a client that sends
+    /// markup the design can't hold is refused, and one the host doesn't offer markup to is too.
+    @Test func markupAndItsProposalsGoThroughTheHostsChecks() async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        host.server.setDesignsServed(true)
+        let id = try await design(host)
+        let raw = try await designClient(host)
+        let card = DesignElementID(board: "A.dc.html", tid: 2, path: [1])!
+
+        let markup = DesignMarkup(strokes: [DesignMarkupStroke(kind: .circle, board: "A.dc.html", element: card, note: "bigger")])
+        guard case .markupSent(let undelivered) = try await answer(raw, 2, .sendMarkup(designID: id, markup: markup)) else {
+            Issue.record("expected markupSent"); return
+        }
+        #expect(undelivered == "The design has no agent.")
+        let nowhere = DesignMarkup(strokes: [DesignMarkupStroke(kind: .mark, board: "Gone.dc.html")])
+        #expect(try await refusal(raw, 3, .sendMarkup(designID: id, markup: nowhere)) == RemoteDesignCode.invalidMarkup)
+
+        let draft = DesignCommentDraft(board: Self.board, tid: 2, path: [1], target: "Checkout funnel", text: "Bigger.", proposal: "c#0")
+        guard case .proposedCommentsAdded(let kept, nil) = try await answer(raw, 4, .addProposedComments(designID: id, drafts: [draft],
+                                                                                                          deliver: false, baseRevision: 0)) else {
+            Issue.record("expected proposedCommentsAdded"); return
+        }
+        #expect(kept.map(\.proposal) == ["c#0"] && kept.map(\.number) == [1])
+        #expect(try await refusal(raw, 5, .addProposedComments(designID: id, drafts: [draft], deliver: false, baseRevision: 0))
+            == "stale_revision")
+    }
+
+    @Test func aHostThatDoesntOfferMarkupRefusesItAndOffersItOnlyWithDesigns() async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        let off = try await host.raw(authenticated: false)
+        #expect(try await off.hello(token: host.token, capabilities: RemoteProtocol.clientCapabilities)
+            .contains(RemoteProtocol.designMarkupCapability) == false, "not while the Design tool is off")
+
+        host.server.advertisedCapabilities = RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.designMarkupCapability }
+        host.server.setDesignsServed(true)
+        let id = try await design(host)
+        let raw = try await designClient(host)
+        let markup = DesignMarkup(strokes: [DesignMarkupStroke(kind: .mark, board: "A.dc.html")])
+        #expect(try await refusal(raw, 2, .sendMarkup(designID: id, markup: markup)) == "unsupported")
+        #expect(try await refusal(raw, 3, .list) == nil, "the rest of designs.v1 still serves")
+    }
+
     // MARK: Files
 
     @Test func boardsComeByHashAndOnlyChangedFilesTravel() async throws {

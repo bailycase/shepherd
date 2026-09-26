@@ -79,10 +79,14 @@ public struct DesignComment: Codable, Hashable, Sendable, Identifiable {
     /// A rewrite left nothing the comment could be found on ("element changed"): its board and
     /// element are where it was.
     public var detached: Bool
+    /// The design agent's proposal from the viewer's markup it was made from
+    /// (`DesignMarkupProposals.proposalID`); nil for a comment the viewer wrote.
+    public var proposal: String?
 
     public init(id: UUID = UUID(), number: Int, board: DesignPath, tid: Int, path: [Int], label: String? = nil,
                 target: String? = nil, rect: DesignCommentRect? = nil, text: String, author: DesignCommentAuthor = .user,
-                createdAt: Double, replies: [DesignCommentReply] = [], resolvedAt: Double? = nil, detached: Bool = false) {
+                createdAt: Double, replies: [DesignCommentReply] = [], resolvedAt: Double? = nil, detached: Bool = false,
+                proposal: String? = nil) {
         self.id = id
         self.number = number
         self.board = board
@@ -97,10 +101,11 @@ public struct DesignComment: Codable, Hashable, Sendable, Identifiable {
         self.replies = replies
         self.resolvedAt = resolvedAt
         self.detached = detached
+        self.proposal = proposal
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, number, board, tid, path, label, target, rect, text, author, createdAt, replies, resolvedAt, detached
+        case id, number, board, tid, path, label, target, rect, text, author, createdAt, replies, resolvedAt, detached, proposal
     }
 
     public init(from decoder: Decoder) throws {
@@ -119,6 +124,7 @@ public struct DesignComment: Codable, Hashable, Sendable, Identifiable {
         replies = (try? c.decodeIfPresent([DesignCommentReply].self, forKey: .replies)) ?? []
         resolvedAt = try c.decodeIfPresent(Double.self, forKey: .resolvedAt)
         detached = try c.decodeIfPresent(Bool.self, forKey: .detached) ?? false
+        proposal = try? c.decodeIfPresent(String.self, forKey: .proposal)
     }
 
     /// Its element's id, when the grammar can express it.
@@ -182,9 +188,12 @@ public struct DesignCommentDraft: Codable, Hashable, Sendable {
     public var target: String?
     public var rect: DesignCommentRect?
     public var text: String
+    /// The design agent's proposal it applies (`DesignMarkupProposals.proposalID`): a design
+    /// keeps one comment per proposal.
+    public var proposal: String?
 
     public init(board: DesignPath, tid: Int, path: [Int], label: String? = nil, target: String? = nil,
-                rect: DesignCommentRect? = nil, text: String) {
+                rect: DesignCommentRect? = nil, text: String, proposal: String? = nil) {
         self.board = board
         self.tid = tid
         self.path = path
@@ -192,6 +201,12 @@ public struct DesignCommentDraft: Codable, Hashable, Sendable {
         self.target = target
         self.rect = rect
         self.text = text
+        self.proposal = proposal
+    }
+
+    /// A proposal's name: at most 200 characters of one line.
+    public static func isProposalID(_ id: String) -> Bool {
+        !id.isEmpty && id.utf8.count <= 200 && DesignViewRecord.isLine(id)
     }
 }
 
