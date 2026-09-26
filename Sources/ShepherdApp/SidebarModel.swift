@@ -145,27 +145,21 @@ enum SidebarDerivation {
         return lists
     }
 
-    /// The short reason a Needs you row gives: the question's own text, else the subagent
-    /// asking, else "ASK".
-    static func reason(question: String?, children: [ChildRun]) -> String {
-        if let question = question.flatMap(nonEmpty) { return shortened(question) }
-        if let child = children.first(where: \.needsAttention), let name = nonEmpty(child.role ?? child.label) {
-            return shortened(name)
+    /// The short reason a Needs you row gives: the agent's own word or two for its question
+    /// ("retention?"), else the question cut short; else the asking subagent's own reason, else
+    /// its name; else "ASK".
+    static func reason(question: String?, short: String? = nil, children: [ChildRun]) -> String {
+        if let question = question.flatMap(nonEmpty) { return shortened(short.flatMap(nonEmpty) ?? question) }
+        if let child = children.first(where: \.needsAttention),
+           let reason = child.question?.short.flatMap(nonEmpty) ?? nonEmpty(child.role ?? child.label) {
+            return shortened(reason)
         }
         return "ASK"
     }
 
-    /// One line, at most `NWSidebarMetrics.reasonLength` characters: cut at a word where one
-    /// ends past the middle, with an ellipsis.
+    /// One line, at most `NWSidebarMetrics.reasonLength` characters (`NeedsYouReason`).
     static func shortened(_ text: String) -> String {
-        let flat = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
-        let limit = NWSidebarMetrics.reasonLength
-        guard flat.count > limit else { return flat }
-        let clipped = flat.prefix(limit - 1)
-        if let space = clipped.lastIndex(of: " "), clipped.distance(from: clipped.startIndex, to: space) >= limit / 2 {
-            return clipped[..<space].trimmingCharacters(in: .punctuationCharacters) + "…"
-        }
-        return clipped.trimmingCharacters(in: .whitespaces) + "…"
+        NeedsYouReason.shortened(text, limit: NWSidebarMetrics.reasonLength)
     }
 
     private static func nonEmpty(_ text: String) -> String? {
@@ -182,7 +176,7 @@ enum SidebarDerivation {
         let word: String
         if needsYou {
             leading = automation == nil ? .dot(.attention) : .glyph("bolt", attention: true)
-            accessory = .reason(reason(question: agent.waitingOn, children: children))
+            accessory = .reason(reason(question: agent.waitingOn, short: agent.waitingReason, children: children))
             word = "needs you"
         } else if automation != nil {
             leading = .glyph("bolt", attention: false)
@@ -212,7 +206,7 @@ enum SidebarDerivation {
         let word: String
         if needsYou {
             leading = automation ? .glyph("bolt", attention: true) : .dot(.attention)
-            accessory = .reason(reason(question: agent.waitingOn, children: children))
+            accessory = .reason(reason(question: agent.waitingOn, short: agent.waitingReason, children: children))
             word = "needs you"
         } else {
             leading = automation ? .glyph("bolt", attention: false) : .dot(AgentState(agent.status))

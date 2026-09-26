@@ -2197,12 +2197,18 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    /// Server queue: the question an agent's thread asks first changed. Live state, like a
-    /// status: broadcast at once and never written on its own (nor ever to state.json).
-    func applyAgentQuestion(agentID: AgentID, question: String?) {
-        guard let index = store.state.agents.firstIndex(where: { $0.id == agentID }),
-              store.state.agents[index].waitingOn != question else { return }
-        store.updateLive { $0.agents[index].waitingOn = question }
+    /// Server queue: the question an agent's thread asks first changed (its title and the
+    /// agent's short reason for it). Live state, like a status: broadcast at once and never
+    /// written on its own (nor ever to state.json).
+    func applyAgentQuestion(agentID: AgentID, question: String?, reason: String? = nil) {
+        guard let index = store.state.agents.firstIndex(where: { $0.id == agentID }) else { return }
+        let reason = question == nil ? nil : reason
+        let agent = store.state.agents[index]
+        guard agent.waitingOn != question || agent.waitingReason != reason else { return }
+        store.updateLive {
+            $0.agents[index].waitingOn = question
+            $0.agents[index].waitingReason = reason
+        }
         let committedState = store.state
         broadcastRemoteState(committedState)
         hopToMain { [weak self] in self?.onStateChanged?(committedState) }
@@ -2690,7 +2696,7 @@ public final class SessionServer: @unchecked Sendable {
             thread.onRevision = { [weak serverWeak] in serverWeak?.threadRevised(sessionID: sid) }
             thread.onQuestionChanged = { [weak serverWeak] question in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
-                server.applyAgentQuestion(agentID: agentID, question: question)
+                server.applyAgentQuestion(agentID: agentID, question: question?.title, reason: question?.reason)
             }
             thread.onToolFinished = { [weak serverWeak] name in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }

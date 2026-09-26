@@ -79,13 +79,14 @@ struct ThreadPreviewTests {
         try await render("thread-activity-running", ActivityThreads.running(.call))
     }
 
-    /// The model thinking at the tail: "› Thinking…" shimmering, the thread's one live line.
+    /// The model thinking at the tail: "Thinking…" shimmering, the thread's one live line, with
+    /// no chevron.
     @Test func threadActivityThinking() async throws {
         try await render("thread-activity-thinking", ActivityThreads.running(.thinking))
     }
 
     /// LiveText's "Between tools": the commit finished and nothing streams yet, so the turn ends
-    /// in "› Thinking…".
+    /// in "Thinking…".
     @Test func threadActivityBetweenTools() async throws {
         try await render("thread-activity-between-tools", ActivityThreads.running(.between))
     }
@@ -94,6 +95,57 @@ struct ThreadPreviewTests {
     /// disclosure of thinking it shared.
     @Test func threadThinkingUnshared() async throws {
         try await render("thread-thinking-unshared", ActivityThreads.unsharedThinking, size: CGSize(width: 1180, height: 640))
+    }
+
+    /// A GPT reasoning summary opened (the user's report, 2026-09-25): its bold title and body
+    /// as Markdown in the thinking style, with no gap after it where pi-ai's blank-line part
+    /// endings were; a folded summary with a list, code and a link; then rows with nothing to
+    /// open (live "Thinking…", a thought the model kept back) beside a collapsed one: no
+    /// chevron on those, and every label where a chevron's row puts it.
+    @Test func threadThinkingMarkdown() async throws {
+        func thought(_ id: String, _ text: String, seconds: Double?) -> NativeThreadMessage {
+            NativeThreadMessage(entryID: id, role: "assistant", blocks: [NativeThreadBlock(kind: .thinking, text: text)],
+                                thinkingSeconds: seconds)
+        }
+        func read(_ id: String, _ path: String) -> NativeThreadMessage {
+            NativeThreadMessage(entryID: id, role: "toolResult", blocks: [NativeThreadBlock(kind: .text, text: "Host runner")],
+                                toolName: "read", toolCallID: id, argumentsText: #"{"path":"\#(path)"}"#, status: "complete")
+        }
+        let turn = nativeTurnPresentation([
+            thought("a1", "**Inspecting SSH config**\n\nChecking ~/.ssh/config for the runner host…\n\n", seconds: nil),
+            read("r1", "~/.ssh/config"),
+            NativeThreadMessage(entryID: "a2", role: "assistant", blocks: [
+                NativeThreadBlock(kind: .text, text: "The runner's host entry points at the old address."),
+            ]),
+            thought("a3", "**Planning the fix**\n\n", seconds: 6),
+            thought("a4", "- update `HostName` for *runner*\n- keep the `IdentityFile` line\n\nSee [ssh_config(5)](https://man.openbsd.org/ssh_config).\n\n\n\n", seconds: nil),
+            read("r2", "~/.ssh/known_hosts"),
+        ], live: false)
+        let size = CGSize(width: 760, height: 600)
+        try await Preview.render("thread-thinking-markdown", size: size) {
+            VStack(alignment: .leading, spacing: AppLayout.turnItemSpacing) {
+                ForEach(turn.items) { item in
+                    switch item {
+                    case .thinking(_, _, let blocks, let seconds, let live, _):
+                        ThinkingRow(seconds: seconds, blocks: blocks, live: live, isExpanded: true) {}
+                    case .prose(_, _, let blocks, _):
+                        Prose(blocks: blocks)
+                    case .activity(_, let bursts):
+                        ActivityLinesView(bursts: bursts)
+                    default:
+                        EmptyView()
+                    }
+                }
+                NWHairline()
+                NWThinking.live()
+                NWThinking("Thought for 10s", blocks: [], isExpanded: .constant(false), spokenTitle: "Thought for 10 seconds")
+                ThinkingRow(seconds: 4, blocks: [.paragraph("Check the labels first.")], live: false, isExpanded: false) {}
+                Spacer(minLength: 0)
+            }
+            .padding(32)
+            .frame(width: size.width, height: size.height, alignment: .topLeading)
+            .background(Color.nw.bgWindow)
+        }
     }
 
     /// A new agent from its first frame, while its pi boots: the framed empty state and a complete

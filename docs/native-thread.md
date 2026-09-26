@@ -143,6 +143,14 @@ events come out on stdout, one record per LF.
     settles the ended live rows into history.
   - `queue_update` tells the host which text pi queued for a steer (see The queue).
   - Thinking spans are timed as they stream, so history can show "Thought for Ns".
+  - **Thinking text** is normalized where it is projected, streaming or settled
+    (`RPCContentBlock.normalizedThinking`): trimmed, whitespace-only lines blank, and at most one
+    blank line in a row, so a summary part left empty leaves no gap. pi-ai 0.87.1's OpenAI
+    Responses provider closes every summary part with `"\n\n"` as it streams
+    (`response.reasoning_summary_part.done` in `dist/api/openai-responses-shared.js`) and joins a
+    finished item's parts with `"\n\n"`, empty ones included. Decoding does the same for a
+    block's text and for a summary read from its signature. The map keeps prefixes: growing
+    text only grows its normalized form.
   - What a Stop ends reads as stopped, not failed: pi ends a run stopped mid-tool-call with a
     failed call ("Command aborted") and an error reply ("This operation was aborted"). While the
     user's stop is in effect, the host projects both with status `aborted` (in history too, for
@@ -519,7 +527,8 @@ The pure derivations live in ShepherdRemote:
 
 - **`NativeTurnPresentation`:** a reply's items, built once per turn change, in the order they
   happened: thinking (folded into one block at the start of each stretch of work between
-  prose), prose (Markdown parsed once), activity lines, the subagent record lines (the spawn
+  prose; finished text parsed as Markdown once, memoised by the store, live thinking never),
+  prose (Markdown parsed once), activity lines, the subagent record lines (the spawn
   calls they stand for leave the activity), notes, errors, and steers (`.steer`: a message the user
   steered in, where pi read it). It also carries the changes card, the countable tool calls, and
   the copy text.

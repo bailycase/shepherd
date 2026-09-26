@@ -119,34 +119,42 @@ extension NWAgentProse where Code == NWCodeBlock {
     }
 }
 
+/// How prose reads: a reply's body, a quote inside it, or the model's thinking.
+enum NWProseVoice: Equatable {
+    /// Body in `textPrimary`.
+    case reply
+    /// Body italic in `textSecondary`.
+    case quoted
+    /// Italic 12.5 at 1.55 in `textSecondary` (expanded `NWThinking`); headings semibold.
+    case thinking
+}
+
 /// Blocks at one level: the reply's own, or those inside a list item, a quote or a disclosure.
 struct NWProseBlocks<Code: View>: View {
     let blocks: [NWProseBlock]
     var nested = false
     /// How deep in lists these blocks sit: each level draws its own bullet.
     var depth = 0
-    /// Inside a quote: italic `textSecondary`.
-    var quoted = false
+    var voice = NWProseVoice.reply
     let code: (String, String?) -> Code
     @Environment(\.nwProseSize) private var size
 
     var body: some View {
         let nw = Color.nw
-        let tone = quoted ? nw.textSecondary : nw.textPrimary
+        let tone = voice == .reply ? nw.textPrimary : nw.textSecondary
         ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
             switch block {
             case .heading(_, let text):
-                Text(text).font(.nw(.headline, size: size)).lineSpacing(NWTextStyle.headline.lineSpacing(size))
-                    .foregroundStyle(tone).textSelection(.enabled)
+                heading(text).foregroundStyle(tone).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, nested ? 0 : NW.Space.xs)
+                    .padding(.top, nested || voice == .thinking ? 0 : NW.Space.xs)
                     .accessibilityAddTraits(.isHeader)
             case .paragraph(let text):
-                Text(text).nwText(.body, size: size).italic(quoted).foregroundStyle(tone).textSelection(.enabled)
+                words(text).foregroundStyle(tone).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             case .quote(let inner):
                 VStack(alignment: .leading, spacing: NW.Space.m) {
-                    NWProseBlocks(blocks: inner, nested: true, depth: depth, quoted: true, code: code)
+                    NWProseBlocks(blocks: inner, nested: true, depth: depth, voice: voice == .thinking ? .thinking : .quoted, code: code)
                 }
                 .padding(.leading, NW.Space.l)
                 .overlay(alignment: .leading) { nw.lineStrong.frame(width: NWThreadMetrics.ruleWidth) }
@@ -161,7 +169,7 @@ struct NWProseBlocks<Code: View>: View {
             case .image(let image):
                 NWProseImageView(image: image)
             case .details(let summary, let inner):
-                NWProseDetails(summary: summary, blocks: inner, depth: depth, code: code)
+                NWProseDetails(summary: summary, blocks: inner, depth: depth, voice: voice, code: code)
             case .footnotes(let notes):
                 NWProseFootnotes(notes: notes)
             }
@@ -178,10 +186,10 @@ struct NWProseBlocks<Code: View>: View {
                         .padding(.trailing, NW.Space.s)
                     VStack(alignment: .leading, spacing: NW.Space.xs) {
                         if !item.text.characters.isEmpty || item.children.isEmpty {
-                            Text(item.text).nwText(.body, size: size).italic(quoted).foregroundStyle(tone).textSelection(.enabled)
+                            words(item.text).foregroundStyle(tone).textSelection(.enabled)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
-                        NWProseBlocks(blocks: item.children, nested: true, depth: depth + 1, quoted: quoted, code: code)
+                        NWProseBlocks(blocks: item.children, nested: true, depth: depth + 1, voice: voice, code: code)
                     }
                 }
                 .accessibilityElement(children: .combine)
@@ -195,14 +203,31 @@ struct NWProseBlocks<Code: View>: View {
         let nw = Color.nw
         if let task {
             Image(systemName: task == .done ? "checkmark.square.fill" : "square")
-                .font(.nw(.body, size: size))
+                .font(font)
                 .foregroundStyle(task == .done ? nw.textSecondary : nw.textTertiary)
                 .accessibilityHidden(true)
         } else {
             Text(ordered ? "\(number)." : NWProseBlocks.bullet(depth: depth))
-                .font(.nw(.body, size: size)).foregroundStyle(nw.textPrimary).monospacedDigit()
+                .font(font).foregroundStyle(voice == .thinking ? nw.textSecondary : nw.textPrimary).monospacedDigit()
                 .fixedSize()
                 .accessibilityHidden(!ordered)
+        }
+    }
+
+    private var font: Font { voice == .thinking ? NWThinking.font : .nw(.body, size: size) }
+
+    /// A paragraph's or a list item's text in this voice.
+    @ViewBuilder private func words(_ text: AttributedString) -> some View {
+        switch voice {
+        case .reply, .quoted: Text(text).nwText(.body, size: size).italic(voice == .quoted)
+        case .thinking: Text(text).font(NWThinking.font).italic().lineSpacing(NWThinking.lineSpacing)
+        }
+    }
+
+    @ViewBuilder private func heading(_ text: AttributedString) -> some View {
+        switch voice {
+        case .reply, .quoted: Text(text).font(.nw(.headline, size: size)).lineSpacing(NWTextStyle.headline.lineSpacing(size))
+        case .thinking: Text(text).font(NWThinking.headingFont).italic().lineSpacing(NWThinking.lineSpacing)
         }
     }
 
