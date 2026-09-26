@@ -25,6 +25,15 @@ extension FixtureCatalog {
                           routes: [.thread(preview)]),
             // A turn the user stopped mid-command: "stopped" on its line and a quiet note, no error.
             FixtureScreen(name: "stopped", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.stopped()), routes: [.thread(preview)]),
+            // MobileThreadError, iPadThreadError: the earlier error folded, the last one's card,
+            // and the header reading Failed.
+            FixtureScreen(name: "thread-error", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.providerError()), routes: [.thread(preview)]),
+            // TurnErrors › Touch sizes: the card with Details open, the facts above the raw body.
+            FixtureScreen(name: "thread-error-details", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.providerError()),
+                          routes: [.thread(preview)],
+                          prepare: { app in app.threads.store(for: preview).errors.setDetails("e5", open: true) }),
+            // TurnErrors › While it retries: the retry line ends the live turn.
+            FixtureScreen(name: "thread-error-retrying", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.retrying()), routes: [.thread(preview)]),
             // Thinking the model kept back: a plain "Thought for 10s" line, then thinking it shared.
             FixtureScreen(name: "thinking-unshared", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.unsharedThinking()),
                           routes: [.thread(preview)]),
@@ -191,6 +200,39 @@ enum ThreadFixtures {
             F.user("m1", "Which tools does Shepherd expose to its agents?"),
             F.assistant("m2", text, at: 9_000),
         ]))
+    }
+
+    /// OpenAI refusing the key, as the error boards draw it.
+    static let authError = #"401: {"message":"Incorrect API key provided: sk-svcac*****************************fvMA. You can find your API key at https://platform.openai.com/account/api-keys.","type":"authentication_error","code":"auth_unavailable"}"#
+
+    private static func failure(_ id: String, _ text: String, at offset: Double) -> NativeThreadMessage {
+        NativeThreadMessage(entryID: id, role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: text)], status: "error",
+                            timestamp: FixtureData.start + offset, provider: "openai", model: "gpt-6-astra")
+    }
+
+    /// MobileThreadError: the dashboards follow-up failed, and the next one failed the same way.
+    static func providerError() -> NativeThreadSnapshot {
+        typealias F = FixtureData
+        return rpc(F.snapshot([
+            F.user("e1", "Add Prometheus metrics to ms-payments: request latency, error rate and Kafka consumer lag."),
+            F.assistant("e2", "The Grafana dashboard and alert rules live in the infra repo, so they aren’t in this branch yet.", at: 250_000),
+            F.user("e3", "ok, add the dashboard and alerts too", at: 1_260_000),
+            failure("e4", authError, at: 1_262_000),
+            F.user("e5u", "we need two PRs for this right? one for this service, and one for infra wherever the grafana and prometheus stuff lives. copy what I did for ms-graphql-internal.",
+                   at: 1_380_000),
+            failure("e5", authError, at: 1_382_000),
+        ]))
+    }
+
+    /// pi retrying an overloaded request: the second of three tries goes in a few seconds.
+    static func retrying() -> NativeThreadSnapshot {
+        typealias F = FixtureData
+        var snapshot = rpc(F.snapshot([
+            F.user("r1", "ok, add the dashboard and alerts too"),
+            failure("r2", #"529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"#, at: 2_000),
+        ], running: true))
+        snapshot.retry = NativeThreadRetry(attempt: 2, maxAttempts: 3, retryAt: Date.now.timeIntervalSince1970 * 1000 + 60_000)
+        return snapshot
     }
 
     /// The user stopped a long command: pi failed the call and ended the run with an error reply,
