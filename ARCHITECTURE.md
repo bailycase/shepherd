@@ -279,7 +279,8 @@ authentication boundary ([SECURITY.md](SECURITY.md)).
   `designRead`, `designWriteBoard` and `designUpdateIndex`; the server answers them itself, only
   for the agent that draws the design, by reading and writing through `DesignStore` off its queue
   (`design`, `designBoard`, `designWritten`). `design_check` runs in the extension against the
-  project's CSS custom properties. It hands pi the design skill through `resources_discover` and
+  design's installed systems, else the CSS custom properties in its working folder (the design's
+  own folder: a design belongs to no project). It hands pi the design skill through `resources_discover` and
   adds the design's facts to each run's system prompt ([docs/designs.md](docs/designs.md)).
 
 The server owns PTYs but not layouts, so pane requests from an agent (and from remote clients,
@@ -381,6 +382,8 @@ are ignored, and new fields decode with defaults.
 - **Terminal-era agents:** the old `runtime` key is ignored, and those agents relaunch over RPC
   in the same pi session.
 - **Pre-autoname agents:** agents without `nameIsFinal` decode as final.
+- **Designs:** a design's `spaceID` from before designs stood alone is ignored (a system
+  build's reads as its `sourceSpaceID`), and a space without `holdsDesigns` decodes false.
 - **Worktree fields:** agents without `worktreeBranch`, `worktreeBase`, or `worktreePath` decode
   them as nil.
 - **Removed shell tabs:** `Tab` ignores the keys of removed shell tabs (`name`, `nameIsFinal`,
@@ -398,6 +401,9 @@ At startup the server then:
 - forgets designs whose `canvas.json` is gone, and clears an agent's `designID` or a design's
   `agentID` that names nothing (`reconcileDesigns`); which folders are gone is read on the
   design store's queue before the server's queue starts
+- keeps design agents in the reserved designs space (`settleDesignAgents`): one an older
+  state.json kept in a user space moves there with its layout and working directory, and one the
+  space holds for a design that is gone is dropped with its layout
 
 `LegacyTerminalAgents` also clears the old per-agent view preferences from UserDefaults.
 

@@ -14,7 +14,7 @@ enum RemoteDesignSamples {
     ], order: [board, phone])
     static let snapshot = DesignSnapshot(designID: design, revision: 7, index: index,
                                          boards: [board: String(repeating: "a", count: 64), phone: String(repeating: "b", count: 64)])
-    static let record = Design(id: design, name: "Checkout funnel", spaceID: SpaceID(rawValue: "space"), agentID: AgentID(rawValue: "agent"),
+    static let record = Design(id: design, name: "Checkout funnel", agentID: AgentID(rawValue: "agent"),
                                systemNamespace: "acme-web", createdAt: 1_700_000_000_000, lastActiveAt: 1_700_000_100_000, boardCount: 2)
     static let system = DesignSystemSummary(info: DesignSystemInfo(namespace: "acme-web", title: "acme-web", revision: 3,
                                                                   createdAt: 1_700_000_000_000, sources: ["web/static/tokens.css"]),
@@ -47,9 +47,8 @@ enum RemoteDesignSamples {
         .system(namespace: "acme-web"),
         .watch(designIDs: [design]),
         .watch(designIDs: []),
-        .create(RemoteDesignCreate(brief: "A checkout funnel for the \"growth\" team", spaceID: SpaceID(rawValue: "space"),
-                                   systemNamespace: "acme-web")),
-        .create(RemoteDesignCreate(brief: "funnel", spaceID: SpaceID(rawValue: "space"))),
+        .create(RemoteDesignCreate(brief: "A checkout funnel for the \"growth\" team", systemNamespace: "acme-web")),
+        .create(RemoteDesignCreate(brief: "funnel")),
     ]
 
     static let results: [RemoteDesignResult] = [
@@ -158,7 +157,7 @@ struct RemoteDesignMessageTests {
         (.boards(designID: RemoteDesignSamples.design, paths: nil, knownShas: [:]), RemoteDesignSamples.design, false),
         (.updateIndex(designID: RemoteDesignSamples.design, patch: .null, baseRevision: nil), RemoteDesignSamples.design, true),
         (.addComment(designID: RemoteDesignSamples.design, draft: RemoteDesignSamples.draft, baseRevision: nil), RemoteDesignSamples.design, true),
-        (.create(RemoteDesignCreate(brief: "funnel", spaceID: SpaceID(rawValue: "space"))), nil, true),
+        (.create(RemoteDesignCreate(brief: "funnel")), nil, true),
     ])
     func aRequestNamesItsDesignAndWhetherItWrites(_ request: RemoteDesignRequest, _ design: DesignID?, _ writes: Bool) {
         #expect(request.designID == design)

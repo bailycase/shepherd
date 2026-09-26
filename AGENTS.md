@@ -507,8 +507,8 @@ Sources/
       Present and Play, pages), DesignHost (the only DesignSurfaceKit import: live views, the
       rasterizer, snapshots, thumbnails, tweak previews, the presented board, DesignExporter),
       DesignExportSheet (DZExport's sheet over the window, its model), DesignTweak (the Tweak tab's controls, pure), DesignTweakModel (its writes,
-      one per gesture, Reset and Undo), DesignTweakPane, DesignProjectTokens (with
-      DesignSystemDetection, a project's tokens file), NightWatchSystem (Night Watch as a
+      one per gesture, Reset and Undo), DesignTweakPane, DesignProjectTokens (the
+      custom properties a design agent's folder declares), NightWatchSystem (Night Watch as a
       built-in design system, from ShepherdUI's tokens), DesignSystemCatalog (the host's systems
       as last read), DesignSystemPageModel (DZSystem as values; specimen boards), DesignSystemPage
       (the Design systems page, a build's layout beside its chat, the header)
@@ -686,8 +686,8 @@ variables are blanked.
   run by hand; removing an automation forgets its runs. Remote clients read them with
   `RemoteAutomationRequest.runs`.
 - **At startup:** the previous run's agents and their layouts are dropped
-  (`SessionServer.automationRunAgentIDs`: every agent in the hidden space, plus any agent an
-  automation still points at), every automation's `agentID` is cleared, and enabled automations
+  (`SessionServer.automationRunAgentIDs`: every agent in the automations' hidden space, never
+  the designs space's, plus any agent an automation still points at), every automation's `agentID` is cleared, and enabled automations
   start fresh runs once the workspace is adopted. Never keep a run agent across launches.
 - **Changing them** touches `ShepherdCore`, the extension-message enums, `SessionServer`, the
   panes extension (canonical and embedded), and their tests.
@@ -916,8 +916,11 @@ previous run.
 
 **Startup reconciliation** (`SessionServer.start()`) drops the global-shell and space-shell tabs
 of older state files (`shellTabIDs`: no space, or no agent owns the tab). It also purges
-`inspectorFor` utility tabs, removes review leaves, and clears automation runs. `Tab` ignores the
-shell keys, and `Agent` ignores `runtime`.
+`inspectorFor` utility tabs, removes review leaves, and clears automation runs. It keeps design
+agents, which live in the reserved designs space (`Space.holdsDesigns`): one an older state.json
+kept in a user space moves there with its layout, and one the space holds for a design that is
+gone is dropped (`settleDesignAgents`; docs/designs.md). `Tab` ignores the shell keys, and `Agent`
+ignores `runtime`.
 
 **Dropped images are resized on the way in.** `TerminalImageDrop`, also reached through
 `AppImageDrop` for composer attachments, clamps the longest edge to 2000 px and re-encodes: JPEG

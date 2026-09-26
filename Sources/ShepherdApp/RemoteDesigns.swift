@@ -99,8 +99,8 @@ extension ShepherdViewModel {
                                        source: { _, path in try await source.source(path) },
                                        comments: remoteDesignCommentActions(library), tweak: tweak,
                                        actions: remoteDesignCanvasActions(library, agent: agentRef))
-        if let design = connection.state.designs.first(where: { $0.id == id }) {
-            screen.tweak?.systemName = design.systemNamespace ?? connection.state.spaces.first { $0.id == design.spaceID }?.name ?? "design"
+        if let system = connection.state.designs.first(where: { $0.id == id })?.systemNamespace {
+            screen.tweak?.systemName = system
         }
         remoteDesignScreens[ref] = screen
         return screen
@@ -244,11 +244,11 @@ extension ShepherdViewModel {
         return remoteHosts.connections.filter(\.supportsDesigns).compactMap { connection in
             guard let listing = connection.designs.listing, !listing.designs.isEmpty else { return nil }
             let thumbnails = remoteDesignRenderings[connection.id]?.thumbnails
-            let spaces = Dictionary(connection.state.spaces.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
             let query = designsPageFilter.trimmingCharacters(in: .whitespacesAndNewlines)
             let cards = listing.designs.compactMap { summary -> DesignsPageModel.Card? in
                 let design = summary.design
-                let system = design.systemNamespace ?? spaces[design.spaceID]
+                // A design belongs to no project: its card names its system alone.
+                let system = design.systemNamespace
                 guard query.isEmpty || design.name.localizedCaseInsensitiveContains(query)
                         || system?.localizedCaseInsensitiveContains(query) == true else { return nil }
                 let entry = thumbnails?.entries[summary.id]

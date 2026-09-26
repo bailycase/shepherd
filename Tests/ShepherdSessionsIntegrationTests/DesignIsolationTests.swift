@@ -19,8 +19,7 @@ struct DesignIsolationTests {
         drawer.agent.designID = designID
         let thread = Fixture.agent(in: space, name: "Fix login bug")
         try await h.seed(Fixture.workspace([thread, drawer], space: space))
-        _ = try await h.server.createDesign(Design(id: designID, name: "Landing hero", spaceID: space.id,
-                                                   agentID: drawer.agent.id, createdAt: 1_000))
+        _ = try await h.server.createDesign(Design(id: designID, name: "Landing hero", agentID: drawer.agent.id, createdAt: 1_000))
         return (thread.agent, drawer.agent, designID)
     }
 

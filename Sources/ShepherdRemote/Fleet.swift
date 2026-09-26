@@ -456,11 +456,11 @@ public struct FleetModel: Equatable, Sendable {
                 let digest = digests[ref]
                 // A design's agent is no thread (docs/designs.md › Design agents and ordinary
                 // threads): never running, needing you, finished or counted. Its design is its
-                // Recents row where the host serves designs; a system build's has none.
+                // Recents row where the host serves designs; a system build's has none. It lives in
+                // the host's reserved (hidden) designs space, which is no project to name.
                 if host.state.isDesignAgent(agent) {
-                    guard host.designs, let design = Self.design(drawnBy: agent, in: host.state),
-                          spaces[agent.spaceID]?.hidden != true else { continue }
-                    var row = Self.row(agent, ref: ref, digest: digest, space: spaces[agent.spaceID], hostName: host.name,
+                    guard host.designs, let design = Self.design(drawnBy: agent, in: host.state) else { continue }
+                    var row = Self.row(agent, ref: ref, digest: digest, space: nil, hostName: host.name,
                                        hostTag: tag, offline: !connected)
                     row.design = FleetDesign(id: design.id, boards: design.boardCount)
                     row.detail = RemoteDesignPresentation.recentsDetail(boards: design.boardCount)

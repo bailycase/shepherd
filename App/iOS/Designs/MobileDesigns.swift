@@ -251,10 +251,9 @@ final class MobileDesigns {
     }
 
     /// Makes a design on `host` as its New design does; answers the design.
-    func create(host: UUID, brief: String, spaceID: SpaceID, system: String?) async throws -> HostDesignRef {
+    func create(host: UUID, brief: String, system: String?) async throws -> HostDesignRef {
         guard let library = library(host) else { throw MobileDesignsError.offline }
-        guard case .created(let id, _) = try await library.request(.create(RemoteDesignCreate(brief: brief, spaceID: spaceID,
-                                                                                               systemNamespace: system))) else {
+        guard case .created(let id, _) = try await library.request(.create(RemoteDesignCreate(brief: brief, systemNamespace: system))) else {
             throw MobileDesignsError.unexpected
         }
         await list(host)

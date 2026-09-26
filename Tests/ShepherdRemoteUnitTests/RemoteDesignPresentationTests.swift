@@ -26,7 +26,7 @@ struct RemoteDesignPresentationTests {
 
     static func design(_ id: String, _ name: String, system: String? = "acme-web", agent: AgentID? = nil, edited: Double,
                        boards: Int = 4, buildsSystem: Bool = false) -> Design {
-        Design(id: DesignID(rawValue: id), name: name, spaceID: space.id, agentID: agent, systemNamespace: system, createdAt: 0,
+        Design(id: DesignID(rawValue: id), name: name, agentID: agent, systemNamespace: system, createdAt: 0,
                lastActiveAt: edited, boardCount: boards, buildsSystem: buildsSystem)
     }
 

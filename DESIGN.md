@@ -3689,7 +3689,8 @@ update, switch and removal goes to every host, and a host that is offline catche
 back. The page sits between Instructions and Remote in the nav, with `graduationcap`.
 
 - **Header:** "Skills", then "Instructions and scripts the agent picks up when a task calls for
-  them. Skills are global: every thread and automation on every host gets the same set." (capped at
+  them. Installed skills are global: every thread and automation on every host gets the same set.
+  Skills from your pi setup and pi packages are listed read-only." (capped at
   700pt), and trailing, bottom-aligned: Add from repo… (secondary, `plus`) and Browse skills.sh
   (primary, a glass). Both open sheets (below). The blocks are 18pt apart, the list and the 280pt
   rail 28pt apart.
@@ -7574,7 +7575,7 @@ the board focused over a scrim, its links playing) and Play, and pages with titl
 notes, design systems (the format, the store, installing one in a design, `system_read` and
 `system_write`, `design_check` against it, `<x-import>`, Night Watch as a built-in, the system
 page and its Re-sync, the Designs page's systems grid with "Build one from a repo", More ▸ Design
-systems, the system chip opening its page, and New design's system card read from the project;
+systems, the system chip opening its page, and New design's system card;
 docs/designs.md › Design systems), and Export (its sheet, the four formats and Attach to a thread;
 docs/designs.md › Export and import). Not built: the live link, Attach to a mission, Present
 mode's own board, Tweak snapping to an installed system's tokens, and every iPhone and iPad part;
@@ -7655,7 +7656,7 @@ tool work reads as activity lines.
 
 **Mac: built** (`DesignsPage`), except a card's "2 comments" and the Night Watch skeleton. The
 systems are the host's (docs/designs.md › Design systems › In the app); a design without one
-names its project. A system build still reading its project is a card with no swatches over
+names no system (designs stand alone, below: a card never names a project). A system build still reading its project is a card with no swatches over
 "dashboard-web · building" (not drawn). With no designs the page shows its header and the
 systems. Not drawn, and built plainly: each connected host that serves designs (`designs.v1`)
 lists its designs after This Mac's, under the host's name in the section label's style, in the
@@ -7714,11 +7715,14 @@ and a system's screen (its counts, colors, type and steps as rows).
 ### New design (DZStart)
 
 **Built** (`NewDesignPage`), without the Capture a page and From a screenshot cards (the design
-tool plan's decision 9; they come later). The one card is the design system, drawn chosen and
-found in the project: the system built from it ("acme-web", "design system · dashboard-web",
-"found in web/static/tokens.css"), else the project with the tokens file a read-only walk finds,
-else the project at its folder. Its menu (not drawn) picks another project or another system;
-Send installs the system in the new design. The composer card keeps `NWComposer`'s
+tool plan's decision 9; they come later). **Designs stand alone** (the user's decision,
+2026-09-26, superseding the plan's decision 10 that a design belongs to a project): New design
+picks no project, and a design's agent works in the design's own folder, in a reserved hidden
+space. The one card is the design system, drawn chosen: the one picked, else the system changed
+last among those built here, else Night Watch. It keeps naming the repo a system was read from,
+as information about the system ("acme-web", "design system · dashboard-web", "found in
+web/static/tokens.css"); choosing it picks no project. Its menu (not drawn) picks another
+system; Send installs the system in the new design. The composer card keeps `NWComposer`'s
 radius 8. New design (the destination's button, "Start a design", or Search's action)
 opens this page in the main column, with the sidebar showing and Designs selected.
 
@@ -7778,7 +7782,8 @@ are off the tokens). Opening a design fills the main column: the header, then th
   board is shown; Present again, or a click on the scrim, goes back to the canvas.
 - **The design system chip** (`NWDesignSystemChip`): 24pt, 8pt padding, radius 6, a 1px
   `lineSubtle` line, three of the system's colors as 8pt squares (radius 2, 2pt apart), then its
-  name in mono 11.5 `textSecondary`. Clicking it opens the system (Design systems, below).
+  name in mono 11.5 `textSecondary`. Clicking it opens the system (Design systems, below). A
+  design drawn in no system shows no chip: it has no project to name in its place.
 - **The canvas** fills the rest, on `bgBase` with a dot grid: 1px `lineStrong` dots every 22pt.
   It pans (the Pan tool) and zooms (the toolbar shows 42% on DZCanvas, 72% on DZTweak); the
   boards draw no zoom limits.

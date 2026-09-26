@@ -185,18 +185,16 @@ public struct RemoteDesignBoardsWrite: Codable, Hashable, Sendable {
     }
 }
 
-/// A new design as another device asks for it (iPhone's New design): the brief, the project it
-/// belongs to, and the design system to draw it in. The host makes it as its own New design
+/// A new design as another device asks for it (iPhone's New design): the brief and the design
+/// system to draw it in. A design belongs to no project. The host makes it as its own New design
 /// does: the design, the system installed, and its agent started with the brief.
 public struct RemoteDesignCreate: Codable, Hashable, Sendable {
     public var brief: String
-    public var spaceID: SpaceID
     /// A design system the host has (`ds/<namespace>` name); nil draws in none.
     public var systemNamespace: String?
 
-    public init(brief: String, spaceID: SpaceID, systemNamespace: String? = nil) {
+    public init(brief: String, systemNamespace: String? = nil) {
         self.brief = brief
-        self.spaceID = spaceID
         self.systemNamespace = systemNamespace
     }
 

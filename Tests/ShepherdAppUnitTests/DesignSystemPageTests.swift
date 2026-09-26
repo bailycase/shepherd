@@ -8,8 +8,8 @@ import Testing
 @testable import ShepherdApp
 
 /// Design systems in the app, as pure rules: the Designs page's systems grid (NavDesigns), a
-/// system's page (DZSystem), a component's specimen board, finding a project's tokens file and
-/// New design's system card (DZStart), and the sidebar's More ▸ Design systems.
+/// system's page (DZSystem), a component's specimen board, New design's system card (DZStart),
+/// and the sidebar's More ▸ Design systems.
 @Suite("Design system page")
 @MainActor
 struct DesignSystemPageTests {
@@ -51,7 +51,8 @@ struct DesignSystemPageTests {
     private static let nightWatch = summary("night-watch", title: "Night Watch", builtIn: true)
 
     private func design(_ name: String, system: String? = nil, boards: Int = 4, space: Space = web, builds: Bool = false) -> Design {
-        Design(name: name, spaceID: space.id, systemNamespace: system, createdAt: 1_000, boardCount: boards, buildsSystem: builds)
+        Design(name: name, systemNamespace: system, createdAt: 1_000, boardCount: boards, buildsSystem: builds,
+               sourceSpaceID: builds ? space.id : nil)
     }
 
     // MARK: The systems grid (NavDesigns)
@@ -187,34 +188,34 @@ struct DesignSystemPageTests {
         #expect(!hostile.contains("red;") && !hostile.contains("tokens.css") && hostile.contains("<title>&lt;b&gt;</title>"))
     }
 
-    // MARK: Finding a project's tokens file (DZStart)
-
-    @Test(arguments: [
-        ([("web/static/tokens.css", 11), ("web/app.css", 40)], "web/static/tokens.css"),
-        ([("a/b/design-tokens.scss", 5), ("tokens.css", 3)], "tokens.css"),
-        ([("web/theme.css", 6), ("web/app.css", 40)], "web/theme.css"),
-        ([("web/app.css", 40), ("web/other.css", 12)], "web/app.css"),
-        ([("tokens.css", 2), ("app.css", 1)], nil),
-        ([], nil),
-    ] as [([(String, Int)], String?)])
-    func aProjectsTokensFileIsTheOneNamedForThem(_ candidates: [(String, Int)], _ found: String?) {
-        #expect(DesignSystemDetection.best(candidates.map { (path: $0.0, declarations: $0.1) }) == found)
+    @Test func newDesignsCardNamesTheSystemAndTheRepoItWasReadFrom() {
+        let built = NewDesignState.card(system: Self.acme, spaces: [Self.web])
+        #expect(built == ("acme-web", "design system · dashboard-web", "found in web/static/tokens.css"))
+        // The repo is information only: a system whose project is gone still names itself.
+        let orphan = NewDesignState.card(system: Self.acme, spaces: [])
+        #expect(orphan == ("acme-web", "design system", "found in web/static/tokens.css"))
+        let written = NewDesignState.card(system: Self.summary("sketch"), spaces: [Self.web])
+        #expect(written == ("sketch", "design system", "made in Shepherd"))
+        let nightWatch = NewDesignState.card(system: Self.nightWatch, spaces: [])
+        #expect(nightWatch == ("night-watch", "design system · shepherd", "built into Shepherd"))
+        let none = NewDesignState.card(system: nil, spaces: [Self.web])
+        #expect(none.title == "No design system")
     }
 
-    @Test func newDesignsCardNamesTheSystemFoundInTheProject() {
-        let built = Self.acme
-        let fromProject = NewDesignState.card(project: Self.web, system: built, picked: false, tokensFile: nil, spaces: [Self.web])
-        #expect(fromProject.title == "acme-web" && fromProject.line == "design system · dashboard-web")
-        #expect(fromProject.note == "found in web/static/tokens.css")
-        let detected = NewDesignState.card(project: Self.web, system: nil, picked: false, tokensFile: "web/static/tokens.css",
-                                           spaces: [Self.web])
-        #expect(detected == ("dashboard-web", "design system · dashboard-web", "found in web/static/tokens.css"))
-        let nothing = NewDesignState.card(project: Self.web, system: nil, picked: false, tokensFile: nil, spaces: [Self.web])
-        #expect(nothing.note == "/tmp/dashboard-web")
-        let nightWatch = NewDesignState.card(project: Self.web, system: Self.nightWatch, picked: true, tokensFile: nil, spaces: [])
-        #expect(nightWatch == ("night-watch", "design system · shepherd", "built into Shepherd"))
-        #expect(NewDesignState.projectSystem(Self.web.id, in: [Self.nightWatch, Self.acme])?.namespace == "acme-web")
-        #expect(NewDesignState.projectSystem(Self.app.id, in: [Self.nightWatch, Self.acme]) == nil)
+    /// A new design starts in the system changed last among those built here, else Night Watch:
+    /// no project picks it.
+    @Test func aNewDesignStartsInTheLatestSystemBuiltHereElseTheBuiltIn() {
+        let older = Self.summary("older", space: Self.app.id, updated: 1)
+        let newer = Self.summary("newer", space: Self.web.id, updated: 2)
+        #expect(NewDesignState.defaultSystem(in: [Self.nightWatch, older, newer])?.namespace == "newer")
+        #expect(NewDesignState.defaultSystem(in: [Self.nightWatch])?.namespace == "night-watch")
+        #expect(NewDesignState.defaultSystem(in: []) == nil)
+        let draft = NewDesignState()
+        #expect(draft.chosenSystem(in: [Self.nightWatch, older, newer])?.namespace == "newer")
+        draft.choose(system: "older")
+        #expect(draft.chosenSystem(in: [Self.nightWatch, older, newer])?.namespace == "older")
+        // A pick that is gone reads as the default.
+        #expect(draft.chosenSystem(in: [Self.nightWatch])?.namespace == "night-watch")
     }
 
     // MARK: The sidebar
@@ -234,9 +235,9 @@ struct DesignSystemPageTests {
 
     @Test func aSystemBuildHasNoRecentsRowAndNeitherDoesItsAgent() {
         var builder = Fixture.agent("dashboard-web", in: Self.web).agent
-        let build = Design(name: "dashboard-web", spaceID: Self.web.id, agentID: builder.id, createdAt: 1, buildsSystem: true)
+        let build = Design(name: "dashboard-web", agentID: builder.id, createdAt: 1, buildsSystem: true, sourceSpaceID: Self.web.id)
         builder.designID = build.id
-        let canvas = Design(name: "Checkout", spaceID: Self.web.id, createdAt: 2)
+        let canvas = Design(name: "Checkout", createdAt: 2)
         let lists = SidebarDerivation.lists(SidebarSource(local: ShepherdState(spaces: [Self.web], agents: [builder],
                                                                                designs: [build, canvas]), designs: true))
         #expect(lists.all.map(\.id) == [.design(canvas.id)])
