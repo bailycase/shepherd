@@ -133,7 +133,7 @@ final class FixtureHost: @unchecked Sendable {
             guard token == FixtureHostData.token, !data.refusesToken else {
                 return [.error(id: id, code: RemoteProtocol.unauthorizedCode, message: "bad token")]
             }
-            return [.helloOk(id: id, protocolVersion: RemoteProtocol.version, capabilities: RemoteProtocol.capabilities)]
+            return [.helloOk(id: id, protocolVersion: RemoteProtocol.version, capabilities: data.capabilities ?? RemoteProtocol.capabilities)]
         case .stateFetch(let id):
             note("stateFetch")
             return [.state(id: id, state: data.state)]
@@ -229,6 +229,10 @@ final class FixtureHost: @unchecked Sendable {
         case .agentQuery(let id, _, .commit):
             // Commit from review changes the host's repository.
             mutation("agentQuery.commit")
+            return [.error(id: id, code: "fixture", message: refused)]
+        case .agentQuery(let id, _, .changesUndoTurn), .agentQuery(let id, _, .changesRedoTurn):
+            // Undo and Redo change the agent's working tree.
+            mutation("agentQuery.changesUndoTurn")
             return [.error(id: id, code: "fixture", message: refused)]
         case .hello, .stateFetch, .listModels, .listDir, .creationOptions, .agentQuery:
             return nil

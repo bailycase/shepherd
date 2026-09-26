@@ -157,12 +157,12 @@ And the rules that follow from them:
 | TerminalTab · states: an exited tab stays, its output kept ("exited with an error; the output stays") | On the Mac a shell that exits closes its pane, so its tab goes at once; iOS shows the exited state until the host closes it | A process that exits on its own closes its pane (AGENTS.md › Sessions and views are separate) |
 | iPadTerminal: the key row reads esc, tab, ctrl, ⌥, ↑ ↓ ← →, `\|`, `~`, `/` | esc, tab, ctrl, ⌥, `\|`, `~`, `/`, `-`, then the arrows | A row that wraps in two on a phone keeps the arrows together (`TerminalKey`); `-` for flags |
 | Earlier boards, no longer on the canvas: a compose button beside the window controls and a "Jump to…" field above the sidebar tree | Neither comes back. The Search (⌘K) and Hide sidebar buttons today's boards draw there are the spec (Sidebar › Top bar, not built yet) | ⌘N (or a space's hover `+`) starts an agent, and the palette is a button, not a field |
-| Subagents, SubagentsDone, SubagentsQueue and Review (the macOS page boards; the side-pane boards PaneStates, PaneBrowser, PaneArtifacts, PaneArtifactEdit and PaneFiles draw the same way): radius 10 cards and panes, 52pt toolbars and 48–52pt pane headers, 40pt card headers, 36pt file headers and 26pt file chips, 26–30pt buttons at radius 6–7, 13–14pt text, a 20pt `running` comment `+` and avatar, a comment's Edit at rest | The Night Watch boards' components (NWAgents, NWReview): radius 8, 44pt headers, 32pt file headers and 24pt chips, `s` (24pt) buttons, `ui` 12.5 text, a lantern avatar and an 18pt lantern `+` to match it, Edit and Delete on hover | The NW boards are the system; the radius, height and type scales, and Details on hover |
+| Subagents, SubagentsDone and SubagentsQueue (the macOS page boards; the side-pane boards PaneStates, PaneBrowser, PaneArtifacts, PaneArtifactEdit and PaneFiles draw the same way): radius 10 cards and panes, 52pt toolbars and 48–52pt pane headers, 40pt card headers, 36pt file headers and 26pt file chips, 26–30pt buttons at radius 6–7, 13–14pt text, a 20pt `running` comment `+` and avatar, a comment's Edit at rest | The Night Watch boards' components (NWAgents, NWReview): radius 8, 44pt headers, 32pt file headers and 24pt chips, `s` (24pt) buttons, `ui` 12.5 text, a lantern avatar and an 18pt lantern `+` to match it, Edit and Delete on hover | The NW boards are the system; the radius, height and type scales, and Details on hover |
 | SubagentsDone: the inspector's "async · claude-sonnet · 11 turns · 19 tools · 118k tok"; "Fork as new agent" | NWAgents: "claude-sonnet · 11 turns · done 11:02"; "Fork" (its tooltip says the rest) | The NWAgents board |
 | Subagents, MobileSubagent: the transcript's live call "Building swift build --target ShepherdRemote 11s" with the output's tail | The live line with its verb, command and clock ("Building swift build --target ShepherdRemote 11s"), with no output lines | A run's session file holds only finished calls, and the run reports its call in flight but not its output |
 | PaneStates widths: the thread keeps 520pt, 760pt default for Files, double-click the divider for half the window, ⇧⌘O pops the pane into a window | 380pt minimum and 600 default as drawn, at most half the column, and the layout keeps 400; no double-click and no pop-out | The Navigation board's 400pt thread (`RightPaneSplit`); Files is not built; one window (Window and adaptive layout) |
-| PaneStates' ⋯ menu (`SidePaneOptions`): Split below, Open pane in its own window ⇧⌘O, Reset width, then Show tabs with a check per tab | Changes' own items (Expand All Files, Collapse All Files, Copy Review as Text), then Reset Width | With Changes the only tab, a split has nothing to show below it, Show tabs nothing to hide, and a window of its own would break the one-window rule and host the review a second time: none is offered until it works (never a dead item) |
-| PaneStates, Review, PaneBrowser, PaneArtifacts, PaneFiles: four tabs, Changes, Browser, Artifacts and Files | Changes alone | Only what Shepherd has (the user's decision, 2026-09-25: "dont show browser, artifacts, files, etc, only show the things we have"); the others join when they are built |
+| PaneStates' ⋯ menu (`SidePaneOptions`): Split below, Open pane in its own window ⇧⌘O, Reset width, then Show tabs with a check per tab | Changes' own items (Maximize Pane, Expand All Files, Collapse All Files, Copy Review as Text), then Reset Width | With Changes the only tab, a split has nothing to show below it, Show tabs nothing to hide, and a window of its own would break the one-window rule and host the review a second time: none is offered until it works (never a dead item) |
+| PaneStates, the Changes boards, PaneBrowser, PaneArtifacts, PaneFiles: four tabs, Changes, Browser, Artifacts and Files | Changes alone | Only what Shepherd has (the user's decision, 2026-09-25: "dont show browser, artifacts, files, etc, only show the things we have"); the others join when they are built |
 | NWThread: inline code on `bgSunken` with a 1px `lineSubtle` line, radius 4, 1×5 padding | Prose draws it in mono 12 on a `lineSubtle` fill, with no line or padding. `NWInlineCode` draws the board's form where a view holds the code (only the Component Gallery today) | A run inside `Text` cannot carry a border or padding |
 | NWThread: a follow-up typed while pi works is a dashed bubble in the thread ("queued · sends when the turn ends", Edit, Send now) | It never enters the thread early: it waits in Up next above the composer and joins the thread where pi reads it | The Queue & steer boards replaced it; the host holds one queue that every viewer sees and edits |
 | Settings boards: controls drawn by hand larger than the Controls board's (30pt buttons, fields and popups at radius 7 in Geist 13; a 26pt segmented control on its own track; a 180pt slider with a 4pt track and an 18pt knob; a 30×28 stepper; 22pt keycaps at radius 5; 240pt fields and a 100pt port field; a 32pt search field with a plain "⌘F"), cards at radius 10, 10pt paddings and gaps (rows, nav rows, the icon-to-name gap, under the search field), mono-free sans section labels (Geist 11/600 caps in `textSecondary`), and hexes outside the palette (`#22262a`, `#1b1e21`, `#c1c5cb`, `#767c85`, `#23272c`, `#f58a86`, `#6fd49a`) | The Controls board's components at their sizes (`NWSegmentedPicker` m, `NWPopupMenu` 200×28, `NWStepper`, `NWValueSlider` 200pt, `.nw` fields 220pt and a port 88pt, `NWKeycap`, `NWSearchField` with keycaps); the radius and space scales (cards 8, controls 6, keycaps 4; 10pt steps to 8 or 12); `.nwSectionLabel()` (Foundations' micro mono caps in `textTertiary`); the nearest roles (`lineSubtle`, `textSecondary`, `textTertiary`, `bgSelected`, `failed`, `done`) | One anatomy per control and one section label across the app; the scales and roles are the contract (SettingsAdvanced's own Update channel row already draws the Controls board's segmented control) |
@@ -654,7 +654,7 @@ layout a change moves (the rows under an opening disclosure, a column a pane nar
 runs. Put it on what must not move, as close to it as possible.
 
 - **Switching agents** is a visibility flip, and **keyboard navigation** (⌘1–9, ⌘↑/↓, a palette
-  or menu highlight, j/k in the review) lands at once.
+  or menu highlight, J/K and N/P in the Changes pane) lands at once.
 - **Terminal surfaces** never change size frame by frame. SwiftUI resizes a hosted NSView on every
   frame of an animated layout change (about 70 times for one 180ms pane), and for Ghostty each is
   a PTY resize. With `.nwInstant()` on the terminal view it takes its new size once while
@@ -1563,18 +1563,27 @@ tools merge only with the same tool. Consecutive lines form one part of the turn
   - ⌥-click or the context menu's Show Call opens the raw arguments; the menu also has
     Review <file>, Open Output, and Copy Output.
 
-**Changes card** (`NWChangesCard`): every finished turn that edited files ends with one.
+**Changes card** (`NWChangesCard`, ChangesCard(turn.changes); Main, NWThread): every finished turn
+that edited files ends with one. It comes from the turn the host recorded (`ChangesTurn`, carried
+by the thread's rows as `recordedTurn`): the files as the repository saw them, however they were
+written. A host without Changes (or a directory that is no repository) gets the card from the
+turn's edit and write calls, without Undo.
 
-- A card on `bgWindow`, radius 8, 1px `lineSubtle`. A 32pt `bgSunken` header (12pt leading, 6pt
-  trailing, 10pt gaps, a hairline beneath): a 12pt pencil in `textSecondary`, "4 files changed"
-  in `ui` semibold `textPrimary`, the diff stat in mono 11 (`NWDiffStat`: "+149" in `done`,
-  "−63" in `failed`, with a true minus), and a ghost `s` **Review** button
-  (`plus.forwardslash.minus`) at the trailing edge that opens the review pane at the first file.
-- One 28pt row per file, hairlines between, 12pt padding and 10pt gaps: the status letter in
-  mono 11 bold (M `lantern`; A `done` for a file the turn wrote without reading or editing it
-  first), the directory in tertiary and the filename in `textPrimary` (mono 12, truncated at the
-  head), and its diff stat in mono 11. A row has the row hover fill and opens the review pane at
-  that file.
+- A card on `bgWindow`, radius 10, 1px `lineSubtle`. Its head (10pt padding, 12pt leading, 10pt
+  gaps): a 30pt tile (`bgSunken`, radius 8, a `lineSubtle` line) with `plus.forwardslash.minus`,
+  "Edited 5 files" (Geist 13 semibold) over the turn's diff stat in mono 11 (`NWDiffStat`, a true
+  minus), then **Undo** (ghost `s`, the undo glyph after it) and **Review** (secondary `s`).
+- The first three files as 30pt rows between hairlines, 12pt sides: the folder in `textTertiary`
+  and the file name in `textPrimary` (`ui`, truncated at the head), "new" (or "deleted") in 11
+  `textTertiary`, the file's stat in mono 11. Then "2 more" (12 `textSecondary`) when there are
+  more. Review, a row and "N more" open the Changes pane on this turn (at that file).
+- **Undo** puts back the turn's edits in the worktree and nothing else (docs/changes.md): no
+  dialog, since Redo reverses it, and the agent isn't told (both the user's call, 2026-09-25). It is offered on the last turn only, once it ended having changed
+  something. While it runs its buttons hold; a refusal says why under the card in `caption`
+  `failed` ("Didn’t undo: outbox.go changed after the turn. Nothing was touched.").
+- **After Undo** (ChangesCard · after Undo) the card is one line on a dashed `lineStrong` border,
+  radius 10, padding 10×12: the undo glyph, "Undid the agent’s edits to 5 files" in `ui`
+  `textSecondary`, and **Redo** (ghost `s`) until the next turn starts.
 
 #### Rich content in prose
 
@@ -2267,15 +2276,15 @@ will use (Missions are not built; see "Where Shepherd departs from the boards").
 ### Side pane: Changes and the subagent inspector
 
 One pane per window beside the agent's layout (`RightPaneSplit` around the whole layout in
-`AgentLayoutView`, its tabs in `SidePaneView`; PaneStates, Review, Subagents, SubagentsDone). It
+`AgentLayoutView`, its tabs in `SidePaneView`; PaneStates, the Changes boards, Subagents, SubagentsDone). It
 sits at the workspace's trailing edge beside the thread and its terminal panel, at its full
 height, and the dock rule measures the main column, never the thread's own pane. Its sizes and
 adaptive rule are in "Window and adaptive layout" above. It shows only the tabs Shepherd has:
-**Changes**, the review. Browser, Artifacts and Files are specified below and are not built, so
+**Changes**, the Changes pane. Browser, Artifacts and Files are specified below and are not built, so
 they have no tab and no placeholder (the user's decision, 2026-09-25: "dont show browser,
-artifacts, files, etc, only show the things we have"); each joins `SidePaneTab` when it is.
-A tray row, a record line, and the footer's "3 subagents" open the subagent inspector over the
-tabs; the tray's Steer opens it with its Steer field focused.
+artifacts, files, etc, only show the things we have"); each joins `SidePaneTab` when it is. A tray row, a record
+line, and the footer's "3 subagents" open the inspector; the tray's Steer opens it with its
+Steer field focused.
 
 - **Showing and hiding:** ⇧⌘B, the header's side-pane button, or View › Show Side Pane / Hide Side
   Pane. Showing opens the pane on its tab (Changes starts the review); hiding also closes an
@@ -2297,9 +2306,12 @@ tabs; the tray's Steer opens it with its Steer field focused.
   `micro` regular `textTertiary` (Changes: the review's files, once loaded), and pi's dot. The
   current tab has the `bgSelected` fill, `textPrimary`, semibold; a tab's tooltip has its ⌃ chord.
   Then a spacer, the pane's ⋯ menu and close ("Hide side pane" with ⇧⌘B), 28pt `nwIcon`s 4pt
-  apart. **Narrow:** under 480pt the labels drop (padding 0×9); glyphs, counts and dots stay.
-- **The ⋯ menu** (`SidePaneOptions`, "Pane options"): the current tab's items (Changes: Expand All
-  Files, Collapse All Files, a divider, Copy Review as Text), a divider, then Reset Width
+  apart; while the pane is maximized (ChangesWide), Restore the thread (a bordered 28pt circle)
+  comes before ⋯. **Narrow:** under 480pt the labels drop (padding 0×9); glyphs, counts and dots
+  stay.
+- **The ⋯ menu** (`SidePaneOptions`, "Pane options"): the current tab's items (Changes: Maximize
+  Pane or Restore the Thread, a divider, Expand All Files, Collapse All Files, a divider, Copy Review
+  as Text), a divider, then Reset Width
   (disabled at the default). Split below, Open pane in its own window and Show tabs are left out
   until they can work (see the departures).
 - **The subagent inspector takes the pane over** (Subagents, SubagentsDone) with its own header
@@ -2370,74 +2382,130 @@ tabs; the tray's Steer opens it with its Steer field focused.
   - **Not built yet** (SubagentsDone): "kept with the thread" in Geist Mono 11 `textTertiary`
     trailing the bar (`NWRunActions`' trailing slot).
 
-**Changes** (the review: `ReviewPane` in `DiffReviewView.swift`, state in `DiffReview.swift`):
+**Changes** (the Changes pane: ChangesSplit, ChangesScope, ChangesBase, ChangesUnified,
+ChangesLastTurn, ChangesWide and ChangesStates; `ReviewPane` in `DiffReviewView.swift`, state in
+`DiffReview.swift`, rows in `ChangesRows.swift`, menus in `ChangesMenus.swift`; parts in
+`Components/Review/ChangesToolbar.swift`, `ChangesMenu.swift`, `DiffLines.swift`,
+`FileHeader.swift`, `FileStrip.swift`, `InlineComment.swift`). It reads the host's Changes engine
+(docs/changes.md): this Mac's `server.changes`, or a remote host's `changes*` queries
+(`changes.v1`). Pick what to compare, see it side by side, tick files off, comment on lines, then
+send the review.
 
-- **Bar** (Review board, `ChangesBar`): 40pt under the strip, 14pt leading and 12pt trailing
-  padding, a hairline beneath. The scope and totals fill it in Geist Mono 10.5 `textTertiary`,
-  truncated in the middle: "working tree vs HEAD · 4 files · +67 −58" (the counts in `done` and
-  `failed`, cross-faded when they change). The directory's name leads when an agent's
-  `review_diff` points it outside the agent's own directory, then the reference an agent asked for
-  in place of "working tree vs HEAD"; "loading…" while loading. Then a small (`s`)
-  `NWSegmentedPicker` `Local | PR`, disabled while loading; the PR side names the pull request
-  ("PR #24", Review), which the app shows as "PR · <base ref>" once the base is known (Known
-  gaps). Its options (Expand All Files, Collapse All Files, Copy Review as Text) are in the pane's ⋯
-  menu. In a layout pane of its own (an older host's review leaf) the review keeps `NWPaneHeader`
-  instead: "Review" over the same line, Local | PR, its own "Review options" ⋯, and close ("Close
-  review").
-- **File strip** (`NWFileStrip`, NWReview, on `bgBase` with a hairline beneath): 24pt chips 4pt
-  apart inside 6pt padding, scrolling sideways (lazily). Each chip has its status letter (M
-  `lantern`, A `done`, D `failed`, R `running`; Geist Mono 11 bold), the filename in Geist Mono 11,
-  and for a modified or renamed file its diff stat (an added or deleted file shows only its
-  letter); the full path is its tooltip. The selected chip has the `bgSelected` fill (radius 6),
-  which slides to the next chip and scrolls it into view (at once for keyboard moves;
-  cross-faded under Reduce Motion); viewed files dim to 50%, and a 6pt `running` dot marks a file
-  the agent is editing right now.
-- **File headers** (`NWFileHeader`, NWReview; pinned while their file scrolls): at least 32pt on
-  `bgSunken` with a hairline beneath, 10pt leading and 6pt trailing padding, 8pt gaps. A 9pt fold
-  chevron (`textTertiary`, turning as the file folds), the path in `code` mono (Geist Mono 12)
-  with its directory in `textTertiary` and the filename semibold `textPrimary`, truncated at the
-  head, "n hunks" in `micro` `textTertiary`, "n comments" in `micro` `running`, then 24pt
-  `nwIcon` actions: Open in Xcode (`arrow.up.forward.square`; the default editor when Xcode is
-  absent; local reviews only), Revert ("Revert this file"; confirmed, local working-tree reviews
-  only), and Viewed (a checkmark, "Mark viewed" / "Mark unviewed", tinted `done` once viewed and
-  popping as it is marked). Clicking a header makes its file the current one. A binary file shows
-  "Binary file" in `caption` `textTertiary` in place of its lines.
-- **Diff lines** (`NWDiffView`, `NWDiffLine`, NWReview): unified, 22pt (`rowCompact`, ×
-  density), two 36pt line-number gutters (`micro` regular `textTertiary`, monospaced digits,
-  right-aligned with 6pt padding, shrinking to fit five digits), a 16pt sign column (+ `done`, a
-  true minus `failed`), and syntax-colored code in `mono` (Geist Mono 11.5). Removals sit on
-  `failedTint`, additions on `doneTint`, and a commentable context line hovers `bgHover`. Hunk
-  headers (`NWHunkHeader`) are 22pt `bgSunken` rows in `mono` `textTertiary` aligned to the code
-  column. Lines are tail-truncated with the full line on hover, never wrapped. Highlighting runs
-  off the main actor, once per file, with the theme's syntax colors.
-- **Folding** (`NWFoldRow`): a run of more than 8 like lines (`reviewCollapseThreshold`,
-  `Sources/ShepherdRemote/ReviewDiff.swift`) keeps a few lines at each end and folds the middle to a
-  24pt `bgSunken` strip (× density) between hairlines: "+ 13 more removed lines · 20–32"
-  ("unchanged", "added" or "removed") in `micro` regular `textTertiary` (`textSecondary` while
-  hovered), 6pt into the code column (94pt). Clicking shows the lines; ⌥-click (or the VoiceOver
-  action "Show the whole file") shows the whole file.
-- **Comments:** hovering a line shows an 18pt lantern `+` (radius 4, a 9pt bold plus in
-  `textOnLantern`) in a slot that is always laid out, and double-clicking the line also starts a
-  comment ("Comment" is the line's VoiceOver action). The editor (`NWCommentEditor`) is the
-  comment's card with a `running` line: the field ("Comment for the agent on this line") in `ui`,
-  one to eight lines, then Cancel (ghost `s`) and Comment (secondary `s`). ⏎ saves, ⇧⏎ adds a line,
-  Esc cancels, and saving an empty comment removes it. A saved comment (`NWInlineComment`,
-  NWReview) is a `bgRaised` card with a `lineStrong` line, radius 8, padding 8×10, inset 6pt under
-  its line and 94pt from the leading edge: a 16pt lantern avatar with the account name's initial
-  (Geist 9 bold, `textOnLantern`), "You" in `caption` semibold, "line 33 · just now" in `mono`
-  `textSecondary`, and Edit / Delete as `caption` links on hover; the comment in `ui`, selectable.
-- **Review composer** (`NWReviewComposer`, NWReview, at the foot with 12pt padding under a
-  hairline): a `bgRaised` card, radius 8, a `lineStrong` line (the focus ring while focused). The
-  field "Overall comment" in Geist 13, one to five lines, 10pt from the top and 12pt from the sides;
-  beneath it a row with 6pt padding: "n inline" in `micro` `textTertiary` (6pt more in), then
-  **Commit** (secondary `s`; asks the agent to commit, naming every file under review; not in PR
-  mode) and **Request changes** (primary `s`, ⌘⏎; sends the overall and inline comments as the
-  agent's next turn, queued if it is mid-turn; enabled once there is a comment or an overall
-  comment). The review closes only once the send succeeds. Where the host commits from review (a
-  local review, or a remote host with `review.commit.v1`), Commit becomes **Ask agent to commit**
-  (ghost) beside **Commit…** (secondary), which opens the commit sheet.
-- **Commit… sheet** (`ReviewCommitSheet`, 520pt, derived from the iPadCommit board; parts in
-  `Components/Review/CommitForm.swift`): "Commit n files" over "On <branch> in <repository>."
+- **What it compares** (the scope): Branch for a worktree agent with a base, else Uncommitted,
+  until the engine's overview names its default; Last turn once the agent has replied to a review
+  you sent (the reply's turn settling turns an open pane to Last turn, and a pane opened later
+  starts there), unless you picked a scope meanwhile. A card's Review opens the pane on that turn.
+- **Toolbar** (`ChangesToolbar`, 44pt, 12pt leading and 10pt trailing padding, 10pt gaps, a
+  hairline beneath): the scope button (`NWScopeButton`: 28pt, radius 7, a `lineStrong` line on
+  `bgRaised`, the scope's glyph, its name in `ui` semibold, a chevron; ⌘E), the scope's diff stat
+  in `code` mono; then "2/5 viewed" (`NWViewedPill`: 24pt capsule on `bgSunken`, an eye, the count
+  in mono 11.5, `caption` `textSecondary`), **Commit…** (secondary `s` with the commit glyph), and
+  four 28pt `nwIcon` circles 2pt apart: Refresh, Collapse all (Expand all when every file is
+  folded), the split toggle (it shows the layout it switches to; ⌥U) and Diff options. A narrow
+  pane drops the viewed count, then Commit…'s label. Commit… opens the commit sheet where the host
+  commits from review, and otherwise asks the agent to commit; it works on the working tree, so it
+  is off for Last turn, Staged, Commits and Pull request.
+- **Compare row** (`NWCompareRow`, 32pt on `bgBase`, 12pt sides, 8pt gaps, a hairline beneath):
+  head → base in `mono` (the head `textSecondary`, the base `textPrimary`), the base a 22pt picker
+  with a chevron on Branch, and "merge base 3f2a91c" trailing in mono 10.5 `textTertiary`. On a
+  turn it reads "The agent’s last turn" (12 `textSecondary`, with the turn glyph) and "3:07–3:11 PM
+  · after “Wrap errors with context”" in mono 11 `textTertiary` ("since 3:07 PM" while it runs).
+  An older host's review reads "Working tree → HEAD", led by the directory when it is not the
+  agent's own.
+- **Scope menu** (ScopeMenu, `NWChangesMenu` 320pt): Last turn ("What the agent changed since your
+  last message"), then Uncommitted, Unstaged and Staged (the last two without a glyph), then
+  Commits (its count and a chevron to the Commits menu), Branch ("agent/refund-events vs
+  origin/main") and Pull request ("#31 draft"). Each row carries its scope's diff stat from the
+  overview, the current one a check; a scope the engine can't compare is dimmed with its reason as
+  its second line. Until the overview lands (it asks gh for the pull request) a spinner says
+  "Counting each scope…". An older host's menu offers Uncommitted and Pull request.
+- **Menus** (`NWChangesMenu`, ChangesMenu.swift): popovers at radius 12 with 6pt padding and the
+  popover shadow, 30pt rows (40pt with a subtitle, in 11 `textTertiary`) at radius 6, a 13pt glyph
+  9pt from the title in `ui`, trailing a diff stat in mono 11, a tag in mono 10.5 `textTertiary`, a
+  check or a chevron; hovering fills `bgHover`, and the row whose submenu is open keeps
+  `bgSelected`. Section titles are mono 10 uppercase `textTertiary` (24pt); dividers are hairlines
+  with 4pt above and below. They hang from their control; a click anywhere else or esc closes them.
+- **Commits menu** (CommitsMenu, 360pt, beside Commits): "On agent/refund-events", All commits on
+  the branch, then the branch's commits newest first with "a1c9f2e · 12m", and "Pick two with ⇧
+  to see the range between them." A click compares one commit; ⇧-click marks one end and a
+  second ⇧-click the other.
+- **Base picker** (BasePicker, 316pt, under the base): a 32pt search field ("Search branches"),
+  "Compare against", then the default base, recents, and every branch by its last commit (the
+  checked-out one left out), mono titles with "default" or "worktree" tags and the current base
+  checked; then A commit… (the branch's commits, to compare against one) and The PR's base with
+  its ref. ⏎ picks the first match. A pick joins the repository's recents.
+- **Diff options** (DiffOptions, 300pt, under More): "Diff", then Word diffs, Hide whitespace
+  changes and Load full files ("Expand past folds without a round trip") as switches that leave
+  the menu open (the last two load the diff again; Hide whitespace changes also drops a file whose
+  only changes are whitespace, as `git diff -w` does, the user's call on 2026-09-25), then Copy git apply command (the patch in a
+  `git apply --3way` here-document), Copy as patch, and Open in your editor (⇧⌘O, the current
+  file; local reviews). Word diffs and Load full files start on. A patch a remote host had to cut
+  is not copied, and says so. **Not built yet:** Rich preview (the engine has no file contents to
+  render).
+- **File strip** (`NWFileStrip`, 38pt: 26pt chips 2pt apart inside 8pt sides, on `bgBase`, a
+  hairline beneath, scrolling sideways lazily): the status letter (M `lantern`, A `done`, D
+  `failed`, R `running`; mono 10.5 bold), the name in `mono` (`textPrimary` selected,
+  `textSecondary` otherwise, `textTertiary` with a `done` check once viewed) and its diff stat in
+  mono 10.5, a new file's too; the full path is its tooltip. The selected chip's `bgSelected` fill
+  slides to the next (at once for keys; a cross-fade under Reduce Motion), and a 6pt `running` dot
+  marks a file the agent is editing now. **Not built yet:** ⌘1–9 to jump to a file (ChangesStates):
+  those chords select agents.
+- **File headers** (`NWFileHeader`, 36pt on `bgRaised` between hairlines, pinned while their file
+  scrolls; 10pt leading and 8pt trailing padding, 8pt gaps): a 9pt fold chevron, the status letter
+  (mono 11 bold), the path in `code` (the directory `textTertiary`, the name semibold
+  `textPrimary`, truncated at the head), the file's diff stat in mono 11; then **Viewed**
+  (`NWViewedCheckbox`: a 14pt box, radius 4, a 1.5pt `lineStrong` line, lantern with a check once
+  ticked and popping as it is; `caption` `textSecondary`; ticking folds the file; V), Comment on the
+  file, and Open in your editor (26pt circles). Its context menu: Show Whole File, Revert File…
+  (Uncommitted on this Mac only: confirmed with `RevertFileDialog`), Copy Path. A click makes the
+  file current. A binary file shows "Binary file" in `caption` `textTertiary`, and one the engine
+  cut at 20,000 lines ends with "The rest of this file is left out: it is too long to show."
+- **Split** (ChangesSplit, `NWSplitDiffLine`, the pane at 900pt and up until you pick): each side
+  a 3pt gutter bar (`done` or `failed` on a changed line, clear otherwise), its line number in a
+  34pt gutter (mono 10.5 `textTertiary`, right-aligned, 8pt in), then the code in `code`; a 1px
+  `lineSubtle` rule between the halves. Unchanged lines sit beside themselves; a run of removals
+  pairs line for line with the additions after it, and the longer side's extra lines face filler
+  hatched in `lineSubtle` diagonals 7pt apart (`NWDiffHatch`), so rows line up.
+- **Unified** (ChangesUnified, `NWDiffLine`): the gutter bar, the old and new numbers, a 16pt sign
+  (+ `done`, a true minus `failed`) and the code. Lines are 21pt (× density), clipped at the pane's
+  edge with the full line on hover, never wrapped. Removals sit on `failedTint` and additions on
+  `doneTint`; with Word diffs on, a paired line's changed words take a second layer of the same
+  tint (`DiffWords`, computed with the syntax colors once per file off the main thread).
+- **Folds** (FoldRow, `NWDiffFoldRow`, 26pt on `bgSunken` between hairlines): unchanged lines
+  between hunks, and in a whole file every run more than three lines from a change (four at
+  least), fold to "28 unmodified lines" in `caption` `textTertiary` (`textSecondary` hovered) after
+  a 37pt column of reveal arrows: up shows the 20 lines at the fold's bottom edge, down the 20 at
+  its top (a fold at the top of the file has only up, one at its end only down), and the label shows
+  all of them. Lines between hunks came without the diff: opening their fold fetches the file whole
+  from the same revision first (Load full files brings every file whole to begin with).
+- **Comments:** hovering a line shows an 18pt lantern `+` in a slot that is always laid out, and
+  double-clicking the line (or C, on the current change's first changed line) comments. The
+  comment sits under its row, 6pt down, 40pt in, 12pt from the edge, between hairlines: a
+  `bgRaised` card with a `lineStrong` line, radius 8, padding 8×10 (`NWInlineComment`): a 16pt
+  lantern avatar with the account name's initial, "You" in `caption` semibold, "line 103 · just
+  now" in mono 10.5 `textSecondary`, and Edit (Delete joins it on hover); the comment in `ui`,
+  selectable. The editor (`NWCommentEditor`) is that card with a lantern line and a 3pt
+  `lanternTint` ring: the field ("Comment for the agent on this line"), then "on line 103" in mono
+  10.5 `textTertiary`, Cancel (ghost `s`) and Add comment (secondary `s`). ⏎ saves, ⇧⏎ adds a line,
+  Esc cancels, and saving an empty comment removes it. Comment on the file puts the same card under
+  the file's header ("file · just now"). Comments follow their lines when a file is fetched again
+  or the scope changes, by side, number and text.
+- **Send bar** (ReviewSendBar, `NWReviewSendBar`, 48pt on `bgRaised` under a `lineStrong` line,
+  14pt leading and 10pt trailing padding): only while there are unsent comments. "**1 comment** on
+  outbox.go, not sent yet" (or "on 2 files") in `ui`, then Discard (ghost `s`) and **Send to agent**
+  (primary `s`, ⌘↩). There is no overall comment: anything else is said in the thread. Sending
+  makes the comments the agent's next message (queued if it is mid-turn), under the scope they
+  were written against ("Diff review (Branch · vs main):"); once the send succeeds the comments
+  clear and the pane stays, and the agent's reply turns it to Last turn. A failed send keeps them.
+- **Maximized** (ChangesWide): the pane's ⋯ menu has Maximize Pane; the pane then covers the
+  thread (hidden, never unmounted) and the tab strip gains Restore the thread (a bordered circle
+  before ⋯). The strip gives way to a 260pt file list (`NWChangesFileList`): "5 FILES" with the
+  scope's stat over 46pt rows at radius 6 (the status letter; the name in `code` semibold over its
+  directory in mono 10.5 `textTertiary`; the stat over a `running` comment count or a `done`
+  check), the current file on `bgSelected`. **Not built yet:** the board's 52pt rail with the window
+  controls and Back to the thread, in place of the sidebar and the header.
+- **Commit… sheet** (`ReviewCommitSheet`, 520pt, from the toolbar's Commit…; derived from the
+  iPadCommit board; parts in `Components/Review/CommitForm.swift`): "Commit n files" over "On <branch> in <repository>."
   - Titles: "Commit n files" (or "Commit"), "Committing…" while it runs, "Committed" or "Pull
     request opened" when done, "Commit stopped" when a step fails. While it reads the checkout
     the subtitle and the footer say "Reading the checkout…" (a spinner in the footer); running,
@@ -2480,25 +2548,31 @@ tabs; the tray's Steer opens it with its Steer field focused.
     branch, commit n files, push to …, open a pull request into …) with each one's detail, a
     failed "Stopped" banner saying what was kept, then Open Pull Request and Done. Close while it
     runs leaves it running; Commit… shows it again. A finished commit reloads the review.
-- **Empty and error states:** "Loading the diff…" in `caption` `textTertiary` beside a 12pt
-  spinner; "No changes" (`NWEmptyState` without the crook) with "The working tree matches HEAD.",
-  "<ref> has no changes." for an agent's reference, or "This branch matches its PR base."; a
-  `failed` `NWBanner` with the error, 12pt in from the pane's edges. Loading, the diff, "No
-  changes" and an error cross-fade, as does one side's diff for the other (Local | PR).
-- **Keys:** j/k move between hunks, n/p between files, c comments on the current hunk's first
-  changed line, v marks the file viewed or unviewed, ⌘⏎ sends, and Esc returns to the thread's
-  composer. They are ignored while a comment or the overall comment is being typed, and keyboard
-  moves land at once.
-- **Repository changes:** per-file Revert is the only repository mutation outside the worktree
-  flows (`RevertFileDialog`: "Discard changes", with a Repository row naming the directory the
-  diff came from). Tracked files return to HEAD; new files move to the Trash. It acts on the
-  directory the confirmed diff came from, even if the review has since moved.
+- **States:** "Loading the diff…" in `caption` `textTertiary` beside a 12pt spinner; "No changes"
+  (`NWEmptyState` without the crook) with the scope's sentence ("The working tree matches HEAD.",
+  "This branch matches main.", "The agent’s turn changed no files."); a scope with nothing to
+  compare ("No turn yet.", not a repository) as "Nothing to compare"; and anything else as a
+  `failed` `NWBanner`, 12pt in. Loading, the diff, "No changes" and an error cross-fade, as does one
+  scope's diff for another; a reload of the same scope changes in place.
+- **Following the agent:** a turn that ends, an Undo and a Redo reload a working-tree scope and
+  Last turn. Refresh reloads by hand. Reads never wait on git: the engine runs off the server queue
+  and the main thread, and a list and its files land together.
+- **Keys** (ChangesStates › Keys, while the pane has focus and no comment is being written): J / K
+  the next and previous file, N / P the next and previous change, V viewed, C comment on the
+  current change, ⌥U split or unified, ⌘E the scope menu, ⇧⌘O open the current file in your
+  editor, ⌘↩ send; Esc closes a menu, then returns to the thread's composer. Keyboard moves land at
+  once.
+- **Repository changes:** only per-file Revert (above), Commit… (the commit sheet) and a card's
+  Undo and Redo (Thread › Changes card) touch a repository; the engine's reads leave the index,
+  HEAD, refs and every file alone (docs/changes.md).
 
 A review an agent opens (`review_diff`) is the host's view state; remote viewers open their own
 with ⇧⌘B. An agent may point its review at another repository or worktree (`cwd`); a new target
-starts the review over (comments, summary, viewed marks, folds), and asking again reloads it in
-place, marking the tab again while it is out of sight. A review that is sent (Request changes, Ask
-agent to commit) closes the pane with it; one that fails to send stays, with its comments.
+starts the review over (comments, viewed marks, folds), and asking again reloads it in place,
+marking the tab again while it is out of sight. A `review_diff` naming a git reference other than
+the pull request (and a review from a host without `changes.v1`) loads that diff the old way under
+the same chrome, its scope menu offering Uncommitted and Pull request. Hiding the pane discards its
+review.
 
 ### Side pane: Browser, Artifacts, Files (not built yet)
 
@@ -3170,8 +3244,8 @@ automated step of the worktree flows can be turned off here.
   Agents, a Thread group (Stop agent, Model picker, Previous turn, Next turn, Inspect subagent),
   While the agent is working (QueueStates' Keyboard card, in its order: ↩ and ⌘↩ named for what they do
   under the Return setting, "Send, queued" or "Send and steer now"; Edit the last queued message ↑;
-  Move the focused message ⌥↑↓; Delete the focused message ⌫; Steer the focused message ⌘↩; Stop the agent
-  Esc; only ⌘↩ records), a Window group (Show or hide the sidebar, the side pane), and Show or hide
+  Move the focused message ⌥↑↓; Delete the focused message ⌫; Steer the focused message ⌘↩; Stop the
+  agent Esc; only ⌘↩ records), a Window group (Show or hide the sidebar, the side pane), and Show or hide
   terminal ⌘J and Maximize or restore terminal ⇧⌘↩ in Panes. Its Fixed group (agents ⌘1–9, the side
   pane's Changes ⌃1, Settings, sheets) has the footnote "Changes apply immediately, everywhere a
   shortcut is shown."
@@ -3725,7 +3799,7 @@ composing chrome by hand. Debug builds have a **Component Gallery** (View menu,
 | Thread | `NWUserBubble` (its time shown while `revealed`; `origin: .steered`), `NWQueueDivider`, `NWAgentProse`, `NWCodeBlock`, `NWThinking`, `NWActivityLine`, `NWActivityCalls`, `NWChangesCard`, `NWDiffStat`, `NWInlineCode`, `NWAttachmentChip`, `NWTurnFooter` (shown while `revealed`), `NWTurnError`, `NWJumpToLatest`, `.nwShimmer(active:)` (live text) | `Thread/ThreadView.swift`, `ThreadTurns.swift` (with each turn's `MessageHover`), `ThreadTools.swift`, `ThreadMarkdown.swift` |
 | Composer | `NWComposer`, `.nwComposerChip(active:)`, `NWChipChevron`, `NWComposerActionButton` (outlined Stop, Send's ring), `NWMenuHeader`, `NWSlashMenu`, `NWModelPicker`, `NWThinkingMenu`, `NWSendMenu`; the queue: `NWQueueStack`, `NWQueueRow`, `NWQueueEditor`, `NWQueueDeletedRow`, `NWQueueMoreRow`, `NWQueueNumber`, `NWQueueGlyph`, `NWGripGlyph`, `NWQueueMetrics` | `Thread/Composer.swift`, `Thread/QueueStack.swift` |
 | Agents | `NWSubagentTray` (`NWSubagentTrayRun`, `NWSubagentTraySummary`, `NWSubagentTrayRow`, `NWSubagentTrayMoreRow`), `NWDockStack`, `NWSubagentRecordLine`, `NWSubagentQuestionDock`, `NWInspectorHeader`, `NWRunBrief`, `NWRunActions`, `NWBranchGlyph`, `NWElapsedText`, `NWDuration`, `NWInlineMarkup`, `.nwRunArrival`; touch forms for iOS (the tray's `.pad` and `.phone` sizes, `NWRunCard`, `NWRunHeader`, `NWRunTabs`, `NWSteerField`, …) | `Thread/Subagents.swift`, `Thread/SubagentInspector.swift`, `Thread/SubagentPresentation.swift`; the iOS client |
-| Review | `NWFileStrip`, `NWFileHeader`, `NWDiffView`, `NWDiffLine`, `NWHunkHeader`, `NWFoldRow`, `NWInlineComment`, `NWCommentEditor`, `NWReviewComposer`, `NWDiffMetrics`; the commit form (`NWCommitMessageEditor`, `NWCommitFileRow`, `NWCommitOptionRow`); touch forms for iOS (`NWTouchDiffLine`, `NWSplitDiffRow`, `NWTouchFileStrip`, `NWLineCommentBar`, `NWReviewFileRow`, …) | `DiffReviewView.swift`, `ReviewCommitSheet.swift`; the iOS client |
+| Review | The Changes pane: `NWScopeButton`, `NWViewedPill`, `NWCompareRow`, `NWFileStrip`, `NWFileHeader`, `NWViewedCheckbox`, `NWDiffView` over `NWChangesRow`s (`NWDiffLine`, `NWSplitDiffLine`, `NWDiffHatch`, `NWDiffFoldRow`), `NWInlineComment`, `NWCommentEditor`, `NWReviewSendBar`, `NWChangesFileList`, the menus (`NWChangesMenu`, `NWChangesMenuRow`, `NWChangesMenuToggle`, `NWChangesMenuSearch`), `NWDiffMetrics`, `NWChangesMetrics`; the commit form (`NWCommitMessageEditor`, `NWCommitFileRow`, `NWCommitOptionRow`); touch forms for iOS (`NWTouchDiffLine`, `NWSplitDiffRow`, `NWTouchFileStrip`, `NWLineCommentBar`, `NWReviewFileRow`, `NWReviewComposer`, …) | `DiffReviewView.swift`, `ChangesMenus.swift`, `ChangesRows.swift`, `ReviewCommitSheet.swift`; the iOS client |
 | Dialogs | `NWDialog` (`NWDialogMetrics`), `NWDialogStatus`, `NWSheetRow`, `NWChecklistRow`, `NWSettingsNavRow` | `DialogSheet.swift`, `AppDialogs.swift`, the sheets, `QuitConfirmation.swift`, `SettingsView.swift` |
 | Automations | `NWAutomationRow` (a row with its switch), `NWAutomationSwitch`, `NWFactRow` and `NWFactText`, `NWAutomationPrompt`, `NWRunBars`, `NWRunRow`, `NWAutomationMetrics` | `RemoteAutomationSheet.swift`; the iOS client's `Automations/` |
 | Design tool (not built yet; `Components/DesignTool/`) | `NWDesignCanvas`, `NWBoardFrame`, `NWSelectionRing`, `NWCommentPin`, `NWBoardActions`, `NWCanvasToolbar`, `NWCommentCard`, `NWCommentThread`, `NWTweakRow`, `NWTokenChip`, `NWTweakScope`, `NWDesignSystemChip`, `NWTokenSwatch`, `NWExportFormatCard`, `NWLiveLinkField`, and `NWActivityLine`'s `.drew` and `.checked` kinds (see Design tool) | nothing yet |
@@ -3773,7 +3847,7 @@ color is a role.
 - **With a shortcut:** only on the view's main action. The chord is bound (⌘⏎:
   `.keyboardShortcut(.return, modifiers: .command)`) and drawn after the title in Geist Mono
   10.5 regular at 60% opacity, 6pt after it ("Land ⌘⏎", "New agent ⌘N"). **Not built yet:** no
-  button draws its chord. The review's Request changes binds ⌘⏎ and names it in its tooltip,
+  button draws its chord. The Changes pane's Send to agent binds ⌘↩ and names it in its tooltip,
   and the empty workspace puts `NWKeycap`s beside New agent (Known gaps). In a sheet the primary
   is the ⏎ default instead (Dialogs and sheets).
 
@@ -4022,7 +4096,7 @@ Fixed chords:
   answers, and Esc hides or shows the question. Today a confirm answers to y or n while its panel
   has focus, and Esc does nothing while a question waits (it never stops pi then).
 
-Review-pane keys are listed with the review.
+The Changes pane's keys are listed with the pane (Side pane › Changes).
 
 ## Accessibility and motion
 
@@ -4083,22 +4157,32 @@ below collects the rest, and the places those sentences point here.
   where the board's is `ghost`. `dangerFill` lifts on hover like `primary` (`Buttons.swift`); the
   board's stays put. Primary's and dangerFill's hover and pressed fills are 12% and 10% mixes toward
   white and black, near but not the board's hexes (dark hover `#f4b352` against `#f7b84f`). No
-  button draws its chord after its title: the review's Request changes names ⌘⏎ only in its tooltip,
+  button draws its chord after its title: the Changes pane's Send to agent names ⌘↩ only in its tooltip,
   and the empty workspace puts keycaps beside New agent (`WorkspaceView.swift`). `NWPopupMenu`
   defaults to a 180pt minimum width (`Pickers.swift`); the board's popups are 200.
 - **Status and feedback:** an empty state's sentence is capped at 320pt (`Feedback.swift`), the
   board's at 280. A banner's icon is 13pt, the board's 15.
 - **Agents and review:**
-  - A review in a layout pane of its own (an older host's review leaf) leaves the scope off for
-    the plain local diff ("4 files · +67 −58"); the Changes tab's bar leads with "working tree vs
-    HEAD" as the Review board does (`ReviewScope.text`, `Sources/ShepherdApp/DiffReviewView.swift`).
-  - The PR side of Local | PR reads "PR · <base ref>"; the Review board names the pull request
-    ("PR #24") (`ReviewScope.prLabel`).
+  - A review from an older host (no `changes.v1`) keeps two scopes (Uncommitted and Pull request)
+    and compares the working tree against HEAD, or the PR's merge base, the old way.
   - The Agents and Review components pad and space in 10pt where their boards do (the brief's
-    vertical padding, the subagent question dock's, the action bar, a comment's sides, the review
-    composer's field, a file header's leading inset,
+    vertical padding, the subagent question dock's, the action bar, a comment's sides, the changes
+    card's head, the toolbar's gaps, a file header's leading inset,
     `AppLayout.steerTopInset`), which is not a step on the space scale ("Padding and gaps use only
     these steps").
+- **The Changes pane: open, waiting on the user's call** (not decided departures; each either
+  gets built as its board draws it or becomes a departure once the user says so):
+  - Mac: a pinned file header's shadow under its bottom hairline (ChangesSplit); the maximized
+    pane's 52pt rail with the window controls and Back to the thread (ChangesWide); ⌘1–9 to jump
+    to a file (ChangesStates), chords that select agents today; Rich preview (the engine sends no
+    file contents).
+  - iPad: the sidebar stays in landscape, so the docked pane is narrower than the board's 640pt;
+    its toolbar drops "2/5 viewed", then the stat (`PadChangesToolbar`), and its head sits under
+    the thread's bar rather than beside it.
+  - iPhone and iPad, not built: a file head's Comment on the file and Open buttons; the base
+    picker's "A commit…"; a commits range (touch has no ⇧); Rich preview and Open in your editor;
+    a draft pull request from Commit… (`RemoteCommitOptions` has no draft).
+  - A comment's author: the boards draw the initial "B"; the touch clients say "You".
 - **Thread and terminal** (NWThread, TerminalSplit, TerminalPane against the app):
   - Consecutive activity lines sit 6pt apart (`AppLayout.activitySpacing`), as NWThread draws
     them; ToolRows and Running draw 4pt.
@@ -4238,11 +4322,11 @@ components first), with these differences for touch:
     dots follow the host's news, so a tab leaving the screen (its viewer detaching, the PTY taking
     the Mac's size again) leaves no dot.
 - **Commit from review** (MobileCommit, iPadCommit boards): the same parts as the Mac's sheet. On
-  iPhone the changes' bar reads Request changes and **Commit…** (primary), which presents a sheet
+  iPhone the changes' bar reads Send 1 comment and **Commit…** (primary), which presents a sheet
   (Cancel, "Commit n files"; Message, Files "n of m", the options card; a full-width Commit &
   push, with Ask agent to commit as a link under it and in the review's ••• menu). File rows are
-  44pt and show the name alone. On iPad, Commit… (the docked review composer's, or the full-screen
-  review's bar) opens a 400pt popover; its anatomy is in iOS: iPad › Commit. A host without
+  44pt and show the name alone. On iPad, Commit… (the Changes toolbar's, docked or full screen)
+  opens a 400pt popover; its anatomy is in iOS: iPad › Commit. A host without
   `review.commit.v1` keeps the single Commit that asks the agent.
 
 ### iPhone: shell and shared anatomy
@@ -4437,12 +4521,20 @@ follows the Mac's rules (Thread) with the phone's measures below.
   indented 21pt, the newest in `textSecondary` and the rest `textTertiary`. Nothing spins, and no
   "Working…" row sits under it; between tools the turn ends in "› Thinking…", shimmering, as on the
   Mac (Thread › Live text).
-- **Changes card** (`NWChangesCard`): 1px `lineSubtle`, 8pt corners, on `bgWindow`. Its 40pt head on
-  `bgSunken`: a pencil glyph, "2 files changed" (12.5/600), the stat (`done` added, `failed`
-  removed, mono 11), and Review (a 24pt ghost button, 12/500 `textSecondary`) trailing, which opens
-  every change of the turn. Then a 36pt row per file: the status letter (mono 11/700; M `lantern`, A
-  `done`), the path in mono 12 with its directory in `textTertiary`, its stat; a row opens the
-  review at that file.
+- **"Edited N files" card** (`NWTurnChangesCard`, ChangesStates › ChangesCard): 1px
+  `lineSubtle`, 12pt corners, on `bgWindow`. Its head (10×10×12 inset): a 36pt tile (`bgSunken`,
+  a 1px `lineSubtle` line, radius 8) with the ± glyph in `textSecondary`; "Edited 2 files" (15/600)
+  over its stat (mono 12, `done`/`failed`); then Undo (a 36pt ghost with its ↶ glyph, 13.5/500
+  `textSecondary`) and Review (secondary, 28pt, its hit area 44pt). Then 40pt rows with hairlines:
+  the path at 14 with its folder in `textTertiary` and the name in `textPrimary`, "new" (12
+  `textTertiary`) before a created file's stat, the stat in mono 12; three files, then "2 more",
+  which opens the review too. A row opens the review at that file. Review opens the review
+  scoped to that turn; Undo puts back the turn's edits in the working tree (the host's engine,
+  docs/changes.md) with no dialog, and the card becomes one dashed line, "↶ Undid the agent's
+  edits to 5 files" with Redo, until the next turn starts. A refusal (a file changed since)
+  names the files in an alert. The card comes from the host's record of the turn
+  (`turnChanges`); an older host's comes from the turn's edit calls, with no Undo. At the
+  accessibility sizes the head stacks and paths take two lines.
 - **Turn footer** (`NWTurnFooter`): at rest, mono 11 `textTertiary`: "2:44 PM · 3m 12s"; the app
   adds the tool-call count, Copy and Retry, and "n subagents" when the turn spawned runs.
 - **Composer:** a 1px `lineSubtle` rule, `bgWindow`, 10pt above, 12pt sides, 30pt below. A 44pt
@@ -4617,33 +4709,49 @@ record lines, a list, and a screen per run.
 
 ### iPhone: Review (MobileChanges, MobileDiff, MobileCommit)
 
-`Review/ChangesScreen.swift`, `DiffScreen.swift`, `Commit/CommitScreen.swift`. The review is the
-Mac's (Side pane › Changes); Commit… follows the Commit from review rule above.
+`Review/ChangesScreen.swift`, `DiffScreen.swift`, `ScopeMenu.swift`, `Commit/CommitScreen.swift`.
+The review is the Mac's Changes pane (Side pane › Changes) on a host with `changes.v1`; Commit…
+follows the Commit from review rule above.
 
-- **Changes** (MobileChanges), pushed from the changes card: "Changes" over "working tree vs HEAD"
-  (or the PR), ••• trailing (Working tree vs HEAD or Pull request, Refresh, Ask agent to commit,
-  Finalize worktree…). On `bgBase`, 14pt padding, 10pt apart:
+- **Changes** (MobileChanges), pushed from the card: "Changes" (17/600) over the scope in
+  `running` (12/500): a glyph for the scope, "Branch · vs main", a chevron. It opens the scope
+  menu (ChangesStates › ScopeMenu): Last turn ("What the agent changed since your last message"),
+  then Uncommitted, Unstaged, Staged, then Commits (a submenu: all commits on the branch, then
+  each with its short id and age), Branch (this branch against its base, and Compare against…,
+  the base picker) and Pull request ("#31 draft"), each with its diffstat; a scope the host can't
+  compare says why and is off. ••• trailing: Refresh, Discard comments, Ask agent to commit,
+  Finalize worktree…. A card's Review opens on that turn; a review opens on the host's default
+  (Branch for a worktree agent, else Uncommitted), and after Send on Last turn. On `bgBase`, 14pt
+  padding, 10pt apart:
   - The summary card (14pt padding): "3 files" (17/600) and the stat (mono 11), then the branch
-    trailing (a branch glyph and "main", mono 12 `textSecondary`); under it a 4pt bar (`done` fill
-    on `lineSubtle`) and "1 of 3 viewed" (12.5 `textTertiary`). The app shows the branch only for a
-    worktree agent, and adds Finalize worktree ("commit · push · PR") to the card for one.
+    trailing (a branch glyph and "agent/pay-button-jump", mono 12 `textSecondary`); under it a
+    4pt bar (`done` fill on `lineSubtle`) and "1 of 3 viewed" (12.5 `textTertiary`). The app adds
+    Finalize worktree ("commit · push · PR") to the card for a worktree agent.
   - "Files" with "tap to read the diff", then one card of 58pt rows (`NWReviewFileRow`): the viewed
     mark (a `done` check, or a 14pt ring in `lineStrong`), the status letter (mono 12: M `lantern`,
     A `done`), the name (mono 14/600) over its directory (mono 11 `textTertiary`), the comment count
-    (a bubble glyph and "1", 12 `running`), the stat, a chevron. A row pushes its diff.
-  - "Your comments" with the count, then a card per comment: an 18pt `bgSelected` circle with the
-    author's initial (10/600), "FleetView.swift · line 33" (mono 12 `textTertiary`), the time
-    trailing ("just now"), and the text at 14/1.45. The app labels the author "You" and adds Edit,
-    Delete and an overall comment field.
-  - The bottom bar: Request changes (secondary) and Commit… (primary), 48pt each, sharing the width.
+    (a bubble glyph and "1", 12 `running`), the stat, a chevron. A row pushes its diff. The list
+    comes from the host first; a file's lines come when it is read.
+  - "Your comments" with the count, then a card per comment: an 18pt circle with the author's
+    initial (10/600), "FleetView.swift · line 33" (mono 12 `textTertiary`), the time, and the
+    text at 14/1.45. The app labels the author "You" and adds Edit and Delete. There is no overall
+    comment: anything else is said in the thread.
+  - The bottom bar: Send 1 comment (secondary; "Send 3 comments", off with none) and Commit…
+    (primary), 48pt each, sharing the width.
+- **Base picker** (ChangesStates › BasePicker), a sheet from Compare against…: "Search branches",
+  then "Compare against": the default base first ("default"), recents, then every other branch
+  by its last commit, a branch checked out in another worktree tagged "worktree", the current
+  base checked; then The PR's base. Rows 44pt: a branch glyph, the name in mono 13, the tag in
+  mono 12 `textTertiary`. The board's "A commit…" is not offered (Known gaps).
 - **Diff** (MobileDiff): the file name over "App/iOS · 2 of 3 · +9 −7" (mono 11.5), and Next file (a
   34pt button, a down chevron) trailing; the app adds Mark viewed. On `bgWindow`:
   - The hunk head in mono 11 `textTertiary` on `runningTint`, 6×12 padding.
   - Lines (`NWTouchDiffLine`) at least 22pt (`NW.Height.rowCompact`), wrapped, mono 12 at 1.55: a
     32pt number column (10.5 `textTertiary`, right-aligned, 6pt after), a 14pt sign column (`failed`
-    −, `done` +), the code with syntax colors; removed lines on `failedTint`, added on `doneTint`.
-  - Long removed runs fold into a 26pt row on `bgSunken` indented 46pt: a chevron and "13 more
-    removed lines" (mono 11 `textTertiary`); a tap shows them.
+    −, `done` +), the code with syntax colors; removed lines on `failedTint`, added on `doneTint`,
+    and a changed word of a paired line on its tint again (`DiffWords`).
+  - Long runs fold into a 26pt row on `bgSunken` indented 46pt: a chevron and "13 more removed
+    lines" (mono 11 `textTertiary`); a tap shows them.
   - A comment sits under its line: 6pt above and below, 12pt trailing, indented 46pt; `bgRaised`,
     1px `lineStrong`, 10pt corners, 10×12 padding: the initial, "You · just now", and the text at
     14.
@@ -4651,6 +4759,7 @@ Mac's (Side pane › Changes); Commit… follows the Commit from review rule abo
     then shows "line 16 selected · Suggest a change" (12 `textTertiary`; the line in mono `running`)
     over a 44pt capsule "Comment on line 16…" with Send. The app adds Done, which clears the
     selection.
+  - A file the host cut short (20,000 lines, or the remote frame's size) says so under its lines.
   - **Not built yet:** "Suggest a change" (`running`, after "selected ·"): it turns the comment into
     a suggested replacement for the selected line, prefilled with the line's text, sent with the
     review as a suggestion the agent applies. Neither the phone nor the Mac has it.
@@ -4669,6 +4778,9 @@ Mac's (Side pane › Changes); Commit… follows the Commit from review rule abo
     PR", off.
   - A full-width 48pt Commit & push (primary) at the bottom. The app adds Ask agent to commit as a
     link under it, and the host's steps once it runs.
+- **Older hosts** (without `changes.v1`): the same screens show the working tree against HEAD, or
+  the PR, from one diff; the title's menu offers those two, and Commit sends the agent a turn
+  where the host doesn't commit from review.
 
 ### iPhone: Needs you (MobileInbox)
 
@@ -5073,11 +5185,10 @@ selected thread, or the Overview when none is. Other screens push over the detai
   The running call keeps its own live line (LiveText): the tool's glyph, still, the summary and
   the command shimmering, and its clock in mono `textTertiary` ("Running tests · go test
   ./ledger/... · 18s").
-- **Changes card:** `bgWindow`, a 1px `lineSubtle` line, radius 8. A 44pt header on `bgSunken`
-  (12pt glyph, "2 files changed" at 12.5/600, "+58 −45" in mono 11 `done`/`failed`, and Review, a
-  24pt ghost button with its glyph); then 40pt file rows with hairlines between: the status
-  letter in mono 11 bold (`lantern` for M, `done` for A), the path in mono 13 with its directory
-  in `textTertiary`, and its stat. Review opens every change of the turn; a row opens its file.
+- **"Edited N files" card** (iPadReview): the phone's card (`NWTurnChangesCard`) at the iPad's
+  column width: the 36pt tile, "Edited 5 files" (15/600) over "+200 −8", Undo and Review, then
+  "ledger/outbox.go" rows at 14 ("new" before a created file's stat) and "2 more". Its rules are
+  the phone's (iPhone: Thread).
 - **Turn footer:** Copy response and Retry turn as 36pt circles with 15pt `textTertiary`
   glyphs, then "2:44 PM · 3m 12s · 6 tool calls" in mono 11 `textTertiary`, and "· 3 subagents"
   as a link when the turn spawned runs. At rest (no hover).
@@ -5264,92 +5375,92 @@ chosen (All subagents) it lists the thread's runs under a "Subagents" head with 
 
 #### Review (iPadReview, iPadReviewSplit)
 
-`PadReviewScreen` has two layouts; Full screen and Beside the thread switch between them.
+`PadReviewScreen` has two layouts: the pane's ••• (Full screen) and "‹ Thread" switch between
+them. Both read the host's Changes engine (`changes.v1`) as the phone does (iPhone: Review):
+the scope menu, the base picker, a file's lines fetched as it nears the screen, word diffs.
 
-**Docked** (iPadReview): the thread keeps the left and the review takes the right: 620pt, never
-more than 58% of the detail, with a 1px `lineStrong` leading edge on `bgWindow`. The board hides
-the sidebar (Show sidebar in the thread's header) so the thread keeps a 512pt column; so do the
-inspector's boards (iPadSubagents, iPadSteer). The app keeps the sidebar in landscape whatever
-docks (`PadShell` shows both columns in landscape), so the thread narrows between the two until
-the user hides it (Known gaps).
+**Docked** (iPadReview): the thread keeps the left and the Changes pane takes the right: 640pt,
+never more than 58% of the detail, with a 1px `lineStrong` leading edge on `bgWindow`. The board
+hides the sidebar so the thread keeps a 540pt column; the app keeps the sidebar in landscape
+(`PadShell`), so the pane narrows and its toolbar drops the viewed count, then the stat, rather
+than clip (Known gaps).
 
-- **Head** (the bar's height, 16pt leading and 6pt trailing inset, a hairline under it):
-  "Review" at 15/600 over "4 files · +67 −58" in mono 11 `textTertiary`; the source switch,
-  Local | PR #24 (a `bgSelected` track at radius 10, 3pt inset; 30pt segments at radius 8, 13;
-  the chosen one on `bgWindow`, semibold, the other `textSecondary`); and Close review (a 44pt
-  circle, `xmark` 13 in `textSecondary`). The app adds Full screen and, for a worktree agent,
-  Finalize worktree, and its segment reads "PR".
-- **File strip** (on `bgBase`, 8×12 inset, 6pt apart, a hairline under it; `NWTouchFileStrip`):
-  36pt chips at radius 9 in mono 12: the status letter bold (`lantern` M, `done` A), the name,
-  and its stat. The current file's chip takes `bgSelected`.
-- **File head** (at least 44pt, on `bgSunken`, 14pt leading inset): the path in mono 13 (the
-  directory `textSecondary`, the name semibold), "2 hunks" in mono 11 `textTertiary`, then Mark
-  viewed (a 44pt circle; `done` once viewed). The board's Revert file (a `failed` glyph) is not
-  offered over remote (see Where Shepherd departs).
-- **Diff** (unified): 24pt lines in mono 12.5, two 34pt gutters in mono 11 `textTertiary`, a
-  14pt sign column. The hunk header on `bgSunken` in mono 11 `textSecondary`. Removed lines on
-  `failedTint`, added on `doneTint`, signs in `failed` and `done`, code in syntax colors. A run
-  of removed lines folds into a 36pt row on `bgSunken` between `lineSubtle` hairlines, indented
-  82pt: a 10pt plus and "13 more removed lines · 18–32" in mono 11.5 `textSecondary`; a tap
-  unfolds it. Tapping a line opens a comment editor under it.
-- **Comment** under its line, indented 82pt to the code: `bgRaised`, a 1px `lineStrong` line, radius
-  10, 10×12 inset: an 18pt initial on `running` in white, "You" semibold, "line 33 · just now" in
-  mono 12 `textSecondary`, then the text at 14/1.5.
-- **Review composer** (a hairline above, 10×12 inset, 28 under): a `bgRaised` card at radius 14
-  with a 1px `lineStrong` line: the field "Overall comment" at 15/1.5, then "1 inline" in mono
-  11 `textTertiary`, Commit (40pt at radius 10, `bgWindow` with a 1px `lineStrong` line, 14/500
-  in `done`) and Request changes (primary, 40pt at radius 10, 14/600). With `review.commit.v1`
-  the app's Commit… opens the commit popover, and Ask agent to commit keeps the turn that asks
-  the agent. A failed send shows "Couldn't send the review" with Dismiss.
+- **Pane head** (52pt, 10pt inset, a hairline under it): the Changes tab (36pt, radius 6,
+  `bgSelected`, 12.5/600, its glyph and the file count in mono 10.5 `textTertiary`), then Pane
+  options (a 28pt bordered circle: Full screen, Finalize worktree…) and Close pane (28pt). The
+  board's Browser, Artifacts and Files tabs are not built on iPad (Side pane).
+- **Toolbar** (ChangesStates › ChangesToolbar; 54pt, 12pt leading, a hairline under it): the
+  scope pill (36pt, radius 6, `bgRaised`, a 1px `lineStrong` line: a branch glyph, "Branch" at
+  15/600, a chevron), the scope's stat (mono 12), then "👁 2/5 viewed" (a 24pt `bgSunken`
+  capsule, 12 `textSecondary`), Commit… (secondary, 28pt, the commit glyph), then 36pt icons:
+  Refresh, Collapse all files (Expand all once every file is folded), the split toggle (its
+  glyph is the mode it switches to), and Diff options (•••: Word diffs, Hide whitespace changes,
+  Load full files, then Copy git apply command and Copy as patch).
+- **Compare row** (38pt on `bgBase`, 12pt inset): the head in mono 12 `textSecondary`, →, the
+  base in mono 12 `textPrimary` with a chevron (Branch only: the base picker, a popover), and
+  "merge base 3f2a91c" (or a turn's `after “…”`) in mono 11 `textTertiary` trailing.
+- **File strip** (`NWTouchFileStrip`): 36pt chips in mono 12 (the status letter bold, the name,
+  the stat); the chip tapped is filled, and the stack scrolls its file to the top; viewed files
+  dim.
+- **Files, stacked** in one lazy list: each file's head sticks while its file scrolls (44pt on
+  `bgRaised`, hairlines above and below): a disclosure chevron, the status letter, the folder in
+  `textTertiary` and the name semibold (mono 12), its stat, and Viewed (a 14pt checkbox and
+  "Viewed" at 12 `textSecondary`); ticking Viewed folds the file away, and a tap on the head folds
+  or opens it. The board's per-file Comment and Open buttons are not built (Known gaps).
+- **Diff** (unified while the pane is narrow, ChangesStates' rule: split from 900pt): lines in
+  mono 12.5, two 34pt gutters in mono 11 `textTertiary`, a 14pt sign column; removed lines on
+  `failedTint` and added on `doneTint`, each with a 3pt `failed`/`done` bar at its leading edge
+  (the gutter bar), a changed word on its tint again. A hunk's head is the unchanged lines before
+  it ("95 unmodified lines", 44pt on `bgSunken` between hairlines, a ⌃⌄ glyph, 12
+  `textSecondary`); a tap asks the host for the whole file. Long runs fold as on the phone.
+  Tapping a line opens a comment editor under it.
+- **Comment** under its line, indented to the code: `bgRaised`, a 1px `lineStrong` line, radius 10,
+  10×12 inset: an 18pt initial, "You" semibold, "line 103 · just now" in mono 12 `textSecondary`,
+  Edit and Delete, then the text at 14/1.5.
+- **Send bar** (`NWReviewSendBar`, only while comments wait; a hairline above, `bgWindow`): a
+  `running` bubble, "1 comment" semibold and "on outbox.go, not sent yet" in `textSecondary`,
+  then Discard (ghost) and Send to agent (primary). Sent, the review closes and opens next on
+  Last turn. There is no overall comment box. A failed send shows "Couldn't send the comments"
+  with Dismiss.
 
-**Full screen** (iPadReviewSplit): the review takes the window; the board draws no sidebar. The
-app fills the detail column, so in landscape the sidebar stays beside it (Known gaps).
+**Full screen** (iPadReviewSplit): the review takes the detail column (the sidebar stays in
+landscape, Known gaps).
 
-- **Head** (the 76pt header): "‹ Thread" (16, `running`, back to the thread), "Review" at 17/600,
-  the agent's pill with its clock ("Running · 42m"), and "working tree vs HEAD" at 12.5
-  `textTertiary`; trailing, the source switch (a `bgSunken` track with a 1px `lineSubtle` line
-  at radius 6; 24pt segments at radius 4, 12; the chosen one on `bgSelected` with a 1px
-  `lineStrong` ring), 8pt, Commit… (secondary, 36pt) and Request changes (primary, 36pt). The app
-  adds Beside the thread and Finalize worktree, and a host without `review.commit.v1` shows
-  Commit, which asks the agent.
-- **File list** (260pt, a 1px `lineSubtle` trailing edge, 12×10 inset, 4pt apart): "3 FILES"
-  (`.nwSectionLabel()`) with "+97 −48"; rows at least 58pt, 8×12 inset, radius 10: the status
-  letter in mono 12 bold, the name in mono 13/600 over its directory in mono 11 `textTertiary`,
-  the stat in mono 11 and a comment count (an 11pt `running` bubble and "1") trailing, names
-  whole. The current row takes `bgSelected`; viewed files are marked. At the foot (a hairline
-  above, 14×16 inset): "OVERALL" and "Add an overall comment…" at 13 `textTertiary`.
-- **File head** (46pt on `bgSunken`, 14pt inset): a 14pt file glyph, the path in mono 13, its
-  stat, Viewed (a 14pt checkbox at radius 4 with the 1.5pt `lineStrong` border on `bgRaised`,
-  and "Viewed" at 13 `textSecondary`), and Unified | Split (20pt segments).
-- **Split:** column heads "HEAD" | "WORKING TREE" ("BASE" | "BRANCH" for a PR) in mono 10.5
-  tracked 4% `textTertiary`, 6×12 inset, 48pt leading; halves split by a 1px `lineSubtle` line.
-  Rows 26pt in mono 12, a 34pt number column in mono 10.5 `textTertiary`, a 14pt sign column;
-  removed rows on `failedTint`, added on `doneTint`. A fold is a 26pt `bgSunken` row ("13 more
-  removed lines", mono 11 `textTertiary`) on its side, blank `bgSunken` on the other; a side with
-  no line opposite is hatched (`lineSubtle` stripes at 135°, every 6pt). Comments sit under
-  their line in the right half, 44pt in.
+- **Head** (the bar): "‹ Thread" (back beside the thread), "Review" at 17/600, the scope pill and
+  the stat; trailing, "2/5 viewed", Commit…, the split toggle and Diff options (which adds Refresh
+  and Collapse all here), and Finalize worktree for a worktree agent.
+- **Compare row** as docked.
+- **File list** (260pt on `bgBase`, a 1px `lineSubtle` trailing edge, 12×10 inset, 4pt apart):
+  "5 FILES" (`.nwSectionLabel()`) with "+200 −8"; rows at least 58pt, radius 10: the status letter
+  in mono 12 bold, the name in mono 13/600 over its directory in mono 11 `textTertiary`, the
+  comment count and the stat trailing. The file tapped is filled and scrolled to; viewed files
+  dim.
+- **Split** (the default here): halves split by a 1px `lineSubtle` line; rows in mono 12, a 34pt
+  number column, a 14pt sign column, removed rows on `failedTint` and added on `doneTint` with
+  their gutter bars; a side with no line opposite is hatched (`lineSubtle` stripes at 135°, every
+  6pt). Folds sit on their side, blank `bgSunken` on the other. Comments sit under the side they
+  were written on.
+- **Send bar** across the foot, as docked.
 
 #### Commit (iPadCommit)
 
-Commit… opens a popover under it (`.commitPopover`): 400pt wide, `bgRaised`, radius 14 on the
-board (`.nwPopover()`), with its arrow; 16pt inset, parts 12pt apart.
+Commit… opens a popover under it (`.commitPopover`): 400pt wide, `bgRaised`, with its arrow; 16pt
+inset, parts 12pt apart.
 
-- **Title:** "Commit 3 files" at 16/600; the count follows the ticked files ("Committing…",
-  "Committed", "Pull request opened", "Commit stopped" as it runs).
-- **Message card** (`bgWindow`, a 1px `lineStrong` line, radius 10, 10×12 inset, 6pt apart): the
-  summary at 14.5/600, the body at 13/1.5 `textSecondary`, and "Drafted from the diff" at 11.5
-  `textTertiary` with an 11pt sparkle (the app: "Drafted from the diff · edit anything"). Both
-  lines edit in place.
-- **Files** (rows at least 36pt, 10pt gap): a 14pt checkbox at radius 4 (`lantern` with a
-  `textOnLantern` check when ticked), the name in mono 12.5, its stat in mono 11. Every file
-  starts ticked; an untouched message redrafts for the ticked files. The list scrolls past
-  220pt.
-- **Options** (rows at least 46pt, a hairline above each): Push after commit (its upstream,
-  "origin/main", at 12 `textTertiary`) and Open a pull request instead ("pushes a branch, opens
-  the PR"), titles at 14.5, each with a 30×18 switch (`lantern` on, `lineStrong` off).
-- **Foot:** Cancel (the board's ghost; the app's secondary) and the primary, whose title
-  follows the options: Commit, Commit & push, or Commit & open PR. The app adds Ask agent (ghost,
-  leading), which sends the agent a turn instead.
+- **Title:** "Commit 5 files" at 17/600 and "to agent/refund-events" in mono 12 `textTertiary`
+  ("Committing…", "Committed", "Pull request opened", "Commit stopped" as it runs).
+- **Message card** (`bgWindow`, a 1px `lineStrong` line, radius 10, 10×12 inset): the summary
+  semibold, the body in `textSecondary`, and "Drafted from the diff · edit anything" with a
+  sparkle. Both lines edit in place. The primary is "Commit & push" here, on the phone and on the
+  Mac: one wording and one note everywhere (the user's call, 2026-09-25; the iPadCommit board
+  matches).
+- **Options** as checkboxes (rows at least 44pt): Push to origin (the upstream it pushes to in
+  12 `textTertiary`) and Open a pull request (where the PR goes). The popover commits every
+  changed file; the phone's sheet is where files are ticked off. The board's "draft" pull request
+  is not offered: the host opens a ready one (Known gaps).
+- **Foot:** Cancel (secondary) and the primary, whose title follows the options: Commit, Commit &
+  push, or Commit & open PR. The app adds Ask agent (ghost, leading), which sends the agent a turn
+  instead.
 - **States** (the app's): "Reading the changes on the host…" while it loads; "Can't commit
   from here" when the host can't; "The agent is working" with a "Commit while it works"
   switch; "Can't commit here" for a detached HEAD or a merge in progress; "Redrafting the
@@ -5569,7 +5680,8 @@ Instructions, SettingsInstructions; `Settings/InstructionsScreens.swift`):
 
 #### Side pane (iPadPaneBrowser, iPadPaneArtifacts, iPadPaneFiles)
 
-Built: the docked review (see Review) is the only thing beside a thread.
+Built: the Changes pane (see Review) is the only thing beside a thread; its head carries the
+Changes tab alone.
 
 **Not built yet: the side pane.** Show side pane (a 40pt circle in the thread's header; Hide side
 pane, on `bgSelected`, while it shows) opens a pane on the thread's trailing side, with a 1px
@@ -7599,7 +7711,12 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | ModelPicker | Composer, questions, and menus › Model picker | Built |
 | CommandPalette | Command palette | Partial |
 | ToolRows | Thread › Activity lines | Built |
-| Review | Side pane › Changes; Side pane: Browser, Artifacts, Files (its other tabs) | Partial |
+| ChangesSplit | Side pane › Changes (toolbar, compare row, strip, file headers, split, comments, send bar) | Built |
+| ChangesScope | Side pane › Changes (scope menu, Commits menu) | Built |
+| ChangesBase | Side pane › Changes (base picker) | Built |
+| ChangesUnified | Side pane › Changes (unified, word diffs, Diff options) | Partial |
+| ChangesLastTurn | Side pane › Changes (a turn's compare row, the comment editor) | Built |
+| ChangesWide | Side pane › Changes (maximized, file list) | Partial |
 | Subagents | Subagents; Side pane › Subagent inspector | Partial |
 | SubagentsDone | Subagents; Side pane › Subagent inspector | Partial |
 | SubagentsQueue | Subagents (One card with Up next); Up next (the queue) | Partial |
@@ -7774,8 +7891,8 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | NWComposer, NWComposerLight | Composer, questions, and menus; Command palette | Partial |
 | NWNavigation, NWNavigationLight | Window and adaptive layout; Sidebar; Sidebar destinations, Needs you, and Recents; Toolbar | Partial |
 | NWAgents, NWAgentsLight | Subagents; Side pane › Subagent inspector; Mission components | Partial |
+| ChangesStates | Side pane › Changes; Thread › Changes card; Keyboard | Partial |
 | SubagentTray | Subagents; iPhone: Subagents; iOS: iPad › Subagents | Partial |
-| NWReview, NWReviewLight | Side pane › Changes | Built |
 | NWSwift, NWSwiftLight | Theme model › Building on ShepherdUI | Partial |
 | MXVocab, MXVocabLight | Missions › Missions: the map | Not built yet |
 | NWMissions, NWMissionsLight | Missions (Missions: shared parts and the screens that use them) | Not built yet |

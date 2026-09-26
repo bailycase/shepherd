@@ -220,6 +220,8 @@ struct AgentLayoutModel: Equatable {
     /// The side pane's tab while it is open, and the tabs pi opened something in.
     var sideTab: SidePaneTab?
     var sideNews: Set<SidePaneTab> = []
+    /// The side pane over the whole layout (ChangesWide).
+    var sideMaximized = false
     /// The Changes tab's review, by identity.
     let review: ReviewSession?
     /// The terminal panel under the thread, and its height.
@@ -228,7 +230,8 @@ struct AgentLayoutModel: Equatable {
 
     static func == (a: AgentLayoutModel, b: AgentLayoutModel) -> Bool {
         a.tab == b.tab && a.isVisible == b.isVisible && a.thread == b.thread && a.focusedPaneID == b.focusedPaneID
-            && a.inspectingRunID == b.inspectingRunID && a.sideTab == b.sideTab && a.sideNews == b.sideNews && a.review === b.review
+            && a.inspectingRunID == b.inspectingRunID && a.sideTab == b.sideTab && a.sideNews == b.sideNews
+            && a.sideMaximized == b.sideMaximized && a.review === b.review
             && a.terminal == b.terminal && a.terminalHeight == b.terminalHeight
     }
 
@@ -264,6 +267,7 @@ struct AgentLayoutModel: Equatable {
                                     inspectingRunID: thread.flatMap { runs[$0.agentID] },
                                     sideTab: owner.flatMap { panes.open.contains($0) ? panes.tab(for: $0) : nil },
                                     sideNews: owner.flatMap { panes.news[$0] } ?? [],
+                                    sideMaximized: owner.map { panes.maximized.contains($0) } ?? false,
                                     review: thread.flatMap { reviews[$0.agentID] },
                                     terminal: terminals.panel(TerminalPanelKey(host: nil, tab: tab.id)),
                                     terminalHeight: terminals.height)
@@ -290,7 +294,8 @@ struct AgentLayoutView: View, Equatable {
         let sideTab = model.sideTab
         // The layout stays the first child whether or not a pane is open, so opening one never
         // remounts a pane's surface.
-        RightPaneSplit(state: vm.subagentInspector, showPane: inspecting != nil || sideTab != nil) {
+        RightPaneSplit(state: vm.subagentInspector, showPane: inspecting != nil || sideTab != nil,
+                       maximized: inspecting == nil && model.sideMaximized) {
             PaneTreeView(vm: vm, model: model)
         } pane: {
             if let thread {
@@ -308,7 +313,8 @@ struct AgentLayoutView: View, Equatable {
                         // The inspector keys its run itself, so a run switch nudges in from its side.
                         .nwTransition(.content)
                     } else if let sideTab {
-                        SidePaneView(vm: vm, owner: owner, tab: sideTab, news: model.sideNews, review: model.review, store: store)
+                        SidePaneView(vm: vm, owner: owner, tab: sideTab, news: model.sideNews, review: model.review, store: store,
+                                     maximized: model.sideMaximized)
                             .nwTransition(.content)
                     }
                 }
@@ -656,7 +662,11 @@ struct PaneLeafView: View, Equatable {
                     inspectSubagent: { [vm] in vm.toggleSubagentInspector(agentID: agentID, runID: $0.runID) },
                     steerSubagent: { [vm] in vm.steerSubagent(agentID: agentID, runID: $0.runID) },
                     inspectedRunID: inspecting,
-                    review: { [vm] path in vm.selectAgent(agentID); vm.openReview(agentID: agentID, path: path) }
+                    review: { [vm] path in vm.selectAgent(agentID); vm.openReview(agentID: agentID, path: path) },
+                    turnActions: TurnChangesActions(
+                        review: { [vm] turnID, path in vm.selectAgent(agentID); vm.openTurnReview(.local(agentID), turnID: turnID, path: path) },
+                        undo: { [vm] in await vm.undoTurn(.local(agentID), turnID: $0) },
+                        redo: { [vm] in await vm.redoTurn(.local(agentID), turnID: $0) })
                 )
             } else {
                 LiveTerminalPane(
@@ -689,6 +699,7 @@ struct AgentThreadPane: View {
     var steerSubagent: ((ChildRun) -> Void)? = nil
     var inspectedRunID: String? = nil
     var review: ((String) -> Void)? = nil
+    var turnActions: TurnChangesActions? = nil
 
     var body: some View {
         // The placeholder cross-fades in when pi dies; connecting → live changes nothing here.
@@ -697,7 +708,7 @@ struct AgentThreadPane: View {
             case .connecting, .live:
                 ThreadView(store: store, active: active, isFocused: isFocused, request: request, preview: preview, commandKey: commandKey,
                            agentName: agentName, workingDirectory: workingDirectory, inspectSubagent: inspectSubagent,
-                           steerSubagent: steerSubagent, inspectedRunID: inspectedRunID, review: review)
+                           steerSubagent: steerSubagent, inspectedRunID: inspectedRunID, review: review, turnActions: turnActions)
             case .failed(let reason):
                 PanePlaceholder(text: "session unavailable · \(reason)")
                     .nwTransition(.content)
@@ -831,7 +842,8 @@ private struct RemoteAgentLayoutView: View {
         let sideTab = threadPaneID != nil && panes.open.contains(owner) ? panes.tab(for: owner) : nil
         // A review a host layout still carries as a leaf (older hosts) renders there instead.
         let review = threadPaneID == nil ? nil : vm.remoteReviews[ref].flatMap { $0.hostReviewPane ? nil : $0 }
-        RightPaneSplit(state: panes, showPane: inspecting != nil || sideTab != nil) {
+        RightPaneSplit(state: panes, showPane: inspecting != nil || sideTab != nil,
+                       maximized: inspecting == nil && panes.maximized.contains(owner)) {
             RemotePaneTreeView(vm: vm, connection: connection, ref: ref, tab: tab, node: tab.layout, thread: threadPaneID)
         } pane: {
             if let threadPaneID {
@@ -846,7 +858,8 @@ private struct RemoteAgentLayoutView: View {
                         // The inspector keys its run itself, so a run switch nudges in from its side.
                         .nwTransition(.content)
                     } else if let sideTab {
-                        SidePaneView(vm: vm, owner: owner, tab: sideTab, news: panes.news[owner] ?? [], review: review, store: store)
+                        SidePaneView(vm: vm, owner: owner, tab: sideTab, news: panes.news[owner] ?? [], review: review, store: store,
+                                     maximized: panes.maximized.contains(owner))
                             .nwTransition(.content)
                     }
                 }
@@ -1048,6 +1061,10 @@ private struct RemoteAgentThreadPane: View {
             },
             inspectedRunID: inspecting,
             review: { path in vm.openRemoteReview(ref, path: path) },
+            turnActions: vm.remoteHosts.connections.first(where: { $0.id == ref.hostID })?.supportsChanges == true ? TurnChangesActions(
+                review: { turnID, path in vm.openTurnReview(.remote(ref), turnID: turnID, path: path) },
+                undo: { await vm.undoTurn(.remote(ref), turnID: $0) },
+                redo: { await vm.redoTurn(.remote(ref), turnID: $0) }) : nil,
             listModels: {
                 guard let listing = try? await vm.remoteHosts.listModels(hostID: ref.hostID) else { return .empty }
                 let allLevels = vm.remoteHosts.connections.first { $0.id == ref.hostID }?.supportsAllThinkingLevels ?? false

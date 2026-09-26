@@ -286,6 +286,9 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   case (table-driven), plus the `NativeThread` wire types against the golden
   `Tests/Extensions/native-thread-wire.json`.
 - **Server:** every `SessionServer` state mutation.
+- **Changes:** every scope on a scratch repository, the proof that reading changes leaves the
+  index, HEAD, refs, the stash, `.git` and every file alone, and Undo, Redo and the refusal on a
+  turn the stub pi made.
 - **Core:** the status transition table, `PaneNode` operations, and state validation.
 - **Migration:** terminal-era `runtime` keys, global shells and space shells dropped at startup,
   and review leaves.
@@ -354,7 +357,9 @@ Sources/
                        Instructions (Settings ▸ Instructions' files, history and requests),
                        Suggestions (Settings ▸ Experiments ▸ Suggested instructions),
                        Skills (Settings ▸ Skills: installed skills, repositories, requests),
-                       HostSettings (a host's settings as a client sees and changes them).
+                       HostSettings (a host's settings as a client sees and changes them),
+                       DiffFile (a diff's files, hunks and lines), Changes (the Changes pane's
+                       scopes, lists, turns and base picker on the wire), DiffWords (word diffs).
   ShepherdRemote/      RemoteHostClient, NativeThreadStore (@Observable), NativeThreadPresentation,
                        NativeTurnPresentation (a turn's items), NativeMarkdown (the prose
                        parser: tables, lists, images, details, footnotes), NativeActivity
@@ -363,15 +368,17 @@ Sources/
                        TerminalPanel (a layout's terminal tabs, the key row's bytes, the panel's
                        height, RemoteTerminalLink), AutomationPresentation (automation rows, runs
                        and what a client may do), AgentBranchPresentation (the header's branch
-                       chip), InstructionsText (an instruction file's size, diff, changed lines,
-                       highlighting and suggested lines), InstructionsPresentation (its host
-                       chips and rows), SuggestionsPresentation (Experiments' words),
-                       ClientSettings (the iOS client's Settings models: a host's settings, its
-                       instructions and suggestions over the remote protocol),
-                       HostSettingsPresentation, ClientSkills (Settings ▸ Skills' model on every
-                       platform), SkillsText (SKILL.md's frontmatter, prompt tokens, repository
-                       references), SkillsPresentation (its words), SkillsDirectory (skills.sh),
-                       ShepherdLog. Shared with the iOS client.
+                       chip), ChangesPresentation (the send bar, the review message, the "Edited
+                       N files" card from a recorded turn), InstructionsText (an instruction
+                       file's size, diff, changed lines, highlighting and suggested lines),
+                       InstructionsPresentation (its host chips and rows),
+                       SuggestionsPresentation (Experiments' words), ClientSettings (the iOS
+                       client's Settings models: a host's settings, its instructions and
+                       suggestions over the remote protocol), HostSettingsPresentation,
+                       ClientSkills (Settings ▸ Skills' model on every platform), SkillsText
+                       (SKILL.md's frontmatter, prompt tokens, repository references),
+                       SkillsPresentation (its words), SkillsDirectory (skills.sh), ShepherdLog.
+                       Shared with the iOS client.
   ShepherdPTYSpawn/    The PTY child side (fork → exec) in C: no Swift runs between the two.
   ShepherdSessions/    SessionServer (state, sessions, extension socket, remote listener),
                        RPCSession, RPCThreadState (+Queue: the queue of messages sent while pi
@@ -383,7 +390,9 @@ Sources/
                        InstructionsStore (Settings ▸ Instructions' files and their history),
                        SuggestionsStore (Suggested instructions: settings, waiting, added),
                        SkillsStore (a host's skills in ~/.agents/skills; docs/skills.md),
-                       SkillsGit (the partial clones skills install from).
+                       SkillsGit (the partial clones skills install from),
+                       Changes/ (ChangesService: the Changes pane's engine — scopes, snapshots,
+                       diffs, the base picker, each agent's turns and their Undo; docs/changes.md).
   TerminalSurfaceKit/  Ghostty adapter for terminal panes; see its NOTES.md.
   ShepherdApp/         The Mac app:
     ShepherdApp.swift (the Window scene, AppDelegate), RootView (+ WorkspaceHeaderView),
@@ -406,7 +415,9 @@ Sources/
     TerminalSessions (TerminalSessionStore), AgentStartQueue (launch order of restored pi),
       TerminalHost (the only TerminalSurfaceKit import),
       NativeThreadStores (+ LegacyTerminalAgents), PaneControl, PaneFocusMemory
-    DiffReview (ReviewSession), DiffReviewView (ReviewPane), GitDiff, CodeHighlight (tree-sitter)
+    DiffReview (ReviewSession, ChangesEngine, ReviewPaneModel), DiffReviewView (ReviewPane: the
+      Changes pane), ChangesRows (split and unified rows, folds), ChangesMenus (scope, commits,
+      base and options menus), GitDiff, CodeHighlight (tree-sitter)
     ReviewCommit (ReviewCommitGit, ReviewCommitter), ReviewCommitSheet, +ReviewCommit
     GitWorktree, WorktreeFinalize, ChecklistStatus, NewWorktreeSheet, FinalizeWorktreeSheet,
       NewAgentSheet, RemoteWorktreeSheet, RemoteDirectoryPicker, DialogSheet,
@@ -579,7 +590,10 @@ variables are blanked.
     info/setup/finalize/delete, `terminals` (what each terminal pane runs; answered by the
     server itself, `terminal.activity.v1`), and commit from review (`commitInfo`,
     `commitMessage`, `commit` behind `review.commit.v1`; the commit is an operation polled with
-    `worktreeStatus`)
+    `worktreeStatus`), and the Changes pane (`changesOverview`, `changesList`, `changesFile`,
+    `changesBranches`, `changesPatch`, `changesUndoTurn`, `changesRedoTurn` behind `changes.v1`,
+    answered by the server itself; thread snapshots carry `turnChanges`). Older hosts review the
+    working tree only (`review`).
   - `automation` (`automations.v1`): switch on or off, run now, stop, the runs the host kept,
     create, edit, delete. There is no schedule or trigger: an automation that is on starts a run
     when Shepherd launches on the host. The Mac shows a host's automations under its sidebar
@@ -836,8 +850,9 @@ agent and its auxiliary processes while the app runs, and quitting the app termi
   opt-in merge → clean gate → remove worktree → delete local branch. Each step gates the next,
   nothing is destroyed before the clean gate, and the remote branch is never deleted (that would
   close the PR).
-- **The review pane's per-file Revert** (`GitDiff.revert`): confirmed, local working-tree reviews
-  only. Tracked files return to HEAD, and new files move to the Trash.
+- **The Changes pane's per-file Revert** (`GitDiff.revert`, a file header's context menu):
+  confirmed, local reviews of Uncommitted only. Tracked files return to HEAD, and new files move
+  to the Trash.
 - **Commit from review** (`ReviewCommit.swift`, served by `ShepherdViewModel+ReviewCommit.swift`
   to the Mac's own review pane and to remote clients alike): confirmed in the Commit… sheet.
   check → (new branch) → commit → (push) → (pull request); each step gates the next and git's
@@ -853,6 +868,21 @@ agent and its auxiliary processes while the app runs, and quitting the app termi
     to another branch (a feature branch tracking origin/main never pushes to main). A pull request pushes the branch (a new `shepherd/<slug>` branch,
     made with `git switch -c`, when on the default branch) and runs `gh pr create`.
   - It holds the checkout in `hostBusyWorktrees` while it runs, like Finalize.
+- **Working-tree snapshots of the Changes engine** (`ChangesService`, [docs/changes.md](docs/changes.md)):
+  deliberate and invisible. To compare the working tree (and to record where an agent's turn
+  started and ended) the engine runs `git add -A` and `git write-tree` against an index file of
+  its own in the support directory (`GIT_INDEX_FILE`), seeded once from a copy of the user's, and
+  `git write-tree` on a throwaway copy of the user's index for Staged and Unstaged. The only
+  trace in the repository is loose objects in `.git/objects`: unreachable, pruned by `git gc`
+  after its expiry. The user's index, working tree, HEAD, refs, stash and config are never
+  written (`ChangesEngineTests` proves it). Untracked files over 16 MiB are left out, so nothing
+  big is copied into the object store; clean filters (Git LFS) run as they would for `git add`.
+- **Undo and Redo of an agent's last turn** (the "Edited N files" card, `ChangesService.undoTurn`,
+  `redoTurn`): the turn's files only. Paths the turn modified or deleted return to the turn's
+  starting snapshot (`git restore --source=<tree> --worktree`, through a throwaway index), and
+  files it created move to the Trash; Redo reverses that until the next turn starts. Refused,
+  naming the files and touching none, when any of them changed after the turn (or the Undo).
+  The index, HEAD, refs, the stash and every other file stay as they are.
 
 Nothing else mutates repository state, and Shepherd never prunes worktrees.
 
@@ -862,9 +892,12 @@ an inspected subagent takes the pane over and closing it goes back to Changes. I
 the persisted layout. **Nothing opens the pane by itself:** an agent's `review_diff` readies the
 review and marks the Changes tab, and with the pane closed the header's side-pane button, with a
 dot; only the user shows it (⇧⌘B, ⌃1, the button, a link).
-Request changes and Ask agent to commit (plain Commit on a host without commit from review) send
-the agent a follow-up turn, and the review closes only once the send succeeds, so comments survive
-a failed send. Commit… commits directly (above) and reloads the review once it finishes. A
+It reads the Changes engine (`server.changes` here, `changes*` from a `changes.v1` host; a
+`review_diff` naming another git reference, or an older host, loads the old way under the same
+chrome). Send to agent and Ask agent to commit (Commit… on a host without commit from review)
+send the agent a follow-up turn; the comments clear only once the send succeeds, so they survive a
+failed send, and the pane stays (the agent's reply turns it to Last turn). Commit… commits
+directly (above) and reloads the review once it finishes. A
 review an agent opens on a host is that host's view state: remote viewers are deliberately not
 notified and open their own with ⇧⌘B.
 

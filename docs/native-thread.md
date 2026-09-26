@@ -286,6 +286,16 @@ one prompt at a time.
   app kills pi on quit (asking first while agents work), and on relaunch every agent resumes
   idle, so a restored queue could only come back paused against a run that no longer exists.
 
+## Turn changes
+
+The host records each run of an RPC agent in a git repository: the Changes engine snapshots the
+working tree when pi starts it (`agent_start`) and when it settles (`agent_settled`), and names
+the turn by its first user message (`RPCThreadState.onTurnEvent`). The snapshot's `turnChanges`
+carries the agent's recent turns, oldest first, with each turn's first files, counts, state and
+whether Undo or Redo applies: the "Edited N files" card ([changes.md](changes.md) › Turns).
+`nil` from an older host, and for an agent outside a repository. A turn's state change moves the
+revision like any other part of the snapshot.
+
 ## Serving
 
 `SessionServer.nativeThread(agentID:request:)` answers the local GUI directly on the server

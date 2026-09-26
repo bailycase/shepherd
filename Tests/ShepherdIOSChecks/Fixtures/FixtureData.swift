@@ -46,6 +46,9 @@ struct FixtureHostData {
     /// Settings ▸ Skills: the host's skills, and what looking up a repository finds there.
     var skills: SkillsSnapshot? = FixtureData.skills()
     var repoSkills: RepoSkills? = nil
+    /// What the host says it understands; nil is everything this build knows (an older host
+    /// leaves some out).
+    var capabilities: [String]? = nil
 }
 
 /// Fixed ids and builders every track's fixtures share, so screens agree with each other.
@@ -115,16 +118,26 @@ enum FixtureData {
     }
 
     static func snapshot(_ messages: [NativeThreadMessage], running: Bool = false, dialogs: [NativeThreadDialog] = [],
-                         subagents: [NativeSubagent]? = nil) -> NativeThreadSnapshot {
+                         subagents: [NativeSubagent]? = nil, turnChanges: [ChangesTurn]? = nil) -> NativeThreadSnapshot {
         NativeThreadSnapshot(piSessionID: "fixture-session", generation: "fixture-generation", revision: 1, running: running,
                              model: "anthropic/claude-opus", thinking: "medium",
                              supportedActions: ["send", "abort", "answer", "queue", "subagents"], dialogsSupported: true,
                              dialogs: dialogs, messages: messages, provisional: [], clipped: false, runtime: "rpc",
-                             subagents: subagents)
+                             subagents: subagents, turnChanges: turnChanges)
+    }
+
+    /// The turn the host recorded for `thread()`'s reply: the "Edited 2 files" card with Undo
+    /// (`state` .undone draws "Undid the agent’s edits…" with Redo).
+    static func previewTurn(state: ChangesTurn.State = .ready) -> ChangesTurn {
+        ChangesTurn(id: UUID(uuidString: "7E000000-0000-4000-8000-000000000001")!, messageTimestamp: start,
+                    prompt: "Remove the visible speaker labels", startedAt: start, endedAt: start + 192_000, state: state,
+                    files: [ChangesFile(path: "Sources/ShepherdApp/DesktopNativeThreadView.swift", status: .modified, added: 58, removed: 41),
+                            ChangesFile(path: "App/iOS/ThreadView.swift", status: .modified, added: 0, removed: 4)],
+                    added: 58, removed: 45, canUndo: state == .ready, canRedo: state == .undone)
     }
 
     /// The MobileThread board: a finished turn with thinking, edits, a test run and the changes card.
-    static func thread() -> NativeThreadSnapshot {
+    static func thread(turn: ChangesTurn? = previewTurn()) -> NativeThreadSnapshot {
         snapshot([
             user("m1", "Remove the visible speaker labels, and make tool rows show something useful instead of just \"complete\"."),
             assistant("m2", "I'll finish removing the speaker labels and make tool rows show a useful command or path preview.",
@@ -137,7 +150,7 @@ enum FixtureData {
                  output: "✔ Test run with 1 test in 1 suite passed after 0.2 seconds.", at: 150_000),
             assistant("m7", "Removed the visible speaker labels and the desktop gutter. User-message fills still distinguish the conversation.\n\nFocused regression test and Mac Dev build passed.",
                       at: 192_000),
-        ])
+        ], turnChanges: turn.map { [$0] })
     }
 
     /// A turn still running: a live command, started a couple of minutes before launch so its
@@ -165,7 +178,7 @@ enum FixtureData {
 /// Every screen, by track. A track edits only its own file's list.
 enum FixtureCatalog {
     static var all: [FixtureScreen] {
-        home + thread + newThread + subagents + review + commit + search + settings + automations + windows + terminal
+        home + thread + newThread + subagents + review + changes + commit + search + settings + automations + windows + terminal
     }
 
     static func screen(named name: String) -> FixtureScreen? {

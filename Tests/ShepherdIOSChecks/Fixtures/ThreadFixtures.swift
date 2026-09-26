@@ -171,7 +171,7 @@ enum ThreadFixtures {
             F.tool("m6", "bash", args: #"{"command":"xcodebuild -scheme 'Shepherd (Dev)' build"}"#, output: "** BUILD SUCCEEDED **", at: 180_000),
             F.assistant("m7", "Removed the visible speaker labels and the desktop gutter. User-message fills still distinguish the conversation.\n\nFocused regression test and Mac Dev build passed.",
                         at: 192_000),
-        ]))
+        ], turnChanges: [F.previewTurn()]))
     }
 
     /// A question and an answer in rich Markdown (MarkdownFixtures).

@@ -19,13 +19,25 @@ public final class ScratchServer: @unchecked Sendable {
     /// Starts on a fresh directory, or on `dir` to restart over an existing state file.
     public init(dir: URL? = nil, modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels }) throws {
         self.dir = try dir ?? makeScratchDirectory("srv")
+        // An Undo's trashed files land in the scratch directory, never the user's Trash.
+        let trash = self.dir.appendingPathComponent("Trash", isDirectory: true)
         server = SessionServer(socketPath: self.dir.appendingPathComponent("s.sock").path,
                                stateURL: self.dir.appendingPathComponent("state.json"),
                                modelCatalog: modelCatalog,
-                               skillsDirectory: self.dir.appendingPathComponent("agent-skills", isDirectory: true))
+                               skillsDirectory: self.dir.appendingPathComponent("agent-skills", isDirectory: true),
+                               trash: { url in try ScratchServer.moveToTrash(url, trash: trash) })
         let broadcasts = broadcasts
         server.onStateChanged = { state in broadcasts.withValue { $0.append(state) } }
         try server.start()
+    }
+
+    /// Where an Undo on this server moves the files a turn created.
+    public var trash: URL { dir.appendingPathComponent("Trash", isDirectory: true) }
+
+    /// Moves `url` into `trash` under a unique name, as the Finder's Trash would.
+    static func moveToTrash(_ url: URL, trash: URL) throws {
+        try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: true)
+        try FileManager.default.moveItem(at: url, to: trash.appendingPathComponent("\(UUID().uuidString)-\(url.lastPathComponent)"))
     }
 
     /// Stops the server; `keepFiles` leaves the directory for a restart test.
