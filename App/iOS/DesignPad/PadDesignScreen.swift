@@ -80,7 +80,10 @@ struct PadDesignScreen: View {
         .onDisappear {
             designs.setVisible(ref, false)
         }
-        .task(id: hosts.host(ref.host)?.session) { await canvas.loadSystem(design?.systemNamespace) }
+        // The chip's colors, once per connection and system (the design may arrive after the screen).
+        .task(id: [hosts.host(ref.host)?.session?.uuidString, design?.systemNamespace]) {
+            await canvas.loadSystem(design?.systemNamespace)
+        }
     }
 
     /// "‹ Designs": back to the list under the design, or to it when the design opened on its own
