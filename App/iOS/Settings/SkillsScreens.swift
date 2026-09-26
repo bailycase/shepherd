@@ -51,6 +51,7 @@ struct SkillsScreen: View {
                 }
                 if term.isEmpty {
                     InstalledSkills(model: model, hosts: skillsHosts) { name in navigator.open(.settings(.skill(name))) }
+                    PiSkillsSections(model: model, hosts: skillsHosts)
                 } else {
                     SkillSearchResults(term: term, results: results, searching: searching, failure: failure, model: model,
                                        hosts: skillsHosts) { skill in
@@ -234,6 +235,71 @@ private struct SkillListRow: View, Equatable {
                 .padding(.trailing, NW.Space.l + NW.Space.xxs)
         }
         .overlay(alignment: .top) { if !first { NWHairline() } }
+    }
+}
+
+/// The skills the first host's pi loads from elsewhere (its own setup, its packages), read-only:
+/// a card per group, then where they come from and why a repository's own skills aren't here.
+private struct PiSkillsSections: View {
+    let model: ClientSkills
+    let hosts: [SkillsHost]
+
+    var body: some View {
+        if let pi = model.pi(in: hosts) {
+            let groups = model.piGroups(in: hosts)
+            ForEach(groups) { group in
+                VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
+                    NWListHeader("\(SkillsPresentation.groupTitle(group.kind)) · \(group.rows.count)")
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(group.rows.enumerated()), id: \.element.id) { index, row in
+                            PiSkillListRow(row: row, first: index == 0)
+                                .equatable()
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: NWListMetrics.cardRadius))
+                    .nwCard(radius: NWListMetrics.cardRadius)
+                }
+            }
+            if let problem = pi.skills.problem {
+                SettingsFootnote(SkillsPresentation.piProblem(problem), tone: .failed)
+            }
+            SettingsFootnote(SkillsPresentation.piFootnote(host: pi.host.name))
+        } else if let reference = model.reference(in: hosts) {
+            SettingsFootnote(SkillsPresentation.piNotReported(reference.name))
+        }
+    }
+}
+
+/// One of pi's own skills (read-only): its name in mono over its description (or why pi passes
+/// it over), and where it comes from. No switch: Shepherd never changes it.
+private struct PiSkillListRow: View, Equatable {
+    let row: PiSkillRow
+    let first: Bool
+
+    var body: some View {
+        let nw = Color.nw
+        let skill = row.skill
+        VStack(alignment: .leading, spacing: MobileLayout.skillLineSpacing) {
+            Text(skill.name)
+                .font(.nwMono(MobileLayout.skillNameSize, .semibold))
+                .foregroundStyle(skill.isUsed ? nw.textPrimary : nw.textSecondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Text(SkillsPresentation.mobileSummary(skill))
+                .font(.nwSans(MobileLayout.skillSummarySize))
+                .foregroundStyle(nw.textTertiary)
+                .lineLimit(2)
+            Text(SkillsPresentation.source(skill))
+                .font(.nwMono(MobileLayout.skillSummarySize - 1))
+                .foregroundStyle(nw.textTertiary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .padding(.vertical, NW.Space.m)
+        .padding(.horizontal, NW.Space.l + NW.Space.xxs)
+        .frame(maxWidth: .infinity, minHeight: MobileLayout.skillRowHeight, alignment: .leading)
+        .overlay(alignment: .top) { if !first { NWHairline() } }
+        .accessibilityElement(children: .combine)
     }
 }
 

@@ -74,6 +74,15 @@ extension FixtureData {
                                updatedAt: 1_788_091_200, files: [SkillFileEntry(name: "SKILL.md"),
                                                                 SkillFileEntry(name: "scripts", isDirectory: true, fileCount: 2)]),
             ],
-            checkedAt: Date().timeIntervalSince1970 - checkedAgo)
+            checkedAt: Date().timeIntervalSince1970 - checkedAgo,
+            pi: PiSkills(agentDirectory: "~/.pi/agent", skills: [
+                PiSkill(name: "review-pr", summary: "Reviews a pull request the way the team does.",
+                        path: "~/.pi/agent/skills/review-pr/SKILL.md", origin: .agentDirectory),
+                PiSkill(name: "release-notes", summary: "Drafts release notes from the merged pull requests.",
+                        path: "~/.pi/agent/skills/release-notes/SKILL.md", origin: .agentDirectory, invocation: .slashOnly),
+                PiSkill(name: "postgres", summary: "Query plans, indexes and locks for Postgres.",
+                        path: "~/.pi/agent/npm/node_modules/@acme/pi-db-skills/skills/postgres/SKILL.md", origin: .package,
+                        package: "@acme/pi-db-skills"),
+            ]))
     }
 }

@@ -48,6 +48,11 @@ struct SettingsSearchTests {
         ("automations", .experiments, ["Learn from"]),
         ("slash", .skills, ["Skills in the / menu"]),
         ("github", .skills, ["Add from repo"]),
+        // The skills pi loads from elsewhere, listed read-only on the page.
+        ("npm", .skills, ["From pi packages"]),
+        (".pi", .skills, ["From your pi setup"]),
+        ("read-only", .skills, ["From your pi setup", "From pi packages"]),
+        ("agent skills", .skills, ["Installed skills", "From your pi setup", "From pi packages"]),
     ] as [(String, SettingsSection, [String])])
     func rowsMatchByTitleOrKeyword(query: String, section: SettingsSection, rows: [String]) {
         #expect(section.matches(for: query) == rows)
