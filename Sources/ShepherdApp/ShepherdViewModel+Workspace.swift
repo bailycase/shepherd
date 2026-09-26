@@ -325,7 +325,7 @@ extension ShepherdViewModel {
         if let agentID = exitedAgentID {
             cancelReviews(for: agentID)
             childRuns.clear(agent: agentID)
-            notifications.forgetSubagents(of: agentID)
+            forgetNotifications(of: agentID)
             state.agents.removeAll { $0.id == agentID }
             if selectedAgentID == agentID {
                 selectPreviousAgent(after: agentID)
@@ -448,7 +448,7 @@ extension ShepherdViewModel {
         cancelReviews(for: id)
         subagentInspector.runByAgent.removeValue(forKey: id)
         childRuns.clear(agent: id)
-        notifications.forgetSubagents(of: id)
+        forgetNotifications(of: id)
         if selectedAgentID == id { selectPreviousAgent(after: id) }
         else { selectionHistory.removeAll { $0 == id } }
         adopt(server.state)

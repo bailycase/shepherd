@@ -236,13 +236,13 @@ public struct NWSettingsNavRow: View {
     public var body: some View {
         let nw = Color.nw
         Button(action: action) {
-            HStack(spacing: NW.Space.m) {
+            HStack(spacing: NWSettingsNavMetrics.iconGap) {
                 // Scales with the text size, like the name beside it.
                 Image(systemName: systemImage)
-                    .font(.nwSans(NWSettingsNavMetrics.iconSize, .medium))
+                    .font(.nwSans(NWSettingsNavMetrics.glyphSize))
                     .symbolRenderingMode(.monochrome)
                     .foregroundStyle(selected ? nw.textPrimary : nw.textSecondary)
-                    .frame(width: NW.Space.xl)
+                    .frame(width: NWSettingsNavMetrics.iconSize)
                     .accessibilityHidden(true)
                 Text(title)
                     .font(.nwSans(NWSettingsNavMetrics.textSize, selected ? .medium : .regular))
@@ -250,7 +250,7 @@ public struct NWSettingsNavRow: View {
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, NW.Space.m)
+            .padding(.horizontal, NWSettingsNavMetrics.rowPadding)
             .frame(minHeight: NW.Height.scaled(NWSettingsNavMetrics.rowHeight))
             .contentShape(Rectangle())
         }
@@ -265,6 +265,13 @@ public enum NWSettingsNavMetrics {
     /// Before density.
     public static let rowHeight: CGFloat = 32
     public static let iconSize: CGFloat = 15
+    /// The symbol's point size: its outline fills the 15pt box as the boards' 1.4pt-stroke icons do.
+    public static let glyphSize: CGFloat = 13
+    /// 10pt in from the row's sides, and from the icon to the name.
+    public static let rowPadding: CGFloat = 10
+    public static let iconGap: CGFloat = 10
+    /// The nav's own sides: 10pt.
+    public static let sidePadding: CGFloat = 10
     /// The page names, and the Back row's words.
     public static let textSize: CGFloat = 13
 }

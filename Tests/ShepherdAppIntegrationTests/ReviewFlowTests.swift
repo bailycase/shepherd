@@ -207,6 +207,34 @@ struct ReviewFlowTests {
                 "hiding the pane closes the inspector over it too")
     }
 
+    /// Maximize Pane covers the window (ChangesWide): the rail takes the sidebar's and the
+    /// toolbar's place until Back to the thread, a page, or another agent takes the column.
+    @Test func aMaximizedChangesPaneCoversTheWindowUntilTheThreadIsBack() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        let first = Fixture.agent("first", in: space, order: 0), second = Fixture.agent("second", in: space, order: 1)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [first, second]))
+        vm.changesEngineOverride = { _, _ in ChangesEngine.fixed([]) }
+        vm.selectAgent(first.agent.id)
+        let owner = SidePaneOwner.local(first.agent.id)
+        vm.toggleRightPane()
+        #expect(!vm.isSidePaneWide)
+        vm.toggleSidePaneMaximized(owner)
+        #expect(vm.isSidePaneWide)
+
+        vm.subagentInspector.runByAgent[first.agent.id] = "run-1"
+        #expect(!vm.isSidePaneWide, "an inspected subagent sits beside the thread")
+        vm.subagentInspector.runByAgent[first.agent.id] = nil
+        vm.selectAgent(second.agent.id)
+        #expect(!vm.isSidePaneWide, "another agent's thread shows with the sidebar")
+        vm.selectAgent(first.agent.id)
+        #expect(vm.isSidePaneWide, "the pane stays maximized for its thread")
+
+        vm.restoreWideSidePane()
+        #expect(!vm.isSidePaneWide && vm.rightPaneContent == .review, "Back to the thread keeps the pane open beside it")
+    }
+
     @Test func aReviewFromASubdirectoryShowsRepositoryRelativePaths() async throws {
         let app = try AppHarness()
         defer { app.stop() }

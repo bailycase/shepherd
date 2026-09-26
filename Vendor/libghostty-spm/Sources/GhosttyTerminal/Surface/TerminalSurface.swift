@@ -222,6 +222,9 @@ public final class TerminalSurface {
         let text: String
         let offsetStart: UInt32
         let offsetLength: UInt32
+        /// The selection's top-left corner in host points (Shepherd).
+        var topLeftX: Double = 0
+        var topLeftY: Double = 0
     }
 
     func hasSelection() -> Bool {
@@ -255,7 +258,9 @@ public final class TerminalSurface {
             return SelectionResult(
                 text: "",
                 offsetStart: out.offset_start,
-                offsetLength: out.offset_len
+                offsetLength: out.offset_len,
+                topLeftX: out.tl_px_x,
+                topLeftY: out.tl_px_y
             )
         }
 
@@ -269,7 +274,9 @@ public final class TerminalSurface {
         return SelectionResult(
             text: text,
             offsetStart: out.offset_start,
-            offsetLength: out.offset_len
+            offsetLength: out.offset_len,
+            topLeftX: out.tl_px_x,
+            topLeftY: out.tl_px_y
         )
     }
 

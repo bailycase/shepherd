@@ -27,6 +27,8 @@ ShepherdCore
 
 TerminalSurfaceKit ── GhosttyTerminal (Vendor/libghostty-spm)
 
+DesignSurfaceKit ── Core, Protocol, WebKit (+ React 18.3.1 UMD, a resource)
+
 ShepherdUI (local package, Packages/ShepherdUI) ── nothing
 
 ShepherdApp ── Core, Protocol, Sessions, ShepherdUI, TerminalSurfaceKit, Sparkle, SwiftTreeSitter
@@ -42,6 +44,7 @@ Shepherd iOS (Xcode target) ── Core, Protocol, Remote, ShepherdUI
 | `ShepherdPTYSpawn` | `shepherd_forkpty_exec`: the PTY child side in C (reset signal dispositions and mask, close stray descriptors, exec), so no Swift runs between fork and exec | nothing |
 | `ShepherdSessions` | `SessionServer`, the authoritative state store and every session. Agents run as `RPCSession` + `RPCThreadState`, panes as `PTYSession` + `SessionScreen`. Also `StateStore`, the extension socket, the remote listener, `PiSessionPreview` (a thread read from pi's session file while pi starts), `InstructionsStore` (Settings ▸ Instructions' files and history), `SuggestionsStore` (Suggested instructions), `SkillsStore` and `SkillsGit` (a host's skills in `~/.agents/skills`, installed from partial clones; docs/skills.md), `DesignStore` (each design's files, on its own queue; docs/designs.md), and `PiModelCatalog`/`PiConfig` | Core, Protocol, Remote, ShepherdPTYSpawn, SwiftTerm |
 | `TerminalSurfaceKit` | The libghostty adapter for terminal panes (see its [NOTES.md](Sources/TerminalSurfaceKit/NOTES.md)). Knows nothing about agents or workspaces | GhosttyTerminal |
+| `DesignSurfaceKit` | The Design tool's board renderer, for macOS and iOS: `DesignSurface` (one design's sandbox), `DesignBoardView` (one board's `WKWebView`: load, `replaceSource`, `snapshot`, events), the `shepherd-design://` scheme handler with its CSP and content rules, and Shepherd's clean-room board runtime on vendored React (docs/designs.md › The renderer). Reads a design's folder; writes nothing | Core, Protocol, WebKit |
 | `ShepherdApp` | Everything on screen: view model, selection, thread views, review, palette, settings, sheets, appearance, keybindings, embedded extensions, the pane-to-session bridge, and the remote host store | all of the above, Sparkle, tree-sitter |
 | `shepherd-cli` | `shepherd --import herdr`: writes herdr workspaces into `state.json` while Shepherd is not running | Core, Protocol |
 
@@ -53,6 +56,8 @@ Dependencies point inward:
 - ShepherdUI imports no Shepherd module; the app maps its states onto `AgentState`.
 - Only `ShepherdApp/TerminalHost.swift` imports TerminalSurfaceKit.
 - Only TerminalSurfaceKit imports GhosttyTerminal.
+- DesignSurfaceKit imports neither Sessions nor App: it is handed a design's folder and serves
+  it read-only.
 
 The Mac app target is a shim, `App/ShepherdLauncher.swift`, that calls `ShepherdMacApp.main()`.
 The iOS target compiles `App/iOS` (one synchronized folder) against Core, Protocol, Remote, and

@@ -22,7 +22,7 @@ struct RemoteSettings: View {
     private var draftValid: Bool {
         !draftName.trimmingCharacters(in: .whitespaces).isEmpty
             && !draftHost.trimmingCharacters(in: .whitespaces).isEmpty
-            && UInt16(draftPort.trimmingCharacters(in: .whitespaces)) != nil
+            && RemotePortField.port(draftPort) != nil
             && !draftToken.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
@@ -67,7 +67,7 @@ struct RemoteSettings: View {
                 }
                 SettingsRow(title: "Port") {
                     SettingsTextField(label: "Port", prompt: String(RemoteSettingsDefaults.port), text: $draftPort, mono: true,
-                                      width: AppLayout.settingsPortFieldWidth)
+                                      width: AppLayout.settingsPortFieldWidth, error: RemotePortField.problem(draftPort))
                         .onChange(of: draftPort) {
                             // Digits only: a pasted "7,433" must not silently become another port.
                             let digits = draftPort.filter(\.isNumber)
@@ -111,7 +111,7 @@ struct RemoteSettings: View {
     }
 
     private func save() {
-        guard let port = UInt16(draftPort.trimmingCharacters(in: .whitespaces)) else { return }
+        guard let port = RemotePortField.port(draftPort) else { return }
         let name = draftName.trimmingCharacters(in: .whitespaces)
         let host = draftHost.trimmingCharacters(in: .whitespaces)
         let token = draftToken.trimmingCharacters(in: .whitespaces)
@@ -121,6 +121,19 @@ struct RemoteSettings: View {
             store.addHost(name: name, host: host, port: port, token: token)
         }
         cancelEdit()
+    }
+}
+
+/// The Add host form's port: digits from 1 to 65535. Anything else is refused under the field.
+enum RemotePortField {
+    static func port(_ text: String) -> UInt16? {
+        UInt16(text.trimmingCharacters(in: .whitespaces)).flatMap { $0 == 0 ? nil : $0 }
+    }
+
+    /// Why the typed port is refused; nil while it is empty or valid.
+    static func problem(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty || port(trimmed) != nil ? nil : "Ports run from 1 to 65535."
     }
 }
 
@@ -159,7 +172,8 @@ struct RemoteListenerFailure: Equatable {
     }
 }
 
-/// "horizon" over "horizon.internal:7433 · connected · 5 agents", with Edit, Reconnect, Remove.
+/// "horizon" over "horizon.internal:7433 · connected · 5 agents" (the word in its state's text
+/// color), with Edit, Reconnect, Remove.
 /// A failed connection's word says why ("unreachable", "token refused"), its sentence sits
 /// under it as the row's problem, and the client's own reason is the problem's tooltip.
 struct RemoteHostRow: View {
@@ -184,9 +198,9 @@ struct RemoteHostRow: View {
         SettingsActionRow {
             VStack(alignment: .leading, spacing: NW.Space.xxs) {
                 Text(config.name).font(.nw(.body, weight: .medium)).foregroundStyle(Color.nw.textPrimary)
-                HStack(spacing: NW.Space.s) {
-                    NWStatusDot(state)
-                    // The address in mono; the rest in the description's Geist.
+                // The address in mono, then the connection's word in its state's color (no dot, as
+                // SettingsRemote draws it); the rest in the description's Geist.
+                Group {
                     Text("\(Text(verbatim: "\(config.host):\(String(config.port))").font(.nwMono(AppLayout.settingsAddressSize)))\(Text(verbatim: " · "))\(Text(word).foregroundStyle(state.textColor))\(Text(agents))")
                         .foregroundStyle(Color.nw.textSecondary)
                         .nwText(size: NWTextStyle.ui.size, lineHeight: NWCardRowMetrics.settingsDescriptionLineHeight)
@@ -194,7 +208,7 @@ struct RemoteHostRow: View {
                         .truncationMode(.middle)
                         .nwContentTransition(.crossFade)
                 }
-                // Connecting… → connected · 5 agents, or unreachable: the word and dot fade.
+                // Connecting… → connected · 5 agents, or unreachable: the words fade.
                 .nwComponentAnimation(.content, value: state)
                 if let failure = connection.phase.failure {
                     NWInlineProblem(failure.message(host: config.name), help: failure.detail)

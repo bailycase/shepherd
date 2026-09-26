@@ -78,7 +78,11 @@ public enum RemoteProtocol {
     /// how each is used, updates), installs from a repository or a copied folder, and removal
     /// with undo (Settings ▸ Skills). Older hosts have none to show.
     public static let skillsCapability = "skills.v1"
-    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, skillsCapability, createAgentImagesCapability]
+    /// The host takes the terminal panel's actions on an agent's terminal panes
+    /// (`RemoteAgentAction.renameTerminal`, `.killTerminalProcess`, `.typeInTerminal`): Rename
+    /// tab, Kill process and Run in terminal. Older hosts leave them off.
+    public static let terminalControlCapability = "terminal.control.v1"
+    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, skillsCapability, createAgentImagesCapability, terminalControlCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -174,6 +178,23 @@ public enum RemoteAgentAction: Codable, Hashable, Sendable {
     /// Retires the agent only. A worktree checkout and branch are kept.
     case deleteKeepingWorktree
     case reorder(target: AgentID)
+    /// Names a terminal tab (its first pane); nil goes back to naming it after what it runs
+    /// (`terminalControlCapability`, like the two below).
+    case renameTerminal(paneID: PaneID, title: String?)
+    /// Kills the command running in a terminal pane (its foreground process group), never the
+    /// shell at its prompt.
+    case killTerminalProcess(paneID: PaneID)
+    /// Types `text` at a terminal pane's prompt once its shell reads, without running it (Run in
+    /// terminal).
+    case typeInTerminal(paneID: PaneID, text: String)
+
+    /// The capability a host must advertise before the action is sent to it.
+    public var capability: String {
+        switch self {
+        case .rename, .deleteKeepingWorktree, .reorder: RemoteProtocol.agentActionsCapability
+        case .renameTerminal, .killTerminalProcess, .typeInTerminal: RemoteProtocol.terminalControlCapability
+        }
+    }
 }
 
 public struct RemoteFinalizeOptions: Codable, Hashable, Sendable {

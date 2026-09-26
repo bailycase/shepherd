@@ -79,8 +79,10 @@ struct UpdateChannelRow: View {
         case .main:
             SettingsRow(title: "Update channel",
                         subtitle: "Stable: tagged releases. Beta: pre-releases, plus newer stable builds. Nightly builds are a separate app, Shepherd Nightly.") {
+                // SettingsAdvanced draws this one as the Controls board's segmented control.
                 NWSegmentedPicker("Update channel", selection: $channel,
                                   options: UpdateChannel.choices(for: edition).map { ($0, $0.label) })
+                    .nwControlScale(.standard)
             }
         case .nightly:
             SettingsRow(title: "Update channel",

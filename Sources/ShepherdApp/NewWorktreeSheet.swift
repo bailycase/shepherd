@@ -70,7 +70,7 @@ struct NewWorktreeSheet: View {
             if creating { NWDialogStatus("Creating the worktree…") }
         } actions: {
             Button("Cancel") { vm.worktreeSheetTarget = nil }
-                .buttonStyle(.nw(.secondary))
+                .buttonStyle(.nw(.ghost))
                 .keyboardShortcut(.cancelAction)
             Button(creating ? "Creating…" : "Create and open") { create() }
                 .buttonStyle(.nw(.primary))

@@ -76,6 +76,16 @@ A focused Ghostty surface consumes any key equivalent that matches one of its bi
 `extraUnbinds` carries the user's rebound chords from `KeybindingsStore`. Leave Ghostty's
 copy and paste bindings alone.
 
+### Selection (a local patch to the vendored copy)
+
+The terminal's Add to message bar needs what is selected and where. Upstream keeps both
+internal, so the vendored `AppTerminalView` carries a small Shepherd patch: `onSelectionChange`
+(called after a click or drag ends, a key, and Select All) and `selectionSnapshot()` (the text
+from `ghostty_surface_read_selection`, its top-left corner in view points, and a line's height
+from the surface's cell size). `TerminalSurfaceModel` hooks the current surface view whenever one
+becomes ready and forwards `Selection` values; `copySelection()` uses the view's own Copy. Keep the
+patch when the vendored copy is refreshed.
+
 ## Adapter design decisions
 
 - **Byte ordering.** Session callbacks arrive on background threads. `SessionCallbackBridge` always
