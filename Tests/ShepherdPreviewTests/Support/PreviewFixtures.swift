@@ -185,7 +185,7 @@ enum Threads {
         decode(#"""
         {"piSessionID":"fixture","generation":"g","revision":1,"running":false,"model":"anthropic/claude-opus-4-5","thinking":"high",
          "supportedActions":["send","abort","answer","setModel","setThinking","sendImages"],"dialogsSupported":true,"dialogs":[],
-         "commands":[{"name":"fix-tests","description":"Fix failing tests","source":"prompt"},{"name":"review","description":"Review the working tree","source":"prompt"},{"name":"session-name","description":"Set or clear session name","source":"extension"}],
+         "commands":[{"name":"fix-tests","description":"Fix failing tests","source":"prompt","arguments":"[suite]"},{"name":"review","description":"Review the working tree","source":"prompt"},{"name":"session-name","description":"Set or clear session name","source":"extension"}],
          "messages":[
           {"entryID":"u","role":"user","blocks":[{"kind":"text","text":"Check the native desktop presentation without starting a second pi process."}],"truncated":false},
           {"entryID":"a","role":"assistant","blocks":[{"kind":"thinking","text":"Check focus and exact dialog values."},{"kind":"text","text":"**The same agent is still running.** This is a native transcript, not parsed terminal output.\n\n```swift\nlet mode = presentation.isNative(agent.id)\n```"}],"truncated":false},

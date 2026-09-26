@@ -1074,7 +1074,7 @@ final class SlashMatchCache {
     }
 
     static func row(_ command: NativeCommand) -> NWSlashCommand {
-        NWSlashCommand(name: command.name, description: command.description,
+        NWSlashCommand(name: command.name, description: command.description, arguments: command.arguments,
                        tag: command.source.flatMap { $0 == "extension" ? nil : $0 })
     }
 }
