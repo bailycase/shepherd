@@ -204,6 +204,10 @@ final class ShepherdViewModel {
     /// Settings ▸ Skills: every host's agent skills, This Mac's through `localSkills`.
     let skills: ClientSkills
     @ObservationIgnored let localSkills: LocalSkillsClient
+    /// Settings ▸ MCP servers: this Mac's servers, their sign-ins, and the credentials agents ask for.
+    let mcp: MCPStore
+    /// The server Settings ▸ MCP servers opens with its row open (a search hit named it).
+    @ObservationIgnored var mcpOpenServer: String?
     /// This Mac's daily look for newer skills (`startSkillChecks`).
     @ObservationIgnored var skillChecks: Task<Void, Never>?
     /// Where the open space-directory browser creates its space: this Mac
@@ -417,7 +421,8 @@ final class ShepherdViewModel {
             try ShepherdThemeMarker.install(for: theme)
         },
         restoresAgentsAtLaunch: Bool = true,
-        checkoutReader: CheckoutMonitor.Reader? = CheckoutMonitor.git
+        checkoutReader: CheckoutMonitor.Reader? = CheckoutMonitor.git,
+        mcp: MCPStore? = nil
     ) {
         self.state = ShepherdState()
         self.server = server
@@ -436,6 +441,9 @@ final class ShepherdViewModel {
         self.suggestions = SuggestionsModel(store: server.suggestions, instructionsStore: server.instructions, instructions: instructions)
         self.skills = ClientSkills(defaults: sidebarDefaults)
         self.localSkills = LocalSkillsClient(store: server.skills)
+        self.mcp = mcp ?? MCPStore(dependencies: .app(clientPath: ShepherdViewModel.mcpClientPath,
+                                                      openURL: { NSWorkspace.shared.open($0) },
+                                                      copy: ShepherdViewModel.copyToPasteboard))
         self.installThemeMarker = themeInstaller
         self.sessions = TerminalSessionStore(server: server)
         self.selectedSpaceID = nil
@@ -462,6 +470,7 @@ final class ShepherdViewModel {
         server.onSkillsChanged = { [weak skills = self.skills] snapshot in
             MainActor.assumeIsolated { skills?.hostChanged(ShepherdViewModel.thisMacSkills, snapshot) }
         }
+        wireMCP()
         server.onSuggestionsChanged = { [weak suggestions = self.suggestions] snapshot in
             MainActor.assumeIsolated { suggestions?.serverChanged(snapshot) }
         }
@@ -780,6 +789,7 @@ final class ShepherdViewModel {
         let runs = server.openAutomationRuns
         if runs != openAutomationRuns { openAutomationRuns = runs }
         threadStores.prune(live: Set(state.agents.map(\.id)))
+        mcp.retainReports(of: Set(state.agents.map(\.id)))
         notifyLocalQuestions()
         checkouts?.sync(agents: state.agents.map(\.id))
         pruneReviewSessions()
@@ -789,6 +799,7 @@ final class ShepherdViewModel {
         if !didAutoStartAutomations {
             didAutoStartAutomations = true
             autoStartAutomations()
+            if restoresAgentsAtLaunch { mcp.probeAlwaysOn() }
         }
         let standing = WorkspaceSelection.standingSpace(selectedSpaceID, agentSelected: selectedAgent != nil, in: state)
         if standing != selectedSpaceID { selectedSpaceID = standing }

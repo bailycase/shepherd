@@ -132,6 +132,16 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// `call` is the tool call's id, which names each proposal. Answered with `designProposals`.
     case designProposeComments(id: Int, agentID: AgentID, designID: DesignID, call: String, proposals: [DesignMarkupProposal])
 
+    // MARK: MCP servers
+
+    /// The MCP extension needs a server's credentials: its Keychain secrets, or an OAuth token
+    /// (`challenge` is a 401's or 403's raw `WWW-Authenticate`). Answered with
+    /// `ExtensionReply.mcpCredentials`, or `.error` with `needs_sign_in`, `expired`,
+    /// `needs_scopes`, `missing_secret`, `no_such_server` or `mcp_unavailable`.
+    case mcpCredentials(id: Int, agentID: AgentID, server: String, reason: MCPCredentialReason, challenge: String?)
+    /// A server's state changed in this agent's pi, or it listed its tools. Fire-and-forget.
+    case mcpReport(agentID: AgentID, report: MCPServerReport)
+
     private enum CodingKeys: String, CodingKey {
         case type, id, agentID, status, name, piSessionID, children
         case paneID, axis, cwd, relativeTo, command, text, submit, reference
@@ -142,6 +152,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case designID, path, source, baseRevision, changes, commentID
         case namespace, system
         case call, proposals
+        case server, challenge, report
     }
 
     private enum Kind: String, Codable {
@@ -154,6 +165,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case suggestInstruction
         case designRead, designWriteBoard, designUpdateIndex, designComments, designCommentReply
         case designSystemRead, designSystemWrite, designProposeComments
+        case mcpCredentials, mcpReport
     }
 
     public init(from decoder: Decoder) throws {
@@ -378,6 +390,19 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                 designID: try c.decode(DesignID.self, forKey: .designID),
                 system: try c.decode(DesignSystemWrite.self, forKey: .system)
             )
+        case .mcpCredentials:
+            self = .mcpCredentials(
+                id: try c.decode(Int.self, forKey: .id),
+                agentID: try c.decode(AgentID.self, forKey: .agentID),
+                server: try c.decode(String.self, forKey: .server),
+                reason: try c.decode(MCPCredentialReason.self, forKey: .reason),
+                challenge: try c.decodeIfPresent(String.self, forKey: .challenge)
+            )
+        case .mcpReport:
+            self = .mcpReport(
+                agentID: try c.decode(AgentID.self, forKey: .agentID),
+                report: try c.decode(MCPServerReport.self, forKey: .report)
+            )
         }
     }
 
@@ -576,6 +601,17 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(agentID, forKey: .agentID)
             try c.encode(designID, forKey: .designID)
             try c.encode(system, forKey: .system)
+        case .mcpCredentials(let id, let agentID, let server, let reason, let challenge):
+            try c.encode(Kind.mcpCredentials, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(server, forKey: .server)
+            try c.encode(reason, forKey: .reason)
+            try c.encodeIfPresent(challenge, forKey: .challenge)
+        case .mcpReport(let agentID, let report):
+            try c.encode(Kind.mcpReport, forKey: .type)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(report, forKey: .report)
         }
     }
 }
@@ -927,6 +963,8 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     /// A `designProposeComments`: each proposal as the chat offers it, a comment draft the host
     /// checked, named `<call>#<n>`.
     case designProposals(id: Int, proposals: [DesignCommentDraft])
+    /// A server's credentials for the MCP extension (`ExtensionMessage.mcpCredentials`).
+    case mcpCredentials(id: Int, credentials: MCPCredentials)
 
     private enum CodingKeys: String, CodingKey {
         case requestID, targetAgentID, request, result
@@ -937,6 +975,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case comments, comment
         case listing, system
         case proposals
+        case credentials
     }
 
     private enum Kind: String, Codable {
@@ -945,6 +984,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case suggestion
         case design, designBoard, designWritten, designComments, designComment
         case designSystems, designSystem, designSystemWritten, designProposals
+        case mcpCredentials
     }
 
     public init(from decoder: Decoder) throws {
@@ -1064,6 +1104,11 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
                 id: try c.decode(Int.self, forKey: .id),
                 result: try c.decode(DesignSystemWriteResult.self, forKey: .result)
             )
+        case .mcpCredentials:
+            self = .mcpCredentials(
+                id: try c.decode(Int.self, forKey: .id),
+                credentials: try c.decode(MCPCredentials.self, forKey: .credentials)
+            )
         }
     }
 
@@ -1164,6 +1209,10 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             try c.encode(Kind.designSystemWritten, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(result, forKey: .result)
+        case .mcpCredentials(let id, let credentials):
+            try c.encode(Kind.mcpCredentials, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(credentials, forKey: .credentials)
         }
     }
 }

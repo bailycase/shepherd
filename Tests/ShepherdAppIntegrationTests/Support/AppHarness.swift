@@ -42,13 +42,14 @@ final class AppHarness {
     /// seeded a repository.
     @discardableResult
     func start(with state: ShepherdState? = nil, restoringAgents: Bool = false,
-               readingCheckouts: Bool = false) async throws -> ShepherdViewModel {
+               readingCheckouts: Bool = false, mcp: MCPStore? = nil) async throws -> ShepherdViewModel {
         if let state { try await server.putState(state) }
         let vm = ShepherdViewModel(
             server: server, settings: settings, keybindings: keybindings, themeManager: themeManager,
             remoteHosts: remoteHosts, sidebarDefaults: defaults, themeInstaller: { _ in },
             restoresAgentsAtLaunch: restoringAgents,
-            checkoutReader: readingCheckouts ? CheckoutMonitor.git : nil
+            checkoutReader: readingCheckouts ? CheckoutMonitor.git : nil,
+            mcp: mcp
         )
         self.vm = vm
         let server = server

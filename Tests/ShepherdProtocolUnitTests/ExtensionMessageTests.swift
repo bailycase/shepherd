@@ -21,11 +21,11 @@ struct ExtensionMessageTests {
              .coordinateAgent, .agentResponse, .cancelAgentRequest, .createAutomation, .listAutomations,
              .updateAutomation, .deleteAutomation, .startAutomation, .stopAutomation, .suggestInstruction,
              .designRead, .designWriteBoard, .designUpdateIndex, .designComments, .designCommentReply,
-             .designSystemRead, .designSystemWrite, .designProposeComments:
+             .designSystemRead, .designSystemWrite, .designProposeComments, .mcpCredentials, .mcpReport:
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 36
+    static let caseCount = 38
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
@@ -85,6 +85,13 @@ struct ExtensionMessageTests {
         .designProposeComments(id: 28, agentID: agent, designID: design, call: "toolu_01",
                                proposals: [DesignMarkupProposal(element: "A-phone.dc.html#31:1/1/2", text: "Thicker bars on phone."),
                                            DesignMarkupProposal(element: "not an id", text: "Counts “here” too?")]),
+        .mcpCredentials(id: 28, agentID: agent, server: "linear", reason: .unauthorized,
+                        challenge: #"Bearer resource_metadata="https://mcp.linear.app/.well-known/oauth-protected-resource""#),
+        .mcpReport(agentID: agent, report: MCPServerReport(
+            server: "postgres", status: MCPServerStatus(state: .connected), transport: .stdio, serverName: "Postgres MCP",
+            tools: [MCPToolInfo(name: "query", title: "Query", description: "Run a read-only SQL query.",
+                                inputSchema: .object(["type": .string("object"),
+                                                      "properties": .object(["sql": .object(["type": .string("string")])])]))])),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -176,6 +183,24 @@ struct ExtensionMessageTests {
          .designProposeComments(id: 11, agentID: agent, designID: design, call: "call-7",
                                 proposals: [DesignMarkupProposal(element: "A.dc.html#18:1/1/1", text: "Counts too"),
                                             DesignMarkupProposal(element: "?", text: "x")])),
+        // The MCP extension spreads its fields, then the link adds id last; a connect carries no challenge.
+        (#"{"type":"mcpCredentials","agentID":"a1","server":"grafana","reason":"connect","id":1}"#,
+         .mcpCredentials(id: 1, agentID: agent, server: "grafana", reason: .connect, challenge: nil)),
+        (#"{"type":"mcpCredentials","agentID":"a1","server":"linear","reason":"forbidden","challenge":"Bearer error=\"insufficient_scope\", scope=\"issues:write\"","id":2}"#,
+         .mcpCredentials(id: 2, agentID: agent, server: "linear", reason: .forbidden,
+                         challenge: #"Bearer error="insufficient_scope", scope="issues:write""#)),
+        // A state report: no scopes, no tools; a needsScopes report names them.
+        (#"{"type":"mcpReport","agentID":"a1","report":{"server":"notion","status":{"state":"starting"}}}"#,
+         .mcpReport(agentID: agent, report: MCPServerReport(server: "notion", status: MCPServerStatus(state: .starting)))),
+        (#"{"type":"mcpReport","agentID":"a1","report":{"server":"linear","status":{"state":"needsScopes","scopes":["issues:write"],"message":"linear needs more access"},"transport":"streamableHTTP"}}"#,
+         .mcpReport(agentID: agent, report: MCPServerReport(
+            server: "linear", status: MCPServerStatus(state: .needsScopes, scopes: ["issues:write"], message: "linear needs more access"),
+            transport: .streamableHTTP))),
+        // Tools past the 900 KB frame budget arrive with empty schemas; a missing description is empty.
+        (#"{"type":"mcpReport","agentID":"a1","report":{"server":"fake","status":{"state":"connected"},"transport":"stdio","serverName":"Fake MCP","tools":[{"name":"echo","title":"Echo","description":"Echo.","inputSchema":{}},{"name":"bare"}]}}"#,
+         .mcpReport(agentID: agent, report: MCPServerReport(
+            server: "fake", status: MCPServerStatus(state: .connected), transport: .stdio, serverName: "Fake MCP",
+            tools: [MCPToolInfo(name: "echo", title: "Echo", description: "Echo.", inputSchema: .object([:])), MCPToolInfo(name: "bare")]))),
     ]
 
     @Test(arguments: handWritten)
@@ -217,11 +242,11 @@ struct ExtensionReplyTests {
         switch reply {
         case .childCommand, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .automations,
              .agents, .message, .agentRequest, .agentResult, .suggestion, .design, .designBoard, .designWritten,
-             .designComments, .designComment, .designSystems, .designSystem, .designSystemWritten, .designProposals:
+             .designComments, .designComment, .designSystems, .designSystem, .designSystemWritten, .designProposals, .mcpCredentials:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 22
+    static let caseCount = 23
     static let system = DesignSystemSummary(
         info: DesignSystemInfo(namespace: "acme-web", title: "acme-web", revision: 3, createdAt: 1_000, updatedAt: 2_000,
                                syncedAt: 2_000, ownerDesignID: DesignID(rawValue: "d1"), spaceID: SpaceID(rawValue: "s1"),
@@ -291,6 +316,8 @@ struct ExtensionReplyTests {
             summary: system, changed: true, installed: DesignWriteResult(revision: 9, changed: true, title: "Checkout", boardCount: 4),
             notes: ["tokens.css is the one you wrote"])),
         .designProposals(id: 29, proposals: [proposal]),
+        .mcpCredentials(id: 29, credentials: MCPCredentials(bearer: "at-1", headers: ["X-Org": "acme"],
+                                                            env: ["DATABASE_URI": "postgres://u:p@db/app"], expiresAtMs: 1_790_000_000_000)),
     ]
 
     static let proposal = DesignCommentDraft(board: DesignPath("A-phone.dc.html")!, tid: 31, path: [1, 1, 2], label: "Steps Cart viewed",
@@ -308,6 +335,23 @@ struct ExtensionReplyTests {
     @Test(arguments: samples)
     func typeDiscriminatorIsTheCaseName(_ reply: ExtensionReply) throws {
         #expect(try Wire.object(reply)["type"] as? String == Self.caseName(reply))
+    }
+
+    /// The MCP extension reads `credentials.bearer`, `.headers`, `.env` and `.expiresAtMs` by hand,
+    /// and leaves out nothing it needs when the app sends no token.
+    @Test func mcpCredentialsHaveTheShapeTheExtensionReads() throws {
+        let full = try Wire.object(ExtensionReply.mcpCredentials(id: 3, credentials: MCPCredentials(
+            bearer: "at", headers: [:], env: ["TOKEN": "s"], expiresAtMs: 42)))
+        #expect(full["id"] as? Int == 3)
+        let credentials = try #require(full["credentials"] as? [String: Any])
+        #expect(credentials["bearer"] as? String == "at")
+        #expect(credentials["env"] as? [String: String] == ["TOKEN": "s"])
+        #expect(credentials["headers"] as? [String: String] == [:])
+        #expect(credentials["expiresAtMs"] as? Int == 42)
+        let secretsOnly = try Wire.object(ExtensionReply.mcpCredentials(id: 4, credentials: MCPCredentials(env: ["A": "b"])))
+        #expect(Set((secretsOnly["credentials"] as? [String: Any] ?? [:]).keys) == ["headers", "env"])
+        #expect(try Wire.decode(ExtensionReply.self, #"{"type":"mcpCredentials","id":5,"credentials":{}}"#)
+            == .mcpCredentials(id: 5, credentials: MCPCredentials()))
     }
 
     @Test(arguments: [ChildCommandAction.message, .cancel, .resume, .pause, .continue])
