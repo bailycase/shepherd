@@ -67,6 +67,48 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// Skills beside the ones pi loads from elsewhere, read-only: pi's own folder and settings
+    /// (one shadowing an installed skill), then pi packages (one a same-named installed skill
+    /// shadows). pi's answer is a fixture, never this machine's pi.
+    @Test func settingsSkillsFromPi() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let repo = try makeScratchRepo(files: [
+            "skills/pdf/SKILL.md": "---\nname: pdf\ndescription: Read, fill, merge and split PDFs.\n---\n# PDF\n",
+            "skills/frontend-design/SKILL.md": "---\nname: frontend-design\ndescription: Production-grade UI that doesn’t look generic.\n---\n",
+            "skills/webapp-testing/SKILL.md": "---\nname: webapp-testing\ndescription: Tests local web apps with Playwright.\n---\n",
+        ])
+        let store = workspace.server.skills
+        store.piSkills = { _ in Self.piSkills }
+        try store.install(repo: "file://" + repo.path, paths: ["skills/pdf", "skills/frontend-design", "skills/webapp-testing"],
+                          commit: nil, invocation: nil)
+        let vm = workspace.vm
+        vm.settingsSection = .skills
+        try await Preview.render("settings-skills-from-pi", size: CGSize(width: 1440, height: 1100),
+                                 ready: { vm.skills.pi(in: vm.skillsHosts) != nil }) {
+            SettingsView(vm: vm)
+        }
+    }
+
+    nonisolated static let piSkills = PiSkills(agentDirectory: "~/.pi/agent", skills: [
+        PiSkill(name: "frontend-design", summary: "The team’s own take on production UI.", path: "~/.pi/agent/skills/frontend-design/SKILL.md",
+                origin: .agentDirectory),
+        PiSkill(name: "release-notes", summary: "Drafts release notes from the merged pull requests.",
+                path: "~/.pi/agent/skills/release-notes/SKILL.md", origin: .agentDirectory, invocation: .slashOnly),
+        PiSkill(name: "review-pr", summary: "Reviews a pull request the way the team does.", path: "~/.pi/agent/skills/review-pr/SKILL.md",
+                origin: .agentDirectory),
+        PiSkill(name: "go-errors", summary: "Wrap every error with context; never return one bare.",
+                path: "~/code/team-skills/go-errors/SKILL.md", origin: .settingsPath),
+        PiSkill(name: "migrations", summary: "Writes reversible migrations and checks them against a copy.",
+                path: "~/.pi/agent/npm/node_modules/@acme/pi-db-skills/skills/migrations/SKILL.md", origin: .package,
+                package: "@acme/pi-db-skills"),
+        PiSkill(name: "postgres", summary: "Query plans, indexes and locks for Postgres.",
+                path: "~/.pi/agent/npm/node_modules/@acme/pi-db-skills/skills/postgres/SKILL.md", origin: .package,
+                package: "@acme/pi-db-skills"),
+        PiSkill(name: "pdf", summary: "Fills PDF forms.", path: "~/.pi/agent/git/github.com/anthropics/skills/skills/pdf/SKILL.md",
+                origin: .package, package: "anthropics/skills", shadowedBy: "~/.agents/skills/pdf/SKILL.md"),
+    ], shadowedInstalled: ["frontend-design": "~/.pi/agent/skills/frontend-design/SKILL.md"])
+
     /// Remote with a configured host that cannot be reached.
     @Test func settingsRemoteWithHosts() async throws {
         let workspace = try PreviewWorkspace()
