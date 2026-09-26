@@ -54,16 +54,17 @@ public struct NWCanvasViewport: Equatable, Sendable {
     /// "42%".
     public var percent: String { "\(Int((zoom * 100).rounded()))%" }
 
-    /// The boards' bounds fitted into a view of `size`: their top-leading corner 44pt in and
-    /// 52pt down, never larger than 100%.
+    /// The boards' bounds fitted into a view of `size`, never larger than 100%: their
+    /// top-leading corner 44pt in, and the top row's labels 52pt down (its frames 76pt down), so
+    /// the board actions have room above those labels (DZCanvas). 52pt stays free below.
     public static func fitting(_ bounds: CGRect, in size: CGSize) -> NWCanvasViewport {
+        let M = NWDesignMetrics.self
         guard !bounds.isNull, bounds.width > 0, bounds.height > 0, size.width > 0, size.height > 0 else {
-            return NWCanvasViewport(offset: CGPoint(x: NWDesignMetrics.fitLeading, y: NWDesignMetrics.fitTop), zoom: 1)
+            return NWCanvasViewport(offset: CGPoint(x: M.fitLeading, y: M.fitFrameTop), zoom: 1)
         }
-        let room = CGSize(width: size.width - NWDesignMetrics.fitLeading * 2, height: size.height - NWDesignMetrics.fitTop * 2)
+        let room = CGSize(width: size.width - M.fitLeading * 2, height: size.height - M.fitFrameTop - M.fitTop)
         let zoom = clamp(min(1, max(room.width, 1) / bounds.width, max(room.height, 1) / bounds.height))
-        return NWCanvasViewport(offset: CGPoint(x: NWDesignMetrics.fitLeading - bounds.minX * zoom,
-                                                y: NWDesignMetrics.fitTop - bounds.minY * zoom), zoom: zoom)
+        return NWCanvasViewport(offset: CGPoint(x: M.fitLeading - bounds.minX * zoom, y: M.fitFrameTop - bounds.minY * zoom), zoom: zoom)
     }
 }
 
