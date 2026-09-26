@@ -237,6 +237,8 @@ final class PadMarkupInkView: UIView, PKCanvasViewDelegate, UIGestureRecognizerD
         if touches.contains(where: { $0.type == .pencil }) { return tool == .comment ? self : draftView }
         // A finger or a pointer: the canvas's.
         if !touches.isEmpty { return nil }
+        // A trackpad's scroll, a pointer's hover, or no event at all: the canvas's too.
+        guard event?.type == .touches else { return nil }
         // UIKit didn't say: while markup is under way, take it; a finger then pans here.
         return markup.hasInk ? draftView : nil
     }
