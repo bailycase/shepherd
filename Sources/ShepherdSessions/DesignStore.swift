@@ -514,11 +514,15 @@ public final class DesignStore: @unchecked Sendable {
             }
             let manager = FileManager.default
             do {
+                try manager.createDirectory(at: folder, withIntermediateDirectories: true)
                 for (path, data) in files.sorted(by: { $0.key < $1.key }) {
                     guard DesignSystemFile.isPath(path) else { throw DesignSystemError.invalidFile(path) }
                     let url = folder.appendingPathComponent(path)
+                    // Checked before anything is made, so a link under ds/ never has a folder made through it.
+                    guard Self.isInside(Self.deepestExisting(url.deletingLastPathComponent()), folder) else {
+                        throw DesignSystemError.invalidFile(path)
+                    }
                     try manager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-                    guard Self.isInside(url.deletingLastPathComponent(), folder) else { throw DesignSystemError.invalidFile(path) }
                     if (try? Data(contentsOf: url)) != data { try data.write(to: url, options: .atomic) }
                 }
                 for stale in self.systemFiles(folder) where files[stale] == nil {

@@ -271,4 +271,51 @@ struct DesignSystemTests {
         _ = try await w.h.server.writeDesignSystem(DesignSystemWrite(namespace: "plain", tokens: .object([:])), for: w.design)
         await #expect(throws: DesignSystemError.self) { try await w.h.server.resyncDesignSystem("plain") }
     }
+
+    @Test func aLinkNeverLeadsASystemOutsideTheSupportDirectory() async throws {
+        let w = try await workspace()
+        defer { w.h.stop() }
+        let manager = FileManager.default
+        let outside = try makeScratchDirectory()
+        try Data("{}".utf8).write(to: outside.appendingPathComponent("tokens.json"))
+        try Data("# not a system\n".utf8).write(to: outside.appendingPathComponent("README.md"))
+        let outsideBefore = DesignTests.contents(of: outside)
+
+        // design-systems/leak is a link out of the store: never listed, read, written or installed.
+        let store = w.h.server.designSystems
+        try manager.createDirectory(at: store.directory, withIntermediateDirectories: true)
+        try manager.createSymbolicLink(at: store.directory.appendingPathComponent("leak"), withDestinationURL: outside)
+        #expect(store.folder(for: "leak") == nil)
+        #expect(await w.h.server.designSystemSummaries().allSatisfy { $0.info.namespace != "leak" })
+        await #expect(throws: DesignSystemError.notAFolder("leak")) { try await w.h.server.designSystem("leak") }
+        await #expect(throws: DesignSystemError.notAFolder("leak")) {
+            try await w.h.server.installDesignSystem(w.design, namespace: "leak")
+        }
+        let agent = try ExtensionClient(path: w.h.socketPath)
+        try agent.send(.designSystemWrite(id: 1, agentID: w.drawer, designID: w.design,
+                                          system: DesignSystemWrite(namespace: "leak", tokens: Self.tokens)))
+        guard case .error(1, "not_a_folder", _) = try await agent.reply() else { Issue.record("a write followed the link"); return }
+
+        // Inside a real system, a linked file is left out and a linked folder is never written through.
+        _ = try await w.h.server.writeDesignSystem(Self.write(), for: w.design)
+        let folder = try #require(store.folder(for: "acme-web"))
+        try manager.createSymbolicLink(at: folder.appendingPathComponent("stolen.md"),
+                                       withDestinationURL: outside.appendingPathComponent("README.md"))
+        try manager.createSymbolicLink(at: folder.appendingPathComponent("out"), withDestinationURL: outside)
+        #expect(try await w.h.server.designSystem("acme-web").files == ["README.md", "components/Button.html", "tokens.css", "tokens.json"])
+        var through = Self.write(install: false)
+        through.files = ["out/escape.md": .string("x")]
+        try agent.send(.designSystemWrite(id: 2, agentID: w.drawer, designID: w.design, system: through))
+        guard case .error(2, "invalid_file", _) = try await agent.reply() else { Issue.record("a write went through a linked folder"); return }
+
+        // A design's installed copy with a linked folder is refused before anything is made through it.
+        let project = try #require(w.h.server.designs.projectFolder(for: w.design))
+        let components = project.appendingPathComponent("ds/acme-web/components")
+        try manager.removeItem(at: components)
+        try manager.createSymbolicLink(at: components, withDestinationURL: outside)
+        await #expect(throws: DesignSystemError.invalidFile("components/Button.html")) {
+            try await w.h.server.installDesignSystem(w.design, namespace: "acme-web")
+        }
+        #expect(DesignTests.contents(of: outside) == outsideBefore)
+    }
 }
