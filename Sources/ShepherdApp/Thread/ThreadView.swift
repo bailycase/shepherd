@@ -57,7 +57,6 @@ struct ThreadView: View {
     /// Measured height of the floating composer: the scroll view insets by exactly this, so the
     /// thread neither hides under the card nor scrolls into blank space below the last turn.
     @State private var composerHeight: CGFloat = 120
-    @State private var menuRequest: ComposerMenuRequest?
     /// The user turn the last ⌥⌘↑/↓ landed on.
     @State private var jumpedTurn: String?
     @State private var arrivals = ThreadArrivals()
@@ -170,7 +169,7 @@ struct ThreadView: View {
                 // The composer draws "Jump to latest" over the fade it lays on the thread and under
                 // its card and menus, so the pill reads clearly and never covers an open menu.
                 Composer(store: store, active: active, isFocused: isFocused, agentName: agentName, hasTurns: !rows.isEmpty,
-                         gutter: gutter, listModels: listModels, menuRequest: menuRequest,
+                         gutter: gutter, listModels: listModels, commandKey: commandKey,
                          jumpToLatest: follower.showsJump(running: running) ? {
                              follower.jumpToLatest()
                              proxy.scrollTo(Self.bottomID, anchor: .bottom)
@@ -245,10 +244,10 @@ struct ThreadView: View {
 
     private func handle(_ command: ThreadCommandCenter.Command, proxy: ScrollViewProxy) {
         switch command {
-        case .modelPicker:
-            menuRequest = ComposerMenuRequest(menu: .models)
-        case .thinkingMenu:
-            menuRequest = ComposerMenuRequest(menu: .thinking)
+        case .modelPicker, .thinkingMenu:
+            // The composer's own: it watches the command center itself, so the menu opens with
+            // one redraw of the composer and none of the thread.
+            break
         case .inspectSubagent:
             if let run = store.subagents.first(where: { !$0.isTerminal }) ?? store.subagents.last { inspectSubagent?(run) }
             else { NSSound.beep() }
@@ -425,8 +424,8 @@ final class ThreadArrivals {
 }
 
 /// Watches the command center in its own view, so a command sent to another thread never
-/// re-evaluates this thread's body.
-private struct ThreadCommandHandler: ViewModifier {
+/// re-evaluates this thread's body (nor the composer's, which watches it for its menus).
+struct ThreadCommandHandler: ViewModifier {
     let key: String?
     let active: Bool
     let handle: (ThreadCommandCenter.Command) -> Void

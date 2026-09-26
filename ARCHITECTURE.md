@@ -36,11 +36,11 @@ Shepherd iOS (Xcode target) ── Core, Protocol, Remote, ShepherdUI
 | Module | Owns | Depends on |
 | --- | --- | --- |
 | `ShepherdCore` | Codable workspace models (`Space`, `Tab`, `Agent`, `Automation`, `ShepherdState`), typed IDs, the `PaneNode` split tree, `AgentStatus` and its transition table, `ThinkingLevel`, and structural validation | nothing |
-| `ShepherdProtocol` | Wire contracts: `ExtensionMessage`/`ExtensionReply` (extension socket), `RemoteRequest`/`RemoteReply` and `RemoteProtocol` (version, capabilities), the native thread contract (`NativeThreadRequest`/`Result`/`Snapshot`), pi's RPC wire types (`RPCWire`, decoded leniently), NDJSON framing (1 MiB frame cap), `ShepherdPaths`, and `ShepherdEdition` (Shepherd or Shepherd Nightly) | Core |
-| `ShepherdRemote` | `RemoteHostClient` (TCP client: handshake, reconnect, bounded writes), `NativeThreadStore` (the `@Observable` thread client used by local, remote, and iOS views; it derives the rows a thread draws once per change), the pure derivations (`NativeThreadPresentation`, `NativeTurnPresentation` for a turn's items, `NativeActivity` for activity lines and the changes card), and `ShepherdLog` | Core, Protocol |
+| `ShepherdProtocol` | Wire contracts: `ExtensionMessage`/`ExtensionReply` (extension socket), `RemoteRequest`/`RemoteReply` and `RemoteProtocol` (version, capabilities), the native thread contract (`NativeThreadRequest`/`Result`/`Snapshot`), pi's RPC wire types (`RPCWire`, decoded leniently), NDJSON framing (1 MiB frame cap), `ShepherdPaths`, `ShepherdEdition` (Shepherd or Shepherd Nightly), Settings ▸ Instructions' files and requests (`Instructions.swift`), Settings ▸ Experiments ▸ Suggested instructions (`Suggestions.swift`), Settings ▸ Skills' skills, repositories and requests (`Skills.swift`), and a host's settings as a client sees them (`HostSettings.swift`) | Core |
+| `ShepherdRemote` | `RemoteHostClient` (TCP client: handshake, reconnect, bounded writes), `NativeThreadStore` (the `@Observable` thread client used by local, remote, and iOS views; it derives the rows a thread draws once per change), the pure derivations (`NativeThreadPresentation`, `NativeTurnPresentation` for a turn's items, `NativeActivity` for activity lines and the changes card, `InstructionsText` and `InstructionsPresentation` for Settings ▸ Instructions, `SuggestionsPresentation` for its experiment), the Settings models the Mac and the iOS client share (`ClientSettings`, and `ClientSkills` with `SkillsText`, `SkillsPresentation` and `SkillsDirectory`, skills.sh's client, for Settings ▸ Skills), and `ShepherdLog` | Core, Protocol |
 | `ShepherdUI` | Night Watch, the design system, in its own local package (`Packages/ShepherdUI`, macOS 26 and iOS 27): `ThemeDefinition` and Night Watch, `ThemeStore` (with the resolved `NWPalette` and `NWTypeRamp`), `Color.nw`, `Font.nw` and the bundled Geist faces, the `NW` scales, motion, elevation, `AgentState`, and the shared SwiftUI components by domain (Controls, Status, Containers, Navigation, Thread, Composer, Agents, Review, Dialogs). SwiftUI only; no app state | nothing |
 | `ShepherdPTYSpawn` | `shepherd_forkpty_exec`: the PTY child side in C (reset signal dispositions and mask, close stray descriptors, exec), so no Swift runs between fork and exec | nothing |
-| `ShepherdSessions` | `SessionServer`, the authoritative state store and every session. Agents run as `RPCSession` + `RPCThreadState`, panes as `PTYSession` + `SessionScreen`. Also `StateStore`, the extension socket, the remote listener, `PiSessionPreview` (a thread read from pi's session file while pi starts), and `PiModelCatalog`/`PiConfig` | Core, Protocol, Remote, ShepherdPTYSpawn, SwiftTerm |
+| `ShepherdSessions` | `SessionServer`, the authoritative state store and every session. Agents run as `RPCSession` + `RPCThreadState`, panes as `PTYSession` + `SessionScreen`. Also `StateStore`, the extension socket, the remote listener, `PiSessionPreview` (a thread read from pi's session file while pi starts), `InstructionsStore` (Settings ▸ Instructions' files and history), `SuggestionsStore` (Suggested instructions), `SkillsStore` and `SkillsGit` (a host's skills in `~/.agents/skills`, installed from partial clones; docs/skills.md), and `PiModelCatalog`/`PiConfig` | Core, Protocol, Remote, ShepherdPTYSpawn, SwiftTerm |
 | `TerminalSurfaceKit` | The libghostty adapter for terminal panes (see its [NOTES.md](Sources/TerminalSurfaceKit/NOTES.md)). Knows nothing about agents or workspaces | GhosttyTerminal |
 | `ShepherdApp` | Everything on screen: view model, selection, thread views, review, palette, settings, sheets, appearance, keybindings, embedded extensions, the pane-to-session bridge, and the remote host store | all of the above, Sparkle, tree-sitter |
 | `shepherd-cli` | `shepherd --import herdr`: writes herdr workspaces into `state.json` while Shepherd is not running | Core, Protocol |
@@ -213,6 +213,13 @@ authentication boundary ([SECURITY.md](SECURITY.md)).
   opens it; the tab and the header's button take a dot).
 - **`shepherd-subagents.ts`:** publishes subagent runs with `setAgentChildren`.
 - **`shepherd-children.ts`:** opens a `helloChildren` control connection for subagent commands.
+- **`shepherd-instructions.ts`:** reads Settings ▸ Instructions' `AGENTS.md` and
+  `APPEND_SYSTEM.md` from `SHEPHERD_INSTRUCTIONS_DIR` when a session starts and adds them to pi's
+  context files (right after pi's own root `AGENTS.md`) and system prompt (after pi's own
+  `APPEND_SYSTEM.md`), so Shepherd never writes `~/.pi/agent`. While Settings ▸ Experiments ▸
+  Suggested instructions is on for the agent (`SHEPHERD_SUGGEST_FILES`), its `suggest_instruction`
+  sends `suggestInstruction` and reads back what became of the line; the server keeps it in
+  `SuggestionsStore` until the user adds or dismisses it.
 
 The server owns PTYs but not layouts, so pane requests from an agent (and from remote clients,
 through `onRemotePaneRequest`) are forwarded to the GUI and answered with a `PaneOutcome`.
@@ -251,6 +258,14 @@ The protocol is NDJSON (`RemoteMessage.swift`):
   prompt's images (`agent.create.images.v1`)
 - chunked uploads
 - agent queries and actions: rename, delete, reorder, review, subagents, search, worktrees
+- automations, and Settings ▸ Instructions' files (`instructions.v1`: fetch, save, restore)
+- Settings ▸ Experiments ▸ Suggested instructions (`suggestions.v1`: fetch, configure, add, add all,
+  dismiss, undo)
+- the host's settings (`hostSettings.v1`: Settings ▸ Agents, Worktrees and Pi, the pi packages it
+  loads, its versions; one change at a time)
+- Settings ▸ Skills (`skills.v1`: fetch, look up a repository, install, on or off, how it's used,
+  remove and restore, check for updates, Update automatically), run on the server's skills queue
+  because they fetch with git
 
 Capabilities gate newer features. A client falls back (raw bracketed paste) or refuses (pane
 control) against an older host. Output frames are chunked at 256 KiB to stay under the frame cap.
@@ -260,7 +275,8 @@ control) against an older host. Output frames are chunked at 256 KiB to stay und
   reports from unattached clients are ignored.
 - **Host-side handlers:** remote pane and agent-creation requests go through
   `onRemotePaneRequest` and `onRemoteCreateAgent`, with the same authorization as local
-  requests. A server without the GUI rejects them.
+  requests, and host settings through `onRemoteHostSettings`. A server without the GUI rejects
+  them.
 - **Detaching** a remote pane never kills the host's session.
 - **Client side:** `RemoteHostStore` persists host configurations, including tokens, in
   UserDefaults (`shepherd.remote.hosts`). It keeps one `RemoteHostClient` per host, reconnecting
