@@ -54,9 +54,12 @@ public enum NWDesignMetrics {
     public static let tagRadius: CGFloat = NW.Radius.xs
     public static let tagGap: CGFloat = NW.Space.xs
     public static let tagTextSize: CGFloat = 10.5
-    /// Where a fitted canvas puts the boards' top-leading corner (44pt in, 52pt down).
+    /// Where a fitted canvas puts the boards (DZCanvas): 44pt in, the top row's labels 52pt down
+    /// and its frames 76pt down, which leaves the board actions 18pt from the top. `fitTop` is
+    /// also the room kept below the boards.
     public static let fitLeading: CGFloat = 44
     public static let fitTop: CGFloat = 52
+    public static let fitFrameTop: CGFloat = fitTop + labelHeight + labelGap
     /// The canvas toolbar: 16pt from the bottom-leading corner, a 38pt bar (4pt padding, radius
     /// 12), 30pt circle tools with 15pt glyphs, an 18pt divider with 4pt margins, the zoom in mono 11.
     public static let toolbarInset: CGFloat = NW.Space.xl
