@@ -5,6 +5,8 @@ import SwiftUI
         NWTouchQueueCard(count: 3) {
             VStack(spacing: 0) {
                 NWTouchQueueRow("Don't touch the migrations in this PR.", kind: .steering, back: {})
+                NWTouchQueueRow("Don't touch the migrations in this PR.", kind: .steering, wide: true, back: {})
+                    .overlay(alignment: .top) { NWHairline() }
                 NWTouchQueueRow("Also cover partial refunds in the tests.", kind: .queued(number: 1)).overlay(alignment: .top) { NWHairline() }
                 NWTouchQueueRow("Then open a draft PR.", images: 2, kind: .queued(number: 2), held: true).overlay(alignment: .top) { NWHairline() }
                 NWTouchQueueRow("Keep the PR title short", kind: .deleted, undo: {}).overlay(alignment: .top) { NWHairline() }
