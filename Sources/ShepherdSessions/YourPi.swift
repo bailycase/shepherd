@@ -88,7 +88,14 @@ public final class YourPiLocator: @unchecked Sendable {
 
     private let source: Source
     private let lock = NSLock()
-    private var resolved: YourPi??
+    private var resolved: Answer?
+
+    /// What a login shell's answer comes to: "your pi" to read, if any, and a folder refused for
+    /// being inside a support folder, which Shepherd never reads but still guards its home against.
+    struct Answer: Equatable {
+        var yourPi: YourPi?
+        var refused: URL?
+    }
 
     public init(_ source: Source) {
         self.source = source
@@ -117,21 +124,32 @@ public final class YourPiLocator: @unchecked Sendable {
     /// "Your pi", or nil when it can't be found or was refused. Blocking the first time (a
     /// login shell): call it off the main thread and the server queue.
     public func resolve() -> YourPi? {
+        answer().yourPi
+    }
+
+    /// The folder the user's startup files name as their pi, when it was refused for being inside
+    /// a support folder (so `resolve()` is nil): Shepherd reads nothing of it, but its home must
+    /// not overlap it (`PiSetup.check`). Blocking the first time, like `resolve()`.
+    public func refusedDirectory() -> URL? {
+        answer().refused
+    }
+
+    private func answer() -> Answer {
         lock.withLock {
             if let resolved { return resolved }
-            let found: YourPi?
+            let found: Answer
             switch source {
-            case .fixed(let url): found = url.map { YourPi(agentDirectory: $0) }
+            case .fixed(let url): found = Answer(yourPi: url.map { YourPi(agentDirectory: $0) })
             case .loginShell(let environment, let supportFolders): found = Self.fromLoginShell(environment: environment, supportFolders: supportFolders)
             }
-            resolved = .some(found)
+            resolved = found
             return found
         }
     }
 
     static let marker = "SHEPHERD-YOUR-PI"
 
-    private static func fromLoginShell(environment: [String: String], supportFolders: [URL]) -> YourPi? {
+    private static func fromLoginShell(environment: [String: String], supportFolders: [URL]) -> Answer {
         var env = environment
         for key in ["PI_CODING_AGENT_DIR", "PI_CODING_AGENT_SESSION_DIR"] { env[key] = nil }
         for key in env.keys where key.hasPrefix("SHEPHERD_") && key != ShepherdPaths.supportDirectoryEnvKey { env[key] = nil }
@@ -144,13 +162,18 @@ public final class YourPiLocator: @unchecked Sendable {
                 values[key] = String(line.dropFirst(marker.count + key.count + 2))
             }
         }
-        return interpret(dir: values["DIR"], sessions: values["SESSIONS"], home: home, supportFolders: supportFolders)
+        return answer(dir: values["DIR"], sessions: values["SESSIONS"], home: home, supportFolders: supportFolders)
     }
 
     /// What a login shell printed, as pi would take it: the folder (`~` expanded, relative to
     /// home), the session folder from the environment or the folder's settings, and `~/.pi/agent`
     /// when the folder is elsewhere. Nil when the folder resolves inside a support folder.
     static func interpret(dir: String?, sessions: String?, home: String, supportFolders: [URL]) -> YourPi? {
+        answer(dir: dir, sessions: sessions, home: home, supportFolders: supportFolders).yourPi
+    }
+
+    /// `interpret`, with the folder it refused.
+    static func answer(dir: String?, sessions: String?, home: String, supportFolders: [URL]) -> Answer {
         func path(_ value: String?, relativeTo base: String) -> URL? {
             guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
             let expanded = value == "~" ? home : value.hasPrefix("~/") ? home + value.dropFirst() : value
@@ -161,7 +184,7 @@ public final class YourPiLocator: @unchecked Sendable {
         let canonicalAgent = PiHome.canonical(agent.path)
         for folder in supportFolders where PiHome.isInside(canonicalAgent, PiHome.canonical(folder.path)) {
             ShepherdLog.info("your pi resolves to \(agent.path), inside Shepherd's support folder \(folder.path): Shepherd won't read it")
-            return nil
+            return Answer(refused: agent)
         }
         var sessionFolder = path(sessions, relativeTo: home)
         if sessionFolder == nil,
@@ -169,8 +192,8 @@ public final class YourPiLocator: @unchecked Sendable {
            let settings = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             sessionFolder = path(settings["sessionDir"] as? String, relativeTo: agent.path)
         }
-        return YourPi(agentDirectory: agent, sessionDirectory: sessionFolder,
-                      fallbackAgentDirectory: agent.standardizedFileURL == standard.standardizedFileURL ? nil : standard)
+        return Answer(yourPi: YourPi(agentDirectory: agent, sessionDirectory: sessionFolder,
+                                     fallbackAgentDirectory: agent.standardizedFileURL == standard.standardizedFileURL ? nil : standard))
     }
 }
 
