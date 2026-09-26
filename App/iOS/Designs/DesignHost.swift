@@ -91,6 +91,8 @@ final class DesignRendering {
         let key = "\(ref.host.uuidString)/\(ref.design.rawValue)/\(path.rawValue)/\(sha256)/\(Int(width))"
         if let image = images[key] { return image }
         let rendered: UIImage? = await exclusively {
+            // A tile scrolled away while it waited its turn draws nothing: no web view for it.
+            guard !Task.isCancelled else { return nil }
             let view = self.makeView(ref, source: source, path: path, size: size)
             defer { self.release(view) }
             guard (try? await Self.load(view)) != nil, let image = try? await view.snapshot(width: min(width, size.width)) else { return nil }
