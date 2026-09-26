@@ -268,11 +268,11 @@ struct RemoteRequestTests {
         switch request {
         case .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
              .closePane, .resizePaneSplit, .listDir, .listModels, .addSpace, .createAgent, .upload,
-             .creationOptions, .agentQuery, .agentAction, .automation, .instructions, .suggestions, .hostSettings, .skills:
+             .creationOptions, .agentQuery, .agentAction, .automation, .instructions, .suggestions, .hostSettings, .skills, .design:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 24
+    static let caseCount = 25
 
     static let samples: [RemoteRequest] = [
         .nativeThread(id: 80, agentID: S.agent, request: .snapshot(expectedSessionID: "s", beforeEntryID: "m:3", afterRevision: 9)),
@@ -303,6 +303,7 @@ struct RemoteRequestTests {
         .suggestions(id: 25, request: .add(id: S.op, line: "- Ask for join keys first.", file: nil)),
         .hostSettings(id: 27, request: .change(.bundledExtension(id: "review", on: true))),
         .skills(id: 29, request: .install(repo: "anthropics/skills", paths: ["skills/pdf"], commit: nil, invocation: nil)),
+        .design(id: 31, request: .boards(designID: RemoteDesignSamples.design, paths: nil, knownShas: [:])),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -431,11 +432,12 @@ struct RemoteReplyTests {
         switch reply {
         case .nativeThread, .uploadResult, .creationOptions, .helloOk, .agentResult, .ok, .paneOpened, .error,
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
-             .agentCreated, .automationResult, .instructions, .suggestions, .hostSettings, .skills:
+             .agentCreated, .automationResult, .instructions, .suggestions, .hostSettings, .skills, .design, .designChanged,
+             .capabilitiesChanged:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 22
+    static let caseCount = 25
 
     static let samples: [RemoteReply] = [
         .nativeThread(id: 80, result: .accepted(operationID: S.op)),
@@ -464,6 +466,9 @@ struct RemoteReplyTests {
         .suggestions(id: 26, snapshot: S.suggestions),
         .hostSettings(id: 28, settings: S.hostSettings),
         .skills(id: 30, result: .skills(S.skills)),
+        .design(id: 32, result: .ok),
+        .designChanged(designID: RemoteDesignSamples.design, revision: 8, commentsRevision: 2),
+        .capabilitiesChanged(capabilities: [RemoteProtocol.designsCapability]),
     ]
 
     @Test func samplesCoverEveryCase() {
