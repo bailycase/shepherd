@@ -201,10 +201,8 @@ struct ReviewCommitSheet: View {
                     .buttonStyle(.nw(.ghost))
                     .help("Send the agent a turn asking it to commit these changes")
             }
-            // Secondary, as iPadCommit (the board this sheet follows) draws it beside the ghost
-            // Ask Agent to Commit.
             Button("Cancel", action: close)
-                .buttonStyle(.nw(.secondary))
+                .buttonStyle(.nw(.ghost))
                 .keyboardShortcut(.cancelAction)
             if store.stage == .form {
                 Button(store.actionTitle) { Task { await store.commit() } }
