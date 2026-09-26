@@ -537,7 +537,9 @@ extension RPCThreadState {
         }
         let id = liveEntryID(for: message)
         var value = Self.project(entryID: id, message: message)
-        value.origin = origin.map(Self.clipped)
+        // A design comment keeps the origin its fence gives it (`project`).
+        if value.origin?.designComment != nil { origin = nil }
+        value.origin = value.origin ?? origin.map(Self.clipped)
         value.operationID = operationID
         live.append(LiveItem(kind: .user, value: value, raw: message, ended: false))
         if let origin { recordOrigin(origin, entryID: id) }

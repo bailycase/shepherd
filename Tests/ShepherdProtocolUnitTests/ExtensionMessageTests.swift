@@ -20,11 +20,11 @@ struct ExtensionMessageTests {
              .sendPaneInput, .readPane, .requestReview, .listAgents, .sendToAgent, .spawnAgent,
              .coordinateAgent, .agentResponse, .cancelAgentRequest, .createAutomation, .listAutomations,
              .updateAutomation, .deleteAutomation, .startAutomation, .stopAutomation, .suggestInstruction,
-             .designRead, .designWriteBoard, .designUpdateIndex:
+             .designRead, .designWriteBoard, .designUpdateIndex, .designComments, .designCommentReply:
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 31
+    static let caseCount = 33
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
@@ -71,6 +71,9 @@ struct ExtensionMessageTests {
             "boards": .object(["A.dc.html": .object(["x": .number(0), "y": .number(0), "w": .number(1280), "h": .number(800)]),
                                "C.dc.html": .null]),
         ]), baseRevision: nil),
+        .designComments(id: 24, agentID: agent, designID: design),
+        .designCommentReply(id: 25, agentID: agent, designID: design, commentID: "7A1C2E7B-39F5-4B0C-9A40-0E8B1F3C5D21",
+                            text: "Done on A and A · phone.\nWant counts too?"),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -145,6 +148,11 @@ struct ExtensionMessageTests {
         (#"{"type":"designUpdateIndex","changes":{"boards":{"C.dc.html":null}},"baseRevision":6,"id":5,"agentID":"a1","designID":"d1"}"#,
          .designUpdateIndex(id: 5, agentID: agent, designID: design, changes: .object(["boards": .object(["C.dc.html": .null])]),
                             baseRevision: 6)),
+        (#"{"type":"designComments","id":6,"agentID":"a1","designID":"d1"}"#,
+         .designComments(id: 6, agentID: agent, designID: design)),
+        // A comment id that isn't one still decodes, so the server can answer it.
+        (#"{"type":"designCommentReply","commentID":"nope","text":"Done.","id":7,"agentID":"a1","designID":"d1"}"#,
+         .designCommentReply(id: 7, agentID: agent, designID: design, commentID: "nope", text: "Done.")),
     ]
 
     @Test(arguments: handWritten)
@@ -185,11 +193,18 @@ struct ExtensionReplyTests {
     static func caseName(_ reply: ExtensionReply) -> String {
         switch reply {
         case .childCommand, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .automations,
-             .agents, .message, .agentRequest, .agentResult, .suggestion, .design, .designBoard, .designWritten:
+             .agents, .message, .agentRequest, .agentResult, .suggestion, .design, .designBoard, .designWritten,
+             .designComments, .designComment:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 16
+    static let caseCount = 18
+    static let comment = DesignComment(
+        id: UUID(uuidString: "7A1C2E7B-39F5-4B0C-9A40-0E8B1F3C5D21")!, number: 1, board: board, tid: 5, path: [1, 1, 0],
+        label: "Checkout funnel 48,210", target: "Checkout funnel", rect: DesignCommentRect(x: 59, y: 288, w: 648, h: 216),
+        text: "Show the absolute counts next to the percentages.", createdAt: 1_758_000_000_000,
+        replies: [DesignCommentReply(id: UUID(uuidString: "0F7E9A3D-2B41-4C8E-8D7A-5E2B1C9F0A34")!, author: .agent,
+                                     text: "Done on A and A · phone.", createdAt: 1_758_000_060_000)])
 
     static let board = DesignPath("A.dc.html")!
     static let snapshot = DesignSnapshot(
@@ -224,6 +239,11 @@ struct ExtensionReplyTests {
         .designBoard(id: 22, board: DesignBoardSource(path: board, source: "<!doctype html>\n<x-dc>Hi</x-dc>\n", sha256: "5e1f", revision: 4)),
         .designWritten(id: 23, result: DesignWriteResult(revision: 5, changed: true, sha256: "9c0d", created: true,
                                                           warnings: [.innerHTML, .missingPreview], title: "Checkout funnel", boardCount: 1)),
+        .designComments(id: 24, comments: DesignComments(revision: 3, comments: [
+            comment, DesignComment(number: 2, board: DesignPath("flows/Cart.dc.html")!, tid: 2, path: [0, 1], text: "Bigger total",
+                                   createdAt: 3, resolvedAt: 4, detached: true),
+        ])),
+        .designComment(id: 25, comment: comment),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -283,6 +303,24 @@ struct ExtensionReplyTests {
 
     @Test func aPushedMessageWithoutAnIDDecodesAsIDZero() throws {
         #expect(try Wire.decode(ExtensionReply.self, #"{"type":"message","text":"hi"}"#) == .message(id: 0, text: "hi"))
+    }
+
+    /// What `comment_list` and `comment_reply` read: ids, numbers, the board by path, the
+    /// element's halves, the words, replies with their author, and whether it is resolved.
+    @Test func commentRepliesCarryTheShapeTheExtensionReads() throws {
+        let list = try Wire.object(ExtensionReply.designComments(id: 1, comments: DesignComments(revision: 3, comments: [Self.comment])))
+        let comments = try #require(list["comments"] as? [String: Any])
+        #expect(comments["revision"] as? Int == 3)
+        let first = try #require((comments["comments"] as? [[String: Any]])?.first)
+        #expect(first["id"] as? String == "7A1C2E7B-39F5-4B0C-9A40-0E8B1F3C5D21" && first["number"] as? Int == 1)
+        #expect(first["board"] as? String == "A.dc.html" && first["tid"] as? Int == 5 && first["path"] as? [Int] == [1, 1, 0])
+        #expect(first["text"] as? String == "Show the absolute counts next to the percentages.")
+        #expect(first["target"] as? String == "Checkout funnel" && first["detached"] as? Bool == false)
+        #expect(first["resolvedAt"] == nil)
+        let reply = try #require((first["replies"] as? [[String: Any]])?.first)
+        #expect(reply["author"] as? String == "agent" && reply["text"] as? String == "Done on A and A · phone.")
+        let one = try Wire.object(ExtensionReply.designComment(id: 2, comment: Self.comment))
+        #expect((one["comment"] as? [String: Any])?["number"] as? Int == 1)
     }
 
     @Test func emptyCollectionsRoundTrip() throws {

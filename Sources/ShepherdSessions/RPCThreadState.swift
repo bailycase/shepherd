@@ -825,7 +825,10 @@ final class RPCThreadState {
                         if case .text(let text) = block { return text }
                         return nil
                     }.joined()
-                    value.origin = self.origins[value.entryID]?.origin(text: DesignViewRecord.strippingFence(from: text))
+                    // A design comment's origin is its fence (`project`), which pi keeps.
+                    if value.origin == nil {
+                        value.origin = self.origins[value.entryID]?.origin(text: DesignViewRecord.strippingFence(from: text))
+                    }
                     value.operationID = self.operationsByEntry[value.entryID]
                 }
             }
@@ -1630,6 +1633,10 @@ final class RPCThreadState {
             }
             switch block {
             case .text(let text):
+                if fenced, let comment = DesignCommentFence.parse(text), comment.fence.reply != true {
+                    // A design comment: the chat draws its card.
+                    result.origin = .designComment(id: comment.fence.comment)
+                }
                 let shown = fenced ? DesignViewRecord.strippingFence(from: text) : text
                 fenced = false
                 result.blocks.append(NativeThreadBlock(kind: .text, text: clip(shown)))
