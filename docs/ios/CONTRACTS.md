@@ -26,7 +26,7 @@ Never commit a `project.pbxproj` change for a new file.
 | B. Thread & composer | `Thread/` (not `ThreadStores.swift`), `Composer/`, `Fixtures/ThreadFixtures.swift` | the thread screen, composer, queue and steer, model and thinking, images, slash commands, the question panel |
 | C. New thread | `NewThread/`, `Fixtures/NewThreadFixtures.swift` | the creation flow and Where it runs |
 | D. Subagents | `Subagents/`, `Fixtures/SubagentsFixtures.swift` | the cards in a thread, the list, one run's transcript and steer |
-| E. Review | `Review/`, `Fixtures/ReviewFixtures.swift`, the `DiffFile` move into a shared module | changes, the diff reader, comments, Request changes, Commit as a turn, Finalize, review docked on iPad |
+| E. Review | `Review/`, `Fixtures/ReviewFixtures.swift`, `Fixtures/ChangesFixtures.swift`, the `DiffFile` move into a shared module | the Changes pane: scopes and the base picker, the diff reader, comments and the send bar, Commit as a turn on older hosts, Finalize, the pane docked and full screen on iPad, the "Edited N files" card's Undo |
 | F. Search & actions | `Search/`, `Fixtures/SearchFixtures.swift` | search across agents, rename and delete, the iPad ⌘K palette |
 | G. Commit | `Commit/`, `Fixtures/CommitFixtures.swift`, and the Commit… entry points in `Review/` | commit from review: the iPhone sheet, the iPad popover |
 | H. Automations | `Automations/`, `Fixtures/AutomationsFixtures.swift` | the Automations list (Home's `.automations` destination), the iPad list and detail, one automation with its runs, the form |
@@ -73,7 +73,7 @@ Routes today:
 | `.home(.needsYou / .automations / .more / .recents)` | Home's destinations, and every recent thread |
 | `.newThread(.compose(host: UUID?))` | New thread (presented modally) |
 | `.subagents(.list(AgentRef) / .run(AgentRef, runID:))` | a thread's runs, one run |
-| `.review(.changes(AgentRef, file: String?) / .diff(AgentRef, path:))` | changes, one file's diff |
+| `.review(.changes(AgentRef, file: String?) / .diff(AgentRef, path:))` | changes, one file's diff (the scope is the review store's: `ReviewStore.pick`, `show(turn:)`) |
 | `.review(.finalize(AgentRef))` | Finalize a worktree agent (presented) |
 | `.review(.commit(AgentRef))` | Commit from review (presented on iPhone; iPad uses the popover) |
 | `.search(.search(query:))` | search (iPhone, pushed) |
@@ -160,7 +160,8 @@ them except the navigator, which is each window's own ([Windows](#windows-ipad))
 | Composer slot | `Composer/ThreadComposer.swift` (B) | `ThreadScreen`, at the bottom | `ThreadComposer(ref: AgentRef)` |
 | Subagent tray | `Subagents/SubagentTray.swift` (D) | `ThreadComposer`, above the composer in one card with Up next | `SubagentTraySection(ref: AgentRef, tray: NativeSubagentTray, store: NativeThreadStore, state: ComposerState, size: NWSubagentTraySize, enabled: Bool)` |
 | Subagent routes | `Subagents/SubagentsRoute.swift` (D) | the turn footer's "N subagents", a turn's subagent record lines, the thread's options menu | `SubagentHooks.list(thread:) -> MobileRoute`, `SubagentHooks.run(thread:runID:) -> MobileRoute` |
-| Open review | `Review/ReviewRoute.swift` (E) | the changes card's Review and files, an edit line | `ReviewHooks.open(thread: AgentRef, file: String?, navigator: MobileNavigator)` |
+| Open review | `Review/ReviewRoute.swift` (E) | the changes card's Review and files, an edit line | `ReviewHooks.open(thread: AgentRef, file: String?, navigator: MobileNavigator)`; a recorded turn's card: `ReviewHooks.open(thread:turn:file:navigator:)`, the review scoped to that turn |
+| Undo a turn | `Thread/TurnUndo.swift` | the "Edited N files" card's Undo and Redo | `TurnUndoStore.shared.undo(_:ref:hosts:threads:)` / `redo`, and `.turnUndoAlert()` on the thread for a refusal |
 | Agent actions | `Search/AgentActionsMenu.swift` (F) | the thread's options menu (menu items only) | `AgentActionsMenu(thread: AgentRef)` |
 | Commit from review | `Commit/CommitHooks.swift` (G) | the changes' bar and ••• menu, the iPad composer and full-screen toolbar | `CommitHooks.available(host:) -> Bool`, `CommitHooks.open(thread:navigator:sizeClass:)`, `.commitPopover(ref:arrowEdge:)` on the iPad's Commit… |
 | Open search | `Search/SearchRoute.swift` (F) | Home, the iPad sidebar (the palette on iPad, search on iPhone) | `SearchHooks.open(query: String = "", navigator:)` |

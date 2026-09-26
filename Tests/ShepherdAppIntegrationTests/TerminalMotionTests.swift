@@ -159,7 +159,7 @@ struct ShellTerminalMotionTests {
         let space = Fixture.space(path: app.dir.path)
         let agent = try await app.liveAgent("agent", in: space, auxiliary: 1)
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
-        vm.reviewDiffLoader = { _, reference in ([], reference) }
+        vm.changesEngineOverride = { _, _ in .fixed([]) }
         vm.selectAgent(agent.agent.id)
         let shell = vm.sessions.session(for: agent.auxiliary[0], in: agent.tab)
         let log = GridLog()

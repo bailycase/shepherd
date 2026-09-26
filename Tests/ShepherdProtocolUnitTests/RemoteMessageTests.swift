@@ -67,7 +67,43 @@ enum RemoteSamples {
                                                               confirmedWhileWorking: true)),
         .commit(operationID: op, options: RemoteCommitOptions(head: "", files: [commitFile], title: "t", body: "", push: .none)),
         .commit(operationID: op, options: RemoteCommitOptions(head: "abc", files: [commitFile], title: "t", body: "", push: .upstream)),
+        .changesOverview,
+        .changesList(scope: .lastTurn, options: ChangesOptions()),
+        .changesList(scope: .turn(id: op), options: ChangesOptions(ignoreWhitespace: true)),
+        .changesList(scope: .uncommitted, options: ChangesOptions(fullFiles: true)),
+        .changesList(scope: .unstaged, options: ChangesOptions()),
+        .changesList(scope: .staged, options: ChangesOptions()),
+        .changesList(scope: .commits(first: "5d11a07", last: "a1c9f2e"), options: ChangesOptions()),
+        .changesList(scope: .branch(base: "origin/release/2.4"), options: ChangesOptions()),
+        .changesList(scope: .branch(base: nil), options: ChangesOptions()),
+        .changesList(scope: .pullRequest, options: ChangesOptions()),
+        .changesFile(revision: revision, path: "ledger/outbox.go", oldPath: nil, options: ChangesOptions(ignoreWhitespace: true, fullFiles: true)),
+        .changesFile(revision: revision, path: "new name.go", oldPath: "old.go", options: ChangesOptions()),
+        .changesBranches,
+        .changesPatch(revision: revision, options: ChangesOptions()),
+        .changesUndoTurn(turnID: op),
+        .changesRedoTurn(turnID: op),
     ]
+
+    static let revision = ChangesRevision(old: "3f2a91c0", new: "4b825dc6")
+    static let changedFiles = [
+        ChangesFile(path: "ledger/outbox.go", status: .modified, added: 21, removed: 8),
+        ChangesFile(path: "ledger/refund.go", status: .added, added: 64, removed: 0),
+        ChangesFile(path: "new name.go", oldPath: "old.go", status: .renamed, added: 0, removed: 0),
+        ChangesFile(path: "logo.png", status: .deleted, added: 0, removed: 0, isBinary: true),
+    ]
+    static let turn = ChangesTurn(id: op, messageTimestamp: 1_758_000_000_000, prompt: "Wrap errors with context", startedAt: 1_758_000_000_100,
+                                  endedAt: 1_758_000_240_000, state: .ready, files: changedFiles, fileCount: 7, added: 85, removed: 8,
+                                  canUndo: true)
+    static let overview = ChangesOverview(
+        repository: "/host/payments", branch: "agent/refund-events", head: "a1c9f2e", defaultScope: .branch(base: nil), defaultBase: "origin/main",
+        entries: [.init(scope: .lastTurn, files: 2, added: 12, removed: 3), .init(scope: .pullRequest, unavailable: "No pull request for this branch."),
+                  .init(scope: .commits(first: "5d11a07", last: "a1c9f2e"), count: 4)],
+        commits: [ChangesCommit(id: "a1c9f2e00", shortID: "a1c9f2e", subject: "Emit refund events from the outbox", date: 1_758_000_000)],
+        commitsBase: "origin/main",
+        pullRequest: ChangesPullRequest(number: 31, title: "Refund events", isDraft: true, state: "OPEN", base: "main", head: "agent/refund-events",
+                                        url: "https://example.invalid/pull/31"),
+        lastTurn: turn)
 
     static let agentResults: [RemoteAgentResult] = [
         .ok,
@@ -100,6 +136,22 @@ enum RemoteSamples {
         .commitInfo(detachedInfo),
         .commitMessage(title: "Show commands in tool rows", body: "Tool rows preview the command.", drafted: true),
         .commitMessage(title: "Update FleetView.swift", body: "", drafted: false),
+        .changesOverview(overview),
+        .changesOverview(ChangesOverview(repository: nil, reason: "notes is not a git repository.", defaultScope: .uncommitted)),
+        .changesList(ChangesList(scope: .branch(base: nil), revision: revision,
+                                 comparison: ChangesComparison(head: "agent/refund-events", base: "origin/main", baseName: "main", mergeBase: "3f2a91c"),
+                                 files: changedFiles, skipped: ["dump.bin"])),
+        .changesList(ChangesList(scope: .lastTurn, revision: revision,
+                                 comparison: ChangesComparison(head: "End of turn", base: "Start of turn", turn: turn), files: [])),
+        .changesFile(ChangesFileDiff(file: DiffFile.parse("diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1 +1 @@\n-x\n+y\n")[0], truncated: true)),
+        .changesBranches(ChangesBranches(defaultBase: "origin/main", pullRequestBase: "origin/main", recents: ["feat/ledger-v2"],
+                                         branches: [ChangesBranch(name: "origin/main", isRemote: true, committedAt: 1_758_000_000),
+                                                    ChangesBranch(name: "agent/retry-plan", isRemote: false, worktree: "/w/retry", committedAt: 1),
+                                                    ChangesBranch(name: "agent/refund-events", isRemote: false, isCurrent: true, committedAt: 2)])),
+        .changesBranches(ChangesBranches(defaultBase: nil, branches: [])),
+        .changesPatch(text: "diff --git a/a b/a\n", truncated: false),
+        .changesTurn(turn),
+        .changesTurn(ChangesTurn(id: op, startedAt: 1, state: .unavailable, reason: "Shepherd quit before this turn ended.")),
     ]
 
     static let automation = AutomationID(rawValue: "automation")
@@ -611,6 +663,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.terminalActivityCapability,
             RemoteProtocol.reviewCommitCapability,
             RemoteProtocol.thinkingLevelsCapability,
+            RemoteProtocol.changesCapability,
             RemoteProtocol.instructionsCapability, RemoteProtocol.suggestionsCapability,
             RemoteProtocol.hostSettingsCapability, RemoteProtocol.skillsCapability,
         ]
@@ -622,6 +675,7 @@ struct RemoteProtocolConstantTests {
     @Test func capabilityStringsAreStable() {
         #expect(RemoteProtocol.nativeThreadCapability == "native.thread.v1")
         #expect(RemoteProtocol.nativeThreadV2Capability == "native.thread.v2")
+        #expect(RemoteProtocol.changesCapability == "changes.v1")
         #expect(RemoteProtocol.nativeThreadStartingCapability == "native.thread.starting.v1")
         #expect(RemoteProtocol.nativeQueueCapability == "native.queue.v1")
         #expect(RemoteProtocol.pasteCapability == "session.paste.v1")

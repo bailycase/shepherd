@@ -258,12 +258,12 @@ struct ThreadPreviewTests {
     /// The NWThread board's parts: bubbles (hovered, showing its time, and steered), attachment
     /// chips, thinking open and live, the changes card, a hovered turn's footer and a turn error.
     @Test func threadParts() async throws {
-        let changes = NWChangesCard(title: "4 files changed", added: 149, removed: 63, files: [
+        let changes = NWChangesCard(title: "Edited 4 files", added: 149, removed: 63, files: [
             NWChangedFile(path: "Sources/ShepherdApp/DesktopNativeThreadView.swift", directory: "Sources/ShepherdApp/", name: "DesktopNativeThreadView.swift", status: .modified, added: 58, removed: 41),
             NWChangedFile(path: "Sources/ShepherdApp/ToolRow.swift", directory: "Sources/ShepherdApp/", name: "ToolRow.swift", status: .modified, added: 12, removed: 4),
             NWChangedFile(path: "App/iOS/ThreadView.swift", directory: "App/iOS/", name: "ThreadView.swift", status: .modified, added: 31, removed: 18),
             NWChangedFile(path: "Tests/ShepherdAppTests/ToolPreviewTests.swift", directory: "Tests/ShepherdAppTests/", name: "ToolPreviewTests.swift", status: .added, added: 48, removed: 0),
-        ], onReview: {}, onOpen: { _ in })
+        ], onReview: {}, onOpen: { _ in }, onUndo: {})
         let size = CGSize(width: 900, height: 900)
         try await Preview.render("thread-parts", size: size) {
             VStack(alignment: .leading, spacing: 20) {
@@ -537,7 +537,17 @@ enum ActivityThreads {
         return messages
     }
 
-    static var idle: NativeThreadSnapshot { snapshot(idleMessages) }
+    /// The Main board's thread, with the turn its host recorded: "Edited 4 files" with Undo.
+    static var idle: NativeThreadSnapshot {
+        var value = snapshot(idleMessages)
+        let prompt = idleMessages[0].timestamp
+        let files = [(reads[0], 58, 41), (reads[1], 12, 4), (reads[2], 31, 18), ("Tests/ShepherdAppTests/ToolPreviewTests.swift", 48, 0)]
+        value.turnChanges = [ChangesTurn(
+            messageTimestamp: prompt, startedAt: prompt ?? now, endedAt: (prompt ?? now) + 192_000, state: .ready,
+            files: files.map { ChangesFile(path: $0.0, status: $0.2 == 0 ? .added : .modified, added: $0.1, removed: $0.2) },
+            added: 149, removed: 63, canUndo: true)]
+        return value
+    }
 
     /// A turn whose model shared some of its thinking: none for the first stretch (timed, a
     /// plain line), some for the second (the disclosure, folding in a blank block).

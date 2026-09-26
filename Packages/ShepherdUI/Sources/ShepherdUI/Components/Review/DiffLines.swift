@@ -28,23 +28,33 @@ public enum NWDiffLineKind: Sendable, Hashable {
     }
 }
 
-/// The diff's fixed columns (Review board): two 36pt line-number gutters, a 16pt sign column,
-/// then the code. Fold rows and inline comments start 6pt into the code column.
+/// The Changes pane's diff columns (ChangesSplit, ChangesUnified): a 3pt gutter bar, 34pt
+/// line-number gutters (two in unified, one per side in split), a 16pt sign column in unified,
+/// then the code. Comments sit 40pt in, under their line.
 public enum NWDiffMetrics {
-    public static let numberWidth: CGFloat = 36
+    public static let barWidth: CGFloat = 3
+    public static let numberWidth: CGFloat = 34
     public static let signWidth: CGFloat = 16
-    /// Where the code column starts.
-    public static let codeLeading: CGFloat = numberWidth * 2 + signWidth
-    /// Fold labels and inline comments.
-    public static let annotationLeading: CGFloat = codeLeading + NW.Space.s
-    /// Around a line's inline comment or comment editor.
+    /// Where the unified code column starts.
+    public static let codeLeading: CGFloat = barWidth + numberWidth * 2 + signWidth
+    /// Where a split side's code starts.
+    public static let splitCodeLeading: CGFloat = barWidth + numberWidth
+    /// Notices ("Binary file") and comments.
+    public static let annotationLeading: CGFloat = 40
+    /// Around a line's comment or comment editor.
     public static let annotationInsets = EdgeInsets(top: NW.Space.s, leading: annotationLeading, bottom: NW.Space.m, trailing: NW.Space.l)
+    /// The fold row's reveal column.
+    public static let foldControlWidth: CGFloat = 37
+    /// The gap between the hatching's diagonal lines.
+    public static let hatchSpacing: CGFloat = 7
+    /// A line; density-scaled.
+    @MainActor public static var lineHeight: CGFloat { NW.Height.scaled(21) }
     /// A fold row, a little taller than a line; density-scaled.
-    @MainActor public static var foldHeight: CGFloat { NW.Height.scaled(24) }
+    @MainActor public static var foldHeight: CGFloat { NW.Height.scaled(26) }
 }
 
-/// One line of a diff, ready to draw: the text arrives already syntax colored, so nothing is
-/// parsed or highlighted while a row renders.
+/// One line of a diff, ready to draw: the text arrives already syntax colored (and with its word
+/// diff tinted), so nothing is parsed or highlighted while a row renders.
 public struct NWDiffLineContent: Identifiable, Equatable, Sendable {
     /// The row's identity in the diff (stable across renders).
     public let id: String
@@ -84,7 +94,7 @@ public struct NWDiffLineContent: Identifiable, Equatable, Sendable {
     }
 }
 
-/// One row of `NWDiffView`: a hunk header, a line, or a fold of hidden lines.
+/// One row of the touch diff (the iOS client's review): a hunk header, a line, or a fold.
 public enum NWDiffRow: Identifiable, Equatable, Sendable {
     case hunk(id: String, header: String)
     case line(NWDiffLineContent)
@@ -99,10 +109,64 @@ public enum NWDiffRow: Identifiable, Equatable, Sendable {
     }
 }
 
-/// One diff line (Review board): 22pt (density-scaled), old and new numbers in 36pt gutters,
-/// the sign, and the syntax-colored code in mono 11.5, tail-truncated with the full line on
-/// hover. Additions sit on `doneTint`, removals on `failedTint`. With `onComment`, hovering
-/// shows a lantern "+", and double-clicking the line also comments.
+/// Unmodified lines folded away (FoldRow): how many, and which way they can open. A fold at the
+/// top of a file opens only upward, one at its end only downward.
+public struct NWDiffFold: Identifiable, Equatable, Sendable {
+    public let id: String
+    public let count: Int
+    public let revealsUp: Bool
+    public let revealsDown: Bool
+
+    public init(id: String, count: Int, revealsUp: Bool = true, revealsDown: Bool = true) {
+        self.id = id
+        self.count = count
+        self.revealsUp = revealsUp
+        self.revealsDown = revealsDown
+    }
+
+    /// "28 unmodified lines".
+    public var label: String { "\(count) unmodified line\(count == 1 ? "" : "s")" }
+}
+
+/// What a fold's control asks for: 20 lines at its bottom edge (up), 20 at its top (down), or
+/// every line.
+public enum NWDiffReveal: Sendable, Equatable {
+    case up, down, all
+}
+
+/// One row of the Changes pane's diff: a unified line, a split pair (either side may be missing),
+/// a fold of unmodified lines, or a notice ("Binary file").
+public enum NWChangesRow: Identifiable, Equatable, Sendable {
+    case line(NWDiffLineContent)
+    case pair(id: String, old: NWDiffLineContent?, new: NWDiffLineContent?)
+    case fold(NWDiffFold)
+    case notice(id: String, text: String)
+
+    public var id: String {
+        switch self {
+        case .line(let line): line.id
+        case .pair(let id, _, _), .notice(let id, _): id
+        case .fold(let fold): fold.id
+        }
+    }
+
+    /// The lines a row draws, whose comments show under it: the old side first.
+    public var lines: [NWDiffLineContent] {
+        switch self {
+        case .line(let line): [line]
+        case .pair(_, let old, let new): [old, new].compactMap { $0 }
+        case .fold, .notice: []
+        }
+    }
+}
+
+// MARK: Lines
+
+/// A unified line (ChangesUnified): the 3pt gutter bar on a change, the old and new numbers, the
+/// sign, and the syntax-colored code in mono 12, cut at the pane's edge with the full line on
+/// hover. Additions sit on `doneTint`, removals on `failedTint`, and a changed word on a second
+/// layer of the same tint. With `onComment`, hovering shows a lantern "+", and double-clicking
+/// the line also comments.
 public struct NWDiffLine: View {
     let line: NWDiffLineContent
     let onComment: (() -> Void)?
@@ -124,34 +188,18 @@ public struct NWDiffLine: View {
         let _ = NWRenderProbe.tick("diff.line")
         let nw = Color.nw
         HStack(spacing: 0) {
+            NWDiffGutterBar(kind: line.kind)
             NWDiffNumber(value: line.oldNumber)
             NWDiffNumber(value: line.newNumber)
             Text(line.kind.sign)
-                .font(.nw(.mono))
+                .font(.nw(.code))
                 .foregroundStyle(line.kind == .added ? nw.done : nw.failed)
-                .frame(width: NWDiffMetrics.signWidth)
-            Text(line.text)
-                .font(.nw(.mono))
-                .foregroundStyle(nw.textPrimary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .help(line.source)
-            if let onComment {
-                // The slot is always laid out, so hovering moves nothing; the button exists only
-                // while the line is hovered, so a long diff doesn't build a hidden one per line.
-                Color.clear
-                    .frame(width: NWDiffLine.commentButtonSize + 2 * NW.Space.s, height: NWDiffLine.commentButtonSize)
-                    .overlay {
-                        if hovering {
-                            NWDiffCommentButton(action: onComment)
-                                .nwTransition(.hover)
-                        }
-                    }
-            }
+                .frame(width: NWDiffMetrics.signWidth, alignment: .leading)
+            NWDiffCode(line: line)
+            NWDiffCommentSlot(hovering: hovering, onComment: onComment)
         }
-        .frame(minHeight: NW.Height.rowCompact)
-        .background(background(nw))
+        .frame(height: NWDiffMetrics.lineHeight)
+        .background(NWDiffLineBackground.color(line.kind, hovering: hovering && onComment != nil))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .nwAnimation(.hover, value: hovering)
@@ -164,12 +212,151 @@ public struct NWDiffLine: View {
     }
 
     static let commentButtonSize: CGFloat = 18
+}
 
-    private func background(_ nw: NWPalette) -> Color {
-        switch line.kind {
+/// One side of a split row (ChangesSplit): the gutter bar, the side's number, and the code; a
+/// missing side is hatched (Filler) so the rows line up.
+public struct NWSplitDiffSide: View {
+    public enum Side: Sendable { case old, new }
+
+    let line: NWDiffLineContent?
+    let side: Side
+    let onComment: (() -> Void)?
+    @State private var hovering = false
+
+    public init(_ line: NWDiffLineContent?, side: Side, onComment: (() -> Void)? = nil) {
+        self.line = line
+        self.side = side
+        self.onComment = onComment
+    }
+
+    public var body: some View {
+        if let line {
+            HStack(spacing: 0) {
+                NWDiffGutterBar(kind: line.kind)
+                NWDiffNumber(value: side == .old ? line.oldNumber : line.newNumber)
+                NWDiffCode(line: line)
+                NWDiffCommentSlot(hovering: hovering, onComment: onComment)
+            }
+            .frame(maxWidth: .infinity, minHeight: NWDiffMetrics.lineHeight, maxHeight: NWDiffMetrics.lineHeight)
+            .background(NWDiffLineBackground.color(line.kind, hovering: hovering && onComment != nil))
+            .contentShape(Rectangle())
+            .onHover { hovering = $0 }
+            .nwAnimation(.hover, value: hovering)
+            .onTapGesture(count: 2) { onComment?() }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(line.accessibilityText)
+            .accessibilityActions {
+                if let onComment { Button("Comment", action: onComment) }
+            }
+        } else {
+            NWDiffHatch()
+                .frame(maxWidth: .infinity, minHeight: NWDiffMetrics.lineHeight, maxHeight: NWDiffMetrics.lineHeight)
+                .accessibilityHidden(true)
+        }
+    }
+}
+
+/// A split row: the old side, a 1px rule, the new side, each half the width.
+public struct NWSplitDiffLine: View {
+    let old: NWDiffLineContent?
+    let new: NWDiffLineContent?
+    let onComment: ((NWDiffLineContent) -> Void)?
+
+    public init(old: NWDiffLineContent?, new: NWDiffLineContent?, onComment: ((NWDiffLineContent) -> Void)? = nil) {
+        self.old = old
+        self.new = new
+        self.onComment = onComment
+    }
+
+    public var body: some View {
+        let _ = NWRenderProbe.tick("diff.line")
+        HStack(spacing: 0) {
+            NWSplitDiffSide(old, side: .old, onComment: old.flatMap { line in onComment.map { comment in { comment(line) } } })
+            Color.nw.lineSubtle.frame(width: 1).accessibilityHidden(true)
+            NWSplitDiffSide(new, side: .new, onComment: new.flatMap { line in onComment.map { comment in { comment(line) } } })
+        }
+        .frame(height: NWDiffMetrics.lineHeight)
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// A changed line's 3pt bar (Gutter bar): `done` for an addition, `failed` for a removal, so a
+/// change reads even where its tint is faint.
+private struct NWDiffGutterBar: View {
+    let kind: NWDiffLineKind
+
+    var body: some View {
+        let nw = Color.nw
+        (kind == .added ? nw.done : kind == .removed ? nw.failed : Color.clear)
+            .frame(width: NWDiffMetrics.barWidth)
+    }
+}
+
+/// The code, clipped at the edge (never wrapped or ellipsized), its full line on hover.
+private struct NWDiffCode: View {
+    let line: NWDiffLineContent
+
+    var body: some View {
+        Text(line.text)
+            .font(.nw(.code))
+            .foregroundStyle(Color.nw.textPrimary)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            // Takes what the row leaves, however long the line: its width never pushes the row.
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+            .clipped()
+            .help(line.source)
+    }
+}
+
+/// The comment "+" slot: always laid out, so hovering moves nothing; the control exists only
+/// while the line is hovered, so a long diff doesn't build a hidden one per line.
+private struct NWDiffCommentSlot: View {
+    let hovering: Bool
+    let onComment: (() -> Void)?
+
+    var body: some View {
+        if let onComment {
+            Color.clear
+                .frame(width: NWDiffLine.commentButtonSize + 2 * NW.Space.s, height: NWDiffLine.commentButtonSize)
+                .overlay {
+                    if hovering {
+                        NWDiffCommentButton(action: onComment)
+                            .nwTransition(.hover)
+                    }
+                }
+        }
+    }
+}
+
+enum NWDiffLineBackground {
+    @MainActor static func color(_ kind: NWDiffLineKind, hovering: Bool) -> Color {
+        let nw = Color.nw
+        return switch kind {
         case .added: nw.doneTint
         case .removed: nw.failedTint
-        case .context: hovering && onComment != nil ? nw.bgHover : .clear
+        case .context: hovering ? nw.bgHover : .clear
+        }
+    }
+}
+
+/// The filler where one side has no line (Filler, hatched): `lineSubtle` diagonals 7pt apart,
+/// so a gap reads as a gap rather than a blank line.
+public struct NWDiffHatch: View {
+    public init() {}
+
+    public var body: some View {
+        let color = Color.nw.lineSubtle
+        Canvas { context, size in
+            var path = Path()
+            var x = -size.height
+            while x < size.width {
+                path.move(to: CGPoint(x: x, y: size.height))
+                path.addLine(to: CGPoint(x: x + size.height, y: 0))
+                x += NWDiffMetrics.hatchSpacing
+            }
+            context.stroke(path, with: .color(color), lineWidth: 1)
         }
     }
 }
@@ -195,155 +382,120 @@ private struct NWDiffCommentButton: View {
     }
 }
 
-/// A right-aligned line number in its 36pt gutter: micro size, regular weight, tertiary. Five
-/// digits, or four at a large text size, shrink to fit rather than truncate.
+/// A right-aligned line number in its 34pt gutter: mono 10.5, tertiary. Five digits, or four at
+/// a large text size, shrink to fit rather than truncate.
 private struct NWDiffNumber: View {
     let value: Int?
 
     var body: some View {
         Text(value.map(String.init) ?? "")
-            .font(.nw(.micro, weight: .regular))
+            .font(.nwMono(10.5))
             .monospacedDigit()
             .foregroundStyle(.nw.textTertiary)
             .lineLimit(1)
             .minimumScaleFactor(0.6)
-            .padding(.trailing, NW.Space.s)
+            .padding(.trailing, NW.Space.m)
             .frame(width: NWDiffMetrics.numberWidth, alignment: .trailing)
     }
 }
 
-/// A hunk header ("@@ -12,55 +12,10 @@ struct FleetView: View {"): a 22pt `bgSunken` row with the
-/// header in tertiary mono, aligned to the code column.
-public struct NWHunkHeader: View {
-    let header: String
+// MARK: Folds
 
-    public init(_ header: String) { self.header = header }
+/// Unmodified lines folded between changes (FoldRow): a 26pt `bgSunken` strip between hairlines,
+/// the reveal arrows in a 37pt column (up shows the 20 lines at the fold's bottom edge, down the
+/// 20 at its top), then "28 unmodified lines", which shows all of them.
+public struct NWDiffFoldRow: View {
+    let fold: NWDiffFold
+    let reveal: (NWDiffReveal) -> Void
+    @State private var hovering = false
 
-    public var body: some View {
-        let _ = NWRenderProbe.tick("diff.hunk")
-        Text(header)
-            .font(.nw(.mono))
-            .foregroundStyle(.nw.textTertiary)
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .padding(.leading, NWDiffMetrics.codeLeading)
-            .padding(.trailing, NW.Space.l)
-            .frame(maxWidth: .infinity, minHeight: NW.Height.rowCompact, alignment: .leading)
-            .background(Color.nw.bgSunken)
-            .help(header)
-            .accessibilityLabel("Hunk \(header)")
-    }
-}
-
-/// Lines folded out of a long run (Review board): a 24pt `bgSunken` strip between 1px rules,
-/// "+ 13 more removed lines · 18–32" in micro mono, aligned 6pt into the code column. Clicking it
-/// shows the lines; with `expandFile`, ⌥-click (or the VoiceOver action) shows the whole file.
-public struct NWFoldRow: View {
-    let count: Int
-    let kind: NWDiffLineKind
-    let range: String
-    let action: () -> Void
-    let expandFile: (() -> Void)?
-
-    public init(count: Int, kind: NWDiffLineKind, range: String, action: @escaping () -> Void, expandFile: (() -> Void)? = nil) {
-        self.count = count
-        self.kind = kind
-        self.range = range
-        self.action = action
-        self.expandFile = expandFile
-    }
-
-    /// "+ 13 more removed lines · 18–32" (the range is left off when empty).
-    public static func label(count: Int, kind: NWDiffLineKind, range: String) -> String {
-        let lines = "\(count) more \(kind.word) line\(count == 1 ? "" : "s")"
-        return range.isEmpty ? "+ \(lines)" : "+ \(lines) · \(range)"
+    public init(_ fold: NWDiffFold, reveal: @escaping (NWDiffReveal) -> Void) {
+        self.fold = fold
+        self.reveal = reveal
     }
 
     public var body: some View {
         let _ = NWRenderProbe.tick("diff.fold")
-        Button {
-            #if os(macOS)
-            if let expandFile, NSEvent.modifierFlags.contains(.option) { return expandFile() }
-            #endif
-            action()
-        } label: {
-            Text(Self.label(count: count, kind: kind, range: range))
-                .lineLimit(1)
-        }
-        .buttonStyle(NWFoldRowStyle())
-        .help(expandFile == nil ? "Show these lines" : "Show these lines (⌥-click shows the whole file)")
-        .accessibilityHint("Shows the folded lines")
-        .accessibilityActions {
-            if let expandFile { Button("Show the whole file", action: expandFile) }
-        }
-    }
-}
-
-private struct NWFoldRowStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        NWFoldRowBody(configuration: configuration)
-    }
-}
-
-private struct NWFoldRowBody: View {
-    let configuration: ButtonStyleConfiguration
-    @State private var hovering = false
-
-    var body: some View {
         let nw = Color.nw
-        configuration.label
-            .font(.nw(.micro, weight: .regular))
-            .foregroundStyle(hovering || configuration.isPressed ? nw.textSecondary : nw.textTertiary)
-            .padding(.leading, NWDiffMetrics.annotationLeading)
-            .frame(maxWidth: .infinity, minHeight: NWDiffMetrics.foldHeight, alignment: .leading)
-            .background(nw.bgSunken)
-            .overlay(alignment: .top) { NWHairline() }
-            .overlay(alignment: .bottom) { NWHairline() }
+        HStack(spacing: 0) {
+            VStack(spacing: 0) {
+                if fold.revealsUp { arrow("chevron.up", .up, label: "Show 20 lines above") }
+                if fold.revealsDown { arrow("chevron.down", .down, label: "Show 20 lines below") }
+            }
+            .frame(width: NWDiffMetrics.foldControlWidth)
+            Text(fold.label)
+                .font(.nw(.caption))
+                .foregroundStyle(hovering ? nw.textSecondary : nw.textTertiary)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .onHover { hovering = $0 }
+                .onTapGesture { reveal(.all) }
+                .nwAnimation(.hover, value: hovering)
+                .help("Show all \(fold.label)")
+        }
+        .frame(height: NWDiffMetrics.foldHeight)
+        .background(nw.bgSunken)
+        .overlay(alignment: .top) { NWHairline() }
+        .overlay(alignment: .bottom) { NWHairline() }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(fold.label)
+        .accessibilityHint("Shows the unmodified lines")
+        .accessibilityAction { reveal(.all) }
+        .accessibilityActions {
+            if fold.revealsUp { Button("Show 20 lines above") { reveal(.up) } }
+            if fold.revealsDown { Button("Show 20 lines below") { reveal(.down) } }
+        }
+    }
+
+    private func arrow(_ symbol: String, _ direction: NWDiffReveal, label: String) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 8, weight: .semibold))
+            .foregroundStyle(Color.nw.textTertiary)
+            .frame(width: NWDiffMetrics.foldControlWidth, height: NWDiffMetrics.foldHeight / (fold.revealsUp && fold.revealsDown ? 2 : 1))
             .contentShape(Rectangle())
-            .onHover { hovering = $0 }
-            .nwAnimation(.hover, value: hovering)
-            .nwFocusRing(radius: 0)
+            .onTapGesture { reveal(direction) }
+            .help(label)
     }
 }
 
-/// A file's diff (Review board): hunk headers, lines, and folds, with an annotation (an inline
-/// comment, or its editor) under any line that has a note. Its body is the rows themselves, so
-/// inside a `LazyVStack` they stay lazy and can scroll under a pinned `NWFileHeader`.
+// MARK: Diff
+
+/// A file's diff in the Changes pane: lines (unified or split), folds and notices, with an
+/// annotation (a comment, or its editor) under any line that has a note. Its body is the rows
+/// themselves, so inside a `LazyVStack` they stay lazy and scroll under a pinned file header.
 ///
-/// Each row compares its line and its note (never the closures, which act on the same diff), so
-/// a comment added, opened, or saved redraws its own row rather than every row on screen.
+/// Each row compares its lines and their notes (never the closures, which act on the same diff),
+/// so a comment added, opened, or saved redraws its own row rather than every row on screen.
 ///
 ///     Section {
-///         NWDiffView(rows, notes: comments, onComment: comment, onExpand: expand) { line, comment in
+///         NWDiffView(rows, notes: comments, onComment: comment, onReveal: reveal) { line, comment in
 ///             NWInlineComment(…)
 ///         }
 ///     } header: { NWFileHeader(…) }
 public struct NWDiffView<Note: Equatable, Annotation: View>: View {
-    let rows: [NWDiffRow]
+    let rows: [NWChangesRow]
     let notes: [Int: Note]
     let onComment: ((NWDiffLineContent) -> Void)?
-    let onExpand: (String) -> Void
-    let onExpandFile: (() -> Void)?
+    let onReveal: (String, NWDiffReveal) -> Void
     let annotation: (NWDiffLineContent, Note) -> Annotation
 
-    /// `notes` are keyed by a line's `key`; a line with one shows `annotation` under it, inset
-    /// by `NWDiffMetrics.annotationInsets`. `onExpand` gets a fold's id; `onExpandFile` (⌥-click
-    /// on a fold) opens every fold.
-    public init(_ rows: [NWDiffRow], notes: [Int: Note], onComment: ((NWDiffLineContent) -> Void)? = nil,
-                onExpand: @escaping (String) -> Void, onExpandFile: (() -> Void)? = nil,
+    /// `notes` are keyed by a line's `key`; a line with one shows `annotation` under its row,
+    /// inset by `NWDiffMetrics.annotationInsets`. `onReveal` gets a fold's id and the direction.
+    public init(_ rows: [NWChangesRow], notes: [Int: Note], onComment: ((NWDiffLineContent) -> Void)? = nil,
+                onReveal: @escaping (String, NWDiffReveal) -> Void,
                 @ViewBuilder annotation: @escaping (NWDiffLineContent, Note) -> Annotation) {
         self.rows = rows
         self.notes = notes
         self.onComment = onComment
-        self.onExpand = onExpand
-        self.onExpandFile = onExpandFile
+        self.onReveal = onReveal
         self.annotation = annotation
     }
 
     public var body: some View {
         ForEach(rows) { row in
-            NWDiffRowView(row: row, note: row.lineKey.flatMap { notes[$0] }, onComment: onComment, onExpand: onExpand,
-                          onExpandFile: onExpandFile, annotation: annotation)
+            NWDiffRowView(row: row, notes: notes.isEmpty ? [] : row.lines.compactMap { line in notes[line.key].map { NoteSlot(line: line, note: $0) } },
+                          onComment: onComment, onReveal: onReveal, annotation: annotation)
                 .equatable()
         }
     }
@@ -354,48 +506,55 @@ public enum NWDiffNoNote: Equatable, Sendable {}
 
 extension NWDiffView where Note == NWDiffNoNote, Annotation == EmptyView {
     /// A diff without annotations.
-    public init(_ rows: [NWDiffRow], onComment: ((NWDiffLineContent) -> Void)? = nil, onExpand: @escaping (String) -> Void,
-                onExpandFile: (() -> Void)? = nil) {
-        self.init(rows, notes: [:], onComment: onComment, onExpand: onExpand, onExpandFile: onExpandFile) { _, _ in EmptyView() }
+    public init(_ rows: [NWChangesRow], onComment: ((NWDiffLineContent) -> Void)? = nil,
+                onReveal: @escaping (String, NWDiffReveal) -> Void) {
+        self.init(rows, notes: [:], onComment: onComment, onReveal: onReveal) { _, _ in EmptyView() }
     }
 }
 
-extension NWDiffRow {
-    /// A line's key, for its note.
-    var lineKey: Int? {
-        if case .line(let line) = self { line.key } else { nil }
-    }
+struct NoteSlot<Note: Equatable>: Equatable {
+    let line: NWDiffLineContent
+    let note: Note
 }
 
 /// One row, always a single view (a lazy stack's fast path). Opaque on the pane's background, so
 /// the rows sliding into place as a fold or a comment opens or closes cover what is fading
-/// under them instead of showing through it. Equal while its row and note are.
+/// under them instead of showing through it. Equal while its row and notes are.
 private struct NWDiffRowView<Note: Equatable, Annotation: View>: View, Equatable {
-    let row: NWDiffRow
-    let note: Note?
+    let row: NWChangesRow
+    let notes: [NoteSlot<Note>]
     let onComment: ((NWDiffLineContent) -> Void)?
-    let onExpand: (String) -> Void
-    let onExpandFile: (() -> Void)?
+    let onReveal: (String, NWDiffReveal) -> Void
     let annotation: (NWDiffLineContent, Note) -> Annotation
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.row == rhs.row && lhs.note == rhs.note && (lhs.onComment == nil) == (rhs.onComment == nil)
-            && (lhs.onExpandFile == nil) == (rhs.onExpandFile == nil)
+        lhs.row == rhs.row && lhs.notes == rhs.notes && (lhs.onComment == nil) == (rhs.onComment == nil)
     }
 
     var body: some View {
         let _ = NWRenderProbe.tick("diff.row")
         VStack(alignment: .leading, spacing: 0) {
             switch row {
-            case .hunk(_, let header):
-                NWHunkHeader(header)
             case .line(let line):
                 NWDiffLine(line, onComment: onComment.map { comment in { comment(line) } })
-                if let note {
-                    annotation(line, note).padding(NWDiffMetrics.annotationInsets)
-                }
-            case .fold(let id, let count, let kind, let range):
-                NWFoldRow(count: count, kind: kind, range: range, action: { onExpand(id) }, expandFile: onExpandFile)
+            case .pair(_, let old, let new):
+                NWSplitDiffLine(old: old, new: new, onComment: onComment)
+            case .fold(let fold):
+                NWDiffFoldRow(fold) { onReveal(fold.id, $0) }
+            case .notice(_, let text):
+                Text(text)
+                    .font(.nw(.caption))
+                    .foregroundStyle(Color.nw.textTertiary)
+                    .padding(.vertical, NW.Space.m)
+                    .padding(.leading, NWDiffMetrics.annotationLeading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            ForEach(notes, id: \.line.id) { slot in
+                annotation(slot.line, slot.note)
+                    .padding(NWDiffMetrics.annotationInsets)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .overlay(alignment: .top) { NWHairline() }
+                    .overlay(alignment: .bottom) { NWHairline() }
             }
         }
         .background(Color.nw.bgWindow)

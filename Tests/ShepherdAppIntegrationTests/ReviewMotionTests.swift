@@ -9,17 +9,18 @@ import SwiftUI
 import Testing
 @testable import ShepherdApp
 
-/// The review pane in motion, recorded from off-screen windows (`MotionProbe`): folds and
+/// The Changes pane in motion, recorded from off-screen windows (`MotionProbe`): folds and
 /// comments ease open and shut (a big file, or one read under its pinned header, folds at once),
 /// one side's diff cross-fades into the other's, a reload of the same side lands at once,
-/// marking a file viewed pops its check, and keyboard navigation lands at once where a click
+/// ticking a file viewed pops its check, and keyboard navigation lands at once where a click
 /// scrolls.
 @Suite("Review motion", .mainActorExclusive, .timingSensitive)
 @MainActor
 struct ReviewMotionTests {
     private static let size = CGSize(width: 600, height: 500)
-    /// The diff below the pane's header and file strip, from its first file header down.
-    private static let diff = CGRect(x: 0, y: 80, width: 600, height: 300)
+    /// The diff below the pane's toolbar (44pt), compare row (32pt) and file strip (38pt), from
+    /// its first file header down.
+    private static let diff = CGRect(x: 0, y: 114, width: 600, height: 300)
     /// A column clear of the code, where unchanged lines draw nothing.
     private static let margin = CGRect(x: 560, y: diff.minY, width: 1, height: diff.height)
 
@@ -140,7 +141,7 @@ struct ReviewMotionTests {
         let files = [Self.file("a.txt", lines: 4), Self.file("b.txt", lines: 4), Self.file("c.txt", lines: 4)]
         let (model, window) = Self.pane(files)
         defer { window.close() }
-        let strip = CGRect(x: 0, y: 44, width: Self.size.width, height: 36)
+        let strip = Self.strip
 
         let diff = await MotionProbe.record(window, region: Self.diff, timeout: 1) { model.session.files = files.filter { $0.id != "a.txt" } }
         #expect(diff.settled.firstRow(differingFrom: diff.before) != nil, "the file leaves")
@@ -206,7 +207,8 @@ struct ReviewMotionTests {
         defer { window.close() }
         // Folded already, so marking it viewed changes nothing but the check.
         model.toggleFolded("a.txt")
-        let trailing = CGRect(x: Self.size.width - 80, y: 40, width: 80, height: 100)
+        // The first file's header: its Viewed checkbox.
+        let trailing = CGRect(x: Self.size.width - 140, y: Self.diff.minY, width: 140, height: 36)
         _ = await MotionProbe.record(window, region: trailing, timeout: 1) {}
 
         let recording = await MotionProbe.record(window, region: trailing) { model.toggleViewed("a.txt") }
@@ -230,9 +232,9 @@ struct ReviewMotionTests {
         let (model, window) = Self.pane((0..<6).map { Self.file("f\($0).txt", lines: 20) })
         defer { window.close() }
 
-        let key = await MotionProbe.record(window, region: Self.diff) { _ = model.handleKey("n") }
-        #expect(key.settled.firstRow(differingFrom: key.before) != nil, "n moves to the next file")
-        #expect(key.inBetween.isEmpty, "n lands at once")
+        let key = await MotionProbe.record(window, region: Self.diff) { _ = model.handleKey("j") }
+        #expect(key.settled.firstRow(differingFrom: key.before) != nil, "j moves to the next file")
+        #expect(key.inBetween.isEmpty, "j lands at once")
 
         let click = await MotionProbe.record(window, region: Self.diff) { model.select("f4.txt") }
         #expect(click.settled.firstRow(differingFrom: click.before) != nil, "a click moves to its file")
@@ -241,8 +243,8 @@ struct ReviewMotionTests {
         }
     }
 
-    /// The file strip's chips.
-    private static let strip = CGRect(x: 0, y: 44, width: size.width, height: 36)
+    /// The file strip's chips, under the toolbar and the compare row.
+    private static let strip = CGRect(x: 0, y: 76, width: size.width, height: 38)
 
     @Test(arguments: [false, true])
     func theStripsSelectionSlidesToAClickedFileAndJumpsForAKey(reduceMotion: Bool) async throws {
@@ -252,8 +254,8 @@ struct ReviewMotionTests {
         _ = await MotionProbe.record(window, region: Self.strip, timeout: 0.5) {}
         let empty = (x: Int(Self.size.width) - 2, y: 2)
 
-        let key = await MotionProbe.record(window, region: Self.strip) { _ = model.handleKey("n") }
-        #expect(key.settled.firstColumn(differingFrom: key.before) != nil, "n selects the next chip")
+        let key = await MotionProbe.record(window, region: Self.strip) { _ = model.handleKey("j") }
+        #expect(key.settled.firstColumn(differingFrom: key.before) != nil, "j selects the next chip")
         #expect(key.inBetween.isEmpty, "at once")
 
         let click = await MotionProbe.record(window, region: Self.strip) { model.select("f3.txt") }
