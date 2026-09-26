@@ -376,16 +376,17 @@ public struct NWHostCard<Actions: View>: View {
     let status: String
     let summary: String
     let summaryTone: AgentState?
+    let detail: String?
     let openLabel: String?
     let open: (() -> Void)?
     @ViewBuilder let actions: () -> Actions
     @Environment(\.dynamicTypeSize) private var typeSize
 
     /// `state` colors the connection: done while connected, running while connecting, failed
-    /// while offline. With `open`, the card opens on a tap and shows a chevron (a button labeled
-    /// `openLabel` for VoiceOver).
+    /// while offline. `detail` is a line under the summary ("Last seen today 07:12"). With `open`,
+    /// the card opens on a tap and shows a chevron (a button labeled `openLabel` for VoiceOver).
     public init(name: String, address: String, state: AgentState, status: String, summary: String,
-                summaryTone: AgentState? = nil, openLabel: String? = nil, open: (() -> Void)? = nil,
+                summaryTone: AgentState? = nil, detail: String? = nil, openLabel: String? = nil, open: (() -> Void)? = nil,
                 @ViewBuilder actions: @escaping () -> Actions) {
         self.name = name
         self.address = address
@@ -393,6 +394,7 @@ public struct NWHostCard<Actions: View>: View {
         self.status = status
         self.summary = summary
         self.summaryTone = summaryTone
+        self.detail = detail
         self.openLabel = openLabel
         self.open = open
         self.actions = actions
@@ -433,6 +435,10 @@ public struct NWHostCard<Actions: View>: View {
                 .nwText(.caption)
                 .foregroundStyle(summaryTone?.textColor ?? nw.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+            if let detail {
+                Text(detail).nwText(.caption).foregroundStyle(nw.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             NWWrapStack(spacing: NW.Space.m, lineSpacing: NW.Space.xs) { actions() }
         }
         .padding(NW.Space.l)

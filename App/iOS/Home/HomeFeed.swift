@@ -60,7 +60,7 @@ final class HomeFeed {
         let (next, connections) = withObservationTracking {
             (hosts.hosts.map { host in
                 FleetHost(id: host.id, name: host.name, address: host.record.address, port: host.record.port,
-                          phase: host.phase, state: host.state)
+                          phase: host.phase, state: host.state, lastSeen: host.lastSeen)
             }, Dictionary(hosts.hosts.compactMap { host in host.session.map { (host.id, $0) } }, uniquingKeysWith: { a, _ in a }))
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in self?.track() }

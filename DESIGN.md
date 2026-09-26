@@ -4742,7 +4742,8 @@ follows the Mac's rules (Thread) with the phone's measures below.
     branch.
   - Host: an 8pt status dot and "connected · 2 threads running" ("connected", "connecting…"); an
     unreachable host is dimmed to 50% with "unreachable · last seen 07:12" and Retry (14 `running`)
-    trailing. The app shows the failure's headline and no last-seen time.
+    trailing. The app shows the failure's headline, then when this device last had it connected
+    ("unreachable · last seen 7:12 AM"; `HostLastSeen`, kept on the device per host).
   - **Not built yet:** a daemon host ("build-01 · Linux daemon · 2 missions running"). Hosts are
     Macs running Shepherd until the Mac has daemon hosts.
   - Last, a card with "New worktree" (15/500) over "Keeps main clean. Merge it from Review." (12.5
@@ -5021,13 +5022,15 @@ keyboard is up while the query is empty.
   - What runs there: "2 threads running · shepherd, dashboard-web" (12.5 `textSecondary`).
   - Unreachable: "Last seen today 07:12 · 1 automation paused" (12.5), then Retry (32pt secondary
     with a retry glyph) and Wake on LAN (32pt ghost). The app shows why it cannot connect in
-    `failed`, and Retry at 24pt (`.s`).
+    `failed`, then "Last seen today 7:12 AM" (12.5 `textSecondary`: when this device's connection
+    to it last ended, kept on the device; "yesterday 6:42 PM", or the day), and Retry at 24pt
+    (`.s`). The board's "1 automation paused" is not shown.
   - A tap opens the host's form (edit, forget). Pull to refresh retries every host. Under the cards:
     "Hosts connect over your LAN or VPN. The connection has no TLS."
 - **Not built yet:** a daemon host's card ("daemon · Linux", "2 missions · 5 stations running · load
   6 of 16 cores") until the Mac has daemon hosts; Wake on LAN on an unreachable host, which sends
-  the host's magic packet and then retries; a host's kind and pi version and its last-seen time,
-  which need the host to report them.
+  the host's magic packet and then retries; a host's kind and pi version, which need the host to
+  report them.
 - **Under the hosts** (and under their note), a card of 52pt rows: Extensions ("6 installed", a
   puzzle glyph: the settings host's bundled extensions that are on and its installed ones, once it
   has answered), which opens Settings ▸ Extensions (the bundled and installed pi extensions each
