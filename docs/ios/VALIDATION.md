@@ -147,7 +147,9 @@ Air 11-inch, iPadDesign's 1180 × 820): `design-pad`, `design-pad-tweak` (an ele
 ring and the Tweak tab) and `design-pad-comments` (the Comments tab and a pin's thread) with
 `-r landscape` or in portrait; `design-pad-split` (iPadSplitView) with `-w`; `design-pad-sidebar`
 (iPadSidebar) with `--sidebar`; and `designs-pad` (the Designs list). Each design screen prints
-`FIXTURE CHECK ok design` once the boards on screen drew.
+`FIXTURE CHECK ok design` once the boards on screen drew. `design-pad-pan` pans a 64-board canvas
+row by row and prints `FIXTURE CHECK FAILED` if more than the plan's two web views were ever
+alive, in the renderer or in the window.
 
 **Adding a screen:** see [CONTRACTS.md › Fixture screens](CONTRACTS.md#fixture-screens).
 
