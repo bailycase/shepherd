@@ -422,7 +422,8 @@ function openEventStream(url, headers, timeoutMs) {
     try {
       target = new URL(url);
     } catch {
-      reject(new MCPError(`${url} isn't a valid URL`, { kind: "start" }));
+      // Never echo the URL: a resolved one can carry a secret in its query.
+      reject(new MCPError("the server's url isn't a valid URL", { kind: "start" }));
       return;
     }
     const client = target.protocol === "https:" ? https : http;
@@ -618,11 +619,20 @@ class LegacySSETransport {
       timer.unref?.();
       const feed = sseParser(({ event, data }) => {
         if (event === "endpoint") {
+          // Requests carry the server's headers (its token), so they only go back to its origin.
+          let endpoint;
           try {
-            this.endpoint = new URL(data.trim(), this.url).href;
+            endpoint = new URL(data.trim(), this.url);
           } catch {
             return;
           }
+          if (endpoint.origin !== new URL(this.url).origin) {
+            clearTimeout(timer);
+            req.destroy();
+            reject(new MCPError(`${this.host} sent a message endpoint on another origin`, { kind: "start" }));
+            return;
+          }
+          this.endpoint = endpoint.href;
           clearTimeout(timer);
           resolve();
           return;
