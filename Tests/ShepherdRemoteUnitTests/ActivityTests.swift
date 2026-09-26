@@ -241,6 +241,103 @@ struct ActivityTests {
         #expect(burst.kind == .subagents && burst.label == "Started 2 subagents" && burst.meta == "reviewer · tests")
     }
 
+    // MARK: Design verbs
+
+    private func boardWrite(_ path: String, created: Bool) -> NativeActivityCall {
+        call("board_write", ["path": path, "source": "<x-dc></x-dc>"], output: "\(created ? "Drew" : "Updated") \(path) · revision 3")
+    }
+
+    private func canvasUpdate() -> NativeActivityCall {
+        call("canvas_update", ["changes": ["title": "Funnel"]], output: "Updated the canvas · revision 7 · 4 boards")
+    }
+
+    private func check(_ output: String, path: String? = nil) -> NativeActivityCall {
+        call("design_check", path.map { ["path": $0] } ?? [:], output: output)
+    }
+
+    @Test func drawingNewBoardsReadsAsDrewWithTheirDirections() {
+        let bursts = nativeActivityBursts([
+            boardWrite("A.dc.html", created: true), boardWrite("B.dc.html", created: true), boardWrite("C.dc.html", created: true),
+            boardWrite("A-phone.dc.html", created: true), canvasUpdate(),
+        ])
+        #expect(bursts.count == 1)
+        #expect(bursts[0].kind == .drew && !bursts[0].isBoardUpdate)
+        #expect(bursts[0].label == "Drew 4 boards")
+        #expect(bursts[0].meta == "3 directions + phone")
+        #expect(bursts[0].calls.map(\.stat) == ["new", "new", "new", "new", nil])
+    }
+
+    @Test func rewritingBoardsReadsAsAnUpdateOfThoseBoards() {
+        let bursts = nativeActivityBursts([boardWrite("A.dc.html", created: false), boardWrite("A-phone.dc.html", created: false),
+                                           boardWrite("A.dc.html", created: false)])
+        #expect(bursts.map(\.label) == ["Updated A and A · phone"])
+        #expect(bursts[0].meta.isEmpty)
+        #expect(bursts[0].isBoardUpdate, "an update wears the edit glyph")
+        let many = nativeActivityBursts(["A", "B", "C", "D"].map { boardWrite("\($0).dc.html", created: false) })
+        #expect(many.map(\.label) == ["Updated 4 boards"])
+    }
+
+    @Test func aBurstThatDrawsAndUpdatesSaysBoth() {
+        let bursts = nativeActivityBursts([boardWrite("B.dc.html", created: true), boardWrite("A.dc.html", created: false)])
+        #expect(bursts.map(\.label) == ["Drew 1 board and updated A"])
+        #expect(bursts[0].meta == "1 direction")
+        #expect(!bursts[0].isBoardUpdate)
+    }
+
+    @Test func movingBoardsAloneArrangesTheCanvas() {
+        let bursts = nativeActivityBursts([canvasUpdate()])
+        #expect(bursts.map(\.label) == ["Arranged the canvas"])
+        #expect(!bursts[0].isBoardUpdate)
+    }
+
+    @Test func checkingNamesTheSystemAndCountsWhatIsOffIt() {
+        let clean = nativeActivityBursts([check("Checked against acme-web · 0 off-system values\n4 boards against 18 custom properties.")])
+        #expect(clean.map(\.label) == ["Checked against acme-web"] && clean.map(\.meta) == ["0 off-system values"])
+        #expect(clean[0].kind == .checked)
+        let two = nativeActivityBursts([check("Checked against acme-web · 1 off-system value", path: "A.dc.html"),
+                                        check("Checked against acme-web · 2 off-system values", path: "B.dc.html")])
+        #expect(two.map(\.meta) == ["3 off-system values"])
+        #expect(two[0].calls.map(\.detail) == ["A.dc.html", "B.dc.html"])
+        let none = nativeActivityBursts([check("Checked without a design system · no tokens found")])
+        #expect(none.map(\.label) == ["Checked the boards"] && none.map(\.meta) == ["no design system found"])
+    }
+
+    @Test func readingTheDesignIsExploring() {
+        let bursts = nativeActivityBursts([call("design_read", output: "Design \"Funnel\" at revision 4."), call("design_read", ["path": "A.dc.html"]),
+                                           call("read", ["path": "src/tokens.css"], output: "--accent: #4f46e5;")])
+        #expect(bursts.map(\.label) == ["Explored 3 files"])
+        #expect(bursts[0].calls.map(\.detail) == ["canvas.json", "A.dc.html", "src/tokens.css"])
+    }
+
+    @Test func aRunningOrFailedDrawingSaysSo() {
+        let running = nativeActivityBursts([call("board_write", ["path": "A.dc.html"], status: "running")])
+        #expect(running.map(\.label) == ["Drawing"] && running.map(\.meta) == ["A.dc.html"])
+        let failed = nativeActivityBursts([call("board_write", ["path": "A.dc.html"], output: "the root is 1280×800 but $preview says 390×844 (size_mismatch)",
+                                                error: true)])
+        #expect(failed.map(\.label) == ["Board write failed"])
+        #expect(failed[0].meta.hasPrefix("A.dc.html · the root is 1280×800"))
+        #expect(nativeActivityBursts([call("design_check", output: "boom", error: true)]).map(\.label) == ["Check failed"])
+    }
+
+    @Test(arguments: [
+        ("A.dc.html", "A"), ("A-phone.dc.html", "A · phone"), ("B_tablet-wide.dc.html", "B · tablet wide"), ("flows/C.dc.html", "C"),
+        ("Main.dc.html", "Main"), ("AB.dc.html", "AB"), ("a-phone.dc.html", "a-phone"),
+    ])
+    func boardsAreNamedByTheSkillsConvention(path: String, name: String) {
+        #expect(nativeBoardName(path) == name)
+    }
+
+    @Test(arguments: [
+        (["A.dc.html", "B.dc.html", "C.dc.html", "A-phone.dc.html"], "3 directions + phone"),
+        (["A.dc.html", "A-phone.dc.html", "A-tablet.dc.html"], "1 direction + phone + tablet"),
+        (["A-phone.dc.html"], "A · phone"),
+        (["Main.dc.html", "Cart.dc.html"], "Main · Cart"),
+        (["A.dc.html", "B.dc.html", "Cart.dc.html", "Pay.dc.html"], "A · B · Cart …"),
+    ])
+    func aDrawingsMetaCountsDirectionsAndSizes(paths: [String], summary: String) {
+        #expect(nativeBoardSummary(paths) == summary)
+    }
+
     // MARK: Changes card
 
     @Test func theChangesCardSumsEachFileInFirstTouchedOrder() throws {

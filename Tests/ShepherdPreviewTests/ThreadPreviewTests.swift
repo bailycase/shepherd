@@ -258,6 +258,13 @@ struct ThreadPreviewTests {
         try await render("thread-activity-failed", ActivityThreads.failed)
     }
 
+    /// A design agent's thread: reading the system, "Drew 4 boards · 3 directions + phone" (the
+    /// nib), "Checked against acme-web · 0 off-system values" (the shield), then a revision that
+    /// reads "Updated A and A · phone" under the edit glyph.
+    @Test func threadActivityDesign() async throws {
+        try await render("thread-activity-design", ActivityThreads.design, size: CGSize(width: 1180, height: 760))
+    }
+
     /// ThreadError: OpenAI refused the key twice. The earlier error folds to a line; the last is
     /// the card, with Retry, Copy and Details.
     @Test func threadError() async throws {
@@ -803,6 +810,35 @@ enum ActivityThreads {
                                 status: "error", timestamp: t0 + 40_000),
         ]
         return snapshot(messages)
+    }
+
+    /// The design agent drawing a brief, then revising two boards.
+    static var design: NativeThreadSnapshot {
+        let t0 = now - 8 * 60_000
+        func write(_ id: String, _ path: String, created: Bool, at: Double) -> NativeThreadMessage {
+            tool(id, "board_write", ["path": path, "source": "<!doctype html>…"],
+                 output: "\(created ? "Drew" : "Updated") \(path) · revision 3", start: at, end: at + 400)
+        }
+        return snapshot([
+            user("u1", "A checkout funnel dashboard for the product team", at: t0),
+            tool("r1", "design_read", [:], output: "Design \"Checkout funnel\" at revision 0.", start: t0 + 2_000, end: t0 + 2_100),
+            tool("r2", "read", ["path": "src/styles/tokens.css"], output: "--accent: #4f46e5;", start: t0 + 2_200, end: t0 + 2_300),
+            write("w1", "A.dc.html", created: true, at: t0 + 20_000),
+            write("w2", "B.dc.html", created: true, at: t0 + 40_000),
+            write("w3", "C.dc.html", created: true, at: t0 + 60_000),
+            write("w4", "A-phone.dc.html", created: true, at: t0 + 80_000),
+            tool("c1", "canvas_update", ["changes": ["title": "Checkout funnel"]], output: "Updated the canvas · revision 5 · 4 boards",
+                 start: t0 + 81_000, end: t0 + 81_100),
+            tool("k1", "design_check", [:], output: "Checked against acme-web · 0 off-system values", start: t0 + 82_000, end: t0 + 82_300),
+            assistant("a1", "Three directions: **A** leads with the funnel, **B** with a step table, **C** with the trend. A reads fastest, so it has a phone version too.",
+                      at: t0 + 90_000),
+            user("u2", "Show the counts next to each percentage", at: t0 + 5 * 60_000),
+            write("w5", "A.dc.html", created: false, at: t0 + 5 * 60_000 + 10_000),
+            write("w6", "A-phone.dc.html", created: false, at: t0 + 5 * 60_000 + 20_000),
+            tool("k2", "design_check", [:], output: "Checked against acme-web · 0 off-system values",
+                 start: t0 + 5 * 60_000 + 21_000, end: t0 + 5 * 60_000 + 21_300),
+            assistant("a2", "Done. Counts sit next to each percentage on both boards.", at: t0 + 5 * 60_000 + 25_000),
+        ])
     }
 
     /// OpenAI refusing the key (ThreadError, TurnErrors › The error card).

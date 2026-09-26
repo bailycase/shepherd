@@ -978,7 +978,8 @@ final class TerminalSessionStore {
     }
 
     /// `pi --mode rpc` for an agent, with Shepherd's socket, status, panes, review, subagents,
-    /// and namer extensions. Model and thinking flags go only to a fresh session.
+    /// and namer extensions, and the design tools for an agent that draws a design. Model and
+    /// thinking flags go only to a fresh session.
     private static func rpcAgentCommand(for agent: Agent, cwd: String, sessionIsFresh: Bool, isAutomation: Bool = false,
                                         suggestFiles: [InstructionFile] = []) throws -> SessionCommand {
         let settings = AppSettings.shared
@@ -997,6 +998,7 @@ final class TerminalSessionStore {
             isAutomation: isAutomation,
             instructions: (try InstructionsExtension.installedPath(), ShepherdPaths.instructionsDirectory().path),
             suggestFiles: suggestFiles.map(\.fileName),
+            design: try agent.designID.map { (try DesignExtension.installedPath(), $0, try DesignExtension.installedSkillDirectory()) },
             model: sessionIsFresh ? agent.model : nil,
             thinking: sessionIsFresh ? agent.thinkingLevel : nil
         )
