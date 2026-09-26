@@ -66,14 +66,18 @@ struct TerminalSurfaceConfigTests {
         }
     }
 
-    /// The fixed chords: ⌘1–9 agents and ⌃⇧1–9 machines (by character and physical key),
-    /// ⌘, Settings in both spellings ghostty parses, and ⌘Q.
+    /// The fixed chords: ⌘1–9 Recents (by character and physical key), ⌘, Settings in both
+    /// spellings ghostty parses, and ⌘Q. ⌃⇧1–9 jumped between machines, which the sidebar no
+    /// longer has, so a focused terminal keeps them.
     @Test func fixedAppChordsAreUnbound() {
         let bound = unbinds(TerminalSurfaceModel())
         let digits = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]
         for digit in digits {
-            for chord in ["cmd+\(digit)", "cmd+physical:\(digit)", "ctrl+shift+\(digit)", "ctrl+shift+physical:\(digit)"] {
+            for chord in ["cmd+\(digit)", "cmd+physical:\(digit)"] {
                 #expect(bound.contains(chord), "\(chord) must reach the app")
+            }
+            for chord in ["ctrl+shift+\(digit)", "ctrl+shift+physical:\(digit)"] {
+                #expect(!bound.contains(chord), "\(chord) is the terminal's now")
             }
         }
         for chord in ["cmd+comma", "cmd+,", "cmd+q"] {
