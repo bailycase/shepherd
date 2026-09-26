@@ -40,7 +40,11 @@ struct NewDesignScreen: View {
                         .focused($focused)
                 }
                 Section("Project") {
-                    Picker("Project", selection: Binding(get: { chosen }, set: { place = $0 })) {
+                    Picker("Project", selection: Binding(get: { chosen }, set: { next in
+                        // A system names one host's; another host's project starts with none.
+                        if next?.host != chosen?.host { system = nil }
+                        place = next
+                    })) {
                         ForEach(places, id: \.place) { entry in
                             Text(entry.title).tag(Optional(entry.place))
                         }
