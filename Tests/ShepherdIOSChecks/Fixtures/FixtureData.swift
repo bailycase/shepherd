@@ -70,21 +70,25 @@ enum FixtureData {
     static func hosts() -> [FixtureHostData] {
         [
             FixtureHostData(id: studio, name: "Studio", state: ShepherdState(spaces: [shepherdSpace, horizonSpace], agents: [
-                agent(preview, "Investigate SwiftUI live preview", .idle),
-                agent(extensions, "Plan shepherd extensions", .working),
-                agent(dock, "Dock review pane", .blocked),
+                agent(preview, "Investigate SwiftUI live preview", .idle, worktree: "pi/swiftui-previews", changed: 3),
+                agent(extensions, "Plan shepherd extensions", .working, worktree: "pi/shepherd-extensions", changed: 1),
+                agent(dock, "Dock review pane", .blocked, checkout: "chore/remove-homarr", changed: 11),
                 agent(deletion, "Fix remote subagent deletion", .done, space: horizonSpace),
             ], automations: [Automation(name: "Merge PR #24 after CI", prompt: "watch CI", cwd: "/Users/dev/Shepherd", enabled: false)]),
             threads: [preview: thread(), extensions: runningThread(), dock: questionThread()]),
             FixtureHostData(id: buildBox, name: "build-01", state: ShepherdState(spaces: [shepherdSpace], agents: [
-                agent(buffer, "Fix terminal output buffer", .idle),
+                agent(buffer, "Fix terminal output buffer", .idle, worktree: "pi/refund-events"),
             ]), threads: [buffer: thread()]),
             FixtureHostData(id: laptop, name: "MacBook Air", state: ShepherdState(), online: false),
         ]
     }
 
-    static func agent(_ id: AgentID, _ name: String, _ status: AgentStatus, space: Space = shepherdSpace) -> Agent {
-        Agent(id: id, name: name, spaceID: space.id, tabID: TabID(rawValue: "tab-" + id.rawValue), status: status, nameIsFinal: true)
+    /// `worktree` is the branch Shepherd made for it; `checkout` a branch of the space's own
+    /// checkout; `changed` the files the header's chip counts.
+    static func agent(_ id: AgentID, _ name: String, _ status: AgentStatus, space: Space = shepherdSpace,
+                      worktree: String? = nil, checkout: String? = nil, changed: Int = 0) -> Agent {
+        Agent(id: id, name: name, spaceID: space.id, tabID: TabID(rawValue: "tab-" + id.rawValue), status: status, nameIsFinal: true,
+              worktreeBranch: worktree, checkout: (worktree ?? checkout).map { AgentCheckout(branch: $0, changedFiles: changed) })
     }
 
     /// 2:41 PM on a fixed day, in milliseconds.

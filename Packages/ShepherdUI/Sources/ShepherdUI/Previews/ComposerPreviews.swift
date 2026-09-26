@@ -103,3 +103,15 @@ private struct NWPreviewComposerControls: View {
         ], onChoose: { _ in }, onClose: {})
     }
 }
+
+#Preview("Question head") {
+    NWPreviewBoth {
+        VStack(alignment: .leading, spacing: NW.Space.xl) {
+            NWQuestionHead(.agent) {}
+            NWQuestionHead(.agent, count: 2) {}
+            NWQuestionHead(.subagent("reviewer")) {}
+            NWQuestionHiddenLine(.agent, question: "How should I handle Horizon’s uncommitted edits?") {}
+        }
+        .frame(width: 600)
+    }
+}

@@ -306,12 +306,12 @@ private struct ReviewBoard: View {
                 VStack(spacing: 0) {
                     NWFileHeader(path: "App/iOS/FleetView.swift", hunkCount: 2, commentCount: 1, isExpanded: true, isViewed: false,
                                  toggle: {}, toggleViewed: {}, revert: {}, open: {})
-                    NWDiffView(Self.rows, onComment: { _ in }, onExpand: { _ in }) { line in
-                        if line.key == 3 {
+                    NWDiffView(Self.rows, notes: [3: true, 5: false], onComment: { _ in }, onExpand: { _ in }) { _, isComment in
+                        if isComment {
                             NWInlineComment(initial: ReviewAuthor.initial, author: "You", meta: "line 33 · just now",
                                             text: "Keep reconnect reachable from the row — flaky Wi-Fi users lose the one-tap retry.",
                                             onEdit: {}, onDelete: {})
-                        } else if line.key == 5 {
+                        } else {
                             NWCommentEditor(text: $draft, isFocused: $editorFocused, onSave: {}, onCancel: {})
                         }
                     }

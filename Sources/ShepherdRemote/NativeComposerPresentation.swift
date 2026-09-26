@@ -9,40 +9,19 @@ import ShepherdProtocol
 
 // MARK: Header
 
-/// The thread header's meta after the status word: "17 turns · 42k" at rest, the turn's
-/// elapsed time while it runs (MobileThread, MobileApproval, iPadThread boards).
+/// The running turn's elapsed time in the iPad header's status pill ("Running · 21s"; iPadThread
+/// board). The turn and context counts left the headers for the branch chip.
 public struct NativeThreadMeta: Equatable, Sendable {
-    /// "17 turns", once the whole history is loaded.
-    public var turns: String?
-    /// The context in use: "42k".
-    public var context: String?
     /// How long the running turn has run: "21s", "5m 02s".
     public var elapsed: String?
 
-    public init(turns: String? = nil, context: String? = nil, elapsed: String? = nil) {
-        self.turns = turns
-        self.context = context
+    public init(elapsed: String? = nil) {
         self.elapsed = elapsed
     }
 
-    /// `turns` is nil until the count is exact; `runningSince` (ms) is the prompt that opened
-    /// the running turn, nil at rest; `now` in ms.
-    public init(turns: Int?, contextTokens: Int?, runningSince: Double?, now: Double) {
-        self.turns = turns.map { nativeCount($0, "turn") }
-        context = contextTokens.flatMap { $0 > 0 ? nativeCompactTokens($0) : nil }
+    /// `runningSince` (ms) is the prompt that opened the running turn, nil at rest; `now` in ms.
+    public init(runningSince: Double?, now: Double) {
         elapsed = runningSince.map { nativeDurationText(max(0, now - $0) / 1000, live: true) }
-    }
-
-    /// The phone header's line after the status word: the elapsed time while running, else the
-    /// turns and the context.
-    public var compact: [String] {
-        if let elapsed { return [elapsed] }
-        return [turns, context].compactMap { $0 }
-    }
-
-    /// The iPad header's trailing counters: "17 turns · 42k ctx".
-    public var counters: [String] {
-        [turns, context.map { $0 + " ctx" }].compactMap { $0 }
     }
 }
 
@@ -348,7 +327,12 @@ public struct NativeQuestionOption: Equatable, Identifiable, Sendable {
     /// The options of `dialog`, parsed. An option is recommended only when the asker said so:
     /// "(Recommended)" (any case) at the end of its first line, which the title drops.
     public static func options(_ dialog: NativeThreadDialog) -> [NativeQuestionOption] {
-        (dialog.options ?? []).enumerated().map { index, value in
+        options(dialog.options ?? [])
+    }
+
+    /// Answers as offered, parsed the same way (a subagent's question carries them bare).
+    public static func options(_ values: [String]) -> [NativeQuestionOption] {
+        values.enumerated().map { index, value in
             let lines = value.split(separator: "\n", omittingEmptySubsequences: false)
             var title = String(lines.first ?? "").trimmingCharacters(in: .whitespaces)
             var recommended = false

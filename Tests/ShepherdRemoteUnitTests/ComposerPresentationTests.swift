@@ -19,24 +19,9 @@ struct ComposerPresentationTests {
 
     // MARK: Header
 
-    @Test func theMetaCountsTurnsAndContextAtRest() {
-        let meta = NativeThreadMeta(turns: 17, contextTokens: 42_300, runningSince: nil, now: 0)
-        #expect(meta.compact == ["17 turns", "42k"])
-        #expect(meta.counters == ["17 turns", "42k ctx"])
-        #expect(meta.elapsed == nil)
-    }
-
-    @Test func aRunningTurnShowsItsElapsedTimeInPlaceOfTheCounts() {
-        let meta = NativeThreadMeta(turns: 3, contextTokens: 1_000, runningSince: 10_000, now: 31_000)
-        #expect(meta.compact == ["21s"])
-        #expect(meta.counters == ["3 turns", "1k ctx"])
-    }
-
-    @Test func unknownCountsAreLeftOut() {
-        let meta = NativeThreadMeta(turns: nil, contextTokens: 0, runningSince: nil, now: 0)
-        #expect(meta.compact.isEmpty)
-        #expect(meta.counters.isEmpty)
-        #expect(NativeThreadMeta(turns: 1, contextTokens: nil, runningSince: nil, now: 0).compact == ["1 turn"])
+    @Test func aRunningTurnShowsItsElapsedTime() {
+        #expect(NativeThreadMeta(runningSince: 10_000, now: 31_000).elapsed == "21s")
+        #expect(NativeThreadMeta(runningSince: nil, now: 31_000).elapsed == nil)
     }
 
     // MARK: Up next

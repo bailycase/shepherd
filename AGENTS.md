@@ -252,12 +252,12 @@ pointing at the installed pi package. They isolate `HOME` and use a local fake p
 `Tests/ShepherdIOSChecks` holds the iOS client's scripts ([docs/ios/VALIDATION.md](docs/ios/VALIDATION.md)).
 
 **Release rules** (`Tests/Release/test_release.py`, Python's `unittest`, stdlib only) test
-`scripts/release.py`: what each trigger builds (the iOS TestFlight upload included), which feeds
+`scripts/release.py`: what each trigger builds (the manual TestFlight run included), which feeds
 each release lands in, the legacy aliases, `verify-app`, `verify-ios`, and which TestFlight builds
 `retire-testflight` expires (against a local fake App Store Connect). They also read the
 Xcode project, `App/Info.plist`, `App/iOS/ExportOptions.plist`, `ShepherdEdition.swift`,
-`AppUpdater.swift`, and the Release workflow, so a bundle id, feed name or signing setting that
-drifts from the script fails before a release builds.
+`AppUpdater.swift`, and the Release workflow (its `testflight` input included), so a bundle id,
+feed name or signing setting that drifts from the script fails before a release builds.
 
 **Tests never take the user's focus or drive their mouse or keyboard.**
 
@@ -362,15 +362,16 @@ Sources/
                        host and client),
                        TerminalPanel (a layout's terminal tabs, the key row's bytes, the panel's
                        height, RemoteTerminalLink), AutomationPresentation (automation rows, runs
-                       and what a client may do), InstructionsText (an instruction file's size,
-                       diff, changed lines, highlighting and suggested lines),
-                       InstructionsPresentation (its host chips and rows), SuggestionsPresentation
-                       (Experiments' words), ClientSettings (the iOS client's Settings models: a
-                       host's settings, its instructions and suggestions over the remote
-                       protocol), HostSettingsPresentation, ClientSkills (Settings ▸ Skills'
-                       model on every platform), SkillsText (SKILL.md's frontmatter, prompt
-                       tokens, repository references), SkillsPresentation (its words),
-                       SkillsDirectory (skills.sh), ShepherdLog. Shared with the iOS client.
+                       and what a client may do), AgentBranchPresentation (the header's branch
+                       chip), InstructionsText (an instruction file's size, diff, changed lines,
+                       highlighting and suggested lines), InstructionsPresentation (its host
+                       chips and rows), SuggestionsPresentation (Experiments' words),
+                       ClientSettings (the iOS client's Settings models: a host's settings, its
+                       instructions and suggestions over the remote protocol),
+                       HostSettingsPresentation, ClientSkills (Settings ▸ Skills' model on every
+                       platform), SkillsText (SKILL.md's frontmatter, prompt tokens, repository
+                       references), SkillsPresentation (its words), SkillsDirectory (skills.sh),
+                       ShepherdLog. Shared with the iOS client.
   ShepherdPTYSpawn/    The PTY child side (fork → exec) in C: no Swift runs between the two.
   ShepherdSessions/    SessionServer (state, sessions, extension socket, remote listener),
                        RPCSession, RPCThreadState (+Queue: the queue of messages sent while pi
@@ -387,7 +388,9 @@ Sources/
   ShepherdApp/         The Mac app:
     ShepherdApp.swift (the Window scene, AppDelegate), RootView (+ WorkspaceHeaderView),
       SidebarView, RemoteSidebarSection, ThreadHeader, WorkspaceView, WorkspaceSelection,
-      RightPaneSplit, AppCommands (menus, MenuState), AppDialogs (every sheet)
+      RightPaneSplit and SidePane (the side pane and its tabs), CheckoutMonitor (each agent's
+      branch and changed files, read off the main thread), AppCommands (menus, MenuState),
+      AppDialogs (every sheet)
     AppLayout (+Navigation, +Thread, +Agents, +Settings; ShellLayout's adaptive rules live in
       +Navigation), AgentStateMapping (app lifecycles → AgentState)
     ShepherdViewModel(+Navigation, +Creation, +Workspace, +Spaces, +Reorder, +Palette, +Shell,
@@ -439,7 +442,7 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
   shepherd-status.ts      status + active pi session       shepherd-namer.ts   agent titles
   shepherd-panes.ts       pane_*, agent_* (list/send/spawn/read/steer/interrupt/wait/delete),
                           automation_*, notify; see docs/agent-coordination.md
-  shepherd-review.ts      review_diff (opens the review pane)
+  shepherd-review.ts      review_diff (readies the side pane's Changes tab)
   shepherd-subagents.ts   setAgentChildren (native + pi-subagents runs)
   shepherd-children.ts (+ -config, -ui, shepherd-workflow, shepherd-missions, shepherd-inspect.mjs)
                           native subagent runtime; see docs/native-subagents.md
@@ -466,7 +469,7 @@ Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
 - **The in-process `SessionServer` is the single source of truth** for spaces, per-agent layout
   tabs, agents, and automations (persisted to `state.json`). It owns every PTY and RPC process.
 - **The local GUI** calls the server directly, with no socket, and adopts `onStateChanged`
-  broadcasts. It owns only view state: selection, focus, collapsed spaces, the right pane,
+  broadcasts. It owns only view state: selection, focus, collapsed spaces, the side pane,
   sheets, appearance, and keybindings.
 - **Remote clients** reach the same server over TCP.
 - **Tabs** survive only as per-agent layout containers, plus `inspectorFor` utility terminals the
@@ -654,7 +657,7 @@ from ShepherdUI (Night Watch) or `AppLayout`:
 - spacing, radii, and heights from `NW.Space`, `NW.Radius`, and `NW.Height` (rows scale with
   Density; controls don't)
 - a Mac screen's own dimensions from `AppLayout`, in the file for its domain:
-  `AppLayout+Navigation.swift` (window, sidebar, toolbar, right pane, palette),
+  `AppLayout+Navigation.swift` (window, sidebar, toolbar, side pane, palette),
   `AppLayout+Thread.swift` (thread, composer), `AppLayout+Agents.swift` (subagent stack,
   inspector), `AppLayout+Settings.swift` (Settings, sheet sizes), and `AppLayout.swift` for
   anything else. A component's own measures stay with it in ShepherdUI (`NWThreadMetrics`,
@@ -777,8 +780,8 @@ from saved state; the server relays each under its own token and accepts the ans
 the target's registered connection ([docs/agent-coordination.md](docs/agent-coordination.md)).
 
 Shepherd does not nest agents. pi extensions own subagent execution (the bundled native runtime
-is on by default), and the app only *projects* the results in the parent's thread (cards, the
-runs strip, the ledger, and the inspector) and the palette. Subagents have no sidebar rows; one
+is on by default), and the app only *projects* the results: the tray above the parent's
+composer, two record lines in its thread, the inspector, and the palette. Subagents have no sidebar rows; one
 waiting on you marks its parent's row. Child runs are display state and never persisted.
 
 **Switching is a visibility flip, never a remount.** `WorkspaceSelection.mountedTabs` keeps every
@@ -854,8 +857,11 @@ agent and its auxiliary processes while the app runs, and quitting the app termi
 Nothing else mutates repository state, and Shepherd never prunes worktrees.
 
 **Reviews dock; they don't split.** A review (`ReviewSession`, `ShepherdViewModel+Review.swift`)
-lives in the agent's right pane beside its whole layout (thread and terminal panes), in the slot
-shared with the subagent inspector (the inspector wins). It never touches the persisted layout.
+is the Changes tab of the agent's side pane beside its whole layout (thread and terminal panes);
+an inspected subagent takes the pane over and closing it goes back to Changes. It never touches
+the persisted layout. **Nothing opens the pane by itself:** an agent's `review_diff` readies the
+review and marks the Changes tab, and with the pane closed the header's side-pane button, with a
+dot; only the user shows it (⇧⌘B, ⌃1, the button, a link).
 Request changes and Ask agent to commit (plain Commit on a host without commit from review) send
 the agent a follow-up turn, and the review closes only once the send succeeds, so comments survive
 a failed send. Commit… commits directly (above) and reloads the review once it finishes. A
@@ -885,7 +891,7 @@ rebuilds CI's caches.
 
 ## Releases
 
-One workflow (`.github/workflows/release.yml`) ships two Mac apps and the iOS client's nightly. Its rules live in
+One workflow (`.github/workflows/release.yml`) ships two Mac apps and the iOS client's TestFlight builds. Its rules live in
 `scripts/release.py` (tested in `Tests/Release`); the YAML only runs them. A `plan` job decides
 from the pushed ref what to build, and the build job is skipped when the answer is nothing.
 Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
@@ -895,23 +901,27 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
 | Shepherd | stable (default) | tag `vX.Y.Z` | `appcast.xml` | stable | `Shepherd.dmg` |
 | Shepherd | beta | tag `vX.Y.Z-beta.N` | `appcast-beta.xml` | beta + stable | `Shepherd.dmg` |
 | Shepherd Nightly | nightly | push to `nightly` | `appcast-shepherd-nightly.xml` | Shepherd Nightly builds | `Shepherd-Nightly.dmg` |
-| Shepherd iOS | TestFlight internal | push to `nightly` | none (App Store Connect) | Shepherd iOS builds | none |
+| Shepherd iOS | TestFlight internal | manual run (`gh workflow run release.yml --ref nightly -f testflight=true`) | none (App Store Connect) | Shepherd iOS builds | none |
 
 - **Release candidates are retired.** A `vX.Y.Z-rc.N` tag builds nothing (the plan job says
   why), and old rc releases land in no feed.
 - **Only `nightly` ships Shepherd Nightly.** A manual run (`workflow_dispatch`) plans like a
   push of its ref, so on any other branch it builds nothing rather than shipping that branch to
   every Shepherd Nightly.
-- **The iOS client rides the nightly lane.** The same push uploads `Shepherd iOS` to TestFlight
-  internal testing, in its own `testflight` job. It runs on the `xcode-27` runner, archives
-  unsigned, and cloud-signs at export with the `APP_STORE_CONNECT_*` key. The Mac job never waits
-  on it, and without the key it is skipped with a notice. Its version is the project's
+- **The iOS client uploads only on a manual run.** Apple caps TestFlight uploads per day, and a
+  build per nightly push hit it (ITMS-90382, 2026-09-25). So no push uploads `Shepherd iOS`; a
+  manual run on `nightly` with the `testflight` input
+  (`gh workflow run release.yml --ref nightly -f testflight=true`) uploads it to TestFlight
+  internal testing and builds no Mac app. A plain manual run plans like a push. The `testflight`
+  job runs on the `xcode-27` runner, archives unsigned, and cloud-signs at export with the
+  `APP_STORE_CONNECT_*` key. The plan refuses it on any other ref, without the key, or on a
+  re-run (which keeps the build number; start a new run). Its version is the project's
   `MARKETING_VERSION`, and its build number is the run number. Beta tags (external testing) and
   stable tags (the App Store) upload nothing yet ([docs/ios](docs/ios/README.md#distribution)).
 - **Only the newest TestFlight build stays installable.** After the testflight job uploads,
   the Release workflow's `retire-testflight` job (`release.py retire-testflight`) waits up to 45
   minutes for Apple to process that build, then expires every older one. If it fails processing
-  or never finishes, nothing expires. The first nightly push after it lands also clears the
+  or never finishes, nothing expires. The first TestFlight run after it lands also clears the
   builds already there. There is no manual run; a dry run (`--dry-run`) works only locally, with
   the App Store Connect key.
 - **One build number, one release.** A re-run keeps `github.run_number`, the build number.
@@ -919,6 +929,11 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   every feed's update until one ages out. So a nightly re-run whose commit already carries a
   `nightly-*` tag builds nothing (push again instead), and a tag's re-run stops at
   `gh release create`.
+- **Runs queue; they never cancel.** A push waits for the release already running, and a newer push
+  replaces only the one still waiting, so every started run finishes (a cancelled run can leave a
+  TestFlight upload unretired or the feeds half written) and the newest commit ships next. A
+  TestFlight run queues in a group of its own, so it never replaces a waiting push or is replaced
+  by one.
 - **Two apps, never each other's updates.** Shepherd Nightly has its own bundle id, name
   (`Shepherd Nightly.app`), DMG and feed, and every feed carries one app only. Sparkle is not
   the boundary: its installer picks the new app in an archive by the host's *file name* first

@@ -20,20 +20,6 @@ private enum RunTouchSamples {
     static let paused = NWRunCardValue(id: "lint", name: "lint", state: .queued, stateLabel: "Paused",
                                        detail: "paused before its next model request")
 
-    static let live = [
-        NWRunGroupRow(id: "worker", name: "worker", state: .running, detail: "step 1 of 3 · restyling ThreadView",
-                      since: now.addingTimeInterval(-37 * 60)),
-        NWRunGroupRow(id: "reviewer", name: "reviewer", state: .attention, detail: "needs you: rename or replace?",
-                      since: now.addingTimeInterval(-120)),
-        NWRunGroupRow(id: "tests", name: "tests", state: .done, detail: "14 of 14 pass", since: now.addingTimeInterval(-600),
-                      until: now.addingTimeInterval(-360)),
-    ]
-    static let finished = [
-        NWRunGroupRow(id: "worker", name: "worker", state: .done, detail: "Restyled thread, sidebar, composer and iOS to the spec.",
-                      meta: "5 files · 41m"),
-        NWRunGroupRow(id: "reviewer", name: "reviewer", state: .done, detail: "2 spec deviations found and fixed.", meta: "12m"),
-        NWRunGroupRow(id: "tests", name: "tests", state: .failed, detail: "exit 1 · 3 snapshot tests fail", meta: "4m"),
-    ]
     static let history = [
         NWRunHistoryRow(id: "a", name: "claude-header-path", state: .done, summary: "Fix agent model selection",
                         finishedAt: now.addingTimeInterval(-3600), added: 12, removed: 4),
@@ -54,16 +40,10 @@ private enum RunTouchSamples {
     }
 }
 
-#Preview("Run groups and history (touch)") {
+#Preview("Run history (touch)") {
     NWPreviewBoth {
-        VStack(spacing: NW.Space.l) {
-            NWRunGroupCard(title: "3 subagents", state: .running, rows: RunTouchSamples.live,
-                           footer: "Waiting on worker and reviewer", openAll: {}, select: { _ in })
-            NWRunGroupCard(title: "3 subagents", state: .failed, status: "2 done · 1 failed · 45m", rows: RunTouchSamples.finished,
-                           selectedID: "tests", select: { _ in })
-            NWRunHistoryList(RunTouchSamples.history) { _ in }
-        }
-        .frame(width: 360)
+        NWRunHistoryList(RunTouchSamples.history) { _ in }
+            .frame(width: 360)
     }
 }
 
