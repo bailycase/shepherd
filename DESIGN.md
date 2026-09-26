@@ -1922,7 +1922,7 @@ rules (QuestionStates › Rules):
   answered" in mono 10.5 tertiary beneath, on hover like every bubble's time. pi's turn carries
   on under it; the record is part of the agent's turn, but its time is the answer's, so it moves
   neither the turn's duration nor its Copy. A question nobody answered (refused by Stop,
-  dismissed on a touch client, or its timeout passed) keeps its line alone, ending "· not
+  cancelled by an older touch client, or its timeout passed) keeps its line alone, ending "· not
   answered" in `textTertiary`, with no bubble. VoiceOver reads it as one element ("Agent asked: …, you answered: …"). The host keeps
   it (docs/native-thread.md › Questions): a thread row every client draws, remote and iOS
   included, placed after the call that asked and before pi's next reply, and kept per pi
@@ -4800,14 +4800,24 @@ differs.
   5pt-cornered `lineStrong` square (mono 11 `textSecondary`), then "Recommended" (a 20pt
   `lanternTint` chip, 11/600 `lanternText`) when the asker marked it, the title (15/600, 1.35) and
   its detail (14/1.45 `textSecondary`). Tapping one selects it (the number fills); Answer, a
-  full-width 48pt `lantern` button with 12pt corners at 16/600, stays at 40% until one is chosen.
-  The app adds Dismiss before Answer, Yes and No for a confirm, and a field with Send answer for
-  input and editor questions.
+  full-width 48pt `lantern` button with 12pt corners at 16/600 (`.nwReviewBar(.primary)`), stays
+  at 40% until one is chosen. The panel follows the question dock's rules (Composer, questions,
+  and menus › Questions; `QuestionPanel` on `NativeQuestionPrompt`, as the Mac's dock): Answer is
+  the only button, and picking another option moves the pick. A yes or a no (pi's confirm, or two
+  short options) is two cards side by side that answer on a tap; an open question (pi's input or
+  editor, a reply to a subagent) is a field over Answer. The grabber is Hide the question: a tap,
+  or a drag down from it, folds the panel to one line (`NWQuestionCardHiddenLine`, the iPad's),
+  which never answers it; Answer or Show the question on that line opens it again, and the next
+  question arrives open.
+- **What each asker takes** is the dock's table: pi's select takes only one of its options, so it
+  gets no note and no Something else…; a subagent's question gets both (the note field inside the
+  picked card, "Add a note…"; Something else… as the last card, 46pt, its number and a field in
+  place, which typing picks). pi's question has no Dismiss: **Stop** refuses it.
 - **While pi asks** the header shows "Needs you" with a glowing dot and no Stop or •••. The app
-  keeps both.
-- **Not built yet:** a last option "Something else…" (a 46pt card, its number, the text in
-  `textTertiary`) that opens a field for a free answer to a select. pi's select takes only an
-  offered option, so it waits for the picker block's `allowOther`.
+  keeps both: Stop is how a question is refused (the host cancels the questions pi waits on, then
+  stops the turn), as on the Mac.
+- **Not built yet:** "Something else…" for pi's own select (MobileQuestion draws it): pi's select
+  takes only an offered option, so it waits for the picker block's `allowOther`.
 - **After:** the thread keeps the record where pi asked (Composer, questions, and menus ›
   Questions › The record), on iPhone and iPad alike, its time showing at rest (touch has no
   hover).
@@ -4829,8 +4839,10 @@ record lines, a list, and a screen per run.
   composer's room. The tray's rules (when it shows, the order, what each state says) are the
   Mac's.
 - **Answer** opens the run's question in the composer's place, docked to the bottom edge as pi's
-  own questions are (`QuestionPanel` titled "reviewer is asking"): its answers as numbered cards,
-  or a reply field; Answer sends it to that run only, and Hide returns to the tray.
+  own questions are (`QuestionPanel`, "reviewer is asking" with the branch glyph): its answers as
+  numbered cards with a note on the picked one and Something else…, or a reply field; Answer
+  sends it to that run only (the option, then the note after a blank line, as on the Mac), and
+  hiding it (the grabber, or iPad's Hide the question) returns to the tray.
 - **In the thread** (MobileSteer): "Started 3 subagents · worker · reviewer · tests" where the
   turn spawned them (32pt, 14), and "3 subagents finished · 45m · 7 files · +318 −64" once they
   have; both, and the footer's "3 subagents", open the runs list.
@@ -5423,8 +5435,8 @@ header's pill turns "Needs you" (attention, glowing).
 - **Head** (26pt): a 13pt glyph and "Agent is asking" at 13/600, both `lanternText`; and,
   trailing, **Hide the question**: a 40pt circle (`.nwIcon`, a 44pt touch target) with an 18pt
   `chevron.down` in `textSecondary`, overhanging the head rather than growing it, which folds the
-  card to read the thread and never answers it ("Hide the question" to VoiceOver). Only on the
-  card: the phone's docked panel has none.
+  card to read the thread and never answers it ("Hide the question" to VoiceOver). The phone's
+  docked panel hides from its grabber instead.
 - **Folded** (`NWQuestionCardHiddenLine`; no board draws it, so it follows the Mac's hidden
   line, QuestionStates › hidden): the same lantern card around one row, 16pt leading and 4pt
   trailing: a 14pt glyph in `lanternText`, the question in `headline` (truncating), a secondary
@@ -5441,15 +5453,14 @@ header's pill turns "Needs you" (attention, glowing).
   - At rest: `bgWindow`, a 1px `lineSubtle` line, the number outlined in `lineStrong` with
     `textSecondary`. Chosen: `lanternTint` with a `lantern` line, the number on `lantern` in
     `textOnLantern` semibold.
-- **Not built yet: a note in the chosen answer** ("Keep the encrypted secret out of the PR."):
-  a field inside the chosen card (`bgWindow`, a 1px `lineStrong` line, radius 6, 7×10 inset,
-  14.5/1.45, a `lantern` caret) sent with the answer. The answer protocol carries the choice
-  only.
-- **Not built yet: "Something else…"**, a last full-width row (at least 48pt, its number
-  outlined, the placeholder at 15 `textTertiary`) that takes a typed answer.
-- **Foot** (a hairline above): Answer, primary, 36pt, enabled once an answer is chosen. The app
-  adds Dismiss, which cancels the question (the board has none). A confirm shows Yes and No; an
-  input or editor question a field and "Send answer".
+- **A note in the chosen answer** ("Keep the encrypted secret out of the PR."): a field inside
+  the chosen card (`NWQuestionNoteField`: `bgWindow`, a 1px `lineStrong` line, radius 6, "Add a
+  note…", a `lantern` caret) sent with the answer, and **"Something else…"**, a last full-width
+  row (`NWQuestionOtherCard`: at least 46pt, its number outlined, a field in place): only for an
+  asker that takes them, a subagent (the dock's What each asker takes). pi's dialogs take neither.
+- **Foot:** Answer, primary, 36pt, trailing, enabled once there is an answer; there is no
+  Dismiss (Stop refuses pi's question, as on the Mac and the phone). A yes or a no is two cards
+  side by side that answer on a tap; an open question is a field over Answer.
 - **The app's additions:** "1 / N" (mono `textTertiary`) in the head when several questions
   wait; the asker's longer message in mono on `bgSunken` under the question; "The agent may stop
   waiting for this answer" under an answer with a timeout; and, for a question it cannot show,
