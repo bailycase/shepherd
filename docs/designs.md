@@ -1006,9 +1006,10 @@ through `capabilitiesChanged`.
   for the app's run, and which designs are on screen in any window: their hosts push changes for
   those alone.
 - **Rendering** (`PadDesignRenderer.swift`, the only iOS file that imports DesignSurfaceKit):
-  one live board per design on screen (`DesignTouchLivePlan`: the board a tap asks about, then
-  the selected one, then the one nearest the middle) and one off-screen view that draws every
-  other board's snapshot in turn, two web views at most. Snapshots are at most 640pt wide, 64 MB
+  one live board in the app (`DesignTouchLivePlan`: the board a tap asks about, then the
+  selected one, then the one nearest the middle; a design taking it takes it from any other on
+  screen) and one off-screen view that draws every other board's snapshot in turn, two web views
+  at most. Snapshots are at most 640pt wide, 64 MB
   per design. A page gets a viewport of its board's width at the canvas's zoom, so it lays out as
   on the Mac and draws sharp (`DesignBoardView` on iOS). Web views not on the canvas wait on a
   stage at the back of the window, where WebKit still draws them.
