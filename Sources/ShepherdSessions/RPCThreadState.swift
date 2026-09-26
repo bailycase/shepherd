@@ -45,6 +45,8 @@ final class RPCThreadState {
             case pending(UUID)
             /// A compaction pi is running, or one that stopped or failed (`NativeCompaction`).
             case compaction(String)
+            /// A question pi asked, once it ended (`NativeQuestionRecord`), by its dialog id.
+            case question(String)
         }
         var kind: Kind
         /// Assigning it forgets its hash and size, so a commit rehashes only the rows that changed.
@@ -280,6 +282,11 @@ final class RPCThreadState {
     var originOrder: [String] = []
     /// The send behind each user message this host delivered, by entry id (this run only).
     var operationsByEntry: [String: UUID] = [:]
+    /// When each open dialog arrived (ms), by its id.
+    var askedAt: [String: Double] = [:]
+    /// The questions pi asked in this session and how they ended, oldest first (persisted with
+    /// the origins, `RPCThreadState+Questions.swift`).
+    var questions: [ThreadOriginStore.Question] = []
 
     private static let encoder = JSONEncoder()
     private static let queueFieldBytes = #","queue":"#.utf8.count
@@ -597,7 +604,8 @@ final class RPCThreadState {
             }
             // pi never answers extension_ui_response; the write is the dispatch.
             session.send(command)
-            dialogs.remove(at: index)
+            let dialog = dialogs.remove(at: index)
+            if session.isAlive { recordQuestion(dialog, answer: answer) }
             completion(session.isAlive ? accepted : .failure(code: "dispatch_failed", message: "The agent is not running."))
         case .subagentCommand(_, _, _, let runID, let action, let text, let mode):
             // Unknown runs and empty replies never reach the socket; the dispatch itself is the
@@ -817,7 +825,7 @@ final class RPCThreadState {
                     value.operationID = self.operationsByEntry[value.entryID]
                 }
             }
-            let kept = Self.keepingSummarized(previous: self.history, next: history)
+            let kept = Self.keepingSummarized(previous: self.history, next: Self.interleave(self.questions, into: history))
             if kept != self.history {
                 self.history = kept
                 self.historyVersion += 1
@@ -831,6 +839,8 @@ final class RPCThreadState {
                 case .tool: item.value.status == "complete" || item.value.status == "aborted"
                 case .pending: false
                 case .compaction: item.ended
+                // History places it now.
+                case .question: true
                 }
             }
             self.updateContext()
@@ -907,6 +917,9 @@ final class RPCThreadState {
         currentAssistant = nil
         projectionClipped = false
         operationsByEntry.removeAll()
+        questions.removeAll()
+        // A question still open from the last session is not this one's to record.
+        askedAt.removeAll()
         estimate = nil
         compactingRun = nil
         compactionNotes.removeAll()
@@ -924,6 +937,7 @@ final class RPCThreadState {
         let loaded = originStore.load(sessionID: sessionID)
         origins = Dictionary(loaded.map { ($0.id, $0.record) }, uniquingKeysWith: { $1 })
         originOrder = loaded.map(\.id)
+        questions = originStore.loadQuestions(sessionID: sessionID)
     }
 
     func recordOrigin(_ origin: NativeMessageOrigin, entryID: String) {
@@ -935,8 +949,14 @@ final class RPCThreadState {
             for id in originOrder.prefix(originOrder.count - ThreadOriginStore.limit) { origins[id] = nil }
             originOrder.removeFirst(originOrder.count - ThreadOriginStore.limit)
         }
+        saveOrigins()
+    }
+
+    /// Writes the session's origins and questions.
+    func saveOrigins() {
         guard let piSessionID, let originStore else { return }
-        originStore.save(sessionID: piSessionID, records: originOrder.compactMap { id in origins[id].map { (id, $0) } })
+        originStore.save(sessionID: piSessionID, records: originOrder.compactMap { id in origins[id].map { (id, $0) } },
+                         questions: questions)
     }
 
     /// The id history will give a live user message, so the row keeps it when it settles: a
@@ -1070,12 +1090,14 @@ final class RPCThreadState {
     // MARK: - Dialogs and widgets
 
     /// Cancels every question pi waits on that can be answered here (its asker gets pi's
-    /// cancelled answer); the next commit drops them from the thread.
+    /// cancelled answer); the next commit drops them from the thread, which records each as
+    /// not answered.
     private func refuseDialogs() {
         let open = dialogs.filter { $0.unavailable == nil }
         guard !open.isEmpty else { return }
         for dialog in open { session.send(.extensionUIResponse(id: dialog.id, cancelled: true)) }
         dialogs.removeAll { $0.unavailable == nil }
+        if session.isAlive { for dialog in open { recordQuestion(dialog, answer: .cancel) } }
     }
 
     private func handleUIRequest(_ request: RPCExtensionUIRequest) {
@@ -1094,12 +1116,14 @@ final class RPCThreadState {
             var next = dialogs.filter { $0.id != request.id }
             next.append(dialog)
             dialogReasons[request.id] = askingCalls.last?.reason ?? nil
+            askedAt[request.id] = Date().timeIntervalSince1970 * 1000
             dialogs = next
             if let timeout = request.timeout, timeout > 0 {
-                // pi auto-resolves on its side; we only stop showing it.
+                // pi auto-resolves on its side; we only stop showing it, and the thread says it
+                // went unanswered.
                 queue.asyncAfter(deadline: .now() + .milliseconds(Int(timeout))) { [weak self] in
-                    guard let self else { return }
-                    self.dialogs.removeAll { $0.id == request.id }
+                    guard let self, let index = self.dialogs.firstIndex(where: { $0.id == request.id }) else { return }
+                    self.recordQuestion(self.dialogs.remove(at: index), answer: nil)
                     self.commit()
                 }
             }

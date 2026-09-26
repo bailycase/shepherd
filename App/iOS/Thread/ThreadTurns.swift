@@ -142,6 +142,9 @@ struct AgentTurnView: View, Equatable {
         case .compaction(let row):
             // Where it happened; Show summary opens what the agent kept in place.
             CompactionItem(row: row)
+        case .question(let row):
+            // Where pi asked, and the answer as the user's bubble.
+            QuestionRecordView(row: row)
         }
     }
 
@@ -178,6 +181,19 @@ struct AgentTurnView: View, Equatable {
             onLink: actions.subagents,
             onCopy: copy.isEmpty ? nil : { UIPasteboard.general.string = copy },
             onRetry: actions.retry)
+    }
+}
+
+/// A question pi asked, where it asked (QuestionAnswered): "Agent asked:" and the question, then
+/// the answer as the user's bubble with its time (touch has no hover, so it shows at rest).
+struct QuestionRecordView: View {
+    let row: NativeQuestionRecordRow
+
+    var body: some View {
+        NWQuestionRecord(question: row.question, title: row.title, text: row.text, answered: row.answered,
+                         timestamp: row.caption())
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(row.accessibilityLabel)
     }
 }
 

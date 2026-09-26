@@ -23,41 +23,22 @@ struct WorkspaceView: View {
                 // Ghostty views and force a re-attach + full replay on every
                 // switch, which is what made switching flash. Hidden panes
                 // keep their surfaces, scrollback, and their process's real
-                // grid (see WorkspaceSelection).
+                // grid (see WorkspaceSelection). Each layout has a hosting
+                // view of its own (`AgentLayoutDeck`), so an update in the
+                // visible one never walks the hidden ones; a hidden one is an
+                // `isHidden` AppKit view, and never follows a live resize
+                // frame by frame. The pane's `isRendering: false` stops a
+                // hidden surface's drawing via ghostty occlusion.
                 let mounted = vm.mountedTabs
                 let visibleTabID = vm.activeTabID
                 // Each layout's values, resolved here once: a layout reruns only when its own
                 // change, so a status report or another agent's review reruns none of them.
                 let models = AgentLayoutModel.Resolver(vm: vm, visibleTabID: visibleTabID)
-                ForEach(mounted) { tab in
-                    let isVisible = tab.id == visibleTabID
-                    AgentLayoutView(vm: vm, model: models.model(for: tab))
-                        .equatable()
-                        .id(tab.id)
-                        // `opacity(0)`, never a conditional `.hidden()`
-                        // branch: `if hidden { … } else { … }` is
-                        // ConditionalContent — flipping it changes structural
-                        // identity, and SwiftUI destroys and recreates the
-                        // whole subtree, ghostty NSView included. That is a
-                        // full surface teardown + replay + reflow on every
-                        // switch. Opacity keeps identity; the pane's
-                        // `isRendering: false` already stops the hidden
-                        // surface's drawing via ghostty occlusion, so an
-                        // invisible pane costs no GPU time either way.
-                        .opacity(isVisible ? 1 : 0)
-                        // A hidden pane must not take clicks, keyboard focus,
-                        // or VoiceOver from the visible one.
-                        .allowsHitTesting(isVisible)
-                        .accessibilityHidden(!isVisible)
-                        // Nor draw its spinners and glows where no one sees them.
-                        .environment(\.nwMotionPaused, !isVisible)
-                        // Nor follow a live resize frame by frame. The same modifiers either
-                        // way, so a flip never changes a layout's identity. The outer frame,
-                        // bounded on both sides, always takes the column's size, so a frozen
-                        // layout wider than the column never widens the shell around it.
-                        .frame(width: isVisible ? nil : frozenSize?.width, height: isVisible ? nil : frozenSize?.height)
-                        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
-                }
+                AgentLayoutDeck(vm: vm, models: mounted.map { models.model(for: $0) }, frozenSize: frozenSize)
+                    .equatable()
+                    // Bounded on both sides, it always takes the column's size, so a frozen
+                    // layout wider than the column never widens the shell around it.
+                    .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
 
                 if let remote = vm.selectedRemoteAgent {
                     RemoteAgentPane(vm: vm, ref: remote)

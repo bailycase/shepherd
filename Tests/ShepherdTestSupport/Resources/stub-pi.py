@@ -17,8 +17,15 @@
   "ask-input" / "ask-editor" an input (with a placeholder) or an editor (with a prefill)
   "ask-short" / "ask-long" an ask_user tool call (with a `short` reason, or without one) whose
            select extension_ui_request waits; the answer ends the call and the run
+  "question" a turn like pi's with an extension's ask tool: the user message, a call to
+           `ask_user`, which asks a select (two options, the first "(Recommended)") and waits
+           for the answer, the call's result, then "Going with <answer>". Persisted like
+           "tools:N" ($STUB_PI_MESSAGES_FILE). "question-timeout" asks with a 150 ms timeout
+           and goes on unanswered when it passes, as pi does. Each question has its own id.
   "fill"   appends 120 history messages, then agent_start/agent_end
   "newsession" switches sessionId, then agent_start/agent_end
+  "select-newsession" asks a select, then switches sessionId (as "newsession") with the
+           question still open
   "refuse" answers the prompt with success: false (pi refusing it)
   "provider-error" a turn whose reply fails ("529 overloaded"), once the file `fail-turn`
            appears in the cwd
@@ -435,6 +442,65 @@ def agent_run(first):
     emit({"type": "agent_settled"})
 
 
+QUESTION = {"id": None, "answered": threading.Event(), "response": None, "count": 0}
+
+
+def question_turn(prompt):
+    """pi's loop around an extension tool that asks (ctx.ui.select) and waits for the answer."""
+    new = []
+
+    def say(message):
+        emit({"type": "message_start", "message": dict(message, content=[]) if message["role"] == "assistant" else message})
+        emit({"type": "message_end", "message": message})
+        new.append(message)
+
+    emit({"type": "agent_start"})
+    emit({"type": "turn_start"})
+    say({"role": "user", "content": [{"type": "text", "text": prompt}], "timestamp": now_ms()})
+    call = f"call_ask{QUESTION['count'] + 1}"
+    ask = {"role": "assistant", "content": [
+        {"type": "text", "text": "Horizon's checkout isn't clean."},
+        {"type": "toolCall", "id": call, "name": "ask_user", "arguments": {"question": "How should I handle it?"}}],
+        "stopReason": "toolUse", "timestamp": now_ms()}
+    say(ask)
+    emit({"type": "tool_execution_start", "toolCallId": call, "toolName": "ask_user", "args": {"question": "How should I handle it?"}})
+    QUESTION["count"] += 1
+    QUESTION["id"] = f"question-{QUESTION['count']}"
+    QUESTION["answered"].clear()
+    QUESTION["response"] = None
+    request = {"type": "extension_ui_request", "id": QUESTION["id"], "method": "select",
+               "title": "How should I handle Horizon's uncommitted edits?",
+               "options": ["Compare, keep what's unique, then go through GitHub (Recommended)\nNew branch and PR for anything not merged.",
+                           "Leave Horizon alone"]}
+    timeout = 0.15 if prompt == "question-timeout" else 30.0
+    if prompt == "question-timeout":
+        request["timeout"] = 150
+    emit(request)
+    QUESTION["answered"].wait(timeout)
+    response = QUESTION["response"] or {}
+    QUESTION["id"] = None
+    answer = response.get("value") if not response.get("cancelled") else None
+    output = answer or "(no answer)"
+    emit({"type": "tool_execution_end", "toolCallId": call, "toolName": "ask_user",
+          "result": {"content": [{"type": "text", "text": output}], "details": {}}, "isError": False})
+    say({"role": "toolResult", "toolCallId": call, "toolName": "ask_user",
+         "content": [{"type": "text", "text": output}], "isError": False, "timestamp": now_ms()})
+    emit({"type": "turn_end", "message": ask, "toolResults": [new[-1]]})
+    emit({"type": "turn_start"})
+    time.sleep(0.05)  # the model's next call
+    reply = {"role": "assistant", "content": [{"type": "text", "text": f"Going with {output.splitlines()[0]}"}],
+             "stopReason": "stop", "timestamp": now_ms()}
+    say(reply)
+    emit({"type": "turn_end", "message": reply, "toolResults": []})
+    MESSAGES.extend(new)
+    STATE["messageCount"] = len(MESSAGES)
+    if messages_file:
+        with open(messages_file, "w") as f:
+            json.dump(MESSAGES, f)
+    emit({"type": "agent_end", "messages": new, "willRetry": False})
+    emit({"type": "agent_settled"})
+
+
 def ui(method, **fields):
     emit({"type": "extension_ui_request", "id": f"ui-{method}", "method": method, **fields})
 
@@ -534,6 +600,9 @@ for raw in sys.stdin.buffer:
             follow_up.clear()
         queue_update()
         respond(cmd, t, data=cleared)
+    elif t == "extension_ui_response" and QUESTION["id"] is not None and cmd.get("id") == QUESTION["id"]:
+        QUESTION["response"] = cmd
+        QUESTION["answered"].set()
     elif t == "extension_ui_response":
         if pending_ui is not None and cmd.get("id") == pending_ui:
             if pending_ui == "uuid-4":
@@ -602,6 +671,9 @@ for raw in sys.stdin.buffer:
             emit({"type": "agent_start"})
             emit({"type": "extension_ui_request", "id": "uuid-3", "method": "select",
                   "title": "Pick one", "options": ["Allow", "Deny"]})
+        elif message in ("question", "question-timeout"):
+            turn_thread = threading.Thread(target=question_turn, args=(message,), daemon=True)
+            turn_thread.start()
         elif message == "ask-choice":
             pending_ui = "uuid-7"
             emit({"type": "agent_start"})
@@ -685,6 +757,15 @@ for raw in sys.stdin.buffer:
             for i in range(120):
                 MESSAGES.append({"role": "user", "content": f"filler {i}"})
             STATE["messageCount"] = len(MESSAGES)
+            emit({"type": "agent_start"})
+            emit({"type": "agent_end", "messages": [], "willRetry": False})
+            emit({"type": "agent_settled"})
+        elif message == "select-newsession":
+            emit({"type": "extension_ui_request", "id": "uuid-8", "method": "select",
+                  "title": "Pick one", "options": ["Allow", "Deny"]})
+            STATE["sessionId"] = "stub-session-2"
+            del MESSAGES[:]
+            STATE["messageCount"] = 0
             emit({"type": "agent_start"})
             emit({"type": "agent_end", "messages": [], "willRetry": False})
             emit({"type": "agent_settled"})

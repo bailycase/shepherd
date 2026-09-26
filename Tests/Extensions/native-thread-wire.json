@@ -643,6 +643,72 @@
         "value": {
           "piSessionID": "session",
           "generation": "generation",
+          "revision": 9,
+          "running": false,
+          "supportedActions": [
+            "send",
+            "answer"
+          ],
+          "dialogsSupported": true,
+          "dialogs": [],
+          "messages": [
+            {
+              "entryID": "q:dialog",
+              "role": "question",
+              "blocks": [],
+              "truncated": false,
+              "timestamp": 20,
+              "question": {
+                "kind": "select",
+                "question": "How should I handle Horizon's uncommitted edits?",
+                "answer": "Compare, keep what's unique (Recommended)",
+                "outcome": "answered",
+                "askedAt": 10
+              }
+            },
+            {
+              "entryID": "q:confirm",
+              "role": "question",
+              "blocks": [],
+              "truncated": false,
+              "timestamp": 40,
+              "question": {
+                "kind": "confirm",
+                "question": "Clear the session?",
+                "confirmed": true,
+                "outcome": "answered",
+                "askedAt": 30
+              }
+            },
+            {
+              "entryID": "q:timeout",
+              "role": "question",
+              "blocks": [],
+              "truncated": false,
+              "timestamp": 60,
+              "question": {
+                "kind": "input",
+                "question": "Name?",
+                "outcome": "expired",
+                "askedAt": 50
+              }
+            }
+          ],
+          "provisional": [],
+          "clipped": false,
+          "runtime": "rpc"
+        }
+      }
+    }
+  },
+  {
+    "type": "nativeThread",
+    "id": 24,
+    "result": {
+      "snapshot": {
+        "value": {
+          "piSessionID": "session",
+          "generation": "generation",
           "revision": 11,
           "running": true,
           "supportedActions": [

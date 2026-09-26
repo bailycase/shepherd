@@ -177,9 +177,23 @@ events come out on stdout, one record per LF.
   - The first answer wins, whether it comes from this Mac or a remote client. A second answer
     gets `dialog_unavailable`.
   - `abort` refuses every question pi waits on first (an `extension_ui_response` with
-    `cancelled`), then stops the turn: a question has no Dismiss, and a turn waiting on an
-    answer would not stop.
+    `cancelled`), then stops the turn: the Mac's dock has no Dismiss, and a turn waiting on an
+    answer would not stop. Each refused question is recorded as `dismissed` (below).
   - Questions need no pi patch; they are part of pi's RPC protocol.
+  - **The record** (QuestionAnswered): once a question ends, the thread keeps it where pi asked,
+    as a row of role `"question"` with entry id `q:<dialog id>`, no blocks, stamped when it
+    ended, carrying a `NativeQuestionRecord` (kind, the question, the chosen option or typed
+    text or Yes/No, when pi asked, and the outcome: `answered`, `dismissed` for a Dismiss (a touch
+    client's) or a Stop, or `expired` when the timeout passed, stamped at pi's timeout). It joins
+    the live rows when it ends and moves into history under the same id at the next refresh, placed before the
+    first message that started once it ended (a tool result counts from its call), so after the
+    call that asked and before pi's next reply, where the live thread showed it. A question too
+    large to show here is not recorded, nor one still open when pi moved to another session
+    (`/new`, `/resume`): it belongs to the session it left. Older clients have no role for the row and leave it out
+    (it has no blocks); older hosts send none. pi's session holds no UI dialogs, so the host
+    keeps the records beside the origins (below, newest 256 per session) and places them again
+    after a relaunch; one from before a compaction's kept messages went with what was
+    summarized.
 - **Widgets:** `setWidget` text (ANSI stripped) becomes a `NativeThreadWidget`: at most 16, 4 KiB
   of text each, 32 KiB in total. Machine payloads, `notify`, `setStatus`, and `setTitle` are
   dropped, because they belong to pi's TUI chrome.
@@ -297,7 +311,7 @@ one prompt at a time.
   the user asked for) reaches the app with a `TurnFailure` carrying pi's error.
 - **Where a message came from** outlives the app: the host records each delivered message's
   origin by entry id in the support directory's `thread-origins/<pi session>.json` (newest 512
-  per session) and applies it to history, so after a relaunch a queue delivery still shows its
+  per session; the same file keeps the session's question records) and applies it to history, so after a relaunch a queue delivery still shows its
   parts and a steer is still marked steered. pi's session has no room for it. A part is kept as
   its length, id, send time, and image count; its text is pi's message split where it was
   joined, and a message that no longer splits there gets no origin.
@@ -534,9 +548,11 @@ The pure derivations live in ShepherdRemote:
   happened: thinking (folded into one block at the start of each stretch of work between
   prose; finished text parsed as Markdown once, memoised by the store, live thinking never),
   prose (Markdown parsed once), activity lines, the subagent record lines (the spawn
-  calls they stand for leave the activity), notes, errors, and steers (`.steer`: a message the user
-  steered in, where pi read it). It also carries the changes card, the countable tool calls, and
-  the copy text.
+  calls they stand for leave the activity), notes, errors, steers (`.steer`: a message the user
+  steered in, where pi read it), and question records (`.question`, `NativeQuestionRecordRow`:
+  the question and the answer's bubble, or "not answered"). It also carries the changes card,
+  the countable tool calls, and the copy text; a record's time is the answer's, so it moves
+  neither the turn's end nor its copy.
 - **Turns** (`nativeTurns`): a user message the host marks `.steered` stays inside the reply
   it steered, so the reply keeps one footer and one changes card. A user turn's `bubbles` are
   one per message, or one per queued part of a delivery from the queue (each with its own send
@@ -578,7 +594,8 @@ components ([DESIGN.md](../DESIGN.md) specifies their look):
   - the Send menu, and the keys that send while pi works (↩ per Settings, ⌘↩ the other)
   - the slash menu, fed from pi's command registry
   - the question dock (`QuestionDock`, pi's question or a subagent's in the card's place, from
-    `NativeQuestionPrompt`) and extension widgets
+    `NativeQuestionPrompt`; Hide the question keeps only that question folded:
+    `NativeQuestionHiding`, shared with the iPad's card) and extension widgets
 - **`Subagents`** and **`SubagentPresentation`:** the tray above the composer, with the store's
   tray (`NativeSubagentTray`) mapped onto the components' values.
 - **`SubagentInspector`:** the inspector, hosted over the side pane's tabs
@@ -597,9 +614,11 @@ requests sent to its host.
   (`ScratchServer`) driving the scripted stub pi (`StubPi.command`,
   `Tests/ShepherdTestSupport/Resources/stub-pi.py`). The stub's prompt keywords script
   questions, hangs, crashes, oversized records, widgets, session switches, long histories, a
-  context worth sizing ("context", "fill-context"), and compactions ("auto-compact",
-  "compact-abort", and `compact` itself, held with "hold" in its instructions); `ContextTests`
-  drive them.
+  context worth sizing ("context", "fill-context"), compactions ("auto-compact",
+  "compact-abort", and `compact` itself, held with "hold" in its instructions; `ContextTests`
+  drive them), and a pi-like turn whose `ask_user` call asks a select ("question", and
+  "question-timeout" with a 150 ms timeout, and "select-newsession", a question left open
+  while pi moves to another session; `QuestionRecordTests`).
   For example, `LargeHistoryTests` loads a 6 MiB history. A "tools:N" prompt runs a pi-like
   agent loop with pi 0.87.1's queues (steering read after each tool batch, follow-ups when the
   run would stop, `queue_update`, `clear_queue`, abort keeping follow-ups, and a stranded steer

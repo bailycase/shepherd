@@ -56,12 +56,15 @@ public struct NativeTurnPresentation: Equatable, Sendable {
         case steer(id: String, text: String, sentAt: Double?, images: Int)
         /// A compaction where it happened, and what the agent kept.
         case compaction(NativeCompactionRow)
+        /// A question pi asked, where it asked, and the user's answer (QuestionAnswered).
+        case question(NativeQuestionRecordRow)
 
         public var id: String {
             switch self {
             case .thinking(let id, _, _, _, _, _), .prose(let id, _, _, _), .subagents(let id, _), .note(let id, _), .error(let id, _, _, _),
                  .steer(let id, _, _, _), .activity(let id, _), .retrying(let id, _): id
             case .compaction(let row): "compaction:" + row.id
+            case .question(let row): "question:" + row.id
             }
         }
     }
@@ -120,6 +123,7 @@ public func nativeTurnPresentation(
         case error([NativeThreadMessage])
         case steer(String, Double?, Int)
         case compaction(NativeCompactionRow)
+        case question(NativeQuestionRecordRow)
     }
 
     var raw: [Raw] = []
@@ -129,6 +133,10 @@ public func nativeTurnPresentation(
         defer { while times.count < raw.count { times.append(message.timestamp) } }
         if let compaction = message.compaction {
             raw.append(.compaction(NativeCompactionRow(entryID: message.entryID, compaction: compaction)))
+            continue
+        }
+        if let question = message.question {
+            raw.append(.question(NativeQuestionRecordRow(entryID: message.entryID, record: question, endedAt: message.timestamp)))
             continue
         }
         if message.role == "user" {
@@ -281,6 +289,9 @@ public func nativeTurnPresentation(
         case .compaction(let row):
             flushStretch()
             items.append(.compaction(row))
+        case .question(let row):
+            flushStretch()
+            items.append(.question(row))
         }
     }
     // Runs with no spawn call in this turn (older publishes, paged-out history) are recorded
@@ -312,7 +323,9 @@ public func nativeTurnPresentation(
     default: break
     }
     return NativeTurnPresentation(items: items, changes: live ? nil : nativeTurnChanges(calls), toolCalls: toolCalls,
-                                  copyText: copy.joined(separator: "\n\n"), endedAt: messages.compactMap(\.timestamp).max(),
+                                  // A question's record is stamped when it was answered, not when pi worked.
+                                  copyText: copy.joined(separator: "\n\n"),
+                                  endedAt: messages.filter { $0.question == nil }.compactMap(\.timestamp).max(),
                                   betweenTools: betweenTools && !endsInError)
 }
 
@@ -372,4 +385,64 @@ public func nativeThoughtSpokenText(_ seconds: Double?) -> String {
         ? [unit(whole / 60, "minute"), whole % 60 > 0 ? unit(whole % 60, "second") : nil]
         : [unit(whole / 3600, "hour"), (whole % 3600) / 60 > 0 ? unit((whole % 3600) / 60, "minute") : nil]
     return "Thought for " + parts.compactMap { $0 }.joined(separator: " ")
+}
+
+// MARK: Question records (QuestionAnswered)
+
+/// A question pi asked, as the thread keeps it where pi asked: one line, "Agent asked:" and the
+/// question, then the answer as the user's bubble (the option's title, Yes or No, or the text
+/// the user typed) with "2:51 PM · answered" under it. A question nobody answered (dismissed, or
+/// its timeout passed) is the line alone, ending "· not answered".
+public struct NativeQuestionRecordRow: Equatable, Hashable, Sendable, Identifiable {
+    public var id: String
+    public var question: String
+    /// The answer's title, in semibold: the chosen option's title, or Yes or No.
+    public var title: String?
+    /// Text under the title, or the typed answer on its own.
+    public var text: String?
+    public var answered: Bool
+    /// When it was answered (ms).
+    public var answeredAt: Double?
+
+    public init(id: String, question: String, title: String? = nil, text: String? = nil, answered: Bool, answeredAt: Double? = nil) {
+        self.id = id
+        self.question = question
+        self.title = title
+        self.text = text
+        self.answered = answered
+        self.answeredAt = answeredAt
+    }
+
+    public init(entryID: String, record: NativeQuestionRecord, endedAt: Double?) {
+        let question = record.question.trimmingCharacters(in: .whitespacesAndNewlines)
+        var title: String?
+        var text: String?
+        let answered = record.outcome == .answered
+        if answered {
+            switch record.kind {
+            case .select:
+                title = record.answer.flatMap { NativeQuestionOption.options([$0]).first?.title }
+            case .confirm:
+                title = record.confirmed.map { $0 ? NativeConfirmAnswers.yes : NativeConfirmAnswers.no }
+            case .input, .editor, nil:
+                text = record.answer
+            }
+            // An empty field sent is still an answer.
+            if title == nil, (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { text = "An empty answer" }
+        }
+        self.init(id: entryID, question: question.isEmpty ? "A question" : question, title: title, text: text,
+                  answered: answered, answeredAt: answered ? endedAt : nil)
+    }
+
+    /// "2:51 PM · answered", shown under the bubble like every bubble's time.
+    public func caption(timeZone: TimeZone = .current) -> String? {
+        guard answered else { return nil }
+        return answeredAt.map { nativeClockText($0, timeZone: timeZone) + " · answered" } ?? "answered"
+    }
+
+    /// What VoiceOver reads for the whole record.
+    public var accessibilityLabel: String {
+        let answer = [title, text].compactMap { $0 }.joined(separator: ", ")
+        return answered ? "Agent asked: \(question), you answered: \(answer)" : "Agent asked: \(question), not answered"
+    }
 }
