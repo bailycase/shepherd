@@ -217,8 +217,9 @@ enum NWChecklistMetrics {
     static let glyph: CGFloat = 14
 }
 
-/// A row of Settings' navigation, the sidebar's anatomy: a 28pt row (density-scaled), an icon,
-/// the page name, `bgSelected` and a semibold name when selected.
+/// A row of Settings' navigation (every Settings board): 32pt, scaled by density, radius `s`; a
+/// 15pt icon in `textSecondary` (`textPrimary` when selected), then the page name in Geist 13,
+/// on `bgSelected` at medium weight when selected, `bgHover` while hovered.
 public struct NWSettingsNavRow: View {
     let title: String
     let systemImage: String
@@ -238,23 +239,32 @@ public struct NWSettingsNavRow: View {
             HStack(spacing: NW.Space.m) {
                 // Scales with the text size, like the name beside it.
                 Image(systemName: systemImage)
-                    .font(.nw(.body, weight: .medium))
+                    .font(.nwSans(NWSettingsNavMetrics.iconSize, .medium))
                     .symbolRenderingMode(.monochrome)
                     .foregroundStyle(selected ? nw.textPrimary : nw.textSecondary)
                     .frame(width: NW.Space.xl)
                     .accessibilityHidden(true)
                 Text(title)
-                    .font(.nw(.ui, weight: selected ? .semibold : .regular))
+                    .font(.nwSans(NWSettingsNavMetrics.textSize, selected ? .medium : .regular))
                     .foregroundStyle(nw.textPrimary)
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, NW.Space.m)
-            .frame(minHeight: NW.Height.row)
+            .frame(minHeight: NW.Height.scaled(NWSettingsNavMetrics.rowHeight))
             .contentShape(Rectangle())
         }
         .buttonStyle(.nwRow(selected: selected))
         .accessibilityLabel(title)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
+}
+
+/// Settings' navigation rows (every Settings board).
+public enum NWSettingsNavMetrics {
+    /// Before density.
+    public static let rowHeight: CGFloat = 32
+    public static let iconSize: CGFloat = 15
+    /// The page names, and the Back row's words.
+    public static let textSize: CGFloat = 13
 }

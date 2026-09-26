@@ -8,7 +8,7 @@ enum ShellIntegration {
         let env = Dictionary(uniqueKeysWithValues: [
             "SHEPHERD_AGENT_ID", "SHEPHERD_SOCKET", "SHEPHERD_EXT_STATUS",
             "SHEPHERD_EXT_PANES", "SHEPHERD_NEEDS_NAME", "SHEPHERD_AUTOMATION",
-            "SHEPHERD_MODEL",
+            "SHEPHERD_MODEL", "SHEPHERD_INSTRUCTIONS_DIR", "SHEPHERD_SUGGEST_FILES",
         ].map { ($0, "") })
         return SessionCommand(argv: shell, env: env)
     }

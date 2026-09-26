@@ -82,16 +82,24 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
 **Environment variables:**
 
 - **`SHEPHERD_SUPPORT_DIR`** moves the support directory: the socket, `state.json`, installed
-  extensions, `remote-token`, `automation-runs.json`, and subagent artifacts. It wins over the edition's own folder
+  extensions, `remote-token`, `automation-runs.json`, Settings ▸ Instructions' files
+  (`instructions/`), Settings ▸ Skills' state and git caches (`skills/`), and subagent artifacts. It wins over the edition's own folder
   (`Shepherd`, or `Shepherd Nightly` in Shepherd Nightly).
+- **`SHEPHERD_SKILLS_DIR`** moves the skills folder Settings ▸ Skills manages (default
+  `~/.agents/skills`, the folder pi reads skills from; docs/skills.md). Tests point it at a scratch
+  folder; pi itself always reads `~/.agents/skills`.
 - **`SHEPHERD_THEME=night-watch-dark|night-watch-light`** forces an appearance at launch (the
   older `shepherd-dark` still means dark), which is handy for screenshots. Resetting settings
   returns to it.
 - **Set by the app for pi, never read from the user's environment:**
-  - Always: `SHEPHERD_AGENT_ID`, `SHEPHERD_SOCKET`, `SHEPHERD_EXT_STATUS`.
+  - Always: `SHEPHERD_AGENT_ID`, `SHEPHERD_SOCKET`, `SHEPHERD_EXT_STATUS`,
+    `SHEPHERD_INSTRUCTIONS_DIR` (where the instructions extension reads Settings ▸ Instructions'
+    `AGENTS.md` and `APPEND_SYSTEM.md`).
   - With the matching extension on: `SHEPHERD_EXT_PANES`, `SHEPHERD_NATIVE_CHILDREN`,
     `SHEPHERD_EXT_CHILDREN`, and `SHEPHERD_CHILD_*`.
-  - Per agent: `SHEPHERD_NEEDS_NAME`, `SHEPHERD_AUTOMATION`, `SHEPHERD_MODEL`.
+  - Per agent: `SHEPHERD_NEEDS_NAME`, `SHEPHERD_AUTOMATION`, `SHEPHERD_MODEL`, and
+    `SHEPHERD_SUGGEST_FILES` (the files its `suggest_instruction` may draft a line for, while
+    Settings ▸ Experiments ▸ Suggested instructions is on for its kind of agent).
 - **`SHEPHERD_PR_DESCRIPTION_MODEL`** overrides the model that drafts finalize PR bodies.
 - **`SHEPHERD_PREVIEW_DIR`**, **`SHEPHERD_LIVE_MODEL`**, and **`SHEPHERD_PERF_REPORT`** switch on
   the preview renders, the live-model run, and the long-list timing report (see Testing).
@@ -162,8 +170,8 @@ Tests come in tiers, and the switch is `--filter` on target names.
 `signal`, `chdir`, or `umask`, or change any other global that a concurrent test could observe.
 
 - When a test bundle loads, before any test runs, `Tests/ShepherdTestIsolation` (linked through
-  `ShepherdTestKit`) points `SHEPHERD_SUPPORT_DIR`, `PI_CODING_AGENT_DIR`, and `ZDOTDIR` at a
-  scratch root for that process, and clears the agent-only `SHEPHERD_*` variables a run started
+  `ShepherdTestKit`) points `SHEPHERD_SUPPORT_DIR`, `SHEPHERD_SKILLS_DIR`, `PI_CODING_AGENT_DIR`,
+  and `ZDOTDIR` at a scratch root for that process, and clears the agent-only `SHEPHERD_*` variables a run started
   from a Shepherd agent inherits. It also puts a `bin/` first on `PATH`, holding stand-ins for
   `gh` and `pi` that refuse to run, and the scratch `ZDOTDIR`'s `.zshenv` and `.zlogin` keep it
   first in every zsh a test starts. Without them, a login shell from a minimal environment
@@ -259,7 +267,7 @@ feed name or signing setting that drifts from the script fails before a release 
   (`orderBack`).
 - Never call `makeKey` or `orderFront`, and never post synthetic mouse or keyboard events.
 - Nothing touches the user's support directory, preferences, pi configuration or sessions,
-  `$TMPDIR/shepherd-drops`, or a running Shepherd.
+  `~/.agents/skills`, `$TMPDIR/shepherd-drops`, or a running Shepherd.
 
 **Which tier a change needs:**
 
@@ -286,7 +294,7 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
 - **Core:** the status transition table, `PaneNode` operations, and state validation.
 - **Migration:** terminal-era `runtime` keys, global shells and space shells dropped at startup,
   and review leaves.
-- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all eleven).
+- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all twelve).
 - **Themes:** every theme variant complete, and the WCAG contrast rules met.
 - **App logic:** keybindings (defaults, validation, stored overrides for removed actions
   ignored), palette and settings search, workspace selection and parking, sidebar ordering and
@@ -358,6 +366,10 @@ Sources/
                        (the context and compactions), RPCWire (pi's
                        JSONL, lenient), Framing (NDJSON, LineBuffer, 1 MiB cap), ShepherdPaths,
                        ShepherdEdition (Shepherd or Shepherd Nightly, from the bundle id),
+                       Instructions (Settings ▸ Instructions' files, history and requests),
+                       Suggestions (Settings ▸ Experiments ▸ Suggested instructions),
+                       Skills (Settings ▸ Skills: installed skills, repositories, requests),
+                       HostSettings (a host's settings as a client sees and changes them),
                        DiffFile (a diff's files, hunks and lines), Changes (the Changes pane's
                        scopes, lists, turns and base picker on the wire), DiffWords (word diffs).
   ShepherdRemote/      RemoteHostClient, NativeThreadStore (@Observable), NativeThreadPresentation,
@@ -370,8 +382,16 @@ Sources/
                        height, RemoteTerminalLink), AutomationPresentation (automation rows, runs
                        and what a client may do), AgentBranchPresentation (the header's branch
                        chip), ChangesPresentation (the send bar, the review message, the "Edited
-                       N files" card from a recorded turn), ShepherdLog. Shared with the iOS
-                       client.
+                       N files" card from a recorded turn), InstructionsText (an instruction
+                       file's size, diff, changed lines, highlighting and suggested lines),
+                       InstructionsPresentation (its host chips and rows),
+                       SuggestionsPresentation (Experiments' words), ClientSettings (the iOS
+                       client's Settings models: a host's settings, its instructions and
+                       suggestions over the remote protocol), HostSettingsPresentation,
+                       ClientSkills (Settings ▸ Skills' model on every platform), SkillsText
+                       (SKILL.md's frontmatter, prompt tokens, repository references),
+                       SkillsPresentation (its words), SkillsDirectory (skills.sh), ShepherdLog.
+                       Shared with the iOS client.
   ShepherdPTYSpawn/    The PTY child side (fork → exec) in C: no Swift runs between the two.
   ShepherdSessions/    SessionServer (state, sessions, extension socket, remote listener),
                        RPCSession, RPCThreadState (+Queue: the queue of messages sent while pi
@@ -380,6 +400,10 @@ Sources/
                        SessionScreen (SwiftTerm), StateStore,
                        PaneRequest (pane/review/automation requests + outcomes), RemoteFileUpload,
                        PiModelCatalog, PiConfig, PiSessionPreview (a thread from pi's session file),
+                       InstructionsStore (Settings ▸ Instructions' files and their history),
+                       SuggestionsStore (Suggested instructions: settings, waiting, added),
+                       SkillsStore (a host's skills in ~/.agents/skills; docs/skills.md),
+                       SkillsGit (the partial clones skills install from),
                        Changes/ (ChangesService: the Changes pane's engine — scopes, snapshots,
                        diffs, the base picker, each agent's turns and their Undo; docs/changes.md).
   TerminalSurfaceKit/  Ghostty adapter for terminal panes; see its NOTES.md.
@@ -394,7 +418,8 @@ Sources/
       in +Navigation), AgentStateMapping (app lifecycles → AgentState)
     ShepherdViewModel(+Navigation, +Creation, +Workspace, +Spaces, +Palette, +Shell,
       +RightPane, +Review, +ChildInspector, +Automations, +Dialogs, +RemoteActions,
-      +RemoteInspection, +RemoteWorktrees, +RemoteAutomations, +Terminal, +Pages)
+      +RemoteInspection, +RemoteWorktrees, +RemoteAutomations, +Terminal, +HostSettings,
+      +Skills, +Pages)
     Pages/             the sidebar destinations' pages: AutomationsPage and HostsPage (views over
                        AutomationsPageModel and HostsPageModel, derived per change), their
                        destinations (PageDestinations: runs read, sheets), AutomationEditorSheet,
@@ -417,12 +442,16 @@ Sources/
       QuitConfirmation (QuitDialog)
     CommandPalette, CommandPaletteView, PaletteContentSearch, Keybindings (KeybindingsStore)
     SettingsView, SettingsWindow, SettingsComponents, Settings{Appearance, Terminal, Agents,
-      Worktrees, Pi, Remote, Keyboard, Advanced}, AppSettings
+      Worktrees, Pi, Instructions, Skills, Remote, Keyboard, Advanced, Experiments}, AppSettings,
+      InstructionsModel (the Instructions page's files, drafts and sync), InstructionsEditor (its
+      NSTextView), SuggestionsModel (the Experiments page's suggestions), SkillsSheets (Browse
+      skills.sh, Add from repo)
     Themes (ThemeManager, ShepherdTheme), ShepherdThemeMarker, ShellIntegration, ComponentGallery
     RemoteHostStore, AgentPeers, AgentNotifications, ChildRuns, PiSessionFile, PiUpdateManager,
       AppUpdater (Sparkle: UpdateChannel, UpdateChannelStore, ChannelDelegate),
       NightlyMovedNotice
-    Status/Namer/Panes/Review/Subagents/Children/InspectExtension.swift  embedded extensions
+    Status/Namer/Panes/Review/Subagents/Children/Inspect/InstructionsExtension.swift
+      embedded extensions
   shepherd-cli/        `shepherd --import herdr` (writes state.json while Shepherd is not running).
 Packages/
   ShepherdUI/          Night Watch, its own local package (module ShepherdUI; macOS 26, iOS 27;
@@ -434,7 +463,7 @@ Packages/
                                      AgentState, HexColor
                        Resources/Fonts  Geist and Geist Mono (SIL OFL)
                        Components/   Controls, Status, Containers, Navigation, Thread, Composer,
-                                     Agents, Review, Dialogs, Automations
+                                     Agents, Review, Dialogs, Automations, Skills
                        Previews/     a #Preview per component, light and dark
                        Diagnostics/  NWRenderProbe (row-body counts for tests; debug only)
                        Its unit tests live in the root package (Tests/ShepherdUIUnitTests).
@@ -446,6 +475,9 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
   shepherd-subagents.ts   setAgentChildren (native + pi-subagents runs)
   shepherd-children.ts (+ -config, -ui, shepherd-workflow, shepherd-missions, shepherd-inspect.mjs)
                           native subagent runtime; see docs/native-subagents.md
+  shepherd-instructions.ts  Settings ▸ Instructions' AGENTS.md and APPEND_SYSTEM.md, added to
+                          every session Shepherd starts (never ~/.pi/agent); suggest_instruction
+                          (Settings ▸ Experiments ▸ Suggested instructions)
 Tests/
   <Module>UnitTests/, *IntegrationTests/, ShepherdPreviewTests/   the tiers above
   ShepherdTestIsolation/  C, run when a test bundle loads: scratch root, PATH, ZDOTDIR
@@ -585,6 +617,20 @@ variables are blanked.
     create, edit, delete. There is no schedule or trigger: an automation that is on starts a run
     when Shepherd launches on the host. The Mac shows a host's automations under its sidebar
     section; the iOS client in Automations. A host without the capability shows them read-only
+  - `instructions` (`instructions.v1`): Settings ▸ Instructions' files on the host (fetch, save,
+    restore a saved version), answered with the files and their history. The Mac's page syncs
+    them to every host, or edits one host at a time
+  - `suggestions` (`suggestions.v1`): Settings ▸ Experiments ▸ Suggested instructions on the host
+    (fetch, configure, add as edited and retargeted, add all, dismiss, undo), answered with the
+    experiment's settings and its lines
+  - `hostSettings` (`hostSettings.v1`): what the host's Settings ▸ Agents, Worktrees and Pi set,
+    the pi packages its pi loads, and its Shepherd and pi versions; one change per request
+    (`HostSettingChange`), applied as the Mac's own Settings would
+  - `skills` (`skills.v1`): Settings ▸ Skills on the host (fetch, look up a repository, install
+    from one or from files, on or off, how it's used, remove and restore, check for updates,
+    Update automatically), answered with the host's skills or the repository's. The server runs
+    them on its own queue (they fetch with git) and tells the host's page about each change
+    (docs/skills.md)
 
   Capabilities gate newer features. The client falls back (raw bracketed paste) or refuses (pane
   control) against older hosts. Output frames chunk at 256 KiB to stay under the 1 MiB frame cap.
@@ -594,9 +640,9 @@ variables are blanked.
 - **Attach is atomic** on the server queue: viewport registration, snapshot, attachment, and
   replay watermark happen in one turn.
 - **Host-side handlers:** remote pane and agent-creation requests go through
-  `onRemotePaneRequest` and `onRemoteCreateAgent` with the same authorization as local requests.
-  A server without those handlers rejects them. Detaching a remote pane never kills the host
-  session.
+  `onRemotePaneRequest` and `onRemoteCreateAgent` with the same authorization as local requests,
+  and host settings through `onRemoteHostSettings` (the GUI owns `AppSettings`). A server without
+  those handlers rejects them. Detaching a remote pane never kills the host session.
 - **Client:** `RemoteHostStore` persists host configs, **including tokens**, in UserDefaults
   (`shepherd.remote.hosts`). It keeps one `RemoteHostClient` per host, with exponential backoff
   capped at 30 s. A refused token or another protocol version is not retried: the host shows
@@ -621,15 +667,15 @@ the same change.
 - A new `SessionServer` mutation needs an integration test.
 - New persisted fields decode with defaults, so older `state.json` files keep loading.
 
-**Embedded extensions have one canonical copy.** The eleven files in `Extensions/` are canonical.
-pi loads the copies that the seven `Sources/ShepherdApp/*Extension.swift` files write to the
+**Embedded extensions have one canonical copy.** The twelve files in `Extensions/` are canonical.
+pi loads the copies that the eight `Sources/ShepherdApp/*Extension.swift` files write to the
 support directory from embedded string literals. `installedPath()` rewrites an installed copy
 whenever its content differs, so drift ships bugs. `ChildrenExtension.swift` carries children,
 children-config, children-ui, workflow, and missions, and installs `InspectExtension`'s
 `shepherd-inspect.mjs`.
 
 - Edit a `.ts`/`.mjs` file and its literal in the same change, with
-  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all eleven pairs.
+  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all twelve pairs.
 - Extensions stay dependency-free and inert without their environment variables.
 - They must never throw into pi or keep the process alive (unref'd sockets and timers).
 - The panes extension speaks the request/reply half of `ExtensionMessage`/`ExtensionReply`.
@@ -1030,9 +1076,14 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   2000 lines of styled scrollback, the alt screen, cursor, and modes), not raw bytes. Cosmetic
   artifacts are acceptable; lost bytes are not. The watermark protocol prevents duplication and
   loss.
+- **Skills live in `~/.agents/skills`,** the folder pi reads skills from, not `~/.pi/agent`.
+  Settings ▸ Skills is the only thing that writes there; everything else it keeps (skills that
+  are off, just removed, git caches, records) is in the support directory's `skills/`.
 - **pi's trust prompt:** interactive pi asks to trust project `.pi/` directories, but `-e` loads
   our extensions without one. Never install anything into `~/.pi/agent/`. `PiSessionFile` writes
-  only session files, which pi treats as data.
+  only session files, which pi treats as data. Settings ▸ Instructions keeps its root files in
+  Shepherd's support directory and hands them to the sessions Shepherd starts through
+  `shepherd-instructions.ts`; pi run by hand doesn't read them.
 - **pi's formats:** `PiConfig` (models.json, settings.json) and `PiModelCatalog`
   (`pi --list-models`) parse defensively, because pi's formats are not our contract.
 - **Binding:** `SessionServer.start()` refuses to bind over a live socket (it probes with a
