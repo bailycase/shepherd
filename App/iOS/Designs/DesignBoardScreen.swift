@@ -108,8 +108,17 @@ final class DesignBoardModel {
         if current == nil, let index {
             let boards = RemoteDesignPresentation.boards(index.snapshot.index)
             show(initial.flatMap { boards.contains($0) ? $0 : nil } ?? boards.first)
+        } else if live == nil {
+            reopen()
         }
         await measurePins()
+    }
+
+    /// The screen came back (from the agent's thread, say) after giving up its web view: the
+    /// board it showed goes live again where it was.
+    private func reopen() {
+        guard let current, let board, let source = designs.source(ref) else { return }
+        live = DesignLiveBoard(ref: ref, path: current, size: CGSize(width: board.w, height: board.h), source: source)
     }
 
     /// Shows `path`: its web view replaces the last board's, so one board is live at a time.
