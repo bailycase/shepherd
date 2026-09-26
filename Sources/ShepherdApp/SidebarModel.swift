@@ -17,6 +17,9 @@ enum MainDestination: Hashable, CaseIterable {
     case designs
     /// DZStart: a new design's brief. The sidebar shows Designs selected.
     case newDesign
+    /// DZSystem (More ▸ Design systems): a design system without an agent of its own. A system
+    /// built from a repository shows as its build's layout instead.
+    case designSystem
     /// NavAutomations.
     case automations
     /// NavHosts (More ▸ Hosts).
@@ -145,7 +148,8 @@ enum SidebarDerivation {
             entries.append((row, needsYou, agent.lastActiveAt ?? -1, 0, index))
         }
         if source.designs {
-            for (index, design) in source.local.designs.enumerated() {
+            // A system build's page opens from its system, never from Recents.
+            for (index, design) in source.local.designs.enumerated() where !design.buildsSystem {
                 entries.append((designRow(design), false, design.lastActiveAt, 0, index))
             }
         }
@@ -278,6 +282,8 @@ enum SidebarDerivation {
             case more
             /// Settings ▸ Pi, where the bundled extensions are.
             case extensions
+            /// More ▸ Design systems: the system page opened last, else the first.
+            case designSystems
         }
 
         let target: Target
@@ -291,11 +297,11 @@ enum SidebarDerivation {
     }
 
     /// New thread (with its chord), Designs while the Design tool is on (selected on its page and
-    /// on New design), Automations, More, and More's Hosts (with how many hosts are offline) and
-    /// Extensions while it is open. Missions, Design systems and Archive are not built, so they
-    /// are not shown.
+    /// on New design), Automations, More, and More's Hosts (with how many hosts are offline),
+    /// Design systems (with the Design tool; selected while a system's page shows) and Extensions
+    /// while it is open. Missions and Archive are not built, so they are not shown.
     static func destinations(shown: MainDestination?, moreOpen: Bool, offlineHosts: Int, newThreadChord: String,
-                             designs: Bool = false) -> [Destination] {
+                             designs: Bool = false, systemShown: Bool = false) -> [Destination] {
         var rows = [
             Destination(target: .page(.newThread), title: "New thread", icon: .newThread, selected: shown == .newThread,
                         child: false, trailing: .keycaps(newThreadChord)),
@@ -313,6 +319,11 @@ enum SidebarDerivation {
         if moreOpen {
             rows.append(Destination(target: .page(.hosts), title: "Hosts", icon: .symbol("display"), selected: shown == .hosts,
                                     child: true, trailing: offlineHosts > 0 ? .alert("\(offlineHosts) offline") : .none))
+            if designs {
+                rows.append(Destination(target: .designSystems, title: "Design systems", icon: .symbol("paintpalette"),
+                                        selected: shown == .designSystem || (shown == nil && systemShown), child: true,
+                                        trailing: .none))
+            }
             rows.append(Destination(target: .extensions, title: "Extensions", icon: .symbol("puzzlepiece.extension"),
                                     selected: false, child: true, trailing: .none))
         }

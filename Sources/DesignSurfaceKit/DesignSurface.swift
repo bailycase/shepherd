@@ -5,13 +5,13 @@ import WebKit
 
 /// One design's rendering sandbox, shared by every board view of that design: a non-persistent
 /// website data store (nothing a board stores outlives it or reaches another design) and the
-/// `shepherd-design://<design>/` scheme serving the design's folder.
+/// `shepherd-design://<design>/` scheme serving the design's folder, or files held in memory.
 @MainActor
 public final class DesignSurface {
     public let designID: DesignID
     /// The design's folder, `<support>/designs/<id>/`: boards come from its `project/`, uploads
-    /// from its `assets/`.
-    public let folder: URL
+    /// from its `assets/`. Nil for a surface over files in memory.
+    public let folder: URL?
     public let network: DesignSandbox.Network
 
     let dataStore: WKWebsiteDataStore
@@ -24,7 +24,19 @@ public final class DesignSurface {
         self.folder = folder
         self.network = network
         dataStore = .nonPersistent()
-        schemeHandler = DesignSchemeHandler(host: designID.rawValue, folder: folder, network: network)
+        schemeHandler = DesignSchemeHandler(host: designID.rawValue, files: .folder(folder), network: network)
+    }
+
+    /// A surface over files held in memory, by their project path (`tokens.css`,
+    /// `components/Button.html`, a board written for them): a design system's files drawn as
+    /// specimens. The same rules hold: each path by the file grammar, the runtime at any
+    /// `support.js`, and nothing else (no uploads).
+    public init(designID: DesignID, files: [String: Data], network: DesignSandbox.Network = .googleFonts) {
+        self.designID = designID
+        folder = nil
+        self.network = network
+        dataStore = .nonPersistent()
+        schemeHandler = DesignSchemeHandler(host: designID.rawValue, files: .memory(files), network: network)
     }
 
     /// Where a board loads from: `shepherd-design://<design>/project/<path>`.

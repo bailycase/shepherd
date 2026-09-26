@@ -322,7 +322,9 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   re-sync, Night Watch complete for every role in both variants, installing into a design (and
   never over a folder installed from elsewhere), system_write only by the owning design's agent,
   the project only read, `<x-import>` in a real board view, and design_check's off-system values
-  with their lines.
+  with their lines. In the app: the systems grid and a system's page (sources, counts, specimens
+  as boards), a build from a scratch repository leaving it byte-identical, More ▸ Design systems,
+  and New design's tokens-file detection.
 - **Server:** every `SessionServer` state mutation.
 - **Changes:** every scope on a scratch repository, the proof that reading changes leaves the
   index, HEAD, refs, the stash, `.git` and every file alone, and Undo, Redo and the refusal on a
@@ -480,7 +482,8 @@ Sources/
     ShepherdViewModel(+Navigation, +Creation, +Workspace, +Spaces, +Palette, +Shell,
       +RightPane, +Review, +ChildInspector, +Automations, +Dialogs, +RemoteActions,
       +RemoteInspection, +RemoteWorktrees, +RemoteAutomations, +Terminal, +HostSettings,
-      +Skills, +Pages, +AgentMenu, +Designs (opening, New design's NewDesignState, revisions))
+      +Skills, +Pages, +AgentMenu, +Designs (opening, New design's NewDesignState, revisions),
+      +DesignSystems (a system's page, "Build one from a repo", Re-sync, specimens))
     Pages/             the sidebar destinations' pages: AutomationsPage, HostsPage and DesignsPage
                        (views over AutomationsPageModel, HostsPageModel and DesignsPageModel,
                        derived per change), their destinations (PageDestinations: runs read,
@@ -491,8 +494,11 @@ Sources/
       DesignScreenModel (a design's canvas state and its pulls; the board actions, moves,
       Present and Play, pages), DesignHost (the only DesignSurfaceKit import: live views, the
       rasterizer, snapshots, thumbnails, tweak previews, the presented board), DesignTweak (the Tweak tab's controls, pure), DesignTweakModel (its writes,
-      one per gesture, Reset and Undo), DesignTweakPane, DesignProjectTokens, NightWatchSystem
-      (Night Watch as a built-in design system, from ShepherdUI's tokens)
+      one per gesture, Reset and Undo), DesignTweakPane, DesignProjectTokens (with
+      DesignSystemDetection, a project's tokens file), NightWatchSystem (Night Watch as a
+      built-in design system, from ShepherdUI's tokens), DesignSystemCatalog (the host's systems
+      as last read), DesignSystemPageModel (DZSystem as values; specimen boards), DesignSystemPage
+      (the Design systems page, a build's layout beside its chat, the header)
     TerminalPanels (each layout's terminal panel: shown, tab, maximized, activity),
       TerminalPanelLayout (TerminalPanelGeometry, pure), TerminalPanelViews (strip, divider)
     Thread/            ThreadView, ThreadTurns, ThreadTools (activity lines), ThreadMarkdown,
@@ -538,7 +544,9 @@ Packages/
                                      NWDesignCard, NWDesignSystemChip, NWDesignHeader,
                                      NWCommentPin, NWCommentThread, NWCommentCard,
                                      NWBoardActions, NWDirectionTile, NWCanvasNote,
-                                     NWBoardPresentation)
+                                     NWBoardPresentation, NWSectionRail, NWTokenSwatch,
+                                     NWTypeSpecimen, NWComponentSpecimen,
+                                     NWDesignSystemBuildTile)
                        Previews/     a #Preview per component, light and dark
                        Diagnostics/  NWRenderProbe (row-body counts for tests; debug only)
                        Its unit tests live in the root package (Tests/ShepherdUIUnitTests).

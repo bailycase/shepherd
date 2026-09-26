@@ -358,6 +358,57 @@ claude.ai is still checked against).
 - **Activity lines:** `system_read` joins "Explored N files" (`ds/<namespace>`, or "design
   systems"); `system_write` reads "Used system" with its namespace.
 
+### In the app
+
+- **The catalog** (`DesignSystemCatalog`, owned by the view model) holds the host's systems as
+  last read: each one's record and counts, and its tokens, README and file list. It reads them
+  again when the server says one changed (`onDesignSystemsChanged`: a write, a re-sync) and when
+  a page that shows them opens; a system whose revision didn't move keeps what was read.
+- **"Build one from a repo"** (NavDesigns' dashed tile, a menu of projects when there are
+  several) makes a design that builds a system (`Design.buildsSystem`, persisted, false in older
+  files) in the project, named after it, and starts its agent there with Settings' default model
+  and these words: "Build a design system from this project: read its tokens file, its component
+  templates and a few pages (read only), write the system with system_write, and tell me what
+  doesn't match." A project that has a build opens it instead. A build has no card and no Recents
+  row; its system (the one whose `ownerDesignID` is the build) is its page.
+- **A system's page** (DZSystem, `DesignSystemPageModel`): a build's page is its agent's layout
+  (`DesignSystemLayoutView`), the system beside the agent's 420pt chat with the Chat tab alone
+  (decision 12), mounted and hidden like any agent's; before the agent writes its system it says
+  "Reading <project>…". Any other system (Night Watch, or one a canvas's agent wrote) opens as the
+  Design systems page (`MainDestination.designSystem`), without a chat. The page:
+  - the header: "Design systems / acme-web", "Synced" once read from a project ("Syncing" while a
+    re-sync runs), and the system's chip;
+  - the section list, each with its count: Colors, Type, Spacing & radii, Components, and Boards
+    using it (the boards of the designs drawn in it); a section scrolls to its label;
+  - the name over "Read from `dashboard-web`: `web/static/tokens.css` and 9 templates in
+    `templates/partials/` · synced 4m ago" (a built-in: "Generated from ShepherdUI's tokens"; a
+    system whose project is gone: its counts), and **Re-sync** (`resyncDesignSystem`), disabled
+    for a system without stylesheets or project;
+  - colors as token swatches with the line each came from, type styles in the system's own face,
+    the spacing and radius steps, components, and the designs drawn in it.
+- **Specimens.** A component's `specimen` file is drawn by the board renderer, never as SwiftUI:
+  the page reads the system's files (`SessionServer.designSystemContents`), wraps each specimen
+  in a board of the tile's size on the system's background with its `tokens.css` linked
+  (`DesignSpecimenBoard`), and renders it off screen from those files held in memory
+  (`DesignSurface(designID:files:)`, `DesignSpecimens`), again only when the system's revision
+  moves. A specimen over 64 KB, or none, leaves its tile empty. Nothing is written to disk.
+- **The Designs page's systems** (NavDesigns): the systems built here by title, the builds still
+  reading their project ("dashboard-web · building"), then the built-ins, in lazy rows of three
+  ending in "Build one from a repo". A card has four of the system's colors (its accent, text,
+  background and a status color by name, then the rest), its source ("dashboard-web ·
+  tokens.css"; Night Watch: "shepherd · ShepherdUI Tokens") and how many designs are drawn in it,
+  and opens its page.
+- **More ▸ Design systems** opens the system page shown last, else the first system built here,
+  else Night Watch; it is selected while a system's page shows. **A design's system chip** opens
+  its system's page, and draws three of its colors.
+- **New design** (DZStart): the card is the system built from the chosen project ("acme-web",
+  "design system · dashboard-web", "found in web/static/tokens.css"), else the project itself,
+  "found in" its tokens file when a read-only walk finds one (`DesignSystemDetection`: a
+  stylesheet named for tokens, then variables or theme, shallowest first, else the one declaring
+  the most custom properties; at least three; links not followed), else at its folder. Its menu
+  picks another project or another system. Send installs the system in the new design before its
+  agent starts.
+
 ## The renderer
 
 `DesignSurfaceKit` (macOS and iOS) draws a board in a `WKWebView` on the device that shows it.
@@ -378,7 +429,9 @@ Boards are untrusted: an agent wrote them, or they came from someone else's canv
     resolves (links followed) inside `project/`.
   - `/_blob/<id>`: an upload in the design's `assets/`.
 
-  Anything else is a 404, and a board that isn't there fails its load.
+  Anything else is a 404, and a board that isn't there fails its load. A surface over files in
+  memory (a design system's, for its specimens) serves those files by the same grammar and the
+  runtime, and no uploads.
 - **A data store per design,** non-persistent, so nothing a board stores outlives the surface or
   reaches another design.
 - **Content rules** block every load except the scheme and Google Fonts
@@ -501,9 +554,9 @@ was on keep their files and agents either way.
 
 - **The Designs destination** sits between New thread and Automations. Its page
   (`DesignsPage`, NavDesigns) shows recent designs as cards, most recently edited first, each
-  with its first board (the first in `order`) rendered off screen, and the systems they are drawn
-  in. A design's system is the one installed in it last (`Design.systemNamespace`), else its
-  project's name.
+  with its first board (the first in `order`) rendered off screen, and the host's design systems
+  (Design systems › In the app). A card names the design's system: the one installed in it last
+  (`Design.systemNamespace`), else its project's name.
 - **Recents** lists a design as one row (the nib and "4 boards"), placed by its last change. Its
   agent has no row of its own and takes no ⌘-digit; the palette leaves it out too.
 - **New design** (DZStart; the page's button, New thread's "Start a design") takes a brief and
@@ -725,9 +778,11 @@ plainly: the pages menu (a popup in the toolbar), notes (a title's and a sticky'
 moving a board (by its label or while picked whole), Duplicate's name and place for the copy, and
 the words Variations and another direction send.
 
-For design systems only the format, the store and the agent's side are built (Design systems,
-above). The app has none of it yet: the system page (DZSystem) with its Re-sync button, the
-Designs page's systems grid read from the systems (it still names each design's system), More ▸
-Design systems, the system chip opening the page, New design's system cards read from a
-repository (DZStart), and Tweak snapping to an installed system's tokens (it reads the board's
-and the project's custom properties).
+For design systems (Design systems › In the app): Tweak doesn't yet snap to an installed
+system's tokens (it reads the board's and the project's custom properties). Not drawn, and built
+plainly: a build still reading its project ("Reading <project>…" and nothing else), the Design
+systems page with no chat for a system without its own agent, a build on the grid before it has
+written its system, the Spacing & radii and Boards using it sections (rows in the type rows'
+anatomy), a type style without a sample (its name), and a failed build or re-sync (the error
+dialog). The chat's "Read dashboard-web · tokens.css · 9 partials · 3 pages" activity line isn't
+built: the agent's reads join "Explored N files".

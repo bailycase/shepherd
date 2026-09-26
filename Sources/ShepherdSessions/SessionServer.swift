@@ -2956,6 +2956,13 @@ public final class SessionServer: @unchecked Sendable {
         return try await designSystems.read(namespace)
     }
 
+    /// Every file of a design system but Shepherd's record, by path: what its page draws its
+    /// specimens from. Read on the store's queue.
+    public func designSystemContents(_ namespace: String) async throws -> [String: Data] {
+        guard DesignPath.isSystemNamespace(namespace) else { throw DesignSystemError.invalidNamespace(namespace) }
+        return try await designSystems.contents(namespace).files
+    }
+
     /// What `system_read` lists for a design's agent: every system, and the ones the design has
     /// installed, its own first.
     public func designSystemListing(_ designID: DesignID) async throws -> DesignSystemListing {
