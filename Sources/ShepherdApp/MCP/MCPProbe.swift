@@ -42,7 +42,7 @@ struct NodeProbeRunner: MCPProbeRunner {
 
     func run(input: Data, timeout: TimeInterval) async -> Data {
         guard let client = clientPath() else {
-            return Self.failure("Shepherd’s MCP client isn’t installed yet: start an agent once, then Reconnect.")
+            return Self.failure("Shepherd couldn’t install its MCP client in its support folder.")
         }
         return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {

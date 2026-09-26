@@ -4,11 +4,10 @@ import ShepherdProtocol
 import ShepherdSessions
 
 extension ShepherdViewModel {
-    /// The MCP client agents run, installed beside the MCP extension in the support directory.
-    /// Settings' probes run the same file with node.
+    /// The MCP client agents run, installed beside the MCP extension in the support directory
+    /// (written now if no agent has launched yet). Settings' probes run the same file with node.
     nonisolated static func mcpClientPath() -> URL? {
-        let url = ShepherdPaths.supportDirectory().appendingPathComponent("shepherd-mcp-client.mjs")
-        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+        (try? MCPExtension.clientPath()).map { URL(fileURLWithPath: $0) }
     }
 
     static func copyToPasteboard(_ text: String) {
