@@ -59,6 +59,25 @@ struct TerminalFirstResponderTests {
         }
     }
 
+    /// Add to message reads the selection: Select All in a live surface reports what it holds,
+    /// with where it starts and a line's height; a click that selects nothing reports nil.
+    @Test func aSelectionIsReportedWithItsTextAndPlace() async throws {
+        let panes = Panes()
+        defer { panes.window.close() }
+        var reported: [TerminalSurfaceModel.Selection?] = []
+        panes.left.onSelectionChange = { reported.append($0) }
+        panes.show(leftFocused: true, rightFocused: false)
+        try await eventuallyOnMain("the left surface to mount") { panes.surface(of: panes.left) != nil }
+        panes.left.feed(Data("FAIL payments/ledger 0.214s\r\n".utf8))
+        let surface = try #require(panes.surface(of: panes.left))
+        try await eventuallyOnMain("Select All to report the output") {
+            surface.perform(#selector(NSResponder.selectAll(_:)), with: nil)
+            return reported.last??.text.contains("FAIL payments/ledger") == true
+        }
+        let selection = try #require(reported.last ?? nil)
+        #expect(selection.lineHeight > 0 && selection.origin.x >= 0 && selection.origin.y >= 0)
+    }
+
     @Test func releasingFocusOnlyGivesUpThePanesOwnSurface() async throws {
         let panes = Panes()
         defer { panes.window.close() }

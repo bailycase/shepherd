@@ -469,7 +469,7 @@ private struct InstructionsResolve: View {
     var body: some View {
         let name = model.name(of: .remote(hostID))
         VStack(alignment: .leading, spacing: NW.Space.m) {
-            NWSectionHeader("Resolve").padding(.horizontal, NW.Space.xxs)
+            NWSectionHeader("Resolve", style: .settings).padding(.horizontal, NW.Space.xxs)
             NWFlowLayout(spacing: NW.Space.m) {
                 Button("Copy This Mac's to \(name)") { Task { await model.copyThisMacs(to: hostID) } }
                     .buttonStyle(.nw(.secondary))
@@ -528,7 +528,7 @@ private struct InstructionsReadingOrder: View {
     var body: some View {
         let nw = Color.nw
         VStack(alignment: .leading, spacing: NW.Space.m) {
-            NWSectionHeader("How the agent reads them").padding(.horizontal, NW.Space.xxs)
+            NWSectionHeader("How the agent reads them", style: .settings).padding(.horizontal, NW.Space.xxs)
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
                     if index > 0 {
@@ -585,7 +585,7 @@ private struct InstructionsHostsOverview: View {
         let other = InstructionFile.allCases.first { $0 != model.file } ?? .appendSystem
         VStack(alignment: .leading, spacing: AppLayout.instructionsSideSpacing) {
             VStack(alignment: .leading, spacing: NW.Space.m) {
-                NWSectionHeader("Files on each host").padding(.horizontal, NW.Space.xxs)
+                NWSectionHeader("Files on each host", style: .settings).padding(.horizontal, NW.Space.xxs)
                 VStack(spacing: 0) {
                     hostRow(.local)
                     ForEach(model.hosts, id: \.id) { host in
@@ -595,7 +595,7 @@ private struct InstructionsHostsOverview: View {
             }
             if !model.hosts.isEmpty, let line = model.otherFileLine {
                 VStack(alignment: .leading, spacing: NW.Space.m) {
-                    NWSectionHeader(other.fileName).padding(.horizontal, NW.Space.xxs)
+                    NWSectionHeader(other.fileName, style: .settings).padding(.horizontal, NW.Space.xxs)
                     Text(line)
                         .nwText(size: AppLayout.instructionsOtherFileSize, lineHeight: AppLayout.settingsFootnoteLineHeight)
                         .foregroundStyle(Color.nw.textSecondary)
@@ -604,7 +604,7 @@ private struct InstructionsHostsOverview: View {
                 }
             }
             VStack(alignment: .leading, spacing: NW.Space.m) {
-                NWSectionHeader("History · \(model.name(of: model.machine))").padding(.horizontal, NW.Space.xxs)
+                NWSectionHeader("History · \(model.name(of: model.machine))", style: .settings).padding(.horizontal, NW.Space.xxs)
                 InstructionsHistoryList(model: model, machine: model.machine, now: now)
             }
         }

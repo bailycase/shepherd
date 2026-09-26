@@ -102,7 +102,28 @@ extension ShepherdViewModel {
     /// The pane over the whole layout (ChangesWide), or back beside the thread.
     func toggleSidePaneMaximized(_ owner: SidePaneOwner) {
         let panes = subagentInspector
-        if panes.maximized.contains(owner) { panes.maximized.remove(owner) } else { panes.maximized.insert(owner) }
+        if panes.maximized.contains(owner) {
+            panes.maximized.remove(owner)
+        } else {
+            // Hidden layouts keep the column's size while the pane covers the window, so taking
+            // the sidebar's and the toolbar's room relays out the visible one alone.
+            wideFrozenSize = workspaceColumn.size
+            panes.maximized.insert(owner)
+        }
+    }
+
+    /// The side pane on screen covers the window (ChangesWide): its rail replaces the sidebar
+    /// and the toolbar, until the thread is restored or something else takes the column.
+    var isSidePaneWide: Bool {
+        guard destination == nil, !showSettings, !showComponentGallery, let owner = sidePaneOwner,
+              rightPaneContent == .review else { return false }
+        return subagentInspector.maximized.contains(owner)
+    }
+
+    /// The rail's Back to the thread.
+    func restoreWideSidePane() {
+        guard let owner = sidePaneOwner, subagentInspector.maximized.contains(owner) else { return }
+        subagentInspector.maximized.remove(owner)
     }
 
     /// Hides `owner`'s pane: the inspector closes, and the review is discarded like a cancel.
@@ -171,6 +192,9 @@ final class ThreadCommandCenter {
     }
 
     private(set) var request: Request?
+    /// Run in terminal on a finished command's activity line: a new tab in the thread's terminal
+    /// panel with the command typed out, not run. Nil where there is no panel to open it in.
+    @ObservationIgnored var runInTerminal: ((String) -> Void)?
 
     func send(_ command: Command, to thread: String) {
         request = Request(command: command, thread: thread)
