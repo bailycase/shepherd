@@ -79,9 +79,18 @@ public enum ShepherdPaths {
             return URL(fileURLWithPath: (override as NSString).expandingTildeInPath, isDirectory: true)
                 .standardizedFileURL
         }
-        return FileManager.default.homeDirectoryForCurrentUser
+        return homeDirectory
             .appendingPathComponent(".agents", isDirectory: true)
             .appendingPathComponent("skills", isDirectory: true)
+    }
+
+    /// The user's home folder. iOS has no `homeDirectoryForCurrentUser`; its app home stands in.
+    private static var homeDirectory: URL {
+        #if os(macOS)
+        FileManager.default.homeDirectoryForCurrentUser
+        #else
+        URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+        #endif
     }
 
     /// What Shepherd keeps beside the skills (Settings ▸ Skills): the skills that are off, the
