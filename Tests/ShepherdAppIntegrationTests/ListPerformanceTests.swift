@@ -714,7 +714,8 @@ struct ListPerformanceTests {
     /// The right pane casts its shadow only while it floats over the thread, and from its fill
     /// alone: a shadow on the pane's content is redrawn from every layer inside it on each
     /// scroll step, and before this the docked pane still carried a clear one on three layers.
-    @Test(arguments: [(width: CGFloat(1400), floating: false), (width: 800, floating: true)])
+    /// 760pt is under the dock threshold (a 400pt thread beside a 380pt pane), so there it floats.
+    @Test(arguments: [(width: CGFloat(1400), floating: false), (width: 760, floating: true)])
     func theRightPaneCastsItsShadowFromItsFillOnlyWhileFloating(width: CGFloat, floating: Bool) throws {
         let model = ListFixtures.reviewModel([ListFixtures.diffFile("Big.swift", lines: 200)])
         let window = OffscreenWindow(size: CGSize(width: width, height: 800), dark: true,
