@@ -7532,9 +7532,12 @@ review pane's.
 the Designs destination and page, design rows in Recents, New thread's Start a design, New design,
 and a design's canvas beside its chat, with the design agent, live reload, Select (elements and
 boards picked on the canvas, their view record sent with each chat message; docs/designs.md),
-comments (pins, threads, cards in the chat and the Comments tab, answered by the agent), and
-Tweak (its tab, written once per gesture, with Reset and Undo over each board's versions).
-Not built: design systems, export, the live link, Present, and every iPhone and iPad part;
+comments (pins, threads, cards in the chat and the Comments tab, answered by the agent),
+Tweak (its tab, written once per gesture, with Reset and Undo over each board's versions), the
+board actions and "Ask for another direction", boards moved by dragging, Present (decision 11:
+the board focused over a scrim, its links playing) and Play, and pages with title and sticky
+notes. Not built: design systems, export, the live link, Present mode's own board, and every
+iPhone and iPad part;
 each subsection below says what of it is built. The iOS
 client's first release leaves it out until the Mac has it ([docs/ios](docs/ios/README.md)), and its
 search draws no Designs section (`MobileSearchScreen`). The canvas marks the whole page an
@@ -7572,8 +7575,9 @@ tool work reads as activity lines.
 - **Counts are the board's words:** "4 boards", "2 comments", "3 directions + phone",
   "18 tokens · 9 components".
 - **Not drawn on any board**, so design them before building: the Designs page with no designs,
-  a design still loading, a failed drawing or sync, an offline host, Present mode, the
-  contents of the ••• menus, and keyboard shortcuts. Any shortcut added goes through
+  a design still loading, a failed drawing or sync, an offline host, Present mode (until it is,
+  Present shows the board focused: A design, below), the contents of the ••• menus, and keyboard
+  shortcuts. Any shortcut added goes through
   `KeybindingsStore`.
 
 ### Where designs appear
@@ -7695,11 +7699,11 @@ opens this page in the main column, with the sidebar showing and Designs selecte
 ### A design: canvas and chat (DZCanvas)
 
 **Partly built** (`DesignScreen`: a design agent's layout). Built: the header (44pt, the app's
-toolbar; the system chip is a label, Present and Export draw disabled), the canvas with its board
-frames and toolbar, the chat pane with its Chat and Comments tabs and the agent's thread; its
-composer is `NWComposer`'s card at radius 8, Select (Selection, below), and comments (Comments,
-below). Not built: the Tweak tab and the tabs' •••, the board actions bar, and "Ask for another
-direction". A
+toolbar; the system chip is a label, Export draws disabled), the canvas with its board frames and
+toolbar, the chat pane with its Chat, Comments and Tweak tabs and the agent's thread; its
+composer is `NWComposer`'s card at radius 8, Select (Selection, below), comments (Comments,
+below), the board actions and "Ask for another direction", boards moved by dragging, Present and
+Play, and pages with their notes. Not built: the tabs' •••. A
 board frame's outline is `lineStrong` and its shadow the popover's (the board's black 30% and 35%
 are off the tokens). Opening a design fills the main column: the header, then the canvas beside a
 420pt chat pane. The boards draw it with the sidebar hidden.
@@ -7710,7 +7714,16 @@ are off the tokens). Opening a design fills the main column: the header, then th
   `textTertiary`, "/", the design's name in 13 semibold); a spacer; the **design system chip**;
   **Present** (`play.fill`, a 28pt icon button, "Present"); and **Export**
   (`square.and.arrow.up`, a 28pt secondary button). 12pt between the header's groups, 8pt
-  between the trailing controls.
+  between the trailing controls. A canvas with more than one page adds its **pages menu**
+  before the chip (not drawn: `NWPopupMenu` with the page shown, each page by name, the current
+  one checked).
+- **Present** (decision 11, until Present mode is drawn): the board picked last (else the one
+  nearest the middle of the view) focused over the canvas: the `scrim` over it, and the board
+  fitted inside the canvas's 44 and 52pt margins, never over 100%, in its frame, with no label. It
+  is the design's one live view while shown and takes its own clicks, so its handlers run and a
+  link to another board of the design (`<a href="B.dc.html">`, or `/` for the canvas root) shows
+  that board instead; any other link goes nowhere. Present lights up (its `isOn` fill) while a
+  board is shown; Present again, or a click on the scrim, goes back to the canvas.
 - **The design system chip** (`NWDesignSystemChip`): 24pt, 8pt padding, radius 6, a 1px
   `lineSubtle` line, three of the system's colors as 8pt squares (radius 2, 2pt apart), then its
   name in mono 11.5 `textSecondary`. Clicking it opens the system (Design systems, below).
@@ -7727,14 +7740,27 @@ are off the tokens). Opening a design fills the main column: the header, then th
   - **"Ask for another direction"**: after the last board (36pt after it on DZCanvas), a
     300×190 dashed tile (1px `lineStrong`, radius 6), `plus` (16pt) over "Ask for another
     direction" in 12 `textTertiary`, 6pt apart, centered. It asks the agent for one more
-    direction.
+    direction. Built: the tile keeps its size at every zoom (it is chrome), top-aligned with the
+    last board of the page in canvas order, and its words lighten to `textSecondary` on hover.
   - **Board actions** (`NWBoardActions`) float above the selected board: Comment (`text.bubble`),
     Tweak (`slider.horizontal.3`), Variations (`square.grid.2x2`), Duplicate (`doc.on.doc`), and •••
     (a 28pt circle). On NWDesignTool: a `bgRaised` bar with 4pt padding, radius 12, 2pt between
     items, a 1px `lineStrong` line and the popover's shadow; items 28pt tall, 10pt padding, radius
     8, 6pt gap, a 13pt glyph in `textSecondary`, the label in 12.5 `textPrimary`. (DZCanvas draws it
     smaller: a 32pt bar at radius 10 with 26pt items at radius 6 in 12.) Comment pins a comment to
-    the board's element you pick next; Tweak opens the Tweak tab.
+    the board's element you pick next; Tweak opens the Tweak tab. Built as DZCanvas draws it,
+    over the board picked whole last (not an element): its bottom 2pt above the board's label,
+    its leading edge at the frame's middle (DZCanvas: 332 over a board from 44 to 582), kept 16pt
+    inside the canvas's sides and 4pt from its top, where it may cover the label of a board at the
+    very top. Items fill `bgHover` on hover. Variations and Duplicate act on that board; ••• holds
+    Play for an interactive board (`is_interactive`) and is disabled otherwise.
+  - **Moving a board** (not drawn): with Select, a drag that starts on a board's label, or on a
+    board picked whole, moves it; any other drag pans. It follows the pointer and is written
+    once, where it lands.
+  - **Notes** (not drawn): a page's title notes (`title1`) and stickies sit on the canvas under
+    the boards, read-only, scaled with it: a title in 64pt semibold `textPrimary` (canvas points)
+    wrapping at its `maxW`; a sticky's words in 16 on a `bgRaised` card with a `lineStrong` line,
+    radius 8, 16pt padding, 240 wide unless it says. Drawings aren't drawn.
   - **Selection** (built; Select): a click on a board picks the element under it, a click on a
     board's label (or where the board names nothing) picks the board whole, shift adds or takes
     away, and a click on the empty canvas clears. Selected elements wear `NWSelectionRing` (Tweak,
@@ -7948,7 +7974,8 @@ selected on the canvas already ticked.
 appearances): `NWDesignCanvas`, `NWBoardFrame`, `NWCanvasToolbar`, `NWDesignSystemChip`,
 `NWSelectionRing` (with `NWSelectionTag`), `NWCommentPin`, `NWCommentThread`, `NWCommentCard`,
 the Tweak parts `NWTweakRow` (with `NWTweakHeader`, `NWTweakGroup`, `NWTweakNote` and
-`NWTweakFooter`), `NWTokenChip` (with `NWTokenChipFlow`) and `NWTweakScope`, and the page parts
+`NWTweakFooter`), `NWTokenChip` (with `NWTokenChipFlow`) and `NWTweakScope`, `NWBoardActions`
+(with `NWDirectionTile`, `NWCanvasNote` and `NWBoardPresentation`), and the page parts
 `NWDesignCard`, `NWDesignSystemCard`, `NWDesignStartCard`, `NWDesignHeader` and
 `NWDesignPaneTabs`. The rest of the table is not built yet.
 
@@ -7963,7 +7990,7 @@ both appearances:
 | `NWBoardFrame(board, isSelected:)` | A board with its label above, its size in mono, and a `running` ring when selected |
 | `NWSelectionRing(element)` | Picks an element inside a board for comments or tweaks (built: `.selected` with its tag, `.hover` the ring alone) |
 | `NWCommentPin(number)` | The numbered pin, lantern "because a pin is something you asked for" (built) |
-| `NWBoardActions(selection)` | Comment, Tweak, Variations, Duplicate, and •••, floating over the selected board |
+| `NWBoardActions(selection)` | Comment, Tweak, Variations, Duplicate, and •••, floating over the selected board (built, `.regular` and DZCanvas's `.compact`; with `NWDirectionTile`, `NWCanvasNote` and `NWBoardPresentation`) |
 | `NWCanvasToolbar(tool:, zoom:)` | Select, comment, pan, and the zoom |
 | `NWCommentCard(comment)` | A comment in the chat pane's Comments tab (and the chat) (built) |
 | `NWCommentThread(comment)` | A comment on the canvas beside its pin, with Resolve and the agent's reply (built) |
