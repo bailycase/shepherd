@@ -114,7 +114,8 @@ with its SHA-256, listed or not) and `designBoard(_:path:)`.
   on disk, so a base from before a relaunch still compares. A write naming a `baseRevision` the
   design has moved past is refused (`stale_revision`): read again and redo the change once. A
   write that changes nothing moves nothing.
-- **Atomic.** Files are written to a temporary file and renamed into place.
+- **Atomic.** Files are written to a temporary file and renamed into place. A board is never written
+  through a linked folder that leads outside the design.
 - **Index entries need files.** A board the index adds or changes must have its file. A board it
   removes loses its file.
 - **Checks** (`DesignBoardCheck`, ShepherdProtocol) before a board is written:

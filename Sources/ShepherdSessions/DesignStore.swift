@@ -198,8 +198,16 @@ public final class DesignStore: @unchecked Sendable {
             }
             let url = try self.fileURL(id, path)
             do {
-                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                let folder = url.deletingLastPathComponent()
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                // A linked folder could lead outside the design: write only inside it.
+                guard let project = self.projectFolder(for: id),
+                      (folder.resolvingSymlinksInPath().path + "/").hasPrefix(project.resolvingSymlinksInPath().path + "/") else {
+                    throw DesignStoreError.invalidPath(path.rawValue, .parentReference)
+                }
                 try data.write(to: url, options: .atomic)
+            } catch let error as DesignStoreError {
+                throw error
             } catch {
                 throw DesignStoreError.io("could not write \(path): \(error.localizedDescription)")
             }
