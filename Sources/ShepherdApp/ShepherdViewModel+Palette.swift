@@ -74,9 +74,9 @@ extension ShepherdViewModel {
                                                keys: keys)
         }
 
-        // Subagents, live and recent.
+        // Subagents, live and recent: a thread's, never a design's agent's.
         for (agentID, children) in childRuns.rows {
-            guard let agent = state.agents.first(where: { $0.id == agentID }) else { continue }
+            guard let agent = state.agents.first(where: { $0.id == agentID }), !state.isDesignAgent(agent) else { continue }
             for child in children {
                 items.append(PaletteItem(id: "child.\(child.id)", kind: .child(agentID: agentID, child: child),
                                          section: .subagents, title: child.label,
@@ -110,7 +110,7 @@ extension ShepherdViewModel {
                                      title: agent.name, subtitle: context, icon: "bubble.left"))
         }
         for connection in remoteHosts.connections where connection.phase == .connected {
-            for agent in connection.state.agents {
+            for agent in connection.state.agents where !connection.state.isDesignAgent(agent) {
                 items.append(PaletteItem(id: "remoteAgent.\(connection.id.uuidString).\(agent.id.rawValue)",
                                          kind: .remoteAgent(hostID: connection.id, agentID: agent.id), section: .agents,
                                          title: agent.name, subtitle: connection.config.name, icon: "bubble.left"))
@@ -189,9 +189,14 @@ extension ShepherdViewModel {
         return "\(parent) · \(status)"
     }
 
-    /// Agents' current sessions for content search, resolved off the state.
+    /// Threads' current sessions for content search, resolved off the state. A design's chat is
+    /// no thread, so its agent's session is never searched.
     var paletteSearchTargets: [(id: AgentID, piSessionID: String, cwd: String)] {
-        state.agents.map { agent in
+        Self.paletteSearchTargets(in: state)
+    }
+
+    static func paletteSearchTargets(in state: ShepherdState) -> [(id: AgentID, piSessionID: String, cwd: String)] {
+        state.agents.filter { !state.isDesignAgent($0) }.map { agent in
             let cwd = state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd
                 ?? state.spaces.first { $0.id == agent.spaceID }?.path
                 ?? NSHomeDirectory()
@@ -205,7 +210,8 @@ extension ShepherdViewModel {
         matches.compactMap { match in
             let id = "agent.\(match.agentID.rawValue)"
             guard !existing.contains(id),
-                  let agent = state.agents.first(where: { $0.id == match.agentID }) else { return nil }
+                  let agent = state.agents.first(where: { $0.id == match.agentID }),
+                  !state.isDesignAgent(agent) else { return nil }
             let space = state.spaces.first { $0.id == agent.spaceID }
             return PaletteItem(
                 id: "fuzzy.\(match.agentID.rawValue)",
