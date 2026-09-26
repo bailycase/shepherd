@@ -30,9 +30,10 @@ enum RemoteSamples {
         let space = Space(name: "demo", path: "/tmp/demo")
         let pane = LeafPane(cwd: "/tmp/demo")
         let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
-        // The live fields ride the wire (state.json drops `waitingOn`; a remote client needs it).
+        // The live fields ride the wire (state.json drops `waitingOn` and `waitingReason`; a remote
+        // client needs them).
         let agent = Agent(name: "pi-1", spaceID: space.id, tabID: tab.id, paneID: pane.id, status: .blocked,
-                          lastActiveAt: 1_790_000_000_000, waitingOn: "Which base?")
+                          lastActiveAt: 1_790_000_000_000, waitingOn: "Which base?", waitingReason: "base?")
         return ShepherdState(spaces: [space], tabs: [tab], agents: [agent])
     }()
 

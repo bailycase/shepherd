@@ -66,11 +66,14 @@ public struct FleetDigest: Equatable, Sendable {
         public var runID: String
         public var label: String
         public var text: String
+        /// The subagent's own word or two for its question ("retention?"), when it gave one.
+        public var short: String?
 
-        public init(runID: String, label: String, text: String) {
+        public init(runID: String, label: String, text: String, short: String? = nil) {
             self.runID = runID
             self.label = label
             self.text = text
+            self.short = short
         }
     }
 
@@ -102,7 +105,8 @@ public struct FleetDigest: Equatable, Sendable {
         }
         subagentQuestion = (snapshot.subagents ?? []).first(where: \.needsAttention).map { run in
             SubagentQuestion(runID: run.runID, label: run.role ?? run.label,
-                             text: run.question?.text ?? run.attentionText ?? "Waiting on you")
+                             text: run.question?.text ?? run.attentionText ?? "Waiting on you",
+                             short: FleetModel.shortReason(run.question?.short))
         }
         liveSubagents = (snapshot.subagents ?? []).contains { !$0.isTerminal }
         let entries = snapshot.messages + snapshot.provisional
@@ -390,7 +394,7 @@ public struct FleetModel: Equatable, Sendable {
                 }
             }
             items.append(FleetAttention(ref: ref, origin: origin, thread: agent.name, question: question.title,
-                                        message: question.message, reason: "asked you", reply: reply,
+                                        message: question.message, reason: shortReason(agent.waitingReason) ?? "asked you", reply: reply,
                                         dialogID: question.dialogID, session: digest?.session, hostName: hostName,
                                         hostTag: hostTag, since: since))
         } else if agent.status == .blocked {
@@ -400,11 +404,17 @@ public struct FleetModel: Equatable, Sendable {
         }
         if let asking = digest?.subagentQuestion {
             items.append(FleetAttention(ref: ref, origin: .subagent(asking.label), thread: agent.name,
-                                        question: asking.text, reason: asking.label, reply: .open,
+                                        question: asking.text, reason: asking.short ?? asking.label, reply: .open,
                                         session: digest?.session, runID: asking.runID, hostName: hostName,
                                         hostTag: hostTag, since: since))
         }
         return items
+    }
+
+    /// An agent's own short reason as a chip (one line, cut as the Mac's), or nil when it gave none.
+    static func shortReason(_ short: String?) -> String? {
+        let line = short?.split(whereSeparator: \.isWhitespace).joined(separator: " ") ?? ""
+        return line.isEmpty ? nil : NeedsYouReason.shortened(line)
     }
 
     /// A select answers in place when its options fit as a row of buttons.
@@ -469,5 +479,23 @@ public struct FleetModel: Equatable, Sendable {
 
     static func lastComponent(_ path: String) -> String {
         path.split(separator: "/").last.map(String.init) ?? path
+    }
+}
+
+/// The text of a Needs you row's reason chip, shared by the Mac's sidebar and the iPad's.
+public enum NeedsYouReason {
+    /// The longest chip ("approve plan"); the Mac reads it as `NWSidebarMetrics.reasonLength`.
+    public static let length = 14
+
+    /// One line, at most `limit` characters: cut at a word where one ends past the middle, with
+    /// an ellipsis.
+    public static func shortened(_ text: String, limit: Int = length) -> String {
+        let flat = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard flat.count > limit else { return flat }
+        let clipped = flat.prefix(limit - 1)
+        if let space = clipped.lastIndex(of: " "), clipped.distance(from: clipped.startIndex, to: space) >= limit / 2 {
+            return clipped[..<space].trimmingCharacters(in: .punctuationCharacters) + "…"
+        }
+        return clipped.trimmingCharacters(in: .whitespaces) + "…"
     }
 }

@@ -185,7 +185,7 @@ struct AgentTurn: View, Equatable {
                 switch item {
                 case .activity(_, let bursts):
                     ActivityLinesView(bursts: bursts, review: review, entering: entering).equatable()
-                case .thinking(_, _, _, true, _):
+                case .thinking(_, _, _, _, true, _):
                     itemView(item)
                 default:
                     itemView(item).nwArrival(entering, Self.entrance(item), edge: .bottom)
@@ -216,15 +216,11 @@ struct AgentTurn: View, Equatable {
 
     @ViewBuilder private func itemView(_ item: NativeTurnPresentation.Item) -> some View {
         switch item {
-        case .thinking(let id, let text, let seconds, let live, _):
-            // One view for live and finished thinking, so "Thinking…" settles into "Thought
-            // for Ns" in place.
-            live
-                ? NWThinking.live()
-                : NWThinking(nativeThoughtText(seconds), text: text, isExpanded: Binding(
-                    get: { openThinking.contains(id) },
-                    set: { if $0 { openThinking.insert(id) } else { openThinking.remove(id) } }),
-                    spokenTitle: nativeThoughtSpokenText(seconds))
+        case .thinking(let id, _, let blocks, let seconds, let live, _):
+            ThinkingRow(seconds: seconds, blocks: blocks, live: live, isExpanded: openThinking.contains(id)) {
+                if openThinking.remove(id) == nil { openThinking.insert(id) }
+            }
+            .equatable()
         case .prose(_, _, let blocks, let openFence):
             // The fence a streaming reply is writing is colored as it grows, not on every chunk.
             Prose(blocks: blocks, writingFence: live && openFence).equatable()
