@@ -11,21 +11,32 @@
 # ad-hoc build leaves on Autoupdate: it has no Team ID prefix and no
 # provisioning profile behind it.
 #
+# The pi engine's node (Contents/Helpers/node) is the one exception: it is signed slice by
+# slice with the engine's entitlements (scripts/sign-engine.sh), because V8 cannot run under the
+# hardened runtime without allow-jit. An app that carries node refuses to sign without them.
+#
 # usage: scripts/sign-app.sh <Shepherd.app> <identity> <entitlements.plist>
+#                            [<engine.entitlements> <engine-x86_64.entitlements>]
 #   identity "-" signs ad-hoc, without the hardened runtime or a secure timestamp.
 set -euo pipefail
 
-if [[ $# -ne 3 ]]; then
-  echo "usage: $0 <app> <identity|-> <entitlements.plist>" >&2
+if [[ $# -ne 3 && $# -ne 5 ]]; then
+  echo "usage: $0 <app> <identity|-> <entitlements.plist> [<engine.entitlements> <engine-x86_64.entitlements>]" >&2
   exit 64
 fi
 app=$1
 identity=$2
 entitlements=$3
+engine_entitlements=${4:-}
+engine_x86_64_entitlements=${5:-}
 
 [[ -d "$app/Contents" ]] || { echo "error: not an app bundle: $app" >&2; exit 66; }
 [[ -f "$entitlements" ]] || { echo "error: no entitlements file: $entitlements" >&2; exit 66; }
 plutil -lint "$entitlements" >/dev/null
+if [[ -e "$app/Contents/Helpers/node" && -z "$engine_entitlements" ]]; then
+  echo "error: $app carries the pi engine; pass the engine's entitlements" >&2
+  exit 64
+fi
 
 # Physical path of a file, so paths reached through a framework's
 # Versions/Current symlink compare equal to the paths `find` reports.
@@ -59,8 +70,9 @@ main_executable() {
 
 # Every nested code item: bundles that contain code, plus loose Mach-O files
 # that are not some bundle's main executable (Sparkle's Autoupdate, the
-# embedded shepherd-cli, dylibs). `find` does not follow symlinks, so each
-# framework version is visited once, at its real path.
+# embedded shepherd-cli, the engine's node, dylibs, and Node addons, which
+# lose their execute bit in npm tarballs). `find` does not follow symlinks, so
+# each framework version is visited once, at its real path.
 nested_code() {
   local bundle exe file owned
   owned=$(main_executable "$app")$'\n'
@@ -77,14 +89,22 @@ nested_code() {
     [[ "$(file -b "$file")" == Mach-O* ]] || continue
     grep -Fxq -- "$file" <<<"$owned" && continue
     echo "$file"
-  done < <(find "$app/Contents" -type f \( -perm -u+x -o -name '*.dylib' -o -name '*.so' \))
+  done < <(find "$app/Contents" -type f \( -perm -u+x -o -name '*.dylib' -o -name '*.so' -o -name '*.node' \))
 }
 
 # Deepest first: anything inside a bundle is signed before the bundle seals it.
 items=$(nested_code | awk -F/ '{ print NF "\t" $0 }' | sort -rn -k1,1 | cut -f2-)
+engine_node="$app/Contents/Helpers/node"
 
 while IFS= read -r item; do
   [[ -n "$item" ]] || continue
+  if [[ "$item" == "$engine_node" ]]; then
+    runtime=()
+    [[ "$identity" != "-" ]] && runtime=(--runtime)
+    "$(dirname "$0")/sign-engine.sh" ${runtime[@]+"${runtime[@]}"} "$item" "$identity" \
+      "$engine_entitlements" "$engine_x86_64_entitlements"
+    continue
+  fi
   case "$item" in
     *.app|*.xpc|*.appex|*.systemextension) keep=(--preserve-metadata=entitlements) ;;
     *) keep=() ;;

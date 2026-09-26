@@ -450,5 +450,64 @@ class VerifyTests(unittest.TestCase):
             self.assertIn("Resources/pi-engine is missing", problems)
 
 
+class EntitlementsTests(unittest.TestCase):
+    """What node may do under the hardened runtime: JIT everywhere, and unsigned executable
+    memory on x86_64 only, which V8 there needs to start. Nothing else."""
+
+    def entitlements(self, name):
+        return plistlib.loads(read("App", name).encode())
+
+    def test_arm64_gets_only_jit(self):
+        self.assertEqual(self.entitlements("Engine.entitlements"), {"com.apple.security.cs.allow-jit": True})
+
+    def test_x86_64_also_gets_unsigned_executable_memory(self):
+        self.assertEqual(self.entitlements("Engine-x86_64.entitlements"), {
+            "com.apple.security.cs.allow-jit": True,
+            "com.apple.security.cs.allow-unsigned-executable-memory": True,
+        })
+
+
+class SignAppTests(unittest.TestCase):
+    def test_sign_app_takes_the_engine_entitlements_and_finds_node_addons(self):
+        script = read("scripts", "sign-app.sh")
+        self.assertIn("[<engine.entitlements> <engine-x86_64.entitlements>]", script)
+        self.assertIn("-name '*.node'", script)
+        self.assertIn('sign-engine.sh"', script)
+
+    @unittest.skipUnless(sys.platform == "darwin" and all(shutil.which(t) for t in ("codesign", "lipo", "cc")),
+                         "needs macOS with codesign, lipo and a compiler")
+    def test_node_is_signed_slice_by_slice_with_the_engine_entitlements(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            app = os.path.join(scratch, "Shepherd.app")
+            for folder in ("MacOS", "Helpers", "Resources/pi-engine"):
+                os.makedirs(os.path.join(app, "Contents", folder))
+            with open(os.path.join(app, "Contents", "Info.plist"), "wb") as f:
+                plistlib.dump({"CFBundleExecutable": "Shepherd", "CFBundleIdentifier": "com.example.engine-test"}, f)
+            source = os.path.join(scratch, "main.c")
+            with open(source, "w") as f:
+                f.write("int main(void) { return 0; }\n")
+            env = {**os.environ, "TMPDIR": scratch}
+            for name, archs in (("MacOS/Shepherd", ["-arch", "arm64"]),
+                                ("Helpers/node", ["-arch", "arm64", "-arch", "x86_64"])):
+                subprocess.run(["cc", *archs, "-o", os.path.join(app, "Contents", name), source], check=True, env=env)
+            sign = [os.path.join(ROOT, "scripts", "sign-app.sh"), app, "-", os.path.join(ROOT, "App", "Shepherd.entitlements")]
+
+            refused = subprocess.run(sign, capture_output=True, text=True, env=env)
+            self.assertEqual(refused.returncode, 64, "an app carrying node needs the engine entitlements")
+
+            engine = [os.path.join(ROOT, "App", "Engine.entitlements"), os.path.join(ROOT, "App", "Engine-x86_64.entitlements")]
+            subprocess.run(sign + engine, check=True, capture_output=True, env=env)
+            node = os.path.join(app, "Contents", "Helpers", "node")
+            for arch, expected in (("arm64", {"com.apple.security.cs.allow-jit"}),
+                                   ("x86_64", {"com.apple.security.cs.allow-jit",
+                                               "com.apple.security.cs.allow-unsigned-executable-memory"})):
+                shown = subprocess.run(["codesign", "-d", "--entitlements", "-", "--xml", "-a", arch, node],
+                                       capture_output=True, check=True).stdout
+                self.assertEqual(set(plistlib.loads(shown)), expected, arch)
+            main = subprocess.run(["codesign", "-d", "--entitlements", "-", "--xml",
+                                   os.path.join(app, "Contents", "MacOS", "Shepherd")], capture_output=True).stdout
+            self.assertNotIn(b"allow-jit", main, "the app never gets the engine's entitlements")
+
+
 if __name__ == "__main__":
     unittest.main()
