@@ -169,4 +169,27 @@ struct PiLauncherTests {
         #expect(setup.prepare() != nil)
         #expect(try FileManager.default.contentsOfDirectory(atPath: theirs.path).isEmpty)
     }
+
+    /// Startup files that point PI_CODING_AGENT_DIR at Shepherd's own pi home make that folder
+    /// no "your pi" to read, but the terminal pi would share the home: no pi starts there, and
+    /// nothing is written into it.
+    @Test func startupFilesThatPointYourPiAtShepherdsHomeStartNoPi() throws {
+        let dir = try makeScratchDirectory("yours-ours")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let support = dir.appendingPathComponent("support", isDirectory: true)
+        let zdotdir = dir.appendingPathComponent("zdot", isDirectory: true)
+        for folder in [support, zdotdir] { try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true) }
+        try "export PI_CODING_AGENT_DIR='\(support.path)/pi'\n".write(to: zdotdir.appendingPathComponent(".zshenv"), atomically: true, encoding: .utf8)
+        var environment = ProcessInfo.processInfo.environment
+        environment["ZDOTDIR"] = zdotdir.path
+        environment["HOME"] = dir.path
+
+        let locator = YourPiLocator.forEnvironment(environment, supportDirectory: support, honoursOverride: false)
+        let setup = PiSetup(engine: PiSetup.app.engine, home: support.appendingPathComponent("pi", isDirectory: true), yourPi: locator)
+        let problem = try #require(setup.prepare())
+        #expect(locator.resolve() == nil, "a folder inside a support folder is never read as your pi")
+        #expect(locator.refusedDirectory()?.standardizedFileURL.path == support.appendingPathComponent("pi").path)
+        #expect(problem.message.contains("PI_CODING_AGENT_DIR"))
+        #expect(!FileManager.default.fileExists(atPath: setup.home.path), "nothing was written into the shared folder")
+    }
 }

@@ -64,7 +64,7 @@ public struct PiSetup: Sendable {
     }
 
     static func prepare(_ files: PiHome, yourPi: YourPiLocator) -> PiHomeProblem? {
-        if let problem = check(files, yourPi: yourPi.resolve()) { return problem }
+        if let problem = check(files, yourPi: yourPi.resolve(), refused: yourPi.refusedDirectory()) { return problem }
         do {
             for note in try files.install() { ShepherdLog.info(note) }
         } catch {
@@ -74,9 +74,19 @@ public struct PiSetup: Sendable {
     }
 
     /// The startup guards: the home and its sessions must not resolve inside "your pi", nor
-    /// "your pi" inside them, and "your pi" must not hold the marker of a Shepherd home. Reads
+    /// "your pi" inside them, and "your pi" must not hold the marker of a Shepherd home. A folder
+    /// the user's startup files name that was refused as "your pi" for being inside a support
+    /// folder (`refused`) must not overlap the home either: their terminal pi would share it. Reads
     /// only.
-    public static func check(_ files: PiHome, yourPi: YourPi?) -> PiHomeProblem? {
+    public static func check(_ files: PiHome, yourPi: YourPi?, refused: URL? = nil) -> PiHomeProblem? {
+        if let refused {
+            let theirs = PiHome.canonical(refused.path)
+            for mine in [files.directory, files.sessions].map({ PiHome.canonical($0.path) })
+            where PiHome.isInside(mine, theirs) || PiHome.isInside(theirs, mine) {
+                return PiHomeProblem("Your pi (PI_CODING_AGENT_DIR in your shell, \(refused.path)) overlaps Shepherd's own pi home, so Shepherd "
+                    + "won't start pi there. Point PI_CODING_AGENT_DIR in your shell at your own pi.")
+            }
+        }
         guard let yourPi else { return nil }
         let ours = [files.directory, files.sessions].map { PiHome.canonical($0.path) }
         let theirs = ([yourPi.agentDirectory] + (yourPi.sessionDirectory.map { [$0] } ?? [])).map { PiHome.canonical($0.path) }

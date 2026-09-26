@@ -100,6 +100,21 @@ struct PiHomeTests {
         #expect(PiSetup.check(Self.home, yourPi: nil) == nil)
     }
 
+    /// A folder the startup files name, refused as "your pi" for being inside a support folder,
+    /// still may not overlap the home: the terminal pi would share it. One inside another
+    /// edition's support folder, apart from this home, is only not read.
+    @Test(arguments: [
+        ("/s/support/pi", true),
+        ("/s/support/pi/agent", true),
+        ("/s/support", true),
+        ("/s/support/pi/sessions", true),
+        ("/s/other-edition/pi", false),
+    ] as [(String, Bool)])
+    func aFolderRefusedAsYourPiStillMayNotOverlapTheHome(_ refused: String, _ overlaps: Bool) {
+        let files = PiHome(directory: URL(fileURLWithPath: "/s/support/pi"), engine: Self.engine)
+        #expect((PiSetup.check(files, yourPi: nil, refused: URL(fileURLWithPath: refused)) != nil) == overlaps)
+    }
+
     // MARK: Your pi
 
     static let supportFolders = [URL(fileURLWithPath: "/u/Library/Application Support/Shepherd"),
@@ -124,6 +139,8 @@ struct PiHomeTests {
                       "~/Library/Application Support/Shepherd/pi/agent"])
     func yourPiInsideASupportFolderIsRefused(_ dir: String) {
         #expect(YourPiLocator.interpret(dir: dir, sessions: nil, home: "/u", supportFolders: Self.supportFolders) == nil)
+        let refused = YourPiLocator.answer(dir: dir, sessions: nil, home: "/u", supportFolders: Self.supportFolders).refused
+        #expect(refused?.path == (dir.hasPrefix("~/") ? "/u" + dir.dropFirst() : dir), "kept for the guards")
     }
 
     /// Where an agent's old conversation may be: the folder their pi is set to, then theirs and
