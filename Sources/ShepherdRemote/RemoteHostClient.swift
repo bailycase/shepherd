@@ -484,6 +484,83 @@ public final class RemoteHostClient: @unchecked Sendable {
         return runs
     }
 
+    /// Reads or saves the host's root instructions for pi, and answers with its files as they
+    /// are afterwards. A host without `instructionsCapability` has none: this throws
+    /// `update_required` before sending anything.
+    @discardableResult
+    public func instructions(_ request: RemoteInstructionsRequest = .fetch) async throws -> InstructionsSnapshot {
+        guard capabilities.contains(RemoteProtocol.instructionsCapability) else {
+            throw RemoteHostClientError.rejected(
+                code: "update_required", message: "Update Shepherd on the host to edit its instructions from here."
+            )
+        }
+        let reply = try await self.request { .instructions(id: $0, request: request) }
+        switch reply {
+        case .instructions(_, let snapshot): return snapshot
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected instructions reply")
+        }
+    }
+
+    /// Reads or acts on the host's suggested instructions (Settings ▸ Experiments), and answers
+    /// with its suggestions as they are afterwards. A host without `suggestionsCapability` has no
+    /// experiments: this throws `update_required` before sending anything.
+    @discardableResult
+    public func suggestions(_ request: RemoteSuggestionsRequest = .fetch) async throws -> SuggestionsSnapshot {
+        guard capabilities.contains(RemoteProtocol.suggestionsCapability) else {
+            throw RemoteHostClientError.rejected(
+                code: "update_required", message: "Update Shepherd on the host to use its experiments from here."
+            )
+        }
+        let reply = try await self.request { .suggestions(id: $0, request: request) }
+        switch reply {
+        case .suggestions(_, let snapshot): return snapshot
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected suggestions reply")
+        }
+    }
+
+    /// Reads or changes one of the host's settings (Settings on the iPhone and the iPad), and
+    /// answers with its settings as they are afterwards. A host without `hostSettingsCapability`
+    /// shares none: this throws `update_required` before sending anything.
+    @discardableResult
+    public func hostSettings(_ request: RemoteHostSettingsRequest = .fetch) async throws -> HostSettings {
+        guard capabilities.contains(RemoteProtocol.hostSettingsCapability) else {
+            throw RemoteHostClientError.rejected(
+                code: "update_required", message: "Update Shepherd on the host to see its settings from here."
+            )
+        }
+        let reply = try await self.request { .hostSettings(id: $0, request: request) }
+        switch reply {
+        case .hostSettings(_, let settings): return settings
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected settings reply")
+        }
+    }
+
+    /// Reads or changes the host's agent skills (Settings ▸ Skills), and answers with its skills
+    /// as they are afterwards, or with a repository's skills for `lookUp`. Looking up, installing
+    /// and checking for updates fetch from git on the host, so they wait longer. A host without
+    /// `skillsCapability` has none: this throws `update_required` before sending anything.
+    @discardableResult
+    public func skills(_ request: RemoteSkillsRequest = .fetch) async throws -> RemoteSkillsResult {
+        guard capabilities.contains(RemoteProtocol.skillsCapability) else {
+            throw RemoteHostClientError.rejected(
+                code: "update_required", message: "Update Shepherd on the host to manage its skills from here."
+            )
+        }
+        let timeout: TimeInterval = switch request {
+        case .lookUp, .install, .checkUpdates: 180
+        default: RemoteHostClient.requestTimeout
+        }
+        let reply = try await self.request(timeout: timeout) { .skills(id: $0, request: request) }
+        switch reply {
+        case .skills(_, let result): return result
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected skills reply")
+        }
+    }
+
     public func detach(sessionID: SessionID) {
         queue.async { self.sendRequest(.detach(sessionID: sessionID)) }
     }
@@ -741,7 +818,8 @@ public final class RemoteHostClient: @unchecked Sendable {
         case .nativeThread(let id, _), .uploadResult(let id, _), .creationOptions(let id, _), .agentResult(let id, _), .helloOk(let id, _, _), .ok(let id), .paneOpened(let id, _),
              .state(let id, _), .attached(let id, _),
              .dirListing(let id, _, _, _), .models(let id, _, _, _, _),
-             .spaceAdded(let id, _), .agentCreated(let id, _), .automationResult(let id, _):
+             .spaceAdded(let id, _), .agentCreated(let id, _), .automationResult(let id, _), .instructions(let id, _),
+             .suggestions(let id, _), .hostSettings(let id, _), .skills(let id, _):
             resumePending(id: id, with: reply)
         case .error(let id, _, _):
             resumePending(id: id, with: reply)

@@ -6,12 +6,13 @@ import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
 
-/// The view model over a real server: restoring a persisted workspace, moving between
-/// agents and spaces, pane focus, cold parking, and sidebar drag-reordering.
+/// The view model over a real server: restoring a persisted workspace, moving between agents
+/// and pages, pane focus, and cold parking.
 @Suite("Workspace navigation", .mainActorExclusive)
 @MainActor
 struct WorkspaceNavigationTests {
-    @Test func restoringAPersistedWorkspaceSelectsItsSpaceWithNoLayoutOnScreen() async throws {
+    /// With no agent to show, the main column shows the New thread page.
+    @Test func restoringAWorkspaceWithoutAgentsShowsNewThread() async throws {
         let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
@@ -22,9 +23,24 @@ struct WorkspaceNavigationTests {
         #expect(vm.state.spaces == [space] && vm.state.tabs == [tab])
         #expect(vm.selectedSpaceID == space.id)
         #expect(vm.activeTabID == nil)
+        #expect(vm.shownDestination == .newThread)
     }
 
-    @Test func adjacentAgentSelectionFollowsSidebarOrderAndWraps() async throws {
+    /// At launch the most recently active agent shows.
+    @Test func restoringAWorkspaceShowsTheMostRecentlyActiveAgent() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        var agents = ["old", "recent", "untimed"].enumerated().map { Fixture.agent($1, in: space, order: $0) }
+        agents[0].agent.lastActiveAt = 10
+        agents[1].agent.lastActiveAt = 20
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents))
+        #expect(vm.selectedAgentID == agents[1].agent.id)
+        #expect(vm.shownDestination == nil)
+    }
+
+    /// ⌘↓ walks Recents (untimed agents newest first) and wraps.
+    @Test func adjacentAgentSelectionFollowsRecentsAndWraps() async throws {
         let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
@@ -32,48 +48,58 @@ struct WorkspaceNavigationTests {
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents))
         let ids = agents.map(\.agent.id)
 
-        vm.selectAgent(ids[0])
+        vm.selectAgent(ids[2])
         vm.selectAdjacentAgent(1)
         #expect(vm.selectedAgentID == ids[1])
         vm.selectAdjacentAgent(1)
         vm.selectAdjacentAgent(1)
-        #expect(vm.selectedAgentID == ids[0])
-        vm.selectAdjacentAgent(-1)
         #expect(vm.selectedAgentID == ids[2])
+        vm.selectAdjacentAgent(-1)
+        #expect(vm.selectedAgentID == ids[0])
     }
 
-    @Test func collapsingASpaceDropsItsAndItsNestedSpacesAgentsFromTheOrder() async throws {
+    /// A page covers the thread without unmounting it; picking a row brings the thread back as
+    /// a flip, and the sidebar is asked to reveal that row.
+    @Test func aPageHidesTheThreadAndPickingARowReturnsToIt() async throws {
         let app = try AppHarness()
         defer { app.stop() }
-        let root = Fixture.space("root", path: app.dir.path)
-        let child = Fixture.space("child", path: app.dir.appendingPathComponent("child").path)
-        let other = Fixture.space("other", path: "/tmp/elsewhere-\(UUID().uuidString)")
-        let agents = [Fixture.agent("root-agent", in: root), Fixture.agent("child-agent", in: child), Fixture.agent("other-agent", in: other)]
-        let vm = try await app.start(with: Fixture.state(spaces: [root, child, other], agents: agents))
-        #expect(vm.orderedAgents.map(\.name) == ["root-agent", "child-agent", "other-agent"])
+        let space = Fixture.space(path: app.dir.path)
+        let agents = (0..<2).map { Fixture.agent("a\($0)", in: space, order: $0) }
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents))
+        vm.selectAgent(agents[0].agent.id)
+        let mounted = vm.mountedTabs.map(\.id)
 
-        vm.toggleSpaceCollapsed(root.id)
+        for page in MainDestination.allCases {
+            vm.openDestination(page)
+            #expect(vm.shownDestination == page)
+            #expect(vm.activeTabID == nil && vm.selectedSidebarRow == nil)
+            #expect(vm.mountedTabs.map(\.id) == mounted, "nothing unmounts behind a page")
+        }
+        #expect(vm.moreOpen, "Hosts opens More")
+        #expect(vm.newThread.place == NewThreadPlace(host: nil, space: space.id), "New thread opens in the thread's project")
 
-        #expect(vm.orderedAgents.map(\.name) == ["other-agent"])
-    }
-
-    @Test func selectingANestedAgentOpensItsCollapsedAncestorsAndTheLocalMachine() async throws {
-        let app = try AppHarness()
-        defer { app.stop() }
-        let root = Fixture.space("root", path: app.dir.path)
-        let child = Fixture.space("child", path: app.dir.appendingPathComponent("child").path)
-        let nested = Fixture.agent("nested", in: child)
-        let vm = try await app.start(with: Fixture.state(spaces: [root, child], agents: [nested]))
-        vm.collapsedSpaces = [root.id]
-        vm.localMachineCollapsed = true
         let before = vm.sidebarRevealRequest
-
-        vm.selectAgent(nested.agent.id)
-
-        #expect(vm.collapsedSpaces.isEmpty)
-        #expect(!vm.localMachineCollapsed)
-        #expect(vm.sidebarRevealTarget == AnyHashable(nested.agent.id))
+        vm.selectSidebarRow(.local(agents[1].agent.id))
+        #expect(vm.destination == nil && vm.shownDestination == nil)
+        #expect(vm.activeTabID == agents[1].tab.id)
+        #expect(vm.selectedSidebarRow == .local(agents[1].agent.id))
         #expect(vm.sidebarRevealRequest > before)
+    }
+
+    /// A space from the palette or the Space menu opens New thread there.
+    @Test func goingToASpaceOpensNewThreadInIt() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let one = Fixture.space("one", path: app.dir.appendingPathComponent("one").path)
+        let two = Fixture.space("two", path: app.dir.appendingPathComponent("two").path)
+        let agent = Fixture.agent("a", in: one)
+        let vm = try await app.start(with: Fixture.state(spaces: [one, two], agents: [agent]))
+
+        vm.selectSpace(two.id)
+
+        #expect(vm.shownDestination == .newThread)
+        #expect(vm.newThread.place == NewThreadPlace(host: nil, space: two.id))
+        #expect(vm.state.agents.count == 1, "nothing starts until you send")
     }
 
     @Test func returningToAnAgentRestoresThePaneLastFocusedInItsLayout() async throws {
@@ -270,62 +296,5 @@ struct WorkspaceNavigationTests {
         }
 
         #expect(scrollViews() == views, "no layout was rebuilt")
-    }
-
-    @Test func draggingAnAgentOntoASiblingReordersItsSpaceAndPersists() async throws {
-        let app = try AppHarness()
-        defer { app.stop() }
-        let (spaces, agents) = reorderFixture(in: app.dir)
-        let vm = try await app.start(with: Fixture.state(spaces: spaces, agents: agents))
-
-        let accepted = vm.dropAgent(payload: ShepherdViewModel.dragPayload(agent: agents[2].agent.id), on: agents[0].agent.id)
-
-        #expect(accepted)
-        #expect(vm.state.agents.map(\.name) == ["c", "a", "b", "d"])
-        let server = app.server
-        try await eventuallyOnMain("the new order to persist") { server.state.agents.map(\.name) == ["c", "a", "b", "d"] }
-    }
-
-    @Test func draggingASpaceOntoAnotherReordersSpacesAndPersists() async throws {
-        let app = try AppHarness()
-        defer { app.stop() }
-        let (spaces, agents) = reorderFixture(in: app.dir)
-        let vm = try await app.start(with: Fixture.state(spaces: spaces, agents: agents))
-
-        #expect(vm.dropSpace(payload: ShepherdViewModel.dragPayload(space: spaces[1].id), on: spaces[0].id))
-
-        #expect(vm.state.spaces.map(\.name) == ["two", "one"])
-        let server = app.server
-        try await eventuallyOnMain("the new space order to persist") { server.state.spaces.map(\.name) == ["two", "one"] }
-    }
-
-    @Test(arguments: ["cross-space", "self", "space-on-agent", "garbage", "agent-on-space"])
-    func invalidDropsLeaveTheOrderAlone(drop: String) async throws {
-        let app = try AppHarness()
-        defer { app.stop() }
-        let (spaces, agents) = reorderFixture(in: app.dir)
-        let vm = try await app.start(with: Fixture.state(spaces: spaces, agents: agents))
-        let a = agents[0].agent.id
-
-        let accepted = switch drop {
-        case "cross-space": vm.dropAgent(payload: ShepherdViewModel.dragPayload(agent: agents[3].agent.id), on: a)
-        case "self": vm.dropAgent(payload: ShepherdViewModel.dragPayload(agent: a), on: a)
-        case "space-on-agent": vm.dropAgent(payload: ShepherdViewModel.dragPayload(space: spaces[0].id), on: a)
-        case "agent-on-space": vm.dropSpace(payload: ShepherdViewModel.dragPayload(agent: a), on: spaces[0].id)
-        default: vm.dropAgent(payload: "garbage", on: a)
-        }
-
-        #expect(!accepted)
-        #expect(vm.state.agents.map(\.name) == ["a", "b", "c", "d"])
-        #expect(vm.state.spaces.map(\.name) == ["one", "two"])
-    }
-
-    /// Two spaces: a, b, c in the first, d in the second.
-    private func reorderFixture(in dir: URL) -> ([Space], [AgentFixture]) {
-        let one = Fixture.space("one", path: dir.appendingPathComponent("one").path)
-        let two = Fixture.space("two", path: dir.appendingPathComponent("two").path)
-        let agents = [Fixture.agent("a", in: one, order: 0), Fixture.agent("b", in: one, order: 1),
-                      Fixture.agent("c", in: one, order: 2), Fixture.agent("d", in: two, order: 0)]
-        return ([one, two], agents)
     }
 }

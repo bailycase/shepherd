@@ -165,9 +165,37 @@ struct AppSettingsTests {
         #expect(settings.uiDensity == 1 && settings.uiTextScale == 1)
         #expect(settings.sidebarWidth == AppSettings.defaultSidebarWidth)
         #expect(!settings.worktreeAutoMergePR && settings.childConcurrency == 4)
-        for key in AppSettings.Key.all {
+        for key in AppSettings.Key.resettable {
             #expect(store.object(forKey: key) == nil, "\(key) survived reset")
         }
+    }
+
+    /// Serve this Mac is Remote's own switch: a reset leaves the listener as it is, now and at
+    /// the next launch.
+    @Test func resetLeavesTheListenerServing() {
+        let store = Fixture.defaults()
+        let settings = AppSettings(store: store)
+        settings.remoteListenerEnabled = true
+
+        settings.resetToDefaults()
+
+        #expect(settings.remoteListenerEnabled)
+        #expect(AppSettings(store: store).remoteListenerEnabled)
+        #expect(Set(AppSettings.Key.all).subtracting(AppSettings.Key.resettable)
+                == [AppSettings.Key.remoteListenerEnabled, AppSettings.Key.remoteListenerPort, AppSettings.Key.skillsDirectoryKey])
+    }
+
+    /// The skills.sh key is a credential the user pasted: a reset of preferences keeps it.
+    @Test func resetKeepsTheSkillsDirectoryKey() {
+        let store = Fixture.defaults()
+        let settings = AppSettings(store: store)
+        settings.skillsDirectoryKey = "sk-test"
+        settings.skillsInSlashMenu = false
+
+        settings.resetToDefaults()
+
+        #expect(settings.skillsDirectoryKey == "sk-test" && settings.skillsInSlashMenu)
+        #expect(AppSettings(store: store).skillsDirectoryKey == "sk-test")
     }
 
     /// An empty model launches pi without `--model` rather than with an empty argument.
@@ -252,6 +280,16 @@ struct PiUpdateTests {
     ])
     func automaticUpdatesRunOnlyTheEnabledCommands(pi: Bool, extensions: Bool, commands: [[String]]) {
         #expect(PiUpdateManager.automaticUpdateArguments(updatePi: pi, updateExtensions: extensions) == commands)
+    }
+
+    @Test(arguments: [
+        (false, false, [[String]]()),
+        (true, false, [["update"]]),
+        (false, true, [["update", "--extensions"]]),
+        (true, true, [["update"], ["update", "--extensions"]]),
+    ])
+    func updateNowRunsWhateverThereIsToUpdateInOneRun(pi: Bool, extensions: Bool, commands: [[String]]) {
+        #expect(PiUpdateManager.updateNowArguments(pi: pi, extensions: extensions) == commands)
     }
 
     @Test func updatingIsOfferedUntilCheckedOrWhenOutdatedButNeverWhileBusy() {

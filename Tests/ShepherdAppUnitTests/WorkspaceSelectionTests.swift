@@ -53,7 +53,19 @@ struct WorkspaceSelectionTests {
         #expect(orders.allSatisfy { $0 == w.stableOrder })
     }
 
-    @Test func noAgentSelectedShowsAnEmptyWorkspace() {
+    /// A page (New thread, Automations, Hosts) hides every layout and keeps every one mounted,
+    /// in the same order: leaving it is a flip back, never a remount.
+    @Test(arguments: MainDestination.allCases)
+    func aPageHidesEveryLayoutAndKeepsThemMounted(page: MainDestination) {
+        let w = Workspace()
+        var selection = w.selecting(w.b.agent)
+        selection.destination = page
+        #expect(selection.activeTabID == nil)
+        #expect(selection.mountedTabs.map(\.id) == w.stableOrder)
+        #expect(selection.mountedTabs.filter(selection.isVisible).isEmpty)
+    }
+
+    @Test func noAgentSelectedShowsNoLayout() {
         let w = Workspace()
         let selection = w.selecting(nil)
         #expect(selection.activeTabID == nil)
@@ -225,34 +237,5 @@ struct WorkspaceSelectionTests {
         #expect(WorkspaceSelection.coldParkCandidates(hiddenSince: hidden, activeTabID: nil, terminalTabs: Set(hidden.keys), now: now).isEmpty)
         #expect(WorkspaceSelection.hotRetainLimit == 4)
         #expect(WorkspaceSelection.parkDelay == .seconds(30))
-    }
-}
-
-/// What the workspace says with no agent on screen.
-@Suite("Empty workspace")
-@MainActor
-struct EmptyWorkspaceTests {
-    nonisolated static let home = Fixture.space("home")
-    nonisolated static let runs = Space(name: "Automations", path: "~", hidden: true)
-
-    /// "No spaces yet" only when there are none anywhere: the hidden automations space is not
-    /// one, and a connected host's spaces are there in the sidebar to pick from.
-    @Test(arguments: [
-        ([Space](), 0, EmptyWorkspace.Variant.noSpaces),
-        ([runs], 0, .noSpaces),
-        ([], 3, .noSelection),
-        ([runs], 1, .noSelection),
-        ([home], 0, .noSelection),
-    ])
-    func noSpacesMeansNoneOnThisMacOrAnyHost(local: [Space], remote: Int, variant: EmptyWorkspace.Variant) {
-        #expect(EmptyWorkspace.variant(selected: nil, agents: [], localSpaces: local, remoteSpaces: remote) == variant)
-    }
-
-    @Test func aSelectedSpaceSaysWhetherItHasAgents() {
-        let agent = Fixture.agent("a", in: Self.home).agent
-        #expect(EmptyWorkspace.variant(selected: Self.home, agents: [], localSpaces: [Self.home], remoteSpaces: 2)
-            == .space(Self.home.id, hasAgents: false))
-        #expect(EmptyWorkspace.variant(selected: Self.home, agents: [agent], localSpaces: [Self.home], remoteSpaces: 0)
-            == .space(Self.home.id, hasAgents: true))
     }
 }

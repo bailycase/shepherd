@@ -187,6 +187,103 @@ struct ComposerMenuPerformanceTests {
         #expect(hidden.isEmpty, "highlighted models out of view: \(hidden)")
     }
 
+    // MARK: The composer around its menus
+
+    /// Bodies, derivations and menu rows counted while `change` runs and the window settles.
+    private func counting(_ thread: ComposerThread, _ change: () -> Void) async throws -> [String: Int] {
+        NWMenuDiagnostics.rowBodies = 0
+        NWRenderProbe.start()
+        change()
+        try await thread.settle()
+        var counts = NWRenderProbe.stop()
+        counts["menu.rows"] = NWMenuDiagnostics.rowBodies
+        return counts
+    }
+
+    /// Typing rebuilds the field, never the chips: past the first character (which lights Send),
+    /// a keystroke draws no chip row, so `ViewThatFits` keeps its measurements of them; and the
+    /// window's minimum-size pass, which each keystroke sets off, is answered for the row without
+    /// measuring it (`ComposerControlsMinimum`).
+    @Test func typingRedrawsTheFieldAndNoChipRow() async throws {
+        let thread = ComposerThread(animated: false)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        _ = try await counting(thread) { thread.store.draft = "h" }
+
+        for letter in ["e", "l", "l", "o"] {
+            let counts = try await counting(thread) { thread.store.draft += letter }
+            #expect(counts["composer.body", default: 0] >= 1, "'\(letter)': the field redrew: \(counts)")
+            #expect(counts["composer.chips", default: 0] == 0, "'\(letter)': \(counts)")
+            #expect(counts["composer.contextMeter", default: 0] == 0, "'\(letter)': the ring beside Send: \(counts)")
+            #expect(counts["thread.view", default: 0] == 0, "'\(letter)': \(counts)")
+            #expect(counts["layout.composerControlsMinimum", default: 0] >= 1, "'\(letter)': the minimum-size pass was answered: \(counts)")
+        }
+    }
+
+    /// "/" derives the slash menu's matches once, and each keystroke after it once more (never
+    /// per render, per row, or per key press), drawing no chip row and none of the thread.
+    @Test func typingACommandDerivesItsMatchesOncePerKeystroke() async throws {
+        let thread = ComposerThread(animated: false)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+
+        let open = try await counting(thread) { thread.openSlashMenu() }
+        #expect(open["composer.slashMatches", default: 0] == 1, "\(open)")
+        #expect(open["menu.rows", default: 0] > 0, "the menu opened: \(open)")
+        for draft in ["/r", "/re", "/rev", "/re"] {
+            let counts = try await counting(thread) { thread.store.draft = draft }
+            #expect(counts["composer.slashMatches", default: 0] == 1, "'\(draft)': \(counts)")
+            #expect(counts["composer.chips", default: 0] == 0, "'\(draft)': \(counts)")
+            #expect(counts["thread.view", default: 0] == 0, "'\(draft)': \(counts)")
+        }
+    }
+
+    /// ⇧⌘M opens the picker with one redraw of the composer and none of the thread, and closes
+    /// it the same way.
+    @Test func openingTheModelPickerRedrawsTheComposerOnceAndTheThreadNever() async throws {
+        let thread = ComposerThread(animated: false)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+
+        for (step, rows) in [("open", 1...Self.rowBudget), ("close", 0...0)] {
+            let counts = try await counting(thread) { thread.openModelPicker() }
+            #expect(counts["composer.body", default: 0] == 1, "\(step): \(counts)")
+            #expect(counts["thread.view", default: 0] == 0, "\(step): \(counts)")
+            #expect(rows.contains(counts["menu.rows", default: 0]), "\(step): \(counts)")
+        }
+    }
+
+    /// The thinking menu the same: one redraw of the composer, none of the thread, and its rows
+    /// drawn once.
+    @Test func openingTheThinkingMenuRedrawsTheComposerOnceAndTheThreadNever() async throws {
+        let thread = ComposerThread(animated: false)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        let levels = thread.store.thinkingLevels.count
+
+        for (step, rows) in [("open", levels), ("close", 0)] {
+            let counts = try await counting(thread) { thread.commands.send(.thinkingMenu, to: ComposerThread.key) }
+            #expect(counts["composer.body", default: 0] == 1, "\(step): \(counts)")
+            #expect(counts["thread.view", default: 0] == 0, "\(step): \(counts)")
+            #expect(counts["menu.rows", default: 0] == rows, "\(step): \(counts)")
+        }
+    }
+
+    /// A menu taking the keyboard from the field redraws the composer for the focus it lost, but
+    /// draws the chip rows once, for the chip lighting up, and not again.
+    @Test func aMenuTakingTheKeyboardDrawsTheChipsOnce() async throws {
+        let thread = ComposerThread(focused: true, animated: false)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        try await eventuallyOnMain("the field to take the keyboard") { thread.focusedEditor != nil }
+        let field = thread.focusedEditor
+
+        let counts = try await counting(thread) { thread.commands.send(.thinkingMenu, to: ComposerThread.key) }
+        #expect(thread.focusedEditor !== field || thread.focusedEditor == nil, "the menu took the keyboard")
+        #expect(counts["composer.chips", default: 0] <= 3, "\(counts)")
+        #expect(counts["composer.body", default: 0] <= 2, "\(counts)")
+    }
+
     // MARK: Fixtures
 
     /// The catalog as the picker lists it: one section per provider.
