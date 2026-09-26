@@ -457,4 +457,57 @@ struct PiSessionAdoptionTests {
         try scratch.put(.conversation)
         #expect(PiSessionFile.adopt(sessionID: scratch.id, cwd: scratch.cwd.path, sessionsRoot: scratch.ours, yourPi: nil) == .nothing)
     }
+
+    /// A session file in Shepherd's home that links to the user's (a symlink or a hard link) is
+    /// replaced with a copy of its bytes before pi opens it, so pi never appends to theirs.
+    @Test(arguments: [false, true])
+    func aSessionFileLinkedIntoYourPiBecomesACopy(_ hardLink: Bool) throws {
+        let scratch = try Scratch()
+        defer { scratch.remove() }
+        let theirs = try #require(try scratch.put(.conversation))
+        let theirFile = scratch.theirFolder.appendingPathComponent("2026-01-01T00-00-00-000Z_\(scratch.id).jsonl")
+        try FileManager.default.createDirectory(at: scratch.ourFolder, withIntermediateDirectories: true)
+        let ours = scratch.ourFolder.appendingPathComponent(theirFile.lastPathComponent)
+        if hardLink {
+            try FileManager.default.linkItem(at: theirFile, to: ours)
+        } else {
+            try FileManager.default.createSymbolicLink(at: ours, withDestinationURL: theirFile)
+        }
+        let before = try scratch.theirTree()
+
+        #expect(PiSessionFile.adopt(sessionID: scratch.id, cwd: scratch.cwd.path, sessionsRoot: scratch.ours, yourPi: nil) == .alreadyHere)
+        #expect(PiSessionFile.isOwnFile(ours), "a file of Shepherd's own")
+        #expect(try Data(contentsOf: ours) == theirs)
+        try Data("appended by pi\n".utf8).append(to: ours)
+        #expect(try scratch.theirTree() == before, "your pi is byte-identical")
+    }
+
+    /// A project folder in Shepherd's home that links into the user's pi gets no adopted copy, no
+    /// seeded header and no fork.
+    @Test func aProjectFolderLinkedIntoYourPiGetsNothingWritten() throws {
+        let scratch = try Scratch()
+        defer { scratch.remove() }
+        let bytes = try #require(try scratch.put(.conversation))
+        try FileManager.default.createDirectory(at: scratch.ours, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: scratch.ourFolder, withDestinationURL: scratch.theirFolder)
+        let source = scratch.theirFolder.appendingPathComponent("2026-01-01T00-00-00-000Z_\(scratch.id).jsonl")
+        let before = try scratch.theirTree()
+
+        #expect(PiSessionFile.adopt(sessionID: "other-id", cwd: scratch.cwd.path, sessionsRoot: scratch.ours, yourPi: scratch.yourPi) == .nothing)
+        #expect(!PiSessionFile.seedIfMissing(sessionID: "other-id", cwd: scratch.cwd.path, sessionsRoot: scratch.ours))
+        #expect(throws: PiSessionFile.ForkFailure.self) {
+            try PiSessionFile.fork(sessionFile: source.path, cwd: scratch.cwd.path, sessionsRoot: scratch.ours)
+        }
+        #expect(try scratch.theirTree() == before, "your pi is byte-identical")
+        #expect(try Data(contentsOf: source) == bytes)
+    }
+}
+
+private extension Data {
+    func append(to url: URL) throws {
+        let handle = try FileHandle(forWritingTo: url)
+        defer { try? handle.close() }
+        try handle.seekToEnd()
+        try handle.write(contentsOf: self)
+    }
 }
