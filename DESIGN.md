@@ -3074,23 +3074,23 @@ surface: every destination and command in it is also in the sidebar or the menus
   Found in conversations, with or without a query.
 - **Sections**, in this order, under `NWPaletteSectionHeader` (24pt, mono 10 medium caps, tracked,
   `textTertiary`):
-  - **Commands:** New agent ("in <space>/", ⌘N), New agent with options… (⇧⌘T), New space… (⇧⌘N),
+  - **Commands:** New thread ("in <space>/", the project the New thread page last chose, once it
+    has chosen one; ⌘N), New agent with options… (⇧⌘T), New space… (⇧⌘N),
     New space on <host>… ("remote", one per connected host), Hide or Show sidebar (⇧⌘S), Settings…
     (⌘,), and Check remote worktree operation (its host) while one is pending. **Not built yet:**
     New mission… (NWComposer; it waits for Missions).
   - **This thread** (the agent on screen): Rename ("<title>", ⌘R), Choose model… ("<model>", ⇧⌘M),
-    Review diff ("working tree"), Review PR changes, and the Pane menu's terminal commands while a
+    Review diff ("working tree · 4 files", the checkout's changed files as the branch chip counts
+    them; ⇧⌘B, the side pane's chord), Review PR changes ("PR #24" once the agent's review has
+    found its pull request), and the Pane menu's terminal commands while a
     thread with a layout is on screen: Show or Hide terminal (⌘J), New terminal (⌘D, shown while the
     thread has the keyboard), and Maximize or Restore terminal (⇧⌘↩), named for what they will do.
-    **Not built yet:** Review diff's file count ("working tree · 4 files"; NWComposer,
-    CommandPalette) and its ⇧⌘B keycaps (NWComposer), and Review PR changes' number ("PR #24";
-    CommandPalette).
   - **Subagents:** each live or recent run: its label, "<parent> · running 37m" ("needs you",
     "done", "failed"; a remote run's parent adds " · <host>"), and `arrow.turn.down.right` in its
     run's state color.
   - **Agents** (with a query, or in the Agents scope): each agent in sidebar order with "<space> ·
-    <status>" (running, needs you, idle, done, failed), and each remote agent with its host. **Not
-    built yet:** a working agent's elapsed time ("running · 8m"; NWComposer).
+    <status>" (running, needs you, idle, done, failed; a working agent adds its time, "running ·
+    8m", as its sidebar row counts it), and each remote agent with its host.
   - **Spaces:** the name and its `~/path`.
   - **Found in conversations:** conversation search needs at least 3 characters, runs off the main
     actor 250ms after the last keystroke, and reads the last 512 KB of each agent's pi session. It
@@ -7879,7 +7879,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | Running | Thread (A turn while pi works); Composer, questions, and menus | Built |
 | SlashMenu | Composer, questions, and menus › Slash menu | Partial |
 | ModelPicker | Composer, questions, and menus › Model picker | Built |
-| CommandPalette | Command palette | Partial |
+| CommandPalette | Command palette | Built |
 | ToolRows | Thread › Activity lines | Built |
 | ChangesSplit | Side pane › Changes (toolbar, compare row, strip, file headers, split, comments, send bar) | Built |
 | ChangesScope | Side pane › Changes (scope menu, Commits menu) | Built |

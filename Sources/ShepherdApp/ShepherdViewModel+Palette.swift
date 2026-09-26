@@ -15,7 +15,8 @@ extension ShepherdViewModel {
 
         // Commands.
         items.append(PaletteItem(id: "action.newAgent", kind: .action("newAgent"), section: .commands,
-                                 title: "New thread", shortcut: keys.display(.newAgent), icon: "plus"))
+                                 title: "New thread", subtitle: newThreadPlaceName.map(Self.newThreadContext),
+                                 shortcut: keys.display(.newAgent), icon: "plus"))
         // The New thread page's project: what the sidebar's space rows offered.
         if shownDestination == .newThread, let place = newThread.place, place.host == nil,
            let space = state.spaces.first(where: { $0.id == place.space }) {
@@ -60,10 +61,11 @@ extension ShepherdViewModel {
                                          shortcut: keys.display(.modelPicker), icon: "cpu"))
             }
             items.append(PaletteItem(id: "action.reviewDiff", kind: .action("reviewDiff"), section: .thisThread,
-                                     title: "Show changes", subtitle: "working tree", shortcut: SidePaneTab.changes.shortcutDisplay,
-                                     icon: "plus.forwardslash.minus"))
+                                     title: "Review diff", subtitle: Self.reviewDiffContext(changedFiles: agent.checkout?.changedFiles),
+                                     shortcut: keys.display(.toggleRightPane), icon: "plus.forwardslash.minus"))
             items.append(PaletteItem(id: "action.reviewPR", kind: .action("reviewPR"), section: .thisThread,
-                                     title: "Review PR changes", icon: "arrow.triangle.pull"))
+                                     title: "Review PR changes", subtitle: selectedPullRequest.map(Self.pullRequestContext),
+                                     icon: "arrow.triangle.pull"))
         }
         if let target = unreconciledTerminalTarget {
             let panel = terminalPanels.panel(target.key)
@@ -97,11 +99,15 @@ extension ShepherdViewModel {
         // Destinations: this Mac's agents in sidebar order (Needs you, then Recents), then remote
         // agents and spaces.
         let spaceNames = Dictionary(state.spaces.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+        let now = Date()
         for id in localRecentsOrder {
             guard let agent = state.agents.first(where: { $0.id == id }) else { continue }
+            let context = spaceNames[agent.spaceID].map {
+                Self.agentContext(space: $0, status: agent.status, turnFailed: failedTurns.contains(agent.id),
+                                  since: statusSince[agent.id], now: now)
+            }
             items.append(PaletteItem(id: "agent.\(agent.id.rawValue)", kind: .agent(agent.id), section: .agents,
-                                     title: agent.name, subtitle: spaceNames[agent.spaceID].map { "\($0) · \(AgentRow.statusWord(agent.status, turnFailed: failedTurns.contains(agent.id)))" },
-                                     icon: "bubble.left"))
+                                     title: agent.name, subtitle: context, icon: "bubble.left"))
         }
         for connection in remoteHosts.connections where connection.phase == .connected {
             for agent in connection.state.agents {
@@ -133,6 +139,41 @@ extension ShepherdViewModel {
                         title: maximized ? "Restore terminal" : "Maximize terminal", shortcut: keys.display(.maximizeTerminal),
                         icon: maximized ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"),
         ]
+    }
+
+    /// The project the New thread page last chose, which the palette's New thread starts in.
+    private var newThreadPlaceName: String? {
+        guard let place = newThread.place else { return nil }
+        if let host = place.host {
+            return remoteHosts.connections.first { $0.id == host }?.state.spaces.first { $0.id == place.space }?.name
+        }
+        return state.spaces.first { $0.id == place.space }?.name
+    }
+
+    /// The pull request the on-screen agent's review found (its Changes engine's overview).
+    private var selectedPullRequest: ChangesPullRequest? {
+        if let target = selectedRemoteAgent { return remoteReviews[target]?.overview?.pullRequest }
+        guard let id = selectedAgentID else { return nil }
+        return reviewSessions.values.first { $0.agentID == id }?.overview?.pullRequest
+    }
+
+    /// "in Shepherd/".
+    static func newThreadContext(_ space: String) -> String { "in \(space)/" }
+
+    /// "working tree · 4 files"; "working tree" until the host has read the checkout.
+    static func reviewDiffContext(changedFiles: Int?) -> String {
+        guard let changedFiles else { return "working tree" }
+        return "working tree · \(changedFiles) file\(changedFiles == 1 ? "" : "s")"
+    }
+
+    /// "PR #24" ("PR #24 draft").
+    static func pullRequestContext(_ pullRequest: ChangesPullRequest) -> String { "PR \(pullRequest.label)" }
+
+    /// "payments · running · 8m": the space, the status word, and a working agent's time in it.
+    static func agentContext(space: String, status: AgentStatus, turnFailed: Bool, since: Date?, now: Date) -> String {
+        let word = AgentRow.statusWord(status, turnFailed: turnFailed)
+        guard status == .working, let since else { return "\(space) · \(word)" }
+        return "\(space) · \(word) · \(nativeSubagentShortDuration(now.timeIntervalSince(since)))"
     }
 
     /// "Fix remote nightly · running 4m" — the parent thread and the run's state.
