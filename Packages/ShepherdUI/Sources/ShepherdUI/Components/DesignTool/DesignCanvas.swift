@@ -8,11 +8,15 @@ import SwiftUI
 /// the boards are reported too (`point`); the selected and hovered elements are ringed over their
 /// boards (`NWSelectionRing`) from the rects the boards reported.
 ///
+/// Comments' pins (`NWCommentPin`) sit on their elements' top-trailing corners over the boards,
+/// and one thing may open beside a pin, under its element (`popover`: a comment's thread, or the
+/// editor for a new one), kept inside the canvas.
+///
 /// Only the boards on screen are built, each an `NWBoardFrame` compared by value, so a pan
 /// moves frames without redrawing them and a change to one board redraws that board alone. The
 /// slot draws a board's page (a live view or a snapshot); the canvas takes every event, so
-/// nothing inside a board is interactive.
-public struct NWDesignCanvas<Slot: View>: View {
+/// nothing inside a board is interactive. Pins and the popover take their own.
+public struct NWDesignCanvas<Slot: View, Popover: View>: View {
     let boards: [NWCanvasBoard]
     @Binding var viewport: NWCanvasViewport
     @Binding var tool: NWCanvasTool
@@ -27,25 +31,37 @@ public struct NWDesignCanvas<Slot: View>: View {
     /// True while a zoom gesture runs (a pinch, a burst of ⌘-scroll), false once it rests: live
     /// views stand still while the canvas scales, and re-render at the zoom it lands on.
     let zooming: (Bool) -> Void
+    let pins: [NWCanvasPin]
+    /// A pin was clicked: its comment's id.
+    let openPin: (String) -> Void
+    /// The element the popover opens under (its board and rect), or nil for none.
+    let popoverAnchor: NWCanvasElement?
     let slot: (NWCanvasBoard) -> Slot
+    let popover: () -> Popover
     @State private var size: CGSize = .zero
+    @State private var popoverHeight: CGFloat = 0
 
     public init(boards: [NWCanvasBoard], viewport: Binding<NWCanvasViewport>, tool: Binding<NWCanvasTool>,
                 disabledTools: Set<NWCanvasTool> = [], selection: [NWCanvasElement] = [], hover: NWCanvasElement? = nil,
+                pins: [NWCanvasPin] = [], openPin: @escaping (String) -> Void = { _ in }, popoverAnchor: NWCanvasElement? = nil,
                 pick: @escaping (NWCanvasPick) -> Void, point: @escaping (NWCanvasPick?) -> Void = { _ in },
                 resized: @escaping (CGSize) -> Void = { _ in }, zooming: @escaping (Bool) -> Void = { _ in },
-                @ViewBuilder slot: @escaping (NWCanvasBoard) -> Slot) {
+                @ViewBuilder slot: @escaping (NWCanvasBoard) -> Slot, @ViewBuilder popover: @escaping () -> Popover) {
         self.boards = boards
         _viewport = viewport
         _tool = tool
         self.disabledTools = disabledTools
         self.selection = selection
         self.hover = hover
+        self.pins = pins
+        self.openPin = openPin
+        self.popoverAnchor = popoverAnchor
         self.pick = pick
         self.point = point
         self.resized = resized
         self.zooming = zooming
         self.slot = slot
+        self.popover = popover
     }
 
     public var body: some View {
@@ -62,6 +78,8 @@ public struct NWDesignCanvas<Slot: View>: View {
             }
             rings
             input
+            pinLayer
+            popoverLayer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .overlay(alignment: .bottomLeading) {
@@ -100,6 +118,48 @@ public struct NWDesignCanvas<Slot: View>: View {
         }
     }
 
+    /// Where a board's element is on screen; nil when its board isn't on the canvas.
+    private func screenRect(of rect: CGRect, on board: String, frames: [String: CGRect]) -> CGRect? {
+        guard let frame = frames[board] else { return nil }
+        return viewport.screen(rect.offsetBy(dx: frame.minX, dy: frame.minY))
+    }
+
+    /// Each pin centered on its element's top-trailing corner, over boards on screen.
+    private var pinLayer: some View {
+        let frames = Dictionary(boards.map { ($0.id, $0.frame) }, uniquingKeysWith: { a, _ in a })
+        let half = NWDesignMetrics.pinSize / 2
+        let bounds = CGRect(origin: .zero, size: size).insetBy(dx: -half, dy: -half)
+        let shown = pins.compactMap { pin -> (NWCanvasPin, CGPoint)? in
+            guard let rect = screenRect(of: pin.rect, on: pin.board, frames: frames) else { return nil }
+            let corner = CGPoint(x: rect.maxX, y: rect.minY)
+            return bounds.contains(corner) ? (pin, corner) : nil
+        }
+        return ForEach(shown, id: \.0.id) { pin, corner in
+            Button { openPin(pin.id) } label: { NWCommentPin(pin.number) }
+                .buttonStyle(.plain)
+                .offset(x: corner.x - half, y: corner.y - half)
+                .help("Comment \(pin.number)")
+        }
+    }
+
+    /// The popover under its element, its trailing edge at the pin's, inside the canvas.
+    @ViewBuilder private var popoverLayer: some View {
+        let frames = Dictionary(boards.map { ($0.id, $0.frame) }, uniquingKeysWith: { a, _ in a })
+        if let anchor = popoverAnchor, let rect = screenRect(of: anchor.rect, on: anchor.board, frames: frames) {
+            let width = NWDesignMetrics.threadWidth
+            let inset = NWDesignMetrics.toolbarInset
+            let trailing = rect.maxX + NWDesignMetrics.pinSize / 2
+            let x = min(max(trailing - width, inset), max(inset, size.width - width - inset))
+            let below = rect.maxY + NWDesignMetrics.threadGap
+            let y = min(below, max(inset, size.height - popoverHeight - inset))
+            popover()
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: width)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { popoverHeight = $0 }
+                .offset(x: x, y: max(inset, y))
+        }
+    }
+
     @ViewBuilder private var input: some View {
         #if os(macOS)
         NWCanvasInput(tool: tool, handlers: NWCanvasInput.Handlers(
@@ -127,6 +187,19 @@ public struct NWDesignCanvas<Slot: View>: View {
 }
 
 /// The canvas's dots: one device pixel each, every `spacing` points, moving with the canvas.
+extension NWDesignCanvas where Popover == EmptyView {
+    public init(boards: [NWCanvasBoard], viewport: Binding<NWCanvasViewport>, tool: Binding<NWCanvasTool>,
+                disabledTools: Set<NWCanvasTool> = [], selection: [NWCanvasElement] = [], hover: NWCanvasElement? = nil,
+                pins: [NWCanvasPin] = [], openPin: @escaping (String) -> Void = { _ in },
+                pick: @escaping (NWCanvasPick) -> Void, point: @escaping (NWCanvasPick?) -> Void = { _ in },
+                resized: @escaping (CGSize) -> Void = { _ in }, zooming: @escaping (Bool) -> Void = { _ in },
+                @ViewBuilder slot: @escaping (NWCanvasBoard) -> Slot) {
+        self.init(boards: boards, viewport: viewport, tool: tool, disabledTools: disabledTools, selection: selection,
+                  hover: hover, pins: pins, openPin: openPin, popoverAnchor: nil, pick: pick, point: point, resized: resized,
+                  zooming: zooming, slot: slot) { EmptyView() }
+    }
+}
+
 public struct NWDotGrid: View {
     let spacing: CGFloat
     let phase: CGPoint
@@ -174,9 +247,9 @@ struct NWCanvasInput: NSViewRepresentable {
     struct Handlers {
         var pan: (CGSize) -> Void
         var zoom: (CGFloat, CGPoint) -> Void
-        /// A click with Select, and whether shift was held.
+        /// A click with Select or Comment, and whether shift was held.
         var click: (CGPoint, Bool) -> Void
-        /// The pointer moving with Select (nil once it leaves the canvas, or a drag starts).
+        /// The pointer moving with Select or Comment (nil once it leaves the canvas, or a drag starts).
         var move: (CGPoint?) -> Void
         var zooming: (Bool) -> Void
     }
@@ -236,7 +309,7 @@ struct NWCanvasInput: NSViewRepresentable {
         }
 
         override func mouseMoved(with event: NSEvent) {
-            guard tool == .select, !panning, dragOrigin == nil else { return }
+            guard tool != .pan, !panning, dragOrigin == nil else { return }
             handlers?.move(location(event))
         }
 
