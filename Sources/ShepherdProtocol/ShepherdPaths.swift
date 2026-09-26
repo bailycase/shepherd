@@ -101,5 +101,33 @@ public enum ShepherdPaths {
     ) -> URL {
         supportDirectory(environment: environment).appendingPathComponent("skills", isDirectory: true)
     }
-}
 
+    /// Overrides where the MCP servers file lives (Settings ▸ MCP servers). Tests point it at a
+    /// scratch file, so they never touch the user's ~/.config/mcp.
+    public static let mcpConfigEnvKey = "SHEPHERD_MCP_CONFIG"
+
+    /// The MCP servers every agent on this host can use: `~/.config/mcp/mcp.json`, in the common
+    /// `{"mcpServers": …}` shape other tools read too.
+    public static func mcpConfigURL(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL {
+        if let override = environment[mcpConfigEnvKey],
+           !override.trimmingCharacters(in: .whitespaces).isEmpty {
+            return URL(fileURLWithPath: (override as NSString).expandingTildeInPath).standardizedFileURL
+        }
+        return homeDirectory
+            .appendingPathComponent(".config", isDirectory: true)
+            .appendingPathComponent("mcp", isDirectory: true)
+            .appendingPathComponent("mcp.json")
+    }
+
+    /// The tools each MCP server listed, as the app last saw them (`<support>/mcp/tools.json`),
+    /// so an agent can register a server's direct tools without starting it.
+    public static func mcpToolsCacheURL(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL {
+        supportDirectory(environment: environment)
+            .appendingPathComponent("mcp", isDirectory: true)
+            .appendingPathComponent("tools.json")
+    }
+}
