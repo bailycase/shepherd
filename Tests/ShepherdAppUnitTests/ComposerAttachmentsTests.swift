@@ -26,15 +26,26 @@ struct ComposerAttachmentsTests {
         #expect(attachments.error == "At most \(NativeImage.maxPerSend) images per message.")
     }
 
-    @Test(arguments: [
-        (ComposerAttachmentsTests.image("big.png", bytes: NativeImage.maxBytes + 1), "big.png is over 2 MiB after resizing."),
-        (("notes.txt", nil as ImageAttachment?), "notes.txt is not an image Shepherd can attach."),
-    ])
-    func whatCannotGoIsSkippedAndTheRestStays(_ refused: (name: String, attachment: ImageAttachment?), message: String) {
+    /// A file the composer leaves out, and what it says.
+    struct Refusal: Sendable, CustomTestStringConvertible {
+        let name: String
+        let attachment: ImageAttachment?
+        let message: String
+        var testDescription: String { name }
+    }
+
+    static let refusals: [Refusal] = [
+        Refusal(name: "big.png", attachment: image("big.png", bytes: NativeImage.maxBytes + 1).attachment,
+                message: "big.png is over 2 MiB after resizing."),
+        Refusal(name: "notes.txt", attachment: nil, message: "notes.txt is not an image Shepherd can attach."),
+    ]
+
+    @Test(arguments: refusals)
+    func whatCannotGoIsSkippedAndTheRestStays(_ refused: Refusal) {
         var attachments = ComposerAttachments()
-        attachments.add([Self.image("a.png"), refused, Self.image("b.png")])
+        attachments.add([Self.image("a.png"), (refused.name, refused.attachment), Self.image("b.png")])
         #expect(attachments.items.map(\.name) == ["a.png", "b.png"])
-        #expect(attachments.error == message)
+        #expect(attachments.error == refused.message)
     }
 
     @Test func theNextAddClearsTheLastError() {
