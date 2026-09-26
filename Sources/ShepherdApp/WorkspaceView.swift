@@ -9,7 +9,7 @@ import ShepherdSessions
 struct WorkspaceView: View {
     var vm: ShepherdViewModel
     /// The column's size and the window, kept current without redrawing anything.
-    @State private var column = LiveResizeColumn()
+    private var column: LiveResizeColumn { vm.workspaceColumn }
     /// The column's size when the window's live resize began, until it ends: hidden layouts
     /// keep it, so a drag relays out only the visible one and a hidden shell takes one grid
     /// (one SIGWINCH) when the drag ends instead of one per step.
@@ -34,7 +34,9 @@ struct WorkspaceView: View {
                 // Each layout's values, resolved here once: a layout reruns only when its own
                 // change, so a status report or another agent's review reruns none of them.
                 let models = AgentLayoutModel.Resolver(vm: vm, visibleTabID: visibleTabID)
-                AgentLayoutDeck(vm: vm, models: mounted.map { models.model(for: $0) }, frozenSize: frozenSize)
+                // While the side pane covers the window, hidden layouts keep the size they had.
+                let frozen = frozenSize ?? (vm.isSidePaneWide ? vm.wideFrozenSize : nil)
+                AgentLayoutDeck(vm: vm, models: mounted.map { models.model(for: $0) }, frozenSize: frozen)
                     .equatable()
                     // Bounded on both sides, it always takes the column's size, so a frozen
                     // layout wider than the column never widens the shell around it.
