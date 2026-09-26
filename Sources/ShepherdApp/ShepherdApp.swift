@@ -137,6 +137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Sessions live and die with the app: start the in-process session
         // server (extension socket) and shut it down on quit so every agent
         // stops when Shepherd stops, like any terminal app.
+        SessionServer.shared.designSystems.register(NightWatchSystem.builtIn())
         do {
             try SessionServer.shared.start()
         } catch {
