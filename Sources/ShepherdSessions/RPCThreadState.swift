@@ -186,8 +186,8 @@ final class RPCThreadState {
     private var askedQuestion: AgentQuestion?
     /// The short reason of each open dialog an asking tool opened, by dialog id.
     private var dialogReasons: [String: String] = [:]
-    /// Asking tools running now that gave a short reason, oldest first.
-    private var askingCalls: [(id: String, reason: String)] = []
+    /// Asking tools running now and the short reason each gave (nil for none), oldest first.
+    private var askingCalls: [(id: String, reason: String?)] = []
 
     /// What the thread asks first: a question's title, and the agent's word or two for it
     /// ("retention?") when its asking tool gave one.
@@ -386,9 +386,9 @@ final class RPCThreadState {
             // The ring moves once per reply, never per token.
             refreshStats()
         case .toolExecutionStart(let id, let name, let args):
-            if Self.asksUser(name), let reason = Self.shortReason(in: args) {
+            if Self.asksUser(name) {
                 askingCalls.removeAll { $0.id == id }
-                askingCalls.append((id, reason))
+                askingCalls.append((id, Self.shortReason(in: args)))
             }
             upsertTool(id: id, name: name, args: args, content: [], isError: nil, status: "running")
         case .toolExecutionUpdate(let id, let name, let args, let partial):
@@ -1073,7 +1073,7 @@ final class RPCThreadState {
             // One assignment, so the question changes once and its reason is not pruned first.
             var next = dialogs.filter { $0.id != request.id }
             next.append(dialog)
-            dialogReasons[request.id] = askingCalls.last?.reason
+            dialogReasons[request.id] = askingCalls.last?.reason ?? nil
             dialogs = next
             if let timeout = request.timeout, timeout > 0 {
                 // pi auto-resolves on its side; we only stop showing it.
