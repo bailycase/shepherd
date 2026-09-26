@@ -78,7 +78,7 @@ struct DialogSheet<Content: View>: View {
         let button = Button(action.label, action: action.action).disabled(!action.isEnabled)
         switch action.kind {
         case .cancel:
-            button.buttonStyle(.nw(.secondary)).keyboardShortcut(.cancelAction)
+            button.buttonStyle(.nw(.ghost)).keyboardShortcut(.cancelAction)
         case .normal:
             button.buttonStyle(.nw(.secondary))
         case .prominent:
