@@ -129,3 +129,14 @@ public struct DesignBoardsWrite: Hashable, Sendable {
         self.versions = versions
     }
 }
+
+/// A board copied beside itself (Duplicate): the copy's path and the write that made it.
+public struct DesignDuplicate: Hashable, Sendable {
+    public var path: DesignPath
+    public var result: DesignWriteResult
+
+    public init(path: DesignPath, result: DesignWriteResult) {
+        self.path = path
+        self.result = result
+    }
+}
