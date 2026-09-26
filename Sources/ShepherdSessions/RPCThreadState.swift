@@ -485,14 +485,6 @@ final class RPCThreadState {
         }
     }
 
-    /// What one send takes: the contract's count and per-image cap, and an aggregate that keeps
-    /// one prompt line under RPCSession's 8 MiB stdin queue once base64-expanded.
-    static func imagesFit(_ images: [NativeImage]) -> Bool {
-        images.count <= NativeImage.maxPerSend
-            && images.allSatisfy { $0.data.count <= NativeImage.maxBytes && $0.mimeType.hasPrefix("image/") }
-            && images.reduce(0, { $0 + $1.data.count }) <= imageBytesLimit
-    }
-
     private func perform(_ request: NativeThreadRequest, operationID: UUID, olderClient: Bool, completion: @escaping (NativeThreadResult) -> Void) {
         let accepted = NativeThreadResult.accepted(operationID: operationID)
         let settle: (Result<RPCResponse, RPCError>) -> Void = { result in
@@ -505,7 +497,7 @@ final class RPCThreadState {
                 completion(.failure(code: "invalid", message: "Send requires text up to 16 KiB and a valid delivery mode."))
                 return
             }
-            guard Self.imagesFit(images) else {
+            guard NativeImage.fitOneSend(images) else {
                 completion(.failure(code: "invalid", message: "Send accepts up to \(NativeImage.maxPerSend) images of \(NativeImage.maxBytes / 1024 / 1024) MiB each."))
                 return
             }
@@ -736,7 +728,7 @@ final class RPCThreadState {
             ShepherdLog.warning("rpc session \(sessionID) refused its opening prompt: over \(Self.textLimit) bytes")
             return
         }
-        guard Self.imagesFit(images) else {
+        guard NativeImage.fitOneSend(images) else {
             ShepherdLog.warning("rpc session \(sessionID) refused its opening prompt: its images are over the limits")
             return
         }
