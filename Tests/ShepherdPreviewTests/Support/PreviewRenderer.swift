@@ -16,11 +16,14 @@ enum Preview {
     static let liveModel = ProcessInfo.processInfo.environment["SHEPHERD_LIVE_MODEL"]?.isEmpty == false
 
     /// Renders `content` in light and then dark, each in its own off-screen window (borderless,
-    /// ordered to the back, never key), once `ready` holds, and writes both PNGs.
+    /// ordered to the back, never key), once `ready` holds, and writes both PNGs. `scrollers`
+    /// gives every scroll view in the window that style (legacy, as with a mouse attached),
+    /// without touching the process's own setting.
     @MainActor
     static func render<V: View>(
         _ surface: String,
         size: CGSize,
+        scrollers: NSScroller.Style? = nil,
         ready: @escaping @MainActor () -> Bool = { true },
         afterReady: @MainActor () -> Void = {},
         untilGone text: String? = nil,
@@ -40,7 +43,16 @@ enum Preview {
             window.orderBack(nil)
             defer { window.orderOut(nil); window.contentView = nil }
 
+            func styleScrollers() {
+                guard let scrollers else { return }
+                func walk(_ view: NSView) {
+                    if let scroll = view as? NSScrollView, scroll.scrollerStyle != scrollers { scroll.scrollerStyle = scrollers }
+                    view.subviews.forEach(walk)
+                }
+                walk(host)
+            }
             try await eventuallyOnMain("\(surface) to be ready to render", timeout: .seconds(30)) {
+                styleScrollers()
                 host.layoutSubtreeIfNeeded()
                 return ready()
             }
@@ -56,6 +68,7 @@ enum Preview {
             // motion at 240ms at most, when its spring reads as done.
             for _ in 0..<4 {
                 try await Task.sleep(for: .milliseconds(60))
+                styleScrollers()
                 window.layoutIfNeeded()
             }
             host.layoutSubtreeIfNeeded()
