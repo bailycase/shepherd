@@ -132,6 +132,16 @@ public enum DesignMarkupReading {
         public var head: CGPoint?
         public var tail: CGPoint?
 
+        public init(kind: DesignMarkupKind, strokes: [Int], bounds: CGRect, line: (start: CGPoint, end: CGPoint)? = nil,
+                    head: CGPoint? = nil, tail: CGPoint? = nil) {
+            self.kind = kind
+            self.strokes = strokes
+            self.bounds = bounds
+            self.line = line
+            self.head = head
+            self.tail = tail
+        }
+
         public static func == (a: Mark, b: Mark) -> Bool {
             a.kind == b.kind && a.strokes == b.strokes && a.bounds == b.bounds && a.line?.start == b.line?.start
                 && a.line?.end == b.line?.end && a.head == b.head && a.tail == b.tail
