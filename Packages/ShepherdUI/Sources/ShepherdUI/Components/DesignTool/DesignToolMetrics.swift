@@ -224,4 +224,41 @@ public enum NWDesignMetrics {
     public static let tokenChipSwatch: CGFloat = 10
     public static let tokenChipSwatchRadius: CGFloat = 3
     public static let tokenChipTextSize: CGFloat = 11.5
+
+    // Export (DZExport)
+    /// The sheet: a 560pt card at radius 14 on the popover's fill, line and shadow; its header
+    /// 16×18 with "Export" in `title` and a 28pt close button; sections 14×18, their label 6pt
+    /// above what they hold; the footer 12×18 with its buttons 8pt apart.
+    public static let exportWidth: CGFloat = 560
+    public static let exportRadius: CGFloat = 14
+    public static let exportHeaderPaddingVertical: CGFloat = NW.Space.xl
+    public static let exportPaddingHorizontal: CGFloat = 18
+    public static let exportSectionPaddingVertical: CGFloat = 14
+    public static let exportLabelGap: CGFloat = NW.Space.s
+    public static let exportFooterPaddingVertical: CGFloat = NW.Space.l
+    public static let exportFooterSpacing: CGFloat = NW.Space.m
+    /// A board's row: 30pt, 12.5, 10pt between the checkbox, the name and the size (mono 10.5).
+    public static let exportRowHeight: CGFloat = 30
+    public static let exportRowTextSize: CGFloat = 12.5
+    public static let exportRowSpacing: CGFloat = 10
+    public static let exportRowSizeTextSize: CGFloat = 10.5
+    /// Past this many rows the boards scroll (not drawn: DZExport lists four).
+    public static let exportVisibleRows: CGFloat = 8
+    /// A format card: 2 to a row, 8pt apart; 10×12 padding, radius 8, a 1px line; a 14pt radio
+    /// 8pt from the format in 13 semibold; its line in 11.5/1.4, 24pt in, 4pt under it.
+    public static let exportFormatSpacing: CGFloat = NW.Space.m
+    public static let exportFormatPaddingVertical: CGFloat = 10
+    public static let exportFormatPaddingHorizontal: CGFloat = NW.Space.l
+    public static let exportFormatRadius: CGFloat = NW.Radius.m
+    public static let exportFormatGap: CGFloat = NW.Space.xs
+    public static let exportFormatRadioGap: CGFloat = NW.Space.m
+    public static let exportFormatTitleSize: CGFloat = 13
+    public static let exportFormatLineSize: CGFloat = 11.5
+    public static let exportFormatLineHeight: CGFloat = 1.4
+    public static let exportFormatIndent: CGFloat = 24
+    /// "Use it somewhere else": 24pt buttons 8pt apart, a 13pt glyph, and the note 8pt under
+    /// them in 11.5 `textTertiary`.
+    public static let exportShareSpacing: CGFloat = NW.Space.m
+    public static let exportShareGlyph: CGFloat = 13
+    public static let exportNoteSize: CGFloat = 11.5
 }
