@@ -2639,6 +2639,11 @@ public final class SessionServer: @unchecked Sendable {
             session.beforeOffQueueDecode = beforeOffQueueDecode
             let thread = RPCThreadState(session: session, queue: sessionQueue, originStore: originStore)
             thread.defaultQueueMode = defaultQueueMode
+            // pi's compaction settings, as this pi reads them: its agent directory (the app's
+            // environment, or the session's) and the project's own. Read, never written.
+            let piDirectory = PiConfig.agentDirectory(environment: ProcessInfo.processInfo.environment.merging(params.env ?? [:]) { $1 })
+            let cwd = params.cwd
+            thread.compactionSettings = { model in PiConfig.compactionSettings(model: model, cwd: cwd, in: piDirectory) }
             // The queue did not go after all (pi refused it, or it paused): pi is idle, so the
             // agent is done even though its status report was held for the queue.
             thread.onIdleAfterQueue = { [weak serverWeak] in

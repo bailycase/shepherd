@@ -19,7 +19,19 @@
   "provider-error" a turn whose reply fails ("529 overloaded"), once the file `fail-turn`
            appears in the cwd
   "tools:N" a run that behaves like pi's agent loop (below)
+  "context"      loads a context worth sizing: pi's structured system prompt (sections with an
+                 AGENTS.md, tools), a read and a bash call with large results; stats say 42k
+                 of a 200k window
+  "fill-context" stats say 178k of 200k (89%)
+  "auto-compact" a turn, then a threshold compaction before agent_settled
+  "compact-abort" a manual compaction that is stopped (compaction_end aborted)
   other    a full streaming turn with a U+2028 inside a delta
+
+`compact` (with optional customInstructions) compacts like pi: compaction_start (manual),
+then compaction_end with a summary that ends "Kept: <instructions>", the last two messages
+kept after the summary, and stats' contextUsage tokens and percent null until the next turn.
+With "hold" in the instructions it waits for the file `compact-done` first. A session of fewer
+than three messages fails ("Nothing to compact (session too small)").
 
 pi's queues, as pi 0.87.1 behaves (docs/rpc-commands.md, and transcripts of the real thing):
   - While a run streams, `prompt` needs `streamingBehavior`, else pi refuses it ("Agent is
@@ -184,13 +196,69 @@ def streaming_turn(prompt, slow=False):
                    "content": [{"type": "text", "text": "total 48\n"}], "isError": False}
     emit({"type": "turn_end", "message": final, "toolResults": [tool_result]})
     # An event type this client does not model; must decode as unknown, not fail.
-    emit({"type": "compaction_start", "reason": "manual"})
+    emit({"type": "stub_unmodelled_event", "reason": "manual"})
     # Like pi, message_end persisted these; get_messages now returns them.
     MESSAGES.extend([{"role": "user", "content": prompt}, final, tool_result])
     STATE["messageCount"] = len(MESSAGES)
     emit({"type": "agent_end", "messages": [final], "willRetry": False})
+    STATS["contextUsage"] = {"tokens": 60000, "contextWindow": 200000, "percent": 30}
+    if prompt == "auto-compact":
+        compaction("threshold", None)
     # CRLF is tolerated by the reader.
     emit({"type": "agent_settled"}, terminator=b"\r\n")
+
+
+def compaction(reason, instructions):
+    """pi's compaction: the summary replaces all but the last two messages."""
+    emit({"type": "compaction_start", "reason": reason})
+    if instructions and "hold" in instructions:
+        wait_for_file("compact-done")
+    conversation = [m for m in MESSAGES if m.get("role") != "system"]
+    if len(conversation) < 3:
+        emit({"type": "compaction_end", "reason": reason, "aborted": False, "willRetry": False,
+              "errorMessage": "Compaction failed: Nothing to compact (session too small)"})
+        return None
+    before = (STATS.get("contextUsage") or {}).get("tokens") or 184000
+    summary = "## Goal\nMake the thread rows match the spec.\n\n## Done\nLabels removed.\n\n## Next\nPush the branch."
+    if instructions:
+        summary += "\n\nKept: " + instructions
+    system = [m for m in MESSAGES if m.get("role") == "system"]
+    kept = conversation[-2:]
+    MESSAGES[:] = system + [{"role": "compactionSummary", "summary": summary, "tokensBefore": before,
+                             "timestamp": now_ms()}] + kept
+    STATE["messageCount"] = len(MESSAGES)
+    STATS["contextUsage"] = {"tokens": None, "contextWindow": 200000, "percent": None}
+    result = {"summary": summary, "firstKeptEntryId": "kept", "tokensBefore": before, "estimatedTokensAfter": 23000,
+              "details": {}}
+    emit({"type": "compaction_end", "reason": reason, "result": result, "aborted": False, "willRetry": False})
+    return result
+
+
+def context_session():
+    """A session whose context has parts to size."""
+    agents = "# AGENTS.md\n" + "Follow the house rules. " * 220
+    system = {"role": "system", "content": "", "timestamp": 1733234560000,
+              "sections": {"preamble": "You are an expert coding assistant. " * 40,
+                           "tools": "<tools>\n- read: Read files\n- bash: Run commands\n</tools>",
+                           "project_context": "<project_context>\nProject-specific instructions and guidelines:\n\n"
+                                              '<project_instructions path="/repo/AGENTS.md">\n' + agents +
+                                              "\n</project_instructions>\n</project_context>",
+                           "cwd": "<cwd>\n/repo\n</cwd>"},
+              "toolsAdded": [{"name": "read", "description": "Read a file", "parameters": {"type": "object"}},
+                             {"name": "bash", "description": "Run a command", "parameters": {"type": "object"}}]}
+    MESSAGES.insert(0, system)
+    MESSAGES.append({"role": "user", "content": "Look at the thread view", "timestamp": 1733234570000})
+    MESSAGES.append({"role": "assistant", "stopReason": "toolUse", "timestamp": 1733234570001, "content": [
+        {"type": "toolCall", "id": "call_read", "name": "read", "arguments": {"path": "Sources/App/DesktopNativeThreadView.swift"}},
+        {"type": "toolCall", "id": "call_test", "name": "bash", "arguments": {"command": "swift test --filter NativePresentationTests"}}]})
+    MESSAGES.append({"role": "toolResult", "toolCallId": "call_read", "toolName": "read", "timestamp": 1733234570002,
+                     "content": [{"type": "text", "text": "let x = 1\n" * 3200}], "isError": False})
+    MESSAGES.append({"role": "toolResult", "toolCallId": "call_test", "toolName": "bash", "timestamp": 1733234570003,
+                     "content": [{"type": "text", "text": "Test passed.\n" * 1800}], "isError": False})
+    MESSAGES.append({"role": "assistant", "content": [{"type": "text", "text": "The view reads fine."}],
+                     "stopReason": "stop", "timestamp": 1733234570004})
+    STATE["messageCount"] = len(MESSAGES)
+    STATS["contextUsage"] = {"tokens": 42000, "contextWindow": 200000, "percent": 21}
 
 
 def failed_turn(prompt):
@@ -417,6 +485,12 @@ for raw in sys.stdin.buffer:
         respond(cmd, t, data={"commands": COMMANDS})
     elif t == "get_session_stats":
         respond(cmd, t, data=STATS)
+    elif t == "compact":
+        result = compaction("manual", cmd.get("customInstructions"))
+        if result is None:
+            respond(cmd, t, success=False, error="Nothing to compact (session too small)")
+        else:
+            respond(cmd, t, data=result)
     elif t == "set_model":
         if cmd.get("provider") != "anthropic":
             respond(cmd, t, success=False, error=f"Model not found: {cmd.get('provider')}/{cmd.get('modelId')}")
@@ -558,6 +632,20 @@ for raw in sys.stdin.buffer:
             STATE["messageCount"] = len(MESSAGES)
             emit({"type": "agent_start"})
             emit({"type": "agent_end", "messages": [], "willRetry": False})
+            emit({"type": "agent_settled"})
+        elif message == "context":
+            context_session()
+            emit({"type": "agent_start"})
+            emit({"type": "agent_end", "messages": [], "willRetry": False})
+            emit({"type": "agent_settled"})
+        elif message == "fill-context":
+            STATS["contextUsage"] = {"tokens": 178000, "contextWindow": 200000, "percent": 89}
+            emit({"type": "agent_start"})
+            emit({"type": "agent_end", "messages": [], "willRetry": False})
+            emit({"type": "agent_settled"})
+        elif message == "compact-abort":
+            emit({"type": "compaction_start", "reason": "manual"})
+            emit({"type": "compaction_end", "reason": "manual", "aborted": True, "willRetry": False})
             emit({"type": "agent_settled"})
         elif message == "fill":
             for i in range(120):

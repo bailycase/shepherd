@@ -664,6 +664,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.reviewCommitCapability,
             RemoteProtocol.thinkingLevelsCapability,
             RemoteProtocol.changesCapability,
+            RemoteProtocol.nativeContextCapability,
             RemoteProtocol.instructionsCapability, RemoteProtocol.suggestionsCapability,
             RemoteProtocol.hostSettingsCapability, RemoteProtocol.skillsCapability,
         ]
@@ -685,6 +686,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.reviewCommitCapability == "review.commit.v1")
         #expect(RemoteProtocol.automationsCapability == "automations.v1")
         #expect(RemoteProtocol.thinkingLevelsCapability == "thinking.levels.v1")
+        #expect(RemoteProtocol.nativeContextCapability == "native.context.v1")
         #expect(RemoteProtocol.instructionsCapability == "instructions.v1")
         #expect(RemoteProtocol.suggestionsCapability == "suggestions.v1")
         #expect(RemoteProtocol.hostSettingsCapability == "hostSettings.v1")

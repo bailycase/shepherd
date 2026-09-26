@@ -194,6 +194,10 @@ keep the version for real breaks.
   model picker lists the host's catalog, each model's thinking levels under its name; images
   come from Photos, resized to the protocol's limits; "/…" lists the snapshot's commands. A
   question from the agent takes the composer's place: numbered answers to choose, Yes and No for a confirm, a field for input and editor.
+  The context ring sits just before Send (in the capsule on iPhone, in the card's row on iPad)
+  from a host with `native.context.v1`; a tap opens its details as a sheet (`ContextMeter.swift`:
+  the split, the largest items, which find their turn in the thread, and Compact now with what
+  to keep). A compaction is a line in the thread whose Show summary opens what the agent kept.
 - **Settings:** Appearance (System, Light, Dark), the hosts as cards with Retry, and a host form
   (add, edit, forget; a blank token keeps the saved one). A host's own settings as the Mac's
   Settings sets them (`hostSettings.v1`): Defaults (model, thinking, the queue), Worktrees and

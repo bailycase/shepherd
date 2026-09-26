@@ -141,8 +141,52 @@ public enum PiConfig {
             .filter { !$0.isEmpty }
     }
 
+    /// pi's compaction settings for `model` ("provider/id"), as pi resolves them: the project's
+    /// `.pi/settings.json` over the agent directory's, a `compaction.modelOverrides` entry for the
+    /// model over the ordinary values, each field falling back on its own to pi's default. Read
+    /// only; a value pi would reject reads as the default.
+    public static func compactionSettings(model: String?, cwd: String?, in directory: URL = agentDirectory()) -> PiCompactionSettings {
+        var merged: [String: Any] = [:]
+        var overrides: [String: Any] = [:]
+        for object in [settings(in: directory), cwd.flatMap { settings(in: URL(fileURLWithPath: $0).appendingPathComponent(".pi")) }] {
+            guard let compaction = object?["compaction"] as? [String: Any] else { continue }
+            for (key, value) in compaction where key != "modelOverrides" { merged[key] = value }
+            if let model, let table = compaction["modelOverrides"] as? [String: Any], let entry = table[model] as? [String: Any] {
+                overrides.merge(entry) { $1 }
+            }
+        }
+        func count(_ key: String, _ fallback: Int) -> Int {
+            for source in [overrides, merged] {
+                if let number = source[key] as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(), number.intValue >= 0,
+                   Double(number.intValue) == number.doubleValue {
+                    return number.intValue
+                }
+            }
+            return fallback
+        }
+        let defaults = PiCompactionSettings()
+        return PiCompactionSettings(enabled: (merged["enabled"] as? Bool) ?? defaults.enabled,
+                                    reserveTokens: count("reserveTokens", defaults.reserveTokens),
+                                    keepRecentTokens: count("keepRecentTokens", defaults.keepRecentTokens))
+    }
+
     private static func settings(in directory: URL) -> [String: Any]? {
         guard let data = try? Data(contentsOf: directory.appendingPathComponent("settings.json")) else { return nil }
         return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    }
+}
+
+/// pi's `compaction` settings (docs/settings.md): whether it compacts on its own, what it
+/// reserves below the window (it compacts once the context passes `window - reserveTokens`),
+/// and what it keeps as it is.
+public struct PiCompactionSettings: Equatable, Sendable {
+    public var enabled: Bool
+    public var reserveTokens: Int
+    public var keepRecentTokens: Int
+
+    public init(enabled: Bool = true, reserveTokens: Int = 16_384, keepRecentTokens: Int = 20_000) {
+        self.enabled = enabled
+        self.reserveTokens = reserveTokens
+        self.keepRecentTokens = keepRecentTokens
     }
 }

@@ -56,6 +56,10 @@ public enum RemoteProtocol {
     /// thread snapshots carry the turns it recorded (`NativeThreadSnapshot.turnChanges`). Older
     /// hosts review the working tree only (`RemoteAgentQuery.review`).
     public static let changesCapability = "changes.v1"
+    /// The host reports what fills each agent's context window (`NativeThreadSnapshot.context`,
+    /// compactions in the thread) and serves `NativeThreadRequest.compact`. Older hosts send
+    /// neither, and clients draw no context meter.
+    public static let nativeContextCapability = "native.context.v1"
     /// The host serves `RemoteRequest.instructions`: its root instruction files for pi, their
     /// history, save and restore (Settings ▸ Instructions). Older hosts have none to show.
     public static let instructionsCapability = "instructions.v1"
@@ -70,7 +74,7 @@ public enum RemoteProtocol {
     /// how each is used, updates), installs from a repository or a copied folder, and removal
     /// with undo (Settings ▸ Skills). Older hosts have none to show.
     public static let skillsCapability = "skills.v1"
-    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, skillsCapability]
+    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, skillsCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
