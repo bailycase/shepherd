@@ -73,7 +73,6 @@ final class AppSettings {
         static let piSubagentsExtension = "shepherd.pi.extension.subagents"
         static let piNativeSubagents = "shepherd.pi.extension.nativeSubagents"
         static let piMCPExtension = "shepherd.pi.extension.mcp"
-        static let mcpUseRepoConfig = "shepherd.mcp.useRepoConfig"
         static let childConcurrency = "shepherd.pi.children.concurrency"
         static let childModel = "shepherd.pi.children.model"
         static let childThinking = "shepherd.pi.children.thinking"
@@ -101,7 +100,7 @@ final class AppSettings {
             terminalFontFamily, terminalFontSize, defaultModel,
             defaultThinking, autoNameAgents, returnWhileWorking, queueDelivery, shellPath,
             piPanesExtension, piReviewExtension, piSubagentsExtension, piNativeSubagents,
-            piMCPExtension, mcpUseRepoConfig,
+            piMCPExtension,
             childConcurrency, childModel, childThinking, childContext, childScope,
             uiDensity, uiTextScale, sidebarWidth, sidebarRowDensity,
             remoteListenerEnabled, remoteListenerPort,
@@ -174,7 +173,8 @@ final class AppSettings {
         didSet { store.set(mcpOpenSignInPages, forKey: Key.mcpOpenSignInPages) }
     }
 
-    /// Settings ▸ MCP servers ▸ Also use a repo's .mcp.json (`SHEPHERD_EXT_MCP_PROJECT`).
+    /// Settings ▸ MCP servers ▸ Also use a repo's .mcp.json (`SHEPHERD_EXT_MCP_PROJECT`). Off,
+    /// agents get only the servers on that page. Agents launched after a change follow it.
     var mcpProjectConfig: Bool {
         didSet { store.set(mcpProjectConfig, forKey: Key.mcpProjectConfig) }
     }
@@ -227,11 +227,6 @@ final class AppSettings {
     /// Settings ▸ Pi ▸ Bundled extensions ▸ MCP servers: agents get the `mcp` tool.
     var piMCPExtension: Bool {
         didSet { store.set(piMCPExtension, forKey: Key.piMCPExtension) }
-    }
-
-    /// Settings ▸ MCP servers ▸ Also use a repo's .mcp.json. Off: only the servers on that page.
-    var mcpUseRepoConfig: Bool {
-        didSet { store.set(mcpUseRepoConfig, forKey: Key.mcpUseRepoConfig) }
     }
 
     var childConcurrency: Int {
@@ -397,7 +392,6 @@ final class AppSettings {
         piSubagentsExtension = store.object(forKey: Key.piSubagentsExtension) as? Bool ?? true
         piNativeSubagents = store.object(forKey: Key.piNativeSubagents) as? Bool ?? true
         piMCPExtension = store.object(forKey: Key.piMCPExtension) as? Bool ?? true
-        mcpUseRepoConfig = store.object(forKey: Key.mcpUseRepoConfig) as? Bool ?? false
         childConcurrency = min(16, max(1, store.object(forKey: Key.childConcurrency) as? Int ?? 4))
         childModel = store.string(forKey: Key.childModel) ?? ""
         let childReasoning = store.string(forKey: Key.childThinking) ?? ""
@@ -491,7 +485,6 @@ final class AppSettings {
         piSubagentsExtension = true
         piNativeSubagents = true
         piMCPExtension = true
-        mcpUseRepoConfig = false
         childConcurrency = 4
         childModel = ""
         childThinking = ""

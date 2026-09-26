@@ -21,8 +21,13 @@ enum MCPExtension {
 
     /// The installed client, for `node <client> probe`.
     static func clientPath() throws -> String {
-        _ = try installedPath()
-        return ShepherdPaths.supportDirectory().appendingPathComponent("shepherd-mcp-client.mjs").path
+        try install().clientPath
+    }
+
+    /// Writes both files and returns both paths.
+    static func install() throws -> (extensionPath: String, clientPath: String) {
+        let extensionPath = try installedPath()
+        return (extensionPath, ShepherdPaths.supportDirectory().appendingPathComponent("shepherd-mcp-client.mjs").path)
     }
 
     static var sources: [(String, String)] {

@@ -17,6 +17,19 @@ struct MCPLaunch: Equatable {
     var cachePath: String
     /// Settings ▸ MCP servers ▸ Also use a repo's .mcp.json.
     var useRepoConfig: Bool
+
+    /// What an agent launches with under these settings: nil while Settings ▸ Pi ▸ MCP servers
+    /// is off. `install` writes the extension and its client and returns both paths.
+    @MainActor
+    static func forAgents(settings: AppSettings, environment: [String: String] = ProcessInfo.processInfo.environment,
+                          install: () throws -> (extensionPath: String, clientPath: String) = MCPExtension.install) rethrows -> MCPLaunch? {
+        guard settings.piMCPExtension else { return nil }
+        let installed = try install()
+        return MCPLaunch(extensionPath: installed.extensionPath, clientPath: installed.clientPath,
+                         configPath: ShepherdPaths.mcpConfigURL(environment: environment).path,
+                         cachePath: ShepherdPaths.mcpToolsCacheURL(environment: environment).path,
+                         useRepoConfig: settings.mcpProjectConfig)
+    }
 }
 
 /// The per-agent pi status extension: bundled TypeScript source installed to
