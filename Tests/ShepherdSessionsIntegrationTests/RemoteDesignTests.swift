@@ -24,7 +24,7 @@ struct RemoteDesignTests {
             spaceID = made.id
         }
         let id = DesignID()
-        _ = try await host.server.createDesign(Design(id: id, name: "Checkout funnel", spaceID: spaceID, agentID: agentID, createdAt: 1_000))
+        _ = try await host.server.createDesign(Design(id: id, name: "Checkout funnel", agentID: agentID, createdAt: 1_000))
         _ = try await host.server.writeDesignBoard(id, path: Self.board, source: DesignTests.board(root: Self.card))
         _ = try await host.server.updateDesignIndex(id, patch: .object(["boards": .object([Self.board.rawValue: .object([
             "x": .number(0), "y": .number(0), "w": .number(390), "h": .number(844), "title": .string("A · Funnel first"),
@@ -421,15 +421,13 @@ struct RemoteDesignTests {
     // MARK: New design
 
     /// Another device's New design is made by the host's app, with the brief trimmed and the
-    /// project and system checked first; a host without the app to make it refuses.
+    /// system's name checked first; a host without the app to make it refuses.
     @Test func aRemoteNewDesignIsMadeByTheHostsApp() async throws {
         let host = try RemoteHost()
         defer { host.stop() }
         host.server.setDesignsServed(true)
-        let space = Space(name: "demo", path: host.host.dir.path)
-        try await host.server.addSpace(space)
         let raw = try await designClient(host)
-        let draft = RemoteDesignCreate(brief: "  A checkout funnel\n", spaceID: space.id, systemNamespace: "acme-web")
+        let draft = RemoteDesignCreate(brief: "  A checkout funnel\n", systemNamespace: "acme-web")
         #expect(try await refusal(raw, 2, .create(draft)) == "unsupported")
 
         let asked = Locked<[RemoteDesignCreate]>([])
@@ -439,9 +437,10 @@ struct RemoteDesignTests {
             asked.withValue { $0.append(request) }
             completion(.success(RemoteDesignCreated(designID: made, agentID: agent)))
         }
-        #expect(try await refusal(raw, 3, .create(RemoteDesignCreate(brief: " \n ", spaceID: space.id))) == "invalid_brief")
-        #expect(try await refusal(raw, 4, .create(RemoteDesignCreate(brief: "x", spaceID: SpaceID(rawValue: "gone")))) == "no_such_space")
-        #expect(try await refusal(raw, 5, .create(RemoteDesignCreate(brief: "x", spaceID: space.id, systemNamespace: "../x"))) == "invalid_system")
+        #expect(try await refusal(raw, 3, .create(RemoteDesignCreate(brief: " \n "))) == "invalid_brief")
+        #expect(try await refusal(raw, 4, .create(RemoteDesignCreate(brief: String(repeating: "x", count: RemoteDesignCreate.maxBriefBytes + 1))))
+                == "invalid_brief")
+        #expect(try await refusal(raw, 5, .create(RemoteDesignCreate(brief: "x", systemNamespace: "../x"))) == "invalid_system")
         #expect(asked.current.isEmpty)
 
         guard case .created(let designID, let agentID) = try await answer(raw, 6, .create(draft)) else {
@@ -450,7 +449,7 @@ struct RemoteDesignTests {
         }
         #expect(designID == made)
         #expect(agentID == agent)
-        #expect(asked.current == [RemoteDesignCreate(brief: "A checkout funnel", spaceID: space.id, systemNamespace: "acme-web")])
+        #expect(asked.current == [RemoteDesignCreate(brief: "A checkout funnel", systemNamespace: "acme-web")])
 
         host.server.onRemoteCreateDesign = { _, completion in completion(.failure(RemoteCreateAgentError("no such system"))) }
         #expect(try await refusal(raw, 7, .create(draft)) == "create_failed")

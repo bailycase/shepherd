@@ -74,4 +74,23 @@ struct SpaceTests {
         let server = app.server, session = try #require(doomed.piPane.sessionID)
         try await eventuallyAsync("the deleted space's pi to stop") { await server.sessionInfo(sessionID: session)?.isAlive != true }
     }
+
+    /// With the last project gone, nothing is selected: never the reserved designs space.
+    @Test func deletingTheLastSpaceNeverSelectsTheDesignsSpace() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space("repo", path: app.dir.path)
+        let agent = Fixture.agent(in: space)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        let designs = try await app.server.designsSpaceID()
+        vm.adopt(app.server.state)
+        vm.selectAgent(agent.agent.id)
+        #expect(vm.selectedSpaceID == space.id)
+
+        vm.deleteSpace(space.id)
+        await app.settle()
+
+        #expect(app.server.state.spaces.map(\.id) == [designs])
+        #expect(vm.selectedSpaceID == nil && vm.selectedAgentID == nil)
+    }
 }

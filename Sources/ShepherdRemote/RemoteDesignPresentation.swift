@@ -19,12 +19,13 @@ public struct HostDesignRef: Hashable, Codable, Sendable {
 }
 
 /// A design's tile on the Designs screen (MobileDesigns): its first board for the thumbnail, its
-/// name, and "acme-web · 4 boards · 2m", or "drawing · 2 boards" while its agent works.
+/// name, and "acme-web · 4 boards · 2m" (its system), or "drawing · 2 boards" while its agent
+/// works.
 public struct RemoteDesignTile: Identifiable, Equatable, Sendable {
     public var ref: HostDesignRef
     public var name: String
     public var detail: String
-    /// Its system, else its project; and how many boards it has (search's "acme-web · 4 boards").
+    /// Its system's title, if it has one; and how many boards it has (search's "acme-web · 4 boards").
     public var system: String?
     public var boards: Int
     public var firstBoard: RemoteDesignFirstBoard?
@@ -94,10 +95,12 @@ public struct RemoteDesignsModel: Equatable, Sendable {
             guard let listing = host.listing else { continue }
             let spaces = Dictionary(host.state.spaces.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
             let agents = Dictionary(host.state.agents.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            let titles = Dictionary(listing.systems.map { ($0.namespace, $0.info.title) }, uniquingKeysWith: { first, _ in first })
             for summary in listing.designs where !summary.design.buildsSystem {
                 let design = host.state.designs.first { $0.id == summary.id } ?? summary.design
                 let working = design.agentID.flatMap { agents[$0] }?.status == .working
-                let system = design.systemNamespace ?? spaces[design.spaceID]
+                // A design belongs to no project: its line names its system, by its title.
+                let system = design.systemNamespace.map { namespace in titles[namespace] ?? namespace }
                 let detail = RemoteDesignPresentation.tileDetail(system: system, boards: summary.boardCount, drawing: working,
                                                                  edited: design.lastActiveAt, now: now)
                 tiles.append((RemoteDesignTile(ref: HostDesignRef(host: host.id, design: design.id), name: design.name,

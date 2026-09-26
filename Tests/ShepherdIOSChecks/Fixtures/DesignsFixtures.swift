@@ -148,6 +148,8 @@ enum DesignsFixtures {
     static let designer = AgentID(rawValue: "agent-designer")
     static let onboarder = AgentID(rawValue: "agent-onboarder")
     static let dashboardSpace = Space(id: SpaceID(rawValue: "space-dashboard"), name: "dashboard-web", path: "/Users/dev/dashboard-web")
+    /// The host's reserved, hidden space its design agents live in (a design belongs to no project).
+    static let designsSpace = Space.designs(id: SpaceID(rawValue: "space-designs"))
 
     static let wide = DesignPath("A.dc.html")!
     static let table = DesignPath("B.dc.html")!
@@ -168,21 +170,21 @@ enum DesignsFixtures {
         var hosts = FixtureData.hosts()
         let now = Date().timeIntervalSince1970 * 1000
         let records = [
-            Design(id: checkout, name: "Checkout funnel dashboard", spaceID: dashboardSpace.id, agentID: designer,
+            Design(id: checkout, name: "Checkout funnel dashboard", agentID: designer,
                    systemNamespace: "acme-web", createdAt: now - 86_400_000, lastActiveAt: now - 120_000, boardCount: 4),
-            Design(id: events, name: "Events explorer", spaceID: dashboardSpace.id, systemNamespace: "acme-web",
+            Design(id: events, name: "Events explorer", systemNamespace: "acme-web",
                    createdAt: now - 3 * 86_400_000, lastActiveAt: now - 26 * 3_600_000, boardCount: 3),
-            Design(id: onboarding, name: "Onboarding flow", spaceID: dashboardSpace.id, agentID: onboarder,
+            Design(id: onboarding, name: "Onboarding flow", agentID: onboarder,
                    createdAt: now - 600_000, lastActiveAt: now - 60_000, boardCount: 2),
-            Design(id: settings, name: "Settings redesign", spaceID: FixtureData.shepherdSpace.id, systemNamespace: "night-watch",
+            Design(id: settings, name: "Settings redesign", systemNamespace: "night-watch",
                    createdAt: now - 5 * 86_400_000, lastActiveAt: now - 4 * 86_400_000, boardCount: 2),
         ]
-        hosts[0].state.spaces.append(dashboardSpace)
+        hosts[0].state.spaces += [dashboardSpace, designsSpace]
         hosts[0].state.designs = records
         hosts[0].state.agents += [
-            Agent(id: designer, name: "Checkout funnel dashboard", spaceID: dashboardSpace.id, tabID: TabID(rawValue: "tab-designer"),
+            Agent(id: designer, name: "Checkout funnel dashboard", spaceID: designsSpace.id, tabID: TabID(rawValue: "tab-designer"),
                   status: updating ? .working : .idle, nameIsFinal: true, designID: checkout),
-            Agent(id: onboarder, name: "Onboarding flow", spaceID: dashboardSpace.id, tabID: TabID(rawValue: "tab-onboarder"),
+            Agent(id: onboarder, name: "Onboarding flow", spaceID: designsSpace.id, tabID: TabID(rawValue: "tab-onboarder"),
                   status: .working, nameIsFinal: true, designID: onboarding),
         ]
         hosts[0].threads[designer] = FixtureData.snapshot([

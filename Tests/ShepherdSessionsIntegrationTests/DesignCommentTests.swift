@@ -24,7 +24,7 @@ struct DesignCommentIntegrationTests {
     /// A design drawn by `agentID`, with board A placed on its canvas.
     private func design(_ h: ScratchServer, space: SpaceID, agentID: AgentID?) async throws -> DesignID {
         let id = DesignID()
-        _ = try await h.server.createDesign(Design(id: id, name: "Checkout funnel", spaceID: space, agentID: agentID, createdAt: 1_000))
+        _ = try await h.server.createDesign(Design(id: id, name: "Checkout funnel", agentID: agentID, createdAt: 1_000))
         _ = try await h.server.writeDesignBoard(id, path: Self.board, source: DesignTests.board(root: Self.card))
         _ = try await h.server.updateDesignIndex(id, patch: .object(["boards": .object([Self.board.rawValue: .object([
             "x": .number(0), "y": .number(0), "w": .number(390), "h": .number(844), "title": .string("A · Funnel first"),
@@ -127,7 +127,7 @@ struct DesignCommentIntegrationTests {
         drawer.agent.designID = designID
         let stranger = Fixture.agent(in: space, name: "worker")
         try await h.seed(Fixture.workspace([drawer, stranger], space: space))
-        _ = try await h.server.createDesign(Design(id: designID, name: "Checkout funnel", spaceID: space.id, createdAt: 1_000))
+        _ = try await h.server.createDesign(Design(id: designID, name: "Checkout funnel", createdAt: 1_000))
         _ = try await h.server.writeDesignBoard(designID, path: Self.board, source: DesignTests.board(root: Self.card))
         _ = try await h.server.updateDesignIndex(designID, patch: .object(["boards": .object([Self.board.rawValue: .object([
             "x": .number(0), "y": .number(0), "w": .number(390), "h": .number(844)])])]))

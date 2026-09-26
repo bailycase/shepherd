@@ -338,18 +338,21 @@ struct FleetTests {
     /// counted; a system build's agent, and every design agent of a host not serving designs, has
     /// no row at all.
     @Test func aDesignsAgentIsItsDesignsRowAndNeverAThread() {
-        let drawing = Agent(id: AgentID(rawValue: "designer"), name: "Checkout funnel dashboard", spaceID: Self.space.id,
+        // Design agents live in the host's reserved, hidden designs space.
+        let reserved = Space.designs(id: SpaceID(rawValue: "designs"))
+        let drawing = Agent(id: AgentID(rawValue: "designer"), name: "Checkout funnel dashboard", spaceID: reserved.id,
                             tabID: TabID(rawValue: "t-d"), status: .working, nameIsFinal: true, designID: DesignID(rawValue: "d1"))
-        var building = Agent(id: AgentID(rawValue: "builder"), name: "acme-web", spaceID: Self.space.id, tabID: TabID(rawValue: "t-b"),
+        var building = Agent(id: AgentID(rawValue: "builder"), name: "acme-web", spaceID: reserved.id, tabID: TabID(rawValue: "t-b"),
                              status: .blocked, nameIsFinal: true, designID: DesignID(rawValue: "d2"))
         building.waitingReason = "pick a palette"
         let designs = [
-            Design(id: DesignID(rawValue: "d1"), name: "Checkout funnel dashboard", spaceID: Self.space.id, agentID: drawing.id,
+            Design(id: DesignID(rawValue: "d1"), name: "Checkout funnel dashboard", agentID: drawing.id,
                    createdAt: 0, lastActiveAt: 5_000, boardCount: 4),
-            Design(id: DesignID(rawValue: "d2"), name: "acme-web", spaceID: Self.space.id, agentID: building.id, createdAt: 0,
+            Design(id: DesignID(rawValue: "d2"), name: "acme-web", agentID: building.id, createdAt: 0,
                    lastActiveAt: 6_000, buildsSystem: true),
         ]
-        let state = ShepherdState(spaces: [Self.space], agents: [Self.agent("plain", .idle), drawing, building], designs: designs)
+        let state = ShepherdState(spaces: [Self.space, reserved], agents: [Self.agent("plain", .idle), drawing, building],
+                                  designs: designs)
         let digests = [Self.ref("plain"): Self.digest(Self.snapshot([NativeThreadMessage(entryID: "a", role: "assistant", blocks: [],
                                                                                          timestamp: 1_000)]))]
         var host = FleetHost(id: Self.studio, name: "Studio", address: "studio.local", port: 7433, phase: .connected, state: state,

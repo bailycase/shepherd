@@ -21,7 +21,7 @@ struct RemoteDesignFlowTests {
         remote.host.settings.designToolEnabled = true
         let space = Fixture.space("acme-web", path: remote.host.dir.path)
         var agent = Fixture.agent("Checkout funnel dashboard", in: space)
-        let design = Design(name: "Checkout funnel dashboard", spaceID: space.id, agentID: agent.agent.id, createdAt: 1_000)
+        let design = Design(name: "Checkout funnel dashboard", agentID: agent.agent.id, createdAt: 1_000)
         agent.agent.designID = design.id
         let vm = try await local.start(with: ShepherdState())
         vm.designNetwork = .none

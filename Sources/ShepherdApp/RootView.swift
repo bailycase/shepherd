@@ -294,8 +294,7 @@ struct WorkspaceHeaderView: View {
                     PlainHeader(title: "\(agent.name) · terminal", leadingInset: leadingInset, showSidebar: showSidebar)
                 } else if let (_, design) = vm.remoteDesign(drawnBy: remote) {
                     // The host's design: its system's page and Export stay on the host for now.
-                    let space = connection.state.spaces.first { $0.id == design.spaceID }?.name
-                    DesignToolbar(name: design.name, system: design.systemNamespace ?? space ?? "design", leadingInset: leadingInset,
+                    DesignToolbar(name: design.name, system: design.systemNamespace, leadingInset: leadingInset,
                                   showSidebar: showSidebar, designs: { vm.openDestination(.designs) },
                                   screen: vm.remoteDesignScreen(RemoteDesignRef(hostID: remote.hostID, designID: design.id)))
                         .equatable()

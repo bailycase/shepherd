@@ -177,9 +177,10 @@ struct NewAgentSheet: View {
         targetHostID.flatMap { id in vm.remoteHosts.connections.first { $0.id == id } }
     }
 
-    /// Spaces on whichever machine is targeted.
+    /// Spaces on whichever machine is targeted: never a host's reserved automations or designs
+    /// space.
     private var targetSpaces: [Space] {
-        remoteConnection?.state.spaces ?? vm.visibleSpaces
+        remoteConnection.map { $0.state.spaces.filter { !$0.hidden } } ?? vm.visibleSpaces
     }
 
     private var selectedSpace: Space? {
