@@ -31,7 +31,8 @@ pi writes `settings.json` too (the TUI's `/settings`, the first `/login`), so Sh
 read-modify-write under pi's own lock (proper-lockfile's `settings.json.lock` folder, taken over
 after 10 s as pi's is), by temp file and rename, and only when its keys differ. A `packages` key is
 removed at every launch, with a note in the log: a user-scope package missing from `<home>/npm`
-makes pi load the user's global npm install, even offline.
+makes pi load the user's global npm install, even offline. A `bin/` that links out of the home is
+refused rather than written through, and the agent waits on the reason.
 
 ## The launcher
 
@@ -76,7 +77,11 @@ Shepherd sends over RPC names a session file (`RPCCommand`).
 
 Native children run the parent's own engine: `process.execPath` (the engine's node) with the
 package's `dist/bundle/cli.js`, never a `pi` from PATH, and inherit the pins from their parent.
-The MCP probe and the Skills reader run on the engine's node too.
+The MCP probe and the Skills reader run on the engine's node too. The probe runs in a login shell
+(so the servers it starts find what an agent's would) and drops the shell's `PI_*`, `JITI_*`,
+`NODE_*` and `OPENSSL_CONF` first, as the launcher does: a `NODE_OPTIONS` hook of the user's never
+loads into Shepherd's node. The Skills reader readies the home first (`PiSetup.prepare`), so it
+never resolves a `packages` key.
 
 ## Your pi
 
@@ -84,7 +89,9 @@ The MCP probe and the Skills reader run on the engine's node too.
 and never runs pi's code against it. `YourPiLocator` finds it once per launch of the app: a login
 shell, with the app's own `PI_CODING_AGENT_DIR` and `PI_CODING_AGENT_SESSION_DIR` removed, prints
 what the user's startup files set; with neither it is `~/.pi/agent`. A folder inside any
-edition's support folder is refused (logged), as if there were none. Debug builds honour
+edition's support folder is refused (logged): Shepherd reads nothing of it, but the guards
+still check it, so startup files that point `PI_CODING_AGENT_DIR` at Shepherd's own home stop
+every launch rather than share it. Debug builds honour
 `SHEPHERD_YOUR_PI`, which the test isolation sets; under the engine override without it there
 is none, so a test never reads the real one.
 
@@ -109,7 +116,9 @@ so Shepherd never lets pi open the user's file:
 The copy reads the source's real path (a symlink is followed and its bytes copied), writes a new
 regular file by temp file and rename, with the same name, into the agent's session folder, and
 checks it is a single-link regular file; a header Shepherd seeded earlier under another name
-goes. From then on the two copies diverge: the user's `pi --resume` shows the conversation as it
+goes. A session file in the home that is a link (a symlink, or a hard link the user's pi shares)
+is first replaced with a copy of its bytes, and a project folder that resolves outside the home
+gets no copy, no seeded header and no fork. From then on the two copies diverge: the user's `pi --resume` shows the conversation as it
 stood.
 
 **Settings ▸ Skills' From your pi setup** reads the user's `skills/` and the `skills` paths in
@@ -134,9 +143,12 @@ refuses pi's own package commands, and the pins turn off pi's update check and i
   guards, "your pi" resolution and `settings.json` writes (`PiHomeTests`), adoption's table
   (`PiSessionAdoptionTests`), and no RPC command naming a session file (`RPCWireTests`).
 - Integration: the launcher run for real (`PiLauncherTests`: the pins and the stash, restoring
-  in bash and zsh, refusals, a missing engine, a symlinked session folder, the marker), and the
+  in bash and zsh, refusals, a missing engine, a symlinked session folder or `bin/`, the marker,
+  startup files that name Shepherd's home as theirs, the MCP probe's environment), and the
   app launching through the stub engine despite the decoy startup files, adopting a restored
   agent's conversation while "your pi" stays byte-identical with no lock taken
   (`PiHomeLaunchTests`).
 - Engine smoke (opt-in, `SHEPHERD_ENGINE_SMOKE`): through the real launcher, an RPC `bash`
-  command finds `pi` at the launcher and gets back a `NODE_OPTIONS` pi never saw.
+  command finds `pi` at the launcher and gets back a `NODE_OPTIONS` pi never saw; an agent in
+  the user's home folder, whose pi names packages and extensions, loads none of their code, runs
+  no npm, and leaves their pi byte-identical.
