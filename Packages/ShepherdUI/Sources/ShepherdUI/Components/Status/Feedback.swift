@@ -22,7 +22,7 @@ public struct NWBanner<Actions: View>: View {
         let nw = Color.nw
         HStack(alignment: .top, spacing: NW.Space.l) {
             Image(systemName: systemImage ?? Self.defaultSymbol(state))
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(state.color)
                 .padding(.top, 2)
                 .accessibilityHidden(true)
@@ -196,7 +196,7 @@ public struct NWEmptyState<Actions: View>: View {
                 .lineSpacing(3)
                 .foregroundStyle(nw.textSecondary)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 320)
+                .frame(maxWidth: 280)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: NW.Space.s) { actions() }.padding(.top, NW.Space.xs)
         }
