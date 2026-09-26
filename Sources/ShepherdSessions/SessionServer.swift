@@ -986,6 +986,13 @@ public final class SessionServer: @unchecked Sendable {
             request = try NDJSON.decode(RemoteRequest.self, from: line)
         } catch {
             ShepherdLog.warning("undecodable remote request on fd \(client.fd): \(error)")
+            // A request this host does not know (a kind or an action a client from another
+            // version sends) is refused like any unsupported one once the client has said hello.
+            // A frame without an id has no reply to take, so it still closes the connection.
+            if client.authenticated, let id = (try? NDJSON.decode(RemoteRequestID.self, from: line))?.id {
+                send(.error(id: id, code: "unsupported", message: "The host does not take this request."), to: client)
+                return
+            }
             disconnect(client)
             return
         }
@@ -3425,10 +3432,9 @@ public final class SessionServer: @unchecked Sendable {
     /// Types `command` and Return into a fresh shell once its line editor reads, so the command
     /// shows once, at the prompt. Written sooner, the terminal echoes it as typeahead before the
     /// shell draws its prompt, and the line editor then shows it again. A shell with no line
-    /// editor gets it after `timeout`. `submit` false leaves it typed at the prompt, not run (Run
-    /// in terminal).
-    public func typeCommand(_ command: String, sessionID: SessionID, submit: Bool = true, timeout: TimeInterval = 5) {
-        let data = Data((submit ? command + "\n" : command).utf8)
+    /// editor gets it after `timeout`.
+    public func typeCommand(_ command: String, sessionID: SessionID, timeout: TimeInterval = 5) {
+        let data = Data((command + "\n").utf8)
         let deadline = DispatchTime.now() + timeout
         queue.async { self.typeWhenLineEditorReads(data, sessionID: sessionID, deadline: deadline) }
     }
@@ -3823,6 +3829,11 @@ public final class SessionServer: @unchecked Sendable {
         }
         return addr
     }
+}
+
+/// The id of a remote request the host could not decode, so it can refuse it.
+private struct RemoteRequestID: Decodable {
+    let id: Int
 }
 
 // MARK: - Changes
