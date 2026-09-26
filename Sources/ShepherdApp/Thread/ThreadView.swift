@@ -45,6 +45,8 @@ struct ThreadView: View {
     var queueState: QueueStackState? = nil
     /// Previews: the composer opens with the context ring's details showing.
     var contextDetailsOpen = false
+    /// A design's chat: its composer has attach and Send only.
+    var designChat = false
     @State private var follower = NativeScrollFollower()
     /// What the context details ask the thread to find (Largest, Show summary). A stable object,
     /// not a closure, so the composer is not redrawn with every render of the thread.
@@ -177,7 +179,8 @@ struct ThreadView: View {
                              follower.jumpToLatest()
                              proxy.scrollTo(Self.bottomID, anchor: .bottom)
                          } : nil, finder: finder, queueState: queueState, contextDetailsOpen: contextDetailsOpen,
-                         inspectSubagent: inspectSubagent, steerSubagent: steerSubagent, inspectedRunID: inspectedRunID)
+                         inspectSubagent: inspectSubagent, steerSubagent: steerSubagent, inspectedRunID: inspectedRunID,
+                         designChat: designChat)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { [composerInset] in
                         if composerInset.height != $0 { composerInset.height = $0 }
                     }

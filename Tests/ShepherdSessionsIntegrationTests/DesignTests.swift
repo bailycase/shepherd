@@ -494,6 +494,65 @@ struct DesignTests {
         #expect(try await h.server.designSnapshot(design.id).index.title == "Checkout funnel", "its files stay")
     }
 
+    // MARK: Revision pushes
+
+    /// A watched design's write reaches the app once, on the main queue, for that design alone; a
+    /// write that changes nothing, a refused write, and an unwatched design push nothing.
+    @Test func aWriteToAWatchedDesignPushesItsRevisionOnce() async throws {
+        let (h, design, _) = try await serverWithDesign()
+        defer { h.stop() }
+        let other = Design(name: "Onboarding", spaceID: design.spaceID, createdAt: 2_000)
+        _ = try await h.server.createDesign(other)
+        let pushes = Locked<[DesignID]>([])
+        h.server.onDesignRevision = { id in
+            dispatchPrecondition(condition: .onQueue(.main))
+            pushes.withValue { $0.append(id) }
+        }
+        let board = try Self.path("A.dc.html")
+        _ = try await h.server.writeDesignBoard(other.id, path: board, source: Self.board())
+        await drainMainQueue()
+        #expect(pushes.current.isEmpty, "no one watches these designs yet")
+
+        h.server.watchDesignRevisions(of: [design.id])
+        let written = try await h.server.writeDesignBoard(design.id, path: board, source: Self.board())
+        try await eventually("the write's push") { !pushes.current.isEmpty }
+        await drainMainQueue()
+        #expect(pushes.current == [design.id])
+
+        _ = try await h.server.writeDesignBoard(design.id, path: board, source: Self.board())
+        await #expect(throws: DesignStoreError.self) {
+            try await h.server.writeDesignBoard(design.id, path: board, source: Self.board(extra: "<p>x</p>"), baseRevision: written.revision - 1)
+        }
+        _ = try await h.server.writeDesignBoard(other.id, path: board, source: Self.board(extra: "<p>y</p>"))
+        // A write that does push, after them: had any of them pushed, it would arrive first.
+        _ = try await h.server.writeDesignBoard(design.id, path: board, source: Self.board(extra: "<p>z</p>"))
+        try await eventually("the last write's push") { pushes.current.count >= 2 }
+        await drainMainQueue()
+        #expect(pushes.current == [design.id, design.id], "an unchanged write, a stale one and an unwatched design push nothing")
+    }
+
+    /// Writes faster than the display ride one push per frame.
+    @Test func burstsOfWritesArePushedAtMostOncePerFrame() async throws {
+        let (h, design, _) = try await serverWithDesign()
+        defer { h.stop() }
+        let pushes = Locked<[UInt64]>([])
+        h.server.onDesignRevision = { _ in pushes.withValue { $0.append(DispatchTime.now().uptimeNanoseconds) } }
+        h.server.watchDesignRevisions(of: [design.id])
+        let first = try await h.server.writeDesignBoard(design.id, path: try Self.path("A.dc.html"), source: Self.board())
+        var last = first
+        for index in 0..<20 {
+            last = try await h.server.writeDesignBoard(design.id, path: try Self.path("A.dc.html"),
+                                                       source: Self.board(extra: "<p>\(index)</p>"))
+        }
+        // The last write committed before it returned, so a push after this moment carries it.
+        let end = DispatchTime.now().uptimeNanoseconds
+        try await eventually("the burst's last push") { (pushes.current.last ?? 0) >= end }
+        let times = pushes.current
+        #expect(UInt64(times.count) <= last.revision - first.revision + 1)
+        let span = Double((times.last ?? 0) - (times.first ?? 0)) / 1_000_000
+        #expect(Double(times.count) <= span / 16.667 + 2, "\(times.count) pushes in \(span) ms")
+    }
+
     // MARK: Relaunch
 
     @Test func aRelaunchKeepsTheRevisionAndCountsBoards() async throws {

@@ -31,7 +31,7 @@ DesignSurfaceKit ── Core, Protocol, WebKit (+ React 18.3.1 UMD, a resource)
 
 ShepherdUI (local package, Packages/ShepherdUI) ── nothing
 
-ShepherdApp ── Core, Protocol, Sessions, ShepherdUI, TerminalSurfaceKit, Sparkle, SwiftTreeSitter
+ShepherdApp ── Core, Protocol, Sessions, ShepherdUI, TerminalSurfaceKit, DesignSurfaceKit, Sparkle, SwiftTreeSitter
 Shepherd iOS (Xcode target) ── Core, Protocol, Remote, ShepherdUI
 ```
 
@@ -40,7 +40,7 @@ Shepherd iOS (Xcode target) ── Core, Protocol, Remote, ShepherdUI
 | `ShepherdCore` | Codable workspace models (`Space`, `Tab`, `Agent`, `Automation`, `Design`, `ShepherdState`), typed IDs, the `PaneNode` split tree, `AgentStatus` and its transition table, `ThinkingLevel`, and structural validation | nothing |
 | `ShepherdProtocol` | Wire contracts: `ExtensionMessage`/`ExtensionReply` (extension socket), `RemoteRequest`/`RemoteReply` and `RemoteProtocol` (version, capabilities), the native thread contract (`NativeThreadRequest`/`Result`/`Snapshot`), pi's RPC wire types (`RPCWire`, decoded leniently), NDJSON framing (1 MiB frame cap), `ShepherdPaths`, `ShepherdEdition` (Shepherd or Shepherd Nightly), Settings ▸ Instructions' files and requests (`Instructions.swift`), Settings ▸ Experiments ▸ Suggested instructions (`Suggestions.swift`), Settings ▸ Skills' skills, repositories and requests (`Skills.swift`), a host's settings as a client sees them (`HostSettings.swift`), and the Design tool's format (`DesignIndex`, `DesignPath`, `DesignTemplate`/`DesignElementID`, `DesignBoardCheck`; docs/designs.md) | Core |
 | `ShepherdRemote` | `RemoteHostClient` (TCP client: handshake, reconnect, bounded writes), `NativeThreadStore` (the `@Observable` thread client used by local, remote, and iOS views; it derives the rows a thread draws once per change), the pure derivations (`NativeThreadPresentation`, `NativeTurnPresentation` for a turn's items, `NativeActivity` for activity lines and the changes card, `InstructionsText` and `InstructionsPresentation` for Settings ▸ Instructions, `SuggestionsPresentation` for its experiment), the Settings models the Mac and the iOS client share (`ClientSettings`, and `ClientSkills` with `SkillsText`, `SkillsPresentation` and `SkillsDirectory`, skills.sh's client, for Settings ▸ Skills), and `ShepherdLog` | Core, Protocol |
-| `ShepherdUI` | Night Watch, the design system, in its own local package (`Packages/ShepherdUI`, macOS 26 and iOS 27): `ThemeDefinition` and Night Watch, `ThemeStore` (with the resolved `NWPalette` and `NWTypeRamp`), `Color.nw`, `Font.nw` and the bundled Geist faces, the `NW` scales, motion, elevation, `AgentState`, and the shared SwiftUI components by domain (Controls, Status, Containers, Navigation, Thread, Composer, Agents, Review, Dialogs). SwiftUI only; no app state | nothing |
+| `ShepherdUI` | Night Watch, the design system, in its own local package (`Packages/ShepherdUI`, macOS 26 and iOS 27): `ThemeDefinition` and Night Watch, `ThemeStore` (with the resolved `NWPalette` and `NWTypeRamp`), `Color.nw`, `Font.nw` and the bundled Geist faces, the `NW` scales, motion, elevation, `AgentState`, and the shared SwiftUI components by domain (Controls, Status, Containers, Navigation, Thread, Composer, Agents, Review, Dialogs, DesignTool: the design canvas, board frames, cards and header). SwiftUI only; no app state | nothing |
 | `ShepherdPTYSpawn` | `shepherd_forkpty_exec`: the PTY child side in C (reset signal dispositions and mask, close stray descriptors, exec), so no Swift runs between fork and exec | nothing |
 | `ShepherdSessions` | `SessionServer`, the authoritative state store and every session. Agents run as `RPCSession` + `RPCThreadState`, panes as `PTYSession` + `SessionScreen`. Also `StateStore`, the extension socket, the remote listener, `PiSessionPreview` (a thread read from pi's session file while pi starts), `InstructionsStore` (Settings ▸ Instructions' files and history), `SuggestionsStore` (Suggested instructions), `SkillsStore` and `SkillsGit` (a host's skills in `~/.agents/skills`, installed from partial clones; docs/skills.md), `DesignStore` (each design's files, on its own queue; docs/designs.md), and `PiModelCatalog`/`PiConfig` | Core, Protocol, Remote, ShepherdPTYSpawn, SwiftTerm |
 | `TerminalSurfaceKit` | The libghostty adapter for terminal panes (see its [NOTES.md](Sources/TerminalSurfaceKit/NOTES.md)). Knows nothing about agents or workspaces | GhosttyTerminal |
@@ -54,7 +54,8 @@ Dependencies point inward:
 - Sessions imports neither App, ShepherdUI, nor TerminalSurfaceKit; only Sessions imports
   ShepherdPTYSpawn.
 - ShepherdUI imports no Shepherd module; the app maps its states onto `AgentState`.
-- Only `ShepherdApp/TerminalHost.swift` imports TerminalSurfaceKit.
+- Only `ShepherdApp/TerminalHost.swift` imports TerminalSurfaceKit, and only
+  `ShepherdApp/DesignHost.swift` imports DesignSurfaceKit.
 - Only TerminalSurfaceKit imports GhosttyTerminal.
 - DesignSurfaceKit imports neither Sessions nor App: it is handed a design's folder and serves
   it read-only.
@@ -72,7 +73,8 @@ owns all server state. Each session's internal queue targets that queue, so sess
 extension handlers, and remote connections are mutually exclusive without locks. Callbacks
 (`onStateChanged`, `onOutput`, …) hop to the main queue in FIFO order. `onThreadRevision` is the
 exception: a hint to pull, delivered at most once per display frame and only for the agents the
-app watches (its threads on screen).
+app watches (its threads on screen). `onDesignRevision` is paced the same way (one pacer type,
+`RevisionPacer`), for the designs on screen.
 Nothing waits on the queue from outside: `SessionServer.state` returns the copy `StateStore`
 publishes under a lock as it commits, and an RPC record of 256 KiB or more (a long history)
 decodes on a concurrent queue while its session holds its later records in order.
@@ -136,6 +138,29 @@ function that decides, from the window's width, whether the sidebar docks or ove
 the side pane docks or overlays the agent's layout. The side pane wraps the whole
 layout (`AgentLayoutView` in `WorkspaceView.swift`), never one of its panes, so a terminal split
 beside the thread never narrows what the dock rule measures.
+
+## A design on screen
+
+```text
+agent's board_write / canvas_update → SessionServer → DesignStore (its own queue: check, write, revision)
+  → commitDesignWrite (server queue: boardCount, lastActiveAt) → onDesignRevision (paced, watched designs)
+  → DesignScreenModel.refresh (the snapshot: index, revision, each board's sha)
+  → DesignHost.update (only boards whose sha changed)
+      live view  → replaceSource in place, then a new snapshot
+      snapshot   → DesignRasterizer renders it again, off screen
+  → NWDesignCanvas (ShepherdUI: frames compared by board and zoom; one frame redraws per board changed)
+```
+
+- **A design's screen is its agent's layout.** `AgentLayoutView` draws `DesignLayoutView` for an
+  agent whose `designID` names a design: the canvas beside the agent's own `ThreadView` (composer
+  with attach and Send only). It mounts and hides like any layout, so switching is a flip; hidden,
+  its `DesignHost` gives up its live views and keeps its snapshots.
+- **Web views are pooled.** `DesignLivePlan` picks at most five live boards (the selected one, then
+  the nearest the middle, above a zoom threshold) and recycles the least recently wanted;
+  `DesignRasterizer` renders every other board's snapshot one at a time in one off-screen view.
+  A canvas of any size holds at most six web views.
+- **The Designs page** reads each design's first board through the same rasterizer
+  (`DesignThumbnails`).
 
 ## The agent thread
 

@@ -74,9 +74,22 @@ public final class DesignBoardView: DesignPlatformView {
     /// What the board drew, once it booted.
     public private(set) var contentSize: CGSize?
 
+    /// The board's CSS pixel size: its page lays out at this size whatever the zoom.
     public var boardSize: CGSize {
-        didSet { frame.size = boardSize }
+        didSet { frame.size = scaledSize }
     }
+
+    /// The canvas's zoom: the view is `boardSize × zoom` points, and the page draws sharp at that
+    /// scale (WebKit's page zoom) rather than being scaled as a picture.
+    public var zoom: CGFloat = 1 {
+        didSet {
+            guard zoom != oldValue, zoom.isFinite, zoom > 0 else { return }
+            webView.pageZoom = zoom
+            frame.size = scaledSize
+        }
+    }
+
+    private var scaledSize: CGSize { CGSize(width: boardSize.width * zoom, height: boardSize.height * zoom) }
 
     let webView: WKWebView
     /// Navigations the page started, the first load included. `replaceSource` never adds one.
@@ -166,11 +179,13 @@ public final class DesignBoardView: DesignPlatformView {
         }
     }
 
-    /// The board as drawn, `boardSize` from its top left, at the view's backing scale.
-    public func snapshot() async throws -> CGImage {
+    /// The board as drawn, `boardSize` from its top left, `width` points wide (the board's own
+    /// width unless given) at the view's backing scale, whatever the zoom.
+    public func snapshot(width: CGFloat? = nil) async throws -> CGImage {
         guard contentSize != nil else { throw DesignBoardError.notBooted }
         let configuration = WKSnapshotConfiguration()
-        configuration.rect = CGRect(origin: .zero, size: boardSize)
+        configuration.rect = CGRect(origin: .zero, size: scaledSize)
+        configuration.snapshotWidth = NSNumber(value: Double(width ?? boardSize.width))
         configuration.afterScreenUpdates = true
         let image = try await webView.takeSnapshot(configuration: configuration)
         #if canImport(AppKit) && !targetEnvironment(macCatalyst)

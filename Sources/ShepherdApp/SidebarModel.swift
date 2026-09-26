@@ -13,21 +13,29 @@ import ShepherdUI
 enum MainDestination: Hashable, CaseIterable {
     /// NavNewThread: ⌘N or the first destination.
     case newThread
+    /// NavDesigns (Settings ▸ Experiments ▸ Design tool).
+    case designs
+    /// DZStart: a new design's brief. The sidebar shows Designs selected.
+    case newDesign
     /// NavAutomations.
     case automations
     /// NavHosts (More ▸ Hosts).
     case hosts
 }
 
-/// The agent a Needs you or Recents row opens.
+/// What a Needs you or Recents row opens: an agent's thread, or a design (its canvas and its
+/// agent's chat).
 enum SidebarRowID: Hashable {
     case local(AgentID)
     case remote(RemoteAgentRef)
+    case design(DesignID)
 
-    var agentID: AgentID {
+    /// The agent the row names; nil for a design.
+    var agentID: AgentID? {
         switch self {
         case .local(let id): id
         case .remote(let ref): ref.agentID
+        case .design: nil
         }
     }
 }
@@ -66,8 +74,13 @@ struct SidebarLists: Equatable {
     /// The rows ⌘↑/↓ walk through: Needs you, then Recents.
     var all: [SidebarListRow] { needsYou + recents }
 
-    /// The lists with the row on screen marked, and the first nine Recents rows wearing their
-    /// ⌘-digit while ⌘ is held.
+    /// The Recents rows ⌘1–9 reach, in order: every thread's. A design takes no digit.
+    var shortcutRows: [SidebarListRow] {
+        recents.filter { if case .design = $0.id { false } else { true } }
+    }
+
+    /// The lists with the row on screen marked, and the first nine thread rows of Recents
+    /// wearing their ⌘-digit while ⌘ is held.
     func presented(selected: SidebarRowID?, shortcuts: Bool) -> SidebarLists {
         var lists = self
         if let selected {
@@ -75,7 +88,12 @@ struct SidebarLists: Equatable {
             for index in lists.recents.indices where lists.recents[index].id == selected { lists.recents[index].selected = true }
         }
         if shortcuts {
-            for index in lists.recents.indices.prefix(9) { lists.recents[index].accessory = .shortcut("⌘\(index + 1)") }
+            var digit = 0
+            for index in lists.recents.indices where digit < 9 {
+                if case .design = lists.recents[index].id { continue }
+                digit += 1
+                lists.recents[index].accessory = .shortcut("⌘\(digit)")
+            }
         }
         return lists
     }
@@ -102,6 +120,9 @@ struct SidebarSource: Equatable {
     var openRuns: [AutomationID: AutomationRun] = [:]
     /// Every configured host, in configured order; one that is offline lists what it last sent.
     var hosts: [Host] = []
+    /// Settings ▸ Experiments ▸ Design tool: This Mac's designs are Recents rows. Their agents
+    /// never are: a design's chat is its agent's thread.
+    var designs = false
 }
 
 enum SidebarDerivation {
@@ -112,7 +133,9 @@ enum SidebarDerivation {
         let localRuns = Dictionary(source.local.automations.compactMap { automation in
             automation.agentID.map { ($0, automation) }
         }, uniquingKeysWith: { first, _ in first })
+        let designs = Set(source.local.designs.map(\.id))
         for (index, agent) in source.local.agents.enumerated() {
+            if let design = agent.designID, designs.contains(design) { continue }
             let automation = localRuns[agent.id]
             let children = source.localChildren[agent.id] ?? []
             let needsYou = agent.status == .blocked || children.contains(where: \.needsAttention)
@@ -120,6 +143,11 @@ enum SidebarDerivation {
             let row = localRow(agent, automation: automation, run: run, children: children, needsYou: needsYou,
                                failed: source.failedTurns.contains(agent.id), since: source.statusSince[agent.id])
             entries.append((row, needsYou, agent.lastActiveAt ?? -1, 0, index))
+        }
+        if source.designs {
+            for (index, design) in source.local.designs.enumerated() {
+                entries.append((designRow(design), false, design.lastActiveAt, 0, index))
+            }
         }
         for (hostIndex, host) in source.hosts.enumerated() {
             let runs = Set(host.state.automations.compactMap(\.agentID))
@@ -199,6 +227,15 @@ enum SidebarDerivation {
             worktree: agent.worktreeBranch != nil, automation: automation?.id, automationLive: live)
     }
 
+    /// A design in Recents (NavDesigns): the nib in place of the status dot, and its board count.
+    private static func designRow(_ design: Design) -> SidebarListRow {
+        let boards = DesignsPageModel.boardsText(design.boardCount ?? 0)
+        return SidebarListRow(
+            id: .design(design.id), title: design.name, leading: .glyph("pencil.tip", attention: false),
+            accessory: .text(boards), help: design.name, accessibilityLabel: "\(design.name), design, \(boards)",
+            worktree: false, automation: nil, automationLive: false)
+    }
+
     private static func remoteRow(_ agent: Agent, host: SidebarSource.Host, automation: Bool, children: [ChildRun],
                                   needsYou: Bool) -> SidebarListRow {
         let leading: NWSidebarRow.Leading
@@ -253,13 +290,21 @@ enum SidebarDerivation {
         var id: Target { target }
     }
 
-    /// New thread (with its chord), Automations, More, and More's Hosts (with how many hosts are
-    /// offline) and Extensions while it is open. Missions, Designs, Design systems and Archive
-    /// are not built, so they are not shown.
-    static func destinations(shown: MainDestination?, moreOpen: Bool, offlineHosts: Int, newThreadChord: String) -> [Destination] {
+    /// New thread (with its chord), Designs while the Design tool is on (selected on its page and
+    /// on New design), Automations, More, and More's Hosts (with how many hosts are offline) and
+    /// Extensions while it is open. Missions, Design systems and Archive are not built, so they
+    /// are not shown.
+    static func destinations(shown: MainDestination?, moreOpen: Bool, offlineHosts: Int, newThreadChord: String,
+                             designs: Bool = false) -> [Destination] {
         var rows = [
             Destination(target: .page(.newThread), title: "New thread", icon: .newThread, selected: shown == .newThread,
                         child: false, trailing: .keycaps(newThreadChord)),
+        ]
+        if designs {
+            rows.append(Destination(target: .page(.designs), title: "Designs", icon: .symbol("pencil.tip"),
+                                    selected: shown == .designs || shown == .newDesign, child: false, trailing: .none))
+        }
+        rows += [
             Destination(target: .page(.automations), title: "Automations", icon: .symbol("bolt"),
                         selected: shown == .automations, child: false, trailing: .none),
             Destination(target: .more, title: "More", icon: .disclosure(open: moreOpen), selected: false, child: false,
