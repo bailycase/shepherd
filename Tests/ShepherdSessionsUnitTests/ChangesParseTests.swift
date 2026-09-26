@@ -40,6 +40,19 @@ struct ChangesParseTests {
         #expect(ChangesParse.files(rawNumstat: data) == [ChangesFile(path: ":weird", status: .modified, added: 1, removed: 1)])
     }
 
+    /// Hiding whitespace, a file an older git still lists with no counts leaves the list; a mode
+    /// change and a binary file stay.
+    @Test func hidingWhitespaceDropsAFileWithOnlyWhitespaceChanges() {
+        let data = Self.nul([
+            ":100644 100644 aaaaaaa bbbbbbb M", "spaces.txt",
+            ":100644 100755 ccccccc ccccccc M", "run.sh",
+            ":100644 100644 ddddddd eeeeeee M", "long.txt",
+            "0\t0\tspaces.txt", "0\t0\trun.sh", "1\t1\tlong.txt",
+        ])
+        #expect(ChangesParse.files(rawNumstat: data, ignoringWhitespace: true).map(\.path) == ["run.sh", "long.txt"])
+        #expect(ChangesParse.files(rawNumstat: data).map(\.path) == ["spaces.txt", "run.sh", "long.txt"])
+    }
+
     @Test func nameStatusPairsEachStatusWithItsPath() {
         let entries = ChangesParse.nameStatus(Self.nul(["M", "a.swift", "A", "new file.swift", "D", "gone.swift"]))
         #expect(entries.map { "\($0.status)\($0.path)" } == ["Ma.swift", "Anew file.swift", "Dgone.swift"])
