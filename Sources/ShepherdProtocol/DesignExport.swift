@@ -220,3 +220,60 @@ public enum DesignExportTokens {
 
     private static let variablePattern = try! NSRegularExpression(pattern: "var\\(\\s*(--[A-Za-z0-9_-]+)")
 }
+
+/// What an export of some boards reads from its design (`DesignStore.exportFiles`).
+public struct DesignExportFiles: Sendable {
+    public struct Asset: Hashable, Sendable {
+        /// Its file name in `assets/`: `<id>.<ext>`.
+        public var name: String
+        public var data: Data
+
+        public init(name: String, data: Data) {
+            self.name = name
+            self.data = data
+        }
+
+        /// The media type a page or an inlined url gives it, by its extension.
+        public var type: String {
+            switch (name.split(separator: ".").last.map(String.init) ?? "").lowercased() {
+            case "png": return "image/png"
+            case "jpg", "jpeg": return "image/jpeg"
+            case "gif": return "image/gif"
+            case "webp": return "image/webp"
+            case "avif": return "image/avif"
+            case "svg": return "image/svg+xml"
+            case "woff2": return "font/woff2"
+            case "woff": return "font/woff"
+            case "ttf": return "font/ttf"
+            case "otf": return "font/otf"
+            case "css": return "text/css"
+            case "js": return "text/javascript"
+            case "json": return "application/json"
+            default: return "application/octet-stream"
+            }
+        }
+    }
+
+    public var index: DesignIndex
+    /// The boards the export writes, in canvas order.
+    public var boards: [DesignPath]
+    /// Those boards and every board they import.
+    public var members: [DesignPath]
+    /// Each member's source.
+    public var sources: [DesignPath: String]
+    /// The project's other files by their path under `project/` (design systems under `ds/`,
+    /// support files the boards name), canvas.json and the boards aside.
+    public var support: [String: Data]
+    /// The uploads the members name, by id.
+    public var assets: [String: Asset]
+
+    public init(index: DesignIndex, boards: [DesignPath], members: [DesignPath], sources: [DesignPath: String],
+                support: [String: Data] = [:], assets: [String: Asset] = [:]) {
+        self.index = index
+        self.boards = boards
+        self.members = members
+        self.sources = sources
+        self.support = support
+        self.assets = assets
+    }
+}

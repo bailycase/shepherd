@@ -2920,6 +2920,36 @@ public final class SessionServer: @unchecked Sendable {
         return duplicate
     }
 
+    /// Makes a design from a Claude Design folder on disk (decision 4): the folder's canvas and
+    /// project files copied into a new design's folder by `DesignImport`'s rules (the folder is
+    /// only read), then its record in `spaceID`, named by the canvas's title. It has no agent
+    /// yet; opening it starts one.
+    public func importDesign(from folder: URL, spaceID: SpaceID) async throws -> Design {
+        guard state.spaces.contains(where: { $0.id == spaceID }) else { throw SessionServerError.noSuchSpace(spaceID) }
+        let id = DesignID()
+        let snapshot = try await designs.importFolder(id, from: folder)
+        let title = snapshot.index.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let design = Design(id: id, name: title.isEmpty ? "Imported design" : title, spaceID: spaceID,
+                            createdAt: Self.nowMilliseconds(), boardCount: snapshot.index.boards.count)
+        do {
+            try await enqueue {
+                try self.checkNewDesign(design)
+                try self.mutateState { $0.designs.append(design) }
+            }
+        } catch {
+            try? await designs.delete(id)
+            throw error
+        }
+        return design
+    }
+
+    /// What an export of a design's `boards` reads: the canvas, those boards and the ones they
+    /// import, the project's other files and the uploads they name.
+    public func designExportFiles(_ designID: DesignID, boards: [DesignPath]) async throws -> DesignExportFiles {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        return try await designs.exportFiles(designID, boards: boards)
+    }
+
     // MARK: - Design comments
 
     /// What a comment or reply made on the canvas left behind: the comment as kept, and why it
