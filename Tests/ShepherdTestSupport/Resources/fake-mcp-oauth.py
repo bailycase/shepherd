@@ -18,7 +18,7 @@ Prints its port on the first line of stdout, then serves until stdin closes:
   GET  /log                                     every request as JSON, for assertions
 No network beyond the loopback, stdlib only.
 """
-import base64, hashlib, json, os, sys, threading, urllib.parse
+import base64, hashlib, json, os, socketserver, sys, threading, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 STATE = {"clients": {}, "codes": {}, "access": {}, "refresh": {}, "log": [], "n": 0}
@@ -159,8 +159,16 @@ class Handler(BaseHTTPRequestHandler):
         self.send(404, {"error": "not_found"})
 
 
+class LoopbackServer(ThreadingHTTPServer):
+    # HTTPServer.server_bind names the server with socket.getfqdn, a reverse lookup of
+    # 127.0.0.1 that can stall for half a minute on CI's macOS runners.
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
+
 def main():
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server = LoopbackServer(("127.0.0.1", 0), Handler)
     server.daemon_threads = True
     threading.Thread(target=server.serve_forever, daemon=True).start()
     print(server.server_address[1], flush=True)
