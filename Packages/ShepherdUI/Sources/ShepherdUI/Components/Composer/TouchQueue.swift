@@ -132,7 +132,8 @@ private struct NWTouchQueueHeader<Options: View>: View {
 /// - **Queued:** its number (the order it goes), the text on up to two lines, and a photo glyph
 ///   with a count for its images. Its actions are the app's swipe actions and long-press menu.
 /// - **Steering:** on `runningTint`, the still `running` steer glyph in the number's place, the text, "↳
-///   Steering" under it, and Back to the queue.
+///   Steering" under it (on iPad, `wide`, the "Steering" pill after the text; iPadQueue), and Back to
+///   the queue.
 /// - **Deleted / Cleared:** where a message was deleted (or the queue cleared), with Undo.
 public struct NWTouchQueueRow: View {
     public enum Kind: Equatable, Sendable {
@@ -146,17 +147,20 @@ public struct NWTouchQueueRow: View {
     let images: Int
     let kind: Kind
     let held: Bool
+    let wide: Bool
     let back: (() -> Void)?
     let undo: (() -> Void)?
 
     /// `held` marks a message an editor is open on elsewhere. `back` is a steering row's Back
-    /// to the queue; `undo` a deleted row's Undo.
-    public init(_ text: String, images: Int = 0, kind: Kind, held: Bool = false,
+    /// to the queue; `undo` a deleted row's Undo. `wide` (iPad) puts a steering row's pill
+    /// after its text.
+    public init(_ text: String, images: Int = 0, kind: Kind, held: Bool = false, wide: Bool = false,
                 back: (() -> Void)? = nil, undo: (() -> Void)? = nil) {
         self.text = text
         self.images = images
         self.kind = kind
         self.held = held
+        self.wide = wide
         self.back = back
         self.undo = undo
     }
@@ -188,7 +192,7 @@ public struct NWTouchQueueRow: View {
             VStack(alignment: .leading, spacing: NW.Space.xxs) {
                 Text(text).font(.nw(.ui, weight: .regular)).foregroundStyle(nw.textPrimary)
                     .lineLimit(steering ? 1 : 2).truncationMode(.tail)
-                if steering {
+                if steering, !wide {
                     Label("Steering", systemImage: "arrow.turn.down.right")
                         .font(.nw(.caption, weight: .medium)).foregroundStyle(nw.running)
                         .labelStyle(NWTouchQueueInlineLabel())
@@ -199,6 +203,9 @@ public struct NWTouchQueueRow: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            if steering, wide {
+                NWStatusPill(.running, label: "Steering", symbol: "arrow.turn.down.right").fixedSize()
+            }
             if images > 0 {
                 Label("\(images)", systemImage: "photo")
                     .font(.nw(.caption)).foregroundStyle(nw.textTertiary)

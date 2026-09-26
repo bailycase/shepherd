@@ -15,12 +15,20 @@ enum MobileLayout {
     static let turnItemSpacing: CGFloat = NW.Space.l
     /// Lines inside a work group.
     static let activitySpacing: CGFloat = NW.Space.xxs
-    /// A thread's readable measure on iPad; the phone uses its full width.
-    static let threadMaxWidth: CGFloat = 760
+    /// A thread's readable measure on iPad (iPadThread's 780pt column); the phone uses its full width.
+    static let threadMaxWidth: CGFloat = 780
+    /// A question's card on iPad, wider than the thread's column (iPadQuestion).
+    static let questionMaxWidth: CGFloat = 900
+    /// The iPad thread's and composer's side gutters (iPadThread's 24pt; the phone keeps `gutter`).
+    static let padThreadGutter: CGFloat = NW.Space.xxl
     /// A note's indent from its rule.
     static let noteIndent: CGFloat = NW.Space.m
-    /// The iPad sidebar's width.
-    static let sidebarWidth: CGFloat = 320
+    /// The iPad sidebar's width beside the thread, in landscape (iPadThread).
+    static let sidebarWidth: CGFloat = 300
+    /// The iPad sidebar's width as it slides over the thread, in portrait (iPadSidebar).
+    static let sidebarOverlayWidth: CGFloat = 340
+    /// How much further in More's sub-rows start their content in the iPad sidebar (iPadHosts: 24pt).
+    static let sidebarSubrowIndent: CGFloat = NW.Space.l
     /// A list row: the boards' 48pt, never under the touch minimum.
     static let rowHeight: CGFloat = 48
     /// A two-line row (a title over a status line).
