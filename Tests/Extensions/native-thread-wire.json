@@ -260,7 +260,8 @@
             {
               "name": "fix-tests",
               "description": "Fix failing tests",
-              "source": "prompt"
+              "source": "prompt",
+              "arguments": "[suite]"
             },
             {
               "name": "bare"

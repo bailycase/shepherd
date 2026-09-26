@@ -2010,9 +2010,11 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
   skills out (on the Mac). Its rows are lazy, a highlight moving redraws only the two
   rows it moves between, and only ↑↓ scroll the highlight into view (the pointer's is already under
   the pointer).
-- **Not built yet:** argument hints after the name in `textTertiary` ("/resume [session]",
-  "/release-notes [tag]"; NWComposer, SlashMenu). `NWSlashCommand.arguments` draws them, but pi's
-  `get_commands` does not send them, so the app has none to show.
+- **Argument hints** after the name in `textTertiary` ("/release-notes [tag]"; NWComposer,
+  SlashMenu) come from a prompt template's `argument-hint` frontmatter, which the host reads from
+  the file pi names (pi's `get_commands` sends no hints; `NativeCommand.arguments`). Extension
+  commands and skills declare none, and pi's interactive built-ins (/resume, /reload) are not in
+  its registry, so those rows have no hint.
 - **Model picker** (`ModelPicker` on `NWModelPicker`, 380pt, its list at most 360pt tall;
   ModelPicker): from the model chip or ⇧⌘M, either of which also closes it (without `setModel` it
   beeps). A 30pt search row takes focus: a 12pt `magnifyingglass` in `textTertiary`, "Search
@@ -7888,7 +7890,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | --- | --- | --- |
 | Main | Thread; Composer, questions, and menus; Toolbar (breadcrumb, branch chip, side-pane button) | Built |
 | Running | Thread (A turn while pi works); Composer, questions, and menus | Built |
-| SlashMenu | Composer, questions, and menus › Slash menu | Partial |
+| SlashMenu | Composer, questions, and menus › Slash menu | Built |
 | ModelPicker | Composer, questions, and menus › Model picker | Built |
 | CommandPalette | Command palette | Built |
 | ToolRows | Thread › Activity lines | Built |
