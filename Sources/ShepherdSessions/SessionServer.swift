@@ -2845,9 +2845,10 @@ public final class SessionServer: @unchecked Sendable {
     /// Types `command` and Return into a fresh shell once its line editor reads, so the command
     /// shows once, at the prompt. Written sooner, the terminal echoes it as typeahead before the
     /// shell draws its prompt, and the line editor then shows it again. A shell with no line
-    /// editor gets it after `timeout`.
-    public func typeCommand(_ command: String, sessionID: SessionID, timeout: TimeInterval = 5) {
-        let data = Data((command + "\n").utf8)
+    /// editor gets it after `timeout`. `submit` false leaves it typed at the prompt, not run (Run
+    /// in terminal).
+    public func typeCommand(_ command: String, sessionID: SessionID, submit: Bool = true, timeout: TimeInterval = 5) {
+        let data = Data((submit ? command + "\n" : command).utf8)
         let deadline = DispatchTime.now() + timeout
         queue.async { self.typeWhenLineEditorReads(data, sessionID: sessionID, deadline: deadline) }
     }
@@ -2924,6 +2925,13 @@ public final class SessionServer: @unchecked Sendable {
             guard let session = self.sessions[sessionID]?.pty else { return }
             self.resizePTY(session, sessionID: sessionID, cols: cols, rows: rows)
         }
+    }
+
+    /// Kills the command running in a session's terminal (Kill process), leaving its shell.
+    /// False when nothing but the shell has the terminal, or the session is gone.
+    @discardableResult
+    public func killForegroundCommand(sessionID: SessionID) async -> Bool {
+        await enqueueValue { self.sessions[sessionID]?.pty?.killForegroundCommand() ?? false }
     }
 
     public func killSession(_ sessionID: SessionID) {
