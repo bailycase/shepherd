@@ -493,6 +493,9 @@ final class RPCThreadState {
             }
             send(id: operationID, text: text, delivery: delivery, images: images, alone: olderClient, completion: completion)
         case .abort:
+            // Stopping refuses what pi is waiting on: a question has no Dismiss, and a turn
+            // waiting on an answer would not stop.
+            refuseDialogs()
             stop { settle($0) }
         case .queue(_, _, _, let action):
             perform(action, operationID: operationID, completion: completion)
@@ -1002,6 +1005,15 @@ final class RPCThreadState {
     }
 
     // MARK: - Dialogs and widgets
+
+    /// Cancels every question pi waits on that can be answered here (its asker gets pi's
+    /// cancelled answer); the next commit drops them from the thread.
+    private func refuseDialogs() {
+        let open = dialogs.filter { $0.unavailable == nil }
+        guard !open.isEmpty else { return }
+        for dialog in open { session.send(.extensionUIResponse(id: dialog.id, cancelled: true)) }
+        dialogs.removeAll { $0.unavailable == nil }
+    }
 
     private func handleUIRequest(_ request: RPCExtensionUIRequest) {
         switch request.method {
