@@ -75,6 +75,7 @@ elements).
   project/canvas.json          the index
   project/<path>.dc.html       one per board
   revision                     Shepherd's revision counter for the design
+  comments.json                the viewer's comments (Comments, below), beside project/
 ```
 
 - **The support directory**, so a design survives a worktree's deletion, stays with its edition
@@ -145,6 +146,8 @@ project's stylesheets, tokens and templates with its ordinary tools.
 | `board_write(path, source, baseRevision?)` | `designWriteBoard` | `designWritten` | `writeDesignBoard`: the checks under Writing, then an atomic write. It reads "Drew A.dc.html" for a new board and "Updated A.dc.html" for a rewrite (`DesignWriteResult.created`) |
 | `canvas_update(changes, baseRevision?)` | `designUpdateIndex` | `designWritten` | `updateDesignIndex` with `changes` as the merge patch |
 | `design_check(path?)` | none | | In the extension: every hex color (in style attributes, style and script blocks, `data-props`, SVG paint) and every px size in spacing, radius and type that no CSS custom property in the project declares, with the nearest token. Its first line is "Checked against <project> · N off-system values" |
+| `comment_list(all?)` | `designComments` | `designComments` | The viewer's open comments (all of them with `all`), oldest first: id, number, state, element id and name, and each one's words and replies, fenced as data |
+| `comment_reply(id, text)` | `designCommentReply` | `designComment` | An answer under a comment's pin (`replyToDesignComment`, author `agent`). No message resolves a comment: only the viewer does |
 
 - **Only the drawing agent.** The server answers a design message only when the sending agent's
   `designID` is that design (`not_your_design` otherwise), checks a board path against the
@@ -161,6 +164,45 @@ project's stylesheets, tokens and templates with its ordinary tools.
   `.drew`), "Updated A and A · phone" (the edit glyph), or "Arranged the canvas"; `design_check`
   reads "Checked against acme-web · 0 off-system values" (`.checked`). Board names follow the
   skill's files: `A.dc.html` reads "A", `A-phone.dc.html` "A · phone".
+
+### Comments
+
+The viewer pins a comment to one element of a board (the canvas's Comment tool). A comment is
+Shepherd's, not the format's: it lives in the design folder's `comments.json`, beside `project/`,
+so an exported canvas carries none.
+
+- **The record** (`DesignComment`, ShepherdProtocol): its id, its pin's `number` (made in order
+  from 1, never reused), its `board`, its element's `tid` and `path`, the element's words as the
+  template gives them (`label`, from `DesignTemplate.labels`: the runtime's describe label, holes
+  as written), what the card calls it (`target`: the element's `data-el` name, else its words),
+  where the board drew it (`rect`, in the board's points), the viewer's words, author and time,
+  the `replies` under it, `resolvedAt`, and `detached`.
+- **Its own revision.** `comments.json` carries a revision that moves with every change to the
+  comments and never with the boards', so a comment never makes the agent's next board write
+  stale. A change naming an older one is refused (`stale_revision`); the canvas reads them again
+  and goes once more.
+- **Making one** (`SessionServer.addDesignComment`): the element must be one the board's source
+  has now (`invalid_comment` otherwise, and `no_such_board` for a board the canvas doesn't hold);
+  its label is read from the source, not taken from the client. Words are 1 to 8 KiB; a design
+  keeps 500 comments and a comment 100 replies.
+- **To the agent.** Kept, a comment goes to the design's agent through the host queue as a message
+  of its own (`goesAlone`), never into the turn pi is working on: at once while pi is idle, else
+  after the running turn. pi reads the viewer's words after a fence (`DesignCommentFence`): a line
+  saying what it is, then one JSON record between `design-comment` markers carrying a nonce new to
+  the message (the comment's id and number, its board by view name, its element id, label and
+  target). The thread shows the words alone, and the message's origin names the comment
+  (`NativeMessageOrigin.designComment`, from the fence, which pi's session keeps, so it survives a
+  relaunch). A reply the viewer writes under the pin goes the same way, marked `"reply": true`,
+  and draws as their words. A comment that can't go (no agent, pi not running or starting) is
+  kept and says why; it doesn't go later on its own.
+- **Answers and resolving.** The agent answers under the pin with `comment_reply` once the change
+  is made. Only the viewer resolves (`resolveDesignComment`), and may open one again.
+- **Drift.** A rewrite renumbers a board's elements, so every write of a board finds its open
+  comments' elements again (`DesignCommentAnchor`): the element at the same path with the same
+  words; else one with the same words, nearest the old path; else the element at the same path
+  (its words changed where it stands, typically the edit the comment asked for); else the comment
+  detaches where it was ("element changed"). A board leaving the canvas detaches its comments;
+  one found again later attaches again.
 
 ### The design skill
 
@@ -321,8 +363,7 @@ was on keep their files and agents either way.
   a visibility flip, and a design's canvas (where it looks, the tool, the selected board) lasts
   the app's run. A design's screen has no terminal panel.
 - **The canvas** (`NWDesignCanvas`) pans with two fingers, the Pan tool or space-drag, and zooms
-  with a pinch or ⌘-scroll about the pointer. Comment is drawn disabled. It opens fitted to the
-  boards, never above 100%.
+  with a pinch or ⌘-scroll about the pointer. It opens fitted to the boards, never above 100%.
 - **Board labels** sit 24pt above their boards where the boards around them leave room
   (`NWLabelRoom`): where the row above is closer (rows 120 apart are about 20pt at the opening
   17%), a label moves down toward its frame, keeping at least 2pt; where not even that fits, it
@@ -345,6 +386,27 @@ was on keep their files and agents either way.
 - **After a rewrite** a live board reports that it drew new source, and its selected elements
   are found again where it draws them now (by tid, keeping the path); one it no longer draws
   leaves the selection. The board holding the latest pick stays live.
+
+### Comments (Comment)
+
+- **Making one.** With the Comment tool, a click on a board names the element under it (the same
+  hit test as Select; a board's label or nothing named takes no comment): it takes the selection
+  ring and the next pin, and the review's comment editor opens under it ("Comment for the design
+  agent", "on A · Checkout funnel"; ⏎ keeps it, esc cancels, an empty one is none). The Comment
+  tool rings the element under the pointer as Select does.
+- **Pins** (`NWCommentPin`) sit centered on their elements' top-trailing corners: where a live
+  view of the board draws the element now (found again by tid and path after a write), else where
+  it was when the comment was made. Only open comments have pins.
+- **The thread** (`NWCommentThread`) opens under its element, its trailing edge at the pin's, kept
+  inside the canvas: a click on a pin, or on a card in the Comments tab. It shows who and when,
+  Resolve, the comment, each answer under a hairline ("Design agent · 1m"), and Reply…. A click
+  anywhere on the canvas closes it.
+- **The chat.** A message carrying a comment draws as the comment's card (`NWCommentCard`: the
+  small pin, "on A · Checkout funnel", "You · 2m", the words), and the agent's reply to it sits
+  inside the card under a hairline, without the turn's footer.
+- **The Comments tab** lists the open comments' cards, oldest first (a lazy list, one row per
+  card), and its label counts them. The chat's thread stays mounted under it.
+- **Failures** (a comment kept but not delivered, a refused one) go to the app's error dialog.
 
 ### The view record
 
@@ -393,5 +455,9 @@ The design screen publishes what it shows (`DesignScreenModel.viewRecord`, a
 Not drawn on any board, so left out until they are: the Designs page with no designs, a design
 still loading or failing to draw, the design row's and the chat's ••• menus (so no rename or delete
 in the app yet), Present mode, the Capture a page and From a screenshot starting points, zoom
-presets and keyboard shortcuts (so no Escape to clear a selection). Comments, Tweak, Variations
-and the board actions bar come with the rest of this phase.
+presets and keyboard shortcuts (so no Escape to clear a selection). For comments: an empty
+Comments tab (it is blank), a detached pin (it stays where its element was, and its thread and
+card say "element changed"), resolved comments (they leave the canvas and the tab; nothing lists
+them yet), and a comment that couldn't reach the agent (the error dialog says so; it isn't sent
+again). Tweak, Variations and the board actions bar (so no Comment action on a selected board)
+come with the rest of this phase.
