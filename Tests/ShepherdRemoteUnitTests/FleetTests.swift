@@ -333,13 +333,16 @@ struct FleetTests {
     // MARK: Designs
 
     /// Where a host serves designs, the agent drawing one is the design's row (the nib, "design ·
-    /// 4 boards", ordered by when the design last changed); a system build's agent and every agent
-    /// on a host without designs stay threads.
-    @Test func aDesignsAgentIsItsDesignsRowWhereTheHostServesDesigns() {
+    /// 4 boards", ordered by when the design last changed). A design's agent is never a thread
+    /// (docs/designs.md › Design agents and ordinary threads): not running, not needing you, not
+    /// counted; a system build's agent, and every design agent of a host not serving designs, has
+    /// no row at all.
+    @Test func aDesignsAgentIsItsDesignsRowAndNeverAThread() {
         let drawing = Agent(id: AgentID(rawValue: "designer"), name: "Checkout funnel dashboard", spaceID: Self.space.id,
                             tabID: TabID(rawValue: "t-d"), status: .working, nameIsFinal: true, designID: DesignID(rawValue: "d1"))
-        let building = Agent(id: AgentID(rawValue: "builder"), name: "acme-web", spaceID: Self.space.id, tabID: TabID(rawValue: "t-b"),
-                             status: .idle, nameIsFinal: true, designID: DesignID(rawValue: "d2"))
+        var building = Agent(id: AgentID(rawValue: "builder"), name: "acme-web", spaceID: Self.space.id, tabID: TabID(rawValue: "t-b"),
+                             status: .blocked, nameIsFinal: true, designID: DesignID(rawValue: "d2"))
+        building.waitingReason = "pick a palette"
         let designs = [
             Design(id: DesignID(rawValue: "d1"), name: "Checkout funnel dashboard", spaceID: Self.space.id, agentID: drawing.id,
                    createdAt: 0, lastActiveAt: 5_000, boardCount: 4),
@@ -356,13 +359,15 @@ struct FleetTests {
         #expect(row?.design == FleetDesign(id: DesignID(rawValue: "d1"), boards: 4))
         #expect(row?.detail == "design · 4 boards")
         #expect(row?.clock == nil)
-        #expect(model.running.contains { $0.ref == Self.ref("designer") } == false)
-        #expect(model.recents.first { $0.ref == Self.ref("builder") }?.design == nil)
-        #expect(model.recents.map(\.ref.agent.rawValue) == ["designer", "plain", "builder"])
+        #expect(model.recents.map(\.ref.agent.rawValue) == ["designer", "plain"])
+        #expect(model.running.isEmpty && model.needsYou.isEmpty && model.finished.isEmpty)
+        #expect(model.hosts.first?.threads == 1)
+        #expect(model.hosts.first?.running == 0)
+        #expect(model.hosts.first?.summary == "1 thread · none running")
 
         host.designs = false
         let off = FleetModel(hosts: [host], digests: digests)
-        #expect(off.recents.allSatisfy { $0.design == nil })
-        #expect(off.running.map(\.ref) == [Self.ref("designer")])
+        #expect(off.recents.map(\.ref.agent.rawValue) == ["plain"])
+        #expect(off.running.isEmpty && off.needsYou.isEmpty)
     }
 }
