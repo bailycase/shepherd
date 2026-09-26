@@ -188,20 +188,21 @@ struct DesignModelTests {
     }
 
     @Test func aDesignAndItsAgentRoundTrip() throws {
-        let design = Design(name: "Checkout", spaceID: SpaceID(), agentID: AgentID(), systemNamespace: "acme-web",
+        let design = Design(name: "Checkout", agentID: AgentID(), systemNamespace: "acme-web",
                             createdAt: 1_000, lastActiveAt: 2_000, boardCount: 4)
         #expect(try Fixture.roundTrip(design) == design)
-        let bare = Design(name: "Bare", spaceID: SpaceID(), createdAt: 5)
+        let bare = Design(name: "Bare", createdAt: 5)
         #expect(bare.lastActiveAt == 5, "a new design was last active when it was made")
         #expect(try Fixture.roundTrip(bare) == bare)
         let agent = Agent(name: "designer", spaceID: SpaceID(), tabID: TabID(), designID: design.id)
         #expect(try Fixture.roundTrip(agent).designID == design.id)
     }
 
-    /// A system build ("Build one from a repo") says so; a design from before it, or any other
-    /// design, decodes and writes as it did.
+    /// A system build ("Build one from a repo") says so, with the project it reads; a design from
+    /// before it, or any other design, decodes and writes as a canvas.
     @Test func aSystemBuildRoundTripsAndOlderDesignsDecodeAsCanvases() throws {
-        let build = Design(name: "dashboard-web", spaceID: SpaceID(), createdAt: 1, buildsSystem: true)
+        let source = SpaceID()
+        let build = Design(name: "dashboard-web", createdAt: 1, buildsSystem: true, sourceSpaceID: source)
         #expect(try Fixture.roundTrip(build) == build)
         #expect(try Fixture.encodeObject(build)["buildsSystem"] as? Bool == true)
         let older = try Fixture.decode(Design.self, #"{"id":"d1","name":"Checkout","spaceID":"s","createdAt":1,"lastActiveAt":2}"#)
@@ -209,13 +210,53 @@ struct DesignModelTests {
         #expect(try Fixture.encodeObject(older)["buildsSystem"] == nil, "a canvas writes no buildsSystem")
     }
 
+    /// Designs stand alone (2026-09-26): a design decodes with or without the space it used to
+    /// belong to and ignores a stored one. It still writes a `spaceID` no space has, because older
+    /// builds and remote clients can't decode a design without one. An older build's space was
+    /// its project.
+    @Test(arguments: [
+        #"{"id":"d1","name":"Checkout","createdAt":1,"lastActiveAt":2}"#,
+        #"{"id":"d1","name":"Checkout","spaceID":"s1","createdAt":1,"lastActiveAt":2}"#,
+    ])
+    func aDesignBelongsToNoSpace(_ json: String) throws {
+        let design = try Fixture.decode(Design.self, json)
+        #expect(design.name == "Checkout" && design.sourceSpaceID == nil)
+        let written = try Fixture.encodeObject(design)
+        #expect(written["sourceSpaceID"] == nil)
+        #expect(written["spaceID"] as? String == "standalone-design", "older readers still find one")
+        #expect(try Fixture.roundTrip(design) == design)
+    }
+
+    @Test func anOlderSystemBuildKeepsItsSpaceAsItsProject() throws {
+        let build = try Fixture.decode(Design.self,
+                                       #"{"id":"d1","name":"web","spaceID":"s1","createdAt":1,"lastActiveAt":1,"buildsSystem":true}"#)
+        #expect(build.sourceSpaceID == SpaceID(rawValue: "s1"))
+        let written = try Fixture.encodeObject(build)
+        #expect(written["spaceID"] as? String == "s1" && written["sourceSpaceID"] as? String == "s1")
+    }
+
+    /// The reserved designs space says so; every other space decodes and writes as it did.
+    @Test func theDesignsSpaceIsHiddenAndSaysSo() throws {
+        let designs = Space.designs()
+        #expect(designs.hidden && designs.holdsDesigns && !designs.holdsAutomations)
+        #expect(try Fixture.roundTrip(designs) == designs)
+        #expect(try Fixture.encodeObject(designs)["holdsDesigns"] as? Bool == true)
+        let automations = Space(name: "Automations", path: "~", hidden: true)
+        #expect(automations.holdsAutomations && !automations.holdsDesigns)
+        #expect(try Fixture.encodeObject(automations)["holdsDesigns"] == nil)
+        let older = try Fixture.decode(Space.self, #"{"id":"s","name":"web","path":"/tmp/web","hidden":true}"#)
+        #expect(!older.holdsDesigns && older.holdsAutomations)
+        #expect(ShepherdState(spaces: [older, designs]).designsSpace?.id == designs.id)
+        #expect(ShepherdState(spaces: [older]).designsSpace == nil)
+    }
+
     /// The board count is what the host reads from the design's files: never written to state.json.
     @Test func thePersistedStateDropsBoardCounts() {
-        let design = Design(name: "Checkout", spaceID: SpaceID(), createdAt: 1, boardCount: 4)
+        let design = Design(name: "Checkout", createdAt: 1, boardCount: 4)
         let state = ShepherdState(designs: [design])
         #expect(state.persisted.designs.first?.boardCount == nil)
         #expect(state.persisted.designs.first?.name == "Checkout")
-        let uncounted = ShepherdState(designs: [Design(name: "New", spaceID: SpaceID(), createdAt: 1)])
+        let uncounted = ShepherdState(designs: [Design(name: "New", createdAt: 1)])
         #expect(uncounted.persisted == uncounted)
     }
 
@@ -223,7 +264,7 @@ struct DesignModelTests {
     private func drawnState() -> (state: ShepherdState, thread: Agent, drawer: Agent, stray: Agent) {
         var state = Fixture.state()
         let thread = state.agents[0]
-        let design = Design(name: "Checkout", spaceID: thread.spaceID, createdAt: 1)
+        let design = Design(name: "Checkout", createdAt: 1)
         let tab = Tab(spaceID: thread.spaceID, order: 1, layout: .leaf(LeafPane(cwd: "/tmp")))
         let drawer = Agent(name: "Checkout", spaceID: thread.spaceID, tabID: tab.id, designID: design.id)
         let stray = Agent(name: "stray", spaceID: thread.spaceID, tabID: TabID(), designID: DesignID())

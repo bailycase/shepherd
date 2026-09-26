@@ -40,7 +40,7 @@ struct StateValidationTests {
                 let automation = Automation(name: "a", prompt: "p", cwd: "/tmp")
                 state.automations = [automation, automation]
             case .duplicateDesign:
-                let design = Design(name: "d", spaceID: space.id, createdAt: 1)
+                let design = Design(name: "d", createdAt: 1)
                 state.designs = [design, design]
             case .tabInUnknownSpace: state.tabs[0].spaceID = SpaceID()
             case .agentInUnknownSpace: state.agents[0].spaceID = SpaceID()
@@ -99,7 +99,7 @@ struct StateValidationTests {
     /// so a state that still has one is valid.
     @Test func designsAndTheirAgentsMayPointAtWhatIsGone() throws {
         var state = Fixture.state()
-        state.designs = [Design(name: "d", spaceID: SpaceID(), agentID: AgentID(), createdAt: 1)]
+        state.designs = [Design(name: "d", agentID: AgentID(), createdAt: 1)]
         state.agents[0].designID = DesignID()
         try state.validate()
     }

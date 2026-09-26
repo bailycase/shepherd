@@ -58,7 +58,7 @@ struct DesignBoardActionsFlowTests {
         let space = Fixture.space(path: app.dir.path)
         let log = app.dir.appendingPathComponent("pi.log")
         var drawer = try await app.liveAgent("Checkout", in: space, order: 0, log: log)
-        let design = Design(name: "Checkout", spaceID: space.id, agentID: drawer.agent.id, createdAt: 1_000)
+        let design = Design(name: "Checkout", agentID: drawer.agent.id, createdAt: 1_000)
         drawer.agent.designID = design.id
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [drawer]))
         vm.designNetwork = .none

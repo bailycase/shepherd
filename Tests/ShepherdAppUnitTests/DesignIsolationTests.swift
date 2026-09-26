@@ -19,7 +19,7 @@ struct DesignIsolationTests {
     private func workspace() -> (state: ShepherdState, thread: Agent, drawer: Agent) {
         let thread = Fixture.agent("Fix login bug", in: Self.space)
         var drawer = Fixture.agent("Landing hero", in: Self.space, order: 1)
-        let design = Design(name: "Landing hero", spaceID: Self.space.id, agentID: drawer.agent.id, createdAt: 1)
+        let design = Design(name: "Landing hero", agentID: drawer.agent.id, createdAt: 1)
         drawer.agent.designID = design.id
         let state = ShepherdState(spaces: [Self.space], tabs: [thread.tab, drawer.tab], agents: [thread.agent, drawer.agent],
                                   designs: [design])

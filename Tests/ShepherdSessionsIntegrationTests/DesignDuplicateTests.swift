@@ -13,7 +13,7 @@ struct DesignDuplicateTests {
         let h = try ScratchServer.fresh()
         let space = Fixture.space()
         try await h.seed(Fixture.workspace([Fixture.agent(in: space)], space: space))
-        let design = Design(name: "Checkout funnel", spaceID: space.id, createdAt: 1_000)
+        let design = Design(name: "Checkout funnel", createdAt: 1_000)
         _ = try await h.server.createDesign(design)
         try await DesignFixtures.draw(DesignFixtures.checkout, in: design.id, on: h.server, perRow: 3)
         return (h, design)

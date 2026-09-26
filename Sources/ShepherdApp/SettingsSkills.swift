@@ -78,8 +78,9 @@ struct SkillsSettings: View {
     private var header: some View {
         HStack(alignment: .bottom, spacing: NW.Space.xl) {
             SettingsHeader(title: "Skills",
-                           explanation: "Instructions and scripts the agent picks up when a task calls for them. Skills are global: "
-                               + "every thread and automation on every host gets the same set.")
+                           explanation: "Instructions and scripts the agent picks up when a task calls for them. Installed skills are "
+                               + "global: every thread and automation on every host gets the same set. Skills from your pi setup "
+                               + "and pi packages are listed read-only.")
                 .frame(maxWidth: AppLayout.skillsExplanationWidth, alignment: .leading)
             Spacer(minLength: NW.Space.l)
             HStack(spacing: NW.Space.m) {
