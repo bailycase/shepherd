@@ -97,11 +97,12 @@ elements).
 - **Live values.** A design's `boardCount` (its listed boards) is read from its files and
   broadcast, never written to `state.json`. A write moves `lastActiveAt` the same way; it reaches
   the file with the next structural change.
-- **Soft references.** A design's agent and an agent's design may name something gone. Deleting
-  an agent keeps its design, which starts a fresh agent when next opened. Deleting a design keeps
-  its agent. A deleted space keeps its designs.
-- **At startup** the server forgets a design whose folder has no `canvas.json` and clears
-  references to what no longer exists. A canvas that is there but unreadable keeps its design. Which folders are gone is read on the design store's
+- **Soft references.** A design's agent may name something gone. Deleting an agent keeps its
+  design, which starts a fresh agent when next opened. Deleting a design takes the agents that
+  drew it (their layouts and processes too): a design's chat never becomes a thread. A deleted
+  space keeps its designs.
+- **At startup** the server forgets a design whose folder has no `canvas.json`, with the agents
+  that drew it, and clears a design's agent that no longer exists. A canvas that is there but unreadable keeps its design. Which folders are gone is read on the design store's
   queue, not the server's. It then reads each design's board count.
 
 ## Writing
@@ -114,7 +115,7 @@ the only writer, through named mutations:
 | --- | --- |
 | `createDesign(_:)` | Makes the folder with a new canvas.json (`createdOnFiles` stamped, the name as `title`), then the record. A refused record removes the folder again |
 | `renameDesign(_:to:)` | Renames the record and the canvas `title` |
-| `deleteDesign(_:)` | Removes the record, clears `designID` on its agent, then removes the folder |
+| `deleteDesign(_:)` | Removes the record and the agents that drew it (their layouts, and their processes stopped), then removes the folder |
 | `setDesignAgent(_:agentID:)` | Records which agent draws it |
 | `writeDesignBoard(_:path:source:baseRevision:)` | Writes one board's whole source |
 | `updateDesignIndex(_:patch:baseRevision:)` | Applies a canvas update. A new `title` renames the design |
@@ -211,6 +212,9 @@ them, whether the experiment is on or off. The rule holds in both directions:
   `designs`, without their agents, and without those agents' layouts
   (`ShepherdState.withoutDesigns`). There is no remote design screen yet. A Mac client also
   skips any design agent that an older host still sends.
+- **A forgotten design.** Deleting a design, or startup forgetting one whose folder is gone,
+  takes the agents that drew it. Clearing their `designID` instead would turn the design's chat,
+  fences and all, into an ordinary thread.
 
 ### Comments
 

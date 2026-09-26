@@ -563,13 +563,17 @@ public final class SessionServer: @unchecked Sendable {
             || state.designs.contains { $0.agentID.map { !agents.contains($0) } == true }
     }
 
-    /// Forgets designs whose folders are gone, and clears an agent's design or a design's agent
-    /// that no longer exists: opening such a design starts a fresh agent.
+    /// Forgets designs whose folders are gone, with the agents that drew them (a design's chat
+    /// never becomes a thread), and clears a design's agent that no longer exists: opening such a
+    /// design starts a fresh agent.
     static func reconcileDesigns(_ state: inout ShepherdState, missing: Set<DesignID>) {
         state.designs.removeAll { missing.contains($0.id) }
         let designs = Set(state.designs.map(\.id))
-        for i in state.agents.indices where state.agents[i].designID.map({ !designs.contains($0) }) == true {
-            state.agents[i].designID = nil
+        let drawers = Set(state.agents.filter { $0.designID.map { !designs.contains($0) } == true }.map(\.id))
+        if !drawers.isEmpty {
+            let tabs = Set(state.agents.filter { drawers.contains($0.id) }.map(\.tabID))
+            state.agents.removeAll { drawers.contains($0.id) }
+            state.tabs.removeAll { tabs.contains($0.id) || $0.inspectorFor.map(drawers.contains) == true }
         }
         let agents = Set(state.agents.map(\.id))
         for i in state.designs.indices where state.designs[i].agentID.map({ !agents.contains($0) }) == true {
@@ -2863,17 +2867,33 @@ public final class SessionServer: @unchecked Sendable {
         try await enqueue { try self.commitDesignWrite(designID, result) }
     }
 
-    /// Forgets a design and removes its folder. Its agent stays an ordinary agent.
+    /// Forgets a design and removes its folder. The agents that drew it go with it, their
+    /// processes stopped, the way Delete Agent does: a design's chat never becomes a thread.
     public func deleteDesign(_ designID: DesignID) async throws {
         try await enqueue {
             guard self.store.state.designs.contains(where: { $0.id == designID }) else {
                 throw SessionServerError.noSuchDesign(designID)
             }
+            let drawers = Set(self.store.state.agents.filter { $0.designID == designID }.map(\.id))
+            let doomedTabs = self.store.state.tabs.filter { tab in
+                self.store.state.agents.contains { drawers.contains($0.id) && $0.tabID == tab.id }
+                    || tab.inspectorFor.map(drawers.contains) == true
+            }
+            let doomedTabIDs = Set(doomedTabs.map(\.id))
+            let sessions = Set(doomedTabs.flatMap { $0.layout.leaves.compactMap(\.sessionID) })
             try self.mutateState {
                 $0.designs.removeAll { $0.id == designID }
-                for i in $0.agents.indices where $0.agents[i].designID == designID {
-                    $0.agents[i].designID = nil
+                $0.agents.removeAll { drawers.contains($0.id) }
+                $0.tabs.removeAll { doomedTabIDs.contains($0.id) }
+                for i in $0.automations.indices where $0.automations[i].agentID.map(drawers.contains) == true {
+                    $0.automations[i].agentID = nil
                 }
+                for i in $0.designs.indices where $0.designs[i].agentID.map(drawers.contains) == true {
+                    $0.designs[i].agentID = nil
+                }
+            }
+            for sessionID in sessions {
+                self.killSessionOnQueue(sessionID)
             }
         }
         try await designs.delete(designID)
