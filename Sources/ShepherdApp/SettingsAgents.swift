@@ -20,7 +20,7 @@ struct AgentSettings: View {
         SettingsPage(title: "Agents", explanation: Self.explanation(keys)) {
             SettingsGroup(title: "New agents") {
                 SettingsRow(title: "Default model",
-                            subtitle: "Preselected in the New Agent sheet. “Use the agent’s default” passes no --model at all.") {
+                            subtitle: "Preselected in the New Agent sheet. “Use the agent’s default” passes no `--model` at all.") {
                     NWPopupMenu(settings.defaultModel.isEmpty ? agentDefault : settings.defaultModel,
                                 mono: !settings.defaultModel.isEmpty, minWidth: AppLayout.settingsPopupWidth) {
                         Button(agentDefault) { settings.defaultModel = "" }

@@ -55,6 +55,13 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// carries the user's formatted review text.
     case requestReview(id: Int, agentID: AgentID, cwd: String?, reference: String?)
 
+    // MARK: Suggested instructions (request/reply)
+
+    /// The instructions extension's `suggest_instruction`: one line the agent learned the hard
+    /// way, for a root instruction file (`AGENTS.md` when `file` is nil), and why. It waits for
+    /// the user (Settings ▸ Experiments); answered with `ExtensionReply.suggestion`.
+    case suggestInstruction(id: Int, agentID: AgentID, line: String, reason: String, file: InstructionFile?)
+
     // MARK: Agent peers (request/reply)
 
     /// The fleet: every top-level agent thread, for agent_send targeting.
@@ -99,6 +106,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case title, body
         case prompt, enabled, start, automationID, targetAgentID, request, requestID, result
         case error
+        case line, reason, file
     }
 
     private enum Kind: String, Codable {
@@ -108,6 +116,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case createAutomation, listAutomations, updateAutomation, deleteAutomation
         case startAutomation, stopAutomation
         case listAgents, sendToAgent, spawnAgent, coordinateAgent, agentResponse, cancelAgentRequest
+        case suggestInstruction
     }
 
     public init(from decoder: Decoder) throws {
@@ -191,6 +200,14 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                 agentID: try c.decode(AgentID.self, forKey: .agentID),
                 cwd: try c.decodeIfPresent(String.self, forKey: .cwd),
                 reference: try c.decodeIfPresent(String.self, forKey: .reference)
+            )
+        case .suggestInstruction:
+            self = .suggestInstruction(
+                id: try c.decode(Int.self, forKey: .id),
+                agentID: try c.decode(AgentID.self, forKey: .agentID),
+                line: try c.decode(String.self, forKey: .line),
+                reason: try c.decodeIfPresent(String.self, forKey: .reason) ?? "",
+                file: try c.decodeIfPresent(InstructionFile.self, forKey: .file)
             )
         case .listAgents:
             self = .listAgents(
@@ -341,6 +358,13 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(agentID, forKey: .agentID)
             try c.encodeIfPresent(cwd, forKey: .cwd)
             try c.encodeIfPresent(reference, forKey: .reference)
+        case .suggestInstruction(let id, let agentID, let line, let reason, let file):
+            try c.encode(Kind.suggestInstruction, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(line, forKey: .line)
+            try c.encode(reason, forKey: .reason)
+            try c.encodeIfPresent(file, forKey: .file)
         case .listAgents(let id, let agentID):
             try c.encode(Kind.listAgents, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -724,6 +748,8 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     /// Unsolicited push on a helloAgent-registered connection: a peer-thread
     /// message for this agent. `id` is always 0 (no request to correlate).
     case message(id: Int, text: String)
+    /// What became of a `suggestInstruction` line.
+    case suggestion(id: Int, outcome: SuggestionOutcome)
 
     /// Unsolicited, to the target's registered connection: serve `request` and answer with
     /// `ExtensionMessage.agentResponse`. `requestID` is the server's token, independent of the
@@ -737,11 +763,13 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case requestID, targetAgentID, request, result
         case type, id, code, message, panes, pane, paneID, lines, automations, agents, text
         case runID, action, mode
+        case outcome
     }
 
     private enum Kind: String, Codable {
         case childCommand, agentRequest, agentResult
         case ok, error, panes, paneOpened, paneContent, reviewResult, automations, agents, message
+        case suggestion
     }
 
     public init(from decoder: Decoder) throws {
@@ -811,6 +839,11 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
                 id: try c.decodeIfPresent(Int.self, forKey: .id) ?? 0,
                 text: try c.decode(String.self, forKey: .text)
             )
+        case .suggestion:
+            self = .suggestion(
+                id: try c.decode(Int.self, forKey: .id),
+                outcome: try c.decode(SuggestionOutcome.self, forKey: .outcome)
+            )
         }
     }
 
@@ -871,6 +904,10 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             try c.encode(Kind.message, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(text, forKey: .text)
+        case .suggestion(let id, let outcome):
+            try c.encode(Kind.suggestion, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(outcome, forKey: .outcome)
         }
     }
 }
