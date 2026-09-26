@@ -13,15 +13,17 @@ struct SidePaneView: View {
     let news: Set<SidePaneTab>
     let review: ReviewSession?
     let store: NativeThreadStore
+    var maximized = false
 
     var body: some View {
         VStack(spacing: 0) {
-            SidePaneTabBar(vm: vm, owner: owner, tab: tab, news: news, review: review)
+            SidePaneTabBar(vm: vm, owner: owner, tab: tab, news: news, review: review, maximized: maximized)
             ZStack {
                 switch tab {
                 case .changes:
                     if let review {
-                        ReviewPaneHost(session: review, actions: vm.reviewActions(for: review, remote: isRemote), store: store)
+                        ReviewPaneHost(session: review, actions: vm.reviewActions(for: review, remote: isRemote), store: store,
+                                       maximized: maximized)
                             .id(review.id)
                             .nwTransition(.content)
                     }
@@ -45,17 +47,19 @@ private struct SidePaneTabBar: View {
     let tab: SidePaneTab
     let news: Set<SidePaneTab>
     let review: ReviewSession?
+    let maximized: Bool
 
     var body: some View {
         NWSidePaneTabs(SidePaneTabs.items(news: news, changedFiles: review.flatMap { $0.isLoading ? nil : $0.files.count }),
                        selection: tab.rawValue,
                        select: { id in SidePaneTab(rawValue: id).map { vm.showSidePane(owner, tab: $0) } },
                        closeShortcut: vm.keybindings.display(.toggleRightPane),
-                       close: { vm.hideSidePane(owner) }) {
+                       close: { vm.hideSidePane(owner) },
+                       restore: maximized ? { vm.toggleSidePaneMaximized(owner) } : nil) {
             // The pane's ⋯ menu: what the tab on screen offers, then the pane's own. Split below,
             // Open in its own window and Show tabs wait for the tabs that need them.
             if tab == .changes, let review {
-                ReviewOptionItems(session: review)
+                ReviewOptionItems(session: review, maximized: maximized, toggleMaximized: { vm.toggleSidePaneMaximized(owner) })
                 Divider()
             }
             Button("Reset Width") { vm.subagentInspector.width = 0 }

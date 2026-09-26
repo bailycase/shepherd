@@ -9,8 +9,6 @@ import ShepherdRemote
 extension MobileLayout {
     /// The iPad's commit popover (the iPadCommit board's 400pt).
     static let commitPopoverWidth: CGFloat = 400
-    /// The most the popover's file list grows before it scrolls.
-    static let commitPopoverFilesHeight: CGFloat = 220
 }
 
 /// The message card, with where it came from.
