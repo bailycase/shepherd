@@ -172,7 +172,8 @@ events come out on stdout, one record per LF.
     it ends and moves into history under the same id at the next refresh, placed before the
     first message that started once it ended (a tool result counts from its call), so after the
     call that asked and before pi's next reply, where the live thread showed it. A question too
-    large to show here is not recorded. Older clients have no role for the row and leave it out
+    large to show here is not recorded, nor one still open when pi moved to another session
+    (`/new`, `/resume`): it belongs to the session it left. Older clients have no role for the row and leave it out
     (it has no blocks); older hosts send none. pi's session holds no UI dialogs, so the host
     keeps the records beside the origins (below, newest 256 per session) and places them again
     after a relaunch; one from before a compaction's kept messages went with what was
@@ -598,7 +599,8 @@ requests sent to its host.
   context worth sizing ("context", "fill-context"), compactions ("auto-compact",
   "compact-abort", and `compact` itself, held with "hold" in its instructions; `ContextTests`
   drive them), and a pi-like turn whose `ask_user` call asks a select ("question", and
-  "question-timeout" with a 150 ms timeout; `QuestionRecordTests`).
+  "question-timeout" with a 150 ms timeout, and "select-newsession", a question left open
+  while pi moves to another session; `QuestionRecordTests`).
   For example, `LargeHistoryTests` loads a 6 MiB history. A "tools:N" prompt runs a pi-like
   agent loop with pi 0.87.1's queues (steering read after each tool batch, follow-ups when the
   run would stop, `queue_update`, `clear_queue`, abort keeping follow-ups, and a stranded steer
