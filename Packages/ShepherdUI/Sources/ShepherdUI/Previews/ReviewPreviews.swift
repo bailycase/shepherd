@@ -31,12 +31,9 @@ private enum ReviewSample {
         VStack(spacing: 0) {
             NWFileHeader(path: "App/iOS/FleetView.swift", hunkCount: 2, commentCount: 1, isExpanded: true, isViewed: false,
                          toggle: {}, toggleViewed: {}, revert: {})
-            NWDiffView(ReviewSample.rows, onComment: { _ in }, onExpand: { _ in }) { line in
-                if line.key == 4 {
-                    NWInlineComment(initial: "B", author: "You", meta: "line 33 · just now",
-                                    text: "Keep reconnect reachable from the row — flaky Wi-Fi users lose the one-tap retry.",
-                                    onEdit: {}, onDelete: {})
-                }
+            NWDiffView(ReviewSample.rows, notes: [4: "Keep reconnect reachable from the row — flaky Wi-Fi users lose the one-tap retry."],
+                       onComment: { _ in }, onExpand: { _ in }) { _, text in
+                NWInlineComment(initial: "B", author: "You", meta: "line 33 · just now", text: text, onEdit: {}, onDelete: {})
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))

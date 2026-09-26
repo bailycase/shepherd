@@ -82,10 +82,18 @@ final class ReviewStore {
     /// The connection and side the files were loaded for: showing the review again reloads
     /// only when either changed.
     @ObservationIgnored private var loadedKey: LoadKey?
-    @ObservationIgnored private var filesVersion = 0
+    /// Bumped whenever `files` is set: rows and colors belong to one version of the files.
+    @ObservationIgnored private(set) var filesVersion = 0
     @ObservationIgnored private var unifiedCache: [String: CachedRows<NWDiffRow>] = [:]
     @ObservationIgnored private var splitCache: [String: CachedRows<ReviewSplitDisplayRow>] = [:]
-    @ObservationIgnored private var highlightCache: [String: (version: Int, lines: [Int: AttributedString])] = [:]
+    /// Each shown file's syntax colors by line id, highlighted off the main thread
+    /// (`highlight(_:)`): a 3,000-line file took about 170 ms to color in the view's body.
+    private var fileColors: [String: FileColors] = [:]
+
+    private struct FileColors {
+        let version: Int
+        let lines: [Int: AttributedString]
+    }
 
     private struct LoadKey: Equatable {
         let session: UUID?
@@ -95,6 +103,7 @@ final class ReviewStore {
     private struct CachedRows<Row> {
         let version: Int
         let expanded: Set<String>
+        let colored: Bool
         let rows: [Row]
     }
 
@@ -188,8 +197,9 @@ final class ReviewStore {
     func unifiedRows(_ fileID: String) -> [NWDiffRow] {
         guard let file = file(fileID) else { return [] }
         let expanded = expandedRuns[fileID] ?? []
-        if let cached = unifiedCache[fileID], cached.version == filesVersion, cached.expanded == expanded { return cached.rows }
-        let colors = highlight(file)
+        let colors = landedColors(fileID)
+        if let cached = unifiedCache[fileID], cached.version == filesVersion, cached.expanded == expanded,
+           cached.colored == (colors != nil) { return cached.rows }
         let rows: [NWDiffRow] = reviewRows(file, expandedRuns: expanded).map { row in
             switch row.kind {
             case .hunk(let header): return .hunk(id: row.id, header: header)
@@ -197,7 +207,7 @@ final class ReviewStore {
             case .collapsed(let key, let count, let kind, let range): return .fold(id: key, count: count, kind: NWDiffLineKind(kind), range: range)
             }
         }
-        unifiedCache[fileID] = CachedRows(version: filesVersion, expanded: expanded, rows: rows)
+        unifiedCache[fileID] = CachedRows(version: filesVersion, expanded: expanded, colored: colors != nil, rows: rows)
         return rows
     }
 
@@ -205,8 +215,9 @@ final class ReviewStore {
     func splitRows(_ fileID: String) -> [ReviewSplitDisplayRow] {
         guard let file = file(fileID) else { return [] }
         let expanded = expandedRuns[fileID] ?? []
-        if let cached = splitCache[fileID], cached.version == filesVersion, cached.expanded == expanded { return cached.rows }
-        let colors = highlight(file)
+        let colors = landedColors(fileID)
+        if let cached = splitCache[fileID], cached.version == filesVersion, cached.expanded == expanded,
+           cached.colored == (colors != nil) { return cached.rows }
         let rows: [ReviewSplitDisplayRow] = reviewSplitRows(file, expandedRuns: expanded).map { row in
             switch row.kind {
             case .hunk(let header): return .hunk(id: row.id, header: header)
@@ -217,44 +228,67 @@ final class ReviewStore {
                 return .fold(id: row.id, key: key, count: count, kind: NWDiffLineKind(kind), range: range, side: NWSplitFoldRow.Side(side))
             }
         }
-        splitCache[fileID] = CachedRows(version: filesVersion, expanded: expanded, rows: rows)
+        splitCache[fileID] = CachedRows(version: filesVersion, expanded: expanded, colored: colors != nil, rows: rows)
         return rows
     }
 
-    private func content(_ line: DiffLine, id: String, colors: [Int: AttributedString]) -> NWDiffLineContent {
+    private func content(_ line: DiffLine, id: String, colors: [Int: AttributedString]?) -> NWDiffLineContent {
         NWDiffLineContent(id: id, key: line.id, kind: NWDiffLineKind(line.kind), oldNumber: line.oldLine, newNumber: line.newLine,
-                          text: colors[line.id] ?? AttributedString(line.text), source: line.text)
+                          text: colors?[line.id] ?? AttributedString(line.text), source: line.text)
     }
 
-    private func highlight(_ file: DiffFile) -> [Int: AttributedString] {
-        if let cached = highlightCache[file.id], cached.version == filesVersion { return cached.lines }
+    /// A file's colors for the files on hand, once `highlight(_:)` has landed them.
+    private func landedColors(_ fileID: String) -> [Int: AttributedString]? {
+        fileColors[fileID].flatMap { $0.version == filesVersion ? $0.lines : nil }
+    }
+
+    /// Colors a file's lines off the main thread, then lands them in one change: its rows show
+    /// plain text until then. A file already colored for these files is left alone.
+    func highlight(_ fileID: String) async {
+        guard let file = file(fileID), landedColors(fileID) == nil else { return }
+        let version = filesVersion
+        let palette = SyntaxPalette()
+        let lines = await Task.detached(priority: .userInitiated) { Self.colored(file, palette: palette) }.value
+        guard !Task.isCancelled, version == filesVersion else { return }
+        fileColors[fileID] = FileColors(version: version, lines: lines)
+    }
+
+    /// The theme's syntax colors, read on the main actor for the highlighter.
+    private struct SyntaxPalette: Sendable {
+        let keyword, type, string, number, function, comment: Color
+
+        @MainActor init() {
+            let nw = Color.nw
+            keyword = nw.synKeyword
+            type = nw.synType
+            string = nw.synString
+            number = nw.synNumber
+            function = nw.synFunction
+            comment = nw.synComment
+        }
+    }
+
+    private nonisolated static func colored(_ file: DiffFile, palette: SyntaxPalette) -> [Int: AttributedString] {
+        guard !file.isBinary, let language = ReviewSyntax.language(forPath: file.displayPath) else { return [:] }
         var lines: [Int: AttributedString] = [:]
-        if !file.isBinary, let language = ReviewSyntax.language(forPath: file.displayPath) {
-            for line in file.hunks.lazy.flatMap(\.lines) {
-                lines[line.id] = Self.colored(ReviewSyntax.spans(line.text, language: language))
+        for line in file.hunks.lazy.flatMap(\.lines) {
+            var text = AttributedString()
+            for span in ReviewSyntax.spans(line.text, language: language) {
+                var part = AttributedString(span.text)
+                switch span.kind {
+                case .keyword?: part.foregroundColor = palette.keyword
+                case .type?: part.foregroundColor = palette.type
+                case .string?: part.foregroundColor = palette.string
+                case .number?: part.foregroundColor = palette.number
+                case .function?: part.foregroundColor = palette.function
+                case .comment?: part.foregroundColor = palette.comment
+                case nil: break
+                }
+                text += part
             }
+            lines[line.id] = text
         }
-        highlightCache[file.id] = (filesVersion, lines)
         return lines
-    }
-
-    private static func colored(_ spans: [ReviewSyntax.Span]) -> AttributedString {
-        let nw = Color.nw
-        var text = AttributedString()
-        for span in spans {
-            var part = AttributedString(span.text)
-            switch span.kind {
-            case .keyword?: part.foregroundColor = nw.synKeyword
-            case .type?: part.foregroundColor = nw.synType
-            case .string?: part.foregroundColor = nw.synString
-            case .number?: part.foregroundColor = nw.synNumber
-            case .function?: part.foregroundColor = nw.synFunction
-            case .comment?: part.foregroundColor = nw.synComment
-            case nil: break
-            }
-            text += part
-        }
-        return text
     }
 
     // MARK: Comments

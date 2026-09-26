@@ -32,7 +32,9 @@ final class PreviewWorkspace {
             themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .light),
             remoteHosts: RemoteHostStore(defaults: defaults), sidebarDefaults: defaults, themeInstaller: { _ in },
             // Only the agents a preview mounts get a pi, and those get the stub.
-            restoresAgentsAtLaunch: false
+            restoresAgentsAtLaunch: false,
+            // Fixtures set the checkout each header shows.
+            checkoutReader: nil
         )
         // The boards' footer, never this machine's user and name.
         vm.sidebarFooterIdentity = ("Baily", SidebarDerivation.footerDetail(computerName: "build-01"))

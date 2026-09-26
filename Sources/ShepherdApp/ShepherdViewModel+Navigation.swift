@@ -188,6 +188,7 @@ extension ShepherdViewModel {
         // a page covers it next.
         if pendingMountTabIDs.contains(agent.tabID) { pendingMountTabIDs.remove(agent.tabID) }
         sidebarRevealRequest += 1
+        checkouts?.refresh(id)
         focusedPaneID = restoredFocus(forTab: agent.tabID, fallback: agent.paneID)
     }
 

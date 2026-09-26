@@ -66,6 +66,7 @@ struct StateCodingTests {
         #expect(agent.paneID == nil && agent.model == nil && agent.thinkingLevel == nil)
         #expect(agent.worktreeBranch == nil && agent.worktreeBase == nil && agent.worktreePath == nil)
         #expect(agent.lastActiveAt == nil && agent.waitingOn == nil, "older hosts and state files carry neither")
+        #expect(agent.checkout == nil, "older hosts and state files carry no checkout")
     }
 
     /// An agent keeps any level pi has; one this build does not know reads as pi's default.
@@ -97,7 +98,8 @@ struct StateCodingTests {
             name: "calm-stone-3831", spaceID: SpaceID(), tabID: TabID(), paneID: PaneID(),
             status: .blocked, model: "anthropic/claude", thinkingLevel: .high, nameIsFinal: true,
             piSessionID: "s-2", worktreeBranch: "worktree/calm-stone-3831", worktreeBase: "origin/main",
-            worktreePath: "/tmp/calm-stone-3831", lastActiveAt: 1_790_000_000_000, waitingOn: "Which base?"
+            worktreePath: "/tmp/calm-stone-3831", lastActiveAt: 1_790_000_000_000, waitingOn: "Which base?",
+            checkout: AgentCheckout(branch: "worktree/calm-stone-3831", changedFiles: 3)
         )
         #expect(try Fixture.roundTrip(agent) == agent)
     }

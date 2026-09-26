@@ -115,6 +115,11 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     /// sidebar's Needs you can say why without reading the thread. Never written to state.json
     /// (`ShepherdState.persisted`). Nil when nothing is asked, and from older hosts.
     public var waitingOn: String?
+    /// The branch the agent's checkout is on and how many files differ from its HEAD, as the host
+    /// last read them (`git status`). Live state: refreshed by the host after the agent's tool
+    /// calls, turns, commits and focus, and broadcast so remote clients draw the same header.
+    /// Nil until the host has read it, when the directory is no repository, and from older hosts.
+    public var checkout: AgentCheckout?
 
     public init(
         id: AgentID = AgentID(),
@@ -131,7 +136,8 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         worktreeBase: String? = nil,
         worktreePath: String? = nil,
         lastActiveAt: Double? = nil,
-        waitingOn: String? = nil
+        waitingOn: String? = nil,
+        checkout: AgentCheckout? = nil
     ) {
         self.id = id
         self.name = name
@@ -148,6 +154,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         self.worktreePath = worktreePath
         self.lastActiveAt = lastActiveAt
         self.waitingOn = waitingOn
+        self.checkout = checkout
     }
 
     /// The pi session to launch this agent with. Falls back to the agent's id,
@@ -158,7 +165,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case id, name, spaceID, tabID, paneID, status, model, thinkingLevel, nameIsFinal
-        case piSessionID, worktreeBranch, worktreeBase, worktreePath, lastActiveAt, waitingOn, runtime
+        case piSessionID, worktreeBranch, worktreeBase, worktreePath, lastActiveAt, waitingOn, checkout, runtime
     }
 
     public init(from decoder: Decoder) throws {
@@ -185,6 +192,8 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         // Absent before Recents, and from hosts that don't report them.
         lastActiveAt = try c.decodeIfPresent(Double.self, forKey: .lastActiveAt)
         waitingOn = try c.decodeIfPresent(String.self, forKey: .waitingOn)
+        // Absent before the header's branch chip, and from hosts that don't read it.
+        checkout = try c.decodeIfPresent(AgentCheckout.self, forKey: .checkout)
         // `runtime` is ignored: agents from the terminal era ("terminal") relaunch over RPC in
         // the same pi session, which is the whole migration.
     }
@@ -206,9 +215,23 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(worktreePath, forKey: .worktreePath)
         try c.encodeIfPresent(lastActiveAt, forKey: .lastActiveAt)
         try c.encodeIfPresent(waitingOn, forKey: .waitingOn)
+        try c.encodeIfPresent(checkout, forKey: .checkout)
         // Older remote clients default a missing runtime to terminal and would try to attach a
         // PTY that does not exist.
         try c.encode(SessionRuntime.rpc, forKey: .runtime)
+    }
+}
+
+/// An agent's checkout as its host last read it: the branch (a short commit when detached) and
+/// the number of files that differ from HEAD, untracked ones included, so it matches the review's
+/// file count for the working tree.
+public struct AgentCheckout: Codable, Hashable, Sendable {
+    public var branch: String
+    public var changedFiles: Int
+
+    public init(branch: String, changedFiles: Int) {
+        self.branch = branch
+        self.changedFiles = changedFiles
     }
 }
 

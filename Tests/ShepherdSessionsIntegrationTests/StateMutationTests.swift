@@ -165,6 +165,42 @@ struct StateMutationTests {
         #expect(persisted.spaces == [space, added])
     }
 
+    // MARK: - Checkout
+
+    /// The branch and changed-file count the app reads for an agent's header are live state, as a
+    /// status report is: broadcast once and readable at once, written only by the next structural
+    /// mutation; the same value again, or an unknown agent, changes nothing.
+    @Test func anAgentsCheckoutIsLiveStateThatTheNextMutationWrites() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let space = Fixture.space()
+        let worker = Fixture.agent(in: space)
+        try await h.seed(Fixture.workspace([worker], space: space))
+        let onDisk = try Data(contentsOf: h.stateURL)
+        let checkout = AgentCheckout(branch: "pi/swiftui-previews", changedFiles: 3)
+
+        await h.server.setAgentCheckout(worker.agent.id, checkout)
+        await drainMainQueue()
+
+        #expect(h.server.state.agents.first?.checkout == checkout)
+        #expect(h.broadcasts.current.map { $0.agents.first?.checkout } == [checkout])
+        #expect(try Data(contentsOf: h.stateURL) == onDisk, "not written on its own")
+        h.broadcasts.withValue { $0.removeAll() }
+
+        try await expectNoChange(on: h) { await h.server.setAgentCheckout(worker.agent.id, checkout) }
+        try await expectNoChange(on: h) { await h.server.setAgentCheckout(AgentID(), checkout) }
+
+        try await h.server.addSpace(Fixture.space("added"))
+        #expect(try h.persisted().agents.first?.checkout == checkout)
+        await drainMainQueue()
+        h.broadcasts.withValue { $0.removeAll() }
+
+        await h.server.setAgentCheckout(worker.agent.id, nil)
+        await drainMainQueue()
+        #expect(h.server.state.agents.first?.checkout == nil, "a directory that stopped being a repository clears it")
+        #expect(h.broadcasts.current.count == 1)
+    }
+
     // MARK: - putState
 
     @Test func putStateReplacesTheWholeWorkspace() async throws {
