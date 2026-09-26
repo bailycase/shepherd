@@ -36,7 +36,7 @@ struct DesignCanvasPane: View {
         NWDesignCanvas(boards: screen.boards, viewport: $screen.viewport, tool: $screen.tool, disabledTools: [.comment],
                        select: { screen.select($0) }, resized: { screen.resized($0) }, zooming: { screen.setZooming($0) }) { board in
             if let host, let path = DesignPath(board.id) {
-                DesignBoardSlot(host: host, path: path, zoom: zoom)
+                DesignBoardSlot(host: host, path: path, zoom: zoom, content: board.content)
             }
         }
     }

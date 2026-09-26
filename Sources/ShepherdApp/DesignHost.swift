@@ -589,11 +589,13 @@ private extension CGImage {
 // MARK: Views
 
 /// A board's page in its canvas frame: its live view, else its snapshot, else nothing yet (the
-/// frame's fill).
+/// frame's fill). What it reads from the host isn't observed, so `content` (the board's token)
+/// is what tells SwiftUI it changed.
 struct DesignBoardSlot: View {
     let host: DesignHost
     let path: DesignPath
     let zoom: CGFloat
+    let content: Int
 
     var body: some View {
         if let view = host.liveView(path) {
