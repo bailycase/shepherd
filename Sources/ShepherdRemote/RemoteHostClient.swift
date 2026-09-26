@@ -271,13 +271,25 @@ public final class RemoteHostClient: @unchecked Sendable {
         initialPrompt: String?,
         worktreeBranch: String? = nil,
         worktreeBase: String? = nil,
-        worktreeFetchFirst: Bool? = nil
+        worktreeFetchFirst: Bool? = nil,
+        initialImages: [NativeImage] = []
     ) async throws -> AgentID {
+        // An older host would drop the images and start the thread without them.
+        if !initialImages.isEmpty, !capabilities.contains(RemoteProtocol.createAgentImagesCapability) {
+            throw RemoteHostClientError.rejected(code: "update_required", message: Self.createAgentImagesRefusal)
+        }
         if worktreeBase != nil || worktreeFetchFirst != nil, !capabilities.contains(RemoteProtocol.creationOptionsCapability) {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to choose worktree creation options.")
         }
         if worktreeBranch != nil, !capabilities.contains(RemoteProtocol.worktreeActionsCapability) {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to create worktree agents.")
+        }
+        let images = initialImages.isEmpty ? nil : initialImages
+        if images != nil, Self.overFrame(.createAgent(id: 0, spaceID: spaceID, cwd: cwd, model: model, thinking: thinking,
+                                                      initialPrompt: initialPrompt, worktreeBranch: worktreeBranch,
+                                                      worktreeBase: worktreeBase, worktreeFetchFirst: worktreeFetchFirst,
+                                                      initialImages: images)) {
+            throw RemoteHostClientError.rejected(code: "too_large", message: Self.imagesTooLarge)
         }
         let reply = try await request(timeout: 120) { id in
             .createAgent(
@@ -287,9 +299,10 @@ public final class RemoteHostClient: @unchecked Sendable {
                 model: model,
                 thinking: thinking,
                 initialPrompt: initialPrompt,
-            worktreeBranch: worktreeBranch,
-            worktreeBase: worktreeBase,
-            worktreeFetchFirst: worktreeFetchFirst
+                worktreeBranch: worktreeBranch,
+                worktreeBase: worktreeBase,
+                worktreeFetchFirst: worktreeFetchFirst,
+                initialImages: images
             )
         }
         guard case .agentCreated(_, let agentID) = reply else {
@@ -353,6 +366,16 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
     }
 
+    /// Why a host without `createAgentImagesCapability` cannot start a thread with images.
+    public static let createAgentImagesRefusal = "Update Shepherd on the host to start a thread with images."
+    static let imagesTooLarge = "Images exceed the remote payload limit. Send fewer or smaller images."
+
+    /// One NDJSON frame per request: the host drops anything over the cap.
+    static func overFrame(_ request: RemoteRequest) -> Bool {
+        guard let bytes = try? NDJSON.encode(request).count else { return false }
+        return bytes - 1 > NDJSON.maxPayloadBytes
+    }
+
     /// Why a host with `capabilities` cannot take `request` (it predates it), or nil.
     static func missingCapability(_ request: NativeThreadRequest, capabilities: Set<String>) -> String? {
         switch request {
@@ -378,10 +401,8 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
         switch command {
         case .send where !command.images.isEmpty:
-            // One NDJSON frame per request; the host drops anything over the cap.
-            if let bytes = try? NDJSON.encode(RemoteRequest.nativeThread(id: 0, agentID: agentID, request: command)).count,
-               bytes - 1 > NDJSON.maxPayloadBytes {
-                throw RemoteHostClientError.rejected(code: "too_large", message: "Images exceed the remote payload limit. Send fewer or smaller images.")
+            if Self.overFrame(.nativeThread(id: 0, agentID: agentID, request: command)) {
+                throw RemoteHostClientError.rejected(code: "too_large", message: Self.imagesTooLarge)
             }
         default: break
         }
