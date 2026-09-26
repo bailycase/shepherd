@@ -2,7 +2,8 @@
 
 The Design tool (an experiment, off by default) keeps each design as a canvas of HTML boards
 that a design agent draws. This page covers the files, how they change, how a board is drawn,
-the design agent's tools, and the Mac's screens. The remote protocol comes with a later change.
+the design agent's tools, the Mac's screens, and the remote protocol that serves designs to
+other devices.
 
 ## The format
 
@@ -191,6 +192,7 @@ that folder.
 | `design_check(path?)` | `designSystemRead` | `designSystems` | In the extension: every hex color (in style attributes, style and script blocks, `data-props`, SVG paint) and every px size in spacing, radius and type that the design's installed systems don't hold (their colors and dark values, spacing, radii and type sizes), else that no CSS custom property in its working folder declares, with the board and lines it is on and the nearest token. Its first line is "Checked against <system or project> · N off-system values" |
 | `comment_list(all?)` | `designComments` | `designComments` | The viewer's open comments (all of them with `all`), oldest first: id, number, state, element id and name, and each one's words and replies, fenced as data |
 | `comment_reply(id, text)` | `designCommentReply` | `designComment` | An answer under a comment's pin (`replyToDesignComment`, author `agent`). No message resolves a comment: only the viewer does |
+| `markup_propose(proposals)` | `designProposeComments` | `designProposals` | Comments proposed from the viewer's Pencil markup, one per mark: each element checked against its board's source (`invalid_markup` otherwise), named `<call id>#<n>`, its card's name the element's `data-el` name else its words, then kept as comments at once, all or none, sent nowhere. The result lists them for the agent and ends with their JSON between `markup-proposals` markers, all inside the data fence, for the chat (Pencil markup, below) |
 | `system_read()` | `designSystemRead` | `designSystems` | Every design system this host keeps and the ones the design installed (its own first), fenced as data |
 | `system_read(namespace)` | `designSystemRead` with `namespace` | `designSystem` | One system whole: its tokens with the file and line each came from, its components, files and README, fenced as data |
 | `system_write(namespace, …)` | `designSystemWrite` | `designSystemWritten` | `writeDesignSystem`: a system's tokens, files and source stylesheets; with `install`, then `installDesignSystem` into the agent's design. With only a namespace and `install`, installs an existing system |
@@ -229,11 +231,14 @@ them, whether the experiment is on or off. The rule holds in both directions:
   palette lists none of its subagents, and the palette's transcript search never reads its chat.
   It posts no banners: a thread's "Turn finished", question and subagent banners (and their
   Review action) never speak for a design. The Hosts page counts no thread for it.
-- **Remote clients.** Another Mac, or an iPhone or iPad, gets the host's state without
-  `designs`, without their agents, and without those agents' layouts
-  (`ShepherdState.withoutDesigns`). There is no remote design screen yet. `RemoteHostClient`
-  applies the same rule to whatever a host sends, so an older host's designs reach no Mac,
-  iPhone or iPad client either.
+- **Remote clients.** A client that reads designs (`designs.v1` in its hello) gets the host's
+  designs and the agents that draw them while the host serves designs (its experiment on): its
+  design screens show them, and it applies the same chrome rules. Any other client, and every
+  client while the experiment is off, gets the host's state without `designs`, without their
+  agents, and without those agents' layouts (`ShepherdState.withoutDesigns`); turning the
+  experiment on or off sends reading clients the state again. `RemoteHostClient` applies the
+  same rule to whatever a host sends, keeping designs only from a host that offers `designs.v1`,
+  so an older host's designs reach no Mac, iPhone or iPad client that has no screen for them.
 - **A forgotten design.** Deleting a design, or startup forgetting one whose folder is gone,
   takes the agents that drew it. Clearing their `designID` instead would turn the design's chat,
   fences and all, into an ordinary thread.
@@ -249,7 +254,9 @@ so an exported canvas carries none.
   template gives them (`label`, from `DesignTemplate.labels`: the runtime's describe label, holes
   as written), what the card calls it (`target`: the element's `data-el` name, else its words),
   where the board drew it (`rect`, in the board's points), the viewer's words, author and time,
-  the `replies` under it, `resolvedAt`, and `detached`.
+  the `replies` under it, `resolvedAt`, and `detached`; and `proposal`, the design agent's
+  proposal from Pencil markup it was kept from (below), else nothing, with `proposalSettledAt`,
+  when the viewer applied it or kept it as it is (nil while it waits).
 - **Its own revision.** `comments.json` carries a revision that moves with every change to the
   comments and never with the boards', so a comment never makes the agent's next board write
   stale. A change naming an older one is refused (`stale_revision`); the canvas reads them again
@@ -914,3 +921,172 @@ written its system, the Spacing & radii and Boards using it sections (rows in th
 anatomy), a type style without a sample (its name), and a failed build or re-sync (the error
 dialog). The chat's "Read dashboard-web · tokens.css · 9 partials · 3 pages" activity line isn't
 built: the agent's reads join "Explored N files".
+
+## Remote
+
+A host serves its designs to other devices over the remote listener (`designs.v1`), and each
+device renders the boards itself: the host sends files, never pixels. The listener has no TLS;
+a VPN or trusted network is the transport boundary, as for everything else it serves.
+
+### The protocol
+
+`RemoteRequest.design` carries a `RemoteDesignRequest`, answered with a `RemoteDesignResult`
+(`RemoteDesigns.swift`, ShepherdProtocol):
+
+| Request | Answer | What it does |
+| --- | --- | --- |
+| `list` | `listing` | Every design with a canvas (not a system build), most recently changed first: its record, revision, board count, open comments, and its first board's path, hash and size for a thumbnail; and the host's design systems |
+| `index(id)` | `index` | The design's snapshot (index, revision, board hashes) and every file under `project/` a board may load, with its SHA-256 and size: boards, installed systems, stylesheets, fonts, images. Never `canvas.json` (the index) or any `support.js` (each device serves its own runtime) |
+| `boards(id, paths, knownShas)` | `files` | The files among `paths` (nil: all) whose hash isn't the one `knownShas` names: changed only. Their bytes come inline while they fit 256 KiB (`designChunkBytes`); the rest are listed without bytes. Also the paths unchanged and the ones the design lacks |
+| `file(id, path, sha256, offset)` | `chunk` | A piece of one file from `offset`, up to 256 KiB, while it still has that hash (`stale_file` otherwise: read the index again) |
+| `asset(id, blobID, offset)` | `chunk` | A piece of an upload (`/_blob/<id>`) with its file name, hash and size; a download resumes from the next offset |
+| `comments`, `addComment`, `replyToComment`, `resolveComment` | `comments`, `comment` | The host's comment mutations: the element checked against the board's source, the comment handed to the design agent fenced as data, each change at the comments' revision |
+| `writeBoards`, `updateIndex`, `duplicateBoard`, `restoreVersions` | `boardsWritten`, `written`, `duplicated` | Tweak, a board moved, Duplicate and Undo, through `writeDesignBoards`, `updateDesignIndex`, `duplicateDesignBoard` and `restoreDesignVersions` with their checks and revisions |
+| `system(namespace)` | `system` | One design system whole |
+| `sendMarkup(id, markup)` | `markupSent` | Pencil markup (`design.markup.v1`): the record checked against the canvas and the boards' sources, then handed to the design agent fenced, as a turn of its own; why it didn't reach the agent, or nil. Nothing is kept |
+| `settleProposals(id, proposals, deliver, base)` | `proposalsSettled` | The viewer's answer to the agent's proposals, which the host kept as comments when the agent made them (`design.markup.v1`): each named proposal's comment settled (`proposalSettledAt`), all or none, at the comments' revision, once; with `deliver` each one settled now goes to the agent as a comment does |
+| `watch(ids)` | `ok` | The designs this client shows; replaces the last set |
+
+- **Pushed:** `designChanged(id, revision, commentsRevision)` after each change to a watched
+  design, one per write: a hint to pull, carrying no files. `capabilitiesChanged` goes to a
+  client that lists `designs.v1` when the host's experiment turns on or off. Only a client that
+  lists `designs.v1` may `watch` (`update_required` otherwise), so no other client is ever
+  pushed a design frame.
+- **The experiment:** the host offers `designs.v1` only while its Settings ▸ Experiments ▸
+  Design tool is on (`SessionServer.setDesignsServed`), and refuses every design request while
+  it is off (`designs_off`). A device shows design surfaces only for a host that offers it.
+- **Answered by the server itself,** with no GUI hop, off its queue: files are read and written
+  on the design store's (`RemoteDesignService`).
+- **What is served:** only files under a design's `project/` (each segment by the file grammar,
+  a link that leads out of it never followed, 16 MB a file) and its `assets/` uploads. A path
+  outside the grammar is refused (`invalid_path`) before a file is touched, and an offset
+  outside the file with `invalid_offset`. A piece reads only its own bytes once the file's hash
+  is known for its size and modification time. A client keeps a download within the size its
+  first piece named and the 16 MB cap.
+- **Writes** go through the same server mutations as the host's own canvas, with the same
+  checks: a board path outside the grammar, a board the lint refuses, a stale revision.
+- **Sends:** the design agent's chat is its thread over the native-thread requests; a send's
+  view record rides `designContext` where the host lists `design.context.v1`, fenced by the host
+  as data.
+
+### The client (ShepherdRemote)
+
+- **`RemoteHostClient.design(_:)`** sends a request where the host offers `designs.v1`;
+  `onDesignChanged` and `onCapabilitiesChanged` deliver the pushes on the main queue.
+- **`RemoteDesignCache`** keeps remote designs' files by SHA-256, per host and design: bytes are
+  checked against their hash before they are kept, which paths name which hash, uploads by id,
+  and downloads under way (so a dropped connection resumes). It holds them in memory within a
+  budget, giving up the designs used least recently, and optionally on disk
+  (`<directory>/<host>/<design>/<sha>`).
+- **`RemoteDesignSource`** is one design's files: `sync()` reads the index and fetches every file
+  whose hash the cache lacks (a few to a reply, a large one in pieces, a stale file read again
+  once), and it serves them to the renderer as a `DesignFileSource`, fetching a file not yet
+  synced on demand and an upload in pieces on first use.
+- **`RemoteDesignLibrary`** (`@Observable`) is one host's designs: its listing, a source per
+  design, the designs on screen (`watch`), and the pushes for them.
+- **Rendering:** `DesignSurface(designID:source:)` (DesignSurfaceKit) serves a source's files by
+  the same scheme, grammar and sandbox as a folder's; `support.js` is always the device's own
+  runtime.
+
+### On the Mac
+
+- **The Designs page** lists each connected host's designs under its name, after This Mac's
+  (not drawn), their first boards drawn here.
+- **Opening one** selects its agent on the host, whose layout draws as the design's screen
+  (`RemoteDesignLayoutView`): the same canvas and chat pane as a local design's, the boards
+  rendered from the files the host served, the chat its thread on the host. Moves, Tweak (its
+  undo too), Duplicate, Variations, comments and replies go to the host; the host pushes changes
+  for the designs on screen, and the canvas pulls what changed.
+- **Not yet:** a design whose agent is gone on its host doesn't open (it says so; only the host
+  starts a fresh agent), the header's system chip and Export do nothing for a host's design,
+  Tweak snaps to the board's own tokens (the project's stylesheets are on the host), a host's
+  design agent is a plain thread in Recents rather than a design row, and a host's design
+  systems aren't on the page.
+
+### On iPad
+
+`App/iOS/DesignPad/` (docs/ios/README.md › Designs), for every connected host that offers
+`designs.v1`: a host that stops offering it (its experiment off) takes its designs away at once,
+through `capabilitiesChanged`.
+
+- **The store** (`PadDesigns`) keeps one `RemoteDesignLibrary` per host over one
+  `RemoteDesignCache` (48 MB in memory, files also under the app's Caches), each design's canvas
+  for the app's run, and which designs are on screen in any window: their hosts push changes for
+  those alone.
+- **Rendering** (`PadDesignRenderer.swift`, the only iOS file that imports DesignSurfaceKit):
+  one live board in the app (`DesignTouchLivePlan`: the board a tap asks about, then the
+  selected one, then the one nearest the middle; a design taking it takes it from any other on
+  screen) and one off-screen view that draws every other board's snapshot in turn, two web views
+  at most; the `design-pad-pan` fixture pans a 64-board canvas and counts them. Snapshots are at
+  most 640pt wide, 64 MB per design. A page gets a viewport of its board's width at the canvas's zoom, so it lays out as
+  on the Mac and draws sharp (`DesignBoardView` on iOS). Web views not on the canvas wait on a
+  stage at the back of the window, where WebKit still draws them.
+- **Touch** (`NWCanvasTouchInput`): a drag pans, a pinch zooms, a tap selects or, with Comment,
+  opens the editor on the element under it. Fingers and pointers only: an Apple Pencil's touches
+  go to the markup layer over the canvas (`PadDesignMarkupLayer`, Pencil markup, below).
+- **Writes** go through the host: comments, replies and Resolve at the comments' revision, Tweak
+  (`DesignTweakModel`, shared with the Mac) with its board writes and undo, Duplicate; a stale
+  revision reads the design again and goes once more. A send carries the canvas's view record.
+- **Split View:** in a window narrower than 760pt the boards stack in one column, the chat is
+  behind the header's button, and the design agent's latest reply floats over the canvas. "Send
+  to the thread" (`DesignSpecHandoff`) attaches the boards picked on the page shown, else the
+  page's boards (four at most, what one message takes), drawn first where they aren't yet, to
+  the composer of the thread another window shows, with "Use the attached boards as the spec.",
+  and brings that window forward; the viewer sends it. Nothing the design's files say (its
+  title, a board's name) goes into that message: the thread it goes to reads no fence.
+- **Export** shares the page's boards as PNGs through the share sheet, drawing any not drawn yet.
+
+### Pencil markup
+
+On iPad the viewer can draw on the canvas with an Apple Pencil (iPadDesign) where the host offers
+`design.markup.v1` (with `designs.v1`, while its Design tool is on).
+
+- **Ink** (`PadDesignMarkup`, `PadDesignMarkupLayer`): a PencilKit canvas over the boards that
+  draws with the Pencil alone. Hit-testing gives it a Pencil's touches and leaves every other to
+  the canvas, so a finger pans and pinches; where UIKit doesn't say which kind a touch is, the
+  layer takes touches while there is ink and pans and pinches with a finger itself. The ink is
+  kept in canvas points and drawn through the viewport, so it stays on its boards at every zoom.
+  The palette (`NWMarkupPalette`) shows while there is ink: pen, marker, eraser, Comment (the
+  canvas's Comment tool), three inks, Done.
+- **Done reads the markup on the iPad** (`PadDesignMarkupReader`, `DesignMarkupReading`):
+  - Each stroke's shape: a loop, a nearly straight line, a V (an arrowhead drawn on its own), an
+    arrow drawn in one stroke, or none. An arrowhead joins the line whose end it sits on (a line
+    longer than the writing); small shapes among writing are letters; a level line is an
+    underline, any other line a mark; strokes with no shape group into writing by proximity.
+  - Writing is read by Vision's text recognition, on the device; nothing goes over the network.
+    Writing it can't read is a mark.
+  - Notes go with marks: an arrow between a note and a loop or line ties them (and is no mark of
+    its own); an arrow from a note to nothing marked is the mark, pointing away from the note;
+    any other note goes with the nearest mark without one; a note with no mark is a mark where it
+    is written.
+  - Each mark's board is the one it overlaps most (else the nearest); its element is chosen
+    among the elements the board reports under it (a loop's middle; a little above an underline
+    at a quarter, half and three quarters along; an arrow's head) and their ancestors from the
+    board's template, located on the live board: the best-matching box for a loop or mark, the
+    element whose bottom the line runs along for an underline, the deepest under an arrow's head.
+- **The record** (`DesignMarkup`, ShepherdProtocol): `{strokes: [{kind, board, element, label,
+  note}]}`, 1 to 20 marks in the order drawn, each `kind` one of `circle`, `underline`, `arrow`,
+  `mark`, its board by view name, its element (`File.dc.html#tid:path`, on that board) or none
+  for the board as a whole, and its note on one line of at most 280 characters. The host
+  refuses a record outside the grammar, or naming a board the canvas lacks or an element the
+  board's source lacks (`invalid_markup`), reads each label from the source, and hands the agent
+  the record fenced (`DesignMarkupFence`: a line saying it is data, then the JSON between
+  `design-markup` markers carrying a nonce new to the message), then "Pencil markup · 2 strokes
+  · 2 notes", as a turn of its own through the host queue, like a comment. The message's origin
+  (`NativeMessageOrigin.designMarkup`) carries the counts. Sent ink stays on the canvas until its
+  proposals are applied or kept; ink that couldn't go stays as it was. The palette shows while
+  there is ink on the canvas, new or sent, and Done with nothing new puts it away until the next
+  stroke.
+- **The agent's answer.** The skill and the prompt have it read the marks, call `markup_propose`
+  once with a comment per mark, say in a sentence which mark became which comment, and change no
+  board until the viewer applies them. The host keeps the proposals as comments as the call
+  makes them (iPadDesign: "Comments 3" beside cards 2 and 3), author the viewer, their pins
+  placed by the device that shows them (the host draws nothing, so they carry no `rect`).
+- **In the chat** (iPad): the markup message reads "Read your markup · 2 strokes · 2 notes" with
+  the nib; the reply's `markup_propose` call gives way to the proposals card
+  (`NWMarkupProposals`) under its words: comment cards numbered as their pins are, named
+  "A · phone › Steps list", "from your markup". **Apply both** sends each comment to the agent as
+  a comment is sent; **Keep as comments** leaves them on the canvas as they are; both settle the
+  proposals through `settleProposals`, once, so the card reads "On the canvas as comments 2 and
+  3." afterwards, on any device. The Mac shows the markup's words, the comments, and an activity
+  line for the call.

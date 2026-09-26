@@ -32,14 +32,14 @@ DesignSurfaceKit ── Core, Protocol, WebKit (+ React 18.3.1 UMD, a resource)
 ShepherdUI (local package, Packages/ShepherdUI) ── nothing
 
 ShepherdApp ── Core, Protocol, Sessions, ShepherdUI, TerminalSurfaceKit, DesignSurfaceKit, Sparkle, SwiftTreeSitter
-Shepherd iOS (Xcode target) ── Core, Protocol, Remote, ShepherdUI
+Shepherd iOS (Xcode target) ── Core, Protocol, Remote, ShepherdUI, DesignSurfaceKit, SwiftTerm
 ```
 
 | Module | Owns | Depends on |
 | --- | --- | --- |
 | `ShepherdCore` | Codable workspace models (`Space`, `Tab`, `Agent`, `Automation`, `Design`, `ShepherdState`), typed IDs, the `PaneNode` split tree, `AgentStatus` and its transition table, `ThinkingLevel`, and structural validation | nothing |
 | `ShepherdProtocol` | Wire contracts: `ExtensionMessage`/`ExtensionReply` (extension socket), `RemoteRequest`/`RemoteReply` and `RemoteProtocol` (version, capabilities), the native thread contract (`NativeThreadRequest`/`Result`/`Snapshot`), pi's RPC wire types (`RPCWire`, decoded leniently), NDJSON framing (1 MiB frame cap), `ShepherdPaths`, `ShepherdEdition` (Shepherd or Shepherd Nightly), Settings ▸ Instructions' files and requests (`Instructions.swift`), Settings ▸ Experiments ▸ Suggested instructions (`Suggestions.swift`), Settings ▸ Skills' skills, repositories and requests (`Skills.swift`), a host's settings as a client sees them (`HostSettings.swift`), and the Design tool's format (`DesignIndex`, `DesignPath`, `DesignTemplate`/`DesignElementID`, `DesignBoardCheck`, Tweak's `DesignStyleEdit`, `DesignTokens` and `DesignProps`, and `DesignCanvasLayout`'s pages, notes and a duplicate's place; docs/designs.md) | Core |
-| `ShepherdRemote` | `RemoteHostClient` (TCP client: handshake, reconnect, bounded writes), `NativeThreadStore` (the `@Observable` thread client used by local, remote, and iOS views; it derives the rows a thread draws once per change), the pure derivations (`NativeThreadPresentation`, `NativeTurnPresentation` for a turn's items, `NativeActivity` for activity lines and the changes card, `InstructionsText` and `InstructionsPresentation` for Settings ▸ Instructions, `SuggestionsPresentation` for its experiment), the Settings models the Mac and the iOS client share (`ClientSettings`, and `ClientSkills` with `SkillsText`, `SkillsPresentation` and `SkillsDirectory`, skills.sh's client, for Settings ▸ Skills), and `ShepherdLog` | Core, Protocol |
+| `ShepherdRemote` | `RemoteHostClient` (TCP client: handshake, reconnect, bounded writes), `NativeThreadStore` (the `@Observable` thread client used by local, remote, and iOS views; it derives the rows a thread draws once per change), the pure derivations (`NativeThreadPresentation`, `NativeTurnPresentation` for a turn's items, `NativeActivity` for activity lines and the changes card, `InstructionsText` and `InstructionsPresentation` for Settings ▸ Instructions, `SuggestionsPresentation` for its experiment), the Settings models the Mac and the iOS client share (`ClientSettings`, and `ClientSkills` with `SkillsText`, `SkillsPresentation` and `SkillsDirectory`, skills.sh's client, for Settings ▸ Skills), a host's designs (`RemoteDesignLibrary`, `RemoteDesignSource` and the per-host, per-design `RemoteDesignCache`; docs/designs.md › Remote), the Tweak tab's model the Mac and the iPad share (`DesignTweakModel` and `DesignTweakControls`), the iPad's live-board plan and design Recents (`DesignTouchPlan.swift`), and `ShepherdLog` | Core, Protocol |
 | `ShepherdUI` | Night Watch, the design system, in its own local package (`Packages/ShepherdUI`, macOS 26 and iOS 27): `ThemeDefinition` and Night Watch, `ThemeStore` (with the resolved `NWPalette` and `NWTypeRamp`), `Color.nw`, `Font.nw` and the bundled Geist faces, the `NW` scales, motion, elevation, `AgentState`, and the shared SwiftUI components by domain (Controls, Status, Containers, Navigation, Thread, Composer, Agents, Review, Dialogs, DesignTool: the design canvas, board frames, cards and header, and a design system's page parts). SwiftUI only; no app state | nothing |
 | `ShepherdPTYSpawn` | `shepherd_forkpty_exec`: the PTY child side in C (reset signal dispositions and mask, close stray descriptors, exec), so no Swift runs between fork and exec | nothing |
 | `ShepherdSessions` | `SessionServer`, the authoritative state store and every session. Agents run as `RPCSession` + `RPCThreadState`, panes as `PTYSession` + `SessionScreen`. Also `StateStore`, the extension socket, the remote listener, `PiSessionPreview` (a thread read from pi's session file while pi starts), `InstructionsStore` (Settings ▸ Instructions' files and history), `SuggestionsStore` (Suggested instructions), `SkillsStore` and `SkillsGit` (a host's skills in `~/.agents/skills`, installed from partial clones; docs/skills.md), `PiSkillsLoader` (the skills pi loads from its own setup and packages, asked of pi's loader on node, listed read-only), `DesignStore` (each design's files and each board's last 20 versions, on its own queue; docs/designs.md), `DesignSystemStore` (design systems in `design-systems/`, on its own queue; built-ins registered by the app), and `PiModelCatalog`/`PiConfig` | Core, Protocol, Remote, ShepherdPTYSpawn, SwiftTerm |
@@ -55,7 +55,8 @@ Dependencies point inward:
   ShepherdPTYSpawn.
 - ShepherdUI imports no Shepherd module; the app maps its states onto `AgentState`.
 - Only `ShepherdApp/TerminalHost.swift` imports TerminalSurfaceKit, and only
-  `ShepherdApp/DesignHost.swift` imports DesignSurfaceKit.
+  `ShepherdApp/DesignHost.swift` imports DesignSurfaceKit (on iOS, only
+  `App/iOS/DesignPad/PadDesignRenderer.swift`).
 - Only TerminalSurfaceKit imports GhosttyTerminal.
 - DesignSurfaceKit imports neither Sessions nor App: it is handed a design's folder (or a
   design system's files in memory, for its specimens) and serves it read-only.
@@ -329,6 +330,10 @@ The protocol is NDJSON (`RemoteMessage.swift`):
   remove and restore, check for updates, Update automatically), run on the server's skills queue
   because they fetch with git; every answer carries the skills the host's pi loads from elsewhere
   (`skills.pi.v1`)
+- the Design tool's designs (`designs.v1`, while the host's experiment is on): files by hash,
+  uploads in resumable pieces, comments and writes through the host's own mutations, and pushed
+  changes for the designs a client watches; the client renders the boards (docs/designs.md ›
+  Remote)
 
 Capabilities gate newer features. A client falls back (raw bracketed paste) or refuses (pane
 control) against an older host. Output frames are chunked at 256 KiB to stay under the frame cap.

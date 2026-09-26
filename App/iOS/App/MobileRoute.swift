@@ -16,6 +16,7 @@ enum MobileRoute: Hashable, Codable {
     case settings(SettingsRoute)
     case terminal(TerminalRoute)
     case automations(AutomationsRoute)
+    case padDesign(PadDesignRoute)
 
     @MainActor @ViewBuilder
     var destination: some View {
@@ -29,6 +30,7 @@ enum MobileRoute: Hashable, Codable {
         case .settings(let route): SettingsDestination(route: route)
         case .terminal(let route): TerminalDestination(route: route)
         case .automations(let route): AutomationsDestination(route: route)
+        case .padDesign(let route): PadDesignDestination(route: route)
         }
     }
 
@@ -39,7 +41,7 @@ enum MobileRoute: Hashable, Codable {
         case .subagents(let route): route.thread
         case .review(let route): route.thread
         case .terminal(let route): route.thread
-        case .thread, .home, .newThread, .search, .settings, .automations: nil
+        case .thread, .home, .newThread, .search, .settings, .automations, .padDesign: nil
         }
     }
 
@@ -51,6 +53,7 @@ enum MobileRoute: Hashable, Codable {
         case .review(let route): route.thread.host
         case .terminal(let route): route.thread.host
         case .automations(let route): route.host
+        case .padDesign(let route): route.host
         case .home, .newThread, .search, .settings: nil
         }
     }

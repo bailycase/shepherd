@@ -1,6 +1,7 @@
 import SwiftUI
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 import ShepherdUI
 
 /// The Tweak tab (DZTweak): the header naming the selection, a group per kind of control, the
@@ -31,7 +32,7 @@ struct DesignTweakPane: View {
                         }
                         if let name = shown.scopeName {
                             NWTweakGroup("Apply to", divided: false) {
-                                NWTweakRow("Scope") { NWTweakScope(selection: $model.scope, every: "Every \(name)") }
+                                NWTweakRow("Scope") { NWTweakScope(selection: $model.scope.nwScope, every: "Every \(name)") }
                                 if let note = shown.scopeNote { NWTweakNote(note) }
                             }
                         }
@@ -166,5 +167,13 @@ private struct DesignTweakTextField: View {
             .onChange(of: text) { _, now in if !focused { draft = now } }
             .onSubmit { if draft != text { commit(draft) } }
             .onChange(of: focused) { _, now in if !now, draft != text { commit(draft) } }
+    }
+}
+
+extension DesignTweakScope {
+    /// The scope as the picker shows it (`NWTweakScope`).
+    var nwScope: NWTweakScope.Scope {
+        get { self == .every ? .every : .board }
+        set { self = newValue == .every ? .every : .board }
     }
 }

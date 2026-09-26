@@ -433,7 +433,9 @@ public struct FleetModel: Equatable, Sendable {
                 automation.agentID.map { ($0, automation) }
             }, uniquingKeysWith: { first, _ in first })
             var running = 0, needs = 0
-            for agent in host.state.agents {
+            // A design's agent is no thread (docs/designs.md › Design agents and ordinary threads):
+            // never running, needing you, finished or counted. On iPad its design is its row.
+            for agent in host.state.agents where !host.state.isDesignAgent(agent) {
                 let ref = FleetRef(host: host.id, agent: agent.id)
                 let digest = digests[ref]
                 let automation = automationByAgent[agent.id]
@@ -466,7 +468,7 @@ public struct FleetModel: Equatable, Sendable {
             }
             self.hosts.append(FleetHostCard(
                 id: host.id, name: host.name, address: "\(host.address):\(host.port)", phase: host.phase,
-                summary: Self.hostSummary(host, running: running), threads: host.state.agents.count,
+                summary: Self.hostSummary(host, running: running), threads: host.state.agents.count(where: { !host.state.isDesignAgent($0) }),
                 running: running, needsYou: needs, lastSeen: host.phase.isConnected ? nil : host.lastSeen))
         }
         offlineHosts = self.hosts.filter { !$0.phase.isConnected }
@@ -573,7 +575,7 @@ public struct FleetModel: Equatable, Sendable {
         case .connected: break
         }
         let agents = host.state.agents.filter { agent in
-            !(host.state.spaces.first { $0.id == agent.spaceID }?.hidden ?? false)
+            !(host.state.spaces.first { $0.id == agent.spaceID }?.hidden ?? false) && !host.state.isDesignAgent(agent)
         }
         guard !agents.isEmpty else { return "No threads yet" }
         let busy = Set(agents.filter { $0.status == .working }.map(\.spaceID))

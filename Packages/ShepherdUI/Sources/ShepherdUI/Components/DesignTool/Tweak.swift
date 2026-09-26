@@ -87,24 +87,48 @@ public struct NWTweakRow<Control: View>: View {
     }
 
     public var body: some View {
-        HStack(spacing: NWDesignMetrics.tweakRowSpacing) {
-            Text(label)
-                .font(.nwSans(NWDesignMetrics.tweakLabelSize))
-                .foregroundStyle(Color.nw.textSecondary)
-                .lineLimit(1)
-                .frame(width: NWDesignMetrics.tweakLabelWidth, alignment: .leading)
+        Group {
             switch layout {
             case .slider:
-                control
-                Spacer(minLength: 0)
+                // A slider wider than the row leaves beside the label (the iPad's narrower pane)
+                // goes under it.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: NWDesignMetrics.tweakRowSpacing) {
+                        title
+                        control
+                        Spacer(minLength: 0)
+                    }
+                    VStack(alignment: .leading, spacing: NWDesignMetrics.tweakControlSpacing) {
+                        title
+                        control
+                    }
+                }
             case .trailing:
-                Spacer(minLength: 0)
-                control
+                // A control wider than the row leaves beside the label goes under it, trailing.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: NWDesignMetrics.tweakRowSpacing) {
+                        title
+                        Spacer(minLength: 0)
+                        control
+                    }
+                    VStack(alignment: .trailing, spacing: NWDesignMetrics.tweakControlSpacing) {
+                        title.frame(maxWidth: .infinity, alignment: .leading)
+                        control
+                    }
+                }
             }
         }
         .frame(minHeight: layout == .slider ? NWDesignMetrics.tweakSliderRowHeight : NWDesignMetrics.tweakRowHeight)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(label)
+    }
+
+    private var title: some View {
+        Text(label)
+            .font(.nwSans(NWDesignMetrics.tweakLabelSize))
+            .foregroundStyle(Color.nw.textSecondary)
+            .lineLimit(1)
+            .frame(width: NWDesignMetrics.tweakLabelWidth, alignment: .leading)
     }
 }
 
