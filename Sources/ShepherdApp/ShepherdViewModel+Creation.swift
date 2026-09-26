@@ -50,10 +50,7 @@ extension ShepherdViewModel {
         }) {
             space = existing
         } else {
-            guard let id = await addSpace(
-                at: URL(fileURLWithPath: identity.repo),
-                createInitialAgent: false
-            ), let added = state.spaces.first(where: { $0.id == id }) else { return nil }
+            guard let id = await addSpace(at: URL(fileURLWithPath: identity.repo)), let added = state.spaces.first(where: { $0.id == id }) else { return nil }
             space = added
         }
 
@@ -84,8 +81,9 @@ extension ShepherdViewModel {
         }
     }
 
+    /// Adds a project (a space) and opens the New thread page in it.
     @discardableResult
-    func addSpace(at url: URL, createInitialAgent: Bool = true) async -> SpaceID? {
+    func addSpace(at url: URL) async -> SpaceID? {
         let path = url.path
         do { try verifyCheckoutAvailable(path) }
         catch { remoteActionError = String(describing: error); return nil }
@@ -105,11 +103,6 @@ extension ShepherdViewModel {
         sessions.stateDidChange(canonical)
         adopt(canonical)
         selectSpace(space.id)
-        if createInitialAgent {
-            // Normal sidebar/menu creation hires one worker immediately. The
-            // New Agent sheet opts out and starts exactly one on submit.
-            quickCreateAgent(in: space.id)
-        }
         return space.id
     }
 
@@ -177,56 +170,7 @@ extension ShepherdViewModel {
         rebuildSurfaces()
     }
 
-    // MARK: Quick create (⌘N)
-
-    /// ⌘N: hire a worker instantly in the current space's checkout — pi's own
-    /// model/thinking defaults and no prompt. ⌘⇧N opens the sheet. Falls back
-    /// to the sheet when there is no space yet or creation fails.
-    func quickCreateAgent() {
-        if let selectedRemoteAgent {
-            guard let connection = remoteHosts.connections.first(where: { $0.id == selectedRemoteAgent.hostID }),
-                  let agent = connection.state.agents.first(where: { $0.id == selectedRemoteAgent.agentID }),
-                  let space = connection.state.spaces.first(where: { $0.id == agent.spaceID }) else {
-                NSSound.beep()
-                return
-            }
-            Task {
-                do {
-                    try await createRemoteAgent(
-                        hostID: selectedRemoteAgent.hostID,
-                        spaceID: space.id,
-                        cwd: space.path,
-                        model: nil,
-                        thinking: nil,
-                        initialPrompt: nil
-                    )
-                } catch {
-                    NSLog("Shepherd: remote quick create failed: \(error)")
-                    showNewAgentSheetForRemote(hostID: selectedRemoteAgent.hostID, spaceID: space.id)
-                }
-            }
-            return
-        }
-        quickCreateAgent(in: nil)
-    }
-
-    /// The space header's `+`: hire a worker in that specific space.
-    func quickCreateAgent(in spaceID: SpaceID?) {
-        let target = spaceID.flatMap { id in state.spaces.first { $0.id == id } }
-        guard let space = target ?? selectedSpace ?? visibleSpaces.first else {
-            showNewAgentSheet = true
-            return
-        }
-        let config = Self.quickAgentConfig(for: space, defaults: settings.agentDefaults)
-        Task {
-            do {
-                try await startAgent(config)
-            } catch {
-                NSLog("Shepherd: quick create failed: \(error)")
-                showNewAgentSheet = true
-            }
-        }
-    }
+    // MARK: Agent config
 
     /// Pure construction kept separate from process startup so the shortcut's
     /// shared-checkout contract can be regression-tested without spawning pi.
@@ -310,7 +254,9 @@ extension ShepherdViewModel {
             piSessionID: config.piSessionID,
             worktreeBranch: config.worktreeBranch,
             worktreeBase: config.worktreeBase,
-            worktreePath: config.worktreePath
+            worktreePath: config.worktreePath,
+            // A new agent leads Recents.
+            lastActiveAt: SessionServer.nowMilliseconds()
         )
 
         // Reserve before addAgent broadcasts: the broadcast mounts the new
