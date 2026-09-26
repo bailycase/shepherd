@@ -196,6 +196,28 @@ public final class DesignBoardView: DesignPlatformView {
         return cgImage
     }
 
+    // MARK: Selection
+
+    /// The element drawn under `point` (in the board's own points, from its top left), as the
+    /// bridge reports it, or nil: nothing named there, or the board hasn't booted.
+    public func hitTest(at point: CGPoint) async -> DesignHit? {
+        guard contentSize != nil, point.x.isFinite, point.y.isFinite else { return nil }
+        let value = try? await webView.callAsyncJavaScript(
+            "return window.__shepherdBridge ? window.__shepherdBridge.hitTest(x, y) : null",
+            arguments: ["x": Double(point.x), "y": Double(point.y)], in: nil, contentWorld: Self.bridgeWorld)
+        return DesignHit(bridge: value)
+    }
+
+    /// Element `tid` where it is drawn now (its first rendering), or nil when the board no longer
+    /// draws it: a selection found again after the board re-renders.
+    public func element(tid: Int) async -> DesignHit? {
+        guard contentSize != nil, tid >= 0 else { return nil }
+        let value = try? await webView.callAsyncJavaScript(
+            "return window.__shepherdBridge ? window.__shepherdBridge.element(tid) : null",
+            arguments: ["tid": tid], in: nil, contentWorld: Self.bridgeWorld)
+        return DesignHit(bridge: value)
+    }
+
     // MARK: Events
 
     private func finishBoot(_ result: Result<CGSize, any Error>) {
