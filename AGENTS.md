@@ -755,6 +755,12 @@ variables are blanked.
     the skills its pi loads from elsewhere (`SkillsSnapshot.pi`, `skills.pi.v1`, read-only). The
     server runs them on its own queue (they fetch with git) and tells the host's page about each
     change (docs/skills.md)
+  - `design` (`designs.v1`, offered only while the host's Design tool experiment is on): its
+    designs and systems, a design's index with every project file's hash, changed files only
+    (inline up to 256 KiB, larger ones and uploads in resumable pieces), comments and the
+    canvas's writes through the host's own mutations, and a pushed `designChanged` for the
+    designs a client watches (`capabilitiesChanged` when the experiment turns on or off).
+    Answered by the server itself; boards render on the client (docs/designs.md › Remote)
 
   Capabilities gate newer features. The client falls back (raw bracketed paste) or refuses (pane
   control) against older hosts. A host answers an authenticated request it cannot decode (a kind

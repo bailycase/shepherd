@@ -32,6 +32,7 @@ Never commit a `project.pbxproj` change for a new file.
 | H. Automations | `Automations/`, `Fixtures/AutomationsFixtures.swift` | the Automations list (Home's `.automations` destination), the iPad list and detail, one automation with its runs, the form |
 | I. Windows | `Windows/`, `Fixtures/WindowsFixtures.swift` | several iPad windows: the scene, each window's navigator and restoration, Open in new window, Send to…, text dropped on a composer |
 | J. Terminal | `Terminal/`, `Fixtures/TerminalFixtures.swift` | terminal panes: the iPad panel under a thread, the iPhone's full-screen panes, the key row |
+| K. Designs on iPad | `DesignPad/`, `Fixtures/DesignPadFixtures.swift`, `Fixtures/DesignPadBoards.swift` | a host's designs on iPad (`designs.v1`): the Designs list, the canvas beside its chat, Split View's reply card, the sidebar's Designs row and design rows |
 
 Shared modules (`ShepherdUI`, `ShepherdRemote`, `ShepherdProtocol`, `ShepherdCore`) belong to no
 track and are also the Mac's. A track may add to them (a component under
@@ -54,6 +55,7 @@ enum MobileRoute: Hashable, Codable {
     case search(SearchRoute)              // Search/SearchRoute.swift
     case settings(SettingsRoute)          // Settings/SettingsRoute.swift
     case automations(AutomationsRoute)    // Automations/AutomationsRoute.swift
+    case padDesign(PadDesignRoute)        // DesignPad/PadDesignRoute.swift
     case terminal(TerminalRoute)          // Terminal/TerminalRoute.swift
 }
 ```
@@ -88,6 +90,7 @@ Routes today:
 | `.automations(.detail(host:automation:))` | one automation, its runs, Run now and Stop (iPhone, pushed; the iPad shows it beside the list) |
 | `.automations(.edit(host:automation:))` | the form: a new automation (both nil, or a host), or an existing one's fields (presented) |
 | `.terminal(.panes(AgentRef))` | a thread's terminal panes full screen (iPhone; iPad shows them in the panel) |
+| `.padDesign(.list / .design(PadDesignRef))` | a host's designs; one design's canvas and chat (pushed; `PadDesignHooks.open` puts the list under the design, and the sidebar stays out while a design shows) |
 
 Screens reach each other only through `MobileNavigator` (in the environment):
 
@@ -104,7 +107,8 @@ Settings (`SettingsScreen`), each a `NavigationStack`. iPad (regular width) is `
 `NavigationSplitView` with `PadSidebar` beside the detail: the selected thread, or `PadOverview`
 when none is. Landscape shows both columns; in portrait the thread keeps the width and the
 sidebar slides over it, and choosing a row hides it again. With no thread chosen, the sidebar
-is out in portrait too.
+is out in portrait too. While a design shows (`MobileNavigator.padShowsDesign`, iPadDesign) the
+sidebar is out in either orientation.
 
 Portrait means the window is taller than it is wide (`PadSplitLayout.sidebarOverlays`, so a
 narrow Split View or Stage Manager window counts too), measured with the keyboard's safe area
@@ -170,6 +174,10 @@ them except the navigator, which is each window's own ([Windows](#windows-ipad))
 | Home roots | `Home/` (A) | `PhoneShell`, `PadShell` | `HomeScreen()`, `PadSidebar()`, `PadOverview()` |
 | Settings root | `Settings/SettingsScreen.swift` (A) | `PhoneShell` | `SettingsScreen()` |
 | Automations root | `Automations/AutomationsScreen.swift` (H) | `HomeDestination` for `.home(.automations)` | `AutomationsScreen()` |
+| Open a design | `DesignPad/PadDesignRoute.swift` (K) | the iPad sidebar's Designs row and design rows | `PadDesignHooks.open(_ ref: PadDesignRef, navigator:)`, `PadDesignHooks.openList(navigator:)` |
+| Designs in the sidebar | `DesignPad/PadDesigns.swift` (K) | `PadSidebar` | `PadDesigns.of(hosts).available`, `.recents(_ threads: [FleetThreadRow]) -> [PadRecent]` (Recents with the designs among the threads, design agents' threads left out) |
+| A design's chat | `DesignPad/MobileLayout+DesignPad.swift` (K) | `ThreadComposer`, `ThreadTranscript` | `\.composerDesignChat`: one field with Send and a 16pt gutter |
+| Pencil markup | `DesignPad/PadDesignMarkup.swift` (K) | `PadDesignCanvasView`, over the canvas; `ThreadTranscript` in a design's chat | `PadDesignMarkupLayer(canvas:available:)`; the canvas leaves `.pencil` touches to it. `\.designMarkupCanvas` gives a design's chat its canvas, for `PadMarkupReadLine` and `PadMarkupProposalsView` |
 | Open or add an automation | `Automations/AutomationsRoute.swift` (H) | anything that names one | `AutomationsHooks.open(_ key: AutomationKey, navigator:)`, `AutomationsHooks.create(host: UUID? = nil, navigator:)` |
 | Open in new window | `Windows/WindowHooks.swift` (I) | the thread's options menu, the iPad sidebar's rows, the palette's rows and preview | `OpenInNewWindowButton(thread: AgentRef, prominent: Bool = false, before: (() -> Void)? = nil)` |
 | Send to… and drag | `Windows/WindowHooks.swift` (I) | each turn in `ThreadScreen` | `.turnTransfer(_ row: NativeThreadRow, thread: AgentRef)`, `SendToMenu(text:source:)` |
