@@ -95,6 +95,18 @@ struct RemoteListenerTests {
         #expect(try await client.disconnected())
     }
 
+    /// A request of a kind this host does not know (a client from another version) is refused
+    /// like any unsupported one, and the connection carries on.
+    @Test func anUnknownRequestIsRefusedAndKeepsTheConnection() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let client = try await r.raw()
+        try client.sendRaw(Data("{\"type\":\"noSuchRequest\",\"id\":9}\n".utf8))
+        guard case .error(9, "unsupported", _) = try await client.next() else { Issue.record("expected unsupported"); return }
+        try client.send(.stateFetch(id: 10))
+        guard case .state(10, _) = try await client.next() else { Issue.record("expected state"); return }
+    }
+
     @Test func aSecondHelloIsAnErrorButKeepsTheConnection() async throws {
         let r = try RemoteHost()
         defer { r.stop() }
