@@ -131,12 +131,12 @@ keep the version for real breaks.
 - **Target:** the `Shepherd iOS` Xcode target (iOS 27, iPhone and iPad). `App/iOS` is one
   synchronized folder, so every Swift file under it is compiled without a project edit
   (`ExportOptions.plist` is excepted; `PrivacyInfo.xcprivacy` ships as a resource). It links
-  `ShepherdCore`, `ShepherdProtocol`, `ShepherdRemote` and `ShepherdUI`, never `ShepherdApp`,
-  and SwiftTerm (the package the Mac's host screens already use) for terminal panes.
+  `ShepherdCore`, `ShepherdProtocol`, `ShepherdRemote`, `ShepherdUI` and `DesignSurfaceKit` (the
+  board renderer, imported only by `Designs/DesignHost.swift`), never `ShepherdApp`, and SwiftTerm (the package the Mac's host screens already use) for terminal panes.
 - **Folders:** `App/` (entry point, `MobileApp`, `MobileRoot`, the phone and iPad shells, routes
   and the navigator), `Hosts/`, `Home/`, `Thread/`, `Composer/`, `NewThread/`, `Subagents/`,
   `Review/`, `Commit/`, `Search/`, `Settings/`, `Automations/`, `Windows/` (the scene and its
-  windows), `Terminal/`, and `Support/` (`AgentRef`, `MobileLayout`, `MobileAppearance`, the
+  windows), `Terminal/`, `Designs/`, and `Support/` (`AgentRef`, `MobileLayout`, `MobileAppearance`, the
   `AgentState` mapping). Ownership and hooks: [CONTRACTS.md](CONTRACTS.md).
 - **Shared with the Mac:** `RemoteHostClient`, `NativeThreadStore`, the turn and activity
   derivations (`NativeTurnPresentation`, `NativeActivity`), host records
@@ -298,8 +298,16 @@ keep the version for real breaks.
   split or close. A terminal's screen is in one iPad window at a time: another window showing the
   same thread says "open in another window" until the first lets it go.
 
+- **Designs (`Designs/`):** a host's designs while it serves them (`designs.v1`, its Design tool
+  on): Home's Designs row, design rows in Recents, the Designs screen with tiles drawn on the
+  phone, a design's boards, one board full screen with its pins, comments pinned on a tapped
+  element, Ask the agent, Boards and Export (PNG or PDF through the share sheet), search's Designs
+  section and New design, and More ▸ Design systems. Boards render on the phone, at most two web
+  views at once ([docs/designs.md › On iPhone](../designs.md#on-iphone)). The iPad's canvas comes
+  later.
+
 ## Not in the first release
 
 Push notifications and Live Activities (they need a relay: the phone's socket drops in the
-background), QR pairing and TLS, and everything waiting on the Mac (Missions, Designs,
+background), QR pairing and TLS, and everything waiting on the Mac (Missions,
 daemon hosts).

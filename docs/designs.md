@@ -879,6 +879,7 @@ a VPN or trusted network is the transport boundary, as for everything else it se
 | `writeBoards`, `updateIndex`, `duplicateBoard`, `restoreVersions` | `boardsWritten`, `written`, `duplicated` | Tweak, a board moved, Duplicate and Undo, through `writeDesignBoards`, `updateDesignIndex`, `duplicateDesignBoard` and `restoreDesignVersions` with their checks and revisions |
 | `system(namespace)` | `system` | One design system whole |
 | `watch(ids)` | `ok` | The designs this client shows; replaces the last set |
+| `create(brief, spaceID, systemNamespace)` | `created(designID, agentID)` | New design from another device: the host checks the brief (trimmed, at most 8 KB), the project and the system's name on its queue, then its app makes the design as its own New design does (`SessionServer.onRemoteCreateDesign`), selecting nothing there. A host with no app to make it refuses (`unsupported`) |
 
 - **Pushed:** `designChanged(id, revision, commentsRevision)` after each change to a watched
   design, one per write: a hint to pull, carrying no files. `capabilitiesChanged` goes to a
@@ -935,3 +936,35 @@ a VPN or trusted network is the transport boundary, as for everything else it se
   Tweak snaps to the board's own tokens (the project's stylesheets are on the host), a host's
   design agent is a plain thread in Recents rather than a design row, and a host's design
   systems aren't on the page.
+
+### On iPhone
+
+The iOS client's designs track (`App/iOS/Designs`; docs/ios/CONTRACTS.md) shows a host's designs
+only while that host offers `designs.v1`, and follows its Design tool as it turns on and off
+(`capabilitiesChanged`). Boards render on the phone from the files each host served by hash
+(`RemoteDesignCache` in the phone's caches folder); nothing renders on the host.
+
+- **Rendering.** `DesignHost.swift` is the one iOS file that imports DesignSurfaceKit. At most two
+  web views live: the board on screen, and one off-screen renderer that draws tiles and the Boards
+  sheet into images (cached by hash) and exports, one board at a time. A board view on iOS lays out
+  at its own width (a device-width viewport) and never scrolls inside its frame.
+- **Where designs show:** Home's Designs row with its count, a design's agent as its design's
+  Recents row ("design · 4 boards", opening the design), the Designs screen (MobileDesigns: tiles
+  from each design's first board, then the design systems), search's Designs section and its "New
+  design" action, and More ▸ Design systems.
+- **A design** opens on its boards (a grid; not drawn), and a board opens full screen
+  (MobileDesignBoard): pinch zooms (the board re-renders sharp at rest), a drag pans a zoomed
+  board, a sideways swipe moves between boards, and pins sit on their elements' top-trailing
+  corners, found again by tid in the live board. A tapped pin raises its card, with "Design agent
+  is updating <board>" while the design agent works and hasn't answered it, else its answer.
+  - **Comment** on, a tap names the element under it (the bridge's hit test) and the review's
+    comment editor pins a comment there through `addComment`, as the Mac's canvas does.
+  - **Ask the agent** opens the design agent's thread, and the board's view record (the board on
+    screen, and the element being commented on) rides the next send (`design.context.v1`).
+  - **Boards** is a sheet of every board; **Export** and Share render the board at zoom 1 as a
+    PNG (twice its size) or a PDF (print.md) and hand it to the share sheet.
+- **New design** (not drawn) is a form: the brief, a project on a host that serves designs, and a
+  design system; the host makes it (`create`) and it opens.
+- **Not yet:** replies, Resolve and a detached pin's note on the phone; a board's interactive
+  Play and links; Tweak, moves and Duplicate; a design without an agent in Recents; the iPad
+  (P5c); push notifications and Live Activities (they need the push relay).
