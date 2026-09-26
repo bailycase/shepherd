@@ -16,6 +16,10 @@ public enum NWDesignMetrics {
     public static let paneTabTextSize: CGFloat = 12.5
     public static let paneTabCountSize: CGFloat = 10
     public static let paneTabUnderline: CGFloat = 2
+    /// The iPad pane's tabs (iPadDesign): 44pt tall in 14, 16pt in.
+    public static let touchPaneTabHeight: CGFloat = NW.Height.touch
+    public static let touchPaneTabTextSize: CGFloat = 14
+    public static let touchPaneTabsLeading: CGFloat = NW.Space.xl
 
     // The canvas
     /// The canvas's dots: 1px, every 22pt.
@@ -236,7 +240,12 @@ public enum NWDesignMetrics {
     /// the control.
     public static let tweakSliderRowHeight: CGFloat = 30
     public static let tweakRowHeight: CGFloat = 32
+    #if os(iOS)
+    /// The iPad's 360pt pane leaves the controls less room: a narrower label column.
+    public static let tweakLabelWidth: CGFloat = 72
+    #else
     public static let tweakLabelWidth: CGFloat = 92
+    #endif
     public static let tweakLabelSize: CGFloat = 12.5
     public static let tweakRowSpacing: CGFloat = NW.Space.l
     /// Chips and pickers sit 6pt apart at the row's trailing edge.
