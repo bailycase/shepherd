@@ -60,3 +60,21 @@ import SwiftUI
         .frame(width: 360)
     }
 }
+
+#Preview("iPad sidebar rows") {
+    NWPreviewBoth {
+        VStack(alignment: .leading, spacing: 0) {
+            NWListRow("New thread", leading: .badge("plus"), chevron: false, compact: true)
+            NWListRow("Automations", leading: .symbol("bolt"), trailing: .value("4"), chevron: false, compact: true)
+            NWListRow("More", leading: .symbol("chevron.down"), chevron: false, compact: true)
+            NWListRow("Hosts", leading: .symbol("desktopcomputer"), trailing: .alert("1 offline"), chevron: false,
+                      selected: true, compact: true)
+                .padding(.leading, NW.Space.l)
+            NWListHeader("Needs you", attention: true, count: 2, style: .sidebar)
+            NWListRow("Dock review pane", leading: .state(.attention), trailing: .reason("asked you"), chevron: false, compact: true)
+            NWListHeader("Recents", style: .sidebar)
+            NWListRow("Plan shepherd extensions", leading: .state(.running), trailing: .host("build-01"), chevron: false, compact: true)
+        }
+        .frame(width: 300)
+    }
+}

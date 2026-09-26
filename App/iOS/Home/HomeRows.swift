@@ -80,7 +80,7 @@ struct ThreadRow: View, Equatable {
     var body: some View {
         NWListRow(row.title, subtitle: compact ? nil : row.detail, clock: compact ? nil : row.clock?.rowClock,
                   leading: .state(AgentState(row.status)), trailing: row.hostTag.map { .host($0) } ?? .none,
-                  chevron: chevron && !compact, selected: selected, dimmed: row.offline)
+                  chevron: chevron && !compact, selected: selected, dimmed: row.offline, compact: compact)
             // The sidebar's one-line rows say their state only by the dot.
             .accessibilityValue(compact ? FleetModel.statusWord(row.status) + (row.offline ? ", host offline" : "") : "")
     }
@@ -97,7 +97,7 @@ struct AttentionRow: View, Equatable {
         // The sidebar names the thread; its chip says who asks ("reviewer") or why.
         NWListRow(compact ? item.thread : item.title, subtitle: compact ? nil : item.question, subtitleTone: .attention, leading: item.leading,
                   trailing: compact ? .reason(item.reason) : item.hostTag.map { .host($0) } ?? .none,
-                  chevron: !compact, selected: selected)
+                  chevron: !compact, selected: selected, compact: compact)
     }
 }
 

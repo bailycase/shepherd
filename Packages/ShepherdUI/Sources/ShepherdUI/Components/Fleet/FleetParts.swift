@@ -8,6 +8,10 @@ import SwiftUI
 public enum NWListMetrics {
     /// A one-line row (the boards' 48pt, over the touch minimum).
     public static let rowHeight: CGFloat = 48
+    /// A one-line row in the iPad sidebar (iPadThread: 44pt, the touch minimum).
+    public static let compactRowHeight: CGFloat = NW.Height.touch
+    /// The iPad sidebar's New thread badge: its glyph in a `bgSelected` circle.
+    public static let badge: CGFloat = 20
     /// A title over a status line: the boards' 52pt in thread and search lists (Home, Search,
     /// More). Choice lists (56), review files (58) and automations (64) have their own rows.
     public static let twoLineRowHeight: CGFloat = 52
@@ -40,21 +44,30 @@ public enum NWRowClock: Equatable, Sendable {
 /// A list section's head (13/600): "Needs you  4" in lantern, "Recents" in secondary, with an
 /// optional trailing count (mono, tertiary) or action.
 public struct NWListHeader<Trailing: View>: View {
+    /// A list's head (the phone boards': 13/600 in `textSecondary`), or the iPad sidebar's
+    /// quieter one (iPadThread: 13/500, a plain head in `textTertiary`).
+    public enum Style: Sendable {
+        case list, sidebar
+    }
+
     let title: String
     let attention: Bool
+    let style: Style
     @ViewBuilder let trailing: () -> Trailing
 
-    public init(_ title: String, attention: Bool = false, @ViewBuilder trailing: @escaping () -> Trailing) {
+    public init(_ title: String, attention: Bool = false, style: Style = .list, @ViewBuilder trailing: @escaping () -> Trailing) {
         self.title = title
         self.attention = attention
+        self.style = style
         self.trailing = trailing
     }
 
     public var body: some View {
+        let sidebar = style == .sidebar
         HStack(spacing: NW.Space.m) {
             Text(title)
-                .font(.nwSans(NWListMetrics.headSize, .semibold))
-                .foregroundStyle(attention ? Color.nw.lanternText : Color.nw.textSecondary)
+                .font(.nwSans(NWListMetrics.headSize, sidebar ? .medium : .semibold))
+                .foregroundStyle(attention ? Color.nw.lanternText : sidebar ? Color.nw.textTertiary : Color.nw.textSecondary)
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: NW.Space.xs)
             trailing()
@@ -64,8 +77,8 @@ public struct NWListHeader<Trailing: View>: View {
 }
 
 extension NWListHeader where Trailing == Text? {
-    public init(_ title: String, attention: Bool = false, count: Int? = nil) {
-        self.init(title, attention: attention) {
+    public init(_ title: String, attention: Bool = false, count: Int? = nil, style: Style = .list) {
+        self.init(title, attention: attention, style: style) {
             count.map {
                 Text("\($0)").font(.nw(.mono))
                     .foregroundStyle(attention ? Color.nw.lanternText : Color.nw.textTertiary)
@@ -102,6 +115,8 @@ public struct NWListRow: View, Equatable {
         case state(AgentState)
         /// An SF Symbol, tinted by a state (lantern for attention) or secondary.
         case symbol(String, AgentState? = nil)
+        /// A symbol in a 20pt `bgSelected` circle (the iPad sidebar's New thread).
+        case badge(String)
     }
 
     public enum Trailing: Equatable, Sendable {
@@ -126,11 +141,13 @@ public struct NWListRow: View, Equatable {
     let chevron: Bool
     let selected: Bool
     let dimmed: Bool
+    let compact: Bool
     @Environment(\.dynamicTypeSize) private var typeSize
 
+    /// `compact` rows are 44pt, the iPad sidebar's; others 48 (52 with a status line).
     public init(_ title: String, subtitle: String? = nil, subtitleMono: Bool = true, subtitleTone: AgentState? = nil,
                 clock: NWRowClock? = nil, leading: Leading = .none, trailing: Trailing = .none, chevron: Bool = true,
-                selected: Bool = false, dimmed: Bool = false) {
+                selected: Bool = false, dimmed: Bool = false, compact: Bool = false) {
         self.title = title
         self.subtitle = subtitle
         self.subtitleMono = subtitleMono
@@ -141,12 +158,13 @@ public struct NWListRow: View, Equatable {
         self.chevron = chevron
         self.selected = selected
         self.dimmed = dimmed
+        self.compact = compact
     }
 
     public nonisolated static func == (a: NWListRow, b: NWListRow) -> Bool {
         a.title == b.title && a.subtitle == b.subtitle && a.subtitleMono == b.subtitleMono && a.subtitleTone == b.subtitleTone
             && a.clock == b.clock && a.leading == b.leading && a.trailing == b.trailing && a.chevron == b.chevron
-            && a.selected == b.selected && a.dimmed == b.dimmed
+            && a.selected == b.selected && a.dimmed == b.dimmed && a.compact == b.compact
     }
 
     public var body: some View {
@@ -181,7 +199,8 @@ public struct NWListRow: View, Equatable {
         .padding(.horizontal, NW.Space.l)
         .padding(.vertical, NW.Space.m)
         .frame(maxWidth: .infinity,
-               minHeight: subtitle != nil || clock != nil ? NWListMetrics.twoLineRowHeight : NWListMetrics.rowHeight,
+               minHeight: subtitle != nil || clock != nil ? NWListMetrics.twoLineRowHeight
+                   : compact ? NWListMetrics.compactRowHeight : NWListMetrics.rowHeight,
                alignment: .leading)
         .background(selected ? nw.bgSelected : .clear)
         .opacity(dimmed ? NWListMetrics.dimmedOpacity : 1)
@@ -218,7 +237,29 @@ public struct NWListRow: View, Equatable {
         }
     }
 
-    @ViewBuilder private var leadingView: some View {
+    private var leadingView: some View { NWListLeading(leading: leading) }
+
+    @ViewBuilder private var trailingView: some View {
+        switch trailing {
+        case .none:
+            EmptyView()
+        case .value(let text):
+            Text(text).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary).lineLimit(1)
+        case .reason(let text):
+            Text(text).font(.nw(.micro, weight: .regular)).foregroundStyle(Color.nw.lanternText).lineLimit(1).fixedSize()
+        case .alert(let text):
+            Text(text).font(.nw(.micro, weight: .regular)).foregroundStyle(Color.nw.failed).lineLimit(1).fixedSize()
+        case .host(let name):
+            NWHostBadge(name)
+        }
+    }
+}
+
+/// A list row's leading column: a status dot, a symbol, or the New thread badge.
+struct NWListLeading: View {
+    let leading: NWListRow.Leading
+
+    var body: some View {
         switch leading {
         case .none:
             EmptyView()
@@ -236,21 +277,13 @@ public struct NWListRow: View, Equatable {
                 .font(.nw(.ui, weight: .medium))
                 .foregroundStyle(tone == .attention ? Color.nw.lanternText : tone?.color ?? Color.nw.textSecondary)
                 .accessibilityHidden(true)
-        }
-    }
-
-    @ViewBuilder private var trailingView: some View {
-        switch trailing {
-        case .none:
-            EmptyView()
-        case .value(let text):
-            Text(text).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary).lineLimit(1)
-        case .reason(let text):
-            Text(text).font(.nw(.micro, weight: .regular)).foregroundStyle(Color.nw.lanternText).lineLimit(1).fixedSize()
-        case .alert(let text):
-            Text(text).font(.nw(.micro, weight: .regular)).foregroundStyle(Color.nw.failed).lineLimit(1).fixedSize()
-        case .host(let name):
-            NWHostBadge(name)
+        case .badge(let name):
+            Image(systemName: name)
+                .font(.nw(.micro, weight: .semibold))
+                .foregroundStyle(Color.nw.textPrimary)
+                .frame(width: NWListMetrics.badge, height: NWListMetrics.badge)
+                .background(Color.nw.bgSelected, in: Circle())
+                .accessibilityHidden(true)
         }
     }
 }

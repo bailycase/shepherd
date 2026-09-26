@@ -5,7 +5,8 @@ import ShepherdRemote
 /// More (MobileMore, iPadHosts boards; home track): every host as a card with its connection,
 /// what runs there, Retry while it is offline, and Add host. A card opens the host's form. Under
 /// the hosts, Extensions (the bundled and installed pi extensions the hosts load) opens
-/// Settings ▸ Extensions; the board's Design systems and Archive wait for the Mac.
+/// Settings ▸ Extensions; the board's Design systems and Archive wait for the Mac. On iPad the
+/// sidebar's More expands in place, so this is its Hosts page and Extensions is More's own row.
 struct MoreScreen: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
@@ -14,6 +15,7 @@ struct MoreScreen: View {
         let feed = HomeFeed.of(hosts)
         let cards = feed.model.hosts
         let settings = SettingsStore.of(hosts)
+        let pad = navigator.layout == .pad
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
                 NWListHeader("Hosts") {
@@ -32,7 +34,7 @@ struct MoreScreen: View {
                     .nwText(.caption).foregroundStyle(Color.nw.textTertiary)
                     .padding(.horizontal, NW.Space.xs)
                     .padding(.top, NW.Space.xs)
-                if !cards.isEmpty {
+                if !cards.isEmpty, !pad {
                     NWListCard {
                         Button { navigator.open(.settings(SettingsPage.pi.route)) } label: {
                             NWListRow(SettingsPage.pi.title, subtitle: settings.extensionsValue.map { "\($0) installed" },
@@ -52,7 +54,7 @@ struct MoreScreen: View {
             await settings.refresh()
         }
         .task { await settings.watch() }
-        .navigationTitle("More")
+        .navigationTitle(pad ? "Hosts" : "More")
     }
 }
 
