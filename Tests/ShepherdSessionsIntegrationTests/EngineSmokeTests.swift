@@ -22,6 +22,14 @@ struct EngineSmokeTests {
         try await EngineSmoke.run(node: engine.node, engine: engine)
     }
 
+    /// Through Shepherd's real launcher in a scratch Shepherd home: pi never sees the
+    /// `NODE_OPTIONS` it was started with, and an RPC `bash` command finds `pi` at the launcher
+    /// and gets that `NODE_OPTIONS` back (`restore-env.sh`, through `shellCommandPrefix`).
+    @Test func throughTheLauncherBashFindsPiThereAndGetsTheStashedNodeOptionsBack() async throws {
+        let engine = try #require(EngineSmoke.engine)
+        try await EngineSmoke.runThroughLauncher(engine: engine)
+    }
+
     @Test(.enabled(if: EngineSmoke.rosettaRunsX86, "needs an arm64 Mac with Rosetta and an x86_64 slice"))
     func itsX86SliceRunsUnderRosetta() async throws {
         let engine = try #require(EngineSmoke.engine)
@@ -156,6 +164,48 @@ enum EngineSmoke {
         let status = try await pi.finish()
         #expect(status == 0, "pi exits cleanly when its input ends: \(pi.errors)")
         #expect(try files.contentsOfDirectory(atPath: home.path).isEmpty, "pi wrote nothing into HOME")
+    }
+
+    static func runThroughLauncher(engine: BundledPiEngine) async throws {
+        let scratch = try makeScratchDirectory("engine-launcher")
+        let files = FileManager.default
+        let userHome = scratch.appendingPathComponent("home", isDirectory: true)
+        let temporary = scratch.appendingPathComponent("tmp", isDirectory: true)
+        let project = scratch.appendingPathComponent("project", isDirectory: true)
+        for folder in [userHome, temporary, project] { try files.createDirectory(at: folder, withIntermediateDirectories: true) }
+        let home = PiHome(directory: scratch.appendingPathComponent("support/pi", isDirectory: true), engine: .bundled(engine))
+        try home.install()
+        try models.write(to: home.directory.appendingPathComponent("models.json"), atomically: true, encoding: .utf8)
+        // Loaded by any node started with it: pi's must not be.
+        let hook = scratch.appendingPathComponent("hook.cjs")
+        let ran = scratch.appendingPathComponent("hook-ran")
+        try "require('fs').appendFileSync(\(String(reflecting: ran.path)), 'ran\\n');\n".write(to: hook, atomically: true, encoding: .utf8)
+        let nodeOptions = "--require=\(hook.path)"
+
+        let pi = try RPCProcess(executable: home.launcher.path, arguments: ["--mode", "rpc", "--no-session"], directory: project, environment: [
+            "HOME": userHome.path,
+            "TMPDIR": temporary.path + "/",
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "NODE_OPTIONS": nodeOptions,
+            "PI_CODING_AGENT_DIR": scratch.appendingPathComponent("decoy").path,
+        ])
+        defer { pi.stop() }
+
+        let state = try await pi.request(["type": "get_state"])
+        #expect(state["success"] as? Bool == true, "get_state: \(state) \(pi.errors)")
+        let model = (state["data"] as? [String: Any])?["model"] as? [String: Any]
+        #expect(model?["provider"] as? String == "fixture", "pi read Shepherd's home, not the decoy")
+
+        let bash = try await pi.request(["type": "bash", "command": #"command -v pi; printf '%s\n' "${NODE_OPTIONS-unset}" "${PI_CODING_AGENT_DIR-unset}""#])
+        let output = ((bash["data"] as? [String: Any])?["output"] as? String) ?? ""
+        let lines = output.split(separator: "\n").map(String.init)
+        #expect(lines.first == home.launcher.path, "a bare pi in an agent's shell is Shepherd's launcher: \(output) \(pi.errors)")
+        #expect(lines.dropFirst().first == nodeOptions, "the stashed NODE_OPTIONS came back for the command: \(output)")
+        #expect(lines.dropFirst(2).first == scratch.appendingPathComponent("decoy").path, "and so did the user's own pi folder")
+
+        #expect(try await pi.finish() == 0, "pi exits cleanly when its input ends: \(pi.errors)")
+        #expect(!files.fileExists(atPath: ran.path), "pi's own node never loaded NODE_OPTIONS")
+        #expect(try files.contentsOfDirectory(atPath: userHome.path).isEmpty, "pi wrote nothing into HOME")
     }
 
     struct ToolResult { let status: Int32; let output: String }
