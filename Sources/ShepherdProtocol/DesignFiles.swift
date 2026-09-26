@@ -92,3 +92,40 @@ public struct DesignWriteResult: Hashable, Sendable, Codable {
         self.boardCount = boardCount
     }
 }
+
+/// A board's earlier content, kept when a write replaced it: the last `DesignBoardVersion.kept`
+/// per board (docs/designs.md › Versions).
+public struct DesignBoardVersion: Hashable, Sendable, Codable {
+    /// Counts up per board from 1; a restore saves what it replaced as the next one.
+    public var number: Int
+    public var sha256: String
+    public var bytes: Int
+    /// When it was replaced, in milliseconds since 1970.
+    public var savedAt: Double
+
+    /// How many earlier versions a board keeps.
+    public static let kept = 20
+
+    public init(number: Int, sha256: String, bytes: Int, savedAt: Double) {
+        self.number = number
+        self.sha256 = sha256
+        self.bytes = bytes
+        self.savedAt = savedAt
+    }
+}
+
+/// What a write of several boards at once left behind (a tweak applied to every element of a
+/// name, an undo): one revision for all of them.
+public struct DesignBoardsWrite: Hashable, Sendable {
+    public var result: DesignWriteResult
+    /// Each written board's SHA-256 now, changed or not.
+    public var shas: [DesignPath: String]
+    /// The version each changed board's earlier content was kept as (a new board keeps none).
+    public var versions: [DesignPath: Int]
+
+    public init(result: DesignWriteResult, shas: [DesignPath: String], versions: [DesignPath: Int]) {
+        self.result = result
+        self.shas = shas
+        self.versions = versions
+    }
+}

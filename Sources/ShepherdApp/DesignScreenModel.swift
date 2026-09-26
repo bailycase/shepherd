@@ -4,12 +4,6 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
 
-/// The design chat pane's tabs (DZCanvas). Tweak comes with its own change.
-enum DesignPaneTab: String {
-    case chat
-    case comments
-}
-
 /// An element picked on a board: its id as a view record names it, where the board draws it (in
 /// the board's own points), and what it is.
 struct DesignElementPick: Equatable {
@@ -88,12 +82,14 @@ final class DesignScreenModel {
     private(set) var snapshot: DesignSnapshot?
     /// The last pull failed (the canvas keeps what it drew).
     private(set) var loadError: String?
+    /// The chat pane's tab (DZCanvas, DZTweak): Chat, Comments or Tweak.
+    var paneTab: DesignPaneTab = .chat
+    /// The Tweak tab's model; nil where nothing may write (previews of other screens).
+    @ObservationIgnored let tweak: DesignTweakModel?
 
     // Comments
     /// Every comment, open and resolved, in the order they were made.
     private(set) var comments: [DesignComment] = []
-    /// The chat pane's tab: `chat` or `comments`.
-    var paneTab = DesignPaneTab.chat
     /// The comment whose thread is open beside its pin.
     private(set) var openComment: UUID?
     /// The element a new comment is being written on (the Comment tool's click).
@@ -131,6 +127,8 @@ final class DesignScreenModel {
     @ObservationIgnored private var hoverGeneration = 0
     /// Tests: pulls made.
     @ObservationIgnored private(set) var pulls = 0
+    @ObservationIgnored private var remeasureNext: Set<DesignPath> = []
+    @ObservationIgnored private var remeasuring: Task<Void, Never>?
     /// Tests: a click is still being resolved.
     var isPicking: Bool { picking != nil }
 
@@ -138,13 +136,15 @@ final class DesignScreenModel {
     static let restDelay: Duration = .milliseconds(120)
 
     init(designID: DesignID, host: DesignHost?, snapshot: @escaping Snapshot, source: @escaping Source,
-         comments: DesignCommentActions? = nil) {
+         comments: DesignCommentActions? = nil, tweak: DesignTweakIO? = nil) {
         self.designID = designID
         self.host = host
         fetchSnapshot = snapshot
         commentActions = comments
+        self.tweak = tweak.map { DesignTweakModel(designID: designID, io: $0, host: host) }
         host?.source = { path in try await source(designID, path) }
         host?.redrawn = { [weak self] path in self?.relocate(on: path) }
+        self.tweak?.previewed = { [weak self] path in self?.remeasure(path) }
     }
 
     // MARK: Boards
@@ -227,9 +227,12 @@ final class DesignScreenModel {
         var boards: [DesignPath: DesignHost.Board] = [:]
         for (path, board) in next.index.boards {
             guard let sha = next.boards[path] else { continue }
-            boards[path] = DesignHost.Board(size: CGSize(width: board.w, height: board.h), sha: sha)
+            let tweaks = next.index.tweaks(for: path)
+            boards[path] = DesignHost.Board(size: CGSize(width: board.w, height: board.h), sha: sha,
+                                            props: tweaks.isEmpty ? nil : DesignTweakModel.json(.object(tweaks)))
         }
         host?.update(boards)
+        if let tweak { Task { await tweak.snapshotChanged(next) } }
         fitIfNeeded()
         planLive()
     }
@@ -396,6 +399,34 @@ final class DesignScreenModel {
         return elements.enumerated().map { index, element in
             NWCanvasElement(id: element.id.description, board: element.board.rawValue, rect: element.rect,
                             tag: index == elements.count - 1 ? element.tag : nil)
+        }
+    }
+
+    /// What the Tweak tab edits: the latest pick.
+    var tweakTarget: DesignTweakTarget? {
+        guard let pick = picks.last else { return nil }
+        guard let element = pick.element else { return DesignTweakTarget(board: pick.board, element: nil, kind: .other, tag: nil) }
+        return DesignTweakTarget(board: pick.board, element: element.id, kind: element.kind, tag: element.tag)
+    }
+
+    /// A tweak previewed on a board: its selected elements are measured again where they are
+    /// drawn now (a padding moves the ring). One measure runs at a time; the latest waits.
+    func remeasure(_ board: DesignPath) {
+        guard picks.contains(where: { $0.board == board && $0.element != nil }) else { return }
+        remeasureNext.insert(board)
+        guard remeasuring == nil, let host else { return }
+        remeasuring = Task { [weak self] in
+            while let self, let next = self.remeasureNext.popFirst() {
+                let tids = self.picks.compactMap { $0.board == next ? $0.element?.id.tid : nil }
+                guard !tids.isEmpty, let found = await host.locate(next, tids: tids) else { continue }
+                let updated = self.picks.map { pick -> Pick in
+                    guard pick.board == next, let element = pick.element, let now = found[element.id.tid],
+                          now.id.path == element.id.path else { return pick }
+                    return Pick(board: next, element: now)
+                }
+                if updated != self.picks { self.picks = updated }
+            }
+            self?.remeasuring = nil
         }
     }
 
@@ -668,4 +699,9 @@ final class DesignScreenModel {
         guard isActive, let host, !host.zooming, canvasSize.width > 0 else { return }
         host.show(visible: visibleBoards, selected: focusBoard, zoom: viewport.zoom)
     }
+}
+
+/// The chat pane's tabs (DZCanvas): Chat, Comments, and Tweak for the selection.
+enum DesignPaneTab: String, Hashable, Sendable {
+    case chat, comments, tweak
 }

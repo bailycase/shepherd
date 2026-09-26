@@ -139,6 +139,45 @@ struct DesignPerformanceTests {
         }
         #expect(counts["design.board", default: 0] == 0, "\(counts)")
     }
+
+    /// Tweak (DZTweak): dragging a slider previews in the board's live view and redraws no board
+    /// frame; letting go writes once, and only the tweaked board's frame redraws.
+    @Test func aTweakDragRedrawsOnlyTheTweakedBoard() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (_, window, screen, host) = try await openLargeCanvas(app)
+        defer { window.close() }
+        let tweak = try #require(screen.tweak)
+        let target = try #require(screen.visibleBoards.first { host.liveBoards.contains($0) })
+        screen.pick(NWCanvasPick(board: target.rawValue, point: CGPoint(x: 100, y: 45)))
+        try await eventuallyOnMain("an element on \(target) to be selected", timeout: .seconds(30)) {
+            !screen.isPicking && screen.selectedElements.count == 1
+        }
+        await tweak.select(screen.tweakTarget)
+        guard case .steps(let values, _)? = tweak.presentation.groups.flatMap(\.rows).first(where: { $0.id == .style(.padding) })?.control else {
+            Issue.record("the selected element offers no padding: \(tweak.presentation)")
+            return
+        }
+        let before = try await app.server.designSnapshot(screen.designID).revision
+
+        let dragging = try await ListPerf.countingAsync {
+            for index in [4, 6, 8, 10, 8] where index < values.count { tweak.setStep(.padding, index: index, phase: .changed) }
+            try await eventuallyOnMain("the drag to show in the live view") { tweak.previews > 0 }
+            window.layout()
+        }
+        #expect(dragging["design.board", default: 0] == 0, "\(dragging)")
+        #expect(try await app.server.designSnapshot(screen.designID).revision == before, "nothing written while dragging")
+
+        let released = try await ListPerf.countingAsync {
+            tweak.setStep(.padding, index: min(8, values.count - 1), phase: .ended)
+            try await eventuallyOnMain("the tweak to be written and drawn", timeout: .seconds(30)) {
+                window.layout()
+                return tweak.writes == 1 && screen.snapshot?.revision == before + 1 && host.isDrawn([target])
+            }
+            window.layout()
+        }
+        #expect(released["design.board", default: 0] == 1, "\(released)")
+    }
 }
 
 extension ListPerf {

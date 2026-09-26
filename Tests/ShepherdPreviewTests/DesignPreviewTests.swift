@@ -194,6 +194,57 @@ struct DesignPreviewTests {
         #expect(screen.pins.map(\.number) == [1, 2, 3])
     }
 
+    /// The checkout's A and A · phone as a design system would draw them: tokens declared in the
+    /// helmet, the step cards named "funnel card", and two data-props under Labels.
+    private static func tokenized(_ board: DesignFixtures.Board) -> String {
+        DesignFixtures.source(board)
+            .replacingOccurrences(of: "<helmet><style>", with: "<helmet><style>:root{--accent:#4f46e5;--slate:#475569;--success:#059669;"
+                                  + "--space-3:12px;--space-4:16px;--space-6:24px;--space-8:32px;--radius-s:8px;--radius-m:10px;--radius-l:12px}")
+            .replacingOccurrences(of: "<div style=\"flex: 1; background: #ffffff; border: 1px solid #e4e4ea; border-radius: 10px",
+                                  with: "<div data-el=\"funnel card\" style=\"flex: 1; background: #ffffff; border: 1px solid #e4e4ea; border-radius: 10px")
+            .replacingOccurrences(of: "data-props='{", with: "data-props='{\"counts\":{\"editor\":\"boolean\",\"default\":true,\"section\":\"Labels\"},"
+                                  + "\"density\":{\"editor\":\"enum\",\"options\":[\"compact\",\"cozy\"],\"default\":\"cozy\",\"section\":\"Labels\"},")
+    }
+
+    /// Tweak (DZTweak) in each of its states: a card selected with every funnel card in scope, a
+    /// board picked whole (its data-props alone), and nothing selected.
+    @Test(arguments: ["element", "board", "empty"])
+    func designScreenTweak(_ state: String) async throws {
+        let (workspace, checkout, _) = try await designWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        let a = try #require(DesignPath("A.dc.html")), phone = try #require(DesignPath("A-phone.dc.html"))
+        let boards = Dictionary(uniqueKeysWithValues: DesignFixtures.checkout.filter { ["A.dc.html", "A-phone.dc.html"].contains($0.path) }
+            .map { (try! DesignPath.validate($0.path), Self.tokenized($0)) })
+        _ = try await workspace.server.writeDesignBoards(checkout.id, sources: boards)
+        vm.selectSidebarRow(.design(checkout.id))
+        let screen = vm.designScreen(checkout.id)
+        let tweak = try #require(screen.tweak)
+        switch state {
+        case "element":
+            let card = DesignElementPick(board: a, id: try #require(DesignElementID(board: a.viewName, tid: 7, path: [1, 1, 0])),
+                                         rect: CGRect(x: 32, y: 78, width: 396, height: 80), kind: .shape, label: "Step 1 90%",
+                                         tag: "card · funnel card")
+            screen.setSelection([.init(board: a, element: card)])
+            tweak.scope = .every
+        case "board":
+            screen.setSelection([.init(board: a)])
+        default:
+            screen.clearSelection()
+        }
+        screen.paneTab = .tweak
+        _ = phone
+        let close = NWCanvasViewport(offset: CGPoint(x: NWDesignMetrics.fitLeading, y: NWDesignMetrics.fitTop), zoom: 0.55)
+        try await Preview.render("app-window-design-tweak-\(state)", size: Self.windowSize, ready: {
+            if screen.snapshot != nil, screen.viewport != close { screen.viewport = close }
+            let loaded = state == "empty" ? tweak.presentation.isEmpty
+                : !tweak.presentation.groups.isEmpty && (state != "element" || tweak.presentation.scopeNote?.contains("A · phone") == true)
+            return screen.viewport == close && screen.isDrawn && loaded
+        }) {
+            RootView(vm: vm)
+        }
+    }
+
     /// The Designs destination selected on its page, with design rows in Recents.
     @Test func appWindowDesigns() async throws {
         let (workspace, _, _) = try await designWorkspace()
