@@ -80,7 +80,11 @@ Routes today:
 | `.search(.palette(query:))` | the ⌘K palette (iPad, presented) |
 | `.search(.rename(AgentRef) / .delete(AgentRef))` | rename, delete or Delete Worktree Agent (presented) |
 | `.search(.problem(title:message:))` | an agent action from a menu that failed (presented) |
-| `.settings(.root / .hosts / .host(UUID?) / .appearance)` | Settings, hosts, a host's form (nil adds one), appearance |
+| `.settings(.root / .hosts / .host(UUID?) / .appearance)` | Settings (the iPad's list beside its page), hosts, a host's form (nil adds one), appearance |
+| `.settings(.defaults / .worktrees / .piExtensions)` | a host's own settings: Defaults, Worktrees, Extensions (a picker chooses the host) |
+| `.settings(.instructions / .instructionsFile(InstructionFile))` | the root instructions on every host; one file in the editor (iPhone) |
+| `.settings(.skills / .skill(String) / .skillResult(DirectorySkill) / .skillsRepo(String?))` | every host's agent skills (and a search of skills.sh); one skill; a skills.sh result's preview with Install; Add from repo (looking up the repository given) |
+| `.settings(.experiments / .suggestion(UUID))` | Experiments; one suggested line to add or dismiss |
 | `.automations(.detail(host:automation:))` | one automation, its runs, Run now and Stop (iPhone, pushed; the iPad shows it beside the list) |
 | `.automations(.edit(host:automation:))` | the form: a new automation (both nil, or a host), or an existing one's fields (presented) |
 | `.terminal(.panes(AgentRef))` | a thread's terminal panes full screen (iPhone; iPad shows them in the panel) |

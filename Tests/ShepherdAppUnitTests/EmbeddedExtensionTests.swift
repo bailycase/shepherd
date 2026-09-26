@@ -24,6 +24,7 @@ struct EmbeddedExtensionTests {
         "shepherd-workflow.ts": ChildrenExtension.workflowSource,
         "shepherd-missions.ts": ChildrenExtension.missionsSource,
         "shepherd-inspect.mjs": InspectExtension.extensionSource,
+        "shepherd-instructions.ts": InstructionsExtension.extensionSource,
     ]
 
     @Test(arguments: embedded.keys.sorted())

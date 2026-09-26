@@ -244,6 +244,35 @@ public final class SessionServer: @unchecked Sendable {
     public var onRemoteCreationOptions: ((SpaceID, String?, Bool?, @escaping (Result<RemoteCreationOptions, RemoteCreateAgentError>) -> Void) -> Void)?
     public var onRemoteAgentQuery: ((AgentID, RemoteAgentQuery, @escaping (Result<RemoteAgentResult, RemoteCreateAgentError>) -> Void) -> Void)?
     public var onRemoteAgentAction: ((AgentID, RemoteAgentAction, @escaping (Result<Void, RemoteCreateAgentError>) -> Void) -> Void)?
+    /// A remote client reads or changes this host's settings (`RemoteRequest.hostSettings`): the
+    /// GUI owns them, so a server without it (headless, tests) rejects the request. Called on the
+    /// main actor.
+    public var onRemoteHostSettings: ((RemoteHostSettingsRequest, @escaping (Result<HostSettings, RemoteCreateAgentError>) -> Void) -> Void)?
+    /// A remote client saved or restored this host's root instructions: the GUI's Settings page
+    /// follows. Delivered on the main actor.
+    public var onInstructionsChanged: ((InstructionsSnapshot) -> Void)?
+
+    /// Shepherd's root instructions for pi on this host (the support directory's
+    /// `instructions/`): remote clients read and save them through the server, and the Mac's
+    /// Settings page through this store directly.
+    public let instructions: InstructionsStore
+    /// Settings ▸ Experiments ▸ Suggested instructions on this host (`instructions/suggestions.json`):
+    /// agents suggest through the extension socket, remote clients act through the server, and
+    /// the Mac's Settings page through this store directly.
+    public let suggestions: SuggestionsStore
+    /// An agent suggested a line, or a remote client acted on the suggestions: the GUI's
+    /// Experiments page follows. Delivered on the main actor.
+    public var onSuggestionsChanged: ((SuggestionsSnapshot) -> Void)?
+    /// The agent skills on this host (Settings ▸ Skills): ~/.agents/skills, which pi reads, and
+    /// what Shepherd keeps beside it in the support directory's `skills/`. Remote clients change
+    /// them through the server, the Mac's Settings page through this store directly.
+    public let skills: SkillsStore
+    /// A remote client changed this host's skills: the GUI's Skills page follows. Delivered on
+    /// the main actor.
+    public var onSkillsChanged: ((SkillsSnapshot) -> Void)?
+    /// Skills requests fetch from git, so they run here, one at a time, never on the server's
+    /// queue.
+    private let skillsQueue = DispatchQueue(label: "shepherd.skills", qos: .userInitiated)
 
     private let queue = DispatchQueue(label: "shepherd.sessions")
     private let socketPath: String
@@ -426,14 +455,20 @@ public final class SessionServer: @unchecked Sendable {
     public func modelListing() -> ModelListing { modelCatalog() }
 
     /// `modelCatalog` answers remote model listings; tests pass a stand-in so nothing runs pi.
-    /// `trash` is where an Undo moves the files a turn created; tests pass their own.
+    /// `skillsDirectory` is where this host's skills live, ~/.agents/skills unless a test passes
+    /// its own. `trash` is where an Undo moves the files a turn created; tests pass their own.
     public init(socketPath: String, stateURL: URL, modelCatalog: @escaping ModelCatalog = SessionServer.piModelCatalog,
-                trash: @escaping ChangesService.Trash = ChangesService.systemTrash) {
+                skillsDirectory: URL? = nil, trash: @escaping ChangesService.Trash = ChangesService.systemTrash) {
         self.socketPath = socketPath
         self.store = StateStore(url: stateURL)
         self.modelCatalog = modelCatalog
         self.originStore = ThreadOriginStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("thread-origins", isDirectory: true))
         self.runLog = AutomationRunLog(url: stateURL.deletingLastPathComponent().appendingPathComponent("automation-runs.json"))
+        let instructions = InstructionsStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("instructions", isDirectory: true))
+        self.instructions = instructions
+        self.suggestions = SuggestionsStore(url: instructions.directory.appendingPathComponent("suggestions.json"), instructions: instructions)
+        self.skills = SkillsStore(directory: skillsDirectory ?? ShepherdPaths.agentSkillsDirectory(),
+                                  stateDirectory: stateURL.deletingLastPathComponent().appendingPathComponent("skills", isDirectory: true))
         self.changes = ChangesService(directory: stateURL.deletingLastPathComponent().appendingPathComponent("changes", isDirectory: true),
                                       trash: trash)
         installChanges()
@@ -1055,6 +1090,29 @@ public final class SessionServer: @unchecked Sendable {
             }
         case .automation(let id, let automationID, let request):
             remoteAutomation(id: id, automationID: automationID, request: request, client: client)
+        case .instructions(let id, let request):
+            remoteInstructions(id: id, request: request, client: client)
+        case .suggestions(let id, let request):
+            remoteSuggestions(id: id, request: request, client: client)
+        case .skills(let id, let request):
+            remoteSkills(id: id, request: request, client: client)
+        case .hostSettings(let id, let request):
+            guard let handler = onRemoteHostSettings else {
+                send(.error(id: id, code: "unavailable", message: "This host has no settings to share."), to: client)
+                return
+            }
+            hopToMain { [weak self] in
+                handler(request) { result in
+                    guard let self else { return }
+                    self.queue.async {
+                        guard self.clients[client.fd] === client else { return }
+                        switch result {
+                        case .success(let settings): self.send(.hostSettings(id: id, settings: settings), to: client)
+                        case .failure(let error): self.send(.error(id: id, code: "settings_failed", message: error.message), to: client)
+                        }
+                    }
+                }
+            }
         case .stateFetch(let id):
             let state = store.state
             send(.state(id: id, state: client.knowsLegacyThinkingOnly ? state.legacyThinkingLevels() : state), to: client)
@@ -1240,6 +1298,130 @@ public final class SessionServer: @unchecked Sendable {
     struct AutomationDraftError: Error, Equatable {
         let code: String
         let message: String
+    }
+
+    /// A remote client reading or saving this host's root instructions. They are two small
+    /// files behind the store's lock, so the server answers here, with or without a GUI; a save
+    /// or a restore tells the GUI, whose Settings page follows.
+    private func remoteInstructions(id: Int, request: RemoteInstructionsRequest, client: ExtensionConnection) {
+        do {
+            let snapshot: InstructionsSnapshot
+            switch request {
+            case .fetch:
+                snapshot = instructions.snapshot()
+            case .save(let file, let content, let origin, let sync):
+                snapshot = try instructions.save(file, content: content, origin: origin, sync: sync)
+                announceInstructions(snapshot)
+            case .restore(let revisionID, let origin):
+                snapshot = try instructions.restore(revisionID: revisionID, origin: origin)
+                announceInstructions(snapshot)
+            }
+            send(.instructions(id: id, snapshot: snapshot), to: client)
+        } catch InstructionsStore.StoreError.noSuchRevision {
+            send(.error(id: id, code: "no_such_revision", message: InstructionsStore.StoreError.noSuchRevision.description), to: client)
+        } catch {
+            send(.error(id: id, code: "write_failed", message: String(describing: error)), to: client)
+        }
+    }
+
+    private func announceInstructions(_ snapshot: InstructionsSnapshot) {
+        guard let handler = onInstructionsChanged else { return }
+        hopToMain { handler(snapshot) }
+    }
+
+    private func remoteSuggestions(id: Int, request: RemoteSuggestionsRequest, client: ExtensionConnection) {
+        do {
+            let snapshot: SuggestionsSnapshot
+            switch request {
+            case .fetch:
+                snapshot = suggestions.snapshot()
+            case .configure(let settings):
+                snapshot = try suggestions.configure(settings)
+            case .add(let suggestionID, let line, let file):
+                if let line, let problem = InstructionsText.suggestionProblem(line) {
+                    send(.error(id: id, code: "invalid", message: problem), to: client)
+                    return
+                }
+                snapshot = try suggestions.add(suggestionID, line: line, file: file)
+                announceInstructions(instructions.snapshot())
+            case .addAll:
+                snapshot = try suggestions.addAll()
+                announceInstructions(instructions.snapshot())
+            case .dismiss(let suggestionID):
+                snapshot = try suggestions.dismiss(suggestionID)
+            case .undo(let addedID):
+                snapshot = try suggestions.undo(addedID)
+                announceInstructions(instructions.snapshot())
+            }
+            if request != .fetch { announceSuggestions(snapshot) }
+            send(.suggestions(id: id, snapshot: snapshot), to: client)
+        } catch SuggestionsStore.StoreError.noSuchSuggestion {
+            send(.error(id: id, code: "no_such_suggestion", message: SuggestionsStore.StoreError.noSuchSuggestion.description), to: client)
+        } catch {
+            send(.error(id: id, code: "write_failed", message: String(describing: error)), to: client)
+        }
+    }
+
+    /// An agent's `suggest_instruction`: taken only while the experiment is on for its kind of
+    /// agent and the file, and answered with what became of the line.
+    private func suggestInstruction(id: Int, agentID: AgentID, line: String, reason: String, file: InstructionFile?,
+                                    client: ExtensionConnection) {
+        guard let agent = store.state.agents.first(where: { $0.id == agentID }) else {
+            reply(.error(id: id, code: "no_such_agent", message: "no such agent"), to: client)
+            return
+        }
+        let kind: SuggestionSource.Kind = Self.automationRunAgentIDs(in: store.state).contains(agentID) ? .automation : .thread
+        let file = file ?? .agents
+        guard suggestions.snapshot().settings.files(for: kind).contains(file) else {
+            reply(.error(id: id, code: "suggestions_off",
+                         message: "The user hasn't turned on suggestions for \(file.fileName) from this agent."), to: client)
+            return
+        }
+        if let problem = InstructionsText.suggestionProblem(line) {
+            reply(.error(id: id, code: "invalid", message: problem), to: client)
+            return
+        }
+        do {
+            let result = try suggestions.suggest(line: line, reason: String(reason.prefix(600)), file: file,
+                                                 source: SuggestionSource(kind: kind, name: agent.name))
+            if result.outcome == .waiting { announceSuggestions(result.snapshot) }
+            reply(.suggestion(id: id, outcome: result.outcome), to: client)
+        } catch {
+            reply(.error(id: id, code: "write_failed", message: String(describing: error)), to: client)
+        }
+    }
+
+    private func announceSuggestions(_ snapshot: SuggestionsSnapshot) {
+        guard let handler = onSuggestionsChanged else { return }
+        hopToMain { handler(snapshot) }
+    }
+
+    /// A remote client reading or changing this host's skills. Looking up, installing and
+    /// checking for updates fetch from git, so every request runs on the skills queue and its
+    /// answer comes back here; a change tells the GUI, whose Skills page follows.
+    private func remoteSkills(id: Int, request: RemoteSkillsRequest, client: ExtensionConnection) {
+        let skillsStore = self.skills
+        skillsQueue.async { [weak self] in
+            let result: Result<RemoteSkillsResult, SkillsStore.StoreError>
+            do {
+                result = .success(try skillsStore.perform(request))
+            } catch let error as SkillsStore.StoreError {
+                result = .failure(error)
+            } catch {
+                result = .failure(.writeFailed(error.localizedDescription))
+            }
+            guard let self else { return }
+            self.queue.async {
+                if request.changesSkills, case .success(.skills(let snapshot)) = result, let handler = self.onSkillsChanged {
+                    self.hopToMain { handler(snapshot) }
+                }
+                guard self.clients[client.fd] === client else { return }
+                switch result {
+                case .success(let answer): self.send(.skills(id: id, result: answer), to: client)
+                case .failure(let error): self.send(.error(id: id, code: error.code, message: error.description), to: client)
+                }
+            }
+        }
     }
 
     /// A remote draft as the host would save it: a name and a prompt that are not blank, and a
@@ -1683,6 +1865,8 @@ public final class SessionServer: @unchecked Sendable {
             routePaneRequest(.read(agentID: agentID, paneID: paneID), requestID: id, client: client)
         case .requestReview(let id, let agentID, let cwd, let reference):
             routeReviewRequest(.start(agentID: agentID, cwd: cwd, reference: reference), requestID: id, client: client)
+        case .suggestInstruction(let id, let agentID, let line, let reason, let file):
+            suggestInstruction(id: id, agentID: agentID, line: line, reason: reason, file: file, client: client)
         }
     }
 
@@ -1903,7 +2087,8 @@ public final class SessionServer: @unchecked Sendable {
              .agents(let id, _),
              .message(let id, _),
              .agentRequest(let id, _, _, _),
-             .agentResult(let id, _):
+             .agentResult(let id, _),
+             .suggestion(let id, _):
             return id
         }
     }
