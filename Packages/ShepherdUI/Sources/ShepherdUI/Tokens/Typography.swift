@@ -228,6 +228,17 @@ extension View {
             .lineSpacing(NWLineSpacing.extra(size: size, weight: weight, mono: mono, lineHeight: lineHeight))
     }
 
+    /// The Settings boards' section label ("BUNDLED EXTENSIONS", "HOW THE AGENT READS THEM"):
+    /// Geist 11/600, uppercase, tracked 6%, in `textSecondary`. `table` is a list's column header
+    /// and a detail's label (Skill, Source, Use it): 10.5 in `textTertiary`.
+    @MainActor public func nwSettingsLabel(table: Bool = false) -> some View {
+        let size: CGFloat = table ? 10.5 : 11
+        return font(.nwSans(size, .semibold))
+            .textCase(.uppercase)
+            .tracking(size * 0.06)
+            .foregroundStyle(table ? Color.nw.textTertiary : Color.nw.textSecondary)
+    }
+
     /// The section label treatment ("THIS MAC", "AUTOMATIONS"): micro mono, uppercase, tracked,
     /// tertiary.
     @MainActor public func nwSectionLabel() -> some View {

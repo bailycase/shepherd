@@ -258,6 +258,85 @@ struct ThreadPreviewTests {
         try await render("thread-activity-failed", ActivityThreads.failed)
     }
 
+    /// ThreadError: OpenAI refused the key twice. The earlier error folds to a line; the last is
+    /// the card, with Retry, Copy and Details.
+    @Test func threadError() async throws {
+        let fixture = ThreadFixture(ActivityThreads.providerError)
+        defer { fixture.store.stop() }
+        fixture.store.hostName = "build-01"
+        try await Preview.render("thread-error", size: CGSize(width: 1180, height: 900),
+                                 ready: { fixture.store.ready && !fixture.store.rows.isEmpty }) {
+            fixture.thread(title: "Payments metrics and dashboards")
+        }
+    }
+
+    /// ThreadErrorDetails: the same error with Details open, the facts beside the raw body.
+    @Test func threadErrorDetails() async throws {
+        let fixture = ThreadFixture(ActivityThreads.providerError)
+        defer { fixture.store.stop() }
+        fixture.store.hostName = "build-01"
+        fixture.store.errors.setDetails("f2", open: true)
+        try await Preview.render("thread-error-details", size: CGSize(width: 1180, height: 900),
+                                 ready: { fixture.store.ready && !fixture.store.rows.isEmpty }) {
+            fixture.thread(title: "Payments metrics and dashboards")
+        }
+    }
+
+    /// TurnErrors › While it retries: the live turn ends in the retry line, and nothing else
+    /// moves.
+    @Test func threadErrorRetrying() async throws {
+        var snapshot = ActivityThreads.providerError
+        snapshot.messages.removeLast(2)
+        snapshot.messages.append(ActivityThreads.failure("r1", #"529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"#,
+                                                          at: ActivityThreads.now - 10_000))
+        snapshot.running = true
+        snapshot.retry = NativeThreadRetry(attempt: 2, maxAttempts: 3, retryAt: Date.now.timeIntervalSince1970 * 1000 + 8_400)
+        let fixture = ThreadFixture(snapshot)
+        defer { fixture.store.stop() }
+        try await Preview.render("thread-error-retrying", size: CGSize(width: 1180, height: 700),
+                                 ready: { fixture.store.ready && !fixture.store.rows.isEmpty }) {
+            fixture.thread(title: "Payments metrics and dashboards")
+        }
+    }
+
+    /// The Turn errors board: the card, with Details open, folded, and every kind of provider
+    /// error, then the retry line.
+    @Test func turnErrors() async throws {
+        let size = CGSize(width: 900, height: 1900)
+        let at = ActivityThreads.now
+        func card(_ text: String, provider: String = "openai", attempts: Int = 1, span: Double = 0) -> NWTurnError.Content {
+            NWTurnError.Content(NativeTurnError(text: text, provider: provider, model: "gpt-6-astra", host: "build-01", attempts: attempts,
+                                                firstAt: at - span, at: at))
+        }
+        let auth = card(ActivityThreads.authError)
+        try await Preview.render("turn-errors", size: size) {
+            VStack(alignment: .leading, spacing: 20) {
+                NWTurnError(auth, retry: {})
+                NWTurnError(auth, detailsOpen: true, retry: {})
+                NWTurnError(auth, folded: true)
+                NWRetryLine(count: "2 of 3") { _ in "OpenAI is overloaded · retrying in 8s" }
+                NWRetryLine(glyph: "hourglass", count: "2 of 3") { _ in "OpenAI didn’t respond in time · retrying" }
+                NWTurnError(card("Request timed out.", attempts: 3, span: 1_860_000), retry: {})
+                NWTurnError(card(#"529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded. Please try again shortly."}}"#,
+                                 attempts: 3, span: 100_000), retry: {})
+                NWTurnError(card(#"500: {"message":"The server had an error while processing your request. Sorry about that!","type":"server_error"}"#,
+                                 attempts: 3, span: 45_000), retry: {})
+                NWTurnError(card("429 Rate limit reached for gpt-6-astra on tokens per min (TPM): limit 2,000,000, used 1,998,412. Please try again in 1.2s.",
+                                 attempts: 3, span: 120_000), retry: {})
+                NWTurnError(card("request to https://api.openai.com/v1/responses failed, reason: read ECONNRESET", attempts: 3, span: 20_000),
+                            retry: {})
+                NWTurnError(card(#"400: {"message":"This model's maximum context length is 400,000 tokens. Your messages resulted in 412,380 tokens.","type":"invalid_request_error","code":"context_length_exceeded"}"#),
+                            retry: {})
+                NWTurnError(card("502 Unexpected end of JSON input"), retry: {})
+                Spacer(minLength: 0)
+            }
+            .frame(width: 760)
+            .padding(32)
+            .frame(width: size.width, height: size.height, alignment: .topLeading)
+            .background(Color.nw.bgWindow)
+        }
+    }
+
     /// A turn the user stopped mid-command: the call reads "stopped" in its usual colors, and the
     /// turn ends in a quiet "Stopped" note, not an error with Retry.
     @Test func threadActivityStopped() async throws {
@@ -338,8 +417,8 @@ struct ThreadPreviewTests {
                 changes
                 NWTurnFooter(meta: "2:44 PM · 3m 12s · 23 tool calls", link: "3 subagents", onLink: {}, onCopy: {}, onRetry: {},
                              revealed: true)
-                NWTurnError("Model overloaded — the turn stopped after 6 tool calls.", retry: {})
-                    .frame(maxWidth: 440)
+                NWTurnError(NWTurnError.Content(NativeTurnError(text: "529 overloaded", provider: "anthropic", model: "claude-opus-4-5",
+                                                                at: 1_790_281_471_000)), retry: {})
                 Spacer(minLength: 0)
             }
             .padding(32)
@@ -726,6 +805,36 @@ enum ActivityThreads {
                  output: "error: compile failed\nCommand exited with code 1", error: true, start: t0 + 30_000, end: t0 + 38_400),
             NativeThreadMessage(entryID: "err", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: "Model overloaded")],
                                 status: "error", timestamp: t0 + 40_000),
+        ]
+        return snapshot(messages)
+    }
+
+    /// OpenAI refusing the key (ThreadError, TurnErrors › The error card).
+    static let authError = #"401: {"message":"Incorrect API key provided: sk-svcac*****************************fvMA. You can find your API key at https://platform.openai.com/account/api-keys.","type":"authentication_error","code":"auth_unavailable"}"#
+
+    /// A reply whose request failed with `text`, to OpenAI's gpt-6-astra.
+    static func failure(_ id: String, _ text: String, at: Double) -> NativeThreadMessage {
+        NativeThreadMessage(entryID: id, role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: text)], status: "error",
+                            timestamp: at, provider: "openai", model: "gpt-6-astra")
+    }
+
+    /// ThreadError: metrics added, then two follow-ups that failed the same way.
+    static var providerError: NativeThreadSnapshot {
+        let t0 = now - 25 * 60_000
+        let messages = [
+            user("u1", "Add Prometheus metrics to ms-payments: request latency, error rate and Kafka consumer lag. Use the same names as ms-graphql-internal.", at: t0),
+            tool("x1", "read", ["path": "internal/server/server.go"], output: "package server", start: t0 + 2_000, end: t0 + 2_300),
+            tool("x2", "read", ["path": "internal/kafka/consumer.go"], output: "package kafka", start: t0 + 2_400, end: t0 + 2_700),
+            edit("e1", "internal/metrics/metrics.go", added: 42, removed: 0, at: t0 + 60_000),
+            edit("e2", "internal/server/server.go", added: 9, removed: 2, at: t0 + 80_000),
+            tool("b1", "bash", ["command": "go test ./..."], output: "ok  ms-payments/internal/metrics 0.4s", start: t0 + 120_000, end: t0 + 180_000),
+            assistant("a1", "Added the three metrics under `/metrics` with the same names and labels as ms-graphql-internal.\n\nThe Grafana dashboard and alert rules live in the infra repo, so they aren’t in this branch yet.",
+                      at: t0 + 250_000),
+            user("u2", "ok, add the dashboard and alerts too", at: now - 2 * 60_000 - 30_000),
+            failure("f1", authError, at: now - 2 * 60_000 - 28_000),
+            user("u3", "we need two PRs for this right? one for this service, and one for infra wherever the grafana and prometheus stuff lives. copy what I did for ms-graphql-internal.",
+                 at: now - 20_000),
+            failure("f2", authError, at: now - 18_000),
         ]
         return snapshot(messages)
     }

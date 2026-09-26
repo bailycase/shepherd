@@ -43,19 +43,21 @@ struct ThreadComposer: View {
             }
             if let dialog = store.dialogs.first, let session = store.session {
                 let key = session.key + ":" + dialog.id
-                if wide, state.questionHiding.isHidden(key) {
-                    // Folded on iPad to read the thread; it still holds the composer's place.
-                    NWQuestionCardHiddenLine(question: dialog.title) {
+                let prompt = NativeQuestionPrompt(dialog: dialog)
+                if state.questionHiding.isHidden(key) {
+                    // Folded to read the thread; it still holds the composer's place.
+                    NWQuestionCardHiddenLine(question: prompt.question) {
                         withNWAnimation(.disclosure) { state.questionHiding.show() }
                     }
                     .id(key + ":hidden")
                     .nwTransition(.content)
                 } else {
-                    QuestionPanel(dialog: dialog, count: store.dialogs.count, enabled: live && store.supports("answer"), docked: !wide,
-                                  hide: wide ? { withNWAnimation(.disclosure) { state.questionHiding.hide(key) } } : nil) { answer in
+                    QuestionPanel(prompt: prompt, count: store.dialogs.count, enabled: live && store.supports("answer"), docked: !wide,
+                                  hide: { withNWAnimation(.disclosure) { state.questionHiding.hide(key) } }) { answer in
+                        guard let reply = prompt.dialogAnswer(answer) else { return }
                         Task {
                             await store.answer(dialogID: dialog.id, sessionID: session.piSessionID, generation: session.generation,
-                                               answer: answer)
+                                               answer: reply)
                         }
                     }
                     .id(key)
@@ -64,15 +66,12 @@ struct ThreadComposer: View {
                     .padding(.bottom, wide ? 0 : -MobileLayout.composerBottom)
                     .nwTransition(.content)
                 }
-            } else if let run = answering(store, state: state), let dialog = nativeSubagentQuestionDialog(run) {
-                // A subagent's question, from its row's Answer: Hide returns to the tray.
-                QuestionPanel(dialog: dialog, enabled: live && store.takesSubagentCommands, docked: !wide,
-                              title: "\(nativeRunNames(run).name) is asking", dismissTitle: "Hide") { answer in
-                    let commands = SubagentCommands(store: store, enabled: live && store.takesSubagentCommands)
-                    switch answer {
-                    case .select(let value), .input(let value), .editor(let value): commands.send(run.runID, .answer(value))
-                    case .confirm, .cancel: break
-                    }
+            } else if let run = answering(store, state: state), let prompt = nativeSubagentQuestionPrompt(run) {
+                // A subagent's question, from its row's Answer: hiding it returns to the tray.
+                QuestionPanel(prompt: prompt, enabled: live && store.takesSubagentCommands, docked: !wide,
+                              hide: { withNWAnimation(.content) { state.answeringRun = nil } }) { answer in
+                    guard let reply = prompt.messageReply(answer) else { return }
+                    SubagentCommands(store: store, enabled: live && store.takesSubagentCommands).send(run.runID, .answer(reply))
                     withNWAnimation(.content) { state.answeringRun = nil }
                 }
                 .id("subagent:" + run.id)

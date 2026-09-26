@@ -135,11 +135,13 @@ enum HomeFixtureData {
         return snapshot
     }
 
-    /// A running thread whose reviewer subagent asks a question.
+    /// A running thread whose reviewer subagent asks a question, offering two answers
+    /// (MobileInbox: they answer in place).
     static func subagentAsking(at now: Double) -> NativeThreadSnapshot {
-        let reviewer = ChildRun(runID: "run-reviewer", label: "reviewer", state: "running", startedAt: now - 120_000,
-                                needsAttention: true, attentionText: "Two token names collide. Rename the new ones, or replace the old ones everywhere?",
-                                role: "reviewer")
+        let text = "Two token names collide. Rename the new ones, or replace the old ones everywhere?"
+        var reviewer = ChildRun(runID: "run-reviewer", label: "reviewer", state: "running", startedAt: now - 120_000,
+                                needsAttention: true, attentionText: text, role: "reviewer")
+        reviewer.question = ChildQuestion(text: text, options: ["Replace everywhere", "Rename new ones"])
         return FixtureData.snapshot([
             FixtureData.user("s1", "Restyle the native UI on the new tokens."),
             FixtureData.assistant("s2", SubagentFixtures.spawnNote, at: now - FixtureData.start - 120_000),

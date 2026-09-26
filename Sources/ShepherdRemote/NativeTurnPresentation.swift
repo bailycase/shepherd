@@ -45,8 +45,12 @@ public struct NativeTurnPresentation: Equatable, Sendable {
         /// lines do (SubagentsDone).
         case subagents(id: String, lines: [NativeSubagentRecordLine])
         case note(id: String, text: String)
-        /// A failed provider request; `final` when it ended the turn.
-        case error(id: String, text: String, count: Int, final: Bool)
+        /// A failed request to the model, pi's automatic retries of it merged in. `final` when it
+        /// ended the turn (it offers Retry); `folded` when it shows as one line: pi retried it
+        /// and the turn went on, or the next turn failed the same way (the store folds those).
+        case error(id: String, error: NativeTurnError, final: Bool, folded: Bool)
+        /// pi retrying the request that just failed, at the end of the live turn.
+        case retrying(id: String, line: NativeRetryLine)
         /// A message the user steered in, where pi read it (after the tool work before it).
         /// `sentAt` is when it was sent (ms); `images` how many it carried.
         case steer(id: String, text: String, sentAt: Double?, images: Int)
@@ -58,7 +62,7 @@ public struct NativeTurnPresentation: Equatable, Sendable {
         public var id: String {
             switch self {
             case .thinking(let id, _, _, _, _, _), .prose(let id, _, _, _), .subagents(let id, _), .note(let id, _), .error(let id, _, _, _),
-                 .steer(let id, _, _, _), .activity(let id, _): id
+                 .steer(let id, _, _, _), .activity(let id, _), .retrying(let id, _): id
             case .compaction(let row): "compaction:" + row.id
             case .question(let row): "question:" + row.id
             }
@@ -78,6 +82,13 @@ public struct NativeTurnPresentation: Equatable, Sendable {
     /// no reply being written. pi is between tools, so the thread ends in "Thinking…".
     public var betweenTools: Bool
 
+    /// The turn ended in a failed request: its error card carries Retry and Copy, so the turn
+    /// has no footer (ThreadError).
+    public var endsInError: Bool {
+        if case .error? = items.last { return true }
+        return false
+    }
+
     public init(items: [Item], changes: NativeTurnChanges?, toolCalls: Int, copyText: String, endedAt: Double?,
                 betweenTools: Bool = false) {
         self.items = items
@@ -94,9 +105,11 @@ public struct NativeTurnPresentation: Equatable, Sendable {
 /// start of its stretch, so a thinking model's per-call reasoning does not break every line
 /// in two; the block still streaming stays last, live. `call` builds a call from its message
 /// and `thinking` parses a stretch's finished thinking (the store passes memoised ones, so a
-/// reply streaming under a thought never parses it again).
+/// reply streaming under a thought never parses it again). `errors` says where the agent runs
+/// and whether pi is retrying, for the turn's errors.
 public func nativeTurnPresentation(
     _ messages: [NativeThreadMessage], live: Bool, cards: NativeCardLayout = .none,
+    errors: NativeTurnErrorContext = NativeTurnErrorContext(),
     call: (NativeThreadMessage) -> NativeActivityCall = NativeActivityCall.init,
     thinking: (String) -> [NativeMarkdownBlock] = nativeThinkingBlocks
 ) -> NativeTurnPresentation {
@@ -106,7 +119,8 @@ public func nativeTurnPresentation(
         case prose(String, streaming: Bool)
         case tool(NativeThreadMessage)
         case note(String)
-        case error(String, Int)
+        /// Consecutive failed requests: pi's automatic retries of one.
+        case error([NativeThreadMessage])
         case steer(String, Double?, Int)
         case compaction(NativeCompactionRow)
         case question(NativeQuestionRecordRow)
@@ -135,9 +149,8 @@ public func nativeTurnPresentation(
             continue
         }
         if message.role == "assistant", message.status == "error" {
-            let text = message.blocks.filter { $0.kind == .text }.map(\.text).last ?? "Request failed"
-            if case .error(let last, let count)? = raw.last, last == text { raw[raw.count - 1] = .error(text, count + 1) }
-            else { raw.append(.error(text, 1)) }
+            if case .error(let tries)? = raw.last { raw[raw.count - 1] = .error(tries + [message]) }
+            else { raw.append(.error([message])) }
             continue
         }
         for (index, block) in message.blocks.enumerated() {
@@ -267,9 +280,9 @@ public func nativeTurnPresentation(
         case .note(let text):
             flushStretch()
             items.append(.note(id: nextID("note"), text: text))
-        case .error(let text, let count):
+        case .error(let tries):
             flushStretch()
-            items.append(.error(id: nextID("error"), text: text, count: count, final: false))
+            items.append(.error(id: nextID("error"), error: errors.error(tries), final: false, folded: true))
         case .steer(let text, let sentAt, let images):
             flushStretch()
             items.append(.steer(id: nextID("steer"), text: text, sentAt: sentAt, images: images))
@@ -290,22 +303,52 @@ public func nativeTurnPresentation(
         items.append(.thinking(id: nextID("thinking"), text: RPCContentBlock.normalizedThinking(text), blocks: [], seconds: seconds,
                                live: true, since: since))
     }
-    // An error that ended a finished turn offers Retry.
-    if !live, case .error(let id, let text, let count, _)? = items.last {
-        items[items.count - 1] = .error(id: id, text: text, count: count, final: true)
+    // An error the turn ends with shows in full: with Retry once the turn is over, as the
+    // retry line while pi retries it. One the turn went on from was retried: it folds.
+    if case .error(let id, let error, _, _)? = items.last {
+        if !live {
+            items[items.count - 1] = .error(id: id, error: error, final: true, folded: false)
+        } else if let retry = errors.retry {
+            items[items.count - 1] = .retrying(id: id, line: NativeRetryLine(
+                title: error.title, glyph: error.kind == .timeout ? "hourglass" : "arrow.clockwise",
+                attempt: retry.attempt, maxAttempts: retry.maxAttempts, retryAt: retry.retryAt))
+        } else {
+            items[items.count - 1] = .error(id: id, error: error, final: false, folded: false)
+        }
+    }
+    // A failed request, or pi retrying it, is what the live turn ends in: nothing else moves.
+    var endsInError = false
+    switch items.last {
+    case .error?, .retrying?: endsInError = true
+    default: break
     }
     return NativeTurnPresentation(items: items, changes: live ? nil : nativeTurnChanges(calls), toolCalls: toolCalls,
                                   // A question's record is stamped when it was answered, not when pi worked.
                                   copyText: copy.joined(separator: "\n\n"),
                                   endedAt: messages.filter { $0.question == nil }.compactMap(\.timestamp).max(),
-                                  betweenTools: betweenTools)
+                                  betweenTools: betweenTools && !endsInError)
 }
 
-/// "Model overloaded — the turn stopped after 6 tool calls." for a turn that ended on an error.
-public func nativeTurnErrorText(_ text: String, toolCalls: Int) -> String {
-    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard toolCalls > 0 else { return trimmed }
-    return "\(trimmed) — the turn stopped after \(nativeCount(toolCalls, "tool call"))."
+/// What a turn's errors need beyond its messages: the machine the agent runs on (Details'
+/// Host, and whom a network error failed from) and pi's retry in progress.
+public struct NativeTurnErrorContext: Equatable, Hashable, Sendable {
+    public var host: String?
+    public var retry: NativeThreadRetry?
+    public var timeZone: TimeZone
+
+    public init(host: String? = nil, retry: NativeThreadRetry? = nil, timeZone: TimeZone = .current) {
+        self.host = host
+        self.retry = retry
+        self.timeZone = timeZone
+    }
+
+    /// The error a run of failed tries shows: the last one's, and how many there were.
+    func error(_ tries: [NativeThreadMessage]) -> NativeTurnError {
+        let last = tries.last
+        let text = last?.blocks.filter { $0.kind == .text }.map(\.text).last ?? ""
+        return NativeTurnError(id: last?.entryID ?? "", text: text, provider: last?.provider, model: last?.model, host: host, attempts: tries.count,
+                               firstAt: tries.first?.timestamp, at: last?.timestamp, timeZone: timeZone)
+    }
 }
 
 /// A stretch's thinking as the expanded row draws it: normalized (no gap where an empty

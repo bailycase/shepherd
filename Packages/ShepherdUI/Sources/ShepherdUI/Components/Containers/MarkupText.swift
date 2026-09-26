@@ -56,11 +56,18 @@ public struct NWMarkupText: View {
                 let code = { (part: String) in
                     Text(verbatim: part).font(.nwMono(codeSize)).customAttribute(NWInlineCodeAttribute())
                 }
-                guard let last = string.last else { continue }
-                result = Text("\(result)\(code(String(string.dropLast())))\(code(String(last)).kerning(pad))")
+                let shown = unbroken(string)
+                guard let last = shown.last else { continue }
+                result = Text("\(result)\(code(String(shown.dropLast())))\(code(String(last)).kerning(pad))")
             }
         }
         return result
+    }
+
+    /// Code that never breaks after its hyphens (`--model`, `pi-update`): a word joiner follows
+    /// each, so a line breaks only where the code has a space.
+    nonisolated static func unbroken(_ code: String) -> String {
+        code.replacingOccurrences(of: "-", with: "-\u{2060}")
     }
 
     /// `text` with its last character kerned by `kern` (room for a code run's leading padding).
