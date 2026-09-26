@@ -7,13 +7,14 @@ import ShepherdProtocol
 /// (`ThreadOriginStore`) and places them into pi's history on every refresh.
 extension RPCThreadState {
     /// Records how `dialog` ended: `answer` is what the user sent, nil when its timeout passed.
-    /// A question that could not be shown here (over the size limit) is not recorded.
+    /// A question that could not be shown here (over the size limit), or one asked in the session
+    /// before this one, is not recorded.
     func recordQuestion(_ dialog: NativeThreadDialog, answer: NativeDialogAnswer?) {
-        let asked = askedAt.removeValue(forKey: dialog.id)
-        guard dialog.unavailable == nil else { return }
+        // Asked before the session changed (`/new`, `/resume`), it belongs to the one it left.
+        guard let asked = askedAt.removeValue(forKey: dialog.id), dialog.unavailable == nil else { return }
         let now = Date().timeIntervalSince1970 * 1000
         var record = NativeQuestionRecord(kind: dialog.kind, question: Self.clippedText(dialog.title), outcome: .expired,
-                                          askedAt: asked ?? now)
+                                          askedAt: asked)
         switch answer {
         case .select(let value), .input(let value), .editor(let value):
             record.outcome = .answered

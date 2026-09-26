@@ -76,6 +76,22 @@ struct QuestionRecordTests {
         #expect(done.dialogs.isEmpty)
     }
 
+    /// A question asked before pi moved to another session (`/new`, `/resume`) belongs to the
+    /// one it left, so answering it records nothing in the new one.
+    @Test func aQuestionFromTheSessionBeforeIsNotRecordedInTheNextOne() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        _ = try await pi.send("select-newsession", from: try await pi.ready())
+        let switched = try await pi.snapshot("the new session with the question still open") {
+            $0.piSessionID == "stub-session-2" && !$0.dialogs.isEmpty
+        }
+        #expect(try await answer(pi, .select(value: "Allow"), from: switched).failureCode == nil)
+
+        let after = try await pi.snapshot("the question answered") { $0.dialogs.isEmpty }
+        #expect(!(after.messages + after.provisional).contains { $0.question != nil })
+    }
+
     @Test func aRemoteClientSeesTheRecord() async throws {
         let remote = try RemoteHost()
         defer { remote.stop() }
