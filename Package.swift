@@ -10,6 +10,7 @@ let package = Package(
         .library(name: "ShepherdRemote", targets: ["ShepherdRemote"]),
         .library(name: "ShepherdSessions", targets: ["ShepherdSessions"]),
         .library(name: "TerminalSurfaceKit", targets: ["TerminalSurfaceKit"]),
+        .library(name: "DesignSurfaceKit", targets: ["DesignSurfaceKit"]),
         .library(name: "ShepherdApp", targets: ["ShepherdApp"]),
         .executable(name: "shepherd-cli", targets: ["shepherd-cli"]),
     ],
@@ -59,6 +60,13 @@ let package = Package(
             exclude: ["NOTES.md"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        // The Design tool's board renderer: a sandboxed WKWebView per board, the
+        // shepherd-design:// scheme, and Shepherd's own board runtime (docs/designs.md).
+        .target(
+            name: "DesignSurfaceKit",
+            dependencies: ["ShepherdCore", "ShepherdProtocol"],
+            resources: [.copy("Resources")]
+        ),
         .target(
             name: "ShepherdApp",
             dependencies: [
@@ -100,6 +108,7 @@ let package = Package(
         .testTarget(name: "ShepherdAppUnitTests", dependencies: ["ShepherdApp", "ShepherdTestKit"]),
         .testTarget(name: "ShepherdCLIUnitTests", dependencies: ["shepherd-cli"]),
         .testTarget(name: "TerminalSurfaceKitUnitTests", dependencies: ["TerminalSurfaceKit", "ShepherdTestKit"]),
+        .testTarget(name: "DesignSurfaceKitUnitTests", dependencies: ["DesignSurfaceKit", "ShepherdTestKit"]),
         // Test helpers every tier can use, with no Shepherd dependencies. Loading them isolates
         // the whole test process (scratch support and pi agent directories, PATH, ZDOTDIR) before
         // any test runs.
@@ -112,6 +121,11 @@ let package = Package(
             resources: [.copy("Resources/stub-pi.py")]
         ),
         .testTarget(name: "ShepherdSessionsIntegrationTests", dependencies: ["ShepherdSessions", "ShepherdTestSupport"]),
+        .testTarget(
+            name: "DesignSurfaceKitIntegrationTests",
+            dependencies: ["DesignSurfaceKit", "ShepherdCore", "ShepherdProtocol", "ShepherdTestSupport"],
+            exclude: ["Fixtures"]
+        ),
         .testTarget(
             name: "ShepherdAppIntegrationTests",
             dependencies: ["ShepherdApp", "TerminalSurfaceKit", "ShepherdTestSupport", .product(name: "ShepherdUI", package: "ShepherdUI")]
