@@ -255,7 +255,7 @@ struct ChildRunTests {
           "lastActivity":{"kind":"tool","tool":"edit","preview":"Sources/A.swift","diff":{"added":31,"removed":0},"at":2},
           "toolCallID":"call_1","task":"Restyle","sessionFile":"/tmp/c/session.jsonl","paused":true},
          {"runID":"native-2","label":"reviewer","state":"running","needsAttention":true,"attentionText":"Two names collide",
-          "question":{"text":"Two names collide","options":["Replace everywhere","Rename new ones"]}},
+          "question":{"text":"Two names collide","options":["Replace everywhere","Rename new ones"],"short":"token names?"}},
          {"runID":"native-3","label":"tests","state":"complete","needsAttention":false,
           "result":{"files":2,"added":96,"removed":3,"tools":19,"tokens":118000},"output":"Added 6 tests.",
           "cwd":"/repo","files":[{"path":"Tests/A.swift","added":96,"removed":3}],"summary":"Added 6 tests.","sessionID":"child-3"},
@@ -270,12 +270,20 @@ struct ChildRunTests {
         #expect(rows[1].step == ChildStep(index: 1, total: 3))
         #expect(rows[1].lastActivity == ChildActivity(tool: "edit", preview: "Sources/A.swift", diff: ChildDiff(added: 31, removed: 0), at: 2))
         #expect(rows[1].contextPercent == 62 && rows[1].paused == true && rows[1].toolCallID == "call_1")
-        #expect(rows[2].question == ChildQuestion(text: "Two names collide", options: ["Replace everywhere", "Rename new ones"]))
+        #expect(rows[2].question == ChildQuestion(text: "Two names collide", options: ["Replace everywhere", "Rename new ones"],
+                                                  short: "token names?"))
         #expect(rows[3].result == ChildResultSummary(files: 2, added: 96, removed: 3, tools: 19, tokens: 118000))
         #expect(rows[3].files == [ChildFileChange(path: "Tests/A.swift", added: 96, removed: 3)])
         #expect(rows[3].sessionID == "child-3" && rows[3].cwd == "/repo")
         #expect(rows[4].exitReason == "exit 1 · context limit")
         for row in rows { #expect(try Wire.roundTrip(row) == row) }
+    }
+
+    /// A question from an extension older than its short reason decodes without one.
+    @Test func aChildQuestionWithoutAShortReasonDecodes() throws {
+        let question = try Wire.decode(ChildQuestion.self, #"{"text":"Rename or replace?"}"#)
+        #expect(question == ChildQuestion(text: "Rename or replace?"))
+        #expect(try Wire.object(question).keys.sorted() == ["text"])
     }
 
     @Test func absentCardFieldsNeverAppearOnTheWire() throws {

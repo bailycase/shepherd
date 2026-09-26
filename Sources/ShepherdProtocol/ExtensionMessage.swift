@@ -621,7 +621,12 @@ public struct ChildActivity: Codable, Hashable, Sendable {
 public struct ChildQuestion: Codable, Hashable, Sendable {
     public var text: String
     public var options: [String]?
-    public init(text: String, options: [String]? = nil) { self.text = text; self.options = options }
+    /// The child's word or two for the question ("retention?"), for its parent's Needs you row.
+    /// Absent when the child gave none, and from older extensions.
+    public var short: String?
+    public init(text: String, options: [String]? = nil, short: String? = nil) {
+        self.text = text; self.options = options; self.short = short
+    }
 }
 
 public struct ChildResultSummary: Codable, Hashable, Sendable {
