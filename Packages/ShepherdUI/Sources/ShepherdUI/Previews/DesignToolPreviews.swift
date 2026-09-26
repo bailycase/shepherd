@@ -262,6 +262,7 @@ private let previewActions = NWBoardActions.Actions(comment: {}, tweak: {}, vari
                         }
                     }
                 }
+                .fixedSize(horizontal: false, vertical: true)
             }
             NWExportSection("Use it somewhere else", divided: false) {
                 Button("Attach to a thread", systemImage: "text.bubble") {}

@@ -3,6 +3,7 @@ import SwiftUI
 import DesignSurfaceKit
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 
 // The app's board rendering, and the only file that imports DesignSurfaceKit (as TerminalHost is
 // for TerminalSurfaceKit), so the renderer's API drift breaks exactly one file.
@@ -889,6 +890,183 @@ private struct InteractiveDesignBoard: NSViewRepresentable {
         override func layout() {
             super.layout()
             if let board, board.frame != bounds { board.frame = bounds }
+        }
+    }
+}
+
+// MARK: Export
+
+/// A design's boards leaving the app (Export, Attach to a thread): each board rendered off screen
+/// by a view of its own, one at a time, at zoom 1, and written as `DesignExportFormat` says. Only
+/// what the user picked is written: a staged copy under the temporary folder, moved whole into
+/// the save panel's place (or the drop folder, for a thread) once every board is done.
+extension DesignRendering {
+    /// Writes `files`' boards as `format` at `destination`: the file the save panel named, or a
+    /// folder holding one file per board (`DesignExportNames.destination`). What is there already
+    /// is replaced, as the save panel confirmed.
+    func export(_ format: DesignExportFormat, files: DesignExportFiles, designID: DesignID, name: String,
+                tokens: DesignTokens, to destination: URL) async throws {
+        guard let surface = surface(for: designID) else { throw DesignExportFailure("The design's folder is gone.") }
+        let outputs = try await DesignExporter.outputs(format, files: files, surface: surface, name: name, tokens: tokens)
+        try await DesignExporter.place(outputs, format: format, boards: files.boards, name: name, at: destination)
+    }
+
+    /// Writes `files`' boards as standalone pages, and a note of the tokens they use, into a new
+    /// folder under `folder` (the drop folder), for a thread's composer.
+    func attachments(files: DesignExportFiles, designID: DesignID, name: String, tokens: DesignTokens,
+                     into folder: URL) async throws -> [NativeAttachedFile] {
+        guard let surface = surface(for: designID) else { throw DesignExportFailure("The design's folder is gone.") }
+        var outputs: [String: Data] = [:]
+        for path in files.boards {
+            let page = try await DesignExporter.page(path, files: files, surface: surface, assets: .inline)
+            outputs[DesignExportNames.html(path)] = Data(page.utf8)
+        }
+        let sources = files.members.compactMap { files.sources[$0] }
+        let used = DesignExportTokens.used(tokens, in: sources)
+        outputs["tokens.css"] = Data(DesignExportTokens.css(used.isEmpty ? tokens : used,
+                                                            heading: "The design tokens the attached boards of \(name) use").utf8)
+        let target = folder.appendingPathComponent("design-\(UUID().uuidString.prefix(8).lowercased())", isDirectory: true)
+        try await DesignExporter.write(outputs, into: target)
+        let order = files.boards.map(DesignExportNames.html) + ["tokens.css"]
+        return order.map { relative in
+            NativeAttachedFile(name: relative.split(separator: "/").last.map(String.init) ?? relative,
+                               path: target.appendingPathComponent(relative).path)
+        }
+    }
+}
+
+struct DesignExportFailure: LocalizedError {
+    let message: String
+    init(_ message: String) { self.message = message }
+    var errorDescription: String? { message }
+}
+
+@MainActor
+enum DesignExporter {
+    enum Assets {
+        /// Uploads inlined as data URLs: a standalone page.
+        case inline
+        /// Uploads beside the page in `assets/`: a ZIP.
+        case folder
+    }
+
+    /// Every file the export writes, by its path under what the save panel names.
+    static func outputs(_ format: DesignExportFormat, files: DesignExportFiles, surface: DesignSurface, name: String,
+                        tokens: DesignTokens) async throws -> [String: Data] {
+        var outputs: [String: Data] = [:]
+        switch format {
+        case .html:
+            for path in files.boards {
+                outputs[DesignExportNames.html(path)] = Data(try await page(path, files: files, surface: surface, assets: .inline).utf8)
+            }
+        case .png:
+            for path in files.boards {
+                let image = try await render(path, files: files, surface: surface) { try await $0.image(scale: 2) }
+                outputs[DesignExportNames.png(path)] = try DesignImageFile.png(image)
+            }
+        case .pdf:
+            var documents: [Data] = []
+            for path in files.boards {
+                let mode = files.index.boards[path].map(DesignPrint.of) ?? .fixed
+                documents.append(try await render(path, files: files, surface: surface) { try await $0.pdf(mode) })
+            }
+            outputs[DesignExportNames.destination(.pdf, boards: files.boards, design: name).name] = try DesignPDF.merge(documents)
+        case .zip:
+            // The pages, tokens.css and the uploads they use, beside the canvas as a project
+            // folder (format.md), narrowed to these boards and the ones they import.
+            for path in files.boards {
+                outputs[DesignExportNames.html(path)] = Data(try await page(path, files: files, surface: surface, assets: .folder).utf8)
+            }
+            outputs["tokens.css"] = Data(DesignExportTokens.css(tokens, heading: "The design tokens of \(name)").utf8)
+            for asset in files.assets.values { outputs["assets/" + asset.name] = asset.data }
+            outputs["project/canvas.json"] = try DesignBundle.index(files.index, keeping: Set(files.members)).encoded()
+            for path in files.members { outputs["project/" + path.rawValue] = files.sources[path].map { Data($0.utf8) } }
+            for (path, data) in files.support { outputs["project/" + path] = data }
+        }
+        return outputs
+    }
+
+    /// A board baked to a standalone page: its uploads inlined or pointed at `assets/`, its links
+    /// to other exported boards pointed at their pages.
+    static func page(_ path: DesignPath, files: DesignExportFiles, surface: DesignSurface, assets: Assets) async throws -> String {
+        let raw = try await render(path, files: files, surface: surface) { try await $0.staticPage() }
+        let page = DesignExportNames.html(path)
+        let withAssets = DesignBundle.rewritingBlobs(raw) { id in
+            guard let asset = files.assets[id] else { return nil }
+            switch assets {
+            case .inline: return DesignBundle.dataURI(asset.data, type: asset.type)
+            case .folder: return DesignExportNames.relative("assets/" + asset.name, from: page)
+            }
+        }
+        return DesignBundle.rewritingBoardLinks(withAssets, page: path, exported: Set(files.boards))
+    }
+
+    /// Loads `path` in a view of its own at its canvas size and reads it with `body`.
+    private static func render<T>(_ path: DesignPath, files: DesignExportFiles, surface: DesignSurface,
+                                  _ body: (DesignBoardView) async throws -> T) async throws -> T {
+        guard let board = files.index.boards[path] else { throw DesignExportFailure("\(path) isn't on the canvas.") }
+        let view = DesignBoardView(surface: surface, board: path, size: CGSize(width: board.w, height: board.h))
+        do {
+            try await view.load()
+            return try await body(view)
+        } catch {
+            throw DesignExportFailure("\(path) couldn't be drawn: \(error)")
+        }
+    }
+
+    /// Stages `outputs` and moves them into `destination`: the one file a single-file export
+    /// writes, a ZIP of the staged folder, or the staged folder itself.
+    static func place(_ outputs: [String: Data], format: DesignExportFormat, boards: [DesignPath], name: String,
+                      at destination: URL) async throws {
+        let staging = FileManager.default.temporaryDirectory.appendingPathComponent("shepherd-export-\(UUID().uuidString)", isDirectory: true)
+        let folder = staging.appendingPathComponent(DesignExportNames.fileName(name), isDirectory: true)
+        try await write(outputs, into: folder)
+        let isFolder = DesignExportNames.destination(format, boards: boards, design: name).isFolder
+        try await Task.detached(priority: .userInitiated) {
+            defer { try? FileManager.default.removeItem(at: staging) }
+            let result: URL
+            if format == .zip {
+                result = staging.appendingPathComponent("export.zip")
+                try Self.zip(folder, to: result)
+            } else if isFolder {
+                result = folder
+            } else {
+                guard let only = outputs.keys.first, outputs.count == 1 else { throw DesignExportFailure("Nothing to export.") }
+                result = folder.appendingPathComponent(only)
+            }
+            if FileManager.default.fileExists(atPath: destination.path) {
+                _ = try FileManager.default.replaceItemAt(destination, withItemAt: result)
+            } else {
+                try FileManager.default.moveItem(at: result, to: destination)
+            }
+        }.value
+    }
+
+    /// Writes each output at its path under `folder`, off the main thread.
+    static func write(_ outputs: [String: Data], into folder: URL) async throws {
+        try await Task.detached(priority: .userInitiated) {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            for (path, data) in outputs {
+                let url = folder.appendingPathComponent(path)
+                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try data.write(to: url)
+            }
+        }.value
+    }
+
+    /// `folder` as a ZIP holding it by name, with ditto (no library).
+    nonisolated static func zip(_ folder: URL, to file: URL) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        process.arguments = ["-c", "-k", "--sequesterRsrc", "--keepParent", folder.path, file.path]
+        process.standardOutput = FileHandle.nullDevice
+        let errors = Pipe()
+        process.standardError = errors
+        try process.run()
+        let message = errors.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            throw DesignExportFailure("The ZIP couldn't be made: \(String(decoding: message, as: UTF8.self))")
         }
     }
 }
