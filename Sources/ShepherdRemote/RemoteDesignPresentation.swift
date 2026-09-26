@@ -24,6 +24,9 @@ public struct RemoteDesignTile: Identifiable, Equatable, Sendable {
     public var ref: HostDesignRef
     public var name: String
     public var detail: String
+    /// Its system, else its project; and how many boards it has (search's "acme-web · 4 boards").
+    public var system: String?
+    public var boards: Int
     public var firstBoard: RemoteDesignFirstBoard?
     /// The host's name when designs from several hosts mix; nil with one host.
     public var hostTag: String?
@@ -94,11 +97,12 @@ public struct RemoteDesignsModel: Equatable, Sendable {
             for summary in listing.designs where !summary.design.buildsSystem {
                 let design = host.state.designs.first { $0.id == summary.id } ?? summary.design
                 let working = design.agentID.flatMap { agents[$0] }?.status == .working
-                let detail = RemoteDesignPresentation.tileDetail(system: design.systemNamespace ?? spaces[design.spaceID],
-                                                                 boards: summary.boardCount, drawing: working,
+                let system = design.systemNamespace ?? spaces[design.spaceID]
+                let detail = RemoteDesignPresentation.tileDetail(system: system, boards: summary.boardCount, drawing: working,
                                                                  edited: design.lastActiveAt, now: now)
                 tiles.append((RemoteDesignTile(ref: HostDesignRef(host: host.id, design: design.id), name: design.name,
-                                               detail: detail, firstBoard: summary.firstBoard, hostTag: tags ? host.name : nil,
+                                               detail: detail, system: system, boards: summary.boardCount,
+                                               firstBoard: summary.firstBoard, hostTag: tags ? host.name : nil,
                                                drawing: working, revision: summary.revision),
                               design.lastActiveAt, tiles.count))
             }

@@ -87,6 +87,12 @@ struct SearchPalette: View {
         case .settings:
             navigator.dismissPresented()
             navigator.open(.settings(.root))
+        case .openDesign(let ref):
+            navigator.dismissPresented()
+            DesignsHooks.open(ref, navigator: navigator)
+        case .newDesign(let brief):
+            navigator.dismissPresented()
+            DesignsHooks.create(brief: brief, navigator: navigator)
         }
     }
 }
@@ -235,6 +241,8 @@ private struct PalettePreviewPane: View {
         case .delete: [NWHighlightRun("Stops the agent and closes its thread. You confirm on the next screen.")]
         case .newThread: [NWHighlightRun("Start an agent on any connected host.")]
         case .settings: [NWHighlightRun("Hosts, instructions, skills, experiments, and each host’s settings.")]
+        case .openDesign: entry.detail
+        case .newDesign: [NWHighlightRun("A design agent draws it as boards on the host.")]
         }
     }
 
@@ -246,6 +254,8 @@ private struct PalettePreviewPane: View {
         case .delete: "Delete…"
         case .newThread: "New thread"
         case .settings: "Open Settings"
+        case .openDesign: "Open"
+        case .newDesign: "New design"
         }
     }
 
