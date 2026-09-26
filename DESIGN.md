@@ -1372,8 +1372,8 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   session file, a new agent's empty state and opening prompt. The composer says why and offers
   Retry (Composer › States › Can't start); the thread adds no row, no notice and no spinner. The
   host names the cause from pi's exit and its last lines on stderr (`NativeStartProblem`): pi can't
-  reach a model (not signed in), an extension failed to load, Shepherd can't find pi, pi didn't
-  find the conversation it was resuming and would start a new one (Shepherd stops it first, so
+  reach a model (not signed in), an extension failed to load, Shepherd can't find its pi, its pi
+  home overlaps the user's own pi (so Shepherd starts none), pi didn't find the conversation it was resuming and would start a new one (Shepherd stops it first, so
   nothing is written), or pi exited with its own words. Retry starts pi again and the thread is
   Starting once more; a new agent's opening prompt, which pi never read, goes with it. A pi that
   exits after it has served is the lost connection (Composer › States › Error), and its agent
@@ -1874,11 +1874,14 @@ its own.
 - **Can't start:** a `failed` `NWBanner` in the Error banner's place above the card, for a pi
   that stopped before it served (Thread › Can't start). Its title names the cause and its message
   says what to do, then pi's own last lines (at most six, colour codes removed), all selectable:
-  - not signed in: "pi can't reach a model." / "Sign in to a provider in pi, then Retry."
+  - not signed in: "pi can't reach a model." / "Sign in to a provider for Shepherd's pi (Settings
+    ▸ Pi), then Retry."
   - an extension failed: "An extension stopped pi from starting." / "Fix or remove it, then
     Retry." (pi's line names the file)
-  - pi missing: "Shepherd can't find pi." / "Install pi, or put it on your login shell's PATH,
-    then Retry."
+  - pi missing: "Shepherd can't find its pi." / "Its copy of pi is missing from the app.
+    Reinstall Shepherd, then Retry."
+  - home unsafe: "Shepherd won't start pi here." / "Its pi home and your own pi overlap. Move one
+    of them, then Retry." (Shepherd's line names both folders)
   - resumed as new: "pi couldn't find this conversation." / "It would have started a new, empty
     one, so Shepherd stopped it. The conversation's file is untouched."
   - exited: "pi exited while starting (code 1)." ("(signal)" for a signal) / "Retry to start it
@@ -4924,7 +4927,8 @@ follows the Mac's rules (Thread) with the phone's measures below.
   known thread", "This agent is no longer on <host>.", "Update Shepherd on <host> to open threads
   here.", "Some output is clipped · the full thread is on <host>". A pi that can't start on the
   host (Thread › Can't start) reads as its banner's title and advice on one line ("pi can't reach
-  a model. Sign in to a provider in pi, then Retry on <host>."), with no spinner, Send disabled,
+  a model. Sign in to a provider for Shepherd's pi (Settings ▸ Pi), then Retry on <host>."), with
+  no spinner, Send disabled,
   and "Can't start" in `failed` as the title's status.
 
 ### iPhone: New thread and Where it runs (MobileNewThread, MobileWorkspace)
