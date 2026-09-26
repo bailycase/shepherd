@@ -263,7 +263,7 @@ struct ThreadPreviewTests {
     }
 
     /// A relaunched agent whose pi can't reach a model: its history from disk stays, and the
-    /// composer's banner says why, with pi's own lines and Retry (Thread › Can't start).
+    /// composer's banner says why, with pi's own lines, Sign in… and Retry (Thread › Can't start).
     @Test func threadCannotStartNotSignedIn() async throws {
         let fixture = ThreadFixture(Self.cannotStart(NativeStartProblem(kind: .notSignedIn, exitCode: 1, lines: [
             "No models available. Use /login to log into a provider via OAuth or API key. See:",
@@ -279,7 +279,7 @@ struct ThreadPreviewTests {
         try await Preview.render("thread-cannot-start", size: CGSize(width: 1180, height: 900), ready: {
             fixture.store.startProblem != nil && !fixture.store.rows.isEmpty
         }) {
-            fixture.thread()
+            fixture.thread(signInToPi: {})
         }
     }
 
