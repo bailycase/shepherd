@@ -54,16 +54,17 @@ public struct NWCanvasViewport: Equatable, Sendable {
     /// "42%".
     public var percent: String { "\(Int((zoom * 100).rounded()))%" }
 
-    /// The boards' bounds fitted into a view of `size`: their top-leading corner 44pt in and
-    /// 52pt down, never larger than 100%.
+    /// The boards' bounds fitted into a view of `size`, never larger than 100%: their
+    /// top-leading corner 44pt in, and the top row's labels 52pt down (its frames 76pt down), so
+    /// the board actions have room above those labels (DZCanvas). 52pt stays free below.
     public static func fitting(_ bounds: CGRect, in size: CGSize) -> NWCanvasViewport {
+        let M = NWDesignMetrics.self
         guard !bounds.isNull, bounds.width > 0, bounds.height > 0, size.width > 0, size.height > 0 else {
-            return NWCanvasViewport(offset: CGPoint(x: NWDesignMetrics.fitLeading, y: NWDesignMetrics.fitTop), zoom: 1)
+            return NWCanvasViewport(offset: CGPoint(x: M.fitLeading, y: M.fitFrameTop), zoom: 1)
         }
-        let room = CGSize(width: size.width - NWDesignMetrics.fitLeading * 2, height: size.height - NWDesignMetrics.fitTop * 2)
+        let room = CGSize(width: size.width - M.fitLeading * 2, height: size.height - M.fitFrameTop - M.fitTop)
         let zoom = clamp(min(1, max(room.width, 1) / bounds.width, max(room.height, 1) / bounds.height))
-        return NWCanvasViewport(offset: CGPoint(x: NWDesignMetrics.fitLeading - bounds.minX * zoom,
-                                                y: NWDesignMetrics.fitTop - bounds.minY * zoom), zoom: zoom)
+        return NWCanvasViewport(offset: CGPoint(x: M.fitLeading - bounds.minX * zoom, y: M.fitFrameTop - bounds.minY * zoom), zoom: zoom)
     }
 }
 
@@ -114,6 +115,15 @@ public struct NWCanvasBoard: Identifiable, Equatable, Sendable {
         self.isSelected = isSelected
         self.content = content
         self.labelRoom = labelRoom
+    }
+
+    /// Where its label is drawn on screen at `viewport`; nil where it isn't drawn.
+    public func labelRect(in viewport: NWCanvasViewport) -> CGRect? {
+        let frame = viewport.screen(self.frame)
+        let label = labelRoom.layout(width: frame.width, zoom: viewport.zoom)
+        guard label.shown else { return nil }
+        return CGRect(x: frame.minX, y: frame.minY - label.gap - NWDesignMetrics.labelHeight,
+                      width: label.width, height: NWDesignMetrics.labelHeight)
     }
 
     /// "1280 × 800", the board's CSS pixel size.
@@ -264,13 +274,8 @@ extension Array where Element == NWCanvasBoard {
             return NWCanvasPick(board: board.id, point: CGPoint(x: (point.x - origin.x) / viewport.zoom, y: (point.y - origin.y) / viewport.zoom),
                                 extending: extending)
         }
-        for board in reversed() {
-            let frame = viewport.screen(board.frame)
-            let label = board.labelRoom.layout(width: frame.width, zoom: viewport.zoom)
-            guard label.shown else { continue }
-            let rect = CGRect(x: frame.minX, y: frame.minY - label.gap - NWDesignMetrics.labelHeight,
-                              width: label.width, height: NWDesignMetrics.labelHeight)
-            if rect.contains(point) { return NWCanvasPick(board: board.id, extending: extending) }
+        for board in reversed() where board.labelRect(in: viewport)?.contains(point) == true {
+            return NWCanvasPick(board: board.id, extending: extending)
         }
         return NWCanvasPick(extending: extending)
     }
