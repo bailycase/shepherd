@@ -92,11 +92,11 @@ extension ShepherdViewModel {
 
     // MARK: Building one
 
-    /// "Build one from a repo": a design in `spaceID` whose agent builds a system from its
-    /// project, opened on its page. A project with a build already opens that one.
+    /// "Build one from a repo": a design whose agent builds a system from the project `spaceID`
+    /// (its source, read only), opened on its page. A project with a build already opens that one.
     func buildDesignSystem(in spaceID: SpaceID) {
         guard designToolEnabled, let space = state.spaces.first(where: { $0.id == spaceID }) else { return }
-        if let existing = state.designs.first(where: { $0.buildsSystem && $0.spaceID == spaceID }) {
+        if let existing = state.designs.first(where: { $0.buildsSystem && $0.sourceSpaceID == spaceID }) {
             openSystemBuild(existing.id)
             return
         }
@@ -105,7 +105,8 @@ extension ShepherdViewModel {
         Task {
             defer { startingSystemBuilds.remove(spaceID) }
             do {
-                let design = Design(name: space.name, spaceID: space.id, createdAt: SessionServer.nowMilliseconds(), buildsSystem: true)
+                let design = Design(name: space.name, createdAt: SessionServer.nowMilliseconds(), buildsSystem: true,
+                                    sourceSpaceID: space.id)
                 _ = try await server.createDesign(design)
                 adopt(server.state)
                 lastDesignSystem = .build(design.id)

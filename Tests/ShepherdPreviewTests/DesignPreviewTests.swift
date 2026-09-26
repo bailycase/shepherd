@@ -21,8 +21,8 @@ struct DesignPreviewTests {
     private static let windowSize = CGSize(width: 1440, height: 900)
 
     /// A workspace with the Design tool on, two projects, a plain thread, and two designs: the
-    /// checkout funnel (three directions and a phone) drawn by a live stub agent, and a phone-first
-    /// onboarding design.
+    /// checkout funnel (three directions and a phone) drawn by a live stub agent in the reserved
+    /// designs space, and a phone-first onboarding design. Designs belong to no project.
     private func designWorkspace() async throws -> (workspace: PreviewWorkspace, checkout: Design, agent: Agent) {
         let workspace = try PreviewWorkspace()
         workspace.settings.designToolEnabled = true
@@ -32,13 +32,15 @@ struct DesignPreviewTests {
         let web = Space(name: "acme-web", path: workspace.dir.path)
         let app = Space(name: "shepherd", path: workspace.dir.path)
         let (thread, threadTab) = try await workspace.agent("Fix the login redirect", in: web, order: 0, status: .working)
-        var (agent, tab) = try await workspace.agent("Checkout funnel dashboard", in: web, order: 1, live: true)
-        let checkout = Design(name: "Checkout funnel dashboard", spaceID: web.id, agentID: agent.id, createdAt: 1_000)
+        let designs = Space.designs()
+        var (agent, tab) = try await workspace.agent("Checkout funnel dashboard", in: designs, order: 0, live: true,
+                                                     cwd: workspace.dir.path)
+        let checkout = Design(name: "Checkout funnel dashboard", agentID: agent.id, createdAt: 1_000)
         agent.designID = checkout.id
-        try await workspace.seed(ShepherdState(spaces: [web, app], tabs: [threadTab, tab], agents: [thread, agent]))
+        try await workspace.seed(ShepherdState(spaces: [web, app, designs], tabs: [threadTab, tab], agents: [thread, agent]))
         _ = try await workspace.server.createDesign(checkout)
         try await DesignFixtures.draw(DesignFixtures.checkout, in: checkout.id, on: workspace.server, perRow: 3)
-        let onboarding = Design(name: "Onboarding", spaceID: app.id, createdAt: 2_000)
+        let onboarding = Design(name: "Onboarding", createdAt: 2_000)
         _ = try await workspace.server.createDesign(onboarding)
         let phone = [DesignFixtures.Board(path: "A-phone.dc.html", title: "A · phone", width: 390, height: 844, accent: "#be123c")]
         try await DesignFixtures.draw(phone, in: onboarding.id, on: workspace.server)
@@ -65,6 +67,7 @@ struct DesignPreviewTests {
         let vm = workspace.vm
         vm.openNewDesign()
         #expect(vm.shownDestination == .newDesign)
+        #expect(vm.newDesign.blocker(vm) == "Describe the design first.", "no project to pick")
         try await Preview.render("app-window-new-design", size: Self.windowSize) {
             RootView(vm: vm)
         }

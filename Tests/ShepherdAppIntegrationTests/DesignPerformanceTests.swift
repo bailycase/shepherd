@@ -26,7 +26,7 @@ struct DesignPerformanceTests {
         app.settings.designToolEnabled = true
         let space = Fixture.space(path: app.dir.path)
         var drawer = try await app.liveAgent("Large canvas", in: space)
-        let design = Design(name: "Large canvas", spaceID: space.id, agentID: drawer.agent.id, createdAt: 1_000)
+        let design = Design(name: "Large canvas", agentID: drawer.agent.id, createdAt: 1_000)
         drawer.agent.designID = design.id
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [drawer]))
         vm.designNetwork = .none

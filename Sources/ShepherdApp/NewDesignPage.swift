@@ -10,9 +10,9 @@ import ShepherdUI
 /// design system the boards are drawn in. Sending makes the design, starts its agent with the
 /// brief, and opens its canvas.
 ///
-/// The one card is the design system the boards are drawn in: the system built from the project,
-/// else the project's own stylesheets, "found in" its tokens file when it has one (read-only
-/// detection). Its menu picks another project or another system. The Capture a page and From a
+/// The one card is the design system the boards are drawn in: the one picked from its menu, else
+/// the most recently changed system built here, else Night Watch. It names the project a system
+/// was read from as information; a design belongs to no project. The Capture a page and From a
 /// screenshot starting points come later.
 struct NewDesignPage: View {
     var vm: ShepherdViewModel
@@ -63,7 +63,6 @@ struct NewDesignPage: View {
         .background(Color.nw.bgWindow)
         .nwAnimation(.content, value: draft.notice)
         .onChange(of: draft.focusRequest, initial: true) { composing = true }
-        .task(id: draft.space) { await draft.detect(vm) }
         .task { await vm.loadDesignSystems() }
         .fileImporter(isPresented: $picking, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result else { return }
@@ -128,8 +127,8 @@ struct NewDesignPage: View {
 
     // MARK: Starting points
 
-    /// "DESIGN SYSTEM & STARTING POINT": the project the design is drawn in, chosen, at a third of
-    /// the row. With more than one project its menu picks another.
+    /// "DESIGN SYSTEM & STARTING POINT": the design system the design is drawn in, chosen, at a
+    /// third of the row. Its menu picks another system.
     private var startingPoints: some View {
         VStack(alignment: .leading, spacing: AppLayout.newDesignCardsLabelGap) {
             Text("Design system & starting point").nwSectionLabel()
@@ -138,10 +137,8 @@ struct NewDesignPage: View {
                 let width = (proxy.size.width - AppLayout.newDesignCardsGap * (AppLayout.newDesignCardsPerRow - 1))
                     / AppLayout.newDesignCardsPerRow
                 HStack(spacing: AppLayout.newDesignCardsGap) {
-                    if let space = vm.state.spaces.first(where: { $0.id == draft.space }) {
-                        systemCard(space)
-                            .frame(width: max(0, width))
-                    }
+                    systemCard
+                        .frame(width: max(0, width))
                     Spacer(minLength: 0)
                 }
             }
@@ -149,23 +146,12 @@ struct NewDesignPage: View {
         }
     }
 
-    @ViewBuilder private func systemCard(_ space: Space) -> some View {
+    @ViewBuilder private var systemCard: some View {
         let systems = vm.designSystems.summaries
-        let picked = draft.system.flatMap { vm.designSystems.summary($0) }
-        let system = picked ?? NewDesignState.projectSystem(space.id, in: systems)
-        let words = NewDesignState.card(project: space, system: system, picked: picked != nil,
-                                        tokensFile: draft.tokensFiles[space.id] ?? nil, spaces: vm.state.spaces)
+        let words = NewDesignState.card(system: draft.chosenSystem(in: systems), spaces: vm.state.spaces)
         let card = NWDesignStartCard(symbol: "pencil.tip", title: words.title, line: words.line, note: words.note, chosen: true)
-        let spaces = vm.visibleSpaces
-        if spaces.count > 1 || !systems.isEmpty {
+        if systems.count > 1 {
             Menu {
-                if spaces.count > 1 {
-                    Section("Projects") {
-                        ForEach(spaces) { option in
-                            Button(option.name) { draft.choose(option.id) }
-                        }
-                    }
-                }
                 Section("Design systems") {
                     ForEach(systems, id: \.namespace) { option in
                         Button(option.info.title) { draft.choose(system: option.namespace) }
@@ -175,7 +161,7 @@ struct NewDesignPage: View {
                 .menuStyle(.button)
                 .buttonStyle(.plain)
                 .menuIndicator(.hidden)
-                .help("Draw it in another project or design system")
+                .help("Draw it in another design system")
         } else {
             card
         }

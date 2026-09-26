@@ -75,7 +75,7 @@ struct DesignExportFlowTests {
         vm.designNetwork = .none
         let out = try makeScratchDirectory("out")
         vm.designAttachDirectory = out.appendingPathComponent("drops", isDirectory: true)
-        let design = Design(name: "Checkout", spaceID: space.id, createdAt: 1_000)
+        let design = Design(name: "Checkout", createdAt: 1_000)
         _ = try await app.server.createDesign(design)
         try await DesignFixtures.draw(DesignFixtures.checkout, in: design.id, on: app.server, perRow: 3)
         let hero = try DesignPath.validate("Hero.dc.html")
@@ -171,8 +171,7 @@ struct DesignExportFlowTests {
         #expect(written["project/Hero.dc.html"] == Data(Self.hero.utf8), "the board's source as written")
 
         // The folder is a Claude Design folder again.
-        let space = try #require(w.vm.state.spaces.first)
-        let imported = try await w.app.server.importDesign(from: unzipped.appendingPathComponent("Checkout"), spaceID: space.id)
+        let imported = try await w.app.server.importDesign(from: unzipped.appendingPathComponent("Checkout"))
         let snapshot = try await w.app.server.designSnapshot(imported.id)
         #expect(snapshot.index.boards.count == 2 && snapshot.boards.count == 3)
     }

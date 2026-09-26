@@ -12,8 +12,8 @@ struct DesignsPageModel: Equatable {
     struct Card: Identifiable, Equatable {
         let id: DesignID
         let name: String
-        /// The design's system: its namespace, else its project's name (the agent checks the
-        /// boards against the project's own stylesheets).
+        /// The design's system: its namespace; nil while it is drawn in none (a design belongs to
+        /// no project).
         let system: String?
         /// "4 boards".
         let detail: String
@@ -81,7 +81,7 @@ struct DesignsPageModel: Equatable {
                      selection: DesignID?, now: Date, systems: [DesignSystemSummary] = [],
                      swatches: [String: [DesignSystemPresentation.Swatch]] = [:]) -> DesignsPageModel {
         let names = Dictionary(spaces.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
-        func system(_ design: Design) -> String? { design.systemNamespace ?? names[design.spaceID] }
+        func system(_ design: Design) -> String? { design.systemNamespace }
         let query = filter.trimmingCharacters(in: .whitespacesAndNewlines)
         func matches(_ text: String?) -> Bool { text?.localizedCaseInsensitiveContains(query) ?? false }
         let canvases = designs.filter { !$0.buildsSystem }
@@ -114,7 +114,7 @@ struct DesignsPageModel: Equatable {
         }
         let built = Set(systems.compactMap(\.info.ownerDesignID))
         let pending = designs.filter { $0.buildsSystem && !built.contains($0.id) }.sorted { $0.createdAt < $1.createdAt }.map { build in
-            System(id: .build(build.id), name: build.name, source: names[build.spaceID].map { "\($0) · building" } ?? "building",
+            System(id: .build(build.id), name: build.name, source: build.sourceSpaceID.flatMap { names[$0] }.map { "\($0) · building" } ?? "building",
                    count: "", swatches: [])
         }
         cards.insert(contentsOf: pending, at: own.count)
