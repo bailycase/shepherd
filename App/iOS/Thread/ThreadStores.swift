@@ -13,9 +13,13 @@ final class ThreadStores {
     @ObservationIgnored private var stores: [AgentRef: NativeThreadStore] = [:]
     @ObservationIgnored private var viewers: [AgentRef: NativeThreadViewers] = [:]
 
+    /// Names the host a thread's agent runs on, for its errors' Details.
+    @ObservationIgnored var hostName: ((AgentRef) -> String?)?
+
     func store(for ref: AgentRef) -> NativeThreadStore {
         if let store = stores[ref] { return store }
         let store = NativeThreadStore()
+        store.hostName = hostName?(ref)
         stores[ref] = store
         return store
     }

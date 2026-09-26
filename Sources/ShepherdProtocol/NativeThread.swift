@@ -279,15 +279,20 @@ public struct NativeCommand: Codable, Hashable, Sendable {
     public static let maxCount = 128
     public static let maxNameBytes = 64
     public static let maxDescriptionBytes = 256
+    public static let maxArgumentsBytes = 64
     public var name: String
     public var description: String?
     /// extension / prompt / skill.
     public var source: String?
+    /// What the command takes after its name ("[tag]", "<session>"): a prompt template's
+    /// `argument-hint`. Additive; absent from older hosts and for commands without one.
+    public var arguments: String?
 
-    public init(name: String, description: String? = nil, source: String? = nil) {
+    public init(name: String, description: String? = nil, source: String? = nil, arguments: String? = nil) {
         self.name = name
         self.description = description
         self.source = source
+        self.arguments = arguments
     }
 }
 
@@ -382,6 +387,9 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
     /// "Edited N files" cards and their Undo (`RemoteProtocol.changesCapability`). nil from older
     /// hosts, and for an agent outside a git repository.
     public var turnChanges: [ChangesTurn]?
+    /// pi is retrying a failed request on its own (TurnErrors › While it retries). nil when it
+    /// isn't, and from older hosts.
+    public var retry: NativeThreadRetry?
 
     public var isRPC: Bool { runtime == "rpc" }
 
@@ -391,7 +399,7 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         widgets: [NativeThreadWidget]? = nil, messages: [NativeThreadMessage], olderCursor: String? = nil,
         provisional: [NativeThreadMessage], clipped: Bool, runtime: String? = nil, stats: NativeThreadStats? = nil,
         commands: [NativeCommand]? = nil, subagents: [NativeSubagent]? = nil, queue: NativeQueue? = nil,
-        context: NativeThreadContext? = nil, turnChanges: [ChangesTurn]? = nil
+        context: NativeThreadContext? = nil, turnChanges: [ChangesTurn]? = nil, retry: NativeThreadRetry? = nil
     ) {
         self.piSessionID = piSessionID
         self.generation = generation
@@ -415,6 +423,7 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         self.queue = queue
         self.context = context
         self.turnChanges = turnChanges
+        self.retry = retry
     }
 }
 
@@ -447,12 +456,16 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
     /// Role "question": a question pi asked and how it ended (`NativeQuestionRecord`). Older
     /// clients leave the row out.
     public var question: NativeQuestionRecord?
+    /// Assistant messages whose request failed (status "error"): the provider and model it went
+    /// to (pi's ids, "openai" and "gpt-5"), for the error card's facts. Absent from older hosts.
+    public var provider: String?
+    public var model: String?
 
     public init(
         entryID: String, role: String, blocks: [NativeThreadBlock], toolName: String? = nil, toolCallID: String? = nil,
         argumentsText: String? = nil, status: String? = nil, isError: Bool? = nil, truncated: Bool = false, timestamp: Double? = nil,
         startedAt: Double? = nil, thinkingSeconds: Double? = nil, origin: NativeMessageOrigin? = nil, operationID: UUID? = nil,
-        compaction: NativeCompaction? = nil, question: NativeQuestionRecord? = nil
+        compaction: NativeCompaction? = nil, question: NativeQuestionRecord? = nil, provider: String? = nil, model: String? = nil
     ) {
         self.entryID = entryID
         self.role = role
@@ -470,6 +483,22 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
         self.operationID = operationID
         self.compaction = compaction
         self.question = question
+        self.provider = provider
+        self.model = model
+    }
+}
+
+/// pi retrying a failed request on its own: which try is next (`attempt` of `maxAttempts`), and
+/// when it goes (`retryAt`, ms since the epoch on the host's clock).
+public struct NativeThreadRetry: Codable, Hashable, Sendable {
+    public var attempt: Int
+    public var maxAttempts: Int
+    public var retryAt: Double
+
+    public init(attempt: Int, maxAttempts: Int, retryAt: Double) {
+        self.attempt = attempt
+        self.maxAttempts = maxAttempts
+        self.retryAt = retryAt
     }
 }
 
