@@ -720,9 +720,10 @@ final class DesignScreenModel {
     }
 
     /// Shows another page: its boards and notes, fitted as a design opens; what was selected on
-    /// the page left goes.
+    /// the page left goes, and so does a presented board.
     func showPage(_ id: String) {
         guard id != page, let index = snapshot?.index, index.pages?.contains(where: { $0.id == id }) == true else { return }
+        present(nil)
         page = id
         labelRooms = Self.labelRooms(index, page: id)
         let kept = picks.filter { index.isOnPage($0.board, id) }
@@ -897,8 +898,10 @@ final class DesignScreenModel {
     var viewRecord: DesignViewRecord? {
         guard let snapshot else { return nil }
         if let presented {
-            let page = Self.recordPage(page)
-            return DesignViewRecord(mode: .focused, page: page, pageName: page == nil ? nil : pageName.flatMap(DesignViewRecord.label),
+            // A Play link may lead to a board on another page: the record names the board's own.
+            let page = Self.recordPage(snapshot.index.page(of: presented))
+            let name = page.flatMap { id in pages.first { $0.id == id }?.name }
+            return DesignViewRecord(mode: .focused, page: page, pageName: page == nil ? nil : name.flatMap(DesignViewRecord.label),
                                     visibleBoards: [presented.viewName])
         }
         return record(selecting: picks)
