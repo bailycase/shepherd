@@ -166,7 +166,7 @@ struct AgentBannersTests {
         let id = UUID()
         let banner = AgentBanners.hostOffline(name: "horizon", hostID: id)
         #expect(banner.title == "horizon is offline")
-        #expect(banner.subtitle == "Host")
+        #expect(banner.subtitle == "Host offline")
         #expect(banner.body == "Remote agents resume when it’s back.")
         #expect(banner.actions == [.reconnect])
         #expect(banner.actions.map(\.title) == ["Retry"])
