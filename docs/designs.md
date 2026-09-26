@@ -1074,7 +1074,9 @@ On iPad the viewer can draw on the canvas with an Apple Pencil (iPadDesign) wher
   `design-markup` markers carrying a nonce new to the message), then "Pencil markup · 2 strokes
   · 2 notes", as a turn of its own through the host queue, like a comment. The message's origin
   (`NativeMessageOrigin.designMarkup`) carries the counts. Sent ink stays on the canvas until its
-  proposals are applied or kept; ink that couldn't go stays as it was.
+  proposals are applied or kept; ink that couldn't go stays as it was. The palette shows while
+  there is ink on the canvas, new or sent, and Done with nothing new puts it away until the next
+  stroke.
 - **The agent's answer.** The skill and the prompt have it read the marks, call `markup_propose`
   once with a comment per mark, say in a sentence which mark became which comment, and change no
   board until the viewer applies them. The host keeps the proposals as comments as the call

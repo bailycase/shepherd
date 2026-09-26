@@ -8169,10 +8169,10 @@ chat's field, and Split View with "Send to the thread". The boards render on the
   without "Send to the thread"; with several such windows, the button asks which thread.
 - **The Designs list** the sidebar's row opens is the Mac's cards (NWDesignCard) in a grid.
 - **Portrait** keeps the canvas beside the 360pt pane.
-- **Markup's moments:** the palette shows while there is ink since the last Done (the first
-  Pencil stroke brings it, erasing everything takes it away); Done reads at 40% while the markup
-  is read and sent; sent ink stays on the canvas, under new ink, until its proposals are applied
-  or kept. The palette's Comment is the canvas's Comment tool (a Pencil or finger tap on an
+- **Markup's moments:** the palette shows while there is ink on the canvas, new or sent (the
+  first Pencil stroke brings it; the board draws it beside the agent's answer), and Done with
+  nothing new puts it away until the next stroke; Done reads at 40% while the markup is read and
+  sent; sent ink stays on the canvas, under new ink, until its proposals are applied or kept. The palette's Comment is the canvas's Comment tool (a Pencil or finger tap on an
   element opens the editor). Ink is 3pt (the pen) or 12pt (the marker) on screen, and zooms with
   the boards.
 - **The proposals** are comments from the moment the agent makes them, as the board counts them
