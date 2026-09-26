@@ -231,15 +231,28 @@
       var style = inlined(originals[i]);
       if (style) links[i].parentNode.replaceChild(style, links[i]);
     }
-    var gone = page.querySelectorAll('script, x-dc, style[data-dc-runtime], link[rel~="modulepreload"], link[rel~="preload"]');
+    // Nothing that runs, embeds another document, or redirects the page leaves: an imported
+    // board never passed board_write's lint, and the page opens outside the canvas's sandbox.
+    var gone = page.querySelectorAll('script, x-dc, style[data-dc-runtime], link[rel~="modulepreload"], link[rel~="preload"], ' +
+      'link[rel~="import"], iframe, frame, frameset, object, embed, portal, base, meta[http-equiv]');
     for (var j = 0; j < gone.length; j++) if (gone[j].parentNode) gone[j].parentNode.removeChild(gone[j]);
     var all = page.querySelectorAll('*');
     for (var k = 0; k < all.length; k++) {
       var element = all[k];
       for (var a = element.attributes.length - 1; a >= 0; a--) {
         var name = element.attributes[a].name;
-        if (/^data-dc-/i.test(name) || /^on/i.test(name)) element.removeAttribute(name);
+        var value = element.attributes[a].value;
+        if (/^data-dc-/i.test(name) || /^on/i.test(name) || name.toLowerCase() === 'srcdoc' ||
+            /^[\s\u0000-\u001f]*(javascript|vbscript):/i.test(value.replace(/[\t\n\r]/g, ''))) {
+          element.removeAttribute(name);
+        }
       }
+    }
+    // SVG animation can set a link's target to script.
+    var animations = page.querySelectorAll('animate, set');
+    for (var n = 0; n < animations.length; n++) {
+      var target = (animations[n].getAttribute('attributeName') || '').toLowerCase();
+      if (/(^|:)href$/.test(target) && animations[n].parentNode) animations[n].parentNode.removeChild(animations[n]);
     }
     return '<!doctype html>\n' + page.outerHTML + '\n';
   }

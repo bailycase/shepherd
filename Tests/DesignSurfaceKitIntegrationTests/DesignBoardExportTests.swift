@@ -53,6 +53,44 @@ struct DesignBoardExportTests {
         #expect(!page.contains("{{"), "no holes left")
     }
 
+    /// An imported board never passed board_write's lint, and its page opens outside the sandbox.
+    @Test func aStandalonePageKeepsNothingThatRunsEmbedsOrRedirects() async throws {
+        let hostile = """
+        <!doctype html>
+        <html lang="en">
+        <head><meta charset="utf-8"><title>Hostile</title><script src="./support.js"></script></head>
+        <body>
+        <x-dc>
+        <helmet><meta http-equiv="refresh" content="0; url=https://example.com"><base href="https://example.com/"></helmet>
+        <div style="width: 200px; height: 100px">
+        <a id="bad" href="  JavaScript:alert(1)">Bad</a>
+        <a id="good" href="https://example.com/page">Good</a>
+        <iframe src="https://example.com"></iframe>
+        <object data="x.swf"></object>
+        <embed src="x.swf">
+        <svg width="10" height="10"><a href="#"><animate attributeName="href" to="javascript:alert(1)"/><rect width="10" height="10"/></a></svg>
+        </div>
+        </x-dc>
+        <script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":200,"height":100}}'>
+        class Component extends DCLogic { renderVals() { return {}; } }
+        </script>
+        </body>
+        </html>
+        """
+        let harness = try BoardHarness(files: ["Hostile.dc.html": hostile])
+        let view = try harness.view("Hostile.dc.html", size: CGSize(width: 200, height: 100))
+        try await view.load()
+
+        let page = try await view.staticPage().lowercased()
+
+        #expect(!page.contains("javascript:"))
+        for tag in ["<script", "<iframe", "<object", "<embed", "<base", "http-equiv", "<animate"] {
+            #expect(!page.contains(tag), "\(tag) left")
+        }
+        #expect(page.contains("href=\"https://example.com/page\""), "an ordinary link stays")
+        #expect(page.contains(">bad</a>"), "the link's text stays, without its script")
+    }
+
     @Test func anImageIsTwiceTheBoardsSize() async throws {
         let harness = try BoardHarness()
         let view = try harness.view("Main.dc.html")
