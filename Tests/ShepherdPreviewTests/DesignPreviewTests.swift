@@ -104,7 +104,7 @@ struct DesignPreviewTests {
         let bars = try element(16, [1, 2], CGRect(x: 32, y: 176, width: 1216, height: 592), kind: .shape, label: nil, tag: "card")
         screen.setSelection([.init(board: try #require(DesignPath("B.dc.html"))), .init(board: a, element: card)], hover: bars)
         // Close enough on A to read the tag (the canvas opens fitted, at about 17%).
-        let close = NWCanvasViewport(offset: CGPoint(x: NWDesignMetrics.fitLeading, y: NWDesignMetrics.fitTop), zoom: 0.55)
+        let close = NWCanvasViewport(offset: CGPoint(x: NWDesignMetrics.fitLeading, y: NWDesignMetrics.fitFrameTop), zoom: 0.55)
         try await Preview.render("app-window-design-select", size: Self.windowSize, ready: {
             if screen.snapshot != nil, screen.viewport != close { screen.viewport = close }
             return screen.viewport == close && screen.isDrawn
@@ -139,7 +139,7 @@ struct DesignPreviewTests {
     }
 
     /// Close enough on A to read a pin's thread (the canvas opens fitted, at about 17%).
-    private static let closeOnA = NWCanvasViewport(offset: CGPoint(x: NWDesignMetrics.fitLeading, y: NWDesignMetrics.fitTop), zoom: 0.55)
+    private static let closeOnA = NWCanvasViewport(offset: CGPoint(x: NWDesignMetrics.fitLeading, y: NWDesignMetrics.fitFrameTop), zoom: 0.55)
 
     /// Comments (DZCanvas, DZTweak; NWCommentPin, NWCommentThread, NWCommentCard): two pins on A,
     /// the first's thread open with the design agent's answer, and in the chat the comment's card
@@ -234,7 +234,7 @@ struct DesignPreviewTests {
         }
         screen.paneTab = .tweak
         _ = phone
-        let close = NWCanvasViewport(offset: CGPoint(x: NWDesignMetrics.fitLeading, y: NWDesignMetrics.fitTop), zoom: 0.55)
+        let close = NWCanvasViewport(offset: CGPoint(x: NWDesignMetrics.fitLeading, y: NWDesignMetrics.fitFrameTop), zoom: 0.55)
         try await Preview.render("app-window-design-tweak-\(state)", size: Self.windowSize, ready: {
             if screen.snapshot != nil, screen.viewport != close { screen.viewport = close }
             let loaded = state == "empty" ? tweak.presentation.isEmpty

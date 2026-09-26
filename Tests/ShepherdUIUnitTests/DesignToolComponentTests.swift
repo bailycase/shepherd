@@ -137,10 +137,16 @@ struct DesignToolComponentTests {
         let bounds = Self.boards.bounds
         #expect(bounds == CGRect(x: 0, y: 0, width: 2640, height: 1764))
         let fitted = NWCanvasViewport.fitting(bounds, in: CGSize(width: 1100, height: 800))
-        #expect(fitted.screen(bounds.origin) == CGPoint(x: NWDesignMetrics.fitLeading, y: NWDesignMetrics.fitTop))
+        // DZCanvas: the top row's labels 52pt down, its frames 76pt down.
+        #expect(NWDesignMetrics.fitFrameTop == 76)
+        #expect(fitted.screen(bounds.origin) == CGPoint(x: NWDesignMetrics.fitLeading, y: NWDesignMetrics.fitFrameTop))
         #expect(fitted.zoom < 1)
         let screen = fitted.screen(bounds)
         #expect(screen.maxX <= 1100 - NWDesignMetrics.fitLeading + 0.001 && screen.maxY <= 800 - NWDesignMetrics.fitTop + 0.001)
+        // Fitted by its height, the boards still keep the room above and below.
+        let tall = NWCanvasViewport.fitting(bounds, in: CGSize(width: 4000, height: 600))
+        #expect(tall.screen(bounds.origin).y == NWDesignMetrics.fitFrameTop)
+        #expect(abs(tall.screen(bounds).maxY - (600 - NWDesignMetrics.fitTop)) < 0.001)
         let small = NWCanvasViewport.fitting(CGRect(x: 10, y: 10, width: 200, height: 100), in: CGSize(width: 1100, height: 800))
         #expect(small.zoom == 1)
         // Nothing drawn yet: the origin at the insets, at 100%.
