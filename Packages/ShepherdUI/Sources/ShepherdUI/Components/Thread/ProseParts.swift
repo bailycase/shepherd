@@ -164,21 +164,26 @@ enum NWProseThumbnails {
 // MARK: Disclosure
 
 /// `<details>`: a 10pt chevron and the summary in body medium, the whole line a button; open,
-/// the blocks inside sit 12pt past a 2pt `lineStrong` rule, as expanded thinking does.
+/// the blocks inside sit 12pt past a 2pt `lineStrong` rule, as expanded thinking does. With
+/// nothing inside, the summary is a plain line: its chevron's place stays, empty, and nothing
+/// opens.
 struct NWProseDetails<Code: View>: View {
     let summary: AttributedString
     let blocks: [NWProseBlock]
     let depth: Int
+    let voice: NWProseVoice
     let code: (String, String?) -> Code
     @State private var open: Bool
     @Environment(\.nwProseSize) private var size
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// `open` starts it open (previews).
-    init(summary: AttributedString, blocks: [NWProseBlock], depth: Int, open: Bool = false, code: @escaping (String, String?) -> Code) {
+    init(summary: AttributedString, blocks: [NWProseBlock], depth: Int, voice: NWProseVoice = .reply, open: Bool = false,
+         code: @escaping (String, String?) -> Code) {
         self.summary = summary
         self.blocks = blocks
         self.depth = depth
+        self.voice = voice
         self.code = code
         _open = State(initialValue: open)
     }
@@ -186,32 +191,47 @@ struct NWProseDetails<Code: View>: View {
     var body: some View {
         let nw = Color.nw
         VStack(alignment: .leading, spacing: NW.Space.m) {
-            Button {
-                withAnimation(NW.Motion.disclosure.animation(reduceMotion: reduceMotion)) { open.toggle() }
-            } label: {
-                HStack(alignment: .firstTextBaseline, spacing: NW.Space.s) {
-                    NWThreadChevron(isExpanded: open).foregroundStyle(nw.textSecondary)
-                    Text(summary).font(.nw(.body, weight: .medium, size: size)).foregroundStyle(nw.textPrimary)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
+            if blocks.isEmpty {
+                label(expandable: false)
+            } else {
+                Button {
+                    withAnimation(NW.Motion.disclosure.animation(reduceMotion: reduceMotion)) { open.toggle() }
+                } label: {
+                    label(expandable: true)
                 }
-                #if os(iOS)
-                .frame(minHeight: NW.Height.touch)
-                #endif
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .nwFocusRing(radius: NW.Radius.xs)
+                .accessibilityValue(open ? "Expanded" : "Collapsed")
             }
-            .buttonStyle(.plain)
-            .nwFocusRing(radius: NW.Radius.xs)
-            .accessibilityValue(open ? "Expanded" : "Collapsed")
-            if open {
-                VStack(alignment: .leading, spacing: NW.Space.l) {
-                    NWProseBlocks(blocks: blocks, nested: true, depth: depth, code: code)
+            if open, !blocks.isEmpty {
+                VStack(alignment: .leading, spacing: voice == .thinking ? NW.Space.m : NW.Space.l) {
+                    NWProseBlocks(blocks: blocks, nested: true, depth: depth, voice: voice, code: code)
                 }
                 .padding(.leading, NW.Space.l)
                 .overlay(alignment: .leading) { nw.lineStrong.frame(width: NWThreadMetrics.ruleWidth) }
                 .nwTransition(.disclosure)
             }
         }
+    }
+
+    private func label(expandable: Bool) -> some View {
+        let nw = Color.nw
+        return HStack(alignment: .firstTextBaseline, spacing: NW.Space.s) {
+            NWThreadChevron(isExpanded: open, shown: expandable).foregroundStyle(nw.textSecondary)
+            Group {
+                if voice == .thinking {
+                    Text(summary).font(NWThinking.headingFont).italic().foregroundStyle(nw.textSecondary)
+                } else {
+                    Text(summary).font(.nw(.body, weight: .medium, size: size)).foregroundStyle(nw.textPrimary)
+                }
+            }
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        #if os(iOS)
+        .frame(minHeight: expandable ? NW.Height.touch : nil)
+        #endif
+        .contentShape(Rectangle())
     }
 }
 
