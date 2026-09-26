@@ -1129,7 +1129,7 @@ func nativeContextTooltip(_ stats: NativeThreadStats?) -> String {
     if let tokens = stats.contextTokens, tokens > 0 {
         var line = "\(tokens.formatted()) context tokens"
         if let window = stats.contextWindow { line += " of \(nativeTokenCount(window))" }
-        if let percent = stats.contextPercent { line += " (\(Int(percent.rounded()))%)" }
+        if let percent = stats.contextPercent { line += " (\(nativeContextPercentText(percent)))" }
         parts.append(line)
     }
     if let total = stats.totalTokens { parts.append("\(nativeTokenCount(total)) tokens this session") }

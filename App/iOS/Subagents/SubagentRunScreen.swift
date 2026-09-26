@@ -153,7 +153,7 @@ struct SubagentRunView: View {
         guard !run.isTerminal else { return nil }
         var parts: [String] = []
         if let step = run.step { parts.append("step \(step.index) of \(step.total)") }
-        if let percent = run.contextPercent { parts.append("\(Int(percent.rounded()))%") }
+        if let percent = run.contextPercent { parts.append(nativeContextPercentText(percent)) }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
