@@ -3237,7 +3237,8 @@ Save or Apply (the one exception is Instructions, which edits files and saves wi
     than the text around them (`textPrimary`; the board's #c1c5cb is off the palette): "**Remote
     default** starts clean…". Descriptions and page explanations are written with that markup
     (`` `code` ``, `**name**`) and drawn by `NWMarkupText`, which parses each string once and pads
-    the code's fill by kerning the characters around it.
+    the code's fill by kerning the characters around it. Code breaks only at its spaces, never
+    after a hyphen (`--model` stays whole).
   - rows without a title (a form's Add host, pi's version and update buttons, a remote host) are
     `SettingsActionRow`s: the same padding and minimum height, their own content leading, actions
     trailing `NW.Space.s` apart.
