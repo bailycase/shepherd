@@ -392,7 +392,14 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
     }
 
-    public func nativeThread(agentID: AgentID, request command: NativeThreadRequest) async throws -> NativeThreadResult {
+    /// The request as this host takes it: a send's design context stays only where the host
+    /// takes one (an older host would drop it anyway); the message goes either way.
+    static func outgoing(_ request: NativeThreadRequest, capabilities: Set<String>) -> NativeThreadRequest {
+        capabilities.contains(RemoteProtocol.designContextCapability) ? request : request.droppingDesignContext
+    }
+
+    public func nativeThread(agentID: AgentID, request original: NativeThreadRequest) async throws -> NativeThreadResult {
+        let command = Self.outgoing(original, capabilities: capabilities)
         guard capabilities.contains(RemoteProtocol.nativeThreadCapability) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to view native threads.")
         }

@@ -650,7 +650,7 @@ private final class MotionThread {
         window = OffscreenWindow(size: size, dark: false)
         let request: NativeThreadStore.Request = { [weak self] value in
             guard let self else { return .failure(code: "gone", message: "harness released") }
-            if case .send(_, _, let operation, _, _, _) = value { return .accepted(operationID: operation) }
+            if case .send(_, _, let operation, _, _, _, _) = value { return .accepted(operationID: operation) }
             return .snapshot(value: self.snapshot)
         }
         window.show(Hosted(visibility: visibility, store: store, request: request, models: Fixtures.models)
