@@ -31,7 +31,7 @@ import SwiftUI
 #Preview("Needs you card") {
     NWPreviewBoth {
         VStack(spacing: NW.Space.l) {
-            NWAttentionCard(symbol: "bubble.left", origin: "Thread", title: "Dock review pane",
+            NWAttentionCard(symbol: nil, origin: "Thread", title: "Dock review pane",
                             question: "Where should review dock?", since: Date().addingTimeInterval(-840), host: "Studio") {
                 Button("Beside the thread") {}.buttonStyle(.nw(.primary))
                 Button("Over the thread") {}.buttonStyle(.nw(.secondary))
