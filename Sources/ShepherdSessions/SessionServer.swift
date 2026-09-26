@@ -1867,12 +1867,14 @@ public final class SessionServer: @unchecked Sendable {
                 finishAgentRequest(token, result: .init(text: "request cancelled", code: "cancelled"))
             }
         case .listAgents(let id, let agentID):
+            guard !refusesDesignPeer(id: id, sender: agentID, client: client) else { return }
             routeAgentPeerRequest(.list(agentID: agentID), requestID: id, client: client)
         case .sendToAgent(let id, let agentID, let targetAgentID, let text):
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 reply(.error(id: id, code: "invalid", message: "text is required"), to: client)
                 return
             }
+            guard !refusesDesignPeer(id: id, sender: agentID, target: targetAgentID, client: client) else { return }
             routeAgentPeerRequest(
                 .send(agentID: agentID, targetAgentID: targetAgentID, text: text),
                 requestID: id,
@@ -1883,6 +1885,7 @@ public final class SessionServer: @unchecked Sendable {
                 reply(.error(id: id, code: "invalid", message: "cwd and prompt are required"), to: client)
                 return
             }
+            guard !refusesDesignPeer(id: id, sender: agentID, client: client) else { return }
             routeAgentPeerRequest(
                 .spawn(agentID: agentID, cwd: cwd, prompt: prompt),
                 requestID: id,
@@ -2027,6 +2030,7 @@ public final class SessionServer: @unchecked Sendable {
             reply(.error(id: id, code: "no_such_agent", message: "registered sender and existing target required"), to: client)
             return
         }
+        guard !refusesDesignPeer(id: id, sender: agentID, target: targetAgentID, client: client) else { return }
         guard agentID != targetAgentID || request.operation == .read else {
             reply(.error(id: id, code: "self_control", message: "an agent cannot control, wait for, or delete itself"), to: client)
             return
@@ -2080,6 +2084,22 @@ public final class SessionServer: @unchecked Sendable {
         } else if let target {
             reply(.agentRequest(id: 0, requestID: token, targetAgentID: targetAgentID, request: forwarded), to: target)
         }
+    }
+
+    /// A design's agent is no peer thread: it neither lists, messages, spawns, reads nor controls
+    /// agents, and none of them reach it. Refused here as well as in its launch (no panes
+    /// extension), so an older installed extension cannot get around it.
+    private func refusesDesignPeer(id: Int, sender: AgentID, target: AgentID? = nil, client: ExtensionConnection) -> Bool {
+        let state = store.state
+        if state.isDesignAgent(sender) {
+            reply(.error(id: id, code: "not_a_thread", message: "a design's agent does not coordinate with threads"), to: client)
+            return true
+        }
+        if let target, state.isDesignAgent(target) {
+            reply(.error(id: id, code: "not_a_thread", message: "\(target) draws a design; it is not a thread"), to: client)
+            return true
+        }
+        return false
     }
 
     private func finishAgentRequest(_ token: String, result: AgentCoordinationResult) {
