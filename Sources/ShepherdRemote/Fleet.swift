@@ -454,6 +454,22 @@ public struct FleetModel: Equatable, Sendable {
             for agent in host.state.agents {
                 let ref = FleetRef(host: host.id, agent: agent.id)
                 let digest = digests[ref]
+                // A design's agent is no thread (docs/designs.md › Design agents and ordinary
+                // threads): never running, needing you, finished or counted. Its design is its
+                // Recents row where the host serves designs; a system build's has none.
+                if host.state.isDesignAgent(agent) {
+                    guard host.designs, let design = Self.design(drawnBy: agent, in: host.state),
+                          spaces[agent.spaceID]?.hidden != true else { continue }
+                    var row = Self.row(agent, ref: ref, digest: digest, space: spaces[agent.spaceID], hostName: host.name,
+                                       hostTag: tag, offline: !connected)
+                    row.design = FleetDesign(id: design.id, boards: design.boardCount)
+                    row.detail = RemoteDesignPresentation.recentsDetail(boards: design.boardCount)
+                    row.clock = nil
+                    row.activity = nil
+                    recents.append((row, order, design.lastActiveAt))
+                    order += 1
+                    continue
+                }
                 let automation = automationByAgent[agent.id]
                 let space = spaces[agent.spaceID]
                 let attention = connected ? Self.attention(agent, ref: ref, digest: digest, automation: automation,
@@ -463,20 +479,8 @@ public struct FleetModel: Equatable, Sendable {
                 // Automation runs live under Automations, not among the threads.
                 guard automation == nil, space?.hidden != true else { continue }
                 if agent.status == .working { running += 1 }
-                var row = Self.row(agent, ref: ref, digest: digest, space: space, hostName: host.name, hostTag: tag,
+                let row = Self.row(agent, ref: ref, digest: digest, space: space, hostName: host.name, hostTag: tag,
                                    offline: !connected)
-                // A design's agent is its design's row: no clock, and never among the running threads.
-                if host.designs, let design = Self.design(drawnBy: agent, in: host.state) {
-                    row.design = FleetDesign(id: design.id, boards: design.boardCount)
-                    row.detail = RemoteDesignPresentation.recentsDetail(boards: design.boardCount)
-                    row.clock = nil
-                    row.activity = nil
-                    if attention.isEmpty {
-                        recents.append((row, order, design.lastActiveAt))
-                    }
-                    order += 1
-                    continue
-                }
                 if connected, agent.status == .working { self.running.append(row) }
                 if agent.status == .done { finished.append(row) }
                 if attention.isEmpty {
@@ -496,7 +500,7 @@ public struct FleetModel: Equatable, Sendable {
             }
             self.hosts.append(FleetHostCard(
                 id: host.id, name: host.name, address: "\(host.address):\(host.port)", phase: host.phase,
-                summary: Self.hostSummary(host, running: running), threads: host.state.agents.count,
+                summary: Self.hostSummary(host, running: running), threads: host.state.agents.count(where: { !host.state.isDesignAgent($0) }),
                 running: running, needsYou: needs, lastSeen: host.phase.isConnected ? nil : host.lastSeen))
         }
         offlineHosts = self.hosts.filter { !$0.phase.isConnected }
@@ -547,8 +551,8 @@ public struct FleetModel: Equatable, Sendable {
         return items
     }
 
-    /// The design `agent` draws, when it has one on the host with a canvas (a system build's
-    /// agent stays a thread).
+    /// The design `agent` draws, when it has one on the host with a canvas (a system build has
+    /// no Recents row).
     static func design(drawnBy agent: Agent, in state: ShepherdState) -> Design? {
         guard let id = agent.designID, let design = state.designs.first(where: { $0.id == id }), !design.buildsSystem else { return nil }
         return design
@@ -610,7 +614,7 @@ public struct FleetModel: Equatable, Sendable {
         case .connected: break
         }
         let agents = host.state.agents.filter { agent in
-            !(host.state.spaces.first { $0.id == agent.spaceID }?.hidden ?? false)
+            !(host.state.spaces.first { $0.id == agent.spaceID }?.hidden ?? false) && !host.state.isDesignAgent(agent)
         }
         guard !agents.isEmpty else { return "No threads yet" }
         let busy = Set(agents.filter { $0.status == .working }.map(\.spaceID))
