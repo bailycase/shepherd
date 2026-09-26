@@ -1558,7 +1558,7 @@ turn's edit and write calls, without Undo.
   `textTertiary`, the file's stat in mono 11. Then "2 more" (12 `textSecondary`) when there are
   more. Review, a row and "N more" open the Changes pane on this turn (at that file).
 - **Undo** puts back the turn's edits in the worktree and nothing else (docs/changes.md): no
-  dialog, since Redo reverses it. It is offered on the last turn only, once it ended having changed
+  dialog, since Redo reverses it, and the agent isn't told (both the user's call, 2026-09-25). It is offered on the last turn only, once it ended having changed
   something. While it runs its buttons hold; a refusal says why under the card in `caption`
   `failed` ("Didn’t undo: outbox.go changed after the turn. Nothing was touched.").
 - **After Undo** (ChangesCard · after Undo) the card is one line on a dashed `lineStrong` border,
@@ -2530,7 +2530,8 @@ send the review.
   its ref. ⏎ picks the first match. A pick joins the repository's recents.
 - **Diff options** (DiffOptions, 300pt, under More): "Diff", then Word diffs, Hide whitespace
   changes and Load full files ("Expand past folds without a round trip") as switches that leave
-  the menu open (the last two load the diff again), then Copy git apply command (the patch in a
+  the menu open (the last two load the diff again; Hide whitespace changes also drops a file whose
+  only changes are whitespace, as `git diff -w` does, the user's call on 2026-09-25), then Copy git apply command (the patch in a
   `git apply --3way` here-document), Copy as patch, and Open in your editor (⇧⌘O, the current
   file; local reviews). Word diffs and Load full files start on. A patch a remote host had to cut
   is not copied, and says so. **Not built yet:** Rich preview (the engine has no file contents to
@@ -4087,9 +4088,6 @@ below collects the rest, and the places those sentences point here.
   - iPhone and iPad, not built: a file head's Comment on the file and Open buttons; the base
     picker's "A commit…"; a commits range (touch has no ⇧); Rich preview and Open in your editor;
     a draft pull request from Commit… (`RemoteCommitOptions` has no draft).
-  - iPad Commit…: the board puts "Drafted by the agent from the diff. Edit anything." under the
-    message card and titles the primary "Commit and push"; the app keeps the shared form's note
-    inside the card and "Commit & push", which MobileCommit draws.
   - A comment's author: the boards draw the initial "B"; the touch clients say "You".
 - **Settings (the boards against `SettingsView.swift`, `SettingsComponents.swift`,
   `NWSettingsNavRow`, `NWCardRow`, `NWGroupCard`):** the nav's window-controls strip 38pt
@@ -5259,8 +5257,9 @@ inset, parts 12pt apart.
   ("Committing…", "Committed", "Pull request opened", "Commit stopped" as it runs).
 - **Message card** (`bgWindow`, a 1px `lineStrong` line, radius 10, 10×12 inset): the summary
   semibold, the body in `textSecondary`, and "Drafted from the diff · edit anything" with a
-  sparkle. Both lines edit in place. The board puts "Drafted by the agent from the diff. Edit
-  anything." under the card instead.
+  sparkle. Both lines edit in place. The primary is "Commit & push" here, on the phone and on the
+  Mac: one wording and one note everywhere (the user's call, 2026-09-25; the iPadCommit board
+  matches).
 - **Options** as checkboxes (rows at least 44pt): Push to origin (the upstream it pushes to in
   12 `textTertiary`) and Open a pull request (where the PR goes). The popover commits every
   changed file; the phone's sheet is where files are ticked off. The board's "draft" pull request
