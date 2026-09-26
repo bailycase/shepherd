@@ -137,6 +137,18 @@ iPadReviewSplit, iPadCommit, on an iPad in landscape) run against a host with `c
 `thread` (Undo), `thread-undone` (Redo), `thread-card-legacy` (an older host: no Undo), and
 `changes-card` (the iPad's "Edited 5 files").
 
+**Designs on iPad.** A fixture host with designs (`FixtureHostData.designs`) offers `designs.v1`
+and answers every read of it (the listing, an index, changed files, pieces, comments, a system,
+watch) from `FixtureDesigns`; every write (a comment, a tweak, a move, a duplicate) is refused as
+a mutation. Hosts without designs don't list the capability, so other screens are unchanged. The
+boards (`Fixtures/DesignPadBoards.swift`, acme's checkout funnel) are Design-format files the
+simulator renders with Shepherd's own runtime. Run them on an iPad (the screenshots use an iPad
+Air 11-inch, iPadDesign's 1180 × 820): `design-pad`, `design-pad-tweak` (an element tapped: its
+ring and the Tweak tab) and `design-pad-comments` (the Comments tab and a pin's thread) with
+`-r landscape` or in portrait; `design-pad-split` (iPadSplitView) with `-w`; `design-pad-sidebar`
+(iPadSidebar) with `--sidebar`; and `designs-pad` (the Designs list). Each design screen prints
+`FIXTURE CHECK ok design` once the boards on screen drew.
+
 **Adding a screen:** see [CONTRACTS.md › Fixture screens](CONTRACTS.md#fixture-screens).
 
 ## Not yet validated

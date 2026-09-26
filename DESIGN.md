@@ -7597,6 +7597,10 @@ tool work reads as activity lines.
 - **iPad sidebar** (iPadSidebar and every iPad board with the sidebar): the same Designs
   destination between Missions and Automations, in its 44pt rows at 15, and design rows in
   Recents with their board count ("4 boards").
+  **Built** for hosts that serve designs (`designs.v1`, their Design tool on): the destination
+  (after New thread while Missions is hidden) opens the Designs list, and each design is a
+  Recents row with the nib and "4 boards", placed by when it last moved; its agent's thread has no
+  row of its own.
 - **More ▸ Design systems** (NavHosts, iPadHosts, MobileMore): on the Mac and iPad a row "Design
   systems" nested under More, beside Extensions; on iPhone a More row "Design systems" over
   "2 · acme-web, Night Watch". Built on the Mac behind the experiment: the palette glyph
@@ -8066,7 +8070,23 @@ Build them on what exists: the activity line, `NWValueSlider`, `NWSegmentedPicke
 
 ### On iPad (iPadDesign, iPadSplitView)
 
-**Not built yet.**
+**Built** (`App/iOS/DesignPad/`) for hosts that serve designs (`designs.v1`), except Pencil
+markup: the canvas and 360pt chat pane, the header, Scribble in the chat's field, and Split View
+with "Send to the thread". The boards render on the iPad (docs/designs.md › On iPad). Not drawn,
+and built as the least that is honest:
+
+- **The canvas's tools** are the Mac's toolbar (Select · Comment · Pan | zoom) in the bottom-left
+  corner; iPadDesign draws only the Pencil palette, which comes with markup. With Comment, a tap
+  on an element opens the comment editor beside it, as on the Mac.
+- **The Tweak tab** is DZTweak's anatomy in the 360pt pane; a control too wide for its row goes
+  under its label.
+- **Export** shares the page's boards as the iPad drew them (PNGs, the share sheet), not DZExport.
+- **A narrow window** without a thread in another window shows the design agent's reply card
+  without "Send to the thread"; with several such windows, the button asks which thread.
+- **The Designs list** the sidebar's row opens is the Mac's cards (NWDesignCard) in a grid.
+- **Portrait** keeps the canvas beside the 360pt pane.
+
+What the board draws:
 
 - **Design with Apple Pencil** (iPadDesign): a design fills the screen, the canvas beside a 360pt
   chat pane.
@@ -8286,7 +8306,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | iPadAutomations | iOS: Automations | Partial |
 | iPadHosts | iOS: iPad › Hosts and More | Partial |
 | iPadPalette | iOS: iPad › Command palette; iOS (Windows) | Partial |
-| iPadDesign | Design tool › On iPad | Not built yet |
+| iPadDesign | Design tool › On iPad | Partial |
 | iPadSplitView | iOS (Windows); iOS: iPad › Split View; Design tool › On iPad | Partial |
 | iPadSettingsInstructions | iOS: iPad › Settings | Partial |
 | iPadPaneBrowser | iOS: iPad › Side pane | Not built yet |
