@@ -7931,8 +7931,8 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | NavNewThread | Sidebar; New thread page | Built |
 | NavMissions | Missions page; Missions | Not built yet |
 | NavDesigns | Designs page; Design tool › Designs | Not built yet |
-| NavAutomations | Automations page; Sidebar | Partial |
-| NavHosts | Hosts page; Sidebar; Settings › Remote | Partial |
+| NavAutomations | Automations page; Sidebar (no When, Next or tabs: departures) | Built |
+| NavHosts | Hosts page; Sidebar; Settings › Remote (no daemon, Load or disk use: departures) | Built |
 | PaneBrowser | Side pane (Browser) | Not built yet |
 | PaneArtifacts | Side pane (Artifacts) | Not built yet |
 | PaneArtifactEdit | Side pane (Artifacts › Editing in place) | Not built yet |
