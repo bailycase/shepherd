@@ -1888,7 +1888,10 @@ its own.
     again."
 
   Retry trails the text (secondary, small). A resumed-as-new banner adds **Start new
-  conversation** (ghost, before Retry), which starts pi without the check, as today. Send is
+  conversation** (ghost, before Retry), which starts pi without the check, as today. A
+  not-signed-in banner on a thread adds **Sign in…** (ghost, before Retry), which opens the
+  Settings ▸ Pi sign-in terminal beside that agent; a design's banner and a remote viewer's have
+  none. Send is
   disabled and the draft stays in the field; "Starting…" never shows beside it. A remote viewer's
   banner has no actions and ends "Retry on <host>." Retry takes the banner away at once (`list`
   transition) and the composer is Starting again.
@@ -3455,7 +3458,21 @@ automated step of the worktree flows can be turned off here.
 
 #### Pi (SettingsPi)
 
-"Extensions Shepherd bundles into pi, defaults for native subagents, and keeping pi up to date."
+"Shepherd's own pi, the extensions Shepherd bundles into it, and defaults for native subagents."
+
+- **Shepherd's pi** (first; a departure from SettingsPi, which predates Shepherd running its own
+  pi: the "Bundled pi, isolated home" plan, phase 3; footnote "Shepherd runs its own copy of pi,
+  with its own sign-ins, settings and conversations. The pi in your terminal is yours: Shepherd
+  never runs it or changes its files."):
+  - the engine: a `PathRow`, "pi 0.87.1" (the version the app ships; "pi" alone when a Debug
+    build's override brings its own), "Included with Shepherd, and updated with it. Its home:",
+    then the home's folder name in mono (its path on hover) and Reveal.
+  - Sign in, "Opens Shepherd's pi in a terminal beside the selected agent. Type `/login` there.
+    Your terminal's pi stays signed in as it is.": **Open pi** (secondary, small), which opens a
+    terminal pane beside the agent selected on this Mac, running Shepherd's pi with no session
+    (`pi --no-session` through its launcher). With no agent of this Mac selected it is disabled,
+    and its tooltip says "Select an agent on this Mac first." Until the native sign-in sheet (the
+    plan's phase 7) this is the only way to sign in.
 
 - **Bundled extensions** (footnote "Applies to agents launched on this Mac, including automations
   and remote agents. Running agents keep their extensions until restarted. Status and session
