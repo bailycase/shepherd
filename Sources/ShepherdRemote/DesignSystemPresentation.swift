@@ -77,7 +77,7 @@ public enum DesignSystemPresentation {
     }
 
     /// The color a system's specimens draw on (DZSystem's tiles): its background (`--bg`,
-    /// `--background`, `--surface`, …), else its first light color; nil when it has none.
+    /// `--background`, `--surface`, …, the shortest name); nil when it names none.
     public static func background(_ tokens: DesignSystemTokens?) -> Swatch? {
         guard let tokens else { return nil }
         let colors = tokens.colors.filter { Swatch($0) != nil }
