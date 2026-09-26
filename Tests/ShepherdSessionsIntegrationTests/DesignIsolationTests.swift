@@ -7,7 +7,7 @@ import ShepherdTestSupport
 
 /// A design's agent is no thread (docs/designs.md › Design agents and ordinary threads). The
 /// server refuses every peer request from or to one, even over a panes connection an older
-/// installed extension opened.
+/// installed extension opened, and sends remote clients neither designs nor their agents.
 @Suite("Design isolation", .integrationTimeLimit)
 struct DesignIsolationTests {
     /// A thread, and a design drawn by its own agent.
@@ -81,5 +81,36 @@ struct DesignIsolationTests {
         }
         #expect(asked.current == 0, "nothing reaches the app")
         #expect(h.server.state.agents.count == 2)
+    }
+
+    /// A remote client (another Mac, an iPhone) has no design screen: it is sent the threads only.
+    @Test func aRemoteClientIsSentNoDesignOrDesignAgent() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let (thread, drawer, _) = try await workspace(r.host)
+        let client = try await r.raw()
+
+        try client.send(.stateFetch(id: 2))
+        var fetched: ShepherdState?
+        var pushes: [ShepherdState] = []
+        while fetched == nil {
+            switch try await client.next() {
+            case .state(2, let state): fetched = state
+            case .stateChanged(let state): pushes.append(state)
+            default: break
+            }
+        }
+        #expect(fetched?.agents.map(\.id) == [thread.id])
+        #expect(fetched?.designs.isEmpty == true && fetched?.tabs.contains { $0.id == drawer.tabID } == false)
+
+        try await r.server.renameAgent(thread.id, to: "renamed")
+        while !(pushes.last?.agents.contains { $0.name == "renamed" } ?? false) {
+            if case .stateChanged(let state) = try await client.next() { pushes.append(state) }
+        }
+        for pushed in pushes {
+            #expect(pushed.agents.map(\.id) == [thread.id])
+            #expect(pushed.designs.isEmpty)
+        }
+        #expect(r.server.state.agents.count == 2, "the host keeps its design's agent")
     }
 }

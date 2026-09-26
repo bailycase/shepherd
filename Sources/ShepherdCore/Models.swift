@@ -448,4 +448,17 @@ extension ShepherdState {
     public func isDesignAgent(_ agentID: AgentID) -> Bool {
         agents.first { $0.id == agentID }.map(isDesignAgent) ?? false
     }
+
+    /// The workspace as a remote client gets it: without its designs, the agents that draw them,
+    /// or their layouts. No client has a design screen yet, so any of it would show as a thread.
+    public var withoutDesigns: ShepherdState {
+        guard !designs.isEmpty else { return self }
+        var state = self
+        let drawers = agents.filter(isDesignAgent)
+        let ids = Set(drawers.map(\.id)), tabs = Set(drawers.map(\.tabID))
+        state.agents.removeAll { ids.contains($0.id) }
+        state.tabs.removeAll { tabs.contains($0.id) }
+        state.designs = []
+        return state
+    }
 }
