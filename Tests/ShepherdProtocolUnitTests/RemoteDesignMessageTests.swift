@@ -49,7 +49,19 @@ enum RemoteDesignSamples {
         .watch(designIDs: []),
         .create(RemoteDesignCreate(brief: "A checkout funnel for the \"growth\" team", systemNamespace: "acme-web")),
         .create(RemoteDesignCreate(brief: "funnel")),
+        .sendMarkup(designID: design, markup: markup),
+        .settleProposals(designID: design, proposals: ["call-7#0"], deliver: true, baseRevision: 5),
+        .settleProposals(designID: design, proposals: ["call-7#0", "call-7#1"], deliver: false, baseRevision: nil),
     ]
+
+    static let markup = DesignMarkup(strokes: [
+        DesignMarkupStroke(kind: .circle, board: phone.viewName, element: DesignElementID(board: phone.viewName, tid: 31, path: [1, 1, 2]),
+                           label: "Steps", note: "thicker bars on phone"),
+        DesignMarkupStroke(kind: .mark, board: board.viewName),
+    ])
+    static let settled = DesignComment(number: 2, board: phone, tid: 31, path: [1, 1, 2], label: "Steps", target: "Steps list",
+                                       text: "Thicker bars on phone.", createdAt: 1_700_000_000_000, proposal: "call-7#0",
+                                       proposalSettledAt: 1_700_000_060_000)
 
     static let results: [RemoteDesignResult] = [
         .listing(RemoteDesignListing(designs: [
@@ -77,6 +89,10 @@ enum RemoteDesignSamples {
         .system(DesignSystemRead(summary: system, tokens: nil, readme: "# acme-web\n", files: ["tokens.css", "tokens.json"])),
         .created(designID: design, agentID: AgentID(rawValue: "agent")),
         .created(designID: design, agentID: nil),
+        .markupSent(undelivered: nil),
+        .markupSent(undelivered: "The design agent is starting."),
+        .proposalsSettled([kept, settled], undelivered: nil),
+        .proposalsSettled([], undelivered: "The design has no agent."),
         .ok,
     ]
 }
@@ -103,21 +119,22 @@ struct RemoteDesignMessageTests {
     static func caseName(_ request: RemoteDesignRequest) -> String {
         switch request {
         case .list, .index, .boards, .file, .asset, .comments, .addComment, .replyToComment, .resolveComment, .writeBoards,
-             .updateIndex, .duplicateBoard, .restoreVersions, .system, .watch, .create:
+             .updateIndex, .duplicateBoard, .restoreVersions, .system, .watch, .create, .sendMarkup, .settleProposals:
             Wire.caseName(request)
         }
     }
 
     static func caseName(_ result: RemoteDesignResult) -> String {
         switch result {
-        case .listing, .index, .files, .chunk, .comments, .comment, .written, .boardsWritten, .duplicated, .system, .created, .ok:
+        case .listing, .index, .files, .chunk, .comments, .comment, .written, .boardsWritten, .duplicated, .system, .created,
+             .markupSent, .proposalsSettled, .ok:
             Wire.caseName(result)
         }
     }
 
     @Test func samplesCoverEveryCase() {
-        #expect(Set(S.requests.map(Self.caseName)).count == 16)
-        #expect(Set(S.results.map(Self.caseName)).count == 12)
+        #expect(Set(S.requests.map(Self.caseName)).count == 18)
+        #expect(Set(S.results.map(Self.caseName)).count == 14)
     }
 
     @Test(arguments: [
@@ -140,6 +157,22 @@ struct RemoteDesignMessageTests {
     @Test func bothSidesListDesigns() {
         #expect(RemoteProtocol.capabilities.contains(RemoteProtocol.designsCapability))
         #expect(RemoteProtocol.clientCapabilities.contains(RemoteProtocol.designsCapability))
+    }
+
+    /// Pencil markup and its proposals need the host to offer markup too; nothing else does.
+    @Test func onlyMarkupRequestsNeedTheMarkupCapability() {
+        #expect(RemoteProtocol.designMarkupCapability == "design.markup.v1")
+        #expect(RemoteProtocol.capabilities.contains(RemoteProtocol.designMarkupCapability))
+        for request in S.requests {
+            switch request {
+            case .sendMarkup, .settleProposals:
+                #expect(request.capability == RemoteProtocol.designMarkupCapability)
+                #expect(request.writes)
+                #expect(request.designID == S.design)
+            default:
+                #expect(request.capability == nil)
+            }
+        }
     }
 
     /// A chunk of the largest size still fits one frame once base64-encoded.

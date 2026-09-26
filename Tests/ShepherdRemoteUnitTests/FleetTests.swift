@@ -366,6 +366,7 @@ struct FleetTests {
         #expect(model.running.isEmpty && model.needsYou.isEmpty && model.finished.isEmpty)
         #expect(model.hosts.first?.threads == 1)
         #expect(model.hosts.first?.running == 0)
+        #expect(model.hosts.first?.needsYou == 0)
         #expect(model.hosts.first?.summary == "1 thread · none running")
 
         host.designs = false

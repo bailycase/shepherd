@@ -186,6 +186,11 @@ And the rules that follow from them:
 | SkillsStates: "Topics narrow any tab" | A topic is a search of skills.sh, most installed first, whatever tab is chosen | skills.sh's lists take no topic |
 | SettingsSkillsBrowse: "Pick from all 16…" | "Pick from the whole repo…" | A repository's size is known only once a host looks it up |
 | SettingsSkills, SkillsStates: one list of the skills in `~/.agents/skills`, global, no project skills (SkillsStates' Not yet) | The list holds every skill the agent loads, in groups: Installed (managed as drawn), then read-only From your pi setup (pi's agent directory and its settings' paths, with Show folder) and From pi packages (naming the package), a skill pi passes over for a same-named one marked "not used", and a note that a repository's own skills load in its threads. The filter, the counts and In every prompt count them all; Settings search finds the groups | The user's decision of 2026-09-26 ("Show all, read-only"): the composer's / menu listed skills the page didn't. Shepherd still never writes `~/.pi` |
+| SettingsMCP: "every thread, mission and automation on every host gets the same servers" | "every thread and automation gets the same servers" | Missions aren't built, and stage 1 serves This Mac only |
+| SettingsMCP: Hosts lists build-01 and horizon, a row's detail reports each host, "Couldn't start on horizon", "shared with every host" | This Mac alone, in Hosts and in each detail | Stage 1 keeps servers on this Mac; other hosts come with stage 2 |
+| SettingsMCP: "Same servers on every host … Offline hosts catch up." | "Adds, edits and removals go to all hosts. For now, only this Mac." | Nothing syncs yet, so the board's words would be false |
+| SettingsMCP: Open sign-in pages by itself, off: "when a thread hits a server that needs sign-in, it shows a Sign in link" | "its row here asks you to sign in" | A thread has no Sign in link yet (stage 2); the tool's result tells the agent to sign in from Settings ▸ MCP servers |
+| SettingsMCPSignIn: a Client ID Metadata Document registers Shepherd | Dynamic client registration, or the client ID from the Add sheet's Advanced | A metadata document needs a public https URL Shepherd doesn't have |
 | SettingsExperiments: Learn from Missions, Threads, Automations | Threads and Automations | Missions aren't built |
 | SettingsExperiments: Hosts as a 190pt popup, "Follow Instructions"; a suggestion names "which hosts it applies to" and its chip retargets hosts | A note naming where lines go now, with Open Instructions; the chip retargets the file and reports the hosts; How it works says "for a root file, with the reason." | A line goes where Settings › Instructions sends This Mac's files, so a popup with one option would pick nothing (honest affordances) |
 | MobileInstructions, iPadSettingsInstructions: pi's root files, "Save once, written to each host's ~/.pi/agent/", the editor's path `~/.pi/agent/APPEND_SYSTEM.md`, "The agent reads these at the start of every session", a read order from "root AGENTS.md" | Shepherd's own copies: "Save once, written to every host", the host's instructions folder in the path, "The agent reads these at the start of every session Shepherd starts", the order's links named "Shepherd's AGENTS.md" and "Shepherd's APPEND_SYSTEM.md" | Shepherd never writes the user's `~/.pi/agent` (AGENTS.md › Gotchas) |
@@ -3151,7 +3156,9 @@ splits.
   Every chord resolves through `KeybindingsStore`, shows in the Pane menu ("Show or Hide Terminal",
   "Maximize or Restore Terminal", and New Terminal without one) and in the strip's tooltips, and is
   unbound in Ghostty (`appOwnedChords`) so a focused terminal never eats it. ⌥⌘←/→ move among the
-  panes on screen.
+  panes on screen. Plain Space belongs to the terminal while its surface is first responder,
+  before AppKit or SwiftUI can use it to activate a control. It follows the terminal's normal
+  text-input path, including input-method composition; unfocused terminals leave it alone.
 
 ### Command palette
 
@@ -3235,7 +3242,8 @@ Save or Apply (the one exception is Instructions, which edits files and saves wi
     filters at once
   - the pages, one `NWSettingsNavRow` each, `NW.Space.xxs` apart, in this order: Appearance
     (`circle.lefthalf.filled`) · Terminal (`terminal`) · Agents (`person.2`) · Worktrees
-    (`arrow.branch`) · Pi (`pi`) · Instructions (`doc.text`) · Skills (`graduationcap`) · Remote
+    (`arrow.branch`) · Pi (`pi`) · Instructions (`doc.text`) · Skills (`graduationcap`) · MCP servers
+    (`server.rack`) · Remote
     (`dot.radiowaves.left.and.right`) · Keyboard (`keyboard`) · Advanced (`gearshape`) ·
     Experiments (`flask`). A row is 32pt × density (`NW.Height.scaled(32)`), radius `s`, 10pt in:
     a 13pt symbol in a 15pt box in `textSecondary` (`textPrimary` when selected), then, 10pt after
@@ -3248,7 +3256,7 @@ Save or Apply (the one exception is Instructions, which edits files and saves wi
   (`caption`, `textSecondary`, indented past the icon); clicking one opens its page. When the page
   on screen has no match, the first page that does opens at once (no cross-fade per keystroke). With
   nothing matching, the nav says "No matching settings" in `caption`/`textTertiary`.
-- **Content** (every page but Instructions, Skills and Experiments): the page on `bgWindow`, a 720pt column
+- **Content** (every page but Instructions, Skills, MCP servers and Experiments): the page on `bgWindow`, a 720pt column
   centered in it, 44pt from the top, 48pt from the sides and the bottom; the page scrolls, and the
   strip at its top still drags the window. Top to bottom:
   - the header: the page's name in Geist 22/600, tracked −1% (`Font.nwSans(22, .semibold)`,
@@ -3535,14 +3543,14 @@ automated step of the worktree flows can be turned off here.
   spaces, agents and pane layouts are not affected.", Cancel and a destructive Reset). Remote's
   hosts and its listener stay as they are (`AppSettings.Key.resettable`).
 
-#### Wide pages: Instructions, Skills and Experiments
+#### Wide pages: Instructions, Skills, MCP servers and Experiments
 
-These three pages are wider than the 720pt column (`SettingsSection.isWide`): the page fills the detail area on `bgWindow`, 44pt from the top, 40pt at the sides, 32pt at
+These four pages are wider than the 720pt column (`SettingsSection.isWide`): the page fills the detail area on `bgWindow`, 44pt from the top, 40pt at the sides, 32pt at
 the bottom, with its blocks 20pt apart (`AppLayout.settingsWide*`). It doesn't scroll as a whole:
 its editor and its side column scroll inside themselves, and the strip at its top still drags the
 window. Under the header (the same 22/600 title and `body` explanation, capped at 820pt) sits a main column
 that takes the room and a fixed side column of reference and history (330pt on Instructions, 280pt
-on Skills, 320pt on Experiments), 28pt apart (32pt on Experiments). Their section labels (`nwSettingsLabel()`; a list's column heads and a detail's labels are
+on Skills and MCP servers, 320pt on Experiments), 28pt apart (32pt on Experiments). Their section labels (`nwSettingsLabel()`; a list's column heads and a detail's labels are
 `nwSettingsLabel(table: true)`, 10.5 in `textTertiary`) sit `NW.Space.xxs` in and `NW.Space.m`
 above what they label, and a label may carry a trailing text action ("Add all"). Lists in the side
 column (files, history, steps, what was added) are bare rows separated by `lineSubtle` hairlines,
@@ -3838,6 +3846,44 @@ then a list (560pt) beside the selected item's preview, a hairline between.
   - A folder on this Mac is read here and copied to each host as its files (up to 640 KB), Local
     there. Look-up failures say why under the field ("acme/skills has no skills: no folder in it
     holds a SKILL.md.").
+
+#### MCP servers (SettingsMCP, SettingsMCPAdd, SettingsMCPLocal, SettingsMCPSignIn, MCPStates)
+
+The page (`SettingsMCP.swift` over `MCPStore`) lists the MCP servers every agent Shepherd starts
+can use, kept in `~/.config/mcp/mcp.json` (the file other MCP clients share; `SHEPHERD_MCP_CONFIG`
+moves it). Shepherd's own fields sit under each entry's `shepherd` key, which other tools ignore;
+a secret is a `${keychain:<server>/<NAME>}` reference, and OAuth tokens live only in the Keychain.
+It sits between Skills and Remote in the nav, with `server.rack`. Stage 1 serves This Mac only.
+
+- **Header:** "MCP servers" and its explanation, with Import… (a menu: From a JSON file…, Paste
+  JSON…) and the primary Add server trailing. Both disable while mcp.json doesn't parse, and the
+  page says which line fails.
+- **Filter:** a 240pt search field (name or endpoint) and All / Connected / Needs you with counts.
+- **The list:** one card, a column head (Server, Sign-in, Tools), then a lazy stack of
+  `MCPServerRow`s in the file's order: the on/off switch, a state dot (`MCPStatusDot`), the name
+  in mono semibold with a Remote or Local badge, the URL or command line in mono under it (or the
+  row's error in `failed`, or "Starting on This Mac…"), the Sign-in cell (an account, `$VAR`, a
+  secret's name, "2 variables", a lantern Sign in, Expired or Needs … with Sign in, or None), the
+  tool count, and a chevron. A row opens in place (`MCPServerDetail`): Sign-in (who, scopes, when
+  refreshed, Sign in again, Sign out), Tools with their count and first names, "Through one mcp
+  tool" or "Each tool on its own" with each one's token estimate, Choose which tools…, then
+  Connection (transport, Start: When used / With each session / Always on, and This Mac's
+  state); under a hairline, Edit…, Reconnect, Copy JSON (the entry without Shepherd's fields) and
+  Remove (confirmed; it deletes the entry's Keychain items too). One server's change redraws its
+  row alone (`ListPerformanceTests`).
+- **The rail** (280pt): How the agent uses them over `MCPBudget` ("In every prompt ~200 tokens",
+  a bar and what makes it up), Options (Same servers on every host, Open sign-in pages by itself,
+  Also use a repo's .mcp.json; the second opens the sign-in sheet and the browser when an agent
+  reaches a server that needs a sign-in), and Hosts with mcp.json's path and This Mac.
+- **Add server** (`AddMCPServerSheet`): Remote (a URL, checked as you paste it: the server's name,
+  its transport, whether it signs in with OAuth; headers; Advanced for a client ID, secret and
+  scopes), Local (a command line, env vars whose secret values go to the Keychain) and Paste JSON,
+  each with Start. **Import…** takes an `mcpServers` block or file, asks before replacing
+  servers of the same name, and moves plaintext secrets to the Keychain.
+- **Sign in** (`MCPSignInSheet`): three steps (finding the sign-in server, registering Shepherd,
+  waiting in the browser) with Open browser again and Copy link; done closes by itself, a failure
+  names the step and says nothing was saved. It runs OAuth 2.1 with PKCE (S256) on a one-shot
+  127.0.0.1 redirect, over https only (plain http only to this Mac).
 
 #### Experiments (SettingsExperiments)
 
@@ -7632,6 +7678,10 @@ tool work reads as activity lines.
 - **iPad sidebar** (iPadSidebar and every iPad board with the sidebar): the same Designs
   destination between Missions and Automations, in its 44pt rows at 15, and design rows in
   Recents with their board count ("4 boards").
+  **Built** for hosts that serve designs (`designs.v1`, their Design tool on): the destination
+  (after New thread while Missions is hidden) opens the Designs list, and each design is a
+  Recents row with the nib and "4 boards", placed by when it last moved; its agent's thread has no
+  row of its own.
 - **More ▸ Design systems** (NavHosts, iPadHosts, MobileMore): on the Mac and iPad a row "Design
   systems" nested under More, beside Extensions; on iPhone a More row "Design systems" over
   "2 · acme-web, Night Watch". Built on the Mac behind the experiment: the palette glyph
@@ -8117,7 +8167,41 @@ Resolve on the phone, a detached pin, Play. A design opens one board at a time, 
 
 ### On iPad (iPadDesign, iPadSplitView)
 
-**Not built yet.**
+**Built** (`App/iOS/DesignPad/`) for hosts that serve designs (`designs.v1`): the canvas and 360pt
+chat pane, the header, Pencil markup (where the host offers `design.markup.v1`), Scribble in the
+chat's field, and Split View with "Send to the thread". The boards render on the iPad
+(docs/designs.md › On iPad, › Pencil markup). Not drawn, and built as the least that is honest:
+
+- **The canvas's tools** are the Mac's toolbar (Select · Comment · Pan | zoom) in the bottom-left
+  corner; iPadDesign draws only the Pencil palette, which comes with markup. With Comment, a tap
+  on an element opens the comment editor beside it, as on the Mac.
+- **The Tweak tab** is DZTweak's anatomy in the 360pt pane; a control too wide for its row goes
+  under its label.
+- **Export** shares the page's boards as the iPad drew them (PNGs, the share sheet), not DZExport.
+- **A narrow window** without a thread in another window shows the design agent's reply card
+  without "Send to the thread"; with several such windows, the button asks which thread.
+- **The Designs list** the sidebar's row opens is the Mac's cards (NWDesignCard) in a grid.
+- **Portrait** keeps the canvas beside the 360pt pane.
+- **Markup's moments:** the palette shows while there is ink on the canvas, new or sent (the
+  first Pencil stroke brings it; the board draws it beside the agent's answer), and Done with
+  nothing new puts it away until the next stroke; Done reads at 40% while the markup is read and
+  sent; sent ink stays on the canvas, under new ink, until its proposals are applied or kept.
+  In a canvas too narrow for the centered palette to clear the toolbar (portrait), it rises 12pt
+  above the toolbar. The palette's Comment is the canvas's Comment tool (a Pencil or finger tap on an
+  element opens the editor). Ink is 3pt (the pen) or 12pt (the marker) on screen, and zooms with
+  the boards.
+- **The proposals** are comments from the moment the agent makes them, as the board counts them
+  ("Comments 3" beside cards 2 and 3): **Apply both** sends them to the agent, **Keep as
+  comments** leaves them. One reads **Apply**, three or more **Apply all**. Once applied or kept,
+  the buttons and the Scribble line give way to "On the canvas as comments 2 and 3." in 12.5
+  `textTertiary`. A markup that couldn't reach the agent, and proposals that couldn't be applied
+  or kept, say so in the design's dialog and stay as they were.
+- **On the Mac** the design's chat shows markup from an iPad as the words the host sends with it
+  ("Pencil markup · 2 strokes · 2 notes") and the agent's call as an activity line ("Used markup ·
+  2 proposed comments"); the proposals are among its comments, and the Mac draws no proposals
+  card.
+
+What the board draws:
 
 - **Design with Apple Pencil** (iPadDesign): a design fills the screen, the canvas beside a 360pt
   chat pane.
@@ -8337,7 +8421,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | iPadAutomations | iOS: Automations | Partial |
 | iPadHosts | iOS: iPad › Hosts and More | Partial |
 | iPadPalette | iOS: iPad › Command palette; iOS (Windows) | Partial |
-| iPadDesign | Design tool › On iPad | Not built yet |
+| iPadDesign | Design tool › On iPad | Partial |
 | iPadSplitView | iOS (Windows); iOS: iPad › Split View; Design tool › On iPad | Partial |
 | iPadSettingsInstructions | iOS: iPad › Settings | Partial |
 | iPadPaneBrowser | iOS: iPad › Side pane | Not built yet |

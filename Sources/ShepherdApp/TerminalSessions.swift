@@ -999,6 +999,7 @@ final class TerminalSessionStore {
             instructions: (try InstructionsExtension.installedPath(), ShepherdPaths.instructionsDirectory().path),
             suggestFiles: suggestFiles.map(\.fileName),
             design: try agent.designID.map { (try DesignExtension.installedPath(), $0, try DesignExtension.installedSkillDirectory()) },
+            mcp: try MCPLaunch.forAgents(settings: settings),
             model: sessionIsFresh ? agent.model : nil,
             thinking: sessionIsFresh ? agent.thinkingLevel : nil
         )

@@ -68,78 +68,6 @@ extension FixtureCatalog {
     }
 }
 
-/// What a fixture host serves over designs.v1: its listing, each design's files, comments and
-/// systems. Reads only; the host refuses every write before this sees it.
-struct FixtureDesigns {
-    struct Design {
-        var record: ShepherdCore.Design
-        var index: DesignIndex
-        var files: [String: Data]
-        var comments = DesignComments()
-    }
-
-    var designs: [Design]
-    var systems: [DesignSystemRead]
-
-    func answer(_ request: RemoteDesignRequest) -> Result<RemoteDesignResult, FixtureError> {
-        switch request {
-        case .list:
-            return .success(.listing(RemoteDesignListing(designs: designs.map(summary), systems: systems.map(\.summary))))
-        case .index(let id):
-            guard let design = design(id) else { return .failure(FixtureError("no design \(id)")) }
-            return .success(.index(RemoteDesignIndex(snapshot: snapshot(design), files: design.files.keys.sorted().map { path in
-                RemoteDesignFileInfo(path: path, sha256: RemoteDesignCache.sha256(design.files[path]!), size: design.files[path]!.count)
-            })))
-        case .boards(let id, let paths, let known):
-            guard let design = design(id) else { return .failure(FixtureError("no design \(id)")) }
-            var changed: [RemoteDesignFile] = []
-            var unchanged: [String] = []
-            var missing: [String] = []
-            for path in paths ?? design.files.keys.sorted() {
-                guard let data = design.files[path] else { missing.append(path); continue }
-                let sha = RemoteDesignCache.sha256(data)
-                if known[path] == sha { unchanged.append(path) } else {
-                    changed.append(RemoteDesignFile(path: path, sha256: sha, size: data.count, data: data))
-                }
-            }
-            return .success(.files(RemoteDesignFiles(designID: id, revision: 3, changed: changed, unchanged: unchanged, missing: missing)))
-        case .file(let id, let path, _, let offset):
-            guard let data = design(id)?.files[path], offset >= 0, offset <= data.count else { return .failure(FixtureError("no file")) }
-            let piece = data.subdata(in: offset..<min(data.count, offset + RemoteProtocol.designChunkBytes))
-            return .success(.chunk(RemoteDesignChunk(sha256: RemoteDesignCache.sha256(data), offset: offset, total: data.count, data: piece)))
-        case .comments(let id):
-            guard let design = design(id) else { return .failure(FixtureError("no design \(id)")) }
-            return .success(.comments(design.comments))
-        case .system(let namespace):
-            guard let system = systems.first(where: { $0.summary.namespace == namespace }) else { return .failure(FixtureError("no system")) }
-            return .success(.system(system))
-        case .watch:
-            return .success(.ok)
-        default:
-            return .failure(FixtureError("No fixture answer for this design request."))
-        }
-    }
-
-    private func design(_ id: DesignID) -> Design? { designs.first { $0.record.id == id } }
-
-    private func snapshot(_ design: Design) -> DesignSnapshot {
-        DesignSnapshot(designID: design.record.id, revision: 3, index: design.index,
-                       boards: Dictionary(uniqueKeysWithValues: design.index.boards.keys.compactMap { path in
-                           design.files[path.rawValue].map { (path, RemoteDesignCache.sha256($0)) }
-                       }))
-    }
-
-    private func summary(_ design: Design) -> RemoteDesignSummary {
-        let snapshot = snapshot(design)
-        let first = design.index.order.first.flatMap { path -> RemoteDesignFirstBoard? in
-            guard let board = design.index.boards[path], let sha = snapshot.boards[path] else { return nil }
-            return RemoteDesignFirstBoard(path: path, sha256: sha, width: board.w, height: board.h)
-        }
-        return RemoteDesignSummary(design: design.record, revision: 3, boardCount: design.index.boards.count,
-                                   openComments: design.comments.open.count, firstBoard: first)
-    }
-}
-
 enum DesignsFixtures {
     static let checkout = DesignID(rawValue: "design-checkout")
     static let events = DesignID(rawValue: "design-events")
@@ -193,7 +121,7 @@ enum DesignsFixtures {
         ], running: updating)
         hosts[0].threads[onboarder] = FixtureData.snapshot([FixtureData.user("o1", "An onboarding flow")], running: true)
         hosts[0].designs = FixtureDesigns(designs: [
-            FixtureDesigns.Design(record: records[0], index: DesignIndex(title: "Checkout funnel dashboard", boards: [
+            FixtureDesigns.Item(design: records[0], revision: 3, index: DesignIndex(title: "Checkout funnel dashboard", boards: [
                 wide: DesignIndex.Board(x: 0, y: 0, w: 1280, h: 800, title: "A · Funnel first"),
                 table: DesignIndex.Board(x: 1360, y: 0, w: 1280, h: 800, title: "B · Step table"),
                 trend: DesignIndex.Board(x: 2720, y: 0, w: 1280, h: 800, title: "C · Trend first"),
@@ -201,21 +129,23 @@ enum DesignsFixtures {
             ], order: [wide, table, trend, phone]), files: [
                 wide.rawValue: Boards.funnel, table.rawValue: Boards.table, trend.rawValue: Boards.trend, phone.rawValue: Boards.phone,
             ], comments: comments(now: now)),
-            FixtureDesigns.Design(record: records[1], index: DesignIndex(title: "Events explorer", boards: [
+            FixtureDesigns.Item(design: records[1], revision: 3, index: DesignIndex(title: "Events explorer", boards: [
                 explorer: DesignIndex.Board(x: 0, y: 0, w: 1280, h: 800, title: "A · Table first"),
                 table: DesignIndex.Board(x: 1360, y: 0, w: 1280, h: 800, title: "B · Steps"),
                 trend: DesignIndex.Board(x: 2720, y: 0, w: 1280, h: 800, title: "C · Trend"),
             ], order: [explorer, table, trend]), files: [
                 explorer.rawValue: Boards.explorer, table.rawValue: Boards.table, trend.rawValue: Boards.trend,
-            ]),
-            FixtureDesigns.Design(record: records[2], index: DesignIndex(title: "Onboarding flow", boards: [
+            ], comments: DesignComments()),
+            FixtureDesigns.Item(design: records[2], revision: 3, index: DesignIndex(title: "Onboarding flow", boards: [
                 welcome: DesignIndex.Board(x: 0, y: 0, w: 390, h: 844, title: "A · Welcome"),
                 phone: DesignIndex.Board(x: 470, y: 0, w: 390, h: 844, title: "A · Funnel"),
-            ], order: [phone, welcome]), files: [welcome.rawValue: Boards.welcome, phone.rawValue: Boards.phone]),
-            FixtureDesigns.Design(record: records[3], index: DesignIndex(title: "Settings redesign", boards: [
+            ], order: [phone, welcome]), files: [welcome.rawValue: Boards.welcome, phone.rawValue: Boards.phone],
+                                 comments: DesignComments()),
+            FixtureDesigns.Item(design: records[3], revision: 3, index: DesignIndex(title: "Settings redesign", boards: [
                 settingsBoard: DesignIndex.Board(x: 0, y: 0, w: 1280, h: 800, title: "A · General"),
                 trend: DesignIndex.Board(x: 1360, y: 0, w: 1280, h: 800, title: "B · Usage"),
-            ], order: [settingsBoard, trend]), files: [settingsBoard.rawValue: Boards.settings, trend.rawValue: Boards.trend]),
+            ], order: [settingsBoard, trend]), files: [settingsBoard.rawValue: Boards.settings, trend.rawValue: Boards.trend],
+                                 comments: DesignComments()),
         ], systems: [
             DesignSystemRead(summary: DesignSystemSummary(
                 info: DesignSystemInfo(namespace: "night-watch", title: "Night Watch", createdAt: now), builtIn: true,

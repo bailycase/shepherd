@@ -76,6 +76,9 @@ extension DesignElementPick {
 
 // MARK: Rendering
 
+/// Tweak's live previews go to the board's live view.
+extension DesignHost: DesignTweakPreviews {}
+
 /// What boards may load beyond the design's own files (`DesignSandbox.Network`).
 enum DesignRenderingNetwork {
     /// Google Fonts, as boards link them.

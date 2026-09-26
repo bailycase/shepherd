@@ -16,9 +16,11 @@ struct PadShell: View {
     private static let settleTime: Duration = .milliseconds(600)
 
     /// The columns the layout calls for: in portrait the thread alone, but with no thread chosen
-    /// the sidebar stays out (the overview alone offers no way to one); in landscape both.
+    /// the sidebar stays out (the overview alone offers no way to one); in landscape both. A
+    /// design takes the whole window either way (iPadDesign; DesignPad/).
     private static func columns(_ navigator: MobileNavigator) -> NavigationSplitViewVisibility {
-        navigator.padSidebarOverlays && navigator.padSelection != nil ? .detailOnly : .all
+        if navigator.padShowsDesign { return .detailOnly }
+        return navigator.padSidebarOverlays && navigator.padSelection != nil ? .detailOnly : .all
     }
 
     var body: some View {
@@ -55,6 +57,10 @@ struct PadShell: View {
                 let columns = Self.columns(navigator)
                 if navigator.padColumns != columns { navigator.padColumns = columns }
                 Task { @MainActor in navigator.padColumns = Self.columns(navigator) }
+            }
+            .onChange(of: navigator.padShowsDesign) { _, _ in
+                let columns = Self.columns(navigator)
+                if navigator.padColumns != columns { navigator.padColumns = columns }
             }
             .onChange(of: navigator.padColumns) { _, current in
                 guard let settling else { return }
