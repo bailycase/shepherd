@@ -721,6 +721,20 @@ runs, 2,000 folders).
   floats: on its content, Core Animation redrew the shadow from the scrolling diff every step.
   `ListPerformanceTests` pins each: rows per scroll step, one row per comment, no thread row while
   the pane scrolls, no AppKit view for a hovered `+`, no shadowed layer while docked.
+- **The chrome around a field compares before it redraws.** The composer's control row takes an
+  `Equatable` model of what it draws (`ComposerControls`), so a keystroke past the first
+  character, or the field losing focus to a menu, rebuilds the field and never the chips.
+  `ViewThatFits` builds and measures every alternative it is given, each with its tooltips and
+  accessibility, whenever it is rebuilt, and that was half of a keystroke's main-thread time and
+  a third of a menu's opening. It measures them again in the window's minimum-size pass, which
+  the scene's hosting view runs from a zero-width proposal after every change to a platform
+  view's intrinsic size (each keystroke in the field), so the row answers any proposal narrower
+  than a real layout's without measuring (`ComposerControlsMinimum`): its minimum is never the
+  window's, the thread column's is. The slash menu's matches are derived once per draft change
+  (`SlashMatchCache`), ⇧⌘M and the thinking menu's command reach the composer without a pass
+  over the thread, and the picker and the thinking menu compare their own inputs, so a composer
+  redraw for something else leaves their rows alone. `ComposerMenuPerformanceTests` pins each
+  as a count.
 - **Motion never scales with the list.** A list's motion watches a small key (a layout count, the
   rows' ids), never the rows themselves, and rows scrolled back into a lazy stack are simply
   there: an entrance plays only for what arrives while the list is on screen (`nwArrival`,
