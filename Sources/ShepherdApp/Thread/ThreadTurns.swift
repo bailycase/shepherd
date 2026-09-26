@@ -197,7 +197,7 @@ struct AgentTurn: View, Equatable {
             if !live, !presentation.items.isEmpty {
                 Group {
                     if let changes = cardChanges { changesCard(changes) }
-                    footer
+                    if !presentation.endsInError { footer }
                 }
                 .nwArrival(entering, .list, edge: .bottom)
             }
@@ -210,7 +210,7 @@ struct AgentTurn: View, Equatable {
 
     /// A failed request rises in like a row; everything else streaming in just fades.
     private static func entrance(_ item: NativeTurnPresentation.Item) -> NW.Motion {
-        if case .error = item { return .list }
+        if case .error(_, _, _, false) = item { return .list }
         return .content
     }
 
@@ -241,10 +241,11 @@ struct AgentTurn: View, Equatable {
                 .padding(.leading, AppLayout.noteIndent)
                 .overlay(alignment: .leading) { Color.nw.lineStrong.frame(width: NWThreadMetrics.ruleWidth) }
                 .frame(maxWidth: AppLayout.proseMaxWidth, alignment: .leading)
-        case .error(_, let text, let count, let final):
-            NWTurnError(final ? nativeTurnErrorText(text, toolCalls: presentation.toolCalls) : text,
-                        count: count, retry: final ? retry : nil)
-                .frame(maxWidth: AppLayout.proseMaxWidth, alignment: .leading)
+        case .error(_, let error, let final, let folded):
+            // Every column's width, not the prose measure (ThreadError).
+            TurnErrorItem(error: error, folded: folded, retry: final ? retry : nil)
+        case .retrying(_, let line):
+            RetryLineItem(line: line)
         case .steer(_, let text, let sentAt, let images):
             // Where pi read it, inside the turn it steered.
             SteeredBubble(text: text, images: images, time: sentAt.map { nativeClockText($0) }, hover: hover)

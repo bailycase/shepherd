@@ -62,10 +62,41 @@ import SwiftUI
             NWThinking.live()
             NWTurnFooter(meta: "2:44 PM · 3m 12s · 23 tool calls", link: "3 subagents", onLink: {}, onCopy: {}, onRetry: {},
                          revealed: true)
-            NWTurnError("Model overloaded — the turn stopped after 6 tool calls.", retry: {})
             NWJumpToLatest {}
         }
         .frame(width: 480)
+    }
+}
+
+extension NWTurnError.Content {
+    /// OpenAI refusing a key (TurnErrors › The error card).
+    static let previewAuth = NWTurnError.Content(
+        title: "OpenAI rejected the API key",
+        message: [.text("Incorrect API key provided: "), .code("sk-svcac…fvMA"), .text(". You can find your API key at "),
+                  .link(display: "platform.openai.com/account/api-keys", url: "https://platform.openai.com/account/api-keys"), .text(".")],
+        chips: ["401", "authentication_error"], source: "gpt-6-astra · OpenAI", time: "5:54 PM", foldedMeta: "401 · 5:52 PM",
+        facts: [.init("Provider", "OpenAI", mono: false), .init("Model", "gpt-6-astra"), .init("Host", "build-01"), .init("Status", "401"),
+                .init("Type", "authentication_error"), .init("Code", "auth_unavailable"), .init("Request", "req_7f3c1a9e02b4"),
+                .init("At", "5:54:31 PM")],
+        body: [.plain("{\n  "), .key("\"message\""), .plain(": "), .string("\"Incorrect API key provided: "), .redacted("sk-svcac…fvMA"),
+               .string(". You can find your API key at "), .link("https://platform.openai.com/account/api-keys"), .string(".\""),
+               .plain(",\n  "), .key("\"type\""), .plain(": "), .string("\"authentication_error\""), .plain(",\n  "),
+               .key("\"code\""), .plain(": "), .string("\"auth_unavailable\""), .plain("\n}")],
+        copyText: "OpenAI rejected the API key")
+}
+
+#Preview("Turn errors") {
+    NWPreviewBoth {
+        VStack(alignment: .leading, spacing: NW.Space.xl) {
+            NWTurnError(.previewAuth, retry: {})
+            NWTurnError(.previewAuth, detailsOpen: true, retry: {})
+            NWTurnError(.previewAuth, folded: true)
+            NWTurnError(NWTurnError.Content(glyph: "hourglass", title: "OpenAI didn’t respond in time", message: [.text("Request timed out.")],
+                                            chips: ["timeout"], source: "gpt-6-astra · OpenAI", tries: "Tried 3 times over 31m", time: "6:02 PM"),
+                        retry: {})
+            NWRetryLine(count: "2 of 3") { _ in "OpenAI is overloaded · retrying in 8s" }
+        }
+        .frame(width: 760)
     }
 }
 

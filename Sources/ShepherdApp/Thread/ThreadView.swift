@@ -113,6 +113,7 @@ struct ThreadView: View {
                     .padding(.horizontal, gutter)
                     .frame(maxWidth: .infinity)
                     .environment(\.compactionExpansion, store.compactions)
+                    .environment(\.turnErrorExpansion, store.errors)
                     // A local agent's images draw from its folder; a remote agent's files are not here.
                     .environment(\.nwProseFileRoot, workingDirectory.map {
                         URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true)
