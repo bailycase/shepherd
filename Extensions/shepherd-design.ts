@@ -348,19 +348,25 @@ function boardOrder(current: Snapshot): string[] {
   return [...listed.filter((p) => files.includes(p)), ...files.filter((p) => !listed.includes(p))];
 }
 
+/** A title from the design's files on one short line, so it can't pose as more of the prompt. */
+function oneLine(value: string, max = 120): string {
+  const flat = value.replace(/[\u0000-\u001f\u007f\u2028\u2029]+/g, " ").replace(/\s+/g, " ").trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+}
+
 function boardLine(boardPath: string, entry: any): string {
   if (!entry) return `- ${boardPath} (no frame on the canvas yet)`;
-  const title = typeof entry.title === "string" ? ` "${entry.title}"` : "";
+  const title = typeof entry.title === "string" ? ` "${oneLine(entry.title)}"` : "";
   return `- ${boardPath}${title} · ${entry.w}×${entry.h} at (${entry.x}, ${entry.y})${entry.page ? ` · page ${entry.page}` : ""}`;
 }
 
 function describeSnapshot(current: Snapshot): string {
   const boards = current.index?.boards ?? {};
   const lines = boardOrder(current).map((p) => boardLine(p, boards[p]));
-  const title = typeof current.index?.title === "string" ? current.index.title : "Untitled";
+  const title = typeof current.index?.title === "string" ? oneLine(current.index.title) : "Untitled";
   return (
     `Design "${title}" at revision ${current.revision}.\n` +
-    (lines.length ? `Boards, back to front:\n${lines.join("\n")}\n` : "No boards yet.\n") +
+    (lines.length ? `Boards, back to front:\n${fenced(lines.join("\n"))}\n` : "No boards yet.\n") +
     `canvas.json:\n` +
     fenced(JSON.stringify(current.index, null, 2))
   );
@@ -368,8 +374,7 @@ function describeSnapshot(current: Snapshot): string {
 
 function designFacts(current: Snapshot | undefined, designID: string, skillDirectory: string): string {
   const lines = ["## Shepherd design", ""];
-  const title = typeof current?.index?.title === "string" ? `"${current.index.title}"` : `design ${designID}`;
-  lines.push(`You are the design agent for ${title}: you draw it as boards on Shepherd's design canvas.`);
+  lines.push(`You are the design agent for design ${designID}: you draw it as boards on Shepherd's design canvas.`);
   if (skillDirectory) {
     lines.push(`- Read the shepherd-design skill (${path.join(skillDirectory, "SKILL.md")}) before you draw or revise, once per session.`);
   }
@@ -382,14 +387,18 @@ function designFacts(current: Snapshot | undefined, designID: string, skillDirec
   if (current) {
     const boards = current.index?.boards ?? {};
     const order = boardOrder(current);
-    lines.push("", `The design is at revision ${current.revision}.`);
+    // Titles come from the design's files (an imported canvas is someone else's), so they go
+    // inside the data fence with the board list.
+    const listed = [];
+    if (typeof current.index?.title === "string") listed.push(`Title: "${oneLine(current.index.title)}"`);
     if (order.length === 0) {
-      lines.push("It has no boards yet.");
+      listed.push("No boards yet.");
     } else {
-      lines.push("Its boards, back to front:");
-      for (const p of order.slice(0, 40)) lines.push(boardLine(p, boards[p]));
-      if (order.length > 40) lines.push(`- … and ${order.length - 40} more (design_read lists them all)`);
+      listed.push("Boards, back to front:");
+      for (const p of order.slice(0, 40)) listed.push(boardLine(p, boards[p]));
+      if (order.length > 40) listed.push(`- … and ${order.length - 40} more (design_read lists them all)`);
     }
+    lines.push("", `The design is at revision ${current.revision}. From its canvas.json:`, fenced(listed.join("\n")));
   }
   return lines.join("\n");
 }
