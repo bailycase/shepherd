@@ -99,9 +99,8 @@ public struct NWActivityLine: View {
                         .monospacedDigit()
                         .nwContentTransition(.numeric())
                 }
-                if action != nil {
-                    NWThreadChevron(isExpanded: isExpanded).foregroundStyle(nw.textTertiary)
-                }
+                // Only a line with something behind it wears the chevron; its place stays.
+                NWThreadChevron(isExpanded: isExpanded, shown: action != nil).foregroundStyle(nw.textTertiary)
             }
             // A finished call joining the line counts up ("Explored 6 files").
             .nwAnimation(.content, value: [label, meta])
@@ -163,14 +162,18 @@ public struct NWActivityLine: View {
 
 /// The thread's 10pt disclosure chevron (activity lines, thinking): one `chevron.right` that
 /// turns to point down as it opens, under whatever motion the expansion runs with. Under Reduce
-/// Motion nothing turns: the two positions cross-fade.
+/// Motion nothing turns: the two positions cross-fade. A row with nothing to open keeps the
+/// chevron's place but draws none (`shown: false`), so labels line up with rows that have one.
 struct NWThreadChevron: View {
     let isExpanded: Bool
+    var shown = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Group {
-            if reduceMotion {
+            if !shown {
+                Color.clear.frame(width: NWThreadMetrics.chevron, height: NWThreadMetrics.chevron)
+            } else if reduceMotion {
                 ZStack {
                     glyph.opacity(isExpanded ? 0 : 1)
                     glyph.rotationEffect(.degrees(90)).opacity(isExpanded ? 1 : 0)

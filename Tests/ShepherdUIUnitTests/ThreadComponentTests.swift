@@ -8,6 +8,19 @@ struct ThreadComponentTests {
         #expect(NWDuration.text(seconds, .long) == text)
     }
 
+    /// Only thinking with something to open is a disclosure with a chevron: live "Thinking…"
+    /// and a thought the model kept back are plain lines, whatever they carry.
+    @Test(arguments: [
+        (live: true, text: "", kind: .live),
+        (live: true, text: "hmm", kind: .live),
+        (live: false, text: "", kind: .plain),
+        (live: false, text: "Check the labels first.", kind: .disclosure),
+    ] as [(live: Bool, text: String, kind: NWThinking.Kind)])
+    func thinkingOpensOnlyOntoText(live: Bool, text: String, kind: NWThinking.Kind) {
+        #expect(NWThinking.Kind(live: live, text: text) == kind)
+        #expect(NWThinking.Kind(live: live, text: text).opens == (kind == .disclosure))
+    }
+
     /// A message's time and a turn's footer are hidden at rest. The pointer over the message
     /// shows them, and so does keyboard focus on one of their controls, a copy confirming, or
     /// VoiceOver running, so they are always reachable.
