@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdSessions
 import ShepherdTestSupport
 @testable import ShepherdApp
 

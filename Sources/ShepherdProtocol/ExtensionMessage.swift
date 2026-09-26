@@ -128,16 +128,17 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// `install` copied into the agent's design. Answered with `designSystemWritten`.
     case designSystemWrite(id: Int, agentID: AgentID, designID: DesignID, system: DesignSystemWrite)
 
-    // MCP servers (MCPWire.swift)
-    /// The MCP extension asks for a server's credentials: at `connect` when its entry has
-    /// `${keychain:…}` references or it uses OAuth, and on every 401 or 403. Answered with
-    /// `mcpCredentials`, or `.error` with an `MCPFailureCode`.
+    // MARK: MCP servers
+
+    /// The MCP extension needs a server's credentials: its Keychain secrets, or an OAuth token
+    /// (`challenge` is a 401's or 403's raw `WWW-Authenticate`). Answered with
+    /// `ExtensionReply.mcpCredentials`, or `.error` with `needs_sign_in`, `expired`,
+    /// `needs_scopes`, `missing_secret`, `no_such_server` or `mcp_unavailable`.
     case mcpCredentials(id: Int, agentID: AgentID, server: String, reason: MCPCredentialReason, challenge: String?)
-    /// Fire-and-forget: a server's state changed, or its tools were listed.
+    /// A server's state changed in this agent's pi, or it listed its tools. Fire-and-forget.
     case mcpReport(agentID: AgentID, report: MCPServerReport)
 
     private enum CodingKeys: String, CodingKey {
-        case server, challenge, report
         case type, id, agentID, status, name, piSessionID, children
         case paneID, axis, cwd, relativeTo, command, text, submit, reference
         case title, body
@@ -146,6 +147,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case line, reason, file
         case designID, path, source, baseRevision, changes, commentID
         case namespace, system
+        case server, challenge, report
     }
 
     private enum Kind: String, Codable {
@@ -942,7 +944,6 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     case mcpCredentials(id: Int, credentials: MCPCredentials)
 
     private enum CodingKeys: String, CodingKey {
-        case credentials
         case requestID, targetAgentID, request, result
         case type, id, code, message, panes, pane, paneID, lines, automations, agents, text
         case runID, action, mode
@@ -950,6 +951,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case snapshot, board
         case comments, comment
         case listing, system
+        case credentials
     }
 
     private enum Kind: String, Codable {

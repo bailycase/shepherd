@@ -1,26 +1,30 @@
 import Foundation
-import ShepherdCore
 
-// MCP servers (stage 1): what the MCP extension inside each pi and the app say to each other.
-// The extension owns the connections; the app owns config writes, the Keychain, OAuth and the
-// Settings status. Times on the wire are epoch milliseconds, never `Date`.
+// The MCP extension (`Extensions/shepherd-mcp.ts`) and the app: credentials asked for and handed
+// over (`ExtensionMessage.mcpCredentials`, `ExtensionReply.mcpCredentials`), and each server's
+// state and tools reported for Settings ▸ MCP servers (`ExtensionMessage.mcpReport`). Times are
+// epoch milliseconds, never `Date`. Decoding is lenient where the extension omits empty values.
 
 /// Why the extension asks for a server's credentials.
 public enum MCPCredentialReason: String, Codable, Hashable, Sendable {
-    /// Before connecting: the entry has `${keychain:…}` references, or the server uses OAuth.
+    /// Before connecting: the entry references Keychain items, or the server signs in with OAuth.
     case connect
     /// The server answered 401.
     case unauthorized
-    /// The server answered 403 `insufficient_scope`.
+    /// The server answered 403 (`insufficient_scope`).
     case forbidden
 }
 
-/// What the app hands the extension for one server: an OAuth bearer, resolved
-/// `${keychain:…}` values for headers and env, and when the bearer expires.
+/// What the app hands the extension for one server.
 public struct MCPCredentials: Codable, Hashable, Sendable {
+    /// An OAuth access token, sent as `Authorization: Bearer …`.
     public var bearer: String?
+    /// Headers added to every HTTP request, over the entry's own.
     public var headers: [String: String]
+    /// The values of the server's `${keychain:<server>/<NAME>}` references, keyed by `NAME`. The
+    /// extension substitutes them wherever the reference appears (env, args, url, headers).
     public var env: [String: String]
+    /// When `bearer` expires; the extension asks again 60 s before.
     public var expiresAtMs: Int64?
 
     public init(bearer: String? = nil, headers: [String: String] = [:], env: [String: String] = [:], expiresAtMs: Int64? = nil) {
@@ -29,6 +33,8 @@ public struct MCPCredentials: Codable, Hashable, Sendable {
         self.env = env
         self.expiresAtMs = expiresAtMs
     }
+
+    private enum CodingKeys: String, CodingKey { case bearer, headers, env, expiresAtMs }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -39,7 +45,7 @@ public struct MCPCredentials: Codable, Hashable, Sendable {
     }
 }
 
-/// One tool a server lists (`tools/list`).
+/// One tool a server lists (`tools/list`), as reported and cached.
 public struct MCPToolInfo: Codable, Hashable, Sendable {
     public var name: String
     public var title: String?
@@ -53,6 +59,8 @@ public struct MCPToolInfo: Codable, Hashable, Sendable {
         self.inputSchema = inputSchema
     }
 
+    private enum CodingKeys: String, CodingKey { case name, title, description, inputSchema }
+
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         name = try c.decode(String.self, forKey: .name)
@@ -62,16 +70,16 @@ public struct MCPToolInfo: Codable, Hashable, Sendable {
     }
 }
 
-/// A server's state as one pi (or the app's probe) sees it.
+/// A server's state in one agent's pi.
 public struct MCPServerStatus: Codable, Hashable, Sendable {
     public enum State: String, Codable, Hashable, Sendable {
         case starting, connected, idle, needsSignIn, expired, needsScopes, error, off
     }
 
     public var state: State
-    /// The missing scopes, for `needsScopes` only.
+    /// The scopes a 403 asked for; `needsScopes` only.
     public var scopes: [String]
-    /// The error's text, for `error`.
+    /// What went wrong, for `error` (and the agent-facing text for the sign-in states).
     public var message: String?
 
     public init(state: State, scopes: [String] = [], message: String? = nil) {
@@ -79,6 +87,8 @@ public struct MCPServerStatus: Codable, Hashable, Sendable {
         self.scopes = scopes
         self.message = message
     }
+
+    private enum CodingKeys: String, CodingKey { case state, scopes, message }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -88,18 +98,19 @@ public struct MCPServerStatus: Codable, Hashable, Sendable {
     }
 }
 
+/// How a connection reached its server.
 public enum MCPTransportKind: String, Codable, Hashable, Sendable {
     case stdio, streamableHTTP, sse
 }
 
-/// Sent on every state change of a server, and after every `tools/list`.
+/// One server's state change, or its tool list, from one agent's pi.
 public struct MCPServerReport: Codable, Hashable, Sendable {
     public var server: String
     public var status: MCPServerStatus
     public var transport: MCPTransportKind?
-    /// `initialize`'s `serverInfo.title ?? name`.
+    /// `initialize`'s `serverInfo.title`, else its `name`.
     public var serverName: String?
-    /// Only after a list.
+    /// Present only after a `tools/list`.
     public var tools: [MCPToolInfo]?
 
     public init(server: String, status: MCPServerStatus, transport: MCPTransportKind? = nil, serverName: String? = nil,
@@ -110,44 +121,4 @@ public struct MCPServerReport: Codable, Hashable, Sendable {
         self.serverName = serverName
         self.tools = tools
     }
-}
-
-/// An MCP credentials request as the server hands it to the app (`SessionServer.onMCPRequest`).
-public struct MCPRequest: Hashable, Sendable {
-    public var agentID: AgentID
-    public var server: String
-    public var reason: MCPCredentialReason
-    /// The raw `WWW-Authenticate` value from a 401, or from a 403 `insufficient_scope`.
-    public var challenge: String?
-
-    public init(agentID: AgentID, server: String, reason: MCPCredentialReason, challenge: String? = nil) {
-        self.agentID = agentID
-        self.server = server
-        self.reason = reason
-        self.challenge = challenge
-    }
-}
-
-/// The app's answer to an `MCPRequest`.
-public enum MCPOutcome: Hashable, Sendable {
-    case credentials(MCPCredentials)
-    /// `code` is one of `MCPFailureCode`; `message` is written for the agent to read.
-    case failure(code: String, message: String)
-
-    public func withID(_ id: Int) -> ExtensionReply {
-        switch self {
-        case .credentials(let credentials): .mcpCredentials(id: id, credentials: credentials)
-        case .failure(let code, let message): .error(id: id, code: code, message: message)
-        }
-    }
-}
-
-/// The error codes an MCP credentials request fails with.
-public enum MCPFailureCode {
-    public static let needsSignIn = "needs_sign_in"
-    public static let expired = "expired"
-    public static let needsScopes = "needs_scopes"
-    public static let missingSecret = "missing_secret"
-    public static let noSuchServer = "no_such_server"
-    public static let unavailable = "mcp_unavailable"
 }

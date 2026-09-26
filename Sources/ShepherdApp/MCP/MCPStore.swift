@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdSessions
 import ShepherdUI
 
 /// Settings ▸ MCP servers' one store. The extension inside each pi owns the connections; the app
