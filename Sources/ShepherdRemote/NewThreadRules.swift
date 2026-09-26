@@ -13,13 +13,17 @@ public struct NewThreadHostInput: Equatable, Sendable {
     public var phase: RemoteHostPhase
     public var capabilities: Set<String>
     public var state: ShepherdState
+    /// When this device's connection to it last ended (`HostLastSeen`).
+    public var lastSeen: Date?
 
-    public init(id: UUID, name: String, phase: RemoteHostPhase, capabilities: Set<String>, state: ShepherdState) {
+    public init(id: UUID, name: String, phase: RemoteHostPhase, capabilities: Set<String>, state: ShepherdState,
+                lastSeen: Date? = nil) {
         self.id = id
         self.name = name
         self.phase = phase
         self.capabilities = capabilities
         self.state = state
+        self.lastSeen = lastSeen
     }
 
     /// Spaces the user sees: not the hidden space automation runs live in.
@@ -41,7 +45,7 @@ public struct NewThreadHostRow: Identifiable, Equatable, Sendable {
     public let id: UUID
     public let name: String
     public let status: Status
-    /// "connected · 2 threads running", "connecting…", "unreachable".
+    /// "connected · 2 threads running", "connecting…", "unreachable · last seen 7:12 AM".
     public let detail: String
     /// What this host cannot do from here, and why: an older Shepherd.
     public let limitation: String?
@@ -74,14 +78,19 @@ public struct NewThreadRepoRow: Identifiable, Equatable, Sendable {
 }
 
 public enum NewThreadRows {
-    public static func hosts(_ hosts: [NewThreadHostInput], selected: UUID?) -> [NewThreadHostRow] {
+    public static func hosts(_ hosts: [NewThreadHostInput], selected: UUID?, now: Date = Date(),
+                             calendar: Calendar = .current, locale: Locale = .current) -> [NewThreadHostRow] {
         hosts.map { host in
             let status: NewThreadHostRow.Status = switch host.phase {
             case .connected: .connected
             case .connecting: .connecting
             case .disconnected, .failed: .offline
             }
-            return NewThreadHostRow(id: host.id, name: host.name, status: status, detail: detail(host, status: status),
+            var detail = detail(host, status: status)
+            if status == .offline, let seen = host.lastSeen {
+                detail += " · last seen " + HostLastSeen.short(seen, now: now, calendar: calendar, locale: locale)
+            }
+            return NewThreadHostRow(id: host.id, name: host.name, status: status, detail: detail,
                                     limitation: status == .connected ? NewThreadRules.limitation(host) : nil,
                                     selected: host.id == selected)
         }

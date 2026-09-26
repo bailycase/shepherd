@@ -272,6 +272,8 @@ final class RPCThreadState {
     private(set) var turnChangesSet = false
     /// The server held back a "done" report because the queue was about to go.
     var doneHeld = false
+    /// pi is retrying a failed request (`auto_retry_start` until `auto_retry_end`).
+    private(set) var retry: NativeThreadRetry?
 
     /// Where messages Shepherd delivered came from, by entry id (persisted per pi session).
     let originStore: ThreadOriginStore?
@@ -348,6 +350,7 @@ final class RPCThreadState {
             refreshStats()
         case .agentSettled:
             running = false
+            retry = nil
             askingCalls.removeAll()
             settled()
             onTurnEvent?(.settled)
@@ -418,6 +421,11 @@ final class RPCThreadState {
             compactionStarted(reason: NativeCompactionReason(pi: reason))
         case .compactionEnd(let reason, let result, let aborted, let willRetry, let error):
             compactionEnded(reason: NativeCompactionReason(pi: reason), result: result, aborted: aborted, willRetry: willRetry, error: error)
+        case .autoRetryStart(let attempt, let maxAttempts, let delayMs, _):
+            retry = NativeThreadRetry(attempt: attempt, maxAttempts: maxAttempts,
+                                      retryAt: (Date().timeIntervalSince1970 * 1000 + max(0, delayMs)).rounded())
+        case .autoRetryEnd:
+            retry = nil
         case .turnStart, .turnEnd, .unknown:
             break
         }
@@ -1282,6 +1290,7 @@ final class RPCThreadState {
         hasher.combine(commandsHash)
         hasher.combine(subagentsHash)
         hasher.combine(turnChangesHash)
+        hasher.combine(retry)
         hasher.combine(queueHash())
         #if DEBUG
         bytesHashedByLastCommit = bytesHashedSinceCommit
@@ -1345,7 +1354,7 @@ final class RPCThreadState {
             dialogs: [], widgets: widgets.map(\.value), messages: [], provisional: [],
             clipped: projectionClipped || dialogs.contains { $0.unavailable == "payload-limit" },
             runtime: "rpc", stats: stats, commands: commands, subagents: subagents, context: context,
-            turnChanges: turnChanges
+            turnChanges: turnChanges, retry: retry
         )
         // The rest encodes without the queue, which adds `,"queue":` and its cached size.
         let queue = queueValue
@@ -1635,6 +1644,10 @@ final class RPCThreadState {
         // A stopped run's "Request was aborted" says nothing its `aborted` status does not.
         if let error = message.errorMessage, !error.isEmpty, message.stopReason != "aborted" {
             result.blocks.append(NativeThreadBlock(kind: .text, text: clip(error)))
+        }
+        if message.stopReason == "error" {
+            result.provider = message.provider.map(clip)
+            result.model = message.model.map(clip)
         }
         if message.role == "compactionSummary" {
             result.compaction = NativeCompaction(phase: .done, tokensBefore: message.tokensBefore.map { Int($0) },

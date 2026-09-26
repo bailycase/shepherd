@@ -1,0 +1,1988 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "ChangesBase.dc.html": {
+      "h": 900,
+      "title": "Changes \u2014 compare against another branch",
+      "w": 1600,
+      "x": 3360,
+      "y": 9720
+    },
+    "ChangesLastTurn.dc.html": {
+      "h": 900,
+      "title": "Changes \u2014 just the agent\u2019s last turn, commenting on a line",
+      "w": 1600,
+      "x": 6720,
+      "y": 9720
+    },
+    "ChangesScope.dc.html": {
+      "h": 900,
+      "title": "Changes \u2014 what to compare: last turn, working tree, commits, branch, PR",
+      "w": 1600,
+      "x": 1680,
+      "y": 9720
+    },
+    "ChangesSplit.dc.html": {
+      "h": 900,
+      "title": "Changes \u2014 split diff, branch vs base, an inline comment waiting to send",
+      "w": 1600,
+      "x": 0,
+      "y": 9720
+    },
+    "ChangesStates.dc.html": {
+      "h": 2317,
+      "page": "system",
+      "title": "Changes pane \u2014 toolbar, card, menus, rows, keys",
+      "w": 1600,
+      "x": 0,
+      "y": 10102
+    },
+    "ChangesUnified.dc.html": {
+      "h": 900,
+      "title": "Changes \u2014 unified, with word diffs; diff options open",
+      "w": 1600,
+      "x": 5040,
+      "y": 9720
+    },
+    "ChangesWide.dc.html": {
+      "h": 900,
+      "title": "Changes \u2014 maximized, with the file list",
+      "w": 1600,
+      "x": 8400,
+      "y": 9720
+    },
+    "CommandPalette.dc.html": {
+      "h": 900,
+      "title": "Command palette (\u2318K)",
+      "w": 1440,
+      "x": 6080,
+      "y": 0
+    },
+    "ContextCompacted.dc.html": {
+      "h": 900,
+      "title": "Context \u2014 just compacted",
+      "w": 1440,
+      "x": 3040,
+      "y": 6480
+    },
+    "ContextDetails.dc.html": {
+      "h": 900,
+      "title": "Context \u2014 details",
+      "w": 1440,
+      "x": 0,
+      "y": 6480
+    },
+    "ContextFull.dc.html": {
+      "h": 900,
+      "title": "Context \u2014 almost full",
+      "w": 1440,
+      "x": 1520,
+      "y": 6480
+    },
+    "ContextIdeas.dc.html": {
+      "h": 2834,
+      "page": "system",
+      "title": "Context meter \u2014 placement, ring states, details popover, compaction, data",
+      "w": 1600,
+      "x": 10600,
+      "y": 3528
+    },
+    "DZCanvas.dc.html": {
+      "h": 1000,
+      "page": "design",
+      "title": "2 \u00b7 Canvas + chat \u2014 3 directions and a phone board, comments pinned to elements",
+      "w": 1600,
+      "x": 1680,
+      "y": 0
+    },
+    "DZExport.dc.html": {
+      "h": 1000,
+      "page": "design",
+      "title": "5 \u00b7 Export & share \u2014 HTML / ZIP / PDF / PNG, a live link on the host, attach to a thread or mission",
+      "w": 1600,
+      "x": 1680,
+      "y": 1340
+    },
+    "DZStart.dc.html": {
+      "h": 1000,
+      "page": "design",
+      "title": "1 \u00b7 New design \u2014 describe it, pick the design system or a starting point",
+      "w": 1600,
+      "x": 0,
+      "y": 0
+    },
+    "DZSystem.dc.html": {
+      "h": 1000,
+      "page": "design",
+      "title": "4 \u00b7 Design system \u2014 built from the repo; every board is checked against it",
+      "w": 1600,
+      "x": 0,
+      "y": 1340
+    },
+    "DZTweak.dc.html": {
+      "h": 1000,
+      "page": "design",
+      "title": "3 \u00b7 Tweak \u2014 select an element, drag the knobs, apply to every matching card",
+      "w": 1600,
+      "x": 3360,
+      "y": 0
+    },
+    "LiveText.dc.html": {
+      "h": 1270,
+      "page": "system",
+      "title": "Live text \u2014 the live line shimmers; nothing in the thread spins",
+      "w": 1600,
+      "x": 2360,
+      "y": 3528
+    },
+    "MXBudget.dc.html": {
+      "h": 1100,
+      "page": "missions",
+      "title": "Out of budget \u2014 every station stops at a checkpoint; here\u2019s what\u2019s left",
+      "w": 1600,
+      "x": 4960,
+      "y": 4980
+    },
+    "MXCancel.dc.html": {
+      "h": 1000,
+      "page": "missions",
+      "title": "Stop \u2014 what happens to each lane, with safe defaults",
+      "w": 1600,
+      "x": 8320,
+      "y": 4980
+    },
+    "MXDone.dc.html": {
+      "h": 1400,
+      "page": "missions",
+      "title": "6 \u00b7 Done \u2014 route history, contract revealed, merge order",
+      "w": 1600,
+      "x": 6640,
+      "y": 1540
+    },
+    "MXEvidence.dc.html": {
+      "h": 1000,
+      "page": "missions",
+      "title": "Evidence \u2014 what the validator ran for one check, traced across services",
+      "w": 1600,
+      "x": 4960,
+      "y": 3280
+    },
+    "MXFlow.dc.html": {
+      "h": 3710,
+      "page": "missions",
+      "title": "Start here \u00b7 C \u2014 how a mission runs, start to finish",
+      "w": 1440,
+      "x": 1680,
+      "y": 0
+    },
+    "MXGoal.dc.html": {
+      "h": 1000,
+      "page": "missions",
+      "title": "1 \u00b7 Planner intake \u2014 you chat, the brief builds itself (lanes, context, contract, size)",
+      "w": 1600,
+      "x": 4960,
+      "y": 0
+    },
+    "MXInputs.dc.html": {
+      "h": 1280,
+      "page": "missions",
+      "title": "Start here \u00b7 B \u2014 what you put in, and what the planner builds",
+      "w": 1440,
+      "x": 0,
+      "y": 1700
+    },
+    "MXLocks.dc.html": {
+      "h": 1000,
+      "page": "missions",
+      "title": "Two missions, one repo \u2014 locks are on paths, with a queue",
+      "w": 1600,
+      "x": 6640,
+      "y": 4980
+    },
+    "MXMap.dc.html": {
+      "h": 1200,
+      "page": "missions",
+      "title": "2 \u00b7 Map \u2014 a lane per repo, fog on the undecided, data wires for the selected station",
+      "w": 1600,
+      "x": 6640,
+      "y": 0
+    },
+    "MXNav.dc.html": {
+      "h": 1440,
+      "page": "missions",
+      "title": "Start here \u00b7 A \u2014 getting to Missions from a thread",
+      "w": 1600,
+      "x": 0,
+      "y": 0
+    },
+    "MXOffMap.dc.html": {
+      "h": 1400,
+      "page": "missions",
+      "title": "5 \u00b7 Off the map \u2014 upstream contract change; re-runs follow the data wires",
+      "w": 1600,
+      "x": 4960,
+      "y": 1540
+    },
+    "MXPatch.dc.html": {
+      "h": 1200,
+      "page": "missions",
+      "title": "3 \u00b7 Fog clears \u2014 your answer becomes a patch on the map",
+      "w": 1600,
+      "x": 8320,
+      "y": 0
+    },
+    "MXReview.dc.html": {
+      "h": 1100,
+      "page": "missions",
+      "title": "Review gate \u2014 every PR in one pass, the contract\u2019s evidence beside the diff",
+      "w": 1600,
+      "x": 3280,
+      "y": 3280
+    },
+    "MXRun.dc.html": {
+      "h": 1200,
+      "page": "missions",
+      "title": "4 \u00b7 Run \u2014 mini-map + the live station",
+      "w": 1600,
+      "x": 3280,
+      "y": 1540
+    },
+    "MXStart.dc.html": {
+      "h": 1000,
+      "page": "missions",
+      "title": "0 \u00b7 New mission \u2014 one question: where do you want to end up?",
+      "w": 1600,
+      "x": 3280,
+      "y": 0
+    },
+    "MXStuck.dc.html": {
+      "h": 1100,
+      "page": "missions",
+      "title": "Stuck lane \u2014 three failed tries pause that lane, the rest keep going",
+      "w": 1600,
+      "x": 3280,
+      "y": 4980
+    },
+    "MXTemplateSave.dc.html": {
+      "h": 1100,
+      "page": "missions",
+      "title": "Save as template \u2014 inputs detected, what it learned is kept",
+      "w": 1600,
+      "x": 3280,
+      "y": 6680
+    },
+    "MXTemplateStart.dc.html": {
+      "h": 1000,
+      "page": "missions",
+      "title": "Start from a template \u2014 five of six inputs filled, one question first",
+      "w": 1600,
+      "x": 6480,
+      "y": 6680
+    },
+    "MXTemplates.dc.html": {
+      "h": 900,
+      "page": "missions",
+      "title": "Missions \u25b8 Templates \u2014 shared through a repo, reviewed like code",
+      "w": 1440,
+      "x": 4960,
+      "y": 6680
+    },
+    "MXTrain.dc.html": {
+      "h": 1000,
+      "page": "missions",
+      "title": "Merge train \u2014 order from the data wires; staging and a soak between services",
+      "w": 1600,
+      "x": 6640,
+      "y": 3280
+    },
+    "MXVocab.dc.html": {
+      "h": 2803,
+      "page": "system",
+      "title": "Missions map",
+      "w": 1440,
+      "x": 1520,
+      "y": 14054
+    },
+    "Main.dc.html": {
+      "h": 900,
+      "title": "Thread \u2014 idle",
+      "w": 1440,
+      "x": 0,
+      "y": 0
+    },
+    "MobileAgents.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "ios",
+      "title": "iOS \u2014 Home",
+      "w": 390,
+      "x": 0,
+      "y": 0
+    },
+    "MobileAnswer.dc.html": {
+      "h": 844,
+      "page": "ios",
+      "title": "Answer a planner question from the notification",
+      "w": 390,
+      "x": 470,
+      "y": 6256
+    },
+    "MobileApproval.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "ios",
+      "title": "iOS \u2014 Running",
+      "w": 390,
+      "x": 1410,
+      "y": 0
+    },
+    "MobileAutomations.dc.html": {
+      "h": 844,
+      "page": "ios",
+      "title": "Automations \u2014 running now, toggles, last result",
+      "w": 390,
+      "x": 2350,
+      "y": 4692
+    },
+    "MobileChanges.dc.html": {
+      "h": 844,
+      "page": "ios",
+      "title": "Changes \u2014 scope in the title, files, your comments, send or commit",
+      "w": 390,
+      "x": 0,
+      "y": 3128
+    },
+    "MobileCommit.dc.html": {
+      "h": 844,
+      "page": "ios",
+      "title": "Commit \u2014 drafted message, push or open a PR",
+      "w": 390,
+      "x": 940,
+      "y": 3128
+    },
+    "MobileDesignBoard.dc.html": {
+      "h": 844,
+      "page": "ios",
+      "title": "A board \u2014 pinned comments, the agent updates it",
+      "w": 390,
+      "x": 1880,
+      "y": 4692
+    },
+    "MobileDesigns.dc.html": {
+      "h": 844,
+      "page": "ios",
+      "title": "Designs \u2014 recent designs and design systems",
+      "w": 390,
+      "x": 1410,
+      "y": 4692
+    },
+    "MobileDiff.dc.html": {
+      "h": 844,
+      "page": "ios",
+      "title": "Diff reader \u2014 wrapped lines, comment on a line",
+      "w": 390,
+      "x": 470,
+      "y": 3128
+    },
+    "MobileExperiments.dc.html": {
+      "h": 844,
+      "page": "ios",
+      "title": "Experiments",
+      "w": 390,
+      "x": 1880,
+      "y": 9470
+    },
+    "MobileInbox.dc.html": {
+      "h": 844,
+      "page": "ios",
+      "title": "Needs you \u2014 every question, with its answer buttons",
+      "w": 390,
+      "x": 0,
+      "y": 4692
+    },
+    "MobileInstructions.dc.html": {
+      "h": 844,
+      "page": "ios",
+      "title": "Instructions \u2014 files, hosts, suggestions",
+      "w": 390,
+      "x": 470,
+      "y": 9470
+    },
+    "MobileInstructionsEdit.dc.html": {
+      "h": 844,
+      "page": "ios",
+      "title": "Edit AGENTS.md",
+      "w": 390,
+      "x": 940,
+      "y": 9470
+    },
+    "MobileIsland.dc.html": {
+      "h": 930,
+      "page": "ios",
+      "title": "Dynamic Island \u2014 compact, minimal, expanded (always dark)",
+      "w": 1330,
+      "x": 470,
+      "y": 7820
+    },
+    "MobileLiveLock.dc.html": {
+      "h": 844,
+      "page": "ios",
+      "title": "Lock screen \u2014 a thread, a subagent run and an automation, with buttons",
+      "w": 390,
+      "x": 0,
+      "y": 7820
+    },
+    "MobileLock.dc.html": {
+      "h": 844,
+      "page": "ios",
+      "title": "Lock screen \u2014 Live Activity and mission notifications",
+      "w": 390,
+      "x": 0,
+      "y": 6256
+    },
+    "MobileMerge.dc.html": {
+      "h": 844,
+      "page": "ios",
+      "title": "Review \u2014 approve the PR set, start the train",
+      "w": 390,
+      "x": 1880,
+      "y": 6256
+    },
+    "MobileMission.dc.html": {
+      "h": 844,
+      "page": "ios",
+      "title": "Mission \u2014 a lane is stuck",
+      "w": 390,
+      "x": 940,
+      "y": 6256
+    },
+    "MobileMissions.dc.html": {
+      "h": 844,
+      "page": "ios",
+      "title": "Missions",
+      "w": 390,
+      "x": 940,
+      "y": 4692
+    },
+    "MobileMore.dc.html": {
+      "h": 844,
+      "page": "ios",
+      "title": "More \u2014 hosts with retry, systems, extensions, archive",
+      "w": 390,
+      "x": 2820,
+      "y": 4692
+    },
+    "MobileNewThread.dc.html": {
+      "h": 844,
+      "page": "ios",
+      "title": "New thread \u2014 repo, host, model and thinking as chips",
+      "w": 390,
+      "x": 0,
+      "y": 1564
+    },
+    "MobilePatch.dc.html": {
+      "h": 844,
+      "page": "ios",
+      "title": "Patch sheet \u2014 apply from the phone",
+      "w": 390,
+      "x": 1410,
+      "y": 6256
+    },
+    "MobileQuestion.dc.html": {
+      "h": 844,
+      "page": "ios",
+      "title": "Question \u2014 a panel takes the composer\u2019s place",
+      "w": 390,
+      "x": 2350,
+      "y": 1564
+    },
+    "MobileQueue.dc.html": {
+      "h": 844,
+      "page": "ios",
+      "title": "Queue \u2014 swipe a message to edit or delete it",
+      "w": 390,
+      "x": 1410,
+      "y": 1564
+    },
+    "MobileQueueMenu.dc.html": {
+      "h": 844,
+      "page": "ios",
+      "title": "Queue \u2014 touch and hold: steer now, edit, move, delete",
+      "w": 390,
+      "x": 1880,
+      "y": 1564
+    },
+    "MobileSearch.dc.html": {
+      "h": 844,
+      "page": "ios",
+      "title": "Search \u2014 missions, designs, conversations, actions",
+      "w": 390,
+      "x": 470,
+      "y": 4692
+    },
+    "MobileSettings.dc.html": {
+      "h": 844,
+      "page": "ios",
+      "title": "Settings",
+      "w": 390,
+      "x": 0,
+      "y": 9470
+    },
+    "MobileSkills.dc.html": {
+      "h": 844,
+      "page": "ios",
+      "title": "Skills \u2014 installed, search skills.sh, updates",
+      "w": 390,
+      "x": 1410,
+      "y": 9470
+    },
+    "MobileSteer.dc.html": {
+      "h": 844,
+      "page": "ios",
+      "title": "Steer a running thread \u2014 subagents and Up next above the composer",
+      "w": 390,
+      "x": 940,
+      "y": 1564
+    },
+    "MobileSubagent.dc.html": {
+      "h": 844,
+      "page": "ios",
+      "title": "One subagent \u2014 goal, transcript, its own steer field",
+      "w": 390,
+      "x": 3290,
+      "y": 1564
+    },
+    "MobileSubagents.dc.html": {
+      "h": 844,
+      "page": "ios",
+      "title": "Subagents \u2014 answer in place; finished ones stay",
+      "w": 390,
+      "x": 2820,
+      "y": 1564
+    },
+    "MobileThread.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "ios",
+      "title": "iOS \u2014 Thread",
+      "w": 390,
+      "x": 470,
+      "y": 0
+    },
+    "MobileWorkspace.dc.html": {
+      "h": 844,
+      "page": "ios",
+      "title": "Where it runs \u2014 repo, host, worktree",
+      "w": 390,
+      "x": 470,
+      "y": 1564
+    },
+    "ModelPicker.dc.html": {
+      "h": 900,
+      "title": "Composer \u2014 model picker",
+      "w": 1440,
+      "x": 4560,
+      "y": 0
+    },
+    "NWAgents.dc.html": {
+      "h": 1460,
+      "page": "system",
+      "title": "Agents & orchestration",
+      "w": 1440,
+      "x": 0,
+      "y": 7406
+    },
+    "NWComposer.dc.html": {
+      "h": 1467,
+      "page": "system",
+      "title": "Composer & menus",
+      "w": 1440,
+      "x": 5720,
+      "y": 3528
+    },
+    "NWControls.dc.html": {
+      "h": 1502,
+      "page": "system",
+      "title": "Controls",
+      "w": 1440,
+      "x": 1520,
+      "y": 0
+    },
+    "NWDesignTool.dc.html": {
+      "h": 1707,
+      "page": "system",
+      "title": "Design tool",
+      "w": 1440,
+      "x": 4560,
+      "y": 14054
+    },
+    "NWFoundations.dc.html": {
+      "h": 2808,
+      "page": "system",
+      "title": "Foundations",
+      "w": 1440,
+      "x": 0,
+      "y": 0
+    },
+    "NWMissions.dc.html": {
+      "h": 3021,
+      "page": "system",
+      "title": "Mission screens",
+      "w": 1440,
+      "x": 3040,
+      "y": 14054
+    },
+    "NWNavigation.dc.html": {
+      "h": 1706,
+      "page": "system",
+      "title": "Navigation",
+      "w": 1440,
+      "x": 4880,
+      "y": 7406
+    },
+    "NWStatus.dc.html": {
+      "h": 1332,
+      "page": "system",
+      "title": "Status & feedback",
+      "w": 1440,
+      "x": 3040,
+      "y": 0
+    },
+    "NWSwift.dc.html": {
+      "h": 2157,
+      "page": "system",
+      "title": "Swift implementation",
+      "w": 1440,
+      "x": 0,
+      "y": 17795
+    },
+    "NWThread.dc.html": {
+      "h": 1987,
+      "page": "system",
+      "title": "Thread",
+      "w": 1440,
+      "x": 0,
+      "y": 3528
+    },
+    "NavAutomations.dc.html": {
+      "h": 900,
+      "title": "Automations \u2014 schedules and event triggers, with runs",
+      "w": 1440,
+      "x": 4560,
+      "y": 14580
+    },
+    "NavDesigns.dc.html": {
+      "h": 900,
+      "title": "Designs \u2014 recent designs and design systems",
+      "w": 1440,
+      "x": 3040,
+      "y": 14580
+    },
+    "NavHosts.dc.html": {
+      "h": 900,
+      "title": "More \u25b8 Hosts \u2014 where agents run",
+      "w": 1440,
+      "x": 6080,
+      "y": 14580
+    },
+    "NavMissions.dc.html": {
+      "h": 900,
+      "title": "Missions \u2014 every mission, filtered by state",
+      "w": 1440,
+      "x": 1520,
+      "y": 14580
+    },
+    "NavNewThread.dc.html": {
+      "h": 900,
+      "title": "New thread \u2014 \u2318N or the first destination",
+      "w": 1440,
+      "x": 0,
+      "y": 14580
+    },
+    "NotifCatalog.dc.html": {
+      "h": 2636,
+      "page": "system",
+      "title": "Catalog and rules \u2014 every notification, its actions, level and grouping",
+      "w": 1440,
+      "x": 0,
+      "y": 14054
+    },
+    "NotifMac.dc.html": {
+      "h": 900,
+      "page": "notifications",
+      "title": "Mac \u2014 alerts with Options, inline reply, banners for finished work",
+      "w": 1440,
+      "x": 0,
+      "y": 3104
+    },
+    "NotifPhoneBanner.dc.html": {
+      "h": 844,
+      "page": "notifications",
+      "title": "Banner \u2014 Time Sensitive, over any app",
+      "w": 390,
+      "x": 0,
+      "y": 0
+    },
+    "NotifPhoneReply.dc.html": {
+      "h": 844,
+      "page": "notifications",
+      "title": "Reply \u2014 a typed answer goes to the subagent",
+      "w": 390,
+      "x": 1410,
+      "y": 0
+    },
+    "NotifPhoneReview.dc.html": {
+      "h": 844,
+      "page": "notifications",
+      "title": "Ready to review \u2014 approving needs Face ID",
+      "w": 390,
+      "x": 1880,
+      "y": 0
+    },
+    "NotifPhoneRich.dc.html": {
+      "h": 844,
+      "page": "notifications",
+      "title": "Long press \u2014 lanes, attempts and the planner\u2019s read",
+      "w": 390,
+      "x": 940,
+      "y": 0
+    },
+    "NotifPhoneStacks.dc.html": {
+      "h": 844,
+      "page": "notifications",
+      "title": "Notification Center \u2014 grouped by mission and thread",
+      "w": 390,
+      "x": 470,
+      "y": 0
+    },
+    "NotifPhoneSummary.dc.html": {
+      "h": 844,
+      "page": "notifications",
+      "title": "Scheduled Summary \u2014 finished work, quietly",
+      "w": 390,
+      "x": 2350,
+      "y": 0
+    },
+    "NotifSettings.dc.html": {
+      "h": 844,
+      "page": "notifications",
+      "title": "Settings \u2014 what, which device, per mission",
+      "w": 390,
+      "x": 2820,
+      "y": 0
+    },
+    "NotifiPadBanner.dc.html": {
+      "h": 820,
+      "page": "notifications",
+      "title": "iPad banner \u2014 actions right in the banner",
+      "w": 1180,
+      "x": 0,
+      "y": 1564
+    },
+    "NotifiPadCenter.dc.html": {
+      "h": 820,
+      "page": "notifications",
+      "title": "iPad Notification Center \u2014 rich previews at full width",
+      "w": 1180,
+      "x": 1260,
+      "y": 1564
+    },
+    "PaneArtifactEdit.dc.html": {
+      "h": 900,
+      "title": "Artifacts \u2014 edit a plan in place; your version goes back to the agent",
+      "w": 1600,
+      "x": 3360,
+      "y": 11340
+    },
+    "PaneArtifacts.dc.html": {
+      "h": 900,
+      "title": "Artifacts \u2014 a report the agent made, open beside the thread",
+      "w": 1600,
+      "x": 1680,
+      "y": 11340
+    },
+    "PaneBrowser.dc.html": {
+      "h": 900,
+      "title": "Browser \u2014 the agent starts the dev server; select an element and add it to your message",
+      "w": 1600,
+      "x": 0,
+      "y": 11340
+    },
+    "PaneFiles.dc.html": {
+      "h": 900,
+      "title": "Files \u2014 the worktree and an editor while the agent works in another file",
+      "w": 1600,
+      "x": 5040,
+      "y": 11340
+    },
+    "PaneStates.dc.html": {
+      "h": 3232,
+      "page": "system",
+      "title": "Side pane \u2014 tabs, states and layout",
+      "w": 1600,
+      "x": 1680,
+      "y": 10102
+    },
+    "QuestionAnswered.dc.html": {
+      "h": 900,
+      "title": "Question \u2014 answered; the composer comes back and the thread keeps a record",
+      "w": 1440,
+      "x": 3040,
+      "y": 4860
+    },
+    "QuestionAsk.dc.html": {
+      "h": 900,
+      "title": "Question \u2014 it takes over the composer area until you answer",
+      "w": 1440,
+      "x": 0,
+      "y": 4860
+    },
+    "QuestionPick.dc.html": {
+      "h": 900,
+      "title": "Question \u2014 pick an option, add a note, answer",
+      "w": 1440,
+      "x": 1520,
+      "y": 4860
+    },
+    "QuestionStates.dc.html": {
+      "h": 2021,
+      "page": "system",
+      "title": "Questions \u2014 the dock, kinds of question, hiding it",
+      "w": 1600,
+      "x": 8920,
+      "y": 3528
+    },
+    "QueueEdit.dc.html": {
+      "h": 900,
+      "title": "Queue \u2014 edit in place, delete with undo, choose at send",
+      "w": 1440,
+      "x": 3040,
+      "y": 3240
+    },
+    "QueueStack.dc.html": {
+      "h": 900,
+      "title": "Queue \u2014 messages stack above the composer; hover to steer, edit or delete",
+      "w": 1440,
+      "x": 0,
+      "y": 3240
+    },
+    "QueueStates.dc.html": {
+      "h": 1763,
+      "page": "system",
+      "title": "Queue and steer \u2014 states, thread, keys and settings",
+      "w": 1600,
+      "x": 7240,
+      "y": 3528
+    },
+    "QueueSteer.dc.html": {
+      "h": 900,
+      "title": "Queue \u2014 one steered in: it lands after the current tool call",
+      "w": 1440,
+      "x": 1520,
+      "y": 3240
+    },
+    "Running.dc.html": {
+      "h": 900,
+      "title": "Thread \u2014 running",
+      "w": 1440,
+      "x": 1520,
+      "y": 0
+    },
+    "SettingsAdvanced.dc.html": {
+      "h": 900,
+      "title": "Settings \u2014 Advanced",
+      "w": 1440,
+      "x": 1520,
+      "y": 18480
+    },
+    "SettingsAgents.dc.html": {
+      "h": 900,
+      "title": "Settings \u2014 Agents",
+      "w": 1440,
+      "x": 1520,
+      "y": 16200
+    },
+    "SettingsAppearance.dc.html": {
+      "h": 900,
+      "title": "Settings \u2014 Appearance",
+      "w": 1440,
+      "x": 0,
+      "y": 16200
+    },
+    "SettingsExperiments.dc.html": {
+      "h": 900,
+      "title": "Settings \u2014 Experiments: suggested instructions from your agents",
+      "w": 1440,
+      "x": 6080,
+      "y": 18480
+    },
+    "SettingsInstructions.dc.html": {
+      "h": 900,
+      "title": "Settings \u2014 Instructions: root AGENTS.md and APPEND_SYSTEM.md, same on every host",
+      "w": 1440,
+      "x": 3040,
+      "y": 18480
+    },
+    "SettingsInstructionsHosts.dc.html": {
+      "h": 900,
+      "title": "Settings \u2014 Instructions per host, with a difference to resolve",
+      "w": 1440,
+      "x": 4560,
+      "y": 18480
+    },
+    "SettingsKeyboard.dc.html": {
+      "h": 1240,
+      "title": "Settings \u2014 Keyboard",
+      "w": 1440,
+      "x": 0,
+      "y": 18480
+    },
+    "SettingsPi.dc.html": {
+      "h": 1560,
+      "title": "Settings \u2014 Pi",
+      "w": 1440,
+      "x": 4560,
+      "y": 16200
+    },
+    "SettingsRemote.dc.html": {
+      "h": 1000,
+      "title": "Settings \u2014 Remote",
+      "w": 1440,
+      "x": 6080,
+      "y": 16200
+    },
+    "SettingsSkills.dc.html": {
+      "h": 900,
+      "title": "Settings \u2014 Skills: global, one list; pdf open with an update waiting",
+      "w": 1440,
+      "x": 0,
+      "y": 20440
+    },
+    "SettingsSkillsBrowse.dc.html": {
+      "h": 900,
+      "title": "Skills \u2014 browse skills.sh: trending, with a preview",
+      "w": 1440,
+      "x": 1520,
+      "y": 20440
+    },
+    "SettingsSkillsRepo.dc.html": {
+      "h": 900,
+      "title": "Skills \u2014 add from a repo: pick which skills to install",
+      "w": 1440,
+      "x": 4560,
+      "y": 20440
+    },
+    "SettingsSkillsSearch.dc.html": {
+      "h": 900,
+      "title": "Skills \u2014 search skills.sh, one installing across hosts",
+      "w": 1440,
+      "x": 3040,
+      "y": 20440
+    },
+    "SettingsWorktrees.dc.html": {
+      "h": 900,
+      "title": "Settings \u2014 Worktrees",
+      "w": 1440,
+      "x": 3040,
+      "y": 16200
+    },
+    "SkillsStates.dc.html": {
+      "h": 1976,
+      "page": "system",
+      "title": "Skills \u2014 rows, detail, skills.sh results, how it works",
+      "w": 1600,
+      "x": 3200,
+      "y": 7406
+    },
+    "SlashMenu.dc.html": {
+      "h": 900,
+      "title": "Composer \u2014 slash commands",
+      "w": 1440,
+      "x": 3040,
+      "y": 0
+    },
+    "SubagentTray.dc.html": {
+      "h": 1799,
+      "page": "system",
+      "title": "Subagent tray \u2014 states, rows, record, touch sizes",
+      "w": 1600,
+      "x": 1520,
+      "y": 7406
+    },
+    "Subagents.dc.html": {
+      "h": 900,
+      "title": "Subagents \u2014 running, in the tray; the inspector shows the selected one",
+      "w": 1600,
+      "x": 0,
+      "y": 1620
+    },
+    "SubagentsDone.dc.html": {
+      "h": 900,
+      "title": "Subagents \u2014 all done; the tray stays until your next message",
+      "w": 1600,
+      "x": 1680,
+      "y": 1620
+    },
+    "SubagentsQueue.dc.html": {
+      "h": 900,
+      "title": "Subagents \u2014 with queued messages: one card, subagents then Up next",
+      "w": 1440,
+      "x": 3360,
+      "y": 1620
+    },
+    "TerminalPane.dc.html": {
+      "h": 900,
+      "title": "Terminal \u2014 split terminals beside the side pane; send output to the agent",
+      "w": 1600,
+      "x": 1520,
+      "y": 12960
+    },
+    "TerminalSplit.dc.html": {
+      "h": 900,
+      "title": "Terminal \u2014 a panel under the thread and composer (\u2303`)",
+      "w": 1440,
+      "x": 0,
+      "y": 12960
+    },
+    "TerminalStates.dc.html": {
+      "h": 1700,
+      "page": "system",
+      "title": "Terminal \u2014 tabs, maximized, divider, menu and keys",
+      "w": 1600,
+      "x": 3360,
+      "y": 10102
+    },
+    "ThreadRichContent.dc.html": {
+      "h": 2560,
+      "page": "system",
+      "title": "Thread \u2014 rich content in prose: tables, task lists, nested lists, images, footnotes, details, diagrams",
+      "w": 1440,
+      "x": 12280,
+      "y": 3528
+    },
+    "ToolRows.dc.html": {
+      "h": 700,
+      "page": "system",
+      "title": "Activity line states",
+      "w": 760,
+      "x": 1520,
+      "y": 3528
+    },
+    "iPadAutomations.dc.html": {
+      "h": 820,
+      "page": "ipados",
+      "title": "Automations \u2014 list and detail with run history",
+      "w": 1180,
+      "x": 1260,
+      "y": 8060
+    },
+    "iPadCommit.dc.html": {
+      "h": 820,
+      "page": "ipados",
+      "title": "iPad \u2014 Commit\u2026 with a drafted message",
+      "w": 1180,
+      "x": 1260,
+      "y": 4980
+    },
+    "iPadDesign.dc.html": {
+      "h": 820,
+      "page": "ipados",
+      "title": "Design with Apple Pencil \u2014 markup becomes comments",
+      "w": 1180,
+      "x": 0,
+      "y": 11140
+    },
+    "iPadHosts.dc.html": {
+      "h": 820,
+      "page": "ipados",
+      "title": "Hosts \u2014 load, sessions, worktrees and the log",
+      "w": 1180,
+      "x": 2520,
+      "y": 8060
+    },
+    "iPadInbox.dc.html": {
+      "h": 820,
+      "page": "ipados",
+      "title": "Needs you \u2014 one at a time, with the full context",
+      "w": 1180,
+      "x": 0,
+      "y": 8060
+    },
+    "iPadLock.dc.html": {
+      "h": 820,
+      "page": "ipados",
+      "title": "Lock screen \u2014 Live Activities beside a Shepherd widget (no Dynamic Island on iPad)",
+      "w": 1180,
+      "x": 0,
+      "y": 12680
+    },
+    "iPadMissionMap.dc.html": {
+      "h": 820,
+      "page": "ipados",
+      "title": "Mission map \u2014 the whole map beside the station inspector",
+      "w": 1180,
+      "x": 1260,
+      "y": 9600
+    },
+    "iPadMissionReview.dc.html": {
+      "h": 820,
+      "page": "ipados",
+      "title": "Mission review \u2014 PR set, diff and contract in three columns",
+      "w": 1180,
+      "x": 2520,
+      "y": 9600
+    },
+    "iPadMissions.dc.html": {
+      "h": 820,
+      "page": "ipados",
+      "title": "Missions \u2014 list and detail next to the sidebar",
+      "w": 1180,
+      "x": 0,
+      "y": 9600
+    },
+    "iPadNewThread.dc.html": {
+      "h": 820,
+      "page": "ipados",
+      "title": "New thread \u2014 a form sheet; the host picker is a popover",
+      "w": 1180,
+      "x": 0,
+      "y": 3440
+    },
+    "iPadOverview.dc.html": {
+      "h": 820,
+      "page": "ipados",
+      "title": "Overview \u2014 waiting, running and finished, side by side",
+      "w": 1180,
+      "x": 1260,
+      "y": 12680
+    },
+    "iPadPalette.dc.html": {
+      "h": 820,
+      "page": "ipados",
+      "title": "\u2318K \u2014 results with a live preview",
+      "w": 1180,
+      "x": 3780,
+      "y": 8060
+    },
+    "iPadPaneArtifacts.dc.html": {
+      "h": 820,
+      "page": "ipados",
+      "title": "Side pane \u2014 an artifact beside the thread",
+      "w": 1180,
+      "x": 1260,
+      "y": 6520
+    },
+    "iPadPaneBrowser.dc.html": {
+      "h": 820,
+      "page": "ipados",
+      "title": "Side pane \u2014 Browser with an element selected",
+      "w": 1180,
+      "x": 0,
+      "y": 6520
+    },
+    "iPadPaneFiles.dc.html": {
+      "h": 820,
+      "page": "ipados",
+      "title": "Side pane \u2014 Files: tree and editor while the agent works",
+      "w": 1180,
+      "x": 2520,
+      "y": 6520
+    },
+    "iPadPortrait.dc.html": {
+      "h": 1180,
+      "is_interactive": true,
+      "page": "ipados",
+      "title": "iPad portrait \u2014 slash commands",
+      "w": 820,
+      "x": 0,
+      "y": 1540
+    },
+    "iPadPortraitLaunch.dc.html": {
+      "h": 1180,
+      "is_interactive": true,
+      "page": "ipados",
+      "title": "iPad portrait \u2014 launch: the sidebar over the Overview; a tap on the dim closes it",
+      "w": 820,
+      "x": 1800,
+      "y": 1540
+    },
+    "iPadQuestion.dc.html": {
+      "h": 820,
+      "page": "ipados",
+      "title": "Question \u2014 the dock takes over, options side by side",
+      "w": 1180,
+      "x": 3780,
+      "y": 3440
+    },
+    "iPadQueue.dc.html": {
+      "h": 820,
+      "page": "ipados",
+      "title": "Queue \u2014 swipe to edit or delete; a steer waits on top",
+      "w": 1180,
+      "x": 2520,
+      "y": 3440
+    },
+    "iPadReview.dc.html": {
+      "h": 820,
+      "is_interactive": true,
+      "page": "ipados",
+      "title": "iPad \u2014 thread with the Changes pane (unified when narrow)",
+      "w": 1180,
+      "x": 1260,
+      "y": 0
+    },
+    "iPadReviewSplit.dc.html": {
+      "h": 820,
+      "page": "ipados",
+      "title": "iPad \u2014 review full screen: file list and split diff",
+      "w": 1180,
+      "x": 0,
+      "y": 4980
+    },
+    "iPadSettingsInstructions.dc.html": {
+      "h": 820,
+      "page": "ipados",
+      "title": "Settings \u2014 Instructions, editing APPEND_SYSTEM.md",
+      "w": 1180,
+      "x": 0,
+      "y": 14220
+    },
+    "iPadSidebar.dc.html": {
+      "h": 1180,
+      "is_interactive": true,
+      "page": "ipados",
+      "title": "iPad portrait \u2014 sidebar overlay",
+      "w": 820,
+      "x": 900,
+      "y": 1540
+    },
+    "iPadSplitView.dc.html": {
+      "h": 820,
+      "page": "ipados",
+      "title": "Split View \u2014 a thread and a design side by side",
+      "w": 1180,
+      "x": 1260,
+      "y": 11140
+    },
+    "iPadSteer.dc.html": {
+      "h": 820,
+      "page": "ipados",
+      "title": "Steer \u2014 subagents and Up next share one card; the inspector shows the reviewer",
+      "w": 1180,
+      "x": 1260,
+      "y": 3440
+    },
+    "iPadSubagents.dc.html": {
+      "h": 820,
+      "is_interactive": true,
+      "page": "ipados",
+      "title": "iPad \u2014 subagents done, tray above the composer",
+      "w": 1180,
+      "x": 2520,
+      "y": 0
+    },
+    "iPadTerminal.dc.html": {
+      "h": 820,
+      "page": "ipados",
+      "title": "Terminal \u2014 under the thread, with a key row for touch",
+      "w": 1180,
+      "x": 3780,
+      "y": 6520
+    },
+    "iPadThread.dc.html": {
+      "h": 820,
+      "is_interactive": true,
+      "page": "ipados",
+      "title": "iPad \u2014 thread, sidebar",
+      "w": 1180,
+      "x": 0,
+      "y": 0
+    },
+    "ThreadError.dc.html": {
+      "w": 1440,
+      "h": 900,
+      "title": "Thread \u2014 OpenAI rejected the key: the error, readable; the earlier one folded",
+      "x": 0,
+      "y": 8100
+    },
+    "ThreadErrorDetails.dc.html": {
+      "w": 1440,
+      "h": 900,
+      "title": "Thread \u2014 the same error with Details open",
+      "x": 1520,
+      "y": 8100
+    },
+    "iPadThreadError.dc.html": {
+      "w": 1180,
+      "h": 820,
+      "title": "iPad \u2014 the model request failed",
+      "x": 3780,
+      "y": 0,
+      "page": "ipados"
+    },
+    "MobileThreadError.dc.html": {
+      "w": 390,
+      "h": 844,
+      "title": "Thread \u2014 the model request failed",
+      "x": 940,
+      "y": 0,
+      "page": "ios"
+    },
+    "TurnErrors.dc.html": {
+      "w": 1600,
+      "h": 3158,
+      "title": "Turn errors \u2014 the card, every kind of provider error, touch sizes",
+      "x": 4040,
+      "y": 3528,
+      "page": "system"
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-09-21T15:10:00Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "view": "canvas"
+  },
+  "notes": {
+    "dz1": {
+      "kind": "title1",
+      "maxW": 4960,
+      "page": "design",
+      "text": "Design tool (experiment) \u2014 HTML mockups on a canvas, drawn and refined with a design agent",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "dz2": {
+      "kind": "title1",
+      "maxW": 3280,
+      "page": "design",
+      "text": "Design systems & getting it out",
+      "w": 240,
+      "x": 0,
+      "y": 1040
+    },
+    "explore-top": {
+      "kind": "title1",
+      "maxW": 3000,
+      "page": "explore",
+      "text": "Explorations \u2014 try designs here before they go on the other pages. Nothing on trial right now: provider errors are applied (macOS \u203a When a model request fails, Components \u203a Turn errors).",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "mx0": {
+      "kind": "title1",
+      "maxW": 3120,
+      "page": "missions",
+      "text": "Start here \u2014 how you get there, what you put in, and how it runs",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "mx1": {
+      "kind": "title1",
+      "maxW": 6640,
+      "page": "missions",
+      "text": "Missions \u2014 one map from goal to merged PRs, across every repo it touches",
+      "w": 240,
+      "x": 3280,
+      "y": -300
+    },
+    "mx2": {
+      "kind": "title1",
+      "maxW": 4960,
+      "page": "missions",
+      "text": "Run \u2014 the map moves on its own; it pauses only when reality leaves the map",
+      "w": 240,
+      "x": 3280,
+      "y": 1240
+    },
+    "mx3": {
+      "kind": "title1",
+      "maxW": 4960,
+      "page": "missions",
+      "text": "Review & merge \u2014 one pass over every PR, then the train",
+      "w": 240,
+      "x": 3280,
+      "y": 2980
+    },
+    "mx4": {
+      "kind": "title1",
+      "maxW": 6640,
+      "page": "missions",
+      "text": "When things go wrong \u2014 only the part that\u2019s stuck pauses",
+      "w": 240,
+      "x": 3280,
+      "y": 4680
+    },
+    "mx5": {
+      "kind": "title1",
+      "maxW": 5000,
+      "page": "missions",
+      "text": "Templates \u2014 a finished mission becomes a map you can reuse",
+      "w": 240,
+      "x": 3280,
+      "y": 6380
+    },
+    "page-1-s00": {
+      "kind": "title1",
+      "text": "Thread and composer",
+      "x": 0,
+      "y": -300,
+      "w": 240,
+      "maxW": 7520
+    },
+    "page-1-s01": {
+      "kind": "title1",
+      "text": "Subagents \u2014 live in a tray above the composer",
+      "x": 0,
+      "y": 1320,
+      "w": 240,
+      "maxW": 4800
+    },
+    "page-1-s02": {
+      "kind": "title1",
+      "text": "Queue and steer \u2014 messages you send while the agent works",
+      "x": 0,
+      "y": 2940,
+      "w": 240,
+      "maxW": 4480
+    },
+    "page-1-s03": {
+      "kind": "title1",
+      "text": "When the agent asks a question",
+      "x": 0,
+      "y": 4560,
+      "w": 240,
+      "maxW": 4480
+    },
+    "page-1-s04": {
+      "kind": "title1",
+      "text": "Context meter",
+      "x": 0,
+      "y": 6180,
+      "w": 240,
+      "maxW": 4480
+    },
+    "page-1-s05": {
+      "kind": "title1",
+      "text": "When a model request fails \u2014 the error, readable; the earlier one folds to a line",
+      "x": 0,
+      "y": 7800,
+      "w": 240,
+      "maxW": 2960
+    },
+    "page-1-s06": {
+      "kind": "title1",
+      "text": "Review \u2014 the Changes pane",
+      "x": 0,
+      "y": 9420,
+      "w": 240,
+      "maxW": 8000
+    },
+    "page-1-s07": {
+      "kind": "title1",
+      "text": "Side pane \u2014 Browser, Artifacts, Files",
+      "x": 0,
+      "y": 11040,
+      "w": 240,
+      "maxW": 6640
+    },
+    "page-1-s08": {
+      "kind": "title1",
+      "text": "Terminal in a horizontal split",
+      "x": 0,
+      "y": 12660,
+      "w": 240,
+      "maxW": 3120
+    },
+    "page-1-s09": {
+      "kind": "title1",
+      "text": "Sidebar destinations",
+      "x": 0,
+      "y": 14280,
+      "w": 240,
+      "maxW": 7520
+    },
+    "page-1-s10": {
+      "kind": "title1",
+      "text": "Settings",
+      "x": 0,
+      "y": 15900,
+      "w": 240,
+      "maxW": 7520
+    },
+    "page-1-s11": {
+      "kind": "title1",
+      "text": "Settings \u2014 keys, instructions, experiments",
+      "x": 0,
+      "y": 18180,
+      "w": 240,
+      "maxW": 7520
+    },
+    "page-1-s12": {
+      "kind": "title1",
+      "text": "Settings \u2014 skills: manage them, browse and search skills.sh, add from a repo",
+      "x": 0,
+      "y": 20140,
+      "w": 240,
+      "maxW": 6000
+    },
+    "ipados-s00": {
+      "kind": "title1",
+      "text": "Thread \u2014 landscape (11-inch, 1180\u00d7820)",
+      "x": 0,
+      "y": -300,
+      "w": 240,
+      "maxW": 4960,
+      "page": "ipados"
+    },
+    "ipados-s01": {
+      "kind": "title1",
+      "text": "Portrait (820\u00d71180)",
+      "x": 0,
+      "y": 1240,
+      "w": 240,
+      "maxW": 2620,
+      "page": "ipados"
+    },
+    "ipados-s02": {
+      "kind": "title1",
+      "text": "Start, steer, queue and answer",
+      "x": 0,
+      "y": 3140,
+      "w": 240,
+      "maxW": 4960,
+      "page": "ipados"
+    },
+    "ipados-s03": {
+      "kind": "title1",
+      "text": "Review \u2014 the Changes pane",
+      "x": 0,
+      "y": 4680,
+      "w": 240,
+      "maxW": 2440,
+      "page": "ipados"
+    },
+    "ipados-s04": {
+      "kind": "title1",
+      "text": "Side pane and terminal",
+      "x": 0,
+      "y": 6220,
+      "w": 240,
+      "maxW": 4960,
+      "page": "ipados"
+    },
+    "ipados-s05": {
+      "kind": "title1",
+      "text": "Destinations as list + detail",
+      "x": 0,
+      "y": 7760,
+      "w": 240,
+      "maxW": 4960,
+      "page": "ipados"
+    },
+    "ipados-s06": {
+      "kind": "title1",
+      "text": "Missions on a big screen",
+      "x": 0,
+      "y": 9300,
+      "w": 240,
+      "maxW": 3700,
+      "page": "ipados"
+    },
+    "ipados-s07": {
+      "kind": "title1",
+      "text": "Pencil, and two windows at once",
+      "x": 0,
+      "y": 10840,
+      "w": 240,
+      "maxW": 2440,
+      "page": "ipados"
+    },
+    "ipados-s08": {
+      "kind": "title1",
+      "text": "Live Activities and the Overview",
+      "x": 0,
+      "y": 12380,
+      "w": 240,
+      "maxW": 2440,
+      "page": "ipados"
+    },
+    "ipados-s09": {
+      "kind": "title1",
+      "text": "Settings",
+      "x": 0,
+      "y": 13920,
+      "w": 240,
+      "maxW": 2400,
+      "page": "ipados"
+    },
+    "ios-s00": {
+      "kind": "title1",
+      "text": "Home and a thread (390\u00d7844)",
+      "x": 0,
+      "y": -300,
+      "w": 240,
+      "maxW": 2400,
+      "page": "ios"
+    },
+    "ios-s01": {
+      "kind": "title1",
+      "text": "Start, steer, queue and answer",
+      "x": 0,
+      "y": 1264,
+      "w": 240,
+      "maxW": 3680,
+      "page": "ios"
+    },
+    "ios-s02": {
+      "kind": "title1",
+      "text": "Review on the phone",
+      "x": 0,
+      "y": 2828,
+      "w": 240,
+      "maxW": 2400,
+      "page": "ios"
+    },
+    "ios-s03": {
+      "kind": "title1",
+      "text": "Destinations \u2014 Needs you, search, Missions, Designs, Automations, More",
+      "x": 0,
+      "y": 4392,
+      "w": 240,
+      "maxW": 3210,
+      "page": "ios"
+    },
+    "ios-s04": {
+      "kind": "title1",
+      "text": "Missions while you\u2019re away",
+      "x": 0,
+      "y": 5956,
+      "w": 240,
+      "maxW": 2400,
+      "page": "ios"
+    },
+    "ios-s05": {
+      "kind": "title1",
+      "text": "Live Activities and the Dynamic Island",
+      "x": 0,
+      "y": 7520,
+      "w": 240,
+      "maxW": 2400,
+      "page": "ios"
+    },
+    "ios-s06": {
+      "kind": "title1",
+      "text": "Settings",
+      "x": 0,
+      "y": 9170,
+      "w": 240,
+      "maxW": 2400,
+      "page": "ios"
+    },
+    "notifications-s00": {
+      "kind": "title1",
+      "text": "iPhone",
+      "x": 0,
+      "y": -300,
+      "w": 240,
+      "maxW": 3210,
+      "page": "notifications"
+    },
+    "notifications-s01": {
+      "kind": "title1",
+      "text": "iPad",
+      "x": 0,
+      "y": 1264,
+      "w": 240,
+      "maxW": 2440,
+      "page": "notifications"
+    },
+    "notifications-s02": {
+      "kind": "title1",
+      "text": "Mac",
+      "x": 0,
+      "y": 2804,
+      "w": 240,
+      "maxW": 2400,
+      "page": "notifications"
+    },
+    "system-top": {
+      "kind": "title1",
+      "text": "Components \u2014 Night Watch, Shepherd\u2019s design system. Every component and state lives here; the other pages are screens.",
+      "x": 0,
+      "y": -560,
+      "w": 240,
+      "maxW": 6000,
+      "page": "system"
+    },
+    "system-s00": {
+      "kind": "title1",
+      "text": "Foundations, controls and status",
+      "x": 0,
+      "y": -300,
+      "w": 240,
+      "maxW": 4480,
+      "page": "system"
+    },
+    "system-s01": {
+      "kind": "title1",
+      "text": "Thread and composer \u2014 activity lines, live text, errors, menus, queue, questions, context",
+      "x": 0,
+      "y": 3228,
+      "w": 240,
+      "maxW": 8000,
+      "page": "system"
+    },
+    "system-s02": {
+      "kind": "title1",
+      "text": "Agents, subagents, skills and navigation",
+      "x": 0,
+      "y": 7106,
+      "w": 240,
+      "maxW": 6320,
+      "page": "system"
+    },
+    "system-s03": {
+      "kind": "title1",
+      "text": "Review, side pane and terminal",
+      "x": 0,
+      "y": 9802,
+      "w": 240,
+      "maxW": 4960,
+      "page": "system"
+    },
+    "system-s04": {
+      "kind": "title1",
+      "text": "Notifications, missions and the design tool",
+      "x": 0,
+      "y": 13754,
+      "w": 240,
+      "maxW": 6000,
+      "page": "system"
+    },
+    "system-s05": {
+      "kind": "title1",
+      "text": "Swift implementation",
+      "x": 0,
+      "y": 17495,
+      "w": 240,
+      "maxW": 2400,
+      "page": "system"
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "Running.dc.html",
+    "SlashMenu.dc.html",
+    "ModelPicker.dc.html",
+    "CommandPalette.dc.html",
+    "Subagents.dc.html",
+    "SubagentsDone.dc.html",
+    "SubagentsQueue.dc.html",
+    "QueueStack.dc.html",
+    "QueueSteer.dc.html",
+    "QueueEdit.dc.html",
+    "QuestionAsk.dc.html",
+    "QuestionPick.dc.html",
+    "QuestionAnswered.dc.html",
+    "ContextDetails.dc.html",
+    "ContextFull.dc.html",
+    "ContextCompacted.dc.html",
+    "ThreadError.dc.html",
+    "ThreadErrorDetails.dc.html",
+    "ChangesSplit.dc.html",
+    "ChangesScope.dc.html",
+    "ChangesBase.dc.html",
+    "ChangesUnified.dc.html",
+    "ChangesLastTurn.dc.html",
+    "ChangesWide.dc.html",
+    "PaneBrowser.dc.html",
+    "PaneArtifacts.dc.html",
+    "PaneArtifactEdit.dc.html",
+    "PaneFiles.dc.html",
+    "TerminalSplit.dc.html",
+    "TerminalPane.dc.html",
+    "NavNewThread.dc.html",
+    "NavMissions.dc.html",
+    "NavDesigns.dc.html",
+    "NavAutomations.dc.html",
+    "NavHosts.dc.html",
+    "SettingsAppearance.dc.html",
+    "SettingsAgents.dc.html",
+    "SettingsWorktrees.dc.html",
+    "SettingsPi.dc.html",
+    "SettingsRemote.dc.html",
+    "SettingsKeyboard.dc.html",
+    "SettingsAdvanced.dc.html",
+    "SettingsInstructions.dc.html",
+    "SettingsInstructionsHosts.dc.html",
+    "SettingsExperiments.dc.html",
+    "SettingsSkills.dc.html",
+    "SettingsSkillsBrowse.dc.html",
+    "SettingsSkillsSearch.dc.html",
+    "SettingsSkillsRepo.dc.html",
+    "iPadThread.dc.html",
+    "iPadReview.dc.html",
+    "iPadSubagents.dc.html",
+    "iPadThreadError.dc.html",
+    "iPadPortrait.dc.html",
+    "iPadSidebar.dc.html",
+    "iPadPortraitLaunch.dc.html",
+    "iPadNewThread.dc.html",
+    "iPadSteer.dc.html",
+    "iPadQueue.dc.html",
+    "iPadQuestion.dc.html",
+    "iPadReviewSplit.dc.html",
+    "iPadCommit.dc.html",
+    "iPadPaneBrowser.dc.html",
+    "iPadPaneArtifacts.dc.html",
+    "iPadPaneFiles.dc.html",
+    "iPadTerminal.dc.html",
+    "iPadInbox.dc.html",
+    "iPadAutomations.dc.html",
+    "iPadHosts.dc.html",
+    "iPadPalette.dc.html",
+    "iPadMissions.dc.html",
+    "iPadMissionMap.dc.html",
+    "iPadMissionReview.dc.html",
+    "iPadDesign.dc.html",
+    "iPadSplitView.dc.html",
+    "iPadLock.dc.html",
+    "iPadOverview.dc.html",
+    "iPadSettingsInstructions.dc.html",
+    "MobileAgents.dc.html",
+    "MobileThread.dc.html",
+    "MobileThreadError.dc.html",
+    "MobileApproval.dc.html",
+    "MobileNewThread.dc.html",
+    "MobileWorkspace.dc.html",
+    "MobileSteer.dc.html",
+    "MobileQueue.dc.html",
+    "MobileQueueMenu.dc.html",
+    "MobileQuestion.dc.html",
+    "MobileSubagents.dc.html",
+    "MobileSubagent.dc.html",
+    "MobileChanges.dc.html",
+    "MobileDiff.dc.html",
+    "MobileCommit.dc.html",
+    "MobileInbox.dc.html",
+    "MobileSearch.dc.html",
+    "MobileMissions.dc.html",
+    "MobileDesigns.dc.html",
+    "MobileDesignBoard.dc.html",
+    "MobileAutomations.dc.html",
+    "MobileMore.dc.html",
+    "MobileLock.dc.html",
+    "MobileAnswer.dc.html",
+    "MobileMission.dc.html",
+    "MobilePatch.dc.html",
+    "MobileMerge.dc.html",
+    "MobileLiveLock.dc.html",
+    "MobileIsland.dc.html",
+    "MobileSettings.dc.html",
+    "MobileInstructions.dc.html",
+    "MobileInstructionsEdit.dc.html",
+    "MobileSkills.dc.html",
+    "MobileExperiments.dc.html",
+    "NotifPhoneBanner.dc.html",
+    "NotifPhoneStacks.dc.html",
+    "NotifPhoneRich.dc.html",
+    "NotifPhoneReply.dc.html",
+    "NotifPhoneReview.dc.html",
+    "NotifPhoneSummary.dc.html",
+    "NotifSettings.dc.html",
+    "NotifiPadBanner.dc.html",
+    "NotifiPadCenter.dc.html",
+    "NotifMac.dc.html",
+    "MXNav.dc.html",
+    "MXFlow.dc.html",
+    "MXStart.dc.html",
+    "MXGoal.dc.html",
+    "MXMap.dc.html",
+    "MXPatch.dc.html",
+    "MXRun.dc.html",
+    "MXOffMap.dc.html",
+    "MXDone.dc.html",
+    "MXInputs.dc.html",
+    "MXReview.dc.html",
+    "MXEvidence.dc.html",
+    "MXTrain.dc.html",
+    "MXStuck.dc.html",
+    "MXBudget.dc.html",
+    "MXLocks.dc.html",
+    "MXCancel.dc.html",
+    "MXTemplateSave.dc.html",
+    "MXTemplates.dc.html",
+    "MXTemplateStart.dc.html",
+    "DZStart.dc.html",
+    "DZCanvas.dc.html",
+    "DZTweak.dc.html",
+    "DZSystem.dc.html",
+    "DZExport.dc.html",
+    "NWFoundations.dc.html",
+    "NWControls.dc.html",
+    "NWStatus.dc.html",
+    "NWThread.dc.html",
+    "ToolRows.dc.html",
+    "LiveText.dc.html",
+    "TurnErrors.dc.html",
+    "NWComposer.dc.html",
+    "QueueStates.dc.html",
+    "QuestionStates.dc.html",
+    "ContextIdeas.dc.html",
+    "ThreadRichContent.dc.html",
+    "NWAgents.dc.html",
+    "SubagentTray.dc.html",
+    "SkillsStates.dc.html",
+    "NWNavigation.dc.html",
+    "ChangesStates.dc.html",
+    "PaneStates.dc.html",
+    "TerminalStates.dc.html",
+    "NotifCatalog.dc.html",
+    "MXVocab.dc.html",
+    "NWMissions.dc.html",
+    "NWDesignTool.dc.html",
+    "NWSwift.dc.html"
+  ],
+  "pages": [
+    {
+      "id": "page-1",
+      "name": "macOS"
+    },
+    {
+      "id": "explore",
+      "name": "Explorations"
+    },
+    {
+      "id": "ipados",
+      "name": "iPadOS"
+    },
+    {
+      "id": "ios",
+      "name": "iOS"
+    },
+    {
+      "id": "notifications",
+      "name": "Notifications"
+    },
+    {
+      "id": "missions",
+      "name": "Missions"
+    },
+    {
+      "id": "design",
+      "name": "Design tool"
+    },
+    {
+      "id": "system",
+      "name": "Components"
+    }
+  ],
+  "title": "Shepherd chat UI"
+}

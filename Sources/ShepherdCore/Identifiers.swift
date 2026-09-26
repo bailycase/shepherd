@@ -32,6 +32,7 @@ public enum PaneMarker: Sendable {}
 public enum AgentMarker: Sendable {}
 public enum SessionMarker: Sendable {}
 public enum AutomationMarker: Sendable {}
+public enum DesignMarker: Sendable {}
 
 public typealias SpaceID = Identifier<SpaceMarker>
 public typealias TabID = Identifier<TabMarker>
@@ -39,6 +40,7 @@ public typealias PaneID = Identifier<PaneMarker>
 public typealias AgentID = Identifier<AgentMarker>
 public typealias SessionID = Identifier<SessionMarker>
 public typealias AutomationID = Identifier<AutomationMarker>
+public typealias DesignID = Identifier<DesignMarker>
 
 
 /// Parameters for spawning a PTY session. `command` empty means the default

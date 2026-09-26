@@ -18,6 +18,95 @@ public enum NWAutomationMetrics {
     public static let factLabelWidth: CGFloat = 110
     /// The switch as drawn (`.nwSwitch`); touch grows its hit area.
     public static let switchSize = CGSize(width: 30, height: 18)
+    /// A live run's card: its ring outside the running line, and its spinner.
+    public static let runRing: CGFloat = 3
+    public static let runSpinner: CGFloat = 13
+    /// How a live run is going ("Running · 4m"): the board's 13pt, between caption and ui.
+    public static let runStatusSize: CGFloat = 13
+}
+
+/// A run going now, as its own card (MobileAutomations' Running now): a spinner, the
+/// automation's name, and its host trailing, then how the run is going ("Running · 4m"). A
+/// working run's card takes a `running` line inside a 3pt `runningTint` ring; one that asked
+/// you a `lanternText` line, the bolt and "Asked you" in lanternText. A tap opens the automation.
+public struct NWAutomationRunCard: View, Equatable {
+    let title: String
+    let host: String?
+    let status: String
+    let asking: Bool
+    let since: Date?
+    let open: (() -> Void)?
+
+    public init(_ title: String, host: String? = nil, status: String, asking: Bool = false, since: Date? = nil,
+                open: (() -> Void)? = nil) {
+        self.title = title
+        self.host = host
+        self.status = status
+        self.asking = asking
+        self.since = since
+        self.open = open
+    }
+
+    public nonisolated static func == (a: Self, b: Self) -> Bool {
+        a.title == b.title && a.host == b.host && a.status == b.status && a.asking == b.asking && a.since == b.since
+            && (a.open == nil) == (b.open == nil)
+    }
+
+    public var body: some View {
+        if let open {
+            Button(action: open) { card }.buttonStyle(.plain)
+        } else {
+            card
+        }
+    }
+
+    private var card: some View {
+        let nw = Color.nw
+        let shape = RoundedRectangle(cornerRadius: NWListMetrics.cardRadius)
+        return VStack(alignment: .leading, spacing: NW.Space.m) {
+            HStack(spacing: NW.Space.m) {
+                Group {
+                    if asking {
+                        Image(systemName: "bolt").font(.nw(.caption, weight: .semibold)).foregroundStyle(nw.lanternText)
+                    } else {
+                        ProgressView().progressViewStyle(.nwSpinner(size: NWAutomationMetrics.runSpinner))
+                    }
+                }
+                .accessibilityHidden(true)
+                Text(title).font(.nw(.ui, weight: .semibold)).foregroundStyle(nw.textPrimary).lineLimit(2)
+                Spacer(minLength: NW.Space.m)
+                if let host {
+                    Text(host).font(.nw(.micro, weight: .regular)).foregroundStyle(nw.textTertiary).lineLimit(1)
+                }
+            }
+            statusLine
+                .font(.nwSans(NWAutomationMetrics.runStatusSize))
+                .foregroundStyle(asking ? nw.lanternText : nw.textSecondary)
+        }
+        .padding(NW.Space.l)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(nw.bgRaised, in: shape)
+        .nwBorder(asking ? nw.lanternText : nw.running, radius: NWListMetrics.cardRadius)
+        .background {
+            if !asking {
+                RoundedRectangle(cornerRadius: NWListMetrics.cardRadius + NWAutomationMetrics.runRing)
+                    .inset(by: -NWAutomationMetrics.runRing).fill(nw.runningTint)
+            }
+        }
+        .contentShape(shape)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(open == nil ? "" : "Opens the automation")
+    }
+
+    @ViewBuilder private var statusLine: some View {
+        if let since {
+            TimelineView(NWElapsedSchedule(start: since)) { context in
+                Text(status + " · " + NWDuration.text(context.date.timeIntervalSince(since)))
+            }
+        } else {
+            Text(status)
+        }
+    }
 }
 
 /// One automation in a list: what leads it, its name, when it runs and where, and how its run
@@ -149,9 +238,10 @@ public struct NWAutomationRow: View, Equatable {
             ProgressView().progressViewStyle(.nwSpinner(size: NWListMetrics.symbol))
                 .accessibilityHidden(true)
         case .symbol(let name, let tone):
+            // A glyph that needs you is lanternText; only a status dot glows in lantern.
             Image(systemName: name)
                 .font(.nw(.ui, weight: .medium))
-                .foregroundStyle(tone?.color ?? Color.nw.textSecondary)
+                .foregroundStyle(tone == .attention ? Color.nw.lanternText : tone?.color ?? Color.nw.textSecondary)
                 .accessibilityHidden(true)
         }
     }
