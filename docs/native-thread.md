@@ -447,8 +447,18 @@ transport differs.
     pushed revision (`revisionAvailable()`, below), so a thread on screen pulls at once instead
     of at its next poll. The launch queue ends on the same signal.
     Remote clients keep polling; the remote protocol has no push for this.
+  - **Can't start** (DESIGN.md › Thread › Can't start): a pi that exits before its thread
+    serves, or one Shepherd stops (`stopKeepingAgent`, and a pi launched to resume a session
+    that warns it will create a new one under that id), keeps its agent. The server keeps a
+    start record per RPC session (`PiStartRecord`: stderr without colour codes, the exit code,
+    the cause) and reports the exit as a `SessionExit` that keeps the agent. Until another pi
+    is bound to the pane, a snapshot of that agent answers with the problem alone
+    (`NativeThreadSnapshot.startProblem`, generation `start-problem`, no history, no actions);
+    every other request is `native_unavailable`. `retryStart` makes it `native_starting` until
+    the new pi is bound, and that pi takes the opening prompt the stopped one never read. An
+    older client ignores the field and draws an empty thread it cannot send to.
   - `native_unavailable`, with the reason: the agent no longer exists, its pane runs no pi, or
-    its pi exited (with the exit code, also after the app retired the session).
+    its pi exited after it served (with the exit code, also after the app retired the session).
   - Hosts advertise `native.thread.starting.v1`. `RemoteHostClient` reads `native_unavailable`
     from an older host as starting: such a host said that while pi started, and it retires an
     agent whose pi exits.
@@ -522,6 +532,10 @@ output grows.
   opening prompt's pending row) before the agent is selected, so its thread draws complete at
   once, with what the user asked for. A pi still
   starting after `startingLimit` (a minute) becomes a `loadError`, cleared if it answers later.
+- **Can't start:** a snapshot carrying `startProblem` sets `startProblem` and nothing else: the
+  store keeps what it drew (a preview stays a preview), is neither `ready` nor `starting`, offers
+  no send, and a send waiting for pi gives up with its draft kept. `restarting()` (Retry) clears
+  it at once and the thread is starting; any other answer clears it too.
 - **Preview:** while a local thread has nothing from pi, `run(request:preview:)` reads the
   agent's pi session file alongside the first pull (`PiSessionFile.previewLoader`, off the main
   actor) and `preview(_:)` shows it: `previewing`, not `ready`, so nothing acts on it. pi's

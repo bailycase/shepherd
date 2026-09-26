@@ -169,8 +169,10 @@ Tests come in tiers, and the switch is `--filter` on target names.
 - `StubPi.command`: runs `Resources/stub-pi.py`, a scripted `pi --mode rpc` driven by prompt
   keywords (`ask`, `select`, `hang`, `die`, `big`, `slow`, `widgets`, `fill`, `newsession`, …).
   `STUB_PI_LOG` records what it received, and `STUB_PI_HISTORY_BYTES` seeds a long history.
-  `STUB_PI_STARTUP_DELAY`/`_GATE`/`_EXIT` hold or fail its boot (`stub-pi-startup.json` in its
-  cwd does the same for a pi launched the way the app launches it).
+  `STUB_PI_STARTUP_DELAY`/`_GATE`/`_EXIT` hold or fail its boot, `_STDERR` is what it says
+  before that exit, and `_NEW_SESSION` prints pi's warning that it found no session for its
+  `--session-id` (`stub-pi-startup.json` in its cwd does the same for a pi launched the way the
+  app launches it).
   `StubPi.installAsEngine()` installs it as the engine `SHEPHERD_PI_ENGINE` names (answering
   `--list-models`), for code that launches pi the way the app does (`PiLaunch`).
 - `makeScratchRepo()` and `git(_:in:)`: a git repository with one commit. A failing git call
@@ -1042,7 +1044,10 @@ history, so returning to it is always a flip. Measurements are in
 [docs/benchmarks](docs/benchmarks/2026-09-03-terminal-baseline.md).
 
 **Sessions and views are separate.** Closing a pane detaches views only. A process that exits on
-its own closes its pane and retires its agent. Delete Agent is the explicit way to terminate an
+its own closes its pane and retires its agent, with one exception: an agent's pi that exits before
+its thread serves (or that Shepherd stops) keeps its agent, which waits with the reason and Retry
+(`SessionExit.keepsAgent`, DESIGN.md › Thread › Can't start). Its pane session stays `.stopped`, so
+the pane never respawns pi on its own. Delete Agent is the explicit way to terminate an
 agent and its auxiliary processes while the app runs, and quitting the app terminates everything.
 
 **Only these paths mutate repositories** ([docs/worktrees.md](docs/worktrees.md)):
