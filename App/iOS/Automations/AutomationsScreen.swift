@@ -72,7 +72,19 @@ private struct AutomationsList: View {
                 }
             }
             if !model.live.isEmpty {
-                section("Running now", count: nil, rows: model.live)
+                if chosen == nil {
+                    // iPhone (MobileAutomations): each live run is its own card.
+                    VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
+                        NWListHeader("Running now")
+                        VStack(spacing: MobileLayout.blockSpacing) {
+                            ForEach(model.live) { row in
+                                AutomationRunCardView(row: row) { open(row.key) }.equatable()
+                            }
+                        }
+                    }
+                } else {
+                    section("Running now", count: nil, rows: model.live)
+                }
             }
             if !model.quiet.isEmpty {
                 section("All", count: model.rows.count, rows: model.quiet)
@@ -133,6 +145,20 @@ struct AutomationListRowView: View, Equatable {
         case .ago(let at)?: .ago(at)
         case nil: nil
         }
+    }
+}
+
+/// A live run as Running now's card on iPhone (MobileAutomations): a tap opens the automation.
+struct AutomationRunCardView: View, Equatable {
+    let row: AutomationListRow
+    let open: () -> Void
+
+    static func == (a: Self, b: Self) -> Bool { a.row == b.row }
+
+    var body: some View {
+        let since: Date? = if case .elapsed(let start)? = row.clock { start } else { nil }
+        NWAutomationRunCard(row.name, host: row.hostTag ?? row.hostName, status: row.status, asking: row.tone == .attention,
+                            since: since, open: open)
     }
 }
 
