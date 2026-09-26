@@ -189,6 +189,45 @@ struct ListPerformanceTests {
         #expect(counts["design.card", default: 0] < 120)
     }
 
+    // MARK: The Export sheet's boards
+
+    /// The Export sheet over a design of 172 boards: it builds the rows it shows (eight, then it
+    /// scrolls), and a tick redraws the row it changed.
+    @Test func theExportSheetBuildsOnlyTheBoardRowsItShowsAndATickRedrawsOne() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        app.settings.designToolEnabled = true
+        let space = Fixture.space(path: app.dir.path)
+        let vm = try await app.start(with: ShepherdState(spaces: [space]))
+        vm.designNetwork = .none
+        let design = Design(name: "Large", spaceID: space.id, createdAt: 1_000)
+        _ = try await app.server.createDesign(design)
+        try await DesignFixtures.draw(DesignFixtures.grid(172), in: design.id, on: app.server, perRow: 12)
+        try await eventuallyOnMain("the design to arrive") { vm.state.designs.count == 1 }
+        await vm.designScreen(design.id).refresh()
+        vm.openDesignExport(design.id)
+        let model = try #require(vm.designExport)
+        #expect(model.selection.rows.count == 172)
+
+        var window: OffscreenWindow!
+        let opening = ListPerf.counting {
+            window = OffscreenWindow(size: CGSize(width: 900, height: 900), dark: true, DesignExportOverlay(vm: vm))
+            ListPerf.settle(window)
+        }
+        defer { window.close() }
+        let shown = Int(NWDesignMetrics.exportVisibleRows)
+        #expect(opening["design.exportRow", default: 0] > 0)
+        #expect(opening["design.exportRow", default: 0] <= 2 * (shown + 2), "\(opening)")
+
+        let first = try #require(model.selection.rows.first?.path)
+        let tick = ListPerf.counting {
+            model.selection.toggle(first)
+            ListPerf.settle(window)
+        }
+        #expect(tick["design.exportRow", default: 0] >= 1)
+        #expect(tick["design.exportRow", default: 0] <= 2, "\(tick)")
+    }
+
     // MARK: Design systems
 
     /// A system card's height (its 12pt padding and two lines) with the gap under it.

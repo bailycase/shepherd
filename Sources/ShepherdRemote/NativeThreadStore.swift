@@ -100,6 +100,9 @@ public final class NativeThreadStore {
     public private(set) var settledRunning = false
     public var draft = ""
     public var delivery: NativeThreadDelivery = .followUp
+    /// Files waiting beside the draft (a design's boards attached to this thread); they go with
+    /// the next message the draft sends.
+    public private(set) var attachedFiles: [NativeAttachedFile] = []
 
     /// History, then the optimistic user echo, then the live (provisional) reply to it. The echo
     /// must precede provisional rows: the reply to a sent message streams below it, and the
@@ -906,16 +909,34 @@ public final class NativeThreadStore {
     /// While pi works, `delivery` says whether the message waits in the queue (`followUp`) or
     /// is steered in; while pi is idle it goes at once either way.
     public func send(images: [NativeImage] = [], delivery: NativeThreadDelivery) async {
-        guard !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, await readyToAct() else { return }
-        let text = draft
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              supports("send"), let current = snapshot else { return }
+        guard hasDraft, await readyToAct() else { return }
+        let typed = draft
+        let files = attachedFiles
+        guard hasDraft, supports("send"), let current = snapshot else { return }
+        let text = NativeAttachedFile.message(typed, files: files)
         let operation = UUID()
         let attached: [NativeImage]? = images.isEmpty || !supports("sendImages") ? nil : images
         let context = supports("designContext") ? designContext?().map(NativeDesignContext.init) : nil
         await perform(.send(expectedSessionID: current.piSessionID, generation: current.generation,
                             operationID: operation, text: text, delivery: delivery, images: attached, designContext: context),
-                      operation: operation, current: current, sentText: text, delivery: delivery, images: attached ?? [])
+                      operation: operation, current: current, sentText: text, typed: typed, files: files,
+                      delivery: delivery, images: attached ?? [])
+    }
+
+    /// Whether the draft has something to send: words, or attached files.
+    public var hasDraft: Bool {
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachedFiles.isEmpty
+    }
+
+    /// Adds files beside the draft, each once by path.
+    public func attach(files: [NativeAttachedFile]) {
+        let fresh = files.filter { file in !attachedFiles.contains { $0.path == file.path } }
+        guard !fresh.isEmpty else { return }
+        attachedFiles += fresh
+    }
+
+    public func detachFile(_ id: UUID) {
+        attachedFiles.removeAll { $0.id == id }
     }
 
     /// Send `text` as a new user message without touching the draft (a turn's Retry).
@@ -1124,6 +1145,7 @@ public final class NativeThreadStore {
     }
 
     private func perform(_ action: NativeThreadRequest, operation: UUID, current: NativeThreadSnapshot, sentText: String? = nil,
+                         typed: String? = nil, files: [NativeAttachedFile] = [],
                          delivery: NativeThreadDelivery = .followUp, images: [NativeImage] = []) async {
         guard let request else { return }
         let run = epoch
@@ -1143,7 +1165,8 @@ public final class NativeThreadStore {
             switch result {
             case .accepted(let accepted) where accepted == operation:
                 if let sentText {
-                    if draft == sentText { draft = "" }
+                    if draft == (typed ?? sentText) { draft = "" }
+                    if !files.isEmpty { attachedFiles.removeAll { file in files.contains { $0.id == file.id } } }
                     lastSendQueued = queued
                     sentCount += 1
                     if hostQueues && current.running {

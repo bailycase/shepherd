@@ -202,7 +202,7 @@ struct DesignCommentsList: View {
 
 /// The toolbar over a design (DZCanvas): the breadcrumb to it, its pages (a canvas with more than
 /// one), its design system (the chip opens the system's page), Present and Export. Present shows the selected board focused (decision
-/// 11: until Present mode is drawn); Export waits for its sheet, so it draws disabled.
+/// 11: until Present mode is drawn); Export opens its sheet (DZExport).
 struct DesignToolbar: View, Equatable {
     let name: String
     let system: String
@@ -215,11 +215,13 @@ struct DesignToolbar: View, Equatable {
     let designs: () -> Void
     /// The design's canvas: its pages and Present.
     var screen: DesignScreenModel?
+    /// Opens the Export sheet; nil while the canvas hasn't read the design yet.
+    var export: (() -> Void)?
 
     nonisolated static func == (a: Self, b: Self) -> Bool {
         a.name == b.name && a.system == b.system && a.swatches == b.swatches && (a.openSystem == nil) == (b.openSystem == nil)
             && a.leadingInset == b.leadingInset && (a.showSidebar == nil) == (b.showSidebar == nil)
-            && a.screen.map(ObjectIdentifier.init) == b.screen.map(ObjectIdentifier.init)
+            && a.screen.map(ObjectIdentifier.init) == b.screen.map(ObjectIdentifier.init) && (a.export == nil) == (b.export == nil)
     }
 
     var body: some View {
@@ -243,9 +245,9 @@ struct DesignToolbar: View, Equatable {
                 .disabled(screen?.canPresent != true)
                 .help("Present")
                 .accessibilityLabel("Present")
-            Button("Export", systemImage: "square.and.arrow.up") {}
+            Button("Export", systemImage: "square.and.arrow.up") { export?() }
                 .buttonStyle(.nw(.secondary))
-                .disabled(true)
+                .disabled(export == nil)
         }
     }
 }
