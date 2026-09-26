@@ -32,6 +32,35 @@ struct ContextPresentationTests {
         #expect(meter.ring == ring && meter.tooltip == tooltip && meter.tooltipNote == note && meter.accessibilityLabel == label)
     }
 
+    /// pi's percent is tokens over a window it passes through as written, so a tiny window makes
+    /// it enormous: the text stays a whole number from 0 to 100.
+    @Test(arguments: [
+        (21.4, "21%"), (61.6, "62%"), (0, "0%"), (100, "100%"), (100.4, "100%"), (125, "100%"), (8.123e23, "100%"),
+        (.greatestFiniteMagnitude, "100%"), (.infinity, "100%"), (-4, "0%"), (-.greatestFiniteMagnitude, "0%"), (.nan, "0%"),
+    ] as [(Double, String)])
+    func aPercentIsWholeAndWithinAHundred(_ percent: Double, text: String) {
+        #expect(nativeContextPercentText(percent) == text)
+    }
+
+    /// A models.json "unlimited" window (1e20, clamped to `Int.max`) or one of a single token
+    /// still draws a ring, a tooltip, and details.
+    @Test(arguments: [
+        (8_123, Int.max, NativeContextMeter.Ring.fill(8_123 / Double(Int.max), .calm), "0%"),
+        (Int.max, Int.max, .fill(1, .critical), "100%"),
+        (Int.max, 1, .fill(1, .critical), "100%"),
+        (8_123, 1, .fill(1, .critical), "100%"),
+    ])
+    func windowsAtEitherExtremeStillDraw(_ tokens: Int, _ window: Int, ring: NativeContextMeter.Ring, percent: String) throws {
+        let context = Self.context(tokens: tokens, window: window, split: Self.split)
+        let meter = try #require(NativeContextMeter(context))
+        #expect(meter.ring == ring)
+        #expect(meter.tooltip.hasSuffix(" · " + percent) && meter.accessibilityLabel == "Context \(percent) full")
+        let details = NativeContextDetails(context: context, model: "anthropic/claude-opus")
+        #expect(details.trailing == percent)
+        #expect(details.segments.allSatisfy { (0...1).contains($0.fraction) })
+        #expect(details.mark.map { (0...1).contains($0) } ?? true)
+    }
+
     /// No number yet is the empty track; after a compaction, the dashed ring with the agent's
     /// estimate; while compacting, the spinning arc. An older host sends no context: no ring.
     @Test func theRingsOtherStates() throws {

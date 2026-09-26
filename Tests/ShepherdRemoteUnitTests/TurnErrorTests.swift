@@ -115,6 +115,7 @@ struct TurnErrorTests {
         (3, 0.0, 120_000.0, "Tried 3 times over 2m"),
         (3, 0.0, 1_860_000.0, "Tried 3 times over 31m"),
         (2, 0.0, 400.0, "Tried 2 times"),
+        (3, 0.0, 1e25, "Tried 3 times over 2562047788015215h 30m"),
     ] as [(Int, Double, Double, String?)])
     func retriesSayHowManyAndOverHowLong(_ attempts: Int, _ first: Double, _ last: Double, _ expected: String?) {
         let error = NativeTurnError(text: "529 overloaded", provider: "anthropic", attempts: attempts, firstAt: first, at: last, timeZone: Self.utc)
@@ -172,6 +173,8 @@ struct TurnErrorTests {
         #expect(line.text(now: 2_000) == "OpenAI is overloaded · retrying in 8s")
         #expect(line.text(now: 9_500) == "OpenAI is overloaded · retrying in 1s")
         #expect(line.text(now: 10_000) == "OpenAI is overloaded · retrying")
+        let far = NativeRetryLine(title: "OpenAI is overloaded", glyph: "arrow.clockwise", attempt: 2, maxAttempts: 3, retryAt: 1e25)
+        #expect(far.text(now: 0) == "OpenAI is overloaded · retrying in 9223372036854775807s", "a delayMs past Int.max seconds")
         #expect(line.count == "2 of 3")
         #expect(NativeRetryLine(title: "x", glyph: "g", attempt: 1, maxAttempts: 0, retryAt: 0).count == nil)
     }
