@@ -117,6 +117,15 @@ public struct NWCanvasBoard: Identifiable, Equatable, Sendable {
         self.labelRoom = labelRoom
     }
 
+    /// Where its label is drawn on screen at `viewport`; nil where it isn't drawn.
+    public func labelRect(in viewport: NWCanvasViewport) -> CGRect? {
+        let frame = viewport.screen(self.frame)
+        let label = labelRoom.layout(width: frame.width, zoom: viewport.zoom)
+        guard label.shown else { return nil }
+        return CGRect(x: frame.minX, y: frame.minY - label.gap - NWDesignMetrics.labelHeight,
+                      width: label.width, height: NWDesignMetrics.labelHeight)
+    }
+
     /// "1280 × 800", the board's CSS pixel size.
     public static func sizeLabel(_ size: CGSize) -> String {
         "\(Int(size.width.rounded())) × \(Int(size.height.rounded()))"
@@ -265,13 +274,8 @@ extension Array where Element == NWCanvasBoard {
             return NWCanvasPick(board: board.id, point: CGPoint(x: (point.x - origin.x) / viewport.zoom, y: (point.y - origin.y) / viewport.zoom),
                                 extending: extending)
         }
-        for board in reversed() {
-            let frame = viewport.screen(board.frame)
-            let label = board.labelRoom.layout(width: frame.width, zoom: viewport.zoom)
-            guard label.shown else { continue }
-            let rect = CGRect(x: frame.minX, y: frame.minY - label.gap - NWDesignMetrics.labelHeight,
-                              width: label.width, height: NWDesignMetrics.labelHeight)
-            if rect.contains(point) { return NWCanvasPick(board: board.id, extending: extending) }
+        for board in reversed() where board.labelRect(in: viewport)?.contains(point) == true {
+            return NWCanvasPick(board: board.id, extending: extending)
         }
         return NWCanvasPick(extending: extending)
     }
