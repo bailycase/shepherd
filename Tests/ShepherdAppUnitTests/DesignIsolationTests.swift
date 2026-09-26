@@ -6,8 +6,8 @@ import Testing
 @testable import ShepherdApp
 
 /// A design's agent is no thread (docs/designs.md › Design agents and ordinary threads): it
-/// launches without the peer tools, agent_list leaves it out, and a host's design agents make no
-/// rows here, whether the Design tool is on or off.
+/// launches without the peer tools, agent_list leaves it out, the palette never searches its
+/// chat, and a host's design agents make no rows here, whether the Design tool is on or off.
 @Suite("Design isolation")
 @MainActor
 struct DesignIsolationTests {
@@ -36,6 +36,11 @@ struct DesignIsolationTests {
         #expect(infos.map(\.id) == [thread.id])
         #expect(infos.first?.isSelf == true)
         #expect(!infos.contains { $0.id == drawer.id })
+    }
+
+    @Test func thePalettesTranscriptSearchNeverReadsADesignsChat() {
+        let (state, thread, _) = workspace()
+        #expect(ShepherdViewModel.paletteSearchTargets(in: state).map(\.id) == [thread.id])
     }
 
     /// A host that sends its design agents (one from before `withoutDesigns`) still gives them
