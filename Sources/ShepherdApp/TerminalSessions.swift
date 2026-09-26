@@ -1002,14 +1002,17 @@ final class TerminalSessionStore {
     }
 
     /// Before an agent's pi starts: readies Shepherd's pi home (`PiSetup.prepare`, which refuses
-    /// a home that overlaps the user's own pi), then says whether the agent's pi session is still
-    /// fresh, after seeding its header (`PiSessionFile.prepareForLaunch`). Off the main actor: at
+    /// a home that overlaps the user's own pi), adopts its conversation from the user's pi
+    /// (`PiSessionFile.adopt`), then says whether the agent's pi session is still fresh, after
+    /// seeding its header (`PiSessionFile.prepareForLaunch`). Off the main actor: at
     /// launch every restored agent does this at once, and a project directory holds hundreds of
     /// session files.
     private static func prepareLaunch(for agent: Agent, cwd: String, pi: PiSetup) async -> (fresh: Bool, problem: PiHomeProblem?) {
         let sessionID = agent.effectivePiSessionID
         return await Task.detached(priority: .userInitiated) {
             if let problem = pi.prepare() { return (true, problem) }
+            // Its conversation from before Shepherd ran its own pi, copied in before any seeding.
+            _ = PiSessionFile.adopt(sessionID: sessionID, cwd: cwd, sessionsRoot: pi.sessionsRoot, yourPi: pi.yourPi.resolve())
             return (PiSessionFile.prepareForLaunch(sessionID: sessionID, cwd: cwd, sessionsRoot: pi.sessionsRoot), nil)
         }.value
     }
