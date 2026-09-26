@@ -242,10 +242,11 @@ struct NWCopyGlyph: View {
 // MARK: Thinking
 
 /// The model's thinking (NWThread board). Collapsed: a 10pt chevron and "Thought for 4s" in
-/// italic 12. Expanded: the text in italic 12.5 on a 2pt rule. Live (LiveText): "› Thinking…"
+/// italic 12. Expanded: the text in italic 12.5 on a 2pt rule. Live (LiveText): "Thinking…"
 /// shimmering on a 26pt line, the thread's live indicator between tools, settling into "Thought
 /// for Ns" when it ends. With no text (the model kept its reasoning back), finished thinking is
-/// the plain line, not a control.
+/// the plain line, not a control. A row with nothing to open draws no chevron but keeps its
+/// place, so the words never move.
 public struct NWThinking: View {
     let title: String
     let spokenTitle: String
@@ -274,20 +275,41 @@ public struct NWThinking: View {
     /// pi thinking between tools: its thinking streaming, or nothing yet to show for it.
     public static func live() -> NWThinking { NWThinking() }
 
+    /// What the row is: only a disclosure has something to open, so only it wears a chevron
+    /// and takes a press.
+    enum Kind: Equatable {
+        /// "Thinking…", shimmering: nothing to open yet.
+        case live
+        /// "Thought for Ns" with no text: the model kept its reasoning back.
+        case plain
+        case disclosure
+
+        init(live: Bool, text: String) {
+            self = live ? .live : text.isEmpty ? .plain : .disclosure
+        }
+
+        var opens: Bool { self == .disclosure }
+    }
+
+    var kind: Kind { Kind(live: live, text: text) }
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// When thinking ends, "Thinking…" cross-fades into "Thought for 4s" in place, as long as
     /// the caller keeps one `NWThinking` for both (the same view identity).
     public var body: some View {
         let nw = Color.nw
+        let kind = kind
         VStack(alignment: .leading, spacing: NW.Space.m) {
             ZStack(alignment: .leading) {
-                if live { liveHeader.nwTransition(.content) }
-                else if text.isEmpty { plainLine.nwTransition(.content) }
-                else { toggle.nwTransition(.content) }
+                switch kind {
+                case .live: liveHeader.nwTransition(.content)
+                case .plain: plainLine.nwTransition(.content)
+                case .disclosure: toggle.nwTransition(.content)
+                }
             }
             .nwAnimation(.content, value: live)
-            if isExpanded, !live, !text.isEmpty {
+            if isExpanded, kind.opens {
                 Text(text)
                     .font(.nwSans(12.5)).italic()
                     .lineSpacing(NWTextStyle.caption.lineSpacing + 2)
@@ -303,14 +325,12 @@ public struct NWThinking: View {
         }
     }
 
-    /// The disclosure's chevron, still, in `textTertiary`, and "Thinking…" in italic 12.5
-    /// shimmering (LiveText: text moves, icons don't).
+    /// "Thinking…" in italic 12.5 shimmering (LiveText: text moves, icons don't). Nothing
+    /// opens yet, so no chevron draws (the user's decision, 2026-09-25); its place stays, the
+    /// finished row's, so the words settle into "Thought for Ns" without moving.
     private var liveHeader: some View {
-        HStack(spacing: NW.Space.m) {
-            Image(systemName: "chevron.right")
-                .font(.system(size: 8, weight: .semibold))
-                .foregroundStyle(Color.nw.textTertiary)
-                .frame(width: NWThreadMetrics.liveChevron, height: NWThreadMetrics.liveChevron)
+        HStack(spacing: NW.Space.s) {
+            NWThreadChevron(isExpanded: false, shown: false)
             Text(title).font(.nw(.ui, weight: .regular)).italic().lineLimit(1).nwShimmer(active: true)
         }
         .frame(minHeight: NWThreadMetrics.liveHeight)
@@ -318,13 +338,17 @@ public struct NWThinking: View {
         .accessibilityLabel(spokenTitle)
     }
 
-    /// Thinking the model did not share: the collapsed row's words alone, with nothing to open.
+    /// Thinking the model did not share: the collapsed row's words alone, where a toggle's would
+    /// be, with nothing to open.
     private var plainLine: some View {
         let note = "\(spokenTitle). The model didn't share its reasoning."
-        return Text(title).font(.nwSans(12)).italic()
-            .nwContentTransition(.numeric())
-            .nwAnimation(.content, value: title)
-            .foregroundStyle(Color.nw.textSecondary)
+        return HStack(spacing: NW.Space.s) {
+            NWThreadChevron(isExpanded: false, shown: false)
+            Text(title).font(.nwSans(12)).italic()
+                .nwContentTransition(.numeric())
+                .nwAnimation(.content, value: title)
+        }
+        .foregroundStyle(Color.nw.textSecondary)
             #if os(iOS)
             .frame(minHeight: NW.Height.touch)
             #endif

@@ -151,6 +151,7 @@ And the rules that follow from them:
 | iPad sidebar footer: the person (avatar, name, "This Mac · build-01") and Settings | The hosts ("2 of 3 offline" and their names, opening Settings ▸ Hosts) and Settings | Shepherd has no accounts, only hosts (docs/ios/README.md › iPad: "a footer with the hosts and Settings") |
 | ModelPicker: ⌘M opens the model picker (the ⌘M hint in its search field) | **⇧⌘M**, the hint the search field shows (from `KeybindingsStore`), and the palette's Choose model… row and the menu bar | ⌘M is the system Minimize chord |
 | ModelPicker: each row's second line describes the model ("Faster, cheaper", "Fastest") | Model rows' second line lists the model's thinking levels instead of the board's notes ("Off · Minimal · Low · Medium · High", or "No thinking"), on the Mac and in the iOS picker | The user's decision, 2026-09-25 (pi has no model descriptions) |
+| LiveText, ContextCompacted: live "› Thinking…" wears the disclosure's chevron | No chevron on a row with nothing to open: live "Thinking…", a thought the model kept back, a `<details>` with nothing inside, an activity or subagent record line with nothing behind it. Its place stays, so every label sits where a chevron's row puts it and nothing moves when a row becomes one that opens; such a row is not a button and offers VoiceOver no expand | The user's decision, 2026-09-25: "also for the thinking and blocks in such, if there is nothing to expand / show like when the model is thinking, dont show the carat". Patched copies of LiveText and ContextCompacted, their live chevrons left out, go to the canvas |
 | NWComposer and Running: while pi runs, the placeholder "Queue a follow-up — sent when the turn ends" | The idle placeholder stays ("Follow up, or / for commands…"), as QueueSteer and QuestionAnswered draw it beside Stop | Dropped with the queue and steer redesign: ↩ queues or steers per Settings ▸ Agents, so "sent when the turn ends" would be wrong under Steer |
 | Terminal: ⌃\` shows the panel, ⌃⇧\` opens a tab, ⌘K clears, ⇧⌘[ ] switch tabs | **⌘J** shows or hides it; + or ⌘D opens a tab; no clear or tab-switch chord | Every rebindable chord needs ⌘, ⌘K is the palette, and a tab is one click away |
 | Terminal: the terminal on `bgBase` (Mac and iPad panels) | On `bgWindow`, the theme's terminal background | Terminal panes keep one surface everywhere |
@@ -1402,10 +1403,10 @@ the turn has finished, the changes card and the footer end it. A running turn ha
     shorter than half a second or untimed). The whole label is the button.
   - Expanded: 8pt beneath, the text in italic 12.5 at 1.55 in `textSecondary`, 12pt past a 2pt
     `lineStrong` rule, at the prose measure. It opens and closes with `disclosure`.
-  - Live (LiveText): the disclosure's chevron, still, 11pt in `textTertiary`, and "Thinking…" in
-    italic `ui` (12.5) shimmering, 8pt apart on a 26pt row, with no clock. It is the thread's live line
-    between tools (see Live text), and when thinking ends it cross-fades in place into what the
-    finished row is (below), or leaves.
+  - Live (LiveText): "Thinking…" in italic `ui` (12.5) shimmering on a 26pt row, with no clock
+    and no chevron (nothing opens yet; see the departures), its words where the finished row's
+    are. It is the thread's live line between tools (see Live text), and when thinking ends it
+    cross-fades in place into what the finished row is (below), or leaves.
   - Finished, by what the stretch carries. Providers often keep their reasoning back
     (Anthropic's redacted or omitted thinking, OpenAI's encrypted reasoning, a proxy that
     streams none), and pi keeps that as a thinking block with no text; readable text is
@@ -1413,9 +1414,10 @@ the turn has finished, the changes card and the footer end it. A running turn ha
     folded row shows only the blocks that have it.
     1. Readable text: the disclosure above.
     2. No readable text, timed at half a second or more: "Thought for 10s" as a plain line, the
-       collapsed label's words, type and color with no chevron. It is not a control (no hover,
-       no press, no focus); its tooltip and VoiceOver say "Thought for 10 seconds. The model
-       didn't share its reasoning."
+       collapsed label's words, type and color with no chevron, where a disclosure's label
+       sits (the chevron's place stays). It is not a control (no hover, no press, no focus);
+       its tooltip and VoiceOver say "Thought for 10 seconds. The model didn't share its
+       reasoning."
     3. No readable text and no such time: no row.
 
     The NWThread board draws only the first; the other two are app states it does not draw.
@@ -1437,7 +1439,7 @@ the turn has finished, the changes card and the footer end it. A running turn ha
   - A tool is running: its own activity line is the indicator (Activity lines › Live), with
     nothing under it but its output.
   - Between tools (no call running, no thinking or reply streaming; also before pi's reply has
-    a row): the turn ends in live thinking, "› Thinking…" shimmering. When pi's thinking streams
+    a row): the turn ends in live thinking, "Thinking…" shimmering. When pi's thinking streams
     it is the same line, and it settles into "Thought for Ns".
   - Replying: the text being written is the indicator; no line joins it.
   - A running call the subagent record or the tray stands for (`shepherd_child_wait`) still
@@ -1495,7 +1497,8 @@ tools merge only with the same tool. Consecutive lines form one part of the turn
   turning down) when it expands, 8pt apart, with 4pt leading and 8pt trailing padding. It hugs
   its content and sits 4pt left of the column, so its glyph lines up with the prose. The label
   never truncates; the meta truncates at its tail. It is a real button with a radius-6 `bgHover`
-  fill on hover; a line with nothing behind it has no chevron and does nothing.
+  fill on hover; a line with nothing behind it draws no chevron (its place stays) and does
+  nothing.
 
   | Kind | Glyph | Done | Running |
   | --- | --- | --- | --- |
@@ -1643,6 +1646,8 @@ text.
 - **HTML is never rendered raw.** `<details><summary>` becomes a disclosure
   (`NWProseDetails`), collapsed: a 10pt chevron and the summary in body medium, the whole line
   a button. Open, its blocks sit 12pt past a 2pt `lineStrong` rule, as expanded thinking does.
+  One with nothing inside is its summary alone, where the chevron's row puts it: no chevron,
+  not a button.
   `<br>` breaks the line, `<kbd>` is a keycap (`ui` on `bgSelected`), and `<b>`, `<i>`, `<s>`,
   `<code>`, `<sup>`, `<sub>` and `<a href>` style their text. `<img>`, `<hr>` and `<h1>`–`<h6>`
   become their blocks, other known tags are stripped to their text, and comments are dropped.
@@ -2326,7 +2331,8 @@ the components' values, and `Thread/Subagents.swift` lays out the tray. State al
   reviewer…").
 - **In the thread** (`NWSubagentRecordLine`, SubagentTray › SubagentRecord): an activity line in
   look (26pt, 12.5 `textSecondary`, the meta in `.nwMono(11)` `textTertiary`, a 13pt branch glyph
-  and a 10pt chevron; a real button with the row hover). "Started 3 subagents · worker · reviewer
+  and a 10pt chevron; a real button with the row hover; with no run to open, no chevron, its
+  place kept, and it does nothing). "Started 3 subagents · worker · reviewer
   · tests" (at most six names, then "+2 more") takes the first spawn call's place; later spawns
   and the parent's `shepherd_child_wait` and `shepherd_child_result` calls leave no line, and the
   activity lines around them run on as one (a burst of one kind still merges across them). Once every run has finished, "3 subagents finished · 45m ·
@@ -4440,8 +4446,8 @@ follows the Mac's rules (Thread) with the phone's measures below.
   `textSecondary`, the label ("Pushing") and the command (mono 11) shimmering, the elapsed seconds
   in mono 11 `textTertiary`, then the call's last three output lines in mono 11 at 1.6 line height,
   indented 21pt, the newest in `textSecondary` and the rest `textTertiary`. Nothing spins, and no
-  "Working…" row sits under it; between tools the turn ends in "› Thinking…", shimmering, as on the
-  Mac (Thread › Live text).
+  "Working…" row sits under it; between tools the turn ends in "Thinking…", shimmering, as on the
+  Mac (Thread › Live text), with no chevron.
 - **"Edited N files" card** (`NWTurnChangesCard`, ChangesStates › ChangesCard): 1px
   `lineSubtle`, 12pt corners, on `bgWindow`. Its head (10×10×12 inset): a 36pt tile (`bgSunken`,
   a 1px `lineSubtle` line, radius 8) with the ± glyph in `textSecondary`; "Edited 2 files" (15/600)
@@ -4621,7 +4627,7 @@ record lines, a list, and a screen per run.
     THE PARENT" (`.nwSectionLabel()`), then the goal at 14/1.45. The app adds "step 1 of 3 · 34%".
   - Its transcript: prose at 15/1.5, activity lines 32pt tall at 14; the running call live with its
     verb ("Building") and command shimmering and its elapsed seconds, as in the thread; nothing
-    shows between calls (LiveText's "› Thinking…" is the thread's alone). The app draws the live
+    shows between calls (LiveText's "Thinking…" is the thread's alone). The app draws the live
     call without the board's output tail: the child's session holds no streamed output (Where
     Shepherd departs from the boards).
   - Its question, while it waits on you, on `lanternTint` with its answers.

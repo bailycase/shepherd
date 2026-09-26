@@ -509,11 +509,12 @@ public struct NWSubagentRecordLine: View {
                 if !meta.isEmpty {
                     Text(meta).font(.nwMono(11)).foregroundStyle(nw.textTertiary).lineLimit(1).truncationMode(.tail).monospacedDigit()
                 }
-                if action != nil {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: NWSubagentTrayMetrics.chevron - 1, weight: .semibold))
-                        .foregroundStyle(nw.textTertiary)
-                }
+                // Only a line that opens something wears the chevron; its place stays.
+                Image(systemName: "chevron.right")
+                    .font(.system(size: NWSubagentTrayMetrics.chevron - 1, weight: .semibold))
+                    .foregroundStyle(nw.textTertiary)
+                    .opacity(action == nil ? 0 : 1)
+                    .accessibilityHidden(true)
             }
             .padding(.leading, NW.Space.xs)
             .padding(.trailing, NW.Space.m)

@@ -79,13 +79,14 @@ struct ThreadPreviewTests {
         try await render("thread-activity-running", ActivityThreads.running(.call))
     }
 
-    /// The model thinking at the tail: "› Thinking…" shimmering, the thread's one live line.
+    /// The model thinking at the tail: "Thinking…" shimmering, the thread's one live line, with
+    /// no chevron.
     @Test func threadActivityThinking() async throws {
         try await render("thread-activity-thinking", ActivityThreads.running(.thinking))
     }
 
     /// LiveText's "Between tools": the commit finished and nothing streams yet, so the turn ends
-    /// in "› Thinking…".
+    /// in "Thinking…".
     @Test func threadActivityBetweenTools() async throws {
         try await render("thread-activity-between-tools", ActivityThreads.running(.between))
     }
