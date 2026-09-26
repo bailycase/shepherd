@@ -82,6 +82,31 @@ struct PreviewTests {
         }
     }
 
+    /// The picker with legacy scroll bars (a mouse attached, or "Show scroll bars: Always"):
+    /// a long catalog scrolls under the search row, the scroller inside the popover's edge.
+    @Test func composerModelPickerLegacyScrollers() async throws {
+        let fixture = ThreadFixture(Threads.idle)
+        defer { fixture.store.stop() }
+        let providers = ["anthropic", "openai", "google", "openrouter", "cpa"]
+        let models = ["claude-opus-4-5", "claude-sonnet-4-5-20250929", "gpt-5.1-codex-max", "gemini-3-pro-preview", "o4-mini-deep-research"]
+        let entries = providers.flatMap { provider in
+            models.map { PiModelCatalog.Entry(id: "\(provider)/\($0)", context: "200K", reasoning: !$0.hasPrefix("gpt")) }
+        }
+        final class Opened { var at: Date? }
+        let opened = Opened()
+        try await Preview.render("composer-model-picker-legacy-scrollers", size: CGSize(width: 1000, height: 820), scrollers: .legacy, ready: {
+            guard fixture.store.ready else { return false }
+            if opened.at == nil {
+                opened.at = Date()
+                fixture.commands.send(.modelPicker, to: "preview")
+            }
+            return Date().timeIntervalSince(opened.at ?? Date()) > ThreadPreviewTests.motionAtRest
+        }) {
+            let _ = opened.at = nil
+            fixture.thread(listModels: { ModelCatalog(entries) })
+        }
+    }
+
     // MARK: Gallery (the palette is in NavigationPreviewTests, the review pane in ReviewPreviewTests)
 
     @Test func componentGallery() async throws {
