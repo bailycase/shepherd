@@ -7698,7 +7698,7 @@ opens this page in the main column, with the sidebar showing and Designs selecte
     a row, 10pt apart. Each card: 12×14 padding, radius 8, 1px `lineSubtle`, 6pt between its
     lines, the hover fill: a 13pt glyph and a title in mono 12 semibold; a line in 12.5
     `textPrimary`; a note in 11 `textTertiary`. The chosen card is `lanternTint` with a
-    `lanternText` line and glyph.
+    `lanternText` border and glyph.
     1. The design system found in the repo, drawn chosen: nib, "acme-web", "design system
        · dashboard-web", "found in web/static/tokens.css".
     2. `link`, "Capture a page", "paste a URL to start from", "staging or production".
