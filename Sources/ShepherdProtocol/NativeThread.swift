@@ -434,12 +434,15 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
     /// v4, role "compactionSummary" (a compaction and what the agent kept) and role "compaction"
     /// (one running, or stopped, as a live row). Older clients ignore both.
     public var compaction: NativeCompaction?
+    /// Role "question": a question pi asked and how it ended (`NativeQuestionRecord`). Older
+    /// clients leave the row out.
+    public var question: NativeQuestionRecord?
 
     public init(
         entryID: String, role: String, blocks: [NativeThreadBlock], toolName: String? = nil, toolCallID: String? = nil,
         argumentsText: String? = nil, status: String? = nil, isError: Bool? = nil, truncated: Bool = false, timestamp: Double? = nil,
         startedAt: Double? = nil, thinkingSeconds: Double? = nil, origin: NativeMessageOrigin? = nil, operationID: UUID? = nil,
-        compaction: NativeCompaction? = nil
+        compaction: NativeCompaction? = nil, question: NativeQuestionRecord? = nil
     ) {
         self.entryID = entryID
         self.role = role
@@ -456,6 +459,7 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
         self.origin = origin
         self.operationID = operationID
         self.compaction = compaction
+        self.question = question
     }
 }
 
@@ -495,6 +499,61 @@ public struct NativeThreadDialog: Codable, Hashable, Sendable {
         self.prefill = prefill
         self.timeout = timeout
         self.unavailable = unavailable
+    }
+}
+
+/// A question pi asked (a `NativeThreadDialog`) and how it ended, kept in the thread where pi
+/// asked it (QuestionAnswered): a history or live row with role "question", entry id
+/// "q:<dialog id>", stamped when it ended. Older clients have no role for it and leave the row
+/// out (it has no blocks).
+public struct NativeQuestionRecord: Codable, Hashable, Sendable {
+    public enum Outcome: String, Codable, Hashable, Sendable {
+        /// The user answered it.
+        case answered
+        /// The user dismissed it: pi took no answer.
+        case dismissed
+        /// Its timeout passed first: pi went on without an answer.
+        case expired
+        /// From a newer host.
+        case unknown
+
+        public init(from decoder: Decoder) throws {
+            self = Outcome(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .unknown
+        }
+    }
+
+    /// nil for a kind this client does not know.
+    public var kind: NativeThreadDialog.Kind?
+    /// The question as pi asked it (the dialog's title).
+    public var question: String
+    /// A select's chosen option, or an input's or editor's text.
+    public var answer: String?
+    /// A confirm's Yes (true) or No (false).
+    public var confirmed: Bool?
+    public var outcome: Outcome
+    /// When pi asked (ms since epoch).
+    public var askedAt: Double
+
+    public init(kind: NativeThreadDialog.Kind?, question: String, answer: String? = nil, confirmed: Bool? = nil,
+                outcome: Outcome, askedAt: Double) {
+        self.kind = kind
+        self.question = question
+        self.answer = answer
+        self.confirmed = confirmed
+        self.outcome = outcome
+        self.askedAt = askedAt
+    }
+
+    private enum CodingKeys: String, CodingKey { case kind, question, answer, confirmed, outcome, askedAt }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try? values.decodeIfPresent(NativeThreadDialog.Kind.self, forKey: .kind)
+        question = try values.decodeIfPresent(String.self, forKey: .question) ?? ""
+        answer = try values.decodeIfPresent(String.self, forKey: .answer)
+        confirmed = try values.decodeIfPresent(Bool.self, forKey: .confirmed)
+        outcome = try values.decodeIfPresent(Outcome.self, forKey: .outcome) ?? .unknown
+        askedAt = try values.decodeIfPresent(Double.self, forKey: .askedAt) ?? 0
     }
 }
 

@@ -177,6 +177,42 @@ struct NativeThreadWireTests {
         #expect(NativeCompactionReason(pi: "threshold") == .threshold && NativeCompactionReason(pi: nil) == .unknown)
     }
 
+    /// Question records (QuestionAnswered) in history and in the live rows, one per outcome and kind.
+    static let questionSnapshot = NativeThreadSnapshot(
+        piSessionID: "s", generation: "g", revision: 7, running: true, supportedActions: ["send", "answer"], dialogsSupported: true,
+        dialogs: [],
+        messages: [
+            NativeThreadMessage(entryID: "q:a", role: "question", blocks: [], timestamp: 20,
+                                question: NativeQuestionRecord(kind: .select, question: "Which way?", answer: "Left (Recommended)",
+                                                               outcome: .answered, askedAt: 10)),
+            NativeThreadMessage(entryID: "q:b", role: "question", blocks: [], timestamp: 30,
+                                question: NativeQuestionRecord(kind: .confirm, question: "Clear it?", confirmed: false,
+                                                               outcome: .answered, askedAt: 25)),
+            NativeThreadMessage(entryID: "q:c", role: "question", blocks: [], timestamp: 40,
+                                question: NativeQuestionRecord(kind: .input, question: "Name?", outcome: .dismissed, askedAt: 35)),
+        ],
+        provisional: [NativeThreadMessage(entryID: "q:d", role: "question", blocks: [], timestamp: 60,
+                                          question: NativeQuestionRecord(kind: .editor, question: "Edit the plan", outcome: .expired,
+                                                                         askedAt: 50))],
+        clipped: false, runtime: "rpc")
+
+    @Test func questionRecordsRoundTrip() throws {
+        #expect(try Wire.roundTrip(NativeThreadResult.snapshot(value: Self.questionSnapshot)) == .snapshot(value: Self.questionSnapshot))
+    }
+
+    /// A kind or an outcome a newer host adds reads as unknown, never failing the snapshot; a
+    /// record missing its fields still decodes.
+    @Test func questionRecordsDecodeLeniently() throws {
+        let snapshot = try Self.snapshot(adding: ["messages": [
+            ["entryID": "q:x", "role": "question", "blocks": [], "truncated": false,
+             "question": ["kind": "multiSelect", "question": "Pick", "outcome": "retracted", "askedAt": 1]],
+            ["entryID": "q:y", "role": "question", "blocks": [], "truncated": false, "question": [String: Any]()],
+        ]])
+        let first = try #require(snapshot.messages.first?.question)
+        #expect(first.kind == nil && first.outcome == .unknown && first.question == "Pick")
+        #expect(snapshot.messages.last?.question == NativeQuestionRecord(kind: nil, question: "", outcome: .unknown, askedAt: 0))
+    }
+
     @Test(arguments: results)
     func resultsRoundTrip(_ result: NativeThreadResult) throws {
         #expect(try Wire.roundTrip(result) == result)
