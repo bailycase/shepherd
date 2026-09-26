@@ -29,6 +29,13 @@ enum ReviewHooks {
     static func open(thread: AgentRef, file: String?, navigator: MobileNavigator) {
         navigator.open(.review(.changes(thread, file: file)))
     }
+
+    /// A changes card's Review, its file rows and the turn's edit lines: the review scoped to
+    /// the turn the host recorded, at `file` when one is named.
+    static func open(thread: AgentRef, turn: UUID, file: String? = nil, navigator: MobileNavigator) {
+        ReviewStores.shared.store(for: thread).show(turn: turn)
+        navigator.open(.review(.changes(thread, file: file)))
+    }
 }
 
 struct ReviewDestination: View {
