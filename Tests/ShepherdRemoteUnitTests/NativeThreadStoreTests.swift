@@ -147,6 +147,22 @@ struct NativeThreadStoreTests {
         #expect(unanswered.rows.last?.designComment == id && unanswered.rows.last?.commentAnswered == false)
     }
 
+    /// A message carrying Pencil markup names its counts on its row, and the reply that proposed
+    /// comments from it names them, so a design's chat draws the line and the proposals card.
+    @Test func markupRowsNameTheirCountsAndTheReplyItsProposals() async {
+        var markup = F.user("Pencil markup · 2 strokes · 1 note", id: "u1")
+        markup.origin = .designMarkup(strokes: 2, notes: 1)
+        let block = DesignMarkupProposals(proposals: [
+            DesignCommentDraft(board: DesignPath("A.dc.html")!, tid: 2, path: [1], target: "KPI row", text: "Counts too.", proposal: "c#0"),
+        ]).block
+        let proposed = NativeThreadMessage(entryID: "t1", role: "toolResult", blocks: [NativeThreadBlock(kind: .text, text: "Proposed 1 comment\n" + block)],
+                                           toolName: "markup_propose", toolCallID: "c", status: "complete")
+        let (store, _, task) = await started(F.snapshot(messages: [markup, proposed, F.assistant("One comment.", id: "a1"), F.user("thanks", id: "u2")]))
+        defer { task.cancel() }
+        #expect(store.rows.map(\.designMarkup) == [NativeMarkupCounts(strokes: 2, notes: 1), nil, nil])
+        #expect(store.rows.map { $0.markupProposals?.ids } == [nil, ["c#0"], nil])
+    }
+
     // MARK: Turn errors
 
     /// A thread whose last reply failed reads failed until a new turn starts; while pi retries,

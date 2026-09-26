@@ -773,7 +773,13 @@ private struct RemoteAgentPaneContent: View {
             } else {
                 switch connection.phase {
                 case .connected:
-                    if let agent = connection.state.agents.first(where: { $0.id == agentID }),
+                    let ref = RemoteAgentRef(hostID: connection.id, agentID: agentID)
+                    if vm.remoteInspectingAgent != ref, let (_, design) = vm.remoteDesign(drawnBy: ref),
+                       let agent = connection.state.agents.first(where: { $0.id == agentID }) {
+                        RemoteDesignLayoutView(vm: vm, ref: RemoteDesignRef(hostID: connection.id, designID: design.id), agent: ref,
+                                               agentName: agent.name, threadPaneID: agent.paneID)
+                            .id(design.id)
+                    } else if let agent = connection.state.agents.first(where: { $0.id == agentID }),
                        let tab = connection.state.tabs.first(where: {
                            let ref = RemoteAgentRef(hostID: connection.id, agentID: agentID)
                            return $0.id == (vm.remoteInspectingAgent == ref ? vm.remoteInspectorTabs[ref] ?? agent.tabID : agent.tabID)
@@ -1025,11 +1031,13 @@ private struct RemotePaneLeafView: View {
 
 /// A remote agent's thread. Same view as a local agent's, with requests sent to the host; its
 /// right pane docks beside the whole layout (`RemoteAgentLayoutView`).
-private struct RemoteAgentThreadPane: View {
+struct RemoteAgentThreadPane: View {
     var vm: ShepherdViewModel
     let ref: RemoteAgentRef
     let agentName: String
     let isFocused: Bool
+    /// A design's chat (`ThreadView.designChat`).
+    var designChat = false
 
     var body: some View {
         let inspecting = vm.subagentInspector.remoteRuns[ref]
@@ -1061,7 +1069,8 @@ private struct RemoteAgentThreadPane: View {
                 guard let listing = try? await vm.remoteHosts.listModels(hostID: ref.hostID) else { return .empty }
                 let allLevels = vm.remoteHosts.connections.first { $0.id == ref.hostID }?.supportsAllThinkingLevels ?? false
                 return await ModelCatalog.derive(listing, hostTakesAllLevels: allLevels)
-            }
+            },
+            designChat: designChat
         )
     }
 }

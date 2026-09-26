@@ -122,10 +122,11 @@ struct DesignChatPane: View {
     let model: AgentLayoutModel
     let thread: AgentLayoutModel.Thread
 
-    private func tabs(open: Int) -> [NWDesignPaneTabs.Tab] {
+    /// Chat, Comments with its count, and Tweak where the canvas can write.
+    static func tabs(open: Int, tweak: Bool) -> [NWDesignPaneTabs.Tab] {
         var tabs = [NWDesignPaneTabs.Tab(id: DesignPaneTab.chat.rawValue, title: "Chat"),
                     NWDesignPaneTabs.Tab(id: DesignPaneTab.comments.rawValue, title: "Comments", count: open > 0 ? open : nil)]
-        if screen.tweak != nil { tabs.append(NWDesignPaneTabs.Tab(id: DesignPaneTab.tweak.rawValue, title: "Tweak")) }
+        if tweak { tabs.append(NWDesignPaneTabs.Tab(id: DesignPaneTab.tweak.rawValue, title: "Tweak")) }
         return tabs
     }
 
@@ -134,7 +135,7 @@ struct DesignChatPane: View {
         let tab = screen.paneTab == .tweak && screen.tweak == nil ? .chat : screen.paneTab
         let chat = tab == .chat
         VStack(spacing: 0) {
-            NWDesignPaneTabs(tabs(open: open), selection: tab.rawValue) { id in
+            NWDesignPaneTabs(Self.tabs(open: open, tweak: screen.tweak != nil), selection: tab.rawValue) { id in
                 screen.paneTab = DesignPaneTab(rawValue: id) ?? .chat
             }
             ZStack {

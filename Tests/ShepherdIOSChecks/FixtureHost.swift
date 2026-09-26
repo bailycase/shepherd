@@ -133,7 +133,7 @@ final class FixtureHost: @unchecked Sendable {
             guard token == FixtureHostData.token, !data.refusesToken else {
                 return [.error(id: id, code: RemoteProtocol.unauthorizedCode, message: "bad token")]
             }
-            return [.helloOk(id: id, protocolVersion: RemoteProtocol.version, capabilities: data.capabilities ?? RemoteProtocol.capabilities)]
+            return [.helloOk(id: id, protocolVersion: RemoteProtocol.version, capabilities: data.capabilities ?? data.defaultCapabilities)]
         case .stateFetch(let id):
             note("stateFetch")
             return [.state(id: id, state: data.state)]
@@ -170,6 +170,16 @@ final class FixtureHost: @unchecked Sendable {
         case .skills(let id, .lookUp) where data.repoSkills != nil:
             note("skills.lookUp")
             return [.skills(id: id, result: .repo(data.repoSkills!))]
+        case .design(let id, let request):
+            note("design." + Self.kind(request))
+            // A host serves designs only while its Design tool is on: a fixture with designs.
+            guard let designs = data.designs else {
+                return [.error(id: id, code: RemoteDesignCode.off, message: "The Design tool is off on this host.")]
+            }
+            switch designs.answer(request) {
+            case .success(let result): return [.design(id: id, result: result)]
+            case .failure(let refusal): return [.error(id: id, code: refusal.code, message: refusal.message)]
+            }
         case .listDir(let id, _), .creationOptions(let id, _, _, _), .agentQuery(let id, _, _), .automation(let id, _, _),
              .instructions(let id, _), .suggestions(let id, _), .hostSettings(let id, _), .skills(let id, _):
             note(Self.kind(request))
@@ -234,12 +244,22 @@ final class FixtureHost: @unchecked Sendable {
             // Undo and Redo change the agent's working tree.
             mutation("agentQuery.changesUndoTurn")
             return [.error(id: id, code: "fixture", message: refused)]
+        case .design(let id, let request):
+            // Reading a design, its files and comments, and watching it change nothing; a comment,
+            // a tweak, a move or a duplicate writes.
+            guard request.writes else { return nil }
+            mutation("design." + Self.kind(request))
+            return [.error(id: id, code: "fixture", message: refused)]
         case .hello, .stateFetch, .listModels, .listDir, .creationOptions, .agentQuery:
             return nil
         }
     }
 
     static func kind(_ request: RemoteRequest) -> String {
+        String(describing: request).prefix { $0 != "(" }.description
+    }
+
+    static func kind(_ request: RemoteDesignRequest) -> String {
         String(describing: request).prefix { $0 != "(" }.description
     }
 
