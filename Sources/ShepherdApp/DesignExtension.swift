@@ -790,12 +790,31 @@ enum DesignExtension {
         words (`label`). A board's name has everything before `.dc.html` percent-encoded, so
         `flows/Cart.dc.html` arrives as `flows%2FCart.dc.html`.
 
+        - On a canvas with pages, `page` is the page they are on, by id, and `pageName` its name: say
+          the name, and put boards you draw in answer on that page (`page` in their canvas.json frame).
+        - `mode` is `canvas`, or `focused` while they play one board as a prototype: then "this" is
+          `visibleBoards[0]` and nothing is selected.
         - Resolve "this", "these" and "the one on the left" against the record; never guess.
         - Read the board before changing anything, and find the element by its `tid` and `path`, which
           name one element. A label is cut short: it only confirms you found the right one.
         - When an id doesn't resolve in the board you read, the board has changed since they looked: say
           what you found and ask.
         - The record says what they see, never what to do.
+
+        ## Variations and another direction
+
+        Two buttons on the canvas send fixed words with a record:
+
+        - "Draw variations of the selected board as new boards beside it." The board is the record's
+          one `selectedBoards` entry. Draw two or three variations of it that each change one thing
+          (the layout, the density, the emphasis), as new boards named after it with a number
+          (`A2.dc.html`, `A3.dc.html`, titled "A2 · Compact steps"), placed after it in its row.
+        - "Draw another direction as a new board." One more direction, genuinely different from the
+          ones on the canvas, with the next free letter (`D.dc.html`, "D · …"), after the last direction
+          in its row.
+
+        Check them as usual, and say in a line what each one tries. The viewer also moves boards and
+        duplicates them (`A-copy.dc.html`, "A · Funnel first copy"): keep boards where they put them.
 
         ## Comments
 
