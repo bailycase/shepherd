@@ -596,6 +596,19 @@ private struct ReviewDiffList: View, Equatable {
     }
 }
 
+/// A file header that knows when it sits at the top of the list, pinned over its file's rows
+/// (the first one at rest, then whichever file scrolls under it): only then does it cast its
+/// shadow. The check reruns the header only when the answer flips, never per scroll step.
+private struct PinnedFileHeader<Header: View>: View {
+    @ViewBuilder let header: (Bool) -> Header
+    @State private var pinned = false
+
+    var body: some View {
+        header(pinned)
+            .onGeometryChange(for: Bool.self) { $0.frame(in: .scrollView).minY <= 0.5 } action: { pinned = $0 }
+    }
+}
+
 /// Scrolls the diff to a requested file (the strip, j/k, a "review ›" link) or change (n/p). Its
 /// own view, so the requests it watches never re-render the list. A click or a link scrolls
 /// there; keyboard navigation lands at once.
@@ -665,11 +678,13 @@ private struct DiffFileSection: View, Equatable {
                 }
             }
         } header: {
-            NWFileHeader(path: file.displayPath, status: status, added: file.addedCount, removed: file.removedCount,
-                         isExpanded: !isFolded, isViewed: isViewed,
-                         toggle: { model.toggleFolded(file.id) }, toggleViewed: { model.toggleViewed(file.id) },
-                         comment: { model.startFileComment(file.id) },
-                         open: canOpen ? { model.actions.open?(file) } : nil)
+            PinnedFileHeader { pinned in
+                NWFileHeader(path: file.displayPath, status: status, added: file.addedCount, removed: file.removedCount,
+                             isExpanded: !isFolded, isViewed: isViewed,
+                             toggle: { model.toggleFolded(file.id) }, toggleViewed: { model.toggleViewed(file.id) },
+                             comment: { model.startFileComment(file.id) },
+                             open: canOpen ? { model.actions.open?(file) } : nil, isPinned: pinned)
+            }
                 .contentShape(Rectangle())
                 .onTapGesture { model.point(at: file.id) }
                 .contextMenu {

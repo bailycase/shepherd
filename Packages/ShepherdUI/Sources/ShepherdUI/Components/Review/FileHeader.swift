@@ -42,7 +42,8 @@ public enum NWFileStatus: Sendable, Hashable, CaseIterable {
 /// while its file scrolls. A chevron folds the file; the status letter, the path in mono 12 with
 /// its directory in tertiary and the filename semibold, and the file's diff stat; then Viewed
 /// (a checkbox with its label: ticking it folds the file), comment on the file, and open in your
-/// editor as 26pt circles.
+/// editor as 26pt circles. Pinned at the top of the list, it casts a soft shadow onto the rows
+/// scrolling under it (ChangesSplit).
 public struct NWFileHeader: View {
     let path: String
     let status: NWFileStatus
@@ -55,12 +56,15 @@ public struct NWFileHeader: View {
     let comment: (() -> Void)?
     let open: (() -> Void)?
     let openLabel: String
+    let isPinned: Bool
 
     /// `comment` and `open` are left out where they cannot work (a binary file, a remote review).
-    /// `openLabel` names what open does ("Open in your editor").
+    /// `openLabel` names what open does ("Open in your editor"). `isPinned` while the header sits at
+    /// the top of the list, over its file's rows.
     public init(path: String, status: NWFileStatus, added: Int, removed: Int, isExpanded: Bool, isViewed: Bool,
                 toggle: @escaping () -> Void, toggleViewed: @escaping () -> Void,
-                comment: (() -> Void)? = nil, open: (() -> Void)? = nil, openLabel: String = "Open in your editor") {
+                comment: (() -> Void)? = nil, open: (() -> Void)? = nil, openLabel: String = "Open in your editor",
+                isPinned: Bool = false) {
         self.path = path
         self.status = status
         self.added = added
@@ -72,6 +76,7 @@ public struct NWFileHeader: View {
         self.comment = comment
         self.open = open
         self.openLabel = openLabel
+        self.isPinned = isPinned
     }
 
     /// "App/iOS/" and "FleetView.swift".
@@ -125,7 +130,7 @@ public struct NWFileHeader: View {
         .padding(.leading, NWFileHeader.leadingInset)
         .padding(.trailing, NW.Space.m)
         .frame(height: NWFileHeader.height)
-        .background(nw.bgRaised)
+        .nwPinnedBackground(nw.bgRaised, pinned: isPinned)
         .overlay(alignment: .top) { NWHairline() }
         .overlay(alignment: .bottom) { NWHairline() }
         .accessibilityElement(children: .contain)
