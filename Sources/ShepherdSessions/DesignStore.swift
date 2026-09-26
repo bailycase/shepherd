@@ -103,6 +103,9 @@ public final class DesignStore: @unchecked Sendable {
         var sha256: String
     }
     private var servedHashes: [DesignID: [String: ServedHash]] = [:]
+    /// The hash of each file served in pieces (`project/<path>`, `assets/<name>`), while its size
+    /// and modification time hold, so a piece reads only its own bytes. Queue-confined.
+    private var pieceHashes: [DesignID: [String: ServedHash]] = [:]
 
     public init(directory: URL) {
         self.directory = directory
@@ -196,6 +199,7 @@ public final class DesignStore: @unchecked Sendable {
             self.loaded[id] = nil
             self.commentFiles[id] = nil
             self.servedHashes[id] = nil
+            self.pieceHashes[id] = nil
             guard FileManager.default.fileExists(atPath: folder.path) else { return }
             do { try FileManager.default.removeItem(at: folder) } catch {
                 throw DesignStoreError.io("could not delete design \(id): \(error.localizedDescription)")
@@ -845,6 +849,78 @@ public final class DesignStore: @unchecked Sendable {
                   let data = Self.readInside(assets.appendingPathComponent(name), root: assets) else { return nil }
             return (name, data)
         }
+    }
+
+    /// A served file read in pieces: `length` bytes from `offset`, and the whole file's size and
+    /// hash.
+    public struct Piece: Sendable {
+        public var data: Data
+        public var offset: Int
+        public var total: Int
+        public var sha256: String
+    }
+
+    /// A piece of one file of the design's `project/`, as `projectFile` would serve it; nil when
+    /// the design has no such file. Only the piece's bytes are read once the file's hash is known.
+    /// With `sha256`, a file whose hash moved answers its new hash with no bytes.
+    public func projectFilePiece(_ id: DesignID, path: String, offset: Int, length: Int, sha256: String? = nil) async throws -> Piece? {
+        guard Self.isServable(path) else { throw DesignStoreError.io("\"\(path)\" names no file a design serves") }
+        return try await run {
+            _ = try self.load(id)
+            guard let project = self.projectFolder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+            return try self.piece(id, key: "project/" + path, file: project.appendingPathComponent(path), root: project,
+                                  offset: offset, length: length, sha256: sha256)
+        }
+    }
+
+    /// A piece of an upload in the design's `assets/`, with its file name; nil when there is none.
+    public func assetPiece(_ id: DesignID, blobID: String, offset: Int, length: Int) async throws -> (name: String, piece: Piece)? {
+        guard DesignBundle.isAssetName(blobID), !blobID.contains(".") else {
+            throw DesignStoreError.io("\"\(blobID)\" names no upload")
+        }
+        return try await run {
+            _ = try self.load(id)
+            guard let folder = self.folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+            let assets = folder.appendingPathComponent("assets", isDirectory: true)
+            let names = (try? FileManager.default.contentsOfDirectory(atPath: assets.path))?.sorted() ?? []
+            guard let name = names.first(where: { ($0 == blobID || $0.hasPrefix(blobID + ".")) && DesignBundle.isAssetName($0) }),
+                  let piece = try self.piece(id, key: "assets/" + name, file: assets.appendingPathComponent(name), root: assets,
+                                             offset: offset, length: length) else { return nil }
+            return (name, piece)
+        }
+    }
+
+    /// Queue: a piece of a regular file that resolves (links followed) inside `root` and fits the
+    /// cap. The whole file is read only while its hash isn't known for its size and modification
+    /// time. `sha256` (the hash the asker holds): a file that no longer has it answers its new
+    /// hash with no bytes, whatever the offset. An offset outside the file throws.
+    private func piece(_ id: DesignID, key: String, file: URL, root: URL, offset: Int, length: Int,
+                       sha256 expected: String? = nil) throws -> Piece? {
+        let base = root.resolvingSymlinksInPath().standardizedFileURL.path
+        let resolved = file.resolvingSymlinksInPath().standardizedFileURL
+        guard resolved.path.hasPrefix(base + "/"),
+              let values = try? resolved.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]),
+              values.isRegularFile == true, let size = values.fileSize, size <= DesignImport.maxFileBytes else { return nil }
+        let modified = values.contentModificationDate ?? .distantPast
+        var whole: Data?
+        let sha: String
+        if let known = pieceHashes[id]?[key], known.size == size, known.modified == modified {
+            sha = known.sha256
+        } else {
+            guard let data = try? Data(contentsOf: resolved), data.count == size else { return nil }
+            sha = Self.sha256(data)
+            pieceHashes[id, default: [:]][key] = ServedHash(size: size, modified: modified, sha256: sha)
+            whole = data
+        }
+        if let expected, expected != sha { return Piece(data: Data(), offset: 0, total: size, sha256: sha) }
+        guard offset >= 0, offset <= size else { throw RemoteDesignRefusal.badOffset(offset, size: size) }
+        let end = offset + min(max(length, 0), size - offset)
+        if let whole { return Piece(data: whole.subdata(in: offset..<end), offset: offset, total: size, sha256: sha) }
+        guard let handle = try? FileHandle(forReadingFrom: resolved) else { return nil }
+        defer { try? handle.close() }
+        guard (try? handle.seek(toOffset: UInt64(offset))) != nil, let data = try? handle.read(upToCount: end - offset) ?? Data(),
+              data.count == end - offset else { return nil }
+        return Piece(data: data, offset: offset, total: size, sha256: sha)
     }
 
     /// Whether a design serves `path` under its `project/`: segments by the file grammar, not
