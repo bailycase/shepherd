@@ -6,7 +6,8 @@
 import { spawn } from "node:child_process";
 import * as http from "node:http";
 import * as https from "node:https";
-import { pathToFileURL } from "node:url";
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 export const PROTOCOL_VERSION = "2025-06-18";
 const CLIENT_INFO = { name: "shepherd", title: "Shepherd", version: "1" };
@@ -882,6 +883,8 @@ async function main() {
   });
 }
 
+// node names its main module by its real path, but argv keeps the path it was given: compare real
+// paths, or a support folder reached through a symlink (/var → /private/var) would never probe.
 try {
-  if (process.argv[2] === "probe" && process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+  if (process.argv[2] === "probe" && process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) main();
 } catch {}
