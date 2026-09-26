@@ -12,8 +12,10 @@ public enum NWQuestionDockMetrics {
     public static let padding = EdgeInsets(top: NW.Space.l, leading: 14, bottom: NW.Space.l, trailing: 14)
     /// The lantern ring outside the card.
     public static let ring: CGFloat = 3
-    /// The question: 16 for the agent's own, 14.5 for a subagent's; 1.35 and tracked -0.5%.
+    /// The question: 16 for the agent's own choice, 15 for a yes or a no and an open question
+    /// (QuestionStates › Kinds), 14.5 for a subagent's; 1.35 and tracked -0.5%.
     public static let questionSize: CGFloat = 16
+    public static let kindQuestionSize: CGFloat = 15
     public static let subagentQuestionSize: CGFloat = 14.5
     public static let questionLineSpacing: CGFloat = 3
     public static let questionTracking: CGFloat = -0.005
@@ -231,7 +233,8 @@ public struct NWQuestionDock: View {
     private var pickedWithNote: Int? { content.takesNote ? selection.picked : nil }
 
     private var question: some View {
-        let size = content.isSubagent ? NWQuestionDockMetrics.subagentQuestionSize : NWQuestionDockMetrics.questionSize
+        let size = content.isSubagent ? NWQuestionDockMetrics.subagentQuestionSize
+            : content.kind == .choice ? NWQuestionDockMetrics.questionSize : NWQuestionDockMetrics.kindQuestionSize
         return Text(NWProseInline.attributed(content.question))
             .font(.nwSans(size, .semibold))
             .tracking(size * NWQuestionDockMetrics.questionTracking)
