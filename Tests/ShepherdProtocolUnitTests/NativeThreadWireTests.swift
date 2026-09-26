@@ -129,6 +129,8 @@ struct NativeThreadWireTests {
                                     origin: .queue(parts: [NativeQueuePart(id: op, text: "a", sentAt: 0.5), NativeQueuePart(text: "b", sentAt: 0.75, images: 2)]),
                                     operationID: op),
                 NativeThreadMessage(entryID: "user:2", role: "user", blocks: [], origin: .steered),
+                NativeThreadMessage(entryID: "user:3", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "Show the counts")],
+                                    origin: .designComment(id: op)),
             ],
             provisional: [], clipped: false, runtime: "rpc",
             queue: NativeQueue(items: [
@@ -332,6 +334,9 @@ struct NativeThreadWireTests {
         #expect((steered["origin"] as? [String: Any])?.keys.sorted() == ["steered"])
         let user = try Wire.object(NativeThreadMessage(entryID: "e", role: "user", blocks: [], origin: .user))
         #expect((user["origin"] as? [String: Any])?.keys.sorted() == ["user"])
+        let id = UUID(uuidString: "7A1C2E7B-39F5-4B0C-9A40-0E8B1F3C5D21")!
+        let comment = try Wire.object(NativeThreadMessage(entryID: "e", role: "user", blocks: [], origin: .designComment(id: id)))
+        #expect((comment["origin"] as? [String: Any])?["designComment"] as? [String: String] == ["id": id.uuidString])
     }
 
     @Test func aQueuedPartDefaultsToNoImages() throws {

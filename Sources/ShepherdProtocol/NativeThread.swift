@@ -203,11 +203,16 @@ public enum NativeMessageOrigin: Codable, Hashable, Sendable {
     /// inspector), not the parent agent. Older hosts mark nothing, and clients read every later
     /// message as the parent's.
     case user
+    /// A design comment the viewer pinned on the canvas (`DesignComment.id`), which the host
+    /// handed pi fenced (`DesignCommentFence`): the chat draws its comment card. Older clients
+    /// read `unknown` and show the words.
+    case designComment(id: UUID)
     /// From a newer host.
     case unknown
 
-    private enum CodingKeys: String, CodingKey { case steered, queue, user }
+    private enum CodingKeys: String, CodingKey { case steered, queue, user, designComment }
     private enum QueueKeys: String, CodingKey { case parts }
+    private enum CommentKeys: String, CodingKey { case id }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -215,6 +220,9 @@ public enum NativeMessageOrigin: Codable, Hashable, Sendable {
             self = .steered
         } else if values.contains(.user) {
             self = .user
+        } else if values.contains(.designComment) {
+            let comment = try values.nestedContainer(keyedBy: CommentKeys.self, forKey: .designComment)
+            self = .designComment(id: try comment.decode(UUID.self, forKey: .id))
         } else if values.contains(.queue) {
             let queue = try values.nestedContainer(keyedBy: QueueKeys.self, forKey: .queue)
             self = .queue(parts: try queue.decode([NativeQueuePart].self, forKey: .parts))
@@ -233,6 +241,9 @@ public enum NativeMessageOrigin: Codable, Hashable, Sendable {
         case .queue(let parts):
             var queue = values.nestedContainer(keyedBy: QueueKeys.self, forKey: .queue)
             try queue.encode(parts, forKey: .parts)
+        case .designComment(let id):
+            var comment = values.nestedContainer(keyedBy: CommentKeys.self, forKey: .designComment)
+            try comment.encode(id, forKey: .id)
         case .unknown:
             break
         }
@@ -240,6 +251,12 @@ public enum NativeMessageOrigin: Codable, Hashable, Sendable {
 
     public var parts: [NativeQueuePart]? {
         if case .queue(let parts) = self { return parts }
+        return nil
+    }
+
+    /// The design comment the message carried to pi.
+    public var designComment: UUID? {
+        if case .designComment(let id) = self { return id }
         return nil
     }
 }
