@@ -78,6 +78,9 @@ public final class DesignSurface {
         configuration.allowsAirPlayForMediaPlayback = false
         configuration.upgradeKnownHostsToHTTPS = true
         #if os(iOS)
+        // iPad browses as a desktop by default, where a page narrower than 980 lays out 980 wide
+        // whatever its viewport says: a phone board drawn live on the canvas would shrink.
+        configuration.defaultWebpagePreferences.preferredContentMode = .mobile
         configuration.dataDetectorTypes = []
         configuration.allowsInlineMediaPlayback = true
         configuration.allowsPictureInPictureMediaPlayback = false
