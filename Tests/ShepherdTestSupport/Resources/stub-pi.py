@@ -20,6 +20,8 @@
            and goes on unanswered when it passes, as pi does. Each question has its own id.
   "fill"   appends 120 history messages, then agent_start/agent_end
   "newsession" switches sessionId, then agent_start/agent_end
+  "select-newsession" asks a select, then switches sessionId (as "newsession") with the
+           question still open
   "refuse" answers the prompt with success: false (pi refusing it)
   "provider-error" a turn whose reply fails ("529 overloaded"), once the file `fail-turn`
            appears in the cwd
@@ -721,6 +723,15 @@ for raw in sys.stdin.buffer:
             for i in range(120):
                 MESSAGES.append({"role": "user", "content": f"filler {i}"})
             STATE["messageCount"] = len(MESSAGES)
+            emit({"type": "agent_start"})
+            emit({"type": "agent_end", "messages": [], "willRetry": False})
+            emit({"type": "agent_settled"})
+        elif message == "select-newsession":
+            emit({"type": "extension_ui_request", "id": "uuid-4", "method": "select",
+                  "title": "Pick one", "options": ["Allow", "Deny"]})
+            STATE["sessionId"] = "stub-session-2"
+            del MESSAGES[:]
+            STATE["messageCount"] = 0
             emit({"type": "agent_start"})
             emit({"type": "agent_end", "messages": [], "willRetry": False})
             emit({"type": "agent_settled"})

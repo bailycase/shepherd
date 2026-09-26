@@ -866,6 +866,8 @@ final class RPCThreadState {
         projectionClipped = false
         operationsByEntry.removeAll()
         questions.removeAll()
+        // A question still open from the last session is not this one's to record.
+        askedAt.removeAll()
         estimate = nil
         compactingRun = nil
         compactionNotes.removeAll()
