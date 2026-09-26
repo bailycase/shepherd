@@ -148,10 +148,28 @@ extension ShepherdViewModel {
         let screen = DesignScreenModel(designID: id, host: designRendering.host(for: id),
                                        snapshot: { try await server.designSnapshot($0) },
                                        source: { try await server.designBoard($0, path: $1).source },
-                                       comments: designCommentActions(), tweak: tweak)
+                                       comments: designCommentActions(), tweak: tweak, actions: designCanvasActions())
         if let design = design(id) { screen.tweak?.systemName = designSystemName(design) }
         designScreens[id] = screen
         return screen
+    }
+
+    /// The canvas's own changes through the server (Duplicate, a board moved), and its messages to
+    /// the design agent (Variations, another direction), which carry a view record as data.
+    private func designCanvasActions() -> DesignCanvasActions {
+        let server = server
+        return DesignCanvasActions(
+            snapshot: { try await server.designSnapshot($0) },
+            duplicate: { try await server.duplicateDesignBoard($0, path: $1, baseRevision: $2) },
+            updateIndex: { try await server.updateDesignIndex($0, patch: $1, baseRevision: $2) },
+            ask: { [weak self] id, text, record in
+                guard let self, let agentID = self.design(id)?.agentID, self.state.agents.contains(where: { $0.id == agentID }) else {
+                    return false
+                }
+                await self.threadStores.store(for: agentID).send(text: text, designContext: record)
+                return true
+            },
+            report: { [weak self] in self?.remoteActionError = $0 })
     }
 
     /// The canvas's comment changes through the server. A change based on comments that moved on

@@ -178,6 +178,28 @@ struct DesignPerformanceTests {
         }
         #expect(released["design.board", default: 0] == 1, "\(released)")
     }
+
+    /// Dragging a board redraws that board's frame once per step, no other board's, and writes
+    /// nothing until it lands.
+    @Test func aBoardDragRedrawsOnlyTheDraggedBoard() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (_, window, screen, _) = try await openLargeCanvas(app)
+        defer { window.close() }
+        let target = try #require(screen.visibleBoards.first)
+        let before = try await app.server.designSnapshot(screen.designID).revision
+        let steps = 5
+        let dragging = try await ListPerf.countingAsync {
+            for step in 1...steps {
+                screen.move(NWBoardMove(board: target.rawValue, offset: CGSize(width: Double(step) * 12, height: 0), ended: false))
+                window.layout()
+            }
+        }
+        #expect(dragging["design.board", default: 0] == steps, "\(dragging)")
+        #expect(try await app.server.designSnapshot(screen.designID).revision == before, "nothing written while dragging")
+        await screen.move(NWBoardMove(board: target.rawValue, offset: CGSize(width: 60, height: 0), ended: true))?.value
+        #expect(try await app.server.designSnapshot(screen.designID).revision == before + 1)
+    }
 }
 
 extension ListPerf {

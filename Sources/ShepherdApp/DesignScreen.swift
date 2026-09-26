@@ -31,9 +31,10 @@ struct DesignLayoutView: View {
     }
 }
 
-/// The canvas: the design's boards, the tool, the zoom, the selection ringed over the boards, and
-/// the comments' pins. The Comment tool's click on an element opens the editor beside it; a pin
-/// opens its thread.
+/// The canvas: the design's boards and notes, the tool, the zoom, the selection ringed over the
+/// boards, and the comments' pins. The Comment tool's click on an element opens the editor beside
+/// it; a pin opens its thread. The board actions float over the board picked whole, and "Ask for
+/// another direction" follows the last board. A presented board (Present, Play) covers it all.
 struct DesignCanvasPane: View {
     @Bindable var screen: DesignScreenModel
 
@@ -43,6 +44,9 @@ struct DesignCanvasPane: View {
         NWDesignCanvas(boards: screen.boards, viewport: $screen.viewport, tool: $screen.tool,
                        selection: screen.selectionRings, hover: screen.hoverRing,
                        pins: screen.pins, openPin: { screen.openThread($0) }, popoverAnchor: screen.popoverAnchor,
+                       notes: screen.notes, actions: actions,
+                       anotherDirection: screen.canAsk ? { screen.askForAnotherDirection() } : nil,
+                       move: { screen.move($0) },
                        pick: { screen.pick($0) }, point: { screen.pointer($0) },
                        resized: { screen.resized($0) }, zooming: { screen.setZooming($0) }) { board in
             if let host, let path = DesignPath(board.id) {
@@ -51,6 +55,29 @@ struct DesignCanvasPane: View {
         } popover: {
             DesignCommentPopover(screen: screen)
         }
+        .overlay {
+            if let host, let path = screen.presented, let board = screen.snapshot?.index.boards[path] {
+                let title = board.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+                NWBoardPresentation(title: title?.isEmpty == false ? title! : path.stem,
+                                    boardSize: CGSize(width: board.w, height: board.h), close: { screen.present(nil) }) { zoom in
+                    DesignPresentedSlot(host: host, path: path, zoom: zoom, content: host.tokens[path] ?? 0)
+                }
+            }
+        }
+    }
+
+    /// The board actions over the board picked whole: Comment takes the Comment tool (the next
+    /// element picked takes the comment), Tweak opens its tab, Variations and Duplicate act on
+    /// the board, and ••• plays an interactive one.
+    private var actions: NWCanvasActions? {
+        guard let path = screen.actionsBoard else { return nil }
+        let screen = screen
+        return NWCanvasActions(board: path.rawValue, actions: NWBoardActions.Actions(
+            comment: { screen.tool = .comment },
+            tweak: { screen.paneTab = .tweak },
+            variations: { screen.askForVariations(of: path) },
+            duplicate: { screen.duplicate(path) },
+            play: screen.isInteractive(path) ? { screen.present(path) } : nil))
     }
 }
 
@@ -171,26 +198,42 @@ struct DesignCommentsList: View {
     }
 }
 
-/// The toolbar over a design (DZCanvas): the breadcrumb to it, its design system, Present and
-/// Export. Present waits for its own board and Export for its sheet, so both draw disabled.
+/// The toolbar over a design (DZCanvas): the breadcrumb to it, its pages (a canvas with more than
+/// one), its design system, Present and Export. Present shows the selected board focused (decision
+/// 11: until Present mode is drawn); Export waits for its sheet, so it draws disabled.
 struct DesignToolbar: View, Equatable {
     let name: String
     let system: String
     var leadingInset: CGFloat = 0
     var showSidebar: (() -> Void)?
     let designs: () -> Void
+    /// The design's canvas: its pages and Present.
+    var screen: DesignScreenModel?
 
     nonisolated static func == (a: Self, b: Self) -> Bool {
         a.name == b.name && a.system == b.system && a.leadingInset == b.leadingInset && (a.showSidebar == nil) == (b.showSidebar == nil)
+            && a.screen.map(ObjectIdentifier.init) == b.screen.map(ObjectIdentifier.init)
     }
 
     var body: some View {
         NWDesignHeader(name, style: .toolbar, leadingInset: leadingInset, sidebar: showSidebar,
                        sidebarShortcut: KeybindingsStore.shared.display(.toggleSidebar), designs: designs) {
+            if let screen, screen.pages.count > 1 {
+                NWPopupMenu(screen.pageName ?? "Pages") {
+                    ForEach(screen.pages, id: \.id) { page in
+                        Button {
+                            screen.showPage(page.id)
+                        } label: {
+                            if page.id == screen.page { Label(page.name, systemImage: "checkmark") } else { Text(page.name) }
+                        }
+                    }
+                }
+                .accessibilityLabel("Page")
+            }
             NWDesignSystemChip(system)
-            Button {} label: { Image(systemName: "play.fill") }
-                .buttonStyle(.nwIcon)
-                .disabled(true)
+            Button { screen?.togglePresent() } label: { Image(systemName: "play.fill") }
+                .buttonStyle(.nwIcon(isOn: screen?.presented != nil))
+                .disabled(screen?.canPresent != true)
                 .help("Present")
                 .accessibilityLabel("Present")
             Button("Export", systemImage: "square.and.arrow.up") {}
