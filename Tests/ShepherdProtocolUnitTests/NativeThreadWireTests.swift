@@ -59,6 +59,10 @@ struct NativeThreadWireTests {
               images: [NativeImage(mimeType: "image/png", data: Data([1]), name: "checkout.png")]),
         .compact(expectedSessionID: "s", generation: "g", operationID: op),
         .compact(expectedSessionID: "s", generation: "g", operationID: op, instructions: "Keep the preview findings"),
+        .send(expectedSessionID: "s", generation: "g", operationID: op, text: "taller", delivery: .followUp,
+              designContext: NativeDesignContext(DesignViewRecord(
+                visibleBoards: ["A.dc.html"], selectedBoards: ["A.dc.html"], selected: [DesignElementID("A.dc.html#5:1/1/0")!],
+                selection: [.init(id: DesignElementID("A.dc.html#5:1/1/0")!, kind: .text, label: "Checkout funnel")]))),
     ] + queueActions.map { .queue(expectedSessionID: "s", generation: "g", operationID: op, action: $0) }
 
     /// Every queue action, as a request carries it.

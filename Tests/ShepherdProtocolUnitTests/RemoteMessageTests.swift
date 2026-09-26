@@ -686,6 +686,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.instructionsCapability, RemoteProtocol.suggestionsCapability,
             RemoteProtocol.hostSettingsCapability, RemoteProtocol.skillsCapability,
             RemoteProtocol.terminalControlCapability,
+            RemoteProtocol.designContextCapability,
         ]
         #expect(Set(RemoteProtocol.capabilities) == Set(named))
         #expect(RemoteProtocol.capabilities.count == named.count)
@@ -711,6 +712,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.suggestionsCapability == "suggestions.v1")
         #expect(RemoteProtocol.hostSettingsCapability == "hostSettings.v1")
         #expect(RemoteProtocol.skillsCapability == "skills.v1")
+        #expect(RemoteProtocol.designContextCapability == "design.context.v1")
     }
 
     /// Commit info from a host that sends only some fields still reads, with defaults.

@@ -83,7 +83,7 @@ final class FakeThread {
                 page.messages = Array(history[start..<end])
                 page.olderCursor = start > 0 ? history[start].entryID : nil
                 return .snapshot(value: page)
-            case .send(_, _, let operation, _, _, _), .abort(_, _, let operation), .answer(_, _, let operation, _, _),
+            case .send(_, _, let operation, _, _, _, _), .abort(_, _, let operation), .answer(_, _, let operation, _, _),
                  .setModel(_, _, let operation, _), .setThinking(_, _, let operation, _),
                  .subagentCommand(_, _, let operation, _, _, _, _):
                 return .accepted(operationID: operation)

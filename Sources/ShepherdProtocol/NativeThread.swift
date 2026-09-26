@@ -3,7 +3,10 @@ import Foundation
 public enum NativeThreadRequest: Codable, Hashable, Sendable {
     case snapshot(expectedSessionID: String? = nil, beforeEntryID: String? = nil, afterRevision: UInt64? = nil)
     /// `images` is v2 (RPC agents, `sendImages` in `supportedActions`); absent on the wire when nil.
-    case send(expectedSessionID: String, generation: String, operationID: UUID, text: String, delivery: NativeThreadDelivery, images: [NativeImage]? = nil)
+    /// `designContext` is what the sender's design screen showed (`DesignViewRecord`), gated by
+    /// `designContext` in `supportedActions` and, remotely, `design.context.v1`; absent when nil.
+    case send(expectedSessionID: String, generation: String, operationID: UUID, text: String, delivery: NativeThreadDelivery, images: [NativeImage]? = nil,
+              designContext: NativeDesignContext? = nil)
     case abort(expectedSessionID: String, generation: String, operationID: UUID)
     case answer(expectedSessionID: String, generation: String, operationID: UUID, dialogID: String, answer: NativeDialogAnswer)
     /// v2: `model` is "provider/id". Gated by `setModel` in `supportedActions`.
@@ -24,8 +27,19 @@ public enum NativeThreadRequest: Codable, Hashable, Sendable {
     case compact(expectedSessionID: String, generation: String, operationID: UUID, instructions: String? = nil)
 
     public var images: [NativeImage] {
-        if case .send(_, _, _, _, _, let images) = self { return images ?? [] }
+        if case .send(_, _, _, _, _, let images, _) = self { return images ?? [] }
         return []
+    }
+
+    public var designContext: NativeDesignContext? {
+        if case .send(_, _, _, _, _, _, let context) = self { return context }
+        return nil
+    }
+
+    /// The same request without a design context (for a host that doesn't take one).
+    public var droppingDesignContext: NativeThreadRequest {
+        guard case .send(let session, let generation, let operation, let text, let delivery, let images, .some) = self else { return self }
+        return .send(expectedSessionID: session, generation: generation, operationID: operation, text: text, delivery: delivery, images: images)
     }
 }
 

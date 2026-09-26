@@ -82,6 +82,19 @@ struct RemoteHostClientTests {
         #expect(RemoteHostClient.missingCapability(.snapshot(), capabilities: all.subtracting([capability])) == nil)
     }
 
+    /// A send's design record goes only to a host that takes one; the message goes either way.
+    @Test func aDesignRecordGoesOnlyToAHostThatTakesOne() throws {
+        let element = try #require(DesignElementID("A.dc.html#1:0"))
+        let record = DesignViewRecord(selectedBoards: ["A.dc.html"], selected: [element])
+        let send = NativeThreadRequest.send(expectedSessionID: "s", generation: "g", operationID: UUID(), text: "t", delivery: .followUp,
+                                            designContext: NativeDesignContext(record))
+        let all = Set(RemoteProtocol.capabilities)
+        #expect(RemoteHostClient.outgoing(send, capabilities: all) == send)
+        let older = RemoteHostClient.outgoing(send, capabilities: all.subtracting([RemoteProtocol.designContextCapability]))
+        #expect(older == send.droppingDesignContext && older.designContext == nil)
+        #expect(RemoteHostClient.missingCapability(send, capabilities: all.subtracting([RemoteProtocol.designContextCapability])) == nil)
+    }
+
     @Test(arguments: [
         RemoteAgentQuery.children, .review(pullRequest: false), .search(query: "q"),
         .worktreeInfo, .worktreeStatus(operationID: UUID()), .deleteKeepingWorktree,

@@ -78,7 +78,7 @@ struct ThreadStoreCheck {
         store.delivery = .steer
         let send = Task { await store.send() }
         try await wait { pendingAction != nil }
-        guard case .send(let session, let generation, let operation, let text, let delivery, _) = requests.last else { fatalError("send missing") }
+        guard case .send(let session, let generation, let operation, let text, let delivery, _, _) = requests.last else { fatalError("send missing") }
         precondition(session == "session" && generation == "generation" && text == "continue" && delivery == .steer)
         precondition(store.draft == "continue")
         store.draft = "edited while pending"
@@ -89,7 +89,7 @@ struct ThreadStoreCheck {
 
         let sendExact = Task { await store.send() }
         try await wait { pendingAction != nil }
-        guard case .send(_, _, let exactID, _, _, _) = requests.last else { fatalError("send missing") }
+        guard case .send(_, _, let exactID, _, _, _, _) = requests.last else { fatalError("send missing") }
         pendingAction!.resume(returning: .accepted(operationID: exactID))
         pendingAction = nil
         await sendExact.value
@@ -154,7 +154,7 @@ struct ThreadStoreCheck {
         // Leaving during a mutation retains the draft and ignores the late acknowledgement.
         let lateSend = Task { await store.send() }
         try await wait { pendingAction != nil }
-        guard case .send(_, _, let lateID, _, _, _) = requests.last else { fatalError("send missing") }
+        guard case .send(_, _, let lateID, _, _, _, _) = requests.last else { fatalError("send missing") }
         run.cancel()
         store.stop()
         pendingAction!.resume(returning: .accepted(operationID: lateID))
