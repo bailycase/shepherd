@@ -312,7 +312,13 @@ timing-sensitive tests. Docs-only changes (`docs/**`, `*.md`) don't trigger it.
 - **Caches:** dependency checkouts (keyed on `Package.resolved`) and build products (one entry per
   commit, restored from the nearest earlier one) are cached apart. `scripts/ci_mtimes.py` puts
   each unchanged source's saved mtime back after checkout, so a restored build compiles only
-  what changed. A push to `nightly` runs no tests: its `warm` job builds from scratch and saves
+  what changed. SwiftPM's native build system reruns a target only when a *direct* dependency's
+  module changes, so a change to `ShepherdCore` could leave `ShepherdProtocolUnitTests` (which
+  calls it through `ShepherdProtocol`) compiled against the old one: undefined symbols at link,
+  or wrong field offsets that link fine. It reproduces locally with the native build system,
+  cache or not. The action therefore removes the restored `swift-version-*.txt`, an input of
+  every compile command, so each target's driver runs and recompiles what any module it loaded
+  changed (a few seconds when nothing did). A push to `nightly` runs no tests: its `warm` job builds from scratch and saves
   both caches where every PR based on `nightly` can read them. Pull requests save nothing, so
   every push to one restores that entry and compiles the PR's changes on top; a PR into
   `master` reads only `master`'s. Master pushes and manual runs save from shard C, before its
