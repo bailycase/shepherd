@@ -5939,7 +5939,8 @@ or the iPad sidebar's.
   - **Running now** heads each live run as its own card: a `running` line with a 3pt `runningTint`
     ring, 12×14 padding: a 13pt `running` spinner, the name (15/600), and the host (mono 11
     `textTertiary`) trailing, then how the run is going (13 `textSecondary`: "Running · 4m"; "Asked
-    you" in `lanternText`). The app draws the live runs as rows in a list card under the head.
+    you" in `lanternText`, with a bolt in place of the spinner and a `lanternText` line with no
+    ring; `NWAutomationRunCard`). A tap opens the automation. The iPad's column keeps them as rows.
   - **All** with the count, one card of 64pt rows (`NWAutomationRow`, 10×14 padding, 3pt between
     lines): the name (15/500), "When Shepherd starts · folder" or "By hand" (12.5 `textTertiary`;
     the host's name in mono instead of the folder when there are several hosts), how the last run

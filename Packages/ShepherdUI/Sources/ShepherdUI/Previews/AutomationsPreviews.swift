@@ -9,6 +9,10 @@ import SwiftUI
                                 statusTone: .running, clock: .elapsed(since: Date().addingTimeInterval(-250)), leading: .running,
                                 isOn: true, chevron: true, toggle: { _ in }, open: {})
             }
+            NWListHeader("Running now")
+            NWAutomationRunCard("Merge PR #24 after CI", host: "build-01", status: "Running",
+                                since: Date().addingTimeInterval(-250)) {}
+            NWAutomationRunCard("Triage new Sentry issues", host: "build-01", status: "Asked you", asking: true) {}
             NWListHeader("All", count: 4)
             NWListCard {
                 NWAutomationRow("Nightly migrations dry run", when: "When Shepherd starts · orders-svc", status: "Finished",
