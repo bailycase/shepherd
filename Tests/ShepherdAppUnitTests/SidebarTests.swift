@@ -89,6 +89,23 @@ struct SidebarRecentsTests {
         #expect(rows["remote"]?.accessibilityLabel == "remote, running, on horizon")
     }
 
+    /// An agent whose pi stopped before it served reads "can't start" in red, a thread's or a
+    /// run's, until Retry (DESIGN.md › Sidebar).
+    @Test func anAgentWhosePiCannotStartSaysSo() {
+        let stopped = agent("stopped", at: 2)
+        let run = agent("Nightly", at: 1)
+        let automation = Automation(name: "Nightly", prompt: "p", cwd: space.path, agentID: run.id)
+        var state = ShepherdState(spaces: [space], agents: [stopped, run])
+        state.automations = [automation]
+        let lists = SidebarDerivation.lists(SidebarSource(local: state, cannotStart: [stopped.id, run.id]))
+        let rows = Dictionary(uniqueKeysWithValues: lists.recents.map { ($0.title, $0) })
+        #expect(rows["stopped"]?.leading == .dot(.failed))
+        #expect(rows["stopped"]?.accessory == .text("can't start", tone: .failed))
+        #expect(rows["stopped"]?.accessibilityLabel == "stopped, can't start")
+        #expect(rows["Nightly"]?.leading == .glyph("bolt", attention: false))
+        #expect(rows["Nightly"]?.accessory == .text("can't start", tone: .failed))
+    }
+
     /// A host that dropped keeps its threads in Recents as it last sent them, dimmed and tagged
     /// (NavHosts' horizon rows); nothing there can be answered, so none of it needs you.
     @Test func anOfflineHostsThreadsStayInRecentsDimmed() {

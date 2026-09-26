@@ -94,6 +94,7 @@ struct DesignSystemChatPane: View {
                     commandKey: ThreadCommandCenter.key(local: agentID),
                     agentName: thread.agentName,
                     workingDirectory: pane.cwd,
+                    restartPi: { [vm] in vm.retryAgentStart(agentID, newConversation: $0) },
                     designChat: true)
             }
         }

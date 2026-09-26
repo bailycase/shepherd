@@ -617,7 +617,8 @@ struct PaneLeafView: View, Equatable {
                     turnActions: TurnChangesActions(
                         review: { [vm] turnID, path in vm.selectAgent(agentID); vm.openTurnReview(.local(agentID), turnID: turnID, path: path) },
                         undo: { [vm] in await vm.undoTurn(.local(agentID), turnID: $0) },
-                        redo: { [vm] in await vm.redoTurn(.local(agentID), turnID: $0) })
+                        redo: { [vm] in await vm.redoTurn(.local(agentID), turnID: $0) }),
+                    restartPi: { [vm] in vm.retryAgentStart(agentID, newConversation: $0) }
                 )
             } else {
                 LiveTerminalPane(
@@ -652,18 +653,21 @@ struct AgentThreadPane: View {
     var inspectedRunID: String? = nil
     var review: ((String) -> Void)? = nil
     var turnActions: TurnChangesActions? = nil
+    /// Retry for a pi that stopped before it served (true: start a new conversation).
+    var restartPi: ((Bool) -> Void)? = nil
     /// A design's chat (`ThreadView.designChat`).
     var designChat = false
 
     var body: some View {
-        // The placeholder cross-fades in when pi dies; connecting → live changes nothing here.
+        // The placeholder cross-fades in when pi dies; connecting → live changes nothing here, nor
+        // does a pi that stopped before it served: its thread says why.
         ZStack {
             switch session.phase {
-            case .connecting, .live:
+            case .connecting, .live, .stopped:
                 ThreadView(store: store, active: active, isFocused: isFocused, request: request, preview: preview, commandKey: commandKey,
                            agentName: agentName, workingDirectory: workingDirectory, inspectSubagent: inspectSubagent,
                            steerSubagent: steerSubagent, inspectedRunID: inspectedRunID, review: review, turnActions: turnActions,
-                           designChat: designChat)
+                           restartPi: restartPi, designChat: designChat)
             case .failed(let reason):
                 PanePlaceholder(text: "session unavailable · \(reason)")
                     .nwTransition(.content)
@@ -677,10 +681,11 @@ struct AgentThreadPane: View {
 }
 
 extension TerminalSessionStore.PaneSession.Phase {
-    /// Connecting or live: the session's view is up (a thread, a terminal surface).
+    /// Connecting or live: the session's view is up (a thread, a terminal surface). A stopped
+    /// agent's thread stays up too.
     var isRunning: Bool {
         switch self {
-        case .connecting, .live: true
+        case .connecting, .live, .stopped: true
         case .failed, .exited: false
         }
     }
@@ -720,6 +725,10 @@ struct LiveTerminalPane: View {
                     .nwTransition(.content)
             case .exited(let code):
                 PanePlaceholder(text: code.map { "session exited (\($0))" } ?? "session exited")
+                    .nwTransition(.content)
+            case .stopped:
+                // Only an agent's own pane stops; a shell never does.
+                PanePlaceholder(text: "session stopped")
                     .nwTransition(.content)
             }
         }

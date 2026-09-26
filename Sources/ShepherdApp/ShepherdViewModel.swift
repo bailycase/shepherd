@@ -126,6 +126,9 @@ final class ShepherdViewModel {
     /// Agents whose last turn ended in an error: done, but their sidebar row reads failed.
     /// Ephemeral, like the status it qualifies.
     var failedTurns: Set<AgentID> = []
+    /// Agents whose pi stopped before it served, waiting for Retry: their sidebar row reads "can't
+    /// start" (DESIGN.md › Thread › Can't start). Ephemeral: a relaunch starts every pi again.
+    var cannotStart: Set<AgentID> = []
     /// Each automation's run whose agent still exists, as the server's run log keeps it: an
     /// idle run agent is starting until its run has settled (`AutomationRun.isLive`). Read with
     /// every adopted state.
@@ -535,6 +538,13 @@ final class ShepherdViewModel {
         }
         sessions.onPaneSessionExited = { [weak self] paneID in
             self?.handleSessionExited(paneID: paneID)
+        }
+        sessions.onAgentStopped = { [weak self] agentID, problem, stopped in
+            guard let self else { return }
+            let waiting = stopped && problem != nil
+            if waiting != cannotStart.contains(agentID) {
+                if waiting { cannotStart.insert(agentID) } else { cannotStart.remove(agentID) }
+            }
         }
         sessions.onNotify = { [weak self] agentID, title, body in
             guard let self, let agent = self.state.agents.first(where: { $0.id == agentID }) else { return }
