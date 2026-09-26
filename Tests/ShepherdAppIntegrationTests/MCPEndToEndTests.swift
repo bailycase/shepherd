@@ -103,4 +103,28 @@ struct MCPEndToEndTests {
         #expect(store.entry("unsigned").map(store.status(of:))?.state == .needsSignIn)
         #expect(store.count(.connected) == 2)
     }
+
+    /// The page's own probe runs the client MCPExtension installs, with node in a login shell,
+    /// before any agent has launched: a server with no cache lists its tools.
+    @Test func theProbeListsAServersToolsWithTheInstalledClient() async throws {
+        let node = try #require(MCPAgentHarness.node)
+        let dir = try makeScratchDirectory()
+        let config = dir.appendingPathComponent("mcp.json")
+        let entry: JSONValue = .object([
+            "command": .string(node.path), "args": .array([.string(MCPAgentHarness.stdioFixture.path)]),
+            "env": .object(["FAKE_TOKEN": .string("${keychain:local/FAKE_TOKEN}")]),
+        ])
+        try JSONEncoder().encode(JSONValue.object(["mcpServers": .object(["local": entry])])).write(to: config)
+        let store = MCPStore(dependencies: .init(
+            file: MCPConfigFile(url: config), cacheURL: dir.appendingPathComponent("tools.json"),
+            secrets: InMemorySecretStore(["secret/local/FAKE_TOKEN": "s3cret"]), http: URLSessionHTTP(),
+            probe: MCPProbe(runner: NodeProbeRunner(clientPath: ShepherdViewModel.mcpClientPath)),
+            openURL: { _ in }, copy: { _ in }, now: { Date() }))
+        store.probe("local")
+        try await eventuallyOnMain("the probe to list local's tools") { store.rows.first.map { $0.tools != nil || $0.status == .error } == true }
+        #expect(store.rows.first?.tools == 6, "\(String(describing: store.rows.first))")
+        // A probe lists tools; only an agent's connection makes the row connected (CONTRACT §5).
+        #expect(store.rows.first?.status == .idle)
+        #expect(FileManager.default.fileExists(atPath: try MCPExtension.clientPath()))
+    }
 }
