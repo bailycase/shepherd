@@ -493,38 +493,49 @@ public struct NWSubagentRecordLine: View {
         self.action = action
     }
 
+    /// A real button only when there is a run to open; otherwise its words alone (no hover,
+    /// press, or focus, and VoiceOver hears no button).
     public var body: some View {
-        let nw = Color.nw
-        Button {
-            action?()
-        } label: {
-            HStack(spacing: NW.Space.m) {
-                NWBranchGlyph(.idle, size: NWThreadMetrics.activityIcon, color: nw.textTertiary)
-                Text(title)
-                    .font(.nw(.ui, weight: .regular))
-                    .foregroundStyle(nw.textSecondary)
-                    .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
-                    .fixedSize(horizontal: !typeSize.isAccessibilitySize, vertical: true)
-                    .layoutPriority(1)
-                if !meta.isEmpty {
-                    Text(meta).font(.nwMono(11)).foregroundStyle(nw.textTertiary).lineLimit(1).truncationMode(.tail).monospacedDigit()
-                }
-                if action != nil {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: NWSubagentTrayMetrics.chevron - 1, weight: .semibold))
-                        .foregroundStyle(nw.textTertiary)
-                }
+        let spoken = [title, meta].filter { !$0.isEmpty }.joined(separator: ", ")
+        Group {
+            if let action {
+                Button(action: action) { label }
+                    .buttonStyle(.nwRow())
+                    .accessibilityLabel(spoken)
+                    .accessibilityHint("Opens the subagents")
+            } else {
+                label
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(spoken)
             }
-            .padding(.leading, NW.Space.xs)
-            .padding(.trailing, NW.Space.m)
-            .frame(minHeight: NWThreadMetrics.activityHeight)
         }
-        .buttonStyle(.nwRow())
-        .disabled(action == nil)
         .padding(.leading, -NW.Space.xs)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityLabel([title, meta].filter { !$0.isEmpty }.joined(separator: ", "))
-        .accessibilityHint(action == nil ? "" : "Opens the subagents")
+    }
+
+    private var label: some View {
+        let nw = Color.nw
+        return HStack(spacing: NW.Space.m) {
+            NWBranchGlyph(.idle, size: NWThreadMetrics.activityIcon, color: nw.textTertiary)
+            Text(title)
+                .font(.nw(.ui, weight: .regular))
+                .foregroundStyle(nw.textSecondary)
+                .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
+                .fixedSize(horizontal: !typeSize.isAccessibilitySize, vertical: true)
+                .layoutPriority(1)
+            if !meta.isEmpty {
+                Text(meta).font(.nwMono(11)).foregroundStyle(nw.textTertiary).lineLimit(1).truncationMode(.tail).monospacedDigit()
+            }
+            // Only a line that opens something wears the chevron; its place stays.
+            Image(systemName: "chevron.right")
+                .font(.system(size: NWSubagentTrayMetrics.chevron - 1, weight: .semibold))
+                .foregroundStyle(nw.textTertiary)
+                .opacity(action == nil ? 0 : 1)
+                .accessibilityHidden(true)
+        }
+        .padding(.leading, NW.Space.xs)
+        .padding(.trailing, NW.Space.m)
+        .frame(minHeight: NWThreadMetrics.activityHeight)
     }
 }
 

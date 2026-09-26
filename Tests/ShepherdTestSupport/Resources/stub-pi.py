@@ -15,6 +15,8 @@
   "select" emits a select extension_ui_request (no timeout) and waits
   "ask-choice" a select of three options, the first "(Recommended)" with a line under each
   "ask-input" / "ask-editor" an input (with a placeholder) or an editor (with a prefill)
+  "ask-short" / "ask-long" an ask_user tool call (with a `short` reason, or without one) whose
+           select extension_ui_request waits; the answer ends the call and the run
   "fill"   appends 120 history messages, then agent_start/agent_end
   "newsession" switches sessionId, then agent_start/agent_end
   "refuse" answers the prompt with success: false (pi refusing it)
@@ -534,6 +536,9 @@ for raw in sys.stdin.buffer:
         respond(cmd, t, data=cleared)
     elif t == "extension_ui_response":
         if pending_ui is not None and cmd.get("id") == pending_ui:
+            if pending_ui == "uuid-4":
+                emit({"type": "tool_execution_end", "toolCallId": "call_ask", "toolName": "ask_user",
+                      "result": {"content": [{"type": "text", "text": "answered"}]}, "isError": False})
             pending_ui = None
             if "value" in cmd:
                 text = cmd["value"]
@@ -583,15 +588,24 @@ for raw in sys.stdin.buffer:
             emit({"type": "agent_start"})
             emit({"type": "extension_ui_request", "id": "uuid-2", "method": "confirm",
                   "title": "Clear session?", "message": "All messages will be lost.", "timeout": 60000})
+        elif message in ("ask-short", "ask-long"):
+            pending_ui = "uuid-4"
+            args = {"question": "Retention: 30 days or 13 months?", "options": ["30 days", "13 months"]}
+            if message == "ask-short":
+                args["short"] = "  retention?\n"
+            emit({"type": "agent_start"})
+            emit({"type": "tool_execution_start", "toolCallId": "call_ask", "toolName": "ask_user", "args": args})
+            emit({"type": "extension_ui_request", "id": "uuid-4", "method": "select",
+                  "title": "Retention: 30 days or 13 months?", "options": ["30 days", "13 months"]})
         elif message == "select":
             pending_ui = "uuid-3"
             emit({"type": "agent_start"})
             emit({"type": "extension_ui_request", "id": "uuid-3", "method": "select",
                   "title": "Pick one", "options": ["Allow", "Deny"]})
         elif message == "ask-choice":
-            pending_ui = "uuid-4"
+            pending_ui = "uuid-7"
             emit({"type": "agent_start"})
-            emit({"type": "extension_ui_request", "id": "uuid-4", "method": "select",
+            emit({"type": "extension_ui_request", "id": "uuid-7", "method": "select",
                   "title": "How should I handle the uncommitted edits?",
                   "options": ["Compare first (Recommended)\nDiff them against main; nothing is overwritten.",
                               "Leave them alone\nDeploy from a clean checkout beside it.",
