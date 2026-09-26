@@ -976,6 +976,13 @@ public final class SessionServer: @unchecked Sendable {
             request = try NDJSON.decode(RemoteRequest.self, from: line)
         } catch {
             ShepherdLog.warning("undecodable remote request on fd \(client.fd): \(error)")
+            // A request this host does not know (a kind or an action a client from another
+            // version sends) is refused like any unsupported one once the client has said hello.
+            // A frame without an id has no reply to take, so it still closes the connection.
+            if client.authenticated, let id = (try? NDJSON.decode(RemoteRequestID.self, from: line))?.id {
+                send(.error(id: id, code: "unsupported", message: "The host does not take this request."), to: client)
+                return
+            }
             disconnect(client)
             return
         }
@@ -3813,6 +3820,11 @@ public final class SessionServer: @unchecked Sendable {
         }
         return addr
     }
+}
+
+/// The id of a remote request the host could not decode, so it can refuse it.
+private struct RemoteRequestID: Decodable {
+    let id: Int
 }
 
 // MARK: - Changes

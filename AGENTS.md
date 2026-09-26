@@ -737,7 +737,9 @@ variables are blanked.
     (docs/skills.md)
 
   Capabilities gate newer features. The client falls back (raw bracketed paste) or refuses (pane
-  control) against older hosts. Output frames chunk at 256 KiB to stay under the 1 MiB frame cap.
+  control) against older hosts. A host answers an authenticated request it cannot decode (a kind
+  or action from another version's client) with `unsupported` and keeps the connection; a frame
+  with no `id` closes it. Output frames chunk at 256 KiB to stay under the 1 MiB frame cap.
 - **Sizing:** viewports are smallest-viewer-wins. Each attached remote viewer reports its grid,
   and the PTY takes the minimum; with no remote viewers, the local viewport rules. Resize reports
   from unattached clients are ignored.
