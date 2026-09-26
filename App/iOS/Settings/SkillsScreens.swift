@@ -644,7 +644,8 @@ private struct SkillVersionCard: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 let installed = SkillsPresentation.installed(source)
-                Text("Installed \(installed.commit)" + (installed.date.map { " · \($0)" } ?? ""))
+                let when = installed.date.map { " · " + $0 } ?? ""
+                Text("Installed \(installed.commit)\(when)")
                     .font(.nw(.caption))
                     .foregroundStyle(nw.textTertiary)
                 if let newer = skill.update {
