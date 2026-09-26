@@ -235,10 +235,12 @@ final class DesignScreenModel {
         }
     }
 
-    /// The boards back to front: canvas.json's `order`, then any it doesn't list by path.
+    /// The boards back to front: canvas.json's `order`, then any it doesn't list by path. A
+    /// board the order lists twice comes where it is first listed.
     static func canvasOrder(_ index: DesignIndex) -> [DesignPath] {
-        let listed = index.order.filter { index.boards[$0] != nil }
-        let rest = index.boards.keys.filter { !listed.contains($0) }.sorted()
+        var seen = Set<DesignPath>()
+        let listed = index.order.filter { index.boards[$0] != nil && seen.insert($0).inserted }
+        let rest = index.boards.keys.filter { !seen.contains($0) }.sorted()
         return listed + rest
     }
 
