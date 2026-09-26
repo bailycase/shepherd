@@ -85,6 +85,26 @@ struct DesignCommentIntegrationTests {
         #expect(DesignCommentFence.parse(try #require(prompts(pi).last))?.fence.reply == true)
     }
 
+    /// Words that start with "/" are a comment, never a command: pi gets them behind the fence.
+    @Test func aCommentStartingWithASlashStillGoesFenced() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        let designID = try await design(h, space: pi.agent.spaceID, agentID: pi.agent.id)
+        _ = try await pi.ready()
+
+        let outcome = try await h.server.addDesignComment(designID, draft: Self.draft(text: "/tighten the header tools:0"))
+        #expect(outcome.undelivered == nil)
+        _ = try await pi.snapshot("the comment's turn to settle") { s in
+            !s.running && s.messages.contains { $0.origin?.designComment == outcome.comment.id }
+                && s.messages.last?.role == "assistant"
+        }
+        let prompt = try #require(prompts(pi).last)
+        let parsed = try #require(DesignCommentFence.parse(prompt))
+        #expect(parsed.fence.comment == outcome.comment.id)
+        #expect(parsed.text == "/tighten the header tools:0")
+    }
+
     @Test func aCommentWithoutAnAgentToTakeItIsKeptAndSaysWhy() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
