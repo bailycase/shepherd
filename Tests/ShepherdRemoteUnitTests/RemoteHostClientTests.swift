@@ -139,6 +139,26 @@ struct RemoteHostClientTests {
         } == "update_required")
     }
 
+    /// An older host would start the thread without its images, so the client refuses before
+    /// writing anything (a written request would fail `not_sent` here, with no connection).
+    @Test func aNewThreadsImagesNeedAHostThatTakesThem() async {
+        let client = RemoteHostClient()
+        let image = NativeImage(mimeType: "image/png", data: Data([1]))
+        #expect(await code {
+            _ = try await client.createAgent(spaceID: SpaceID(), cwd: nil, model: nil, thinking: nil, initialPrompt: "look", initialImages: [image])
+        } == "update_required")
+        #expect(await code {
+            _ = try await client.createAgent(spaceID: SpaceID(), cwd: nil, model: nil, thinking: nil, initialPrompt: "look")
+        } == "not_sent", "without images nothing changes")
+    }
+
+    @Test(arguments: [(1, false), (NDJSON.maxPayloadBytes, true)])
+    func aCreateAgentOverOneFrameIsRefused(bytes: Int, over: Bool) {
+        let image = NativeImage(mimeType: "image/png", data: Data(count: bytes))
+        #expect(RemoteHostClient.overFrame(.createAgent(id: 0, spaceID: SpaceID(), cwd: nil, model: nil, thinking: nil,
+                                                        initialPrompt: "look", initialImages: [image])) == over)
+    }
+
     /// A request on a closed connection is refused before it is written, so it is safe to retry.
     @Test func requestsWithoutAConnectionAreNotSent() async {
         let client = RemoteHostClient()
