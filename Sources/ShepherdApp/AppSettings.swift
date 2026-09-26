@@ -62,6 +62,9 @@ final class AppSettings {
         static let defaultThinking = "shepherd.agent.defaultThinking"
         static let autoNameAgents = "shepherd.agent.autoName"
         static let skillsInSlashMenu = "shepherd.skills.slashMenu"
+        static let mcpOpenSignInPages = "shepherd.mcp.openSignInPages"
+        static let mcpProjectConfig = "shepherd.mcp.projectConfig"
+        static let mcpSameEverywhere = "shepherd.mcp.sameEverywhere"
         static let skillsDirectoryKey = "shepherd.skills.directoryKey"
         static let returnWhileWorking = "shepherd.agent.returnWhileWorking"
         static let queueDelivery = "shepherd.agent.queueDelivery"
@@ -69,6 +72,7 @@ final class AppSettings {
         static let piReviewExtension = "shepherd.pi.extension.review"
         static let piSubagentsExtension = "shepherd.pi.extension.subagents"
         static let piNativeSubagents = "shepherd.pi.extension.nativeSubagents"
+        static let piMCPExtension = "shepherd.pi.extension.mcp"
         static let childConcurrency = "shepherd.pi.children.concurrency"
         static let childModel = "shepherd.pi.children.model"
         static let childThinking = "shepherd.pi.children.thinking"
@@ -96,6 +100,7 @@ final class AppSettings {
             terminalFontFamily, terminalFontSize, defaultModel,
             defaultThinking, autoNameAgents, returnWhileWorking, queueDelivery, shellPath,
             piPanesExtension, piReviewExtension, piSubagentsExtension, piNativeSubagents,
+            piMCPExtension,
             childConcurrency, childModel, childThinking, childContext, childScope,
             uiDensity, uiTextScale, sidebarWidth, sidebarRowDensity,
             remoteListenerEnabled, remoteListenerPort,
@@ -104,6 +109,7 @@ final class AppSettings {
             worktreeAutoCommit, worktreeGeneratePRDescription,
             worktreeDeleteLocalBranch, worktreeAutoMergePR,
             worktreeMergeMethod, skillsInSlashMenu, skillsDirectoryKey,
+            mcpOpenSignInPages, mcpProjectConfig, mcpSameEverywhere,
             designToolEnabled,
         ]
 
@@ -161,6 +167,24 @@ final class AppSettings {
         didSet { store.set(skillsInSlashMenu, forKey: Key.skillsInSlashMenu) }
     }
 
+    /// Settings ▸ MCP servers ▸ Open sign-in pages by itself: an agent reaching a server that
+    /// needs sign-in opens the sign-in sheet and the browser. Off, only the row changes.
+    var mcpOpenSignInPages: Bool {
+        didSet { store.set(mcpOpenSignInPages, forKey: Key.mcpOpenSignInPages) }
+    }
+
+    /// Settings ▸ MCP servers ▸ Also use a repo's .mcp.json (`SHEPHERD_EXT_MCP_PROJECT`). Off,
+    /// agents get only the servers on that page. Agents launched after a change follow it.
+    var mcpProjectConfig: Bool {
+        didSet { store.set(mcpProjectConfig, forKey: Key.mcpProjectConfig) }
+    }
+
+    /// Settings ▸ MCP servers ▸ Same servers on every host. Stored for stage 2; stage 1 has
+    /// only This Mac.
+    var mcpSameEverywhere: Bool {
+        didSet { store.set(mcpSameEverywhere, forKey: Key.mcpSameEverywhere) }
+    }
+
     /// A skills.sh API key: Browse's ranked lists need one (search and install don't).
     var skillsDirectoryKey: String {
         didSet { store.set(skillsDirectoryKey, forKey: Key.skillsDirectoryKey) }
@@ -198,6 +222,11 @@ final class AppSettings {
 
     var piNativeSubagents: Bool {
         didSet { store.set(piNativeSubagents, forKey: Key.piNativeSubagents) }
+    }
+
+    /// Settings ▸ Pi ▸ Bundled extensions ▸ MCP servers: agents get the `mcp` tool.
+    var piMCPExtension: Bool {
+        didSet { store.set(piMCPExtension, forKey: Key.piMCPExtension) }
     }
 
     var childConcurrency: Int {
@@ -351,6 +380,9 @@ final class AppSettings {
         autoNameAgents = store.object(forKey: Key.autoNameAgents) as? Bool ?? Defaults.autoNameAgents
         skillsInSlashMenu = store.object(forKey: Key.skillsInSlashMenu) as? Bool ?? Defaults.skillsInSlashMenu
         skillsDirectoryKey = store.string(forKey: Key.skillsDirectoryKey) ?? ""
+        mcpOpenSignInPages = store.object(forKey: Key.mcpOpenSignInPages) as? Bool ?? false
+        mcpProjectConfig = store.object(forKey: Key.mcpProjectConfig) as? Bool ?? false
+        mcpSameEverywhere = store.object(forKey: Key.mcpSameEverywhere) as? Bool ?? true
         returnWhileWorking = store.string(forKey: Key.returnWhileWorking)
             .flatMap(ReturnWhileWorking.init(rawValue:)) ?? Defaults.returnWhileWorking
         queueDelivery = store.string(forKey: Key.queueDelivery)
@@ -359,6 +391,7 @@ final class AppSettings {
         piReviewExtension = store.object(forKey: Key.piReviewExtension) as? Bool ?? true
         piSubagentsExtension = store.object(forKey: Key.piSubagentsExtension) as? Bool ?? true
         piNativeSubagents = store.object(forKey: Key.piNativeSubagents) as? Bool ?? true
+        piMCPExtension = store.object(forKey: Key.piMCPExtension) as? Bool ?? true
         childConcurrency = min(16, max(1, store.object(forKey: Key.childConcurrency) as? Int ?? 4))
         childModel = store.string(forKey: Key.childModel) ?? ""
         let childReasoning = store.string(forKey: Key.childThinking) ?? ""
@@ -438,6 +471,9 @@ final class AppSettings {
         defaultThinking = Defaults.thinking
         autoNameAgents = Defaults.autoNameAgents
         skillsInSlashMenu = Defaults.skillsInSlashMenu
+        mcpOpenSignInPages = false
+        mcpProjectConfig = false
+        mcpSameEverywhere = true
         returnWhileWorking = Defaults.returnWhileWorking
         queueDelivery = Defaults.queueDelivery
         uiDensity = 1
@@ -448,6 +484,7 @@ final class AppSettings {
         piReviewExtension = true
         piSubagentsExtension = true
         piNativeSubagents = true
+        piMCPExtension = true
         childConcurrency = 4
         childModel = ""
         childThinking = ""
