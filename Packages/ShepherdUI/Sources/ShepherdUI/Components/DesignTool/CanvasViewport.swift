@@ -102,14 +102,18 @@ public struct NWCanvasBoard: Identifiable, Equatable, Sendable {
     /// Moves whenever what the frame's slot shows changes (a new snapshot, a live view coming or
     /// going): a frame redraws only when its board does.
     public var content: Int
+    /// The room its label has among the boards around it (`NWLabelRoom.rooms`).
+    public var labelRoom: NWLabelRoom
 
-    public init(id: String, frame: CGRect, title: String, size: String, isSelected: Bool = false, content: Int = 0) {
+    public init(id: String, frame: CGRect, title: String, size: String, isSelected: Bool = false, content: Int = 0,
+                labelRoom: NWLabelRoom = .open) {
         self.id = id
         self.frame = frame
         self.title = title
         self.size = size
         self.isSelected = isSelected
         self.content = content
+        self.labelRoom = labelRoom
     }
 
     /// "1280 × 800", the board's CSS pixel size.
@@ -118,7 +122,113 @@ public struct NWCanvasBoard: Identifiable, Equatable, Sendable {
     }
 }
 
+/// The room a board's label has, in canvas points, so that at a low zoom (rows 120 apart are
+/// about 20pt at 17%) no label lies over another board: how far up the nearest board above it is,
+/// and how far along its top edge the next board in its row starts.
+public struct NWLabelRoom: Equatable, Sendable {
+    /// Clear canvas points between the board's top and the nearest board above its label; nil
+    /// when nothing is above.
+    public var above: CGFloat?
+    /// Canvas points from the board's leading edge to the next board beside it; nil when none.
+    public var along: CGFloat?
+
+    public static let open = NWLabelRoom()
+
+    public init(above: CGFloat? = nil, along: CGFloat? = nil) {
+        self.above = above
+        self.along = along
+    }
+
+    /// The label at `zoom` over a board `width` points wide on screen: whether it is drawn, how
+    /// wide it runs, and its gap to the frame. It keeps its 8pt gap where the room allows, moves
+    /// down toward the frame where it doesn't, and isn't drawn where not even a 2pt gap fits.
+    public func layout(width: CGFloat, zoom: CGFloat) -> (shown: Bool, width: CGFloat, gap: CGFloat) {
+        var labelWidth = Swift.max(width, NWDesignMetrics.labelMinWidth)
+        if let along { labelWidth = Swift.min(labelWidth, along * zoom - NWDesignMetrics.labelSpacing) }
+        guard let above else { return (labelWidth > 0, labelWidth, NWDesignMetrics.labelGap) }
+        let room = above * zoom - NWDesignMetrics.labelHeight
+        guard room >= NWDesignMetrics.labelMinGap, labelWidth > 0 else { return (false, Swift.max(labelWidth, 0), NWDesignMetrics.labelGap) }
+        return (true, labelWidth, Swift.min(NWDesignMetrics.labelGap, room))
+    }
+
+    /// Each board's room among `frames` (canvas points, by id). `along` is the nearest board that
+    /// starts further along and overlaps the board's height; `above`, the nearest board wholly
+    /// above that overlaps the stretch the label can run over.
+    public static func rooms(_ frames: [String: CGRect]) -> [String: NWLabelRoom] {
+        let all = Array(frames)
+        var rooms: [String: NWLabelRoom] = [:]
+        for (id, frame) in all {
+            var along: CGFloat?
+            for (other, rect) in all where other != id && rect.minX > frame.minX
+                && rect.minY < frame.maxY && rect.maxY > frame.minY {
+                along = Swift.min(along ?? .infinity, rect.minX - frame.minX)
+            }
+            let reach = frame.minX + Swift.max(frame.width, along ?? frame.width)
+            var above: CGFloat?
+            for (other, rect) in all where other != id && rect.maxY <= frame.minY
+                && rect.minX < reach && rect.maxX > frame.minX {
+                above = Swift.min(above ?? .infinity, frame.minY - rect.maxY)
+            }
+            rooms[id] = NWLabelRoom(above: above, along: along)
+        }
+        return rooms
+    }
+}
+
+/// A board element the canvas rings: the selection, or the one under the pointer.
+public struct NWCanvasElement: Identifiable, Equatable, Sendable {
+    /// Its id (`File.dc.html#tid:path`).
+    public let id: String
+    /// The board it is on (`NWCanvasBoard.id`).
+    public var board: String
+    /// Where it is drawn, in the board's own points from its top left.
+    public var rect: CGRect
+    /// "card · Checkout funnel", drawn over a selected element's top-leading corner; nil draws none.
+    public var tag: String?
+
+    public init(id: String, board: String, rect: CGRect, tag: String? = nil) {
+        self.id = id
+        self.board = board
+        self.rect = rect
+        self.tag = tag
+    }
+}
+
+/// Where a click or the pointer landed on the canvas.
+public struct NWCanvasPick: Equatable, Sendable {
+    /// The board under it, front-most first; nil over the empty canvas.
+    public var board: String?
+    /// The point on that board in its own points; nil when it landed on the board's label.
+    public var point: CGPoint?
+    /// Shift was held: the pick adds to the selection, or takes itself out of it.
+    public var extending: Bool
+
+    public init(board: String? = nil, point: CGPoint? = nil, extending: Bool = false) {
+        self.board = board
+        self.point = point
+        self.extending = extending
+    }
+}
+
 extension Array where Element == NWCanvasBoard {
+    /// What is under a screen point: a board (the front-most), and where on it, or its label.
+    public func pick(at point: CGPoint, viewport: NWCanvasViewport, extending: Bool = false) -> NWCanvasPick {
+        if let board = board(at: point, viewport: viewport) {
+            let origin = viewport.screen(board.frame.origin)
+            return NWCanvasPick(board: board.id, point: CGPoint(x: (point.x - origin.x) / viewport.zoom, y: (point.y - origin.y) / viewport.zoom),
+                                extending: extending)
+        }
+        for board in reversed() {
+            let frame = viewport.screen(board.frame)
+            let label = board.labelRoom.layout(width: frame.width, zoom: viewport.zoom)
+            guard label.shown else { continue }
+            let rect = CGRect(x: frame.minX, y: frame.minY - label.gap - NWDesignMetrics.labelHeight,
+                              width: label.width, height: NWDesignMetrics.labelHeight)
+            if rect.contains(point) { return NWCanvasPick(board: board.id, extending: extending) }
+        }
+        return NWCanvasPick(extending: extending)
+    }
+
     /// The boards a view of `size` shows at `viewport`, with room for their labels, back to
     /// front as given.
     public func visible(in viewport: NWCanvasViewport, size: CGSize) -> [NWCanvasBoard] {

@@ -7,8 +7,10 @@ import ShepherdProtocol
 // The app's board rendering, and the only file that imports DesignSurfaceKit (as TerminalHost is
 // for TerminalSurfaceKit), so the renderer's API drift breaks exactly one file.
 //
-// A design on screen keeps at most `DesignLivePlan.liveCap` live web views: the selected board
-// and the boards nearest the middle of the view, recycled least recently wanted first. Every
+// A design on screen keeps at most `DesignLivePlan.liveCap` live web views: the selected board,
+// the board under the pointer with Select, and the boards nearest the middle of the view,
+// recycled least recently wanted first. Selection asks a live board what is under a point
+// (`hitTest`), so the board under the pointer is always one of them. Every
 // other board draws its snapshot, taken by one shared off-screen view (`DesignRasterizer`), so
 // the app never holds more than six web views however large the canvas. A hidden design gives
 // its live views up and keeps its snapshots.
@@ -25,13 +27,16 @@ enum DesignLivePlan {
     static let threshold: CGFloat = 0.25
     static let selectedThreshold: CGFloat = 0.1
 
-    /// The boards to keep live, most wanted first: the selected board, then the visible boards
-    /// in the order given (nearest the middle first).
-    static func wanted(visible: [DesignPath], selected: DesignPath?, zoom: CGFloat, cap: Int = liveCap) -> [DesignPath] {
+    /// The boards to keep live, most wanted first: the selected board, the board under the
+    /// pointer (Select asks it what is there, at any zoom), then the visible boards in the order
+    /// given (nearest the middle first).
+    static func wanted(visible: [DesignPath], selected: DesignPath?, hovered: DesignPath? = nil, zoom: CGFloat,
+                       cap: Int = liveCap) -> [DesignPath] {
         var result: [DesignPath] = []
         if let selected, zoom >= selectedThreshold { result.append(selected) }
+        if let hovered, hovered != selected { result.append(hovered) }
         if zoom >= threshold {
-            for path in visible where path != selected && result.count < cap { result.append(path) }
+            for path in visible where !result.contains(path) && result.count < cap { result.append(path) }
         }
         return Array(result.prefix(cap))
     }
@@ -53,6 +58,17 @@ enum DesignLivePlan {
             .sorted { $0.value != $1.value ? $0.value < $1.value : $0.key < $1.key }
             .map(\.key)
         return Assignment(evict: Array(evictable.prefix(max(0, missing.count - free))), create: missing)
+    }
+}
+
+// MARK: Selection
+
+extension DesignElementPick {
+    /// What a board's hit test reported, as the canvas and the view record take it; nil when the
+    /// grammar can't name it on this board.
+    init?(_ hit: DesignHit, on board: DesignPath) {
+        guard let id = hit.id(on: board) else { return nil }
+        self.init(board: board, id: id, rect: hit.rect, kind: hit.kind, label: hit.label, tag: hit.tag)
     }
 }
 
@@ -155,6 +171,11 @@ final class DesignHost {
     @ObservationIgnored private var zoom: CGFloat = 1
     @ObservationIgnored private var visible: [DesignPath] = []
     @ObservationIgnored private var selected: DesignPath?
+    /// The board under the pointer with Select.
+    @ObservationIgnored private var hovered: DesignPath?
+    /// Told when a live board draws new source (a live reload, or a fresh load of a new version),
+    /// so a selection on it is found again where it is drawn now.
+    @ObservationIgnored var redrawn: ((DesignPath) -> Void)?
     /// Boards whose render failed at a hash: not tried again until it changes.
     @ObservationIgnored private var failed: [DesignPath: String] = [:]
     /// Tests: snapshots taken, and live reloads made.
@@ -264,13 +285,58 @@ final class DesignHost {
         images.removeAll()
     }
 
+    // MARK: Selection
+
+    /// The board under the pointer with Select (nil once it leaves the boards): it takes a live
+    /// view so what is under the pointer can be named.
+    func hover(_ path: DesignPath?) {
+        guard hovered != path else { return }
+        hovered = path
+        plan()
+    }
+
+    /// The element drawn under `point` (the board's own points) on a board, once the board has a
+    /// live view to ask; nil when nothing named is there, or the board can't draw.
+    func hitTest(_ path: DesignPath, at point: CGPoint) async -> DesignElementPick? {
+        guard let view = await readyView(path) else { return nil }
+        return await view.hitTest(at: point).flatMap { DesignElementPick($0, on: path) }
+    }
+
+    /// Elements `tids` of a live board where it draws them now; an element it no longer draws is
+    /// missing. Nil when the board has no live view to ask.
+    func locate(_ path: DesignPath, tids: [Int]) async -> [Int: DesignElementPick]? {
+        guard let slot = slots[path], slot.ready else { return nil }
+        var found: [Int: DesignElementPick] = [:]
+        for tid in tids {
+            if let hit = await slot.view.element(tid: tid), let pick = DesignElementPick(hit, on: path) { found[tid] = pick }
+        }
+        return found
+    }
+
+    /// The board's live view once it has drawn, making it wanted if it has none.
+    private func readyView(_ path: DesignPath) async -> DesignBoardView? {
+        guard isActive, boards[path] != nil else { return nil }
+        if slots[path] == nil {
+            hovered = path
+            plan()
+        }
+        // A view still loading answers once it has drawn.
+        for _ in 0..<3 {
+            guard let slot = slots[path] else { return nil }
+            if slot.ready { return slot.view }
+            await slot.task?.value
+        }
+        return nil
+    }
+
     // MARK: Planning
 
     private func plan() {
         guard isActive else { return }
         stamp += 1
         let wanted = DesignLivePlan.wanted(visible: visible.filter { boards[$0] != nil },
-                                           selected: selected.flatMap { boards[$0] != nil ? $0 : nil }, zoom: zoom, cap: liveCap)
+                                           selected: selected.flatMap { boards[$0] != nil ? $0 : nil },
+                                           hovered: hovered.flatMap { boards[$0] != nil ? $0 : nil }, zoom: zoom, cap: liveCap)
         for path in wanted { slots[path]?.wanted = stamp }
         let assignment = DesignLivePlan.assign(slots: slots.mapValues(\.wanted), wanted: wanted, cap: liveCap)
         for path in assignment.evict { releaseSlot(path) }
@@ -302,6 +368,7 @@ final class DesignHost {
                 slot.ready = true
                 self.reload(path, slot: slot)
             } else {
+                self.redrawn?(path)
                 // Its snapshot first, so the board never swaps to an older picture later.
                 await self.snapshot(path, slot: slot)
                 guard self.slots[path] === slot else { return }
@@ -337,6 +404,7 @@ final class DesignHost {
                 guard self.slots[path] === slot, !Task.isCancelled else { return }
                 try await slot.view.replaceSource(text)
                 self.reloads += 1
+                self.redrawn?(path)
             } catch DesignBoardError.refused {
                 self.reloads += 1
             } catch {

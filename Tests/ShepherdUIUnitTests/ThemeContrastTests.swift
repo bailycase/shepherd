@@ -103,6 +103,16 @@ struct ThemeContrastTests {
         #expect(ratio < Self.text)
     }
 
+    /// The design canvas's selection tag puts white on `running` in mono 10.5, as NWDesignTool
+    /// and DZTweak draw it: light reaches 4.5:1; dark falls short (2.39), the board's choice.
+    @Test(arguments: [(false, 4.70), (true, 2.39)])
+    func whiteOnRunningIsADocumentedException(isDark: Bool, measured: Double) {
+        let variant = Variant(theme: .nightWatch, isDark: isDark)
+        let ratio = HexColor("#ffffff")!.contrast(with: variant.color(\.running))
+        #expect(abs(ratio - measured) < 0.01, "white on running is now \(ratio)")
+        #expect((ratio >= Self.text) == !isDark)
+    }
+
     /// The primary button's hover and pressed fills (the Controls board's hexes) keep its label
     /// at 4.5:1 in both variants.
     @Test(arguments: [false, true])

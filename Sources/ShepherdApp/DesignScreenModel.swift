@@ -3,9 +3,26 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdUI
 
+/// An element picked on a board: its id as a view record names it, where the board draws it (in
+/// the board's own points), and what it is.
+struct DesignElementPick: Equatable {
+    let board: DesignPath
+    let id: DesignElementID
+    var rect: CGRect
+    var kind: DesignElementKind
+    var label: String?
+    /// "card · Checkout funnel".
+    var tag: String
+}
+
 /// One design's canvas (DZCanvas): its files as the host last served them, where the canvas
-/// looks, the tool, the selected board, and the renderer drawing its boards. Kept per design for
+/// looks, the tool, what is selected, and the renderer drawing its boards. Kept per design for
 /// the app's run, so coming back to a design finds it as it was left (a visibility flip).
+///
+/// Selection (Select): a click names the element under it (the board's hit test), a click on a
+/// board's label or on nothing named picks the board whole, shift adds or takes away, and a click
+/// on the empty canvas clears it. The element under the pointer is ringed as it moves. What the
+/// screen shows goes with every message the chat sends (`viewRecord`).
 ///
 /// Live reload: a pushed revision (`SessionServer.onDesignRevision`) pulls the snapshot, and
 /// only the boards whose hash changed reload (`DesignHost.update`); new boards appear and
@@ -19,8 +36,13 @@ final class DesignScreenModel {
     var viewport = NWCanvasViewport() {
         didSet { if viewport != oldValue { viewportMoved() } }
     }
-    var tool: NWCanvasTool = .select
-    private(set) var selection: DesignPath?
+    var tool: NWCanvasTool = .select {
+        didSet { if tool != .select { pointer(nil) } }
+    }
+    /// What is selected, most recent last: boards picked whole, and elements.
+    private(set) var picks: [Pick] = []
+    /// The element under the pointer with Select.
+    private(set) var hover: DesignElementPick?
     private(set) var snapshot: DesignSnapshot?
     /// The last pull failed (the canvas keeps what it drew).
     private(set) var loadError: String?
@@ -33,6 +55,13 @@ final class DesignScreenModel {
     @ObservationIgnored private var refreshAgain = false
     @ObservationIgnored private var rest: Task<Void, Never>?
     @ObservationIgnored private(set) var isActive = false
+    /// Each board's room for its label among the others, worked out once per index.
+    @ObservationIgnored private var labelRooms: [String: NWLabelRoom] = [:]
+    /// The pointer's latest place while a hit test for an earlier one runs.
+    @ObservationIgnored private var pendingHover: (board: DesignPath, point: CGPoint)?
+    @ObservationIgnored private var hovering: Task<Void, Never>?
+    /// Moves when the pointer leaves, so a late answer for where it was is dropped.
+    @ObservationIgnored private var hoverGeneration = 0
     /// Tests: pulls made.
     @ObservationIgnored private(set) var pulls = 0
 
@@ -44,6 +73,7 @@ final class DesignScreenModel {
         self.host = host
         fetchSnapshot = snapshot
         host?.source = { path in try await source(designID, path) }
+        host?.redrawn = { [weak self] path in self?.relocate(on: path) }
     }
 
     // MARK: Boards
@@ -52,20 +82,32 @@ final class DesignScreenModel {
     var boards: [NWCanvasBoard] {
         guard let snapshot else { return [] }
         let tokens = host?.tokens ?? [:]
-        return Self.boards(snapshot.index, selection: selection, tokens: tokens)
+        return Self.boards(snapshot.index, selected: selectedWhole, tokens: tokens, rooms: labelRooms)
     }
 
-    static func boards(_ index: DesignIndex, selection: DesignPath?, tokens: [DesignPath: Int]) -> [NWCanvasBoard] {
-        let listed = index.order.filter { index.boards[$0] != nil }
-        let rest = index.boards.keys.filter { !listed.contains($0) }.sorted()
-        return (listed + rest).compactMap { path in
+    static func boards(_ index: DesignIndex, selected: Set<DesignPath>, tokens: [DesignPath: Int],
+                       rooms: [String: NWLabelRoom] = [:]) -> [NWCanvasBoard] {
+        canvasOrder(index).compactMap { path in
             guard let board = index.boards[path] else { return nil }
             let title = board.title?.trimmingCharacters(in: .whitespacesAndNewlines)
             return NWCanvasBoard(id: path.rawValue, frame: CGRect(x: board.x, y: board.y, width: board.w, height: board.h),
                                  title: title?.isEmpty == false ? title! : path.stem,
                                  size: NWCanvasBoard.sizeLabel(CGSize(width: board.w, height: board.h)),
-                                 isSelected: path == selection, content: tokens[path] ?? 0)
+                                 isSelected: selected.contains(path), content: tokens[path] ?? 0,
+                                 labelRoom: rooms[path.rawValue] ?? .open)
         }
+    }
+
+    /// The boards back to front: canvas.json's `order`, then any it doesn't list by path.
+    static func canvasOrder(_ index: DesignIndex) -> [DesignPath] {
+        let listed = index.order.filter { index.boards[$0] != nil }
+        let rest = index.boards.keys.filter { !listed.contains($0) }.sorted()
+        return listed + rest
+    }
+
+    static func labelRooms(_ index: DesignIndex) -> [String: NWLabelRoom] {
+        NWLabelRoom.rooms(Dictionary(index.boards.map { ($0.key.rawValue, CGRect(x: $0.value.x, y: $0.value.y, width: $0.value.w, height: $0.value.h)) },
+                                     uniquingKeysWith: { a, _ in a }))
     }
 
     /// The boards on screen, nearest the middle of the view first.
@@ -105,8 +147,11 @@ final class DesignScreenModel {
 
     private func apply(_ next: DesignSnapshot) {
         guard snapshot != next else { return }
+        if snapshot?.index.boards != next.index.boards { labelRooms = Self.labelRooms(next.index) }
         snapshot = next
-        if let selection, next.index.boards[selection] == nil { self.selection = nil }
+        let kept = picks.filter { next.index.boards[$0.board] != nil }
+        if kept != picks { picks = kept }
+        if let hover, next.index.boards[hover.board] == nil { self.hover = nil }
         var boards: [DesignPath: DesignHost.Board] = [:]
         for (path, board) in next.index.boards {
             guard let sha = next.boards[path] else { continue }
@@ -133,11 +178,167 @@ final class DesignScreenModel {
         viewport = .fitting(boards.bounds, in: canvasSize)
     }
 
+    // MARK: Selection
+
+    /// One thing selected: a board whole (`element` nil), or an element on it.
+    struct Pick: Equatable {
+        let board: DesignPath
+        var element: DesignElementPick?
+    }
+
+    /// The most selected elements (and boards) kept, as a view record carries.
+    static let pickLimit = DesignViewRecord.maxSelected
+
+    /// Boards selected whole.
+    var selectedWhole: Set<DesignPath> { Set(picks.filter { $0.element == nil }.map(\.board)) }
+
+    /// The selected elements, most recent last.
+    var selectedElements: [DesignElementPick] { picks.compactMap(\.element) }
+
+    /// The board the latest pick is on: it stays live, so its selection can be found again.
+    var focusBoard: DesignPath? { picks.last?.board }
+
+    /// Picks a board whole, or clears the selection (nil): what a click on a label does.
     func select(_ id: String?) {
-        let path = id.flatMap(DesignPath.init)
-        guard selection != path else { return }
-        selection = path
+        guard let path = id.flatMap(DesignPath.init) else { clearSelection(); return }
+        take(Pick(board: path), extending: false)
+    }
+
+    /// A click with Select (`NWDesignCanvas`): an element when the board names one under it, the
+    /// board whole on its label or where nothing is named, nothing on the empty canvas.
+    func pick(_ pick: NWCanvasPick) {
+        guard let id = pick.board, let board = DesignPath(id) else {
+            if !pick.extending { clearSelection() }
+            return
+        }
+        guard let point = pick.point, let host else {
+            take(Pick(board: board), extending: pick.extending)
+            return
+        }
+        Task {
+            let element = await host.hitTest(board, at: point)
+            take(Pick(board: board, element: element), extending: pick.extending)
+        }
+    }
+
+    private func take(_ pick: Pick, extending: Bool) {
+        var next = picks
+        if extending {
+            if let index = next.firstIndex(where: { $0.board == pick.board && $0.element?.id == pick.element?.id }) {
+                next.remove(at: index)
+            } else {
+                next.append(pick)
+            }
+        } else {
+            next = [pick]
+        }
+        if next.count > Self.pickLimit { next.removeFirst(next.count - Self.pickLimit) }
+        guard next != picks else { return }
+        picks = next
         planLive()
+    }
+
+    /// Previews: what is selected and hovered, as the boards would have reported it.
+    func setSelection(_ picks: [Pick], hover: DesignElementPick? = nil) {
+        self.picks = Array(picks.suffix(Self.pickLimit))
+        self.hover = hover
+        planLive()
+    }
+
+    func clearSelection() {
+        guard !picks.isEmpty else { return }
+        picks = []
+        planLive()
+    }
+
+    /// Where the pointer is with Select: the element under it is ringed once its board names it.
+    func pointer(_ pick: NWCanvasPick?) {
+        guard tool == .select, let pick, let id = pick.board, let board = DesignPath(id), let point = pick.point, let host else {
+            hoverGeneration += 1
+            pendingHover = nil
+            host?.hover(nil)
+            if hover != nil { hover = nil }
+            return
+        }
+        host.hover(board)
+        pendingHover = (board, point)
+        guard hovering == nil else { return }
+        // One hit test at a time; the pointer's latest place goes next.
+        hovering = Task { [weak self] in
+            while let next = self?.pendingHover, let generation = self?.hoverGeneration {
+                self?.pendingHover = nil
+                let found = await host.hitTest(next.board, at: next.point)
+                guard let self else { return }
+                if self.hoverGeneration == generation, self.pendingHover == nil, self.hover != found { self.hover = found }
+            }
+            self?.hovering = nil
+        }
+    }
+
+    /// A live board drew new source: its selected elements are found again where it draws them
+    /// now, and one it no longer draws leaves the selection.
+    func relocate(on board: DesignPath) {
+        let tids = picks.compactMap { $0.board == board ? $0.element?.id.tid : nil }
+        if hover?.board == board { hover = nil }
+        guard !tids.isEmpty, let host else { return }
+        Task {
+            guard let found = await host.locate(board, tids: tids) else { return }
+            let next = picks.compactMap { pick -> Pick? in
+                guard pick.board == board, let element = pick.element else { return pick }
+                guard let now = found[element.id.tid], now.id.path == element.id.path else { return nil }
+                return Pick(board: board, element: now)
+            }
+            if next != picks { picks = next }
+        }
+    }
+
+    /// The canvas's rings: every selected element, the latest wearing its tag.
+    var selectionRings: [NWCanvasElement] {
+        let elements = selectedElements
+        return elements.enumerated().map { index, element in
+            NWCanvasElement(id: element.id.description, board: element.board.rawValue, rect: element.rect,
+                            tag: index == elements.count - 1 ? element.tag : nil)
+        }
+    }
+
+    var hoverRing: NWCanvasElement? {
+        hover.map { NWCanvasElement(id: $0.id.description, board: $0.board.rawValue, rect: $0.rect) }
+    }
+
+    // MARK: The view record
+
+    /// What this screen shows, as the chat's messages carry it (view-state.md): the boards on
+    /// screen in canvas order, the boards selected whole or holding a selected element, and the
+    /// selected elements, most recent last.
+    var viewRecord: DesignViewRecord? {
+        guard let snapshot else { return nil }
+        let visible = Set(Self.onScreen(boards, viewport: viewport, size: canvasSize))
+        return Self.viewRecord(order: Self.canvasOrder(snapshot.index), visible: visible, picks: picks)
+    }
+
+    /// The boards whose frames a view of `size` shows.
+    static func onScreen(_ boards: [NWCanvasBoard], viewport: NWCanvasViewport, size: CGSize) -> [DesignPath] {
+        guard size.width > 0, size.height > 0 else { return [] }
+        let shown = viewport.visibleRect(in: size)
+        return boards.filter { $0.frame.intersects(shown) }.compactMap { DesignPath($0.id) }
+    }
+
+    static func viewRecord(order: [DesignPath], visible: Set<DesignPath>, picks: [Pick]) -> DesignViewRecord {
+        let elements = Array(picks.compactMap(\.element).suffix(DesignViewRecord.maxSelected))
+        let holding = Set(elements.map(\.board))
+        let whole = Set(picks.filter { $0.element == nil }.map(\.board))
+        var selectedBoards = order.filter { holding.contains($0) }
+        for path in order where whole.contains(path) && !holding.contains(path) && selectedBoards.count < DesignViewRecord.maxBoards {
+            selectedBoards.append(path)
+        }
+        selectedBoards = order.filter(Set(selectedBoards).contains)
+        return DesignViewRecord(
+            mode: .canvas,
+            visibleBoards: Array(order.filter(visible.contains).prefix(DesignViewRecord.maxBoards)).map(\.viewName),
+            selectedBoards: selectedBoards.map(\.viewName),
+            selected: elements.map(\.id),
+            selection: elements.suffix(DesignViewRecord.maxSelection).map { .init(id: $0.id, kind: $0.kind, label: $0.label) },
+            dirty: false)
     }
 
     func setZooming(_ zooming: Bool) {
@@ -177,6 +378,6 @@ final class DesignScreenModel {
     /// Tells the renderer what is on screen now.
     func planLive() {
         guard isActive, let host, !host.zooming, canvasSize.width > 0 else { return }
-        host.show(visible: visibleBoards, selected: selection, zoom: viewport.zoom)
+        host.show(visible: visibleBoards, selected: focusBoard, zoom: viewport.zoom)
     }
 }

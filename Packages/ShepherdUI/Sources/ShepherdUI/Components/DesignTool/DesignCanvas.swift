@@ -3,7 +3,10 @@ import SwiftUI
 /// The design canvas (NWDesignCanvas; DZCanvas): `bgBase` with 1px `lineStrong` dots every
 /// 22pt, the boards at their canvas positions in their frames, and the canvas toolbar in the
 /// bottom-leading corner. It pans (two-finger scroll, the Pan tool, space-drag) and zooms (pinch,
-/// ⌘-scroll) about the pointer; a click with Select picks the board under it, or none.
+/// ⌘-scroll) about the pointer. With Select, a click reports what it landed on (`pick`: a point
+/// on a board, a board's label, or the empty canvas; shift extends), and the pointer's moves over
+/// the boards are reported too (`point`); the selected and hovered elements are ringed over their
+/// boards (`NWSelectionRing`) from the rects the boards reported.
 ///
 /// Only the boards on screen are built, each an `NWBoardFrame` compared by value, so a pan
 /// moves frames without redrawing them and a change to one board redraws that board alone. The
@@ -14,7 +17,11 @@ public struct NWDesignCanvas<Slot: View>: View {
     @Binding var viewport: NWCanvasViewport
     @Binding var tool: NWCanvasTool
     let disabledTools: Set<NWCanvasTool>
-    let select: (String?) -> Void
+    let selection: [NWCanvasElement]
+    let hover: NWCanvasElement?
+    let pick: (NWCanvasPick) -> Void
+    /// Where the pointer is over the canvas with Select, as it moves; nil once it leaves.
+    let point: (NWCanvasPick?) -> Void
     /// The canvas's size, as it changes.
     let resized: (CGSize) -> Void
     /// True while a zoom gesture runs (a pinch, a burst of ⌘-scroll), false once it rests: live
@@ -24,14 +31,18 @@ public struct NWDesignCanvas<Slot: View>: View {
     @State private var size: CGSize = .zero
 
     public init(boards: [NWCanvasBoard], viewport: Binding<NWCanvasViewport>, tool: Binding<NWCanvasTool>,
-                disabledTools: Set<NWCanvasTool> = [], select: @escaping (String?) -> Void,
+                disabledTools: Set<NWCanvasTool> = [], selection: [NWCanvasElement] = [], hover: NWCanvasElement? = nil,
+                pick: @escaping (NWCanvasPick) -> Void, point: @escaping (NWCanvasPick?) -> Void = { _ in },
                 resized: @escaping (CGSize) -> Void = { _ in }, zooming: @escaping (Bool) -> Void = { _ in },
                 @ViewBuilder slot: @escaping (NWCanvasBoard) -> Slot) {
         self.boards = boards
         _viewport = viewport
         _tool = tool
         self.disabledTools = disabledTools
-        self.select = select
+        self.selection = selection
+        self.hover = hover
+        self.pick = pick
+        self.point = point
         self.resized = resized
         self.zooming = zooming
         self.slot = slot
@@ -49,6 +60,7 @@ public struct NWDesignCanvas<Slot: View>: View {
                     .fixedSize()
                     .offset(x: origin.x, y: origin.y - lift)
             }
+            rings
             input
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -66,12 +78,39 @@ public struct NWDesignCanvas<Slot: View>: View {
         .accessibilityLabel("Canvas")
     }
 
+    private struct Ring: Identifiable {
+        let element: NWCanvasElement
+        let style: NWSelectionRing.Style
+        var id: String { element.id }
+    }
+
+    /// The selected elements, then the hovered one unless it is selected, over their boards.
+    private var rings: some View {
+        let frames = Dictionary(boards.map { ($0.id, $0.frame) }, uniquingKeysWith: { a, _ in a })
+        let selected = Set(selection.map(\.id))
+        var rings = selection.map { Ring(element: $0, style: .selected) }
+        if let hover, !selected.contains(hover.id) { rings.append(Ring(element: hover, style: .hover)) }
+        return ForEach(rings) { ring in
+            let board = frames[ring.element.board] ?? .null
+            let rect = board.isNull ? .zero : viewport.screen(ring.element.rect.offsetBy(dx: board.minX, dy: board.minY))
+            NWSelectionRing(ring.style, tag: ring.element.tag)
+                .frame(width: max(rect.width, 1), height: max(rect.height, 1))
+                .offset(x: rect.minX, y: rect.minY)
+                .opacity(board.isNull ? 0 : 1)
+        }
+    }
+
     @ViewBuilder private var input: some View {
         #if os(macOS)
         NWCanvasInput(tool: tool, handlers: NWCanvasInput.Handlers(
             pan: { viewport.pan(by: $0) },
             zoom: { factor, anchor in viewport.zoom(by: factor, about: anchor) },
-            click: { point in select(boards.board(at: point, viewport: viewport)?.id) },
+            click: { location, extending in pick(boards.pick(at: location, viewport: viewport, extending: extending)) },
+            move: { location in
+                guard let location else { point(nil); return }
+                let found = boards.pick(at: location, viewport: viewport)
+                point(found.board == nil ? nil : found)
+            },
             zooming: zooming))
         #else
         Color.clear
@@ -82,7 +121,7 @@ public struct NWDesignCanvas<Slot: View>: View {
             .simultaneousGesture(MagnifyGesture().onChanged { value in
                 viewport.zoom(by: value.magnification, about: value.startLocation)
             })
-            .onTapGesture { point in select(boards.board(at: point, viewport: viewport)?.id) }
+            .onTapGesture { location in pick(boards.pick(at: location, viewport: viewport)) }
         #endif
     }
 }
@@ -135,7 +174,10 @@ struct NWCanvasInput: NSViewRepresentable {
     struct Handlers {
         var pan: (CGSize) -> Void
         var zoom: (CGFloat, CGPoint) -> Void
-        var click: (CGPoint) -> Void
+        /// A click with Select, and whether shift was held.
+        var click: (CGPoint, Bool) -> Void
+        /// The pointer moving with Select (nil once it leaves the canvas, or a drag starts).
+        var move: (CGPoint?) -> Void
         var zooming: (Bool) -> Void
     }
 
@@ -165,6 +207,7 @@ struct NWCanvasInput: NSViewRepresentable {
         private var keyMonitor: Any?
         private var zoomRest: DispatchWorkItem?
         private var pinching = false
+        private var tracking: NSTrackingArea?
 
         override var isFlipped: Bool { true }
         override var acceptsFirstResponder: Bool { false }
@@ -179,6 +222,26 @@ struct NWCanvasInput: NSViewRepresentable {
 
         override func resetCursorRects() {
             if panning { addCursorRect(bounds, cursor: dragOrigin == nil ? .openHand : .closedHand) }
+        }
+
+        // MARK: The pointer
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            if let tracking { removeTrackingArea(tracking) }
+            let area = NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                                      owner: self, userInfo: nil)
+            addTrackingArea(area)
+            tracking = area
+        }
+
+        override func mouseMoved(with event: NSEvent) {
+            guard tool == .select, !panning, dragOrigin == nil else { return }
+            handlers?.move(location(event))
+        }
+
+        override func mouseExited(with event: NSEvent) {
+            handlers?.move(nil)
         }
 
         // MARK: Scroll and pinch
@@ -234,6 +297,7 @@ struct NWCanvasInput: NSViewRepresentable {
             let point = location(event)
             let delta = CGSize(width: point.x - origin.x, height: point.y - origin.y)
             if !dragged, abs(delta.width) + abs(delta.height) < 3 { return }
+            if !dragged { handlers?.move(nil) }
             dragged = true
             // Select drags the canvas too: there is nothing on it to move yet.
             handlers?.pan(delta)
@@ -247,7 +311,7 @@ struct NWCanvasInput: NSViewRepresentable {
                 window?.invalidateCursorRects(for: self)
             }
             guard !dragged, !panning else { return }
-            handlers?.click(location(event))
+            handlers?.click(location(event), event.modifierFlags.contains(.shift))
         }
 
         private func location(_ event: NSEvent) -> CGPoint {

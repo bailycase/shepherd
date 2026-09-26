@@ -28,8 +28,12 @@ public enum NWDesignMetrics {
     public static let labelSpacing: CGFloat = NW.Space.m
     public static let labelSize: CGFloat = 12
     public static let labelSizeTextSize: CGFloat = 10.5
-    /// A label is never narrower than this, whatever its board's width on screen.
+    /// A label is never narrower than this, whatever its board's width on screen, unless the next
+    /// board along the row comes sooner.
     public static let labelMinWidth: CGFloat = 160
+    /// Where the room above a board is short (rows closer than a label at a low zoom), the label
+    /// moves down toward its frame, keeping at least this gap; with less room it isn't drawn.
+    public static let labelMinGap: CGFloat = NW.Space.xxs
     /// A board frame's corners.
     public static let frameRadius: CGFloat = NW.Radius.xs
     /// The selected board's `running` ring, outside the frame.
@@ -37,6 +41,19 @@ public enum NWDesignMetrics {
     /// The frame's drop shadow (the board's 0 12 32).
     public static let frameShadowRadius: CGFloat = 16
     public static let frameShadowY: CGFloat = 12
+    /// A selected element (NWSelectionRing; NWDesignTool, DZTweak): a 1.5pt `running` ring over
+    /// a `runningTint` fill, 8pt square handles on its corners (a 1.5pt `running` line, radius 2),
+    /// and a tag 4pt above its top-leading corner: 18pt, 6pt padding, radius 4, mono 10.5. A
+    /// hovered element wears the ring alone.
+    public static let elementRingWidth: CGFloat = 1.5
+    public static let handleSize: CGFloat = 8
+    public static let handleLineWidth: CGFloat = 1.5
+    public static let handleRadius: CGFloat = 2
+    public static let tagHeight: CGFloat = 18
+    public static let tagPadding: CGFloat = NW.Space.s
+    public static let tagRadius: CGFloat = NW.Radius.xs
+    public static let tagGap: CGFloat = NW.Space.xs
+    public static let tagTextSize: CGFloat = 10.5
     /// Where a fitted canvas puts the boards' top-leading corner (44pt in, 52pt down).
     public static let fitLeading: CGFloat = 44
     public static let fitTop: CGFloat = 52

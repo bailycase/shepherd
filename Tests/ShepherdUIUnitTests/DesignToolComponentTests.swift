@@ -72,6 +72,67 @@ struct DesignToolComponentTests {
         #expect(Self.boards.board(at: CGPoint(x: 660, y: 10), viewport: viewport) == nil)
     }
 
+    // MARK: Labels and picks
+
+    /// The skill's grid: desktop boards 80 apart in a row, a phone row 120 below.
+    private static let grid: [String: CGRect] = [
+        "A.dc.html": CGRect(x: 0, y: 0, width: 1280, height: 800),
+        "B.dc.html": CGRect(x: 1360, y: 0, width: 1280, height: 800),
+        "A-phone.dc.html": CGRect(x: 0, y: 920, width: 390, height: 844),
+        "B-phone.dc.html": CGRect(x: 470, y: 920, width: 390, height: 844),
+    ]
+
+    @Test func aLabelsRoomIsTheGapToTheRowAboveAndTheNextBoardAlong() {
+        let rooms = NWLabelRoom.rooms(Self.grid)
+        #expect(rooms["A.dc.html"] == NWLabelRoom(above: nil, along: 1360))
+        #expect(rooms["B.dc.html"] == NWLabelRoom(above: nil, along: nil))
+        #expect(rooms["A-phone.dc.html"] == NWLabelRoom(above: 120, along: 470))
+        #expect(rooms["B-phone.dc.html"] == NWLabelRoom(above: 120, along: nil))
+    }
+
+    /// The canvas opens near 17% on the skill's grid, where rows are 20pt apart: the second row's
+    /// labels move down toward their boards instead of over the first row, and past a zoom where
+    /// even that doesn't fit they aren't drawn.
+    @Test(arguments: [
+        (CGFloat(1), true, NWDesignMetrics.labelGap),
+        (0.17, true, 120 * 0.17 - NWDesignMetrics.labelHeight),
+        (0.14, false, NWDesignMetrics.labelGap),
+    ])
+    func aLabelNeverLiesOverTheRowAbove(zoom: CGFloat, shown: Bool, gap: CGFloat) {
+        let room = NWLabelRoom.rooms(Self.grid)["A-phone.dc.html"]!
+        let label = room.layout(width: 390 * zoom, zoom: zoom)
+        #expect(label.shown == shown)
+        #expect(abs(label.gap - gap) < 0.001)
+        if label.shown {
+            // The label's top stays below the row above's bottom.
+            let rowAbove = 800 * zoom
+            let labelTop = 920 * zoom - label.gap - NWDesignMetrics.labelHeight
+            #expect(labelTop >= rowAbove)
+        }
+        #expect(NWLabelRoom.rooms(Self.grid)["A.dc.html"]!.layout(width: 1280 * zoom, zoom: zoom).shown, "nothing above the first row")
+    }
+
+    /// A phone's label runs past its narrow board at a low zoom, but stops short of the next one.
+    @Test func aLabelStopsBeforeTheNextBoardAlong() {
+        let room = NWLabelRoom.rooms(Self.grid)["A-phone.dc.html"]!
+        let label = room.layout(width: 390 * 0.2, zoom: 0.2)
+        #expect(label.width == 470 * 0.2 - NWDesignMetrics.labelSpacing)
+        #expect(room.layout(width: 390, zoom: 1).width == 390)
+    }
+
+    @Test func aPickNamesTheBoardThePointOnItOrItsLabel() {
+        let rooms = NWLabelRoom.rooms(Self.grid)
+        let boards = Self.grid.keys.sorted().map { id in
+            NWCanvasBoard(id: id, frame: Self.grid[id]!, title: id, size: "", labelRoom: rooms[id]!)
+        }
+        let viewport = NWCanvasViewport(offset: CGPoint(x: 44, y: 52), zoom: 0.5)
+        let onA = boards.pick(at: CGPoint(x: 44 + 100, y: 52 + 60), viewport: viewport, extending: true)
+        #expect(onA == NWCanvasPick(board: "A.dc.html", point: CGPoint(x: 200, y: 120), extending: true))
+        let label = boards.pick(at: CGPoint(x: 44 + 10, y: 52 - 12), viewport: viewport)
+        #expect(label == NWCanvasPick(board: "A.dc.html"), "a label picks its board whole")
+        #expect(boards.pick(at: CGPoint(x: 44 + 660, y: 52 + 10), viewport: viewport) == NWCanvasPick())
+    }
+
     @Test func aFittedCanvasPutsTheBoardsTopLeadingCornerInItsInsetsAndNeverEnlarges() {
         let bounds = Self.boards.bounds
         #expect(bounds == CGRect(x: 0, y: 0, width: 2640, height: 1764))
