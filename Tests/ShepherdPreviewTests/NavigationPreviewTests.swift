@@ -260,6 +260,33 @@ extension PreviewTests {
         }
     }
 
+    /// The side pane maximized over the window (ChangesWide): its 52pt rail with the window
+    /// controls and Back to the thread in place of the sidebar and the toolbar, the file list
+    /// beside the diff.
+    @Test func appWindowChangesWide() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        let space = Space(name: "Shepherd", path: workspace.dir.path)
+        var (agent, tab) = try await workspace.agent("Add refund events", in: space, order: 0, live: true)
+        agent.checkout = AgentCheckout(branch: "agent/refund-events", changedFiles: 5)
+        try await workspace.seed(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
+        let files = Reviews.session().files
+        vm.changesEngineOverride = { _, _ in
+            ChangesBoard.engine(files, list: ChangesBoard.listed(files, scope: .uncommitted,
+                                                                  comparison: ChangesComparison(head: "Working tree", base: "HEAD")))
+        }
+        vm.selectAgent(agent.id)
+        vm.toggleRightPane()
+        vm.toggleSidePaneMaximized(.local(agent.id))
+        #expect(vm.isSidePaneWide)
+        try await Preview.render("app-window-changes-wide", size: CGSize(width: 1440, height: 900), ready: {
+            vm.reviewSessions.values.first?.isLoading == false
+        }) {
+            RootView(vm: vm)
+        }
+    }
+
     /// The terminal panel (TerminalSplit, TerminalStates boards): two tabs under the thread, the
     /// first split right, then the same panel maximized over the folded thread.
     @Test(arguments: [false, true])

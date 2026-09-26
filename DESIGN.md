@@ -820,7 +820,8 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
 - **Size** (`AppLayout+Navigation.swift`; NWNavigation): minimum 720×600 (`windowMinWidth`,
   `windowMinHeight`), default 1440×900. The window controls stay at macOS's standard position
   (NWNavigation: "window controls at the standard macOS position"); the board draws them in the
-  sidebar's 44pt top bar, 14pt in and 8pt apart.
+  sidebar's 44pt top bar, 14pt in and 8pt apart. The one exception is the maximized side pane's
+  rail (ChangesWide), which stacks them (Side pane › Changes › Maximized).
 - **Layout** (NWNavigation's window diagram): the sidebar sits on `bgBase` and runs behind the
   window controls; the main column sits on `bgWindow`, with the 44pt toolbar on top. A docked
   sidebar's trailing edge is a 1pt `lineSubtle` divider (`AppLayout.dividerWidth`) with a 9pt drag
@@ -2653,8 +2654,13 @@ send the review.
   before ⋯). The strip gives way to a 260pt file list (`NWChangesFileList`): "5 FILES" with the
   scope's stat over 46pt rows at radius 6 (the status letter; the name in `code` semibold over its
   directory in mono 10.5 `textTertiary`; the stat over a `running` comment count or a `done`
-  check), the current file on `bgSelected`. **Not built yet:** the board's 52pt rail with the window
-  controls and Back to the thread, in place of the sidebar and the header.
+  check), the current file on `bgSelected`. The pane then takes the whole window: a 52pt rail
+  (`NWSidePaneRail`) replaces the sidebar and the toolbar, on `bgBase` with a `lineStrong` edge,
+  holding the window controls stacked at its top (12pt circles 6pt apart, 14pt down; Shepherd draws
+  them, `NWWindowControls`, and hides the window's own while the rail shows; none in full screen)
+  and, 18pt under them, Back to the thread (a 32pt bordered circle with `text.bubble`), which
+  restores the pane beside the thread as Restore the thread does. Hidden layouts keep the column's
+  size meanwhile, so only the visible layout relays out.
 - **Commit… sheet** (`ReviewCommitSheet`, 520pt, from the toolbar's Commit…; derived from the
   iPadCommit board; parts in `Components/Review/CommitForm.swift`): "Commit n files" over "On <branch> in <repository>."
   - Titles: "Commit n files" (or "Commit"), "Committing…" while it runs, "Committed" or "Pull
@@ -4328,8 +4334,7 @@ below collects the rest, and the places those sentences point here.
     these steps").
 - **The Changes pane: open, waiting on the user's call** (not decided departures; each either
   gets built as its board draws it or becomes a departure once the user says so):
-  - Mac: the maximized pane's 52pt rail with the window controls and Back to the thread
-    (ChangesWide); ⌘1–9 to jump
+  - Mac: ⌘1–9 to jump
     to a file (ChangesStates), chords that select agents today; Rich preview (the engine sends no
     file contents).
   - iPad: the sidebar stays in landscape, so the docked pane is narrower than the board's 640pt;
@@ -7890,7 +7895,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | ChangesBase | Side pane › Changes (base picker) | Built |
 | ChangesUnified | Side pane › Changes (unified, word diffs, Diff options) | Partial |
 | ChangesLastTurn | Side pane › Changes (a turn's compare row, the comment editor) | Built |
-| ChangesWide | Side pane › Changes (maximized, file list) | Partial |
+| ChangesWide | Side pane › Changes (maximized, file list, rail) | Built |
 | Subagents | Subagents; Side pane › Subagent inspector | Partial |
 | SubagentsDone | Subagents; Side pane › Subagent inspector | Partial |
 | SubagentsQueue | Subagents (One card with Up next); Up next (the queue) | Partial |

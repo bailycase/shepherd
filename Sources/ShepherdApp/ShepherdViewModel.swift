@@ -274,6 +274,11 @@ final class ShepherdViewModel {
     }
     var showNewAgentSheet = false
     /// Whether the in-window settings surface is visible.
+    /// The workspace column's size and window, kept current without redrawing anything.
+    @ObservationIgnored let workspaceColumn = LiveResizeColumn()
+    /// The column's size when the side pane last covered the window: hidden layouts keep it
+    /// while it does (`isSidePaneWide`).
+    @ObservationIgnored var wideFrozenSize: CGSize?
     var showSettings = false
     /// Last Settings category visited. View-model state survives closing the
     /// overlay but naturally resets when Shepherd restarts.
