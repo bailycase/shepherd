@@ -213,6 +213,35 @@ extension NWEmptyState where Actions == EmptyView {
     }
 }
 
+/// A list still loading (NWStatus: a remote host's list): four placeholder rows, each a 6pt dot
+/// and an 8pt bar 10pt after it, the bars at 70%, 52%, 64% and 40% of the width, all in
+/// `bgSelected`, pulsing (`nwShimmer()`; static under Reduce Motion). VoiceOver hears "Loading".
+public struct NWLoadingRows: View {
+    static let widths: [CGFloat] = [0.70, 0.52, 0.64, 0.40]
+
+    public init() {}
+
+    public var body: some View {
+        let fill = Color.nw.bgSelected
+        GeometryReader { geo in
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Self.widths.indices, id: \.self) { index in
+                    HStack(spacing: 10) {
+                        Circle().fill(fill).frame(width: 6, height: 6)
+                        RoundedRectangle(cornerRadius: NW.Radius.xs).fill(fill)
+                            .frame(width: geo.size.width * Self.widths[index], height: 8)
+                    }
+                    .frame(height: NW.Height.row)
+                }
+            }
+        }
+        .frame(height: NW.Height.row * CGFloat(Self.widths.count))
+        .nwShimmer()
+        .accessibilityElement()
+        .accessibilityLabel("Loading")
+    }
+}
+
 extension View {
     /// Loading placeholders pulse (use with `.redacted(reason: .placeholder)`; NWStatus), the
     /// `pulse` motion; static under Reduce Motion. Live text shimmers with `nwShimmer(active:)`.

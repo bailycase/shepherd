@@ -149,6 +149,11 @@ struct RemoteDirectoryPicker: View {
                             load((path as NSString).appendingPathComponent(name))
                         }
                     }
+                    // The host's first listing is on its way: placeholder rows, not an empty list.
+                    if loading, dirs.isEmpty, parent == nil, errorText == nil {
+                        NWLoadingRows()
+                            .padding(.horizontal, NW.Space.m)
+                    }
                     if !loading, visible.isEmpty {
                         Text("No subdirectories")
                             .font(.nw(.caption))
