@@ -96,6 +96,16 @@ public final class DesignStore: @unchecked Sendable {
     private var loaded: [DesignID: Loaded] = [:]
     /// Each design's comments.json as last read or written. Queue-confined.
     private var commentFiles: [DesignID: DesignComments] = [:]
+    /// Each served file's hash, while its size and modification time hold. Queue-confined.
+    private struct ServedHash {
+        var size: Int
+        var modified: Date
+        var sha256: String
+    }
+    private var servedHashes: [DesignID: [String: ServedHash]] = [:]
+    /// The hash of each file served in pieces (`project/<path>`, `assets/<name>`), while its size
+    /// and modification time hold, so a piece reads only its own bytes. Queue-confined.
+    private var pieceHashes: [DesignID: [String: ServedHash]] = [:]
 
     public init(directory: URL) {
         self.directory = directory
@@ -188,6 +198,8 @@ public final class DesignStore: @unchecked Sendable {
             guard let folder = self.folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
             self.loaded[id] = nil
             self.commentFiles[id] = nil
+            self.servedHashes[id] = nil
+            self.pieceHashes[id] = nil
             guard FileManager.default.fileExists(atPath: folder.path) else { return }
             do { try FileManager.default.removeItem(at: folder) } catch {
                 throw DesignStoreError.io("could not delete design \(id): \(error.localizedDescription)")
@@ -767,6 +779,166 @@ public final class DesignStore: @unchecked Sendable {
         let ds = project.appendingPathComponent("ds", isDirectory: true)
         let names = (try? FileManager.default.contentsOfDirectory(atPath: ds.path)) ?? []
         return names.filter { $0 != namespace }.reduce(0) { $0 + systemFiles(ds.appendingPathComponent($1, isDirectory: true)).count }
+    }
+
+    // MARK: Serving files (remote)
+
+    /// Every file under the design's `project/` a board may load, with its hash and size: the
+    /// boards and the rest (installed systems, stylesheets, fonts, images), by the path grammar,
+    /// never through a link that leads out of `project/`, and never `canvas.json` (the index) or
+    /// a `support.js` (each device serves its own runtime there). A file's hash is kept while its
+    /// size and modification time stay the same.
+    public func projectFiles(_ id: DesignID) async throws -> [RemoteDesignFileInfo] {
+        try await run {
+            _ = try self.load(id)
+            guard let project = self.projectFolder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+            var known = self.servedHashes[id] ?? [:]
+            var seen: [String: ServedHash] = [:]
+            var files: [RemoteDesignFileInfo] = []
+            let root = project.resolvingSymlinksInPath().path + "/"
+            let keys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey]
+            let walker = FileManager.default.enumerator(at: project, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles])
+            while let url = walker?.nextObject() as? URL, files.count < Self.maxFiles {
+                let resolved = url.resolvingSymlinksInPath().path
+                guard resolved.hasPrefix(root) else { continue }
+                let relative = String(resolved.dropFirst(root.count))
+                let values = try? url.resourceValues(forKeys: Set(keys))
+                guard values?.isRegularFile == true, values?.isSymbolicLink != true, Self.isServable(relative),
+                      let size = values?.fileSize, size <= DesignImport.maxFileBytes else { continue }
+                let modified = values?.contentModificationDate ?? .distantPast
+                let hash: ServedHash
+                if let cached = known[relative], cached.size == size, cached.modified == modified {
+                    hash = cached
+                } else {
+                    guard let data = try? Data(contentsOf: url) else { continue }
+                    hash = ServedHash(size: data.count, modified: modified, sha256: Self.sha256(data))
+                }
+                seen[relative] = hash
+                files.append(RemoteDesignFileInfo(path: relative, sha256: hash.sha256, size: hash.size))
+            }
+            known = seen
+            self.servedHashes[id] = known
+            return files.sorted { $0.path < $1.path }
+        }
+    }
+
+    /// One file of the design's `project/` as `projectFiles` lists it, with its hash; nil when the
+    /// design has no such file. `path` is checked segment by segment before anything is read.
+    public func projectFile(_ id: DesignID, path: String) async throws -> (data: Data, sha256: String)? {
+        guard Self.isServable(path) else { throw DesignStoreError.io("\"\(path)\" names no file a design serves") }
+        return try await run {
+            _ = try self.load(id)
+            guard let project = self.projectFolder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+            guard let data = Self.readInside(project.appendingPathComponent(path), root: project) else { return nil }
+            return (data, Self.sha256(data))
+        }
+    }
+
+    /// An upload in the design's `assets/` (`/_blob/<id>`): its file name and bytes; nil when
+    /// there is none. Only a regular file inside `assets/` is read.
+    public func asset(_ id: DesignID, blobID: String) async throws -> (name: String, data: Data)? {
+        guard DesignBundle.isAssetName(blobID), !blobID.contains(".") else {
+            throw DesignStoreError.io("\"\(blobID)\" names no upload")
+        }
+        return try await run {
+            _ = try self.load(id)
+            guard let folder = self.folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+            let assets = folder.appendingPathComponent("assets", isDirectory: true)
+            let names = (try? FileManager.default.contentsOfDirectory(atPath: assets.path))?.sorted() ?? []
+            guard let name = names.first(where: { ($0 == blobID || $0.hasPrefix(blobID + ".")) && DesignBundle.isAssetName($0) }),
+                  let data = Self.readInside(assets.appendingPathComponent(name), root: assets) else { return nil }
+            return (name, data)
+        }
+    }
+
+    /// A served file read in pieces: `length` bytes from `offset`, and the whole file's size and
+    /// hash.
+    public struct Piece: Sendable {
+        public var data: Data
+        public var offset: Int
+        public var total: Int
+        public var sha256: String
+    }
+
+    /// A piece of one file of the design's `project/`, as `projectFile` would serve it; nil when
+    /// the design has no such file. Only the piece's bytes are read once the file's hash is known.
+    /// With `sha256`, a file whose hash moved answers its new hash with no bytes.
+    public func projectFilePiece(_ id: DesignID, path: String, offset: Int, length: Int, sha256: String? = nil) async throws -> Piece? {
+        guard Self.isServable(path) else { throw DesignStoreError.io("\"\(path)\" names no file a design serves") }
+        return try await run {
+            _ = try self.load(id)
+            guard let project = self.projectFolder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+            return try self.piece(id, key: "project/" + path, file: project.appendingPathComponent(path), root: project,
+                                  offset: offset, length: length, sha256: sha256)
+        }
+    }
+
+    /// A piece of an upload in the design's `assets/`, with its file name; nil when there is none.
+    public func assetPiece(_ id: DesignID, blobID: String, offset: Int, length: Int) async throws -> (name: String, piece: Piece)? {
+        guard DesignBundle.isAssetName(blobID), !blobID.contains(".") else {
+            throw DesignStoreError.io("\"\(blobID)\" names no upload")
+        }
+        return try await run {
+            _ = try self.load(id)
+            guard let folder = self.folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+            let assets = folder.appendingPathComponent("assets", isDirectory: true)
+            let names = (try? FileManager.default.contentsOfDirectory(atPath: assets.path))?.sorted() ?? []
+            guard let name = names.first(where: { ($0 == blobID || $0.hasPrefix(blobID + ".")) && DesignBundle.isAssetName($0) }),
+                  let piece = try self.piece(id, key: "assets/" + name, file: assets.appendingPathComponent(name), root: assets,
+                                             offset: offset, length: length) else { return nil }
+            return (name, piece)
+        }
+    }
+
+    /// Queue: a piece of a regular file that resolves (links followed) inside `root` and fits the
+    /// cap. The whole file is read only while its hash isn't known for its size and modification
+    /// time. `sha256` (the hash the asker holds): a file that no longer has it answers its new
+    /// hash with no bytes, whatever the offset. An offset outside the file throws.
+    private func piece(_ id: DesignID, key: String, file: URL, root: URL, offset: Int, length: Int,
+                       sha256 expected: String? = nil) throws -> Piece? {
+        let base = root.resolvingSymlinksInPath().standardizedFileURL.path
+        let resolved = file.resolvingSymlinksInPath().standardizedFileURL
+        guard resolved.path.hasPrefix(base + "/"),
+              let values = try? resolved.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]),
+              values.isRegularFile == true, let size = values.fileSize, size <= DesignImport.maxFileBytes else { return nil }
+        let modified = values.contentModificationDate ?? .distantPast
+        var whole: Data?
+        let sha: String
+        if let known = pieceHashes[id]?[key], known.size == size, known.modified == modified {
+            sha = known.sha256
+        } else {
+            guard let data = try? Data(contentsOf: resolved), data.count == size else { return nil }
+            sha = Self.sha256(data)
+            pieceHashes[id, default: [:]][key] = ServedHash(size: size, modified: modified, sha256: sha)
+            whole = data
+        }
+        if let expected, expected != sha { return Piece(data: Data(), offset: 0, total: size, sha256: sha) }
+        guard offset >= 0, offset <= size else { throw RemoteDesignRefusal.badOffset(offset, size: size) }
+        let end = offset + min(max(length, 0), size - offset)
+        if let whole { return Piece(data: whole.subdata(in: offset..<end), offset: offset, total: size, sha256: sha) }
+        guard let handle = try? FileHandle(forReadingFrom: resolved) else { return nil }
+        defer { try? handle.close() }
+        guard (try? handle.seek(toOffset: UInt64(offset))) != nil, let data = try? handle.read(upToCount: end - offset) ?? Data(),
+              data.count == end - offset else { return nil }
+        return Piece(data: data, offset: offset, total: size, sha256: sha)
+    }
+
+    /// Whether a design serves `path` under its `project/`: segments by the file grammar, not
+    /// the index, and no `support.js`.
+    static func isServable(_ path: String) -> Bool {
+        let segments = path.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        guard !segments.isEmpty, segments.count <= 16, path != "canvas.json", segments.last != "support.js" else { return false }
+        return segments.allSatisfy(DesignImport.isSegment)
+    }
+
+    /// A regular file's bytes, when it resolves (links followed) inside `root` and fits the cap.
+    private static func readInside(_ file: URL, root: URL) -> Data? {
+        let base = root.resolvingSymlinksInPath().standardizedFileURL.path
+        let resolved = file.resolvingSymlinksInPath().standardizedFileURL
+        guard resolved.path.hasPrefix(base + "/"),
+              let values = try? resolved.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
+              values.isRegularFile == true, (values.fileSize ?? 0) <= DesignImport.maxFileBytes else { return nil }
+        return try? Data(contentsOf: resolved)
     }
 
     // MARK: Comments

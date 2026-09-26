@@ -57,10 +57,11 @@ final class HomeFeed {
 
     /// Reads the hosts under observation tracking, derives when they changed, and tracks again.
     private func track() {
+        let designs = MobileDesigns.of(hosts)
         let (next, connections) = withObservationTracking {
             (hosts.hosts.map { host in
                 FleetHost(id: host.id, name: host.name, address: host.record.address, port: host.record.port,
-                          phase: host.phase, state: host.state, lastSeen: host.lastSeen)
+                          phase: host.phase, state: host.state, lastSeen: host.lastSeen, designs: designs.serving.contains(host.id))
             }, Dictionary(hosts.hosts.compactMap { host in host.session.map { (host.id, $0) } }, uniquingKeysWith: { a, _ in a }))
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in self?.track() }
@@ -125,7 +126,8 @@ final class HomeFeed {
                 guard let client = host.connectedClient, let session = host.session,
                       host.supports(RemoteProtocol.nativeThreadCapability) else { continue }
                 var quietReads = 0
-                for agent in host.state.agents {
+                // A design's agent has no thread row to read for (its design is the row).
+                for agent in host.state.agents where !host.state.isDesignAgent(agent) {
                     let ref = FleetRef(host: host.id, agent: agent.id)
                     let digest = digests[ref]
                     let current = readIn[ref] == session

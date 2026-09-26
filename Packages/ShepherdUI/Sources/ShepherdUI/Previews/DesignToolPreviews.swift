@@ -309,3 +309,51 @@ private let previewActions = NWBoardActions.Actions(comment: {}, tweak: {}, vari
         .background(Color.nw.sheetScrim)
     }
 }
+
+#Preview("Designs on iPhone") {
+    NWPreviewBoth {
+        VStack(alignment: .leading, spacing: NW.Space.xl) {
+            HStack(alignment: .top, spacing: NWPhoneDesignMetrics.gridColumnSpacing) {
+                NWDesignTile(name: "Checkout funnel dashboard", detail: "acme-web · 4 boards · 2m", action: {}) {
+                    PreviewBoardPage(phone: false)
+                }
+                NWDesignTile(name: "Onboarding flow", detail: "drawing · 2 boards", action: {}) {
+                    PreviewBoardPage(phone: true).frame(width: 51)
+                }
+            }
+            NWListCard {
+                NWDesignSystemRow(name: "acme-web", source: "dashboard-web · tokens.css",
+                                  colors: [Color.nw.running, Color.nw.textPrimary, Color.nw.lineSubtle])
+                NWDesignSystemRow(name: "Night Watch", source: "shepherd · ShepherdUI Tokens",
+                                  colors: [Color.nw.lantern, Color.nw.bgBase, Color.nw.textPrimary])
+            }
+        }
+        .padding(NW.Space.l)
+        .frame(width: 390)
+    }
+}
+
+#Preview("A board on iPhone") {
+    NWPreviewBoth {
+        VStack(spacing: NW.Space.xl) {
+            VStack(spacing: NW.Space.xxs) {
+                Text("A · phone").font(.nwSans(NWPhoneDesignMetrics.boardTitleSize, .semibold))
+                NWBoardDots(count: 4, current: 3)
+            }
+            NWPhoneCommentCard(number: 2, target: "Steps list", meta: "You · now",
+                               text: "Make the bars thicker on phones. Hard to read at a glance.",
+                               status: "Design agent is updating A · phone")
+            NWPhoneCommentCard(number: 1, target: "Cart viewed", meta: "You · 5m", text: "Round the bar ends.",
+                               answer: NWCommentEntry(id: "r1", author: "Design agent", age: "1m",
+                                                      text: "Done on A and A · phone."))
+            NWBoardToolbar(tools: [
+                .init(id: "comment", title: "Comment", symbol: "text.bubble"),
+                .init(id: "ask", title: "Ask the agent", symbol: "sparkle"),
+                .init(id: "boards", title: "Boards", symbol: "square.grid.2x2"),
+                .init(id: "export", title: "Export", symbol: "square.and.arrow.up"),
+            ], active: "comment") { _ in }
+        }
+        .padding(NW.Space.l)
+        .frame(width: 390)
+    }
+}

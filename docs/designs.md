@@ -2,7 +2,8 @@
 
 The Design tool (an experiment, off by default) keeps each design as a canvas of HTML boards
 that a design agent draws. This page covers the files, how they change, how a board is drawn,
-the design agent's tools, and the Mac's screens. The remote protocol comes with a later change.
+the design agent's tools, the Mac's screens, and the remote protocol that serves designs to
+other devices.
 
 ## The format
 
@@ -229,11 +230,14 @@ them, whether the experiment is on or off. The rule holds in both directions:
   palette lists none of its subagents, and the palette's transcript search never reads its chat.
   It posts no banners: a thread's "Turn finished", question and subagent banners (and their
   Review action) never speak for a design. The Hosts page counts no thread for it.
-- **Remote clients.** Another Mac, or an iPhone or iPad, gets the host's state without
-  `designs`, without their agents, and without those agents' layouts
-  (`ShepherdState.withoutDesigns`). There is no remote design screen yet. `RemoteHostClient`
-  applies the same rule to whatever a host sends, so an older host's designs reach no Mac,
-  iPhone or iPad client either.
+- **Remote clients.** A client that reads designs (`designs.v1` in its hello) gets the host's
+  designs and the agents that draw them while the host serves designs (its experiment on): its
+  design screens show them, and it applies the same chrome rules. Any other client, and every
+  client while the experiment is off, gets the host's state without `designs`, without their
+  agents, and without those agents' layouts (`ShepherdState.withoutDesigns`); turning the
+  experiment on or off sends reading clients the state again. `RemoteHostClient` applies the
+  same rule to whatever a host sends, keeping designs only from a host that offers `designs.v1`,
+  so an older host's designs reach no Mac, iPhone or iPad client that has no screen for them.
 - **A forgotten design.** Deleting a design, or startup forgetting one whose folder is gone,
   takes the agents that drew it. Clearing their `designID` instead would turn the design's chat,
   fences and all, into an ordinary thread.
@@ -914,3 +918,120 @@ written its system, the Spacing & radii and Boards using it sections (rows in th
 anatomy), a type style without a sample (its name), and a failed build or re-sync (the error
 dialog). The chat's "Read dashboard-web · tokens.css · 9 partials · 3 pages" activity line isn't
 built: the agent's reads join "Explored N files".
+
+## Remote
+
+A host serves its designs to other devices over the remote listener (`designs.v1`), and each
+device renders the boards itself: the host sends files, never pixels. The listener has no TLS;
+a VPN or trusted network is the transport boundary, as for everything else it serves.
+
+### The protocol
+
+`RemoteRequest.design` carries a `RemoteDesignRequest`, answered with a `RemoteDesignResult`
+(`RemoteDesigns.swift`, ShepherdProtocol):
+
+| Request | Answer | What it does |
+| --- | --- | --- |
+| `list` | `listing` | Every design with a canvas (not a system build), most recently changed first: its record, revision, board count, open comments, and its first board's path, hash and size for a thumbnail; and the host's design systems |
+| `index(id)` | `index` | The design's snapshot (index, revision, board hashes) and every file under `project/` a board may load, with its SHA-256 and size: boards, installed systems, stylesheets, fonts, images. Never `canvas.json` (the index) or any `support.js` (each device serves its own runtime) |
+| `boards(id, paths, knownShas)` | `files` | The files among `paths` (nil: all) whose hash isn't the one `knownShas` names: changed only. Their bytes come inline while they fit 256 KiB (`designChunkBytes`); the rest are listed without bytes. Also the paths unchanged and the ones the design lacks |
+| `file(id, path, sha256, offset)` | `chunk` | A piece of one file from `offset`, up to 256 KiB, while it still has that hash (`stale_file` otherwise: read the index again) |
+| `asset(id, blobID, offset)` | `chunk` | A piece of an upload (`/_blob/<id>`) with its file name, hash and size; a download resumes from the next offset |
+| `comments`, `addComment`, `replyToComment`, `resolveComment` | `comments`, `comment` | The host's comment mutations: the element checked against the board's source, the comment handed to the design agent fenced as data, each change at the comments' revision |
+| `writeBoards`, `updateIndex`, `duplicateBoard`, `restoreVersions` | `boardsWritten`, `written`, `duplicated` | Tweak, a board moved, Duplicate and Undo, through `writeDesignBoards`, `updateDesignIndex`, `duplicateDesignBoard` and `restoreDesignVersions` with their checks and revisions |
+| `system(namespace)` | `system` | One design system whole |
+| `watch(ids)` | `ok` | The designs this client shows; replaces the last set |
+| `create(brief, systemNamespace)` | `created(designID, agentID)` | New design from another device (a design belongs to no project): the host checks the brief (trimmed, at most 8 KB) and the system's name on its queue, then its app makes the design as its own New design does (`SessionServer.onRemoteCreateDesign`), selecting nothing there. A host with no app to make it refuses (`unsupported`) |
+
+- **Pushed:** `designChanged(id, revision, commentsRevision)` after each change to a watched
+  design, one per write: a hint to pull, carrying no files. `capabilitiesChanged` goes to a
+  client that lists `designs.v1` when the host's experiment turns on or off. Only a client that
+  lists `designs.v1` may `watch` (`update_required` otherwise), so no other client is ever
+  pushed a design frame.
+- **The experiment:** the host offers `designs.v1` only while its Settings ▸ Experiments ▸
+  Design tool is on (`SessionServer.setDesignsServed`), and refuses every design request while
+  it is off (`designs_off`). A device shows design surfaces only for a host that offers it.
+- **Answered by the server itself,** with no GUI hop, off its queue: files are read and written
+  on the design store's (`RemoteDesignService`).
+- **What is served:** only files under a design's `project/` (each segment by the file grammar,
+  a link that leads out of it never followed, 16 MB a file) and its `assets/` uploads. A path
+  outside the grammar is refused (`invalid_path`) before a file is touched, and an offset
+  outside the file with `invalid_offset`. A piece reads only its own bytes once the file's hash
+  is known for its size and modification time. A client keeps a download within the size its
+  first piece named and the 16 MB cap.
+- **Writes** go through the same server mutations as the host's own canvas, with the same
+  checks: a board path outside the grammar, a board the lint refuses, a stale revision.
+- **Sends:** the design agent's chat is its thread over the native-thread requests; a send's
+  view record rides `designContext` where the host lists `design.context.v1`, fenced by the host
+  as data.
+
+### The client (ShepherdRemote)
+
+- **`RemoteHostClient.design(_:)`** sends a request where the host offers `designs.v1`;
+  `onDesignChanged` and `onCapabilitiesChanged` deliver the pushes on the main queue.
+- **`RemoteDesignCache`** keeps remote designs' files by SHA-256, per host and design: bytes are
+  checked against their hash before they are kept, which paths name which hash, uploads by id,
+  and downloads under way (so a dropped connection resumes). It holds them in memory within a
+  budget, giving up the designs used least recently, and optionally on disk
+  (`<directory>/<host>/<design>/<sha>`).
+- **`RemoteDesignSource`** is one design's files: `sync()` reads the index and fetches every file
+  whose hash the cache lacks (a few to a reply, a large one in pieces, a stale file read again
+  once), and it serves them to the renderer as a `DesignFileSource`, fetching a file not yet
+  synced on demand and an upload in pieces on first use.
+- **`RemoteDesignLibrary`** (`@Observable`) is one host's designs: its listing, a source per
+  design, the designs on screen (`watch`), and the pushes for them.
+- **Rendering:** `DesignSurface(designID:source:)` (DesignSurfaceKit) serves a source's files by
+  the same scheme, grammar and sandbox as a folder's; `support.js` is always the device's own
+  runtime.
+
+### On the Mac
+
+- **The Designs page** lists each connected host's designs under its name, after This Mac's
+  (not drawn), their first boards drawn here.
+- **Opening one** selects its agent on the host, whose layout draws as the design's screen
+  (`RemoteDesignLayoutView`): the same canvas and chat pane as a local design's, the boards
+  rendered from the files the host served, the chat its thread on the host. Moves, Tweak (its
+  undo too), Duplicate, Variations, comments and replies go to the host; the host pushes changes
+  for the designs on screen, and the canvas pulls what changed.
+- **Not yet:** a design whose agent is gone on its host doesn't open (it says so; only the host
+  starts a fresh agent), the header's system chip and Export do nothing for a host's design,
+  Tweak snaps to the board's own tokens (the project's stylesheets are on the host), a host's
+  design agent is a plain thread in Recents rather than a design row, and a host's design
+  systems aren't on the page.
+
+### On iPhone
+
+The iOS client's designs track (`App/iOS/Designs`; docs/ios/CONTRACTS.md) shows a host's designs
+only while that host offers `designs.v1`, and follows its Design tool as it turns on and off
+(`capabilitiesChanged`). Boards render on the phone from the files each host served by hash
+(`RemoteDesignCache` in the phone's caches folder); nothing renders on the host.
+
+- **Rendering.** `DesignHost.swift` is the one iOS file that imports DesignSurfaceKit. At most two
+  web views live: the board on screen, and one off-screen renderer that draws tiles and the Boards
+  sheet into images (cached by hash) and exports, one board at a time. A board view on iOS lays out
+  at its own width (a device-width viewport) and never scrolls inside its frame.
+- **Where designs show:** Home's Designs row with its count, a design's agent as its design's
+  Recents row ("design · 4 boards", opening the design; never a running, Needs you or finished
+  thread, nor counted among a host's threads, and a system build's agent has no row), the
+  Designs screen (MobileDesigns: tiles
+  from each design's first board, then the design systems), search's Designs section and its "New
+  design" action, and More ▸ Design systems.
+- **A design** opens on its boards (a grid; not drawn), watched while on screen so new boards
+  land, and a board opens full screen
+  (MobileDesignBoard): pinch zooms (the board lays out at its own size, scaled to fit, as on the
+  Mac; above its own size it is its 100% drawing scaled up), a drag pans a zoomed
+  board, a sideways swipe moves between boards, and pins sit on their elements' top-trailing
+  corners, found again by tid in the live board. A tapped pin raises its card, with "Design agent
+  is updating <board>" while the design agent works and hasn't answered it, else its answer.
+  - **Comment** on, a tap names the element under it (the bridge's hit test) and the review's
+    comment editor pins a comment there through `addComment`, as the Mac's canvas does.
+  - **Ask the agent** opens the design agent's thread, and the board's view record (the board on
+    screen, and the element being commented on) rides the next send (`design.context.v1`).
+  - **Boards** is a sheet of every board; **Export** and Share render the board at zoom 1 as a
+    PNG (twice its size) or a PDF (print.md) and hand it to the share sheet.
+- **New design** (not drawn) is a form: the brief, the host to make it on (only when several
+  serve designs), and a design system; no project, since a design stands alone. The host makes
+  it (`create`) and it opens.
+- **Not yet:** replies, Resolve and a detached pin's note on the phone; a board's interactive
+  Play and links; Tweak, moves and Duplicate; a design without an agent in Recents; the iPad
+  (P5c); push notifications and Live Activities (they need the push relay).

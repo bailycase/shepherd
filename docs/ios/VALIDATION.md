@@ -137,6 +137,14 @@ iPadReviewSplit, iPadCommit, on an iPad in landscape) run against a host with `c
 `thread` (Undo), `thread-undone` (Redo), `thread-card-legacy` (an older host: no Undo), and
 `changes-card` (the iPad's "Edited 5 files").
 
+**The designs screens.** Studio serves designs.v1 from `Fixtures/DesignsFixtures.swift` (boards
+written for the fixtures, two comments, two systems) and refuses every design write; hosts without
+fixture designs don't offer the capability. `home-designs`, `designs`, `design`, `design-board`
+(checks that at most two web views lived at once), `design-comment` (a tap on the board names an
+element, checked), `design-boards`, `search-designs`, `more-designs`, `design-systems`,
+`design-system` and `new-design`. Boards render in the fixture app, so the harness links
+DesignSurfaceKit and copies its runtime bundle.
+
 **Adding a screen:** see [CONTRACTS.md › Fixture screens](CONTRACTS.md#fixture-screens).
 
 ## Not yet validated

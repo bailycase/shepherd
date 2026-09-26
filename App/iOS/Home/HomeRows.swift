@@ -68,7 +68,16 @@ extension FleetHostCard {
     }
 }
 
-/// A thread in Recents, the overview and the sidebar.
+extension FleetThreadRow {
+    /// Where a row opens: a design's row its design, any other its thread.
+    var route: MobileRoute {
+        if let design { return .designs(.design(HostDesignRef(host: ref.host, design: design.id))) }
+        return .thread(ref.agentRef)
+    }
+}
+
+/// A thread in Recents, the overview and the sidebar; a design's row (MobileAgents) wears the nib
+/// and "design · 4 boards".
 struct ThreadRow: View, Equatable {
     let row: FleetThreadRow
     var selected = false
@@ -81,7 +90,7 @@ struct ThreadRow: View, Equatable {
         // The sidebar says a failed last turn (iPadThreadError): a failed dot and "failed".
         let failed = compact && row.failed
         NWListRow(row.title, subtitle: compact ? nil : row.detail, clock: compact ? nil : row.clock?.rowClock,
-                  leading: .state(failed ? .failed : AgentState(row.status)),
+                  leading: row.design != nil ? .symbol("pencil.tip") : .state(failed ? .failed : AgentState(row.status)),
                   trailing: failed ? .meta("failed") : row.hostTag.map { .host($0) } ?? .none,
                   chevron: chevron && !compact, selected: selected, dimmed: row.offline, compact: compact)
             // The sidebar's one-line rows say their state only by the dot.

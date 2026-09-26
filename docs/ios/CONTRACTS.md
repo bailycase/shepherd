@@ -32,6 +32,7 @@ Never commit a `project.pbxproj` change for a new file.
 | H. Automations | `Automations/`, `Fixtures/AutomationsFixtures.swift` | the Automations list (Home's `.automations` destination), the iPad list and detail, one automation with its runs, the form |
 | I. Windows | `Windows/`, `Fixtures/WindowsFixtures.swift` | several iPad windows: the scene, each window's navigator and restoration, Open in new window, Send to…, text dropped on a composer |
 | J. Terminal | `Terminal/`, `Fixtures/TerminalFixtures.swift` | terminal panes: the iPad panel under a thread, the iPhone's full-screen panes, the key row |
+| K. Designs | `Designs/`, `Fixtures/DesignsFixtures.swift`, and its rows in Home, Recents, search and More | a host's designs (`designs.v1`): Designs, a design's boards, one board with its comments, New design, design systems |
 
 Shared modules (`ShepherdUI`, `ShepherdRemote`, `ShepherdProtocol`, `ShepherdCore`) belong to no
 track and are also the Mac's. A track may add to them (a component under
@@ -55,6 +56,7 @@ enum MobileRoute: Hashable, Codable {
     case settings(SettingsRoute)          // Settings/SettingsRoute.swift
     case automations(AutomationsRoute)    // Automations/AutomationsRoute.swift
     case terminal(TerminalRoute)          // Terminal/TerminalRoute.swift
+    case designs(DesignsRoute)            // Designs/DesignsRoute.swift
 }
 ```
 
@@ -88,6 +90,9 @@ Routes today:
 | `.automations(.detail(host:automation:))` | one automation, its runs, Run now and Stop (iPhone, pushed; the iPad shows it beside the list) |
 | `.automations(.edit(host:automation:))` | the form: a new automation (both nil, or a host), or an existing one's fields (presented) |
 | `.terminal(.panes(AgentRef))` | a thread's terminal panes full screen (iPhone; iPad shows them in the panel) |
+| `.designs(.list / .design(HostDesignRef) / .board(HostDesignRef, path:))` | Designs, a design's boards, one board full screen |
+| `.designs(.boards(HostDesignRef, current:) / .newDesign(brief:host:))` | a design's boards to jump to, New design (presented) |
+| `.designs(.systems / .system(host:namespace:))` | the hosts' design systems, one system |
 
 Screens reach each other only through `MobileNavigator` (in the environment):
 
@@ -137,6 +142,8 @@ them except the navigator, which is each window's own ([Windows](#windows-ipad))
 
 `@Environment(\.mobileWindow)` is the window a view is in (its `MobileWindowSeed`).
 
+- The designs track (`MobileDesigns`) owns every client's `onDesignChanged` and
+  `onCapabilitiesChanged`, set as each connection is followed; nothing else sets them.
 - The terminal track (`MobileTerminals`) owns every client's `onOutput` and `onSessionExited`,
   wiring each new connection's client on its first attach: nothing else sets them.
 - Talk to a host with `hosts.host(ref.host)?.connectedClient` (a `RemoteHostClient`). Key work
@@ -176,6 +183,7 @@ them except the navigator, which is each window's own ([Windows](#windows-ipad))
 | Text dropped on a composer | `Windows/WindowHooks.swift` (I) | `ThreadScreen`, on `ThreadComposer` | `.composerTextDrop(_ thread: AgentRef)` |
 | Terminal panel | `Terminal/TerminalPanelView.swift` (J) | `ThreadScreen`, on its content (the transcript with the composer) | `.threadTerminal(_ ref: AgentRef)`; adds nothing in compact width |
 | Terminal menu item | `Terminal/TerminalRoute.swift` (J) | the thread's options menu (menu items only; the terminal has no header button) | `TerminalMenuItems(thread: AgentRef)` |
+| Open or start a design | `Designs/DesignsRoute.swift` (K) | Recents' design rows, search, the Designs screen | `DesignsHooks.open(_ ref: HostDesignRef, navigator:)`, `DesignsHooks.create(brief: String = "", host: UUID? = nil, navigator:)` |
 
 Each hook ships with the foundation's minimal version so the app builds and navigates end to end;
 the owning track replaces the body. Keep the signature. What a turn draws of its

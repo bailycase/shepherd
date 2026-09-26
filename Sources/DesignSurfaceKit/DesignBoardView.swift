@@ -97,6 +97,9 @@ public final class DesignBoardView: DesignPlatformView {
             }
             guard zoom != oldValue else { return }
             frame.size = scaledSize
+            #if !(canImport(AppKit) && !targetEnvironment(macCatalyst))
+            webView.scrollView.contentOffset = .zero
+            #endif
         }
     }
 
@@ -114,6 +117,16 @@ public final class DesignBoardView: DesignPlatformView {
     private var rulesInstalled = false
 
     static let bridgeWorld = WKContentWorld.world(name: "shepherd-design-bridge")
+    #if os(iOS)
+    static let viewportScript = """
+    (function () {
+      var meta = document.createElement('meta');
+      meta.name = 'viewport';
+      meta.content = 'width=device-width, initial-scale=1, user-scalable=no';
+      (document.head || document.documentElement).appendChild(meta);
+    })();
+    """
+    #endif
     static let messageName = "shepherdDesign"
 
     public init(surface: DesignSurface, board: DesignPath, size: CGSize) {
@@ -124,6 +137,12 @@ public final class DesignBoardView: DesignPlatformView {
         let controller = configuration.userContentController
         controller.addUserScript(WKUserScript(source: DesignRuntime.bridgeScript, injectionTime: .atDocumentStart,
                                               forMainFrameOnly: true, in: Self.bridgeWorld))
+        #if os(iOS)
+        // Without a viewport, iOS lays a page out 980px wide and shrinks it to fit: a board lays
+        // out at its own width, as on the Mac.
+        controller.addUserScript(WKUserScript(source: Self.viewportScript, injectionTime: .atDocumentStart,
+                                              forMainFrameOnly: true, in: Self.bridgeWorld))
+        #endif
         controller.add(delegate, contentWorld: Self.bridgeWorld, name: Self.messageName)
         webView = WKWebView(frame: CGRect(origin: .zero, size: size), configuration: configuration)
         super.init(frame: CGRect(origin: .zero, size: size))
@@ -137,6 +156,8 @@ public final class DesignBoardView: DesignPlatformView {
         webView.allowsMagnification = false
         #else
         webView.scrollView.isScrollEnabled = false
+        // The board stays where its canvas puts it: no insets for the safe area or a keyboard.
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
         #endif
         addSubview(webView)
         layOutPage()
@@ -171,9 +192,12 @@ public final class DesignBoardView: DesignPlatformView {
         setBoundsSize(page)
     }
     #else
+    /// A board never scrolls inside its view: WebKit on iOS moves its scroll view when the view
+    /// resizes (a new zoom, a keyboard), which would slide the board under its pins and rings.
     public override func layoutSubviews() {
         super.layoutSubviews()
         placeWebView()
+        if webView.scrollView.contentOffset != .zero { webView.scrollView.contentOffset = .zero }
     }
 
     /// The web view at the board's size, centred and scaled to the view's bounds: UIKit converts
