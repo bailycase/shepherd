@@ -297,7 +297,7 @@ public func nativeTurns(_ messages: [NativeThreadMessage], aliases: [String: Str
     // they render as stray notes and stretch the turn's duration to the next system update.
     // User messages always stay: they are the turn boundaries. So does finished thinking the
     // host timed, though the model shared none of it: it reads "Thought for Ns".
-    for message in messages where message.role == "user" || (message.role != "system" && (message.toolName != nil
+    for message in messages where message.role == "user" || message.compaction != nil || (message.role != "system" && (message.toolName != nil
         || message.role == "toolResult" || message.truncated || message.status == "error" || message.status == "aborted"
         || message.blocks.contains { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || $0.kind == .unsupportedImage }
         || (message.status != "streaming" && nativeThoughtIsTimed(message.thinkingSeconds) && message.blocks.contains { $0.kind == .thinking }))) {

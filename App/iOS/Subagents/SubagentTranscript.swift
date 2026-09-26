@@ -233,6 +233,8 @@ private struct SubagentTurnItem: View {
         case .steer(_, let text, let sentAt, _):
             NWUserBubble(text, timestamp: sentAt.map { nativeClockText($0, meridiem: false) }, note: "from parent", origin: .steered)
                 .frame(maxWidth: .infinity, alignment: .trailing)
+        case .compaction(let row):
+            CompactionItem(row: row)
         }
     }
 }

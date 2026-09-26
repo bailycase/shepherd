@@ -101,7 +101,7 @@ struct ThreadScreen: View {
 }
 
 /// The scrolling turns. It reads the store's rows, so a streamed chunk redraws only this and the
-/// turn it changed.
+/// turn it changed. The context sheet's Largest and Show summary bring an entry into view here.
 private struct ThreadTranscript: View {
     let ref: AgentRef
     let store: NativeThreadStore
@@ -156,6 +156,9 @@ private struct ThreadTranscript: View {
                 .padding(.horizontal, MobileLayout.gutter)
                 .padding(.vertical, MobileLayout.gutter)
                 .frame(maxWidth: .infinity)
+                // Which compactions show what the agent kept: its own object, so a toggle
+                // redraws only the compaction lines.
+                .environment(\.compactionExpansion, store.compactions)
             }
             // Open at the tail and stay pinned while it grows; only the reader's own drag
             // detaches, and sending re-attaches.
@@ -196,6 +199,10 @@ private struct ThreadTranscript: View {
             }
             // New output at the tail is what "unseen" means, never the content height.
             .onChange(of: rows.last) { _, _ in follow { $0.contentArrived(); return false } }
+            .onChange(of: ComposerStates.shared.state(for: ref).findRequest) { _, request in
+                guard let request else { return }
+                Task { await find(request.entryID, proxy: proxy) }
+            }
             // Laid out in the thread's safe area, so it sits on the composer; the margin of its
             // 44pt hit area draws the capsule 8pt above it.
             .overlay(alignment: .bottom) {
@@ -206,6 +213,20 @@ private struct ThreadTranscript: View {
             }
             .scrollDismissesKeyboard(.interactively)
         }
+    }
+
+    /// Brings the turn holding `entryID` (a tool result, a compaction) to the top of the thread,
+    /// loading older pages until it is there (the context sheet's Largest and Show summary).
+    private func find(_ entryID: String, proxy: ScrollViewProxy) async {
+        func holder() -> NativeThreadRow? { store.rows.first { $0.turn.messages.contains { $0.entryID == entryID } } }
+        var pages = 0
+        while holder() == nil, store.olderCursor != nil, pages < MobileLayout.findPageLimit {
+            await store.loadOlder()
+            pages += 1
+        }
+        guard let row = holder() else { return }
+        follow { $0.beginJump(); return false }
+        withNWAnimation(.scroll) { proxy.scrollTo(row.id, anchor: .top) }
     }
 
     /// Applies a change to the follower, writing it back only when it changed, so a scroll frame

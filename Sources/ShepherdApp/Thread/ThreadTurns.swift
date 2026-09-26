@@ -252,6 +252,8 @@ struct AgentTurn: View, Equatable {
         case .steer(_, let text, let sentAt, let images):
             // Where pi read it, inside the turn it steered.
             SteeredBubble(text: text, images: images, time: sentAt.map { nativeClockText($0) }, hover: hover)
+        case .compaction(let row):
+            CompactionItem(row: row)
         }
     }
 
