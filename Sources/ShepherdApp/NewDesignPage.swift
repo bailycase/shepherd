@@ -10,8 +10,10 @@ import ShepherdUI
 /// design system the boards are drawn in. Sending makes the design, starts its agent with the
 /// brief, and opens its canvas.
 ///
-/// P1 reads a design's system from its project, so the one card is the project (its menu picks
-/// another); the Capture a page and From a screenshot starting points come later.
+/// The one card is the design system the boards are drawn in: the system built from the project,
+/// else the project's own stylesheets, "found in" its tokens file when it has one (read-only
+/// detection). Its menu picks another project or another system. The Capture a page and From a
+/// screenshot starting points come later.
 struct NewDesignPage: View {
     var vm: ShepherdViewModel
     let chrome: PageHeaderChrome
@@ -61,6 +63,8 @@ struct NewDesignPage: View {
         .background(Color.nw.bgWindow)
         .nwAnimation(.content, value: draft.notice)
         .onChange(of: draft.focusRequest, initial: true) { composing = true }
+        .task(id: draft.space) { await draft.detect(vm) }
+        .task { await vm.loadDesignSystems() }
         .fileImporter(isPresented: $picking, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result else { return }
             draft.attach(urls: urls)
@@ -146,19 +150,32 @@ struct NewDesignPage: View {
     }
 
     @ViewBuilder private func systemCard(_ space: Space) -> some View {
-        let card = NWDesignStartCard(symbol: "pencil.tip", title: space.name, line: "design system · \(space.name)",
-                                     note: NewThreadRules.abbreviatedPath(space.path), chosen: true)
+        let systems = vm.designSystems.summaries
+        let picked = draft.system.flatMap { vm.designSystems.summary($0) }
+        let system = picked ?? NewDesignState.projectSystem(space.id, in: systems)
+        let words = NewDesignState.card(project: space, system: system, picked: picked != nil,
+                                        tokensFile: draft.tokensFiles[space.id] ?? nil, spaces: vm.state.spaces)
+        let card = NWDesignStartCard(symbol: "pencil.tip", title: words.title, line: words.line, note: words.note, chosen: true)
         let spaces = vm.visibleSpaces
-        if spaces.count > 1 {
+        if spaces.count > 1 || !systems.isEmpty {
             Menu {
-                ForEach(spaces) { option in
-                    Button(option.name) { draft.choose(option.id) }
+                if spaces.count > 1 {
+                    Section("Projects") {
+                        ForEach(spaces) { option in
+                            Button(option.name) { draft.choose(option.id) }
+                        }
+                    }
+                }
+                Section("Design systems") {
+                    ForEach(systems, id: \.namespace) { option in
+                        Button(option.info.title) { draft.choose(system: option.namespace) }
+                    }
                 }
             } label: { card }
                 .menuStyle(.button)
                 .buttonStyle(.plain)
                 .menuIndicator(.hidden)
-                .help("Draw it in another project")
+                .help("Draw it in another project or design system")
         } else {
             card
         }

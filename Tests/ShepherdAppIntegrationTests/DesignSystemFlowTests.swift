@@ -11,8 +11,9 @@ import Testing
 /// Design systems end to end on a real server with the stub pi: "Build one from a repo" makes a
 /// system build and starts its agent in the project with the build's words, its page follows the
 /// system the agent writes, a system's specimens render through the board renderer, a system opens
-/// from the Designs page and More ▸ Design systems, Re-sync reads the project again, and the
-/// repository is left exactly as it was.
+/// from the Designs page and More ▸ Design systems, Re-sync reads the project again, New design
+/// finds the project's tokens file and draws in its system, and the repository is left exactly
+/// as it was.
 @Suite("Design systems in the app", .mainActorExclusive)
 @MainActor
 struct DesignSystemFlowTests {
@@ -161,6 +162,10 @@ struct DesignSystemFlowTests {
             !vm.designSystems.syncing.contains("acme-web") && (vm.designSystems.summary("acme-web")?.info.syncedAt ?? 0) > synced
         }
 
+        // New design draws in the system built from its project.
+        vm.openNewDesign()
+        #expect(vm.newDesign.systemToInstall(vm) == "acme-web")
+
         // Night Watch has no agent of its own: it opens as the Design systems page.
         vm.openDesignSystem("night-watch")
         #expect(vm.shownDestination == .designSystem && vm.designSystemShown == "night-watch")
@@ -170,5 +175,32 @@ struct DesignSystemFlowTests {
         #expect(Self.workingTree(repo) == before)
         #expect(try git(["rev-parse", "HEAD"], in: repo) == head)
         #expect(try git(["status", "--porcelain"], in: repo).isEmpty)
+    }
+
+    @Test func newDesignFindsTheProjectsTokensFileAndInstallsTheSystemPicked() async throws {
+        try StubPi.installOnPath()
+        let app = try AppHarness()
+        defer { app.stop() }
+        let repo = try makeScratchRepo(files: Self.repoFiles)
+        let before = Self.workingTree(repo)
+        let (vm, space) = try await start(app, repo: repo)
+        await vm.loadDesignSystems()
+
+        vm.openNewDesign()
+        let draft = vm.newDesign
+        await draft.detect(vm)
+        #expect(draft.tokensFiles[space.id] == .some("web/static/tokens.css"))
+        #expect(draft.systemToInstall(vm) == nil, "no system was built from the project yet")
+
+        draft.choose(system: "night-watch")
+        #expect(draft.systemToInstall(vm) == "night-watch")
+        draft.brief = "A settings page"
+        draft.send(vm)
+        try await eventuallyOnMain("the design to open") { vm.shownDesign != nil && !draft.starting }
+        let design = try #require(vm.shownDesign)
+        #expect(design.systemNamespace == "night-watch" && !design.buildsSystem)
+        let snapshot = try await app.server.designSnapshot(design.id)
+        #expect(snapshot.index.designSystems?.map(\.namespace) == ["night-watch"])
+        #expect(Self.workingTree(repo) == before)
     }
 }
