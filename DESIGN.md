@@ -1422,12 +1422,63 @@ the turn has finished, the changes card and the footer end it. A running turn ha
     The NWThread board draws only the first; the other two are app states it does not draw.
 - **Notes** ("Image attached", "Output truncated", extension messages) render as caption
   tertiary text on a 2pt rule (three lines, full text on hover).
-- **Errors** (`NWTurnError`): a failed provider request, on `failedTint` with radius 6 and 8×10
-  padding, at most the prose measure: a 14pt `exclamationmark.triangle` in `failed`, the message
-  in `ui` regular `textPrimary` ("Model overloaded — the turn stopped after 6 tool calls."; the
-  suffix only when the error ended a turn that made tool calls), "×n" in mono 11 tertiary when
-  repeated, and Retry (a secondary `s` button with `arrow.clockwise`) when it ended the turn,
-  10pt apart. It rises in like a row (`list`). Tool failures stay in their activity lines.
+- **Errors** (TurnErrors, ThreadError, ThreadErrorDetails; `NWTurnError`, `Thread/TurnErrors.swift`,
+  read by `NativeTurnError` in ShepherdRemote once per change): a request to the model that failed
+  (pi's assistant message with `stopReason` `error` and its `errorMessage`), the error itself,
+  readable. Tool failures stay in their activity lines.
+  - **The card** spans the column (not the prose measure): `bgRaised`, a 1px `lineStrong` line,
+    radius 10 (`NWTurnErrorMetrics`), 14×16 inset. A 28pt tile at radius 8 on `failedTint` holds
+    the kind's 14pt glyph in `failed` (`exclamationmark.triangle`; `hourglass` for a timeout,
+    `wifi.slash` for the network, `arrow.down.right.and.arrow.up.left` for a thread too long);
+    12pt right of it, 5pt apart: the **title** (Geist 14/600, and the time in mono 11 tertiary at
+    the trailing edge), the **message** (13 `textSecondary`), the **facts** (2pt more above: the
+    status and type as mono 10.5 chips, `NWTag`, then "gpt-5 · OpenAI" and "· Tried 3 times over
+    31m" in 12 tertiary), and the **actions** (6pt more above): Retry (secondary `s`, when it
+    ended the turn), Copy (a 26pt icon circle), and "Details ›" (12.5 `textSecondary`) at the
+    trailing edge. It rises in like a row (`list`).
+  - **Title,** from the status and type: "OpenAI rejected the API key" (401, an authentication
+    type), "OpenAI didn’t respond in time" (a timeout, 408, 504), "OpenAI is overloaded" (529,
+    `overloaded_error`), "OpenAI had a server error" (500, `server_error`), "Rate limited by
+    OpenAI" (429, `rate_limit_*`, `RESOURCE_EXHAUSTED`), "Couldn’t reach OpenAI" (a network error
+    with no status), "The thread is too long for gpt-5" (`context_length_exceeded`), else "The
+    request to OpenAI failed". Without a provider: "The provider …", "The model request failed".
+    Providers are named as people write them (pi's `openai` is OpenAI).
+  - **Message:** the provider's own words out of pi's text ("401: {…}", "429 Rate limit…",
+    "OpenAI API error (401): …", an OpenRouter wrapper's upstream message), cleaned: keys cut to
+    their first eight and last four ("sk-svcac…fvMA", in mono `textPrimary`), links clickable
+    ("platform.openai.com/account/api-keys" in `running` 12.5 with `arrow.up.right.square`), names
+    the provider quoted in backticks in mono, no JSON, no escaped quotes. A network error says
+    where from: "`api.openai.com` didn’t answer from build-01: connection reset.", with the errno
+    and the host as chips.
+  - **Details** opens in place under a `lineSubtle` hairline (14pt above, 16 below, 52 leading):
+    the facts (a 250pt column, 70pt labels in 12 tertiary, values in 12 `textSecondary`, mono but
+    the provider): Provider, Model, Host (the machine the agent runs on: this Mac's name, or a
+    remote host's), Status, Type, Code, Request, At (with seconds); 24pt right, everything the
+    provider sent back pretty-printed in the provider's key order (mono 11.5 on `bgSunken`, radius
+    8, a `lineSubtle` line, 10×12 inset): keys in `synFunction`, strings in `synString`, a cut key
+    on `bgSelected`, addresses underlined in `running`. Keys stay cut here too. What isn't JSON
+    shows as it came. Details and a folded error's opening are kept by the thread's store
+    (`NativeTurnErrorExpansion`), so a row the list rebuilds keeps them.
+  - **Copy** puts the whole error on the pasteboard as text, redacted the same way: the title,
+    the message, the facts line, each fact, and the body.
+  - **Folded** (`NWTurnError(folded:)`): when the next reply fails the same way (the same kind,
+    title and chips), the earlier card folds to one 26pt line: the 13pt glyph in `failed`, the
+    title in 12.5 `textPrimary`, "401 · 5:52 PM" in mono 11 tertiary, and a 10pt `chevron.right`.
+    A click opens the card. An error pi retried past, the turn going on, folds the same way.
+  - **While pi retries** (`NWRetryLine`; the snapshot's `retry`, from pi's `auto_retry_start`
+    until `auto_retry_end` or it settles): the live turn ends in one 26pt line, the only thing
+    moving: `arrow.clockwise` (an `hourglass` for a timeout) in `textSecondary`, "OpenAI is
+    overloaded · retrying in 8s" shimmering (counting down each second, then "· retrying"), and
+    "2 of 3" in mono 11 tertiary. The failed tries merge into one error, so the card that shows once
+    the retries are used up says "Tried 3 times over 1m 40s" (from the first try to the last).
+  - **Touch sizes** (TurnErrors › Touch sizes; iPhone and iPad alike): radius 12, a 14pt inset,
+    the title at 15/600 and the message at 14; the time joins the facts line ("gpt-5 · OpenAI ·
+    5:54 PM"); Retry is secondary `l` (32pt) and Copy a 32pt circle; the folded line is 36pt at
+    13.5. Details stacks the facts above the body, 12pt apart, in a 12×14 inset, the body in mono 11.
+  - A turn that ends in an error has no footer: the card carries its Retry and Copy.
+  - **Not built yet:** a timeout's own sentence and length ("No response after 10 minutes, so the
+    request was cancelled. Nothing in the thread was lost.", the "600s" chip): pi's text says only
+    "Request timed out.", so the card shows that and the "timeout" chip.
 - **Stopped:** a turn the user stopped is not an error. It ends in the note "Stopped", and the
   call Stop interrupted keeps its line's usual colors with "stopped" in its meta ("Ran a
   command · sleep 40 · stopped · 7.5s"), standing alone like a failure, so the word stays
@@ -1448,7 +1499,7 @@ the turn has finished, the changes card and the footer end it. A running turn ha
     working: a steering message in Up next waits still (Up next).
   - A counting timer is motion enough: the running call's clock ticks beside its shimmer in
     `textTertiary`. Under Reduce Motion the shimmer is plain `textSecondary` text.
-- **Footer** (`NWTurnFooter`), after a finished turn: copy (the turn's prose; tooltip "Copy the
+- **Footer** (`NWTurnFooter`), after a finished turn that didn't end in an error: copy (the turn's prose; tooltip "Copy the
   reply", VoiceOver "Copy response", then a check for 1.5s) and retry (resend the prompt that opened
   it, only while the agent is idle; tooltip "Send this turn's prompt again", VoiceOver "Retry turn";
   Main's labels) as 24pt icon buttons 4pt apart, then, 4pt further, "2:44 PM · 3m 12s · 23 tool
@@ -3888,7 +3939,8 @@ detects it yet, and the board fixes no threshold.
 
 A turn fails when pi's last reply is a provider error (not a Stop). The thread shows the error
 (`NWTurnError`), and the agent's row (an automation's too) and its palette subtitle read failed
-until its next turn starts.
+until its next turn starts. On iPhone and iPad the thread's header reads Failed from the thread
+itself (`NativeThreadStore.lastTurnFailed`): a remote client hears no turn failure from the host.
 
 Agent events that need a sentence are banners inside the pane they concern (Components › Status
 and feedback), never a modal alert; the one modal an agent can raise is `PeerDeleteDialog`
@@ -3912,7 +3964,7 @@ composing chrome by hand. Debug builds have a **Component Gallery** (View menu,
 | Status | `NWStatusPill` (20pt, radius 4; a glyph in place of its dot), `NWStatusDot` (6pt), `NWStateGlyph` (14pt), `.progressViewStyle(.nwSpinner)` and `.nwBar` (4pt), `NWStepStrip`, `NWSparkline`, `NWBanner`, `.nwToast(item:)` with `NWToast`, `NWEmptyState`, `.nwShimmer()`, `NWWordmark`, `NWCrook` | across the app; `NWSparkline` and `.nwToast(item:)` have no app use (see departures), and `.nwShimmer()` none yet |
 | Containers | `NWSectionHeader`, `NWGroupCard`, `NWCardRow`, `NWHairline`, `NWChoiceRow` (`NWChoiceRowMetrics`), `NWFlowLayout`, `NWMarkupText` | `SettingsComponents.swift`; hairlines everywhere; `NWMarkupText` for Settings' descriptions (Mac and iOS); `NWChoiceRow` in the iOS client's New thread pickers; `NWFlowLayout` for wrapping chips and answers (iOS) |
 | Navigation | `NWSidebar`, `NWSidebarTopBar`, `NWSidebarDestination`, `NWSidebarSection`, `NWSidebarRow`, `NWSidebarFooter`, `NWDropIndicator`, `NWDensity`; `NWThreadToolbar`, `NWPaneToggle`, `NWOptionsMenu`, `NWPaneHeader`; `.nwCommandPalette(isPresented:)`, `NWPaletteCard`, `NWPaletteSearchRow`, `NWPaletteSectionHeader`, `NWPaletteRow` | `SidebarView.swift`, `ThreadHeader.swift`, `RootView.swift`, `CommandPaletteView.swift`; the review's header (`DiffReviewView.swift`) and the inspector's ⋯ menu (`Thread/SubagentInspector.swift`) |
-| Thread | `NWUserBubble` (its time shown while `revealed`; `origin: .steered`), `NWQueueDivider`, `NWAgentProse`, `NWCodeBlock`, `NWThinking`, `NWActivityLine`, `NWActivityCalls`, `NWChangesCard`, `NWDiffStat`, `NWInlineCode`, `NWAttachmentChip`, `NWTurnFooter` (shown while `revealed`), `NWTurnError`, `NWJumpToLatest`, `.nwShimmer(active:)` (live text) | `Thread/ThreadView.swift`, `ThreadTurns.swift` (with each turn's `MessageHover`), `ThreadTools.swift`, `ThreadMarkdown.swift` |
+| Thread | `NWUserBubble` (its time shown while `revealed`; `origin: .steered`), `NWQueueDivider`, `NWAgentProse`, `NWCodeBlock`, `NWThinking`, `NWActivityLine`, `NWActivityCalls`, `NWChangesCard`, `NWDiffStat`, `NWInlineCode`, `NWAttachmentChip`, `NWTurnFooter` (shown while `revealed`), `NWTurnError` (card, Details, folded), `NWRetryLine`, `NWJumpToLatest`, `.nwShimmer(active:)` (live text) | `Thread/ThreadView.swift`, `ThreadTurns.swift` (with each turn's `MessageHover`), `ThreadTools.swift`, `ThreadMarkdown.swift` |
 | Composer | `NWComposer`, `.nwComposerChip(active:)`, `NWChipChevron`, `NWComposerActionButton` (outlined Stop, Send's ring), `NWMenuHeader`, `NWSlashMenu`, `NWModelPicker`, `NWThinkingMenu`, `NWSendMenu`, `NWPlaceMenu` and `NWPlaceChipLabel` (the New thread page's workplace); the question dock: `NWQuestionDock` (`NWQuestionDockContent`, `NWQuestionDockMetrics`, `.nwQuestionCard()`), `NWQuestionHead`, `NWQuestionDockHidden` (over `NWQuestionHiddenLine`); the queue: `NWQueueStack`, `NWQueueRow`, `NWQueueEditor`, `NWQueueDeletedRow`, `NWQueueMoreRow`, `NWQueueNumber`, `NWQueueGlyph`, `NWGripGlyph`, `NWQueueMetrics` | `Thread/Composer.swift`, `Thread/QuestionDock.swift`, `Thread/QueueStack.swift` |
 | Agents | `NWSubagentTray` (`NWSubagentTrayRun`, `NWSubagentTraySummary`, `NWSubagentTrayRow`, `NWSubagentTrayMoreRow`), `NWDockStack`, `NWSubagentRecordLine`, `NWInspectorHeader`, `NWRunBrief`, `NWRunActions`, `NWBranchGlyph`, `NWElapsedText`, `NWDuration`, `NWInlineMarkup`, `.nwRunArrival`; touch forms for iOS (the tray's `.pad` and `.phone` sizes, `NWRunCard`, `NWRunHeader`, `NWRunTabs`, `NWSteerField`, …) | `Thread/Subagents.swift`, `Thread/SubagentInspector.swift`, `Thread/SubagentPresentation.swift`; the iOS client |
 | Review | The Changes pane: `NWScopeButton`, `NWViewedPill`, `NWCompareRow`, `NWFileStrip`, `NWFileHeader`, `NWViewedCheckbox`, `NWDiffView` over `NWChangesRow`s (`NWDiffLine`, `NWSplitDiffLine`, `NWDiffHatch`, `NWDiffFoldRow`), `NWInlineComment`, `NWCommentEditor`, `NWReviewSendBar`, `NWChangesFileList`, the menus (`NWChangesMenu`, `NWChangesMenuRow`, `NWChangesMenuToggle`, `NWChangesMenuSearch`), `NWDiffMetrics`, `NWChangesMetrics`; the commit form (`NWCommitMessageEditor`, `NWCommitFileRow`, `NWCommitOptionRow`); touch forms for iOS (`NWTouchDiffLine`, `NWSplitDiffRow`, `NWTouchFileStrip`, `NWLineCommentBar`, `NWReviewFileRow`, `NWReviewComposer`, …) | `DiffReviewView.swift`, `ChangesMenus.swift`, `ChangesRows.swift`, `ReviewCommitSheet.swift`; the iOS client |
@@ -4110,8 +4162,8 @@ trail, top-aligned, 6pt apart, as small (24pt) buttons. Default icons:
   diagnosis that says whether retrying helps ("3 snapshot tests fail at Dynamic Type XL.
   Retrying won't help."), and **Open replay** (secondary). **Not built yet:** nothing counts
   repeated failures or diagnoses them, and the board fixes no threshold. Today a failed turn
-  shows `NWTurnError` with its repeat count and Retry, and a failed subagent card offers Open
-  replay and Re-run.
+  shows `NWTurnError` with its tries ("Tried 3 times over 2m") and Retry, and a failed subagent
+  card offers Open replay and Re-run.
 - **A host reconnecting** (running, `point.topleft.down.to.point.bottomright.curvepath`):
   "<host> reconnecting", "Last seen 3h ago. Remote agents resume when it's back.", and **Retry
   now** (secondary), in the pane of a remote agent whose host went away. **Not built yet:** the
@@ -4611,7 +4663,8 @@ merges into one Home.
 follows the Mac's rules (Thread) with the phone's measures below.
 
 - **Header:** the inline title with the agent's name over its status line: the status word
-  ("Idle", "Running", "Needs you" with a glowing dot while pi asks), then where the agent works:
+  ("Idle", "Running", "Needs you" with a glowing dot while pi asks, "Failed" in `failed` while the
+  last reply ended in an error, MobileThreadError), then where the agent works:
   "· ⧉ pi/swiftui-previews" (a worktree's branch in mono `textTertiary`, truncating in the middle;
   MobileThread, MobileQueue) or "· ⌂ your checkout" in `lanternText` for the space's own checkout
   (MobileQuestion). The boards dropped the turn and context counts and the clock for it, and so
@@ -5281,7 +5334,8 @@ selected thread, or the Overview when none is. Other screens push over the detai
   when the sidebar is hidden; the name at `.title` (16/600), the branch chip (`NWBranchChip` as on
   the Mac, without its chevron: the branch, the files changed, and the host when more than one is
   set up; iPadThread: "pi/swiftui-previews ●3"), and the status pill (`NWStatusPill`, with the
-  running clock: "Running · 37m"); then, trailing, 44pt icon buttons in `textPrimary`. The
+  running clock: "Running · 37m"; "Failed" on `failedTint` after a reply that failed,
+  iPadThreadError); then, trailing, 44pt icon buttons in `textPrimary`. The
   counters ("17 turns · 42k ctx") are gone, as on the boards.
 - **Header buttons on the board:** Subagents, Review changes, and Thread options (•••). A
   button whose pane is open takes a `runningTint` fill and a `running` glyph: Subagents while
@@ -7884,6 +7938,8 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | TerminalSplit | Terminal panes; Terminal panel (no header button: departures) | Built |
 | TerminalPane | Terminal panes; Terminal panel (Split panes, Send output to pi; no header button: departures) | Partial |
 | TerminalStates | Terminal panel (no header toggle: departures) | Partial |
+| ThreadError | Thread › Errors (the card, folded); Status language | Built |
+| ThreadErrorDetails | Thread › Errors (Details) | Built |
 
 **iOS**
 
@@ -7892,6 +7948,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | MobileAgents | iPhone: shell and shared anatomy; iPhone: Home | Partial |
 | MobileThread | iPhone: Thread | Built |
 | MobileApproval | iPhone: Thread | Built |
+| MobileThreadError | iPhone: Thread (Header); Thread › Errors (touch sizes) | Built |
 | MobileLock | Notifications and Live Activities › Live Activities | Not built yet |
 | MobileAnswer | Notifications and Live Activities › Actions and answering | Not built yet |
 | MobileMission | Missions › Missions: iPhone and iPad | Not built yet |
@@ -7928,6 +7985,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | Board | Specified in | Status |
 | --- | --- | --- |
 | iPadThread | iOS: iPad › Shell and sidebar, Thread, Composer and commands | Partial |
+| iPadThreadError | iOS: iPad › Thread (Header); Thread › Errors (touch sizes) | Built |
 | iPadReview | iOS: iPad › Review | Built |
 | iPadSubagents | iOS: iPad › Subagents | Partial |
 | iPadPortrait | iOS: iPad › Shell and sidebar, Composer and commands | Partial |
@@ -8015,6 +8073,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | NWControls, NWControlsLight | Components › Controls | Partial |
 | NWStatus, NWStatusLight | Components › Status and feedback; Status language | Partial |
 | NWThread, NWThreadLight | Thread | Partial |
+| TurnErrors | Thread › Errors (every kind, the retry line, touch sizes) | Partial |
 | LiveText | Thread › Live text, Activity lines (Live), Thinking (Live); Motion (`shimmer`); Up next (a steering row waits still); Subagents (a running tray row's words) | Built |
 | NWComposer, NWComposerLight | Composer, questions, and menus; Command palette | Partial |
 | ContextIdeas | Composer, questions, and menus › Context meter; Thread › Compactions | Partial |
