@@ -382,6 +382,9 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
     /// "Edited N files" cards and their Undo (`RemoteProtocol.changesCapability`). nil from older
     /// hosts, and for an agent outside a git repository.
     public var turnChanges: [ChangesTurn]?
+    /// pi is retrying a failed request on its own (TurnErrors › While it retries). nil when it
+    /// isn't, and from older hosts.
+    public var retry: NativeThreadRetry?
 
     public var isRPC: Bool { runtime == "rpc" }
 
@@ -391,7 +394,7 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         widgets: [NativeThreadWidget]? = nil, messages: [NativeThreadMessage], olderCursor: String? = nil,
         provisional: [NativeThreadMessage], clipped: Bool, runtime: String? = nil, stats: NativeThreadStats? = nil,
         commands: [NativeCommand]? = nil, subagents: [NativeSubagent]? = nil, queue: NativeQueue? = nil,
-        context: NativeThreadContext? = nil, turnChanges: [ChangesTurn]? = nil
+        context: NativeThreadContext? = nil, turnChanges: [ChangesTurn]? = nil, retry: NativeThreadRetry? = nil
     ) {
         self.piSessionID = piSessionID
         self.generation = generation
@@ -415,6 +418,7 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         self.queue = queue
         self.context = context
         self.turnChanges = turnChanges
+        self.retry = retry
     }
 }
 
@@ -444,12 +448,16 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
     /// v4, role "compactionSummary" (a compaction and what the agent kept) and role "compaction"
     /// (one running, or stopped, as a live row). Older clients ignore both.
     public var compaction: NativeCompaction?
+    /// Assistant messages whose request failed (status "error"): the provider and model it went
+    /// to (pi's ids, "openai" and "gpt-5"), for the error card's facts. Absent from older hosts.
+    public var provider: String?
+    public var model: String?
 
     public init(
         entryID: String, role: String, blocks: [NativeThreadBlock], toolName: String? = nil, toolCallID: String? = nil,
         argumentsText: String? = nil, status: String? = nil, isError: Bool? = nil, truncated: Bool = false, timestamp: Double? = nil,
         startedAt: Double? = nil, thinkingSeconds: Double? = nil, origin: NativeMessageOrigin? = nil, operationID: UUID? = nil,
-        compaction: NativeCompaction? = nil
+        compaction: NativeCompaction? = nil, provider: String? = nil, model: String? = nil
     ) {
         self.entryID = entryID
         self.role = role
@@ -466,6 +474,22 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
         self.origin = origin
         self.operationID = operationID
         self.compaction = compaction
+        self.provider = provider
+        self.model = model
+    }
+}
+
+/// pi retrying a failed request on its own: which try is next (`attempt` of `maxAttempts`), and
+/// when it goes (`retryAt`, ms since the epoch on the host's clock).
+public struct NativeThreadRetry: Codable, Hashable, Sendable {
+    public var attempt: Int
+    public var maxAttempts: Int
+    public var retryAt: Double
+
+    public init(attempt: Int, maxAttempts: Int, retryAt: Double) {
+        self.attempt = attempt
+        self.maxAttempts = maxAttempts
+        self.retryAt = retryAt
     }
 }
 

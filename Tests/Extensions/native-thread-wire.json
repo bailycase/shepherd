@@ -634,5 +634,49 @@
         }
       }
     }
+  },
+  {
+    "type": "nativeThread",
+    "id": 23,
+    "result": {
+      "snapshot": {
+        "value": {
+          "piSessionID": "session",
+          "generation": "generation",
+          "revision": 11,
+          "running": true,
+          "supportedActions": [
+            "send"
+          ],
+          "dialogsSupported": true,
+          "dialogs": [],
+          "messages": [],
+          "provisional": [
+            {
+              "entryID": "provisional:assistant:1",
+              "role": "assistant",
+              "blocks": [
+                {
+                  "kind": "text",
+                  "text": "529 {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}"
+                }
+              ],
+              "status": "error",
+              "truncated": false,
+              "timestamp": 1790281446000,
+              "provider": "anthropic",
+              "model": "claude-sonnet-4-5"
+            }
+          ],
+          "clipped": false,
+          "runtime": "rpc",
+          "retry": {
+            "attempt": 2,
+            "maxAttempts": 3,
+            "retryAt": 1790281454000
+          }
+        }
+      }
+    }
   }
 ]
