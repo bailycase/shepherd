@@ -33,6 +33,12 @@ public struct NativeThreadRow: Equatable, Identifiable, Sendable {
     /// A finished reply's "Edited N files" card for the touch thread: the host's record of its
     /// turn (`recordedTurn`), else its edit calls.
     public var changes: NativeChangesCard? = nil
+    /// A design comment (`NativeMessageOrigin.designComment`): on a user row, the comment its one
+    /// message carried, which a design's chat draws as its card; on a reply, the comment it
+    /// answers, drawn inside that card.
+    public var designComment: UUID? = nil
+    /// A user row carrying a comment with the reply to it below.
+    public var commentAnswered = false
 
     public var id: String { turn.id }
     public var isUser: Bool { turn.isUser }
@@ -403,7 +409,10 @@ public final class NativeThreadStore {
         var kept: Set<String> = []
         for (index, turn) in turns.enumerated() {
             if turn.isUser {
-                rows.append(NativeThreadRow(turn: turn, presentation: nil, live: false, promptText: nil, startedAt: nil))
+                var row = NativeThreadRow(turn: turn, presentation: nil, live: false, promptText: nil, startedAt: nil)
+                row.designComment = Self.designComment(turn)
+                row.commentAnswered = row.designComment != nil && turns.indices.contains(index + 1) && !turns[index + 1].isUser
+                rows.append(row)
                 continue
             }
             let isLive = index == liveReply
@@ -423,13 +432,21 @@ public final class NativeThreadStore {
             let startedAt = opener?.messages.first?.timestamp
             let recordedTurn = changesTurn(forMessageAt: startedAt, in: snapshot?.turnChanges)
             let card = isLive ? nil : nativeChangesCard(turn: recordedTurn, changes: presentation.changes)
-            rows.append(NativeThreadRow(turn: turn, presentation: presentation, live: isLive, promptText: prompt,
-                                        startedAt: startedAt, recordedTurn: recordedTurn, changes: card))
+            var row = NativeThreadRow(turn: turn, presentation: presentation, live: isLive, promptText: prompt,
+                                      startedAt: startedAt, recordedTurn: recordedTurn, changes: card)
+            row.designComment = opener.flatMap(Self.designComment)
+            rows.append(row)
         }
         if presentationCache.count > kept.count { presentationCache = presentationCache.filter { kept.contains($0.key) } }
         Self.foldRepeatedErrors(&rows)
         if rows != self.rows { self.rows = rows }
         deriveChrome()
+    }
+
+    /// The comment a user turn carried: its one message's origin.
+    static func designComment(_ turn: NativeTurn) -> UUID? {
+        guard turn.messages.count == 1 else { return nil }
+        return turn.messages[0].origin?.designComment
     }
 
     /// A reply that ended in an error the next reply failed with again folds to a line

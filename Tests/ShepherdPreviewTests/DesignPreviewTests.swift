@@ -116,6 +116,84 @@ struct DesignPreviewTests {
         #expect(record.selectedBoards == ["A.dc.html", "B.dc.html"])
     }
 
+    /// Comments on the checkout funnel's A, made once its agent answers: the step card's comment
+    /// (answered under its pin) and one on the bars. Rects are the fixture board's layout.
+    private func comment(on workspace: PreviewWorkspace, _ design: Design, agent: Agent) async throws -> [DesignComment] {
+        let server = workspace.server
+        let agentID = agent.id
+        try await eventually("the design agent to start") { @Sendable [server] in
+            guard case .snapshot(let s) = try await server.nativeThread(agentID: agentID, request: .snapshot()) else { return false }
+            return !s.piSessionID.isEmpty
+        }
+        let a = try #require(DesignPath("A.dc.html"))
+        let first = try await server.addDesignComment(design.id, draft: DesignCommentDraft(
+            board: a, tid: 7, path: [1, 1, 0], target: "Step 1", rect: DesignCommentRect(x: 32, y: 78, w: 396, h: 80),
+            text: "Show the absolute counts next to the percentages."))
+        #expect(first.undelivered == nil)
+        _ = try await server.replyToDesignComment(design.id, commentID: first.comment.id,
+                                                  text: "Done on A and A · phone. Want the drop-off line in counts too?", author: .agent)
+        let second = try await server.addDesignComment(design.id, draft: DesignCommentDraft(
+            board: a, tid: 16, path: [1, 2], rect: DesignCommentRect(x: 32, y: 176, w: 1216, h: 592),
+            text: "Use the accent for the biggest drop only."))
+        return [first.comment, second.comment]
+    }
+
+    /// Close enough on A to read a pin's thread (the canvas opens fitted, at about 17%).
+    private static let closeOnA = NWCanvasViewport(offset: CGPoint(x: NWDesignMetrics.fitLeading, y: NWDesignMetrics.fitTop), zoom: 0.55)
+
+    /// Comments (DZCanvas, DZTweak; NWCommentPin, NWCommentThread, NWCommentCard): two pins on A,
+    /// the first's thread open with the design agent's answer, and in the chat the comment's card
+    /// with the agent's turn inside it.
+    @Test func designScreenComments() async throws {
+        let (workspace, checkout, agent) = try await designWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        vm.selectSidebarRow(.design(checkout.id))
+        let screen = vm.designScreen(checkout.id)
+        let comments = try await comment(on: workspace, checkout, agent: agent)
+        await screen.refreshComments()
+        screen.openThread(comments[0].id.uuidString)
+        let store = vm.threadStores.store(for: agent.id)
+        try await Preview.render("app-window-design-comments", size: Self.windowSize, ready: {
+            if screen.snapshot != nil, screen.viewport != Self.closeOnA { screen.viewport = Self.closeOnA }
+            let answered = store.rows.contains { $0.designComment == comments[0].id && $0.commentAnswered }
+            let second = store.rows.contains { $0.designComment == comments[1].id && $0.isUser }
+            return screen.viewport == Self.closeOnA && screen.isDrawn && answered && second && !store.running
+        }) {
+            RootView(vm: vm)
+        }
+        #expect(screen.pins.map(\.number) == [1, 2])
+        #expect(screen.openThread?.replies.map(\.author) == [.agent])
+    }
+
+    /// The Comments tab (DZCanvas): the open comments' cards, and a third comment being written
+    /// on A's second step with the Comment tool.
+    @Test func designScreenCommentsTab() async throws {
+        let (workspace, checkout, agent) = try await designWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        vm.selectSidebarRow(.design(checkout.id))
+        let screen = vm.designScreen(checkout.id)
+        _ = try await comment(on: workspace, checkout, agent: agent)
+        await screen.refreshComments()
+        screen.paneTab = .comments
+        screen.tool = .comment
+        let a = try #require(DesignPath("A.dc.html"))
+        var step = DesignElementPick(board: a, id: try #require(DesignElementID(board: a.viewName, tid: 10, path: [1, 1, 1])),
+                                     rect: CGRect(x: 442, y: 78, width: 396, height: 80), kind: .shape, label: "Step 2 70%",
+                                     tag: "card · Step 2 70%")
+        step.words = "Step 2 70%"
+        screen.beginComment(on: step)
+        screen.draftText = "Make the bars thicker."
+        try await Preview.render("app-window-design-comments-tab", size: Self.windowSize, ready: {
+            if screen.snapshot != nil, screen.viewport != Self.closeOnA { screen.viewport = Self.closeOnA }
+            return screen.viewport == Self.closeOnA && screen.isDrawn && screen.openCards.count == 2
+        }) {
+            RootView(vm: vm)
+        }
+        #expect(screen.pins.map(\.number) == [1, 2, 3])
+    }
+
     /// The Designs destination selected on its page, with design rows in Recents.
     @Test func appWindowDesigns() async throws {
         let (workspace, _, _) = try await designWorkspace()

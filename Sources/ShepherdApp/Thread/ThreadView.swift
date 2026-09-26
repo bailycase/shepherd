@@ -12,6 +12,8 @@ extension EnvironmentValues {
     /// starting; a blank one waits no longer than `AppLayout.blankStartingIndicatorDelay`
     /// (previews show it at once).
     @Entry var threadStartingDelay: Duration = AppLayout.startingIndicatorDelay
+    /// A design's chat: its comments' cards, which messages carrying a comment draw.
+    @Entry var designCommentCards: DesignCommentCards? = nil
 }
 
 /// An agent's thread (NWThread board): an 820pt column of turns in a scroll view that follows
@@ -64,6 +66,7 @@ struct ThreadView: View {
     /// The user turn the last ⌥⌘↑/↓ landed on.
     @State private var jumpedTurn: String?
     @State private var arrivals = ThreadArrivals()
+    @Environment(\.designCommentCards) private var commentCards
 
     var body: some View {
         let _ = NWRenderProbe.tick("thread.view")
@@ -218,18 +221,29 @@ struct ThreadView: View {
     }
 
     /// A sent message rises into the thread; a reply's parts make their own entrances.
+    /// A design comment's message draws its card, and the reply to it sits inside the card
+    /// (DZCanvas); a comment whose card isn't known draws as the viewer's words.
     @ViewBuilder private func turn(_ row: NativeThreadRow, running: Bool, thinking: Bool, arriving: Bool, settled: Bool) -> some View {
+        let card = row.designComment.flatMap { commentCards?.cards[$0] }
         if row.isUser {
-            UserTurn(turn: row.turn)
-                .equatable()
-                .nwArrival(arriving, .list, edge: .bottom)
+            if let card {
+                NWCommentCard(number: card.number, target: card.target, meta: card.meta, text: card.text,
+                              continues: row.commentAnswered)
+                    .equatable()
+                    .nwArrival(arriving, .list, edge: .bottom)
+            } else {
+                UserTurn(turn: row.turn)
+                    .equatable()
+                    .nwArrival(arriving, .list, edge: .bottom)
+            }
         } else if let presentation = row.presentation {
             AgentTurn(presentation: presentation, live: row.live, subagents: TurnSubagents(store.placements[row.id]),
                       subagentActions: subagentActions, startedAt: row.startedAt,
                       retry: retryAction(row, running: running), review: review, recordedTurn: row.recordedTurn,
                       turnActions: turnActions, thinking: thinking, arriving: arriving,
-                      settled: settled)
+                      settled: settled, footer: card == nil)
                 .equatable()
+                .modifier(CommentAnswer(inCard: card != nil))
         }
     }
 
@@ -474,5 +488,18 @@ struct ComposerInsetPadding: ViewModifier {
 
     func body(content: Content) -> some View {
         content.safeAreaPadding(.bottom, inset.height)
+    }
+}
+
+/// A reply to a design comment, inside the comment's card above it.
+private struct CommentAnswer: ViewModifier {
+    let inCard: Bool
+
+    func body(content: Content) -> some View {
+        if inCard {
+            content.nwCommentAnswer(bridge: AppLayout.turnSpacing)
+        } else {
+            content
+        }
     }
 }

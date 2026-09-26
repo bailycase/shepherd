@@ -139,9 +139,37 @@ extension ShepherdViewModel {
         let server = server
         let screen = DesignScreenModel(designID: id, host: designRendering.host(for: id),
                                        snapshot: { try await server.designSnapshot($0) },
-                                       source: { try await server.designBoard($0, path: $1).source })
+                                       source: { try await server.designBoard($0, path: $1).source },
+                                       comments: designCommentActions())
         designScreens[id] = screen
         return screen
+    }
+
+    /// The canvas's comment changes through the server. A change based on comments that moved on
+    /// meanwhile is refused as stale: it reads them again and goes once more.
+    private func designCommentActions() -> DesignCommentActions {
+        let server = server
+        func again<T>(_ designID: DesignID, _ base: UInt64?, _ body: (UInt64?) async throws -> T) async throws -> T {
+            do {
+                return try await body(base)
+            } catch DesignStoreError.stale {
+                return try await body(try await server.designComments(designID).revision)
+            }
+        }
+        return DesignCommentActions(
+            list: { try await server.designComments($0) },
+            add: { id, draft, base in
+                let outcome = try await again(id, base) { try await server.addDesignComment(id, draft: draft, baseRevision: $0) }
+                return (outcome.comment, outcome.undelivered)
+            },
+            reply: { id, comment, text, base in
+                let outcome = try await again(id, base) { try await server.replyToDesignComment(id, commentID: comment, text: text, baseRevision: $0) }
+                return (outcome.comment, outcome.undelivered)
+            },
+            resolve: { id, comment, base in
+                try await again(id, base) { try await server.resolveDesignComment(id, commentID: comment, baseRevision: $0) }
+            },
+            report: { [weak self] in self?.remoteActionError = $0 })
     }
 
     /// A design's layout came on screen or left it: only designs on screen take live views and

@@ -188,6 +188,46 @@ struct ListPerformanceTests {
         #expect(counts["design.card", default: 0] < 120)
     }
 
+    // MARK: A design's comments
+
+    private static let commentsSize = CGSize(width: AppLayout.designChatWidth, height: 800)
+    /// A one-line comment's card and the room after it: at least this tall.
+    private static let commentRowHeight: CGFloat = 70
+
+    private static var commentsOnScreen: Int { Int(commentsSize.height / commentRowHeight) + 1 }
+
+    /// The Comments tab over 300 open comments.
+    private static func commentsList() -> DesignCommentsList {
+        DesignCommentsList(cards: (1...300).map { number in
+            DesignCommentCardValue(id: UUID(), number: number, target: "A · Checkout funnel", meta: "You · 2m",
+                                   text: "Comment \(number): show the absolute counts next to the percentages.")
+        }) { _ in }
+    }
+
+    @Test func openingTheCommentsTabBuildsOnlyTheCardsOnScreen() {
+        var window: OffscreenWindow!
+        let counts = ListPerf.counting {
+            window = OffscreenWindow(size: Self.commentsSize, dark: true, Self.commentsList())
+            ListPerf.settle(window)
+        }
+        defer { window.close() }
+        #expect(counts["design.comment", default: 0] > 0)
+        #expect(counts["design.comment", default: 0] <= 2 * Self.commentsOnScreen, "\(counts)")
+    }
+
+    @Test func scrollingTheCommentsTabBuildsOnlyTheCardsComingIntoView() throws {
+        let window = OffscreenWindow(size: Self.commentsSize, dark: true, Self.commentsList())
+        ListPerf.settle(window)
+        defer { window.close() }
+        let scroll = try #require(ListPerf.scrollView(in: window))
+        var moved: CGFloat = 0
+        let counts = ListPerf.counting { moved = ListPerf.scroll(window, scroll, step: Self.commentRowHeight / 2, steps: 12).distance }
+        #expect(moved > 0)
+        let arriving = Int(moved / Self.commentRowHeight) + 1
+        #expect(counts["design.comment", default: 0] <= 2 * (arriving + Self.commentsOnScreen), "\(counts)")
+        #expect(counts["design.comment", default: 0] < 300)
+    }
+
     // MARK: Thread
 
     /// A long thread streaming its reply builds only the rows on screen for each chunk, however
