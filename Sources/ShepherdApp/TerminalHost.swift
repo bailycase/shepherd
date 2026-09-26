@@ -113,6 +113,9 @@ enum AppImageDrop {
     static func resolve(_ providers: [NSItemProvider]) async -> [URL] {
         await TerminalImageDrop.resolve(providers)
     }
+
+    /// Where drops and attachments are copied; pruned of anything older than a day.
+    static var directory: URL { TerminalImageDrop.dropDirectory }
 }
 
 /// Installs the window-level file-drop overlay. Mount once per window.

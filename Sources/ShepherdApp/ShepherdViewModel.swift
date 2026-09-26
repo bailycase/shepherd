@@ -75,6 +75,12 @@ final class ShepherdViewModel {
     let newThread = NewThreadState()
     /// The New design page's brief, images and project. Kept while the page is away.
     let newDesign = NewDesignState()
+    /// The Export sheet over a design (DZExport), while it is up.
+    var designExport: DesignExportModel?
+    /// File ▸ Import Claude Design Folder…'s folder picker is up.
+    var importingDesign = false
+    /// Where boards attached to a thread are written: the drop folder (tests use their own).
+    @ObservationIgnored var designAttachDirectory: URL = AppImageDrop.directory
     /// The Designs page's filter and selected card. Ephemeral.
     var designsPageFilter = ""
     var designsPageSelection: DesignID?

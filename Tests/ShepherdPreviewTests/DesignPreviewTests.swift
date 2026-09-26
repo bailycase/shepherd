@@ -85,6 +85,33 @@ struct DesignPreviewTests {
         }
     }
 
+    /// Export (DZExport): the sheet over the design with A and A · phone ticked from the canvas's
+    /// selection and HTML chosen; then ZIP with every board ticked; then an export being written.
+    @Test(arguments: ["html", "zip", "working"])
+    func designExport(_ state: String) async throws {
+        let (workspace, checkout, _) = try await designWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        vm.selectSidebarRow(.design(checkout.id))
+        let screen = vm.designScreen(checkout.id)
+        await screen.refresh()
+        let a = try #require(DesignPath("A.dc.html"))
+        let phone = try #require(DesignPath("A-phone.dc.html"))
+        screen.setSelection(state == "zip" ? [] : [.init(board: a), .init(board: phone)])
+        vm.openDesignExport(checkout.id)
+        let model = try #require(vm.designExport)
+        switch state {
+        case "zip": model.format = .zip
+        case "working": model.working = true
+        default: break
+        }
+        #expect(model.selection.count == (state == "zip" ? 4 : 2))
+        try await Preview.render(state == "html" ? "app-window-design-export" : "app-window-design-export-\(state)",
+                                 size: Self.windowSize, ready: { screen.isDrawn }) {
+            RootView(vm: vm)
+        }
+    }
+
     /// Select (NWSelectionRing; NWDesignTool, DZTweak): a card on A selected with its tag, the
     /// bars under the pointer ringed, and B selected whole by its label. Rects are the fixture
     /// board's layout (a capture draws snapshots, so nothing live is asked).
