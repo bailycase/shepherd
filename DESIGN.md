@@ -5028,11 +5028,12 @@ keyboard is up while the query is empty.
   6 of 16 cores") until the Mac has daemon hosts; Wake on LAN on an unreachable host, which sends
   the host's magic packet and then retries; a host's kind and pi version and its last-seen time,
   which need the host to report them.
-- **Not built yet:** under the hosts, a card of 52pt rows: Design systems ("2 · acme-web, Night
-  Watch", a palette glyph), Extensions ("6 installed", a puzzle glyph), and Archive ("41
-  threads", a box glyph), each pushing its list. Design systems and Archive wait for the Mac;
-  Extensions opens Settings ▸ Extensions (built: the bundled and installed pi extensions each host
-  loads).
+- **Under the hosts** (and under their note), a card of 52pt rows: Extensions ("6 installed", a
+  puzzle glyph: the settings host's bundled extensions that are on and its installed ones, once it
+  has answered), which opens Settings ▸ Extensions (the bundled and installed pi extensions each
+  host loads). The card shows while any host is set up.
+- **Not built yet:** the card's Design systems ("2 · acme-web, Night Watch", a palette glyph) and
+  Archive ("41 threads", a box glyph) rows, each pushing its list; they wait for the Mac.
 
 ### iPhone: Settings (MobileSettings)
 

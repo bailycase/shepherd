@@ -3,7 +3,9 @@ import ShepherdUI
 import ShepherdRemote
 
 /// More (MobileMore, iPadHosts boards; home track): every host as a card with its connection,
-/// what runs there, Retry while it is offline, and Add host. A card opens the host's form.
+/// what runs there, Retry while it is offline, and Add host. A card opens the host's form. Under
+/// the hosts, Extensions (the bundled and installed pi extensions the hosts load) opens
+/// Settings ▸ Extensions; the board's Design systems and Archive wait for the Mac.
 struct MoreScreen: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
@@ -11,6 +13,7 @@ struct MoreScreen: View {
     var body: some View {
         let feed = HomeFeed.of(hosts)
         let cards = feed.model.hosts
+        let settings = SettingsStore.of(hosts)
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
                 NWListHeader("Hosts") {
@@ -29,12 +32,26 @@ struct MoreScreen: View {
                     .nwText(.caption).foregroundStyle(Color.nw.textTertiary)
                     .padding(.horizontal, NW.Space.xs)
                     .padding(.top, NW.Space.xs)
+                if !cards.isEmpty {
+                    NWListCard {
+                        Button { navigator.open(.settings(SettingsPage.pi.route)) } label: {
+                            NWListRow(SettingsPage.pi.title, subtitle: settings.extensionsValue.map { "\($0) installed" },
+                                      subtitleMono: false, leading: .symbol(SettingsPage.pi.symbol))
+                        }
+                        .buttonStyle(.nwRow(radius: 0))
+                    }
+                    .padding(.top, MobileLayout.sectionSpacing - MobileLayout.headerSpacing)
+                }
             }
             .padding(.horizontal, MobileLayout.gutter)
             .padding(.bottom, MobileLayout.sectionSpacing)
         }
         .background(Color.nw.bgWindow)
-        .refreshable { hosts.retryAll() }
+        .refreshable {
+            hosts.retryAll()
+            await settings.refresh()
+        }
+        .task { await settings.watch() }
         .navigationTitle("More")
     }
 }
