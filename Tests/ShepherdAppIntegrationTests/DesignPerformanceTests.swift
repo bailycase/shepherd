@@ -6,6 +6,7 @@ import ShepherdSessions
 import ShepherdTestSupport
 import SwiftUI
 import Testing
+@testable import DesignSurfaceKit
 @testable import ShepherdApp
 @testable import ShepherdUI
 
@@ -87,6 +88,41 @@ struct DesignPerformanceTests {
         #expect(rasterizer.peakWebViews <= Self.webViewBudget)
         #expect(host.liveBoards.isDisjoint(with: first), "the first boards' views went to the boards now on screen")
         #expect(seen.count > DesignLivePlan.liveCap * 2)
+    }
+
+    /// Zooming a settled canvas out and in: a board that stays live keeps its page (never
+    /// loaded again, at any step), and its web view stays the board's size at a page zoom of 1,
+    /// so no step lays the page out again.
+    @Test func zoomingNeverReloadsALiveBoard() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (_, window, screen, host) = try await openLargeCanvas(app)
+        defer { window.close() }
+        let target = try #require(DesignPath("Board0.dc.html"))
+        screen.select(target.rawValue)
+        try await eventuallyOnMain("the selected board to be live", timeout: .seconds(30)) {
+            window.layout()
+            return host.liveView(target) != nil
+        }
+        let view = try #require(host.liveView(target))
+        let reloads = host.reloads
+        let steps: [CGFloat] = [0.3, 0.15, 0.5, 1, 1.25, 2, 3, 1, 0.5]
+        for zoom in steps {
+            let before = host.liveBoards.compactMap { host.liveView($0) }
+            screen.viewport = NWCanvasViewport(offset: CGPoint(x: 44, y: 52), zoom: zoom)
+            screen.planLive()
+            try await eventuallyOnMain("the canvas at \(zoom) to draw", timeout: .seconds(60)) {
+                window.layout()
+                return screen.isDrawn && host.liveView(target)?.zoom == zoom
+            }
+            #expect(host.liveView(target) === view, "the selected board kept its view at \(zoom)")
+            #expect(view.webView.pageZoom == 1 && view.webView.frame.size == view.boardSize, "at \(zoom)")
+            for kept in before where host.liveView(kept.board) === kept {
+                #expect(kept.navigationsStarted == 1, "\(kept.board) loaded again at \(zoom)")
+            }
+        }
+        #expect(view.navigationsStarted == 1)
+        #expect(host.reloads == reloads)
     }
 
     /// One board changing on a canvas of 172: that board's frame redraws once and one snapshot is

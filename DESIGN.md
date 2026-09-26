@@ -185,6 +185,7 @@ And the rules that follow from them:
 | SettingsSkillsBrowse, SkillsStates: a ranked row's 24-hour change ("+8.1K") and a description beside each result; "· updated Sep 19" in the preview | Installs only in the list, the description in the preview (from its SKILL.md), and no date | skills.sh's lists report neither a change nor a description, nor when a skill last changed |
 | SkillsStates: "Topics narrow any tab" | A topic is a search of skills.sh, most installed first, whatever tab is chosen | skills.sh's lists take no topic |
 | SettingsSkillsBrowse: "Pick from all 16…" | "Pick from the whole repo…" | A repository's size is known only once a host looks it up |
+| SettingsSkills, SkillsStates: one list of the skills in `~/.agents/skills`, global, no project skills (SkillsStates' Not yet) | The list holds every skill the agent loads, in groups: Installed (managed as drawn), then read-only From your pi setup (pi's agent directory and its settings' paths, with Show folder) and From pi packages (naming the package), a skill pi passes over for a same-named one marked "not used", and a note that a repository's own skills load in its threads. The filter, the counts and In every prompt count them all; Settings search finds the groups | The user's decision of 2026-09-26 ("Show all, read-only"): the composer's / menu listed skills the page didn't. Shepherd still never writes `~/.pi` |
 | SettingsExperiments: Learn from Missions, Threads, Automations | Threads and Automations | Missions aren't built |
 | SettingsExperiments: Hosts as a 190pt popup, "Follow Instructions"; a suggestion names "which hosts it applies to" and its chip retargets hosts | A note naming where lines go now, with Open Instructions; the chip retargets the file and reports the hosts; How it works says "for a root file, with the reason." | A line goes where Settings › Instructions sends This Mac's files, so a popup with one option would pick nothing (honest affordances) |
 | MobileInstructions, iPadSettingsInstructions: pi's root files, "Save once, written to each host's ~/.pi/agent/", the editor's path `~/.pi/agent/APPEND_SYSTEM.md`, "The agent reads these at the start of every session", a read order from "root AGENTS.md" | Shepherd's own copies: "Save once, written to every host", the host's instructions folder in the path, "The agent reads these at the start of every session Shepherd starts", the order's links named "Shepherd's AGENTS.md" and "Shepherd's APPEND_SYSTEM.md" | Shepherd never writes the user's `~/.pi/agent` (AGENTS.md › Gotchas) |
@@ -3692,14 +3693,17 @@ back. The page sits between Instructions and Remote in the nav, with `graduation
   700pt), and trailing, bottom-aligned: Add from repo… (secondary, `plus`) and Browse skills.sh
   (primary, a glass). Both open sheets (below). The blocks are 18pt apart, the list and the 280pt
   rail 28pt apart.
-- **Toolbar:** a 240pt `NWSearchField` ("Filter installed skills", names and descriptions), then
+- **Toolbar:** a 240pt `NWSearchField` ("Filter skills", names and descriptions, and a package's name), then
   All · On · Updates with their counts ("All 8", "On 7", "Updates 2", an `NWSegmentedPicker`), a
   spacer, "Checked 2h ago" in 12 `textTertiary` (when the first host last looked for updates:
   "Checked just now", "Not checked yet"; it ages by the minute), and Update N (small secondary,
   `arrow.down.to.line`) while any skill has a newer commit.
 - **The list** (a card at radius 10, `bgWindow`, a `lineSubtle` line): a 30pt header row on
-  `bgSunken` with section labels (Skill, Source, Use, Updated) over rows at least 54pt, with 16pt
-  column gaps and sides, hairlines between (`SkillsListRow`, Equatable, lazy):
+  `bgSunken` with section labels (Skill, Source, Use, Updated), then groups, each under a 34pt
+  title row (`SkillsGroupTitle`: 12/600 `textSecondary`, its count in mono `textTertiary`, its
+  folder trailing in mono): **Installed** (the folder, "~/.agents/skills"), then the read-only
+  groups below. Rows are at least 54pt, with 16pt column gaps and sides, hairlines between
+  (`SkillsListRow`, Equatable, lazy). An Installed row:
   - the switch (a 30pt column): on or off on every host. Off moves the skill out of the folder pi
     reads, without deleting it.
   - the name in mono 13/600 (`textSecondary` while off) over its description in 12.5
@@ -3713,8 +3717,32 @@ back. The page sits between Instructions and Remote in the nav, with `graduation
     installs it; "Updating" shimmering while it goes (nothing spins).
   - a chevron: a click anywhere on the row opens its detail in place, below it, one row at a time
     (`bgHover` while open or hovered).
+  - "not used" (`NWTag`) after the name when pi uses a same-named skill from the user's pi setup
+    instead; its tooltip names where ("Not used: pi uses the one in ~/.pi/agent/skills.").
   - Empty: "No skills yet. Browse skills.sh, or add them from a repo.", "No skill matches “…”.",
-    "No skill is on.", "Every skill is up to date.", or "Reading skills…".
+    "No skill is on.", "Every skill is up to date.", or "Reading skills…". Filtered, an Installed
+    group left empty hides while another group keeps a row.
+- **The read-only groups** (the user's decision of 2026-09-26: every skill the agent can use shows
+  here, grouped by where it comes from; departures above). They are the first host's own (This Mac
+  on the Mac), read with pi's own loader (docs/skills.md › Outside skills), and Same skills on
+  every host never touches them:
+  - **From your pi setup:** pi's agent directory's `skills/` and the `skills` paths in pi's
+    settings. Its title has a lock in the switch column, "~/.pi/agent/skills" and Show folder
+    (small ghost; This Mac only).
+  - **From pi packages:** the skills the packages in pi's settings bring, each naming its package.
+  - A row (`PiSkillsListRow`, Equatable, lazy): no switch, the name in mono 13/600 over its
+    description, Source (the package, or the folder holding it: "~/.pi/agent/skills",
+    "~/code/team-skills"), Use as above, no Updated, no chevron. One pi passes over for a
+    same-named skill that comes first reads "not used", its description replaced by "Not used:
+    pi uses the one in ~/.agents/skills.". On This Mac its menu offers Open SKILL.md and Show in
+    Finder.
+  - Pi couldn't be asked: the group's title over the reason (`NWInlineProblem`: "Couldn’t find
+    pi, so the skills from your pi setup aren’t listed.", "…node…", "This pi is too old…", "pi
+    took too long…"). A remote first host too old to report them says so in the note row.
+  - Last, on `bgSunken`: "A repository’s own skills (.pi/skills, .agents/skills) load only in
+    that repository’s threads, so they aren’t listed here." (Settings is global.)
+  - Skills an extension adds while pi runs aren't known without running it, so they show only
+    in a thread's / menu.
 - **The detail** (`SkillDetail`, on `bgSunken` under a hairline, 62pt in, 14pt apart): three
   columns 28pt apart under section labels:
   - **Use it:** two radio options (`NWRadioOption`): Automatically, "The agent reads it when a
@@ -3739,9 +3767,10 @@ back. The page sits between Instructions and Remote in the nav, with `graduation
     skill. When a task matches one, it reads that skill’s files and follows them. Type /skill:name
     to use one on purpose." (12.5/1.55, the command in mono `textPrimary`), then the In every prompt
     card (radius 10, `bgWindow`): "In every prompt" with "~610 tokens" (mono), a 6pt bar
-    (`NWBudgetBar`) with a segment per skill that is on (`running` for an automatic one, a rule for a
-    /skill one), and "6 automatic skills. Full files load only when used." Its tooltip: "The context
-    meter counts this as part of the system prompt."
+    (`NWBudgetBar`) with a segment per skill the agent loads (`running` for an automatic one, a
+    rule for a /skill one), and "6 automatic skills. Full files load only when used." They count
+    every skill the agent loads, pi's own included, and not one pi passes over. Its tooltip: "The
+    context meter counts this as part of the system prompt."
   - **Options**, rows between hairlines, each a title (13/500) over a note (12/1.45) and its
     switch: Skills in the / menu ("List every skill as /skill:name in the composer’s slash menu.";
     off, the slash menu leaves skills out), Same skills on every host ("Installs, updates and
@@ -3753,8 +3782,8 @@ back. The page sits between Instructions and Remote in the nav, with `graduation
     by hand show up as Local."
 - **States:** a change shows at once; one a host refuses springs back, its reason inline over the
   list with Dismiss. Each host checks its skills for newer commits once a day.
-- **Not built yet:** project skills (`.agents/skills` inside a repository) and per-agent skill sets
-  (SkillsStates' Not yet).
+- **Not built yet:** per-agent skill sets (SkillsStates' Not yet). A repository's own skills are
+  listed nowhere in Settings (the note above); its threads' / menu shows them.
 
 #### Browse skills.sh and Add from repo (SettingsSkillsBrowse, SettingsSkillsSearch, SettingsSkillsRepo)
 
@@ -5262,6 +5291,14 @@ SettingsSkills): every host's agent skills, the same on every host, over `skills
   detail) comes back to the list with "Removed pdf from every host" and Undo in a banner. Without a
   host, or with none online, too old or unreadable, the page says so in place of the list, and
   reads every host again on pull to refresh.
+- **pi's own skills** (the user's decision of 2026-09-26, as on the Mac): under Installed, "From
+  your pi setup · 2" and "From pi packages · 1" (the lists' header) over read-only cards of the
+  first host's own pi's skills: rows at least 58pt with the name in mono 14/600, the description
+  at 12.5 `textTertiary` ("/skill only · …", or "Not used: pi uses the one in …" for one pi passes
+  over), and where it comes from in mono 11.5 `textTertiary` (the folder, or the package); no
+  switch, and a tap does nothing. Under them: "Read-only: from studio’s own pi, which Shepherd
+  never changes." and the note that a repository's own skills load only in its threads; why pi
+  couldn't be asked in `failed`; a host too old to report them says so.
 - **Search:** typing asks skills.sh (a quarter second after the last key): "9 skills for
   “postgres”" over a card of results, the name in mono 14/600 with the search's matches in
   `lanternText` and the Official seal, "supabase/agent-skills · 71K installs" under it, and a 96pt

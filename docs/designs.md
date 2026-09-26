@@ -106,17 +106,18 @@ elements).
 - **Live values.** A design's `boardCount` (its listed boards) is read from its files and
   broadcast, never written to `state.json`. A write moves `lastActiveAt` the same way; it reaches
   the file with the next structural change.
-- **Soft references.** A design's agent and an agent's design may name something gone. Deleting
-  an agent keeps its design, which starts a fresh agent when next opened. Deleting a design takes
-  its agent in the designs space with it (nothing else reaches that agent). Deleting or reordering
-  a space never touches a design or its agent.
-- **At startup** the server forgets a design whose folder has no `canvas.json` and clears
-  references to what no longer exists. A canvas that is there but unreadable keeps its design. Which folders are gone is read on the design store's
-  queue, not the server's. Design agents last across launches, unlike automation runs
-  (`settleDesignAgents`): one an older state.json kept in a user space moves into the designs
-  space (made then if needed) with its layout, keeping its working directory, since its pi
-  session is filed under it; one the designs space holds for a design that is gone is dropped
-  with its layout. It then reads each design's board count.
+- **Soft references.** A design's agent may name something gone. Deleting an agent keeps its
+  design, which starts a fresh agent when next opened. Deleting a design takes the agents that
+  drew it (their layouts and processes too): a design's chat never becomes a thread. Deleting or
+  reordering a space never touches a design or its agent.
+- **At startup** the server forgets a design whose folder has no `canvas.json`, with the agents
+  that drew it, and clears references to what no longer exists. A canvas that is there but
+  unreadable keeps its design. Which folders are gone is read on the design store's queue, not the
+  server's. Design agents last across launches, unlike automation runs (`settleDesignAgents`): one
+  an older state.json kept in a user space moves into the designs space (made then if needed) with
+  its layout, keeping its working directory, since its pi session is filed under it; one the
+  designs space holds for a design that is gone is dropped with its layout. It then reads each
+  design's board count.
 
 ## Writing
 
@@ -128,7 +129,7 @@ the only writer, through named mutations:
 | --- | --- |
 | `createDesign(_:)` | Makes the folder with a new canvas.json (`createdOnFiles` stamped, the name as `title`), then the record. No space changes; a build's `sourceSpaceID` must exist. A refused record removes the folder again |
 | `renameDesign(_:to:)` | Renames the record and the canvas `title` |
-| `deleteDesign(_:)` | Removes the record and its agent in the designs space (its layout and processes; an agent elsewhere only loses its `designID`), then removes the folder |
+| `deleteDesign(_:)` | Removes the record and the agents that drew it (their layouts, and their processes stopped), then removes the folder |
 | `designsSpaceID()` | The reserved designs space (`Space.designs()`: hidden, `holdsDesigns`), made on first use |
 | `setDesignAgent(_:agentID:)` | Records which agent draws it |
 | `writeDesignBoard(_:path:source:baseRevision:)` | Writes one board's whole source |
@@ -171,7 +172,7 @@ with its SHA-256, listed or not), `designBoard(_:path:)` and `designVersions(_:p
 
 ## The design agent
 
-A design is drawn by an ordinary pi agent whose `Agent.designID` names it. Its launch adds
+A design is drawn by a pi agent whose `Agent.designID` names it. Its launch adds
 `-e shepherd-design.ts` and two variables: `SHEPHERD_DESIGN_ID` (the extension is inert without
 it) and `SHEPHERD_DESIGN_SKILL_DIR`. It lives in the reserved designs space, and its working
 directory is the design's own folder (`<support>/designs/<id>/`): a design has no repository,
@@ -210,6 +211,32 @@ that folder.
   `.drew`), "Updated A and A · phone" (the edit glyph), or "Arranged the canvas"; `design_check`
   reads "Checked against acme-web · 0 off-system values" (`.checked`). Board names follow the
   skill's files: `A.dc.html` reads "A", `A-phone.dc.html` "A · phone".
+
+### Design agents and ordinary threads
+
+An agent draws a design while its `designID` names one in the workspace
+(`ShepherdState.isDesignAgent`). Its thread is that design's Chat tab and nothing else. Only it
+gets `shepherd-design.ts`, the design skill, the design facts in its prompt,
+`SHEPHERD_DESIGN_ID` and `SHEPHERD_DESIGN_SKILL_DIR`. A thread with no design never gets any of
+them, whether the experiment is on or off. The rule holds in both directions:
+
+- **Peers.** A design agent launches without the panes extension, so it has no `pane_*`,
+  `agent_*`, `automation_*` or `notify` tools. The server also refuses `listAgents`,
+  `sendToAgent`, `spawnAgent` and `coordinateAgent` from it or aimed at it, with `not_a_thread`,
+  so an older installed copy of the extension can't get around the rule. agent_list leaves it
+  out.
+- **The Mac's chrome.** A design agent has no sidebar row, no ⌘-digit and no palette row, the
+  palette lists none of its subagents, and the palette's transcript search never reads its chat.
+  It posts no banners: a thread's "Turn finished", question and subagent banners (and their
+  Review action) never speak for a design. The Hosts page counts no thread for it.
+- **Remote clients.** Another Mac, or an iPhone or iPad, gets the host's state without
+  `designs`, without their agents, and without those agents' layouts
+  (`ShepherdState.withoutDesigns`). There is no remote design screen yet. `RemoteHostClient`
+  applies the same rule to whatever a host sends, so an older host's designs reach no Mac,
+  iPhone or iPad client either.
+- **A forgotten design.** Deleting a design, or startup forgetting one whose folder is gone,
+  takes the agents that drew it. Clearing their `designID` instead would turn the design's chat,
+  fences and all, into an ordinary thread.
 
 ### Comments
 
@@ -723,10 +750,16 @@ The design screen publishes what it shows (`DesignScreenModel.viewRecord`, a
   presented): the board holding
   the latest pick (down to 10% zoom), the board under the pointer with Select (at any zoom), and
   the boards nearest the middle of the view (from 25%), recycled least
-  recently wanted first (`DesignLivePlan`). A live view draws at the canvas's zoom with WebKit's
-  page zoom, so it lays out at the board's size and stays sharp, and it shows once its first
-  snapshot is taken. During a zoom gesture every board draws its snapshot; live views follow once
-  the canvas rests.
+  recently wanted first (`DesignLivePlan`). A live view's page always lays out at the board's
+  `w` × `h` in CSS pixels, whatever the zoom: its web view is the board's size at a page zoom of
+  1, scaled to the board's frame on screen (AppKit's bounds, UIKit's transform, so clicks and
+  touches map through the same scale). Never WebKit's page zoom: it scales font sizes, so below
+  about 56% its minimum font size swells text until labels wrap, above 100% the system font's
+  size-dependent tracking narrows text until paragraphs rewrap, and at fractional zooms the layout
+  viewport loses a pixel. Zooming changes no layout and reloads nothing; above 100% a live board
+  is its 100% drawing scaled up, like a snapshot. A live view shows once its first snapshot is
+  taken. During a zoom gesture every board draws its snapshot;
+  live views follow once the canvas rests.
 - **Snapshots.** Every other board draws its last snapshot, rendered by one off-screen view at a
   time (`DesignRasterizer`), so any canvas holds at most six web views. Snapshots are kept per
   design within a pixel budget, never evicting a board on screen. A hidden design gives up its
@@ -737,8 +770,9 @@ The design screen publishes what it shows (`DesignScreenModel.viewRecord`, a
   navigation, its state kept; source the runtime refuses leaves it as it was), and any other board
   renders one new snapshot. New boards appear and removed boards leave.
 - **Budgets** (`DesignPerformanceTests`, over 172 boards): at most six web views, panning recycles
-  them, one board changing redraws one frame (`design.board`) with one snapshot, and a board
-  dragged redraws its own frame once per step and no other. The Designs
+  them, one board changing redraws one frame (`design.board`) with one snapshot, a board
+  dragged redraws its own frame once per step and no other, and zooming never reloads a live
+  board or changes its page zoom. The Designs
   grid builds only the cards on screen (`ListPerformanceTests`, `design.card`).
 
 ### Tweak (DZTweak)

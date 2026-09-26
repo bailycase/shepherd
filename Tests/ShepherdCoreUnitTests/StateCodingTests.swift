@@ -259,6 +259,39 @@ struct DesignModelTests {
         let uncounted = ShepherdState(designs: [Design(name: "New", createdAt: 1)])
         #expect(uncounted.persisted == uncounted)
     }
+
+    /// A thread (the fixture's agent), a design's agent, and an agent naming a design that is gone.
+    private func drawnState() -> (state: ShepherdState, thread: Agent, drawer: Agent, stray: Agent) {
+        var state = Fixture.state()
+        let thread = state.agents[0]
+        let design = Design(name: "Checkout", createdAt: 1)
+        let tab = Tab(spaceID: thread.spaceID, order: 1, layout: .leaf(LeafPane(cwd: "/tmp")))
+        let drawer = Agent(name: "Checkout", spaceID: thread.spaceID, tabID: tab.id, designID: design.id)
+        let stray = Agent(name: "stray", spaceID: thread.spaceID, tabID: TabID(), designID: DesignID())
+        state.tabs.append(tab)
+        state.agents += [drawer, stray]
+        state.designs = [design]
+        return (state, thread, drawer, stray)
+    }
+
+    @Test func onlyAnAgentDrawingOneOfTheStatesDesignsIsADesignAgent() {
+        let (state, thread, drawer, stray) = drawnState()
+        #expect(state.isDesignAgent(drawer) && state.isDesignAgent(drawer.id))
+        #expect(!state.isDesignAgent(thread) && !state.isDesignAgent(thread.id))
+        #expect(!state.isDesignAgent(stray), "a design that is gone makes no design agent")
+        #expect(!state.isDesignAgent(AgentID()))
+    }
+
+    /// What a remote client gets: no design, and no design's agent or its layout.
+    @Test func aRemoteClientsStateLeavesOutDesignsAndTheirAgents() {
+        let (state, thread, drawer, stray) = drawnState()
+        let remote = state.withoutDesigns
+        #expect(remote.designs.isEmpty)
+        #expect(remote.agents.map(\.id) == [thread.id, stray.id])
+        #expect(!remote.tabs.contains { $0.id == drawer.tabID })
+        #expect(remote.tabs.contains { $0.id == thread.tabID })
+        #expect(Fixture.state().withoutDesigns.agents.count == 1)
+    }
 }
 
 @Suite("Automation model")

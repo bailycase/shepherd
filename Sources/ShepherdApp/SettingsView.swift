@@ -250,8 +250,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically"]
         case .pi: ["Name agents automatically", "Panes and agent tools", "Diff review tool", "Native subagents", "Subagent display", "Concurrency", "Update pi daily", "Update extensions daily", "Check now"]
         case .instructions: ["Same on every host", "AGENTS.md", "APPEND_SYSTEM.md", "History"]
-        case .skills: ["Installed skills", "Browse skills.sh", "Add from repo", "Skills in the / menu", "Same skills on every host",
-                       "Update automatically"]
+        case .skills: ["Installed skills", "From your pi setup", "From pi packages", "Browse skills.sh", "Add from repo",
+                       "Skills in the / menu", "Same skills on every host", "Update automatically"]
         case .remote: ["Hosts", "Add host", "Listener", "Token"]
         case .keyboard: ["Shortcuts", "Reset all shortcuts"]
         case .advanced: ["Workspace state", "Extension socket", "Update channel", "Check for updates", "Reset settings"]
@@ -272,7 +272,10 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .pi: ["Native subagents": ["children", "workflows"], "Update pi daily": ["version", "upgrade"]]
         case .instructions: ["Same on every host": ["sync", "hosts"], "AGENTS.md": ["system prompt", "how you work", "context"],
                              "APPEND_SYSTEM.md": ["system prompt", "override"], "History": ["restore", "undo"]]
-        case .skills: ["Installed skills": ["SKILL.md", ".agents", "agent skills"], "Browse skills.sh": ["directory", "search", "install"],
+        case .skills: ["Installed skills": ["SKILL.md", ".agents", "agent skills"],
+                       "From your pi setup": [".pi", "pi agent", "~/.pi/agent/skills", "settings.json", "outside", "read-only", "agent skills"],
+                       "From pi packages": ["package", "npm", "pi install", "read-only", "agent skills"],
+                       "Browse skills.sh": ["directory", "search", "install"],
                        "Add from repo": ["github", "git", "folder"], "Skills in the / menu": ["slash", "command", "composer"],
                        "Same skills on every host": ["sync", "hosts"], "Update automatically": ["update", "upgrade"]]
         case .remote: ["Hosts": ["vpn", "tailscale", "ssh"], "Listener": ["port", "serve"]]
