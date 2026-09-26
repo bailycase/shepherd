@@ -11,6 +11,7 @@ Prints its port on the first line of stdout, then serves until stdin closes:
   POST /auth/register                           RFC 7591
   GET  /auth/authorize                          302 to the redirect with code and state
                                                 (FAKE_OAUTH_DENY=1: error=access_denied)
+  FAKE_OAUTH_SEED="<access> <refresh> <scope>"  a sign-in already done: both tokens valid
   POST /auth/token                              authorization_code with PKCE S256, and
                                                 refresh_token (rotating; a used one is
                                                 invalid_grant)
@@ -23,6 +24,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 STATE = {"clients": {}, "codes": {}, "access": {}, "refresh": {}, "log": [], "n": 0}
 LOCK = threading.Lock()
 DENY = os.environ.get("FAKE_OAUTH_DENY") == "1"
+if os.environ.get("FAKE_OAUTH_SEED"):
+    _access, _refresh, _scope = os.environ["FAKE_OAUTH_SEED"].split(" ", 2)
+    STATE["access"][_access] = _scope
+    STATE["refresh"][_refresh] = _scope
 
 
 def b64url(data):
@@ -143,6 +148,9 @@ class Handler(BaseHTTPRequestHandler):
             if method == "tools/call" and message.get("params", {}).get("name") == "create_issue" and "issues:write" not in scope.split():
                 return self.send(403, {"error": "insufficient_scope"}, headers={
                     "WWW-Authenticate": 'Bearer error="insufficient_scope", scope="%s issues:write"' % scope})
+            if method == "tools/call" and message.get("params", {}).get("name") == "list_issues":
+                return self.send(200, {"jsonrpc": "2.0", "id": message.get("id"), "result": {
+                    "content": [{"type": "text", "text": "ISSUE-1 The login page loops"}]}})
             if method == "tools/list":
                 return self.send(200, {"jsonrpc": "2.0", "id": message.get("id"), "result": {"tools": [
                     {"name": "list_issues", "description": "Lists issues.", "inputSchema": {"type": "object"}},
