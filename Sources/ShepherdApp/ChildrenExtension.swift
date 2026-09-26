@@ -228,9 +228,6 @@ enum ChildrenExtension {
           const controlWatchers = new Map();
           const root = path.join(path.dirname(process.env.SHEPHERD_SOCKET), "children");
           const bridge = process.env.SHEPHERD_EXT_CHILDREN;
-          // The pi Shepherd starts agents with (Sources/ShepherdSessions/PiLaunch.swift), read before a
-          // child's environment drops every SHEPHERD_ variable.
-          const piExecutable = process.env.SHEPHERD_PI_EXECUTABLE;
           let supported = false;
           try {
             const version = JSON.parse(fs.readFileSync(path.join(getPackageDir(), "package.json"), "utf8")).version.split(".").map(Number);
@@ -492,11 +489,13 @@ enum ChildrenExtension {
             for (const extension of new Set([...inherited, ...(run.extensions ?? [])])) {
               if (fs.realpathSync(extension) !== fs.realpathSync(bridge)) args.push("-e", extension);
             }
-            const script = path.join(getPackageDir(), "dist", "cli.js");
-            // pi's own runtime when it is node or bun; else the pi Shepherd started this agent with.
-            const executable = /^(node|bun)(\.exe)?$/i.test(path.basename(process.execPath)) ? process.execPath : (piExecutable || "pi");
-            run.proc = spawn(executable, executable === process.execPath ? [script, ...args] : args,
-              { cwd: run.cwd, env, detached: false, stdio: ["pipe", "pipe", "pipe"] });
+            // The parent's own engine: the node it runs on and its pi's bundle, never a `pi` from PATH
+            // (Shepherd's pi ships both; its launcher pins the rest, which the child inherits).
+            const script = path.join(getPackageDir(), "dist", "bundle", "cli.js");
+            if (!/^node(\.exe)?$/i.test(path.basename(process.execPath)) || !fs.existsSync(script)) {
+              throw new Error(`Native subagents run on pi's own node and bundle, and this pi has none (${process.execPath}, ${script})`);
+            }
+            run.proc = spawn(process.execPath, [script, ...args], { cwd: run.cwd, env, detached: false, stdio: ["pipe", "pipe", "pipe"] });
             if (run.proc.pid) atomic(path.join(leaseDir, "owner.json"), { pid: run.proc.pid, token: run.token });
             const proc = run.proc;
             proc.stdin.on("error", () => {});
