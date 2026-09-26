@@ -114,8 +114,8 @@ struct AttentionCard: View {
 
     var body: some View {
         NWAttentionCard(symbol: item.symbol, origin: item.originLabel, title: item.title, question: item.question,
-                        message: item.message, since: item.since.map(Date.init(milliseconds:)), host: item.hostTag,
-                        selected: selected) {
+                        message: answers ? item.message : nil, since: item.since.map(Date.init(milliseconds:)), host: item.hostTag,
+                        selected: selected, style: answers ? .card : .item) {
             if answers {
                 AttentionReplies(item: item, busy: busy)
                 Button("Open") { navigator.open(item.route) }
@@ -129,30 +129,39 @@ struct AttentionCard: View {
     }
 }
 
-/// The answers a question takes in place: its options, or Yes and No.
+/// The answers a question takes in place: its options, or Yes and No. The asker's pick (the
+/// first) is primary: it leads a card's answers, and in a trailing foot (`pickLast`, the iPad
+/// inbox's) it comes last, nearest the edge.
 struct AttentionReplies: View {
     let item: FleetAttention
     let busy: Bool
     var size: NWButtonStyle.Size = .m
+    var pickLast = false
     @Environment(MobileHosts.self) private var hosts
 
     var body: some View {
         let feed = HomeFeed.of(hosts)
         switch item.reply {
         case .choose(let options):
-            ForEach(Array(options.enumerated()), id: \.offset) { index, option in
+            let ordered = Array(options.enumerated())
+            ForEach(pickLast ? ordered.reversed() : ordered, id: \.offset) { index, option in
                 Button(option) { Task { await feed.choose(item, option) } }
                     .buttonStyle(.nw(index == 0 ? .primary : .secondary, size: size))
                     .disabled(busy)
             }
         case .confirm:
+            if pickLast { no(feed) }
             Button("Yes") { Task { await feed.answer(item, .confirm(value: true)) } }
                 .buttonStyle(.nw(.primary, size: size)).disabled(busy)
-            Button("No") { Task { await feed.answer(item, .confirm(value: false)) } }
-                .buttonStyle(.nw(.secondary, size: size)).disabled(busy)
+            if !pickLast { no(feed) }
         case .open:
             EmptyView()
         }
+    }
+
+    private func no(_ feed: HomeFeed) -> some View {
+        Button("No") { Task { await feed.answer(item, .confirm(value: false)) } }
+            .buttonStyle(.nw(.secondary, size: size)).disabled(busy)
     }
 }
 

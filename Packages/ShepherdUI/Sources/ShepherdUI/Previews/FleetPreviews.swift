@@ -98,3 +98,16 @@ import SwiftUI
         .frame(width: 280)
     }
 }
+
+#Preview("Needs you items") {
+    NWPreviewBoth {
+        VStack(spacing: NW.Space.xxs) {
+            NWAttentionCard(symbol: "arrow.triangle.branch", origin: "Subagent · Restyle native UI", title: "reviewer asks",
+                            question: "Rename the new ones, or replace the old ones?", since: Date().addingTimeInterval(-120),
+                            selected: true, style: .item) { EmptyView() }
+            NWAttentionCard(symbol: nil, origin: "Thread", title: "Dock review pane", question: "Plan ready to approve",
+                            since: Date().addingTimeInterval(-840), style: .item) { EmptyView() }
+        }
+        .frame(width: 360)
+    }
+}
