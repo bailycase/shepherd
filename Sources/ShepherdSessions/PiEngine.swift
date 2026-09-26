@@ -52,3 +52,49 @@ public struct PiEngine: Equatable, Sendable {
         return .userPi
     }
 }
+
+/// The engine Shepherd ships inside the app: Node at `Contents/Helpers/node` and pi's package at
+/// `Contents/Resources/pi-engine`, started as `node <package>/dist/bundle/cli.js`.
+/// `scripts/pi_engine.py` stages that layout and the Mac target's "Embed pi engine" phase copies
+/// it in (`Tests/Release` holds the two to these paths). Nothing launches it yet; only the
+/// opt-in engine smoke test runs it.
+public struct BundledPiEngine: Equatable, Sendable {
+    public static let nodePath = "Helpers/node"
+    public static let packagePath = "Resources/pi-engine"
+    public static let entryPath = "dist/bundle/cli.js"
+
+    /// Node, the one executable the engine ships.
+    public let node: URL
+    /// pi's package directory (`PI_PACKAGE_DIR`).
+    public let packageDirectory: URL
+    /// The file node runs: the package's `bin`.
+    public let entry: URL
+    /// pi's version, from its package.json.
+    public let version: String
+
+    /// The engine under `contents` (an app's Contents, or a staged tree with the same layout),
+    /// or nil when node isn't executable, the entry is missing, or package.json names no version.
+    public init?(contents: URL) {
+        let node = contents.appendingPathComponent(Self.nodePath)
+        let package = contents.appendingPathComponent(Self.packagePath, isDirectory: true)
+        let entry = package.appendingPathComponent(Self.entryPath)
+        let files = FileManager.default
+        guard files.isExecutableFile(atPath: node.path), files.fileExists(atPath: entry.path),
+              let data = try? Data(contentsOf: package.appendingPathComponent("package.json")),
+              let manifest = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let version = manifest["version"] as? String, !version.isEmpty
+        else { return nil }
+        self.node = node
+        self.packageDirectory = package
+        self.entry = entry
+        self.version = version
+    }
+
+    /// The engine inside an app bundle.
+    public init?(app: URL) {
+        self.init(contents: app.appendingPathComponent("Contents", isDirectory: true))
+    }
+
+    /// What starts pi, before pi's own arguments.
+    public var command: [String] { [node.path, entry.path] }
+}
