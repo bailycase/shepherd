@@ -212,8 +212,9 @@ them, whether the experiment is on or off. The rule holds in both directions:
   Review action) never speak for a design. The Hosts page counts no thread for it.
 - **Remote clients.** Another Mac, or an iPhone or iPad, gets the host's state without
   `designs`, without their agents, and without those agents' layouts
-  (`ShepherdState.withoutDesigns`). There is no remote design screen yet. A Mac client also
-  skips any design agent that an older host still sends.
+  (`ShepherdState.withoutDesigns`). There is no remote design screen yet. `RemoteHostClient`
+  applies the same rule to whatever a host sends, so an older host's designs reach no Mac,
+  iPhone or iPad client either.
 - **A forgotten design.** Deleting a design, or startup forgetting one whose folder is gone,
   takes the agents that drew it. Clearing their `designID` instead would turn the design's chat,
   fences and all, into an ordinary thread.
