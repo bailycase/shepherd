@@ -60,10 +60,15 @@ final class DesignScreenModel {
     /// The pointer's latest place while a hit test for an earlier one runs.
     @ObservationIgnored private var pendingHover: (board: DesignPath, point: CGPoint)?
     @ObservationIgnored private var hovering: Task<Void, Never>?
+    /// The latest click still being resolved (its board asked what is under it).
+    @ObservationIgnored private var picking: Task<Void, Never>?
+    @ObservationIgnored private var pickSerial = 0
     /// Moves when the pointer leaves, so a late answer for where it was is dropped.
     @ObservationIgnored private var hoverGeneration = 0
     /// Tests: pulls made.
     @ObservationIgnored private(set) var pulls = 0
+    /// Tests: a click is still being resolved.
+    var isPicking: Bool { picking != nil }
 
     /// How long the canvas stays still before live views follow it.
     static let restDelay: Duration = .milliseconds(120)
@@ -207,18 +212,33 @@ final class DesignScreenModel {
     /// A click with Select (`NWDesignCanvas`): an element when the board names one under it, the
     /// board whole on its label or where nothing is named, nothing on the empty canvas.
     func pick(_ pick: NWCanvasPick) {
-        guard let id = pick.board, let board = DesignPath(id) else {
+        let board = pick.board.flatMap(DesignPath.init)
+        let asks = board != nil && pick.point != nil && host != nil
+        guard asks || picking != nil else {
+            resolve(pick, on: board, element: nil)
+            return
+        }
+        // Clicks land in order: one whose board is still being asked never overtakes a later one
+        // (a click on the empty canvas after it stays cleared).
+        let previous = picking
+        pickSerial += 1
+        let serial = pickSerial
+        picking = Task { [weak self] in
+            await previous?.value
+            guard let self else { return }
+            var element: DesignElementPick?
+            if asks, let board, let point = pick.point, let host = self.host { element = await host.hitTest(board, at: point) }
+            self.resolve(pick, on: board, element: element)
+            if self.pickSerial == serial { self.picking = nil }
+        }
+    }
+
+    private func resolve(_ pick: NWCanvasPick, on board: DesignPath?, element: DesignElementPick?) {
+        guard let board else {
             if !pick.extending { clearSelection() }
             return
         }
-        guard let point = pick.point, let host else {
-            take(Pick(board: board), extending: pick.extending)
-            return
-        }
-        Task {
-            let element = await host.hitTest(board, at: point)
-            take(Pick(board: board, element: element), extending: pick.extending)
-        }
+        take(Pick(board: board, element: element), extending: pick.extending)
     }
 
     private func take(_ pick: Pick, extending: Bool) {
