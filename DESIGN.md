@@ -7543,9 +7543,8 @@ systems, the system chip opening its page, and New design's system card read fro
 docs/designs.md › Design systems), and Export (its sheet, the four formats and Attach to a thread;
 docs/designs.md › Export and import). Not built: the live link, Attach to a mission, Present
 mode's own board, Tweak snapping to an installed system's tokens, and every iPhone and iPad part;
-each subsection below says what of it is built. The iOS
-client's first release leaves it out until the Mac has it ([docs/ios](docs/ios/README.md)), and its
-search draws no Designs section (`MobileSearchScreen`). The canvas marks the whole page an
+each subsection below says what of it is built. On iPhone, a host's designs show while that host
+serves them (docs/designs.md › On iPhone); the iPad's parts are not built yet. The canvas marks the whole page an
 experiment. This section is the spec to build it to, board by board: the Design tool page (DZStart,
 DZCanvas, DZTweak, DZSystem, DZExport), Night Watch's Design tool components (NWDesignTool,
 NWDesignToolLight), the Designs destination (NavDesigns, MobileDesigns), and the phone and iPad
@@ -7626,7 +7625,13 @@ names its project. A system build still reading its project is a card with no sw
 systems. Not drawn, and built plainly: each connected host that serves designs (`designs.v1`)
 lists its designs after This Mac's, under the host's name in the section label's style, in the
 same cards; one opens on the same canvas beside its agent's chat on the host (docs/designs.md ›
-Remote). **iPhone: not built yet.**
+Remote). **iPhone: built** (`DesignsScreen`), with these choices: New design is the navigation
+bar's prominent button in `lantern` and Search a plain one (the bar's glass, not the board's
+outlined circle); a design the agent is drawing reads "drawing · 2 boards" (the host doesn't say
+how many boards it will draw, so not "2 of 4"); a tile's background is its board's own (its
+top-leading pixel). Not drawn, and built plainly: a host that serves no designs (the screen says
+so), no designs yet, a design's own screen (its boards in the tiles' anatomy, with Ask the agent),
+and a system's screen (its counts, colors, type and steps as rows).
 
 **Mac** (NavDesigns): the Designs destination fills the main column.
 
@@ -8042,7 +8047,13 @@ Build them on what exists: the activity line, `NWValueSlider`, `NWSegmentedPicke
 
 ### On iPhone (MobileDesignBoard)
 
-**Not built yet.** A design opens one board at a time, full screen.
+**Built** (`DesignBoardScreen`), with these choices: the frame's second shadow is left out (the
+system's one shadow); Comment is off until tapped; a tapped pin raises its card and a tap on the
+canvas lowers it; the comment being written uses the review's comment editor (`NWCommentEditor`)
+where the card rises, and the element picked wears `NWSelectionRing`; an answered comment's card
+shows the agent's answer under a hairline; Boards is a sheet of every board; Share hands the board
+to the share sheet as a PNG, and Export offers PNG or PDF. Not drawn, and left out: replies and
+Resolve on the phone, a detached pin, Play. A design opens one board at a time, full screen.
 
 - **Navigation** (a hairline under it): back to the design ("Checkout funnel"); the board's label
   ("A · phone", 16 semibold) centered, with one 6pt dot per board under it (5pt apart, the
@@ -8250,8 +8261,8 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | MobileInbox | iPhone: Needs you | Partial |
 | MobileSearch | iPhone: Search | Partial |
 | MobileMissions | Missions › Missions: iPhone and iPad | Not built yet |
-| MobileDesigns | Design tool › Designs | Not built yet |
-| MobileDesignBoard | Design tool › On iPhone | Not built yet |
+| MobileDesigns | Design tool › Designs | Built |
+| MobileDesignBoard | Design tool › On iPhone | Partial |
 | MobileAutomations | iOS: Automations | Partial |
 | MobileMore | iPhone: More | Partial |
 | MobileSettings | iPhone: Settings | Partial |
