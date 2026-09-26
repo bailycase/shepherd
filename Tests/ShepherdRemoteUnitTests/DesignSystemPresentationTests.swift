@@ -36,4 +36,45 @@ struct DesignSystemPresentationTests {
         #expect(DesignSystemPresentation.detail(DesignSystemTokens.Length(name: "--space-4", px: 16, source: .init(file: "tokens.css", line: 20)))
                 == "16px · tokens.css:20")
     }
+
+    // MARK: Colors
+
+    @Test(arguments: [
+        ("#4F46E5", "#4f46e5"), ("#abc", "#aabbcc"), ("#4f46e5ff", "#4f46e5"), ("#4f46e580", "#4f46e580"),
+        ("rgb(79, 70, 229)", "#4f46e5"), ("rgb(79 70 229 / 50%)", "#4f46e580"), ("rgba(0,0,0,0.3)", "#0000004d"),
+    ])
+    func aColorReadsAsItsHex(_ value: String, _ hex: String) {
+        #expect(DesignSystemPresentation.hex(value) == hex)
+    }
+
+    @Test(arguments: ["hsl(240 50% 50%)", "white", "var(--accent)", "rgb(300, 0, 0)", "rgb(1, 2)", "#12", "rgbx(1, 2, 3)", ""])
+    func anythingElseIsNoHex(_ value: String) {
+        #expect(DesignSystemPresentation.hex(value) == nil)
+    }
+
+    /// The card's four: accent, text, background and a status color by their names (the
+    /// shortest name of each), then the rest in order; a color that isn't a hex is left out.
+    @Test func swatchesStandForTheSystem() {
+        let tokens = DesignSystemTokens(colors: [
+            .init(name: "--accent", value: "#4f46e5"), .init(name: "--accent-soft", value: "#eef2ff"),
+            .init(name: "--text", value: "#0f172a", dark: "#f8fafc"), .init(name: "--muted", value: "#64748b"),
+            .init(name: "--bg", value: "#f8fafc"), .init(name: "--surface", value: "#ffffff"),
+            .init(name: "--shadow", value: "0 1px 2px black"), .init(name: "--success", value: "#059669"),
+        ])
+        let swatches = DesignSystemPresentation.swatches(tokens, count: 4)
+        #expect(swatches.map(\.light) == ["#4f46e5", "#0f172a", "#f8fafc", "#059669"])
+        #expect(swatches[1].dark == "#f8fafc" && swatches[0].dark == "#4f46e5", "a color without a dark variant keeps its own")
+        #expect(DesignSystemPresentation.swatches(tokens, count: 6).map(\.light).suffix(2) == ["#eef2ff", "#64748b"])
+        #expect(DesignSystemPresentation.swatches(nil, count: 4).isEmpty)
+        #expect(DesignSystemPresentation.background(tokens)?.light == "#f8fafc")
+        #expect(DesignSystemPresentation.background(DesignSystemTokens(colors: [.init(name: "--ink", value: "#000")])) == nil)
+    }
+
+    @Test func aCardSaysWhereItsSystemWasRead() {
+        #expect(DesignSystemPresentation.source(project: "dashboard-web", sources: ["web/static/tokens.css", "web/a.css"])
+                == "dashboard-web · tokens.css")
+        #expect(DesignSystemPresentation.source(project: "dashboard-web", sources: []) == "dashboard-web")
+        #expect(DesignSystemPresentation.source(project: nil, sources: ["tokens.css"]) == "tokens.css")
+        #expect(DesignSystemPresentation.source(project: nil, sources: []) == nil)
+    }
 }
