@@ -557,6 +557,9 @@ final class ShepherdViewModel {
         // Queues go the way Settings ▸ Agents says, unless an agent's own ••• menu chose.
         server.setDefaultQueueMode(self.settings.queueDelivery)
         self.settings.onQueueDeliveryChange = { [weak server] mode in server?.setDefaultQueueMode(mode) }
+        // Remote clients see designs only while the Design tool is on here.
+        server.setDesignsServed(self.settings.designToolEnabled)
+        self.settings.onDesignToolChange = { [weak server] on in server?.setDesignsServed(on) }
         installRemoteInspection()
         installHostSettings()
         server.onRemoteAgentAction = { [weak self] agentID, action, completion in

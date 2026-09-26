@@ -16,7 +16,9 @@ struct RemoteListenerTests {
         defer { r.stop() }
         let client = try await r.raw(authenticated: false)
         try client.send(.hello(id: 7, token: r.token, clientName: "test", protocolVersion: RemoteProtocol.version))
-        #expect(try await client.next() == .helloOk(id: 7, protocolVersion: RemoteProtocol.version, capabilities: RemoteProtocol.capabilities))
+        // Designs only while the host's Design tool is on, and it starts off.
+        let offered = RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.designsCapability }
+        #expect(try await client.next() == .helloOk(id: 7, protocolVersion: RemoteProtocol.version, capabilities: offered))
     }
 
     @Test func stateFetchReturnsTheHostsWorkspace() async throws {
