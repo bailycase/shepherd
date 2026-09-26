@@ -32,6 +32,7 @@ public final class PiSkillsLoader: @unchecked Sendable {
     private let agentDirectory: URL
     private let engine: PiEngine
     private let yourPi: @Sendable () -> YourPi?
+    private let ready: @Sendable () -> Bool
     private let launch: Launch
     private let environment: [String: String]
     private let timeout: TimeInterval
@@ -41,11 +42,16 @@ public final class PiSkillsLoader: @unchecked Sendable {
 
     /// `environment` is the child's (tests move `HOME` with it); `agentDirectory` is Shepherd's
     /// pi home, `engine` the pi an `.engine` launch imports, and `yourPi` the user's own pi.
-    public init(agentDirectory: URL, engine: PiEngine, yourPi: @escaping @Sendable () -> YourPi? = { nil }, launch: Launch = .engine,
+    /// `ready` readies the home before pi's loader reads it (`PiSetup.prepare`, which strips a
+    /// `packages` key: resolving one pi can't find in the home runs the user's npm); false when
+    /// no pi may read it.
+    public init(agentDirectory: URL, engine: PiEngine, yourPi: @escaping @Sendable () -> YourPi? = { nil },
+                ready: @escaping @Sendable () -> Bool = { true }, launch: Launch = .engine,
                 environment: [String: String] = ProcessInfo.processInfo.environment, timeout: TimeInterval = PiSkillsLoader.timeout) {
         self.agentDirectory = agentDirectory.standardizedFileURL
         self.engine = engine
         self.yourPi = yourPi
+        self.ready = ready
         self.launch = launch
         self.environment = environment
         self.timeout = timeout
@@ -61,7 +67,7 @@ public final class PiSkillsLoader: @unchecked Sendable {
                 return cached.skills
             }
             let yours = yourPi()
-            let (output, problem) = run()
+            let (output, problem) = ready() ? run() : (nil, PiSkills.Problem.failed.rawValue)
             let skills: PiSkills
             var watched = baseWatched(installed: installed, yourPi: yours)
             let shown = yours?.agentDirectory.path ?? agentDirectory.path
