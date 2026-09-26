@@ -204,12 +204,16 @@ struct MCPConfigDocument: Equatable, Sendable {
     static let vscodeServersKey = "servers"
 
     var root: [String: JSONValue]
+    /// The servers' names in the file's order, which the page keeps; a new server goes last.
+    var order: [String]
 
-    init(root: [String: JSONValue] = [:]) {
+    init(root: [String: JSONValue] = [:], order: [String] = []) {
         self.root = root
+        self.order = order
     }
 
-    /// Every server, `mcpServers` first, then VS Code's `servers` not already listed; by name.
+    /// Every server, `mcpServers` first, then VS Code's `servers` not already listed, in the
+    /// file's order (any the order doesn't know go last, by name).
     var servers: [MCPServerEntry] {
         var seen = Set<String>()
         var out: [MCPServerEntry] = []
@@ -221,7 +225,15 @@ struct MCPConfigDocument: Equatable, Sendable {
                 out.append(MCPServerEntry(name: name, json: json))
             }
         }
-        return out.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        let rank = Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        return out.sorted { a, b in
+            switch (rank[a.name], rank[b.name]) {
+            case let (x?, y?): return x < y
+            case (_?, nil): return true
+            case (nil, _?): return false
+            case (nil, nil): return a.name.localizedStandardCompare(b.name) == .orderedAscending
+            }
+        }
     }
 
     func server(_ name: String) -> MCPServerEntry? {
@@ -244,6 +256,7 @@ struct MCPConfigDocument: Equatable, Sendable {
         }()
         map[entry.name] = .object(entry.json)
         root[key] = .object(map)
+        if !order.contains(entry.name) { order.append(entry.name) }
     }
 
     mutating func remove(_ name: String) {
@@ -252,14 +265,25 @@ struct MCPConfigDocument: Equatable, Sendable {
             map[name] = nil
             root[key] = .object(map)
         }
+        order.removeAll { $0 == name }
     }
 
     /// Renames an entry in place, keeping everything else about it.
     mutating func rename(_ name: String, to newName: String) {
         guard name != newName, var entry = server(name) else { return }
+        let place = order.firstIndex(of: name)
         remove(name)
         entry.name = newName
         upsert(entry)
+        if let place {
+            order.removeAll { $0 == newName }
+            order.insert(newName, at: min(place, order.count))
+        }
+    }
+
+    /// The file's text: its servers in their order, everything else with sorted keys.
+    var text: String {
+        MCPJSON.write(.object(root), order: [Self.serversKey: order, Self.vscodeServersKey: order])
     }
 }
 
@@ -297,7 +321,12 @@ struct MCPConfigFile: Sendable {
     static func parse(_ data: Data) -> Contents {
         guard !data.allSatisfy({ [0x20, 0x0A, 0x0D, 0x09].contains($0) }) else { return .document(MCPConfigDocument()) }
         switch MCPJSON.parse(data) {
-        case .success(.object(let root)): return .document(MCPConfigDocument(root: root))
+        case .success(.object(let root)):
+            let order = MCPJSON.keyOrder(in: data, under: [MCPConfigDocument.serversKey, MCPConfigDocument.vscodeServersKey])
+            var seen = Set<String>()
+            let names = (order[MCPConfigDocument.serversKey, default: []] + order[MCPConfigDocument.vscodeServersKey, default: []])
+                .filter { seen.insert($0).inserted }
+            return .document(MCPConfigDocument(root: root, order: names))
         case .success: return .invalid(line: 1)
         case .failure(let error): return .invalid(line: error.line)
         }
@@ -315,7 +344,7 @@ struct MCPConfigFile: Sendable {
             case .document(let parsed): document = parsed
             }
             try edit(&document)
-            let text = MCPJSON.write(.object(document.root)) + "\n"
+            let text = document.text + "\n"
             if try write(Data(text.utf8), ifStill: before) { return document }
         }
         throw MCPConfigError.busy
@@ -383,7 +412,72 @@ enum MCPJSON {
         }
     }
 
-    static func write(_ value: JSONValue, indent: Int = 0) -> String {
+    /// The keys of each object directly under the root's `keys`, in the order the text has them.
+    /// Only called on text that parsed.
+    static func keyOrder(in data: Data, under keys: Set<String>) -> [String: [String]] {
+        let bytes = [UInt8](data)
+        var i = 0
+        func skipSpace() {
+            while i < bytes.count, [0x20, 0x0A, 0x0D, 0x09].contains(bytes[i]) { i += 1 }
+        }
+        func string() -> String? {
+            guard i < bytes.count, bytes[i] == UInt8(ascii: "\"") else { return nil }
+            let start = i
+            i += 1
+            while i < bytes.count, bytes[i] != UInt8(ascii: "\"") { i += bytes[i] == UInt8(ascii: "\\") ? 2 : 1 }
+            i += 1
+            let raw = Data(bytes[start..<min(i, bytes.count)])
+            return (try? JSONSerialization.jsonObject(with: raw, options: [.fragmentsAllowed])) as? String
+        }
+        func skipValue() {
+            skipSpace()
+            var depth = 0
+            while i < bytes.count {
+                switch bytes[i] {
+                case UInt8(ascii: "\""): _ = string(); if depth == 0 { return }; continue
+                case UInt8(ascii: "{"), UInt8(ascii: "["): depth += 1
+                case UInt8(ascii: "}"), UInt8(ascii: "]"):
+                    if depth == 0 { return }
+                    depth -= 1
+                    if depth == 0 { i += 1; return }
+                case UInt8(ascii: ","): if depth == 0 { return }
+                default: break
+                }
+                i += 1
+            }
+        }
+        /// Walks one object's members, handing each key to `member` positioned at its value.
+        func members(_ member: (String) -> Void) {
+            skipSpace()
+            guard i < bytes.count, bytes[i] == UInt8(ascii: "{") else { skipValue(); return }
+            i += 1
+            while i < bytes.count {
+                skipSpace()
+                if i < bytes.count, bytes[i] == UInt8(ascii: "}") { i += 1; return }
+                guard let key = string() else { return }
+                skipSpace()
+                i += 1 // :
+                member(key)
+                skipSpace()
+                if i < bytes.count, bytes[i] == UInt8(ascii: ",") { i += 1 }
+            }
+        }
+        var out: [String: [String]] = [:]
+        members { key in
+            guard keys.contains(key) else { skipValue(); return }
+            var names: [String] = []
+            members { name in
+                names.append(name)
+                skipValue()
+            }
+            out[key] = names
+        }
+        return out
+    }
+
+    /// `order` names the key order of the objects directly under the root's keys; other keys
+    /// follow, sorted.
+    static func write(_ value: JSONValue, indent: Int = 0, order: [String: [String]] = [:], key parent: String? = nil) -> String {
         let pad = String(repeating: "  ", count: indent)
         let inner = String(repeating: "  ", count: indent + 1)
         switch value {
@@ -398,8 +492,11 @@ enum MCPJSON {
             return "[\n" + items.map { inner + write($0, indent: indent + 1) }.joined(separator: ",\n") + "\n" + pad + "]"
         case .object(let object):
             guard !object.isEmpty else { return "{}" }
-            return "{\n" + object.keys.sorted().map { key in
-                inner + quote(key) + ": " + write(object[key]!, indent: indent + 1)
+            let first = (indent == 1 ? parent.flatMap { order[$0] } : nil)?.filter { object[$0] != nil } ?? []
+            let placed = Set(first)
+            let keys = first + object.keys.filter { !placed.contains($0) }.sorted()
+            return "{\n" + keys.map { key in
+                inner + quote(key) + ": " + write(object[key]!, indent: indent + 1, order: indent == 0 ? order : [:], key: key)
             }.joined(separator: ",\n") + "\n" + pad + "}"
         }
     }
