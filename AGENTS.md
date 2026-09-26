@@ -89,8 +89,9 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
 - **`SHEPHERD_SKILLS_DIR`** moves the skills folder Settings ▸ Skills manages (default
   `~/.agents/skills`, the folder pi reads skills from; docs/skills.md). Tests point it at a scratch
   folder; pi itself always reads `~/.agents/skills`.
-- **`SHEPHERD_MCP_CONFIG`** moves the MCP servers file Settings ▸ MCP servers manages (default
-  `~/.config/mcp/mcp.json`, shared with other MCP clients). Tests point it at a scratch file.
+- **`SHEPHERD_MCP_CONFIG`** moves the MCP servers file (Settings ▸ MCP servers) away from
+  `~/.config/mcp/mcp.json`. Test isolation points it at a scratch file; setting it in the Dev
+  scheme keeps Dev's servers apart from the everyday app's.
 - **`SHEPHERD_THEME=night-watch-dark|night-watch-light`** forces an appearance at launch (the
   older `shepherd-dark` still means dark), which is handy for screenshots. Resetting settings
   returns to it.

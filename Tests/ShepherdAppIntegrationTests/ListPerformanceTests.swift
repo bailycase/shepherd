@@ -975,6 +975,44 @@ struct ListPerformanceTests {
         #expect(changed["skills.row", default: 0] <= 2, "\(changed)")
     }
 
+    // MARK: MCP servers
+
+    private struct NoProbe: MCPProbeRunner {
+        func run(input: Data, timeout: TimeInterval) async -> Data { Data() }
+    }
+
+    /// Settings ▸ MCP servers over 200 servers: opening builds the rows on screen and some ahead
+    /// of them, never the whole list, and one server's report redraws its row alone.
+    @Test func oneServerChangingRedrawsOnlyItsRow() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let vm = try await app.start()
+        let directory = try makeScratchDirectory()
+        let config = directory.appendingPathComponent("mcp.json")
+        let servers = (0..<200).map { #""server-\#($0 + 100)": {"command": "npx", "args": ["server-\#($0)"]}"# }
+        try Data("{\"mcpServers\": {\(servers.joined(separator: ","))}}".utf8).write(to: config)
+        let store = MCPStore(dependencies: .init(
+            file: MCPConfigFile(url: config), cacheURL: directory.appendingPathComponent("tools.json"), secrets: InMemorySecretStore(),
+            http: URLSessionHTTP(), probe: MCPProbe(runner: NoProbe()), openURL: { _ in }, copy: { _ in }, now: { Date() }))
+        #expect(store.rows.count == 200)
+        let size = CGSize(width: 1200, height: 800)
+        var window: OffscreenWindow!
+        let opened = ListPerf.counting {
+            window = OffscreenWindow(size: size, dark: true, MCPSettings(vm: vm, store: store))
+            ListPerf.settle(window)
+        }
+        defer { window.close() }
+        // About a dozen rows fit under the page's header; the lazy stack builds some ahead.
+        #expect(opened["mcp.row", default: 0] <= 80, "\(opened)")
+
+        let changed = ListPerf.counting {
+            ListPerf.time(window) {
+                store.receive(MCPServerReport(server: "server-100", status: MCPServerStatus(state: .connected)), from: AgentID())
+            }
+        }
+        #expect(changed["mcp.row", default: 0] <= 2, "\(changed)")
+    }
+
     // MARK: Review
 
     private func review(_ files: [DiffFile]) -> OffscreenWindow {
