@@ -153,6 +153,12 @@ enum ShellLayout {
         return Pane(mode: .overlay, width: min(preferred, max(0, total - AppLayout.dividerWidth)), contentWidth: total)
     }
 
+    /// The widest the side pane may be beside a column this wide: half of it where it docks
+    /// (PaneStates: double-click the divider for half the window), never taking the thread's 400.
+    static func widestRightPane(containerWidth: CGFloat) -> CGFloat {
+        rightPane(containerWidth: containerWidth, preferredWidth: .greatestFiniteMagnitude).width
+    }
+
     /// The divider ratio for a drag at `position` along a split `span` long (its 1pt divider
     /// included): 15–85%, and each side keeps `splitPaneMinSpan` (a split too short for both
     /// stays centred).

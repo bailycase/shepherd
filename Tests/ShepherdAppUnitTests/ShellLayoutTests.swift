@@ -85,6 +85,12 @@ struct ShellLayoutTests {
         #expect(pane == ShellLayout.Pane(mode: mode, width: width, contentWidth: content))
     }
 
+    /// Double-clicking the divider: half the column where the thread keeps its 400 beside it.
+    @Test(arguments: [(1440.0, 720.0), (1000.0, 500.0), (781.0, 380.0), (700.0, 699.0)])
+    func theWidestPaneIsHalfTheColumn(column: Double, width: Double) {
+        #expect(ShellLayout.widestRightPane(containerWidth: column) == CGFloat(width))
+    }
+
     @Test(arguments: [
         // position, span → ratio
         (500.0, 1001.0, 500.0 / 1001),
