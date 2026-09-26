@@ -599,7 +599,10 @@ import, the project's other files, and the uploads they name).
   Nothing writes a repository.
 - **HTML.** One standalone page per board (`<path>.html`): the bridge's `staticPage` serializes
   what the board draws, the hoisted helmet in its head, with no script, no runtime and none of
-  Shepherd's `data-dc-*` stamps or handler attributes. The design's own stylesheets are inlined;
+  Shepherd's `data-dc-*` stamps or handler attributes. Since the page opens outside the canvas's
+  sandbox (and an imported board never passed `board_write`'s lint), it also keeps no iframe,
+  object, embed, `base`, `http-equiv` meta, `srcdoc`, `javascript:` url, or SVG animation that
+  retargets a link. The design's own stylesheets are inlined;
   Google Fonts' links stay. Uploads (`/_blob/<id>`) are inlined as data URLs, fonts included, and
   a link to another exported board (`<a href="B.dc.html">`, or from the canvas root) goes to its
   page. A support file the board links by a relative path (not an upload) is not carried.
@@ -635,7 +638,8 @@ recently used, and opens it (its agent starts then). The folder is only read.
   `project/` and, from a Shepherd export, `assets/`. Everything else in it is left behind.
 - **Rules** (`DesignImport`): links anywhere in what is read are refused, as is anything that is
   neither a file nor a folder; every name passes the path grammar's segment rule; at most 16 levels,
-  512 files, 16 MB a file and 256 MB in all; uploads are `assets/<id>.<ext>`. Hidden files and any
+  512 files, 16 MB a file and 256 MB in all; uploads are `assets/<id>.<ext>`. Each file is opened
+  without following a link and checked for its size before it is read. Hidden files and any
   `support.js` (Shepherd serves its own runtime there) are left behind.
 - **The canvas** is kept byte for byte, every key with it; one without a title is titled after
   the folder, still keeping every key. A canvas this build can't read refuses the import.
