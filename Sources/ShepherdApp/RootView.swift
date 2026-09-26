@@ -116,9 +116,6 @@ struct RootView: View {
         }
         // Export (DZExport) sits over the whole window on its own scrim.
         .overlay { DesignExportOverlay(vm: vm) }
-        .fileImporter(isPresented: $vm.importingDesign, allowedContentTypes: [.folder]) { result in
-            if case .success(let url) = result { vm.importDesignFolder(url) }
-        }
         // ⌘K floats over everything, 18% down and capped to the window; the scrim dismisses.
         .nwCommandPalette(isPresented: Binding(
             get: { vm.showCommandPalette && !vm.showSettings && !vm.showComponentGallery },

@@ -113,10 +113,20 @@ extension ShepherdViewModel {
 
     // MARK: Import
 
-    /// File ▸ Import Claude Design Folder…: the folder picker.
+    /// File ▸ Import Claude Design Folder…: the folder picker, then the import.
     func chooseDesignFolder() {
         guard designToolEnabled else { return }
-        importingDesign = true
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Import"
+        panel.message = "A Claude Design folder: one holding canvas.json, or its project folder."
+        let done: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            self?.importDesignFolder(url)
+        }
+        if let window = NSApp.keyWindow { panel.beginSheetModal(for: window, completionHandler: done) } else { panel.begin(completionHandler: done) }
     }
 
     /// Reads a Claude Design folder into a new design in the selected project (else the most

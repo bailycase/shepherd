@@ -1035,7 +1035,13 @@ enum DesignExporter {
                 result = folder.appendingPathComponent(only)
             }
             if FileManager.default.fileExists(atPath: destination.path) {
-                _ = try FileManager.default.replaceItemAt(destination, withItemAt: result)
+                do {
+                    _ = try FileManager.default.replaceItemAt(destination, withItemAt: result)
+                } catch {
+                    // Another volume: what was there goes, as the save panel confirmed.
+                    try FileManager.default.removeItem(at: destination)
+                    try FileManager.default.moveItem(at: result, to: destination)
+                }
             } else {
                 try FileManager.default.moveItem(at: result, to: destination)
             }
