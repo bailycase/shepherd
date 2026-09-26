@@ -182,8 +182,9 @@ their handwriting.
   where they wrote a note ("thicker bars on phone" becomes "Thicker bars on phone.").
 - Then reply in a sentence or two saying which mark became which comment ("The circle is on the
   steps list of the phone board; the underline is the KPI row on A.").
-- Change no board yet. The viewer applies the proposals, and each then reaches you as a comment
-  (Comments, above), or keeps them as comments for later.
+- Shepherd keeps the proposals as comments on the canvas at once. Change no board yet: the viewer
+  applies them, and each then reaches you as a comment (Comments, above), or keeps them as
+  comments for later.
 
 ## Replying
 

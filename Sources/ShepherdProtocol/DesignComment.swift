@@ -82,11 +82,14 @@ public struct DesignComment: Codable, Hashable, Sendable, Identifiable {
     /// The design agent's proposal from the viewer's markup it was made from
     /// (`DesignMarkupProposals.proposalID`); nil for a comment the viewer wrote.
     public var proposal: String?
+    /// When the viewer applied the proposal or kept it as a comment; nil while it waits (and for
+    /// a comment the viewer wrote).
+    public var proposalSettledAt: Double?
 
     public init(id: UUID = UUID(), number: Int, board: DesignPath, tid: Int, path: [Int], label: String? = nil,
                 target: String? = nil, rect: DesignCommentRect? = nil, text: String, author: DesignCommentAuthor = .user,
                 createdAt: Double, replies: [DesignCommentReply] = [], resolvedAt: Double? = nil, detached: Bool = false,
-                proposal: String? = nil) {
+                proposal: String? = nil, proposalSettledAt: Double? = nil) {
         self.id = id
         self.number = number
         self.board = board
@@ -102,10 +105,11 @@ public struct DesignComment: Codable, Hashable, Sendable, Identifiable {
         self.resolvedAt = resolvedAt
         self.detached = detached
         self.proposal = proposal
+        self.proposalSettledAt = proposalSettledAt
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, number, board, tid, path, label, target, rect, text, author, createdAt, replies, resolvedAt, detached, proposal
+        case id, number, board, tid, path, label, target, rect, text, author, createdAt, replies, resolvedAt, detached, proposal, proposalSettledAt
     }
 
     public init(from decoder: Decoder) throws {
@@ -125,6 +129,7 @@ public struct DesignComment: Codable, Hashable, Sendable, Identifiable {
         resolvedAt = try c.decodeIfPresent(Double.self, forKey: .resolvedAt)
         detached = try c.decodeIfPresent(Bool.self, forKey: .detached) ?? false
         proposal = try? c.decodeIfPresent(String.self, forKey: .proposal)
+        proposalSettledAt = try? c.decodeIfPresent(Double.self, forKey: .proposalSettledAt)
     }
 
     /// Its element's id, when the grammar can express it.
@@ -188,8 +193,8 @@ public struct DesignCommentDraft: Codable, Hashable, Sendable {
     public var target: String?
     public var rect: DesignCommentRect?
     public var text: String
-    /// The design agent's proposal it applies (`DesignMarkupProposals.proposalID`): a design
-    /// keeps one comment per proposal.
+    /// The design agent's proposal it keeps (`DesignMarkupProposals.proposalID`): a design keeps
+    /// one comment per proposal.
     public var proposal: String?
 
     public init(board: DesignPath, tid: Int, path: [Int], label: String? = nil, target: String? = nil,

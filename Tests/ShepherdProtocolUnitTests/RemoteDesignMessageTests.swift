@@ -48,8 +48,8 @@ enum RemoteDesignSamples {
         .watch(designIDs: [design]),
         .watch(designIDs: []),
         .sendMarkup(designID: design, markup: markup),
-        .addProposedComments(designID: design, drafts: [proposed], deliver: true, baseRevision: 5),
-        .addProposedComments(designID: design, drafts: [proposed, draft], deliver: false, baseRevision: nil),
+        .settleProposals(designID: design, proposals: ["call-7#0"], deliver: true, baseRevision: 5),
+        .settleProposals(designID: design, proposals: ["call-7#0", "call-7#1"], deliver: false, baseRevision: nil),
     ]
 
     static let markup = DesignMarkup(strokes: [
@@ -57,8 +57,9 @@ enum RemoteDesignSamples {
                            label: "Steps", note: "thicker bars on phone"),
         DesignMarkupStroke(kind: .mark, board: board.viewName),
     ])
-    static let proposed = DesignCommentDraft(board: phone, tid: 31, path: [1, 1, 2], label: "Steps", target: "Steps list",
-                                             text: "Thicker bars on phone.", proposal: "call-7#0")
+    static let settled = DesignComment(number: 2, board: phone, tid: 31, path: [1, 1, 2], label: "Steps", target: "Steps list",
+                                       text: "Thicker bars on phone.", createdAt: 1_700_000_000_000, proposal: "call-7#0",
+                                       proposalSettledAt: 1_700_000_060_000)
 
     static let results: [RemoteDesignResult] = [
         .listing(RemoteDesignListing(designs: [
@@ -86,8 +87,8 @@ enum RemoteDesignSamples {
         .system(DesignSystemRead(summary: system, tokens: nil, readme: "# acme-web\n", files: ["tokens.css", "tokens.json"])),
         .markupSent(undelivered: nil),
         .markupSent(undelivered: "The design agent is starting."),
-        .proposedCommentsAdded([kept], undelivered: nil),
-        .proposedCommentsAdded([], undelivered: "The design has no agent."),
+        .proposalsSettled([kept, settled], undelivered: nil),
+        .proposalsSettled([], undelivered: "The design has no agent."),
         .ok,
     ]
 }
@@ -114,7 +115,7 @@ struct RemoteDesignMessageTests {
     static func caseName(_ request: RemoteDesignRequest) -> String {
         switch request {
         case .list, .index, .boards, .file, .asset, .comments, .addComment, .replyToComment, .resolveComment, .writeBoards,
-             .updateIndex, .duplicateBoard, .restoreVersions, .system, .watch, .sendMarkup, .addProposedComments:
+             .updateIndex, .duplicateBoard, .restoreVersions, .system, .watch, .sendMarkup, .settleProposals:
             Wire.caseName(request)
         }
     }
@@ -122,7 +123,7 @@ struct RemoteDesignMessageTests {
     static func caseName(_ result: RemoteDesignResult) -> String {
         switch result {
         case .listing, .index, .files, .chunk, .comments, .comment, .written, .boardsWritten, .duplicated, .system, .markupSent,
-             .proposedCommentsAdded, .ok:
+             .proposalsSettled, .ok:
             Wire.caseName(result)
         }
     }
@@ -160,7 +161,7 @@ struct RemoteDesignMessageTests {
         #expect(RemoteProtocol.capabilities.contains(RemoteProtocol.designMarkupCapability))
         for request in S.requests {
             switch request {
-            case .sendMarkup, .addProposedComments:
+            case .sendMarkup, .settleProposals:
                 #expect(request.capability == RemoteProtocol.designMarkupCapability)
                 #expect(request.writes)
                 #expect(request.designID == S.design)

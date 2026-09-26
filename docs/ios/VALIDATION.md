@@ -158,7 +158,10 @@ and the boards say what is under each mark. It prints `FIXTURE CHECK ok design-p
 strokes · 2 notes: circle on A-phone.dc.html#… "thicker bars on phone"; underline on A.dc.html#…
 "counts here too?"`, or `FAILED` unless the loop is on the phone's Steps list and the line on A's
 KPI row, each with its note. `design-pad-markup-reply` shows the agent's answer: the markup line,
-its words, and the two proposals with Apply both and Keep as comments. Run both with
+its words, and the two proposals with Apply both and Keep as comments, already comments 2 and 3
+(the tab reads Comments 3) with the sent ink still on the canvas; it prints
+`FIXTURE CHECK ok design-pad-markup-reply` once the proposals' pins, kept with no place drawn,
+have found their elements. Run both with
 `-r landscape`. A real Pencil (drawing while a finger pans, the palette, Done against a host)
 is checked on a device.
 

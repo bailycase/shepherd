@@ -192,7 +192,7 @@ that folder.
 | `design_check(path?)` | `designSystemRead` | `designSystems` | In the extension: every hex color (in style attributes, style and script blocks, `data-props`, SVG paint) and every px size in spacing, radius and type that the design's installed systems don't hold (their colors and dark values, spacing, radii and type sizes), else that no CSS custom property in its working folder declares, with the board and lines it is on and the nearest token. Its first line is "Checked against <system or project> · N off-system values" |
 | `comment_list(all?)` | `designComments` | `designComments` | The viewer's open comments (all of them with `all`), oldest first: id, number, state, element id and name, and each one's words and replies, fenced as data |
 | `comment_reply(id, text)` | `designCommentReply` | `designComment` | An answer under a comment's pin (`replyToDesignComment`, author `agent`). No message resolves a comment: only the viewer does |
-| `markup_propose(proposals)` | `designProposeComments` | `designProposals` | Comments proposed from the viewer's Pencil markup, one per mark: each element checked against its board's source (`invalid_markup` otherwise), named `<call id>#<n>`, its card's name the element's `data-el` name else its words. The result lists them for the agent and ends with their JSON between `markup-proposals` markers, all inside the data fence, for the chat (Pencil markup, below). Nothing is kept |
+| `markup_propose(proposals)` | `designProposeComments` | `designProposals` | Comments proposed from the viewer's Pencil markup, one per mark: each element checked against its board's source (`invalid_markup` otherwise), named `<call id>#<n>`, its card's name the element's `data-el` name else its words, then kept as comments at once, all or none, sent nowhere. The result lists them for the agent and ends with their JSON between `markup-proposals` markers, all inside the data fence, for the chat (Pencil markup, below) |
 | `system_read()` | `designSystemRead` | `designSystems` | Every design system this host keeps and the ones the design installed (its own first), fenced as data |
 | `system_read(namespace)` | `designSystemRead` with `namespace` | `designSystem` | One system whole: its tokens with the file and line each came from, its components, files and README, fenced as data |
 | `system_write(namespace, …)` | `designSystemWrite` | `designSystemWritten` | `writeDesignSystem`: a system's tokens, files and source stylesheets; with `install`, then `installDesignSystem` into the agent's design. With only a namespace and `install`, installs an existing system |
@@ -255,7 +255,8 @@ so an exported canvas carries none.
   as written), what the card calls it (`target`: the element's `data-el` name, else its words),
   where the board drew it (`rect`, in the board's points), the viewer's words, author and time,
   the `replies` under it, `resolvedAt`, and `detached`; and `proposal`, the design agent's
-  proposal from Pencil markup it was kept from (below), else nothing.
+  proposal from Pencil markup it was kept from (below), else nothing, with `proposalSettledAt`,
+  when the viewer applied it or kept it as it is (nil while it waits).
 - **Its own revision.** `comments.json` carries a revision that moves with every change to the
   comments and never with the boards', so a comment never makes the agent's next board write
   stale. A change naming an older one is refused (`stale_revision`); the canvas reads them again
@@ -943,7 +944,7 @@ a VPN or trusted network is the transport boundary, as for everything else it se
 | `writeBoards`, `updateIndex`, `duplicateBoard`, `restoreVersions` | `boardsWritten`, `written`, `duplicated` | Tweak, a board moved, Duplicate and Undo, through `writeDesignBoards`, `updateDesignIndex`, `duplicateDesignBoard` and `restoreDesignVersions` with their checks and revisions |
 | `system(namespace)` | `system` | One design system whole |
 | `sendMarkup(id, markup)` | `markupSent` | Pencil markup (`design.markup.v1`): the record checked against the canvas and the boards' sources, then handed to the design agent fenced, as a turn of its own; why it didn't reach the agent, or nil. Nothing is kept |
-| `addProposedComments(id, drafts, deliver, base)` | `proposedCommentsAdded` | The agent's proposals kept as comments (`design.markup.v1`): all or none, at the comments' revision, once per proposal; with `deliver` each new one goes to the agent as a comment does |
+| `settleProposals(id, proposals, deliver, base)` | `proposalsSettled` | The viewer's answer to the agent's proposals, which the host kept as comments when the agent made them (`design.markup.v1`): each named proposal's comment settled (`proposalSettledAt`), all or none, at the comments' revision, once; with `deliver` each one settled now goes to the agent as a comment does |
 | `watch(ids)` | `ok` | The designs this client shows; replaces the last set |
 
 - **Pushed:** `designChanged(id, revision, commentsRevision)` after each change to a watched
@@ -1076,12 +1077,14 @@ On iPad the viewer can draw on the canvas with an Apple Pencil (iPadDesign) wher
   proposals are applied or kept; ink that couldn't go stays as it was.
 - **The agent's answer.** The skill and the prompt have it read the marks, call `markup_propose`
   once with a comment per mark, say in a sentence which mark became which comment, and change no
-  board until the viewer applies them.
+  board until the viewer applies them. The host keeps the proposals as comments as the call
+  makes them (iPadDesign: "Comments 3" beside cards 2 and 3), author the viewer, their pins
+  placed by the device that shows them (the host draws nothing, so they carry no `rect`).
 - **In the chat** (iPad): the markup message reads "Read your markup · 2 strokes · 2 notes" with
   the nib; the reply's `markup_propose` call gives way to the proposals card
-  (`NWMarkupProposals`) under its words: comment cards numbered as their pins will be, named
-  "A · phone › Steps list", "from your markup". **Apply both** keeps them as comments and sends
-  each to the agent as a comment is sent; **Keep as comments** keeps them on the canvas unsent;
-  both through `addProposedComments`, which keeps a proposal once, so the card reads "On the
-  canvas as comments 2 and 3." afterwards, on any device. The Mac shows the markup's words and
-  an activity line for the call.
+  (`NWMarkupProposals`) under its words: comment cards numbered as their pins are, named
+  "A · phone › Steps list", "from your markup". **Apply both** sends each comment to the agent as
+  a comment is sent; **Keep as comments** leaves them on the canvas as they are; both settle the
+  proposals through `settleProposals`, once, so the card reads "On the canvas as comments 2 and
+  3." afterwards, on any device. The Mac shows the markup's words, the comments, and an activity
+  line for the call.

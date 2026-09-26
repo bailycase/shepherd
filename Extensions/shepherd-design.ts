@@ -473,9 +473,9 @@ export default function shepherdDesign(pi: ExtensionAPI) {
     description:
       "Propose comments from the viewer's Pencil markup (a message that opens with design-markup markers): one comment " +
       "per mark, on the element it marks (the mark's element id, or the element you resolved from the board's source " +
-      "when it names none), in the viewer's words where they wrote a note. The viewer sees each as a card and applies " +
-      "them (each then reaches you as a comment to make) or keeps them as comments. Call it once per markup message and " +
-      "change no board before the viewer applies.",
+      "when it names none), in the viewer's words where they wrote a note. Shepherd keeps them as comments on the canvas " +
+      "at once; the viewer sees each as a card and applies them (each then reaches you as a comment to make) or leaves " +
+      "them as comments. Call it once per markup message and change no board before the viewer applies.",
     promptSnippet: "Propose comments from the viewer's Pencil markup",
     parameters: Type.Object({
       proposals: Type.Array(
@@ -700,7 +700,7 @@ export function describeComments(comments: Comment[], all: boolean): string {
 }
 
 /**
- * What markup_propose answers: the comments Shepherd checked, one line each for the agent, then
+ * What markup_propose answers: the comments Shepherd checked and kept, one line each for the agent, then
  * the proposals' JSON between markers for the viewer's chat, which draws them as cards, all
  * fenced as data.
  */
@@ -714,8 +714,8 @@ export function describeProposals(proposals: Proposal[]): string {
   // block the chat reads goes inside the data fence with the lines.
   const block = `<markup-proposals>\n${JSON.stringify({ proposals })}\n</markup-proposals>`;
   return (
-    `Proposed ${count} from the viewer's markup. They see each as a card and apply them or keep them as comments; ` +
-    `an applied one reaches you as a comment.\n${fenced(`${lines.join("\n")}\n${block}`)}`
+    `Kept ${count} from the viewer's markup on the canvas. They see each as a card and apply them or keep them as ` +
+    `comments; an applied one reaches you as a comment.\n${fenced(`${lines.join("\n")}\n${block}`)}`
   );
 }
 

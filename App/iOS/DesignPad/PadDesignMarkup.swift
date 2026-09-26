@@ -12,8 +12,9 @@ import ShepherdUI
 // (Vision, no network); Done reads each mark (its kind, the board and element under it, the note
 // that goes with it) and sends the design agent one record of them through `designs.v1`
 // (`sendMarkup`), which the host checks and hands on fenced as data, as a turn of its own. The
-// agent's comments proposed from it come back in the chat (`NWMarkupProposals`), where Apply
-// sends each to it as a comment and Keep as comments leaves them on the canvas.
+// agent's proposals from it are kept as comments at once and come back in the chat
+// (`NWMarkupProposals`), where Apply sends each to it as a comment and Keep as comments leaves them
+// on the canvas as they are.
 // docs/designs.md › Pencil markup.
 
 /// The markup on one design's canvas: the ink drawn since the last Done and the ink already sent,
@@ -451,9 +452,10 @@ extension PadDesignCanvas {
         }
     }
 
-    /// The proposals card for a reply: each proposal numbered as its pin is (kept) or will be
-    /// (the next numbers, in order), named as the comment cards name boards ("A · phone › Steps
-    /// list"), and whether they are kept.
+    /// The proposals card for a reply: each proposal numbered as its pin is (the host keeps the
+    /// proposals as comments when the agent makes them; one not seen yet takes the next number),
+    /// named as the comment cards name boards ("A · phone › Steps list"), and whether the viewer
+    /// has applied or kept them.
     func markupCard(_ proposals: NativeMarkupProposals) -> (cards: [NWMarkupProposals.Card], state: NWMarkupProposals.State) {
         let kept = Dictionary(comments.compactMap { comment in comment.proposal.map { ($0, comment) } }, uniquingKeysWith: { a, _ in a })
         var next = (comments.map(\.number).max() ?? 0) + 1
@@ -472,7 +474,7 @@ extension PadDesignCanvas {
         }
         let key = proposals.ids.joined(separator: "|")
         if applyingProposals.contains(key) { return (cards, .working) }
-        if !cards.isEmpty, cards.allSatisfy({ kept[$0.id] != nil }) {
+        if !cards.isEmpty, cards.allSatisfy({ kept[$0.id]?.proposalSettledAt != nil }) {
             let numbers = cards.map { String($0.number) }
             let list = numbers.count == 1 ? "comment \(numbers[0])"
                 : "comments " + numbers.dropLast().joined(separator: ", ") + " and " + numbers[numbers.count - 1]
@@ -481,42 +483,34 @@ extension PadDesignCanvas {
         return (cards, .open)
     }
 
-    /// Apply (each proposal kept as a comment and sent to the design agent as one) or Keep as
-    /// comments (kept, not sent): one change at the comments' revision, through the host's checks.
-    /// The pins go where the boards draw the elements. The ink that led to them leaves the canvas.
+    /// Apply (each proposal's comment sent to the design agent as a comment is) or Keep as
+    /// comments (left on the canvas as they are): the proposals settled as one change at the
+    /// comments' revision, through the host's checks. The ink that led to them leaves the canvas.
     @discardableResult
     func applyProposals(_ proposals: NativeMarkupProposals, deliver: Bool) -> Task<Void, Never>? {
         let key = proposals.ids.joined(separator: "|")
-        guard !applyingProposals.contains(key) else { return nil }
+        guard !applyingProposals.contains(key), !proposals.ids.isEmpty else { return nil }
         applyingProposals.insert(key)
         let design = ref.design
+        let ids = proposals.ids
         return Task {
             defer { applyingProposals.remove(key) }
-            var drafts = proposals.proposals
-            for board in Set(drafts.map(\.board)) {
-                let tids = drafts.filter { $0.board == board }.map(\.tid)
-                guard let found = await host.measure(board, tids: tids) else { continue }
-                for index in drafts.indices where drafts[index].board == board {
-                    guard let pick = found[drafts[index].tid], pick.id.path == drafts[index].path else { continue }
-                    drafts[index].rect = DesignCommentRect(x: pick.rect.minX, y: pick.rect.minY, w: pick.rect.width, h: pick.rect.height)
-                }
-            }
             do {
                 let result: RemoteDesignResult
                 do {
-                    result = try await library.request(.addProposedComments(designID: design, drafts: drafts, deliver: deliver,
-                                                                            baseRevision: commentsRevision))
+                    result = try await library.request(.settleProposals(designID: design, proposals: ids, deliver: deliver,
+                                                                        baseRevision: commentsRevision))
                 } catch let error where Self.isStale(error) {
                     guard case .comments(let fresh) = try await library.request(.comments(designID: design)) else { throw Self.unexpected }
                     applyComments(fresh)
-                    result = try await library.request(.addProposedComments(designID: design, drafts: drafts, deliver: deliver,
-                                                                            baseRevision: fresh.revision))
+                    result = try await library.request(.settleProposals(designID: design, proposals: ids, deliver: deliver,
+                                                                        baseRevision: fresh.revision))
                 }
-                guard case .proposedCommentsAdded(_, let undelivered) = result else { throw Self.unexpected }
+                guard case .proposalsSettled(_, let undelivered) = result else { throw Self.unexpected }
                 markup.clearSent()
-                if let undelivered { problem = "The comments are kept, but they didn't reach the design agent: \(undelivered)" }
+                if let undelivered { problem = "The comments are on the canvas, but they didn't reach the design agent: \(undelivered)" }
             } catch {
-                problem = "Couldn't keep the comments: \(Self.message(error))"
+                problem = "Couldn't \(deliver ? "apply" : "keep") the comments: \(Self.message(error))"
             }
             await refreshComments()
         }

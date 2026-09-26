@@ -8175,13 +8175,16 @@ chat's field, and Split View with "Send to the thread". The boards render on the
   or kept. The palette's Comment is the canvas's Comment tool (a Pencil or finger tap on an
   element opens the editor). Ink is 3pt (the pen) or 12pt (the marker) on screen, and zooms with
   the boards.
-- **The proposals:** one reads **Apply**, three or more **Apply all**. Once applied or kept, the
-  buttons and the Scribble line give way to "On the canvas as comments 2 and 3." in 12.5
-  `textTertiary`. A markup that couldn't reach the agent, and proposals that couldn't be kept,
-  say so in the design's dialog and stay as they were.
+- **The proposals** are comments from the moment the agent makes them, as the board counts them
+  ("Comments 3" beside cards 2 and 3): **Apply both** sends them to the agent, **Keep as
+  comments** leaves them. One reads **Apply**, three or more **Apply all**. Once applied or kept,
+  the buttons and the Scribble line give way to "On the canvas as comments 2 and 3." in 12.5
+  `textTertiary`. A markup that couldn't reach the agent, and proposals that couldn't be applied
+  or kept, say so in the design's dialog and stay as they were.
 - **On the Mac** the design's chat shows markup from an iPad as the words the host sends with it
   ("Pencil markup · 2 strokes · 2 notes") and the agent's call as an activity line ("Used markup ·
-  2 proposed comments"); the Mac draws no proposals card.
+  2 proposed comments"); the proposals are among its comments, and the Mac draws no proposals
+  card.
 
 What the board draws:
 
