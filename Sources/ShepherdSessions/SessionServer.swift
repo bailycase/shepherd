@@ -181,12 +181,12 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    /// This Mac's pi, asked for the skills it loads from outside ~/.agents/skills (one loader, so
-    /// one cache).
-    public static let piSkillsReader: SkillsStore.PiSkillsReader = {
-        let loader = PiSkillsLoader()
+    /// This Mac's pi, asked for the skills it loads from outside ~/.agents/skills (one loader per
+    /// server, so one cache).
+    public static func piSkillsReader(_ pi: PiSetup) -> SkillsStore.PiSkillsReader {
+        let loader = PiSkillsLoader(agentDirectory: pi.home, engine: pi.engine)
         return { loader.read(installedDirectory: $0) }
-    }()
+    }
 
     /// Shared instance the app uses; tests construct their own with scratch
     /// paths.
@@ -316,6 +316,8 @@ public final class SessionServer: @unchecked Sendable {
     private let socketPath: String
     private let store: StateStore
     private let modelCatalog: ModelCatalog
+    /// Which pi this server's agents run, and its home (`PiSetup`).
+    public let pi: PiSetup
     /// Where each delivered message came from, per pi session (support directory).
     private let originStore: ThreadOriginStore
     /// How each automation's runs went (support directory), for remote clients.
@@ -487,25 +489,30 @@ public final class SessionServer: @unchecked Sendable {
 
     /// pi's own catalog (`pi --list-models`, else models.json) and settings.json's default, all
     /// as "provider/id".
-    public static let piModelCatalog: ModelCatalog = {
-        ModelListing(entries: PiModelCatalog.entriesOrConfigured(), defaultModel: PiConfig.defaultModel(),
-                     levelMaps: PiConfig.thinkingLevelMaps())
+    public static func piModelCatalog(_ pi: PiSetup) -> ModelCatalog {
+        {
+            ModelListing(entries: pi.catalog.entriesOrConfigured(), defaultModel: PiConfig.defaultModel(in: pi.home),
+                         levelMaps: PiConfig.thinkingLevelMaps(in: pi.home))
+        }
     }
 
     /// This Mac's models as a remote client's `listModels` gets them, for the local New Agent
     /// sheet. Blocking (asking pi shells out): call it off the main thread and the server queue.
     public func modelListing() -> ModelListing { modelCatalog() }
 
-    /// `modelCatalog` answers remote model listings; tests pass a stand-in so nothing runs pi.
-    /// `skillsDirectory` is where this host's skills live, ~/.agents/skills unless a test passes
-    /// its own; `piSkills` reads the skills pi loads from elsewhere (tests pass nil, or their own).
+    /// `pi` is which pi the agents run and where it keeps its state (the app's, `PiSetup.app`,
+    /// unless a test passes its own). `modelCatalog` answers remote model listings, `pi`'s own
+    /// when nil; tests pass a stand-in so nothing runs pi. `skillsDirectory` is where this host's
+    /// skills live, ~/.agents/skills unless a test passes its own; `piSkills` reads the skills pi
+    /// loads from elsewhere: `pi`'s when left out, none when nil (tests pass nil, or their own).
     /// `trash` is where an Undo moves the files a turn created; tests pass their own.
-    public init(socketPath: String, stateURL: URL, modelCatalog: @escaping ModelCatalog = SessionServer.piModelCatalog,
-                skillsDirectory: URL? = nil, piSkills: SkillsStore.PiSkillsReader? = SessionServer.piSkillsReader,
+    public init(socketPath: String, stateURL: URL, pi: PiSetup = .app, modelCatalog: ModelCatalog? = nil,
+                skillsDirectory: URL? = nil, piSkills: SkillsStore.PiSkillsReader?? = .none,
                 trash: @escaping ChangesService.Trash = ChangesService.systemTrash) {
         self.socketPath = socketPath
         self.store = StateStore(url: stateURL)
-        self.modelCatalog = modelCatalog
+        self.pi = pi
+        self.modelCatalog = modelCatalog ?? SessionServer.piModelCatalog(pi)
         self.originStore = ThreadOriginStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("thread-origins", isDirectory: true))
         self.runLog = AutomationRunLog(url: stateURL.deletingLastPathComponent().appendingPathComponent("automation-runs.json"))
         let instructions = InstructionsStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("instructions", isDirectory: true))
@@ -513,7 +520,7 @@ public final class SessionServer: @unchecked Sendable {
         self.suggestions = SuggestionsStore(url: instructions.directory.appendingPathComponent("suggestions.json"), instructions: instructions)
         self.skills = SkillsStore(directory: skillsDirectory ?? ShepherdPaths.agentSkillsDirectory(),
                                   stateDirectory: stateURL.deletingLastPathComponent().appendingPathComponent("skills", isDirectory: true),
-                                  piSkills: piSkills)
+                                  piSkills: piSkills ?? SessionServer.piSkillsReader(pi))
         self.changes = ChangesService(directory: stateURL.deletingLastPathComponent().appendingPathComponent("changes", isDirectory: true),
                                       trash: trash)
         self.designs = DesignStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("designs", isDirectory: true))
@@ -3422,9 +3429,10 @@ public final class SessionServer: @unchecked Sendable {
             session.beforeOffQueueDecode = beforeOffQueueDecode
             let thread = RPCThreadState(session: session, queue: sessionQueue, originStore: originStore)
             thread.defaultQueueMode = defaultQueueMode
-            // pi's compaction settings, as this pi reads them: its agent directory (the app's
-            // environment, or the session's) and the project's own. Read, never written.
-            let piDirectory = PiConfig.agentDirectory(environment: ProcessInfo.processInfo.environment.merging(params.env ?? [:]) { $1 })
+            // pi's compaction settings, as this pi reads them: its agent directory (the server's
+            // pi home, or the one the session's environment names) and the project's own. Read,
+            // never written.
+            let piDirectory = PiConfig.agentDirectory(environment: params.env ?? [:], otherwise: pi.home)
             let cwd = params.cwd
             thread.compactionSettings = { model in PiConfig.compactionSettings(model: model, cwd: cwd, in: piDirectory) }
             // The queue did not go after all (pi refused it, or it paused): pi is idle, so the

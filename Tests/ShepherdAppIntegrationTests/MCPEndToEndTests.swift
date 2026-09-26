@@ -118,7 +118,7 @@ struct MCPEndToEndTests {
         let store = MCPStore(dependencies: .init(
             file: MCPConfigFile(url: config), cacheURL: dir.appendingPathComponent("tools.json"),
             secrets: InMemorySecretStore(["secret/local/FAKE_TOKEN": "s3cret"]), http: URLSessionHTTP(),
-            probe: MCPProbe(runner: NodeProbeRunner(clientPath: ShepherdViewModel.mcpClientPath)),
+            probe: MCPProbe(runner: NodeProbeRunner(engine: PiSetup.app.engine, clientPath: ShepherdViewModel.mcpClientPath)),
             openURL: { _ in }, copy: { _ in }, now: { Date() }))
         store.probe("local")
         try await eventuallyOnMain("the probe to list local's tools") { store.rows.first.map { $0.tools != nil || $0.status == .error } == true }

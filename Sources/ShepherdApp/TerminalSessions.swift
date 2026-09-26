@@ -582,9 +582,9 @@ final class TerminalSessionStore {
             let cwd = Self.resolvedCwd(pane.cwd)
             guard rpc else { throw TerminalSessionStoreError.paneUnavailable(pane.id) }
             // Give pi a session to find, so --session-id does not warn.
-            let fresh = await Self.prepareSessionFile(for: agent, cwd: cwd)
+            let fresh = await Self.prepareSessionFile(for: agent, cwd: cwd, sessionsRoot: server.pi.sessionsRoot)
             // RPC mode ignores a positional prompt; the opening prompt goes to the server below.
-            let command = try Self.rpcAgentCommand(for: agent, cwd: cwd, sessionIsFresh: fresh, isAutomation: isAutomation,
+            let command = try Self.rpcAgentCommand(for: agent, cwd: cwd, engine: server.pi.engine, sessionIsFresh: fresh, isAutomation: isAutomation,
                                                     suggestFiles: suggestionFiles(isAutomation: isAutomation))
             guard ownsPane(session, pane: pane, tabID: tab.id, expectedAgentID: agent.id),
                   session.sessionID == nil,
@@ -825,8 +825,8 @@ final class TerminalSessionStore {
                 }
                 // Respawn after relaunch: an agent that was never prompted has
                 // no session file yet, so seed one before pi looks for it.
-                let fresh = await Self.prepareSessionFile(for: agent, cwd: cwd)
-                command = try Self.rpcAgentCommand(for: agent, cwd: cwd, sessionIsFresh: fresh,
+                let fresh = await Self.prepareSessionFile(for: agent, cwd: cwd, sessionsRoot: server.pi.sessionsRoot)
+                command = try Self.rpcAgentCommand(for: agent, cwd: cwd, engine: server.pi.engine, sessionIsFresh: fresh,
                                                    suggestFiles: suggestionFiles(isAutomation: false))
             } else {
                 command = ShellIntegration.command(shell: AppSettings.shared.shellCommand)
@@ -964,10 +964,10 @@ final class TerminalSessionStore {
     /// Whether the agent's pi session is still fresh, after seeding its header
     /// (`PiSessionFile.prepareForLaunch`). Off the main actor: at launch every restored agent
     /// does this at once, and a project directory holds hundreds of session files.
-    private static func prepareSessionFile(for agent: Agent, cwd: String) async -> Bool {
+    private static func prepareSessionFile(for agent: Agent, cwd: String, sessionsRoot: URL) async -> Bool {
         let sessionID = agent.effectivePiSessionID
         return await Task.detached(priority: .userInitiated) {
-            PiSessionFile.prepareForLaunch(sessionID: sessionID, cwd: cwd)
+            PiSessionFile.prepareForLaunch(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot)
         }.value
     }
 
@@ -980,10 +980,12 @@ final class TerminalSessionStore {
     /// `pi --mode rpc` for an agent, with Shepherd's socket, status, panes, review, subagents,
     /// and namer extensions; an agent that draws a design gets the design tools instead of panes. Model and
     /// thinking flags go only to a fresh session.
-    private static func rpcAgentCommand(for agent: Agent, cwd: String, sessionIsFresh: Bool, isAutomation: Bool = false,
+    private static func rpcAgentCommand(for agent: Agent, cwd: String, engine: PiEngine, sessionIsFresh: Bool, isAutomation: Bool = false,
                                         suggestFiles: [InstructionFile] = []) throws -> SessionCommand {
         let settings = AppSettings.shared
         return StatusExtension.command(
+            engine: engine,
+            cwd: cwd,
             agentID: agent.id,
             piSessionID: agent.effectivePiSessionID,
             socketPath: ShepherdPaths.socketURL().path,

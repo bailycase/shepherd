@@ -151,7 +151,7 @@ final class ShepherdViewModel {
     var remoteWorktreeFinalize = false
     var remoteWorktreeOperationEndpoints: [RemoteAgentRef: UUID] = [:]
     var remoteWorktreeOperationIDs: [RemoteAgentRef: UUID] = [:]
-    var hostPRDescriptionGenerator = WorktreePRDescriptionGenerator()
+    var hostPRDescriptionGenerator: WorktreePRDescriptionGenerator
     var hostWorktreeOperations: [UUID: RemoteWorktreeOperation] = [:]
     var hostWorktreeOperationAgents: [UUID: AgentID] = [:]
     var hostBusyWorktrees: Set<String> = []
@@ -420,6 +420,7 @@ final class ShepherdViewModel {
     ) {
         self.state = ShepherdState()
         self.server = server
+        self.hostPRDescriptionGenerator = WorktreePRDescriptionGenerator(engine: server.pi.engine)
         self.restoresAgentsAtLaunch = restoresAgentsAtLaunch
         self.settings = settings ?? .shared
         self.sidebarDefaults = sidebarDefaults
@@ -435,7 +436,7 @@ final class ShepherdViewModel {
         self.suggestions = SuggestionsModel(store: server.suggestions, instructionsStore: server.instructions, instructions: instructions)
         self.skills = ClientSkills(defaults: sidebarDefaults)
         self.localSkills = LocalSkillsClient(store: server.skills)
-        self.mcp = mcp ?? MCPStore(dependencies: .app(clientPath: ShepherdViewModel.mcpClientPath,
+        self.mcp = mcp ?? MCPStore(dependencies: .app(engine: server.pi.engine, clientPath: ShepherdViewModel.mcpClientPath,
                                                       openURL: { NSWorkspace.shared.open($0) },
                                                       copy: ShepherdViewModel.copyToPasteboard))
         self.installThemeMarker = themeInstaller
@@ -599,7 +600,7 @@ final class ShepherdViewModel {
                         : GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetch)
                 }.value
                 completion(.success(.init(base: resolution.display, note: resolution.note, fetchFirst: fetch,
-                                          model: self.settings.agentDefaults.model ?? PiConfig.defaultModel(), thinking: self.settings.defaultThinking)))
+                                          model: self.settings.agentDefaults.model ?? PiConfig.defaultModel(in: self.server.pi.home), thinking: self.settings.defaultThinking)))
             }
         }
         // Remote clients create agents through this host's normal spawn flow.

@@ -606,7 +606,7 @@ struct PaneLeafView: View, Equatable {
                     active: model.isVisible,
                     isFocused: model.isFocused && inspecting == nil,
                     request: { [vm] in try await vm.server.nativeThread(agentID: agentID, request: $0) },
-                    preview: model.piSessionID.map { PiSessionFile.previewLoader(sessionID: $0, cwd: pane.cwd) },
+                    preview: model.piSessionID.map { PiSessionFile.previewLoader(sessionID: $0, cwd: pane.cwd, sessionsRoot: vm.server.pi.sessionsRoot) },
                     commandKey: ThreadCommandCenter.key(local: agentID),
                     agentName: model.agentName,
                     workingDirectory: pane.cwd,

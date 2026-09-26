@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import ShepherdUI
+import ShepherdSessions
 
 /// Checks the installed pi version and optionally updates pi plus its user
 /// extensions. Checks are intentionally independent of the auto-update toggle
@@ -51,8 +52,12 @@ final class PiUpdateManager {
         static let latest = "shepherd.piUpdates.latestVersion"
     }
 
+    /// The pi whose version is checked and which `update` runs.
+    @ObservationIgnored private let engine: PiEngine
+
     /// Restores the last successful check's result, so Settings shows it before the next one.
-    init(defaults: UserDefaults = .standard) {
+    init(engine: PiEngine = PiSetup.app.engine, defaults: UserDefaults = .standard) {
+        self.engine = engine
         self.defaults = defaults
         lastSucceeded = defaults.object(forKey: Key.checked) as? Date
         if let lastSucceeded, let current = defaults.string(forKey: Key.current), let latest = defaults.string(forKey: Key.latest) {
@@ -123,7 +128,7 @@ final class PiUpdateManager {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let result = try await Self.checkVersions()
+                let result = try await Self.checkVersions(engine: engine)
                 recordCheck(current: result.current, latest: result.latest, at: Date())
                 let settings = AppSettings.shared
                 let arguments = Self.automaticUpdateArguments(
@@ -180,11 +185,11 @@ final class PiUpdateManager {
             guard let self else { return }
             do {
                 for arguments in commands {
-                    _ = try await Self.runPiCommand(arguments, discardOutput: true)
+                    _ = try await Self.runPiCommand(arguments, engine: engine, discardOutput: true)
                     if !arguments.contains("--extensions") {
                         // Publish the installed version as soon as Pi finishes.
                         // The npm latest-version request below may take longer.
-                        currentVersion = try await Self.readCurrentVersion()
+                        currentVersion = try await Self.readCurrentVersion(engine: engine)
                         if let latestVersion {
                             isOutdated = Self.isVersion(currentVersion ?? "", olderThan: latestVersion)
                         }
@@ -192,7 +197,7 @@ final class PiUpdateManager {
                         extensionsUpdatedAt = Date()
                     }
                 }
-                let result = try await Self.checkVersions()
+                let result = try await Self.checkVersions(engine: engine)
                 recordCheck(current: result.current, latest: result.latest, at: Date())
             } catch {
                 lastError = error.localizedDescription
@@ -241,8 +246,8 @@ final class PiUpdateManager {
         }
     }
 
-    private static func readCurrentVersion() async throws -> String {
-        let current = try await runPiCommand(["--version"]).stdout
+    private static func readCurrentVersion(engine: PiEngine) async throws -> String {
+        let current = try await runPiCommand(["--version"], engine: engine).stdout
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !current.isEmpty else {
             throw CommandError.failed("could not determine pi version")
@@ -250,8 +255,8 @@ final class PiUpdateManager {
         return current
     }
 
-    private static func checkVersions() async throws -> VersionResult {
-        async let currentOutput = readCurrentVersion()
+    private static func checkVersions(engine: PiEngine) async throws -> VersionResult {
+        async let currentOutput = readCurrentVersion(engine: engine)
         async let latestOutput = runCommand(
             executable: "/bin/zsh",
             arguments: ["-l", "-c", "exec npm view \(shellQuote(packageName)) version --json"]
@@ -289,12 +294,9 @@ final class PiUpdateManager {
         }
     }
 
-    private static func runPiCommand(_ arguments: [String], discardOutput: Bool = false) async throws -> CommandOutput {
-        let redirection = discardOutput ? " >/dev/null 2>&1" : ""
-        return try await runCommand(
-            executable: "/bin/zsh",
-            arguments: ["-l", "-c", "exec pi \(arguments.map(shellQuote).joined(separator: " "))\(redirection)"]
-        )
+    private static func runPiCommand(_ arguments: [String], engine: PiEngine, discardOutput: Bool = false) async throws -> CommandOutput {
+        let line = PiLaunch.command(engine: engine, arguments: arguments, discardingOutput: discardOutput)
+        return try await runCommand(executable: line.argv[0], arguments: Array(line.argv.dropFirst()))
     }
 
     private static func shellQuote(_ argument: String) -> String {
