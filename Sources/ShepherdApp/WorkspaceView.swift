@@ -137,13 +137,16 @@ struct AgentLayoutModel: Equatable {
     let review: ReviewSession?
     /// The terminal panel under the thread, and its height.
     var terminal = TerminalPanels.Panel()
+    /// The thread's state while the panel is maximized over it, for its folded line; nil
+    /// otherwise, so a status report reruns no other layout.
+    var foldedState: AgentState?
     var terminalHeight: CGFloat = AppLayout.terminalPanelHeight
 
     static func == (a: AgentLayoutModel, b: AgentLayoutModel) -> Bool {
         a.tab == b.tab && a.isVisible == b.isVisible && a.thread == b.thread && a.focusedPaneID == b.focusedPaneID
             && a.inspectingRunID == b.inspectingRunID && a.sideTab == b.sideTab && a.sideNews == b.sideNews
             && a.sideMaximized == b.sideMaximized && a.review === b.review
-            && a.terminal == b.terminal && a.terminalHeight == b.terminalHeight
+            && a.terminal == b.terminal && a.terminalHeight == b.terminalHeight && a.foldedState == b.foldedState
     }
 
     /// Resolves every mounted layout's model from one pass over the workspace.
@@ -174,14 +177,15 @@ struct AgentLayoutModel: Equatable {
                     .map { Thread(agentID: agent.id, paneID: $0.id, agentName: agent.name, piSessionID: agent.effectivePiSessionID) }
             }
             let owner = thread.map { SidePaneOwner.local($0.agentID) }
+            let terminal = terminals.panel(TerminalPanelKey(host: nil, tab: tab.id))
+            let folded = terminal.shown && terminal.maximized ? agentsByTab[tab.id].map { AgentState($0.status) } : nil
             return AgentLayoutModel(tab: tab, isVisible: visible, thread: thread, focusedPaneID: visible ? focusedPaneID : nil,
                                     inspectingRunID: thread.flatMap { runs[$0.agentID] },
                                     sideTab: owner.flatMap { panes.open.contains($0) ? panes.tab(for: $0) : nil },
                                     sideNews: owner.flatMap { panes.news[$0] } ?? [],
                                     sideMaximized: owner.map { panes.maximized.contains($0) } ?? false,
                                     review: thread.flatMap { reviews[$0.agentID] },
-                                    terminal: terminals.panel(TerminalPanelKey(host: nil, tab: tab.id)),
-                                    terminalHeight: terminals.height)
+                                    terminal: terminal, foldedState: folded, terminalHeight: terminals.height)
         }
     }
 }
@@ -381,6 +385,9 @@ struct PaneTreeView: View {
                         onCommit: { vm.commitSplitRatio(tabID: tab.id, split: separator.node, ratio: $0) }
                     )
                 }
+                TerminalPanelChrome(vm: vm, key: key, geometry: geometry, focused: model.focusedPaneID, host: nil,
+                                    threadTitle: thread.agentName, threadState: model.foldedState ?? .idle,
+                                    focus: { [vm] in vm.focusedPaneID = $0 })
                 if let bar = geometry.tabBar {
                     TerminalPanelBar(vm: vm, target: target, tabs: geometry.tabs, selected: selected, maximized: panel.maximized,
                                      onScreen: model.isVisible, host: nil)
@@ -831,6 +838,10 @@ private struct RemotePaneTreeView: View {
                         onCommit: { vm.commitRemoteSplitRatio(ref: ref, split: separator.node, ratio: $0) }
                     )
                 }
+                let agent = connection.state.agents.first { $0.id == ref.agentID }
+                TerminalPanelChrome(vm: vm, key: key, geometry: geometry, focused: vm.remoteFocusedPaneID, host: connection.config.name,
+                                    threadTitle: agent?.name ?? "", threadState: agent.map { AgentState($0.status) } ?? .idle,
+                                    focus: { [vm] in vm.remoteFocusedPaneID = $0 })
                 if let bar = geometry.tabBar {
                     TerminalPanelBar(vm: vm, target: target, tabs: geometry.tabs, selected: selected, maximized: panel.maximized,
                                      onScreen: true, host: connection.config.name)
