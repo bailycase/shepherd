@@ -59,8 +59,8 @@ public struct NativeContextMeter: Equatable, Sendable {
         } else if let tokens = context.tokens, let windowTokens = context.window, windowTokens > 0 {
             let percent = nativeContextPercent(tokens, of: windowTokens)
             self.init(ring: .fill(min(1, Double(tokens) / Double(windowTokens)), Self.tone(percent: percent)),
-                      tooltip: "\(nativeContextTokens(tokens)) of \(window ?? "") · \(Int(percent.rounded()))%",
-                      accessibilityLabel: "Context \(Int(percent.rounded()))% full")
+                      tooltip: "\(nativeContextTokens(tokens)) of \(window ?? "") · \(nativeContextPercentText(percent))",
+                      accessibilityLabel: "Context \(nativeContextPercentText(percent)) full")
         } else if let estimate = context.estimate {
             self.init(ring: .estimated, tooltip: "about \(nativeContextTokens(estimate))" + (window.map { " of \($0)" } ?? ""),
                       tooltipNote: replying ? "exact after this reply" : "exact after the next reply", accessibilityLabel: "Context: updating after compaction")
@@ -74,6 +74,12 @@ public struct NativeContextMeter: Equatable, Sendable {
 /// `tokens` as a percentage of `window`, 0 for an empty window.
 public func nativeContextPercent(_ tokens: Int, of window: Int) -> Double {
     window > 0 ? Double(tokens) / Double(window) * 100 : 0
+}
+
+/// A context percentage as the meter writes it, "21%": whole and within 0 to 100, whatever pi
+/// reported (a tiny `contextWindow` makes pi's percent enormous).
+public func nativeContextPercentText(_ percent: Double) -> String {
+    "\(Int(percent.isNaN ? 0 : min(100, max(0, percent)).rounded()))%"
 }
 
 /// Context sizes to the nearest thousand, as the boards write them: "42k", "184k" (a 200k
@@ -220,7 +226,7 @@ public struct NativeContextDetails: Equatable, Sendable {
         }
         let percent = nativeContextPercent(tokens, of: window)
         total = nativeContextTokens(tokens)
-        trailing = "\(Int(percent.rounded()))%"
+        trailing = nativeContextPercentText(percent)
         if let split {
             segments = [Segment(part: .system, fraction: fraction(split.system)),
                         Segment(part: .instructions, fraction: fraction(split.instructions)),

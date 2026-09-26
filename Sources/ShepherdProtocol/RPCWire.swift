@@ -64,6 +64,11 @@ public enum JSONValue: Codable, Hashable, Sendable {
         return nil
     }
 
+    /// A count (tokens, a context window) as `Int(reportedCount:)` reads it.
+    public var countValue: Int? {
+        doubleValue.flatMap(Int.init(reportedCount:))
+    }
+
     public var boolValue: Bool? {
         if case .bool(let b) = self { return b }
         return nil
@@ -77,6 +82,16 @@ public enum JSONValue: Codable, Hashable, Sendable {
     /// Re-decode this value as a concrete type.
     public func decode<T: Decodable>(_ type: T.Type) throws -> T {
         try JSONDecoder().decode(type, from: JSONEncoder().encode(self))
+    }
+}
+
+extension Int {
+    /// A count pi reported as a JSON number, truncated toward zero. `Int(_: Double)` traps at
+    /// 2^63 and beyond, and pi passes a models.json `contextWindow` through as written (1e20 for
+    /// "unlimited"), so anything that large is `Int.max`. NaN, infinities, and negatives are nil.
+    public init?(reportedCount value: Double) {
+        guard value.isFinite, value >= 0 else { return nil }
+        self = value >= Double(Int.max) ? .max : Int(value)
     }
 }
 
