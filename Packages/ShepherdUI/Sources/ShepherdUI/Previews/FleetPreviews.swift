@@ -78,3 +78,23 @@ import SwiftUI
         .frame(width: 300)
     }
 }
+
+#Preview("Overview cards") {
+    NWPreviewBoth {
+        VStack(spacing: NW.Space.l) {
+            NWListCard {
+                NWCaptionBand("Threads · 2")
+                NWOverviewRow("Investigate SwiftUI live preview", detail: "swift test --filter toolPreview", leading: .state(.running),
+                              time: .elapsed(since: Date().addingTimeInterval(-252)))
+                NWOverviewRow("Restyle native UI", detail: "3 subagents · 1 needs you", leading: .state(.running),
+                              time: .elapsed(since: Date().addingTimeInterval(-2_220)))
+            }
+            NWListCard {
+                NWCaptionBand("Today")
+                NWOverviewRow("Ship native UI v2", detail: "done · Shepherd", detailMono: false, leading: .symbol("checkmark", .done),
+                              time: .text("11:02"))
+            }
+        }
+        .frame(width: 280)
+    }
+}

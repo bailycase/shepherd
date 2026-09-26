@@ -1,5 +1,6 @@
 import SwiftUI
 import ShepherdUI
+import ShepherdCore
 import ShepherdRemote
 
 /// The iPad detail with no thread selected (iPadOverview board; home track): Needs you with the
@@ -43,9 +44,22 @@ struct PadOverview: View {
         .background(Color.nw.bgWindow)
         .task { await feed.watch() }
         .navigationTitle("Overview")
-        .navigationSubtitle(model.hosts.isEmpty ? "" : model.summary)
         .navigationBarTitleDisplayMode(.inline)
+        // The board's head: "Overview" leading, the summary beside it.
+        .toolbar(removing: .title)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
+                    Text("Overview").font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary)
+                    if !model.hosts.isEmpty {
+                        Text(model.summary).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary).lineLimit(1)
+                    }
+                }
+                .fixedSize()
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isHeader)
+            }
+            .sharedBackgroundVisibility(.hidden)
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button("Search", systemImage: "magnifyingglass") { SearchHooks.open(navigator: navigator) }
                 Button("New thread", systemImage: "plus") { NewThreadHooks.open(navigator: navigator) }
@@ -76,13 +90,16 @@ private struct OverviewColumns: View {
             if model.running.isEmpty && model.automationsRunning.isEmpty {
                 quiet("Nothing is running.")
             }
+            // One card per kind, each under its caption band.
             if !model.running.isEmpty {
                 NWListCard {
-                    ForEach(model.running) { row in threadButton(row) }
+                    NWCaptionBand("Threads · \(model.running.count)")
+                    ForEach(model.running) { row in runningButton(row) }
                 }
             }
             if !model.automationsRunning.isEmpty {
                 NWListCard {
+                    NWCaptionBand("Automations · \(model.automationsRunning.count)")
                     ForEach(model.automationsRunning) { row in
                         if let run = row.run {
                             Button { navigator.open(.thread(run.agentRef)) } label: { AutomationRow(row: row).equatable() }
@@ -96,16 +113,41 @@ private struct OverviewColumns: View {
             if model.finished.isEmpty {
                 quiet("Nothing has finished yet.")
             } else {
-                NWListCard {
-                    ForEach(model.finished) { row in threadButton(row) }
+                // Under a band per day, each with the time it finished.
+                TimelineView(.everyMinute) { context in
+                    VStack(spacing: MobileLayout.blockSpacing) {
+                        ForEach(FleetFinishedDay.days(model.finished, now: context.date)) { day in
+                            NWListCard {
+                                NWCaptionBand(day.title)
+                                ForEach(day.rows) { row in finishedButton(row, now: context.date) }
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 
-    private func threadButton(_ row: FleetThreadRow) -> some View {
-        Button { navigator.open(.thread(row.ref.agentRef)) } label: { ThreadRow(row: row, chevron: false).equatable() }
-            .buttonStyle(.nwRow(radius: 0))
+    /// A running thread: its state, title and clock, and what it does now.
+    private func runningButton(_ row: FleetThreadRow) -> some View {
+        let time: NWOverviewRow.Time = if case .elapsed(let since)? = row.clock { .elapsed(since: Date(milliseconds: since)) } else { .none }
+        return Button { navigator.open(.thread(row.ref.agentRef)) } label: {
+            NWOverviewRow(row.title, detail: row.now, leading: .state(AgentState(row.status)), time: time, dimmed: row.offline)
+                .equatable()
+        }
+        .buttonStyle(.nwRow(radius: 0))
+        .contextMenu { OpenInNewWindowButton(thread: row.ref.agentRef) }
+    }
+
+    /// A finished thread: a check, its title over where it ran, and when it finished.
+    private func finishedButton(_ row: FleetThreadRow, now: Date) -> some View {
+        Button { navigator.open(.thread(row.ref.agentRef)) } label: {
+            NWOverviewRow(row.title, detail: row.detail, detailMono: false, leading: .symbol("checkmark", .done),
+                          time: row.lastMoved.map { .text(FleetFinishedDay.stamp($0, now: now)) } ?? .none, dimmed: row.offline)
+                .equatable()
+        }
+        .buttonStyle(.nwRow(radius: 0))
+        .contextMenu { OpenInNewWindowButton(thread: row.ref.agentRef) }
     }
 
     private func column(_ title: String, count: Int, @ViewBuilder content: () -> some View) -> some View {
