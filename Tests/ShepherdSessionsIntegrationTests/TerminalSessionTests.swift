@@ -207,9 +207,10 @@ struct TerminalSessionTests {
     @Test func aCommandTypedWithoutSubmitWaitsAtThePrompt() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
-        let info = try await h.shell("exec /bin/zsh -f -i")
+        // A short prompt, so a long host name never wraps the typed line.
+        let info = try await h.shell("PS1='$ ' exec /bin/zsh -f -i")
         h.server.typeCommand("echo typed''-not-run", sessionID: info.id, submit: false)
-        try await h.waitForScreen(info.id, toContain: "echo typed''-not-run")
+        try await h.waitForScreen(info.id, toContain: "$ echo typed''-not-run")
         // Return now runs it: until then it only sat at the prompt.
         #expect(!(await h.screen(info.id)).contains("typed-not-run\n"))
         h.server.write(sessionID: info.id, data: Data("\r".utf8))
