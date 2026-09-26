@@ -109,7 +109,7 @@ struct DesignSystemPageModel: Equatable {
         let names = Dictionary(spaces.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
         guard let summary else {
             // A build whose agent is still reading the project.
-            let project = build.flatMap { names[$0.spaceID] }
+            let project = build?.sourceSpaceID.flatMap { names[$0] }
             model.title = build?.name ?? ""
             model.building = build != nil
             model.source = [Segment(text: "Reading ", mono: false), Segment(text: project ?? model.title, mono: true),

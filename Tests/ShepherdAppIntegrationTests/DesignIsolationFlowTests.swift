@@ -16,7 +16,7 @@ struct DesignIsolationFlowTests {
         let space = Fixture.space(path: app.dir.path)
         let thread = Fixture.agent("Fix login bug", in: space)
         var drawer = Fixture.agent("Landing hero", in: space, order: 1)
-        let design = Design(name: "Landing hero", spaceID: space.id, agentID: drawer.agent.id, createdAt: 1_000)
+        let design = Design(name: "Landing hero", agentID: drawer.agent.id, createdAt: 1_000)
         drawer.agent.designID = design.id
         var state = Fixture.state(spaces: [space], agents: [thread, drawer])
         state.designs = [design]

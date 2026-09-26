@@ -558,7 +558,8 @@ public final class SessionServer: @unchecked Sendable {
     /// ephemeral; enabled automations start fresh ones after adoption. Keeping the old agents
     /// relaunched their pi on every start and piled up one per launch.
     static func automationRunAgentIDs(in state: ShepherdState) -> Set<AgentID> {
-        let hiddenSpaces = Set(state.spaces.filter(\.hidden).map(\.id))
+        // The designs space is hidden too, but its agents last (`settleDesignAgents`).
+        let hiddenSpaces = Set(state.spaces.filter(\.holdsAutomations).map(\.id))
         return Set(state.agents.filter { hiddenSpaces.contains($0.spaceID) }.map(\.id))
             .union(state.automations.compactMap(\.agentID))
     }
@@ -591,6 +592,62 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Whether startup must move design agents into the reserved designs space, or drop agents
+    /// that space holds for designs that are gone (after `reconcileDesigns`).
+    static func designAgentsNeedSettling(in state: ShepherdState, missing: Set<DesignID>) -> Bool {
+        var reconciled = state
+        reconcileDesigns(&reconciled, missing: missing)
+        var settled = reconciled
+        settleDesignAgents(&settled)
+        return settled != reconciled
+    }
+
+    /// Designs stand alone (the user's decision, 2026-09-26): every design's agent lives in the
+    /// reserved designs space, made when first needed. A design agent an older state.json kept in
+    /// a user space moves there with its layout, keeping its working directory (its pi session is
+    /// filed under it). An agent the designs space holds for no design is dropped with its
+    /// layout: it has nothing to draw and no row to reach it by. Design agents otherwise last
+    /// across launches, unlike automation runs.
+    static func settleDesignAgents(_ state: inout ShepherdState) {
+        let designs = Set(state.designs.map(\.id))
+        let designSpace = state.designsSpace?.id
+        let misplaced = state.agents.filter { agent in
+            agent.designID.map(designs.contains) == true && agent.spaceID != designSpace
+        }
+        let orphans = Set(state.agents.filter { agent in
+            agent.spaceID == designSpace && agent.designID.map(designs.contains) != true
+        }.map(\.id))
+        guard !misplaced.isEmpty || !orphans.isEmpty else { return }
+        if !orphans.isEmpty {
+            let orphanTabs = Set(state.agents.filter { orphans.contains($0.id) }.map(\.tabID))
+            state.agents.removeAll { orphans.contains($0.id) }
+            state.tabs.removeAll { orphanTabs.contains($0.id) || $0.inspectorFor.map(orphans.contains) == true }
+            for i in state.designs.indices where state.designs[i].agentID.map(orphans.contains) == true {
+                state.designs[i].agentID = nil
+            }
+            for i in state.automations.indices where state.automations[i].agentID.map(orphans.contains) == true {
+                state.automations[i].agentID = nil
+            }
+        }
+        guard !misplaced.isEmpty else { return }
+        let space: SpaceID
+        if let designSpace {
+            space = designSpace
+        } else {
+            let made = Space.designs()
+            state.spaces.append(made)
+            space = made.id
+        }
+        let moved = Set(misplaced.map(\.id))
+        let movedTabs = Set(misplaced.map(\.tabID))
+        for i in state.agents.indices where moved.contains(state.agents[i].id) {
+            state.agents[i].spaceID = space
+        }
+        for i in state.tabs.indices where movedTabs.contains(state.tabs[i].id) || state.tabs[i].inspectorFor.map(moved.contains) == true {
+            state.tabs[i].spaceID = space
+        }
+    }
+
     private func startOnQueue(missingDesigns: Set<DesignID> = []) throws {
         let stale = store.state.agents.filter { $0.status != .idle }.map(\.id)
         let deadInspectors = store.state.tabs.contains { $0.inspectorFor != nil }
@@ -601,6 +658,7 @@ public final class SessionServer: @unchecked Sendable {
         let shellTabs = Self.shellTabIDs(in: store.state)
         let runAgents = Self.automationRunAgentIDs(in: store.state)
         let staleDesigns = Self.designsNeedReconciling(in: store.state, missing: missingDesigns, removedAgents: runAgents)
+            || Self.designAgentsNeedSettling(in: store.state, missing: missingDesigns)
         if !stale.isEmpty || deadInspectors || deadReviews || staleRuns || !shellTabs.isEmpty || !runAgents.isEmpty
             || staleDesigns {
             do {
@@ -641,6 +699,7 @@ public final class SessionServer: @unchecked Sendable {
                         state.automations[i].agentID = nil
                     }
                     Self.reconcileDesigns(&state, missing: missingDesigns)
+                    Self.settleDesignAgents(&state)
                 }
             } catch {
                 throw SessionServerError.persistFailed(String(describing: error))
@@ -2842,7 +2901,8 @@ public final class SessionServer: @unchecked Sendable {
     // MARK: - Designs
 
     /// Makes a design: its folder with a new canvas.json titled with its name, then its record.
-    /// Its space must exist, and its agent when it names one.
+    /// A design belongs to no space. A system build's project must exist, and the design's agent
+    /// when it names one.
     public func createDesign(_ design: Design) async throws -> DesignSnapshot {
         var design = design
         design.name = design.name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2867,8 +2927,8 @@ public final class SessionServer: @unchecked Sendable {
         guard !store.state.designs.contains(where: { $0.id == design.id }) else {
             throw SessionServerError.conflict("design \(design.id) already exists")
         }
-        guard store.state.spaces.contains(where: { $0.id == design.spaceID }) else {
-            throw SessionServerError.noSuchSpace(design.spaceID)
+        if let source = design.sourceSpaceID, !store.state.spaces.contains(where: { $0.id == source }) {
+            throw SessionServerError.noSuchSpace(source)
         }
         if let agentID = design.agentID, !store.state.agents.contains(where: { $0.id == agentID }) {
             throw SessionServerError.noSuchAgent(agentID)
@@ -2888,7 +2948,8 @@ public final class SessionServer: @unchecked Sendable {
     /// processes stopped, the way Delete Agent does: a design's chat never becomes a thread.
     public func deleteDesign(_ designID: DesignID) async throws {
         try await enqueue {
-            guard self.store.state.designs.contains(where: { $0.id == designID }) else {
+            let state = self.store.state
+            guard state.designs.contains(where: { $0.id == designID }) else {
                 throw SessionServerError.noSuchDesign(designID)
             }
             let drawers = Set(self.store.state.agents.filter { $0.designID == designID }.map(\.id))
@@ -2914,6 +2975,17 @@ public final class SessionServer: @unchecked Sendable {
             }
         }
         try await designs.delete(designID)
+    }
+
+    /// The reserved hidden space design agents live in (`Space.designs()`), made on first use.
+    /// Never listed as a project, and never touched by deleting or reordering a space.
+    public func designsSpaceID() async throws -> SpaceID {
+        try await enqueue {
+            if let existing = self.store.state.designsSpace { return existing.id }
+            let space = Space.designs()
+            try self.mutateState { $0.spaces.append(space) }
+            return space.id
+        }
     }
 
     /// Records which agent draws a design (nil: none; opening it starts one).
@@ -3003,14 +3075,13 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Makes a design from a Claude Design folder on disk (decision 4): the folder's canvas and
     /// project files copied into a new design's folder by `DesignImport`'s rules (the folder is
-    /// only read), then its record in `spaceID`, named by the canvas's title. It has no agent
-    /// yet; opening it starts one.
-    public func importDesign(from folder: URL, spaceID: SpaceID) async throws -> Design {
-        guard state.spaces.contains(where: { $0.id == spaceID }) else { throw SessionServerError.noSuchSpace(spaceID) }
+    /// only read), then its record, named by the canvas's title. Like any design it belongs to
+    /// no space. It has no agent yet; opening it starts one.
+    public func importDesign(from folder: URL) async throws -> Design {
         let id = DesignID()
         let snapshot = try await designs.importFolder(id, from: folder)
         let title = snapshot.index.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let design = Design(id: id, name: title.isEmpty ? "Imported design" : title, spaceID: spaceID,
+        let design = Design(id: id, name: title.isEmpty ? "Imported design" : title,
                             createdAt: Self.nowMilliseconds(), boardCount: snapshot.index.boards.count)
         do {
             try await enqueue {
@@ -3070,7 +3141,8 @@ public final class SessionServer: @unchecked Sendable {
         let state = self.state
         guard let design = state.designs.first(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
         guard DesignPath.isSystemNamespace(write.namespace) else { throw DesignSystemError.invalidNamespace(write.namespace) }
-        let space = state.spaces.first { $0.id == design.spaceID }
+        // A system build reads its project; any other design has no repository.
+        let space = design.sourceSpaceID.flatMap { id in state.spaces.first { $0.id == id } }
         var summary: DesignSystemSummary
         var changed = false
         var notes: [String] = []

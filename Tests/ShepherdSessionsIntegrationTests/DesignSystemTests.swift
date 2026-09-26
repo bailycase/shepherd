@@ -52,8 +52,8 @@ struct DesignSystemTests {
         var stranger: AgentID
     }
 
-    /// A project (a git repository with a stylesheet and a template), two designs in it with
-    /// their agents, and an agent that draws nothing.
+    /// A project (a git repository with a stylesheet and a template), a system build reading it
+    /// and a canvas, with their agents, and an agent that draws nothing.
     private func workspace() async throws -> Workspace {
         let h = try ScratchServer.fresh()
         let repo = try makeScratchRepo(files: [
@@ -68,9 +68,12 @@ struct DesignSystemTests {
         otherDrawer.agent.designID = other
         let stranger = Fixture.agent(in: space, name: "worker")
         try await h.seed(Fixture.workspace([drawer, otherDrawer, stranger], space: space))
-        _ = try await h.server.createDesign(Design(id: design, name: "Checkout funnel", spaceID: space.id,
-                                                   agentID: drawer.agent.id, createdAt: 1_000))
-        _ = try await h.server.createDesign(Design(id: other, name: "Settings", spaceID: space.id,
+        // The first reads the project as a system build (designs stand alone: only a build has
+        // a project to read); the other is a canvas.
+        _ = try await h.server.createDesign(Design(id: design, name: "Checkout funnel",
+                                                   agentID: drawer.agent.id, createdAt: 1_000, buildsSystem: true,
+                                                   sourceSpaceID: space.id))
+        _ = try await h.server.createDesign(Design(id: other, name: "Settings",
                                                    agentID: otherDrawer.agent.id, createdAt: 1_000))
         await drainMainQueue()
         h.broadcasts.withValue { $0.removeAll() }
@@ -218,6 +221,19 @@ struct DesignSystemTests {
         #expect(DesignTests.contents(of: folder) == before)
         let other = try #require(w.h.server.designs.projectFolder(for: w.other))
         #expect(FileManager.default.fileExists(atPath: other.appendingPathComponent("ds/acme-web/tokens.json").path))
+    }
+
+    /// A canvas belongs to no project: a system its agent writes records none, keeps its sources
+    /// unread, and can't be re-synced.
+    @Test func aCanvasHasNoProjectToReadASystemFrom() async throws {
+        let w = try await workspace()
+        defer { w.h.stop() }
+        var write = Self.write(install: false)
+        write.namespace = "sketch"
+        let result = try await w.h.server.writeDesignSystem(write, for: w.other)
+        #expect(result.changed && result.summary.info.spaceID == nil && result.summary.info.syncedAt == nil)
+        #expect(result.summary.info.sources == ["web/static/tokens.css"] && result.notes.isEmpty)
+        await #expect(throws: DesignSystemError.self) { try await w.h.server.resyncDesignSystem("sketch") }
     }
 
     @Test func aSystemInstalledFromElsewhereKeepsItsFolder() async throws {

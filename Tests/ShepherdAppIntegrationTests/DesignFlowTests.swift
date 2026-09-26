@@ -38,7 +38,6 @@ struct DesignFlowTests {
         vm.openNewDesign()
         #expect(vm.shownDestination == .newDesign)
         let draft = vm.newDesign
-        #expect(draft.space == space.id, "the project picked is the only one")
         #expect(draft.blocker(vm) == "Describe the design first.")
         draft.brief = "A checkout funnel dashboard for the product team"
         #expect(draft.blocker(vm) == nil)
@@ -48,8 +47,16 @@ struct DesignFlowTests {
         let design = try #require(vm.state.designs.first)
         let agent = try #require(vm.selectedAgent)
         #expect(design.name == "A checkout funnel dashboard for the product team")
-        #expect(design.spaceID == space.id)
         #expect(design.agentID == agent.id)
+        // A design stands alone: its agent lives in the reserved designs space, in the design's
+        // own folder, and the projects are as they were.
+        let designs = try #require(vm.state.designsSpace)
+        #expect(agent.spaceID == designs.id && designs.hidden)
+        #expect(vm.visibleSpaces == [space])
+        let folder = try #require(app.server.designs.folder(for: design.id))
+        #expect(vm.state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd == folder.path)
+        #expect(!vm.paletteItems.contains { $0.id == "space.\(designs.id.rawValue)" || $0.id == "agent.\(agent.id.rawValue)" },
+                "never a project, and its agent no destination, in the palette")
         #expect(agent.designID == design.id)
         #expect(agent.nameIsFinal, "a design's agent keeps the design's name: no namer")
         #expect(agent.model == app.settings.agentDefaults.model, "the default model")
@@ -70,8 +77,8 @@ struct DesignFlowTests {
         try StubPi.installOnPath()
         let app = try AppHarness()
         defer { app.stop() }
-        let (vm, space) = try await start(app)
-        let design = Design(name: "Onboarding", spaceID: space.id, createdAt: 1_000)
+        let (vm, _) = try await start(app)
+        let design = Design(name: "Onboarding", createdAt: 1_000)
         _ = try await app.server.createDesign(design)
         try await eventuallyOnMain("the design to arrive") { vm.state.designs.count == 1 }
 
@@ -89,6 +96,27 @@ struct DesignFlowTests {
         try await eventuallyOnMain("the design to record its agent") { vm.state.designs.first?.agentID == agent.id }
         #expect(vm.state.agents.count == 1)
         #expect(vm.startingDesignAgents.isEmpty)
+    }
+
+    /// Import Claude Design Folder… makes a standalone design, with or without a project.
+    @Test func importingAFolderMakesAStandaloneDesign() async throws {
+        try StubPi.installOnPath()
+        let app = try AppHarness()
+        defer { app.stop() }
+        app.settings.designToolEnabled = true
+        let vm = try await app.start(with: ShepherdState())
+        vm.designNetwork = .none
+        let folder = try makeScratchDirectory().appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data(#"{"v":3,"title":"Imported","boards":{}}"#.utf8).write(to: folder.appendingPathComponent("canvas.json"))
+
+        vm.importDesignFolder(folder)
+
+        try await eventuallyOnMain("the imported design on screen") { vm.shownDesign?.name == "Imported" }
+        #expect(vm.remoteActionError == nil)
+        #expect(vm.visibleSpaces.isEmpty, "no project was needed or made")
+        let agent = try #require(vm.selectedAgent)
+        #expect(agent.spaceID == vm.state.designsSpace?.id)
     }
 
     @Test func theDesignPagesExistOnlyWhileTheToolIsOn() async throws {
@@ -113,7 +141,7 @@ struct DesignFlowTests {
         let space = Fixture.space(path: app.dir.path)
         var drawer = try await app.liveAgent("Checkout", in: space, order: 0)
         let other = try await app.liveAgent("thread", in: space, order: 1)
-        let design = Design(name: "Checkout", spaceID: space.id, agentID: drawer.agent.id, createdAt: 1_000)
+        let design = Design(name: "Checkout", agentID: drawer.agent.id, createdAt: 1_000)
         drawer.agent.designID = design.id
         let (vm, _) = try await start(app, agents: [drawer, other])
         _ = try await app.server.createDesign(design)
@@ -275,7 +303,7 @@ struct DesignFlowTests {
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         var drawer = try await app.liveAgent("Checkout", in: space)
-        let design = Design(name: "Checkout", spaceID: space.id, agentID: drawer.agent.id, createdAt: 1_000)
+        let design = Design(name: "Checkout", agentID: drawer.agent.id, createdAt: 1_000)
         drawer.agent.designID = design.id
         let (vm, _) = try await start(app, agents: [drawer])
         _ = try await app.server.createDesign(design)

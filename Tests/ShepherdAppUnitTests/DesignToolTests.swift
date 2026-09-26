@@ -73,35 +73,39 @@ struct DesignToolTests {
     private static let app = Space(name: "shepherd", path: "/tmp/shepherd")
     private static let now = Date(timeIntervalSince1970: 1_790_215_200)
 
-    private func design(_ name: String, space: Space = web, edited: Double, boards: Int? = 4, system: String? = nil) -> Design {
-        Design(name: name, spaceID: space.id, systemNamespace: system, createdAt: 1_000,
+    private func design(_ name: String, edited: Double, boards: Int? = 4, system: String? = nil) -> Design {
+        Design(name: name, systemNamespace: system, createdAt: 1_000,
                lastActiveAt: (Self.now.timeIntervalSince1970 - edited) * 1000, boardCount: boards)
     }
 
     @Test func cardsAreMostRecentlyEditedFirstWithTheirSystemAndCounts() {
-        let old = design("Onboarding", space: Self.app, edited: 3 * 3600, boards: 1)
-        let new = design("Checkout funnel dashboard", edited: 7200)
+        let old = design("Onboarding", edited: 3 * 3600, boards: 1, system: "night-watch")
+        let new = design("Checkout funnel dashboard", edited: 7200, system: "acme-web")
         let model = DesignsPageModel.make(designs: [old, new], spaces: [Self.web, Self.app], firstBoards: [:], filter: "",
                                           selection: new.id, now: Self.now)
         #expect(model.cards.map(\.name) == ["Checkout funnel dashboard", "Onboarding"])
-        #expect(model.cards.map(\.system) == ["acme-web", "shepherd"])
+        #expect(model.cards.map(\.system) == ["acme-web", "night-watch"])
         #expect(model.cards.map(\.detail) == ["4 boards", "1 board"])
         #expect(model.cards.map(\.edited) == ["edited 2h ago", "edited 3h ago"])
         #expect(model.cards.map(\.selected) == [true, false])
         #expect(model.systems.isEmpty, "the systems are the host's, never the designs' projects")
     }
 
-    @Test func aDesignsOwnSystemWinsOverItsProject() {
+    /// Designs stand alone: a card names its system or nothing, never a project, and the page
+    /// never offers the reserved designs space as a project.
+    @Test func aDesignWithoutASystemNamesNoProject() {
         let model = DesignsPageModel.make(designs: [design("A", edited: 60, system: "night-watch"), design("B", edited: 120)],
-                                          spaces: [Self.web], firstBoards: [:], filter: "", selection: nil, now: Self.now)
-        #expect(model.cards.map(\.system) == ["night-watch", "acme-web"])
+                                          spaces: [Self.web, Space.designs()], firstBoards: [:], filter: "", selection: nil,
+                                          now: Self.now)
+        #expect(model.cards.map(\.system) == ["night-watch", nil])
+        #expect(model.projects.map(\.name) == ["acme-web"], "the designs space is never a project")
     }
 
-    @Test(arguments: [("checkout", ["Checkout funnel dashboard"]), ("SHEPHERD", ["Onboarding"]), ("  ", ["Checkout funnel dashboard", "Onboarding"]),
-                      ("nothing", [])])
+    @Test(arguments: [("checkout", ["Checkout funnel dashboard"]), ("ACME", ["Onboarding"]), ("  ", ["Checkout funnel dashboard", "Onboarding"]),
+                      ("shepherd", []), ("nothing", [])])
     func theFilterMatchesNamesAndSystems(filter: String, names: [String]) {
         let model = DesignsPageModel.make(designs: [design("Checkout funnel dashboard", edited: 60),
-                                                    design("Onboarding", space: Self.app, edited: 120)],
+                                                    design("Onboarding", edited: 120, system: "acme-web")],
                                           spaces: [Self.web, Self.app], firstBoards: [:], filter: filter, selection: nil, now: Self.now)
         #expect(model.cards.map(\.name) == names)
         #expect(model.noMatch == names.isEmpty)
@@ -486,7 +490,7 @@ struct DesignToolTests {
 
     private func sidebar(designs: Bool) -> (SidebarSource, Agent, Design) {
         var drawer = Fixture.agent("Checkout funnel dashboard", in: Self.web).agent
-        let design = Design(name: "Checkout funnel dashboard", spaceID: Self.web.id, agentID: drawer.id, createdAt: 1_000,
+        let design = Design(name: "Checkout funnel dashboard", agentID: drawer.id, createdAt: 1_000,
                             lastActiveAt: 55, boardCount: 4)
         drawer.designID = design.id
         drawer.lastActiveAt = 60
