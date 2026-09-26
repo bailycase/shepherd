@@ -167,10 +167,11 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
         }
     }
 
-    /// The board actions over their board, kept inside the canvas.
+    /// The board actions over their board, clear of every label on screen, kept inside the canvas.
     @ViewBuilder private var actionsLayer: some View {
         if let actions, let board = boards.first(where: { $0.id == actions.board }),
-           let origin = NWBoardActions.origin(over: viewport.screen(board.frame), bar: actionsSize, canvas: size) {
+           let origin = NWBoardActions.origin(over: viewport.screen(board.frame), bar: actionsSize, canvas: size,
+                                              labels: boards.visible(in: viewport, size: size).compactMap { $0.labelRect(in: viewport) }) {
             NWBoardActions(size: .compact, actions: actions.actions)
                 .fixedSize()
                 .onGeometryChange(for: CGSize.self) { $0.size } action: { actionsSize = $0 }
