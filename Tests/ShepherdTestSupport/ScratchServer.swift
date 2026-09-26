@@ -28,7 +28,7 @@ public final class ScratchServer: @unchecked Sendable {
                                stateURL: self.dir.appendingPathComponent("state.json"),
                                modelCatalog: modelCatalog,
                                skillsDirectory: self.dir.appendingPathComponent("agent-skills", isDirectory: true),
-                               piSkills: piSkills,
+                               piSkills: piSkills.map { .reader($0) } ?? .off,
                                trash: { url in try ScratchServer.moveToTrash(url, trash: trash) })
         let broadcasts = broadcasts
         server.onStateChanged = { state in broadcasts.withValue { $0.append(state) } }
