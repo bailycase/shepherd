@@ -89,6 +89,12 @@ final class ShepherdViewModel {
     @ObservationIgnored var visibleDesigns: Set<DesignID> = []
     /// Designs whose agent is being started, so a second open waits for it.
     @ObservationIgnored var startingDesignAgents: Set<DesignID> = []
+    /// Each remote design's canvas, kept for the app's run like a local one's.
+    @ObservationIgnored var remoteDesignScreens: [RemoteDesignRef: DesignScreenModel] = [:]
+    /// Each remote host's renderers, made when one of its designs is first drawn.
+    @ObservationIgnored var remoteDesignRenderings: [UUID: DesignRendering] = [:]
+    /// Remote designs on screen: their hosts push changes for these alone.
+    @ObservationIgnored var visibleRemoteDesigns: Set<RemoteDesignRef> = []
     /// This Mac's design systems as last read (DZSystem, the Designs page's systems).
     let designSystems = DesignSystemCatalog()
     /// The system the Design systems page shows (a system without an agent of its own; a
@@ -501,12 +507,16 @@ final class ShepherdViewModel {
             return { [weak self] in self?.startingCheckoutUsers.removeValue(forKey: id) }
         }
         self.remoteHosts.onDropError = { [weak self] in self?.remoteActionError = $0 }
+        self.remoteHosts.onDesignChanged = { [weak self] host, design, revision, comments in
+            self?.remoteDesignChanged(RemoteDesignRef(hostID: host, designID: design), revision: revision, comments: comments)
+        }
         self.remoteHosts.onProjectionChanged = { [weak self] in
             guard let self else { return }
             self.notifyRemote()
             self.remoteThreadStores.prune(live: Set(self.remoteHosts.connections.flatMap { connection in
                 connection.state.agents.map { RemoteAgentRef(hostID: connection.id, agentID: $0.id) }
             }))
+            self.pruneRemoteDesigns()
             for (target, review) in self.remoteReviews where review.hostReviewPane {
                 guard let connection = self.remoteHosts.connections.first(where: { $0.id == target.hostID }),
                       connection.phase == .connected,

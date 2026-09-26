@@ -292,6 +292,14 @@ struct WorkspaceHeaderView: View {
                let agent = connection.state.agents.first(where: { $0.id == remote.agentID }) {
                 if vm.remoteInspectingAgent == remote {
                     PlainHeader(title: "\(agent.name) · terminal", leadingInset: leadingInset, showSidebar: showSidebar)
+                } else if let (_, design) = vm.remoteDesign(drawnBy: remote) {
+                    // The host's design: its system's page and Export stay on the host for now.
+                    let space = connection.state.spaces.first { $0.id == design.spaceID }?.name
+                    DesignToolbar(name: design.name, system: design.systemNamespace ?? space ?? "design", leadingInset: leadingInset,
+                                  showSidebar: showSidebar, designs: { vm.openDestination(.designs) },
+                                  screen: vm.remoteDesignScreen(RemoteDesignRef(hostID: remote.hostID, designID: design.id)))
+                        .equatable()
+                        .id(remote)
                 } else {
                     let space = connection.state.spaces.first { $0.id == agent.spaceID }?.name
                     threadHeader(store: vm.remoteThreadStores.store(for: remote), owner: .remote(remote),

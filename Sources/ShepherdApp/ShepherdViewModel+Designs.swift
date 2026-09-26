@@ -49,11 +49,12 @@ extension ShepherdViewModel {
                                   uniquingKeysWith: { first, _ in first })
         let inputs = DesignsPageInputs(designs: state.designs, spaces: state.spaces, firstBoards: firstBoards,
                                        filter: designsPageFilter, selection: designsPageSelection, systems: systems,
-                                       swatches: swatches, minute: Int(now.timeIntervalSince1970 / 60))
+                                       swatches: swatches, hosts: remoteDesignSections, minute: Int(now.timeIntervalSince1970 / 60))
         if let cached = designsPageCache, cached.inputs == inputs { return cached.model }
-        let model = DesignsPageModel.make(designs: inputs.designs, spaces: inputs.spaces, firstBoards: inputs.firstBoards,
+        var model = DesignsPageModel.make(designs: inputs.designs, spaces: inputs.spaces, firstBoards: inputs.firstBoards,
                                           filter: inputs.filter, selection: inputs.selection, now: now,
                                           systems: inputs.systems, swatches: inputs.swatches)
+        model.hosts = inputs.hosts
         designsPageCache = (inputs, model)
         return model
     }
