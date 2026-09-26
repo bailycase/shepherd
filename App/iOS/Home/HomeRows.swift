@@ -51,9 +51,10 @@ extension FleetAttention {
         }
     }
 
-    var symbol: String {
+    /// The card's origin glyph; a thread's is the glowing dot (nil).
+    var symbol: String? {
         switch origin {
-        case .thread: "bubble.left"
+        case .thread: nil
         case .automation: "bolt"
         case .subagent: "arrow.triangle.branch"
         }
@@ -140,7 +141,7 @@ struct AttentionReplies: View {
         switch item.reply {
         case .choose(let options):
             ForEach(Array(options.enumerated()), id: \.offset) { index, option in
-                Button(option) { Task { await feed.answer(item, .select(value: option)) } }
+                Button(option) { Task { await feed.choose(item, option) } }
                     .buttonStyle(.nw(index == 0 ? .primary : .secondary, size: size))
                     .disabled(busy)
             }

@@ -272,6 +272,8 @@ final class RPCThreadState {
     private(set) var turnChangesSet = false
     /// The server held back a "done" report because the queue was about to go.
     var doneHeld = false
+    /// pi is retrying a failed request (`auto_retry_start` until `auto_retry_end`).
+    private(set) var retry: NativeThreadRetry?
 
     /// Where messages Shepherd delivered came from, by entry id (persisted per pi session).
     let originStore: ThreadOriginStore?
@@ -320,8 +322,10 @@ final class RPCThreadState {
         refreshStats(timeout: timeout)
         session.request(.getCommands, timeout: timeout) { [weak self] result in
             guard let self, case .success(let response) = result, response.success else { return }
-            self.commands = Self.projectCommands(response.data?["commands"])
+            let listed = response.data?["commands"]
+            self.commands = Self.projectCommands(listed)
             self.commit()
+            self.readArgumentHints(Self.promptTemplateFiles(listed))
         }
     }
 
@@ -346,6 +350,7 @@ final class RPCThreadState {
             refreshStats()
         case .agentSettled:
             running = false
+            retry = nil
             askingCalls.removeAll()
             settled()
             onTurnEvent?(.settled)
@@ -416,6 +421,11 @@ final class RPCThreadState {
             compactionStarted(reason: NativeCompactionReason(pi: reason))
         case .compactionEnd(let reason, let result, let aborted, let willRetry, let error):
             compactionEnded(reason: NativeCompactionReason(pi: reason), result: result, aborted: aborted, willRetry: willRetry, error: error)
+        case .autoRetryStart(let attempt, let maxAttempts, let delayMs, _):
+            retry = NativeThreadRetry(attempt: attempt, maxAttempts: maxAttempts,
+                                      retryAt: (Date().timeIntervalSince1970 * 1000 + max(0, delayMs)).rounded())
+        case .autoRetryEnd:
+            retry = nil
         case .turnStart, .turnEnd, .unknown:
             break
         }
@@ -877,6 +887,8 @@ final class RPCThreadState {
     }
 
     /// get_commands → capped, byte-limited list. Over-long names are dropped, descriptions clipped.
+    /// An `argumentHint` pi sends is kept (pi 0.87.1 sends none; `readArgumentHints` reads a
+    /// prompt template's from its file).
     static func projectCommands(_ value: JSONValue?) -> [NativeCommand] {
         guard let items = value?.arrayValue else { return [] }
         var result: [NativeCommand] = []
@@ -886,10 +898,81 @@ final class RPCThreadState {
             if let text = description, text.utf8.count > NativeCommand.maxDescriptionBytes {
                 description = String(decoding: Array(text.utf8.prefix(NativeCommand.maxDescriptionBytes)), as: UTF8.self)
             }
-            result.append(NativeCommand(name: name, description: description, source: item["source"]?.stringValue))
+            result.append(NativeCommand(name: name, description: description, source: item["source"]?.stringValue,
+                                        arguments: argumentHint(item["argumentHint"]?.stringValue)))
             if result.count == NativeCommand.maxCount { break }
         }
         return result
+    }
+
+    /// A hint worth showing: trimmed, one line, within `NativeCommand.maxArgumentsBytes`.
+    static func argumentHint(_ raw: String?) -> String? {
+        guard let text = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty, !text.contains("\n"),
+              text.utf8.count <= NativeCommand.maxArgumentsBytes else { return nil }
+        return text
+    }
+
+    /// The prompt templates get_commands listed, by name, with the file pi read each from.
+    static func promptTemplateFiles(_ value: JSONValue?) -> [String: String] {
+        var files: [String: String] = [:]
+        for item in value?.arrayValue ?? [] where item["source"]?.stringValue == "prompt" && item["argumentHint"] == nil {
+            guard let name = item["name"]?.stringValue, let path = item["sourceInfo"]?["path"]?.stringValue,
+                  path.hasSuffix(".md") else { continue }
+            files[name] = path
+            if files.count == NativeCommand.maxCount { break }
+        }
+        return files
+    }
+
+    /// How much of a template file is read for its frontmatter.
+    static let frontmatterBytes = 4096
+
+    /// A prompt template's `argument-hint` from its YAML frontmatter, as pi reads it for its own
+    /// autocomplete ("argument-hint: \"[tag]\""); nil when the file has none.
+    static func argumentHint(frontmatter text: String) -> String? {
+        var lines = text.split(separator: "\n", omittingEmptySubsequences: false).makeIterator()
+        guard lines.next()?.trimmingCharacters(in: .whitespaces) == "---" else { return nil }
+        while let line = lines.next() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed == "---" { return nil }
+            guard trimmed.hasPrefix("argument-hint:") else { continue }
+            var value = trimmed.dropFirst("argument-hint:".count).trimmingCharacters(in: .whitespaces)
+            if value.count >= 2, let first = value.first, first == value.last, first == "\"" || first == "'" {
+                value = String(value.dropFirst().dropLast())
+            }
+            return argumentHint(value)
+        }
+        return nil
+    }
+
+    /// Reads each prompt template's argument hint off the queue (small files, but file work all
+    /// the same), then adds them to the commands still listed, and commits once if any changed.
+    private func readArgumentHints(_ files: [String: String]) {
+        guard !files.isEmpty else { return }
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            var hints: [String: String] = [:]
+            for (name, path) in files {
+                guard let handle = FileHandle(forReadingAtPath: path) else { continue }
+                defer { try? handle.close() }
+                let head = (try? handle.read(upToCount: Self.frontmatterBytes)) ?? Data()
+                if let hint = Self.argumentHint(frontmatter: String(decoding: head, as: UTF8.self)) { hints[name] = hint }
+            }
+            guard !hints.isEmpty, let self else { return }
+            self.queue.async { [weak self] in
+                guard let self, var commands = self.commands else { return }
+                var changed = false
+                for index in commands.indices where commands[index].arguments == nil {
+                    if let hint = hints[commands[index].name] {
+                        commands[index].arguments = hint
+                        changed = true
+                    }
+                }
+                if changed {
+                    self.commands = commands
+                    self.commit()
+                }
+            }
+        }
     }
 
     /// pi switched sessions (new_session / switch): nothing from the previous
@@ -1207,6 +1290,7 @@ final class RPCThreadState {
         hasher.combine(commandsHash)
         hasher.combine(subagentsHash)
         hasher.combine(turnChangesHash)
+        hasher.combine(retry)
         hasher.combine(queueHash())
         #if DEBUG
         bytesHashedByLastCommit = bytesHashedSinceCommit
@@ -1270,7 +1354,7 @@ final class RPCThreadState {
             dialogs: [], widgets: widgets.map(\.value), messages: [], provisional: [],
             clipped: projectionClipped || dialogs.contains { $0.unavailable == "payload-limit" },
             runtime: "rpc", stats: stats, commands: commands, subagents: subagents, context: context,
-            turnChanges: turnChanges
+            turnChanges: turnChanges, retry: retry
         )
         // The rest encodes without the queue, which adds `,"queue":` and its cached size.
         let queue = queueValue
@@ -1560,6 +1644,10 @@ final class RPCThreadState {
         // A stopped run's "Request was aborted" says nothing its `aborted` status does not.
         if let error = message.errorMessage, !error.isEmpty, message.stopReason != "aborted" {
             result.blocks.append(NativeThreadBlock(kind: .text, text: clip(error)))
+        }
+        if message.stopReason == "error" {
+            result.provider = message.provider.map(clip)
+            result.model = message.model.map(clip)
         }
         if message.role == "compactionSummary" {
             result.compaction = NativeCompaction(phase: .done, tokensBefore: message.tokensBefore.map { Int($0) },

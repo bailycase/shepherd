@@ -174,6 +174,10 @@ final class FixtureRunner {
         defaults.removePersistentDomain(forName: suite)
         let records = hosts.map { RemoteHostRecord(id: $0.data.id, name: $0.data.name, address: "127.0.0.1", port: $0.port) }
         defaults.set(RemoteHostRecord.encodeList(records), forKey: MobileHosts.recordsKey)
+        // An offline host was last seen a few hours ago (More's and Where it runs' "last seen").
+        let seen = Date().addingTimeInterval(-3 * 3_600).timeIntervalSince1970
+        defaults.set(Dictionary(uniqueKeysWithValues: hosts.filter { !$0.data.online }.map { ($0.data.id.uuidString, seen) }),
+                     forKey: MobileHosts.lastSeenKey)
         let tokens = HostTokens.memory(Dictionary(uniqueKeysWithValues: records.map { ($0.id, FixtureHostData.token) }))
         let appearance = MobileAppearance(defaults: defaults)
         appearance.mode = environment["FIXTURE_SCHEME"] == "light" ? .light : .dark

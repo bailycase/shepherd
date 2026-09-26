@@ -161,14 +161,19 @@ struct SubagentTrayTests {
 
     // MARK: Answering
 
-    @Test func aQuestionAnsweredFromTheTrayOffersItsAnswersElseAReply() throws {
+    @Test func aQuestionAnsweredFromTheTrayOffersItsAnswersANoteAndItsOwnWordsElseAReply() throws {
         var run = Self.run("r", role: "reviewer", needsAttention: true)
         run.question = ChildQuestion(text: "Rename or replace?", options: ["Replace everywhere", "Rename new ones"])
-        let dialog = try #require(nativeSubagentQuestionDialog(run))
-        #expect(dialog.kind == .select && dialog.title == "Rename or replace?" && dialog.options == ["Replace everywhere", "Rename new ones"])
+        let prompt = try #require(nativeSubagentQuestionPrompt(run))
+        #expect(prompt.asker == .subagent("reviewer") && prompt.question == "Rename or replace?")
+        #expect(prompt.options.map(\.title) == ["Replace everywhere", "Rename new ones"])
+        #expect(prompt.takesNote && prompt.otherNumber == 3 && prompt.showsAnswer)
         run.question = ChildQuestion(text: "Which base?")
-        let reply = try #require(nativeSubagentQuestionDialog(run))
-        #expect(reply.kind == .input && reply.placeholder == "Reply to reviewer…")
-        #expect(nativeSubagentQuestionDialog(Self.run("w")) == nil)
+        let reply = try #require(nativeSubagentQuestionPrompt(run))
+        #expect(reply.kind == .open && reply.placeholder == "Reply to reviewer…")
+        run.question = nil
+        run.attentionText = nil
+        #expect(try #require(nativeSubagentQuestionPrompt(run)).question == "Waiting on your answer")
+        #expect(nativeSubagentQuestionPrompt(Self.run("w")) == nil)
     }
 }

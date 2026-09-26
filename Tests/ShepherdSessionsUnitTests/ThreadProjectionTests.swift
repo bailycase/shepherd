@@ -424,6 +424,36 @@ struct ThreadProjectionTests {
         #expect(projected.allSatisfy { $0.description?.utf8.count == NativeCommand.maxDescriptionBytes })
     }
 
+    @Test func anArgumentHintPiSendsIsKept() throws {
+        let value: JSONValue = try decode(#"""
+        [{"name":"release-notes","source":"prompt","argumentHint":" [tag] "},
+         {"name":"long","source":"prompt","argumentHint":"\#(String(repeating: "x", count: NativeCommand.maxArgumentsBytes + 1))"}]
+        """#)
+        #expect(RPCThreadState.projectCommands(value).map(\.arguments) == ["[tag]", nil])
+    }
+
+    @Test func promptTemplatesAreReadForHintsFromTheirFiles() throws {
+        let value: JSONValue = try decode(#"""
+        [{"name":"session-name","source":"extension","sourceInfo":{"path":"/x/ext.ts"}},
+         {"name":"release-notes","source":"prompt","sourceInfo":{"path":"/p/release-notes.md"}},
+         {"name":"hinted","source":"prompt","argumentHint":"[x]","sourceInfo":{"path":"/p/hinted.md"}},
+         {"name":"pathless","source":"prompt"}]
+        """#)
+        #expect(RPCThreadState.promptTemplateFiles(value) == ["release-notes": "/p/release-notes.md"])
+    }
+
+    @Test(arguments: [
+        ("---\ndescription: Draft notes\nargument-hint: \"[tag]\"\n---\nBody", "[tag]" as String?),
+        ("---\nargument-hint: <session> [--all]\n---\n", "<session> [--all]"),
+        ("---\nargument-hint: '[file]'\n---\n", "[file]"),
+        ("---\ndescription: none\n---\nargument-hint: [late]\n", nil),
+        ("argument-hint: [no frontmatter]\n", nil),
+        ("---\nargument-hint:\n---\n", nil),
+    ])
+    func aTemplatesHintComesFromItsFrontmatter(text: String, hint: String?) {
+        #expect(RPCThreadState.argumentHint(frontmatter: text) == hint)
+    }
+
     @Test(arguments: [nil, JSONValue.string("not a list"), .array([.object(["name": .string("")]), .number(3)])])
     func malformedCommandListsProjectToNothing(value: JSONValue?) {
         #expect(RPCThreadState.projectCommands(value).isEmpty)

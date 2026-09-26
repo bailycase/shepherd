@@ -433,7 +433,7 @@ Sources/
     ShepherdViewModel(+Navigation, +Creation, +Workspace, +Spaces, +Palette, +Shell,
       +RightPane, +Review, +ChildInspector, +Automations, +Dialogs, +RemoteActions,
       +RemoteInspection, +RemoteWorktrees, +RemoteAutomations, +Terminal, +HostSettings,
-      +Skills, +Pages)
+      +Skills, +Pages, +AgentMenu)
     Pages/             the sidebar destinations' pages: AutomationsPage and HostsPage (views over
                        AutomationsPageModel and HostsPageModel, derived per change), their
                        destinations (PageDestinations: runs read, sheets), AutomationEditorSheet,
