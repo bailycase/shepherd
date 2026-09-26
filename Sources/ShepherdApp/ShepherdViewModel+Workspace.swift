@@ -15,6 +15,7 @@ extension ShepherdViewModel {
             selectedSpaceID: selectedSpaceID,
             selectedAgentID: selectedAgentID,
             remoteSelectionActive: selectedRemoteAgent != nil,
+            destination: destination,
             parkedTabIDs: parkedTabIDs,
             pendingMountTabIDs: pendingMountTabIDs
         )

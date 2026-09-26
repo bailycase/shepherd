@@ -4,7 +4,8 @@ import ShepherdUI
 
 // MARK: Page chrome
 
-/// A settings page: the title in `display`, a one-line explanation, then its groups.
+/// A settings page: the title in Geist 22/600, a one-line explanation in `body` (it may carry
+/// inline markup, `NWMarkupText`), then its groups 28pt apart.
 struct SettingsPage<Content: View>: View {
     let title: String
     let explanation: String
@@ -12,23 +13,34 @@ struct SettingsPage<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
-            VStack(alignment: .leading, spacing: NW.Space.s) {
-                Text(title)
-                    .nwText(.display)
-                    .foregroundStyle(Color.nw.textPrimary)
-                    .accessibilityAddTraits(.isHeader)
-                Text(explanation)
-                    .nwText(.body)
-                    .foregroundStyle(Color.nw.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            SettingsHeader(title: title, explanation: explanation)
             content
         }
     }
 }
 
-/// A titled group: the section label, a group card of rows (rules inserted between them), and
-/// an optional footnote under it.
+/// A page's title and the line under it that says what the page is for.
+struct SettingsHeader: View {
+    let title: String
+    let explanation: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NW.Space.xs) {
+            Text(title)
+                .font(.nwSans(AppLayout.settingsTitleSize, .semibold))
+                .tracking(AppLayout.settingsTitleSize * AppLayout.settingsTitleTracking)
+                .foregroundStyle(Color.nw.textPrimary)
+                .accessibilityAddTraits(.isHeader)
+            NWMarkupText(explanation, size: NWTextStyle.body.size, codeSize: NWTextStyle.code.size,
+                           lineHeight: NWTextStyle.body.lineHeight)
+                .foregroundStyle(Color.nw.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// A titled group: the section label, a flat group card of rows (rules inserted between them),
+/// and an optional footnote under it.
 struct SettingsGroup<Content: View>: View {
     let title: String
     var footnote: String?
@@ -37,7 +49,7 @@ struct SettingsGroup<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NW.Space.m) {
             NWSectionHeader(title).padding(.horizontal, NW.Space.xs)
-            NWGroupCard { content }
+            NWGroupCard(fill: Color.nw.bgWindow) { content }
             if let footnote {
                 SettingsNote(text: footnote).padding(.horizontal, NW.Space.xs)
             }
@@ -45,15 +57,18 @@ struct SettingsGroup<Content: View>: View {
     }
 }
 
-/// One row: title, optional description and inline problem, control trailing.
+/// One row: title, optional description (inline markup: `` `code` `` and `**option**`) and
+/// inline problem, control trailing. `problemHelp` is the problem's tooltip: the technical
+/// reason, never the message.
 struct SettingsRow<Control: View>: View {
     let title: String
     var subtitle: String?
     var problem: String?
+    var problemHelp: String?
     @ViewBuilder var control: Control
 
     var body: some View {
-        NWCardRow(title, description: subtitle, problem: problem) { control }
+        NWCardRow(title, description: subtitle, problem: problem, problemHelp: problemHelp, style: .settings) { control }
             .accessibilityElement(children: .contain)
     }
 }
@@ -65,7 +80,7 @@ struct SettingsActionRow<Leading: View, Actions: View>: View {
     @ViewBuilder var actions: Actions
 
     var body: some View {
-        HStack(alignment: .center, spacing: NW.Space.xl) {
+        HStack(alignment: .center, spacing: NW.Space.xxl) {
             leading
             Spacer(minLength: 0)
             HStack(spacing: NW.Space.s) { actions }
@@ -82,13 +97,14 @@ extension SettingsActionRow where Leading == EmptyView {
     }
 }
 
-/// Footnote under a group: caption sans in `textTertiary`, never a mono paragraph.
+/// Footnote under a group: Geist 12/1.5 in `textTertiary`, a sentence or two about the whole
+/// group, never a mono paragraph.
 struct SettingsNote: View {
     let text: String
 
     var body: some View {
         Text(text)
-            .nwText(.caption)
+            .nwText(size: AppLayout.settingsFootnoteSize, lineHeight: AppLayout.settingsFootnoteLineHeight)
             .foregroundStyle(Color.nw.textTertiary)
             .fixedSize(horizontal: false, vertical: true)
     }

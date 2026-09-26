@@ -36,6 +36,8 @@ final class PreviewWorkspace {
             // Fixtures set the checkout each header shows.
             checkoutReader: nil
         )
+        // The boards' footer, never this machine's user and name.
+        vm.sidebarFooterIdentity = ("Baily", SidebarDerivation.footerDetail(computerName: "build-01"))
     }
 
     /// Replaces the server's workspace and waits for the view model to adopt it.

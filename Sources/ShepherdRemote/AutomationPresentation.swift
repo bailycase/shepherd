@@ -305,7 +305,7 @@ public struct AutomationsModel: Equatable, Sendable {
     }
 
     /// "Sep 24 02:00".
-    static func stamp(_ date: Date, timeZone: TimeZone, locale: Locale) -> String {
+    public static func stamp(_ date: Date, timeZone: TimeZone, locale: Locale) -> String {
         let calendar = gregorian(timeZone)
         let parts = calendar.dateComponents([.month, .day], from: date)
         let formatter = DateFormatter()

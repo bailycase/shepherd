@@ -70,7 +70,7 @@ A focused Ghostty surface consumes any key equivalent that matches one of its bi
 - ⇧⌘[ and ⇧⌘], which the app does not bind but Ghostty would swallow as no-op tab switches
 - agent navigation and turn jumps
 - sidebar, right pane, model picker, stop, and inspect
-- ⌘1–9 and ⌃⇧1–9, in both logical and physical spellings
+- ⌘1–9, in both logical and physical spellings
 - ⌘, (both spellings), ⌘Q, and ⌘K
 
 `extraUnbinds` carries the user's rebound chords from `KeybindingsStore`. Leave Ghostty's

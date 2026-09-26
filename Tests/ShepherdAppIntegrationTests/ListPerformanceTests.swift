@@ -26,6 +26,19 @@ struct ListPerformanceTests {
         Int(sidebarSize.height / (NWDensity.standard.rowHeight + AppLayout.sidebarRowSpacing)) + 1
     }
 
+    /// The fleet in an off-screen sidebar, settled.
+    private func openSidebar(_ app: AppHarness) async throws -> (ShepherdViewModel, OffscreenWindow) {
+        let vm = try await app.start(with: ListFixtures.fleet(in: app.dir))
+        let window = OffscreenWindow(size: Self.sidebarSize, dark: true, SidebarView(vm: vm))
+        ListPerf.settle(window)
+        return (vm, window)
+    }
+
+    /// The Recents rows on screen at the top of the list (Needs you's come first).
+    private func recentsOnScreen(_ vm: ShepherdViewModel) -> [SidebarListRow] {
+        Array(vm.sidebarLists.all.prefix(Self.sidebarRowsOnScreen / 2)).filter { row in vm.sidebarLists.recents.contains { $0.id == row.id } }
+    }
+
     @Test func openingTheSidebarOverThreeHundredAgentsBuildsOnlyTheRowsOnScreen() async throws {
         let app = try AppHarness()
         defer { app.stop() }
@@ -36,76 +49,85 @@ struct ListPerformanceTests {
             ListPerf.settle(window)
         }
         defer { window.close() }
-        let built = rows["sidebar.row", default: 0] + rows["sidebar.spaceRow", default: 0]
-        #expect(built <= 2 * Self.sidebarRowsOnScreen, "\(rows)")
+        #expect(rows["sidebar.row", default: 0] <= 2 * Self.sidebarRowsOnScreen, "\(rows)")
+        #expect(rows["sidebar.lists", default: 0] <= 1, "one derivation for the whole list: \(rows)")
     }
 
-    /// A status report or a selection redraws the rows it changed, never the rest of the fleet.
-    @Test func statusReportsAndSelectionRedrawOnlyTheRowsTheyChange() async throws {
+    /// Scrolling Recents builds the rows that come into view, never the whole fleet.
+    @Test func scrollingRecentsBuildsOnlyTheRowsComingIntoView() async throws {
         let app = try AppHarness()
         defer { app.stop() }
-        let vm = try await app.start(with: ListFixtures.fleet(in: app.dir))
-        let window = OffscreenWindow(size: Self.sidebarSize, dark: true, SidebarView(vm: vm))
+        let (_, window) = try await openSidebar(app)
         defer { window.close() }
-        ListPerf.settle(window)
-        // The first rows in sidebar order: on screen.
-        let shown = Array(vm.orderedAgents.prefix(6))
+        let scroll = try #require(ListPerf.scrollView(in: window))
+        let step = NWDensity.standard.rowHeight * 4
+
+        var moved: CGFloat = 0
+        let rows = ListPerf.counting { moved = ListPerf.scroll(window, scroll, step: step, steps: 20).distance }
+        let arriving = Int(moved / (NWDensity.standard.rowHeight + AppLayout.sidebarRowSpacing)) + 1
+        #expect(moved > 0)
+        #expect(rows["sidebar.row", default: 0] <= 2 * (arriving + Self.sidebarRowsOnScreen), "\(rows)")
+        #expect(rows["sidebar.lists", default: 0] == 0, "scrolling derives nothing: \(rows)")
+    }
+
+    /// A status report redraws the row it changed; the order holds (only a turn starting or
+    /// ending moves a row), the destinations never redraw, and the lists derive once.
+    @Test func aStatusReportRedrawsOnlyItsRow() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, window) = try await openSidebar(app)
+        defer { window.close() }
+        let shown = recentsOnScreen(vm).prefix(6)
+        let order = vm.sidebarLists.recents.map(\.id)
 
         let rows = ListPerf.counting {
-            for agent in shown {
+            for row in shown {
                 var next = vm.state
-                if let index = next.agents.firstIndex(where: { $0.id == agent.id }) {
+                if let index = next.agents.firstIndex(where: { $0.id == row.id.agentID }) {
                     next.agents[index].status = next.agents[index].status == .working ? .done : .working
                 }
                 ListPerf.time(window) { vm.adopt(next) }
-                ListPerf.time(window) { vm.selectAgent(agent.id) }
             }
         }
-        // Per round: the reported row, and the rows the selection leaves and lands on (the space
-        // rows count their agents' states).
-        #expect(rows["sidebar.row", default: 0] + rows["sidebar.spaceRow", default: 0] <= shown.count * 4, "\(rows)")
+        #expect(vm.sidebarLists.recents.map(\.id) == order)
+        #expect(rows["sidebar.row", default: 0] <= shown.count * 2, "\(rows)")
+        #expect(rows["sidebar.destination", default: 0] == 0, "\(rows)")
+        #expect(rows["sidebar.lists", default: 0] <= shown.count, "\(rows)")
     }
 
-    /// A report or a selection redraws the tree from one pass over the agents, never a scan of
-    /// every agent for each space (40 spaces: 40 scans per broadcast).
-    @Test func statusReportsAndSelectionGroupTheFleetInOnePass() async throws {
+    /// One row changing (a settled name) redraws that row alone.
+    @Test func oneRowChangingRedrawsThatRowAlone() async throws {
         let app = try AppHarness()
         defer { app.stop() }
-        let vm = try await app.start(with: ListFixtures.fleet(in: app.dir))
-        let window = OffscreenWindow(size: Self.sidebarSize, dark: true, SidebarView(vm: vm))
+        let (vm, window) = try await openSidebar(app)
         defer { window.close() }
-        ListPerf.settle(window)
-        let shown = Array(vm.orderedAgents.prefix(6))
+        let shown = recentsOnScreen(vm).prefix(6)
 
-        let passes = ListPerf.counting {
-            for agent in shown {
+        let rows = ListPerf.counting {
+            for row in shown {
                 var next = vm.state
-                if let index = next.agents.firstIndex(where: { $0.id == agent.id }) {
-                    next.agents[index].status = next.agents[index].status == .working ? .done : .working
+                if let index = next.agents.firstIndex(where: { $0.id == row.id.agentID }) {
+                    next.agents[index].name += " (renamed)"
                 }
                 ListPerf.time(window) { vm.adopt(next) }
-                ListPerf.time(window) { vm.selectAgent(agent.id) }
             }
         }
-        #expect(passes["sidebar.spaceScan", default: 0] == 0, "\(passes)")
+        #expect(rows["sidebar.row", default: 0] <= shown.count * 2, "\(rows)")
     }
 
-    /// Selecting an agent opens and reveals its row from the memoized forest: rebuilding the
-    /// forest searches every pair of spaces and resolves each path on disk.
-    @Test func selectingAnAgentRevealsItFromTheMemoizedForest() async throws {
+    /// A selection moving redraws the row it leaves and the row it lands on.
+    @Test func aSelectionMovingRedrawsTheTwoRowsItTouches() async throws {
         let app = try AppHarness()
         defer { app.stop() }
-        let vm = try await app.start(with: ListFixtures.fleet(in: app.dir))
-        let window = OffscreenWindow(size: Self.sidebarSize, dark: true, SidebarView(vm: vm))
+        let (vm, window) = try await openSidebar(app)
         defer { window.close() }
-        ListPerf.settle(window)
-        let agents = Array(vm.orderedAgents.prefix(3)) + Array(vm.orderedAgents.suffix(3))
+        let shown = recentsOnScreen(vm).prefix(6)
 
-        // Each update asks the sidebar for the row to reveal (`sidebarRevealTarget`).
-        let passes = ListPerf.counting {
-            for agent in agents { ListPerf.time(window) { vm.selectAgent(agent.id) } }
+        let rows = ListPerf.counting {
+            for row in shown { ListPerf.time(window) { vm.selectSidebarRow(row.id) } }
         }
-        #expect(passes["sidebar.spaceForest", default: 0] == 0, "\(passes)")
+        #expect(rows["sidebar.row", default: 0] <= shown.count * 2 + 2, "\(rows)")
+        #expect(rows["sidebar.lists", default: 0] == 0, "a selection derives nothing: \(rows)")
     }
 
     // MARK: Thread
@@ -646,6 +668,40 @@ struct ListPerformanceTests {
         let rows = ListPerf.counting { ListPerf.time(window) { window.show(TrayHost(runs: next, state: state)) } }
 
         #expect(rows["tray.row", default: 0] <= 2, "\(rows)")
+    }
+
+    // MARK: Skills
+
+    /// Settings ▸ Skills over 200 skills: opening builds the rows on screen and some ahead of them,
+    /// never the whole list, and one skill turning off redraws its row alone.
+    @Test func oneSkillChangingRedrawsOnlyItsRow() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let vm = try await app.start()
+        for index in 0..<200 {
+            let name = "skill-\(index + 100)"
+            let text = "---\nname: \(name)\ndescription: Skill number \(index).\n---\n"
+            try app.server.skills.installFiles(name: name, files: [SkillFile(path: "SKILL.md", contents: Data(text.utf8))],
+                                                invocation: .automatic)
+        }
+        await vm.skills.refresh(vm.skillsHosts)
+        let size = CGSize(width: 1200, height: 800)
+        var window: OffscreenWindow!
+        let opened = ListPerf.counting {
+            window = OffscreenWindow(size: size, dark: true, SkillsSettings(vm: vm, model: vm.skills))
+            ListPerf.settle(window)
+        }
+        defer { window.close() }
+        // About a dozen rows fit under the page's header; the lazy stack builds some ahead of
+        // them (50 here, at any speed). All 200 would mean it isn't lazy.
+        #expect(opened["skills.row", default: 0] <= 80, "\(opened)")
+
+        var snapshot = try #require(vm.skills.state(of: vm.skillsHosts[0]).snapshot)
+        snapshot.skills[0].isOn = false
+        let changed = ListPerf.counting {
+            ListPerf.time(window) { vm.skills.hostChanged(ShepherdViewModel.thisMacSkills, snapshot) }
+        }
+        #expect(changed["skills.row", default: 0] <= 2, "\(changed)")
     }
 
     // MARK: Review
