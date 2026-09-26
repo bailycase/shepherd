@@ -61,9 +61,10 @@ struct AgentTurnActions {
 
 /// One agent turn (MobileThread board): thinking, prose, activity lines, the subagent record
 /// (where they started and where they finished), notes and errors, then, once finished, the
-/// changes card and the footer.
+/// changes card and the footer. In a design's chat, the comments the design agent proposed from
+/// Pencil markup follow its words (iPadDesign), in place of their call's activity line.
 /// Everything it draws was derived once per turn change (`NativeTurnPresentation`).
-struct AgentTurnView: View, Equatable {
+struct AgentTurnView<Proposals: View>: View, Equatable {
     let thread: AgentRef
     let presentation: NativeTurnPresentation
     let live: Bool
@@ -78,13 +79,16 @@ struct AgentTurnView: View, Equatable {
     var changes: NativeChangesCard?
     /// Its Undo or Redo is on its way to the host.
     var changesBusy = false
+    /// Comments proposed from Pencil markup (a design's chat), drawn by `proposalsView`.
+    var proposals: NativeMarkupProposals?
     var actions = AgentTurnActions()
+    @ViewBuilder var proposalsView: () -> Proposals
     @State private var openThinking: Set<String> = []
 
     static func == (lhs: AgentTurnView, rhs: AgentTurnView) -> Bool {
         lhs.thread == rhs.thread && lhs.presentation == rhs.presentation && lhs.live == rhs.live
             && lhs.subagents == rhs.subagents && lhs.startedAt == rhs.startedAt && lhs.thinking == rhs.thinking
-            && lhs.changes == rhs.changes && lhs.changesBusy == rhs.changesBusy
+            && lhs.changes == rhs.changes && lhs.changesBusy == rhs.changesBusy && lhs.proposals == rhs.proposals
             && (lhs.actions.undo == nil) == (rhs.actions.undo == nil)
             && (lhs.actions.retry == nil) == (rhs.actions.retry == nil)
             && (lhs.actions.review == nil) == (rhs.actions.review == nil)
@@ -97,6 +101,7 @@ struct AgentTurnView: View, Equatable {
             ForEach(presentation.items) { item in
                 itemView(item)
             }
+            if proposals != nil, !live { proposalsView() }
             if thinking { NWThinking.live() }
             if !live, !presentation.items.isEmpty {
                 if let changes { changesCard(changes) }
@@ -117,7 +122,11 @@ struct AgentTurnView: View, Equatable {
         case .prose(_, _, let blocks, _):
             ProseView(blocks: blocks).equatable()
         case .activity(_, let bursts):
-            ActivityLinesView(bursts: bursts, review: actions.review).equatable()
+            // The proposals card stands for its call.
+            let shown = proposals == nil ? bursts : bursts.filter { !$0.calls.allSatisfy { $0.name == "markup_propose" } }
+            if !shown.isEmpty {
+                ActivityLinesView(bursts: shown, review: actions.review).equatable()
+            }
         case .subagents(_, let lines):
             // Where they started, and where they finished: both open the thread's subagents.
             // Adjacent, they sit together as activity lines do.

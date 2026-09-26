@@ -73,6 +73,10 @@ final class PadDesignCanvas {
     @ObservationIgnored private var picking: Task<Void, Never>?
     /// The Tweak tab's model (DZTweak's, shared with the Mac): its writes go to the host.
     @ObservationIgnored let tweak: DesignTweakModel
+    /// The Pencil markup over the canvas (`PadDesignMarkupLayer`).
+    @ObservationIgnored let markup = PadDesignMarkup()
+    /// Proposals from markup on their way to the host (by their names joined).
+    var applyingProposals: Set<String> = []
 
     static let restDelay: Duration = .milliseconds(120)
 

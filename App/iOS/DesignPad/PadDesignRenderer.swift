@@ -266,6 +266,13 @@ final class PadDesignHost {
         return await view.hitTest(at: point).flatMap { PadDesignPick($0, on: path) }
     }
 
+    /// Elements `tids` of a board where it draws them now, making it live first when it isn't
+    /// (Pencil markup asks about boards the canvas may not show live); nil when it can't draw.
+    func measure(_ path: DesignPath, tids: [Int]) async -> [Int: PadDesignPick]? {
+        guard await readyView(path) != nil else { return nil }
+        return await locate(path, tids: tids)
+    }
+
     /// Elements `tids` of a live board where it draws them now; nil without a live view.
     func locate(_ path: DesignPath, tids: [Int]) async -> [Int: PadDesignPick]? {
         guard let slot = slots[path], slot.ready else { return nil }
