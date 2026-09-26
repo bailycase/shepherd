@@ -26,14 +26,18 @@ public struct FleetHost: Equatable, Sendable {
     public var port: UInt16
     public var phase: RemoteHostPhase
     public var state: ShepherdState
+    /// When this device's connection to it last ended (`HostLastSeen`).
+    public var lastSeen: Date?
 
-    public init(id: UUID, name: String, address: String, port: UInt16, phase: RemoteHostPhase, state: ShepherdState) {
+    public init(id: UUID, name: String, address: String, port: UInt16, phase: RemoteHostPhase, state: ShepherdState,
+                lastSeen: Date? = nil) {
         self.id = id
         self.name = name
         self.address = address
         self.port = port
         self.phase = phase
         self.state = state
+        self.lastSeen = lastSeen
     }
 }
 
@@ -254,6 +258,8 @@ public struct FleetHostCard: Identifiable, Equatable, Sendable {
     public var threads: Int
     public var running: Int
     public var needsYou: Int
+    /// When it was last connected, while it is not (MobileMore's "Last seen today 07:12").
+    public var lastSeen: Date?
 
     /// Retry makes sense: neither connected nor already connecting.
     public var canRetry: Bool { !phase.isConnected && phase != .connecting }
@@ -369,7 +375,7 @@ public struct FleetModel: Equatable, Sendable {
             self.hosts.append(FleetHostCard(
                 id: host.id, name: host.name, address: "\(host.address):\(host.port)", phase: host.phase,
                 summary: Self.hostSummary(host, running: running), threads: host.state.agents.count,
-                running: running, needsYou: needs))
+                running: running, needsYou: needs, lastSeen: host.phase.isConnected ? nil : host.lastSeen))
         }
         offlineHosts = self.hosts.filter { !$0.phase.isConnected }
         hostNames = self.hosts.map(\.name).joined(separator: " · ")

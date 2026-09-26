@@ -67,6 +67,7 @@ struct HostCardView: View {
     var body: some View {
         NWHostCard(name: card.name, address: card.address, state: card.state, status: card.phase.word,
                    summary: card.summary, summaryTone: card.state == .failed ? .failed : nil,
+                   detail: card.lastSeen.map { "Last seen " + HostLastSeen.text($0, now: .now) },
                    openLabel: "Edit \(card.name)", open: edit) {
             if card.canRetry {
                 Button("Retry", systemImage: "arrow.clockwise") { hosts.retry(card.id) }
