@@ -34,6 +34,14 @@ struct AppDialogs: ViewModifier {
                     vm.remoteRenameTarget = nil
                 }
             }
+            .sheet(item: $vm.terminalRenameTarget) { rename in
+                RenameDialog(title: "Rename tab", caption: "Clear the name to name the tab after what it runs.",
+                             name: rename.name, allowsEmpty: true) { name in
+                    vm.commitTerminalRename(rename, to: name)
+                } onCancel: {
+                    vm.terminalRenameTarget = nil
+                }
+            }
             .sheet(item: $vm.remoteWorktreeItem) { item in
                 RemoteWorktreeSheet(vm: vm, target: item.target, finalize: item.finalize)
                     .dialogSheetFrame()

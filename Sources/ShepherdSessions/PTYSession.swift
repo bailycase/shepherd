@@ -120,6 +120,16 @@ final class PTYSession: @unchecked Sendable {
         return foregroundCommandLine
     }
 
+    /// Kills the command that has the terminal (its whole foreground process group) with
+    /// SIGKILL. Never the shell: at a prompt, or on any failure, nothing is signalled. Returns
+    /// whether a command was killed.
+    func killForegroundCommand() -> Bool {
+        guard isAlive else { return false }
+        let pgid = tcgetpgrp(masterFD)
+        guard pgid > 0, pgid != childPID else { return false }
+        return kill(-pgid, SIGKILL) == 0
+    }
+
     /// A line editor (zsh's ZLE, readline, fish) has the terminal: it takes it out of canonical
     /// mode and turns the terminal's echo off while it reads, and echoes what it reads itself.
     /// Until then the terminal echoes input as it arrives. A startup script that leaves canonical
