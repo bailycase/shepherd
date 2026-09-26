@@ -94,6 +94,8 @@ final class RemoteHostStore {
         var skillsClient: (any SkillsClient)? { phase == .connected ? client : nil }
         /// The host takes every level pi has in `createAgent` (older hosts: Off to High).
         var supportsAllThinkingLevels: Bool { client?.capabilities.contains(RemoteProtocol.thinkingLevelsCapability) == true }
+        /// The host takes the terminal panel's Rename tab, Kill process and Run in terminal.
+        var supportsTerminalControl: Bool { client?.capabilities.contains(RemoteProtocol.terminalControlCapability) == true }
         /// The host takes a new thread's images with its opening prompt.
         var supportsCreateAgentImages: Bool { client?.capabilities.contains(RemoteProtocol.createAgentImagesCapability) == true }
         var supportsWorktreeCreation: Bool {

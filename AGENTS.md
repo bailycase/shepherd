@@ -626,7 +626,10 @@ variables are blanked.
     `worktreeStatus`), and the Changes pane (`changesOverview`, `changesList`, `changesFile`,
     `changesBranches`, `changesPatch`, `changesUndoTurn`, `changesRedoTurn` behind `changes.v1`,
     answered by the server itself; thread snapshots carry `turnChanges`). Older hosts review the
-    working tree only (`review`).
+    working tree only (`review`). The terminal panel's own actions on an agent's terminal panes
+    ride `agentAction` behind `terminal.control.v1`: `renameTerminal` (Rename tab),
+    `killTerminalProcess` (Kill process) and `typeInTerminal` (Run in terminal), each refused on
+    the agent's thread pane.
   - `automation` (`automations.v1`): switch on or off, run now, stop, the runs the host kept,
     create, edit, delete. There is no schedule or trigger: an automation that is on starts a run
     when Shepherd launches on the host. The Mac shows a host's automations under its sidebar

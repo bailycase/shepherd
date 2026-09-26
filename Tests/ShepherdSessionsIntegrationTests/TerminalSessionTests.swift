@@ -203,6 +203,40 @@ struct TerminalSessionTests {
         try await h.waitForScreen(info.id, toContain: "got:plain")
     }
 
+    /// Run in terminal: the command is typed at the prompt and left there, not run.
+    @Test func aCommandTypedWithoutSubmitWaitsAtThePrompt() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        // A short prompt, so a long host name never wraps the typed line.
+        let info = try await h.shell("PS1='$ ' exec /bin/zsh -f -i")
+        h.server.typeCommand("echo typed''-not-run", sessionID: info.id, submit: false)
+        try await h.waitForScreen(info.id, toContain: "$ echo typed''-not-run")
+        // Return now runs it: until then it only sat at the prompt.
+        #expect(!(await h.screen(info.id)).contains("typed-not-run\n"))
+        h.server.write(sessionID: info.id, data: Data("\r".utf8))
+        try await h.waitForScreen(info.id, toContain: "\ntyped-not-run")
+    }
+
+    // MARK: - Kill process
+
+    /// Kill process ends the command a shell runs (its whole process group) and leaves the
+    /// shell; at the prompt there is nothing to kill.
+    @Test func killingTheForegroundCommandLeavesTheShell() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let info = try await h.shell("set -m; echo READY; sleep 30; echo AFTER; sleep 30")
+        try await h.waitForScreen(info.id, toContain: "READY")
+        try await eventually("sleep to take the terminal") { await h.server.foregroundProcessName(sessionID: info.id) == "sleep" }
+        #expect(await h.server.killForegroundCommand(sessionID: info.id))
+        try await h.waitForScreen(info.id, toContain: "AFTER")
+        #expect(await h.server.sessionInfo(sessionID: info.id)?.isAlive == true, "the shell carries on")
+
+        let prompt = try await h.shell("echo AT_PROMPT; read -r line")
+        try await h.waitForScreen(prompt.id, toContain: "AT_PROMPT")
+        #expect(await !h.server.killForegroundCommand(sessionID: prompt.id), "the shell itself is never killed")
+        #expect(await h.server.sessionInfo(sessionID: prompt.id)?.isAlive == true)
+    }
+
     // MARK: - Resize and foreground
 
     @Test func resizeReachesThePtyAndASameSizeResizeStillNudgesARepaint() async throws {

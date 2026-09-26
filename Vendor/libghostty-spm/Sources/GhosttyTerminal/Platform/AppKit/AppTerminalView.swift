@@ -23,6 +23,10 @@
         var pointer: PointerSelectionState = .init()
         var focusBridge: FocusBridgeState = .init()
 
+        /// Called after anything that may have changed the selection: a click or a drag ending,
+        /// a key, Select All (Shepherd: the terminal's Add to message bar).
+        public var onSelectionChange: (() -> Void)?
+
         open weak var delegate: (any TerminalSurfaceViewDelegate)? {
             get { core.delegate }
             set { core.delegate = newValue }
@@ -159,6 +163,23 @@
             copyItem.target = self
             menu.addItem(copyItem)
             return menu
+        }
+
+        /// What is selected, where it starts (view points, top-left origin) and a line's height,
+        /// or nil with nothing selected (Shepherd).
+        public struct SelectionSnapshot: Equatable, Sendable {
+            public let text: String
+            public let origin: CGPoint
+            public let lineHeight: CGFloat
+        }
+
+        public func selectionSnapshot() -> SelectionSnapshot? {
+            guard let surface, surface.hasSelection(), let result = surface.readSelectionResult(), !result.text.isEmpty else {
+                return nil
+            }
+            let scale = window?.backingScaleFactor ?? 2
+            let cell = surface.size().map { CGFloat($0.cellHeightPixels) / scale } ?? 0
+            return SelectionSnapshot(text: result.text, origin: CGPoint(x: result.topLeftX, y: result.topLeftY), lineHeight: cell)
         }
 
         @discardableResult
