@@ -4186,7 +4186,7 @@ trail, top-aligned, 6pt apart, as small (24pt) buttons. Default icons:
   built.
 
 The app's banners today: the composer's "Lost connection to the agent process." (failed, with
-Reconnect) and a failed attachment, dialogs' `DialogBanner`s, the commit sheet's, the review's load
+Reconnect) and a failed attachment, a remote agent's pane while its host reconnects, dialogs' `DialogBanner`s, the commit sheet's, the review's load
 error, and the Nightly notice (idle); on iOS, a screen's own failure (commit, review, terminal, New
 thread, Automations).
 
@@ -8085,8 +8085,8 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 
 | Board | Specified in | Status |
 | --- | --- | --- |
-| NWFoundations, NWFoundationsLight | Theme model; Typography; Space, radius, height, elevation; Motion | Partial |
-| NWControls, NWControlsLight | Components › Controls | Partial |
+| NWFoundations, NWFoundationsLight | Theme model; Typography; Space, radius, height, elevation; Motion | Built |
+| NWControls, NWControlsLight | Components › Controls | Built |
 | NWStatus, NWStatusLight | Components › Status and feedback; Status language | Partial |
 | NWThread, NWThreadLight | Thread | Partial |
 | LiveText | Thread › Live text, Activity lines (Live), Thinking (Live); Motion (`shimmer`); Up next (a steering row waits still); Subagents (a running tray row's words) | Built |
