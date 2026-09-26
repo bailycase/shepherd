@@ -96,8 +96,9 @@ struct RemoteHostTests {
         #expect(review.loadError == nil)
         #expect(review.files.map(\.displayPath) == ["host.txt"])
         #expect(vm.reviewSessions.isEmpty)
-        vm.openUserReview()
-        #expect(vm.remoteReviews[target] == nil, "the header button toggles the review closed")
+        #expect(vm.rightPaneContent == .review, "Review Changes shows the side pane on Changes")
+        vm.toggleRightPane()
+        #expect(vm.remoteReviews[target] == nil && vm.rightPaneContent == nil, "the header button hides the pane and its review")
     }
 
     @Test func remoteSubagentsFollowTheHostAndClearWhenTheAgentOrHostGoes() async throws {

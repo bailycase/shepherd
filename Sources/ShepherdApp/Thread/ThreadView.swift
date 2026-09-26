@@ -31,7 +31,9 @@ struct ThreadView: View {
     var workingDirectory: String? = nil
     /// Opens a subagent in the inspector.
     var inspectSubagent: ((ChildRun) -> Void)? = nil
-    /// The run open in the inspector; its card and ledger row are highlighted.
+    /// Opens a subagent in the inspector with its Steer field focused (the tray's Steer).
+    var steerSubagent: ((ChildRun) -> Void)? = nil
+    /// The run open in the inspector; its tray row wears the selection.
     var inspectedRunID: String? = nil
     /// Opens the review pane at a file (a changed file, the changes card, an edit call).
     var review: ((String) -> Void)? = nil
@@ -57,11 +59,11 @@ struct ThreadView: View {
         let rows = store.rows
         let running = store.running
         let liveRow = rows.last(where: \.live)
-        // One persistent tail row for the whole run, the last part of the streaming reply (or on
-        // its own before the reply starts). A question replaces it with the composer's question
-        // panel, and live thinking carries its own spinner. A pi that is starting says so in the
-        // composer, never here (`NativeThreadStore.workingLabel`).
-        let working = store.workingLabel
+        // Only one thing moves (LiveText): a running call's own line, thinking, or the reply as it
+        // is written. Between tools the thread ends in "Thinking…", the live turn's last part (or
+        // on its own before the reply has a row). A question waits in the composer instead, and a
+        // pi that is starting says so there too, never here (`NativeThreadStore.showsThinking`).
+        let thinking = store.showsThinking
         // Until the thread has caught up since it came on screen (opening it, or the first pull
         // after switching back to the agent), whatever changes lands at once.
         let catchingUp = arrivals.catchUp.catchingUp(caughtUpAt: store.catchUp?.thread, version: store.threadVersion)
@@ -90,20 +92,17 @@ struct ThreadView: View {
                             // rows on screen: a row that could be nothing would make it evaluate
                             // every row of a long thread on each streamed chunk.
                             VStack(spacing: 0) {
-                                turn(row, running: running, working: row.live ? working : nil, arriving: arrived.contains(row.id),
+                                turn(row, running: running, thinking: row.live && thinking, arriving: arrived.contains(row.id),
                                      settled: settled)
                             }
                             .id(row.id)
                         }
-                        if let working, liveRow == nil { WorkingRow(label: working).nwArrival(settled) }
+                        if thinking, liveRow == nil { NWThinking.live().nwArrival(settled) }
                         Color.clear.frame(height: 1).id(Self.bottomID)
                     }
                     .frame(maxWidth: AppLayout.threadMaxWidth)
                     .padding(.horizontal, gutter)
                     .frame(maxWidth: .infinity)
-                    // The subagent cards' controls: it changes only when the thread is switched
-                    // to or away from (and when the host's support does), and redraws the cards.
-                    .environment(\.threadActionsEnabled, active && store.supports("subagents"))
                     // A local agent's images draw from its folder; a remote agent's files are not here.
                     .environment(\.nwProseFileRoot, workingDirectory.map {
                         URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true)
@@ -162,7 +161,8 @@ struct ThreadView: View {
                          jumpToLatest: follower.showsJump(running: running) ? {
                              follower.jumpToLatest()
                              proxy.scrollTo(Self.bottomID, anchor: .bottom)
-                         } : nil, queueState: queueState)
+                         } : nil, queueState: queueState,
+                         inspectSubagent: inspectSubagent, steerSubagent: steerSubagent, inspectedRunID: inspectedRunID)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
             }
         }
@@ -175,6 +175,9 @@ struct ThreadView: View {
         .transaction(value: CatchUpGate.Key(version: store.threadVersion, active: active)) {
             if catchingUp { $0.disablesAnimations = true }
         }
+        // The tray's controls: it changes only when the thread is switched to or away from (and
+        // when the host's support does), and redraws the tray's rows.
+        .environment(\.threadActionsEnabled, active && store.supports("subagents"))
         .foregroundStyle(Color.nw.textPrimary)
         .tint(Color.nw.running)
         .background(Color.nw.bgWindow)
@@ -195,15 +198,15 @@ struct ThreadView: View {
     }
 
     /// A sent message rises into the thread; a reply's parts make their own entrances.
-    @ViewBuilder private func turn(_ row: NativeThreadRow, running: Bool, working: String?, arriving: Bool, settled: Bool) -> some View {
+    @ViewBuilder private func turn(_ row: NativeThreadRow, running: Bool, thinking: Bool, arriving: Bool, settled: Bool) -> some View {
         if row.isUser {
             UserTurn(turn: row.turn)
                 .equatable()
                 .nwArrival(arriving, .list, edge: .bottom)
         } else if let presentation = row.presentation {
-            AgentTurn(presentation: presentation, live: row.live, subagents: store.placements[row.id] ?? NativeSubagentPlacement(),
+            AgentTurn(presentation: presentation, live: row.live, subagents: TurnSubagents(store.placements[row.id]),
                       subagentActions: subagentActions, startedAt: row.startedAt,
-                      retry: retryAction(row, running: running), review: review, working: working, arriving: arriving,
+                      retry: retryAction(row, running: running), review: review, thinking: thinking, arriving: arriving,
                       settled: settled)
                 .equatable()
         }
@@ -215,6 +218,7 @@ struct ThreadView: View {
         SubagentActions(
             inspect: { run in inspectSubagent?(run) },
             command: { run, action, text, mode in Task { await store.subagentCommand(runID: run.runID, action: action, text: text, mode: mode) } },
+            steer: steerSubagent,
             inspectedRunID: inspectedRunID)
     }
 
@@ -277,7 +281,7 @@ struct ThreadView: View {
             if !store.ready, store.loadError == nil, !store.starting, !store.previewing {
                 quiet("Last known thread · refreshing before enabling actions")
             }
-            if !store.dialogsSupported { quiet("This host's pi cannot answer questions here · update Shepherd on the host") }
+            if !store.dialogsSupported { quiet("This host's agent cannot answer questions here · update Shepherd on the host") }
             if store.clipped { quiet("Some earlier output is clipped") }
         }
     }

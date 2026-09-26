@@ -27,8 +27,15 @@ struct ReviewActions {
     var commitClosed: () -> Void = {}
 }
 
-/// The review pane (Review board): a companion docked right of the thread. A header with the
-/// scope and totals, the file strip, sticky file headers over a syntax-colored unified diff with
+/// Where a review sits: the side pane's Changes tab (the strip above names it; a 40pt bar gives
+/// the scope, totals and Local | PR), or a layout pane of its own (an older host's review leaf),
+/// under a "Review" header with its options and close.
+enum ReviewChrome {
+    case tab, header
+}
+
+/// The review (Review board): the side pane's Changes tab beside the thread. The scope and
+/// totals, the file strip, sticky file headers over a syntax-colored unified diff with
 /// long runs folded, inline comments, and the review composer.
 ///
 /// Equal when it shows the same session and touched files: the actions are rebuilt by every
@@ -39,15 +46,16 @@ struct ReviewPane: View, Equatable {
     let actions: ReviewActions
     /// Files the running agent is editing right now: their chips carry a running dot.
     var touchedPaths: Set<String> = []
+    var chrome: ReviewChrome = .tab
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.session === rhs.session && lhs.touchedPaths == rhs.touchedPaths
+        lhs.session === rhs.session && lhs.touchedPaths == rhs.touchedPaths && lhs.chrome == rhs.chrome
     }
 
     var body: some View {
         // A review retargeted at another repository starts over: folds, the comment being
         // edited, the current file, and syntax colors all belonged to the old diff.
-        ReviewPaneContent(session: session, actions: actions, touchedPaths: touchedPaths)
+        ReviewPaneContent(session: session, actions: actions, touchedPaths: touchedPaths, chrome: chrome)
             .id(Identity(session: session.id, cwd: session.cwd))
     }
 
@@ -74,24 +82,29 @@ struct ReviewPaneHost: View {
 struct ReviewPaneContent: View {
     let session: ReviewSession
     let touchedPaths: Set<String>
+    let chrome: ReviewChrome
     @State private var model: ReviewPaneModel
     @FocusState private var summaryFocused: Bool
     @FocusState private var commentFocused: Bool
 
-    init(session: ReviewSession, actions: ReviewActions, touchedPaths: Set<String>) {
-        self.init(model: ReviewPaneModel(session: session, actions: actions), touchedPaths: touchedPaths)
+    init(session: ReviewSession, actions: ReviewActions, touchedPaths: Set<String>, chrome: ReviewChrome = .tab) {
+        self.init(model: ReviewPaneModel(session: session, actions: actions), touchedPaths: touchedPaths, chrome: chrome)
     }
 
     /// A pane over a model the caller holds (tests drive it as the pane's own controls do).
-    init(model: ReviewPaneModel, touchedPaths: Set<String> = []) {
+    init(model: ReviewPaneModel, touchedPaths: Set<String> = [], chrome: ReviewChrome = .tab) {
         session = model.session
         self.touchedPaths = touchedPaths
+        self.chrome = chrome
         _model = State(initialValue: model)
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            ReviewHeader(model: model, session: session)
+            switch chrome {
+            case .tab: ChangesBar(model: model, session: session)
+            case .header: ReviewHeader(model: model, session: session)
+            }
             if !session.files.isEmpty {
                 ReviewFileStrip(model: model, session: session, touchedPaths: touchedPaths)
                     .nwTransition(.content)
@@ -115,8 +128,10 @@ struct ReviewPaneContent: View {
         .background(Color.nw.bgWindow)
         .modifier(RevertConfirmation(model: model))
         .modifier(CommitSheetPresenter(model: model))
+        // The side pane's ⋯ menu folds and unfolds this pane's files.
+        .onAppear { session.paneModel = model }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Review")
+        .accessibilityLabel(chrome == .tab ? "Changes" : "Review")
     }
 }
 
@@ -154,8 +169,39 @@ private struct CommitSheetPresenter: ViewModifier {
 
 // MARK: Header
 
-/// The pane header: "Review" over "4 files · +67 −58", the Local | PR control, the options
-/// menu, and close.
+/// The Changes tab's bar under the side pane's strip (Review board): the scope and totals in mono
+/// ("working tree vs HEAD · 4 files · +67 −58") and Local | PR. Its options (Expand and Collapse
+/// All Files, Copy Review as Text) are in the pane's ⋯ menu.
+private struct ChangesBar: View, Equatable {
+    @Bindable var model: ReviewPaneModel
+    let session: ReviewSession
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.model === rhs.model && lhs.session === rhs.session }
+
+    var body: some View {
+        HStack(spacing: NW.Space.m) {
+            ReviewScope.text(session, plainScope: "working tree vs HEAD")
+                .font(.nw(.micro, weight: .regular))
+                .foregroundStyle(Color.nw.textTertiary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .nwContentTransition(.crossFade)
+                .nwAnimation(.content, value: ReviewScope.key(session))
+            NWSegmentedPicker("Diff", selection: $model.pullRequestMode, options: [(false, "Local"), (true, ReviewScope.prLabel(session))], size: .s)
+                .disabled(session.isLoading)
+                .fixedSize()
+        }
+        .padding(.leading, AppLayout.changesBarLeadingPadding)
+        .padding(.trailing, NW.Space.l)
+        .frame(height: AppLayout.changesBarHeight)
+        .background(Color.nw.bgWindow)
+        .overlay(alignment: .bottom) { NWHairline() }
+    }
+}
+
+/// The review's own header in a layout pane: "Review" over "4 files · +67 −58", the Local | PR
+/// control, the options menu, and close.
 private struct ReviewHeader: View, Equatable {
     @Bindable var model: ReviewPaneModel
     let session: ReviewSession
@@ -163,39 +209,64 @@ private struct ReviewHeader: View, Equatable {
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.model === rhs.model && lhs.session === rhs.session }
 
     var body: some View {
+        let _ = NWRenderProbe.tick("review.header")
         NWPaneHeader("Review", closeLabel: "Close review", close: model.actions.close) {
             // Cross-faded, not rolled: rolling digits through its colored runs leaves the old
             // count's ghost for most of a second.
-            subtitle.truncationMode(.middle)
+            ReviewScope.text(session, plainScope: nil).truncationMode(.middle)
                 .nwContentTransition(.crossFade)
-                .nwAnimation(.content, value: [session.isLoading ? -1 : session.files.count, session.addedCount, session.removedCount])
+                .nwAnimation(.content, value: ReviewScope.key(session))
         } controls: {
-            NWSegmentedPicker("Diff", selection: $model.pullRequestMode, options: [(false, "Local"), (true, prLabel)], size: .s)
+            NWSegmentedPicker("Diff", selection: $model.pullRequestMode, options: [(false, "Local"), (true, ReviewScope.prLabel(session))], size: .s)
                 .disabled(session.isLoading)
-            NWOptionsMenu("Review options") {
-                Button("Expand All Files") { model.expandAllFiles() }
-                Button("Collapse All Files") { model.collapseAllFiles() }
-                Divider()
-                Button("Copy Review as Text") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(formatReview(files: session.files, comments: session.comments, summary: session.summary,
-                                                                reference: session.reference), forType: .string)
-                }
-            }
-            .nwHelp("Review options")
+            NWOptionsMenu("Review options") { ReviewOptionItems(session: session, model: model) }
+                .nwHelp("Review options")
         }
     }
+}
 
-    private var prLabel: String {
+/// Expand All Files, Collapse All Files, and Copy Review as Text: the review's own ⋯ menu in a
+/// layout pane, the side pane's ⋯ menu on the Changes tab. Without a `model` the items find the
+/// pane drawing the review when chosen (`ReviewSession.paneModel`, unobserved): the strip draws
+/// before its pane appears, and a pane rebuilt under it (the inspector closing) never redraws it.
+struct ReviewOptionItems: View {
+    let session: ReviewSession
+    var model: ReviewPaneModel?
+
+    var body: some View {
+        Button("Expand All Files") { (model ?? session.paneModel)?.expandAllFiles() }
+            .disabled(session.files.isEmpty)
+        Button("Collapse All Files") { (model ?? session.paneModel)?.collapseAllFiles() }
+            .disabled(session.files.isEmpty)
+        Divider()
+        Button("Copy Review as Text") {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(formatReview(files: session.files, comments: session.comments, summary: session.summary,
+                                                        reference: session.reference), forType: .string)
+        }
+        .disabled(session.files.isEmpty)
+    }
+}
+
+/// The review's scope line, in its bar or its header.
+enum ReviewScope {
+    @MainActor static func prLabel(_ session: ReviewSession) -> String {
         guard session.isPRMode, let reference = session.reference else { return "PR" }
         return "PR · \(reference)"
     }
 
+    @MainActor static func key(_ session: ReviewSession) -> [Int] {
+        [session.isLoading ? -1 : session.files.count, session.addedCount, session.removedCount]
+    }
+
     /// "4 files · +67 −58", led by a reference the agent asked for ("main..HEAD · …"), and before
-    /// that by the directory's name when it is not the agent's own ("project-worktree · …").
-    private var subtitle: Text {
+    /// that by the directory's name when it is not the agent's own ("project-worktree · …"). In
+    /// the Changes bar the plain local diff says what it compares ("working tree vs HEAD · …").
+    @MainActor static func text(_ session: ReviewSession, plainScope: String?) -> Text {
         let directory = session.otherDirectoryName.map { "\($0) · " } ?? ""
-        let scope = directory + (!session.isPRMode ? session.reference.map { "\($0) · " } ?? "" : "")
+        let reference = !session.isPRMode ? session.reference.map { "\($0) · " } : nil
+        let plain = session.isPRMode || session.reference != nil ? nil : plainScope.map { "\($0) · " }
+        let scope = directory + (reference ?? plain ?? "")
         if session.isLoading { return Text("\(scope)loading…") }
         let count = session.files.count
         if count == 0 { return Text("\(scope)0 files") }
@@ -292,6 +363,7 @@ private struct ReviewDiffList: View, Equatable {
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.model === rhs.model && lhs.session === rhs.session }
 
     var body: some View {
+        let _ = NWRenderProbe.tick("review.diffList")
         let canRevert = model.actions.revert != nil && !session.isPRMode
         let canOpen = model.actions.open != nil
         ScrollViewReader { proxy in
@@ -369,6 +441,7 @@ private struct DiffFileSection: View, Equatable {
     }
 
     var body: some View {
+        let _ = NWRenderProbe.tick("review.section")
         Section {
             // Where the file's rows start: a fold eases only while the file sits in its place.
             Color.clear.frame(height: 0)
@@ -381,9 +454,9 @@ private struct DiffFileSection: View, Equatable {
                         .padding(.vertical, NW.Space.m)
                         .padding(.leading, NWDiffMetrics.annotationLeading)
                 } else {
-                    NWDiffView(rows, onComment: { model.startComment(fileID: file.id, lineID: $0.key) },
-                               onExpand: { model.expandFold($0, in: file.id) }, onExpandFile: { model.expandFile(file.id) }) { line in
-                        annotation(line)
+                    NWDiffView(rows, notes: notes, onComment: { model.startComment(fileID: file.id, lineID: $0.key) },
+                               onExpand: { model.expandFold($0, in: file.id) }, onExpandFile: { model.expandFile(file.id) }) { line, note in
+                        annotation(line, note)
                     }
                 }
             }
@@ -399,13 +472,21 @@ private struct DiffFileSection: View, Equatable {
         }
     }
 
-    @ViewBuilder private func annotation(_ line: NWDiffLineContent) -> some View {
-        if editingLine == line.key {
-            ReviewCommentEditor(initialText: comments[line.key]?.text ?? "", focused: commentFocused,
+    /// What shows under each line: its comment, or the editor on the line being commented.
+    private var notes: [Int: ReviewLineNote] {
+        var notes = comments.mapValues(ReviewLineNote.comment)
+        if let editingLine { notes[editingLine] = .editing(initialText: comments[editingLine]?.text ?? "") }
+        return notes
+    }
+
+    @ViewBuilder private func annotation(_ line: NWDiffLineContent, _ note: ReviewLineNote) -> some View {
+        switch note {
+        case .editing(let initialText):
+            ReviewCommentEditor(initialText: initialText, focused: commentFocused,
                                 save: { model.saveComment($0, fileID: file.id, lineID: line.key) },
                                 cancel: { model.cancelComment() })
                 .nwTransition(.disclosure)
-        } else if let comment = comments[line.key] {
+        case .comment(let comment):
             NWInlineComment(initial: ReviewAuthor.initial, author: "You",
                             meta: "line \(comment.lineNumber) · \(reviewCommentAge(comment.createdAt))", text: comment.text,
                             onEdit: { model.startComment(fileID: file.id, lineID: line.key) },
@@ -413,6 +494,13 @@ private struct DiffFileSection: View, Equatable {
                 .nwTransition(.disclosure)
         }
     }
+}
+
+/// A line's annotation in the review: its comment, or the editor writing one. Rows compare it,
+/// so a comment's change redraws only its line.
+enum ReviewLineNote: Equatable {
+    case comment(ReviewComment)
+    case editing(initialText: String)
 }
 
 /// The comment being written, with its own draft: typing re-renders only the editor.
@@ -451,6 +539,7 @@ private struct ReviewComposerBar: View, Equatable {
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.model === rhs.model && lhs.session === rhs.session }
 
     var body: some View {
+        let _ = NWRenderProbe.tick("review.composer")
         let hasReview = !session.comments.isEmpty || !session.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         NWReviewComposer(text: $session.summary, isFocused: focused, inlineCount: session.comments.count,
                          canCommit: !session.isSubmitting && !session.files.isEmpty && !session.isPRMode,

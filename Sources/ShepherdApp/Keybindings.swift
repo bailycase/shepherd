@@ -35,7 +35,7 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .focusNextPane: return "Focus Next Pane"
         case .focusPreviousPane: return "Focus Previous Pane"
         case .toggleSidebar: return "Show or Hide Sidebar"
-        case .toggleRightPane: return "Show or Hide Review Pane"
+        case .toggleRightPane: return "Show or Hide Side Pane"
         case .modelPicker: return "Choose Model…"
         case .stopAgent: return "Stop Agent"
         case .previousTurn: return "Previous Turn"
@@ -85,7 +85,7 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
     }
 }
 
-/// Settings ▸ Keyboard's "While pi is working" rows, in the order of the Queue & steer boards'
+/// Settings ▸ Keyboard's "While the agent is working" rows, in the order of the Queue & steer boards'
 /// Keyboard card: the send keys, then the queue's own. ↩ and the alternate send trade titles
 /// with the Return setting, so each row says what its key does now.
 enum WhileWorkingKey: Hashable, Identifiable {
@@ -133,7 +133,7 @@ enum FixedChord: String, CaseIterable, Identifiable {
         case .editLastQueued: "Edit the last queued message"
         case .moveQueued: "Move the focused message"
         case .deleteQueued: "Delete the focused message"
-        case .stopFromComposer: "Stop pi"
+        case .stopFromComposer: "Stop the agent"
         }
     }
 

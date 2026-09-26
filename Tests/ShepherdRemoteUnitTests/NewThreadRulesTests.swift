@@ -261,7 +261,7 @@ struct NewThreadRulesTests {
     @Test func aGeneratedBranchIsAReadableWorktreeName() {
         var generator = SeededGenerator(seed: 7)
         let branch = NewThreadRules.generatedBranch(using: &generator)
-        #expect(branch.wholeMatch(of: /worktree\/[a-z]+-[a-z]+-\d{4}/) != nil)
+        #expect(branch.wholeMatch(of: /agent\/[a-z]+-[a-z]+-\d{4}/) != nil)
         var again = SeededGenerator(seed: 7)
         #expect(NewThreadRules.generatedBranch(using: &again) == branch)
     }

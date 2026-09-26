@@ -28,6 +28,14 @@ public enum NWRenderProbe {
     }
 
     public static func count(_ key: String) -> Int { counts[key, default: 0] }
+    #else
+    // Release builds record nothing, but keep the API so the test targets build for the
+    // release benchmarks (their timings); every count reads zero there.
+    public static let isRecording = false
+    public static let counts: [String: Int] = [:]
+    public static func start() {}
+    @discardableResult public static func stop() -> [String: Int] { [:] }
+    public static func count(_ key: String) -> Int { 0 }
     #endif
 
     /// Counts one body evaluation under `key`.

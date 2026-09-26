@@ -11,7 +11,9 @@ import ShepherdSessions
 /// controls: attach · / commands · model · thinking · Send or Stop. Menus float over the thread
 /// above the card, so opening one never moves the thread or changes the composer's height.
 /// Messages sent while pi works wait in "Up next" above the card (`QueueStackView`); ↩ queues
-/// or steers per Settings, ⌘↩ does the other, and the Send menu offers both.
+/// or steers per Settings, ⌘↩ does the other, and the Send menu offers both. Running subagents
+/// share that card, above Up next (`ComposerDock`), and a subagent's question answered from its
+/// row takes the composer's place until it is answered or hidden.
 struct Composer: View {
     /// The thread's coordinate space: the menus measure the room above the card in it.
     static let threadSpace = "composer.thread"
@@ -32,6 +34,14 @@ struct Composer: View {
     var jumpToLatest: (() -> Void)? = nil
     /// The "Up next" stack's state, from a test or preview that drives it; else the composer's own.
     var queueState: QueueStackState? = nil
+    /// Opens a subagent in the inspector; nil hides the tray (a thread with no inspector). The
+    /// composer takes the thread's own closures, never ones built per render, so a revision the
+    /// thread adopts leaves the composer alone.
+    var inspectSubagent: ((ChildRun) -> Void)? = nil
+    /// Opens a subagent with its Steer field focused (the tray's Steer).
+    var steerSubagent: ((ChildRun) -> Void)? = nil
+    /// The run open in the inspector: its tray row wears the selection.
+    var inspectedRunID: String? = nil
     @State private var attachments: [ImageAttachment] = []
     @State private var attachmentError: String?
     @State private var dropTargeted = false
@@ -59,6 +69,12 @@ struct Composer: View {
     /// "Up next": what the stack shows of the store's queue, and its own view state.
     @State private var ownQueueStack = QueueStackState()
     private var queueStack: QueueStackState { queueState ?? ownQueueStack }
+    /// The subagent tray's collapse and "Show N more".
+    @State private var trayState = SubagentTrayState()
+    /// The run whose question is open in the composer's place (from its row's Answer).
+    @State private var answering: String?
+    /// pi's question the user shrank to its hidden line.
+    @State private var questionHiding = QuestionHiding()
     /// The queued message with keyboard focus, if one has it.
     @FocusState private var focusedRow: String?
     /// ⌘↩ reaches the composer before any key equivalent in its window.
@@ -131,6 +147,27 @@ struct Composer: View {
     private var accessories: [String] {
         let banner = store.loadError != nil ? "lost" : attachmentError != nil ? "attachment" : store.notice != nil ? "notice" : nil
         return [banner].compactMap { $0 } + store.widgets.map(\.id) + (queueStack.isVisible ? ["queue"] : [])
+            + (showsTray ? ["tray"] : []) + (answeringRun != nil ? ["answering"] : [])
+    }
+
+    private var showsTray: Bool { subagents != nil && store.tray != nil }
+
+    /// What the tray's rows do.
+    private var subagents: SubagentActions? {
+        guard let inspectSubagent else { return nil }
+        return SubagentActions(
+            inspect: inspectSubagent,
+            command: { [store] run, action, text, mode in
+                Task { await store.subagentCommand(runID: run.runID, action: action, text: text, mode: mode) }
+            },
+            steer: steerSubagent,
+            inspectedRunID: inspectedRunID)
+    }
+
+    /// The run whose question is open, while it still asks.
+    private var answeringRun: ChildRun? {
+        guard let answering, subagents != nil else { return nil }
+        return store.subagents.first { $0.runID == answering && nativeRunPhase($0) == .needsYou }
     }
 
     /// The question in place of the field, by the identity its panel takes.
@@ -172,15 +209,33 @@ struct Composer: View {
                     .padding(.horizontal, NW.Space.xs)
                     .nwTransition(.list, edge: .bottom)
             }
-            // "Up next" grows upward from the card, which never moves.
-            if queueStack.isVisible {
-                QueueStackView(state: queueStack, store: store, running: running, animated: !catchingUp, focusedRow: $focusedRow,
-                               focusComposer: { composing = true })
-                    // A lifted row floats over the card too.
-                    .zIndex(queueStack.dragging == nil ? 0 : 1)
-                    .nwTransition(.list, edge: .bottom)
+            // The subagents and "Up next" grow upward from the card, which never moves.
+            if answeringRun == nil, showsTray || queueStack.isVisible {
+                ComposerDock(tray: store.tray, trayState: trayState, runs: store.subagents, actions: subagents,
+                             answer: { answering = $0.runID }, showsQueue: queueStack.isVisible) {
+                    if queueStack.isVisible {
+                        QueueStackView(state: queueStack, store: store, running: running, animated: !catchingUp, framed: !showsTray,
+                                       focusedRow: $focusedRow, focusComposer: { composing = true })
+                    }
+                }
+                // A lifted row floats over the card too.
+                .zIndex(queueStack.dragging == nil ? 0 : 1)
+                .nwTransition(.list, edge: .bottom)
             }
-            card
+            // A subagent's question answered from its row takes the card's place until it is
+            // answered or hidden.
+            Group {
+                if let run = answeringRun, let subagents {
+                    SubagentQuestion(run: run, enabled: active && store.supports("subagents"), actions: subagents) {
+                        answering = nil
+                        composing = true
+                    }
+                    .id(run.runID)
+                    .nwTransition(.content)
+                } else {
+                    card
+                }
+            }
                 .background { ComposerMenuRegion(dismissal: dismissal) }
                 .background { ComposerWindowReader(monitor: keyMonitor) }
                 .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.threadSpace)).minY } action: { cardTop = $0 }
@@ -195,6 +250,7 @@ struct Composer: View {
         .nwAnimation(.list, value: accessories)
         .nwAnimation(.list, value: attachments.map(\.id))
         .nwAnimation(.disclosure, value: questionKey)
+        .nwAnimation(.disclosure, value: questionHiding)
         // What a catch-up brings lands at once, however it changes the composer; keyed on what
         // the render drew, so a menu or a chip's own later motion still runs.
         .transaction(value: CatchUpGate.Key(version: store.chromeVersion, active: active)) {
@@ -374,14 +430,23 @@ struct Composer: View {
             // lingering over the controls.
             if let dialog = dialogs.first, let session = store.session, let questionKey {
                 // The card swaps its field for the question so it can never scroll out of view.
-                QuestionPanel(dialog: dialog, count: dialogs.count, enabled: active && store.supports("answer")) { answer in
-                    Task {
-                        await store.answer(dialogID: dialog.id, sessionID: session.piSessionID,
-                                           generation: session.generation, answer: answer)
+                // Hidden, it keeps one line there: pi is still waiting on it.
+                if questionHiding.isHidden(questionKey) {
+                    NWQuestionHiddenLine(.agent, question: dialog.title) { questionHiding.show() }
+                        .id(questionKey + ":hidden")
+                        .nwEntrance(.content)
+                } else {
+                    QuestionPanel(dialog: dialog, count: dialogs.count, enabled: active && store.supports("answer")) { answer in
+                        Task {
+                            await store.answer(dialogID: dialog.id, sessionID: session.piSessionID,
+                                               generation: session.generation, answer: answer)
+                        }
+                    } hide: {
+                        questionHiding.hide(questionKey)
                     }
+                    .id(questionKey)
+                    .nwEntrance(.content)
                 }
-                .id(questionKey)
-                .nwEntrance(.content)
             } else {
                 field.nwEntrance(.content)
             }
@@ -664,9 +729,9 @@ struct Composer: View {
     static func sendOptions(_ setting: ReturnWhileWorking, send: String, alternate: String) -> [NWSendOption] {
         let steers = setting == .steer
         return [
-            NWSendOption(id: "queue", title: "Queue", detail: "Goes when pi finishes this turn.", glyph: .queue,
+            NWSendOption(id: "queue", title: "Queue", detail: "Goes when the agent finishes this turn.", glyph: .queue,
                          shortcut: steers ? alternate : send),
-            NWSendOption(id: "steer", title: "Steer now", detail: "Lands once pi’s current tool calls finish, before its next step.",
+            NWSendOption(id: "steer", title: "Steer now", detail: "Lands once the agent’s current tool calls finish, before its next step.",
                          glyph: .symbol("arrow.turn.down.right"), shortcut: steers ? send : alternate),
         ]
     }
@@ -745,7 +810,7 @@ struct ComposerControlsActions {
 
 /// The composer's control row: attach · / commands · model · thinking · Send or Stop, with full
 /// chip labels when they fit; in a narrow thread (a docked right pane) the chips drop their words
-/// ("/", the thinking level alone) instead of truncating mid-word, after "Starting pi…" drops
+/// ("/", the thinking level alone) instead of truncating mid-word, after "Starting…" drops
 /// its own. `ViewThatFits` builds and measures every alternative, each with its tooltips and
 /// accessibility, whenever the row is rebuilt, so the row compares what it draws first: a
 /// keystroke past the first character and the field losing focus to a menu rebuild the field,
@@ -760,7 +825,7 @@ struct ComposerControls: View, Equatable {
         ComposerControlsMinimum {
             ViewThatFits(in: .horizontal) {
                 chips(compact: false, startingLabel: true)
-                // "Starting pi…" gives up its words before the chips do.
+                // "Starting…" gives up its words before the chips do.
                 chips(compact: false, startingLabel: false)
                 chips(compact: true, startingLabel: false)
             }
@@ -835,19 +900,19 @@ struct ComposerControls: View, Equatable {
         }
     }
 
-    /// "Starting pi…" beside the action, quiet and in the row it never resizes. Its spinner
-    /// gives way to Send's own while a message waits for pi.
+    /// "Starting…" beside the action, quiet and in the row it never resizes. Its spinner
+    /// gives way to Send's own while a message waits for the agent.
     private func startingIndicator(label: Bool) -> some View {
         HStack(spacing: AppLayout.startingSpacing) {
             if !model.busy {
                 ProgressView().progressViewStyle(.nwSpinner(size: AppLayout.startingSpinner, color: Color.nw.textTertiary))
             }
-            if label { Text("Starting pi…").font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary) }
+            if label { Text("Starting…").font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary) }
         }
         .padding(.trailing, NW.Space.s)
-        .help("pi is starting. A message sent now goes once it is ready.")
+        .help("The agent is starting. A message sent now goes once it is ready.")
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Starting pi")
+        .accessibilityLabel("Starting the agent")
     }
 
     /// Send and Stop are one button that morphs; the spinner cross-fades over it while pi
@@ -865,7 +930,7 @@ struct ComposerControls: View, Equatable {
                 if model.busy {
                     ProgressView().progressViewStyle(.nwSpinner(color: Color.nw.textTertiary))
                         .frame(width: NWComposerMetrics.actionSize, height: NWComposerMetrics.actionSize)
-                        .accessibilityLabel("Waiting for pi")
+                        .accessibilityLabel("Waiting for the agent")
                         .nwTransition(.content)
                 } else {
                     NWComposerActionButton(model.stops ? .stop : .send, ringed: model.sendRinged, enabled: model.actionEnabled,
@@ -1014,41 +1079,45 @@ func nativeContextTooltip(_ stats: NativeThreadStats?) -> String {
 
 // MARK: Questions
 
+/// Which of pi's questions the user hid. Only that one stays hidden: the next question pi asks
+/// arrives open.
+struct QuestionHiding: Equatable {
+    private(set) var hiddenKey: String?
+
+    func isHidden(_ key: String?) -> Bool { key != nil && key == hiddenKey }
+    mutating func hide(_ key: String) { hiddenKey = key }
+    mutating func show() { hiddenKey = nil }
+}
+
 /// A question from pi or an extension (select / confirm / input / editor), in place of the
 /// field so it can never scroll away. Shepherd has no permission model: these are questions,
 /// answered with the values the asker offered.
 struct QuestionPanel: View {
     let dialog: NativeThreadDialog
-    /// Pending questions in total; the panel shows the first as "1 / N".
+    /// Pending questions in total; the head shows the first as "1 / N".
     var count = 1
     let enabled: Bool
     let answer: (NativeDialogAnswer) -> Void
+    /// Shrinks the question to its hidden line; pi keeps waiting.
+    let hide: () -> Void
     @State private var text: String
 
-    init(dialog: NativeThreadDialog, count: Int = 1, enabled: Bool, answer: @escaping (NativeDialogAnswer) -> Void) {
+    init(dialog: NativeThreadDialog, count: Int = 1, enabled: Bool, answer: @escaping (NativeDialogAnswer) -> Void,
+         hide: @escaping () -> Void) {
         self.dialog = dialog
         self.count = count
         self.enabled = enabled
         self.answer = answer
+        self.hide = hide
         _text = State(initialValue: dialog.prefill ?? "")
     }
 
     var body: some View {
         let blocked = !enabled || dialog.unavailable != nil
         VStack(alignment: .leading, spacing: AppLayout.questionSpacing) {
-            HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
-                NWStateGlyph(.attention, size: AppLayout.questionGlyph)
-                Text(dialog.title).font(Font.nw(.ui)).foregroundStyle(Color.nw.textPrimary).textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-                if count > 1 {
-                    Text("1 / \(count)").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary).monospacedDigit()
-                        .nwContentTransition(.numeric())
-                        .nwTransition(.content)
-                }
-            }
-            // Another question queuing behind this one counts up.
-            .nwAnimation(.content, value: count)
+            NWQuestionHead(.agent, count: count, hide: hide)
+            Text(dialog.title).font(Font.nw(.ui)).foregroundStyle(Color.nw.textPrimary).textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
             if let message = dialog.message {
                 ScrollView {
                     Text(message).font(Font.nw(.mono)).foregroundStyle(Color.nw.textPrimary).textSelection(.enabled)
@@ -1105,7 +1174,7 @@ struct QuestionPanel: View {
             }
             .disabled(blocked)
             if dialog.timeout != nil {
-                Text("pi may stop waiting for this answer").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
+                Text("The agent may stop waiting for this answer").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
             }
         }
         // An external editor opening or closing dims the answers and says why.
@@ -1113,7 +1182,7 @@ struct QuestionPanel: View {
         .padding(.top, NW.Space.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Question: \(dialog.title)")
+        .accessibilityLabel("\(NWQuestionAsker.agent.title): \(dialog.title)")
     }
 }
 

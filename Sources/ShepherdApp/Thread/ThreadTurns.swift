@@ -102,8 +102,9 @@ struct UserTurn: View, Equatable {
     }
 }
 
-/// One agent turn (NWThread board): thinking, prose, activity lines, subagent cards where their
-/// spawn calls were, then, once it has finished, the changes card and the footer (shown while
+/// One agent turn (NWThread board): thinking, prose, activity lines, the subagent record (where
+/// they started and where they finished), then, once it has finished, the changes card and the
+/// footer (shown while
 /// the turn is hovered). Everything it shows was derived once per turn change
 /// (`NativeTurnPresentation`), and it redraws only when that, its placement, or its flags
 /// change; hovering redraws only the footer.
@@ -111,7 +112,7 @@ struct AgentTurn: View, Equatable {
     let presentation: NativeTurnPresentation
     /// True while this turn is the one streaming.
     let live: Bool
-    var subagents = NativeSubagentPlacement()
+    var subagents = TurnSubagents()
     var subagentActions: SubagentActions? = nil
     /// Timestamp (ms) of the user message that opened this turn: the footer's time and duration.
     var startedAt: Double? = nil
@@ -119,8 +120,9 @@ struct AgentTurn: View, Equatable {
     var retry: (() -> Void)? = nil
     /// Opens the review pane at a file.
     var review: ((String) -> Void)? = nil
-    /// The streaming turn's tail row ("Working…"): the last of its parts.
-    var working: String? = nil
+    /// The live turn is between tools (`NativeThreadStore.showsThinking`): it ends in the live
+    /// "Thinking…" (LiveText).
+    var thinking = false
     /// The turn just arrived in a thread on screen: its first parts make their entrance too.
     /// Read only when the turn is created; not part of equality.
     var arriving = false
@@ -132,9 +134,9 @@ struct AgentTurn: View, Equatable {
     @State private var hover: MessageHover
 
     /// `hover` seeds the pointer state, for previews and tests.
-    init(presentation: NativeTurnPresentation, live: Bool, subagents: NativeSubagentPlacement = NativeSubagentPlacement(),
+    init(presentation: NativeTurnPresentation, live: Bool, subagents: TurnSubagents = TurnSubagents(),
          subagentActions: SubagentActions? = nil, startedAt: Double? = nil, retry: (() -> Void)? = nil, review: ((String) -> Void)? = nil,
-         working: String? = nil, arriving: Bool = false, settled: Bool = true, hover: MessageHover? = nil) {
+         thinking: Bool = false, arriving: Bool = false, settled: Bool = true, hover: MessageHover? = nil) {
         self.presentation = presentation
         self.live = live
         self.subagents = subagents
@@ -142,21 +144,22 @@ struct AgentTurn: View, Equatable {
         self.startedAt = startedAt
         self.retry = retry
         self.review = review
-        self.working = working
+        self.thinking = thinking
         self.arriving = arriving
         self.settled = settled
         _hover = State(initialValue: hover ?? MessageHover())
     }
 
     /// A transcript with no store behind it (the subagent inspector): the presentation is
-    /// memoised per turn.
+    /// memoised per turn. Its thinking is never live: a transcript holds finished messages, and
+    /// the run's own tail says what moves (`RunLiveTail`).
     init(messages: [NativeThreadMessage], live: Bool) {
-        self.init(presentation: TurnPresentationMemo.presentation(messages, live: live), live: live)
+        self.init(presentation: TurnPresentationMemo.presentation(messages, live: false), live: live)
     }
 
     static func == (lhs: AgentTurn, rhs: AgentTurn) -> Bool {
         lhs.presentation == rhs.presentation && lhs.live == rhs.live && lhs.subagents == rhs.subagents
-            && lhs.startedAt == rhs.startedAt && lhs.working == rhs.working
+            && lhs.startedAt == rhs.startedAt && lhs.thinking == rhs.thinking
             && (lhs.retry == nil) == (rhs.retry == nil) && (lhs.review == nil) == (rhs.review == nil)
             && (lhs.subagentActions == nil) == (rhs.subagentActions == nil)
             && lhs.subagentActions?.inspectedRunID == rhs.subagentActions?.inspectedRunID
@@ -170,22 +173,20 @@ struct AgentTurn: View, Equatable {
         let entering = (shown.appeared || arriving) && settled
         VStack(alignment: .leading, spacing: AppLayout.turnItemSpacing) {
             ForEach(presentation.items) { item in
-                // A work group's lines make their own entrances as they stream in.
-                if case .work(let group) = item {
-                    WorkGroupView(group: group, review: review, entering: entering).equatable()
-                } else {
+                // Activity lines make their own entrances as they stream in. Live thinking
+                // carries on the thread's live line, so it never enters.
+                switch item {
+                case .activity(_, let bursts):
+                    ActivityLinesView(bursts: bursts, review: review, entering: entering).equatable()
+                case .thinking(_, _, _, true, _):
+                    itemView(item)
+                default:
                     itemView(item).nwArrival(entering, Self.entrance(item), edge: .bottom)
                 }
             }
-            // Runs with no spawn row in this turn render after it; a folded group already
-            // placed them in its strip or ledger unless there was no spawn row to fold into.
-            if let subagentActions, !subagents.trailing.isEmpty,
-               subagents.byToolCall.isEmpty || !NativeCardLayout(subagents).folds {
-                SubagentStack(runs: subagents.byToolCall.isEmpty ? subagents.all : subagents.trailing, actions: subagentActions)
-                    .nwArrival(entering)
-            }
-            // The tail row passes from the thread into its reply unchanged: it never re-enters.
-            if let working { WorkingRow(label: working).nwArrival(shown.appeared && settled) }
+            // Between tools the turn ends in "Thinking…", which passes from the thread's tail into
+            // the reply unchanged: it never enters.
+            if thinking { NWThinking.live() }
             if !live, !presentation.items.isEmpty {
                 Group {
                     if let changes = presentation.changes { changesCard(changes) }
@@ -208,11 +209,11 @@ struct AgentTurn: View, Equatable {
 
     @ViewBuilder private func itemView(_ item: NativeTurnPresentation.Item) -> some View {
         switch item {
-        case .thinking(let id, let text, let seconds, let live, let since):
+        case .thinking(let id, let text, let seconds, let live, _):
             // One view for live and finished thinking, so "Thinking…" settles into "Thought
             // for Ns" in place.
             live
-                ? NWThinking(liveSince: since.map { Date(timeIntervalSince1970: $0 / 1000) }, seconds: seconds)
+                ? NWThinking.live()
                 : NWThinking(nativeThoughtText(seconds), text: text, isExpanded: Binding(
                     get: { openThinking.contains(id) },
                     set: { if $0 { openThinking.insert(id) } else { openThinking.remove(id) } }),
@@ -220,12 +221,16 @@ struct AgentTurn: View, Equatable {
         case .prose(_, _, let blocks, let openFence):
             // The fence a streaming reply is writing is colored as it grows, not on every chunk.
             Prose(blocks: blocks, writingFence: live && openFence).equatable()
-        case .work(let group):
-            WorkGroupView(group: group, review: review).equatable()
-        case .subagents(_, let callIDs, let all):
-            if let subagentActions {
-                SubagentStack(runs: all ? subagents.all : callIDs.flatMap { subagents.byToolCall[$0] ?? [] },
-                              turnLive: subagents.all.contains { !$0.isTerminal }, actions: subagentActions)
+        case .activity(_, let bursts):
+            ActivityLinesView(bursts: bursts, review: review).equatable()
+        case .subagents(_, let lines):
+            // Where they started, and where they finished: both open the first run in the
+            // inspector, whose ‹ › browse the rest. Adjacent, they sit together as activity
+            // lines do.
+            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+                ForEach(lines, id: \.title) { line in
+                    NWSubagentRecordLine(title: line.title, meta: line.meta, action: openFirstRun)
+                }
             }
         case .note(_, let text):
             Text(text).font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
@@ -243,6 +248,12 @@ struct AgentTurn: View, Equatable {
         }
     }
 
+    /// Opens the turn's first subagent; nil while nothing can open it.
+    private var openFirstRun: (() -> Void)? {
+        guard let subagentActions, let first = subagents.first else { return nil }
+        return { subagentActions.inspect(first) }
+    }
+
     private func changesCard(_ changes: NativeTurnChanges) -> some View {
         NWChangesCard(
             title: changes.title, added: changes.added, removed: changes.removed,
@@ -257,7 +268,6 @@ struct AgentTurn: View, Equatable {
     /// Copy and retry, then "2:44 PM · 3m 12s · 23 tool calls" and "3 subagents" as a link to
     /// the first run.
     private var footer: some View {
-        let ordered = subagents.all.sorted { ($0.startedAt ?? 0) < ($1.startedAt ?? 0) }
         let meta = [nativeTurnTimeText(startedAt: startedAt, endedAt: presentation.endedAt),
                     presentation.toolCalls > 0 ? nativeCount(presentation.toolCalls, "tool call") : nil]
             .compactMap { $0 }.joined(separator: " · ")
@@ -265,13 +275,31 @@ struct AgentTurn: View, Equatable {
         return TurnFooter(
             hover: hover,
             meta: meta,
-            link: ordered.isEmpty || subagentActions == nil ? nil : nativeCount(ordered.count, "subagent"),
-            onLink: ordered.first.flatMap { first in subagentActions.map { actions in { actions.inspect(first) } } },
+            link: subagents.count == 0 || subagentActions == nil ? nil : nativeCount(subagents.count, "subagent"),
+            onLink: openFirstRun,
             onCopy: copy.isEmpty ? nil : {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(copy, forType: .string)
             },
             onRetry: retry)
+    }
+}
+
+/// A turn's subagents as the turn needs them: how many, and the first spawned (what the record
+/// and the footer's "3 subagents" open). Compared by the first run's id alone, so a poll that
+/// moves a live run redraws the tray, never the turn.
+struct TurnSubagents: Equatable {
+    var count = 0
+    var first: ChildRun?
+
+    init(_ placement: NativeSubagentPlacement? = nil) {
+        let all = placement?.all ?? []
+        count = all.count
+        first = all.min { ($0.startedAt ?? 0, $0.id) < ($1.startedAt ?? 0, $1.id) }
+    }
+
+    static func == (a: TurnSubagents, b: TurnSubagents) -> Bool {
+        a.count == b.count && a.first?.runID == b.first?.runID
     }
 }
 
@@ -326,13 +354,4 @@ enum TurnPresentationMemo {
 @MainActor
 final class TurnShown {
     var appeared = false
-}
-
-/// The tail row while the agent runs.
-struct WorkingRow: View {
-    let label: String
-
-    var body: some View {
-        NWWorkingRow(label)
-    }
 }

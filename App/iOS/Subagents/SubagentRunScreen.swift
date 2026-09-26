@@ -124,7 +124,7 @@ struct SubagentRunView: View {
                     if !compact {
                         Text("Its run").nwSectionLabel().padding(.top, NW.Space.s)
                     }
-                    SubagentTranscriptList(model: transcript, working: run.flatMap(Self.working),
+                    SubagentTranscriptList(model: transcript, live: run.flatMap(nativeRunLive),
                                            emptyText: run == nil ? "This run is no longer listed." : "No transcript yet.",
                                            showsTask: !compact)
                     footer(run)
@@ -155,12 +155,6 @@ struct SubagentRunView: View {
         if let step = run.step { parts.append("step \(step.index) of \(step.total)") }
         if let percent = run.contextPercent { parts.append("\(Int(percent.rounded()))%") }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
-    }
-
-    /// The live run's tail row.
-    static func working(_ run: NativeSubagent) -> String? {
-        guard !run.isTerminal, !run.needsAttention else { return nil }
-        return nativeRunWorking(run)
     }
 
     @ViewBuilder private func footer(_ run: NativeSubagent?) -> some View {
