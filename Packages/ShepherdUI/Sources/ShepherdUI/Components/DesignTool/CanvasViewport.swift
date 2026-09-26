@@ -212,6 +212,34 @@ public struct NWCanvasPin: Identifiable, Equatable, Sendable {
     }
 }
 
+/// The board actions over one board (`NWBoardActions`): which board, and what each does.
+public struct NWCanvasActions {
+    /// The board they float over (`NWCanvasBoard.id`).
+    public var board: String
+    public var actions: NWBoardActions.Actions
+
+    public init(board: String, actions: NWBoardActions.Actions) {
+        self.board = board
+        self.actions = actions
+    }
+}
+
+/// A board being dragged to a new place on the canvas.
+public struct NWBoardMove: Equatable, Sendable {
+    /// The board (`NWCanvasBoard.id`).
+    public var board: String
+    /// How far it has moved since the drag began, in canvas points.
+    public var offset: CGSize
+    /// The drag has ended: this is where the board stays.
+    public var ended: Bool
+
+    public init(board: String, offset: CGSize, ended: Bool) {
+        self.board = board
+        self.offset = offset
+        self.ended = ended
+    }
+}
+
 /// Where a click or the pointer landed on the canvas.
 public struct NWCanvasPick: Equatable, Sendable {
     /// The board under it, front-most first; nil over the empty canvas.

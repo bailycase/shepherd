@@ -176,4 +176,34 @@ struct DesignToolComponentTests {
         #expect(start == CGPoint(x: 0, y: y) && path.currentPoint == CGPoint(x: 100, y: y))
         #expect(path.boundingRect == rect)
     }
+
+    // MARK: Board actions, the direction tile, presenting
+
+    /// DZCanvas: the bar's bottom 2pt above the board's label (58pt above the frame), its leading
+    /// edge at the frame's middle, kept inside the canvas; none for a board off screen.
+    @Test func theBoardActionsSitOverTheBoardsLabelFromItsMiddle() throws {
+        let bar = CGSize(width: 375, height: 32)
+        let canvas = CGSize(width: 1000, height: 700)
+        let origin = try #require(NWBoardActions.origin(over: CGRect(x: 44, y: 200, width: 538, height: 336), bar: bar, canvas: canvas))
+        #expect(origin == CGPoint(x: 313, y: 200 - 24 - 2 - 32))
+        // Near the trailing edge and the top, it stays 16pt inside.
+        let edge = try #require(NWBoardActions.origin(over: CGRect(x: 800, y: 20, width: 538, height: 336), bar: bar, canvas: canvas))
+        #expect(edge == CGPoint(x: 1000 - 375 - 16, y: 16))
+        #expect(NWBoardActions.origin(over: CGRect(x: 1200, y: 20, width: 538, height: 336), bar: bar, canvas: canvas) == nil)
+    }
+
+    @Test func theDirectionTileFollowsTheLastBoard36PointsOn() {
+        // DZCanvas: A · phone at 626 × 480, 164 wide on screen, and the tile at 826.
+        #expect(NWDirectionTile.origin(after: CGRect(x: 626, y: 480, width: 164, height: 354)) == CGPoint(x: 826, y: 480))
+    }
+
+    @Test(arguments: [
+        // Fits the view with the canvas's margins and the label above it, never over 100%.
+        (CGSize(width: 1280, height: 800), CGSize(width: 1000, height: 700), CGFloat(912) / 1280),
+        (CGSize(width: 390, height: 844), CGSize(width: 1000, height: 700), CGFloat(572) / 844),
+        (CGSize(width: 200, height: 100), CGSize(width: 1000, height: 700), CGFloat(1)),
+    ])
+    func aPresentedBoardFitsTheView(_ board: CGSize, _ view: CGSize, _ zoom: CGFloat) {
+        #expect(abs(NWBoardPresentation<EmptyView>.zoom(for: board, in: view) - zoom) < 0.0001)
+    }
 }

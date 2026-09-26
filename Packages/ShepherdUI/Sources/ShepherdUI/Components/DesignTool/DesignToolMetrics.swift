@@ -108,6 +108,50 @@ public enum NWDesignMetrics {
     public static let commentCardSpacing: CGFloat = NW.Space.m
     public static let commentCardRadius: CGFloat = 10
 
+    // Board actions (NWBoardActions; NWDesignTool, DZCanvas)
+    /// NWDesignTool's bar: 4pt padding, radius 12, 2pt between items; items 28pt tall, 10pt
+    /// padding, radius 8, a 13pt glyph 6pt from the label in 12.5; ••• a 28pt circle.
+    public static let actionsPadding: CGFloat = NW.Space.xs
+    public static let actionsSpacing: CGFloat = NW.Space.xxs
+    public static let actionsRadius: CGFloat = NW.Radius.l
+    public static let actionItemHeight: CGFloat = NW.Height.controlM
+    public static let actionItemPadding: CGFloat = 10
+    public static let actionItemRadius: CGFloat = NW.Radius.m
+    public static let actionItemGap: CGFloat = NW.Space.s
+    public static let actionGlyph: CGFloat = 13
+    public static let actionTextSize: CGFloat = 12.5
+    /// DZCanvas draws the bar smaller: 32pt at radius 10, items 26pt at radius 6 with 8pt
+    /// padding, in 12; ••• a 26pt circle with a 14pt glyph.
+    public static let compactActionsHeight: CGFloat = NW.Height.controlL
+    public static let compactActionsRadius: CGFloat = 10
+    public static let compactActionItemHeight: CGFloat = 26
+    public static let compactActionItemPadding: CGFloat = NW.Space.m
+    public static let compactActionItemRadius: CGFloat = NW.Radius.s
+    public static let compactActionTextSize: CGFloat = 12
+    public static let moreGlyph: CGFloat = 14
+    /// The bar sits 2pt above its board's label (DZCanvas: 58pt above the frame at 42%).
+    public static let actionsGap: CGFloat = NW.Space.xxs
+
+    // "Ask for another direction" (DZCanvas)
+    /// A 300×190 dashed tile (1px `lineStrong`, radius 6), 36pt after the last board, top-aligned
+    /// with it: a 16pt `plus` over the words in 12 `textTertiary`, 6pt apart.
+    public static let directionTileSize = CGSize(width: 300, height: 190)
+    public static let directionTileRadius: CGFloat = NW.Radius.s
+    public static let directionTileGap: CGFloat = 36
+    public static let directionTileGlyph: CGFloat = 16
+    public static let directionTileTextSize: CGFloat = 12
+    public static let directionTileSpacing: CGFloat = NW.Space.s
+    public static let directionTileDash: [CGFloat] = [3, 3]
+
+    // Notes on the canvas (not drawn on a board: canvas points, scaled with the zoom)
+    /// A title note's words (`title1` and the other titles), semibold.
+    public static let titleNoteSize: CGFloat = 64
+    /// A sticky: its words at 16, 16pt padding, radius 8, 240 wide unless it says.
+    public static let stickyTextSize: CGFloat = 16
+    public static let stickyPadding: CGFloat = 16
+    public static let stickyRadius: CGFloat = 8
+    public static let stickyWidth: CGFloat = 240
+
     // A design card (NavDesigns)
     public static let cardRadius: CGFloat = 10
     public static let cardThumbnailHeight: CGFloat = 172
