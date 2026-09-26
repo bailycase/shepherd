@@ -115,6 +115,21 @@ struct PiSkillsReportTests {
         #expect(pi.skills[0].summary.isEmpty && pi.skills[0].invocation == .automatic)
     }
 
+    /// A login shell's startup files may print before node runs: the answer is the last line.
+    @Test(arguments: [
+        #"{"skills":[{"name":"n","path":"/a/n/SKILL.md"}]}"#,
+        "Welcome back!\n" + #"{"skills":[{"name":"n","path":"/a/n/SKILL.md"}]}"# + "\n",
+        "Using node v23\n{not json\n" + #"{"skills":[{"name":"n","path":"/a/n/SKILL.md"}]}"#,
+    ])
+    func theAnswerIsReadPastWhatTheShellPrints(stdout: String) throws {
+        let output = try #require(PiSkillsLoader.Output.decode(Data(stdout.utf8)))
+        #expect(output.skills.map(\.name) == ["n"])
+    }
+
+    @Test func stdoutWithoutAnAnswerDecodesToNothing() {
+        #expect(PiSkillsLoader.Output.decode(Data("zsh: command not found: node\n".utf8)) == nil)
+    }
+
     /// What a result depends on, so the page reads pi again when one changes: each skill's file,
     /// its folder and the folder beside it, and its package.
     @Test func aResultWatchesTheFoldersItCameFrom() {
