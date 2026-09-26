@@ -106,17 +106,18 @@ enum DesignPadMarkupFixtures {
         guard read else {
             canvas.markup.finishReading(sent: true)
             await FixtureWindows.wait(seconds: 15) { !canvas.comments.isEmpty }
-            // The proposals are comments 2 and 3 already, still to apply, and their pins, kept with
-            // no place drawn, find their elements.
+            // The proposals are comments 2 and 3 already, still to apply, and the pins of those on
+            // boards on screen, kept with no place drawn, find their elements.
             let placed = { (number: Int) in canvas.pins.first { $0.number == number }.map { $0.rect != .zero } ?? false }
-            await FixtureWindows.wait(seconds: 30) { placed(2) && placed(3) && canvas.isDrawn }
+            let shown = { canvas.openComments.filter { [2, 3].contains($0.number) && canvas.visibleBoards.contains($0.board) }.map(\.number) }
+            await FixtureWindows.wait(seconds: 30) { canvas.isDrawn && shown().allSatisfy(placed) }
             let card = canvas.markupCard(NativeMarkupProposals(proposals: proposed))
             let through = touchesReachTheCanvas()
             let ok = card.cards.map(\.number) == [2, 3] && card.state == .open && canvas.openComments.count == 3
-                && placed(2) && placed(3) && canvas.markup.showsPalette && through
+                && shown().allSatisfy(placed) && canvas.markup.showsPalette && through
             print("FIXTURE CHECK \(ok ? "ok" : "FAILED:") design-pad-markup-reply: cards \(card.cards.map(\.number)) \(card.state), "
-                  + "\(canvas.openComments.count) comments, pins placed \(placed(2)) \(placed(3)), palette \(canvas.markup.showsPalette), "
-                  + "a touch the ink doesn't take reaches the canvas \(through)")
+                  + "\(canvas.openComments.count) comments, pins on screen \(shown()) placed \(shown().map(placed)), "
+                  + "palette \(canvas.markup.showsPalette), a touch the ink doesn't take reaches the canvas \(through)")
             return
         }
         let boards = canvas.boards.compactMap { board in DesignPath(board.id).map { (path: $0, frame: board.frame) } }
