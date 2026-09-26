@@ -145,10 +145,13 @@ struct AgentLayoutModel: Equatable {
     var terminalHeight: CGFloat = AppLayout.terminalPanelHeight
     /// The design the thread's agent draws: the layout is its canvas and chat (`DesignLayoutView`).
     var design: DesignID?
+    /// That design builds a design system: the layout is the system's page and the chat
+    /// (`DesignSystemLayoutView`).
+    var systemBuild = false
 
     static func == (a: AgentLayoutModel, b: AgentLayoutModel) -> Bool {
         a.tab == b.tab && a.isVisible == b.isVisible && a.thread == b.thread && a.focusedPaneID == b.focusedPaneID
-            && a.design == b.design
+            && a.design == b.design && a.systemBuild == b.systemBuild
             && a.inspectingRunID == b.inspectingRunID && a.sideTab == b.sideTab && a.sideNews == b.sideNews
             && a.sideMaximized == b.sideMaximized && a.review === b.review
             && a.terminal == b.terminal && a.terminalHeight == b.terminalHeight && a.foldedState == b.foldedState
@@ -164,11 +167,12 @@ struct AgentLayoutModel: Equatable {
         private let panes: RightPaneState
         private let reviews: [AgentID: ReviewSession]
         private let terminals: TerminalPanels
-        private let designs: Set<DesignID>
+        /// Each design, and whether it builds a system.
+        private let designs: [DesignID: Bool]
 
         init(vm: ShepherdViewModel, visibleTabID: TabID?) {
             terminals = vm.terminalPanels
-            designs = Set(vm.state.designs.map(\.id))
+            designs = Dictionary(vm.state.designs.map { ($0.id, $0.buildsSystem) }, uniquingKeysWith: { first, _ in first })
             self.visibleTabID = visibleTabID
             focusedPaneID = vm.focusedPaneID
             agentsByTab = Dictionary(vm.state.agents.map { ($0.tabID, $0) }, uniquingKeysWith: { first, _ in first })
@@ -193,7 +197,8 @@ struct AgentLayoutModel: Equatable {
                                     sideMaximized: owner.map { panes.maximized.contains($0) } ?? false,
                                     review: thread.flatMap { reviews[$0.agentID] },
                                     terminal: terminal, foldedState: folded, terminalHeight: terminals.height,
-                                    design: agentsByTab[tab.id]?.designID.flatMap { designs.contains($0) ? $0 : nil })
+                                    design: agentsByTab[tab.id]?.designID.flatMap { designs[$0] != nil ? $0 : nil },
+                                    systemBuild: agentsByTab[tab.id]?.designID.flatMap { designs[$0] } ?? false)
         }
     }
 }
@@ -215,7 +220,9 @@ struct AgentLayoutView: View, Equatable {
         let thread = model.thread
         let inspecting = model.inspectingRunID
         let sideTab = model.sideTab
-        if let design = model.design, let thread {
+        if let design = model.design, let thread, model.systemBuild {
+            DesignSystemLayoutView(vm: vm, model: model, designID: design, thread: thread)
+        } else if let design = model.design, let thread {
             DesignLayoutView(vm: vm, model: model, designID: design, thread: thread)
         } else {
             threadLayout(thread: thread, inspecting: inspecting, sideTab: sideTab)

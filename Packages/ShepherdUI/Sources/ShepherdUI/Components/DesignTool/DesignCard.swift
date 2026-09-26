@@ -136,6 +136,7 @@ public struct NWDesignSystemCard: View {
     }
 
     public var body: some View {
+        let _ = NWRenderProbe.tick("design.systemCard")
         let shape = RoundedRectangle(cornerRadius: NWDesignMetrics.cardRadius)
         HStack(spacing: NWDesignMetrics.systemCardSpacing) {
             if !colors.isEmpty {
@@ -185,17 +186,30 @@ public struct NWDesignSystemCard: View {
 
 /// The design's system in the design header (NWDesignSystemChip; DZCanvas): 24pt, 8pt padding,
 /// radius 6, a hairline, up to three of the system's colors as 8pt squares, then its name in
-/// mono 11.5 `textSecondary`.
+/// mono 11.5 `textSecondary`. With an action it opens the system's page.
 public struct NWDesignSystemChip: View {
     let name: String
     let colors: [Color]
+    let action: (() -> Void)?
 
-    public init(_ name: String, colors: [Color] = []) {
+    public init(_ name: String, colors: [Color] = [], action: (() -> Void)? = nil) {
         self.name = name
         self.colors = colors
+        self.action = action
     }
 
     public var body: some View {
+        if let action {
+            Button(action: action) { chip }
+                .buttonStyle(.plain)
+                .help("Open \(name)")
+                .accessibilityAddTraits(.isButton)
+        } else {
+            chip
+        }
+    }
+
+    private var chip: some View {
         HStack(spacing: NW.Space.s) {
             if !colors.isEmpty {
                 HStack(spacing: NWDesignMetrics.chipSwatchSpacing) {
@@ -215,6 +229,7 @@ public struct NWDesignSystemChip: View {
         .padding(.horizontal, NWDesignMetrics.chipPadding)
         .frame(height: NWDesignMetrics.chipHeight)
         .nwBorder(Color.nw.lineSubtle, radius: NWDesignMetrics.chipRadius)
+        .contentShape(RoundedRectangle(cornerRadius: NWDesignMetrics.chipRadius))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Design system \(name)")
     }
@@ -223,7 +238,7 @@ public struct NWDesignSystemChip: View {
 /// A design system or starting point on New design (DZStart): 12×14 padding, radius 8, a
 /// hairline, 6pt between its lines, the hover fill. A 13pt glyph and a title in mono 12
 /// semibold; a line in 12.5 `textPrimary`; a note in 11 `textTertiary`. The chosen card is
-/// `lanternTint` with a `lanternText` line and glyph.
+/// `lanternTint` with a `lanternText` border and glyph.
 public struct NWDesignStartCard: View {
     let symbol: String
     let title: String
@@ -255,7 +270,7 @@ public struct NWDesignStartCard: View {
             }
             Text(line)
                 .font(.nwSans(NWDesignMetrics.startLineSize))
-                .foregroundStyle(chosen ? Color.nw.lanternText : Color.nw.textPrimary)
+                .foregroundStyle(Color.nw.textPrimary)
                 .lineLimit(1)
             Text(note)
                 .font(.nwSans(NWDesignMetrics.startNoteSize))
@@ -267,7 +282,7 @@ public struct NWDesignStartCard: View {
         .padding(.horizontal, NWDesignMetrics.cardPaddingHorizontal)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(chosen ? Color.nw.lanternTint : hovering ? Color.nw.bgHover : .clear, in: shape)
-        .nwBorder(Color.nw.lineSubtle, radius: NW.Radius.m)
+        .nwBorder(chosen ? Color.nw.lanternText : Color.nw.lineSubtle, radius: NW.Radius.m)
         .contentShape(shape)
         .onHover { hovering = $0 }
         .nwAnimation(.hover, value: hovering)

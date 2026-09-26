@@ -43,7 +43,7 @@ private struct SidebarDestinations: View {
         let rows = SidebarDerivation.destinations(shown: vm.shownDestination, moreOpen: vm.moreOpen,
                                                   offlineHosts: vm.offlineHostCount,
                                                   newThreadChord: vm.keybindings.display(.newAgent),
-                                                  designs: vm.designToolEnabled)
+                                                  designs: vm.designToolEnabled, systemShown: vm.shownDesign?.buildsSystem == true)
         VStack(alignment: .leading, spacing: NWSidebarMetrics.rowSpacing) {
             ForEach(rows) { row in
                 NWSidebarDestination(row.title, icon: row.icon, selected: row.selected, child: row.child, trailing: row.trailing) {

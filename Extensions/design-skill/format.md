@@ -64,7 +64,9 @@ class Component extends DCLogic {
 ## The rules that matter
 
 - **The head line** `<script src="./support.js"></script>` is exact. Shepherd refuses a board
-  without it.
+  without it. Only an installed design system's files may follow it in the head:
+  `<link rel="stylesheet" href="ds/<namespace>/tokens.css">`, then the stylesheets and scripts
+  its README names (`../ds/…` from a board in a folder).
 - **One template** between `<x-dc>` and `</x-dc>`. `<helmet>` inside it holds what belongs in
   the page's head: `<style>` for page basics and custom properties, and at most a Google Fonts
   `css2` `<link>`.
@@ -91,6 +93,11 @@ class Component extends DCLogic {
 - `<dc-import name="Card" item="{{ it }}" hint-size="320px,120px"></dc-import>` mounts the
   sibling board `Card.dc.html` in place; its other attributes become the child's props
   (`data-id` reads as `dataId`). Never self-close it, and don't name a prop `name`.
+- `<x-import component-from-global-scope="Acme.Button" variant="primary">Save</x-import>`
+  mounts a design system's component, from the bundle its README names (loaded in the head), at
+  any depth (`Acme.Field.TextInput`). Its attributes are props, kebab-case for camelCase
+  (`icon-only="{{ yes }}"`; handlers only as holes), its content is `children`, and `style` on it
+  only places and sizes its slot. Never self-close it.
 - Links between boards: `<a href="B.dc.html">` moves a playing prototype to board B. Style the
   `<a>` itself as the button.
 
@@ -117,7 +124,7 @@ size. The viewer sets these in Tweak and the values arrive as props, so read eac
 ## What a board may not hold
 
 No `<iframe>`, `<object>` or `<embed>`; no `data:` URIs; no network beyond one Google Fonts
-stylesheet. Shepherd refuses the first three outright.
+stylesheet and the design's own files (its `ds/` included). Shepherd refuses the first three outright.
 
 ## canvas.json
 

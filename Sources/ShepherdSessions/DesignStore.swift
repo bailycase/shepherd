@@ -641,6 +641,134 @@ public final class DesignStore: @unchecked Sendable {
         }
     }
 
+    // MARK: Design systems
+
+    /// Copies a design system into the design's `project/ds/<namespace>/` (files of an earlier
+    /// copy that this one doesn't hold leave) and records it in canvas.json's `designSystems`,
+    /// in place of an earlier record of that folder, else last: one change, when the design is
+    /// still at `baseRevision` (nil: any). A folder whose record came from elsewhere (claude.ai)
+    /// is kept as it is, and a canvas holds at most `DesignIndex.maxSystems` systems.
+    func installSystem(_ id: DesignID, namespace: String, record: DesignIndex.SystemRecord, files: [String: Data],
+                       baseRevision: UInt64?) async throws -> DesignWriteResult {
+        try await run {
+            var design = try self.load(id)
+            try Self.compare(baseRevision, design.revision)
+            guard DesignPath.isSystemNamespace(namespace) else { throw DesignSystemError.invalidNamespace(namespace) }
+            guard files[DesignSystemFile.tokens] != nil else { throw DesignSystemError.noTokens(namespace) }
+            var systems = design.index.designSystems ?? []
+            let at = systems.firstIndex { $0.namespace == namespace }
+            if let at, !systems[at].isShepherds { throw DesignSystemError.namespaceTaken(namespace) }
+            guard let project = self.projectFolder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+            let folder = project.appendingPathComponent("ds", isDirectory: true).appendingPathComponent(namespace, isDirectory: true)
+            if FileManager.default.fileExists(atPath: folder.path), at == nil {
+                throw DesignSystemError.namespaceTaken(namespace)
+            }
+            var next = design.index
+            if let at {
+                systems[at] = record
+                // A later record of the same folder goes.
+                systems = systems.enumerated().filter { $0.offset == at || $0.element.namespace != namespace }.map(\.element)
+            } else {
+                systems.append(record)
+            }
+            next.designSystems = systems
+            let known = Set(design.index.problems())
+            let problems = next.problems().filter { !known.contains($0) }
+            guard problems.isEmpty else { throw DesignStoreError.invalidIndex(problems) }
+            let boards = try self.files(of: id, &design)
+            let others = self.systemFileCount(project, excluding: namespace)
+            guard boards.count + others + files.count + 1 <= Self.maxFiles else { throw DesignStoreError.tooManyFiles }
+            guard Self.isInside(Self.deepestExisting(folder), project) else {
+                throw DesignStoreError.io("ds/\(namespace) leads outside the design")
+            }
+            let manager = FileManager.default
+            do {
+                try manager.createDirectory(at: folder, withIntermediateDirectories: true)
+                for (path, data) in files.sorted(by: { $0.key < $1.key }) {
+                    guard DesignSystemFile.isPath(path) else { throw DesignSystemError.invalidFile(path) }
+                    let url = folder.appendingPathComponent(path)
+                    // Checked before anything is made, so a link under ds/ never has a folder made through it.
+                    guard Self.isInside(Self.deepestExisting(url.deletingLastPathComponent()), folder) else {
+                        throw DesignSystemError.invalidFile(path)
+                    }
+                    try manager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    if (try? Data(contentsOf: url)) != data { try data.write(to: url, options: .atomic) }
+                }
+                for stale in self.systemFiles(folder) where files[stale] == nil {
+                    try? manager.removeItem(at: folder.appendingPathComponent(stale))
+                }
+                try next.encoded().write(to: self.indexURL(id), options: .atomic)
+            } catch let error as DesignSystemError {
+                throw error
+            } catch {
+                throw DesignStoreError.io("could not install \(namespace): \(error.localizedDescription)")
+            }
+            design.index = next
+            try self.commit(&design, id)
+            return DesignWriteResult(revision: design.revision, changed: true, title: next.title, boardCount: next.boards.count)
+        }
+    }
+
+    /// The systems canvas.json records, with the tokens each copy under `ds/` holds: its
+    /// tokens.json, else the custom properties of its tokens.css.
+    public func installedSystems(_ id: DesignID) async throws -> [DesignSystemInstalled] {
+        try await run {
+            let design = try self.load(id)
+            guard let project = self.projectFolder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+            return (design.index.designSystems ?? []).compactMap { record -> DesignSystemInstalled? in
+                guard let namespace = record.namespace, DesignPath.isSystemNamespace(namespace) else { return nil }
+                let folder = project.appendingPathComponent("ds", isDirectory: true).appendingPathComponent(namespace, isDirectory: true)
+                var tokens: DesignSystemTokens?
+                var file: String?
+                let json = folder.appendingPathComponent(DesignSystemFile.tokens)
+                let css = folder.appendingPathComponent(DesignSystemFile.stylesheet)
+                if Self.isInside(json, project), let data = try? Data(contentsOf: json), let read = try? DesignSystemTokens.decode(data) {
+                    tokens = read
+                    file = "ds/\(namespace)/\(DesignSystemFile.tokens)"
+                } else if Self.isInside(css, project), let text = try? String(contentsOf: css, encoding: .utf8) {
+                    let declared = DesignSystemCSS.declarations(text, file: DesignSystemFile.stylesheet)
+                    var read = DesignSystemTokens(name: record.title, namespace: namespace)
+                    read.colors = declared.filter { DesignSystemCSS.isHex($0.value) }.map {
+                        .init(name: $0.name, value: $0.value, source: .init(file: $0.file, line: $0.line))
+                    }
+                    for found in declared {
+                        guard let px = DesignSystemCSS.px(found.value) else { continue }
+                        let step = DesignSystemTokens.Length(name: found.name, px: px, source: .init(file: found.file, line: found.line))
+                        switch DesignTokens.role(of: found.name) {
+                        case .radius: read.radii.append(step)
+                        case .text: continue
+                        case .spacing, nil: read.spacing.append(step)
+                        }
+                    }
+                    tokens = read
+                    file = "ds/\(namespace)/\(DesignSystemFile.stylesheet)"
+                }
+                return DesignSystemInstalled(namespace: namespace, title: record.title, shepherd: record.isShepherds,
+                                             version: record.extra["version"]?.stringValue, tokens: tokens, tokensFile: file)
+            }
+        }
+    }
+
+    /// The files under a system's folder in a design, by path relative to it.
+    private func systemFiles(_ folder: URL) -> [String] {
+        let root = folder.resolvingSymlinksInPath().path + "/"
+        var out: [String] = []
+        let walker = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles])
+        while let url = walker?.nextObject() as? URL {
+            let resolved = url.resolvingSymlinksInPath().path
+            guard resolved.hasPrefix(root), (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true else { continue }
+            out.append(String(resolved.dropFirst(root.count)))
+        }
+        return out
+    }
+
+    /// How many files the design's `ds/` holds outside `namespace`'s folder.
+    private func systemFileCount(_ project: URL, excluding namespace: String) -> Int {
+        let ds = project.appendingPathComponent("ds", isDirectory: true)
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: ds.path)) ?? []
+        return names.filter { $0 != namespace }.reduce(0) { $0 + systemFiles(ds.appendingPathComponent($1, isDirectory: true)).count }
+    }
+
     // MARK: Comments
 
     /// The design's comments, open and resolved, in the order they were made.
