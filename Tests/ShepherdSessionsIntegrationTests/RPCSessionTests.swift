@@ -55,6 +55,8 @@ struct RPCSessionTests {
             case .queueUpdate: "queue_update"
             case .extensionUIRequest: "extension_ui_request"
             case .extensionError: "extension_error"
+            case .compactionStart: "compaction_start"
+            case .compactionEnd: "compaction_end"
             case .unknown(let type): "unknown:\(type)"
             }
         }
@@ -97,7 +99,7 @@ struct RPCSessionTests {
             "message_update", "message_update", "message_update", "message_update", "message_update",
             "message_update", "message_update",
             "message_end", "tool_execution_start", "tool_execution_end", "turn_end",
-            "unknown:compaction_start", "agent_end", "agent_settled",
+            "unknown:stub_unmodelled_event", "agent_end", "agent_settled",
         ])
         var text = ""
         for case .messageUpdate(let delta) in h.events.current where delta.type == "text_delta" {
@@ -134,7 +136,7 @@ struct RPCSessionTests {
         try await h.waitFor("agent_settled")
         #expect(order.current == ["history:12", "prompt", "agent_start", "turn_start", "message_start"]
             + Array(repeating: "message_update", count: 7)
-            + ["message_end", "tool_execution_start", "tool_execution_end", "turn_end", "unknown:compaction_start", "agent_end", "agent_settled"])
+            + ["message_end", "tool_execution_start", "tool_execution_end", "turn_end", "unknown:stub_unmodelled_event", "agent_end", "agent_settled"])
     }
 
     /// An answer that arrived before its deadline wins, even while it is still decoding off the

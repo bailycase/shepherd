@@ -14,7 +14,8 @@ import ShepherdRemote
 ///   row of the paperclip, "/ commands", the model and thinking chips, and Send.
 ///
 /// Send queues the message while pi works (it goes when pi settles); hold it to Steer now, which
-/// pi reads once its current tool calls finish. Stop lives in the thread's header.
+/// pi reads once its current tool calls finish. Stop lives in the thread's header. The context
+/// ring sits just before Send on both (ContextIdeas › A); a tap opens its details as a sheet.
 struct ThreadComposer: View {
     let ref: AgentRef
     @Environment(ThreadStores.self) private var threads
@@ -115,6 +116,9 @@ struct ThreadComposer: View {
         .task(id: ModelsAsk(session: host?.session, thinking: store.thinking != nil && store.supportedActions.contains("setThinking"))) {
             if store.thinking != nil && store.supportedActions.contains("setThinking") { await state.loadModels(host: host) }
         }
+        .sheet(isPresented: Binding(get: { state.showingContext }, set: { state.showingContext = $0 })) {
+            ContextDetailsSheet(store: store, live: live) { id in state.find(id) }
+        }
         .sheet(isPresented: Binding(get: { state.choosingModel }, set: { state.choosingModel = $0 })) {
             ModelPickerSheet(host: host, current: store.model, currentLevels: { store.snapshot?.thinkingLevels }) { model in
                 Task { await store.setModel(model) }
@@ -156,7 +160,10 @@ struct ThreadComposer: View {
             NWCapsuleComposer(isFocused: focused) {
                 field(store: store, placeholder: store.running ? "Queue a follow-up…" : "Follow up…")
             } action: {
-                sendButton(store: store, state: state, live: live)
+                HStack(spacing: 0) {
+                    contextMeter(store: store, state: state)
+                    sendButton(store: store, state: state, live: live)
+                }
             }
         }
     }
@@ -181,7 +188,11 @@ struct ThreadComposer: View {
                 cardControls(store: store, state: state, live: live)
                 Spacer(minLength: NW.Space.m)
             }
-            sendButton(store: store, state: state, live: live)
+            // The ring and Send keep their place whatever the chips do.
+            HStack(spacing: 0) {
+                contextMeter(store: store, state: state)
+                sendButton(store: store, state: state, live: live)
+            }
         }
     }
 
@@ -222,6 +233,13 @@ struct ThreadComposer: View {
         !store.commands.isEmpty || store.model != nil || store.supportedActions.contains("setModel")
             || NativeThinkingLevel.offered(thinking: store.thinking, supportedActions: store.supportedActions, model: store.model,
                                            listing: state.models, levels: store.thinkingLevels)
+    }
+
+    /// The context ring (no ring from a host that reports no context). Its own equatable view:
+    /// a keystroke or a streamed chunk never redraws it.
+    private func contextMeter(store: NativeThreadStore, state: ComposerState) -> some View {
+        ContextMeterButton(store: store, expanded: state.showingContext) { state.showingContext = true }
+            .equatable()
     }
 
     private func acceptsImages(_ store: NativeThreadStore) -> Bool {

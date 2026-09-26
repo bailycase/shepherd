@@ -76,7 +76,7 @@ SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter PreviewTests
 swift test                                   # everything (previews skip without SHEPHERD_PREVIEW_DIR)
 CI=true swift test --no-parallel             # what CI runs (in four shards): serially, timing-sensitive tests skipped
 PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" node --test Tests/Extensions/*.test.mjs
-python3 -m unittest discover -s Tests/Release   # the release workflow's rules (scripts/release.py)
+python3 -m unittest discover -s Tests/Release   # the release workflow's rules (scripts/release.py), CI's stale-link check
 ```
 
 **Environment variables:**
@@ -314,7 +314,16 @@ timing-sensitive tests. Docs-only changes (`docs/**`, `*.md`) don't trigger it.
 - **Caches:** dependency checkouts (keyed on `Package.resolved`) and build products (one entry per
   commit, restored from the nearest earlier one) are cached apart. `scripts/ci_mtimes.py` puts
   each unchanged source's saved mtime back after checkout, so a restored build compiles only
-  what changed. A push to `nightly` runs no tests: its `warm` job builds from scratch and saves
+  what changed. SwiftPM's native build system reruns a target only when a *direct* dependency's
+  module changes, so a change to `ShepherdCore` could leave `ShepherdProtocolUnitTests` (which
+  calls it through `ShepherdProtocol`) compiled against the old one: undefined symbols at link,
+  or wrong field offsets that link fine. It reproduces locally with the native build system,
+  cache or not. The action therefore removes the restored `swift-version-*.txt`, an input of
+  every compile command, so each target's driver runs and recompiles what any module it loaded
+  changed (a few seconds when nothing did). A link that still fails with undefined symbols and no
+  other error (`scripts/ci_stale_link.py`, tested in `Tests/Release`) gets a `::warning::` and
+  one rebuild from scratch that keeps the dependency checkouts; a compile error fails at once.
+  A push to `nightly` runs no tests: its `warm` job builds from scratch and saves
   both caches where every PR based on `nightly` can read them. Pull requests save nothing, so
   every push to one restores that entry and compiles the PR's changes on top; a PR into
   `master` reads only `master`'s. Master pushes and manual runs save from shard C, before its
@@ -345,7 +354,8 @@ Sources/
                        No deps.
   ShepherdProtocol/    ExtensionMessage/ExtensionReply (+ ChildRun, PaneInfo, …), RemoteMessage
                        (RemoteRequest/RemoteReply, RemoteProtocol version + capabilities),
-                       NativeThread (requests, results, NativeThreadSnapshot), RPCWire (pi's
+                       NativeThread (requests, results, NativeThreadSnapshot), NativeThreadContext
+                       (the context and compactions), RPCWire (pi's
                        JSONL, lenient), Framing (NDJSON, LineBuffer, 1 MiB cap), ShepherdPaths,
                        ShepherdEdition (Shepherd or Shepherd Nightly, from the bundle id),
                        DiffFile (a diff's files, hunks and lines), Changes (the Changes pane's
@@ -354,7 +364,8 @@ Sources/
                        NativeTurnPresentation (a turn's items), NativeMarkdown (the prose
                        parser: tables, lists, images, details, footnotes), NativeActivity
                        (activity lines, the changes card), NativeQueueRules (the queue's rules,
-                       host and client),
+                       host and client), NativeContextPresentation (the context ring, its
+                       details, compaction lines),
                        TerminalPanel (a layout's terminal tabs, the key row's bytes, the panel's
                        height, RemoteTerminalLink), AutomationPresentation (automation rows, runs
                        and what a client may do), AgentBranchPresentation (the header's branch
@@ -364,7 +375,7 @@ Sources/
   ShepherdPTYSpawn/    The PTY child side (fork → exec) in C: no Swift runs between the two.
   ShepherdSessions/    SessionServer (state, sessions, extension socket, remote listener),
                        RPCSession, RPCThreadState (+Queue: the queue of messages sent while pi
-                       works), ThreadOriginStore (where delivered messages came from, kept per pi
+                       works; +Context: what fills the context, compactions), ThreadOriginStore (where delivered messages came from, kept per pi
                        session), AutomationRunLog (each automation's runs), PTYSession,
                        SessionScreen (SwiftTerm), StateStore,
                        PaneRequest (pane/review/automation requests + outcomes), RemoteFileUpload,
@@ -391,8 +402,9 @@ Sources/
     TerminalPanels (each layout's terminal panel: shown, tab, maximized, activity),
       TerminalPanelLayout (TerminalPanelGeometry, pure), TerminalPanelViews (strip, divider)
     Thread/            ThreadView, ThreadTurns, ThreadTools (activity lines), ThreadMarkdown,
-                       Composer, QueueStack ("Up next", the queue above the composer), Subagents,
-                       SubagentPresentation, SubagentInspector
+                       Composer, QueueStack ("Up next", the queue above the composer),
+                       ContextMeter (the ring beside Send, its details, compaction lines),
+                       Subagents, SubagentPresentation, SubagentInspector
     TerminalSessions (TerminalSessionStore), AgentStartQueue (launch order of restored pi),
       TerminalHost (the only TerminalSurfaceKit import),
       NativeThreadStores (+ LegacyTerminalAgents), PaneControl, PaneFocusMemory
@@ -555,7 +567,7 @@ variables are blanked.
   or trusted network is the transport boundary. Never describe the listener as internet-safe.
 - **Protocol** (NDJSON, `RemoteMessage.swift`):
   - state fetch and pushed `stateChanged`
-  - native thread requests
+  - native thread requests, with the context and Compact now behind `native.context.v1`
   - attach, detach, input, resize, and acknowledged paste
   - pane open, close, and split resize
   - `listDir`, `listModels`, `addSpace`, and `createAgent` with `creationOptions`
