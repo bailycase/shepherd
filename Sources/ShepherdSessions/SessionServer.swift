@@ -2910,6 +2910,16 @@ public final class SessionServer: @unchecked Sendable {
         return result
     }
 
+    /// Copies a board beside itself as a new board (Duplicate): its file and its canvas entry
+    /// as one write, when the design is still at `baseRevision`. Answers the copy's path.
+    public func duplicateDesignBoard(_ designID: DesignID, path: DesignPath,
+                                     baseRevision: UInt64? = nil) async throws -> DesignDuplicate {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        let duplicate = try await designs.duplicateBoard(designID, path: path, baseRevision: baseRevision)
+        try await enqueue { try self.commitDesignWrite(designID, duplicate.result) }
+        return duplicate
+    }
+
     // MARK: - Design comments
 
     /// What a comment or reply made on the canvas left behind: the comment as kept, and why it
