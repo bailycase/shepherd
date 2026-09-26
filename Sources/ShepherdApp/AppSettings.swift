@@ -90,6 +90,7 @@ final class AppSettings {
         static let worktreeDeleteLocalBranch = "shepherd.worktree.deleteLocalBranch"
         static let worktreeAutoMergePR = "shepherd.worktree.autoMergePR"
         static let worktreeMergeMethod = "shepherd.worktree.mergeMethod"
+        static let designToolEnabled = "shepherd.experiments.designTool"
 
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
@@ -103,6 +104,7 @@ final class AppSettings {
             worktreeAutoCommit, worktreeGeneratePRDescription,
             worktreeDeleteLocalBranch, worktreeAutoMergePR,
             worktreeMergeMethod, skillsInSlashMenu, skillsDirectoryKey,
+            designToolEnabled,
         ]
 
         /// What Reset settings clears: everything but Remote's listener, which only its own
@@ -327,6 +329,13 @@ final class AppSettings {
         didSet { store.set(worktreeMergeMethod.rawValue, forKey: Key.worktreeMergeMethod) }
     }
 
+    /// Settings ▸ Experiments ▸ Design tool: the Designs destination, design rows in Recents,
+    /// and New thread's "Start a design". Off by default; designs made while it was on keep
+    /// their files and agents while it is off.
+    var designToolEnabled: Bool {
+        didSet { store.set(designToolEnabled, forKey: Key.designToolEnabled) }
+    }
+
     private let store: UserDefaults
 
     /// `edition` picks defaults that differ between Shepherd and Shepherd Nightly (the
@@ -383,6 +392,7 @@ final class AppSettings {
         worktreeAutoMergePR = store.bool(forKey: Key.worktreeAutoMergePR)
         worktreeMergeMethod = store.string(forKey: Key.worktreeMergeMethod)
             .flatMap(WorktreeMergeMethod.init(rawValue:)) ?? .squash
+        designToolEnabled = store.bool(forKey: Key.designToolEnabled)
     }
 
     static let uiDensityRange: ClosedRange<Double> = 0.8...1.5
@@ -453,6 +463,7 @@ final class AppSettings {
         worktreeDeleteLocalBranch = true
         worktreeAutoMergePR = false
         worktreeMergeMethod = .squash
+        designToolEnabled = false
         // Then clear the store, so an unset preference reads as "never
         // configured" and follows a future change of default.
         for key in Key.resettable {

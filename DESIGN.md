@@ -145,7 +145,7 @@ And the rules that follow from them:
 | Status & feedback: no modal alerts for agent events | One: an agent asking to delete another opens `PeerDeleteDialog` | Only the user deletes an agent, by a click (AGENTS.md › Agents never delete each other on their own) |
 | NavAutomations: When and Next columns, Scheduled and On an event tabs, a schedule or trigger per automation ("Every day · 02:00"), a run's outcome ("passed", "1 PR failed CI"), a "mission" kind, and Repos | The table without When and Next and with no tabs; the run's word and time ("finished · 6h ago"), every run starting a thread, and Folder in place of Repos (Automations page) | The user's decision, 2026-09-25 ("Build both, with what we have (Recommended)"): "Automations = table + detail with name, host, last run, prompt, runs, Run now (no schedules, triggers or next-run column)". Automations have no schedule or trigger, and a run's result is its thread |
 | NavHosts: daemon hosts ("Shepherd daemon · Linux"), Load, worktree disk use, Open in Finder, Open terminal and Logs, and missions in the explainer | This Mac and each remote host with Running, Worktrees (a count), Repos and Address, or Waiting, Last seen and Address while unreachable; Retry and Remove (Hosts page) | The user's decision, 2026-09-25 ("Build both, with what we have (Recommended)"): "Hosts = This Mac and each remote host's card with status, address, threads, Retry, Remove, Add host". Shepherd has no daemon, and nothing measures load or disk use |
-| The sidebar on every Mac board: Missions and Designs destinations, More ▸ Design systems and Archive, and the New thread page's mission and design cards | Hidden | The user's decision, 2026-09-25 ("Hide them (Recommended)"): not built yet, hidden until built |
+| The sidebar on every Mac board: Missions and Designs destinations, More ▸ Design systems and Archive, and the New thread page's mission and design cards | Hidden; Designs and the design card show while Settings ▸ Experiments ▸ Design tool is on | The user's decision, 2026-09-25 ("Hide them (Recommended)"): not built yet, hidden until built. The Design tool ships behind its experiment, off by default (the design tool plan's decision 2) |
 | MobileAutomations, iPadAutomations: a schedule or trigger per automation ("Every day 02:00", "New issue in checkout-svc", "When CI goes green on #24"), its model and repos, a run's outcome ("Passed · 3 migrations, all reversible", "1 PR failed CI"), a CI-checks bar on a running card, and a "mission" kind | "When Shepherd starts · folder" or "By hand", an On switch and a folder on the host, the run's status word with its time ("Finished · 12h ago"), and "Running · 4m" | As NavAutomations: the host has no schedules, triggers, models, repo lists or check tracking, and a run's result is its thread (iOS: Automations) |
 | MobileCommit: the sheet's title "Commit" | "Commit n files", as the Mac's commit sheet | The phone and the Mac share the commit form's parts |
 | iPadReview: Revert file in a file's header | Not offered on iOS | The remote protocol has no revert; the Mac's local review keeps it (docs/ios/README.md › Review) |
@@ -1167,8 +1167,10 @@ one. The New agent sheet (⇧⌘T) stays for its directory and base fields.
   `textTertiary` with a 12pt `textSecondary` glyph 8pt before it, a title in 13 medium truncating at
   the tail, and a detail in 11 `textTertiary`. Only **Continue** is built: a speech bubble, the most
   recent running thread's title, and "running · 42m" (since its turn began, counting). Clicking it
-  opens that thread; with nothing running there is no card. The mission and design cards ("Bigger
-  than one thread?", "Need a mockup first?") are hidden until Missions and Designs are built.
+  opens that thread; with nothing running there is no card. **Start a design** ("Need a mockup
+  first?", "Start a design", "HTML boards on a canvas", the nib) is the last card while Settings ▸
+  Experiments ▸ Design tool is on, and opens New design. The mission card ("Bigger than one
+  thread?") is hidden until Missions is built.
 
 ### Missions page
 
@@ -1198,9 +1200,10 @@ one. The New agent sheet (⇧⌘T) stays for its directory and base fields.
 
 ### Designs page
 
-**Not built yet** (NavDesigns; "recent designs and design systems"). The page takes the header
-above ("Designs", "Filter designs", and **New design**); its recent designs and design systems
-are specified with the rest of the design tool, under Design tool › Designs.
+**Built behind Settings ▸ Experiments ▸ Design tool** (NavDesigns; "recent designs and design
+systems"; `DesignsPage`). The page takes the header above ("Designs", "Filter designs", and **New
+design**); its recent designs and design systems are specified with the rest of the design tool,
+under Design tool › Designs.
 
 ### Automations page
 
@@ -3811,8 +3814,12 @@ then a list (560pt) beside the selected item's preview, a hairline between.
 
 The last page of the nav, with `flask` (`SettingsExperiments.swift`, `SuggestionsModel`): features
 still being tried, each off until the user turns it on. Header: "Experiments", then "Features
-we're still trying out. Each is off until you turn it on." Its one experiment today is Suggested
-instructions. The experiment lives on the host (`SuggestionsStore`, `suggestions.json` beside the
+we're still trying out. Each is off until you turn it on." Its experiments are Suggested
+instructions and the Design tool. The Design tool's card (not drawn on the board) is the same card
+with the nib in its tile, "Design tool", "Describe a page or flow and a design agent draws it as
+HTML boards on a canvas you pan and zoom. Adds Designs to the sidebar and “Start a design” to New
+thread.", and its switch; it has no options and no "on since" tag, and it is a preference of this
+Mac (`AppSettings.designToolEnabled`). Suggested instructions lives on the host (`SuggestionsStore`, `suggestions.json` beside the
 instructions): agents suggest through the instructions extension's `suggest_instruction`, which an
 agent gets only while the experiment is on for its kind and names the files it may suggest for
 (`SHEPHERD_SUGGEST_FILES`); remote clients read and act on it over `suggestions.v1`.
@@ -7520,8 +7527,11 @@ review pane's.
 
 ## Design tool
 
-**Not built yet.** Nothing in this section exists in the Mac app, the iOS client, or ShepherdUI: no
-Designs destination, canvas, design agent, design system reader, export, or live link. The iOS
+**Partly built, on the Mac, behind Settings ▸ Experiments ▸ Design tool (off by default).** Built:
+the Designs destination and page, design rows in Recents, New thread's Start a design, New design,
+and a design's canvas beside its chat, with the design agent and live reload (docs/designs.md).
+Not built: comments, Tweak, design systems, export, the live link, Present, and every iPhone and
+iPad part; each subsection below says what of it is built. The iOS
 client's first release leaves it out until the Mac has it ([docs/ios](docs/ios/README.md)), and its
 search draws no Designs section (`MobileSearchScreen`). The canvas marks the whole page an
 experiment. This section is the spec to build it to, board by board: the Design tool page (DZStart,
@@ -7568,8 +7578,9 @@ tool work reads as activity lines.
   between Missions and Automations, its glyph the pen nib (the boards' nib; `pencil.tip` is the
   nearest SF Symbol), selected in `bgSelected` with its title semibold. A design in Recents shows
   the nib (13pt, `textTertiary`) in place of the status dot and its board count in mono 10
-  `textTertiary` ("Checkout funnel dashboard  4 boards"). The Mac sidebar's destinations are
-  built (Sidebar); Designs is hidden until the design tool is.
+  `textTertiary` ("Checkout funnel dashboard  4 boards"). Built behind the Design tool
+  experiment: the destination (selected on its page and on New design) and the design rows, whose
+  agents have no row of their own and take no ⌘-digit.
 - **iPad sidebar** (iPadSidebar and every iPad board with the sidebar): the same Designs
   destination between Missions and Automations, in its 44pt rows at 15, and design rows in
   Recents with their board count ("4 boards").
@@ -7593,7 +7604,11 @@ tool work reads as activity lines.
 
 ### Designs (NavDesigns, MobileDesigns)
 
-**Not built yet.**
+**Mac: built** (`DesignsPage`), except where noted: a card's "2 comments" (comments aren't
+built), the Night Watch skeleton, and on a system card the swatches, the source line and the
+"Build one from a repo" tile (design systems aren't built: a system card is its name and how many
+designs use it; a design's system is its project's name until they are). With no designs the page
+shows its header alone (not drawn). **iPhone: not built yet.**
 
 **Mac** (NavDesigns): the Designs destination fills the main column.
 
@@ -7640,7 +7655,11 @@ tool work reads as activity lines.
 
 ### New design (DZStart)
 
-**Not built yet.** New design (the destination's button, "Start a design", or Search's action)
+**Built** (`NewDesignPage`), without the Capture a page and From a screenshot cards (the design
+tool plan's decision 9; they come later). The one card is the design's project, drawn chosen:
+"<project>", "design system · <project>", and the project's folder in place of the tokens file the
+board names; its menu picks another project (not drawn). The composer card keeps `NWComposer`'s
+radius 8. New design (the destination's button, "Start a design", or Search's action)
 opens this page in the main column, with the sidebar showing and Designs selected.
 
 - **Header** (52pt on the board; see Toolbar): the breadcrumb, 8pt apart: the nib (14pt
@@ -7671,7 +7690,13 @@ opens this page in the main column, with the sidebar showing and Designs selecte
 
 ### A design: canvas and chat (DZCanvas)
 
-**Not built yet.** Opening a design fills the main column: the header, then the canvas beside a
+**Partly built** (`DesignScreen`: a design agent's layout). Built: the header (44pt, the app's
+toolbar; the system chip is a label, Present and Export draw disabled), the canvas with its board
+frames and toolbar (Comment disabled), and the chat pane with its Chat tab alone and the agent's
+thread; its composer is `NWComposer`'s card at radius 8. Not built: Tweak and Comments tabs and the
+tabs' •••, pins, the board actions bar, "Ask for another direction", and multiple selection. A
+board frame's outline is `lineStrong` and its shadow the popover's (the board's black 30% and 35%
+are off the tokens). Opening a design fills the main column: the header, then the canvas beside a
 420pt chat pane. The boards draw it with the sidebar hidden.
 
 - **Header** (the toolbar row, on `bgWindow` with a hairline; the boards draw it 52pt, as every
@@ -7882,7 +7907,12 @@ selected on the canvas already ticked.
 
 ### Design components (NWDesignTool, NWDesignToolLight)
 
-**Not built yet.** Night Watch's Design tool page names these components, dark and light ("Light ·
+**Partly built** (`Packages/ShepherdUI/.../Components/DesignTool/`, each with a `#Preview` in both
+appearances): `NWDesignCanvas`, `NWBoardFrame`, `NWCanvasToolbar`, `NWDesignSystemChip`, and the
+page parts `NWDesignCard`, `NWDesignSystemCard`, `NWDesignStartCard`, `NWDesignHeader` and
+`NWDesignPaneTabs`. The rest of the table is not built yet.
+
+Night Watch's Design tool page names these components, dark and light ("Light ·
 Day Watch"), with the same structure in both; NWSwift's inventory adds `NWDesignCanvas`. They belong
 in ShepherdUI under `Components/DesignTool/` (NWSwift's package layout), each with a `#Preview` in
 both appearances:
@@ -8066,7 +8096,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | SettingsExperiments | Settings › Experiments | Built |
 | NavNewThread | Sidebar; New thread page | Built |
 | NavMissions | Missions page; Missions | Not built yet |
-| NavDesigns | Designs page; Design tool › Designs | Not built yet |
+| NavDesigns | Designs page; Design tool › Designs | Built (Mac, behind the Design tool experiment; systems as names only) |
 | NavAutomations | Automations page; Sidebar (no When, Next or tabs: departures) | Built |
 | NavHosts | Hosts page; Sidebar; Settings › Remote (no daemon, Load or disk use: departures) | Built |
 | PaneBrowser | Side pane (Browser) | Not built yet |
@@ -8209,8 +8239,8 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 
 | Board | Specified in | Status |
 | --- | --- | --- |
-| DZStart | Design tool › New design | Not built yet |
-| DZCanvas | Design tool › A design: canvas and chat, Comments | Not built yet |
+| DZStart | Design tool › New design | Built, without Capture a page and From a screenshot |
+| DZCanvas | Design tool › A design: canvas and chat, Comments | Partly built: header, canvas, board frames, Chat; not comments, actions, Tweak |
 | DZTweak | Design tool › Tweak | Not built yet |
 | DZSystem | Design tool › Design systems | Not built yet |
 | DZExport | Design tool › Export and share | Not built yet |
@@ -8234,4 +8264,4 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | NWSwift, NWSwiftLight | Theme model › Building on ShepherdUI | Partial |
 | MXVocab, MXVocabLight | Missions › Missions: the map | Not built yet |
 | NWMissions, NWMissionsLight | Missions (Missions: shared parts and the screens that use them) | Not built yet |
-| NWDesignTool, NWDesignToolLight | Design tool › Design components | Not built yet |
+| NWDesignTool, NWDesignToolLight | Design tool › Design components | Partly built: the canvas, board frame, toolbar and system chip |

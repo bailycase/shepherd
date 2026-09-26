@@ -130,6 +130,64 @@ struct ListPerformanceTests {
         #expect(rows["sidebar.lists", default: 0] == 0, "a selection derives nothing: \(rows)")
     }
 
+    // MARK: Designs
+
+    private static let designsSize = CGSize(width: 1200, height: 800)
+    /// A card's height: its thumbnail and its three lines, with the gap under it.
+    private static let designRowHeight = NWDesignMetrics.cardThumbnailHeight + 80 + NWPageMetrics.columnGap
+
+    /// Rows of cards that fit the page under its header.
+    private static var designRowsOnScreen: Int {
+        Int((designsSize.height - NWPageMetrics.headerHeight) / designRowHeight) + 1
+    }
+
+    /// The Designs page over 120 designs (no boards, so no thumbnails to render), and what opens
+    /// it in a window.
+    private func openDesigns(_ app: AppHarness) async throws -> () -> OffscreenWindow {
+        app.settings.designToolEnabled = true
+        let space = Fixture.space(path: app.dir.path)
+        let vm = try await app.start(with: ShepherdState(spaces: [space]))
+        vm.designNetwork = .none
+        for index in 0..<120 {
+            _ = try await app.server.createDesign(Design(name: "Design \(index)", spaceID: space.id, createdAt: Double(1_000 + index)))
+        }
+        try await eventuallyOnMain("the designs to arrive") { vm.state.designs.count == 120 }
+        vm.openDestination(.designs)
+        return { OffscreenWindow(size: Self.designsSize, dark: true, DesignsDestination(vm: vm)) }
+    }
+
+    @Test func openingTheDesignsPageBuildsOnlyTheCardsOnScreen() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let make = try await openDesigns(app)
+        var window: OffscreenWindow!
+        let counts = ListPerf.counting {
+            window = make()
+            ListPerf.settle(window)
+        }
+        defer { window.close() }
+        let onScreen = Self.designRowsOnScreen * DesignsPageModel.columns
+        #expect(counts["design.card", default: 0] > 0)
+        #expect(counts["design.card", default: 0] <= 2 * (onScreen + DesignsPageModel.columns), "\(counts)")
+    }
+
+    /// Scrolling the cards builds the rows that come into view, never all 120 cards.
+    @Test func scrollingTheDesignsPageBuildsOnlyTheCardsComingIntoView() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let make = try await openDesigns(app)
+        let window = make()
+        ListPerf.settle(window)
+        defer { window.close() }
+        let scroll = try #require(ListPerf.scrollView(in: window))
+        var moved: CGFloat = 0
+        let counts = ListPerf.counting { moved = ListPerf.scroll(window, scroll, step: Self.designRowHeight / 2, steps: 12).distance }
+        let arriving = (Int(moved / Self.designRowHeight) + 1) * DesignsPageModel.columns
+        #expect(moved > 0)
+        #expect(counts["design.card", default: 0] <= 2 * (arriving + Self.designRowsOnScreen * DesignsPageModel.columns), "\(counts)")
+        #expect(counts["design.card", default: 0] < 120)
+    }
+
     // MARK: Thread
 
     /// A long thread streaming its reply builds only the rows on screen for each chunk, however

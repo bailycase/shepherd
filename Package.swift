@@ -76,7 +76,7 @@ let package = Package(
         .target(
             name: "ShepherdApp",
             dependencies: [
-                "ShepherdCore", "ShepherdProtocol", "ShepherdSessions", "TerminalSurfaceKit",
+                "ShepherdCore", "ShepherdProtocol", "ShepherdSessions", "TerminalSurfaceKit", "DesignSurfaceKit",
                 .product(name: "ShepherdUI", package: "ShepherdUI"),
                 .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "SwiftTreeSitter", package: "swift-tree-sitter"),

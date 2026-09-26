@@ -204,8 +204,9 @@ skipped when the variable is unset. Look at them after a UI change; they exist s
 see its work.
 
 - Each domain has its own suite in `Tests/ShepherdPreviewTests` (`ThreadPreviewTests`,
-  `NavigationPreviewTests`, `AgentsPreviewTests`, `ReviewPreviewTests`, `SettingsPreviewTests`),
-  and `PreviewTests` holds the rest. Add a new surface's render to its domain's suite.
+  `NavigationPreviewTests`, `AgentsPreviewTests`, `ReviewPreviewTests`, `SettingsPreviewTests`,
+  `DesignPreviewTests`), and `PreviewTests` holds the rest. A capture can't draw a web view, so
+  the design previews draw every board from its snapshot (`designLiveCap = 0`). Add a new surface's render to its domain's suite.
 - `--filter ThreadPreviewTests` (or any one suite) renders just that domain.
 - ShepherdUI's components also have `#Preview`s (`Packages/ShepherdUI/Sources/ShepherdUI/Previews/`)
   for Xcode's canvas; the Debug build's Component Gallery shows the base components live.
@@ -241,6 +242,10 @@ runs them.
   Counts hold on a slow or busy runner; timing budgets do not, so don't add those. Two thread
   budgets differ on macOS 26 (CI) and in Xcode 26 builds whatever the speed, so there they run
   as known issues.
+- `DesignPerformanceTests` pins the design canvas the same way over a 172-board canvas: at most
+  six web views open (five live, one rasterizing), panning recycles them, and one board changing
+  redraws one frame (`design.board`) with one snapshot. The Designs grid's budget is in
+  `ListPerformanceTests` (`design.card`).
 - `SHEPHERD_PERF_REPORT=1 swift test --filter ListPerformanceReport` prints each list's timings
   against large fixtures (`Support/ListFixtures.swift`). `ListPerf` times a change's update,
   layout, and display, and scrolls a list a step at a time by moving its clip view.
@@ -298,7 +303,10 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   board path grammar, and element numbering against the golden `Tests/Designs/element-ids.json`,
   by `DesignTemplate` and by the board runtime (the tids it stamps in a real web view). The board
   sandbox (what a board may reach, and that no navigation leaves it), live reload without a
-  navigation, and the vendored React's pinned checksums.
+  navigation, and the vendored React's pinned checksums. In the app: the live-view plan and its
+  recycling, the Designs page's cards, design rows in the sidebar (no ⌘-digit; their agents have
+  no row), New design and opening a design, the visibility flip, one pushed revision per write,
+  and only the changed board reloading.
 - **Server:** every `SessionServer` state mutation.
 - **Changes:** every scope on a scratch repository, the proof that reading changes leaves the
   index, HEAD, refs, the stash, `.git` and every file alone, and Undo, Redo and the refusal on a
@@ -442,16 +450,21 @@ Sources/
       RightPaneSplit and SidePane (the side pane and its tabs), CheckoutMonitor (each agent's
       branch and changed files, read off the main thread), AppCommands (menus, MenuState),
       AppDialogs (every sheet)
-    AppLayout (+Navigation, +Thread, +Agents, +Settings, +Pages; ShellLayout's adaptive rules live
-      in +Navigation), AgentStateMapping (app lifecycles → AgentState)
+    AppLayout (+Navigation, +Thread, +Agents, +Settings, +Pages, +Designs; ShellLayout's adaptive
+      rules live in +Navigation), AgentStateMapping (app lifecycles → AgentState)
     ShepherdViewModel(+Navigation, +Creation, +Workspace, +Spaces, +Palette, +Shell,
       +RightPane, +Review, +ChildInspector, +Automations, +Dialogs, +RemoteActions,
       +RemoteInspection, +RemoteWorktrees, +RemoteAutomations, +Terminal, +HostSettings,
-      +Skills, +Pages, +AgentMenu)
-    Pages/             the sidebar destinations' pages: AutomationsPage and HostsPage (views over
-                       AutomationsPageModel and HostsPageModel, derived per change), their
-                       destinations (PageDestinations: runs read, sheets), AutomationEditorSheet,
-                       PageHeader (every page's header, New thread's too)
+      +Skills, +Pages, +AgentMenu, +Designs (opening, New design's NewDesignState, revisions))
+    Pages/             the sidebar destinations' pages: AutomationsPage, HostsPage and DesignsPage
+                       (views over AutomationsPageModel, HostsPageModel and DesignsPageModel,
+                       derived per change), their destinations (PageDestinations: runs read,
+                       sheets), AutomationEditorSheet, PageHeader (every page's header, New
+                       thread's too)
+    The Design tool (Settings ▸ Experiments ▸ Design tool; docs/designs.md): NewDesignPage,
+      DesignScreen (a design agent's layout: the canvas beside its chat, and the toolbar),
+      DesignScreenModel (a design's canvas state and its pulls), DesignHost (the only
+      DesignSurfaceKit import: live views, the rasterizer, snapshots, thumbnails)
     TerminalPanels (each layout's terminal panel: shown, tab, maximized, activity),
       TerminalPanelLayout (TerminalPanelGeometry, pure), TerminalPanelViews (strip, divider)
     Thread/            ThreadView, ThreadTurns, ThreadTools (activity lines), ThreadMarkdown,
@@ -492,7 +505,9 @@ Packages/
                                      AgentState, HexColor
                        Resources/Fonts  Geist and Geist Mono (SIL OFL)
                        Components/   Controls, Status, Containers, Navigation, Thread, Composer,
-                                     Agents, Review, Dialogs, Automations, Skills
+                                     Agents, Review, Dialogs, Automations, Skills, DesignTool
+                                     (NWDesignCanvas, NWBoardFrame, NWCanvasToolbar,
+                                     NWDesignCard, NWDesignSystemChip, NWDesignHeader)
                        Previews/     a #Preview per component, light and dark
                        Diagnostics/  NWRenderProbe (row-body counts for tests; debug only)
                        Its unit tests live in the root package (Tests/ShepherdUIUnitTests).
@@ -821,8 +836,10 @@ and the navigation policy enforce it together, and `aBoardReachesOnlyItsOwnDesig
 Shepherd's runtime is written from the documented format only: never copy, fetch or imitate
 Claude Design's code (`support.js`, `dc-runtime.js`, `app.js`). React is the one vendored
 dependency, loaded only inside board web views; a new version is vetted and its checksum pinned
-in `DesignRuntimeTests`. The app will reach DesignSurfaceKit through one file, as it does
-TerminalSurfaceKit.
+in `DesignRuntimeTests`. `Sources/ShepherdApp/DesignHost.swift` is the only app file that imports
+DesignSurfaceKit, as `TerminalHost.swift` is for TerminalSurfaceKit. A design on screen holds at
+most five live web views and one off-screen view renders snapshots for the rest; never let a
+canvas hold a web view per board.
 
 **Status transitions.** `AgentStatus.canTransition` allows `done → working` (a finished agent
 starting a new turn). The server applies extension reports unconditionally and logs table

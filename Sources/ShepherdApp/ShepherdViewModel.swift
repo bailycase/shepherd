@@ -38,6 +38,9 @@ struct NewAgentConfig {
     /// Resume an existing pi session (a forked subagent transcript already in the cwd's
     /// session directory) instead of a fresh one keyed by the agent id.
     var piSessionID: String?
+    /// The design this agent draws: it launches with the design tools, keeps its name (the
+    /// design's), and has no row of its own in Recents.
+    var designID: DesignID?
 }
 
 struct AgentStartFailure: Error, CustomStringConvertible {
@@ -70,6 +73,31 @@ final class ShepherdViewModel {
     @ObservationIgnored var hostsPageCache: (inputs: HostsPageInputs, model: HostsPageModel)?
     /// The New thread page's draft: what to do, where, and how. Kept while the page is away.
     let newThread = NewThreadState()
+    /// The New design page's brief, images and project. Kept while the page is away.
+    let newDesign = NewDesignState()
+    /// The Designs page's filter and selected card. Ephemeral.
+    var designsPageFilter = ""
+    var designsPageSelection: DesignID?
+    @ObservationIgnored var designsPageCache: (inputs: DesignsPageInputs, model: DesignsPageModel)?
+    /// Each design's canvas, kept for the app's run so returning to one finds it as it was.
+    @ObservationIgnored var designScreens: [DesignID: DesignScreenModel] = [:]
+    /// Designs on screen: only their revisions are pushed (`SessionServer.onDesignRevision`).
+    @ObservationIgnored var visibleDesigns: Set<DesignID> = []
+    /// Designs whose agent is being started, so a second open waits for it.
+    @ObservationIgnored var startingDesignAgents: Set<DesignID> = []
+    /// Draws every design's boards (`DesignHost.swift`), once a design or the Designs page is
+    /// first shown.
+    var designRendering: DesignRendering {
+        if let made = madeDesignRendering { return made }
+        let made = DesignRendering(folder: { [server] in server.designs.folder(for: $0) }, network: designNetwork, liveCap: designLiveCap)
+        madeDesignRendering = made
+        return made
+    }
+    @ObservationIgnored private(set) var madeDesignRendering: DesignRendering?
+    /// Tests turn Google Fonts off so boards never reach the network, and previews take no live
+    /// views; both are set before the first design draws.
+    @ObservationIgnored var designNetwork: DesignRenderingNetwork = .googleFonts
+    @ObservationIgnored var designLiveCap = DesignLivePlan.liveCap
     /// Child runs per agent, as published: the palette's Subagents section and the needs-you
     /// mark on an agent's sidebar row.
     /// Ephemeral display state; see `ChildRuns` for the lifecycle rules.
@@ -438,6 +466,10 @@ final class ShepherdViewModel {
         sessions.onThreadRevision = { [weak self] agentID in
             self?.threadStores.existing(for: agentID)?.revisionAvailable()
         }
+        // A design on screen pulls what changed as the agent draws.
+        server.onDesignRevision = { [weak self] designID in
+            MainActor.assumeIsolated { self?.designRevised(designID) }
+        }
         notifications.onResponse = { [weak self] response in
             self?.respond(to: response)
         }
@@ -686,7 +718,7 @@ final class ShepherdViewModel {
         switch action {
         case .agentDigit(let digit):
             // Mirrors the Agent menu's digit rows: live only for an existing Recents row.
-            guard sidebarLists.recents.count >= digit else { return false }
+            guard sidebarLists.shortcutRows.count >= digit else { return false }
             showCommandPalette = false
             selectAgentDigit(digit)
             return true
@@ -723,6 +755,7 @@ final class ShepherdViewModel {
         notifyLocalQuestions()
         checkouts?.sync(agents: state.agents.map(\.id))
         pruneReviewSessions()
+        pruneDesigns()
         // First adoption of the restored workspace: stand the enabled
         // automation watches back up (their agents died with the last run).
         if !didAutoStartAutomations {
