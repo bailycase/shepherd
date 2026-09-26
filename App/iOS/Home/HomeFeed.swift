@@ -174,17 +174,38 @@ final class HomeFeed {
 
     // MARK: Answering
 
-    /// Answers a question from Home, then reads its thread again.
+    /// Picks one of the offered options: pi's select takes it as its answer, a subagent as its
+    /// reply (steered into its run, as the thread's tray sends it).
+    func choose(_ item: FleetAttention, _ option: String) async {
+        if item.runID != nil {
+            await send(item) { session in
+                guard let runID = item.runID, let command = NativeRunCommand.answer(option) else { return nil }
+                return .subagentCommand(expectedSessionID: session.piSessionID, generation: session.generation, operationID: UUID(),
+                                        runID: runID, action: command.action, text: command.text, mode: command.mode)
+            }
+        } else {
+            await answer(item, .select(value: option))
+        }
+    }
+
+    /// Answers pi's question from Home.
     func answer(_ item: FleetAttention, _ answer: NativeDialogAnswer) async {
-        guard let dialogID = item.dialogID, let session = item.session, !answering.contains(item.id),
+        await send(item) { session in
+            guard let dialogID = item.dialogID else { return nil }
+            return .answer(expectedSessionID: session.piSessionID, generation: session.generation, operationID: UUID(),
+                           dialogID: dialogID, answer: answer)
+        }
+    }
+
+    /// Sends the answer, then reads its thread again.
+    private func send(_ item: FleetAttention, _ request: (NativeThreadSession) -> NativeThreadRequest?) async {
+        guard let session = item.session, let request = request(session), !answering.contains(item.id),
               let client = hosts.host(item.ref.host)?.connectedClient else { return }
         answering.insert(item.id)
         failures[item.id] = nil
         defer { answering.remove(item.id) }
         do {
-            let result = try await client.nativeThread(agentID: item.ref.agent, request: .answer(
-                expectedSessionID: session.piSessionID, generation: session.generation, operationID: UUID(),
-                dialogID: dialogID, answer: answer))
+            let result = try await client.nativeThread(agentID: item.ref.agent, request: request)
             if case .failure(_, let message) = result { failures[item.id] = message }
         } catch RemoteHostClientError.rejected(_, let message), RemoteHostClientError.outcomeUnknown(let message) {
             failures[item.id] = message

@@ -68,12 +68,19 @@ public struct FleetDigest: Equatable, Sendable {
         public var text: String
         /// The subagent's own word or two for its question ("retention?"), when it gave one.
         public var short: String?
+        /// The answers it offered to pick from.
+        public var options: [String]
+        /// The host takes subagent commands for the thread, so an option can be sent from here.
+        public var answerable: Bool
 
-        public init(runID: String, label: String, text: String, short: String? = nil) {
+        public init(runID: String, label: String, text: String, short: String? = nil, options: [String] = [],
+                    answerable: Bool = true) {
             self.runID = runID
             self.label = label
             self.text = text
             self.short = short
+            self.options = options
+            self.answerable = answerable
         }
     }
 
@@ -103,10 +110,12 @@ public struct FleetDigest: Equatable, Sendable {
             Question(dialogID: dialog.id, kind: dialog.kind, title: dialog.title, message: dialog.message,
                      options: dialog.options ?? [], answerable: answers && dialog.unavailable == nil)
         }
+        let commands = snapshot.supportedActions.contains("subagents")
         subagentQuestion = (snapshot.subagents ?? []).first(where: \.needsAttention).map { run in
             SubagentQuestion(runID: run.runID, label: run.role ?? run.label,
                              text: run.question?.text ?? run.attentionText ?? "Waiting on you",
-                             short: FleetModel.shortReason(run.question?.short))
+                             short: FleetModel.shortReason(run.question?.short),
+                             options: run.question?.options ?? [], answerable: commands)
         }
         liveSubagents = (snapshot.subagents ?? []).contains { !$0.isTerminal }
         let entries = snapshot.messages + snapshot.provisional
@@ -403,8 +412,11 @@ public struct FleetModel: Equatable, Sendable {
                                         hostName: hostName, hostTag: hostTag, since: since))
         }
         if let asking = digest?.subagentQuestion {
+            // Its options answer in place as a select's do; a reply in its own words is written in
+            // the thread (MobileInbox).
+            let reply: FleetAttention.Reply = asking.answerable && Self.choosable(asking.options) ? .choose(asking.options) : .open
             items.append(FleetAttention(ref: ref, origin: .subagent(asking.label), thread: agent.name,
-                                        question: asking.text, reason: asking.short ?? asking.label, reply: .open,
+                                        question: asking.text, reason: asking.short ?? asking.label, reply: reply,
                                         session: digest?.session, runID: asking.runID, hostName: hostName,
                                         hostTag: hostTag, since: since))
         }

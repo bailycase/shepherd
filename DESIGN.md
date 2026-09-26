@@ -4977,8 +4977,11 @@ connected hosts, newest first.
     carries no labels of its own). Then Open (ghost; secondary when it is the only action), which
     goes where the question can be answered. Input and editor questions show Open alone.
 - **A subagent's question** answers in place with its options ("Replace everywhere", "Rename new
-  ones"), as its card in the thread does. The app shows Open alone for it: the list's digest does
-  not carry the child's options yet.
+  ones"), as its card in the thread does: at most three short ones, the first primary, and a tap
+  sends that option to the run as its reply (`FleetDigest.SubagentQuestion.options`,
+  `HomeFeed.choose`). A reply in its own words, more options, or a host that takes no subagent
+  commands shows Open alone, which opens the run. Home's row and the iPad's detail answer the same
+  way.
 - **Not built yet:** a mission's item ("Mission", "Checkout funnel events", "orders is stuck after 3
   tries. The planner suggests a retry with a hint.", Retry with hint and Open), and a thread's plan
   approval ("Plan ready: …", Approve plan and Read plan). They wait for Missions and plan approval
