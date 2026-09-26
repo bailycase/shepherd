@@ -151,7 +151,8 @@ extension ShepherdViewModel {
             writeBoards: { try await server.writeDesignBoards(id, sources: $0, baseRevision: $1) },
             updateIndex: { try await server.updateDesignIndex(id, patch: $0, baseRevision: $1) },
             restore: { try await server.restoreDesignVersions(id, $0, ifCurrent: $1) },
-            projectTokens: { await DesignProjectTokens.read(project) })
+            projectTokens: { await DesignProjectTokens.read(project) },
+            isStale: { if case DesignStoreError.stale = $0 { true } else { false } })
         let screen = DesignScreenModel(designID: id, host: designRendering.host(for: id),
                                        snapshot: { try await server.designSnapshot($0) },
                                        source: { try await server.designBoard($0, path: $1).source },
