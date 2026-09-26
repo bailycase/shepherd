@@ -11,7 +11,9 @@ import SwiftUI
 /// in mono 11 `textTertiary`, and its last output lines. Nothing spins.
 public struct NWActivityLine: View {
     /// Which glyph leads the line: the tool's own, live or done.
-    public enum Kind: Sendable { case explore, edit, run, subagents, other }
+    /// `drew` and `checked` are the design agent's verbs ("Drew 4 boards", "Checked against
+    /// acme-web"): the nib and the shield.
+    public enum Kind: Sendable { case explore, edit, run, subagents, drew, checked, other }
 
     public enum Status: Equatable, Sendable {
         case done
@@ -80,6 +82,8 @@ public struct NWActivityLine: View {
         case .edit: "pencil"
         case .run: "terminal"
         case .subagents: "arrow.triangle.branch"
+        case .drew: "pencil.tip"
+        case .checked: "checkmark.shield"
         case .other: "wrench.adjustable"
         }
     }
