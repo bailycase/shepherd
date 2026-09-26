@@ -9,15 +9,11 @@ import * as http from "node:http";
 import * as net from "node:net";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { spawn, execFileSync } from "node:child_process";
+import { spawn } from "node:child_process";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-// Walk up from the resolved `pi` binary to the directory holding package.json (dist/cli.js
-// in older layouts, dist/bundle/cli.js in 0.87+).
-const pkg = process.env.PI_PACKAGE_DIR || (() => {
-  let dir = path.dirname(fs.realpathSync(execFileSync("/usr/bin/which", ["pi"], { encoding: "utf8" }).trim()));
-  while (!fs.existsSync(path.join(dir, "package.json")) && path.dirname(dir) !== dir) dir = path.dirname(dir);
-  return dir;
-})();
+// pi's package, named: never a `pi` looked up on PATH.
+const pkg = process.env.PI_PACKAGE_DIR;
+if (!pkg) throw Error("Set PI_PACKAGE_DIR to pi's package");
 const require = createRequire(path.join(pkg, "package.json"));
 const { createJiti } = require("jiti");
 const jiti = createJiti(import.meta.url, { alias: {
