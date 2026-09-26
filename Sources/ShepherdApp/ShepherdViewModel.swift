@@ -651,6 +651,20 @@ final class ShepherdViewModel {
                 }
             }
         }
+        // Another device's New design, made here as this Mac's own is (the host's Design tool on).
+        server.onRemoteCreateDesign = { [weak self] request, completion in
+            guard let self else {
+                completion(.failure(RemoteCreateAgentError("host is shutting down")))
+                return
+            }
+            Task { @MainActor in
+                do {
+                    completion(.success(try await self.createRemoteDesign(request)))
+                } catch {
+                    completion(.failure(RemoteCreateAgentError(String(describing: error))))
+                }
+            }
+        }
         // Adopt the persisted workspace without waiting for a pane to render
         // (an empty sidebar can never render one).
         sessions.warmUp()
