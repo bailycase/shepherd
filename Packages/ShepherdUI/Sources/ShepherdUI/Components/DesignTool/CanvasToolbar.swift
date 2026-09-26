@@ -22,11 +22,9 @@ public struct NWCanvasToolbar: View {
                 NWCanvasToolButton(tool: item, current: tool == item) { tool = item }
                     .disabled(disabled.contains(item))
             }
-            Rectangle()
-                .fill(Color.nw.lineSubtle)
-                .frame(width: 1, height: NWDesignMetrics.toolbarDividerHeight)
+            NWHairline(.vertical)
+                .frame(height: NWDesignMetrics.toolbarDividerHeight)
                 .padding(.horizontal, NWDesignMetrics.toolbarDividerMargin)
-                .accessibilityHidden(true)
             Text(zoom)
                 .font(.nwMono(NWDesignMetrics.zoomTextSize))
                 .foregroundStyle(Color.nw.textSecondary)
