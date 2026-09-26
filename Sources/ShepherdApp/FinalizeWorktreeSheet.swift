@@ -169,7 +169,7 @@ struct FinalizeWorktreeSheet: View {
         switch phase {
         case .checking:
             Button("Cancel") { vm.finalizeRequest = nil }
-                .buttonStyle(.nw(.secondary))
+                .buttonStyle(.nw(.ghost))
                 .keyboardShortcut(.cancelAction)
         case .setup:
             Button(setup.running ? "Checking…" : "Re-run checks") {
@@ -178,7 +178,7 @@ struct FinalizeWorktreeSheet: View {
             .buttonStyle(.nw(.secondary))
             .disabled(setup.running)
             Button("Cancel") { vm.finalizeRequest = nil }
-                .buttonStyle(.nw(.secondary))
+                .buttonStyle(.nw(.ghost))
                 .keyboardShortcut(.cancelAction)
             Button("Continue") {
                 Task {
@@ -192,7 +192,7 @@ struct FinalizeWorktreeSheet: View {
             .disabled(!setup.allPassed)
         case .input:
             Button("Cancel") { vm.finalizeRequest = nil }
-                .buttonStyle(.nw(.secondary))
+                .buttonStyle(.nw(.ghost))
                 .keyboardShortcut(.cancelAction)
             Button("Finalize") { start() }
                 .buttonStyle(.nw(.primary))

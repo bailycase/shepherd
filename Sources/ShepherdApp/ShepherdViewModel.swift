@@ -438,9 +438,8 @@ final class ShepherdViewModel {
         sessions.onThreadRevision = { [weak self] agentID in
             self?.threadStores.existing(for: agentID)?.revisionAvailable()
         }
-        notifications.onSelectAgent = { [weak self] agentID in
-            guard let self, self.state.agents.contains(where: { $0.id == agentID }) else { return }
-            self.selectAgent(agentID)
+        notifications.onResponse = { [weak self] response in
+            self?.respond(to: response)
         }
         // Banners from a previous app run point at dead sessions; drop them.
         notifications.removeAll()
@@ -454,6 +453,7 @@ final class ShepherdViewModel {
         self.remoteHosts.onDropError = { [weak self] in self?.remoteActionError = $0 }
         self.remoteHosts.onProjectionChanged = { [weak self] in
             guard let self else { return }
+            self.notifyRemote()
             self.remoteThreadStores.prune(live: Set(self.remoteHosts.connections.flatMap { connection in
                 connection.state.agents.map { RemoteAgentRef(hostID: connection.id, agentID: $0.id) }
             }))
@@ -720,6 +720,7 @@ final class ShepherdViewModel {
         let runs = server.openAutomationRuns
         if runs != openAutomationRuns { openAutomationRuns = runs }
         threadStores.prune(live: Set(state.agents.map(\.id)))
+        notifyLocalQuestions()
         checkouts?.sync(agents: state.agents.map(\.id))
         pruneReviewSessions()
         // First adoption of the restored workspace: stand the enabled
@@ -770,10 +771,7 @@ final class ShepherdViewModel {
             if failed != failedTurns.contains(id) {
                 if failed { failedTurns.insert(id) } else { failedTurns.remove(id) }
             }
-            // Visible means the workspace is actually showing this agent's
-            // layout — not a remote agent.
-            let visible = selectedAgentID == id && selectedRemoteAgent == nil
-            notifications.agentStatusChanged(state.agents[index], from: old, failure: failure, isAgentVisible: visible)
+            notifyStatus(state.agents[index], from: old, failure: failure)
         }
     }
 
@@ -806,8 +804,7 @@ final class ShepherdViewModel {
         if updated.rows == childRuns.rows { _childRuns = updated } else { childRuns = updated }
         syncChildSweepTimer()
         if let agent = state.agents.first(where: { $0.id == agentID }) {
-            let visible = selectedAgentID == agentID && selectedRemoteAgent == nil
-            notifications.subagentsChanged(agent, children: children, isAgentVisible: visible)
+            notifySubagents(agent, children: children)
         }
     }
 

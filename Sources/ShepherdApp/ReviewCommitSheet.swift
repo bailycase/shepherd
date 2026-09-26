@@ -202,7 +202,7 @@ struct ReviewCommitSheet: View {
                     .help("Send the agent a turn asking it to commit these changes")
             }
             Button("Cancel", action: close)
-                .buttonStyle(.nw(.secondary))
+                .buttonStyle(.nw(.ghost))
                 .keyboardShortcut(.cancelAction)
             if store.stage == .form {
                 Button(store.actionTitle) { Task { await store.commit() } }
