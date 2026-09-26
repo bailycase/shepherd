@@ -31,4 +31,6 @@ extension AppLayout {
     // A design
     /// The chat pane beside the canvas.
     static let designChatWidth: CGFloat = 420
+    /// A data-props text field in the Tweak tab (not drawn: the board's slider width).
+    static let designTweakFieldWidth: CGFloat = 190
 }
