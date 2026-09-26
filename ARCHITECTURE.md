@@ -332,7 +332,7 @@ At startup the server then:
 - removes review leaves left in layouts by older builds
 - drops the previous run's automation agents and their layouts (`automationRunAgentIDs`) and
   clears every automation's `agentID`
-- forgets designs whose folder is gone, and clears an agent's `designID` or a design's
+- forgets designs whose `canvas.json` is gone, and clears an agent's `designID` or a design's
   `agentID` that names nothing (`reconcileDesigns`); which folders are gone is read on the
   design store's queue before the server's queue starts
 

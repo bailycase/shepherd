@@ -277,14 +277,15 @@ struct DesignTests {
         try await expectUntouched(before, h, design.id)
     }
 
-    @Test func aBoardIsNeverWrittenThroughALinkedFolder() async throws {
+    @Test(arguments: ["linked/Board.dc.html", "linked/deeper/Board.dc.html"])
+    func aBoardIsNeverWrittenThroughALinkedFolder(_ raw: String) async throws {
         let (h, design, _) = try await serverWithDesign()
         defer { h.stop() }
         let outside = try makeScratchDirectory("outside")
         defer { try? FileManager.default.removeItem(at: outside) }
         let project = try #require(h.server.designs.projectFolder(for: design.id))
         try FileManager.default.createSymbolicLink(at: project.appendingPathComponent("linked"), withDestinationURL: outside)
-        let path = try Self.path("linked/Board.dc.html")
+        let path = try Self.path(raw)
 
         await #expect(throws: DesignStoreError.invalidPath(path.rawValue, .parentReference)) {
             try await h.server.writeDesignBoard(design.id, path: path, source: Self.board())
@@ -382,6 +383,30 @@ struct DesignTests {
         #expect(snapshot.boards.isEmpty && snapshot.index.order.isEmpty)
         let url = try #require(h.server.designs.projectFolder(for: design.id)).appendingPathComponent(a.rawValue)
         #expect(!FileManager.default.fileExists(atPath: url.path))
+    }
+
+    /// An index entry can reach a linked folder only when canvas.json was edited by hand; removing
+    /// it leaves the file the link leads to.
+    @Test func removingABoardNeverDeletesThroughALinkedFolder() async throws {
+        let (first, design, _) = try await serverWithDesign()
+        let outside = try makeScratchDirectory("outside")
+        defer { try? FileManager.default.removeItem(at: outside) }
+        let kept = outside.appendingPathComponent("B.dc.html")
+        try Data(Self.board().utf8).write(to: kept)
+        let project = try #require(first.server.designs.projectFolder(for: design.id))
+        try FileManager.default.createSymbolicLink(at: project.appendingPathComponent("linked"), withDestinationURL: outside)
+        let canvas = project.appendingPathComponent("canvas.json")
+        var index = try DesignIndex.decode(Data(contentsOf: canvas))
+        index.boards[try Self.path("linked/B.dc.html")] = DesignIndex.Board(x: 0, y: 0, w: 390, h: 844)
+        try index.inSync().encoded().write(to: canvas)
+        first.stop(keepFiles: true)
+
+        let h = try ScratchServer(dir: first.dir)
+        defer { h.stop() }
+        let result = try await h.server.updateDesignIndex(design.id, patch: .object(["boards": .object(["linked/B.dc.html": .null])]))
+
+        #expect(result.changed && result.boardCount == 0)
+        #expect(FileManager.default.fileExists(atPath: kept.path))
     }
 
     @Test func aNewTitleRenamesTheDesign() async throws {
@@ -518,5 +543,18 @@ struct DesignTests {
         #expect(restored.designs.first?.agentID == nil)
         #expect(restored.agents.first?.designID == nil)
         #expect(try h.persisted().designs.map(\.id) == [kept.id], "the cleared state is written")
+    }
+
+    /// A canvas.json that is there but unreadable (a bad hand edit) never costs the design.
+    @Test func startupKeepsADesignWhoseCanvasIsUnreadable() async throws {
+        let (first, design, _) = try await serverWithDesign()
+        let canvas = try #require(first.server.designs.projectFolder(for: design.id)).appendingPathComponent("canvas.json")
+        try Data("{ not json".utf8).write(to: canvas)
+        first.stop(keepFiles: true)
+
+        let h = try ScratchServer(dir: first.dir)
+        defer { h.stop() }
+        #expect(h.server.state.designs.map(\.id) == [design.id])
+        await #expect(throws: DesignStoreError.self) { try await h.server.designSnapshot(design.id) }
     }
 }

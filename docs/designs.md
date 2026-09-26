@@ -88,8 +88,8 @@ elements).
 - **Soft references.** A design's agent and an agent's design may name something gone. Deleting
   an agent keeps its design, which starts a fresh agent when next opened. Deleting a design keeps
   its agent. A deleted space keeps its designs.
-- **At startup** the server forgets a design whose folder has no readable canvas and clears
-  references to what no longer exists. Which folders are gone is read on the design store's
+- **At startup** the server forgets a design whose folder has no `canvas.json` and clears
+  references to what no longer exists. A canvas that is there but unreadable keeps its design. Which folders are gone is read on the design store's
   queue, not the server's. It then reads each design's board count.
 
 ## Writing
@@ -115,9 +115,9 @@ with its SHA-256, listed or not) and `designBoard(_:path:)`.
   design has moved past is refused (`stale_revision`): read again and redo the change once. A
   write that changes nothing moves nothing.
 - **Atomic.** Files are written to a temporary file and renamed into place. A board is never written
-  through a linked folder that leads outside the design.
+  through a linked folder that leads outside the design, and no folder is made there.
 - **Index entries need files.** A board the index adds or changes must have its file. A board it
-  removes loses its file.
+  removes loses its file, unless that file lies through a linked folder.
 - **Checks** (`DesignBoardCheck`, ShepherdProtocol) before a board is written:
   - At most 900,000 bytes, so it fits the extension socket's 1 MiB frame.
   - The head line `<script src="./support.js"></script>`, exactly.
