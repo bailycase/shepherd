@@ -34,6 +34,23 @@ enum PiSessionFile {
         sessionsRoot.appendingPathComponent(PiSessionFolder.name(forCwd: cwd), isDirectory: true)
     }
 
+    /// `projectDirectory`, when it resolves inside `sessionsRoot`: nil when a link in Shepherd's
+    /// home would carry a write somewhere else, such as the user's own pi (principle 4).
+    static func writableProjectDirectory(forCwd cwd: String, sessionsRoot: URL) -> URL? {
+        let directory = projectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot)
+        guard PiHome.isInside(PiHome.canonical(directory.path), PiHome.canonical(sessionsRoot.path)) else {
+            ShepherdLog.info("\(directory.path) resolves outside \(sessionsRoot.path): Shepherd writes no session there")
+            return nil
+        }
+        return directory
+    }
+
+    /// Whether `url` is a regular file with one link: one that is Shepherd's alone.
+    static func isOwnFile(_ url: URL) -> Bool {
+        var info = stat()
+        return lstat(url.path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFREG && info.st_nlink == 1
+    }
+
     /// pi's rule (`PiSessionFolder.mangled`): the real path, one leading `/` or `\` dropped, then
     /// every `/`, `\` and `:` replaced with `-`.
     static func mangled(_ cwd: String) -> String {
@@ -145,7 +162,7 @@ enum PiSessionFile {
         guard !exists(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot) else { return true }
 
         let resolvedCwd = realPath(cwd)
-        let directory = projectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot)
+        guard let directory = writableProjectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot) else { return false }
         let now = Date()
 
         let header: [String: Any] = [
@@ -189,8 +206,16 @@ enum PiSessionFile {
     /// never lets pi open the user's file, and copies bytes (never a link) under the same name
     /// into the agent's session folder in its home. A copy already there wins; a header alone on
     /// either side is nothing to adopt; a header newer than Shepherd's pi reads is left alone.
+    ///
+    /// A session file in Shepherd's home that is a link (a symlink, or a hard link the user's pi
+    /// shares) is first replaced with a copy of its bytes, so pi never appends through it; a
+    /// project folder that resolves outside the home gets nothing.
     static func adopt(sessionID: String, cwd: String, sessionsRoot: URL, yourPi: YourPi?) -> Adoption {
-        let ours = file(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot)
+        guard let directory = writableProjectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot) else { return .nothing }
+        var ours = file(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot)
+        if let linked = ours, !isOwnFile(linked) {
+            ours = detach(linked) ? linked : nil
+        }
         if let ours, hasRuntimeState(at: ours) { return .alreadyHere }
         guard let yourPi else { return .nothing }
         var candidates: [URL] = []
@@ -206,7 +231,6 @@ enum PiSessionFile {
             ShepherdLog.info("session \(sessionID) in your pi (\(source.path)) is format \(version), newer than Shepherd's pi reads; starting fresh")
             return .newerFormat(source.path)
         }
-        let directory = projectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot)
         let target = directory.appendingPathComponent(source.lastPathComponent)
         let temporary = directory.appendingPathComponent(".\(source.lastPathComponent).\(UUID().uuidString)")
         do {
@@ -226,6 +250,24 @@ enum PiSessionFile {
         // The header Shepherd seeded earlier, under another name, would be a second file for the id.
         if let ours, ours.lastPathComponent != target.lastPathComponent { try? FileManager.default.removeItem(at: ours) }
         return .copied(from: source.path)
+    }
+
+    /// Replaces the link at `url` with a regular file holding the bytes it reached, by temp file
+    /// and rename, which leaves the file it pointed to as it was. False, with the link removed,
+    /// when those bytes can't be read or written.
+    static func detach(_ url: URL) -> Bool {
+        let real = realPath(url.path)
+        var info = stat()
+        let temporary = url.deletingLastPathComponent().appendingPathComponent(".\(url.lastPathComponent).\(UUID().uuidString)")
+        if lstat(real, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG, let data = FileManager.default.contents(atPath: real),
+           (try? data.write(to: temporary)) != nil, rename(temporary.path, url.path) == 0, isOwnFile(url) {
+            ShepherdLog.info("\(url.path) was a link; Shepherd's pi now keeps its own copy")
+            return true
+        }
+        try? FileManager.default.removeItem(at: temporary)
+        unlink(url.path)
+        ShepherdLog.info("\(url.path) was a link Shepherd couldn't copy; removed it, so pi never writes through it")
+        return false
     }
 
     /// The `version` a session file's header names.
@@ -264,7 +306,9 @@ enum PiSessionFile {
         header["cwd"] = realPath(cwd)
         header["timestamp"] = isoTimestamp.string(from: now)
         header.removeValue(forKey: "parentSession")
-        let directory = projectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot)
+        guard let directory = writableProjectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot) else {
+            throw ForkFailure(message: "Shepherd's session folder for \(cwd) leads outside its pi home.")
+        }
         let url = directory.appendingPathComponent("\(fileTimestamp.string(from: now))_\(sessionID).jsonl")
         do {
             let headerData = try JSONSerialization.data(withJSONObject: header, options: [.sortedKeys])
