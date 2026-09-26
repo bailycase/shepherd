@@ -17,12 +17,16 @@ import UIKit
 struct NWLayerSpinner: View {
     let size: CGFloat
     let color: Color
+    /// The stroke, else `NWPhase.spinnerLineWidth`; and how much of the circle the arc spans.
+    var lineWidth: CGFloat? = nil
+    var sweep: CGFloat = 0.75
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.nwMotionPaused) private var motionPaused
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        NWSpinnerLayerRepresentable(size: size, color: color, animates: !reduceMotion && !motionPaused, colorScheme: colorScheme)
+        NWSpinnerLayerRepresentable(size: size, color: color, animates: !reduceMotion && !motionPaused, colorScheme: colorScheme,
+                                    lineWidth: lineWidth, sweep: sweep)
             .frame(width: size, height: size)
     }
 }
@@ -167,6 +171,7 @@ enum NWLayerMotion {
 final class NWSpinnerLayerView: NSView {
     let arc = CAShapeLayer()
     private var size: CGFloat = 0
+    private var sweep: CGFloat = 0.75
     private var animates = false
 
     override init(frame: NSRect) {
@@ -180,11 +185,13 @@ final class NWSpinnerLayerView: NSView {
 
     required init?(coder: NSCoder) { nil }
 
-    func update(size: CGFloat, color: CGColor, animates: Bool) {
+    func update(size: CGFloat, color: CGColor, animates: Bool, lineWidth: CGFloat? = nil, sweep: CGFloat = 0.75) {
         arc.strokeColor = color
-        if size != self.size {
+        let width = lineWidth ?? NWPhase.spinnerLineWidth(size: size)
+        if size != self.size || width != arc.lineWidth || sweep != self.sweep {
             self.size = size
-            arc.lineWidth = NWPhase.spinnerLineWidth(size: size)
+            self.sweep = sweep
+            arc.lineWidth = width
             needsLayout = true
         }
         self.animates = animates
@@ -198,7 +205,7 @@ final class NWSpinnerLayerView: NSView {
         let radius = max(0, min(bounds.width, bounds.height) / 2 - inset)
         let path = CGMutablePath()
         path.addArc(center: CGPoint(x: bounds.midX, y: bounds.midY), radius: radius, startAngle: 0,
-                    endAngle: -1.5 * .pi, clockwise: true)
+                    endAngle: -2 * sweep * .pi, clockwise: true)
         arc.path = path
     }
 
@@ -220,11 +227,14 @@ struct NWSpinnerLayerRepresentable: NSViewRepresentable {
     let animates: Bool
     /// Read so that an appearance change updates the view, which resolves `color` again.
     let colorScheme: ColorScheme
+    var lineWidth: CGFloat? = nil
+    var sweep: CGFloat = 0.75
 
     func makeNSView(context: Context) -> NWSpinnerLayerView { NWSpinnerLayerView() }
 
     func updateNSView(_ view: NWSpinnerLayerView, context: Context) {
-        view.update(size: size, color: color.resolve(in: context.environment).cgColor, animates: animates)
+        view.update(size: size, color: color.resolve(in: context.environment).cgColor, animates: animates,
+                    lineWidth: lineWidth, sweep: sweep)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: NWSpinnerLayerView, context: Context) -> CGSize? {
@@ -339,6 +349,7 @@ struct NWShimmerLayerRepresentable: NSViewRepresentable {
 final class NWSpinnerLayerView: UIView {
     let arc = CAShapeLayer()
     private var size: CGFloat = 0
+    private var sweep: CGFloat = 0.75
     private var animates = false
 
     override init(frame: CGRect) {
@@ -352,11 +363,13 @@ final class NWSpinnerLayerView: UIView {
 
     required init?(coder: NSCoder) { nil }
 
-    func update(size: CGFloat, color: CGColor, animates: Bool) {
+    func update(size: CGFloat, color: CGColor, animates: Bool, lineWidth: CGFloat? = nil, sweep: CGFloat = 0.75) {
         arc.strokeColor = color
-        if size != self.size {
+        let width = lineWidth ?? NWPhase.spinnerLineWidth(size: size)
+        if size != self.size || width != arc.lineWidth || sweep != self.sweep {
             self.size = size
-            arc.lineWidth = NWPhase.spinnerLineWidth(size: size)
+            self.sweep = sweep
+            arc.lineWidth = width
             setNeedsLayout()
         }
         self.animates = animates
@@ -370,7 +383,7 @@ final class NWSpinnerLayerView: UIView {
         let radius = max(0, min(bounds.width, bounds.height) / 2 - inset)
         let path = CGMutablePath()
         path.addArc(center: CGPoint(x: bounds.midX, y: bounds.midY), radius: radius, startAngle: 0,
-                    endAngle: 1.5 * .pi, clockwise: false)
+                    endAngle: 2 * sweep * .pi, clockwise: false)
         arc.path = path
     }
 
@@ -391,11 +404,14 @@ struct NWSpinnerLayerRepresentable: UIViewRepresentable {
     let color: Color
     let animates: Bool
     let colorScheme: ColorScheme
+    var lineWidth: CGFloat? = nil
+    var sweep: CGFloat = 0.75
 
     func makeUIView(context: Context) -> NWSpinnerLayerView { NWSpinnerLayerView() }
 
     func updateUIView(_ view: NWSpinnerLayerView, context: Context) {
-        view.update(size: size, color: color.resolve(in: context.environment).cgColor, animates: animates)
+        view.update(size: size, color: color.resolve(in: context.environment).cgColor, animates: animates,
+                    lineWidth: lineWidth, sweep: sweep)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: NWSpinnerLayerView, context: Context) -> CGSize? {

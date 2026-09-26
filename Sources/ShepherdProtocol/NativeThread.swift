@@ -19,6 +19,9 @@ public enum NativeThreadRequest: Codable, Hashable, Sendable {
     /// v3: change the messages the host holds while pi works (`NativeQueue`). Gated by `queue`
     /// in `supportedActions` and, remotely, `native.queue.v1`.
     case queue(expectedSessionID: String, generation: String, operationID: UUID, action: NativeQueueAction)
+    /// v4: summarize the conversation now (pi's `compact`), keeping what `instructions` asks
+    /// for. Gated by `compact` in `supportedActions` and, remotely, `native.context.v1`.
+    case compact(expectedSessionID: String, generation: String, operationID: UUID, instructions: String? = nil)
 
     public var images: [NativeImage] {
         if case .send(_, _, _, _, _, let images) = self { return images ?? [] }
@@ -362,6 +365,13 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
     public var subagents: [NativeSubagent]?
     /// v3: the messages the host holds for pi. nil from older hosts (they send straight to pi).
     public var queue: NativeQueue?
+    /// v4: what fills the model's context window (`native.context.v1`). nil from older hosts,
+    /// which get no context meter.
+    public var context: NativeThreadContext?
+    /// The agent's recent turns as the host recorded them in its working tree, oldest first: the
+    /// "Edited N files" cards and their Undo (`RemoteProtocol.changesCapability`). nil from older
+    /// hosts, and for an agent outside a git repository.
+    public var turnChanges: [ChangesTurn]?
 
     public var isRPC: Bool { runtime == "rpc" }
 
@@ -370,7 +380,8 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         thinking: String? = nil, thinkingLevels: [String]? = nil, supportedActions: [String], dialogsSupported: Bool, dialogs: [NativeThreadDialog],
         widgets: [NativeThreadWidget]? = nil, messages: [NativeThreadMessage], olderCursor: String? = nil,
         provisional: [NativeThreadMessage], clipped: Bool, runtime: String? = nil, stats: NativeThreadStats? = nil,
-        commands: [NativeCommand]? = nil, subagents: [NativeSubagent]? = nil, queue: NativeQueue? = nil
+        commands: [NativeCommand]? = nil, subagents: [NativeSubagent]? = nil, queue: NativeQueue? = nil,
+        context: NativeThreadContext? = nil, turnChanges: [ChangesTurn]? = nil
     ) {
         self.piSessionID = piSessionID
         self.generation = generation
@@ -392,6 +403,8 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         self.commands = commands
         self.subagents = subagents
         self.queue = queue
+        self.context = context
+        self.turnChanges = turnChanges
     }
 }
 
@@ -418,11 +431,15 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
     /// v3, user messages: the `send` that became this message. A host's pending row
     /// ("pending:<id>") and pi's message share it, so the turn keeps its identity.
     public var operationID: UUID?
+    /// v4, role "compactionSummary" (a compaction and what the agent kept) and role "compaction"
+    /// (one running, or stopped, as a live row). Older clients ignore both.
+    public var compaction: NativeCompaction?
 
     public init(
         entryID: String, role: String, blocks: [NativeThreadBlock], toolName: String? = nil, toolCallID: String? = nil,
         argumentsText: String? = nil, status: String? = nil, isError: Bool? = nil, truncated: Bool = false, timestamp: Double? = nil,
-        startedAt: Double? = nil, thinkingSeconds: Double? = nil, origin: NativeMessageOrigin? = nil, operationID: UUID? = nil
+        startedAt: Double? = nil, thinkingSeconds: Double? = nil, origin: NativeMessageOrigin? = nil, operationID: UUID? = nil,
+        compaction: NativeCompaction? = nil
     ) {
         self.entryID = entryID
         self.role = role
@@ -438,6 +455,7 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
         self.thinkingSeconds = thinkingSeconds
         self.origin = origin
         self.operationID = operationID
+        self.compaction = compaction
     }
 }
 

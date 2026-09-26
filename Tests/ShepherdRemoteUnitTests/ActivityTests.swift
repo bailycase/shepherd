@@ -252,7 +252,7 @@ struct ActivityTests {
         #expect(changes.files.map(\.path) == ["Sources/A.swift", "Tests/New.swift", "B.swift"])
         #expect(changes.files.map(\.status) == [.modified, .added, .modified])
         #expect(changes.files.map(\.added) == [60, 2, 1] && changes.added == 63 && changes.removed == 42)
-        #expect(changes.title == "3 files changed")
+        #expect(changes.title == "Edited 3 files")
         #expect((changes.files[0].directory, changes.files[0].name) == ("Sources/", "A.swift"))
         #expect((changes.files[2].directory, changes.files[2].name) == ("", "B.swift"))
     }
@@ -292,6 +292,7 @@ struct TurnPresentationTests {
             case .note: "note"
             case .error(_, _, _, let final): final ? "error:final" : "error"
             case .steer(_, let text, _, _): "steer:" + text
+            case .compaction(let row): "compaction:" + row.title
             }
         }
     }

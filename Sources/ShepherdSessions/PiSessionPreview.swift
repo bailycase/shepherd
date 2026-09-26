@@ -110,6 +110,7 @@ public enum PiSessionPreview {
         // compaction and branch_summary
         let summary: String?
         let firstKeptEntryId: String?
+        let tokensBefore: Double?
         let systemMessage: RPCMessage?
         // model_change and thinking_level_change
         let provider: String?
@@ -142,7 +143,7 @@ public enum PiSessionPreview {
         }
 
         enum CodingKeys: String, CodingKey {
-            case type, id, parentId, timestamp, message, customType, content, display, summary, firstKeptEntryId,
+            case type, id, parentId, timestamp, message, customType, content, display, summary, firstKeptEntryId, tokensBefore,
                  systemMessage, provider, modelId, thinkingLevel, targetId, replacement
         }
 
@@ -159,6 +160,7 @@ public enum PiSessionPreview {
             display = try? c.decodeIfPresent(Bool.self, forKey: .display)
             summary = try? c.decodeIfPresent(String.self, forKey: .summary)
             firstKeptEntryId = try? c.decodeIfPresent(String.self, forKey: .firstKeptEntryId)
+            tokensBefore = type == "compaction" ? try? c.decodeIfPresent(Double.self, forKey: .tokensBefore) : nil
             systemMessage = try? c.decodeIfPresent(RPCMessage.self, forKey: .systemMessage)
             provider = try? c.decodeIfPresent(String.self, forKey: .provider)
             modelId = try? c.decodeIfPresent(String.self, forKey: .modelId)
@@ -256,10 +258,11 @@ public enum PiSessionPreview {
                 messages = [RPCMessage(role: "custom", content: entry.content?.blocks ?? [], timestamp: milliseconds(entry.timestamp),
                                        customType: entry.customType, display: entry.display)]
             case "branch_summary" where entry.summary?.isEmpty == false:
-                messages = [RPCMessage(role: "branchSummary", content: [], timestamp: milliseconds(entry.timestamp))]
+                messages = [RPCMessage(role: "branchSummary", content: [], timestamp: milliseconds(entry.timestamp), summary: entry.summary)]
             case "compaction" where index == 0 && newestCompaction != nil:
                 messages = (entry.systemMessage.map { [$0] } ?? [])
-                    + [RPCMessage(role: "compactionSummary", content: [], timestamp: milliseconds(entry.timestamp))]
+                    + [RPCMessage(role: "compactionSummary", content: [], timestamp: milliseconds(entry.timestamp),
+                                  summary: entry.summary, tokensBefore: entry.tokensBefore)]
             default:
                 messages = []
             }

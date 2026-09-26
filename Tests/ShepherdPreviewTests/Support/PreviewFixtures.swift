@@ -93,12 +93,14 @@ final class ThreadFixture {
     /// Header over thread, the way the workspace composes a native agent.
     func thread(title: String = "Investigate SwiftUI live preview capabilities", inspected: String? = nil,
                 workingDirectory: String = "~/Developer/Shepherd",
-                listModels: (() async -> ModelCatalog)? = nil) -> some View {
+                listModels: (() async -> ModelCatalog)? = nil, contextDetailsOpen: Bool = false) -> some View {
         VStack(spacing: 0) {
             ThreadHeader(store: store, project: "Shepherd", title: title)
             ThreadView(store: store, active: true, isFocused: false, request: request, commandKey: "preview",
                        agentName: "Investigate", workingDirectory: workingDirectory, inspectSubagent: { _ in },
-                       inspectedRunID: inspected, review: { _ in }, listModels: listModels)
+                       inspectedRunID: inspected, review: { _ in },
+                       turnActions: TurnChangesActions(review: { _, _ in }, undo: { _ in nil }, redo: { _ in nil }), listModels: listModels,
+                       contextDetailsOpen: contextDetailsOpen)
         }
         .environment(\.threadCommands, commands)
     }
@@ -161,8 +163,23 @@ enum Threads {
         try! JSONDecoder().decode(NativeThreadSnapshot.self, from: Data(json.utf8))
     }
 
-    /// A finished conversation: thinking, Markdown with code, and one of each common tool row.
+    /// The idle thread with the turn its host recorded: "Edited 3 files" with Undo.
     static var idle: NativeThreadSnapshot {
+        var snapshot = idleMessages
+        let prompt: Double = 1_758_830_400_000
+        snapshot.messages[0].timestamp = prompt
+        snapshot.turnChanges = [ChangesTurn(
+            messageTimestamp: prompt, prompt: "Check the native desktop presentation", startedAt: prompt, endedAt: prompt + 130_000,
+            state: .ready,
+            files: [ChangesFile(path: "Sources/ShepherdApp/DesktopNativeThreadView.swift", status: .modified, added: 58, removed: 41),
+                    ChangesFile(path: "App/iOS/ThreadView.swift", status: .modified, added: 0, removed: 4),
+                    ChangesFile(path: "Tests/ShepherdAppTests/NativePresentationTests.swift", status: .modified, added: 9, removed: 1)],
+            added: 67, removed: 46, canUndo: true)]
+        return snapshot
+    }
+
+    /// A finished conversation: thinking, Markdown with code, and one of each common tool row.
+    private static var idleMessages: NativeThreadSnapshot {
         decode(#"""
         {"piSessionID":"fixture","generation":"g","revision":1,"running":false,"model":"anthropic/claude-opus-4-5","thinking":"high",
          "supportedActions":["send","abort","answer","setModel","setThinking","sendImages"],"dialogsSupported":true,"dialogs":[],

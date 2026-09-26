@@ -4,8 +4,9 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-/// One file's diff on iPhone (MobileDiff board): wrapped, syntax-colored lines with long runs
-/// folded (tap to show them), comments under their lines, and Next file. Tapping a line selects
+/// One file's diff on iPhone (MobileDiff board): wrapped, syntax-colored lines with changed
+/// words tinted and long runs folded (tap to show them), comments under their lines, and Next
+/// file. The host sends a file's hunks when it is opened. Tapping a line selects
 /// it; the bar at the bottom writes its comment. Mark viewed in the toolbar.
 struct DiffScreen: View {
     let ref: AgentRef
@@ -17,22 +18,22 @@ struct DiffScreen: View {
 
     var body: some View {
         let store = ReviewStores.shared.store(for: ref)
-        let file = store.file(shown) ?? store.file(matching: path)
-        let summary = store.summaries.first { $0.id == file?.id }
+        let entry = store.entry(shown) ?? store.entry(matching: path)
+        let summary = store.summaries.first { $0.id == entry?.id }
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                if let file {
-                    if file.isBinary {
-                        NWEmptyState(Text("Binary file"), message: "Its changes can't be shown as lines.")
-                    } else if file.hunks.isEmpty {
-                        NWEmptyState(Text("No line changes"), message: "The file was \(ReviewFileStatus(file) == .renamed ? "renamed" : "changed") without changing its lines.")
-                    } else {
-                        ReviewDiffRows(store: store, fileID: file.id, gutters: 1, inlineEditor: false, tintedHunks: true,
+                if let entry {
+                    let state = store.state(of: entry.id)
+                    if state == .lines {
+                        ReviewDiffRows(store: store, fileID: entry.id, gutters: 1, inlineEditor: false, tintedHunks: true,
                                        editorFocused: $commentFocused)
+                        if store.truncated.contains(entry.id) { ReviewTruncatedNote() }
+                    } else {
+                        ReviewFileNotice(state: state) { store.ensure(entry.id) }
                     }
                 } else {
-                    ReviewLoadState(store: store) { Task { await store.load(hosts: hosts) } }
-                    if store.loaded, !store.files.isEmpty {
+                    ReviewLoadState(store: store) { store.refresh() }
+                    if store.loaded, !store.entries.isEmpty {
                         NWEmptyState(Text("Not in this diff"), message: "\(path) has no changes here.")
                     }
                 }
@@ -40,10 +41,9 @@ struct DiffScreen: View {
             .padding(.top, NW.Space.xs)
         }
         .scrollDismissesKeyboard(.interactively)
-        .task(id: ReviewColorsKey(file: file?.id, version: store.filesVersion)) { if let file { await store.highlight(file.id) } }
         .background(Color.nw.bgWindow)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if let label = store.selectionLabel, let selection = store.selection, selection.fileID == file?.id {
+            if let label = store.selectionLabel, let selection = store.selection, selection.fileID == entry?.id {
                 NWLineCommentBar(lineLabel: label, text: store.draftBinding, isFocused: $commentFocused,
                                  canDelete: store.comment(fileID: selection.fileID, lineID: selection.lineID) != nil,
                                  onSend: { store.saveDraft(); commentFocused = false },
@@ -61,26 +61,35 @@ struct DiffScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                DiffTitle(summary: summary, position: file.flatMap { store.index(of: $0.id) }, count: store.files.count)
+                DiffTitle(summary: summary, position: entry.flatMap { store.index(of: $0.id) }, count: store.entries.count)
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
-                if let file {
-                    let viewed = store.viewed.contains(file.id)
+                if let entry {
+                    let viewed = store.viewed.contains(entry.id)
                     Button(viewed ? "Mark unviewed" : "Mark viewed", systemImage: viewed ? "checkmark.circle.fill" : "checkmark.circle") {
-                        store.toggleViewed(file.id)
+                        store.toggleViewed(entry.id)
                     }
                     .tint(viewed ? Color.nw.done : nil)
-                    if let next = store.file(after: file.id) {
+                    if let next = store.entry(after: entry.id) {
                         Button("Next file", systemImage: "chevron.down") {
                             store.clearSelection()
                             shown = next.id
                         }
-                        .accessibilityHint("Shows \(reviewPathParts(next.displayPath).name)")
+                        .accessibilityHint("Shows \(reviewPathParts(next.path).name)")
                     }
                 }
             }
         }
         .task(id: hosts.host(ref.host)?.session) { await store.loadIfNeeded(hosts: hosts) }
+        // The file's hunks come when it is read, and the next file's are fetched meanwhile.
+        .task(id: entry?.id) {
+            guard let entry else { return }
+            store.ensure(entry.id)
+            if let next = store.entry(after: entry.id) { store.ensure(next.id) }
+        }
+        .onChange(of: store.entries.count) { _, _ in
+            if let entry { store.ensure(entry.id) }
+        }
         .onDisappear { if store.draft.isEmpty { store.clearSelection() } }
     }
 }

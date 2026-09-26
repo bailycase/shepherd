@@ -253,6 +253,10 @@ public final class SessionServer: @unchecked Sendable {
     private let originStore: ThreadOriginStore
     /// How each automation's runs went (support directory), for remote clients.
     private let runLog: AutomationRunLog
+    /// The Changes pane's engine: scopes, diffs, the base picker, and each agent's turns with
+    /// their Undo (docs/changes.md). The app calls it directly; remote clients through
+    /// `RemoteAgentQuery.changes*`.
+    public let changes: ChangesService
     /// How queues go for agents with no choice of their own (Settings ▸ Agents).
     private var defaultQueueMode: NativeQueueMode = .all
     private var listenFD: Int32 = -1
@@ -422,12 +426,17 @@ public final class SessionServer: @unchecked Sendable {
     public func modelListing() -> ModelListing { modelCatalog() }
 
     /// `modelCatalog` answers remote model listings; tests pass a stand-in so nothing runs pi.
-    public init(socketPath: String, stateURL: URL, modelCatalog: @escaping ModelCatalog = SessionServer.piModelCatalog) {
+    /// `trash` is where an Undo moves the files a turn created; tests pass their own.
+    public init(socketPath: String, stateURL: URL, modelCatalog: @escaping ModelCatalog = SessionServer.piModelCatalog,
+                trash: @escaping ChangesService.Trash = ChangesService.systemTrash) {
         self.socketPath = socketPath
         self.store = StateStore(url: stateURL)
         self.modelCatalog = modelCatalog
         self.originStore = ThreadOriginStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("thread-origins", isDirectory: true))
         self.runLog = AutomationRunLog(url: stateURL.deletingLastPathComponent().appendingPathComponent("automation-runs.json"))
+        self.changes = ChangesService(directory: stateURL.deletingLastPathComponent().appendingPathComponent("changes", isDirectory: true),
+                                      trash: trash)
+        installChanges()
     }
 
     /// The queue mode of every agent that has not chosen its own (`NativeQueueAction.setMode`).
@@ -530,6 +539,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         // Runs still open died with the previous launch, their agents with them.
         runLog.closeOpenRuns()
+        changes.pruneTurns(keeping: Set(store.state.agents.map(\.id)))
 
         let fm = FileManager.default
         let supportDirectory = (socketPath as NSString).deletingLastPathComponent
@@ -686,6 +696,7 @@ public final class SessionServer: @unchecked Sendable {
             unavailable("The agent is not running in its pane.")
             return
         }
+        if !thread.turnChangesSet { thread.setTurnChanges(changes.turns(agentID: agentID)) }
         guard session.isAlive else {
             unavailable(Self.exitMessage(session.exitCode))
             return
@@ -973,6 +984,29 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             send(.agentResult(id: id, result: .terminals(terminals)), to: client)
+        case .agentQuery(let id, let agentID, let query) where query.isChanges:
+            // The server owns the engine: answered here, without the GUI, off the queue.
+            guard store.state.agents.contains(where: { $0.id == agentID }) else {
+                send(.error(id: id, code: "no_such_agent", message: "Agent no longer exists on the host."), to: client)
+                return
+            }
+            let changes = changes
+            // The connection is only touched back on the server queue.
+            let connection = ChangesUnchecked(value: client)
+            Task.detached { [weak self] in
+                let result: Result<RemoteAgentResult, ChangesError>
+                do { result = .success(try await changes.answer(query, agentID: agentID)) } catch let error as ChangesError {
+                    result = .failure(error)
+                } catch { result = .failure(ChangesError(ChangesError.gitFailed, String(describing: error))) }
+                self?.queue.async {
+                    let client = connection.value
+                    guard let self, self.clients[client.fd] === client else { return }
+                    switch result {
+                    case .success(let value): self.send(.agentResult(id: id, result: value), to: client)
+                    case .failure(let error): self.send(.error(id: id, code: error.code, message: error.message), to: client)
+                    }
+                }
+            }
         case .agentQuery(let id, let agentID, let query):
             guard let handler = onRemoteAgentQuery else {
                 send(.error(id: id, code: "unavailable", message: "Agent inspection is unavailable on the host."), to: client)
@@ -2420,6 +2454,11 @@ public final class SessionServer: @unchecked Sendable {
             session.beforeOffQueueDecode = beforeOffQueueDecode
             let thread = RPCThreadState(session: session, queue: sessionQueue, originStore: originStore)
             thread.defaultQueueMode = defaultQueueMode
+            // pi's compaction settings, as this pi reads them: its agent directory (the app's
+            // environment, or the session's) and the project's own. Read, never written.
+            let piDirectory = PiConfig.agentDirectory(environment: ProcessInfo.processInfo.environment.merging(params.env ?? [:]) { $1 })
+            let cwd = params.cwd
+            thread.compactionSettings = { model in PiConfig.compactionSettings(model: model, cwd: cwd, in: piDirectory) }
             // The queue did not go after all (pi refused it, or it paused): pi is idle, so the
             // agent is done even though its status report was held for the queue.
             thread.onIdleAfterQueue = { [weak serverWeak] in
@@ -2446,6 +2485,14 @@ public final class SessionServer: @unchecked Sendable {
             session.onStderr = { line in ShepherdLog.info("rpc session \(sid) stderr: \(line)") }
             session.onExit = { [weak serverWeak] code in
                 serverWeak?.sessionDidExit(sid, code: code)
+            }
+            thread.onTurnEvent = { [weak serverWeak] event in
+                guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
+                switch event {
+                case .started: server.changes.turnStarted(agentID: agentID)
+                case .message(let timestamp, let text): server.changes.turnMessage(agentID: agentID, timestamp: timestamp, text: text)
+                case .settled: server.changes.turnSettled(agentID: agentID)
+                }
             }
             sessions[sid] = .rpc(session, thread)
             session.start()
@@ -2932,5 +2979,42 @@ public final class SessionServer: @unchecked Sendable {
             }
         }
         return addr
+    }
+}
+
+// MARK: - Changes
+
+/// A value handed across a `@Sendable` boundary and used only back on the queue that owns it.
+private struct ChangesUnchecked<Value>: @unchecked Sendable {
+    let value: Value
+}
+
+extension SessionServer {
+    /// Server queue, from the committed state: the agent's thread pane directory and branch base.
+    fileprivate static func changesContext(_ state: ShepherdState, _ agentID: AgentID) -> ChangesService.AgentContext? {
+        guard let agent = state.agents.first(where: { $0.id == agentID }),
+              let tab = state.tabs.first(where: { $0.id == agent.tabID }) else { return nil }
+        let cwd = agent.paneID.flatMap { tab.layout.leaf(withID: $0)?.cwd } ?? tab.layout.firstLeaf.cwd
+        return ChangesService.AgentContext(cwd: cwd, worktreeBase: agent.worktreeBase,
+                                           isWorktree: agent.worktreePath != nil || agent.worktreeBranch != nil)
+    }
+
+    fileprivate func installChanges() {
+        changes.agentContext = { [weak self] agentID in
+            guard let self else { return nil }
+            return Self.changesContext(self.state, agentID)
+        }
+        changes.onTurnsChanged = { [weak self] agentID, turns in
+            self?.queue.async { self?.setTurnChanges(turns, for: agentID) }
+        }
+    }
+
+    /// Server queue: hands an agent's turns to its thread, whose next snapshot carries them.
+    fileprivate func setTurnChanges(_ turns: [ChangesTurn], for agentID: AgentID) {
+        guard let agent = store.state.agents.first(where: { $0.id == agentID }),
+              let tab = store.state.tabs.first(where: { $0.id == agent.tabID }),
+              let paneID = agent.paneID, let sessionID = tab.layout.leaf(withID: paneID)?.sessionID,
+              let thread = sessions[sessionID]?.thread else { return }
+        thread.setTurnChanges(turns)
     }
 }

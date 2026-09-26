@@ -44,26 +44,6 @@ private enum ReviewSample {
 
 @Suite("Review diff rows")
 struct ReviewDiffRowTests {
-    /// Lines keep their ids and numbers, and take their colors from the highlight when it has
-    /// them; folds and hunk headers carry through.
-    @Test func linesTakeTheirHighlightedTextAndEverythingElseCarriesThrough() throws {
-        let file = Fixture.diffFile("a.swift", hunks: [DiffHunk(header: "@@ -1,13 +0,0 @@", lines: ReviewSample.lines(.removed, 1...13))])
-        var colored = AttributedString("line 1")
-        colored.foregroundColor = .red
-
-        let rows = diffRows(reviewRows(file, expandedRuns: []), highlight: [1: colored])
-
-        #expect(rows.map(\.id) == reviewRows(file, expandedRuns: []).map(\.id))
-        guard case .hunk(_, let header) = rows[0] else { Issue.record("expected the hunk header first"); return }
-        #expect(header == "@@ -1,13 +0,0 @@")
-        guard case .line(let first) = rows[1], case .line(let second) = rows[2] else { Issue.record("expected lines"); return }
-        #expect(first.text == colored && first.key == 1 && first.kind == .removed && first.oldNumber == 1 && first.newNumber == nil)
-        #expect(second.text == AttributedString("line 2") && second.source == "line 2", "no highlight yet: plain text")
-        let fold = try #require(rows.first { if case .fold = $0 { true } else { false } })
-        guard case .fold(_, let count, let kind, let range) = fold else { return }
-        #expect(count == 7 && kind == .removed && range == "6–12")
-    }
-
     @Test(arguments: [
         (false, false, false, NWFileStatus.modified), (true, false, false, .added), (false, true, false, .deleted), (false, false, true, .renamed),
     ])
@@ -141,24 +121,35 @@ struct ReviewSessionTests {
 @Suite("Review pane model")
 @MainActor
 struct ReviewPaneModelTests {
-    @Test func nAndPStepThroughFilesByAskingTheDiffToScroll() {
+    @Test func jAndKStepThroughFilesByAskingTheDiffToScroll() {
         let model = ReviewSample.model()
         let before = model.session.focusRequest
-        #expect(model.handleKey("n"))
+        #expect(model.handleKey("j"))
         #expect(model.session.focusFile == "b.txt" && model.session.focusRequest != before)
         #expect(model.takeFocusRequest() == "b.txt")
         #expect(model.currentFile == "b.txt" && model.session.focusFile == nil)
-        #expect(model.handleKey("n") && model.takeFocusRequest() == "b.txt", "the last file stays put")
-        #expect(model.handleKey("p") && model.takeFocusRequest() == "a.go")
+        #expect(model.handleKey("j") && model.takeFocusRequest() == "b.txt", "the last file stays put")
+        #expect(model.handleKey("k") && model.takeFocusRequest() == "a.go")
     }
 
-    @Test func jAndKWalkEveryHunkAcrossFiles() {
+    /// n/p walk every change across files: each run of changed rows, by its first row.
+    @Test func nAndPWalkEveryChangeAcrossFiles() {
         let model = ReviewSample.model()
-        let hunks = ReviewSample.files.flatMap { file in file.hunks.map { "\(file.id)\u{0}\($0.id)" } }
-        for expected in hunks { #expect(model.handleKey("j") && model.currentHunk == expected) }
-        #expect(model.handleKey("j") && model.currentHunk == hunks.last, "the last hunk stays put")
-        #expect(model.currentFile == "b.txt")
-        #expect(model.handleKey("k") && model.currentHunk == hunks[1] && model.currentFile == "a.go")
+        let changes = ReviewSample.files.flatMap { file in model.changes(in: file).map { (file.id, $0.row) } }
+        #expect(changes.count == 3, "two in a.go, one in b.txt")
+        for (file, row) in changes { #expect(model.handleKey("n") && model.currentChange == row && model.currentFile == file) }
+        #expect(model.handleKey("n") && model.currentChange == changes.last?.1, "the last change stays put")
+        #expect(model.handleKey("p") && model.currentChange == changes[1].1 && model.currentFile == "a.go")
+    }
+
+    @Test func optionUSwitchesTheLayoutAndKeepsTheChoice() {
+        let model = ReviewSample.model()
+        model.noteWidth(1200)
+        #expect(model.layout == .split, "900pt and up is split")
+        #expect(model.handleKey("u", option: true) && model.layout == .unified)
+        model.noteWidth(1400)
+        #expect(model.layout == .unified, "the reader's choice holds at any width")
+        #expect(!model.handleKey("x", option: true))
     }
 
     @Test func vTogglesTheCurrentFileViewedWhichFoldsIt() {
@@ -170,9 +161,9 @@ struct ReviewPaneModelTests {
         #expect(!model.isFolded("a.go") && model.session.viewed.isEmpty, "unfolding a viewed file unmarks it")
     }
 
-    @Test func cCommentsOnTheCurrentHunksFirstChangedLine() throws {
+    @Test func cCommentsOnTheCurrentChangesFirstChangedLine() throws {
         let model = ReviewSample.model()
-        #expect(model.handleKey("j") && model.handleKey("j"))
+        #expect(model.handleKey("n") && model.handleKey("n"))
         #expect(model.handleKey("c"))
         let second = try #require(ReviewSample.files.first?.hunks.last)
         #expect(model.editing == ReviewSession.CommentKey(fileID: "a.go", lineID: try #require(second.lines.first { $0.kind != .context }).id))
@@ -205,25 +196,31 @@ struct ReviewPaneModelTests {
         #expect(model.session.comments.isEmpty && model.editing == nil)
     }
 
-    /// A file's rows are built once per state: the same array until its folds change.
+    /// A file's rows are built once per state: the same array until a fold opens.
     @Test func rowsAreReusedUntilAFoldOpens() throws {
-        let file = Fixture.diffFile("a.txt", hunks: [DiffHunk(header: "@@ -1,13 +0,0 @@", lines: ReviewSample.lines(.removed, 1...13))])
+        let lines = ReviewSample.lines(.context, 1...20) + [DiffLine(kind: .added, text: "new", oldLine: nil, newLine: 21, id: 100)]
+            + ReviewSample.lines(.context, 21...40).map { DiffLine(kind: .context, text: $0.text, oldLine: $0.oldLine, newLine: ($0.newLine ?? 0) + 1, id: $0.id) }
+        let file = Fixture.diffFile("a.txt", hunks: [DiffHunk(header: "@@ -1,40 +1,41 @@", lines: lines)])
         let model = ReviewSample.model(files: [file])
         let first = model.rows(for: file)
         #expect(first.withUnsafeBufferPointer { a in model.rows(for: file).withUnsafeBufferPointer { a.baseAddress == $0.baseAddress } })
         let fold = try #require(first.first { if case .fold = $0 { true } else { false } })
 
-        model.expandFold(fold.id, in: file.id)
+        model.reveal(fold.id, .all, in: file.id)
 
-        #expect(model.rows(for: file).count == 1 + 13)
+        #expect(model.rows(for: file).count > first.count)
     }
 
-    @Test func optionClickingAFoldOpensTheWholeFile() {
-        let lines = ReviewSample.lines(.removed, 1...13) + ReviewSample.lines(.context, 20...32)
-        let file = Fixture.diffFile("a.txt", hunks: [DiffHunk(header: "@@ -1,26 +1,13 @@", lines: lines)])
-        let model = ReviewSample.model(files: [file])
-        model.expandFile(file.id)
-        #expect(model.rows(for: file).count == 1 + 26)
+    /// Lines between hunks came without the diff: opening their fold fetches the file whole.
+    @Test func openingAFoldBetweenHunksFetchesTheFileWhole() throws {
+        var fetched: [String] = []
+        var actions = ReviewActions(setPullRequest: { _ in }, requestChanges: {}, commit: {}, close: {})
+        actions.loadWholeFile = { fetched.append($0) }
+        let model = ReviewSample.model(actions: actions)
+        let fold = try #require(model.rows(for: ReviewSample.files[0]).first { if case .fold = $0 { true } else { false } })
+        model.reveal(fold.id, .down, in: "a.go")
+        #expect(fetched == ["a.go"])
+        #expect(model.revealed["a.go"] == IndexSet(integersIn: 3..<20), "the 20 lines at its top edge, as far as the fold goes")
     }
 
     @Test func expandAndCollapseAllFoldEveryFileOrNone() {
@@ -258,16 +255,22 @@ struct ReviewPaneModelTests {
         let style = CodeHighlight.Style.theme
         await model.highlightFiles(style: style)
 
-        #expect(model.highlights["b.txt"] == nil)
+        #expect(model.highlights["b.txt"]?.lines.isEmpty == true, "no grammar: word diffs only")
         let highlight = try #require(model.highlights["a.go"])
         let lines = ReviewSample.files[0].hunks.flatMap(\.lines)
         #expect(Set(highlight.lines.keys) == Set(lines.map(\.id)))
         let keyword = try #require(highlight.lines[lines[1].id])
         #expect(keyword.runs.contains { $0.foregroundColor == style.keyword })
-        guard case .line(let row)? = model.rows(for: ReviewSample.files[0]).first(where: { $0.id.hasSuffix("l\(lines[1].id)") }) else {
+        guard case .line(let row)? = model.rows(for: ReviewSample.files[0]).first(where: { $0.id.hasSuffix("\u{0}\(lines[1].id)") }) else {
             Issue.record("expected the line's row"); return
         }
-        #expect(row.text == keyword, "rows pick the colors up")
+        #expect(row.text.runs.map(\.foregroundColor) == keyword.runs.map(\.foregroundColor), "rows pick the colors up")
+        // The changed word ("1" became "2") sits on a second layer of the line's tint.
+        let tinted = row.text.runs.filter { $0.backgroundColor != nil }.map { String(row.text[$0.range].characters) }
+        #expect(tinted == ["1"])
+        model.session.wordDiffs = false
+        guard case .line(let plain)? = model.rows(for: ReviewSample.files[0]).first(where: { $0.id == row.id }) else { return }
+        #expect(plain.text == keyword, "without word diffs, just the colors")
     }
 
     /// Reloading (after a revert, or a repeated review request) keeps what did not change.

@@ -58,6 +58,7 @@ struct ThreadScreen: View {
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
             // iPad: the terminal panel under the thread and its composer (Terminal/).
             .threadTerminal(ref)
+            .turnUndoAlert()
             // A thread takes the whole screen on iPhone (MobileThread board): no tab bar under the composer.
             .toolbar(.hidden, for: .tabBar)
             .navigationTitle(agent?.name ?? "Thread")
@@ -100,12 +101,14 @@ struct ThreadScreen: View {
 }
 
 /// The scrolling turns. It reads the store's rows, so a streamed chunk redraws only this and the
-/// turn it changed.
+/// turn it changed. The context sheet's Largest and Show summary bring an entry into view here.
 private struct ThreadTranscript: View {
     let ref: AgentRef
     let store: NativeThreadStore
     let banner: String?
     @Environment(MobileNavigator.self) private var navigator
+    @Environment(MobileHosts.self) private var hosts
+    @Environment(ThreadStores.self) private var threads
     @Environment(\.horizontalSizeClass) private var sizeClass
     /// Follows the tail until the reader drags away from it (DESIGN.md › Thread › Following).
     @State private var follower = NativeScrollFollower()
@@ -153,6 +156,9 @@ private struct ThreadTranscript: View {
                 .padding(.horizontal, MobileLayout.gutter)
                 .padding(.vertical, MobileLayout.gutter)
                 .frame(maxWidth: .infinity)
+                // Which compactions show what the agent kept: its own object, so a toggle
+                // redraws only the compaction lines.
+                .environment(\.compactionExpansion, store.compactions)
             }
             // Open at the tail and stay pinned while it grows; only the reader's own drag
             // detaches, and sending re-attaches.
@@ -193,6 +199,10 @@ private struct ThreadTranscript: View {
             }
             // New output at the tail is what "unseen" means, never the content height.
             .onChange(of: rows.last) { _, _ in follow { $0.contentArrived(); return false } }
+            .onChange(of: ComposerStates.shared.state(for: ref).findRequest) { _, request in
+                guard let request else { return }
+                Task { await find(request.entryID, proxy: proxy) }
+            }
             // Laid out in the thread's safe area, so it sits on the composer; the margin of its
             // 44pt hit area draws the capsule 8pt above it.
             .overlay(alignment: .bottom) {
@@ -203,6 +213,20 @@ private struct ThreadTranscript: View {
             }
             .scrollDismissesKeyboard(.interactively)
         }
+    }
+
+    /// Brings the turn holding `entryID` (a tool result, a compaction) to the top of the thread,
+    /// loading older pages until it is there (the context sheet's Largest and Show summary).
+    private func find(_ entryID: String, proxy: ScrollViewProxy) async {
+        func holder() -> NativeThreadRow? { store.rows.first { $0.turn.messages.contains { $0.entryID == entryID } } }
+        var pages = 0
+        while holder() == nil, store.olderCursor != nil, pages < MobileLayout.findPageLimit {
+            await store.loadOlder()
+            pages += 1
+        }
+        guard let row = holder() else { return }
+        follow { $0.beginJump(); return false }
+        withNWAnimation(.scroll) { proxy.scrollTo(row.id, anchor: .top) }
     }
 
     /// Applies a change to the follower, writing it back only when it changed, so a scroll frame
@@ -228,6 +252,8 @@ private struct ThreadTranscript: View {
             AgentTurnView(thread: ref, presentation: presentation, live: row.live,
                           subagents: store.placements[row.id]?.all.count ?? 0,
                           startedAt: row.startedAt, thinking: thinking,
+                          changes: row.changes,
+                          changesBusy: row.changes?.turnID.map { TurnUndoStore.shared.busy.contains($0) } ?? false,
                           actions: actions(row, running: running))
                 .equatable()
         }
@@ -243,6 +269,14 @@ private struct ThreadTranscript: View {
         }
         actions.review = { path in ReviewHooks.open(thread: ref, file: path, navigator: navigator) }
         actions.reviewChanges = { ReviewHooks.open(thread: ref, file: nil, navigator: navigator) }
+        if let turn = row.changes?.turnID {
+            let hosts = hosts
+            let threads = threads
+            actions.review = { path in ReviewHooks.open(thread: ref, turn: turn, file: path, navigator: navigator) }
+            actions.reviewTurn = { id in ReviewHooks.open(thread: ref, turn: id, navigator: navigator) }
+            actions.undo = { id in TurnUndoStore.shared.undo(id, ref: ref, hosts: hosts, threads: threads) }
+            actions.redo = { id in TurnUndoStore.shared.redo(id, ref: ref, hosts: hosts, threads: threads) }
+        }
         if store.placements[row.id]?.isEmpty == false {
             actions.subagents = { navigator.open(SubagentHooks.list(thread: ref)) }
         }

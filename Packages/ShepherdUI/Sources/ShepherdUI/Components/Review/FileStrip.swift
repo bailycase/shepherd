@@ -1,11 +1,15 @@
 import SwiftUI
 
-/// The review's files as a horizontally scrolling strip of 24pt chips (Review board): a bold
-/// status letter, the filename, and for a modified file its diff stat. The selected chip has the
-/// selected fill; viewed files dim; a running dot marks a file the agent is editing right now.
+/// The review's files as a horizontally scrolling strip of 26pt chips (FileStrip): a bold status
+/// letter, the filename, and its diff stat. The selected chip has the selected fill and its name
+/// in `textPrimary`; a viewed file's name dims to tertiary with a `done` check; a running dot
+/// marks a file the agent is editing right now.
 /// The selection slides from chip to chip (it cross-fades under Reduce Motion) and the strip
 /// scrolls it into view; with `animatesSelection` false (keyboard navigation) both land at once.
 public struct NWFileStrip: View {
+    static let chipHeight: CGFloat = 26
+    static let chipPadding: CGFloat = 9
+
     public struct Item: Identifiable, Equatable, Sendable {
         public let id: String
         /// The full path: the chip's help tag.
@@ -28,8 +32,8 @@ public struct NWFileStrip: View {
 
         public var name: String { NWFileHeader.split(path).name }
 
-        /// Added and deleted files show only their letter; the count is the whole file.
-        public var showsStat: Bool { status == .modified || status == .renamed }
+        /// Every file shows its stat, a new file's too (FileStrip).
+        public var showsStat: Bool { true }
 
         /// "FleetView.swift, modified, 10 added, 54 removed, viewed".
         public var accessibilityText: String {
@@ -58,7 +62,7 @@ public struct NWFileStrip: View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
                 // Lazy: a big change touches hundreds of files, and only the chips in view are built.
-                LazyHStack(spacing: NW.Space.xs) {
+                LazyHStack(spacing: NW.Space.xxs) {
                     ForEach(items) { item in
                         NWFileChip(item: item, selected: item.id == selection, selectionSpace: reduceMotion ? nil : selectionSpace) {
                             onSelect(item.id)
@@ -69,7 +73,8 @@ public struct NWFileStrip: View {
                                                 removal: .identity))
                     }
                 }
-                .padding(NW.Space.s)
+                .padding(.horizontal, NW.Space.m)
+                .padding(.vertical, NW.Space.s)
                 // Files arriving or leaving (a reload, a revert) move the chips aside.
                 .nwAnimation(.list, value: items.map(\.id))
                 .animation(animatesSelection ? NW.Motion.content.animation(reduceMotion: reduceMotion) : nil, value: selection)
@@ -110,14 +115,17 @@ private struct NWFileChip: View, Equatable {
         let nw = Color.nw
         Button(action: action) {
             HStack(spacing: NW.Space.s) {
-                Text(item.status.letter).font(.nwMono(11, .bold)).foregroundStyle(item.status.color)
-                Text(item.name).font(.nwMono(11)).foregroundStyle(nw.textPrimary).lineLimit(1)
-                if item.showsStat { NWDiffStat(added: item.added, removed: item.removed, font: .nwMono(11)) }
+                Text(item.status.letter).font(.nwMono(10.5, .bold)).foregroundStyle(item.status.color)
+                Text(item.name).font(.nw(.mono)).foregroundStyle(nameColor(nw)).lineLimit(1)
+                if item.showsStat { NWDiffStat(added: item.added, removed: item.removed, font: .nwMono(10.5)) }
+                if item.isViewed {
+                    Image(systemName: "checkmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(nw.done)
+                        .nwTransition(.content)
+                }
                 if item.isTouched { NWStatusDot(.running).nwTransition(.content) }
             }
-            .padding(.horizontal, NW.Space.m)
-            .frame(minHeight: NW.Height.controlS)
-            .opacity(item.isViewed ? 0.5 : 1)
+            .padding(.horizontal, NWFileStrip.chipPadding)
+            .frame(minHeight: NWFileStrip.chipHeight)
             .background {
                 if selected { selectionFill }
             }
@@ -130,6 +138,10 @@ private struct NWFileChip: View, Equatable {
         .help(item.path)
         .accessibilityLabel(item.accessibilityText)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func nameColor(_ nw: NWPalette) -> Color {
+        selected ? nw.textPrimary : item.isViewed ? nw.textTertiary : nw.textSecondary
     }
 
     @ViewBuilder private var selectionFill: some View {
