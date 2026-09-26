@@ -136,10 +136,11 @@ extension DesignViewRecord {
         return (0..<6).map { _ in String(format: "%02x", UInt8.random(in: .min ... .max, using: &generator)) }.joined()
     }
 
-    /// `message` without the fenced record `fenced(nonce:)` put ahead of it: what the viewer
-    /// typed, as the thread shows it. Text that doesn't start with exactly such a fence comes
-    /// back unchanged.
+    /// `message` without the fenced record `fenced(nonce:)` or the comment fence
+    /// (`DesignCommentFence`) put ahead of it: what the viewer typed, as the thread shows it.
+    /// Text that doesn't start with exactly such a fence comes back unchanged.
     public static func strippingFence(from message: String) -> String {
+        if let comment = DesignCommentFence.parse(message) { return String(comment.text) }
         let head = preamble + "\n<design-data nonce=\""
         guard message.hasPrefix(head) else { return message }
         let rest = message.dropFirst(head.count)

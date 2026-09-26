@@ -45,7 +45,7 @@ final class ThreadOriginStore: @unchecked Sendable {
                 steered = true
             case .queue(let parts):
                 self.parts = parts.map { Part(id: $0.id, bytes: $0.text.utf8.count, sentAt: $0.sentAt, images: $0.images) }
-            case .user, .unknown:
+            case .user, .designComment, .unknown:
                 return nil
             }
         }
