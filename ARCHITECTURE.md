@@ -93,7 +93,7 @@ persistence task tail keeps user mutations ordered. If the server rejects a muta
 model reconciles itself and `TerminalSessionStore` from `server.state`.
 
 **Observation.** The view model and the app's stores (`NativeThreadStore`, `AppSettings`,
-`KeybindingsStore`, `ThemeManager`, `RemoteHostStore`, `PiUpdateManager`, `AppUpdater`, the
+`KeybindingsStore`, `ThemeManager`, `RemoteHostStore`, `AppUpdater`, the
 worktree models, pane sessions) are `@MainActor @Observable`. Views read only what they draw and
 take plain `Equatable` values, so a status report or a poll re-renders just the views whose
 values changed. The menu bar reads `MenuState` (`AppCommands.swift`), narrow cached values that
@@ -272,7 +272,7 @@ authentication boundary ([SECURITY.md](SECURITY.md)).
 - **`shepherd-instructions.ts`:** reads Settings ▸ Instructions' `AGENTS.md` and
   `APPEND_SYSTEM.md` from `SHEPHERD_INSTRUCTIONS_DIR` when a session starts and adds them to pi's
   context files (right after pi's own root `AGENTS.md`) and system prompt (after pi's own
-  `APPEND_SYSTEM.md`), so Shepherd never writes `~/.pi/agent`. While Settings ▸ Experiments ▸
+  `APPEND_SYSTEM.md`), so Shepherd never writes a pi home's files for it. While Settings ▸ Experiments ▸
   Suggested instructions is on for the agent (`SHEPHERD_SUGGEST_FILES`), its `suggest_instruction`
   sends `suggestInstruction` and reads back what became of the line; the server keeps it in
   `SuggestionsStore` until the user adds or dismisses it.

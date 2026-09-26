@@ -1,9 +1,9 @@
 # The pi engine
 
-Shepherd ships its own pi: the official Node binary plus pi's bundle, inside the Mac app. Nothing
-starts it yet. The switch to it (agents, the model catalog, PR descriptions, children) comes with
-Shepherd's own pi home, and until then every agent still runs the `pi` on the user's PATH. The
-opt-in engine smoke test is the only thing that runs it.
+Shepherd ships its own pi: the official Node binary plus pi's bundle, inside the Mac app. Every
+pi Shepherd starts runs it (agents, the model catalog, PR descriptions, children, the sign-in
+terminal), through the launcher in Shepherd's own pi home ([pi-home.md](pi-home.md)); the MCP
+probe and the Skills reader run on its node. Nothing runs the `pi` on the user's PATH.
 
 ## What ships
 

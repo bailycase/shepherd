@@ -62,11 +62,10 @@ and the workspace comes back, with each agent resumed in its pi session.
 ## Requirements
 
 - macOS 26 or later on Apple Silicon.
-- [pi](https://github.com/earendil-works/pi-coding-agent), on your login shell's `PATH`:
-
-  ```sh
-  npm install -g --ignore-scripts @earendil-works/pi-coding-agent
-  ```
+- Nothing else: Shepherd ships its own [pi](https://github.com/earendil-works/pi-coding-agent) and
+  runs it in its own folder, with its own sign-ins ([docs/pi-home.md](docs/pi-home.md)). A pi you
+  installed yourself stays yours: Shepherd never runs it or changes its files. Sign in once in
+  Settings ▸ Pi.
 
 - To build from source: Xcode with the macOS 26 SDK.
 

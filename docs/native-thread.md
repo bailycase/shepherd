@@ -23,22 +23,26 @@ the server speaks pi's RPC protocol directly.
 session (`SessionRuntime.rpc`). Every other pane is a PTY running the shell configured in
 Settings ▸ Terminal. `StatusExtension.command` builds the agent command with `PiLaunch.agent`,
 which builds every pi launch line. It always goes through a zsh login shell, so the user's `PATH`
-resolves, and it enters the agent's folder after the shell's startup files have run:
+reaches pi's tools, and it enters the agent's folder after the shell's startup files have run:
 
 ```sh
-/bin/zsh -l -c "cd -- '<cwd>' && exec pi --mode rpc --session-id '<id>' [--model '<m>' --thinking '<t>'] \
+/bin/zsh -l -c "cd -- '<cwd>' && exec '<home>/bin/pi' --mode rpc --session-dir '<home>/sessions/--<cwd>--' \
+  --session-id '<id>' [--model '<m>' --thinking '<t>'] \
   -e '<status>' [-e '<panes>'] [-e '<review>'] [-e '<subagents>'] [-e '<children>'] [-e '<namer>']"
 ```
 
-`pi` is the engine `PiEngine` located: the user's `pi` on that PATH, or in a Debug build the file
-`SHEPHERD_PI_ENGINE` names (the tests' stand-in), quoted and never looked up.
+`<home>/bin/pi` is the launcher in Shepherd's own pi home, which pins the home and starts the
+engine the app ships (in a Debug build, the file `SHEPHERD_PI_ENGINE` names: the tests'
+stand-in), never a `pi` looked up on PATH ([pi-home.md](pi-home.md)).
 
 - **`--session-id`** is `Agent.effectivePiSessionID`: the pi session the agent was last in, or
   the agent's own ID for a new agent. `PiSessionFile` writes a minimal session header before
-  launch if pi has not written one yet, so pi finds the session instead of warning.
+  launch if pi has not written one yet, so pi finds the session instead of warning. Before that,
+  an agent whose conversation Shepherd's home lacks copies it in from the user's own pi
+  (`PiSessionFile.adopt`; [pi-home.md](pi-home.md) › Adoption).
   `--model`/`--thinking` are passed only while that file has no conversation (a fresh session).
 - **Extensions** are installed into the support directory from embedded literals and loaded
-  with `-e`. Nothing is installed into `~/.pi/agent/`. The status extension is always loaded; the
+  with `-e`. Nothing is installed into a pi home. The status extension is always loaded; the
   rest follow Settings ▸ Pi ▸ Bundled extensions: "Panes and agent tools", "Diff review tool",
   "Subagent display", "Native subagents", and "Name agents automatically" (the namer, and only
   for agents whose name is not final).
@@ -390,7 +394,7 @@ draw no context meter.
   compaction as events meanwhile.
 - **Never `set_auto_compaction`:** pi 0.87.1 handles it with
   `SettingsManager.setCompactionEnabled`, which writes `compaction.enabled` into the user's global
-  `settings.json` (`~/.pi/agent`, or `PI_CODING_AGENT_DIR`). Shepherd never writes pi's settings, so
+  `settings.json` (Shepherd's pi home's). Shepherd writes only its own keys there, so
   there is no Compact automatically switch (the user's call, 2026-09-25).
 - **Clients** derive the ring and its details once per change in ShepherdRemote
   (`NativeContextMeter`, `NativeContextDetails`, `NativeCompactionRow`), so the Mac and the iOS
