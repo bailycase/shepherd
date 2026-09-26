@@ -9,19 +9,22 @@ import Testing
 @Suite("Spaces", .mainActorExclusive)
 @MainActor
 struct SpaceTests {
-    @Test func addingASpaceWithoutAnAgentCreatesOnlyTheSpaceAndSelectsIt() async throws {
+    /// Adding a folder makes a project and opens New thread in it: no agent starts until you send.
+    @Test func addingASpaceCreatesOnlyTheSpaceAndOpensNewThreadInIt() async throws {
         let app = try AppHarness()
         defer { app.stop() }
         let vm = try await app.start()
         let checkout = app.dir.appendingPathComponent("checkout", isDirectory: true)
         try FileManager.default.createDirectory(at: checkout, withIntermediateDirectories: true)
 
-        let id = try #require(await vm.addSpace(at: checkout, createInitialAgent: false))
+        let id = try #require(await vm.addSpace(at: checkout))
 
         #expect(app.server.state.spaces.map(\.id) == [id])
         #expect(app.server.state.spaces.first?.name == "checkout")
         #expect(app.server.state.tabs.isEmpty && app.server.state.agents.isEmpty)
         #expect(vm.selectedSpaceID == id && vm.selectedAgentID == nil)
+        #expect(vm.shownDestination == .newThread)
+        #expect(vm.newThread.place == NewThreadPlace(host: nil, space: id))
     }
 
     @Test func aCheckoutWithAWorktreeOperationRunningCannotBecomeASpace() async throws {
@@ -30,7 +33,7 @@ struct SpaceTests {
         let vm = try await app.start()
         vm.hostBusyWorktrees.insert(canonical(app.dir))
 
-        #expect(await vm.addSpace(at: app.dir, createInitialAgent: false) == nil)
+        #expect(await vm.addSpace(at: app.dir) == nil)
 
         #expect(vm.remoteActionError != nil)
         #expect(app.server.state.spaces.isEmpty)

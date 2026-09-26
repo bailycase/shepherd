@@ -11,12 +11,6 @@ final class MenuState {
         let title: String
     }
 
-    struct Machine: Equatable, Identifiable {
-        let id: UUID
-        let name: String
-        let connected: Bool
-    }
-
     struct Snapshot: Equatable {
         var hasVisibleThread = false
         var hasSelection = false
@@ -24,10 +18,9 @@ final class MenuState {
         var sidebarVisible = true
         var rightPaneOpen = false
         var hasMachineAgents = false
-        /// The first nine agents of the active machine, for ⌘1–9.
+        /// The first nine Recents rows, for ⌘1–9.
         var agents: [Item] = []
         var spaces: [Item] = []
-        var machines: [Machine] = []
     }
 
     private(set) var hasVisibleThread = false
@@ -38,7 +31,6 @@ final class MenuState {
     private(set) var hasMachineAgents = false
     private(set) var agents: [Item] = []
     private(set) var spaces: [Item] = []
-    private(set) var machines: [Machine] = []
 
     /// Writes only the fields that changed, so only the menus reading them rebuild.
     func apply(_ snapshot: Snapshot) {
@@ -50,26 +42,22 @@ final class MenuState {
         if hasMachineAgents != snapshot.hasMachineAgents { hasMachineAgents = snapshot.hasMachineAgents }
         if agents != snapshot.agents { agents = snapshot.agents }
         if spaces != snapshot.spaces { spaces = snapshot.spaces }
-        if machines != snapshot.machines { machines = snapshot.machines }
     }
 }
 
 extension MenuState.Snapshot {
     @MainActor init(_ vm: ShepherdViewModel) {
         let selected = vm.selectedRemoteAgent?.agentID ?? vm.selectedAgentID
-        let machineAgents = vm.activeMachineAgents
+        let lists = vm.sidebarLists
         self.init(
             hasVisibleThread: vm.visibleThread != nil,
             hasSelection: selected != nil || vm.selectedRemoteAgent != nil,
             canActOnSelection: selected != nil,
             sidebarVisible: vm.isSidebarVisible,
             rightPaneOpen: vm.isRightPaneOpen,
-            hasMachineAgents: !machineAgents.isEmpty,
-            agents: machineAgents.prefix(9).map { MenuState.Item(id: $0.id.rawValue, title: $0.name) },
-            spaces: vm.visibleSpaces.map { MenuState.Item(id: $0.id.rawValue, title: $0.name) },
-            machines: vm.remoteHosts.connections.prefix(8).map {
-                MenuState.Machine(id: $0.id, name: $0.config.name, connected: $0.phase == .connected)
-            }
+            hasMachineAgents: !lists.all.isEmpty,
+            agents: lists.recents.prefix(9).map { MenuState.Item(id: "\($0.id)", title: $0.title) },
+            spaces: vm.visibleSpaces.map { MenuState.Item(id: $0.id.rawValue, title: $0.name) }
         )
     }
 }
@@ -108,7 +96,7 @@ struct AppSettingsCommands: Commands {
     }
 }
 
-/// File ▸ New Agent…, New Space…, and ⌘W as Close Pane.
+/// File ▸ New Thread, New Agent with Options…, New Space…, and ⌘W as Close Pane.
 struct FileCommands: Commands {
     let vm: ShepherdViewModel
     let keys: KeybindingsStore
@@ -117,7 +105,7 @@ struct FileCommands: Commands {
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            Button("New Agent in Current Checkout") { later { vm.quickCreateAgent() } }
+            Button("New Thread") { later { vm.openNewThread() } }
                 .keyboardShortcut(keys.shortcut(.newAgent))
             Button("New Agent with Options…") { later { vm.showNewAgentSheet = true } }
                 .keyboardShortcut(keys.shortcut(.newAgentOptions))
@@ -255,24 +243,6 @@ struct AgentCommands: Commands {
                     }
                     .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
                 }
-            }
-        }
-    }
-}
-
-/// ⌃⇧1–9: machine jumps (this Mac is always ⌃⇧1; hosts follow in configured order).
-struct MachineCommands: Commands {
-    let vm: ShepherdViewModel
-    let menu: MenuState
-
-    var body: some Commands {
-        CommandMenu("Machines") {
-            Button("This Mac") { later { vm.jumpToMachine(1) } }
-                .keyboardShortcut("1", modifiers: [.control, .shift])
-            ForEach(Array(menu.machines.enumerated()), id: \.element.id) { index, machine in
-                Button("⌁ \(machine.name)") { later { vm.jumpToMachine(index + 2) } }
-                    .keyboardShortcut(KeyEquivalent(Character("\(index + 2)")), modifiers: [.control, .shift])
-                    .disabled(!machine.connected)
             }
         }
     }

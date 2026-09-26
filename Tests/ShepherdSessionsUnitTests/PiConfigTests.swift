@@ -35,6 +35,21 @@ struct PiConfigTests {
         #expect(PiConfig.defaultModel(in: dir) == expected)
     }
 
+    /// What pi loads besides Shepherd's own: its packages, in either form, then its extension
+    /// paths; anything unreadable is skipped.
+    @Test(arguments: [
+        (#"{"packages":["npm:@example/pi-tools@1.0.0",{"source":"git:github.com/example/checks@v1","skills":[]},{"skills":[]},7],"extensions":["~/pi/local.ts",""]}"#,
+         ["npm:@example/pi-tools@1.0.0", "git:github.com/example/checks@v1", "~/pi/local.ts"]),
+        (#"{"defaultModel":"gpt-6"}"#, []),
+        ("not json", []),
+    ] as [(String, [String])])
+    func piLoadsTheExtensionsItsSettingsDeclare(_ settings: String, expected: [String]) throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try Data(settings.utf8).write(to: dir.appendingPathComponent("settings.json"))
+        #expect(PiConfig.installedExtensions(in: dir) == expected)
+    }
+
     /// models.json in pi's own shape lists each model as "provider/id", the form `--model` takes,
     /// and says whether it reasons (pi's default is no).
     @Test(arguments: [

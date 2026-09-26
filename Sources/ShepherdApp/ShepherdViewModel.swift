@@ -53,14 +53,21 @@ final class ShepherdViewModel {
     var state: ShepherdState
     var selectedSpaceID: SpaceID?
     var selectedAgentID: AgentID?
-    /// Collapsed space sections in the sidebar tree. A collapsed space shows
-    /// only its header; its agents leave the ⌘1–9 order too. Persisted —
-    /// collapse choices survive relaunch, unlike selection.
-    var collapsedSpaces: Set<SpaceID> = [] {
-        didSet {
-            sidebarDefaults.set(collapsedSpaces.map(\.rawValue).sorted(), forKey: "shepherd.collapsedSpaces")
-        }
-    }
+    /// The page the main column shows in place of a thread (New thread, Automations, Hosts);
+    /// nil while a thread shows. Picking a row clears it. Ephemeral, like all selection state.
+    var destination: MainDestination?
+    /// The sidebar's More is open, showing Hosts and Extensions. Ephemeral.
+    var moreOpen = false
+    /// Needs you and Recents, derived once per change of what they read (`SidebarSource`).
+    @ObservationIgnored var sidebarListsCache: (source: SidebarSource, lists: SidebarLists)?
+    /// Who the sidebar's footer names: the Mac's user and computer, read once. Previews pass their
+    /// own, so a render never shows the machine it ran on.
+    @ObservationIgnored var sidebarFooterIdentity: (name: String, detail: String)?
+    /// The Automations and Hosts pages, derived again only when what they read changed.
+    @ObservationIgnored var automationsPageCache: (inputs: AutomationsPageInputs, model: AutomationsPageModel)?
+    @ObservationIgnored var hostsPageCache: (inputs: HostsPageInputs, model: HostsPageModel)?
+    /// The New thread page's draft: what to do, where, and how. Kept while the page is away.
+    let newThread = NewThreadState()
     /// Child runs per agent, as published: the palette's Subagents section and the needs-you
     /// mark on an agent's sidebar row.
     /// Ephemeral display state; see `ChildRuns` for the lifecycle rules.
@@ -90,9 +97,6 @@ final class ShepherdViewModel {
     var sidebarAutoHidden = false
     /// The overlaid sidebar is showing (narrow window only). Ephemeral.
     var sidebarOverlayShown = false
-    /// The sidebar row being dragged, for drop validation while the drag hovers; the drag
-    /// payload itself never leaves the process.
-    @ObservationIgnored var sidebarDragPayload: String?
     /// The remote agent the workspace is showing (a REMOTE row is selected):
     /// host connection id + agent id on that host. Wins over every local
     /// selection; cleared by ordinary selection. Ephemeral, like all
@@ -141,6 +145,15 @@ final class ShepherdViewModel {
 
     /// Configured remote Shepherd hosts and their live connections.
     let remoteHosts: RemoteHostStore
+    /// Settings ▸ Instructions: pi's root instructions here and on every host, and their sync.
+    let instructions: InstructionsModel
+    /// Settings ▸ Experiments ▸ Suggested instructions: what this Mac's agents suggested.
+    let suggestions: SuggestionsModel
+    /// Settings ▸ Skills: every host's agent skills, This Mac's through `localSkills`.
+    let skills: ClientSkills
+    @ObservationIgnored let localSkills: LocalSkillsClient
+    /// This Mac's daily look for newer skills (`startSkillChecks`).
+    @ObservationIgnored var skillChecks: Task<Void, Never>?
     /// Where the open space-directory browser creates its space: this Mac
     /// or a host. Sheet in RootView; every "new space" entry point (⌘⇧N,
     /// ⌘K, sidebar +) routes here — the system open panel is gone.
@@ -175,64 +188,21 @@ final class ShepherdViewModel {
     /// Pre-selection for the New Agent sheet (a remote space header's `+`);
     /// consumed by the sheet's onAppear.
     var newAgentPreselect: (hostID: UUID, spaceID: SpaceID)?
-    /// Collapsed machine roots in the unified tree (hosts by id; local has
-    /// its own flag). Persisted, like collapsedSpaces.
-    var collapsedHosts: Set<UUID> = [] {
-        didSet {
-            sidebarDefaults.set(collapsedHosts.map(\.uuidString).sorted(), forKey: "shepherd.collapsedHosts")
-        }
-    }
-    var localMachineCollapsed = false {
-        didSet { sidebarDefaults.set(localMachineCollapsed, forKey: "shepherd.localMachineCollapsed") }
-    }
-    /// The sidebar footer's Automations list is open. Persisted.
-    var automationsExpanded = false {
-        didSet { sidebarDefaults.set(automationsExpanded, forKey: "shepherd.automationsExpanded") }
-    }
-    /// Hosts whose Automations disclosure is open in the sidebar. Persisted.
-    var expandedRemoteAutomations: Set<UUID> = [] {
-        didSet {
-            sidebarDefaults.set(expandedRemoteAutomations.map(\.uuidString).sorted(), forKey: "shepherd.expandedRemoteAutomations")
-        }
-    }
-    /// The remote automation whose details and runs the sheet shows.
-    var remoteAutomationSheet: AutomationKey?
     /// Each remote automation's runs as its host last sent them, oldest first (read for the sheet).
     var remoteAutomationRuns: [AutomationKey: [AutomationRun]] = [:]
     /// Remote automation changes on their way, so their controls wait.
     var remoteAutomationsPending: Set<AutomationKey> = []
-    /// Remote space disclosure state, keyed by host + space so equal space IDs
-    /// on different machines cannot collide. Persisted across relaunches.
-    private(set) var collapsedRemoteSpaces: Set<String> = [] {
-        didSet {
-            sidebarDefaults.set(collapsedRemoteSpaces.sorted(), forKey: "shepherd.collapsedRemoteSpaces")
-        }
-    }
-    /// Last agent selected on each host, so a machine jump returns to where
-    /// you were, not the top. Ephemeral.
-    var lastRemoteAgentByHost: [UUID: AgentID] = [:]
+    /// This Mac's automations' runs as the run log kept them, oldest first (read for the
+    /// Automations page).
+    var localAutomationRuns: [AutomationID: [AutomationRun]] = [:]
+    /// The Automations page's selected row and its filter. Ephemeral.
+    var automationsPageSelection: AutomationKey?
+    var automationsPageFilter = ""
     /// Bumped by every selection that should scroll the sidebar to the
-    /// selected row (`sidebarRevealTarget`). A counter, not the target value:
-    /// re-selecting the same row (⌘3 twice after scrolling away) must scroll
-    /// back, and a value-diff would see no change. Ephemeral.
+    /// selected row. A counter, not the target value: re-selecting the same
+    /// row (⌘3 twice after scrolling away) must scroll back, and a value-diff
+    /// would see no change. Ephemeral.
     var sidebarRevealRequest = 0
-
-    private func remoteSpaceCollapseKey(hostID: UUID, spaceID: SpaceID) -> String {
-        "\(hostID.uuidString)/\(spaceID.rawValue)"
-    }
-
-    func isRemoteSpaceCollapsed(hostID: UUID, spaceID: SpaceID) -> Bool {
-        collapsedRemoteSpaces.contains(remoteSpaceCollapseKey(hostID: hostID, spaceID: spaceID))
-    }
-
-    func toggleRemoteSpaceCollapsed(hostID: UUID, spaceID: SpaceID) {
-        let key = remoteSpaceCollapseKey(hostID: hostID, spaceID: spaceID)
-        if collapsedRemoteSpaces.contains(key) {
-            collapsedRemoteSpaces.remove(key)
-        } else {
-            collapsedRemoteSpaces.insert(key)
-        }
-    }
 
     /// A remote space header's `+`: the New Agent sheet opens pointed at
     /// that host and space.
@@ -322,8 +292,6 @@ final class ShepherdViewModel {
     let threadCommands = ThreadCommandCenter()
     /// The menu bar's narrow view of this model (`MenuStateSync` keeps it current).
     let menuState = MenuState()
-    /// The sidebar's one drop target (`SidebarView`), kept here so no update allocates another.
-    let sidebarDropZone = SidebarDropZone()
     /// Which native subagent an agent's workspace is inspecting (the side panel).
     let subagentInspector = RightPaneState()
     /// Each layout's terminal panel under its thread (`TerminalPanels`).
@@ -345,14 +313,9 @@ final class ShepherdViewModel {
     @ObservationIgnored private(set) var checkouts: CheckoutMonitor?
     /// Last pane focused in each layout (see `PaneFocusMemory`).
     var focusMemory = PaneFocusMemory()
-    /// Memoized sidebar projections (`SidebarDerivations`). `spaceForest`
-    /// is quadratic in spaces, and the sidebar reads these on every render —
-    /// including once per row for the ⌘1–9 badges — so uncached they
-    /// dominate every click once the space count grows. @ObservationIgnored:
-    /// the cache fills inside getters during view updates and must never
-    /// invalidate the views reading it; the inputs (`state`,
-    /// `collapsedSpaces`) are themselves observed.
-    @ObservationIgnored var sidebarDerivations = SidebarDerivations()
+    /// Whether each space's folder is a git checkout (the New thread page offers a worktree
+    /// there), probed once per change of the space list, never per render.
+    @ObservationIgnored var repoBySpace: (spaces: [Space], repos: [SpaceID: Bool])?
     /// When each layout last stopped being the visible one; drives cold
     /// parking (see `WorkspaceSelection`). @ObservationIgnored: it only changes alongside
     /// the active tab.
@@ -407,32 +370,41 @@ final class ShepherdViewModel {
         LegacyTerminalAgents.forgetPresentationPreferences(in: sidebarDefaults)
         self.keybindings = keybindings ?? .shared
         self.themeManager = themeManager ?? .shared
-        self.remoteHosts = remoteHosts ?? RemoteHostStore()
+        let hosts = remoteHosts ?? RemoteHostStore()
+        self.remoteHosts = hosts
+        let instructions = InstructionsModel(store: server.instructions, remoteHosts: hosts, defaults: sidebarDefaults)
+        self.instructions = instructions
+        self.suggestions = SuggestionsModel(store: server.suggestions, instructionsStore: server.instructions, instructions: instructions)
+        self.skills = ClientSkills(defaults: sidebarDefaults)
+        self.localSkills = LocalSkillsClient(store: server.skills)
         self.installThemeMarker = themeInstaller
         self.sessions = TerminalSessionStore(server: server)
         self.selectedSpaceID = nil
         self.selectedAgentID = nil
         self.focusedPaneID = nil
 
-        // Restore persisted sidebar collapse state. Stale IDs are pruned on
-        // the first server snapshot (`adopt`).
-        let defaults = sidebarDefaults
-        if let raw = defaults.stringArray(forKey: "shepherd.collapsedSpaces") {
-            collapsedSpaces = Set(raw.map(SpaceID.init(rawValue:)))
-        }
-        if let raw = defaults.stringArray(forKey: "shepherd.collapsedHosts") {
-            collapsedHosts = Set(raw.compactMap(UUID.init(uuidString:)))
-        }
-        localMachineCollapsed = defaults.bool(forKey: "shepherd.localMachineCollapsed")
-        automationsExpanded = defaults.bool(forKey: "shepherd.automationsExpanded")
-        if let raw = defaults.stringArray(forKey: "shepherd.expandedRemoteAutomations") {
-            expandedRemoteAutomations = Set(raw.compactMap(UUID.init(uuidString:)))
-        }
-        sidebarHidden = defaults.bool(forKey: "shepherd.sidebarHidden")
-        collapsedRemoteSpaces = Set(defaults.stringArray(forKey: "shepherd.collapsedRemoteSpaces") ?? [])
+        // The tree's disclosure keys (collapsed spaces, hosts, This Mac, the Automations
+        // footer) stay in older preferences and are no longer read.
+        sidebarHidden = sidebarDefaults.bool(forKey: "shepherd.sidebarHidden")
 
         sessions.onStateChanged = { [weak self] serverState in
             self?.adopt(serverState)
+        }
+        // Settings ▸ Instructions follows a remote client's save here, and sends a host that
+        // comes back what it is owed.
+        server.onInstructionsChanged = { [weak instructions = self.instructions] snapshot in
+            MainActor.assumeIsolated { instructions?.localChanged(snapshot) }
+        }
+        hosts.onHostConnected = { [weak self, weak instructions = self.instructions] hostID in
+            instructions?.hostConnected(hostID)
+            self?.skillsHostConnected(hostID)
+        }
+        // Settings ▸ Skills follows a remote client's change to This Mac's skills.
+        server.onSkillsChanged = { [weak skills = self.skills] snapshot in
+            MainActor.assumeIsolated { skills?.hostChanged(ShepherdViewModel.thisMacSkills, snapshot) }
+        }
+        server.onSuggestionsChanged = { [weak suggestions = self.suggestions] snapshot in
+            MainActor.assumeIsolated { suggestions?.serverChanged(snapshot) }
         }
         sessions.onTabLayoutChanged = { [weak self] tabID, layout in
             guard let self, let index = self.state.tabs.firstIndex(where: { $0.id == tabID }),
@@ -523,6 +495,7 @@ final class ShepherdViewModel {
         server.setDefaultQueueMode(self.settings.queueDelivery)
         self.settings.onQueueDeliveryChange = { [weak server] mode in server?.setDefaultQueueMode(mode) }
         installRemoteInspection()
+        installHostSettings()
         server.onRemoteAgentAction = { [weak self] agentID, action, completion in
             Task { @MainActor in
                 guard let self else {
@@ -660,13 +633,11 @@ final class ShepherdViewModel {
     /// a keystroke it shouldn't — is directly testable.
     enum NavigationKeyAction: Equatable {
         case agentDigit(Int)
-        case machineJump(Int)
         case adjacentAgent(Int)
     }
 
-    /// `modifiers` must be pre-masked to the four app modifiers. Digit
-    /// families match by exact modifier set; validation already guarantees
-    /// the three sets are mutually exclusive.
+    /// `modifiers` must be pre-masked to the four app modifiers. ⌘digits match by the exact
+    /// modifier set, so ⌃⇧digits (the retired machine jumps) fall through to the focused view.
     static func navigationKeyAction(
         digit: Int?,
         chord: KeyChord?,
@@ -674,17 +645,14 @@ final class ShepherdViewModel {
         next: KeyChord,
         previous: KeyChord
     ) -> NavigationKeyAction? {
-        if let digit {
-            if modifiers == .command { return .agentDigit(digit) }
-            if modifiers == [.control, .shift] { return .machineJump(digit) }
-        }
+        if let digit, modifiers == .command { return .agentDigit(digit) }
         guard let chord else { return nil }
         if chord == next { return .adjacentAgent(1) }
         if chord == previous { return .adjacentAgent(-1) }
         return nil
     }
 
-    /// Fast path for the navigation chords (⌘↑/↓, ⌘1–9, ⌃⇧1–9 machine jumps): act directly instead of letting the event
+    /// Fast path for the navigation chords (⌘↑/↓, ⌘1–9): act directly instead of letting the event
     /// reach the main menu. Consumes an event only when the menu's
     /// equivalent item would be live, so a dead chord falls through
     /// unchanged. Stands down while the Settings shortcut recorder is
@@ -700,19 +668,10 @@ final class ShepherdViewModel {
         )
         switch action {
         case .agentDigit(let digit):
-            // Mirrors the Agent menu's digit rows: live only for an existing sidebar index.
-            guard activeMachineAgents.count >= digit else { return false }
+            // Mirrors the Agent menu's digit rows: live only for an existing Recents row.
+            guard sidebarLists.recents.count >= digit else { return false }
             showCommandPalette = false
             selectAgentDigit(digit)
-            return true
-        case .machineJump(let digit):
-            // ⌃⇧1 (local) is always live; host rows only while connected,
-            // matching the Machines menu's disabled states.
-            if digit > 1 {
-                guard remoteHosts.connections.indices.contains(digit - 2),
-                      remoteHosts.connections[digit - 2].phase == .connected else { return false }
-            }
-            jumpToMachine(digit)
             return true
         case .adjacentAgent(let delta):
             selectAdjacentAgent(delta)
@@ -752,22 +711,24 @@ final class ShepherdViewModel {
             didAutoStartAutomations = true
             autoStartAutomations()
         }
-        // Drop collapse entries for spaces that no longer exist so the
-        // persisted set cannot grow without bound.
-        let liveSpaces = Set(state.spaces.map(\.id))
-        if !collapsedSpaces.isSubset(of: liveSpaces) {
-            collapsedSpaces.formIntersection(liveSpaces)
-        }
         let standing = WorkspaceSelection.standingSpace(selectedSpaceID, agentSelected: selectedAgent != nil, in: state)
         if standing != selectedSpaceID { selectedSpaceID = standing }
-        if selectedAgent == nil {
-            selectedAgentID = state.agents.first { $0.spaceID == selectedSpaceID }?.id
+        // With nothing on screen (the shown agent went away, or the app just launched), the
+        // agent shown before it comes back, else the most recently active on this Mac; with no
+        // agents at all, the New thread page shows. A page the user opened stays.
+        if selectedAgent == nil, destination == nil, selectedRemoteAgent == nil {
+            let live = Set(state.agents.map(\.id))
+            if let next = selectionHistory.last(where: live.contains) ?? localRecentsOrder.first,
+               let agent = state.agents.first(where: { $0.id == next }) {
+                selectedAgentID = agent.id
+                selectedSpaceID = agent.spaceID
+            }
         }
         // First adoption of the restored workspace: every agent's pi starts now, not when its
-        // layout mounts, the one on screen first and the rest a few at a time.
+        // layout mounts, the one on screen first and the rest a few at a time, in Recents order.
         if restoresAgentsAtLaunch, !didStartRestoredAgents {
             didStartRestoredAgents = true
-            sessions.startRestoredAgents(orderedAgents.map(\.id) + state.agents.map(\.id),
+            sessions.startRestoredAgents(localRecentsOrder + state.agents.map(\.id),
                                          first: selectedAgentID.map { [$0] } ?? [], in: state)
         }
         focusMemory.prune(liveTabs: Set(state.tabs.map(\.id)))
@@ -844,7 +805,7 @@ final class ShepherdViewModel {
     /// The bound port while serving, nil otherwise. Distinct from the
     /// setting: binding can fail (port in use), and the UI must say so.
     private(set) var remoteListenerBoundPort: UInt16?
-    private(set) var remoteListenerError: String?
+    private(set) var remoteListenerFailure: RemoteListenerFailure?
 
     var remoteListenerEnabled: Bool { settings.remoteListenerEnabled }
 
@@ -855,8 +816,10 @@ final class ShepherdViewModel {
         return "Let other Macs with your token connect to agents here."
     }
 
-    /// The bind failure, shown inline under the listener row.
-    var remoteListenerProblem: String? { remoteListenerError.map { "Couldn't start: \($0)" } }
+    /// Why the listener couldn't start, in words, shown inline under the listener row.
+    var remoteListenerProblem: String? { remoteListenerFailure?.sentence }
+    /// The technical reason: that line's tooltip.
+    var remoteListenerProblemDetail: String? { remoteListenerFailure?.detail }
 
     /// Applied at startup (ShepherdApp calls this after server.start()) and
     /// from the Settings toggle.
@@ -866,18 +829,19 @@ final class ShepherdViewModel {
 
     func setRemoteListenerEnabled(_ enabled: Bool, persist: Bool = true) {
         if persist { settings.remoteListenerEnabled = enabled }
-        remoteListenerError = nil
+        remoteListenerFailure = nil
         if enabled {
             guard remoteListenerBoundPort == nil else { return }
+            let port = UInt16(clamping: settings.remoteListenerPort)
             do {
                 remoteListenerBoundPort = try server.startRemoteListener(
-                    port: UInt16(clamping: settings.remoteListenerPort),
+                    port: port,
                     tokenURL: ShepherdPaths.remoteTokenURL()
                 )
             } catch {
                 // Surfaced in Settings AND logged — on a headless host nobody
                 // is looking at Settings.
-                remoteListenerError = String(describing: error)
+                remoteListenerFailure = RemoteListenerFailure(error, port: port)
                 NSLog("Shepherd: remote listener failed to start: \(error)")
             }
         } else if remoteListenerBoundPort != nil {

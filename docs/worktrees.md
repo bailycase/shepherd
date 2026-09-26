@@ -14,17 +14,18 @@ index per working tree, and the Changes pane opens on Branch against the agent's
 `worktreeBase`.
 
 Code: `Sources/ShepherdApp/GitWorktree.swift` (create, resolve base, inspect, remove),
-`NewWorktreeSheet.swift`, `NewAgentSheet.swift` (worktree option), `WorktreeFinalize.swift`
+`NewWorktreeSheet.swift`, `NewAgentSheet.swift` (worktree option), `NewThreadModel.swift` (the
+New thread page's worktree switch), `WorktreeFinalize.swift`
 (setup checks and the finalize pipeline), `FinalizeWorktreeSheet.swift`,
 `SettingsWorktrees.swift`, and `ShepherdViewModel+RemoteWorktrees.swift` (host side for remote
 clients).
 
 ## Creating a worktree agent
 
-There are two entry points:
+There are three entry points:
 
-- **New Worktree…** in a local space's context menu. It appears only when the space is a git
-  repository. The sheet has three rows:
+- **New Worktree…** in a local project's context menu (the New thread page's workplace chip lists
+  the projects). It appears only when the space is a git repository. The sheet has three rows:
   - **Branch:** generated as `agent/<adjective>-<noun>-<1000–9999>`, for example
     `agent/calm-stone-3831`. Branches made before 2026-09-25 keep their `worktree/` names.
   - **Base:** an editable ref, pre-filled from the resolved base (below), with a note
@@ -36,6 +37,10 @@ There are two entry points:
 - **The New Agent sheet's Worktree option.** It is available for a repository or a remote
   target. It adds a Base field, a "Fetch origin before creating" toggle, and a "Resolve base…"
   link. It uses the same base resolution.
+- **The New thread page's New worktree switch**, in the workplace chip's menu, for a local
+  repository or a host that creates worktrees. It has no Base field: the branch is generated and
+  the base resolved per Settings ▸ Worktrees as above, both recorded on the agent. A failure shows
+  under the composer before any agent exists.
 
 **Import Existing Worktree…** (same context menu) adopts a worktree you already have. You pick
 its directory, Shepherd checks that it belongs to the space's repository, and it creates an
@@ -82,7 +87,8 @@ git -C <repo> worktree add --no-track -b <branch> <checkout> <base>
 
 The base is stored on the agent as `Agent.worktreeBase` (`ShepherdCore`), alongside
 `worktreeBranch` and, for imported worktrees, `worktreePath`. All three decode as nil from older
-state files. The sidebar marks worktree agents with `⎇`.
+state files. A worktree agent's sidebar row names its branch in its tooltip, and its menu offers
+Finalize Worktree… and Delete Worktree Agent….
 
 ## Finalizing
 

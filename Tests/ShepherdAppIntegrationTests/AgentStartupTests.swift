@@ -255,8 +255,10 @@ struct AgentStartupTests {
         try FileManager.default.createDirectory(at: broken, withIntermediateDirectories: true)
         try JSONSerialization.data(withJSONObject: ["exit": 1]).write(to: broken.appendingPathComponent("stub-pi-startup.json"))
         let space = Fixture.space(path: app.dir.path)
-        let agents = [Fixture.agent("broken", in: space, order: 0, cwd: broken.path, piSession: SessionID())]
+        var agents = [Fixture.agent("broken", in: space, order: 0, cwd: broken.path, piSession: SessionID())]
             + (1..<4).map { Fixture.agent("worker \($0)", in: space, order: $0, piSession: SessionID()) }
+        // The broken one is the most recently active, so it is the one on screen at launch.
+        agents[0].agent.lastActiveAt = 10
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents), restoringAgents: true)
         let onScreen = try #require(vm.selectedAgentID)
         #expect(onScreen == agents[0].agent.id)

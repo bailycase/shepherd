@@ -95,7 +95,7 @@ let package = Package(
         .testTarget(name: "ShepherdCoreUnitTests", dependencies: ["ShepherdCore"]),
         .testTarget(name: "ShepherdProtocolUnitTests", dependencies: ["ShepherdProtocol"]),
         .testTarget(name: "ShepherdUIUnitTests", dependencies: [.product(name: "ShepherdUI", package: "ShepherdUI")]),
-        .testTarget(name: "ShepherdRemoteUnitTests", dependencies: ["ShepherdCore", "ShepherdProtocol", "ShepherdRemote"]),
+        .testTarget(name: "ShepherdRemoteUnitTests", dependencies: ["ShepherdCore", "ShepherdProtocol", "ShepherdRemote", "ShepherdTestKit"]),
         .testTarget(name: "ShepherdSessionsUnitTests", dependencies: ["ShepherdSessions"]),
         .testTarget(name: "ShepherdAppUnitTests", dependencies: ["ShepherdApp", "ShepherdTestKit"]),
         .testTarget(name: "ShepherdCLIUnitTests", dependencies: ["shepherd-cli"]),
