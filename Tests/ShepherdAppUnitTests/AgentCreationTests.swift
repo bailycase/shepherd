@@ -268,6 +268,25 @@ struct AgentLaunchCommandTests {
         #expect(launch.env["SHEPHERD_SUGGEST_FILES"] == "AGENTS.md,APPEND_SYSTEM.md")
     }
 
+    /// A design's agent loads the design tools last, and learns its design and the skill's folder;
+    /// every other agent gets neither.
+    @Test func aDesignsAgentLoadsTheDesignTools() {
+        let launch = StatusExtension.command(
+            agentID: AgentID(rawValue: "agent-id"), piSessionID: "current-session",
+            socketPath: "/tmp/shepherd.sock", extensionPath: "/tmp/status.ts",
+            panesExtensionPath: "/tmp/panes.ts", reviewExtensionPath: nil, subagentsExtensionPath: nil,
+            namerExtensionPath: "/tmp/namer.ts",
+            design: ("/tmp/design.ts", DesignID(rawValue: "d1"), "/tmp/support/design-skill"),
+            model: nil, thinking: nil
+        )
+        #expect(launch.argv[3].hasSuffix(" -e '/tmp/panes.ts' -e '/tmp/namer.ts' -e '/tmp/design.ts'"))
+        #expect(launch.env["SHEPHERD_DESIGN_ID"] == "d1")
+        #expect(launch.env["SHEPHERD_DESIGN_SKILL_DIR"] == "/tmp/support/design-skill")
+        let plain = command(enabled: [0, 1, 2, 3, 4])
+        #expect(!plain.argv[3].contains("design"))
+        #expect(plain.env["SHEPHERD_DESIGN_ID"] == nil && plain.env["SHEPHERD_DESIGN_SKILL_DIR"] == nil)
+    }
+
     /// Watchers must never create watchers.
     @Test func automationAgentsAreMarked() {
         #expect(command(isAutomation: true).env["SHEPHERD_AUTOMATION"] == "1")
