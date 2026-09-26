@@ -39,6 +39,18 @@ enum DesignRoute: Equatable, Sendable {
         }
     }
 
+    /// The project path a link on a board names, or nil when it names no file of this design.
+    /// A link's leading `/` means the canvas root, which the scheme serves at `/project/`, so a
+    /// path outside it (`/flows/Cart.dc.html`) is read from there.
+    static func linkedPath(_ url: URL, host: String) -> String? {
+        if case .project(let segments) = DesignRoute(url: url, host: host) { return segments.joined(separator: "/") }
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              components.path.hasPrefix("/"), !components.path.hasPrefix("/project/") else { return nil }
+        components.path = "/project" + components.path
+        guard let rooted = components.url, case .project(let segments) = DesignRoute(url: rooted, host: host) else { return nil }
+        return segments.joined(separator: "/")
+    }
+
     /// A project path segment, by the canvas's file grammar: `[A-Za-z0-9_][A-Za-z0-9_.-]*`, and
     /// never `..`.
     static func isSegment(_ segment: String) -> Bool {
