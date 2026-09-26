@@ -12,19 +12,24 @@ public struct LeafPane: Codable, Hashable, Sendable {
     /// Marks a native diff-review pane. Review panes are session-scoped UI and
     /// are purged at startup; old state files decode nil.
     public var isReview: Bool?
+    /// A terminal tab's name, set by Rename tab on the tab's first pane; nil names the tab after
+    /// what it runs. Old state files decode nil.
+    public var title: String?
 
     public init(
         id: PaneID = PaneID(),
         sessionID: SessionID? = nil,
         cwd: String,
         agentID: AgentID? = nil,
-        isReview: Bool? = nil
+        isReview: Bool? = nil,
+        title: String? = nil
     ) {
         self.id = id
         self.sessionID = sessionID
         self.cwd = cwd
         self.agentID = agentID
         self.isReview = isReview
+        self.title = title
     }
 }
 
