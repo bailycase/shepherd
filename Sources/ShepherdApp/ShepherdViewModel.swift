@@ -333,6 +333,10 @@ final class ShepherdViewModel {
     @ObservationIgnored private var flagsMonitor: Any?
     @ObservationIgnored private var keyDownMonitor: Any?
     @ObservationIgnored private var resignActiveObserver: NSObjectProtocol?
+    @ObservationIgnored private var becomeActiveObserver: NSObjectProtocol?
+    /// Reads each local agent's branch and changed files for the header (`CheckoutMonitor`);
+    /// nil when the harness turned it off.
+    @ObservationIgnored private(set) var checkouts: CheckoutMonitor?
     /// Last pane focused in each layout (see `PaneFocusMemory`).
     var focusMemory = PaneFocusMemory()
     /// Memoized sidebar projections (`SidebarDerivations`). `spaceForest`
@@ -386,7 +390,8 @@ final class ShepherdViewModel {
         themeInstaller: @escaping (ShepherdTheme) throws -> Void = { theme in
             try ShepherdThemeMarker.install(for: theme)
         },
-        restoresAgentsAtLaunch: Bool = true
+        restoresAgentsAtLaunch: Bool = true,
+        checkoutReader: CheckoutMonitor.Reader? = CheckoutMonitor.git
     ) {
         self.state = ShepherdState()
         self.server = server
@@ -485,6 +490,15 @@ final class ShepherdViewModel {
         sessions.onNotify = { [weak self] agentID, title, body in
             guard let self, let agent = self.state.agents.first(where: { $0.id == agentID }) else { return }
             self.notifications.agentNotify(agent, title: title, body: body)
+        }
+        if let checkoutReader {
+            let monitor = CheckoutMonitor(read: checkoutReader) { [server] id, checkout in await server.setAgentCheckout(id, checkout) }
+            monitor.directory = { [weak self] id in self?.checkoutDirectory(of: id) }
+            checkouts = monitor
+            server.onAgentToolFinished = { [weak monitor] agentID, tool in
+                guard CheckoutMonitor.touchesFiles(tool: tool) else { return }
+                monitor?.refresh(agentID, after: .seconds(1))
+            }
         }
         // Agents drive their own panes through the server's extension socket.
         installPaneControl()
@@ -604,6 +618,16 @@ final class ShepherdViewModel {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.modifierFlagsChanged([]) }
         }
+        // Back from another app (a commit in a terminal, an editor's save): read the checkout on
+        // screen again.
+        becomeActiveObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.selectedRemoteAgent == nil, let id = self.selectedAgentID else { return }
+                self.checkouts?.refresh(id)
+            }
+        }
     }
 
     deinit {
@@ -619,6 +643,9 @@ final class ShepherdViewModel {
         }
         if let resignActiveObserver {
             NotificationCenter.default.removeObserver(resignActiveObserver)
+        }
+        if let becomeActiveObserver {
+            NotificationCenter.default.removeObserver(becomeActiveObserver)
         }
     }
 
@@ -711,6 +738,7 @@ final class ShepherdViewModel {
         let runs = server.openAutomationRuns
         if runs != openAutomationRuns { openAutomationRuns = runs }
         threadStores.prune(live: Set(state.agents.map(\.id)))
+        checkouts?.sync(agents: state.agents.map(\.id))
         pruneReviewSessions()
         // First adoption of the restored workspace: stand the enabled
         // automation watches back up (their agents died with the last run).
@@ -752,6 +780,8 @@ final class ShepherdViewModel {
             // A repeated report must not invalidate every view that reads the workspace.
             if old != status { state.agents[index].status = status }
             if old != status || statusSince[id] == nil { statusSince[id] = Date() }
+            // A turn starting or ending may have changed files.
+            if old != status { checkouts?.refresh(id, after: .milliseconds(300)) }
             let failed = status == .done && failure != nil
             if failed != failedTurns.contains(id) {
                 if failed { failedTurns.insert(id) } else { failedTurns.remove(id) }

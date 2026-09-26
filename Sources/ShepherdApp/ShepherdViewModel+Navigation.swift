@@ -273,6 +273,7 @@ extension ShepherdViewModel {
         selectedAgentID = id
         selectedSpaceID = agent.spaceID
         revealLocalSpace(agent.spaceID)
+        checkouts?.refresh(id)
         focusedPaneID = restoredFocus(forTab: agent.tabID, fallback: agent.paneID)
     }
 

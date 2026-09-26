@@ -211,6 +211,9 @@ public final class SessionServer: @unchecked Sendable {
     /// streaming turn costs a main hop per frame, and an agent no one watches costs none. A hint
     /// to pull, not state: it may land after callbacks the server queued later.
     public var onThreadRevision: ((AgentID) -> Void)?
+    /// An agent's pi finished a tool call (its name). The app reads the agent's checkout again
+    /// after calls that may have changed files. Delivered on the main actor.
+    public var onAgentToolFinished: ((AgentID, String) -> Void)?
     /// The shortest time between two `onThreadRevision` deliveries: one display frame.
     public static let revisionPushSpacing: DispatchTimeInterval = .microseconds(16_667)
     /// A Shepherd agent asked to see, message, or spawn peer threads.
@@ -2231,6 +2234,20 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Record the branch and changed-file count the app read from an agent's checkout. Live
+    /// state, like a status: broadcast at once (remote clients draw it in their headers), never
+    /// validated or written on its own, and a no-op when nothing changed.
+    public func setAgentCheckout(_ agentID: AgentID, _ checkout: AgentCheckout?) async {
+        await enqueueValue {
+            guard let index = self.store.state.agents.firstIndex(where: { $0.id == agentID }),
+                  self.store.state.agents[index].checkout != checkout else { return }
+            self.store.updateLive { $0.agents[index].checkout = checkout }
+            let committedState = self.store.state
+            self.broadcastRemoteState(committedState)
+            self.hopToMain { [weak self] in self?.onStateChanged?(committedState) }
+        }
+    }
+
     /// Persist a hand-entered agent title without replacing the rest of the
     /// agent snapshot that may have changed since the UI rendered it.
     public func renameAgent(_ agentID: AgentID, to name: String) async throws {
@@ -2421,6 +2438,10 @@ public final class SessionServer: @unchecked Sendable {
                 server.sendChildCommand(agentID: agentID, runID: runID, action: action, text: text, mode: mode, completion: done)
             }
             thread.onRevision = { [weak serverWeak] in serverWeak?.threadRevised(sessionID: sid) }
+            thread.onToolFinished = { [weak serverWeak] name in
+                guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
+                server.hopToMain { [weak server] in server?.onAgentToolFinished?(agentID, name) }
+            }
             session.onEvent = { [weak thread] event in thread?.handle(event) }
             thread.onServable = { [weak serverWeak] in
                 guard let server = serverWeak, server.sessions[sid] != nil else { return }
