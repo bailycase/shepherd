@@ -1463,7 +1463,9 @@ final class RPCThreadState {
             case .text(let text):
                 result.blocks.append(NativeThreadBlock(kind: .text, text: clip(text)))
             case .thinking(let text):
-                result.blocks.append(NativeThreadBlock(kind: .thinking, text: clip(text)))
+                // Streamed thinking arrives raw (pi-ai ends each summary part with a blank line);
+                // what a reader sees is normalized, the growing text as much as the settled one.
+                result.blocks.append(NativeThreadBlock(kind: .thinking, text: clip(RPCContentBlock.normalizedThinking(text))))
             case .image:
                 result.blocks.append(NativeThreadBlock(kind: .unsupportedImage, text: clip("[Image unavailable in native thread]")))
             case .toolCall:
