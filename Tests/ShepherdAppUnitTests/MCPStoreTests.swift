@@ -90,7 +90,8 @@ struct MCPStoreTests {
     @Test func theBoardsServersReadWithTheirSignInColumn() throws {
         let secrets = InMemorySecretStore(["secret/postgres/DATABASE_URI": "postgres://db"])
         let store = try MCPFixtures.store(secrets: secrets)
-        #expect(store.rows.map(\.name) == ["github", "grafana", "linear", "notion", "playwright", "postgres", "sentry"])
+        // In the file's order, as the board lists them.
+        #expect(store.rows.map(\.name) == ["linear", "sentry", "notion", "github", "postgres", "playwright", "grafana"])
         #expect(try row(store, "github").signIn == .variable("$GITHUB_TOKEN"))
         #expect(try row(store, "postgres").signIn == .secret("DATABASE_URI"))
         #expect(try row(store, "playwright").signIn == .none)

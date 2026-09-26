@@ -69,6 +69,24 @@ struct MCPConfigFileTests {
         """)
     }
 
+    /// Servers stay in the file's order, on the page and through an edit; a new one goes last and
+    /// a renamed one keeps its place.
+    @Test func serversKeepTheFilesOrder() throws {
+        let file = try scratchFile("""
+        {"mcpServers": {"linear": {"url": "https://l"}, "sentry": {"url": "https://s", "note": {"a": [1, "}"]}},
+                        "notion": {"url": "https://n\\"x"}, "github": {"url": "https://g"}}}
+        """)
+        guard case .document(let read) = file.read() else { Issue.record("didn't parse"); return }
+        #expect(read.servers.map(\.name) == ["linear", "sentry", "notion", "github"])
+        let written = try file.update { document in
+            document.upsert(MCPServerEntry(name: "anthropic", json: ["url": .string("https://a")]))
+            document.rename("sentry", to: "errors")
+        }
+        #expect(written.servers.map(\.name) == ["linear", "errors", "notion", "github", "anthropic"])
+        guard case .document(let again) = file.read() else { Issue.record("didn't parse"); return }
+        #expect(again.servers.map(\.name) == ["linear", "errors", "notion", "github", "anthropic"])
+    }
+
     @Test func aFileThatDoesNotParseIsNeverWritten() throws {
         let broken = "{\n  \"mcpServers\": {\n    \"a\": {\"command\" \"x\"}\n  }\n}\n"
         let file = try scratchFile(broken)
@@ -123,7 +141,8 @@ struct MCPConfigFileTests {
         let file = try scratchFile(#"{"servers": {"gh": {"type": "http", "url": "https://api.githubcopilot.com/mcp/"}}}"#)
         try file.update { $0.upsert(.local("postgres", command: "uvx")) }
         guard case .document(let document) = file.read() else { Issue.record("unreadable"); return }
-        #expect(document.servers.map(\.name) == ["gh", "postgres"])
+        // mcpServers is listed first, as the file now holds it first.
+        #expect(document.servers.map(\.name) == ["postgres", "gh"])
         #expect(document.root["servers"]?["gh"] != nil)
         #expect(document.root["mcpServers"]?["postgres"] != nil)
     }
