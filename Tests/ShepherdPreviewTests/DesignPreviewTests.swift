@@ -143,6 +143,61 @@ struct DesignPreviewTests {
         #expect(record.selectedBoards == ["A.dc.html", "B.dc.html"])
     }
 
+    /// Zoom never changes what a board draws: A, selected, drawn by its own live view at the
+    /// canvas's fitted zoom (about 17%) and at 100%. A capture can't draw a live web view, so each
+    /// render shows the snapshot the live view takes of itself once it has drawn at that zoom;
+    /// the two pictures of A match.
+    @Test func designScreenZoomKeepsTheBoardsLayout() async throws {
+        var drawn: [CGImage] = []
+        for percent in [17, 100] {
+            let (workspace, checkout, _) = try await designWorkspace()
+            defer { workspace.stop() }
+            let vm = workspace.vm
+            #expect(vm.madeDesignRendering == nil)
+            vm.designLiveCap = 1
+            vm.selectSidebarRow(.design(checkout.id))
+            let screen = vm.designScreen(checkout.id)
+            let host = try #require(screen.host)
+            let a = try #require(DesignPath("A.dc.html"))
+            screen.select(a.rawValue)
+            let close = NWCanvasViewport(offset: CGPoint(x: NWDesignMetrics.fitLeading, y: NWDesignMetrics.fitFrameTop), zoom: 1)
+            try await Preview.render("app-window-design-zoom-\(percent)", size: Self.windowSize, ready: {
+                guard screen.snapshot != nil else { return false }
+                if percent == 100, screen.viewport != close {
+                    screen.viewport = close
+                    screen.planLive()
+                }
+                guard let view = host.liveView(a), view.zoom == screen.viewport.zoom else { return host.zooming && screen.isDrawn }
+                // Its snapshot is in; draw it rather than the view a capture can't see.
+                host.setZooming(true)
+                return false
+            }) {
+                RootView(vm: vm)
+            }
+            if percent == 17 { #expect(screen.viewport.zoom < 0.25, "the fitted canvas is at \(screen.viewport.zoom)") }
+            drawn.append(try #require(host.image(a)))
+        }
+        #expect(drawn[0].width == drawn[1].width && drawn[0].height == drawn[1].height)
+        let difference = try #require(Self.meanDifference(drawn[0], drawn[1]))
+        #expect(difference < 2, "A drawn at 17% differs from A at 100% by \(difference) per channel")
+    }
+
+    /// The mean per-channel difference of two images drawn at 320×200.
+    private static func meanDifference(_ a: CGImage, _ b: CGImage) -> Double? {
+        func pixels(_ image: CGImage) -> [UInt8]? {
+            var bytes = [UInt8](repeating: 0, count: 320 * 200 * 4)
+            guard let context = CGContext(data: &bytes, width: 320, height: 200, bitsPerComponent: 8, bytesPerRow: 320 * 4,
+                                          space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+            context.interpolationQuality = .high
+            context.draw(image, in: CGRect(x: 0, y: 0, width: 320, height: 200))
+            return bytes
+        }
+        guard let left = pixels(a), let right = pixels(b) else { return nil }
+        let total = zip(left, right).reduce(0) { $0 + abs(Int($1.0) - Int($1.1)) }
+        return Double(total) / Double(left.count)
+    }
+
     /// Comments on the checkout funnel's A, made once its agent answers: the step card's comment
     /// (answered under its pin) and one on the bars. Rects are the fixture board's layout.
     private func comment(on workspace: PreviewWorkspace, _ design: Design, agent: Agent) async throws -> [DesignComment] {
