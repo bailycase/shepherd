@@ -1,4 +1,5 @@
 import Foundation
+import SystemConfiguration
 import ShepherdCore
 import ShepherdRemote
 
@@ -12,10 +13,13 @@ final class NativeThreadStores<Key: Hashable> {
     /// Told the new `live` whenever it changes: the local app asks its server to push revisions
     /// for these threads only.
     var onLiveChange: ((Set<Key>) -> Void)?
+    /// Names the machine a thread's agent runs on, for its errors' Details.
+    var hostName: ((Key) -> String?)?
 
     func store(for key: Key) -> NativeThreadStore {
         if let store = stores[key] { return store }
         let store = NativeThreadStore()
+        store.hostName = hostName?(key)
         install(store, for: key)
         return store
     }
@@ -40,6 +44,12 @@ final class NativeThreadStores<Key: Hashable> {
         for key in Set(stores.keys).subtracting(live) { stores.removeValue(forKey: key)?.stop() }
     }
 }
+
+/// This Mac's name ("build-01"), read once: the host its own agents' errors name.
+let localHostName: String? = {
+    let name = (SCDynamicStoreCopyComputerName(nil, nil) as String?)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    return name?.isEmpty == false ? name : nil
+}()
 
 /// The agent whose pi runs in `pane` (its primary pane). Other panes are terminals.
 func primaryAgent(in tab: Tab, pane: LeafPane, agents: [Agent]) -> Agent? {

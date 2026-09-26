@@ -69,7 +69,8 @@ struct FleetTests {
         ], subagents: [Fixture.run("quiet"), child]))
         #expect(digest.question == FleetDigest.Question(dialogID: "d1", kind: .select, title: "Where?", message: "Pick one",
                                                        options: ["Left", "Right"]))
-        #expect(digest.subagentQuestion == FleetDigest.SubagentQuestion(runID: "run-1", label: "reviewer", text: "Rename or replace?"))
+        #expect(digest.subagentQuestion == FleetDigest.SubagentQuestion(runID: "run-1", label: "reviewer", text: "Rename or replace?",
+                                                                       answerable: false))
     }
 
     @Test(arguments: [
@@ -188,6 +189,27 @@ struct FleetTests {
         #expect(item.reply == .open)
         #expect(model.recents.isEmpty)
         #expect(model.running.map(\.ref) == [Self.ref("restyle")])
+    }
+
+    /// A subagent's offered answers answer in place, as a select's do, where the host takes
+    /// subagent commands; a reply of its own, or too many options, opens its run.
+    @Test(arguments: [
+        (["Replace everywhere", "Rename new ones"], ["subagents"], FleetAttention.Reply.choose(["Replace everywhere", "Rename new ones"])),
+        (["Replace everywhere", "Rename new ones"], [], .open),
+        ([], ["subagents"], .open),
+        (["A", "B", "C", "D"], ["subagents"], .open),
+    ] as [([String], [String], FleetAttention.Reply)])
+    func anAskingSubagentsOptionsAnswerInPlaceWhereItsHostTakesThem(options: [String], actions: [String],
+                                                                    reply: FleetAttention.Reply) throws {
+        var child = Fixture.run("run-1", needsAttention: true)
+        child.label = "reviewer"
+        child.question = ChildQuestion(text: "Rename or replace?", options: options)
+        let snapshot = Self.snapshot(running: true, subagents: [child], actions: actions)
+        let model = FleetModel(hosts: [Self.host(Self.studio, "Studio", agents: [Self.agent("restyle", .working)])],
+                               digests: [Self.ref("restyle"): Self.digest(snapshot)])
+        let item = try #require(model.needsYou.first)
+        #expect(item.reply == reply)
+        #expect(item.runID == "run-1" && item.dialogID == nil)
     }
 
     @Test func onlyConnectedHostsAskAndOfflineRowsAreTheirLastKnownState() {

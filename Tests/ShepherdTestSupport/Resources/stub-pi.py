@@ -552,7 +552,10 @@ for raw in sys.stdin.buffer:
     elif t == "get_messages":
         respond(cmd, t, data={"messages": MESSAGES})
     elif t == "get_commands":
-        respond(cmd, t, data={"commands": COMMANDS})
+        # STUB_PI_PROMPT_TEMPLATE: the file fix-tests came from, as pi reports a template's source.
+        template = os.environ.get("STUB_PI_PROMPT_TEMPLATE")
+        commands = [dict(c, sourceInfo={"path": template}) if template and c["name"] == "fix-tests" else c for c in COMMANDS]
+        respond(cmd, t, data={"commands": commands})
     elif t == "get_session_stats":
         respond(cmd, t, data=STATS)
     elif t == "compact":

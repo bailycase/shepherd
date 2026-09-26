@@ -295,12 +295,12 @@ public struct NativeSubagentRecord: Hashable, Sendable {
 
 // MARK: Answering from the tray
 
-/// A run's question as the composer's question panel shows it once its row's Answer is tapped
-/// (touch): the answers it offered to choose from, else a reply. nil once it no longer asks.
-public func nativeSubagentQuestionDialog(_ run: ChildRun) -> NativeThreadDialog? {
+/// A run's question as the question dock shows it once its row's Answer is tapped (touch; the
+/// Mac's dock builds the same prompt): its answers to pick from, a note and Something else, or
+/// a reply. nil once it no longer asks.
+public func nativeSubagentQuestionPrompt(_ run: ChildRun) -> NativeQuestionPrompt? {
     guard nativeRunPhase(run) == .needsYou else { return nil }
     let text = run.question?.text ?? run.attentionText ?? ""
-    let options = run.question?.options ?? []
-    return NativeThreadDialog(id: "subagent:" + run.id, kind: options.isEmpty ? .input : .select, title: text.isEmpty ? "Waiting on your answer" : text,
-                              options: options.isEmpty ? nil : options, placeholder: "Reply to \(nativeRunNames(run).name)…")
+    return NativeQuestionPrompt(runID: run.runID, name: nativeRunNames(run).name,
+                                question: text.isEmpty ? "Waiting on your answer" : text, options: run.question?.options)
 }

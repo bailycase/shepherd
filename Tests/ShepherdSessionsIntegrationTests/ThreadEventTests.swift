@@ -100,6 +100,24 @@ struct ThreadEventTests {
         #expect(s.provisional.isEmpty && s.dialogs.isEmpty && s.widgets == [] && !s.clipped && s.olderCursor == nil)
     }
 
+    /// pi lists a prompt template without its argument hint; the host reads it from the file pi
+    /// names and the next snapshot carries it (SlashMenu: "/release-notes [tag]").
+    @Test func aPromptTemplatesArgumentHintIsReadFromItsFile() async throws {
+        let dir = try makeScratchDirectory("prompts")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let template = dir.appendingPathComponent("fix-tests.md")
+        try "---\ndescription: Fix failing tests\nargument-hint: \"[suite]\"\n---\nFix $1.\n".write(to: template, atomically: true, encoding: .utf8)
+        let t = try Thread(env: ["STUB_PI_PROMPT_TEMPLATE": template.path])
+        defer { t.stop() }
+        _ = try await t.ready()
+        var commands: [NativeCommand]?
+        try await eventually("the template's hint to arrive") {
+            commands = await t.request(.snapshot()).snapshotValue?.commands
+            return commands?.contains { $0.arguments != nil } == true
+        }
+        #expect(commands?.map(\.arguments) == [nil, "[suite]"], "an extension command has no hint")
+    }
+
     @Test func requestsBeforePiReportsItsSessionAreStarting() async throws {
         let t = try Thread(bootstrap: false)
         defer { t.stop() }
@@ -153,6 +171,7 @@ struct ThreadEventTests {
     private static let toolStart = #"{"type":"tool_execution_start","toolCallId":"c1","toolName":"bash","args":{"command":"ls"}}"#
     private static let toolUpdate = #"{"type":"tool_execution_update","toolCallId":"c1","toolName":"bash","partialResult":{"content":[{"type":"text","text":"out"}]}}"#
     private static let queueUpdate = #"{"type":"queue_update","steering":[],"followUp":["later"]}"#
+    private static let retryStart = #"{"type":"auto_retry_start","attempt":1,"maxAttempts":3,"delayMs":8000,"errorMessage":"529 overloaded"}"#
 
     static let revisionCases: [RevisionCase] = [
         .init(name: "an agent starting", setup: [], event: start, revisions: 1),
@@ -165,7 +184,9 @@ struct ThreadEventTests {
         .init(name: "a dialog", setup: [], event: #"{"type":"extension_ui_request","id":"d1","method":"select","title":"Pick","options":["a"]}"#, revisions: 1),
         .init(name: "a widget", setup: [], event: #"{"type":"extension_ui_request","id":"w1","method":"setWidget","widgetKey":"k","widgetLines":["hi"]}"#, revisions: 1),
         .init(name: "a repeated queue update", setup: [queueUpdate], event: queueUpdate, revisions: 0),
-        .init(name: "an unknown event", setup: [], event: #"{"type":"auto_retry_start","attempt":1}"#, revisions: 0),
+        .init(name: "an unknown event", setup: [], event: #"{"type":"entry_appended","entry":{}}"#, revisions: 0),
+        .init(name: "a retry starting", setup: [start], event: retryStart, revisions: 1),
+        .init(name: "the retries ending", setup: [start, retryStart], event: #"{"type":"auto_retry_end","success":true,"attempt":1}"#, revisions: 1),
         .init(name: "a compaction starting", setup: [], event: #"{"type":"compaction_start","reason":"threshold"}"#, revisions: 1),
         .init(name: "an idle agent settling", setup: [], event: #"{"type":"agent_settled"}"#, revisions: 0),
         .init(name: "a repeated tool output", setup: [start, toolStart, toolUpdate], event: toolUpdate, revisions: 0),
@@ -445,6 +466,45 @@ struct ThreadEventTests {
         // agent_end asks for with isStreaming false.
         #expect(try await t.feedThenSnapshot(#"{"type":"agent_end","messages":[],"willRetry":true}"#).running)
         #expect(try await !t.feedThenSnapshot(#"{"type":"agent_settled"}"#).running)
+    }
+
+    /// pi retrying a failed request shows as the snapshot's `retry` (which try, of how many, and
+    /// when it goes) until the retries end or pi settles.
+    @Test func aRetryShowsUntilTheRetriesEndOrPiSettles() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        let before = Date().timeIntervalSince1970 * 1000
+        try await t.feed(Self.start, Self.retryStart)
+        let retry = try #require(try await t.snapshot().retry)
+        #expect(retry.attempt == 1 && retry.maxAttempts == 3)
+        #expect(retry.retryAt >= (before + 8000).rounded(.down) && retry.retryAt <= Date().timeIntervalSince1970 * 1000 + 8001)
+
+        try await t.feed(#"{"type":"auto_retry_end","success":false,"attempt":3,"finalError":"529 overloaded"}"#)
+        #expect(try await t.snapshot().retry == nil)
+
+        try await t.feed(Self.retryStart)
+        #expect(try await t.feedThenSnapshot(#"{"type":"agent_settled"}"#).retry == nil)
+    }
+
+    /// A reply that failed carries the provider and model it went to, beside pi's error text;
+    /// other replies carry neither.
+    @Test func aFailedReplyCarriesItsProviderAndModel() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        try await t.feed(
+            Self.start,
+            #"{"type":"message_start","message":{"role":"assistant","content":[]}}"#,
+            #"{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"Sure."}],"stopReason":"stop","provider":"openai","model":"gpt-5"}}"#,
+            #"{"type":"message_start","message":{"role":"assistant","content":[]}}"#,
+            #"{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"error","errorMessage":"401 Incorrect API key provided","provider":"openai","model":"gpt-5"}}"#
+        )
+        let rows = try await t.snapshot().provisional
+        #expect(rows.count == 2)
+        #expect(rows.first?.provider == nil && rows.first?.model == nil)
+        #expect(rows.last?.provider == "openai" && rows.last?.model == "gpt-5")
+        #expect(rows.last?.blocks.map(\.text) == ["401 Incorrect API key provided"])
     }
 
     /// Live rows are one list in pi's order: a steer read after a tool call sits after it, and
