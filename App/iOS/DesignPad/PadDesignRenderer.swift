@@ -117,6 +117,8 @@ final class PadDesignHost {
     @ObservationIgnored var linked: ((_ from: DesignPath, _ to: DesignPath) -> Void)?
     /// A live board drew new source: a selection on it is found again where it is now.
     @ObservationIgnored var redrawn: ((DesignPath) -> Void)?
+    /// A board without a live view has a snapshot of its current version.
+    @ObservationIgnored var rasterized: ((DesignPath) -> Void)?
     /// About to make a live view: every other design gives its own up (`PadDesignRendering`).
     @ObservationIgnored var claiming: (() -> Void)?
     @ObservationIgnored private var boards: [DesignPath: Board] = [:]
@@ -169,6 +171,12 @@ final class PadDesignHost {
 
     /// The board's last snapshot, which may be of an older version while a new one renders.
     func image(_ path: DesignPath) -> CGImage? { images.image(path) }
+
+    /// Whether the board has a snapshot of its current version.
+    func hasCurrentSnapshot(_ path: DesignPath) -> Bool {
+        guard let board = boards[path] else { return false }
+        return images.sha(path) == board.drawing
+    }
 
     /// Whether each board draws something current: a ready live view, or a snapshot of its hash.
     func isDrawn(_ paths: [DesignPath]) -> Bool {
@@ -439,6 +447,7 @@ final class PadDesignHost {
             guard self.boards[path]?.drawing == drawing else { return }
             self.images.store(image, sha: drawing, for: path, keeping: self.onScreen)
             self.bump(path)
+            self.rasterized?(path)
         })
     }
 

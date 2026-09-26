@@ -111,10 +111,12 @@ enum DesignPadMarkupFixtures {
             let placed = { (number: Int) in canvas.pins.first { $0.number == number }.map { $0.rect != .zero } ?? false }
             await FixtureWindows.wait(seconds: 30) { placed(2) && placed(3) && canvas.isDrawn }
             let card = canvas.markupCard(NativeMarkupProposals(proposals: proposed))
+            let through = touchesReachTheCanvas()
             let ok = card.cards.map(\.number) == [2, 3] && card.state == .open && canvas.openComments.count == 3
-                && placed(2) && placed(3) && canvas.markup.showsPalette
+                && placed(2) && placed(3) && canvas.markup.showsPalette && through
             print("FIXTURE CHECK \(ok ? "ok" : "FAILED:") design-pad-markup-reply: cards \(card.cards.map(\.number)) \(card.state), "
-                  + "\(canvas.openComments.count) comments, pins placed \(placed(2)) \(placed(3)), palette \(canvas.markup.showsPalette)")
+                  + "\(canvas.openComments.count) comments, pins placed \(placed(2)) \(placed(3)), palette \(canvas.markup.showsPalette), "
+                  + "a touch the ink doesn't take reaches the canvas \(through)")
             return
         }
         let boards = canvas.boards.compactMap { board in DesignPath(board.id).map { (path: $0, frame: board.frame) } }
@@ -138,6 +140,22 @@ enum DesignPadMarkupFixtures {
             && underline?.board == "A.dc.html" && underline?.element?.tid == kpis.tid
         print("FIXTURE CHECK \(ok ? "ok" : "FAILED:") design-pad-markup read \(DesignMarkup.countsText(strokes: record.strokes.count, notes: record.noteCount)): "
               + marks.joined(separator: "; "))
+    }
+
+    /// A touch the markup layer leaves (a finger's, or one UIKit names no kind for while no new
+    /// ink is on the canvas) goes on through SwiftUI to the canvas's touch view under it, which
+    /// pans and pinches: hit-tested in the window at the ink's middle.
+    @MainActor static func touchesReachTheCanvas() -> Bool {
+        let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows)
+        func ink(in view: UIView) -> PadMarkupInkView? {
+            if let ink = view as? PadMarkupInkView { return ink }
+            for subview in view.subviews { if let found = ink(in: subview) { return found } }
+            return nil
+        }
+        guard let window = windows.first(where: { ink(in: $0) != nil }), let layer = ink(in: window) else { return false }
+        let point = layer.convert(CGPoint(x: layer.bounds.midX, y: layer.bounds.midY), to: window)
+        guard let hit = window.hitTest(point, with: nil) else { return false }
+        return !hit.isDescendant(of: layer) && String(describing: type(of: hit)).contains("InputView")
     }
 
     // MARK: The ink
