@@ -13,6 +13,11 @@ struct RemoteDesignRefusal: Error, Sendable {
         self.message = message
     }
 
+    /// A piece asked for from outside the file.
+    static func badOffset(_ offset: Int, size: Int?) -> RemoteDesignRefusal {
+        RemoteDesignRefusal("invalid_offset", size.map { "offset \(offset) is outside a file of \($0) bytes" } ?? "offset \(offset) is outside the file")
+    }
+
     /// The refusal for any error a design request can meet.
     init(_ error: Error) {
         switch error {
@@ -51,21 +56,25 @@ struct RemoteDesignService: Sendable {
             guard DesignStore.isServable(path) else {
                 throw RemoteDesignRefusal("invalid_path", "\"\(path)\" names no file a design serves.")
             }
-            guard let file = try await designs.projectFile(id, path: path) else {
+            guard offset >= 0 else { throw RemoteDesignRefusal.badOffset(offset, size: nil) }
+            guard let piece = try await designs.projectFilePiece(id, path: path, offset: offset, length: RemoteProtocol.designChunkBytes,
+                                                                    sha256: sha) else {
                 throw RemoteDesignRefusal(RemoteDesignCode.noSuchFile, "The design has no \(path).")
             }
-            guard file.sha256 == sha else {
+            guard piece.sha256 == sha else {
                 throw RemoteDesignRefusal(RemoteDesignCode.staleFile, "\(path) changed since it was listed; read the design again.")
             }
-            return .chunk(try Self.chunk(file.data, sha256: file.sha256, name: nil, offset: offset))
+            return .chunk(RemoteDesignChunk(sha256: piece.sha256, offset: piece.offset, total: piece.total, data: piece.data))
         case .asset(let id, let blobID, let offset):
             guard DesignBundle.isAssetName(blobID), !blobID.contains(".") else {
                 throw RemoteDesignRefusal("invalid_path", "\"\(blobID)\" names no upload.")
             }
-            guard let asset = try await designs.asset(id, blobID: blobID) else {
+            guard offset >= 0 else { throw RemoteDesignRefusal.badOffset(offset, size: nil) }
+            guard let asset = try await designs.assetPiece(id, blobID: blobID, offset: offset, length: RemoteProtocol.designChunkBytes) else {
                 throw RemoteDesignRefusal(RemoteDesignCode.noSuchFile, "The design has no upload \(blobID).")
             }
-            return .chunk(try Self.chunk(asset.data, sha256: Self.sha256(asset.data), name: asset.name, offset: offset))
+            let piece = asset.piece
+            return .chunk(RemoteDesignChunk(name: asset.name, sha256: piece.sha256, offset: piece.offset, total: piece.total, data: piece.data))
         case .comments(let id):
             return .comments(try await server.designComments(id))
         case .addComment(let id, let draft, let base):
@@ -154,15 +163,6 @@ struct RemoteDesignService: Sendable {
             changed.append(RemoteDesignFile(path: path, sha256: info.sha256, size: info.size, data: nil))
         }
         return RemoteDesignFiles(designID: id, revision: revision, changed: changed, unchanged: unchanged, missing: missing)
-    }
-
-    /// One piece of `data` from `offset`, at most a chunk long.
-    static func chunk(_ data: Data, sha256: String, name: String?, offset: Int) throws -> RemoteDesignChunk {
-        guard offset >= 0, offset <= data.count else {
-            throw RemoteDesignRefusal("invalid_offset", "offset \(offset) is outside a file of \(data.count) bytes")
-        }
-        let end = min(data.count, offset + RemoteProtocol.designChunkBytes)
-        return RemoteDesignChunk(name: name, sha256: sha256, offset: offset, total: data.count, data: data.subdata(in: offset..<end))
     }
 
     /// A board path a client sent, checked against the grammar.
