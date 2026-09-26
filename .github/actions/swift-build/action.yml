@@ -1,8 +1,11 @@
 name: Swift build
 description: >
   Restores the dependency and build caches, carries source mtimes over, and runs
-  `swift build --build-tests`. Exports SWIFTPM_FLAGS so later steps call SwiftPM
-  (`swift test --skip-build $SWIFTPM_FLAGS`) exactly as it built.
+  `swift build --build-tests`, making every target recheck the modules it uses
+  so a change never leaves an indirect dependent stale. A restored build whose
+  link still fails with undefined symbols is rebuilt once from scratch. Exports
+  SWIFTPM_FLAGS so later steps call SwiftPM (`swift test --skip-build
+  $SWIFTPM_FLAGS`) exactly as it built.
 
 inputs:
   clean:
@@ -94,10 +97,46 @@ runs:
       shell: bash
       run: python3 scripts/ci_mtimes.py restore .build/ci-mtimes
 
+    # SwiftPM's native build system gives each Swift target's compile command
+    # only its direct dependencies' modules as inputs. A target that uses a
+    # transitive module (ShepherdProtocolUnitTests calling ShepherdCore) is
+    # skipped when only that module changed, since the module between them is
+    # rewritten only when its own interface changes, and its stale objects then
+    # fail to link or, after a layout change, link and misbehave. Every
+    # target's command also reads the swift-version file, so removing it makes
+    # each one run its swift-driver, which knows every module its files loaded
+    # and recompiles exactly what changed (a few seconds when nothing did).
+    # If a restored build's link still fails with undefined symbols and nothing
+    # else, the build products are removed and built once from scratch; any
+    # other failure, or a second one, fails the step, so no cache is saved
+    # from it.
     - name: Build
       shell: bash
+      env:
+        RESTORED: ${{ steps.build.outputs.cache-matched-key }}
       run: |
-        swift build --build-tests $SWIFTPM_FLAGS
+        if [ -n "$RESTORED" ]; then
+          shopt -s nullglob
+          versions=(.build/*/debug/swift-version-*.txt)
+          shopt -u nullglob
+          if [ ${#versions[@]} -eq 0 ]; then
+            echo "::warning::the restored build has no swift-version file, so a module's change may leave its indirect dependents stale"
+          else
+            rm -f "${versions[@]}"
+          fi
+        fi
+        log="$RUNNER_TEMP/swift-build.log"
+        build() { swift build --build-tests $SWIFTPM_FLAGS 2>&1 | tee "$log"; }
+        status=0
+        build || status=$?
+        if [ "$status" -ne 0 ] && [ -n "$RESTORED" ] && stale=$(python3 scripts/ci_stale_link.py "$log"); then
+          echo "::warning::stale objects in the restored build ($stale) failed to link; rebuilding from scratch"
+          find .build -mindepth 1 -maxdepth 1 ! -name repositories ! -name checkouts \
+            ! -name artifacts ! -name workspace-state.json -exec rm -rf {} +
+          status=0
+          build || status=$?
+        fi
+        [ "$status" -eq 0 ] || exit "$status"
         # SwiftPM copies binary frameworks (Sparkle) to Products/<config>,
         # but test-bundle rpaths expect PackageFrameworks; bridge the two
         # (-n: a restored link must be replaced, not followed).
