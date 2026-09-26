@@ -113,6 +113,15 @@ public extension ShepherdState {
             }
         }
 
+        // A design's agent and an agent's design are soft references: removing either leaves
+        // the other standing (startup clears what dangles), so only the ids must be unique.
+        var designIDs = Set<DesignID>()
+        for design in designs {
+            guard designIDs.insert(design.id).inserted else {
+                throw ShepherdStateValidationError.duplicateID(kind: "design", id: design.id.rawValue)
+            }
+        }
+
         for tab in tabs {
             for pane in tab.layout.leaves {
                 guard let agentID = pane.agentID else { continue }
