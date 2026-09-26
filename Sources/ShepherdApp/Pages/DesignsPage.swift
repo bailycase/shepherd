@@ -21,8 +21,12 @@ struct DesignsDestination: View {
                 case .build(let id): vm.openSystemBuild(id)
                 }
             },
-            build: { vm.buildDesignSystem(in: $0) }), thumbnail: { thumbnails.image($0) }, chrome: chrome)
+            build: { vm.buildDesignSystem(in: $0) },
+            openRemote: { vm.openRemoteDesign($0) },
+            remoteThumbnail: { host, id in vm.remoteDesignRenderings[host]?.thumbnails.image(id) }),
+            thumbnail: { thumbnails.image($0) }, chrome: chrome)
             .task(id: vm.designThumbnailSignature) { await vm.loadDesignThumbnails() }
+            .task(id: vm.remoteDesignsSignature) { await vm.loadRemoteDesigns() }
             .task { await vm.loadDesignSystems() }
     }
 }
@@ -35,6 +39,10 @@ struct DesignsPageActions {
     var openSystem: (DesignSystemTarget) -> Void = { _ in }
     /// "Build one from a repo" in a project.
     var build: (SpaceID) -> Void = { _ in }
+    /// A host's design card.
+    var openRemote: (RemoteDesignRef) -> Void = { _ in }
+    /// A host's design's first board, as drawn here.
+    var remoteThumbnail: (UUID, DesignID) -> CGImage? = { _, _ in nil }
 }
 
 /// The Designs page (NavDesigns): the header ("Designs", "Filter designs", New design), then the
@@ -62,7 +70,7 @@ struct DesignsPage: View {
                     ForEach(Self.items(model)) { item in
                         VStack(alignment: .leading, spacing: 0) {
                             switch item {
-                            case .label(let title, let first):
+                            case .label(let title, let first), .hostLabel(_, let title, let first):
                                 Text(title)
                                     .font(.nw(.caption, weight: .medium))
                                     .foregroundStyle(Color.nw.textTertiary)
@@ -71,6 +79,10 @@ struct DesignsPage: View {
                                     .padding(.bottom, NW.Space.l - NWPageMetrics.columnGap)
                             case .cards(let row):
                                 DesignCardRow(cards: row, open: actions.open, thumbnail: thumbnail)
+                                    .equatable()
+                            case .hostCards(let host, let row):
+                                DesignCardRow(cards: row, open: { actions.openRemote(RemoteDesignRef(hostID: host, designID: $0)) },
+                                              thumbnail: { actions.remoteThumbnail(host, $0) })
                                     .equatable()
                             case .systems(let row, let tile, let first):
                                 DesignSystemCardRow(systems: row, tile: tile, projects: model.projects,
@@ -94,13 +106,19 @@ struct DesignsPage: View {
     enum Item: Identifiable {
         case label(String, first: Bool)
         case cards([DesignsPageModel.Card])
+        /// A host's name over its designs.
+        case hostLabel(UUID, String, first: Bool)
+        /// A row of a host's cards.
+        case hostCards(UUID, [DesignsPageModel.Card])
         /// A row of system cards, whether the build tile ends it, and whether it is the first.
         case systems([DesignsPageModel.System], tile: Bool, first: Bool)
 
         var id: String {
             switch self {
             case .label(let title, _): "label.\(title)"
+            case .hostLabel(let host, _, _): "label.host.\(host.uuidString)"
             case .cards(let row): "row.\(row.first?.id.rawValue ?? "")"
+            case .hostCards(let host, let row): "host.\(host.uuidString).\(row.first?.id.rawValue ?? "")"
             case .systems(let row, let tile, _): "systems.\(row.first.map { "\($0.id)" } ?? (tile ? "tile" : ""))"
             }
         }
@@ -111,6 +129,11 @@ struct DesignsPage: View {
         if !model.cards.isEmpty {
             items.append(.label("Recent designs", first: true))
             items += model.rows.map(Item.cards)
+        }
+        // Each host's designs under its name (not drawn: NavDesigns shows This Mac's alone).
+        for host in model.hosts {
+            items.append(.hostLabel(host.id, host.name, first: items.isEmpty))
+            items += host.rows.map { .hostCards(host.id, $0) }
         }
         items.append(.label("Design systems", first: items.isEmpty))
         items += model.systemRows.enumerated().map { index, row in .systems(row.systems, tile: row.tile, first: index == 0) }
