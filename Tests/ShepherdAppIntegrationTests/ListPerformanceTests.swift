@@ -189,6 +189,36 @@ struct ListPerformanceTests {
         #expect(counts["design.card", default: 0] < 120)
     }
 
+    /// A host's 120 designs (`designs.v1`) under its name: the page builds the cards on screen,
+    /// as it does for this Mac's.
+    @Test func openingTheDesignsPageBuildsOnlyTheHostsCardsOnScreen() async throws {
+        let app = try AppHarness(), remote = try RemoteHostHarness()
+        defer { app.stop(); remote.stop() }
+        app.settings.designToolEnabled = true
+        remote.host.settings.designToolEnabled = true
+        let vm = try await app.start(with: ShepherdState())
+        vm.designNetwork = .none
+        let space = Fixture.space(path: remote.host.dir.path)
+        try await remote.host.start(with: ShepherdState(spaces: [space]))
+        for index in 0..<120 {
+            _ = try await remote.host.server.createDesign(Design(name: "Design \(index)", createdAt: Double(1_000 + index)))
+        }
+        _ = try await remote.connect(app.remoteHosts)
+        await vm.loadRemoteDesigns()
+        #expect(vm.remoteDesignSections.first?.cards.count == 120)
+        vm.openDestination(.designs)
+
+        var window: OffscreenWindow!
+        let counts = ListPerf.counting {
+            window = OffscreenWindow(size: Self.designsSize, dark: true, DesignsDestination(vm: vm))
+            ListPerf.settle(window)
+        }
+        defer { window.close() }
+        let onScreen = Self.designRowsOnScreen * DesignsPageModel.columns
+        #expect(counts["design.card", default: 0] > 0)
+        #expect(counts["design.card", default: 0] <= 2 * (onScreen + DesignsPageModel.columns), "\(counts)")
+    }
+
     // MARK: The Export sheet's boards
 
     /// The Export sheet over a design of 172 boards: it builds the rows it shows (eight, then it

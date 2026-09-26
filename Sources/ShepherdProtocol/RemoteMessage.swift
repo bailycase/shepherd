@@ -25,7 +25,8 @@ public enum RemoteProtocol {
     /// messages one per turn, each as it was sent.
     /// It also decodes every thinking level pi has (`thinkingLevelsCapability`); a host sends an
     /// older client's state and creation options with each level clamped to `ThinkingLevel.legacy`.
-    public static let clientCapabilities = [nativeQueueCapability, thinkingLevelsCapability]
+    /// And it reads a host's pushed design changes and capability changes (`designsCapability`).
+    public static let clientCapabilities = [nativeQueueCapability, thinkingLevelsCapability, designsCapability]
     public static let version = 1
     /// A host's final reply to a `hello` whose token it refused; it closes the connection after.
     public static let unauthorizedCode = "unauthorized"
@@ -90,7 +91,7 @@ public enum RemoteProtocol {
     /// The host takes a send's `designContext` (what the sender's design screen showed) and hands
     /// it to pi fenced as data. An older host would drop it, so a client leaves it out there.
     public static let designContextCapability = "design.context.v1"
-    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, designContextCapability]
+    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, designContextCapability, designsCapability, designMarkupCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -456,6 +457,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     case hostSettings(id: Int, request: RemoteHostSettingsRequest)
     /// Read or change the host's agent skills (`RemoteProtocol.skillsCapability`).
     case skills(id: Int, request: RemoteSkillsRequest)
+    /// Read or change the host's designs (`RemoteProtocol.designsCapability`).
+    case design(id: Int, request: RemoteDesignRequest)
 
     private enum CodingKeys: String, CodingKey {
         case request
@@ -473,6 +476,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case listDir, listModels, addSpace, createAgent, agentAction, agentQuery, upload, creationOptions
         case automation
         case instructions, suggestions, hostSettings, skills
+        case design
     }
 
     public init(from decoder: Decoder) throws {
@@ -480,6 +484,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         switch try c.decode(Kind.self, forKey: .type) {
         case .nativeThread:
             self = .nativeThread(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID), request: try c.decode(NativeThreadRequest.self, forKey: .request))
+        case .design:
+            self = .design(id: try c.decode(Int.self, forKey: .id), request: try c.decode(RemoteDesignRequest.self, forKey: .request))
         case .automation:
             self = .automation(id: try c.decode(Int.self, forKey: .id),
                                automationID: try c.decode(AutomationID.self, forKey: .automationID),
@@ -654,6 +660,10 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(Kind.skills, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(request, forKey: .request)
+        case .design(let id, let request):
+            try c.encode(Kind.design, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(request, forKey: .request)
         case .stateFetch(let id):
             try c.encode(Kind.stateFetch, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -770,6 +780,15 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     case hostSettings(id: Int, settings: HostSettings)
     /// A skills request's answer (`RemoteRequest.skills`).
     case skills(id: Int, result: RemoteSkillsResult)
+    /// A design request's answer (`RemoteRequest.design`).
+    case design(id: Int, result: RemoteDesignResult)
+    /// Pushed to a client watching the design (`RemoteDesignRequest.watch`) after each change to
+    /// it: its files' new `revision`, or its comments' (`commentsRevision`), or both. A hint to
+    /// pull; it carries no files.
+    case designChanged(designID: DesignID, revision: UInt64?, commentsRevision: UInt64?)
+    /// Pushed to a client that lists `designsCapability` when what the host offers changes (its
+    /// Design tool experiment turned on or off): the whole list, as `helloOk` gave it.
+    case capabilitiesChanged(capabilities: [String])
 
     private enum CodingKeys: String, CodingKey {
         case result
@@ -777,6 +796,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case sessionID, data, exitCode, spaceID, agentID, paneID
         case path, parent, dirs, models, defaultModel, withoutThinking, thinkingLevels, attachment, options
         case snapshot, settings
+        case designID, revision, commentsRevision
     }
 
     private enum Kind: String, Codable {
@@ -785,6 +805,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case dirListing, models, spaceAdded, agentCreated, uploadResult, creationOptions
         case automationResult
         case instructions, suggestions, hostSettings, skills
+        case design, designChanged, capabilitiesChanged
     }
 
     public init(from decoder: Decoder) throws {
@@ -792,6 +813,14 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         switch try c.decode(Kind.self, forKey: .type) {
         case .nativeThread:
             self = .nativeThread(id: try c.decode(Int.self, forKey: .id), result: try c.decode(NativeThreadResult.self, forKey: .result))
+        case .design:
+            self = .design(id: try c.decode(Int.self, forKey: .id), result: try c.decode(RemoteDesignResult.self, forKey: .result))
+        case .designChanged:
+            self = .designChanged(designID: try c.decode(DesignID.self, forKey: .designID),
+                                  revision: try c.decodeIfPresent(UInt64.self, forKey: .revision),
+                                  commentsRevision: try c.decodeIfPresent(UInt64.self, forKey: .commentsRevision))
+        case .capabilitiesChanged:
+            self = .capabilitiesChanged(capabilities: try c.decode([String].self, forKey: .capabilities))
         case .helloOk:
             self = .helloOk(
                 id: try c.decode(Int.self, forKey: .id),
@@ -936,6 +965,18 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encode(Kind.skills, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(result, forKey: .result)
+        case .design(let id, let result):
+            try c.encode(Kind.design, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(result, forKey: .result)
+        case .designChanged(let designID, let revision, let commentsRevision):
+            try c.encode(Kind.designChanged, forKey: .type)
+            try c.encode(designID, forKey: .designID)
+            try c.encodeIfPresent(revision, forKey: .revision)
+            try c.encodeIfPresent(commentsRevision, forKey: .commentsRevision)
+        case .capabilitiesChanged(let capabilities):
+            try c.encode(Kind.capabilitiesChanged, forKey: .type)
+            try c.encode(capabilities, forKey: .capabilities)
         case .ok(let id):
             try c.encode(Kind.ok, forKey: .type)
             try c.encode(id, forKey: .id)

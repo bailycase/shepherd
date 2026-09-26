@@ -92,12 +92,14 @@ while IFS= read -r file; do sources+=("$file"); done < <(find App/iOS -name '*.s
 xcrun --sdk iphonesimulator swiftc -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" -target arm64-apple-ios27.0-simulator -swift-version 5 \
     -Onone -I "$products" \
     "$products/ShepherdCore.o" "$products/ShepherdProtocol.o" "$products/ShepherdRemote.o" "$products/ShepherdUI.o" \
-    "$products/SwiftTerm.o" \
+    "$products/SwiftTerm.o" "$products/DesignSurfaceKit.o" \
     "${sources[@]}" Tests/ShepherdIOSChecks/ThreadSimulatorFixture.swift Tests/ShepherdIOSChecks/FixtureHost.swift \
     Tests/ShepherdIOSChecks/Fixtures/*.swift Tests/ShepherdTestSupport/MarkdownFixtures.swift \
     -o "$app/ShepherdFixture"
 cp -R "$products/ShepherdUI_ShepherdUI.bundle" "$app/"
 if [[ -d "$products/SwiftTerm_SwiftTerm.bundle" ]]; then cp -R "$products/SwiftTerm_SwiftTerm.bundle" "$app/"; fi
+# The board renderer's runtime (Bundle.module), for the Design tool's screens.
+for bundle in "$products"/*_DesignSurfaceKit.bundle; do [[ -d "$bundle" ]] && cp -R "$bundle" "$app/"; done
 codesign --force --sign - "$app" >/dev/null 2>&1
 
 xcrun simctl bootstatus "$device" -b >/dev/null
