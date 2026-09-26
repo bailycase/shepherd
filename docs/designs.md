@@ -935,3 +935,31 @@ a VPN or trusted network is the transport boundary, as for everything else it se
   Tweak snaps to the board's own tokens (the project's stylesheets are on the host), a host's
   design agent is a plain thread in Recents rather than a design row, and a host's design
   systems aren't on the page.
+
+### On iPad
+
+`App/iOS/DesignPad/` (docs/ios/README.md › Designs), for every connected host that offers
+`designs.v1`: a host that stops offering it (its experiment off) takes its designs away at once,
+through `capabilitiesChanged`.
+
+- **The store** (`PadDesigns`) keeps one `RemoteDesignLibrary` per host over one
+  `RemoteDesignCache` (48 MB in memory, files also under the app's Caches), each design's canvas
+  for the app's run, and which designs are on screen in any window: their hosts push changes for
+  those alone.
+- **Rendering** (`PadDesignRenderer.swift`, the only iOS file that imports DesignSurfaceKit):
+  one live board per design on screen (`DesignTouchLivePlan`: the board a tap asks about, then
+  the selected one, then the one nearest the middle) and one off-screen view that draws every
+  other board's snapshot in turn, two web views at most. Snapshots are at most 640pt wide, 64 MB
+  per design. A page gets a viewport of its board's width at the canvas's zoom, so it lays out as
+  on the Mac and draws sharp (`DesignBoardView` on iOS). Web views not on the canvas wait on a
+  stage at the back of the window, where WebKit still draws them.
+- **Touch** (`NWCanvasTouchInput`): a drag pans, a pinch zooms, a tap selects or, with Comment,
+  opens the editor on the element under it. Fingers and pointers only: an Apple Pencil's touches
+  pass to the markup layer over the canvas (`PadDesignMarkupLayer`, the seam P5d fills).
+- **Writes** go through the host: comments, replies and Resolve at the comments' revision, Tweak
+  (`DesignTweakModel`, shared with the Mac) with its board writes and undo, Duplicate; a stale
+  revision reads the design again and goes once more. A send carries the canvas's view record.
+- **Split View:** in a window narrower than 760pt the boards stack in one column, the chat is
+  behind the header's button, and the design agent's latest reply floats over the canvas. "Send
+  to the thread" attaches the boards (as the iPad drew them) and a line naming the design to the
+  composer of the thread another window shows, and brings that window forward.
