@@ -166,13 +166,16 @@ keep the version for real breaks.
   the width and the sidebar slides over it. Portrait is the window's shape, never what the
   keyboard leaves of it (CONTRACTS.md › Navigation). With no thread selected the detail is the
   overview: Needs you, Running now and Finished.
-- **Thread (`ThreadScreen`):** the title with its status line ("Idle · ⧉ pi/swiftui-previews", or
-  "Needs you · ⌂ your checkout" when pi works in the space's own checkout; on iPad the branch chip
+- **Thread (`ThreadScreen`):** the title with its status line ("Idle · ⧉ agent/swiftui-previews", or
+  "Needs you · ⌂ your checkout" when the agent works in the space's own checkout; on iPad the branch chip
   with its changed files, and the host when there are several, then a status pill with the running
   turn's clock), Stop while the agent
   runs, user bubbles with their times, thinking, prose, activity lines (one per burst of work) with
-  their calls, the running call's live line and output ("Thinking…" between tools), notes, errors with Retry, the changes card
-  (Review opens all of the turn's changes), and the turn footer (time, duration, tool calls,
+  their calls, the running call's live line and output ("Thinking…" between tools), notes, errors with Retry, the "Edited N files"
+  card (the first three files, then "N more"; Review opens the review scoped to that turn, Undo
+  puts the turn's edits back in the working tree and Redo reapplies them, from the host's record
+  of the turn, `NativeThreadSnapshot.turnChanges`; an older host's card comes from the turn's edit
+  calls and has no Undo), and the turn footer (time, duration, tool calls,
   Copy, Retry). It polls its host only while on screen and the app is active (500 ms while the
   agent runs). It follows its tail as the Mac's thread does (`NativeScrollFollower`): only a
   finger dragging it up detaches, while replies, the composer or keyboard resizing, and rows
@@ -210,14 +213,23 @@ keep the version for real breaks.
   child. A child's question is answered from the tray's Answer (in the composer's place), the list or the run. Pause,
   Continue, Stop and Re-run appear where the host takes them. On iPad the run opens in an
   inspector column beside the thread.
-- **Review (`Review/`):** the changes (working tree vs HEAD, or the PR), with viewed progress,
-  the file list, comments, Request changes, and Commit… (below; on an older host, Commit sends the
-  agent a turn, as on the Mac); the diff reader (wrapped, syntax-colored lines, folded removed runs, line comments, Next
-  file); and Finalize for worktree agents (checks, the form, each step, the PR link). On iPad
-  review docks beside the thread or goes full screen with a unified or split view. There is no
-  per-file revert: the remote protocol has none.
+- **Review (`Review/`), the Changes pane:** on a host with `changes.v1` the host's Changes engine
+  says what to compare: the scope menu (Last turn, Uncommitted, Unstaged, Staged, Commits, Branch
+  with its base picker, Pull request, each with its diffstat) in the phone's title ("Branch · vs
+  main ⌄") and the iPad's Branch pill; the list comes first and each file's hunks when it is drawn
+  (`ReviewStore`), with syntax colors and word diffs prepared off the main thread. The phone has
+  the summary with viewed progress, the file list, your comments, Send 1 comment, and Commit…
+  (below); the diff reader (wrapped lines, changed words tinted, folded runs, line comments, Next
+  file). The iPad docks the pane beside the thread (its Changes tab, the toolbar, the compare row,
+  the file strip, then every file stacked with a sticky head, unified while narrow) or shows it
+  full screen (the file list beside the files, split); comments wait in the send bar (Discard,
+  Send to agent). There is no overall comment box: anything else is said in the thread. An older
+  host keeps today's working-tree (or PR) review in the same screens, and Commit sends the agent
+  a turn there. Finalize for worktree agents (checks, the form, each step, the PR link). There is
+  no per-file revert: the remote protocol has none.
 - **Commit from review (`Commit/`):** on a host with `review.commit.v1`, Commit… opens the
-  commit: a sheet on iPhone, a popover beside Commit… on iPad. The host drafts the message from
+  commit: a sheet on iPhone, a popover under Commit… on iPad (the message, then Push and Open a
+  pull request as checkboxes; the popover commits every changed file, the sheet ticks them). The host drafts the message from
   the diff (a plain one from the file list shows first), every changed file starts ticked, a
   message nobody edited follows the ticks (drafted again for the ticked files), and
   Push after commit (to the upstream, setting one when there is none) or Open a pull request

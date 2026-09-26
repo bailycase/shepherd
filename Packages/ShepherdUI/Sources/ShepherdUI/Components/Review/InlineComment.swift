@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// A comment under a diff line (Review board): a raised card with a strong 1px line and radius
-/// 8. A 16pt lantern avatar with the author's initial, the author in semibold, "line 33 · just
-/// now" in mono, then the comment at 12.5. Edit and Delete appear on hover (and are always
-/// VoiceOver actions).
+/// A comment under a diff line (ChangesSplit): a raised card with a strong 1px line and radius
+/// 8. A 16pt lantern avatar with the author's initial, the author in semibold, "line 103 · just
+/// now" in mono 10.5, and Edit trailing (Delete joins it on hover, and both are VoiceOver
+/// actions); then the comment at 12.5.
 public struct NWInlineComment: View {
     let initial: String
     let author: String
@@ -30,17 +30,17 @@ public struct NWInlineComment: View {
             HStack(spacing: NW.Space.s) {
                 NWCommentAvatar(initial: initial)
                 Text(author).font(.nw(.caption, weight: .semibold)).foregroundStyle(nw.textPrimary)
-                Text(meta).font(.nw(.mono)).foregroundStyle(nw.textSecondary).lineLimit(1)
+                Text(meta).font(.nwMono(10.5)).foregroundStyle(nw.textSecondary).lineLimit(1)
                 Spacer(minLength: NW.Space.m)
-                if onEdit != nil || onDelete != nil {
-                    HStack(spacing: NW.Space.m) {
-                        if let onEdit { Button("Edit", action: onEdit) }
-                        if let onDelete { Button("Delete", action: onDelete) }
+                HStack(spacing: NW.Space.m) {
+                    if let onDelete {
+                        Button("Delete", action: onDelete)
+                            .opacity(NWPlatform.showsHoverDetails || hovering ? 1 : 0)
                     }
-                    .buttonStyle(.nwLink(color: nw.textSecondary, font: .nw(.caption)))
-                    .opacity(NWPlatform.showsHoverDetails || hovering ? 1 : 0)
-                    .accessibilityHidden(true)
+                    if let onEdit { Button("Edit", action: onEdit) }
                 }
+                .buttonStyle(.nwLink(color: nw.textSecondary, font: .nw(.caption)))
+                .accessibilityHidden(true)
             }
             Text(text)
                 .font(.nw(.ui, weight: .regular))
@@ -79,20 +79,24 @@ private struct NWCommentAvatar: View {
     }
 }
 
-/// Writing or editing a line comment: the inline comment's card with a running line while it is
-/// open. ⏎ saves, ⇧⏎ adds a line, esc cancels. Saving an empty comment removes it.
+/// Writing or editing a comment (ChangesLastTurn): the comment's card with a lantern line and a
+/// 3pt lantern-tint ring while it is open. The field, then "on line 103" in mono 10.5 and Cancel
+/// and Add comment. ⏎ saves, ⇧⏎ adds a line, esc cancels. Saving an empty comment removes it.
 public struct NWCommentEditor: View {
     @Binding var text: String
     var isFocused: FocusState<Bool>.Binding
     let placeholder: String
+    /// "on line 103", or "on the file".
+    let context: String?
     let onSave: () -> Void
     let onCancel: () -> Void
 
     public init(text: Binding<String>, isFocused: FocusState<Bool>.Binding, placeholder: String = "Comment for the agent on this line",
-                onSave: @escaping () -> Void, onCancel: @escaping () -> Void) {
+                context: String? = nil, onSave: @escaping () -> Void, onCancel: @escaping () -> Void) {
         _text = text
         self.isFocused = isFocused
         self.placeholder = placeholder
+        self.context = context
         self.onSave = onSave
         self.onCancel = onCancel
     }
@@ -114,14 +118,23 @@ public struct NWCommentEditor: View {
                 }
                 .onKeyPress(.escape) { onCancel(); return .handled }
             HStack(spacing: NW.Space.s) {
+                if let context {
+                    Text(context).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary).lineLimit(1)
+                }
                 Spacer(minLength: 0)
                 Button("Cancel", action: onCancel).buttonStyle(.nw(.ghost, size: .s))
-                Button("Comment", action: onSave).buttonStyle(.nw(.secondary, size: .s))
+                Button("Add comment", action: onSave).buttonStyle(.nw(.secondary, size: .s))
             }
         }
         .padding(.vertical, NW.Space.m)
         .padding(.horizontal, NWInlineComment.horizontalInset)
-        .nwCard(radius: NW.Radius.m, line: nw.running)
+        .nwCard(radius: NW.Radius.m, line: nw.lantern)
+        .background {
+            RoundedRectangle(cornerRadius: NW.Radius.m).inset(by: -NWCommentEditor.ringWidth / 2)
+                .stroke(nw.lanternTint, lineWidth: NWCommentEditor.ringWidth)
+        }
         .onAppear { isFocused.wrappedValue = true }
     }
+
+    static let ringWidth: CGFloat = 3
 }

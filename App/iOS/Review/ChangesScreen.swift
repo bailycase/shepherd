@@ -4,36 +4,36 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-/// An agent's changes on iPhone (MobileChanges board): working tree vs HEAD (or the PR), the
-/// summary with viewed progress, the file list (each opens its diff), your comments and an
-/// overall comment, then Request changes and Commit, which send the agent its next turn as the
-/// Mac's review does. A worktree agent's summary offers Finalize.
+/// An agent's changes on iPhone (MobileChanges board): "Changes" over the scope ("Branch · vs
+/// main ⌄", the scope menu), the summary with the branch and viewed progress, the file list
+/// (each opens its diff), your comments, then Send 1 comment and Commit…, which send the agent
+/// its next turn or commit on the host. A worktree agent's summary offers Finalize.
 struct ChangesScreen: View {
     let ref: AgentRef
     let file: String?
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
     @Environment(\.dismiss) private var dismiss
-    @FocusState private var summaryFocused: Bool
 
     var body: some View {
         let store = ReviewStores.shared.store(for: ref)
         let host = hosts.host(ref.host)
         let agent = host?.agent(ref.agent)
-        let highlighted = store.file(matching: file)?.id
+        let highlighted = store.entry(matching: file)?.id
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: MobileLayout.reviewCardSpacing) {
                     if let error = store.loadError, store.loaded {
                         NWBanner(.failed, title: "Couldn't refresh the changes", message: error)
                     }
-                    if !store.files.isEmpty || agent?.worktreeBranch != nil {
-                        ReviewSummaryCard(totals: store.totals, branch: agent?.worktreeBranch,
+                    let branch = store.overview?.branch ?? agent?.worktreeBranch
+                    if !store.entries.isEmpty || branch != nil {
+                        ReviewSummaryCard(totals: store.totals, branch: branch,
                                           onFinalize: ReviewFinalizeGate.available(host: host, agent: agent)
                                             ? { navigator.present(.review(.finalize(ref))) } : nil)
                     }
-                    ReviewLoadState(store: store) { Task { await store.load(hosts: hosts) } }
-                    if !store.files.isEmpty {
+                    ReviewLoadState(store: store) { store.refresh() }
+                    if !store.entries.isEmpty {
                         ReviewSectionHead(title: "Files", note: "tap to read the diff")
                         VStack(spacing: 0) {
                             ForEach(store.summaries) { summary in
@@ -46,14 +46,15 @@ struct ChangesScreen: View {
                             }
                         }
                         .nwCard(radius: MobileLayout.cardRadius)
-                        ReviewSectionHead(title: "Your comments", note: store.comments.isEmpty ? "tap a line to comment" : "\(store.comments.count)")
-                            .padding(.top, NW.Space.s)
-                        ForEach(store.comments) { comment in
-                            ReviewCommentCard(comment: comment, showsFile: true,
-                                              onEdit: { open(comment, store: store) },
-                                              onDelete: { store.deleteComment(fileID: comment.fileID, lineID: comment.lineID) })
+                        if !store.comments.isEmpty {
+                            ReviewSectionHead(title: "Your comments", note: "\(store.comments.count)")
+                                .padding(.top, NW.Space.s)
+                            ForEach(store.comments) { comment in
+                                ReviewCommentCard(comment: comment, showsFile: true,
+                                                  onEdit: { open(comment, store: store) },
+                                                  onDelete: { store.deleteComment(fileID: comment.fileID, lineID: comment.lineID) })
+                            }
                         }
-                        ReviewOverallField(store: store, focused: $summaryFocused)
                     }
                 }
                 .padding(MobileLayout.gutter - NW.Space.xxs)
@@ -62,7 +63,6 @@ struct ChangesScreen: View {
                 if let highlighted { proxy.scrollTo(highlighted, anchor: .center) }
             }
         }
-        .scrollDismissesKeyboard(.interactively)
         .background(Color.nw.bgBase)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             ReviewActionBar(store: store, commitDirectly: CommitHooks.available(host: host)
@@ -73,7 +73,7 @@ struct ChangesScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                ReviewTitle(title: "Changes", subtitle: reviewScopeText(pullRequest: store.filesArePR, reference: store.reference))
+                ChangesTitle(store: store) { store.pickingBase = true }
             }
             ToolbarItem(placement: .topBarTrailing) {
                 ReviewOptionsMenu(store: store, finalize: ReviewFinalizeGate.available(host: host, agent: agent)
@@ -81,8 +81,11 @@ struct ChangesScreen: View {
                                   askAgentToCommit: CommitHooks.available(host: host) ? { dismiss() } : nil)
             }
         }
+        .sheet(isPresented: Binding(get: { store.pickingBase }, set: { store.pickingBase = $0 })) {
+            ChangesBasePicker(store: store) { store.pickingBase = false }
+        }
         .task(id: host?.session) { await store.loadIfNeeded(hosts: hosts) }
-        .onChange(of: store.pullRequest) { _, _ in Task { await store.load(hosts: hosts) } }
+        .onChange(of: store.pullRequest) { _, _ in store.refresh() }
     }
 
     /// A comment in the list opens its file's diff with its line selected.
@@ -92,44 +95,7 @@ struct ChangesScreen: View {
     }
 }
 
-/// A screen title over a mono subtitle ("Changes" over "working tree vs HEAD").
-struct ReviewTitle: View {
-    let title: String
-    let subtitle: String
-
-    var body: some View {
-        VStack(spacing: NW.Space.xxs) {
-            Text(title).font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
-            Text(subtitle).font(.nw(.micro, weight: .regular)).foregroundStyle(Color.nw.textTertiary).lineLimit(1).truncationMode(.middle)
-        }
-        .accessibilityElement(children: .combine)
-    }
-}
-
-/// The overall comment, sent with the line comments.
-struct ReviewOverallField: View {
-    @Bindable var store: ReviewStore
-    var focused: FocusState<Bool>.Binding
-
-    var body: some View {
-        let nw = Color.nw
-        TextField("Overall comment", text: $store.summary, prompt: Text("Add an overall comment…").foregroundStyle(nw.textTertiary),
-                  axis: .vertical)
-            .lineLimit(1...6)
-            .textFieldStyle(.plain)
-            .font(.nw(.body, weight: .regular))
-            .foregroundStyle(nw.textPrimary)
-            .tint(nw.lantern)
-            .focused(focused)
-            .padding(.horizontal, NW.Space.l + NW.Space.xxs)
-            .padding(.vertical, NW.Space.l)
-            .frame(minHeight: NW.Height.touch)
-            .nwCard(radius: MobileLayout.cardRadius, line: focused.wrappedValue ? nw.lineStrong : nil)
-            .accessibilityLabel("Overall comment")
-    }
-}
-
-/// Request changes and Commit (MobileChanges board), with why a send failed above them. Where
+/// Send 1 comment and Commit… (MobileChanges board), with why a send failed above them. Where
 /// the host commits from review, Commit… opens the commit (MobileCommit board) and asking the
 /// agent moves to the options menu.
 struct ReviewActionBar: View {
@@ -151,12 +117,12 @@ struct ReviewActionBar: View {
             // Side by side, or stacked where an accessibility text size would cut the labels.
             let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: NW.Space.m)) : AnyLayout(HStackLayout(spacing: NW.Space.m))
             layout {
-                Button("Request changes") {
-                    Task { finished(await store.requestChanges(hosts: hosts)) }
+                Button(store.sendTitle) {
+                    Task { finished(await store.sendComments(hosts: hosts)) }
                 }
                 .buttonStyle(.nwReviewBar(.secondary))
-                .disabled(!store.canRequestChanges)
-                .accessibilityHint("Sends your comments as the agent's next message")
+                .disabled(!store.canSend)
+                .accessibilityHint(store.comments.isEmpty ? "Tap a line in a diff to comment on it" : "Sends your comments as the agent's next message")
                 if let commitDirectly {
                     Button("Commit\u{2026}", action: commitDirectly)
                         .buttonStyle(.nwReviewBar(.primary))
@@ -180,8 +146,9 @@ struct ReviewActionBar: View {
     }
 }
 
-/// The review's options: which side to diff, refresh, Ask agent to commit where Commit… commits
+/// The review's options: refresh, Discard comments, Ask agent to commit where Commit… commits
 /// directly (`askAgentToCommit` runs once the agent took it), and Finalize for a worktree agent.
+/// What to compare is the title's menu.
 struct ReviewOptionsMenu: View {
     @Bindable var store: ReviewStore
     let finalize: (() -> Void)?
@@ -190,11 +157,10 @@ struct ReviewOptionsMenu: View {
 
     var body: some View {
         Menu {
-            Picker("Compare", selection: $store.pullRequest) {
-                Text("Working tree vs HEAD").tag(false)
-                Text("Pull request").tag(true)
+            Button("Refresh", systemImage: "arrow.clockwise") { store.refresh() }
+            if !store.comments.isEmpty {
+                Button("Discard comments", systemImage: "trash", role: .destructive) { store.discardComments() }
             }
-            Button("Refresh", systemImage: "arrow.clockwise") { Task { await store.load(hosts: hosts) } }
             if let askAgentToCommit {
                 Button("Ask agent to commit", systemImage: "text.bubble") {
                     Task { if await store.commit(hosts: hosts) { askAgentToCommit() } }
