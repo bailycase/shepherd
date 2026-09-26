@@ -76,7 +76,7 @@ public enum DirectoryRanking: String, CaseIterable, Sendable {
     /// The column's label over a ranked list.
     public var heading: String {
         switch self {
-        case .trending: "Trending"
+        case .trending: "Trending · last 24 hours"
         case .allTime: "All time"
         case .hot: "Hot · last hour"
         case .official: "Official publishers"
