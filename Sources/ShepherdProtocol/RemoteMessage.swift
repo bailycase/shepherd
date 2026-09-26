@@ -51,7 +51,12 @@ public enum RemoteProtocol {
     /// `createAgent`. An older host knows only `ThinkingLevel.legacy`, and refuses a request
     /// carrying another. A client lists it too: it decodes them in state and creation options.
     public static let thinkingLevelsCapability = "thinking.levels.v1"
-    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability]
+    /// The host answers the Changes pane's queries (`RemoteAgentQuery.changes*`): scopes, the
+    /// base picker, a file's hunks, a patch, and Undo and Redo of an agent's last turn; and its
+    /// thread snapshots carry the turns it recorded (`NativeThreadSnapshot.turnChanges`). Older
+    /// hosts review the working tree only (`RemoteAgentQuery.review`).
+    public static let changesCapability = "changes.v1"
+    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -283,6 +288,28 @@ public enum RemoteAgentQuery: Codable, Hashable, Sendable {
     case commitMessage(paths: [String])
     /// Commit (then push, or open a pull request), as an operation polled with `worktreeStatus`.
     case commit(operationID: UUID, options: RemoteCommitOptions)
+    /// The scope menu: every scope's diffstat, the branch's commits, the pull request
+    /// (`changesCapability`, like every `changes*` query).
+    case changesOverview
+    /// A scope's files and counts, and the revision to fetch their hunks from.
+    case changesList(scope: ChangesScope, options: ChangesOptions)
+    /// One file's hunks from a list's revision; `oldPath` for a rename.
+    case changesFile(revision: ChangesRevision, path: String, oldPath: String?, options: ChangesOptions)
+    /// The base picker's branches.
+    case changesBranches
+    /// A revision's diff as a patch (Copy as patch).
+    case changesPatch(revision: ChangesRevision, options: ChangesOptions)
+    /// Undo a turn's edits in the agent's working tree; Redo puts them back.
+    case changesUndoTurn(turnID: UUID)
+    case changesRedoTurn(turnID: UUID)
+
+    /// Answered by the host's server itself, without the GUI.
+    public var isChanges: Bool {
+        switch self {
+        case .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch, .changesUndoTurn, .changesRedoTurn: true
+        default: false
+        }
+    }
 }
 
 public enum RemoteAgentResult: Codable, Hashable, Sendable {
@@ -301,6 +328,14 @@ public enum RemoteAgentResult: Codable, Hashable, Sendable {
     case commitInfo(RemoteCommitInfo)
     /// `drafted` is false when the host fell back to a message written from the file list.
     case commitMessage(title: String, body: String, drafted: Bool)
+    case changesOverview(ChangesOverview)
+    case changesList(ChangesList)
+    case changesFile(ChangesFileDiff)
+    case changesBranches(ChangesBranches)
+    /// `truncated`: the patch passed `ChangesLimits.remoteBytes` and ends early.
+    case changesPatch(text: String, truncated: Bool)
+    /// The turn after an Undo or a Redo.
+    case changesTurn(ChangesTurn)
 }
 
 /// Client → host. The first message on a connection must be a successful
