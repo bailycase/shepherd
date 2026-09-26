@@ -47,8 +47,9 @@ public struct NWQuestionRecord: View {
                 Text("Agent asked:").foregroundStyle(nw.textTertiary).layoutPriority(1)
                 #if os(iOS)
                 // Wrapping, the "not answered" rides the question's last line.
-                (Text(question).fontWeight(.medium).foregroundStyle(nw.textSecondary)
-                    + Text(answered ? "" : "\u{00A0} ·\u{00A0}not answered").foregroundStyle(nw.textTertiary))
+                let asked = Text(question).fontWeight(.medium).foregroundStyle(nw.textSecondary)
+                let unanswered = Text(answered ? "" : "\u{00A0} ·\u{00A0}not answered").foregroundStyle(nw.textTertiary)
+                Text("\(asked)\(unanswered)")
                     .lineLimit(NWQuestionRecordMetrics.touchQuestionLines).truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
