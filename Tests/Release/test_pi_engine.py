@@ -497,6 +497,11 @@ class LayoutContractTests(unittest.TestCase):
             for line in commands:
                 self.assertNotIn(fetcher, line.replace("Run: python3 scripts/pi_engine.py stage", ""))
 
+    def test_the_swift_locator_uses_the_same_paths(self):
+        swift = read("Sources", "ShepherdSessions", "PiEngine.swift")
+        for name, value in (("nodePath", pi_engine.NODE), ("packagePath", pi_engine.ENGINE), ("entryPath", pi_engine.ENTRY)):
+            self.assertIn(f'public static let {name} = "{value}"', swift)
+
 
 class EntitlementsTests(unittest.TestCase):
     """What node may do under the hardened runtime: JIT everywhere, and unsigned executable
