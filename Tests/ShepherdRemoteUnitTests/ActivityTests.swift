@@ -320,6 +320,15 @@ struct ActivityTests {
         #expect(bursts[0].calls.map(\.detail) == ["canvas.json", "A.dc.html", "src/tokens.css"])
     }
 
+    @Test func readingADesignSystemIsExploringAndWritingOneNamesIt() {
+        let read = nativeActivityBursts([call("system_read"), call("system_read", ["namespace": "acme-web"]),
+                                         call("read", ["path": "web/static/tokens.css"])])
+        #expect(read.map(\.label) == ["Explored 3 files"])
+        #expect(read[0].calls.map(\.detail) == ["design systems", "ds/acme-web", "web/static/tokens.css"])
+        let wrote = nativeActivityBursts([call("system_write", ["namespace": "acme-web"], output: "Wrote acme-web · revision 1")])
+        #expect(wrote.map(\.label) == ["Used system"] && wrote[0].calls.map(\.detail) == ["acme-web"])
+    }
+
     @Test func aRunningOrFailedDrawingSaysSo() {
         let running = nativeActivityBursts([call("board_write", ["path": "A.dc.html"], status: "running")])
         #expect(running.map(\.label) == ["Drawing"] && running.map(\.meta) == ["A.dc.html"])

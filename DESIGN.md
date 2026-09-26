@@ -7536,8 +7536,10 @@ comments (pins, threads, cards in the chat and the Comments tab, answered by the
 Tweak (its tab, written once per gesture, with Reset and Undo over each board's versions), the
 board actions and "Ask for another direction", boards moved by dragging, Present (decision 11:
 the board focused over a scrim, its links playing) and Play, and pages with title and sticky
-notes. Not built: design systems, export, the live link, Present mode's own board, and every
-iPhone and iPad part;
+notes. Design systems are built as far as the agent (the format, the store, installing one in a
+design, `system_read` and `system_write`, `design_check` against it, `<x-import>` and Night Watch
+as a built-in; docs/designs.md › Design systems), not in the app. Not built: the design system
+page and grid, export, the live link, Present mode's own board, and every iPhone and iPad part;
 each subsection below says what of it is built. The iOS
 client's first release leaves it out until the Mac has it ([docs/ios](docs/ios/README.md)), and its
 search draws no Designs section (`MobileSearchScreen`). The canvas marks the whole page an
@@ -7892,8 +7894,11 @@ and a design without tokens for a role (its note says values snap to Shepherd's 
 
 ### Design systems (DZSystem)
 
-**Not built yet.** A design system is read from a repository, its tokens file and its templates,
-and kept in sync. Night Watch is listed as one too ("shepherd"). A system page opens from the
+**Not built yet in the app.** The format, the store and the agent's side are built
+(docs/designs.md › Design systems): what the page shows is `DesignSystemRead` (tokens with their
+file and line, components, README) and `DesignSystemPresentation` ("synced 4m ago", "#4f46e5 ·
+tokens.css:8"), and Re-sync is `SessionServer.resyncDesignSystem`. A design system is read from a
+repository, its tokens file and its templates, and kept in sync. Night Watch is listed as one too ("shepherd"). A system page opens from the
 design system chip, the Designs page, or More ▸ Design systems, and keeps the chat pane.
 
 - **Header**: the breadcrumb (the 14pt nib, "Design systems", "/", the name in 13 semibold) and
