@@ -375,7 +375,7 @@ struct NewAgentSheet: View {
                 .nwContentTransition(.crossFade)
         } actions: {
             Button("Cancel") { vm.showNewAgentSheet = false }
-                .buttonStyle(.nw(.secondary))
+                .buttonStyle(.nw(.ghost))
                 .keyboardShortcut(.cancelAction)
             Button(starting ? "Starting…" : "Start agent") { start() }
                 .buttonStyle(.nw(.primary))

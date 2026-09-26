@@ -59,6 +59,11 @@ public final class NWPalette: Sendable {
     public let scrim: Color
     /// Labels on a `failed` fill (the dangerFill button, the failed count badge).
     public let textOnFailed: Color
+    /// The primary button's fill lifted on hover and sunk while pressed, and the dangerFill
+    /// button's sunk fill (the Controls board's hexes; `NWButtonFills`).
+    public let lanternHover: Color
+    public let lanternPressed: Color
+    public let failedPressed: Color
     /// The switch knob, on and off.
     public let knobOn: Color
     public let knobOff: Color
@@ -129,6 +134,9 @@ public final class NWPalette: Sendable {
         let scrimBlack = HexColor(red: 0, green: 0, blue: 0, alpha: 0.3)
         scrim = Color(light: scrimBlack, dark: scrimBlack)
         textOnFailed = Color(light: "#ffffff", dark: "#ffffff")
+        lanternHover = Color(light: NWButtonFills.lanternHover.light, dark: NWButtonFills.lanternHover.dark)
+        lanternPressed = Color(light: NWButtonFills.lanternPressed.light, dark: NWButtonFills.lanternPressed.dark)
+        failedPressed = Color(light: NWButtonFills.failedPressed.light, dark: NWButtonFills.failedPressed.dark)
         knobOn = Color(light: "#ffffff", dark: "#ffffff")
         knobOff = Color(light: "#ffffff", dark: "#c9ccd1")
         knobShadow = Color(light: HexColor(red: 0, green: 0, blue: 0, alpha: 0.2), dark: HexColor(red: 0, green: 0, blue: 0, alpha: 0.3))
@@ -142,6 +150,14 @@ public final class NWPalette: Sendable {
         contextMessages = synFunction
         contextToolResults = synType
     }
+}
+
+/// The filled buttons' hover and pressed fills, as the Controls board draws them (light, dark):
+/// primary lifts on hover and sinks while pressed; dangerFill stays put on hover and sinks.
+enum NWButtonFills {
+    static let lanternHover = (light: "#eca63a", dark: "#f7b84f")
+    static let lanternPressed = (light: "#cf8a1c", dark: "#d9922a")
+    static let failedPressed = (light: "#bf3a35", dark: "#d24f4b")
 }
 
 extension Color {

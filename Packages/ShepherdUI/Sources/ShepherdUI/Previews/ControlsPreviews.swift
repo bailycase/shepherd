@@ -19,6 +19,7 @@ import SwiftUI
             HStack(spacing: 10) {
                 Button {} label: { Label("Fork", systemImage: "arrow.branch") }.buttonStyle(.nw(.secondary))
                 Button {} label: { Label("Re-run", systemImage: "arrow.clockwise") }.buttonStyle(.nw(.secondary))
+                Button {} label: { NWButtonTitle("Land", chord: "⌘↩") }.buttonStyle(.nw(.primary))
                 Button("Show all") {}.buttonStyle(.nwLink)
             }
         }
@@ -55,6 +56,7 @@ import SwiftUI
                 Toggle("Done when", isOn: $check).toggleStyle(.nwCheckbox)
                 Toggle("Unchecked", isOn: $off).toggleStyle(.nwCheckbox)
             }
+            NWRadioGroup("Channel", selection: $source, options: [("local", "Stable"), ("pr", "Beta")])
         }
     }
 }
@@ -69,6 +71,7 @@ import SwiftUI
         VStack(alignment: .leading, spacing: NW.Space.l) {
             TextField("Name this agent", text: $name).textFieldStyle(.nw).frame(width: 220)
             TextField("Socket", text: $socket).nwField(error: true, mono: true).frame(width: 220)
+                .nwFieldMessage("Socket path already in use")
             TextField("Disabled", text: $name).textFieldStyle(.nw).disabled(true).frame(width: 220)
             NWSearchField("Search agents", text: $query, shortcut: "⌘F").frame(width: 220)
             NWPopupMenu("claude-opus", mono: true, minWidth: 200) { Button("claude-opus") {}; Button("claude-sonnet") {} }

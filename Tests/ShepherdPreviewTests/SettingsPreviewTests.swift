@@ -104,6 +104,26 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// The Add host form refusing a port it cannot use: the field's line turns failed and the
+    /// reason sits under it (Controls › Text field, error).
+    @Test func settingsRemotePortRefused() async throws {
+        let size = CGSize(width: AppLayout.settingsContentWidth + 2 * AppLayout.settingsGutter, height: 220)
+        try await Preview.render("settings-remote-port-refused", size: size) {
+            SettingsGroup(title: "Add host") {
+                SettingsRow(title: "Address", subtitle: "VPN-reachable IP or hostname.") {
+                    SettingsTextField(label: "Address", prompt: "100.x.y.z", text: .constant("100.64.0.7"), mono: true)
+                }
+                SettingsRow(title: "Port") {
+                    SettingsTextField(label: "Port", prompt: "7433", text: .constant("70000"), mono: true,
+                                      width: AppLayout.settingsPortFieldWidth, error: RemotePortField.problem("70000"))
+                }
+            }
+            .padding(AppLayout.settingsGutter)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(Color.nw.bgWindow)
+        }
+    }
+
     private nonisolated static let instructionsSample = """
         # How I work
 
@@ -321,6 +341,18 @@ struct SettingsPreviewTests {
                                  untilGone: "Loading") {
             RemoteDirectoryPicker(hostName: "this Mac", startPath: root.path,
                                   list: { try await LocalDirectoryLister.load(path: $0) }, choose: { _ in }, cancel: {})
+        }
+    }
+
+    /// A host's first listing still on its way: placeholder rows pulse where the folders will be
+    /// (NWStatus's loading placeholder).
+    @Test func directoryPickerLoading() async throws {
+        try await Preview.render("sheet-directory-picker-loading", size: CGSize(width: AppLayout.directoryPickerWidth, height: 480)) {
+            RemoteDirectoryPicker(hostName: "horizon", startPath: "", list: { _ in
+                // A listing that never arrives while the render looks.
+                for await _ in AsyncStream<Void> { _ in } {}
+                throw CancellationError()
+            }, choose: { _ in }, cancel: {})
         }
     }
 
