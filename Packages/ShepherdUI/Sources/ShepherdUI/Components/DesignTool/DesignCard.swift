@@ -1,5 +1,18 @@
 import SwiftUI
 
+/// How a design card draws its first board.
+public enum NWDesignCardBoard: Equatable, Sendable {
+    case desktop, phone
+    /// No board drawn yet: the thumbnail is the dots alone.
+    case none
+
+    /// A phone board is taller than it is wide.
+    public init(size: CGSize?) {
+        guard let size, size.width > 0, size.height > 0 else { self = .none; return }
+        self = size.height > size.width ? .phone : .desktop
+    }
+}
+
 /// A design on the Designs page (NWDesignCard; NavDesigns): a radius-10 card with a hairline and
 /// the hover fill. Its top is a 172pt thumbnail on `bgBase` with the canvas's dots every 16pt
 /// and a hairline under it, the design's first board centered in it in its board frame (256×160
@@ -7,17 +20,7 @@ import SwiftUI
 /// system in mono `textSecondary` then "· 4 boards" in 11.5 `textTertiary`; "edited 2h ago" in 11
 /// `textTertiary`. The selected card wears a 2pt `textPrimary` ring.
 public struct NWDesignCard<Thumbnail: View>: View {
-    public enum Board: Equatable, Sendable {
-        case desktop, phone
-        /// No board drawn yet: the thumbnail is the dots alone.
-        case none
-
-        /// A phone board is taller than it is wide.
-        public init(size: CGSize?) {
-            guard let size, size.width > 0, size.height > 0 else { self = .none; return }
-            self = size.height > size.width ? .phone : .desktop
-        }
-    }
+    public typealias Board = NWDesignCardBoard
 
     let name: String
     let system: String?
@@ -214,5 +217,62 @@ public struct NWDesignSystemChip: View {
         .nwBorder(Color.nw.lineSubtle, radius: NWDesignMetrics.chipRadius)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Design system \(name)")
+    }
+}
+
+/// A design system or starting point on New design (DZStart): 12×14 padding, radius 8, a
+/// hairline, 6pt between its lines, the hover fill. A 13pt glyph and a title in mono 12
+/// semibold; a line in 12.5 `textPrimary`; a note in 11 `textTertiary`. The chosen card is
+/// `lanternTint` with a `lanternText` line and glyph.
+public struct NWDesignStartCard: View {
+    let symbol: String
+    let title: String
+    let line: String
+    let note: String
+    let chosen: Bool
+    @State private var hovering = false
+
+    public init(symbol: String, title: String, line: String, note: String, chosen: Bool) {
+        self.symbol = symbol
+        self.title = title
+        self.line = line
+        self.note = note
+        self.chosen = chosen
+    }
+
+    public var body: some View {
+        let shape = RoundedRectangle(cornerRadius: NW.Radius.m)
+        VStack(alignment: .leading, spacing: NW.Space.s) {
+            HStack(spacing: NW.Space.s) {
+                Image(systemName: symbol)
+                    .font(.nwSans(NWDesignMetrics.startGlyph))
+                    .foregroundStyle(chosen ? Color.nw.lanternText : Color.nw.textSecondary)
+                    .accessibilityHidden(true)
+                Text(title)
+                    .font(.nwMono(NWDesignMetrics.startTitleSize, .semibold))
+                    .foregroundStyle(Color.nw.textPrimary)
+                    .lineLimit(1)
+            }
+            Text(line)
+                .font(.nwSans(NWDesignMetrics.startLineSize))
+                .foregroundStyle(chosen ? Color.nw.lanternText : Color.nw.textPrimary)
+                .lineLimit(1)
+            Text(note)
+                .font(.nwSans(NWDesignMetrics.startNoteSize))
+                .foregroundStyle(Color.nw.textTertiary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .padding(.vertical, NW.Space.l)
+        .padding(.horizontal, NWDesignMetrics.cardPaddingHorizontal)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(chosen ? Color.nw.lanternTint : hovering ? Color.nw.bgHover : .clear, in: shape)
+        .nwBorder(Color.nw.lineSubtle, radius: NW.Radius.m)
+        .contentShape(shape)
+        .onHover { hovering = $0 }
+        .nwAnimation(.hover, value: hovering)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title), \(line), \(note)")
+        .accessibilityAddTraits(chosen ? .isSelected : [])
     }
 }

@@ -86,11 +86,11 @@ struct DesignToolComponentTests {
         #expect(NWCanvasViewport.fitting(.null, in: CGSize(width: 1100, height: 800)).zoom == 1)
     }
 
-    @Test(arguments: [(CGSize(width: 1280, height: 800), NWDesignCard<EmptyView>.Board.desktop),
+    @Test(arguments: [(CGSize(width: 1280, height: 800), NWDesignCardBoard.desktop),
                       (CGSize(width: 390, height: 844), .phone), (CGSize.zero, .none)])
-    func aCardDrawsItsFirstBoardAsDesktopOrPhone(size: CGSize, board: NWDesignCard<EmptyView>.Board) {
-        #expect(NWDesignCard<EmptyView>.Board(size: size) == board)
-        #expect(NWDesignCard<EmptyView>.Board(size: nil) == .none)
+    func aCardDrawsItsFirstBoardAsDesktopOrPhone(size: CGSize, board: NWDesignCardBoard) {
+        #expect(NWDesignCardBoard(size: size) == board)
+        #expect(NWDesignCardBoard(size: nil) == .none)
     }
 
     @Test func aBoardsSizeReadsInCSSPixels() {
