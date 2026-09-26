@@ -81,6 +81,7 @@ elements).
   project/<path>.dc.html       one per board
   revision                     Shepherd's revision counter for the design
   comments.json                the viewer's comments (Comments, below), beside project/
+  assets/<id>.<ext>            uploads, served to boards as /_blob/<id>
   versions/<path>/<n>.dc.html  each board's last 20 earlier versions
 ```
 
@@ -348,6 +349,10 @@ board's own world, where a board can only affect itself.
   what it showed.
 - **`booted`** comes once imports, fonts and images have settled, or after three seconds.
 - **Snapshots** are `boardSize` from the top left, at the view's backing scale (1× offscreen).
+- **Export.** `staticPage()` answers the board as a standalone page (the bridge's `staticPage`, in
+  its own world); `printLayout()` its height, its lines of text and its images and drawings, and
+  its paper's color, for a flow document's page breaks; `image(scale:)` and `pdf(_:)` draw it as
+  an image and as PDF pages (Export).
 
 ### React
 
@@ -384,7 +389,7 @@ was on keep their files and agents either way.
 - **A design's screen** (DZCanvas) is its agent's layout (`DesignLayoutView`): the canvas beside a
   420pt chat pane holding the agent's thread, whose composer has attach and Send only, under a
   toolbar with the breadcrumb, the pages menu (with more than one page), the design's system,
-  Present (below) and Export (disabled until it is built). Opening a design whose agent is gone starts a fresh one. Switching away and back is
+  Present (below) and Export (below). Opening a design whose agent is gone starts a fresh one. Switching away and back is
   a visibility flip, and a design's canvas (where it looks, the tool, the selected board) lasts
   the app's run. A design's screen has no terminal panel.
 - **The canvas** (`NWDesignCanvas`) pans with two fingers, the Pan tool or space-drag, and zooms
@@ -576,6 +581,66 @@ The chat pane's Tweak tab edits the selection (the latest pick) directly
   message sent carries the selection as data (The view record).
 - **Budget** (`DesignPerformanceTests`): a drag redraws no board frame, and its release redraws
   only the tweaked board's.
+
+### Export (DZExport)
+
+Export in the header opens the sheet over the window (`DesignExportSheet`, as DZExport draws it:
+the 560pt card with its close button, on a 55% black scrim). The boards the canvas has selected
+(picked whole, holding a selected element, or presented) open ticked, every board when none is;
+the primary button counts the ticks ("Export 2 boards"). Each ticked board is rendered off screen
+by a view of its own at zoom 1 (`DesignExporter` in `DesignHost.swift`), one at a time, from what
+the design store reads for it (`SessionServer.designExportFiles`: the boards, every board they
+import, the project's other files, and the uploads they name).
+
+- **Where it goes.** Only where the save panel points: one file for a ZIP or a PDF (named for the
+  design) and for a single board's page or image, else a folder holding one file per board
+  (`DesignExportNames.destination`). The files are staged under the temporary folder and moved
+  there whole once every board is done; what is there is replaced, as the panel confirmed.
+  Nothing writes a repository.
+- **HTML.** One standalone page per board (`<path>.html`): the bridge's `staticPage` serializes
+  what the board draws, the hoisted helmet in its head, with no script, no runtime and none of
+  Shepherd's `data-dc-*` stamps or handler attributes. The design's own stylesheets are inlined;
+  Google Fonts' links stay. Uploads (`/_blob/<id>`) are inlined as data URLs, fonts included, and
+  a link to another exported board (`<a href="B.dc.html">`, or from the canvas root) goes to its
+  page. A support file the board links by a relative path (not an upload) is not carried.
+- **ZIP.** The pages (uploads pointed at `assets/`), `tokens.css` (a `:root` block of every custom
+  property the boards and the project's stylesheets declare, `DesignExportTokens`), `assets/`
+  (the uploads they name), and the canvas as a project folder (format.md): `project/canvas.json`
+  narrowed to the exported boards with every other key kept (`DesignBundle.index`), each exported
+  board's and each imported board's source as written, and the project's other files (`ds/`,
+  support files). Made with `/usr/bin/ditto`. The folder imports into Shepherd again; on claude.ai
+  the files are the format's, but uploads are Shepherd's own `assets/`, not claude.ai's.
+- **PDF.** One document, a page per board in canvas order, at 96 CSS px to the inch (print.md): a
+  fixed board (`print` absent or `fixed`) is one page at its frame's size; a flow board
+  (`"print": "flow"`, `paper` `letter` or `a4`) runs onto that paper, cut between lines of text and
+  never through an image or drawing that fits a page, with 5% of a page blank at each cut in the
+  paper's color (`DesignPrint.pages`), at most 100 pages. WebKit draws each page's slice
+  (`createPDF`); CoreGraphics puts the pages together (`DesignPDF`).
+- **PNG.** Each board at twice its size in pixels (`<path>@2x.png`).
+- **Attach to a thread** (a menu of the local threads, most recently active first) writes the
+  ticked boards as standalone pages and `tokens.css`, a note of the tokens they use (or every
+  token when they reference none), into a folder of the drop folder (pruned after a day), and
+  leaves them in that thread's composer as file chips; the thread opens. They go with its next
+  message as a list of their paths under the words (`NativeAttachedFile`). Attach to a mission
+  waits for Missions, and the live link (a listener on the host) is not built; the sheet leaves
+  both out.
+
+### Import
+
+File ▸ Import Claude Design Folder… (with the Design tool on) reads a canvas folder from disk into
+a new design (`SessionServer.importDesign`, decision 4) in the selected project, else the most
+recently used, and opens it (its agent starts then). The folder is only read.
+
+- **Which folder.** A canvas's `project/` itself (it holds `canvas.json`), or a folder holding
+  `project/` and, from a Shepherd export, `assets/`. Everything else in it is left behind.
+- **Rules** (`DesignImport`): links anywhere in what is read are refused, as is anything that is
+  neither a file nor a folder; every name passes the path grammar's segment rule; at most 16 levels,
+  512 files, 16 MB a file and 256 MB in all; uploads are `assets/<id>.<ext>`. Hidden files and any
+  `support.js` (Shepherd serves its own runtime there) are left behind.
+- **The canvas** is kept byte for byte, every key with it; one without a title is titled after
+  the folder, still keeping every key. A canvas this build can't read refuses the import.
+- **Atomic.** The copy is staged beside the designs and moved into place whole, then the record
+  is committed; a refused or failed import leaves nothing behind.
 
 ### Not built yet
 
