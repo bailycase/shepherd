@@ -11,8 +11,8 @@ import Testing
 
 /// The Design tool end to end on a real server with the stub pi: New design makes a design and
 /// its agent and opens the canvas; a design is its Recents row and its agent has none; opening a
-/// design whose agent is gone starts a fresh one; and switching away and back is a visibility
-/// flip.
+/// design whose agent is gone starts a fresh one; switching away and back is a visibility flip;
+/// and a board the agent writes reloads in place on the canvas, alone.
 @Suite("Design tool", .mainActorExclusive)
 @MainActor
 struct DesignFlowTests {
@@ -153,5 +153,54 @@ struct DesignFlowTests {
         #expect(vm.mountedTabs.map(\.id) == order)
         #expect(vm.designScreen(design.id) === screen, "the same canvas, where it was left")
         try await eventuallyOnMain("the selected board to go live again") { host.liveBoards.contains(DesignPath("A.dc.html")!) }
+    }
+
+    /// One write to a board is one revision pushed and one board reloaded in place (the live one,
+    /// with no new view); the others are untouched. New boards appear and removed ones leave.
+    @Test func aBoardTheAgentRewritesReloadsInPlaceAlone() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, window, design, _, _) = try await openCanvas(app)
+        defer { window.close() }
+        let screen = vm.designScreen(design.id)
+        let host = try #require(screen.host)
+        let a = DesignPath("A.dc.html")!, b = DesignPath("B.dc.html")!
+        screen.select(a.rawValue)
+        try await eventuallyOnMain("A to go live") { host.liveView(a) != nil }
+        let view = host.liveView(a)
+        let server = app.server
+        var pushes = 0
+        let forward = server.onDesignRevision
+        server.onDesignRevision = { id in
+            pushes += 1
+            forward?(id)
+        }
+        let before = (reloads: host.reloads, snapshots: host.snapshotsTaken, pulls: screen.pulls, tokenB: host.tokens[b])
+
+        let board = DesignFixtures.checkout[0]
+        let written = try await server.writeDesignBoard(design.id, path: a, source: DesignFixtures.source(board, note: "revised"))
+        try await eventuallyOnMain("A to show the rewrite", timeout: .seconds(30)) {
+            screen.snapshot?.boards[a] == written.sha256 && host.isDrawn([a]) && host.snapshotsTaken > before.snapshots
+        }
+        #expect(pushes == 1, "one revision pushed")
+        #expect(host.reloads == before.reloads + 1, "the live board reloaded in place")
+        #expect(host.liveView(a) === view, "no new view: no navigation")
+        #expect(host.snapshotsTaken == before.snapshots + 1, "one snapshot redrawn")
+        #expect(host.tokens[b] == before.tokenB, "B is untouched")
+
+        // A board the agent adds appears; one it removes leaves.
+        let added = DesignFixtures.Board(path: "D.dc.html", title: "D · Minimal", width: 1280, height: 800, accent: "#be123c")
+        _ = try await server.writeDesignBoard(design.id, path: DesignPath("D.dc.html")!, source: DesignFixtures.source(added))
+        _ = try await server.updateDesignIndex(design.id, patch: .object([
+            "boards": .object(["D.dc.html": .object(["x": .number(0), "y": .number(2000), "w": .number(1280), "h": .number(800),
+                                                     "title": .string("D · Minimal")]),
+                               "C.dc.html": .null]),
+        ]))
+        try await eventuallyOnMain("D to arrive and C to leave") {
+            let ids = screen.boards.map(\.id)
+            return ids.contains("D.dc.html") && !ids.contains("C.dc.html")
+        }
+        #expect(host.image(DesignPath("C.dc.html")!) == nil)
+        #expect(screen.boards.first { $0.id == "D.dc.html" }?.title == "D · Minimal")
     }
 }

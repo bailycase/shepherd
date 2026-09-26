@@ -297,12 +297,15 @@ final class DesignHost {
                 return
             }
             guard let self, self.slots[path] === slot, !Task.isCancelled else { return }
-            slot.ready = true
-            // Written after the view read the file: show what is there now.
             if let current = self.boards[path], current.sha != slot.sha {
+                // Written after the view read the file: show what is there now.
+                slot.ready = true
                 self.reload(path, slot: slot)
             } else {
+                // Its snapshot first, so the board never swaps to an older picture later.
                 await self.snapshot(path, slot: slot)
+                guard self.slots[path] === slot else { return }
+                slot.ready = true
             }
             self.bump(path)
         }

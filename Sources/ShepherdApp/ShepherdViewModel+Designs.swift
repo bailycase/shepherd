@@ -141,17 +141,28 @@ extension ShepherdViewModel {
         return screen
     }
 
-    /// A design's layout came on screen or left it: only designs on screen take live views.
+    /// A design's layout came on screen or left it: only designs on screen take live views and
+    /// get their revisions pushed.
     func designVisibility(_ id: DesignID, visible: Bool) {
         designScreen(id).setActive(visible)
-        if visible { visibleDesigns.insert(id) } else { visibleDesigns.remove(id) }
+        let changed = visible ? visibleDesigns.insert(id).inserted : visibleDesigns.remove(id) != nil
+        if changed { server.watchDesignRevisions(of: visibleDesigns) }
+    }
+
+    /// The host pushed a design's new revision: its canvas pulls what changed.
+    func designRevised(_ id: DesignID) {
+        guard let screen = designScreens[id] else { return }
+        Task { await screen.refresh() }
     }
 
     /// Designs that are gone give up their canvases and renderers.
     func pruneDesigns() {
         let live = Set(state.designs.map(\.id))
         for id in Set(designScreens.keys).subtracting(live) { designScreens.removeValue(forKey: id) }
-        visibleDesigns.formIntersection(live)
+        if !visibleDesigns.isSubset(of: live) {
+            visibleDesigns.formIntersection(live)
+            server.watchDesignRevisions(of: visibleDesigns)
+        }
         if let selection = designsPageSelection, !live.contains(selection) { designsPageSelection = nil }
         madeDesignRendering?.prune(keeping: live)
     }
