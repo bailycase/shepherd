@@ -6,6 +6,7 @@ import ShepherdTestSupport
 import SwiftUI
 import Testing
 @testable import ShepherdApp
+@testable import TerminalSurfaceKit
 
 /// The view model over a real server: restoring a persisted workspace, moving between agents
 /// and pages, pane focus, and cold parking.
@@ -460,6 +461,76 @@ struct WorkspaceNavigationTests {
         NotificationCenter.default.post(name: NSWindow.didEndLiveResizeNotification, object: window.window)
         ListPerf.settle(window)
         #expect(frames() == Array(repeating: narrow, count: agents.count))
+    }
+
+    /// A hidden layout is built when it mounts, its terminal surface included, and still takes
+    /// its values while hidden: its thread stops polling and its terminal stops drawing, and the
+    /// agent shown instead starts both. The hosts stay in mount order.
+    @Test func hiddenLayoutsSuspendTheirThreadAndStopTheirTerminalsDrawing() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        var agents: [AgentFixture] = []
+        for index in 0..<3 {
+            var agent = try await app.liveAgent("agent \(index)", in: space, order: index, auxiliary: 1)
+            agent.agent.lastActiveAt = Double(3 - index)
+            agents.append(agent)
+        }
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents))
+        vm.selectAgent(agents[0].agent.id)
+        let window = OffscreenWindow(size: CGSize(width: 1200, height: 700), dark: true, WorkspaceView(vm: vm))
+        defer { window.close() }
+        try await eventuallyOnMain("every layout to mount") { vm.mountedTabs.count == agents.count }
+        let deck = try Self.deck(in: window)
+
+        for shown in [0, 2, 1, 0] {
+            vm.selectAgent(agents[shown].agent.id)
+            try await eventuallyOnMain("only agent \(shown)'s thread and terminal to be live") {
+                ListPerf.settle(window)
+                return agents.indices.allSatisfy { index in
+                    let agent = agents[index]
+                    let terminal = vm.sessions.session(for: agent.auxiliary[0], in: agent.tab).terminal.model
+                    guard let surface = TerminalFirstResponder.view(ownedBy: terminal.viewState, in: window.window) else { return false }
+                    let visible = index == shown
+                    return vm.threadStores.store(for: agent.agent.id).isLive == visible
+                        && terminal.renderingActive == visible
+                        && surface.isHiddenOrHasHiddenAncestor == !visible
+                }
+            }
+            #expect(deck.subviews.map(ObjectIdentifier.init) == vm.mountedTabs.compactMap { deck.pages[$0.id].map { ObjectIdentifier($0.host) } })
+        }
+    }
+
+    /// The outer graph's overlays (the overlaid sidebar, the palette) sit over the deck: a click
+    /// there reaches them, never the layout under them.
+    @Test func overlaysOverTheWorkspaceTakeTheirClicksFromTheDeck() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, agents) = try await MountedWorkspace.start(2, in: app)
+        let size = CGSize(width: AppLayout.windowMinWidth, height: 700)
+        let window = OffscreenWindow(size: size, dark: true, RootView(vm: vm).environment(\._accessibilityReduceMotion, true))
+        defer { window.close() }
+        try await eventuallyOnMain("every layout to mount and the narrow window to hide the sidebar") {
+            ListPerf.settle(window)
+            return vm.mountedTabs.count == agents.count && vm.sidebarAutoHidden
+        }
+        let deck = try Self.deck(in: window)
+        let root = try #require(window.window.contentView)
+        func inDeck(_ point: CGPoint) throws -> Bool {
+            let hit = try #require(root.hitTest(root.isFlipped ? point : CGPoint(x: point.x, y: root.bounds.height - point.y)))
+            return hit.isDescendant(of: deck)
+        }
+        let overSidebar = CGPoint(x: 120, y: 300)
+        let overPalette = CGPoint(x: size.width / 2, y: size.height * 0.18 + 30)
+        #expect(try inDeck(overSidebar) && inDeck(overPalette), "the layout takes clicks with nothing over it")
+
+        vm.toggleSidebar()
+        try await eventuallyOnMain("the sidebar to overlay the workspace") { ListPerf.settle(window); return vm.sidebarOverlayShown }
+        ListPerf.settle(window)
+        #expect(try !inDeck(overSidebar))
+        vm.dismissSidebarOverlay()
+        vm.showCommandPalette = true
+        try await eventuallyOnMain("the palette to cover the workspace") { ListPerf.settle(window); return try !inDeck(overPalette) }
     }
 
     /// The workspace's deck of layouts.
