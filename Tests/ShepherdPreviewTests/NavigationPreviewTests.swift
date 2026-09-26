@@ -40,6 +40,7 @@ extension PreviewTests {
         }
         agents[1].waitingOn = "Approve the plan?"
         agents[1].waitingReason = "approve plan"
+        agents[3].checkout = AgentCheckout(branch: "agent/swiftui-previews", changedFiles: 4)
         var (billing, billingTab) = try await workspace.agent("Migrate invoices to v2", in: other, order: 0, status: .idle)
         billing.lastActiveAt = now - 30 * 60_000
         agents.append(billing); tabs.append(billingTab)
@@ -385,6 +386,19 @@ extension PreviewTests {
             Color.nw.bgWindow
                 .nwCommandPalette(isPresented: .constant(true)) {
                     PaletteCard(items: workspace.vm.paletteItems, run: { _ in }, close: {}, initialQuery: "e")
+                }
+        }
+    }
+
+    /// "an" reaches the agents: a working one with its time ("Shepherd · running · 8m").
+    @Test func commandPaletteAgents() async throws {
+        let (workspace, agents) = try await populatedWorkspace()
+        defer { workspace.stop() }
+        workspace.vm.selectAgent(agents[3].id)
+        try await Preview.render("command-palette-agents", size: CGSize(width: 1000, height: 620)) {
+            Color.nw.bgWindow
+                .nwCommandPalette(isPresented: .constant(true)) {
+                    PaletteCard(items: workspace.vm.paletteItems, run: { _ in }, close: {}, initialQuery: "an")
                 }
         }
     }

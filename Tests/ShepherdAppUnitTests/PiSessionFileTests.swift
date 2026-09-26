@@ -266,4 +266,67 @@ struct PiSessionFileTests {
         }
         #expect(!FileManager.default.fileExists(atPath: scratch.projectDirectory.path))
     }
+
+    @Test func forkingLeavesOutALinePiIsStillWriting() throws {
+        let scratch = try Scratch()
+        defer { scratch.remove() }
+        let source = scratch.cwd.appendingPathComponent("live.jsonl")
+        try (Self.childTranscript + #"{"type":"message","id":"m3","message":{"ro"#).write(to: source, atomically: true, encoding: .utf8)
+
+        let id = try PiSessionFile.fork(sessionFile: source.path, cwd: scratch.cwd.path, sessionsRoot: scratch.root)
+
+        let copy = try #require(scratch.files(for: id).first)
+        let text = try String(contentsOf: copy, encoding: .utf8)
+        #expect(text.split(separator: "\n").count == 3)
+        #expect(text.hasSuffix("\n") && !text.contains("m3"))
+    }
+
+    @Test func aForkIsNamedAfterItsAgent() {
+        #expect(ShepherdViewModel.forkName("Restyle native UI") == "Restyle native UI (fork)")
+    }
+
+    // MARK: Transcripts
+
+    private func transcript(_ lines: [String]) throws -> String? {
+        let scratch = try Scratch()
+        defer { scratch.remove() }
+        let file = scratch.cwd.appendingPathComponent("session.jsonl")
+        try (lines.joined(separator: "\n") + "\n").write(to: file, atomically: true, encoding: .utf8)
+        return PiSessionFile.transcript(file: file)
+    }
+
+    @Test func aTranscriptIsWhatWasSaidNeverThinkingOrTools() throws {
+        let text = try transcript([
+            #"{"type":"session","version":3,"id":"s","cwd":"/x"}"#,
+            #"{"type":"message","id":"a","parentId":null,"message":{"role":"user","content":"Fix the build"}}"#,
+            #"{"type":"message","id":"b","parentId":"a","message":{"role":"assistant","content":[{"type":"thinking","thinking":"hmm"},{"type":"text","text":"Looking."},{"type":"toolCall","name":"bash"}]}}"#,
+            #"{"type":"message","id":"c","parentId":"b","message":{"role":"toolResult","content":[{"type":"text","text":"ok"}]}}"#,
+            #"{"type":"model_change","id":"d","parentId":"c","modelId":"x"}"#,
+            #"{"type":"message","id":"e","parentId":"d","message":{"role":"assistant","content":[{"type":"text","text":"Fixed."}]}}"#,
+        ])
+        #expect(text == "user: Fix the build\n\nassistant: Looking.\n\nassistant: Fixed.")
+    }
+
+    @Test func aTranscriptFollowsTheBranchPiIsOn() throws {
+        let text = try transcript([
+            #"{"type":"session","version":3,"id":"s","cwd":"/x"}"#,
+            #"{"type":"message","id":"a","parentId":null,"message":{"role":"user","content":"first"}}"#,
+            #"{"type":"message","id":"b","parentId":"a","message":{"role":"assistant","content":"abandoned"}}"#,
+            #"{"type":"message","id":"c","parentId":"a","message":{"role":"assistant","content":"kept"}}"#,
+        ])
+        #expect(text == "user: first\n\nassistant: kept")
+    }
+
+    @Test func aTranscriptWithoutParentLinksKeepsEveryEntry() throws {
+        let text = try transcript([
+            #"{"type":"session","version":3,"id":"s","cwd":"/x"}"#,
+            #"{"type":"message","id":"a","message":{"role":"user","content":"hello"}}"#,
+            #"{"type":"message","id":"b","message":{"role":"assistant","content":"hi"}}"#,
+        ])
+        #expect(text == "user: hello\n\nassistant: hi")
+    }
+
+    @Test func aSessionWithNothingSaidHasNoTranscript() throws {
+        #expect(try transcript([#"{"type":"session","version":3,"id":"s","cwd":"/x"}"#]) == nil)
+    }
 }
