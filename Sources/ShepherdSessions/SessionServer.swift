@@ -2860,6 +2860,33 @@ public final class SessionServer: @unchecked Sendable {
         return result
     }
 
+    /// Writes several boards' whole sources as one change: one revision, one broadcast (a tweak
+    /// applied to every element of a name). Each board's replaced content is kept as a version.
+    public func writeDesignBoards(_ designID: DesignID, sources: [DesignPath: String],
+                                  baseRevision: UInt64? = nil) async throws -> DesignBoardsWrite {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        let written = try await designs.writeBoards(designID, sources: sources, baseRevision: baseRevision)
+        try await enqueue { try self.commitDesignWrite(designID, written.result) }
+        return written
+    }
+
+    /// A board's kept versions, oldest first (the last `DesignBoardVersion.kept`).
+    public func designVersions(_ designID: DesignID, path: DesignPath) async throws -> [DesignBoardVersion] {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        return try await designs.versions(designID, path: path)
+    }
+
+    /// Puts boards back to kept versions as one change. With `ifCurrent`, only while each board
+    /// still has the hash it names (an undo never takes back a later write); what each held is
+    /// kept as its next version, so a restore can itself be undone.
+    public func restoreDesignVersions(_ designID: DesignID, _ versions: [DesignPath: Int], ifCurrent: [DesignPath: String]? = nil,
+                                      baseRevision: UInt64? = nil) async throws -> DesignBoardsWrite {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        let written = try await designs.restore(designID, versions: versions, ifCurrent: ifCurrent, baseRevision: baseRevision)
+        try await enqueue { try self.commitDesignWrite(designID, written.result) }
+        return written
+    }
+
     /// Applies a canvas_update to the design's index (`DesignIndex.merging`: a JSON merge patch
     /// that keeps every key it doesn't name), when the design is still at `baseRevision`. A new
     /// `title` renames the design.

@@ -106,4 +106,39 @@ public enum NWDesignMetrics {
     public static let chipSwatchRadius: CGFloat = 2
     public static let chipSwatchSpacing: CGFloat = NW.Space.xxs
     public static let chipTextSize: CGFloat = 11.5
+
+    // Tweak (DZTweak, NWDesignTool)
+    /// The Tweak tab's header and groups: 14×18 padding, a hairline under each.
+    public static let tweakPaddingVertical: CGFloat = 14
+    public static let tweakPaddingHorizontal: CGFloat = 18
+    /// The header's lines: the path in mono 11, the note in 11.5, 4pt apart.
+    public static let tweakPathSize: CGFloat = 11
+    public static let tweakNoteSize: CGFloat = 11.5
+    public static let tweakHeaderSpacing: CGFloat = NW.Space.xs
+    /// A group's section label sits 6pt above its rows.
+    public static let tweakLabelGap: CGFloat = NW.Space.s
+    /// A row: at least 30pt (a slider) or 32pt, its label in 12.5 in a 92pt column, 12pt before
+    /// the control.
+    public static let tweakSliderRowHeight: CGFloat = 30
+    public static let tweakRowHeight: CGFloat = 32
+    public static let tweakLabelWidth: CGFloat = 92
+    public static let tweakLabelSize: CGFloat = 12.5
+    public static let tweakRowSpacing: CGFloat = NW.Space.l
+    /// Chips and pickers sit 6pt apart at the row's trailing edge.
+    public static let tweakControlSpacing: CGFloat = NW.Space.s
+    /// The scope's note: 6pt under its row, 11.5/1.45.
+    public static let tweakScopeNoteGap: CGFloat = NW.Space.s
+    public static let tweakScopeNoteLineSpacing: CGFloat = 5
+    /// The footer: 12×14 padding, a hairline above.
+    public static let tweakFooterPaddingVertical: CGFloat = NW.Space.l
+    public static let tweakFooterPaddingHorizontal: CGFloat = 14
+    /// A token chip: 26pt, 8pt padding, radius 6, a 10pt swatch (radius 3) 6pt from the name in
+    /// mono 11.5.
+    public static let tokenChipHeight: CGFloat = 26
+    public static let tokenChipPadding: CGFloat = NW.Space.m
+    public static let tokenChipRadius: CGFloat = NW.Radius.s
+    public static let tokenChipSpacing: CGFloat = NW.Space.s
+    public static let tokenChipSwatch: CGFloat = 10
+    public static let tokenChipSwatchRadius: CGFloat = 3
+    public static let tokenChipTextSize: CGFloat = 11.5
 }

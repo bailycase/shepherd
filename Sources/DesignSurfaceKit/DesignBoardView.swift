@@ -167,12 +167,15 @@ public final class DesignBoardView: DesignPlatformView {
     /// board's state is kept. The source is the whole `.dc.html` file, as it is written.
     ///
     /// Only the template, the logic and the helmet change this way; the lines of the board's
-    /// `<head>` (its title aside) take effect at the next `load()`.
-    public func replaceSource(_ source: String) async throws {
+    /// `<head>` (its title aside) take effect at the next `load()`. `props`, when given, is the
+    /// board's top-level props as JSON (its Tweak values; `load()` reads them from canvas.json).
+    public func replaceSource(_ source: String, props: String? = nil) async throws {
         guard contentSize != nil else { throw DesignBoardError.notBooted }
+        var arguments: [String: Any] = ["source": source]
+        arguments["props"] = props ?? NSNull()
         let result = try await webView.callAsyncJavaScript(
-            "return window.__shepherdDC ? window.__shepherdDC.replaceSource(source) : { ok: false, error: 'no runtime' }",
-            arguments: ["source": source], in: nil, contentWorld: .page)
+            "return window.__shepherdDC ? window.__shepherdDC.replaceSource(source, props === null ? undefined : props) : { ok: false, error: 'no runtime' }",
+            arguments: arguments, in: nil, contentWorld: .page)
         let reply = result as? [String: Any]
         guard reply?["ok"] as? Bool == true else {
             throw DesignBoardError.refused(reply?["error"] as? String ?? "the runtime gave no answer")
@@ -194,6 +197,45 @@ public final class DesignBoardView: DesignPlatformView {
         guard let cgImage = image.cgImage else { throw DesignBoardError.snapshotFailed }
         #endif
         return cgImage
+    }
+
+    // MARK: Previews
+
+    /// Shows style changes on elements of the board without writing them (a tweak being
+    /// dragged): each tid's properties set, or taken out where the value is nil. Returns how many
+    /// renderings changed. Properties and values outside what a tweak writes are left out.
+    @discardableResult
+    public func previewStyle(_ changes: [Int: [String: String?]]) async -> Int {
+        guard contentSize != nil else { return 0 }
+        let list: [[String: Any]] = changes.sorted { $0.key < $1.key }.compactMap { tid, style in
+            let safe = style.filter { DesignStyleEdit.isSafeProperty($0.key) && ($0.value.map(DesignStyleEdit.isSafeValue) ?? true) }
+            guard tid >= 0, !safe.isEmpty else { return nil }
+            return ["tid": tid, "style": safe.mapValues { $0 ?? "" }]
+        }
+        guard !list.isEmpty else { return 0 }
+        let result = try? await webView.callAsyncJavaScript(
+            "return window.__shepherdDC && window.__shepherdDC.previewStyle ? window.__shepherdDC.previewStyle(changes) : 0",
+            arguments: ["changes": list], in: nil, contentWorld: .page)
+        return (result as? NSNumber)?.intValue ?? 0
+    }
+
+    /// Draws the board with top-level props `json` (a data-props tweak being dragged), without
+    /// writing them.
+    @discardableResult
+    public func previewProps(_ json: String) async -> Bool {
+        guard contentSize != nil else { return false }
+        let result = try? await webView.callAsyncJavaScript(
+            "return window.__shepherdDC && window.__shepherdDC.setProps ? window.__shepherdDC.setProps(props) : { ok: false }",
+            arguments: ["props": json], in: nil, contentWorld: .page)
+        return (result as? [String: Any])?["ok"] as? Bool == true
+    }
+
+    /// Puts back every style value a preview changed.
+    public func endPreview() async {
+        guard contentSize != nil else { return }
+        _ = try? await webView.callAsyncJavaScript(
+            "return window.__shepherdDC && window.__shepherdDC.endPreview ? window.__shepherdDC.endPreview() : false",
+            arguments: [:], in: nil, contentWorld: .page)
     }
 
     // MARK: Selection
