@@ -143,9 +143,12 @@ struct AgentLayoutModel: Equatable {
     /// otherwise, so a status report reruns no other layout.
     var foldedState: AgentState?
     var terminalHeight: CGFloat = AppLayout.terminalPanelHeight
+    /// The design the thread's agent draws: the layout is its canvas and chat (`DesignLayoutView`).
+    var design: DesignID?
 
     static func == (a: AgentLayoutModel, b: AgentLayoutModel) -> Bool {
         a.tab == b.tab && a.isVisible == b.isVisible && a.thread == b.thread && a.focusedPaneID == b.focusedPaneID
+            && a.design == b.design
             && a.inspectingRunID == b.inspectingRunID && a.sideTab == b.sideTab && a.sideNews == b.sideNews
             && a.sideMaximized == b.sideMaximized && a.review === b.review
             && a.terminal == b.terminal && a.terminalHeight == b.terminalHeight && a.foldedState == b.foldedState
@@ -161,9 +164,11 @@ struct AgentLayoutModel: Equatable {
         private let panes: RightPaneState
         private let reviews: [AgentID: ReviewSession]
         private let terminals: TerminalPanels
+        private let designs: Set<DesignID>
 
         init(vm: ShepherdViewModel, visibleTabID: TabID?) {
             terminals = vm.terminalPanels
+            designs = Set(vm.state.designs.map(\.id))
             self.visibleTabID = visibleTabID
             focusedPaneID = vm.focusedPaneID
             agentsByTab = Dictionary(vm.state.agents.map { ($0.tabID, $0) }, uniquingKeysWith: { first, _ in first })
@@ -187,7 +192,8 @@ struct AgentLayoutModel: Equatable {
                                     sideNews: owner.flatMap { panes.news[$0] } ?? [],
                                     sideMaximized: owner.map { panes.maximized.contains($0) } ?? false,
                                     review: thread.flatMap { reviews[$0.agentID] },
-                                    terminal: terminal, foldedState: folded, terminalHeight: terminals.height)
+                                    terminal: terminal, foldedState: folded, terminalHeight: terminals.height,
+                                    design: agentsByTab[tab.id]?.designID.flatMap { designs.contains($0) ? $0 : nil })
         }
     }
 }
@@ -209,6 +215,15 @@ struct AgentLayoutView: View, Equatable {
         let thread = model.thread
         let inspecting = model.inspectingRunID
         let sideTab = model.sideTab
+        if let design = model.design, let thread {
+            DesignLayoutView(vm: vm, model: model, designID: design, thread: thread)
+        } else {
+            threadLayout(thread: thread, inspecting: inspecting, sideTab: sideTab)
+        }
+    }
+
+    @ViewBuilder
+    private func threadLayout(thread: AgentLayoutModel.Thread?, inspecting: String?, sideTab: SidePaneTab?) -> some View {
         // The layout stays the first child whether or not a pane is open, so opening one never
         // remounts a pane's surface.
         RightPaneSplit(state: vm.subagentInspector, showPane: inspecting != nil || sideTab != nil,
@@ -630,6 +645,8 @@ struct AgentThreadPane: View {
     var inspectedRunID: String? = nil
     var review: ((String) -> Void)? = nil
     var turnActions: TurnChangesActions? = nil
+    /// A design's chat (`ThreadView.designChat`).
+    var designChat = false
 
     var body: some View {
         // The placeholder cross-fades in when pi dies; connecting → live changes nothing here.
@@ -638,7 +655,8 @@ struct AgentThreadPane: View {
             case .connecting, .live:
                 ThreadView(store: store, active: active, isFocused: isFocused, request: request, preview: preview, commandKey: commandKey,
                            agentName: agentName, workingDirectory: workingDirectory, inspectSubagent: inspectSubagent,
-                           steerSubagent: steerSubagent, inspectedRunID: inspectedRunID, review: review, turnActions: turnActions)
+                           steerSubagent: steerSubagent, inspectedRunID: inspectedRunID, review: review, turnActions: turnActions,
+                           designChat: designChat)
             case .failed(let reason):
                 PanePlaceholder(text: "session unavailable · \(reason)")
                     .nwTransition(.content)

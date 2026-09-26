@@ -56,7 +56,7 @@ extension MenuState.Snapshot {
             sidebarVisible: vm.isSidebarVisible,
             rightPaneOpen: vm.isRightPaneOpen,
             hasMachineAgents: !lists.all.isEmpty,
-            agents: lists.recents.prefix(9).map { MenuState.Item(id: "\($0.id)", title: $0.title) },
+            agents: lists.shortcutRows.prefix(9).map { MenuState.Item(id: "\($0.id)", title: $0.title) },
             spaces: vm.visibleSpaces.map { MenuState.Item(id: $0.id.rawValue, title: $0.name) }
         )
     }

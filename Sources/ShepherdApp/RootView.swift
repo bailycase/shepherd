@@ -259,6 +259,8 @@ private struct DestinationLayer: View {
     var body: some View {
         switch vm.shownDestination {
         case .newThread?: NewThreadPage(vm: vm, chrome: chrome)
+        case .designs?: DesignsDestination(vm: vm, chrome: chrome)
+        case .newDesign?: NewDesignPage(vm: vm, chrome: chrome)
         case .automations?: AutomationsDestination(vm: vm, chrome: chrome)
         case .hosts?: HostsDestination(vm: vm, chrome: chrome)
         case nil: EmptyView()
@@ -295,6 +297,11 @@ struct WorkspaceHeaderView: View {
                                  showChanges: { vm.openRemoteReview(remote, path: nil) }, rename: { vm.remoteRenameTarget = remote })
                         .id(remote)
                 }
+            } else if let agent = vm.selectedAgent, vm.activeTabID == agent.tabID, let design = vm.design(drawnBy: agent) {
+                DesignToolbar(name: design.name, system: vm.designSystemName(design), leadingInset: leadingInset,
+                              showSidebar: showSidebar, designs: { vm.openDestination(.designs) })
+                    .equatable()
+                    .id(agent.id)
             } else if let agent = vm.selectedAgent, vm.activeTabID == agent.tabID,
                       let space = vm.state.spaces.first(where: { $0.id == agent.spaceID }) {
                 threadHeader(store: vm.threadStores.store(for: agent.id), owner: .local(agent.id), project: space.name, title: agent.name,

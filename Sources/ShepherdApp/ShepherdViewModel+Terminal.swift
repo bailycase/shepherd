@@ -35,7 +35,8 @@ extension ShepherdViewModel {
             return TerminalTarget(key: TerminalPanelKey(host: remote.hostID, tab: tab.id), layout: tab.layout,
                                   thread: agent.paneID, remote: remote, focused: remoteFocusedPaneID)
         }
-        guard let tab = activeTab, let agent = selectedAgent, agent.tabID == tab.id else { return nil }
+        // A design's screen is its canvas and chat: it has no terminal panel.
+        guard let tab = activeTab, let agent = selectedAgent, agent.tabID == tab.id, design(drawnBy: agent) == nil else { return nil }
         return TerminalTarget(key: TerminalPanelKey(host: nil, tab: tab.id), layout: tab.layout, thread: agent.paneID,
                               remote: nil, focused: focusedPaneID)
     }

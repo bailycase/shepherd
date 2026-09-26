@@ -48,6 +48,9 @@ struct Composer: View {
     var steerSubagent: ((ChildRun) -> Void)? = nil
     /// The run open in the inspector: its tray row wears the selection.
     var inspectedRunID: String? = nil
+    /// A design's chat (DZCanvas): attach and Send only, with no commands, model, thinking or
+    /// context ring.
+    var designChat = false
     @State private var attachments = ComposerAttachments()
     @State private var dropTargeted = false
     @State private var commandIndex = 0
@@ -139,7 +142,8 @@ struct Composer: View {
     /// pi answers `/name` prompts itself; the list comes from its command registry. Its skills'
     /// commands stay out unless Settings ▸ Skills lists them.
     private var commands: [NativeCommand] {
-        AppSettings.shared.skillsInSlashMenu ? store.commands : store.commands.filter { $0.source != "skill" }
+        if designChat { return [] }
+        return AppSettings.shared.skillsInSlashMenu ? store.commands : store.commands.filter { $0.source != "skill" }
     }
     private var commandQuery: String? {
         guard !commands.isEmpty, store.draft.hasPrefix("/"), !store.draft.contains(where: \.isWhitespace),
@@ -494,6 +498,7 @@ struct Composer: View {
     }
 
     private var placeholder: String {
+        if designChat { return "Describe a change, or click something on the canvas to comment…" }
         if !hasTurns { return "Describe the task, or / for commands…" }
         return commands.isEmpty ? "Follow up…" : "Follow up, or / for commands…"
     }
@@ -572,12 +577,13 @@ struct Composer: View {
         return ComposerControlsModel(
             active: active, canAttach: canAttach, attachFull: attachments.isFull,
             hasCommands: !commands.isEmpty, commandsActive: commandQuery != nil,
-            model: store.model, modelChangeable: store.supportedActions.contains("setModel"), modelEnabled: store.supports("setModel"),
-            modelsOpen: menu == .models,
-            thinking: store.thinking, thinkingShown: thinkingAvailable, thinkingEnabled: store.supports("setThinking"),
+            model: designChat ? nil : store.model, modelChangeable: store.supportedActions.contains("setModel"),
+            modelEnabled: store.supports("setModel"), modelsOpen: menu == .models,
+            thinking: store.thinking, thinkingShown: !designChat && thinkingAvailable, thinkingEnabled: store.supports("setThinking"),
             thinkingOpen: menu == .thinking,
             startingShown: startingShown, busy: store.busy, stops: stops, beside: working && !draftEmpty && !store.busy,
-            sendRinged: menu == .send, contextOpen: menu == .context, stopEnabled: active && store.supports("abort"),
+            sendRinged: menu == .send, contextOpen: menu == .context, showsContext: !designChat,
+            stopEnabled: active && store.supports("abort"),
             actionEnabled: stops ? active && store.supports("abort") : canSend,
             stopHelp: stopHelp, actionHelp: stops ? stopHelp : sendHelp(working: working))
     }
@@ -814,6 +820,8 @@ struct ComposerControlsModel: Equatable {
     var sendRinged: Bool
     /// The context ring's details are open.
     var contextOpen: Bool
+    /// The ring shows (a design's chat has none).
+    var showsContext = true
     var stopEnabled: Bool
     var actionEnabled: Bool
     var stopHelp: String
@@ -864,12 +872,14 @@ struct ComposerControls: View, Equatable {
                 // The ring and the action, 6pt apart, keep their place whatever the chips drop; out
                 // of the fitting candidates, each is built once (a streamed chunk redraws neither).
                 HStack(spacing: NW.Space.s) {
-                    ContextMeterButton(store: store, expanded: model.contextOpen, toggle: actions.context)
-                        .equatable()
-                        .onGeometryChange(for: CGFloat.self) { proxy in
-                            (proxy.bounds(of: .named(Composer.cardSpace))?.width ?? 0)
-                                - proxy.frame(in: .named(Composer.cardSpace)).maxX
-                        } action: { actions.meterInset($0) }
+                    if model.showsContext {
+                        ContextMeterButton(store: store, expanded: model.contextOpen, toggle: actions.context)
+                            .equatable()
+                            .onGeometryChange(for: CGFloat.self) { proxy in
+                                (proxy.bounds(of: .named(Composer.cardSpace))?.width ?? 0)
+                                    - proxy.frame(in: .named(Composer.cardSpace)).maxX
+                            } action: { actions.meterInset($0) }
+                    }
                     primary
                 }
             }

@@ -8,9 +8,9 @@ import ShepherdUI
 /// The New thread page (NavNewThread; ⌘N or the first destination): "What should the agent work
 /// on?", the composer with attach, the workplace chip (project · host, with the worktree option
 /// in its menu), the model and thinking chips and Send, and the Continue card for the most recent
-/// running thread. Sending creates the agent with the prompt and its images as its opening
-/// message and opens its thread. The mission and design cards wait on Missions and Designs, so
-/// they are not shown.
+/// running thread, and "Start a design" while the Design tool is on. Sending creates the agent
+/// with the prompt and its images as its opening message and opens its thread. The mission card
+/// waits on Missions, so it is not shown.
 struct NewThreadPage: View {
     var vm: ShepherdViewModel
     let chrome: PageHeaderChrome
@@ -43,7 +43,8 @@ struct NewThreadPage: View {
                         .frame(maxWidth: AppLayout.newThreadComposerWidth, alignment: .leading)
                         .nwTransition(.content)
                 }
-                ContinueCards(card: vm.continueCard, open: { vm.selectSidebarRow($0) })
+                ContinueCards(card: vm.continueCard, open: { vm.selectSidebarRow($0) },
+                              design: vm.designToolEnabled ? { vm.openNewDesign() } : nil)
                     .frame(maxWidth: AppLayout.newThreadComposerWidth)
                     .padding(.top, AppLayout.newThreadCardsTop)
             }
@@ -269,19 +270,24 @@ extension ShepherdViewModel {
             case .remote(let ref):
                 let since = remoteAgent(ref)?.lastActiveAt.map { Date(timeIntervalSince1970: $0 / 1000) }
                 return ContinueCard(id: row.id, title: row.title, since: since)
+            case .design:
+                // A design's row wears the nib, never a running dot.
+                continue
             }
         }
         return nil
     }
 }
 
-/// The suggestion cards under the composer: only Continue is built (Missions and Designs are
-/// not), so the row holds one card at a third of its width, or nothing.
+/// The suggestion cards under the composer, each a third of the row: Continue, and "Start a
+/// design" last while the Design tool is on (Missions is not built).
 private struct ContinueCards: View, Equatable {
     let card: ContinueCard?
     let open: (SidebarRowID) -> Void
+    /// New design; nil while the Design tool is off.
+    let design: (() -> Void)?
 
-    static func == (a: ContinueCards, b: ContinueCards) -> Bool { a.card == b.card }
+    static func == (a: ContinueCards, b: ContinueCards) -> Bool { a.card == b.card && (a.design == nil) == (b.design == nil) }
 
     var body: some View {
         GeometryReader { proxy in
@@ -293,11 +299,47 @@ private struct ContinueCards: View, Equatable {
                         .frame(width: max(0, width))
                         .nwTransition(.content)
                 }
+                if let design {
+                    DesignSuggestionCard(action: design)
+                        .frame(width: max(0, width))
+                        .nwTransition(.content)
+                }
                 Spacer(minLength: 0)
             }
         }
         .frame(height: SuggestionCard.height)
         .nwAnimation(.content, value: card?.id)
+    }
+}
+
+/// "Start a design" (NavNewThread): "Need a mockup first?" beside a 12pt nib, "Start a design",
+/// and "HTML boards on a canvas".
+private struct DesignSuggestionCard: View {
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: AppLayout.newThreadCardSpacing) {
+                HStack(spacing: NW.Space.m) {
+                    Image(systemName: "pencil.tip").font(.nwSans(12))
+                        .foregroundStyle(Color.nw.textSecondary)
+                    Text("Need a mockup first?").font(.nwSans(11.5)).foregroundStyle(Color.nw.textTertiary)
+                }
+                Text("Start a design").font(.nwSans(13, .medium)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
+                Text("HTML boards on a canvas").font(.nwSans(11)).foregroundStyle(Color.nw.textTertiary).lineLimit(1)
+            }
+            .padding(.vertical, NW.Space.l)
+            .padding(.horizontal, AppLayout.newThreadCardPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(hovering ? Color.nw.bgHover : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+            .nwBorder(Color.nw.lineSubtle, radius: NW.Radius.m)
+            .contentShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .nwAnimation(.hover, value: hovering)
+        .accessibilityLabel("Start a design, HTML boards on a canvas")
     }
 }
 

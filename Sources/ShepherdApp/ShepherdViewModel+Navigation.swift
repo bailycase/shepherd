@@ -74,7 +74,7 @@ extension ShepherdViewModel {
             hosts: remoteHosts.connections.map {
                 SidebarSource.Host(id: $0.id, name: $0.config.name, state: $0.state, children: $0.children,
                                    offline: $0.phase != .connected)
-            })
+            }, designs: designToolEnabled)
     }
 
     /// Needs you and Recents in order, derived again only when what they read changed.
@@ -96,6 +96,8 @@ extension ShepherdViewModel {
     var selectedSidebarRow: SidebarRowID? {
         guard shownDestination == nil else { return nil }
         if let remote = selectedRemoteAgent { return .remote(remote) }
+        // A design's agent has no row: its design's is the one on screen.
+        if let design = design(drawnBy: selectedAgent) { return .design(design.id) }
         return selectedAgentID.map { .local($0) }
     }
 
@@ -138,6 +140,8 @@ extension ShepherdViewModel {
     /// Shows a page in the main column. The thread it covers stays mounted and hidden, as when
     /// switching agents.
     func openDestination(_ page: MainDestination) {
+        // The Design tool's pages exist only while its experiment is on.
+        if page == .designs || page == .newDesign, !designToolEnabled { return }
         // New thread opens in the project of the thread on screen, remote ones included.
         if page == .newThread { newThread.prepare(for: self) }
         if page == .hosts, !moreOpen { moreOpen = true }
@@ -170,6 +174,7 @@ extension ShepherdViewModel {
         switch row {
         case .local(let id): selectAgent(id)
         case .remote(let ref): selectRemoteAgent(hostID: ref.hostID, agentID: ref.agentID)
+        case .design(let id): openDesign(id)
         }
     }
 
@@ -277,9 +282,9 @@ extension ShepherdViewModel {
         selectRemoteAgent(hostID: hostID, agentID: agentID)
     }
 
-    /// ⌘1–9: the first nine Recents rows.
+    /// ⌘1–9: the first nine thread rows of Recents (a design takes no digit).
     func selectAgentDigit(_ digit: Int) {
-        let recents = sidebarLists.recents
+        let recents = sidebarLists.shortcutRows
         guard recents.indices.contains(digit - 1) else { return }
         selectSidebarRow(recents[digit - 1].id)
     }
