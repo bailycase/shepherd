@@ -224,8 +224,10 @@ private struct SubagentTurnItem: View {
             EmptyView()
         case .note(_, let text):
             Text(text).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary).lineLimit(3)
-        case .error(_, let text, let count, _):
-            NWTurnError(text, count: count)
+        case .error(_, let error, _, let folded):
+            TurnErrorItem(error: error, folded: folded)
+        case .retrying(_, let line):
+            RetryLineItem(line: line)
         case .steer(_, let text, let sentAt, _):
             NWUserBubble(text, timestamp: sentAt.map { nativeClockText($0, meridiem: false) }, note: "from parent", origin: .steered)
                 .frame(maxWidth: .infinity, alignment: .trailing)

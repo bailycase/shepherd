@@ -83,7 +83,8 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
 
 - **`SHEPHERD_SUPPORT_DIR`** moves the support directory: the socket, `state.json`, installed
   extensions, `remote-token`, `automation-runs.json`, Settings ▸ Instructions' files
-  (`instructions/`), Settings ▸ Skills' state and git caches (`skills/`), and subagent artifacts. It wins over the edition's own folder
+  (`instructions/`), Settings ▸ Skills' state and git caches (`skills/`), designs (`designs/`;
+  docs/designs.md), and subagent artifacts. It wins over the edition's own folder
   (`Shepherd`, or `Shepherd Nightly` in Shepherd Nightly).
 - **`SHEPHERD_SKILLS_DIR`** moves the skills folder Settings ▸ Skills manages (default
   `~/.agents/skills`, the folder pi reads skills from; docs/skills.md). Tests point it at a scratch
@@ -287,6 +288,8 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
 - **Round trips:** every `ExtensionMessage`/`ExtensionReply` and `RemoteRequest`/`RemoteReply`
   case (table-driven), plus the `NativeThread` wire types against the golden
   `Tests/Extensions/native-thread-wire.json`.
+- **Designs:** canvas.json round trips with unknown keys (the Shepherd canvas among them), the
+  board path grammar, and element numbering against the golden `Tests/Designs/element-ids.json`.
 - **Server:** every `SessionServer` state mutation.
 - **Changes:** every scope on a scratch repository, the proof that reading changes leaves the
   index, HEAD, refs, the stash, `.git` and every file alone, and Undo, Redo and the refusal on a
@@ -356,7 +359,7 @@ App/
   Info.plist               names, executable, and feed from build settings
   AppIcon.icon, AppIconNightly.icon   Shepherd's and Shepherd Nightly's icons
 Sources/
-  ShepherdCore/        Models (Space, Tab, Agent, Automation, ShepherdState), typed IDs, PaneNode
+  ShepherdCore/        Models (Space, Tab, Agent, Automation, Design, ShepherdState), typed IDs, PaneNode
                        (binary split tree; LeafPane carries sessionID/cwd/agentID), AgentStatus +
                        canTransition, ThinkingLevel, SessionRuntime, StateValidation, Reorder.
                        No deps.
@@ -371,7 +374,12 @@ Sources/
                        Skills (Settings ▸ Skills: installed skills, repositories, requests),
                        HostSettings (a host's settings as a client sees and changes them),
                        DiffFile (a diff's files, hunks and lines), Changes (the Changes pane's
-                       scopes, lists, turns and base picker on the wire), DiffWords (word diffs).
+                       scopes, lists, turns and base picker on the wire), DiffWords (word diffs),
+                       the Design tool's format (docs/designs.md): DesignIndex (canvas.json v3,
+                       unknown keys kept), DesignPath (the board path grammar), DesignTemplate
+                       and DesignElementID (a board's elements as `File.dc.html#tid:path`),
+                       DesignBoardCheck (what a board may hold), DesignFiles (snapshots, reads,
+                       write results).
   ShepherdRemote/      RemoteHostClient, NativeThreadStore (@Observable), NativeThreadPresentation,
                        NativeTurnPresentation (a turn's items), NativeMarkdown (the prose
                        parser: tables, lists, images, details, footnotes), NativeActivity
@@ -406,7 +414,9 @@ Sources/
                        SkillsStore (a host's skills in ~/.agents/skills; docs/skills.md),
                        SkillsGit (the partial clones skills install from),
                        Changes/ (ChangesService: the Changes pane's engine — scopes, snapshots,
-                       diffs, the base picker, each agent's turns and their Undo; docs/changes.md).
+                       diffs, the base picker, each agent's turns and their Undo; docs/changes.md),
+                       DesignStore (each design's files in the support directory's designs/, on
+                       its own queue, with a revision per design; docs/designs.md).
   TerminalSurfaceKit/  Ghostty adapter for terminal panes; see its NOTES.md.
   ShepherdApp/         The Mac app:
     ShepherdApp.swift (the Window scene, AppDelegate), RootView (+ WorkspaceHeaderView),
@@ -488,6 +498,8 @@ Tests/
                           QueueFixture (a host's queue without pi), eventually, recordingErrors,
                           the time-limit and timing-sensitive traits
   Extensions/             node tests for the bundled extensions (+ native-thread-wire.json)
+  Designs/                design fixtures: real and synthetic boards, the Shepherd canvas.json,
+                          and element-ids.json (WebKit's numbering of each board's elements)
   Release/                Python tests for scripts/release.py
   ShepherdIOSChecks/      the iOS client's scripts
 scripts/               release.py (the release workflow's rules), sign-app.sh (release

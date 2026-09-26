@@ -19,6 +19,7 @@ final class MobileApp {
         self.hosts = hosts
         navigator = MobileNavigator()
         threads = ThreadStores()
+        threads.hostName = { [weak hosts] ref in hosts?.host(ref.host)?.record.name }
         self.appearance = appearance
     }
 

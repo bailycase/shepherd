@@ -5,6 +5,7 @@ import SwiftUI
 public struct NWKeycap: View {
     let keys: [String]
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.nwControlScale) private var scale
 
     /// Splits a display chord ("⇧⌘N") into caps: each modifier, then the key.
     public init(_ chord: String) {
@@ -23,20 +24,25 @@ public struct NWKeycap: View {
 
     public var body: some View {
         let nw = Color.nw
-        HStack(spacing: 3) {
+        // The Settings boards' caps: 22pt at radius 5, mono 11.5 in `textPrimary`, 4pt apart.
+        let settings = scale == .settings
+        let M = NWSettingsControlMetrics.self
+        let side: CGFloat = settings ? M.keycapHeight : 18
+        let radius = settings ? M.keycapRadius : NW.Radius.xs
+        HStack(spacing: settings ? M.keycapSpacing : 3) {
             ForEach(Array(keys.enumerated()), id: \.offset) { _, key in
                 Text(key)
-                    .font(.nwMono(10.5))
-                    .foregroundStyle(nw.textSecondary)
-                    .padding(.horizontal, NW.Space.xs)
-                    .frame(minWidth: 18, minHeight: 18)
-                    .background(nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
-                    .nwBorder(nw.lineStrong, radius: NW.Radius.xs)
+                    .font(.nwMono(settings ? M.keycapTextSize : 10.5))
+                    .foregroundStyle(settings ? nw.textPrimary : nw.textSecondary)
+                    .padding(.horizontal, settings ? M.keycapPadding : NW.Space.xs)
+                    .frame(minWidth: side, minHeight: side)
+                    .background(nw.bgRaised, in: RoundedRectangle(cornerRadius: radius))
+                    .nwBorder(nw.lineStrong, radius: radius)
                     // The board's heavier bottom edge (1.5px against 1px): a cap, not a box. A
                     // second hairline just above the border's, since a device pixel does not split.
                     .overlay(alignment: .bottom) {
                         NWHairline(color: nw.lineStrong)
-                            .padding(.horizontal, NW.Radius.xs)
+                            .padding(.horizontal, radius)
                             .padding(.bottom, NW.hairline(displayScale))
                     }
             }

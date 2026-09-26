@@ -155,7 +155,9 @@ keep the version for real breaks.
   (device-only, available when unlocked, never synced). The first client's single saved host
   (`shepherd.ios.host` and its one Keychain item) migrates on first launch; if the Keychain is
   locked then, the token moves on the next foreground. Backgrounding
-  disconnects every host; the agents keep running on the Macs.
+  disconnects every host; the agents keep running on the Macs. When a host's connection ends is
+  kept apart from its record (`shepherd.ios.hosts.lastSeen`), so a host the phone cannot reach
+  says when it was last seen.
 - **iPhone:** two tabs, Home and Settings, each a navigation stack. Home merges every host:
   Automations and More (host cards), offline hosts with Retry, Needs you (questions
   and blocked threads, answered in place when short), and Recents with host tags. `HomeFeed`

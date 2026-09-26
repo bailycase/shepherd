@@ -26,14 +26,18 @@ public struct FleetHost: Equatable, Sendable {
     public var port: UInt16
     public var phase: RemoteHostPhase
     public var state: ShepherdState
+    /// When this device's connection to it last ended (`HostLastSeen`).
+    public var lastSeen: Date?
 
-    public init(id: UUID, name: String, address: String, port: UInt16, phase: RemoteHostPhase, state: ShepherdState) {
+    public init(id: UUID, name: String, address: String, port: UInt16, phase: RemoteHostPhase, state: ShepherdState,
+                lastSeen: Date? = nil) {
         self.id = id
         self.name = name
         self.address = address
         self.port = port
         self.phase = phase
         self.state = state
+        self.lastSeen = lastSeen
     }
 }
 
@@ -68,12 +72,19 @@ public struct FleetDigest: Equatable, Sendable {
         public var text: String
         /// The subagent's own word or two for its question ("retention?"), when it gave one.
         public var short: String?
+        /// The answers it offered to pick from.
+        public var options: [String]
+        /// The host takes subagent commands for the thread, so an option can be sent from here.
+        public var answerable: Bool
 
-        public init(runID: String, label: String, text: String, short: String? = nil) {
+        public init(runID: String, label: String, text: String, short: String? = nil, options: [String] = [],
+                    answerable: Bool = true) {
             self.runID = runID
             self.label = label
             self.text = text
             self.short = short
+            self.options = options
+            self.answerable = answerable
         }
     }
 
@@ -103,10 +114,12 @@ public struct FleetDigest: Equatable, Sendable {
             Question(dialogID: dialog.id, kind: dialog.kind, title: dialog.title, message: dialog.message,
                      options: dialog.options ?? [], answerable: answers && dialog.unavailable == nil)
         }
+        let commands = snapshot.supportedActions.contains("subagents")
         subagentQuestion = (snapshot.subagents ?? []).first(where: \.needsAttention).map { run in
             SubagentQuestion(runID: run.runID, label: run.role ?? run.label,
                              text: run.question?.text ?? run.attentionText ?? "Waiting on you",
-                             short: FleetModel.shortReason(run.question?.short))
+                             short: FleetModel.shortReason(run.question?.short),
+                             options: run.question?.options ?? [], answerable: commands)
         }
         liveSubagents = (snapshot.subagents ?? []).contains { !$0.isTerminal }
         let entries = snapshot.messages + snapshot.provisional
@@ -245,6 +258,8 @@ public struct FleetHostCard: Identifiable, Equatable, Sendable {
     public var threads: Int
     public var running: Int
     public var needsYou: Int
+    /// When it was last connected, while it is not (MobileMore's "Last seen today 07:12").
+    public var lastSeen: Date?
 
     /// Retry makes sense: neither connected nor already connecting.
     public var canRetry: Bool { !phase.isConnected && phase != .connecting }
@@ -360,7 +375,7 @@ public struct FleetModel: Equatable, Sendable {
             self.hosts.append(FleetHostCard(
                 id: host.id, name: host.name, address: "\(host.address):\(host.port)", phase: host.phase,
                 summary: Self.hostSummary(host, running: running), threads: host.state.agents.count,
-                running: running, needsYou: needs))
+                running: running, needsYou: needs, lastSeen: host.phase.isConnected ? nil : host.lastSeen))
         }
         offlineHosts = self.hosts.filter { !$0.phase.isConnected }
         hostNames = self.hosts.map(\.name).joined(separator: " · ")
@@ -403,8 +418,11 @@ public struct FleetModel: Equatable, Sendable {
                                         hostName: hostName, hostTag: hostTag, since: since))
         }
         if let asking = digest?.subagentQuestion {
+            // Its options answer in place as a select's do; a reply in its own words is written in
+            // the thread (MobileInbox).
+            let reply: FleetAttention.Reply = asking.answerable && Self.choosable(asking.options) ? .choose(asking.options) : .open
             items.append(FleetAttention(ref: ref, origin: .subagent(asking.label), thread: agent.name,
-                                        question: asking.text, reason: asking.short ?? asking.label, reply: .open,
+                                        question: asking.text, reason: asking.short ?? asking.label, reply: reply,
                                         session: digest?.session, runID: asking.runID, hostName: hostName,
                                         hostTag: hostTag, since: since))
         }
