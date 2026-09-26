@@ -66,6 +66,29 @@ struct ThreadProjectionTests {
         #expect(quoted.origin == nil && quoted.blocks.first?.text.hasPrefix("The text between") == true)
     }
 
+    /// A view record stays off a command, which pi reads only at the start of a message; a
+    /// comment's fence always goes first, so a comment starting with "/" never runs as one.
+    @Test(arguments: [
+        ("/compact", "record", "/compact"),
+        ("Tighten it", "record", "record + Tighten it"),
+        ("/new tabs look off", "comment", "comment + /new tabs look off"),
+        ("Tighten it", "comment", "comment + Tighten it"),
+        ("/compact", "none", "/compact"),
+    ])
+    func aCommandKeepsNoViewRecordButACommentAlwaysKeepsItsFence(_ text: String, _ kind: String, _ expected: String) {
+        let record = "<design-data nonce=\"0123456789ab\">\n{}\n</design-data nonce=\"0123456789ab\">\n\n"
+        let comment = DesignCommentFence(comment: UUID(), number: 1, board: "A.dc.html", element: nil, label: nil, target: nil)
+            .fenced(nonce: "0123456789ab")
+        let context: String? = switch kind {
+        case "record": record
+        case "comment": comment
+        default: nil
+        }
+        let prompt = RPCThreadState.prompt(text, context: context)
+        let shown = context.map { prompt.hasPrefix($0) ? "\(kind) + " + prompt.dropFirst($0.count) : prompt } ?? prompt
+        #expect(shown == expected)
+    }
+
     @Test func unknownContentBlocksAreDropped() throws {
         let message: RPCMessage = try decode(#"{"role":"assistant","content":[{"type":"hologram"},{"type":"text","text":"hi"}]}"#)
         #expect(RPCThreadState.project(entryID: "m:0", message: message).blocks.map(\.text) == ["hi"])

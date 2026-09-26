@@ -299,6 +299,11 @@ public struct DesignCommentFence: Codable, Hashable, Sendable {
         return "\(Self.preamble)\n<design-comment nonce=\"\(nonce)\">\n\(json)\n</design-comment nonce=\"\(nonce)\">\n\n"
     }
 
+    /// `text` starts with a comment's fence.
+    public static func opens(_ text: String) -> Bool {
+        text.hasPrefix(preamble + "\n<design-comment nonce=\"")
+    }
+
     /// The fence a message starts with, and the words after it; nil when it starts with none.
     public static func parse(_ message: String) -> (fence: DesignCommentFence, text: Substring)? {
         let head = preamble + "\n<design-comment nonce=\""

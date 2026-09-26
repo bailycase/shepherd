@@ -193,7 +193,8 @@ so an exported canvas carries none.
   target). The thread shows the words alone, and the message's origin names the comment
   (`NativeMessageOrigin.designComment`, from the fence, which pi's session keeps, so it survives a
   relaunch). A reply the viewer writes under the pin goes the same way, marked `"reply": true`,
-  and draws as their words. A comment that can't go (no agent, pi not running or starting) is
+  and draws as their words. The fence always goes first, so words starting with "/" never run
+  as a pi command (a view record, by contrast, stays off a command). A comment that can't go (no agent, pi not running or starting) is
   kept and says why; it doesn't go later on its own.
 - **Answers and resolving.** The agent answers under the pin with `comment_reply` once the change
   is made. Only the viewer resolves (`resolveDesignComment`), and may open one again.
