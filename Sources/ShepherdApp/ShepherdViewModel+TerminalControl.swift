@@ -101,35 +101,6 @@ extension ShepherdViewModel {
         return terminalPanels.activity[target.key]?[pane]?.isRunning == true
     }
 
-    /// Run in terminal (TerminalStates): a new tab in the thread's folder on its host, with
-    /// `command` typed after the prompt and nothing run. The new tab takes the keyboard.
-    func runInTerminal(_ command: String) {
-        guard let target = terminalTarget, terminalControlAvailable(target) else { NSSound.beep(); return }
-        let anchor = TerminalPanel.newTabAnchor(in: target.layout, thread: target.thread)
-        if let remote = target.remote {
-            Task {
-                do {
-                    let pane = try await remoteHosts.openPane(hostID: remote.hostID, agentID: remote.agentID,
-                                                              relativeTo: anchor.pane, axis: anchor.axis)
-                    remoteFocusedPaneID = pane
-                    try await remoteHosts.agentAction(remote, action: .typeInTerminal(paneID: pane, text: command))
-                } catch { NSSound.beep() }
-            }
-            return
-        }
-        guard let tab = state.tabs.first(where: { $0.id == target.key.tab }), let leaf = tab.layout.leaf(withID: anchor.pane) else { return }
-        do { try verifyCheckoutAvailable(leaf.cwd) }
-        catch { remoteActionError = String(describing: error); return }
-        let pane = LeafPane(cwd: leaf.cwd)
-        guard let layout = tab.layout.splitting(pane: anchor.pane, axis: anchor.axis, newPane: pane) else { return }
-        setLayout(layout, forTab: tab.id)
-        focusedPaneID = pane.id
-        Task {
-            guard let session = await sessions.awaitSession(forPane: pane.id, timeout: .seconds(10)) else { return }
-            server.typeCommand(command, sessionID: session, submit: false)
-        }
-    }
-
     /// Where a new tab opens, for the menu: "<space> on <host>" ("payments on build-01").
     func terminalPlace(_ target: TerminalTarget) -> String {
         if let remote = target.remote, let connection = remoteHosts.connections.first(where: { $0.id == remote.hostID }) {

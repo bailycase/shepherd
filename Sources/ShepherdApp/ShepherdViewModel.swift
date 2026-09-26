@@ -541,8 +541,6 @@ final class ShepherdViewModel {
         }
         // Agents drive their own panes through the server's extension socket.
         installPaneControl()
-        // A finished command's activity line opens it in a new terminal tab, typed out.
-        threadCommands.runInTerminal = { [weak self] in self?.runInTerminal($0) }
         installReviewHandler()
         // Any pi session can create automations through the same socket.
         installAutomationControl()
