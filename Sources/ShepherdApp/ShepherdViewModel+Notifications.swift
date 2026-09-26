@@ -20,10 +20,16 @@ extension ShepherdViewModel {
 
     // MARK: Posting
 
+    /// Whether an agent's turns and questions post as a thread's. A design's agent never does:
+    /// its chat is the design's, and every banner here words and acts on a thread.
+    static func notifiesAsThread(_ agentID: AgentID, in state: ShepherdState) -> Bool {
+        !state.isDesignAgent(agentID)
+    }
+
     /// A local agent's status report: a turn that finished (with its closing line) or failed,
     /// and an asking tool that never opened a question.
     func notifyStatus(_ agent: Agent, from old: AgentStatus, failure: TurnFailure?) {
-        guard notifications.available else { return }
+        guard notifications.available, Self.notifiesAsThread(agent.id, in: state) else { return }
         let target = BannerTarget.agent(agent.id)
         let watching = isWatching(target)
         if agent.status == .blocked, old == .working, !watching { postWaitingIfNoQuestion(agent.id) }
@@ -59,7 +65,7 @@ extension ShepherdViewModel {
     /// comes down, and a deleted agent's go with it.
     func notifyLocalQuestions() {
         guard notifications.available else { return }
-        for agent in state.agents {
+        for agent in state.agents where Self.notifiesAsThread(agent.id, in: state) {
             let target = BannerTarget.agent(agent.id)
             switch notifications.localAsks.update(agent.id, waitingOn: agent.waitingOn) {
             case .asked(let question):
@@ -96,6 +102,7 @@ extension ShepherdViewModel {
 
     /// An agent's subagents as published: a run that starts asking posts, one answered comes down.
     func notifySubagents(_ agent: Agent, children: [ChildRun]) {
+        guard Self.notifiesAsThread(agent.id, in: state) else { return }
         let (asking, answered) = notifications.localSubagents.update(agent.id, children: children)
         subagentBanners(.agent(agent.id), name: agent.name, asking: asking, answered: answered)
     }
@@ -130,7 +137,7 @@ extension ShepherdViewModel {
                 notifications.remove([AgentBanners.identifier("offline", offline)])
             }
             guard connection.phase == .connected else { continue }
-            for agent in connection.state.agents {
+            for agent in connection.state.agents where !connection.state.isDesignAgent(agent) {
                 let ref = RemoteAgentRef(hostID: connection.id, agentID: agent.id)
                 let target = BannerTarget.remote(ref)
                 live.insert(ref)
@@ -170,7 +177,8 @@ extension ShepherdViewModel {
         case .review?:
             show(response.target)
             switch response.target {
-            case .agent(let id) where state.agents.contains(where: { $0.id == id }): openReview(agentID: id, path: nil)
+            case .agent(let id) where state.agents.contains(where: { $0.id == id }) && Self.notifiesAsThread(id, in: state):
+                openReview(agentID: id, path: nil)
             case .remote(let ref): openRemoteReview(ref, path: nil)
             default: break
             }

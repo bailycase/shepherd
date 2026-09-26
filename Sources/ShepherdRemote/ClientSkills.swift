@@ -60,14 +60,48 @@ public struct SkillRow: Identifiable, Equatable, Sendable {
     public var skill: InstalledSkill
     /// An update or a change is on its way to the hosts ("Updating").
     public var isUpdating: Bool
+    /// The SKILL.md the first host's pi uses instead (with `~`), when a skill of the same name
+    /// from pi's own setup comes first: the agent never sees this one.
+    public var shadowedBy: String?
 
-    public init(skill: InstalledSkill, isUpdating: Bool = false) {
+    public init(skill: InstalledSkill, isUpdating: Bool = false, shadowedBy: String? = nil) {
         self.skill = skill
         self.isUpdating = isUpdating
+        self.shadowedBy = shadowedBy
     }
 
     public var id: String { skill.name }
     public var name: String { skill.name }
+}
+
+/// A skill pi loads from outside Shepherd's folder, as the list draws it: read-only.
+public struct PiSkillRow: Identifiable, Equatable, Sendable {
+    public var skill: PiSkill
+
+    public init(skill: PiSkill) {
+        self.skill = skill
+    }
+
+    public var id: String { skill.path }
+    public var name: String { skill.name }
+}
+
+/// One of the list's read-only groups: the skills from the user's own pi setup (pi's agent
+/// directory and its settings' paths), or from pi packages.
+public struct PiSkillGroup: Identifiable, Equatable, Sendable {
+    public enum Kind: String, Sendable, CaseIterable {
+        case setup, packages
+    }
+
+    public var kind: Kind
+    public var rows: [PiSkillRow]
+
+    public init(kind: Kind, rows: [PiSkillRow]) {
+        self.kind = kind
+        self.rows = rows
+    }
+
+    public var id: Kind { kind }
 }
 
 /// Where one host is with a skill (the detail's Hosts).
@@ -225,7 +259,35 @@ public final class ClientSkills {
                 skills[skill.name] = skill
             }
         }
-        return skills.values.sorted { $0.name < $1.name }.map { SkillRow(skill: $0, isUpdating: updating.contains($0.name)) }
+        let shadowed = pi(in: hosts)?.skills.shadowedInstalled ?? [:]
+        return skills.values.sorted { $0.name < $1.name }.map {
+            SkillRow(skill: $0, isUpdating: updating.contains($0.name), shadowedBy: $0.isOn ? shadowed[$0.name] : nil)
+        }
+    }
+
+    /// The skills the first host's pi loads from outside its skills folder, and that host; nil
+    /// while none is read, or when the first host predates reporting them. They are that host's
+    /// own: Same skills on every host never touches them.
+    public func pi(in hosts: [SkillsHost]) -> (host: SkillsHost, skills: PiSkills)? {
+        guard let host = reference(in: hosts), let pi = state(of: host).snapshot?.pi else { return nil }
+        return (host, pi)
+    }
+
+    /// The read-only groups a filter and a search keep: the first host's pi setup, then its pi
+    /// packages; an empty group is left out. They never have updates, and On keeps the skills the
+    /// agent uses (not one a skill of the same name shadows).
+    public func piGroups(in hosts: [SkillsHost], filter: Filter = .all, query: String = "") -> [PiSkillGroup] {
+        guard filter != .updates, let pi = pi(in: hosts) else { return [] }
+        let words = query.trimmingCharacters(in: .whitespaces).lowercased()
+        let kept = pi.skills.skills.filter { skill in
+            guard filter != .on || skill.isUsed else { return false }
+            return words.isEmpty || skill.name.lowercased().contains(words) || skill.summary.lowercased().contains(words)
+                || (skill.package ?? "").lowercased().contains(words)
+        }
+        return PiSkillGroup.Kind.allCases.compactMap { kind in
+            let rows = kept.filter { ($0.origin == .package) == (kind == .packages) }.map(PiSkillRow.init)
+            return rows.isEmpty ? nil : PiSkillGroup(kind: kind, rows: rows)
+        }
     }
 
     /// The rows a filter and a search keep (the search matches names and descriptions).
@@ -241,9 +303,9 @@ public final class ClientSkills {
         }
     }
 
-    /// How many rows each filter keeps ("All 8", "On 7", "Updates 2").
+    /// How many rows each filter keeps ("All 8", "On 7", "Updates 2"), pi's own skills included.
     public func count(_ filter: Filter, in hosts: [SkillsHost]) -> Int {
-        rows(in: hosts, filter: filter).count
+        rows(in: hosts, filter: filter).count + piGroups(in: hosts, filter: filter).reduce(0) { $0 + $1.rows.count }
     }
 
     public func row(_ name: String, in hosts: [SkillsHost]) -> SkillRow? {
@@ -279,10 +341,25 @@ public final class ClientSkills {
         reference(in: hosts).flatMap { state(of: $0).snapshot?.autoUpdate } ?? false
     }
 
-    /// What the first host's automatic skills cost in every prompt.
+    /// Every skill the first host's agent loads, in pi's order: the installed ones that are on
+    /// (less any a skill from pi's setup shadows), then pi's own. Each is a name, a description,
+    /// its SKILL.md and how it's used.
+    public func loadedSkills(in hosts: [SkillsHost]) -> [(name: String, summary: String, location: String, invocation: SkillInvocation)] {
+        guard let snapshot = reference(in: hosts).flatMap({ state(of: $0).snapshot }) else { return [] }
+        let shadowed = snapshot.pi?.shadowedInstalled ?? [:]
+        let installed = snapshot.skills.filter { $0.isOn && shadowed[$0.name] == nil }.map {
+            (name: $0.name, summary: $0.summary, location: "\(snapshot.directory)/\($0.name)/SKILL.md", invocation: $0.invocation)
+        }
+        let outside = (snapshot.pi?.skills ?? []).filter(\.isUsed).map {
+            (name: $0.name, summary: $0.summary, location: $0.path, invocation: $0.invocation)
+        }
+        return installed + outside
+    }
+
+    /// What every automatic skill the first host's agent loads costs in every prompt, pi's own
+    /// included.
     public func promptTokens(in hosts: [SkillsHost]) -> Int {
-        guard let snapshot = reference(in: hosts).flatMap({ state(of: $0).snapshot }) else { return 0 }
-        return SkillsText.promptTokens(snapshot.skills, directory: snapshot.directory)
+        SkillsText.promptTokens(loadedSkills(in: hosts).filter { $0.invocation == .automatic }.map { ($0.name, $0.summary, $0.location) })
     }
 
     /// Where the first host keeps its skills ("~/.agents/skills").

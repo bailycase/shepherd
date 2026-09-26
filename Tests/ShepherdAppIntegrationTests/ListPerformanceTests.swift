@@ -973,6 +973,38 @@ struct ListPerformanceTests {
         #expect(changed["skills.row", default: 0] <= 2, "\(changed)")
     }
 
+    /// The read-only groups are lazy too: 200 skills from pi's own setup and packages build only
+    /// the rows on screen, and one changing redraws its row alone.
+    @Test func onePiSkillChangingRedrawsOnlyItsRow() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let vm = try await app.start()
+        let pi = PiSkills(agentDirectory: "~/.pi/agent", skills: (0..<200).map { index in
+            let name = "pi-skill-\(index + 100)"
+            return index < 100
+                ? PiSkill(name: name, summary: "Skill number \(index).", path: "~/.pi/agent/skills/\(name)/SKILL.md", origin: .agentDirectory)
+                : PiSkill(name: name, summary: "Skill number \(index).", path: "~/.pi/agent/npm/node_modules/@acme/skills/\(name)/SKILL.md",
+                          origin: .package, package: "@acme/skills")
+        })
+        app.server.skills.piSkills = { _ in pi }
+        await vm.skills.refresh(vm.skillsHosts)
+        let size = CGSize(width: 1200, height: 800)
+        var window: OffscreenWindow!
+        let opened = ListPerf.counting {
+            window = OffscreenWindow(size: size, dark: true, SkillsSettings(vm: vm, model: vm.skills))
+            ListPerf.settle(window)
+        }
+        defer { window.close() }
+        #expect(opened["skills.row", default: 0] <= 80, "\(opened)")
+
+        var snapshot = try #require(vm.skills.state(of: vm.skillsHosts[0]).snapshot)
+        snapshot.pi?.skills[0].summary = "Changed by hand."
+        let changed = ListPerf.counting {
+            ListPerf.time(window) { vm.skills.hostChanged(ShepherdViewModel.thisMacSkills, snapshot) }
+        }
+        #expect(changed["skills.row", default: 0] <= 2, "\(changed)")
+    }
+
     // MARK: Review
 
     private func review(_ files: [DiffFile]) -> OffscreenWindow {
