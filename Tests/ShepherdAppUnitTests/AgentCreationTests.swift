@@ -1,6 +1,7 @@
 import Foundation
 import ShepherdCore
 import Testing
+import ShepherdTestKit
 @testable import ShepherdApp
 
 @Suite("Agent creation")
@@ -285,6 +286,45 @@ struct AgentLaunchCommandTests {
         let plain = command(enabled: [0, 1, 2, 3, 4])
         #expect(!plain.argv[3].contains("design"))
         #expect(plain.env["SHEPHERD_DESIGN_ID"] == nil && plain.env["SHEPHERD_DESIGN_SKILL_DIR"] == nil)
+    }
+
+    /// Settings ▸ Pi ▸ MCP servers: the extension loads with the config, cache and client it reads,
+    /// and a repo's .mcp.json only when Settings ▸ MCP servers allows it; off, none of it.
+    @Test(arguments: [false, true])
+    func mcpServersBringTheirExtensionAndPaths(useRepoConfig: Bool) {
+        let launch = StatusExtension.command(
+            agentID: AgentID(rawValue: "agent-id"), piSessionID: "current-session",
+            socketPath: "/tmp/shepherd.sock", extensionPath: "/tmp/status.ts",
+            panesExtensionPath: "/tmp/panes.ts", reviewExtensionPath: nil, subagentsExtensionPath: nil,
+            mcp: MCPLaunch(extensionPath: "/tmp/shepherd-mcp.ts", clientPath: "/tmp/shepherd-mcp-client.mjs",
+                           configPath: "/Users/me/.config/mcp/mcp.json", cachePath: "/tmp/support/mcp/tools.json",
+                           useRepoConfig: useRepoConfig),
+            model: nil, thinking: nil
+        )
+        #expect(launch.argv[3].hasSuffix(" -e '/tmp/panes.ts' -e '/tmp/shepherd-mcp.ts'"))
+        #expect(launch.env["SHEPHERD_EXT_MCP"] == "/tmp/shepherd-mcp.ts")
+        #expect(launch.env["SHEPHERD_EXT_MCP_CLIENT"] == "/tmp/shepherd-mcp-client.mjs")
+        #expect(launch.env["SHEPHERD_EXT_MCP_CONFIG"] == "/Users/me/.config/mcp/mcp.json")
+        #expect(launch.env["SHEPHERD_EXT_MCP_CACHE"] == "/tmp/support/mcp/tools.json")
+        #expect(launch.env["SHEPHERD_EXT_MCP_PROJECT"] == (useRepoConfig ? "1" : nil))
+        let plain = command(enabled: [0, 1, 2, 3, 4])
+        #expect(!plain.argv[3].contains("mcp"))
+        #expect(!plain.env.keys.contains { $0.hasPrefix("SHEPHERD_EXT_MCP") })
+    }
+
+    /// One setting decides a repo's .mcp.json (Settings ▸ MCP servers), and Settings ▸ Pi ▸ MCP
+    /// servers decides whether the extension loads at all.
+    @Test @MainActor func mcpLaunchFollowsTheSettings() {
+        let settings = AppSettings(store: ScratchDefaults())
+        let environment = ["SHEPHERD_MCP_CONFIG": "/tmp/scratch/mcp.json", "SHEPHERD_SUPPORT_DIR": "/tmp/support"]
+        let install = { (extensionPath: "/tmp/support/shepherd-mcp.ts", clientPath: "/tmp/support/shepherd-mcp-client.mjs") }
+        #expect(MCPLaunch.forAgents(settings: settings, environment: environment, install: install) == MCPLaunch(
+            extensionPath: "/tmp/support/shepherd-mcp.ts", clientPath: "/tmp/support/shepherd-mcp-client.mjs",
+            configPath: "/tmp/scratch/mcp.json", cachePath: "/tmp/support/mcp/tools.json", useRepoConfig: false))
+        settings.mcpProjectConfig = true
+        #expect(MCPLaunch.forAgents(settings: settings, environment: environment, install: install)?.useRepoConfig == true)
+        settings.piMCPExtension = false
+        #expect(MCPLaunch.forAgents(settings: settings, environment: environment, install: install) == nil)
     }
 
     /// Watchers must never create watchers.

@@ -114,7 +114,8 @@ struct ThreadScreen: View {
 
 /// The scrolling turns. It reads the store's rows, so a streamed chunk redraws only this and the
 /// turn it changed. The context sheet's Largest and Show summary bring an entry into view here.
-private struct ThreadTranscript: View {
+/// A design's chat (`composerDesignChat`, DesignPad/) shows it in its 360pt pane.
+struct ThreadTranscript: View {
     let ref: AgentRef
     let store: NativeThreadStore
     let banner: String?
@@ -122,6 +123,8 @@ private struct ThreadTranscript: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(ThreadStores.self) private var threads
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.composerDesignChat) private var designChat
+    @Environment(\.designMarkupCanvas) private var markupCanvas
     /// Follows the tail until the reader drags away from it (DESIGN.md › Thread › Following).
     @State private var follower = NativeScrollFollower()
 
@@ -165,8 +168,8 @@ private struct ThreadTranscript: View {
                     Color.clear.frame(height: 1).id(Self.bottomID)
                 }
                 .frame(maxWidth: sizeClass == .regular ? MobileLayout.threadMaxWidth : .infinity)
-                .padding(.horizontal, sizeClass == .regular ? MobileLayout.padThreadGutter : MobileLayout.gutter)
-                .padding(.vertical, sizeClass == .regular ? MobileLayout.padThreadGutter : MobileLayout.gutter)
+                .padding(.horizontal, sizeClass == .regular && !designChat ? MobileLayout.padThreadGutter : MobileLayout.gutter)
+                .padding(.vertical, sizeClass == .regular && !designChat ? MobileLayout.padThreadGutter : MobileLayout.gutter)
                 // iPad bubbles (iPadThread): at most 520pt, 12×16 inside.
                 .environment(\.nwUserBubbleMetrics, sizeClass == .regular ? .pad : .standard)
                 .frame(maxWidth: .infinity)
@@ -262,15 +265,27 @@ private struct ThreadTranscript: View {
 
     @ViewBuilder private func turn(_ row: NativeThreadRow, running: Bool, thinking: Bool) -> some View {
         if row.isUser {
-            UserTurnView(turn: row.turn).equatable()
+            // A design's chat reads Pencil markup as the line the agent read it with (iPadDesign).
+            if designChat, let counts = row.designMarkup {
+                PadMarkupReadLine(counts: counts).equatable()
+            } else {
+                UserTurnView(turn: row.turn).equatable()
+            }
         } else if let presentation = row.presentation {
+            // The card stands in for its call only where a canvas can apply it (iPadDesign).
+            let proposals = designChat && markupCanvas != nil ? row.markupProposals : nil
             AgentTurnView(thread: ref, presentation: presentation, live: row.live,
                           subagents: store.placements[row.id]?.all.count ?? 0,
                           startedAt: row.startedAt, thinking: thinking,
                           changes: row.changes,
                           changesBusy: row.changes?.turnID.map { TurnUndoStore.shared.busy.contains($0) } ?? false,
-                          actions: actions(row, running: running))
-                .equatable()
+                          proposals: proposals,
+                          actions: actions(row, running: running)) {
+                if let proposals, let markupCanvas {
+                    PadMarkupProposalsView(canvas: markupCanvas, proposals: proposals)
+                }
+            }
+            .equatable()
         }
     }
 

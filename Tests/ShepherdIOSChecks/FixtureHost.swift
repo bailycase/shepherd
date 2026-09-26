@@ -133,11 +133,7 @@ final class FixtureHost: @unchecked Sendable {
             guard token == FixtureHostData.token, !data.refusesToken else {
                 return [.error(id: id, code: RemoteProtocol.unauthorizedCode, message: "bad token")]
             }
-            // A host serves designs only with its Design tool on: here, only with fixture designs.
-            let offered = data.capabilities ?? RemoteProtocol.capabilities.filter {
-                $0 != RemoteProtocol.designsCapability || data.designs != nil
-            }
-            return [.helloOk(id: id, protocolVersion: RemoteProtocol.version, capabilities: offered)]
+            return [.helloOk(id: id, protocolVersion: RemoteProtocol.version, capabilities: data.capabilities ?? data.defaultCapabilities)]
         case .stateFetch(let id):
             note("stateFetch")
             return [.state(id: id, state: data.state)]
@@ -174,15 +170,16 @@ final class FixtureHost: @unchecked Sendable {
         case .skills(let id, .lookUp) where data.repoSkills != nil:
             note("skills.lookUp")
             return [.skills(id: id, result: .repo(data.repoSkills!))]
-        case .design(let id, let request) where data.designs != nil:
+        case .design(let id, let request):
             note("design." + Self.kind(request))
-            switch data.designs!.answer(request) {
-            case .success(let result): return [.design(id: id, result: result)]
-            case .failure(let error): return [.error(id: id, code: "fixture", message: error.description)]
+            // A host serves designs only while its Design tool is on: a fixture with designs.
+            guard let designs = data.designs else {
+                return [.error(id: id, code: RemoteDesignCode.off, message: "The Design tool is off on this host.")]
             }
-        case .design(let id, _):
-            note(Self.kind(request))
-            return [.error(id: id, code: RemoteDesignCode.off, message: "The Design tool is off on this host.")]
+            switch designs.answer(request) {
+            case .success(let result): return [.design(id: id, result: result)]
+            case .failure(let refusal): return [.error(id: id, code: refusal.code, message: refusal.message)]
+            }
         case .listDir(let id, _), .creationOptions(let id, _, _, _), .agentQuery(let id, _, _), .automation(let id, _, _),
              .instructions(let id, _), .suggestions(let id, _), .hostSettings(let id, _), .skills(let id, _):
             note(Self.kind(request))
@@ -251,6 +248,12 @@ final class FixtureHost: @unchecked Sendable {
         case .agentQuery(let id, _, .changesUndoTurn), .agentQuery(let id, _, .changesRedoTurn):
             // Undo and Redo change the agent's working tree.
             mutation("agentQuery.changesUndoTurn")
+            return [.error(id: id, code: "fixture", message: refused)]
+        case .design(let id, let request):
+            // Reading a design, its files and comments, and watching it change nothing; a comment,
+            // a tweak, a move or a duplicate writes.
+            guard request.writes else { return nil }
+            mutation("design." + Self.kind(request))
             return [.error(id: id, code: "fixture", message: refused)]
         case .hello, .stateFetch, .listModels, .listDir, .creationOptions, .agentQuery:
             return nil

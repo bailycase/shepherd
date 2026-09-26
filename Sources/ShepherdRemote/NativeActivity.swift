@@ -530,6 +530,13 @@ extension NativeActivityCall {
                 offSystem = found.offSystem
                 stat = nativeCount(found.offSystem, "off-system value")
             }
+        case "markup_propose":
+            // The comments proposed from the viewer's Pencil markup: a design's chat on iPad draws
+            // them as cards (`NativeMarkupProposals`); elsewhere this line says how many.
+            kind = .other
+            label = "markup"
+            let count = (args?["proposals"] as? [Any])?.count ?? 0
+            detail = count > 0 ? nativeCount(count, "proposed comment") : firstLine
         case "shepherd_parent_message":
             kind = .other
             label = "to parent"

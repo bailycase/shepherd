@@ -16,6 +16,10 @@ public enum NWDesignMetrics {
     public static let paneTabTextSize: CGFloat = 12.5
     public static let paneTabCountSize: CGFloat = 10
     public static let paneTabUnderline: CGFloat = 2
+    /// The iPad pane's tabs (iPadDesign): 44pt tall in 14, 16pt in.
+    public static let touchPaneTabHeight: CGFloat = NW.Height.touch
+    public static let touchPaneTabTextSize: CGFloat = 14
+    public static let touchPaneTabsLeading: CGFloat = NW.Space.xl
 
     // The canvas
     /// The canvas's dots: 1px, every 22pt.
@@ -236,7 +240,12 @@ public enum NWDesignMetrics {
     /// the control.
     public static let tweakSliderRowHeight: CGFloat = 30
     public static let tweakRowHeight: CGFloat = 32
+    #if os(iOS)
+    /// The iPad's 360pt pane leaves the controls less room: a narrower label column.
+    public static let tweakLabelWidth: CGFloat = 72
+    #else
     public static let tweakLabelWidth: CGFloat = 92
+    #endif
     public static let tweakLabelSize: CGFloat = 12.5
     public static let tweakRowSpacing: CGFloat = NW.Space.l
     /// Chips and pickers sit 6pt apart at the row's trailing edge.
@@ -293,4 +302,34 @@ public enum NWDesignMetrics {
     public static let exportShareSpacing: CGFloat = NW.Space.m
     public static let exportShareGlyph: CGFloat = 13
     public static let exportNoteSize: CGFloat = 11.5
+
+    // Pencil markup (NWMarkupPalette, NWMarkupProposals; iPadDesign)
+    /// The palette: 6×14 padding, 6pt between items; 44pt tools holding a 20 × 26 glyph (1.3pt
+    /// lines, the pen's 2.4pt tip); 22pt inks, the current one ringed 2pt wide 2pt out, each in a
+    /// 30pt target; 26pt dividers 6pt either side; Done in 15 semibold; 28pt over the canvas's
+    /// bottom edge.
+    public static let markupPaddingVertical: CGFloat = NW.Space.s
+    public static let markupPaddingHorizontal: CGFloat = 14
+    public static let markupSpacing: CGFloat = NW.Space.s
+    public static let markupGlyphWidth: CGFloat = 20
+    public static let markupGlyphHeight: CGFloat = 26
+    public static let markupGlyphLine: CGFloat = 1.3
+    public static let markupTipLine: CGFloat = 2.4
+    public static let markupSwatch: CGFloat = 22
+    public static let markupSwatchRing: CGFloat = 2
+    public static let markupSwatchGap: CGFloat = 2
+    public static let markupSwatchTarget: CGFloat = 30
+    public static let markupDividerHeight: CGFloat = 26
+    public static let markupDividerMargin: CGFloat = NW.Space.s
+    public static let markupDoneSize: CGFloat = 15
+    public static let markupBottom: CGFloat = 28
+    /// A canvas too narrow to keep the centered palette clear of the toolbar's corner (its inset
+    /// and its bar, about 140pt with the zoom) lifts the palette over the toolbar, 12pt above it.
+    public static let markupToolbarClearance: CGFloat = toolbarInset + 144
+    public static let markupLiftedBottom: CGFloat = toolbarInset + toolbarHeight + NW.Space.l
+    /// Ink on the canvas: the pen's width and the marker's, in screen points.
+    public static let markupPenWidth: CGFloat = 3
+    public static let markupMarkerWidth: CGFloat = 12
+    /// The proposals in the chat: cards, buttons and footnote 12pt apart.
+    public static let markupProposalsSpacing: CGFloat = NW.Space.l
 }

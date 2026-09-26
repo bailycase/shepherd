@@ -333,10 +333,10 @@ extension RPCThreadState {
     }
 
     /// The fenced design record ahead of the text, except for a command, which pi reads only at
-    /// the start of a message. A design comment is never a command: its fence always goes first,
-    /// so words that start with "/" stay words.
+    /// the start of a message. A design comment or markup is never a command: its fence always
+    /// goes first, so words that start with "/" stay words.
     static func prompt(_ text: String, context: String?) -> String {
-        guard let context, !text.hasPrefix("/") || DesignCommentFence.opens(context) else { return text }
+        guard let context, !text.hasPrefix("/") || DesignCommentFence.opens(context) || DesignMarkupFence.opens(context) else { return text }
         return context + text
     }
 
@@ -538,8 +538,8 @@ extension RPCThreadState {
         }
         let id = liveEntryID(for: message)
         var value = Self.project(entryID: id, message: message)
-        // A design comment keeps the origin its fence gives it (`project`).
-        if value.origin?.designComment != nil { origin = nil }
+        // A design comment or markup keeps the origin its fence gives it (`project`).
+        if value.origin?.designComment != nil || value.origin?.designMarkup != nil { origin = nil }
         value.origin = value.origin ?? origin.map(Self.clipped)
         value.operationID = operationID
         live.append(LiveItem(kind: .user, value: value, raw: message, ended: false))

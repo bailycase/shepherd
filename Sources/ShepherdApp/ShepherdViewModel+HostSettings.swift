@@ -42,6 +42,7 @@ enum HostSettingsMapping {
         ("review", "Diff review tool", \.piReviewExtension),
         ("nativeSubagents", "Native subagents", \.piNativeSubagents),
         ("subagents", "Subagent display", \.piSubagentsExtension),
+        ("mcp", "MCP servers", \.piMCPExtension),
     ]
 
     static func settings(from app: AppSettings, shepherdVersion: String?, piVersion: String?) -> HostSettings {

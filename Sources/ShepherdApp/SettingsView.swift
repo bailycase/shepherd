@@ -21,7 +21,7 @@ struct SettingsView: View {
 
     private var matchingSections: [SettingsSection] {
         guard !query.isEmpty else { return Array(SettingsSection.allCases) }
-        return SettingsSection.allCases.filter { !$0.matches(for: query).isEmpty || $0.title.localizedCaseInsensitiveContains(query) }
+        return SettingsSection.allCases.filter { !matches($0).isEmpty || $0.title.localizedCaseInsensitiveContains(query) }
     }
 
     var body: some View {
@@ -96,8 +96,12 @@ struct SettingsView: View {
                             vm.settingsSection = section
                         }
                         if !query.isEmpty {
-                            ForEach(section.matches(for: query), id: \.self) { item in
-                                SettingsSearchHit(title: item, section: section.title) { vm.settingsSection = section }
+                            ForEach(matches(section), id: \.self) { item in
+                                SettingsSearchHit(title: item, section: section.title) {
+                                    // A server found by name opens with its row open.
+                                    vm.mcpOpenServer = section == .mcp && vm.mcp.entry(item) != nil ? item : nil
+                                    vm.settingsSection = section
+                                }
                             }
                         }
                     }
@@ -124,6 +128,11 @@ struct SettingsView: View {
         }
         .frame(width: AppLayout.settingsNavWidth)
         .background(Color.nw.bgBase.ignoresSafeArea())
+    }
+
+    /// A page's hits: its rows' titles, and for MCP servers its servers by name.
+    private func matches(_ section: SettingsSection) -> [String] {
+        section.matches(for: query, rows: section == .mcp ? vm.mcp.rows.map(\.name) : [])
     }
 
     /// Searching shows the first page with a match when the current one has none. It lands at
@@ -156,6 +165,7 @@ struct SettingsView: View {
         case .worktrees: WorktreeSettings()
         case .instructions: InstructionsSettings(model: vm.instructions)
         case .skills: SkillsSettings(vm: vm, model: vm.skills)
+        case .mcp: MCPSettings(vm: vm, store: vm.mcp, initiallyExpanded: vm.mcpOpenServer)
         case .remote: RemoteSettings(vm: vm, store: vm.remoteHosts)
         case .keyboard: KeyboardSettings(vm: vm)
         case .advanced: AdvancedSettings(vm: vm)
@@ -221,7 +231,7 @@ private struct SettingsSearchHit: View {
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case appearance, terminal, agents, worktrees, pi, instructions, skills, remote, keyboard, advanced, experiments
+    case appearance, terminal, agents, worktrees, pi, instructions, skills, mcp, remote, keyboard, advanced, experiments
 
     var id: String { rawValue }
 
@@ -234,6 +244,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .pi: return "Pi"
         case .instructions: return "Instructions"
         case .skills: return "Skills"
+        case .mcp: return "MCP servers"
         case .remote: return "Remote"
         case .keyboard: return "Keyboard"
         case .advanced: return "Advanced"
@@ -248,10 +259,12 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .terminal: ["Font family", "Font size", "Shell"]
         case .agents: ["Default model", "Default thinking level", "Return while the agent is working", "When a turn ends, send the queue"]
         case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically"]
-        case .pi: ["Name agents automatically", "Panes and agent tools", "Diff review tool", "Native subagents", "Subagent display", "Concurrency", "Update pi daily", "Update extensions daily", "Check now"]
+        case .pi: ["Name agents automatically", "Panes and agent tools", "Diff review tool", "Native subagents", "Subagent display", "MCP servers", "Concurrency", "Update pi daily", "Update extensions daily", "Check now"]
         case .instructions: ["Same on every host", "AGENTS.md", "APPEND_SYSTEM.md", "History"]
         case .skills: ["Installed skills", "From your pi setup", "From pi packages", "Browse skills.sh", "Add from repo",
                        "Skills in the / menu", "Same skills on every host", "Update automatically"]
+        case .mcp: ["Servers", "Add server", "Import…", "How the agent uses them", "Same servers on every host",
+                    "Open sign-in pages by itself", "Also use a repo’s .mcp.json", "Hosts"]
         case .remote: ["Hosts", "Add host", "Listener", "Token"]
         case .keyboard: ["Shortcuts", "Reset all shortcuts"]
         case .advanced: ["Workspace state", "Extension socket", "Update channel", "Check for updates", "Reset settings"]
@@ -278,6 +291,12 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                        "Browse skills.sh": ["directory", "search", "install"],
                        "Add from repo": ["github", "git", "folder"], "Skills in the / menu": ["slash", "command", "composer"],
                        "Same skills on every host": ["sync", "hosts"], "Update automatically": ["update", "upgrade"]]
+        case .mcp: ["Servers": ["mcp", "model context protocol", "tools", "connectors", "mcp.json"],
+                    "Add server": ["remote", "local", "url", "command", "stdio", "http", "sse"],
+                    "Import…": ["claude desktop", "cursor", "vs code", "paste json", "mcpServers"],
+                    "How the agent uses them": ["tokens", "prompt", "budget", "proxy"],
+                    "Open sign-in pages by itself": ["oauth", "sign in", "login", "browser"],
+                    "Also use a repo’s .mcp.json": ["project", "repository", ".mcp.json"]]
         case .remote: ["Hosts": ["vpn", "tailscale", "ssh"], "Listener": ["port", "serve"]]
         case .keyboard: ["Shortcuts": ["hotkey", "keybinding", "chord"]]
         case .advanced: ["Update channel": ["beta", "nightly", "sparkle"], "Workspace state": ["state.json"]]
@@ -287,14 +306,15 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     }
 
     /// Items matching `query` by title or keyword; every item when the section's name matches.
-    func matches(for query: String) -> [String] {
+    /// `rows` are the page's own rows found by name (MCP servers' servers).
+    func matches(for query: String, rows: [String] = []) -> [String] {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return [] }
         if title.localizedCaseInsensitiveContains(query) { return items }
         return items.filter { item in
             item.localizedCaseInsensitiveContains(query)
                 || (keywords[item] ?? []).contains { $0.localizedCaseInsensitiveContains(query) }
-        }
+        } + rows.filter { $0.localizedCaseInsensitiveContains(query) }
     }
 
     var symbol: String {
@@ -306,6 +326,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .pi: return "pi"
         case .instructions: return "doc.text"
         case .skills: return "graduationcap"
+        case .mcp: return "server.rack"
         case .remote: return "dot.radiowaves.left.and.right"
         case .keyboard: return "keyboard"
         case .advanced: return "gearshape"
@@ -314,5 +335,5 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     }
 
     /// A wide page fills the detail area instead of the 720pt column.
-    var isWide: Bool { self == .instructions || self == .skills || self == .experiments }
+    var isWide: Bool { self == .instructions || self == .skills || self == .mcp || self == .experiments }
 }

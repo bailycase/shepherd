@@ -15,14 +15,7 @@ struct RemoteDesignTests {
     static let card = #"<div data-el="Checkout funnel" style="width: 390px; height: 844px"><h2>Checkout funnel</h2><p>48,210 people</p></div>"#
 
     /// A design with board A on its canvas, a stylesheet beside it, and an upload of `assetBytes`.
-    private func design(_ host: RemoteHost, agentID: AgentID? = nil, space: SpaceID? = nil,
-                        assetBytes: Int = 0) async throws -> DesignID {
-        let spaceID: SpaceID
-        if let space { spaceID = space } else {
-            let made = Space(name: "demo", path: host.host.dir.path)
-            try await host.server.addSpace(made)
-            spaceID = made.id
-        }
+    private func design(_ host: RemoteHost, agentID: AgentID? = nil, assetBytes: Int = 0) async throws -> DesignID {
         let id = DesignID()
         _ = try await host.server.createDesign(Design(id: id, name: "Checkout funnel", agentID: agentID, createdAt: 1_000))
         _ = try await host.server.writeDesignBoard(id, path: Self.board, source: DesignTests.board(root: Self.card))
@@ -113,6 +106,54 @@ struct RemoteDesignTests {
         host.server.setDesignsServed(true)
         let raw = try await host.raw()
         #expect(try await refusal(raw, 2, .list) == RemoteDesignCode.off)
+    }
+
+    // MARK: Pencil markup
+
+    /// Markup and the agent's proposals go through the host's own checks: a client that sends
+    /// markup the design can't hold is refused, and one the host doesn't offer markup to is too.
+    @Test func markupAndItsProposalsGoThroughTheHostsChecks() async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        host.server.setDesignsServed(true)
+        let id = try await design(host)
+        let raw = try await designClient(host)
+        let card = DesignElementID(board: "A.dc.html", tid: 2, path: [1])!
+
+        let markup = DesignMarkup(strokes: [DesignMarkupStroke(kind: .circle, board: "A.dc.html", element: card, note: "bigger")])
+        guard case .markupSent(let undelivered) = try await answer(raw, 2, .sendMarkup(designID: id, markup: markup)) else {
+            Issue.record("expected markupSent"); return
+        }
+        #expect(undelivered == "The design has no agent.")
+        let nowhere = DesignMarkup(strokes: [DesignMarkupStroke(kind: .mark, board: "Gone.dc.html")])
+        #expect(try await refusal(raw, 3, .sendMarkup(designID: id, markup: nowhere)) == RemoteDesignCode.invalidMarkup)
+
+        _ = try await host.server.proposeDesignComments(id, call: "c", proposals: [DesignMarkupProposal(element: card.description, text: "Bigger.")])
+        #expect(try await refusal(raw, 4, .settleProposals(designID: id, proposals: ["c#0"], deliver: false, baseRevision: 0))
+            == "stale_revision")
+        guard case .proposalsSettled(let kept, nil) = try await answer(raw, 5, .settleProposals(designID: id, proposals: ["c#0"],
+                                                                                                 deliver: false, baseRevision: 1)) else {
+            Issue.record("expected proposalsSettled"); return
+        }
+        #expect(kept.map(\.proposal) == ["c#0"] && kept.map(\.number) == [1] && kept[0].proposalSettledAt != nil)
+        #expect(try await refusal(raw, 6, .settleProposals(designID: id, proposals: ["gone#0"], deliver: false, baseRevision: nil))
+            == RemoteDesignCode.invalidMarkup)
+    }
+
+    @Test func aHostThatDoesntOfferMarkupRefusesItAndOffersItOnlyWithDesigns() async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        let off = try await host.raw(authenticated: false)
+        #expect(try await off.hello(token: host.token, capabilities: RemoteProtocol.clientCapabilities)
+            .contains(RemoteProtocol.designMarkupCapability) == false, "not while the Design tool is off")
+
+        host.server.advertisedCapabilities = RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.designMarkupCapability }
+        host.server.setDesignsServed(true)
+        let id = try await design(host)
+        let raw = try await designClient(host)
+        let markup = DesignMarkup(strokes: [DesignMarkupStroke(kind: .mark, board: "A.dc.html")])
+        #expect(try await refusal(raw, 2, .sendMarkup(designID: id, markup: markup)) == "unsupported")
+        #expect(try await refusal(raw, 3, .list) == nil, "the rest of designs.v1 still serves")
     }
 
     // MARK: Files
@@ -374,7 +415,7 @@ struct RemoteDesignTests {
         defer { host.stop() }
         host.server.setDesignsServed(true)
         let pi = try await PiAgent.launch(on: host.host)
-        let id = try await design(host, agentID: pi.agent.id, space: pi.agent.spaceID)
+        let id = try await design(host, agentID: pi.agent.id)
         _ = try await pi.ready()
         let raw = try await designClient(host)
         _ = try await answer(raw, 2, .watch(designIDs: [id]))

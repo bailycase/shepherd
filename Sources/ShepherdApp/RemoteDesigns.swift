@@ -93,7 +93,9 @@ extension ShepherdViewModel {
                 return write.write
             },
             // The project's stylesheets are on the host: Tweak snaps to the board's own tokens.
-            projectTokens: { DesignTokens() })
+            projectTokens: { DesignTokens() },
+            // A stale revision reads as the local store's (`remoteDesign`).
+            isStale: { if case DesignStoreError.stale = $0 { true } else { false } })
         let agentRef = connection.state.designs.first { $0.id == id }?.agentID.map { RemoteAgentRef(hostID: ref.hostID, agentID: $0) }
         let screen = DesignScreenModel(designID: id, host: rendering.host(for: id), snapshot: snapshot,
                                        source: { _, path in try await source.source(path) },

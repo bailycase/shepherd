@@ -7,11 +7,11 @@ import ShepherdProtocol
 
 /// A style a tweak changes on the selected element: the fixed set the plan starts with (flex
 /// layout, padding, radius, color, text size).
-enum DesignTweakProperty: String, CaseIterable, Hashable, Sendable {
+public enum DesignTweakProperty: String, CaseIterable, Hashable, Sendable {
     case direction, gap, padding, radius, fill, color, textSize
 
     /// The token role its lengths snap to.
-    var role: DesignTokens.Role? {
+    public var role: DesignTokens.Role? {
         switch self {
         case .gap, .padding: .spacing
         case .radius: .radius
@@ -22,24 +22,30 @@ enum DesignTweakProperty: String, CaseIterable, Hashable, Sendable {
 }
 
 /// A color a chip offers: a design token, or a swatch a board's data-props lists.
-struct DesignTweakColor: Hashable, Sendable, Identifiable {
+public struct DesignTweakColor: Hashable, Sendable, Identifiable {
     /// What the chip says: the token's name without dashes, or the swatch's hex.
-    let title: String
+    public let title: String
     /// The custom property (`--accent`), when it is a token.
-    let token: String?
-    let hex: String
+    public let token: String?
+    public let hex: String
 
-    var id: String { token ?? hex }
+    public var id: String { token ?? hex }
+
+    public init(title: String, token: String?, hex: String) {
+        self.title = title
+        self.token = token
+        self.hex = hex
+    }
 }
 
 /// One row of the Tweak tab.
-struct DesignTweakRow: Hashable, Sendable, Identifiable {
-    enum ID: Hashable, Sendable {
+public struct DesignTweakRow: Hashable, Sendable, Identifiable {
+    public enum ID: Hashable, Sendable {
         case style(DesignTweakProperty)
         case prop(String)
     }
 
-    enum Control: Hashable, Sendable {
+    public enum Control: Hashable, Sendable {
         /// A slider over a scale's steps; `index` is the step shown.
         case steps(values: [Double], index: Int)
         /// A slider over numbers, `min`…`max` by `step`.
@@ -54,31 +60,47 @@ struct DesignTweakRow: Hashable, Sendable, Identifiable {
         case text(String)
     }
 
-    struct Choice: Hashable, Sendable {
-        let value: String
-        let title: String
+    public struct Choice: Hashable, Sendable {
+        public let value: String
+        public let title: String
+
+        public init(value: String, title: String) {
+            self.value = value
+            self.title = title
+        }
     }
 
-    let id: ID
-    let label: String
-    let control: Control
+    public let id: ID
+    public let label: String
+    public let control: Control
+
+    public init(id: ID, label: String, control: Control) {
+        self.id = id
+        self.label = label
+        self.control = control
+    }
 }
 
-struct DesignTweakGroup: Hashable, Sendable, Identifiable {
-    let title: String
-    let rows: [DesignTweakRow]
+public struct DesignTweakGroup: Hashable, Sendable, Identifiable {
+    public let title: String
+    public let rows: [DesignTweakRow]
 
-    var id: String { title }
+    public var id: String { title }
+
+    public init(title: String, rows: [DesignTweakRow]) {
+        self.title = title
+        self.rows = rows
+    }
 }
 
-enum DesignTweakControls {
+public enum DesignTweakControls {
     // MARK: Style
 
     /// The rows the selected element's inline style offers, grouped as DZTweak groups them:
     /// Layout (direction and gap for a flex or grid container, padding, radius), Color (a fill
     /// for a shape or a filled element, the text's color), and Text (its size). A value the
     /// board's logic sets is left out, and so is every color when the design has no color tokens.
-    static func styleGroups(_ style: DesignInlineStyle, kind: DesignElementKind, tokens: DesignTokens) -> [DesignTweakGroup] {
+    public static func styleGroups(_ style: DesignInlineStyle, kind: DesignElementKind, tokens: DesignTokens) -> [DesignTweakGroup] {
         guard !style.isBoundWhole else { return [] }
         func free(_ property: String) -> Bool { style.declaration(property)?.isBound != true }
         let display = style.value("display")?.lowercased() ?? ""
@@ -121,12 +143,12 @@ enum DesignTweakControls {
     }
 
     /// Where the fill goes: `background-color` when the element writes it, else `background`.
-    static func fillProperty(_ style: DesignInlineStyle) -> String {
+    public static func fillProperty(_ style: DesignInlineStyle) -> String {
         style.declaration("background-color") != nil ? "background-color" : "background"
     }
 
     /// The CSS property a row writes.
-    static func cssProperty(_ property: DesignTweakProperty, style: DesignInlineStyle) -> String {
+    public static func cssProperty(_ property: DesignTweakProperty, style: DesignInlineStyle) -> String {
         switch property {
         case .direction: "flex-direction"
         case .gap: "gap"
@@ -168,20 +190,20 @@ enum DesignTweakControls {
     }
 
     /// The index of the scale's value nearest `value`.
-    static func nearest(_ value: Double, in values: [Double]) -> Int {
+    public static func nearest(_ value: Double, in values: [Double]) -> Int {
         let snapped = DesignTokens.snap(value, to: values)
         return values.firstIndex(of: snapped) ?? 0
     }
 
     /// `count` values of `values` around `index`, keeping the window inside the scale.
-    static func window(_ values: [Double], around index: Int, count: Int) -> [Double] {
+    public static func window(_ values: [Double], around index: Int, count: Int) -> [Double] {
         guard values.count > count else { return values }
         let start = min(max(0, index - (count - 1) / 2), values.count - count)
         return Array(values[start..<(start + count)])
     }
 
     /// `24`, `1.5`.
-    static func format(_ value: Double) -> String {
+    public static func format(_ value: Double) -> String {
         value == value.rounded() ? String(Int(value)) : String(format: "%g", value)
     }
 
@@ -189,13 +211,13 @@ enum DesignTweakControls {
 
     /// What a length writes: the token's `var(--name)` when the board declares one for it, else
     /// px (`24px`).
-    static func lengthValue(_ px: Double, role: DesignTokens.Role, boardTokens: DesignTokens) -> String {
+    public static func lengthValue(_ px: Double, role: DesignTokens.Role, boardTokens: DesignTokens) -> String {
         if let token = boardTokens.length(px, role: role) { return "var(\(token.name))" }
         return "\(format(px))px"
     }
 
     /// What a color writes: the token's `var(--name)` when the board declares it, else its hex.
-    static func colorValue(_ color: DesignTweakColor, boardTokens: DesignTokens) -> String {
+    public static func colorValue(_ color: DesignTweakColor, boardTokens: DesignTokens) -> String {
         if let token = color.token, boardTokens.declares(token) { return "var(\(token))" }
         return color.hex
     }
@@ -204,7 +226,7 @@ enum DesignTweakControls {
 
     /// A board's data-props as rows, grouped by their `section` (in the order first written);
     /// props without one are under "Board".
-    static func propGroups(_ editors: [DesignPropEditor], tweaks: [String: JSONValue], tokens: DesignTokens) -> [DesignTweakGroup] {
+    public static func propGroups(_ editors: [DesignPropEditor], tweaks: [String: JSONValue], tokens: DesignTokens) -> [DesignTweakGroup] {
         var order: [String] = []
         var rows: [String: [DesignTweakRow]] = [:]
         for editor in editors {
@@ -216,7 +238,7 @@ enum DesignTweakControls {
         return order.map { DesignTweakGroup(title: $0, rows: rows[$0] ?? []) }
     }
 
-    static func propRow(_ editor: DesignPropEditor, value: JSONValue?, tokens: DesignTokens) -> DesignTweakRow? {
+    public static func propRow(_ editor: DesignPropEditor, value: JSONValue?, tokens: DesignTokens) -> DesignTweakRow? {
         let control: DesignTweakRow.Control
         switch editor.kind {
         case .boolean:
@@ -254,7 +276,7 @@ enum DesignTweakControls {
     }
 
     /// A prop's name as a label: `showCounts` → "Show counts", `drop_off` → "Drop off".
-    static func label(_ name: String) -> String {
+    public static func label(_ name: String) -> String {
         var words: [String] = []
         var word = ""
         for character in name {
@@ -276,14 +298,14 @@ enum DesignTweakControls {
 
     /// What "Every <name>" reaches, under the scope ("Every funnel card: A and A · phone.
     /// Values snap to acme-web tokens.").
-    static func scopeNote(name: String, boards: [String], system: String, fromTokens: Bool) -> String {
+    public static func scopeNote(name: String, boards: [String], system: String, fromTokens: Bool) -> String {
         let reach = boards.isEmpty ? "" : "Every \(name): \(list(boards)). "
         let snap = fromTokens ? "Values snap to \(system) tokens." : "Values snap to \(system) tokens, or to Shepherd's scale where it declares none."
         return reach + snap
     }
 
     /// "A", "A and B", "A, B and C".
-    static func list(_ items: [String]) -> String {
+    public static func list(_ items: [String]) -> String {
         switch items.count {
         case 0: return ""
         case 1: return items[0]

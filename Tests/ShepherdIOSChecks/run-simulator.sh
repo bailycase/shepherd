@@ -97,8 +97,9 @@ xcrun --sdk iphonesimulator swiftc -sdk "$(xcrun --sdk iphonesimulator --show-sd
     Tests/ShepherdIOSChecks/Fixtures/*.swift Tests/ShepherdTestSupport/MarkdownFixtures.swift \
     -o "$app/ShepherdFixture"
 cp -R "$products/ShepherdUI_ShepherdUI.bundle" "$app/"
-cp -R "$products/Shepherd_DesignSurfaceKit.bundle" "$app/"
 if [[ -d "$products/SwiftTerm_SwiftTerm.bundle" ]]; then cp -R "$products/SwiftTerm_SwiftTerm.bundle" "$app/"; fi
+# The board renderer's runtime (Bundle.module), for the Design tool's screens.
+for bundle in "$products"/*_DesignSurfaceKit.bundle; do [[ -d "$bundle" ]] && cp -R "$bundle" "$app/"; done
 codesign --force --sign - "$app" >/dev/null 2>&1
 
 xcrun simctl bootstatus "$device" -b >/dev/null

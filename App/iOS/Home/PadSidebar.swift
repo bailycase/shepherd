@@ -3,8 +3,9 @@ import ShepherdUI
 import ShepherdRemote
 
 /// The iPad sidebar (iPadThread, iPadSidebar, iPadHosts boards; home track): New thread,
-/// Automations and More (which expands in place to Hosts and Extensions), Needs you with each
-/// item's reason, Recents with their hosts, and a footer with the hosts and Settings.
+/// Designs (while a host serves them, DesignPad/), Automations and More (which expands in place
+/// to Hosts and Extensions), Needs you with each item's reason, Recents with their hosts and the
+/// designs among them, and a footer with the hosts and Settings.
 struct PadSidebar: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
@@ -14,12 +15,20 @@ struct PadSidebar: View {
     var body: some View {
         let feed = HomeFeed.of(hosts)
         let model = feed.model
+        let designs = PadDesigns.of(hosts)
+        let recents = designs.recents(model.recents)
         let selected = navigator.selectedThread
         let pushed = navigator.padPath.last
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 SidebarItem("New thread", leading: .badge("plus")) { NewThreadHooks.open(navigator: navigator) }
                     .disabled(model.hosts.isEmpty)
+                // The Design tool's destination, only while a host offers it (iPadSidebar).
+                if designs.available {
+                    SidebarItem("Designs", leading: .symbol("pencil.tip"), selected: pushed?.isPadDesign == true) {
+                        PadDesignHooks.openList(navigator: navigator)
+                    }
+                }
                 SidebarItem("Automations", leading: .symbol("bolt"), selected: pushed == .home(.automations),
                             trailing: model.automations.isEmpty ? .none : .value(String(model.automations.count))) {
                     navigator.open(.home(.automations))
@@ -64,16 +73,30 @@ struct PadSidebar: View {
                         .contextMenu { OpenInNewWindowButton(thread: item.ref.agentRef) }
                     }
                 }
-                if !model.recents.isEmpty {
+                if !recents.isEmpty {
                     SidebarHeader(title: "Recents")
-                    ForEach(model.recents) { row in
-                        Button { navigator.open(.thread(row.ref.agentRef)) } label: {
-                            ThreadRow(row: row, selected: row.ref.agentRef == selected, compact: true)
-                                .equatable()
-                                .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+                    ForEach(recents) { recent in
+                        // One view per row, whatever it holds.
+                        VStack(spacing: 0) {
+                            switch recent {
+                            case .thread(let row):
+                                Button { navigator.open(.thread(row.ref.agentRef)) } label: {
+                                    ThreadRow(row: row, selected: row.ref.agentRef == selected, compact: true)
+                                        .equatable()
+                                        .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+                                }
+                                .buttonStyle(.nwRow(radius: NW.Radius.m))
+                                .contextMenu { OpenInNewWindowButton(thread: row.ref.agentRef) }
+                            case .design(let row):
+                                Button { PadDesignHooks.open(row.ref, navigator: navigator) } label: {
+                                    PadDesignRecentRow(row: row, selected: pushed == .padDesign(.design(row.ref)))
+                                        .equatable()
+                                        .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+                                }
+                                .buttonStyle(.nwRow(radius: NW.Radius.m))
+                                .contextMenu { PadDesignWindowButton(design: row.ref) }
+                            }
                         }
-                        .buttonStyle(.nwRow(radius: NW.Radius.m))
-                        .contextMenu { OpenInNewWindowButton(thread: row.ref.agentRef) }
                     }
                 }
             }

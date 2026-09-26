@@ -1,75 +1,123 @@
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
-import ShepherdSessions
-import ShepherdUI
 
 /// What the Tweak tab edits: the latest pick on the canvas, an element or a board whole.
-struct DesignTweakTarget: Hashable, Sendable {
-    let board: DesignPath
+public struct DesignTweakTarget: Hashable, Sendable {
+    public let board: DesignPath
     /// The element; nil for a board picked whole (its data-props only).
-    let element: DesignElementID?
-    let kind: DesignElementKind
+    public let element: DesignElementID?
+    public let kind: DesignElementKind
     /// "card · Checkout funnel".
-    let tag: String?
+    public let tag: String?
+
+    public init(board: DesignPath, element: DesignElementID?, kind: DesignElementKind, tag: String?) {
+        self.board = board
+        self.element = element
+        self.kind = kind
+        self.tag = tag
+    }
 }
 
-/// Reads and writes a design's files for Tweak: the host's design mutations.
-struct DesignTweakIO {
-    var snapshot: () async throws -> DesignSnapshot
-    var board: (DesignPath) async throws -> DesignBoardSource
-    var writeBoards: ([DesignPath: String], UInt64?) async throws -> DesignBoardsWrite
-    var updateIndex: (JSONValue, UInt64?) async throws -> DesignWriteResult
-    var restore: ([DesignPath: Int], [DesignPath: String]?) async throws -> DesignBoardsWrite
+/// Where a tweak applies: the element on its board, or every element of its name (`data-el`)
+/// across the design.
+public enum DesignTweakScope: Hashable, Sendable { case board, every }
+
+/// Shows a tweak on a board's live view while it drags, without writing it: the canvas's
+/// renderer (the Mac's `DesignHost`, the iPad's).
+@MainActor
+public protocol DesignTweakPreviews: AnyObject {
+    func previewStyle(_ path: DesignPath, _ changes: [Int: [String: String?]]) async -> Bool
+    func previewProps(_ path: DesignPath, _ json: String) async -> Bool
+    func endPreview(_ path: DesignPath) async
+}
+
+/// Reads and writes a design's files for Tweak: the host's design mutations, this Mac's server
+/// or a remote host's over `designs.v1`.
+public struct DesignTweakIO {
+    public var snapshot: () async throws -> DesignSnapshot
+    public var board: (DesignPath) async throws -> DesignBoardSource
+    public var writeBoards: ([DesignPath: String], UInt64?) async throws -> DesignBoardsWrite
+    public var updateIndex: (JSONValue, UInt64?) async throws -> DesignWriteResult
+    public var restore: ([DesignPath: Int], [DesignPath: String]?) async throws -> DesignBoardsWrite
     /// The custom properties the design's project declares (read off the main actor).
-    var projectTokens: () async -> DesignTokens
+    public var projectTokens: () async -> DesignTokens
+    /// Whether a write was refused for naming a revision the design moved past: the tab reads the
+    /// design again and makes the change once more.
+    public var isStale: (any Error) -> Bool
+
+    public init(snapshot: @escaping () async throws -> DesignSnapshot, board: @escaping (DesignPath) async throws -> DesignBoardSource,
+                writeBoards: @escaping ([DesignPath: String], UInt64?) async throws -> DesignBoardsWrite,
+                updateIndex: @escaping (JSONValue, UInt64?) async throws -> DesignWriteResult,
+                restore: @escaping ([DesignPath: Int], [DesignPath: String]?) async throws -> DesignBoardsWrite,
+                projectTokens: @escaping () async -> DesignTokens, isStale: @escaping (any Error) -> Bool) {
+        self.snapshot = snapshot
+        self.board = board
+        self.writeBoards = writeBoards
+        self.updateIndex = updateIndex
+        self.restore = restore
+        self.projectTokens = projectTokens
+        self.isStale = isStale
+    }
 }
 
 /// The Tweak tab (DZTweak; docs/designs.md › Tweak): the selected element's inline-style controls
 /// and its board's data-props, snapped to the design's tokens.
 ///
-/// While a slider drags, the change shows in the board's live view (`DesignHost.previewStyle`)
+/// While a slider drags, the change shows in the board's live view (`DesignTweakPreviews`)
 /// and nothing is written; on release it is written once: an inline-style splice at the parser's
 /// offsets on every board in scope (`writeDesignBoards`, one revision), or the data-props value in
 /// canvas.json's `tweaks`. Each write names the revision it read; a stale one is read again and
 /// made once more. Each kept tweak registers an undo (the boards' versions, or the old values).
 @MainActor @Observable
-final class DesignTweakModel {
-    enum Phase: Sendable { case changed, ended }
-    typealias Scope = NWTweakScope.Scope
+public final class DesignTweakModel {
+    public enum Phase: Sendable { case changed, ended }
+    public typealias Scope = DesignTweakScope
 
     /// What the tab shows: its header, its groups and footer, as plain values.
-    struct Presentation: Equatable {
-        var board = ""
-        var element: String?
-        var groups: [DesignTweakGroup] = []
-        var scopeName: String?
-        var scopeNote: String?
-        var canReset = false
+    public struct Presentation: Equatable {
+        public var board = ""
+        public var element: String?
+        public var groups: [DesignTweakGroup] = []
+        public var scopeName: String?
+        public var scopeNote: String?
+        public var canReset = false
         /// A write that didn't go, or a selection Tweak can't edit.
-        var problem: String?
+        public var problem: String?
         /// Nothing is selected.
-        var isEmpty = true
+        public var isEmpty = true
+
+        public init(board: String = "", element: String? = nil, groups: [DesignTweakGroup] = [], scopeName: String? = nil,
+                    scopeNote: String? = nil, canReset: Bool = false, problem: String? = nil, isEmpty: Bool = true) {
+            self.board = board
+            self.element = element
+            self.groups = groups
+            self.scopeName = scopeName
+            self.scopeNote = scopeNote
+            self.canReset = canReset
+            self.problem = problem
+            self.isEmpty = isEmpty
+        }
     }
 
-    private(set) var presentation = Presentation()
-    private(set) var target: DesignTweakTarget?
-    var scope: Scope = .board {
+    public private(set) var presentation = Presentation()
+    public private(set) var target: DesignTweakTarget?
+    public var scope: Scope = .board {
         didSet { if scope != oldValue { Task { await rebuild(loadingScope: true) } } }
     }
     /// Tests: writes made (board writes and index updates).
-    @ObservationIgnored private(set) var writes = 0
+    @ObservationIgnored public private(set) var writes = 0
     /// Tests: previews sent to live views.
-    @ObservationIgnored private(set) var previews = 0
+    @ObservationIgnored public private(set) var previews = 0
 
-    @ObservationIgnored weak var undoManager: UndoManager?
-    @ObservationIgnored let designID: DesignID
+    @ObservationIgnored public weak var undoManager: UndoManager?
+    @ObservationIgnored public let designID: DesignID
     @ObservationIgnored private let io: DesignTweakIO
-    @ObservationIgnored private weak var host: DesignHost?
+    @ObservationIgnored private weak var host: (any DesignTweakPreviews)?
     /// The design's name for its system, in the scope's note.
-    @ObservationIgnored var systemName = "the design's"
+    @ObservationIgnored public var systemName = "the design's"
     /// Told when a board's live view previewed a change, so its selection is measured again.
-    @ObservationIgnored var previewed: ((DesignPath) -> Void)?
+    @ObservationIgnored public var previewed: ((DesignPath) -> Void)?
     /// The last snapshot the canvas pulled, for revisions and hashes.
     @ObservationIgnored private var snapshot: DesignSnapshot?
     /// Board sources read, by path, with the hash they had.
@@ -92,7 +140,7 @@ final class DesignTweakModel {
     @ObservationIgnored private var pendingProps: (path: DesignPath, json: String)?
     @ObservationIgnored private var loadSerial = 0
 
-    init(designID: DesignID, io: DesignTweakIO, host: DesignHost?) {
+    public init(designID: DesignID, io: DesignTweakIO, host: (any DesignTweakPreviews)?) {
         self.designID = designID
         self.io = io
         self.host = host
@@ -101,7 +149,7 @@ final class DesignTweakModel {
     // MARK: Loading
 
     /// The canvas pulled a new snapshot: sources whose hash moved are read again.
-    func snapshotChanged(_ next: DesignSnapshot) async {
+    public func snapshotChanged(_ next: DesignSnapshot) async {
         guard snapshot != next else { return }
         snapshot = next
         guard target != nil else { return }
@@ -109,7 +157,7 @@ final class DesignTweakModel {
     }
 
     /// The canvas's latest pick changed (nil: nothing selected).
-    func select(_ next: DesignTweakTarget?) async {
+    public func select(_ next: DesignTweakTarget?) async {
         guard target != next else { return }
         let sameElement = target?.board == next?.board && target?.element?.tid == next?.element?.tid
         target = next
@@ -149,7 +197,7 @@ final class DesignTweakModel {
     private func loadNamed(_ name: String) async throws {
         guard let snapshot else { return }
         var found: [DesignPath: [Int]] = [:]
-        for path in DesignScreenModel.canvasOrder(snapshot.index) {
+        for path in Self.canvasOrder(snapshot.index) {
             let tids = DesignStyleEdit.elements(named: name, in: try await source(path).source)
             if !tids.isEmpty { found[path] = tids }
         }
@@ -182,7 +230,7 @@ final class DesignTweakModel {
             }
             if let name = elementName(target, in: source) {
                 out.scopeName = name
-                let reach = DesignScreenModel.canvasOrder(snapshot?.index ?? DesignIndex(title: nil)).filter { named[$0] != nil }
+                let reach = Self.canvasOrder(snapshot?.index ?? DesignIndex(title: nil)).filter { named[$0] != nil }
                 let fromTokens = DesignTokens.Role.allCases.allSatisfy { !tokens.scale($0).isEmpty }
                 out.scopeNote = DesignTweakControls.scopeNote(name: name, boards: scope == .every ? reach.map(boardTitle) : [],
                                                               system: systemName, fromTokens: fromTokens)
@@ -227,7 +275,7 @@ final class DesignTweakModel {
     }
 
     /// A slider over a scale's steps moved (`index`), or was let go.
-    func setStep(_ property: DesignTweakProperty, index: Int, phase: Phase) {
+    public func setStep(_ property: DesignTweakProperty, index: Int, phase: Phase) {
         guard let target, let role = property.role,
               case .steps(let values, _)? = row(.style(property))?.control, values.indices.contains(index) else { return }
         dragging[.style(property)] = Double(index)
@@ -237,7 +285,7 @@ final class DesignTweakModel {
     }
 
     /// A segmented choice (direction, radius, text size).
-    func choose(_ property: DesignTweakProperty, _ value: String) {
+    public func choose(_ property: DesignTweakProperty, _ value: String) {
         guard let target else { return }
         let written: String
         switch property {
@@ -251,7 +299,7 @@ final class DesignTweakModel {
     }
 
     /// A token chip.
-    func choose(_ property: DesignTweakProperty, color: DesignTweakColor) {
+    public func choose(_ property: DesignTweakProperty, color: DesignTweakColor) {
         guard let target else { return }
         change(property, to: DesignTweakControls.colorValue(color, boardTokens: boardTokens(target.board)), phase: .ended)
     }
@@ -348,7 +396,7 @@ final class DesignTweakModel {
                 report(nil)
                 await rebuild(loadingScope: false)
                 return
-            } catch DesignStoreError.stale where attempt == 0 {
+            } catch let error where attempt == 0 && io.isStale(error) {
                 continue
             } catch {
                 for path in changes.keys { await host?.endPreview(path) }
@@ -413,7 +461,7 @@ final class DesignTweakModel {
     // MARK: Props
 
     /// A data-props control moved (a slider while dragging), or was set.
-    func setProp(_ name: String, _ value: JSONValue, phase: Phase) {
+    public func setProp(_ name: String, _ value: JSONValue, phase: Phase) {
         guard let target, let source = sources[target.board]?.source,
               let editor = DesignProps.editors(in: source).first(where: { $0.name == name }) else { return }
         let colors = Set(tokens(for: source).all.colors.map(\.hex))
@@ -435,7 +483,7 @@ final class DesignTweakModel {
     }
 
     /// An enum prop's option, by the title its picker shows: the value as data-props wrote it.
-    func setPropChoice(_ name: String, _ title: String) {
+    public func setPropChoice(_ name: String, _ title: String) {
         guard let target, let source = sources[target.board]?.source,
               let editor = DesignProps.editors(in: source).first(where: { $0.name == name }),
               let option = editor.options.first(where: { ($0.stringValue ?? $0.doubleValue.map(DesignTweakControls.format)) == title })
@@ -444,7 +492,7 @@ final class DesignTweakModel {
     }
 
     /// A prop's text field was submitted: text for a text prop, a number for a number prop.
-    func setPropText(_ name: String, _ text: String) {
+    public func setPropText(_ name: String, _ text: String) {
         guard let target, let source = sources[target.board]?.source,
               let editor = DesignProps.editors(in: source).first(where: { $0.name == name }) else { return }
         switch editor.kind {
@@ -470,7 +518,7 @@ final class DesignTweakModel {
                 report(nil)
                 await rebuild(loadingScope: false)
                 return
-            } catch DesignStoreError.stale where attempt == 0 {
+            } catch let error where attempt == 0 && io.isStale(error) {
                 continue
             } catch {
                 break
@@ -497,7 +545,7 @@ final class DesignTweakModel {
     }
 
     /// Reset (DZTweak's footer): puts back what this session changed on the target.
-    func reset() {
+    public func reset() {
         guard let target else { return }
         let (styles, props) = resetChanges(target)
         Task {
@@ -569,24 +617,31 @@ final class DesignTweakModel {
 
     // MARK: Helpers
 
-    static func json(_ value: JSONValue) -> String? {
+    public static func json(_ value: JSONValue) -> String? {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         return (try? encoder.encode(value)).map { String(decoding: $0, as: UTF8.self) }
     }
 
-    static func describe(_ error: any Error) -> String {
+    public static func describe(_ error: any Error) -> String {
         if let problem = error as? DesignTweakProblem { return problem.description }
         if let refused = error as? DesignStyleEdit.Problem { return refused.description }
-        if let store = error as? DesignStoreError { return store.description }
+        if case RemoteHostClientError.rejected(_, let message) = error { return message }
         return String(describing: error)
+    }
+
+    /// The boards back to front: canvas.json's `order`, then any it doesn't list by path.
+    static func canvasOrder(_ index: DesignIndex) -> [DesignPath] {
+        let listed = index.order.filter { index.boards[$0] != nil }
+        let rest = index.boards.keys.filter { !listed.contains($0) }.sorted()
+        return listed + rest
     }
 }
 
-enum DesignTweakProblem: Error, CustomStringConvertible {
+public enum DesignTweakProblem: Error, CustomStringConvertible {
     case elementChanged
 
-    var description: String {
+    public var description: String {
         switch self {
         case .elementChanged: "the element changed on its board; select it again"
         }

@@ -93,6 +93,14 @@ public struct DesignViewRecord: Codable, Hashable, Sendable {
     /// A label's text for a record: whitespace runs as one space, control characters dropped,
     /// cut to `labelLength` characters with an ellipsis; nil when nothing is left.
     public static func label(_ text: String) -> String? {
+        guard let out = line(text) else { return nil }
+        guard out.count > labelLength else { return out }
+        return String(out.prefix(labelLength)).trimmingCharacters(in: .whitespaces) + "…"
+    }
+
+    /// `text` as one line: whitespace runs as one space, control characters dropped; nil when
+    /// nothing is left.
+    static func line(_ text: String) -> String? {
         var out = ""
         var space = false
         for scalar in text.unicodeScalars {
@@ -104,13 +112,16 @@ public struct DesignViewRecord: Codable, Hashable, Sendable {
             space = false
             out.unicodeScalars.append(scalar)
         }
-        guard !out.isEmpty else { return nil }
-        guard out.count > labelLength else { return out }
-        return String(out.prefix(labelLength)).trimmingCharacters(in: .whitespaces) + "…"
+        return out.isEmpty ? nil : out
     }
 
     static func isLabel(_ text: String) -> Bool {
-        !text.isEmpty && text.count <= maxLabelLength && !text.unicodeScalars.contains { isControl($0) || $0 == "\n" }
+        !text.isEmpty && text.count <= maxLabelLength && isLine(text)
+    }
+
+    /// No control characters and no line breaks.
+    static func isLine(_ text: String) -> Bool {
+        !text.unicodeScalars.contains { isControl($0) || $0 == "\n" }
     }
 
     private static func isControl(_ scalar: Unicode.Scalar) -> Bool {
@@ -145,11 +156,12 @@ extension DesignViewRecord {
         return (0..<6).map { _ in String(format: "%02x", UInt8.random(in: .min ... .max, using: &generator)) }.joined()
     }
 
-    /// `message` without the fenced record `fenced(nonce:)` or the comment fence
-    /// (`DesignCommentFence`) put ahead of it: what the viewer typed, as the thread shows it.
+    /// `message` without the fenced record `fenced(nonce:)`, the comment fence
+    /// (`DesignCommentFence`) or the markup fence (`DesignMarkupFence`) put ahead of it: what the viewer typed, as the thread shows it.
     /// Text that doesn't start with exactly such a fence comes back unchanged.
     public static func strippingFence(from message: String) -> String {
         if let comment = DesignCommentFence.parse(message) { return String(comment.text) }
+        if let markup = DesignMarkupFence.parse(message) { return String(markup.text) }
         let head = preamble + "\n<design-data nonce=\""
         guard message.hasPrefix(head) else { return message }
         let rest = message.dropFirst(head.count)

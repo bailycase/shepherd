@@ -3,7 +3,7 @@ import SwiftUI
 /// The design canvas (NWDesignCanvas; DZCanvas): `bgBase` with 1px `lineStrong` dots every
 /// 22pt, the boards at their canvas positions in their frames, and the canvas toolbar in the
 /// bottom-leading corner. It pans (two-finger scroll, the Pan tool, space-drag) and zooms (pinch,
-/// ⌘-scroll) about the pointer. With Select or Comment, a click reports what it landed on (`pick`:
+/// ⌘-scroll) about the pointer; on iPad a drag pans and a pinch zooms (`NWCanvasTouchInput`). With Select or Comment, a click reports what it landed on (`pick`:
 /// a point on a board, a board's label, or the empty canvas; shift extends), and the pointer's
 /// moves over the boards are reported too (`point`); the selected and hovered elements are ringed
 /// over their boards (`NWSelectionRing`) from the rects the boards reported.
@@ -244,16 +244,24 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
                 point(found.board == nil ? nil : found)
             },
             zooming: zooming))
+        #elseif os(iOS)
+        NWCanvasTouchInput(tool: tool, handlers: NWCanvasTouchInput.Handlers(
+            pan: { viewport.pan(by: $0) },
+            zoom: { factor, anchor in viewport.zoom(by: factor, about: anchor) },
+            tap: { location in pick(boards.pick(at: location, viewport: viewport)) },
+            grab: { location in
+                guard move != nil else { return nil }
+                let found = boards.pick(at: location, viewport: viewport)
+                guard let id = found.board, let board = boards.first(where: { $0.id == id }) else { return nil }
+                return found.point == nil || board.isSelected ? id : nil
+            },
+            drag: { id, translation, ended in
+                move?(NWBoardMove(board: id, offset: CGSize(width: translation.width / viewport.zoom,
+                                                            height: translation.height / viewport.zoom), ended: ended))
+            },
+            zooming: zooming))
         #else
         Color.clear
-            .contentShape(Rectangle())
-            .gesture(DragGesture(minimumDistance: 4).onChanged { value in
-                viewport.pan(by: CGSize(width: value.velocity.width / 60, height: value.velocity.height / 60))
-            })
-            .simultaneousGesture(MagnifyGesture().onChanged { value in
-                viewport.zoom(by: value.magnification, about: value.startLocation)
-            })
-            .onTapGesture { location in pick(boards.pick(at: location, viewport: viewport)) }
         #endif
     }
 }

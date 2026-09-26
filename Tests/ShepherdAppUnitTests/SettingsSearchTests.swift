@@ -7,15 +7,15 @@ import Testing
 struct SettingsSearchTests {
     @Test func theNavListsEveryPageInDesignOrder() {
         #expect(SettingsSection.allCases.map(\.title) == [
-            "Appearance", "Terminal", "Agents", "Worktrees", "Pi", "Instructions", "Skills", "Remote", "Keyboard", "Advanced",
-            "Experiments",
+            "Appearance", "Terminal", "Agents", "Worktrees", "Pi", "Instructions", "Skills", "MCP servers", "Remote", "Keyboard",
+            "Advanced", "Experiments",
         ])
     }
 
-    /// Instructions, Skills and Experiments fill the detail area; every other page sits in the
-    /// 720pt column.
-    @Test func instructionsSkillsAndExperimentsAreTheWidePages() {
-        #expect(SettingsSection.allCases.filter(\.isWide) == [.instructions, .skills, .experiments])
+    /// Instructions, Skills, MCP servers and Experiments fill the detail area; every other page
+    /// sits in the 720pt column.
+    @Test func instructionsSkillsMCPAndExperimentsAreTheWidePages() {
+        #expect(SettingsSection.allCases.filter(\.isWide) == [.instructions, .skills, .mcp, .experiments])
     }
 
     @Test func everyPageListsItsRows() {
@@ -53,6 +53,9 @@ struct SettingsSearchTests {
         (".pi", .skills, ["From your pi setup"]),
         ("read-only", .skills, ["From your pi setup", "From pi packages"]),
         ("agent skills", .skills, ["Installed skills", "From your pi setup", "From pi packages"]),
+        ("oauth", .mcp, ["Open sign-in pages by itself"]),
+        ("claude desktop", .mcp, ["Import…"]),
+        (".mcp.json", .mcp, ["Also use a repo’s .mcp.json"]),
     ] as [(String, SettingsSection, [String])])
     func rowsMatchByTitleOrKeyword(query: String, section: SettingsSection, rows: [String]) {
         #expect(section.matches(for: query) == rows)
@@ -62,6 +65,13 @@ struct SettingsSearchTests {
     @Test(arguments: SettingsSection.allCases)
     func matchingASectionTitleListsAllItsRows(section: SettingsSection) {
         #expect(section.matches(for: "  \(section.title.lowercased()) ") == section.items)
+    }
+
+    /// MCP servers' own rows are found by the server's name, after the page's rows.
+    @Test func mcpServersAreFoundByName() {
+        #expect(SettingsSection.mcp.matches(for: "lin", rows: ["linear", "notion"]) == ["linear"])
+        #expect(SettingsSection.mcp.matches(for: "stdio", rows: ["postgres"]) == ["Add server"])
+        #expect(SettingsSection.remote.matches(for: "lin").isEmpty)
     }
 
     @Test func aKeywordFindsOnlyTheSectionsThatOwnIt() {

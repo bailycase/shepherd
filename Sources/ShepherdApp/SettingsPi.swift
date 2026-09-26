@@ -31,6 +31,10 @@ struct PiSettings: View {
                             subtitle: "Show subagent runs in their agent's thread, the inspector and the palette. Off doesn't stop them running.") {
                     SettingsSwitch(label: "Subagent display", isOn: $settings.piSubagentsExtension)
                 }
+                SettingsRow(title: "MCP servers",
+                            subtitle: "Let agents use the servers in Settings ▸ MCP servers through one `mcp` tool.") {
+                    SettingsSwitch(label: "MCP servers", isOn: $settings.piMCPExtension)
+                }
             }
 
             if settings.piNativeSubagents {

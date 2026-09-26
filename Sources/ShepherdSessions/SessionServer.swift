@@ -257,6 +257,14 @@ public final class SessionServer: @unchecked Sendable {
     /// An agent asked to open a native diff-review pane. The GUI owns the
     /// review layout and user interaction; the completion carries the result.
     public var onReviewRequest: ((ReviewRequest, @escaping (ReviewOutcome) -> Void) -> Void)?
+    /// An agent's MCP extension asked for a server's credentials. The app owns the Keychain and
+    /// OAuth, so the request is handed to it like a pane request. Delivered on the main actor;
+    /// the completion may be called from any thread. With no handler the answer is
+    /// `mcp_unavailable`.
+    public var onMCPRequest: ((MCPRequest, @escaping (MCPOutcome) -> Void) -> Void)?
+    /// A server's state or tool list, from one agent's MCP extension (Settings ▸ MCP servers).
+    /// Delivered on the main actor in the order the reports arrived.
+    public var onMCPReport: ((AgentID, MCPServerReport) -> Void)?
     public var onRemotePaneRequest: ((PaneRequest, @escaping (PaneOutcome) -> Void) -> Void)?
     /// A remote client asked to create an agent. Spawning pi (extension
     /// flags, session-file seeding, pane binding) is the GUI's flow, so the
@@ -476,10 +484,13 @@ public final class SessionServer: @unchecked Sendable {
     /// The host's Design tool experiment is on: it serves `designs.v1`. Server queue.
     private var designsServed = false
 
-    /// What this host tells a remote client it can do now: `designs.v1` only while it serves
-    /// designs. Server queue.
+    /// What this host tells a remote client it can do now: `designs.v1` (and Pencil markup with
+    /// it) only while it serves designs. Server queue.
     private var offeredCapabilities: [String] {
-        designsServed ? advertisedCapabilities : advertisedCapabilities.filter { $0 != RemoteProtocol.designsCapability }
+        let designs = advertisedCapabilities.contains(RemoteProtocol.designsCapability)
+        return designsServed && designs ? advertisedCapabilities : advertisedCapabilities.filter {
+            $0 != RemoteProtocol.designsCapability && $0 != RemoteProtocol.designMarkupCapability
+        }
     }
     /// Which agent's own pane runs each session, for the store version it was built from.
     private var sessionAgents: (version: UInt64, agents: [SessionID: AgentID])?
@@ -1590,6 +1601,10 @@ public final class SessionServer: @unchecked Sendable {
             send(.error(id: id, code: RemoteDesignCode.off, message: "The Design tool is off on this host."), to: client)
             return
         }
+        if let needed = request.capability, !advertisedCapabilities.contains(needed) {
+            send(.error(id: id, code: "unsupported", message: "This host doesn't take that design request."), to: client)
+            return
+        }
         if case .watch(let designIDs) = request {
             // Pushes go only to a client that said it reads them.
             guard client.knowsDesigns else {
@@ -2090,6 +2105,12 @@ public final class SessionServer: @unchecked Sendable {
             childCommandPending.removeValue(forKey: id)?.completion(error)
         case .notify(let agentID, let title, let body):
             hopToMain { [weak self] in self?.onNotify?(agentID, title, body) }
+        case .mcpCredentials(let id, let agentID, let server, let reason, let challenge):
+            routeMCPRequest(MCPRequest(agentID: agentID, server: server, reason: reason, challenge: challenge),
+                            requestID: id, client: client)
+        case .mcpReport(let agentID, let report):
+            guard store.state.agents.contains(where: { $0.id == agentID }) else { return }
+            hopToMain { [weak self] in self?.onMCPReport?(agentID, report) }
         case .helloAgent(let agentID):
             client.agentID = agentID
         case .coordinateAgent(let id, let agentID, let targetAgentID, let request):
@@ -2213,6 +2234,10 @@ public final class SessionServer: @unchecked Sendable {
         case .designSystemWrite(let id, let agentID, let designID, let system):
             designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client) { server, _ in
                 .designSystemWritten(id: id, result: try await server.writeDesignSystem(system, for: designID))
+            }
+        case .designProposeComments(let id, let agentID, let designID, let call, let proposals):
+            designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client) { server, _ in
+                .designProposals(id: id, proposals: try await server.proposeDesignComments(designID, call: call, proposals: proposals))
             }
         }
     }
@@ -2424,6 +2449,26 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Hand an MCP credentials request to the GUI and write its reply back to the client. Only a
+    /// live agent may ask: the answer can carry secrets.
+    private func routeMCPRequest(_ request: MCPRequest, requestID: Int, client: ExtensionConnection) {
+        guard store.state.agents.contains(where: { $0.id == request.agentID }) else {
+            reply(.error(id: requestID, code: "no_such_agent", message: "no such agent"), to: client)
+            return
+        }
+        guard let handler = onMCPRequest else {
+            reply(.error(id: requestID, code: "mcp_unavailable",
+                         message: "Shepherd can't hand over \(request.server)'s credentials here."), to: client)
+            return
+        }
+        hopToMain { [weak self, weak client] in
+            handler(request) { outcome in
+                guard let self, let client else { return }
+                self.queue.async { self.reply(outcome.withID(requestID), to: client) }
+            }
+        }
+    }
+
     /// Hand a review request to the GUI and write its reply back to the client.
     private func routeReviewRequest(_ request: ReviewRequest, requestID: Int, client: ExtensionConnection) {
         guard let handler = onReviewRequest else {
@@ -2506,7 +2551,9 @@ public final class SessionServer: @unchecked Sendable {
              .designComment(let id, _),
              .designSystems(let id, _),
              .designSystem(let id, _),
-             .designSystemWritten(let id, _):
+             .designSystemWritten(let id, _),
+             .designProposals(let id, _),
+             .mcpCredentials(let id, _):
             return id
         }
     }
@@ -3420,8 +3467,63 @@ public final class SessionServer: @unchecked Sendable {
         return comment
     }
 
-    /// Hands a comment (or a reply under one) to the design's agent as its own queued turn: the
-    /// fence, then the viewer's words, going to pi alone. Why it couldn't, or nil.
+    /// What settling the design agent's proposals left behind: their comments, and why any that
+    /// were to go didn't reach the agent.
+    public struct DesignProposalsOutcome: Sendable {
+        public var comments: [DesignComment]
+        public var undelivered: String?
+    }
+
+    /// The viewer's answer to the design agent's proposals from their markup, which the host kept
+    /// as comments when the agent made them: each named proposal's comment settled, all at once at
+    /// the comments' `baseRevision`. With `deliver` ("Apply both") each one settled now and still
+    /// open goes to the agent as a comment does, a turn of its own; without it ("Keep as
+    /// comments") they stay on the canvas. A proposal settles once, so it is never sent twice.
+    public func settleDesignProposals(_ designID: DesignID, proposals: [String], deliver: Bool,
+                                      baseRevision: UInt64? = nil) async throws -> DesignProposalsOutcome {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        let settled = try await designs.settleProposals(designID, proposals: proposals, baseRevision: baseRevision,
+                                                        at: Self.nowMilliseconds())
+        if !settled.settled.isEmpty { await designCommentsChanged(designID) }
+        guard deliver else { return DesignProposalsOutcome(comments: settled.comments) }
+        var undelivered: String?
+        for comment in settled.comments where settled.settled.contains(comment.id) && comment.isOpen {
+            if let why = await deliverDesignComment(designID, id: comment.id, text: comment.text, fence: DesignCommentFence(comment).fenced()) {
+                undelivered = why
+                break
+            }
+        }
+        return DesignProposalsOutcome(comments: settled.comments, undelivered: undelivered)
+    }
+
+    // MARK: - Pencil markup
+
+    /// Hands the viewer's Pencil markup to the design's agent as a turn of its own through the
+    /// host queue, never into the turn pi is working on: the record, checked against its grammar
+    /// and the design (`DesignStore.checkMarkup`: boards on the canvas, elements their sources
+    /// have now, labels read from them), fenced as data (`DesignMarkupFence`), then a line saying
+    /// what it is. Nothing is kept: why it couldn't reach the agent, or nil.
+    public func sendDesignMarkup(_ designID: DesignID, markup: DesignMarkup) async throws -> String? {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        let checked = try await designs.checkMarkup(designID, markup)
+        return await deliverDesignComment(designID, id: UUID(), text: checked.message, fence: DesignMarkupFence.fenced(checked))
+    }
+
+    /// The design agent's proposals from the markup (`markup_propose`), checked against the
+    /// design's boards and kept as comments at once, all or none (iPadDesign: "I turned the
+    /// Pencil marks into two comments"), sent nowhere until the viewer applies them. The tool's
+    /// result carries them for the chat's card.
+    public func proposeDesignComments(_ designID: DesignID, call: String,
+                                      proposals: [DesignMarkupProposal]) async throws -> [DesignCommentDraft] {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        let drafts = try await designs.resolveProposals(designID, call: call, proposals)
+        let kept = try await designs.addComments(designID, drafts: drafts, baseRevision: nil, at: Self.nowMilliseconds())
+        if !kept.added.isEmpty { await designCommentsChanged(designID) }
+        return drafts
+    }
+
+    /// Hands a comment (or a reply under one, or Pencil markup) to the design's agent as its own
+    /// queued turn: the fence, then the viewer's words, going to pi alone. Why it couldn't, or nil.
     private func deliverDesignComment(_ designID: DesignID, id: UUID, text: String, fence: String) async -> String? {
         await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
             queue.async {

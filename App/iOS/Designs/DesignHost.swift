@@ -119,7 +119,7 @@ final class DesignRendering {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("design-export", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let url = folder.appendingPathComponent(DesignExportNames.file(name, format: format))
+        let url = folder.appendingPathComponent(DesignExportNames.fileName(name) + (format == .png ? "@2x.png" : ".pdf"))
         try data.write(to: url, options: .atomic)
         return url
     }
@@ -368,14 +368,5 @@ extension DesignRendering {
         guard let data = context.data?.assumingMemoryBound(to: UInt8.self) else { return .clear }
         return UIColor(red: CGFloat(data[0]) / 255, green: CGFloat(data[1]) / 255, blue: CGFloat(data[2]) / 255,
                        alpha: CGFloat(data[3]) / 255)
-    }
-}
-
-/// The file names Export gives a board: the board's name, safe for a file.
-enum DesignExportNames {
-    static func file(_ name: String, format: DesignExportFormat) -> String {
-        let safe = name.map { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" || $0 == " " ? $0 : "-" }
-        let base = String(safe).trimmingCharacters(in: .whitespaces)
-        return (base.isEmpty ? "Board" : base) + (format == .png ? "@2x.png" : ".pdf")
     }
 }

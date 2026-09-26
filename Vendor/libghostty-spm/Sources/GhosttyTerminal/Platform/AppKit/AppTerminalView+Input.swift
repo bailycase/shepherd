@@ -32,7 +32,12 @@
             guard window?.firstResponder === self else { return false }
             guard let surface else { return false }
 
-            if keyIsBinding(event, on: surface) {
+            // Keep plain Space with the focused terminal before AppKit/SwiftUI
+            // can use it to activate a control elsewhere in the window. Still
+            // use the normal input path for IME composition and Ghostty bindings.
+            let plainSpace = event.charactersIgnoringModifiers == " "
+                && event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty
+            if plainSpace || keyIsBinding(event, on: surface) {
                 keyDown(with: event)
                 return true
             }

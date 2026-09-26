@@ -7,6 +7,7 @@ import ShepherdSessions
 import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdRemote
 
 /// The Tweak tab against a real server (docs/designs.md › Tweak): a drag writes once, on
 /// release, as a splice of the board's source; a stale revision is read again and the change made
