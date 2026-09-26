@@ -144,3 +144,60 @@ struct MCPOAuthTests {
         #expect(MCPSignInFlow.domain(host) == domain)
     }
 }
+
+/// Sign-in goes only over https, or plain http to this Mac.
+@Suite("MCP OAuth transport")
+struct MCPOAuthTransportTests {
+    @Test(arguments: [
+        ("https://auth.example.com/authorize", true), ("http://127.0.0.1:8123/token", true), ("http://localhost/token", true),
+        ("http://auth.example.com/token", false), ("file:///etc/passwd", false), ("javascript:alert(1)", false),
+        ("shepherd://x", false),
+    ])
+    func onlyHTTPSOrThisMacIsTrusted(url: String, trusted: Bool) throws {
+        #expect(MCPOAuthService.isTrusted(try #require(URL(string: url))) == trusted)
+    }
+
+    /// An authorization server whose endpoints are plain http elsewhere is refused before
+    /// anything is registered or opened.
+    @Test func discoveryRefusesPlainHTTPEndpoints() async throws {
+        let http = MetadataStub([
+            "https://mcp.example.com/.well-known/oauth-protected-resource/mcp":
+                #"{"resource":"https://mcp.example.com/mcp","authorization_servers":["https://auth.example.com"]}"#,
+            "https://auth.example.com/.well-known/oauth-authorization-server":
+                #"{"issuer":"https://auth.example.com","authorization_endpoint":"http://auth.example.com/authorize","token_endpoint":"https://auth.example.com/token","code_challenge_methods_supported":["S256"]}"#,
+        ])
+        await #expect(throws: MCPOAuthError.insecure("auth.example.com")) {
+            try await MCPOAuthService(http: http).discover(server: try #require(URL(string: "https://mcp.example.com/mcp")), challenge: nil)
+        }
+    }
+
+    @Test func aPlainHTTPServerOffThisMacIsNeverSignedIn() async throws {
+        await #expect(throws: MCPOAuthError.insecure("mcp.example.com")) {
+            try await MCPOAuthService(http: MetadataStub([:])).discover(server: try #require(URL(string: "http://mcp.example.com/mcp")),
+                                                                       challenge: nil)
+        }
+    }
+
+    @Test func theAuthorizeLinkIsNeverBuiltForAnUntrustedEndpoint() {
+        let metadata = MCPAuthorizationServerMetadata(issuer: "x", authorizationEndpoint: "http://auth.example.com/authorize",
+                                                      tokenEndpoint: "https://auth.example.com/token")
+        let discovery = MCPOAuthDiscovery(issuer: "x", metadata: metadata, resource: "https://mcp.example.com", challengeScopes: [])
+        let client = MCPOAuthClient(clientID: "c", redirectURI: "http://127.0.0.1:1/callback", registeredDynamically: true)
+        #expect(MCPOAuthService.authorizationURL(discovery, client: client, scopes: [], state: "s", challenge: "c") == nil)
+    }
+}
+
+/// Answers GETs from a table; everything else is 404.
+private struct MetadataStub: MCPHTTP {
+    let bodies: [String: String]
+
+    init(_ bodies: [String: String]) {
+        self.bodies = bodies
+    }
+
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let url = request.url!
+        let body = bodies[url.absoluteString]
+        return (Data((body ?? "").utf8), HTTPURLResponse(url: url, statusCode: body == nil ? 404 : 200, httpVersion: nil, headerFields: [:])!)
+    }
+}

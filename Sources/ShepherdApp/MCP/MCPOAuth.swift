@@ -200,6 +200,8 @@ enum MCPOAuthError: Error, Equatable, CustomStringConvertible {
     /// `invalid_grant` on refresh: the sign-in is over.
     case expired
     case badResponse(String)
+    /// Discovery pointed at plain http off this Mac.
+    case insecure(String)
     case timedOut
     case cancelled
 
@@ -213,6 +215,7 @@ enum MCPOAuthError: Error, Equatable, CustomStringConvertible {
         case .tokenFailed(let error, let description): description.map { "\(error): \($0)" } ?? error
         case .expired: "The sign-in expired."
         case .badResponse(let reason): reason
+        case .insecure(let host): "\(host) asked Shepherd to sign in over plain http, so it won’t."
         case .timedOut: "Nobody finished signing in within 10 minutes."
         case .cancelled: "Cancelled."
         }
@@ -272,6 +275,20 @@ struct MCPOAuthService: Sendable {
     let http: MCPHTTP
 
     // MARK: Discovery
+
+    /// Where sign-in may go: https, or plain http only to this Mac (a local server, tests).
+    static func isTrusted(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased(), let host = url.host?.lowercased() else { return false }
+        if scheme == "https" { return true }
+        return scheme == "http" && ["127.0.0.1", "localhost", "::1"].contains(host)
+    }
+
+    private static func requireTrusted(_ string: String?) throws {
+        guard let string else { return }
+        guard let url = URL(string: string), isTrusted(url) else {
+            throw MCPOAuthError.insecure(URL(string: string)?.host ?? string)
+        }
+    }
 
     /// RFC 9728's well-known URLs for a server: `<origin>/.well-known/oauth-protected-resource<path>`,
     /// then the root one. The challenge's `resource_metadata` goes first when it has one.
@@ -333,7 +350,7 @@ struct MCPOAuthService: Sendable {
     func discover(server: URL, challenge: MCPAuthChallenge?) async throws -> MCPOAuthDiscovery {
         var prm: MCPProtectedResourceMetadata?
         var prmURL: URL?
-        for url in Self.protectedResourceMetadataURLs(server: server, challenge: challenge) {
+        for url in Self.protectedResourceMetadataURLs(server: server, challenge: challenge) where Self.isTrusted(url) {
             if let found: MCPProtectedResourceMetadata = try? await getJSON(url) {
                 prm = found
                 prmURL = url
@@ -348,6 +365,7 @@ struct MCPOAuthService: Sendable {
             issuer = Self.origin(of: server) ?? server.absoluteString
         }
         guard let issuerURL = URL(string: issuer) else { throw MCPOAuthError.noMetadata(server.host ?? issuer) }
+        try Self.requireTrusted(issuer)
         var metadata: MCPAuthorizationServerMetadata?
         for url in Self.authorizationServerMetadataURLs(issuer: issuerURL) {
             if let found: MCPAuthorizationServerMetadata = try? await getJSON(url) {
@@ -360,6 +378,9 @@ struct MCPOAuthService: Sendable {
                                                       tokenEndpoint: origin + "/token", registrationEndpoint: origin + "/register")
         }
         guard let metadata else { throw MCPOAuthError.noMetadata(issuerURL.host ?? issuer) }
+        for endpoint in [metadata.authorizationEndpoint, metadata.tokenEndpoint, metadata.registrationEndpoint] {
+            try Self.requireTrusted(endpoint)
+        }
         guard metadata.supportsS256 else { throw MCPOAuthError.noS256 }
         let resource = prm?.resource.flatMap { $0.isEmpty ? nil : $0 } ?? Self.canonicalResource(server)
         return MCPOAuthDiscovery(resourceMetadata: prm, resourceMetadataURL: prmURL, issuer: metadata.issuer ?? issuer,
@@ -373,6 +394,7 @@ struct MCPOAuthService: Sendable {
         guard let endpoint = metadata.registrationEndpoint.flatMap(URL.init(string:)) else {
             throw MCPOAuthError.noRegistration(provider: provider)
         }
+        try Self.requireTrusted(endpoint.absoluteString)
         let body: [String: Any] = [
             "client_name": "Shepherd",
             "redirect_uris": [redirectURI],
@@ -406,7 +428,8 @@ struct MCPOAuthService: Sendable {
 
     static func authorizationURL(_ discovery: MCPOAuthDiscovery, client: MCPOAuthClient, scopes: [String],
                                  state: String, challenge: String) -> URL? {
-        guard var components = URLComponents(string: discovery.metadata.authorizationEndpoint) else { return nil }
+        guard let endpoint = URL(string: discovery.metadata.authorizationEndpoint), isTrusted(endpoint),
+              var components = URLComponents(string: discovery.metadata.authorizationEndpoint) else { return nil }
         var items = components.queryItems ?? []
         items += [
             URLQueryItem(name: "response_type", value: "code"),
@@ -481,6 +504,7 @@ struct MCPOAuthService: Sendable {
     private func tokenRequest(endpoint: String, form: [(String, String)], clientID: String, clientSecret: String?,
                               authMethod: String?) async throws -> TokenAnswer {
         guard let url = URL(string: endpoint) else { throw MCPOAuthError.badResponse("bad token endpoint") }
+        try Self.requireTrusted(endpoint)
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
