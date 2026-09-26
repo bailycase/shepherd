@@ -100,6 +100,8 @@ final class DesignRendering {
     private let network: DesignSandbox.Network
     /// The Designs page's cards' first boards.
     let thumbnails: DesignThumbnails
+    /// Design systems' component specimens (DZSystem).
+    let specimens: DesignSpecimens
 
     /// Live views a design on screen may hold (previews take none: their captures can't draw a
     /// web view, so every board draws its snapshot).
@@ -110,6 +112,7 @@ final class DesignRendering {
         self.network = network.sandbox
         self.liveCap = liveCap
         thumbnails = DesignThumbnails(rasterizer: rasterizer)
+        specimens = DesignSpecimens(rasterizer: rasterizer, network: network.sandbox)
         thumbnails.surface = { [weak self] id in self?.surface(for: id) }
         rasterizer.countWebViews = { [weak self] in self?.webViews ?? 0 }
     }
@@ -717,6 +720,61 @@ final class DesignThumbnails {
     func prune(keeping ids: Set<DesignID>) {
         for id in Set(entries.keys).subtracting(ids) { entries.removeValue(forKey: id) }
         for id in Set(images.keys).subtracting(ids) { images.removeValue(forKey: id) }
+    }
+}
+
+/// Design systems' component specimens (DZSystem's tiles), drawn by the shared rasterizer from
+/// each system's files held in memory (`DesignSurface(designID:files:)`), never from a copy on
+/// disk. A system's specimens are drawn again only when its revision moves.
+@MainActor @Observable
+final class DesignSpecimens {
+    /// Moves when an image lands.
+    private(set) var version = 0
+    @ObservationIgnored private var images: [String: [Int: CGImage]] = [:]
+    /// The revision each system's specimens were asked for at.
+    @ObservationIgnored private var revisions: [String: String] = [:]
+    @ObservationIgnored private let rasterizer: DesignRasterizer
+    @ObservationIgnored private let network: DesignSandbox.Network
+
+    init(rasterizer: DesignRasterizer, network: DesignSandbox.Network) {
+        self.rasterizer = rasterizer
+        self.network = network
+    }
+
+    func image(_ namespace: String, _ component: Int) -> CGImage? { images[namespace]?[component] }
+
+    /// Whether `namespace`'s specimens are asked for at `revision` already.
+    func has(_ namespace: String, revision: String) -> Bool { revisions[namespace] == revision }
+
+    /// Draws a system's specimens at `revision`: `boards` (by component) among its `files`.
+    func update(_ namespace: String, revision: String, files: [String: Data], boards: [Int: (path: String, source: String)]) {
+        guard revisions[namespace] != revision else { return }
+        revisions[namespace] = revision
+        images[namespace] = images[namespace]?.filter { boards[$0.key] != nil }
+        guard !boards.isEmpty else { return }
+        var all = files
+        for board in boards.values { all[board.path] = Data(board.source.utf8) }
+        let surface = DesignSurface(designID: DesignID(), files: all, network: network)
+        let size = DesignSpecimenBoard.size
+        for (index, board) in boards.sorted(by: { $0.key < $1.key }) {
+            guard let path = DesignPath(board.path) else { continue }
+            rasterizer.enqueue(DesignRasterizer.Job(key: "specimen/\(namespace)/\(index)", surface: surface, path: path, size: size,
+                                                    sha: revision, priority: .thumbnail, wanted: { [weak self] in
+                                                        self?.revisions[namespace] == revision
+                                                    }) { [weak self] image in
+                guard let self, let image, self.revisions[namespace] == revision else { return }
+                self.images[namespace, default: [:]][index] = image
+                self.version += 1
+            })
+        }
+    }
+
+    /// Systems that are gone give up their specimens.
+    func prune(keeping namespaces: Set<String>) {
+        for namespace in Set(revisions.keys).subtracting(namespaces) {
+            revisions.removeValue(forKey: namespace)
+            images.removeValue(forKey: namespace)
+        }
     }
 }
 

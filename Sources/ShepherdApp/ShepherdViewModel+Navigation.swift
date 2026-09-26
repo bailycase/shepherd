@@ -134,6 +134,8 @@ extension ShepherdViewModel {
         case .extensions:
             settingsSection = .pi
             showSettings = true
+        case .designSystems:
+            openDesignSystems()
         }
     }
 
@@ -141,7 +143,8 @@ extension ShepherdViewModel {
     /// switching agents.
     func openDestination(_ page: MainDestination) {
         // The Design tool's pages exist only while its experiment is on.
-        if page == .designs || page == .newDesign, !designToolEnabled { return }
+        if page == .designs || page == .newDesign || page == .designSystem, !designToolEnabled { return }
+        if page == .designSystem, !moreOpen { moreOpen = true }
         // New thread opens in the project of the thread on screen, remote ones included.
         if page == .newThread { newThread.prepare(for: self) }
         if page == .hosts, !moreOpen { moreOpen = true }

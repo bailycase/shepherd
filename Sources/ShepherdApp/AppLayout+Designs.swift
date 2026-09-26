@@ -7,8 +7,6 @@ extension AppLayout {
     // The Designs page
     /// Between the page's sections.
     static let designsSectionSpacing: CGFloat = 26
-    /// System cards per row.
-    static let designSystemColumns = 3
     /// A card's thumbnail is kept this many pixels wide (its board draws at most 256pt).
     static let designThumbnailPixelWidth: CGFloat = 512
 
@@ -27,6 +25,22 @@ extension AppLayout {
     static let newDesignCardsPerRow: CGFloat = 3
     /// A starting point's card: its three lines with their padding.
     static let newDesignCardHeight: CGFloat = 84
+
+    // A design system's page (DZSystem); the section list and the swatches are `NWDesignMetrics`
+    /// The content's padding, and between its sections.
+    static let designSystemPaddingVertical: CGFloat = 24
+    static let designSystemPaddingHorizontal: CGFloat = 32
+    static let designSystemSectionSpacing: CGFloat = 26
+    /// The name in mono 22 over its source in 12.5.
+    static let designSystemNameSize: CGFloat = 22
+    static let designSystemSourceSize: CGFloat = 12.5
+    /// Colors six to a row, 14pt apart; components three, 16pt apart.
+    static let designSystemColorColumns = 6
+    static let designSystemColorGap: CGFloat = 14
+    static let designSystemComponentColumns = 3
+    static let designSystemComponentGap: CGFloat = 16
+    /// A type specimen is drawn at its size up to this (not drawn: a style larger than a row).
+    static let designSystemSpecimenMaxSize: Double = 96
 
     // A design
     /// The chat pane beside the canvas.
