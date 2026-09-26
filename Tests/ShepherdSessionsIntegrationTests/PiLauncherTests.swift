@@ -192,4 +192,20 @@ struct PiLauncherTests {
         #expect(problem.message.contains("PI_CODING_AGENT_DIR"))
         #expect(!FileManager.default.fileExists(atPath: setup.home.path), "nothing was written into the shared folder")
     }
+
+    /// A `bin` in the home that links elsewhere (into the user's pi) gets no launcher: the home
+    /// is refused instead.
+    @Test func aBinFolderThatLeadsOutOfTheHomeGetsNoLauncher() throws {
+        let dir = try makeScratchDirectory("bin-link")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let theirs = dir.appendingPathComponent("theirs/bin", isDirectory: true)
+        let home = dir.appendingPathComponent("support/pi", isDirectory: true)
+        try FileManager.default.createDirectory(at: theirs, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: home.appendingPathComponent("bin"), withDestinationURL: theirs)
+        let setup = PiSetup(engine: PiSetup.app.engine, home: home)
+
+        #expect(setup.prepare() != nil)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: theirs.path).isEmpty)
+    }
 }

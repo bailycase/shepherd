@@ -138,6 +138,11 @@ public struct PiHome: Equatable, Sendable {
         try files.createDirectory(at: directory.appendingPathComponent("bin", isDirectory: true), withIntermediateDirectories: true,
                                   attributes: [.posixPermissions: 0o700])
         chmod(directory.path, 0o700)
+        // A link in the home would carry the launcher somewhere else, such as the user's own pi.
+        let bin = launcher.deletingLastPathComponent().path
+        guard Self.isInside(Self.canonical(bin), Self.canonical(directory.path)) else {
+            throw PiHomeError("\(bin) leads outside Shepherd's pi home, so Shepherd won't write its launcher there")
+        }
         try Self.write(Data(Self.markerText.utf8), to: marker, mode: 0o644)
         try Self.write(Data(restoreEnvScript.utf8), to: restoreEnv, mode: 0o644)
         try Self.write(Data(launcherScript.utf8), to: launcher, mode: 0o755)
