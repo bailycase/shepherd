@@ -9,6 +9,8 @@ enum ShellIntegration {
             "SHEPHERD_AGENT_ID", "SHEPHERD_SOCKET", "SHEPHERD_EXT_STATUS",
             "SHEPHERD_EXT_PANES", "SHEPHERD_NEEDS_NAME", "SHEPHERD_AUTOMATION",
             "SHEPHERD_MODEL", "SHEPHERD_INSTRUCTIONS_DIR", "SHEPHERD_SUGGEST_FILES",
+            "SHEPHERD_EXT_MCP", "SHEPHERD_EXT_MCP_CLIENT", "SHEPHERD_EXT_MCP_CONFIG", "SHEPHERD_EXT_MCP_CACHE",
+            "SHEPHERD_EXT_MCP_PROJECT",
         ].map { ($0, "") })
         return SessionCommand(argv: shell, env: env)
     }

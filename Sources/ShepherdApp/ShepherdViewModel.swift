@@ -195,6 +195,11 @@ final class ShepherdViewModel {
     let instructions: InstructionsModel
     /// Settings ▸ Experiments ▸ Suggested instructions: what this Mac's agents suggested.
     let suggestions: SuggestionsModel
+    /// Settings ▸ MCP servers: what this Mac's agents report about each server.
+    let mcpReports = MCPAgentReports()
+    /// Answers an agent's MCP credentials request (the Keychain and OAuth). Nil until Settings ▸
+    /// MCP servers' store is installed; requests then fail with `mcp_unavailable`.
+    @ObservationIgnored var mcpCredentialSource: (@MainActor (MCPRequest) async -> MCPOutcome)?
     /// Settings ▸ Skills: every host's agent skills, This Mac's through `localSkills`.
     let skills: ClientSkills
     @ObservationIgnored let localSkills: LocalSkillsClient
@@ -542,6 +547,8 @@ final class ShepherdViewModel {
         // Agents drive their own panes through the server's extension socket.
         installPaneControl()
         installReviewHandler()
+        // Agents' MCP extensions report servers and ask for their credentials.
+        installMCPHandlers()
         // Any pi session can create automations through the same socket.
         installAutomationControl()
         // Agents can see, message, and spawn peer threads.
@@ -771,6 +778,7 @@ final class ShepherdViewModel {
         checkouts?.sync(agents: state.agents.map(\.id))
         pruneReviewSessions()
         pruneDesigns()
+        mcpReports.retain(agents: Set(state.agents.map(\.id)))
         // First adoption of the restored workspace: stand the enabled
         // automation watches back up (their agents died with the last run).
         if !didAutoStartAutomations {

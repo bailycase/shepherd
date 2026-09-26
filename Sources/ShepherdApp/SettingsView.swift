@@ -248,7 +248,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .terminal: ["Font family", "Font size", "Shell"]
         case .agents: ["Default model", "Default thinking level", "Return while the agent is working", "When a turn ends, send the queue"]
         case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically"]
-        case .pi: ["Name agents automatically", "Panes and agent tools", "Diff review tool", "Native subagents", "Subagent display", "Concurrency", "Update pi daily", "Update extensions daily", "Check now"]
+        case .pi: ["Name agents automatically", "Panes and agent tools", "Diff review tool", "Native subagents", "Subagent display", "MCP servers", "Concurrency", "Update pi daily", "Update extensions daily", "Check now"]
         case .instructions: ["Same on every host", "AGENTS.md", "APPEND_SYSTEM.md", "History"]
         case .skills: ["Installed skills", "From your pi setup", "From pi packages", "Browse skills.sh", "Add from repo",
                        "Skills in the / menu", "Same skills on every host", "Update automatically"]

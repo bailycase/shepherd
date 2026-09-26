@@ -24,7 +24,7 @@ struct HostSettingsMappingTests {
         #expect(settings.defaultThinking == .high)
         #expect(settings.worktreeBase == .head)
         #expect(settings.mergePRAutomatically && settings.mergeMethod == .rebase)
-        #expect(settings.bundledExtensions.map(\.id) == ["namer", "panes", "review", "nativeSubagents", "subagents"])
+        #expect(settings.bundledExtensions.map(\.id) == ["namer", "panes", "review", "nativeSubagents", "subagents", "mcp"])
         #expect(settings.bundledExtensions.first { $0.id == "review" }?.on == false)
         #expect(settings.bundledExtensions.first { $0.id == "review" }?.name == "Diff review tool")
         // pi's own default reads as none.

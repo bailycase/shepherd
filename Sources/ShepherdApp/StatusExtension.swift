@@ -8,6 +8,17 @@ struct SessionCommand {
     var env: [String: String]
 }
 
+/// What an agent's MCP extension is launched with (Settings ▸ Pi ▸ Bundled extensions ▸ MCP servers).
+struct MCPLaunch: Equatable {
+    var extensionPath: String
+    var clientPath: String
+    /// The config file the app resolved (`ShepherdPaths.mcpConfigURL`).
+    var configPath: String
+    var cachePath: String
+    /// Settings ▸ MCP servers ▸ Also use a repo's .mcp.json.
+    var useRepoConfig: Bool
+}
+
 /// The per-agent pi status extension: bundled TypeScript source installed to
 /// Application Support and passed to pi via `-e`, reporting agent lifecycle
 /// status to the app's extension socket.
@@ -45,6 +56,7 @@ enum StatusExtension {
         instructions: (extensionPath: String, directory: String)? = nil,
         suggestFiles: [String] = [],
         design: (extensionPath: String, designID: DesignID, skillDirectory: String)? = nil,
+        mcp: MCPLaunch? = nil,
         model: String?,
         thinking: ThinkingLevel?
     ) -> SessionCommand {
@@ -53,7 +65,7 @@ enum StatusExtension {
         if let thinking { cmd += " --thinking \(shellQuoted(thinking.rawValue))" }
         cmd += " -e \(shellQuoted(extensionPath))"
         for path in [instructions?.extensionPath, panesExtensionPath, reviewExtensionPath, subagentsExtensionPath, childrenExtensionPath,
-                     namerExtensionPath, design?.extensionPath].compactMap({ $0 }) {
+                     namerExtensionPath, design?.extensionPath, mcp?.extensionPath].compactMap({ $0 }) {
             cmd += " -e \(shellQuoted(path))"
         }
         var env = [
@@ -77,6 +89,14 @@ enum StatusExtension {
         if let design {
             env["SHEPHERD_DESIGN_ID"] = design.designID.rawValue
             env["SHEPHERD_DESIGN_SKILL_DIR"] = design.skillDirectory
+        }
+        // Settings ▸ MCP servers: the extension reads the config and the tools cache the app keeps.
+        if let mcp {
+            env["SHEPHERD_EXT_MCP"] = mcp.extensionPath
+            env["SHEPHERD_EXT_MCP_CLIENT"] = mcp.clientPath
+            env["SHEPHERD_EXT_MCP_CONFIG"] = mcp.configPath
+            env["SHEPHERD_EXT_MCP_CACHE"] = mcp.cachePath
+            if mcp.useRepoConfig { env["SHEPHERD_EXT_MCP_PROJECT"] = "1" }
         }
         if let model { env["SHEPHERD_MODEL"] = model }
         return SessionCommand(argv: ["/bin/zsh", "-l", "-c", cmd], env: env)
