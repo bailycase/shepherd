@@ -56,7 +56,9 @@ struct ThreadView: View {
     @State private var wheelIntentUntil = Date.distantPast
     /// Measured height of the floating composer: the scroll view insets by exactly this, so the
     /// thread neither hides under the card nor scrolls into blank space below the last turn.
-    @State private var composerHeight: CGFloat = 120
+    /// Read only by the inset's own modifier, so the composer changing height (a question taking
+    /// its place, Up next growing) never reruns the thread's body or its rows.
+    @State private var composerInset = ComposerInset()
     /// The user turn the last ⌥⌘↑/↓ landed on.
     @State private var jumpedTurn: String?
     @State private var arrivals = ThreadArrivals()
@@ -118,7 +120,7 @@ struct ThreadView: View {
                 }
                 // The composer floats over the scroll view; inset by its real height so "the
                 // bottom" is the last turn, not the space under the card.
-                .safeAreaPadding(.bottom, composerHeight)
+                .modifier(ComposerInsetPadding(inset: composerInset))
                 // A margin rather than padding so scrollTo(.top) keeps the 28pt above a turn.
                 .contentMargins(.top, AppLayout.threadTop, for: .scrollContent)
                 .defaultScrollAnchor(.bottom, for: .initialOffset)
@@ -175,7 +177,9 @@ struct ThreadView: View {
                              proxy.scrollTo(Self.bottomID, anchor: .bottom)
                          } : nil, finder: finder, queueState: queueState, contextDetailsOpen: contextDetailsOpen,
                          inspectSubagent: inspectSubagent, steerSubagent: steerSubagent, inspectedRunID: inspectedRunID)
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { [composerInset] in
+                        if composerInset.height != $0 { composerInset.height = $0 }
+                    }
             }
         }
         // The composer's menus float over the thread and fit the room above the card in it.
@@ -451,4 +455,20 @@ final class ThreadFinder {
     private(set) var request: Request?
 
     func find(_ entryID: String) { request = Request(entryID: entryID) }
+}
+
+/// The floating composer's measured height, observed only by `ComposerInsetPadding`.
+@MainActor
+@Observable
+final class ComposerInset {
+    var height: CGFloat = 120
+}
+
+/// Insets the thread's scroll view by the composer's height.
+struct ComposerInsetPadding: ViewModifier {
+    let inset: ComposerInset
+
+    func body(content: Content) -> some View {
+        content.safeAreaPadding(.bottom, inset.height)
+    }
 }
