@@ -62,6 +62,9 @@ final class AppSettings {
         static let defaultThinking = "shepherd.agent.defaultThinking"
         static let autoNameAgents = "shepherd.agent.autoName"
         static let skillsInSlashMenu = "shepherd.skills.slashMenu"
+        static let mcpOpenSignInPages = "shepherd.mcp.openSignInPages"
+        static let mcpProjectConfig = "shepherd.mcp.projectConfig"
+        static let mcpSameEverywhere = "shepherd.mcp.sameEverywhere"
         static let skillsDirectoryKey = "shepherd.skills.directoryKey"
         static let returnWhileWorking = "shepherd.agent.returnWhileWorking"
         static let queueDelivery = "shepherd.agent.queueDelivery"
@@ -107,6 +110,7 @@ final class AppSettings {
             worktreeAutoCommit, worktreeGeneratePRDescription,
             worktreeDeleteLocalBranch, worktreeAutoMergePR,
             worktreeMergeMethod, skillsInSlashMenu, skillsDirectoryKey,
+            mcpOpenSignInPages, mcpProjectConfig, mcpSameEverywhere,
             designToolEnabled,
         ]
 
@@ -162,6 +166,23 @@ final class AppSettings {
     /// Off, they are left out of the menu (typing one still works; pi takes it).
     var skillsInSlashMenu: Bool {
         didSet { store.set(skillsInSlashMenu, forKey: Key.skillsInSlashMenu) }
+    }
+
+    /// Settings ▸ MCP servers ▸ Open sign-in pages by itself: an agent reaching a server that
+    /// needs sign-in opens the sign-in sheet and the browser. Off, only the row changes.
+    var mcpOpenSignInPages: Bool {
+        didSet { store.set(mcpOpenSignInPages, forKey: Key.mcpOpenSignInPages) }
+    }
+
+    /// Settings ▸ MCP servers ▸ Also use a repo's .mcp.json (`SHEPHERD_EXT_MCP_PROJECT`).
+    var mcpProjectConfig: Bool {
+        didSet { store.set(mcpProjectConfig, forKey: Key.mcpProjectConfig) }
+    }
+
+    /// Settings ▸ MCP servers ▸ Same servers on every host. Stored for stage 2; stage 1 has
+    /// only This Mac.
+    var mcpSameEverywhere: Bool {
+        didSet { store.set(mcpSameEverywhere, forKey: Key.mcpSameEverywhere) }
     }
 
     /// A skills.sh API key: Browse's ranked lists need one (search and install don't).
@@ -364,6 +385,9 @@ final class AppSettings {
         autoNameAgents = store.object(forKey: Key.autoNameAgents) as? Bool ?? Defaults.autoNameAgents
         skillsInSlashMenu = store.object(forKey: Key.skillsInSlashMenu) as? Bool ?? Defaults.skillsInSlashMenu
         skillsDirectoryKey = store.string(forKey: Key.skillsDirectoryKey) ?? ""
+        mcpOpenSignInPages = store.object(forKey: Key.mcpOpenSignInPages) as? Bool ?? false
+        mcpProjectConfig = store.object(forKey: Key.mcpProjectConfig) as? Bool ?? false
+        mcpSameEverywhere = store.object(forKey: Key.mcpSameEverywhere) as? Bool ?? true
         returnWhileWorking = store.string(forKey: Key.returnWhileWorking)
             .flatMap(ReturnWhileWorking.init(rawValue:)) ?? Defaults.returnWhileWorking
         queueDelivery = store.string(forKey: Key.queueDelivery)
@@ -453,6 +477,9 @@ final class AppSettings {
         defaultThinking = Defaults.thinking
         autoNameAgents = Defaults.autoNameAgents
         skillsInSlashMenu = Defaults.skillsInSlashMenu
+        mcpOpenSignInPages = false
+        mcpProjectConfig = false
+        mcpSameEverywhere = true
         returnWhileWorking = Defaults.returnWhileWorking
         queueDelivery = Defaults.queueDelivery
         uiDensity = 1
