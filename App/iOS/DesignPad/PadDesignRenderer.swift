@@ -354,7 +354,10 @@ final class PadDesignHost {
                 slot.ready = true
                 self.reload(path, slot: slot)
             } else {
-                await self.snapshot(path, slot: slot)
+                // A snapshot of this drawing is kept: a view made live off the canvas (a tap or a
+                // mark asking about it) draws from the stage, where its page can be caught before
+                // it takes the canvas's zoom.
+                if self.images.sha(path) != slot.sha { await self.snapshot(path, slot: slot) }
                 guard self.slots[path] === slot else { return }
                 slot.ready = true
                 self.redrawn?(path)
