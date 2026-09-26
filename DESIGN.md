@@ -3778,10 +3778,10 @@ back. The page sits between Instructions and Remote in the nav, with `graduation
     group left empty hides while another group keeps a row.
 - **The read-only groups** (the user's decision of 2026-09-26: every skill the agent can use shows
   here, grouped by where it comes from; departures above). They are the first host's own (This Mac
-  on the Mac), read with pi's own loader (docs/skills.md › Outside skills), and Same skills on
-  every host never touches them:
-  - **From your pi setup:** pi's agent directory's `skills/` and the `skills` paths in pi's
-    settings. Its title has a lock in the switch column, "~/.pi/agent/skills" and Show folder
+  on the Mac), read from the user's own pi as plain files and from Shepherd's pi (docs/skills.md ›
+  Outside skills), and Same skills on every host never touches them:
+  - **From your pi setup:** the user's own pi's `skills/` and the `skills` paths in its
+    settings, read as plain files (and what Shepherd's own pi home adds, asked of Shepherd's pi). Its title has a lock in the switch column, "~/.pi/agent/skills" and Show folder
     (small ghost; This Mac only).
   - **From pi packages:** the skills the packages in pi's settings bring, each naming its package.
   - A row (`PiSkillsListRow`, Equatable, lazy): no switch, the name in mono 13/600 over its

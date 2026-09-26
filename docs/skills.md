@@ -17,7 +17,8 @@ prompt, and the agent reads the whole file when a task matches. `/skill:name` in
 loads one on purpose. `disable-model-invocation: true` (a YAML boolean; a quoted `"true"` is not
 one) keeps a skill out of the prompt, so only `/skill:name` loads it.
 
-Shepherd never writes into `~/.pi/agent`. `~/.agents/skills` is the folder pi and other agents
+Shepherd never writes into the user's own pi (`~/.pi/agent`), and runs its own pi in its own home
+([pi-home.md](pi-home.md)). `~/.agents/skills` is the folder pi and other agents
 share for skills, and Settings ▸ Skills is the only thing in Shepherd that changes it.
 
 pi loads skills from more places than that folder, and the page lists them all (below, Outside
@@ -29,21 +30,30 @@ The composer's / menu lists every skill the running pi loaded (`get_commands`), 
 Skills lists them too (the user's decision of 2026-09-26: "Show all, read-only"). Besides
 `~/.agents/skills`, a session outside any repository loads:
 
-- **pi's agent directory's `skills/`** (`~/.pi/agent/skills`, or `$PI_CODING_AGENT_DIR/skills`),
+- **pi's agent directory's `skills/`,**
 - **the `skills` paths in pi's settings.json,**
-- **the skills of the pi packages in its `packages`.**
+- **the skills of the pi packages in its `packages`** (none in Shepherd's own pi, which loads no
+  packages).
 
-The page groups them as From your pi setup (the first two) and From pi packages, read-only. A
+The page groups them as From your pi setup (the first two) and From pi packages, read-only.
+"Your pi setup" is the user's own pi (`~/.pi/agent`, or wherever their startup files move it),
+read as plain files; what Shepherd's own pi home adds is asked of Shepherd's pi. A
 repository's own skills (`.pi/skills`, `.agents/skills`, once it's trusted) load only in its
 threads, and Settings is global, so the page says so rather than listing them. Skills an
 extension adds while it runs (`resources_discover`) aren't known without running it, so they show
 only in a thread's / menu.
 
-**Asking pi.** To list exactly what an agent gets, a host asks pi's own loader:
-`PiSkillsLoader` (ShepherdSessions) runs `Extensions/shepherd-pi-skills.mjs` (embedded as
-`PiSkillsLoader.scriptSource`, byte-identical) on the node pi runs on, through a login shell as
-agents start pi, with the source on stdin and pi's executable (`command -v pi`) as its argument.
-The script finds pi's package above the executable (or in a wrapper script's text), imports it,
+**Your pi, as files.** The user's own pi is never asked: `PiSkillsLoader` reads its `skills/`
+folder (its `.md` files and every `SKILL.md` below it) and the `skills` paths in its
+`settings.json` (a `!` or `-` filter skipped, a `+` dropped), each SKILL.md's front matter giving
+the name, description and `disable-model-invocation`. It never runs pi's code, npm, or
+`npm root -g` against it. A name Shepherd's pi already has is listed as passed over.
+
+**Asking Shepherd's pi.** To list exactly what an agent gets from Shepherd's home, a host asks
+pi's own loader: `PiSkillsLoader` (ShepherdSessions) runs `Extensions/shepherd-pi-skills.mjs`
+(embedded as `PiSkillsLoader.scriptSource`, byte-identical) on the engine's node, with no shell,
+the source on stdin, and the engine's package (`SHEPHERD_PI_SKILLS_PACKAGE`) and Shepherd's home
+(`SHEPHERD_PI_SKILLS_AGENT_DIR`). The script imports the engine's bundle (`dist/bundle/index.js`),
 and calls what pi's resource loader calls: `DefaultPackageManager.resolve` with pi's settings,
 then `loadSkills` in pi's order of precedence. It prints each skill's name, description, SKILL.md,
 where it comes from (`source`, `origin`, the package's name) and the ones pi passes over for a
