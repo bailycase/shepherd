@@ -8,8 +8,8 @@ import Testing
 @testable import ShepherdApp
 
 /// Design systems in the app, as pure rules: the Designs page's systems grid (NavDesigns), a
-/// system's page (DZSystem), a component's specimen board, and the sidebar's More ▸ Design
-/// systems.
+/// system's page (DZSystem), a component's specimen board, finding a project's tokens file and
+/// New design's system card (DZStart), and the sidebar's More ▸ Design systems.
 @Suite("Design system page")
 @MainActor
 struct DesignSystemPageTests {
@@ -185,6 +185,36 @@ struct DesignSystemPageTests {
         // A background that isn't a color is left out rather than written into the style.
         let hostile = DesignSpecimenBoard.source(specimen: "x", title: "<b>", stylesheet: false, background: "red; }")
         #expect(!hostile.contains("red;") && !hostile.contains("tokens.css") && hostile.contains("<title>&lt;b&gt;</title>"))
+    }
+
+    // MARK: Finding a project's tokens file (DZStart)
+
+    @Test(arguments: [
+        ([("web/static/tokens.css", 11), ("web/app.css", 40)], "web/static/tokens.css"),
+        ([("a/b/design-tokens.scss", 5), ("tokens.css", 3)], "tokens.css"),
+        ([("web/theme.css", 6), ("web/app.css", 40)], "web/theme.css"),
+        ([("web/app.css", 40), ("web/other.css", 12)], "web/app.css"),
+        ([("tokens.css", 2), ("app.css", 1)], nil),
+        ([], nil),
+    ] as [([(String, Int)], String?)])
+    func aProjectsTokensFileIsTheOneNamedForThem(_ candidates: [(String, Int)], _ found: String?) {
+        #expect(DesignSystemDetection.best(candidates.map { (path: $0.0, declarations: $0.1) }) == found)
+    }
+
+    @Test func newDesignsCardNamesTheSystemFoundInTheProject() {
+        let built = Self.acme
+        let fromProject = NewDesignState.card(project: Self.web, system: built, picked: false, tokensFile: nil, spaces: [Self.web])
+        #expect(fromProject.title == "acme-web" && fromProject.line == "design system · dashboard-web")
+        #expect(fromProject.note == "found in web/static/tokens.css")
+        let detected = NewDesignState.card(project: Self.web, system: nil, picked: false, tokensFile: "web/static/tokens.css",
+                                           spaces: [Self.web])
+        #expect(detected == ("dashboard-web", "design system · dashboard-web", "found in web/static/tokens.css"))
+        let nothing = NewDesignState.card(project: Self.web, system: nil, picked: false, tokensFile: nil, spaces: [Self.web])
+        #expect(nothing.note == "/tmp/dashboard-web")
+        let nightWatch = NewDesignState.card(project: Self.web, system: Self.nightWatch, picked: true, tokensFile: nil, spaces: [])
+        #expect(nightWatch == ("night-watch", "design system · shepherd", "built into Shepherd"))
+        #expect(NewDesignState.projectSystem(Self.web.id, in: [Self.nightWatch, Self.acme])?.namespace == "acme-web")
+        #expect(NewDesignState.projectSystem(Self.app.id, in: [Self.nightWatch, Self.acme]) == nil)
     }
 
     // MARK: The sidebar

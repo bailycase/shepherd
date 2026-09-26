@@ -123,12 +123,14 @@ extension ShepherdViewModel {
         return agentID
     }
 
-    /// New design's Send: makes the design in the chosen project, starts its agent with the
-    /// brief as its first message, and opens the canvas.
+    /// New design's Send: makes the design in the chosen project, installs the chosen design
+    /// system in it, starts its agent with the brief as its first message, and opens the canvas.
     @discardableResult
-    func createDesign(brief: String, images: [NativeImage], in spaceID: SpaceID) async throws -> DesignID {
+    func createDesign(brief: String, images: [NativeImage], in spaceID: SpaceID, system: String? = nil) async throws -> DesignID {
         let design = Design(name: Self.provisionalName(for: brief), spaceID: spaceID, createdAt: SessionServer.nowMilliseconds())
         _ = try await server.createDesign(design)
+        // Installed before the agent starts, so its first turn reads it among the design's systems.
+        if let system { _ = try await server.installDesignSystem(design.id, namespace: system) }
         adopt(server.state)
         // A design whose agent failed to start still opens later, and starts one then.
         try await startDesignAgent(design, brief: brief, images: images)
@@ -240,6 +242,12 @@ final class NewDesignState {
     var attachments = ComposerAttachments()
     /// The project the design belongs to: its agent works in its folder.
     private(set) var space: SpaceID?
+    /// The design system picked from the card's menu; nil draws in the project's own (its system
+    /// when one was built from it, else its stylesheets).
+    private(set) var system: String?
+    /// Each project's tokens file as last found (DZStart's "found in web/static/tokens.css"); a
+    /// project read and found without one maps to nil.
+    private(set) var tokensFiles: [SpaceID: String?] = [:]
     private(set) var starting = false
     var error: String?
     /// Bumped to give the field the keyboard.
@@ -257,9 +265,62 @@ final class NewDesignState {
     }
 
     func choose(_ id: SpaceID) {
-        guard space != id else { return }
+        guard space != id || system != nil else { return }
         space = id
+        system = nil
         error = nil
+    }
+
+    /// Draws the design in `namespace` (a system from the card's menu), in the project chosen.
+    func choose(system namespace: String) {
+        guard system != namespace else { return }
+        system = namespace
+        error = nil
+    }
+
+    /// Looks for the chosen project's tokens file once, read-only.
+    func detect(_ vm: ShepherdViewModel) async {
+        guard let space, tokensFiles[space] == nil,
+              let folder = vm.state.spaces.first(where: { $0.id == space }).map({ URL(fileURLWithPath: $0.path, isDirectory: true) })
+        else { return }
+        let found = await DesignSystemDetection.find(folder)
+        tokensFiles[space] = .some(found)
+    }
+
+    /// The system Send installs: the one picked, else the one built from the project.
+    func systemToInstall(_ vm: ShepherdViewModel) -> String? {
+        if let system { return vm.designSystems.summary(system) != nil ? system : nil }
+        guard let space else { return nil }
+        return Self.projectSystem(space, in: vm.designSystems.summaries)?.namespace
+    }
+
+    /// The system built from a project: the most recently changed of those read from it.
+    static func projectSystem(_ space: SpaceID, in systems: [DesignSystemSummary]) -> DesignSystemSummary? {
+        systems.filter { !$0.builtIn && $0.info.spaceID == space }.max { $0.info.updatedAt < $1.info.updatedAt }
+    }
+
+    /// The card under "Design system & starting point" (DZStart): a system picked from the menu;
+    /// else the one built from the project; else the project, "found in" its tokens file when it
+    /// has one, else at its folder.
+    static func card(project: Space, system: DesignSystemSummary?, picked: Bool, tokensFile: String?,
+                     spaces: [Space]) -> (title: String, line: String, note: String) {
+        if let system {
+            let info = system.info
+            let owner = system.builtIn ? "shepherd" : info.spaceID.flatMap { id in spaces.first { $0.id == id }?.name } ?? project.name
+            let note: String
+            if system.builtIn {
+                note = "built into Shepherd"
+            } else if let source = info.sources.first ?? (picked ? nil : tokensFile) {
+                note = "found in \(source)"
+            } else {
+                note = NewThreadRules.abbreviatedPath(project.path)
+            }
+            return (info.namespace, "design system · \(owner)", note)
+        }
+        if let tokensFile {
+            return (project.name, "design system · \(project.name)", "found in \(tokensFile)")
+        }
+        return (project.name, "design system · \(project.name)", NewThreadRules.abbreviatedPath(project.path))
     }
 
     /// Dropped or pasted images, resized on the way in.
@@ -294,12 +355,13 @@ final class NewDesignState {
         guard blocker(vm) == nil, let space else { NSSound.beep(); return }
         let text = brief.trimmingCharacters(in: .whitespacesAndNewlines)
         let images = attachments.images
+        let system = systemToInstall(vm)
         starting = true
         error = nil
         Task {
             defer { starting = false }
             do {
-                try await vm.createDesign(brief: text, images: images, in: space)
+                try await vm.createDesign(brief: text, images: images, in: space, system: system)
                 brief = ""
                 attachments.removeAll()
             } catch {
