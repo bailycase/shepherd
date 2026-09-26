@@ -161,6 +161,14 @@ agent's board_write / canvas_update → SessionServer → DesignStore (its own q
   A canvas of any size holds at most six web views.
 - **The Designs page** reads each design's first board through the same rasterizer
   (`DesignThumbnails`).
+- **Comments** are Shepherd's, kept by `DesignStore` in the design's `comments.json` with their
+  own revision. A comment made on the canvas goes `DesignScreenModel.submitComment` →
+  `SessionServer.addDesignComment` (the store checks its element against the board's source,
+  off the server queue) → the design agent's `RPCThreadState.send`, fenced and alone, through the
+  host queue. The agent answers with `comment_reply` over the extension socket. Every board write
+  re-anchors that board's comments in the store; each change pushes `onDesignRevision`, and the
+  canvas pulls the comments with the snapshot. The chat draws a comment's message as its card by
+  the message's origin (docs/designs.md › Comments).
 
 ## The agent thread
 
