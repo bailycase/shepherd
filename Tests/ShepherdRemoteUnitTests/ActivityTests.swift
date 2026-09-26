@@ -285,7 +285,7 @@ struct TurnPresentationTests {
     private func kinds(_ presentation: NativeTurnPresentation) -> [String] {
         presentation.items.map { item in
             switch item {
-            case .thinking(_, _, _, let live, _): live ? "live-thinking" : "thinking"
+            case .thinking(_, _, _, _, let live, _): live ? "live-thinking" : "thinking"
             case .prose: "prose"
             case .activity(_, let bursts): "lines:" + bursts.map { "\($0.calls.count)" }.joined(separator: "+")
             case .subagents(_, let lines): "record:" + lines.map(\.title).joined(separator: "|")
@@ -306,7 +306,7 @@ struct TurnPresentationTests {
         ]
         let presentation = nativeTurnPresentation(messages, live: false)
         #expect(kinds(presentation) == ["thinking", "prose", "thinking", "lines:2+1", "prose"])
-        guard case .thinking(_, let text, _, _, _) = presentation.items[2] else { Issue.record("no folded thinking"); return }
+        guard case .thinking(_, let text, _, _, _, _) = presentation.items[2] else { Issue.record("no folded thinking"); return }
         #expect(text == "next\n\nthen")
     }
 
@@ -330,7 +330,7 @@ struct TurnPresentationTests {
         var second = F.assistant("", thinking: "b")
         second.thinkingSeconds = 1.5
         let presentation = nativeTurnPresentation([first, tool("read", "r"), second, tool("read", "s")], live: false)
-        guard case .thinking(_, _, let seconds, _, _) = presentation.items.first else { Issue.record("no thinking"); return }
+        guard case .thinking(_, _, _, let seconds, _, _) = presentation.items.first else { Issue.record("no thinking"); return }
         #expect(seconds == 4.5)
     }
 
@@ -373,7 +373,7 @@ struct TurnPresentationTests {
         let presentation = nativeTurnPresentation([F.assistant("Going."), tool("read", "r"), streaming], live: true)
         #expect(kinds(presentation) == ["prose", "lines:1", "live-thinking"])
         #expect(!presentation.betweenTools, "the thinking is what moves")
-        guard case .thinking(_, _, _, _, let since) = presentation.items.last else { return }
+        guard case .thinking(_, _, _, _, _, let since) = presentation.items.last else { return }
         #expect(since == 5_000)
     }
 

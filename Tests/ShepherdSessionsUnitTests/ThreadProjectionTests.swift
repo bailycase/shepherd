@@ -345,6 +345,25 @@ struct ThreadProjectionTests {
         #expect(message.content == [.thinking("hmm, yes"), .text("final text")])
     }
 
+    /// A GPT reasoning summary streams as pi-ai writes it, each part closed with a blank line and
+    /// an empty part among them: the row a reader gets has no gap, while it streams and after.
+    @Test func streamedSummaryPartsProjectWithoutAGap() throws {
+        let deltas = [
+            #"{"type":"thinking_start","contentIndex":0}"#,
+            #"{"type":"thinking_delta","contentIndex":0,"delta":"**Inspecting SSH config**"}"#,
+            #"{"type":"thinking_delta","contentIndex":0,"delta":"\n\n"}"#,
+            #"{"type":"thinking_delta","contentIndex":0,"delta":"\n\n"}"#,
+        ]
+        var message = RPCMessage(role: "assistant", content: [])
+        var projected: [String] = []
+        for json in deltas {
+            RPCThreadState.apply(try decode(json, as: RPCAssistantDelta.self), to: &message)
+            projected.append(RPCThreadState.project(entryID: "m:0", message: message).blocks.first?.text ?? "")
+        }
+        #expect(projected == ["", "**Inspecting SSH config**", "**Inspecting SSH config**", "**Inspecting SSH config**"])
+        #expect(message.content == [.thinking("**Inspecting SSH config**\n\n\n\n")], "the raw text is kept as pi sent it")
+    }
+
     /// pi streams Anthropic's redacted thinking as its placeholder, without the `redacted` flag
     /// the finished block carries: it reads as nothing to show from the start.
     @Test func aStreamedRedactedBlockEndsWithNothingToRead() throws {

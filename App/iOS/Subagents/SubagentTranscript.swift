@@ -209,13 +209,9 @@ private struct SubagentTurnItem: View {
 
     var body: some View {
         switch item {
-        case .thinking(_, let text, let seconds, let live, _):
-            if live {
-                NWThinking.live()
-            } else {
-                NWThinking(nativeThoughtText(seconds), text: text, isExpanded: $openThinking,
-                           spokenTitle: nativeThoughtSpokenText(seconds))
-            }
+        case .thinking(_, _, let blocks, let seconds, let live, _):
+            ThinkingRow(seconds: seconds, blocks: blocks, live: live, isExpanded: openThinking) { openThinking.toggle() }
+                .equatable()
         case .prose(_, _, let blocks, _):
             NWAgentProse(ProseView.proseBlocks(blocks))
         case .activity(_, let bursts):
