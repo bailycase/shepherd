@@ -69,6 +69,10 @@ import SwiftUI
             NWThinking("Thought for 4s", text: "Check the labels first.", isExpanded: .constant(false))
             NWThinking("Thought for 10s", text: "", isExpanded: .constant(false), spokenTitle: "Thought for 10 seconds")
             NWThinking("Thought for 6s", text: "I'll keep it a minimum, not a fixed height, so large text sizes still fit.", isExpanded: .constant(true))
+            NWThinking("Thought", blocks: [
+                .paragraph(AttributedString("Inspecting SSH config", attributes: AttributeContainer().inlinePresentationIntent(.stronglyEmphasized))),
+                .paragraph(AttributedString("Checking ~/.ssh/config for the runner host…")),
+            ], isExpanded: .constant(true))
             NWThinking.live()
             NWTurnFooter(meta: "2:44 PM · 3m 12s · 23 tool calls", link: "3 subagents", onLink: {}, onCopy: {}, onRetry: {},
                          revealed: true)
