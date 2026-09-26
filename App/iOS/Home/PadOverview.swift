@@ -113,14 +113,12 @@ private struct OverviewColumns: View {
             if model.finished.isEmpty {
                 quiet("Nothing has finished yet.")
             } else {
-                // Under a band per day, each with the time it finished.
+                // One card, a band per day, each row with the time it finished.
                 TimelineView(.everyMinute) { context in
-                    VStack(spacing: MobileLayout.blockSpacing) {
+                    NWListCard {
                         ForEach(FleetFinishedDay.days(model.finished, now: context.date)) { day in
-                            NWListCard {
-                                NWCaptionBand(day.title)
-                                ForEach(day.rows) { row in finishedButton(row, now: context.date) }
-                            }
+                            NWCaptionBand(day.title)
+                            ForEach(day.rows) { row in finishedButton(row, now: context.date) }
                         }
                     }
                 }
@@ -132,7 +130,7 @@ private struct OverviewColumns: View {
     private func runningButton(_ row: FleetThreadRow) -> some View {
         let time: NWOverviewRow.Time = if case .elapsed(let since)? = row.clock { .elapsed(since: Date(milliseconds: since)) } else { .none }
         return Button { navigator.open(.thread(row.ref.agentRef)) } label: {
-            NWOverviewRow(row.title, detail: row.now, leading: .state(AgentState(row.status)), time: time, dimmed: row.offline)
+            NWOverviewRow(row.title, detail: row.now, leading: RunningGlyph.of(row), time: time, dimmed: row.offline)
                 .equatable()
         }
         .buttonStyle(.nwRow(radius: 0))
@@ -168,5 +166,14 @@ private struct OverviewColumns: View {
             .frame(maxWidth: .infinity, minHeight: NW.Height.touch, alignment: .leading)
             .padding(.horizontal, NW.Space.l)
             .nwCard(radius: NWListMetrics.cardRadius)
+    }
+}
+
+/// A running thread's glyph (iPadOverview, iPadHosts): the spinner, the branch while its
+/// subagents work, or its state's dot while it waits on you.
+enum RunningGlyph {
+    static func of(_ row: FleetThreadRow) -> NWListRow.Leading {
+        guard row.status == .working else { return .state(AgentState(row.status)) }
+        return row.subagents > 0 ? .symbol("arrow.triangle.branch", .running) : .glyph(.running)
     }
 }

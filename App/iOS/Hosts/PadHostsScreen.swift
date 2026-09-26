@@ -148,7 +148,7 @@ private struct PadHostDetail: View {
                     ForEach(running) { row in
                         let time: NWOverviewRow.Time = if case .elapsed(let since)? = row.clock { .elapsed(since: Date(milliseconds: since)) } else { .none }
                         Button { navigator.open(.thread(row.ref.agentRef)) } label: {
-                            NWOverviewRow(row.title, detail: Self.local(row).now, leading: .state(AgentState(row.status)), time: time)
+                            NWOverviewRow(row.title, detail: Self.local(row).now, leading: RunningGlyph.of(row), time: time)
                                 .equatable()
                         }
                         .buttonStyle(.nwRow(radius: 0))
