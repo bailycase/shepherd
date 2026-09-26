@@ -24,6 +24,18 @@ public enum AgentStatus: String, Codable, Sendable, CaseIterable {
             return false
         }
     }
+
+    /// Whether a change from `old` to `new` starts or ends a turn, the moments that move an
+    /// agent up the sidebar's Recents (`Agent.lastActiveAt`). Asking and being answered happen
+    /// inside a turn, so they don't.
+    public static func movesRecents(from old: AgentStatus, to new: AgentStatus) -> Bool {
+        guard old != new else { return false }
+        switch new {
+        case .working: return old != .blocked
+        case .done, .idle: return old == .working || old == .blocked
+        case .blocked: return false
+        }
+    }
 }
 
 /// pi's thinking levels, in pi's order (`THINKING_LEVEL_OPTIONS`). Which ones a model takes is

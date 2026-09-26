@@ -26,10 +26,6 @@ struct RemoteAutomationsTests {
         let key = AutomationKey(host: connection.id, automation: automation.id)
         let host = remote.host.server
 
-        // The host's automations sit under its spaces, behind a disclosure.
-        #expect(vm.sidebarTree().items.contains { if case .remoteAutomations(let header) = $0 { header.count == 1 } else { false } })
-        #expect(!vm.sidebarTree().items.contains { if case .remoteAutomation = $0 { true } else { false } })
-        vm.toggleRemoteAutomations(connection.id)
         let row = try #require(Self.row(key, in: vm))
         #expect(row.word == "off" && row.run == nil && row.abilities.run && !row.abilities.stop)
 
@@ -48,26 +44,36 @@ struct RemoteAutomationsTests {
         let runAgent = try #require(host.state.automations.first?.agentID)
         let hidden = try #require(host.state.spaces.first { $0.hidden })
         #expect(host.state.agents.first { $0.id == runAgent }?.spaceID == hidden.id, "a run lives in the hidden space")
-        #expect(!vm.sidebarTree().items.contains { if case .space(let s) = $0 { s.hostID == connection.id && s.id == hidden.id } else { false } })
+        // The run is in Recents with its bolt; the hidden space is never a project to start in.
+        let ref = RemoteAgentRef(hostID: connection.id, agentID: runAgent)
+        try await eventuallyOnMain("the run to reach Recents") {
+            vm.sidebarLists.recents.contains { $0.id == .remote(ref) && $0.leading == .glyph("bolt", attention: false) }
+        }
+        #expect(!NewThreadState.hosts(vm).contains { $0.id == connection.id && $0.spaces.contains { $0.id == hidden.id } })
 
-        vm.openRemoteAutomation(try #require(Self.row(key, in: vm)))
-        #expect(vm.selectedRemoteAgent == RemoteAgentRef(hostID: connection.id, agentID: runAgent))
-        #expect(Self.row(key, in: vm)?.selected == true)
+        vm.openDestination(.automations)
+        vm.openThread(FleetRef(host: connection.id, agent: runAgent))
+        #expect(vm.selectedRemoteAgent == ref && vm.shownDestination == nil, "the page's run opens its thread")
+        vm.selectSidebarRow(.remote(ref))
+        #expect(vm.selectedRemoteAgent == ref)
+        #expect(vm.presentedSidebarLists.recents.first { $0.id == .remote(ref) }?.selected == true)
 
         vm.performRemoteAutomation(key, .stop)
         try await eventuallyOnMain("the run's agent to go") {
             host.state.agents.isEmpty && Self.row(key, in: vm)?.run == nil && !vm.remoteAutomationsPending.contains(key)
         }
 
-        vm.showRemoteAutomation(key)
-        try await eventuallyOnMain("the host's runs to arrive") { vm.remoteAutomationRuns[key]?.count == 1 }
-        let detail = try #require(vm.remoteAutomationDetail(key))
-        #expect(detail.runs.map(\.word) == ["stopped"] && detail.runs.first?.agent == nil)
+        await vm.loadRemoteAutomationRuns(key)
+        #expect(vm.remoteAutomationRuns[key]?.count == 1)
+        vm.automationsPageSelection = key
+        let detail = try #require(vm.automationsPageModel().detail)
+        #expect(detail.key == key && detail.runs.map(\.word) == ["stopped"] && detail.runs.first?.thread == nil)
 
-        vm.performRemoteAutomation(key, .delete)
+        vm.deleteAutomation(key)
         try await eventuallyOnMain("the automation to go") {
-            host.state.automations.isEmpty && vm.remoteAutomationSheet == nil && Self.row(key, in: vm) == nil
+            host.state.automations.isEmpty && Self.row(key, in: vm) == nil && vm.remoteAutomationRuns[key] == nil
         }
+        #expect(vm.automationsPageSelection == nil)
         #expect(vm.remoteActionError == nil)
         #expect(local.server.state.automations.isEmpty, "nothing touched this Mac")
     }
@@ -85,7 +91,6 @@ struct RemoteAutomationsTests {
         let connection = try await remote.connect(local.remoteHosts)
         let key = AutomationKey(host: connection.id, automation: automation.id)
         let host = remote.host.server
-        vm.toggleRemoteAutomations(connection.id)
 
         vm.performRemoteAutomation(key, .run)
         try await eventuallyOnMain("the first run to start", timeout: .seconds(30)) {
@@ -122,8 +127,7 @@ struct RemoteAutomationsTests {
         try await eventuallyOnMain("the client to see the new run") { Self.row(key, in: vm)?.run == second }
         #expect(Self.row(key, in: vm)?.live == true, "Open Run opens the new run, which reads running")
 
-        vm.showRemoteAutomation(key)
-        try await eventuallyOnMain("the host's runs to arrive") { vm.remoteAutomationRuns[key]?.count == 2 }
+        await vm.loadRemoteAutomationRuns(key)
         let runs = try #require(vm.remoteAutomationRuns[key])
         #expect(runs.map(\.result) == [.finished, .running])
         #expect(runs.map(\.agentID) == [nil, second])
@@ -143,10 +147,24 @@ struct RemoteAutomationsTests {
         #expect(vm.remoteActionError == "Couldn't start the run: The automation no longer exists on the host.")
     }
 
-    static func row(_ key: AutomationKey, in vm: ShepherdViewModel) -> SidebarRemoteAutomation? {
-        for item in vm.sidebarTree().items {
-            if case .remoteAutomation(let row) = item, row.key == key { return row }
+    /// A remote automation as the Automations page reads it, with the word its run's state reads.
+    struct Row {
+        let row: AutomationListRow
+        var run: AgentID? { row.run?.agent }
+        var live: Bool { row.live }
+        var abilities: AutomationAbilities { row.abilities }
+        var word: String {
+            guard row.run != nil else { return row.enabled ? "stopped" : "off" }
+            return switch row.tone {
+            case .attention: "needs you"
+            case .running: "running"
+            default: "done"
+            }
         }
-        return nil
+    }
+
+    static func row(_ key: AutomationKey, in vm: ShepherdViewModel) -> Row? {
+        guard let connection = vm.remoteHosts.connections.first(where: { $0.id == key.host }) else { return nil }
+        return vm.remoteAutomationsModel(connection).rows.first { $0.key == key }.map(Row.init)
     }
 }

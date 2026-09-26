@@ -22,10 +22,10 @@ both apply when an agent next launches.
   pi-subagents package yourself, it keeps working as before.
 - **Subagent display** loads `shepherd-subagents.ts`, the only publisher of `setAgentChildren`.
   It merges native children with pi-subagents reports into the runs behind the subagent tray
-  above the composer, the thread's record lines, the inspector, the palette's Subagents section, and the needs-you mark
-  a waiting child puts on its agent's sidebar row. With display off, children still run but none
-  of that UI appears, and tray commands fail because the server only accepts runs that were
-  published.
+  above the composer, the thread's record lines, the inspector, the palette's Subagents section,
+  and the needs-you mark a waiting child puts on its agent in the sidebar's Needs you. With display
+  off, children still run but none of that UI appears, and tray commands fail because the server
+  only accepts runs that were published.
 
 **Native subagent defaults** appear only while Native subagents is on. They apply on the next
 parent launch.
@@ -339,9 +339,9 @@ it.
   an error and creates nothing. Remote agents have no Fork.
 
 **Sidebar.** Children have no sidebar rows; everything about a run lives in the parent's thread
-(and the palette). A child waiting on your answer makes its parent's row need you (the lantern
-dot and "ASK") and counts toward its space's and host's needs-you counts, so the sidebar still
-says which thread to open. Live and finished children leave the parent's row as it is.
+(and the palette). A child waiting on your answer puts its parent in the sidebar's Needs you (the
+lantern dot, with the child's role or name as the reason), so the sidebar still says which thread
+to open. Live and finished children leave the parent's row as it is.
 
 Child runs are display state reported by the extension. Shepherd never persists them.
 

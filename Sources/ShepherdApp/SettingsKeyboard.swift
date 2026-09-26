@@ -35,7 +35,7 @@ struct KeyboardSettings: View {
             }
 
             SettingsGroup(title: "Fixed", footnote: "Changes apply immediately, everywhere a shortcut is shown.") {
-                SettingsRow(title: "Select agent 1–9", subtitle: "Sidebar order; hold ⌘ to see the numbers.") { NWKeycap(keys: ["⌘", "1–9"]) }
+                SettingsRow(title: "Select agent 1–9", subtitle: "The first nine in Recents; hold ⌘ to see the numbers.") { NWKeycap(keys: ["⌘", "1–9"]) }
                 ForEach(SidePaneTab.allCases, id: \.self) { tab in
                     SettingsRow(title: "Side pane: \(tab.title)") { NWKeycap(tab.shortcutDisplay) }
                 }

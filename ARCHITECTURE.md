@@ -114,9 +114,18 @@ SwiftUI's appearance by itself: Ghostty surfaces (a live `setTheme`) and the
 `shepherd-active-theme` variant marker watched by external editors such as Neovim.
 
 **Layout.** `RootView` lays the window out itself: the sidebar, the toolbar, the workspace, and
-the side pane (`RightPaneSplit`, `SidePaneView`). `ShellLayout` (`AppLayout+Navigation.swift`) is
-the pure function that decides, from the window's width, whether the sidebar docks or overlays and
-whether the side pane docks or overlays the agent's layout. The side pane wraps the whole
+the side pane (`RightPaneSplit`, `SidePaneView`). A destination page (New thread, Automations,
+Hosts; `MainDestination`) covers the whole main column while every mounted layout stays mounted
+and hidden under it, as when switching agents.
+
+**Sidebar.** `SidebarDerivation` (`SidebarModel.swift`) derives Needs you and Recents from This
+Mac's state and each host's, once per change (`sidebarLists`). Recents are ordered by
+`Agent.lastActiveAt`, which the host sets when a turn starts or ends or a message is sent; Needs you
+reads `Agent.waitingOn`, the question the agent's thread asks, which the host sets from its thread
+state. Both are live state: broadcast to remote clients, and `waitingOn` is never written to
+state.json. `ShellLayout` (`AppLayout+Navigation.swift`) is the pure function that decides, from
+the window's width, whether the sidebar docks or overlays and whether the side pane docks or
+overlays the agent's layout. The side pane wraps the whole
 layout (`AgentLayoutView` in `WorkspaceView.swift`), never one of its panes, so a terminal split
 beside the thread never narrows what the dock rule measures.
 
@@ -272,8 +281,9 @@ control) against an older host. Output frames are chunked at 256 KiB to stay und
   UserDefaults (`shepherd.remote.hosts`). It keeps one `RemoteHostClient` per host, reconnecting
   with exponential backoff capped at 30 s, except after a refused token or another protocol
   version, which wait for Edit or Reconnect (`RemoteHostFailure`, shared with the iOS client).
-  A failed handshake is reported only by what `connect` throws. Remote hosts are not part of `ShepherdState`; they
-  appear as their own sidebar sections, and their agents use the same thread views.
+  A failed handshake is reported only by what `connect` throws. Remote hosts are not part of `ShepherdState`; their
+  agents join This Mac's in the sidebar's Needs you and Recents (tagged with the host's name), and
+  use the same thread views.
 - **Reviews** an agent opens on the host are the host's view state. Remote viewers open their own
   (⇧⌘B).
 
