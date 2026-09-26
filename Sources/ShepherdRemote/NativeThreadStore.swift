@@ -928,6 +928,19 @@ public final class NativeThreadStore {
                       operation: operation, current: current, sentText: text, delivery: delivery)
     }
 
+    /// Send `text` as a new user message carrying `record` (what a design screen asks of its agent:
+    /// Variations, another direction), without touching the draft. While pi works it waits in the
+    /// queue; the host fences the record ahead of it where it takes one.
+    public func send(text: String, designContext record: DesignViewRecord?, delivery: NativeThreadDelivery = .followUp) async {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, await readyToAct(),
+              supports("send"), let current = snapshot else { return }
+        let operation = UUID()
+        let context = supports("designContext") ? record.map(NativeDesignContext.init) : nil
+        await perform(.send(expectedSessionID: current.piSessionID, generation: current.generation,
+                            operationID: operation, text: text, delivery: delivery, designContext: context),
+                      operation: operation, current: current, sentText: text, delivery: delivery)
+    }
+
     // MARK: Queue
 
     /// The images this client sent with a queued message (the host keeps only their names);
