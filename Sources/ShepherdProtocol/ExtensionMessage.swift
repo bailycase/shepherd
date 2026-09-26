@@ -119,6 +119,14 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// for is made (`ExtensionReply.designComment`). `commentID` stays a string so a bad one is
     /// answered (`no_such_comment`). The agent can't resolve a comment: only the viewer does.
     case designCommentReply(id: Int, agentID: AgentID, designID: DesignID, commentID: String, text: String)
+    /// `system_read`: without `namespace`, every design system this host has and the ones the
+    /// design installed (`ExtensionReply.designSystems`); with it, that system whole
+    /// (`designSystem`). `namespace` stays a string so a bad one is answered (`invalid_namespace`).
+    case designSystemRead(id: Int, agentID: AgentID, designID: DesignID, namespace: String?)
+    /// `system_write`: a system's tokens and files, written to the support directory's
+    /// `design-systems/<namespace>/` (only by the agent of the design that built it), and with
+    /// `install` copied into the agent's design. Answered with `designSystemWritten`.
+    case designSystemWrite(id: Int, agentID: AgentID, designID: DesignID, system: DesignSystemWrite)
 
     private enum CodingKeys: String, CodingKey {
         case type, id, agentID, status, name, piSessionID, children
@@ -128,6 +136,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case error
         case line, reason, file
         case designID, path, source, baseRevision, changes, commentID
+        case namespace, system
     }
 
     private enum Kind: String, Codable {
@@ -139,6 +148,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case listAgents, sendToAgent, spawnAgent, coordinateAgent, agentResponse, cancelAgentRequest
         case suggestInstruction
         case designRead, designWriteBoard, designUpdateIndex, designComments, designCommentReply
+        case designSystemRead, designSystemWrite
     }
 
     public init(from decoder: Decoder) throws {
@@ -341,6 +351,20 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                 commentID: try c.decode(String.self, forKey: .commentID),
                 text: try c.decode(String.self, forKey: .text)
             )
+        case .designSystemRead:
+            self = .designSystemRead(
+                id: try c.decode(Int.self, forKey: .id),
+                agentID: try c.decode(AgentID.self, forKey: .agentID),
+                designID: try c.decode(DesignID.self, forKey: .designID),
+                namespace: try c.decodeIfPresent(String.self, forKey: .namespace)
+            )
+        case .designSystemWrite:
+            self = .designSystemWrite(
+                id: try c.decode(Int.self, forKey: .id),
+                agentID: try c.decode(AgentID.self, forKey: .agentID),
+                designID: try c.decode(DesignID.self, forKey: .designID),
+                system: try c.decode(DesignSystemWrite.self, forKey: .system)
+            )
         }
     }
 
@@ -520,6 +544,18 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(designID, forKey: .designID)
             try c.encode(commentID, forKey: .commentID)
             try c.encode(text, forKey: .text)
+        case .designSystemRead(let id, let agentID, let designID, let namespace):
+            try c.encode(Kind.designSystemRead, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(designID, forKey: .designID)
+            try c.encodeIfPresent(namespace, forKey: .namespace)
+        case .designSystemWrite(let id, let agentID, let designID, let system):
+            try c.encode(Kind.designSystemWrite, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(designID, forKey: .designID)
+            try c.encode(system, forKey: .system)
         }
     }
 }
@@ -862,6 +898,12 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     case designComments(id: Int, comments: DesignComments)
     /// A `designCommentReply`: the comment with the reply under it.
     case designComment(id: Int, comment: DesignComment)
+    /// A `designSystemRead` without a namespace: every system, and the design's installed ones.
+    case designSystems(id: Int, listing: DesignSystemListing)
+    /// A `designSystemRead` with a namespace: that system whole.
+    case designSystem(id: Int, system: DesignSystemRead)
+    /// What a `designSystemWrite` left behind.
+    case designSystemWritten(id: Int, result: DesignSystemWriteResult)
 
     private enum CodingKeys: String, CodingKey {
         case requestID, targetAgentID, request, result
@@ -870,6 +912,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case outcome
         case snapshot, board
         case comments, comment
+        case listing, system
     }
 
     private enum Kind: String, Codable {
@@ -877,6 +920,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case ok, error, panes, paneOpened, paneContent, reviewResult, automations, agents, message
         case suggestion
         case design, designBoard, designWritten, designComments, designComment
+        case designSystems, designSystem, designSystemWritten
     }
 
     public init(from decoder: Decoder) throws {
@@ -976,6 +1020,21 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
                 id: try c.decode(Int.self, forKey: .id),
                 comment: try c.decode(DesignComment.self, forKey: .comment)
             )
+        case .designSystems:
+            self = .designSystems(
+                id: try c.decode(Int.self, forKey: .id),
+                listing: try c.decode(DesignSystemListing.self, forKey: .listing)
+            )
+        case .designSystem:
+            self = .designSystem(
+                id: try c.decode(Int.self, forKey: .id),
+                system: try c.decode(DesignSystemRead.self, forKey: .system)
+            )
+        case .designSystemWritten:
+            self = .designSystemWritten(
+                id: try c.decode(Int.self, forKey: .id),
+                result: try c.decode(DesignSystemWriteResult.self, forKey: .result)
+            )
         }
     }
 
@@ -1060,6 +1119,18 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             try c.encode(Kind.designComment, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(comment, forKey: .comment)
+        case .designSystems(let id, let listing):
+            try c.encode(Kind.designSystems, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(listing, forKey: .listing)
+        case .designSystem(let id, let system):
+            try c.encode(Kind.designSystem, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(system, forKey: .system)
+        case .designSystemWritten(let id, let result):
+            try c.encode(Kind.designSystemWritten, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(result, forKey: .result)
         }
     }
 }

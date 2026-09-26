@@ -190,6 +190,35 @@ public enum NWDesignMetrics {
     public static let chipSwatchSpacing: CGFloat = NW.Space.xxs
     public static let chipTextSize: CGFloat = 11.5
 
+    /// "Build one from a repo": its 12pt `plus`.
+    public static let buildTileGlyph: CGFloat = 12
+
+    // A design system's page (DZSystem)
+    /// The section list: 200pt, 18×10 padding; rows 30pt, 10pt padding, 12.5, counts in mono 10.5.
+    public static let railWidth: CGFloat = 200
+    public static let railPaddingVertical: CGFloat = 18
+    public static let railPaddingHorizontal: CGFloat = 10
+    public static let railRowHeight: CGFloat = 30
+    public static let railRowPadding: CGFloat = 10
+    public static let railTextSize: CGFloat = 12.5
+    public static let railCountSize: CGFloat = 10.5
+    /// A token swatch: 56pt at radius 8, the name in mono 11.5, the value in mono 10.5.
+    public static let tokenSwatchHeight: CGFloat = 56
+    public static let tokenSwatchRadius: CGFloat = NW.Radius.m
+    public static let tokenSwatchNameSize: CGFloat = 11.5
+    public static let tokenSwatchDetailSize: CGFloat = 10.5
+    /// A type style's row: the name in mono 11 in a 90pt column, the spec in mono 10.5.
+    public static let typeNameSize: CGFloat = 11
+    public static let typeNameWidth: CGFloat = 90
+    public static let typeSpecSize: CGFloat = 10.5
+    /// A component's specimen: a 92pt tile at radius 8, 10pt above its name in 12.5 and its
+    /// template in mono 10.5.
+    public static let specimenHeight: CGFloat = 92
+    public static let specimenRadius: CGFloat = NW.Radius.m
+    public static let specimenSpacing: CGFloat = 10
+    public static let specimenNameSize: CGFloat = 12.5
+    public static let specimenTemplateSize: CGFloat = 10.5
+
     // Tweak (DZTweak, NWDesignTool)
     /// The Tweak tab's header and groups: 14×18 padding, a hairline under each.
     public static let tweakPaddingVertical: CGFloat = 14

@@ -144,7 +144,7 @@
 
   /** What the canvas's tag calls it ("card", "text", "button"…), read from how it is drawn. */
   function nounOf(node, found) {
-    if (found.tag === 'dc-import') return 'component';
+    if (found.tag === 'dc-import' || found.tag === 'x-import') return 'component';
     if (found.kind === 'image') return 'image';
     if (found.kind === 'line') return 'line';
     var tag = found.tag;

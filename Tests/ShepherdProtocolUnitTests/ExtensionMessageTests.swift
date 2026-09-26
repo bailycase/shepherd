@@ -20,11 +20,12 @@ struct ExtensionMessageTests {
              .sendPaneInput, .readPane, .requestReview, .listAgents, .sendToAgent, .spawnAgent,
              .coordinateAgent, .agentResponse, .cancelAgentRequest, .createAutomation, .listAutomations,
              .updateAutomation, .deleteAutomation, .startAutomation, .stopAutomation, .suggestInstruction,
-             .designRead, .designWriteBoard, .designUpdateIndex, .designComments, .designCommentReply:
+             .designRead, .designWriteBoard, .designUpdateIndex, .designComments, .designCommentReply,
+             .designSystemRead, .designSystemWrite:
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 33
+    static let caseCount = 35
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
@@ -74,6 +75,13 @@ struct ExtensionMessageTests {
         .designComments(id: 24, agentID: agent, designID: design),
         .designCommentReply(id: 25, agentID: agent, designID: design, commentID: "7A1C2E7B-39F5-4B0C-9A40-0E8B1F3C5D21",
                             text: "Done on A and A · phone.\nWant counts too?"),
+        .designSystemRead(id: 26, agentID: agent, designID: design, namespace: "acme-web"),
+        .designSystemWrite(id: 27, agentID: agent, designID: design, system: DesignSystemWrite(
+            namespace: "acme-web", title: "acme-web",
+            tokens: .object(["colors": .array([.object(["name": .string("--accent"), "value": .string("#4f46e5"),
+                                                        "source": .object(["file": .string("web/static/tokens.css"), "line": .number(8)])])])]),
+            files: ["README.md": .string("# acme-web\n"), "components/old.html": .null],
+            sources: ["web/static/tokens.css"], install: true, baseRevision: 2)),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -153,6 +161,13 @@ struct ExtensionMessageTests {
         // A comment id that isn't one still decodes, so the server can answer it.
         (#"{"type":"designCommentReply","commentID":"nope","text":"Done.","id":7,"agentID":"a1","designID":"d1"}"#,
          .designCommentReply(id: 7, agentID: agent, designID: design, commentID: "nope", text: "Done.")),
+        (#"{"type":"designSystemRead","id":8,"agentID":"a1","designID":"d1"}"#,
+         .designSystemRead(id: 8, agentID: agent, designID: design, namespace: nil)),
+        // A namespace outside the grammar still decodes, so the server can answer it.
+        (#"{"type":"designSystemRead","namespace":"Acme Web","id":9,"agentID":"a1","designID":"d1"}"#,
+         .designSystemRead(id: 9, agentID: agent, designID: design, namespace: "Acme Web")),
+        (#"{"type":"designSystemWrite","system":{"namespace":"night-watch","install":true},"id":10,"agentID":"a1","designID":"d1"}"#,
+         .designSystemWrite(id: 10, agentID: agent, designID: design, system: DesignSystemWrite(namespace: "night-watch", install: true))),
     ]
 
     @Test(arguments: handWritten)
@@ -194,11 +209,22 @@ struct ExtensionReplyTests {
         switch reply {
         case .childCommand, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .automations,
              .agents, .message, .agentRequest, .agentResult, .suggestion, .design, .designBoard, .designWritten,
-             .designComments, .designComment:
+             .designComments, .designComment, .designSystems, .designSystem, .designSystemWritten:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 18
+    static let caseCount = 21
+    static let system = DesignSystemSummary(
+        info: DesignSystemInfo(namespace: "acme-web", title: "acme-web", revision: 3, createdAt: 1_000, updatedAt: 2_000,
+                               syncedAt: 2_000, ownerDesignID: DesignID(rawValue: "d1"), spaceID: SpaceID(rawValue: "s1"),
+                               sources: ["web/static/tokens.css"]),
+        counts: DesignSystemCounts(colors: 11, type: 4, lengths: 7, components: 9))
+    static let tokens = DesignSystemTokens(
+        name: "acme-web", namespace: "acme-web",
+        colors: [.init(name: "--accent", value: "#4f46e5", source: .init(file: "web/static/tokens.css", line: 8))],
+        type: [.init(name: "display", size: 26, weight: 700, sample: "Checkout funnel")],
+        spacing: [.init(name: "--space-4", px: 16)], radii: [.init(name: "--radius-md", px: 8)],
+        components: [.init(name: "Button", source: .init(file: "templates/partials/button.html"), specimen: "components/Button.html")])
     static let comment = DesignComment(
         id: UUID(uuidString: "7A1C2E7B-39F5-4B0C-9A40-0E8B1F3C5D21")!, number: 1, board: board, tid: 5, path: [1, 1, 0],
         label: "Checkout funnel 48,210", target: "Checkout funnel", rect: DesignCommentRect(x: 59, y: 288, w: 648, h: 216),
@@ -244,6 +270,18 @@ struct ExtensionReplyTests {
                                    createdAt: 3, resolvedAt: 4, detached: true),
         ])),
         .designComment(id: 25, comment: comment),
+        .designSystems(id: 26, listing: DesignSystemListing(
+            systems: [DesignSystemSummary(info: DesignSystemInfo(namespace: "night-watch", title: "Night Watch", revision: 1, createdAt: 0),
+                                          builtIn: true, counts: DesignSystemCounts(colors: 31, type: 9, lengths: 12)), system],
+            installed: [DesignSystemInstalled(namespace: "acme-web", title: "acme-web", shepherd: true, version: "3", tokens: tokens,
+                                              tokensFile: "ds/acme-web/tokens.json"),
+                        DesignSystemInstalled(namespace: "cds", title: "CDS", shepherd: false, tokens: nil, tokensFile: nil)],
+            primary: "acme-web")),
+        .designSystem(id: 27, system: DesignSystemRead(summary: system, tokens: tokens, readme: "# acme-web\n",
+                                                        files: ["README.md", "tokens.css", "tokens.json"])),
+        .designSystemWritten(id: 28, result: DesignSystemWriteResult(
+            summary: system, changed: true, installed: DesignWriteResult(revision: 9, changed: true, title: "Checkout", boardCount: 4),
+            notes: ["tokens.css is the one you wrote"])),
     ]
 
     @Test func samplesCoverEveryCase() {

@@ -89,6 +89,16 @@ final class ShepherdViewModel {
     @ObservationIgnored var visibleDesigns: Set<DesignID> = []
     /// Designs whose agent is being started, so a second open waits for it.
     @ObservationIgnored var startingDesignAgents: Set<DesignID> = []
+    /// This Mac's design systems as last read (DZSystem, the Designs page's systems).
+    let designSystems = DesignSystemCatalog()
+    /// The system the Design systems page shows (a system without an agent of its own; a
+    /// build's page is its agent's layout).
+    var shownDesignSystem: String?
+    /// The system page last opened: More ▸ Design systems goes back to it.
+    @ObservationIgnored var lastDesignSystem: DesignSystemTarget?
+    @ObservationIgnored var designSystemPageCache: [DesignSystemTarget: (inputs: DesignSystemPageInputs, model: DesignSystemPageModel)] = [:]
+    /// Projects whose system build is being started, so a second click waits for it.
+    @ObservationIgnored var startingSystemBuilds: Set<SpaceID> = []
     /// Draws every design's boards (`DesignHost.swift`), once a design or the Designs page is
     /// first shown.
     var designRendering: DesignRendering {
@@ -473,6 +483,10 @@ final class ShepherdViewModel {
         // A design on screen pulls what changed as the agent draws.
         server.onDesignRevision = { [weak self] designID in
             MainActor.assumeIsolated { self?.designRevised(designID) }
+        }
+        // A system an agent wrote, or a re-sync, reaches its page and cards.
+        server.onDesignSystemsChanged = { [weak self] in
+            MainActor.assumeIsolated { self?.designSystemsChanged() }
         }
         notifications.onResponse = { [weak self] response in
             self?.respond(to: response)

@@ -1,11 +1,13 @@
 import Foundation
 import ShepherdCore
+import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
 
 /// The Designs page (NavDesigns) as plain values: This Mac's designs, most recently edited first,
-/// in rows of four, and the design systems they are drawn in. Pure: the same inputs always give
-/// the same page. Derived once per change, never in a view's body.
+/// in rows of four, and its design systems in rows of three ending in "Build one from a repo".
+/// Pure: the same inputs always give the same page. Derived once per change, never in a view's
+/// body.
 struct DesignsPageModel: Equatable {
     struct Card: Identifiable, Equatable {
         let id: DesignID
@@ -23,11 +25,22 @@ struct DesignsPageModel: Equatable {
         let selected: Bool
     }
 
+    /// A design system's card, or a system build whose agent hasn't written its system yet.
     struct System: Identifiable, Equatable {
-        var id: String { name }
+        let id: DesignSystemTarget
         let name: String
+        /// "dashboard-web · tokens.css".
+        let source: String?
         /// "3 designs".
         let count: String
+        /// Four of its colors.
+        let swatches: [DesignSystemPresentation.Swatch]
+    }
+
+    /// A project "Build one from a repo" can read.
+    struct Project: Identifiable, Equatable {
+        let id: SpaceID
+        let name: String
     }
 
     /// The first board a card draws, as the thumbnails last read it.
@@ -38,27 +51,44 @@ struct DesignsPageModel: Equatable {
 
     var cards: [Card] = []
     var systems: [System] = []
+    /// The projects a system can be built from; none leaves the tile disabled.
+    var projects: [Project] = []
     /// The filter matched nothing (there are designs).
     var noMatch = false
 
     static let columns = 4
+    static let systemColumns = 3
 
     /// The cards in rows of `columns`.
     var rows: [[Card]] {
         stride(from: 0, to: cards.count, by: Self.columns).map { Array(cards[$0..<min($0 + Self.columns, cards.count)]) }
     }
 
+    /// The systems in rows of `systemColumns`, the build tile after the last: each row's
+    /// systems, and whether the tile ends it.
+    var systemRows: [(systems: [System], tile: Bool)] {
+        let slots = systems.count + 1
+        return stride(from: 0, to: slots, by: Self.systemColumns).map { start in
+            let end = min(start + Self.systemColumns, slots)
+            return (Array(systems[min(start, systems.count)..<min(end, systems.count)]), end == slots)
+        }
+    }
+
+    /// Night Watch's source line: it is generated from ShepherdUI's tokens.
+    static let builtInSource = "shepherd · ShepherdUI Tokens"
+
     static func make(designs: [Design], spaces: [Space], firstBoards: [DesignID: FirstBoard], filter: String,
-                     selection: DesignID?, now: Date) -> DesignsPageModel {
+                     selection: DesignID?, now: Date, systems: [DesignSystemSummary] = [],
+                     swatches: [String: [DesignSystemPresentation.Swatch]] = [:]) -> DesignsPageModel {
         let names = Dictionary(spaces.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
         func system(_ design: Design) -> String? { design.systemNamespace ?? names[design.spaceID] }
         let query = filter.trimmingCharacters(in: .whitespacesAndNewlines)
-        let sorted = designs.sorted { a, b in
+        func matches(_ text: String?) -> Bool { text?.localizedCaseInsensitiveContains(query) ?? false }
+        let canvases = designs.filter { !$0.buildsSystem }
+        let sorted = canvases.sorted { a, b in
             a.lastActiveAt != b.lastActiveAt ? a.lastActiveAt > b.lastActiveAt : a.createdAt > b.createdAt
         }
-        let matching = query.isEmpty ? sorted : sorted.filter { design in
-            design.name.localizedCaseInsensitiveContains(query) || (system(design)?.localizedCaseInsensitiveContains(query) ?? false)
-        }
+        let matching = query.isEmpty ? sorted : sorted.filter { matches($0.name) || matches(system($0)) }
         var model = DesignsPageModel()
         model.cards = matching.map { design in
             let first = firstBoards[design.id]
@@ -67,15 +97,37 @@ struct DesignsPageModel: Equatable {
                         board: NWDesignCardBoard(size: first?.size), thumbnail: first?.version ?? 0,
                         selected: design.id == selection)
         }
+
+        // The systems built here by name, then builds still reading their project, then the
+        // built-ins.
         var counts: [String: Int] = [:]
-        var order: [String] = []
-        for design in matching {
-            guard let name = system(design) else { continue }
-            if counts[name] == nil { order.append(name) }
-            counts[name, default: 0] += 1
+        for design in canvases { if let ns = design.systemNamespace { counts[ns, default: 0] += 1 } }
+        let used = Set(matching.compactMap(\.systemNamespace))
+        let own = systems.filter { !$0.builtIn }.sorted { $0.info.title.localizedStandardCompare($1.info.title) == .orderedAscending }
+        let builtIn = systems.filter(\.builtIn)
+        var cards: [System] = (own + builtIn).map { summary in
+            let info = summary.info
+            let source = summary.builtIn ? builtInSource
+                : DesignSystemPresentation.source(project: info.spaceID.flatMap { names[$0] }, sources: info.sources)
+            return System(id: .system(info.namespace), name: info.title, source: source, count: designsText(counts[info.namespace] ?? 0),
+                          swatches: swatches[info.namespace] ?? [])
         }
-        model.systems = order.map { System(name: $0, count: designsText(counts[$0] ?? 0)) }
-        model.noMatch = !designs.isEmpty && matching.isEmpty
+        let built = Set(systems.compactMap(\.info.ownerDesignID))
+        let pending = designs.filter { $0.buildsSystem && !built.contains($0.id) }.sorted { $0.createdAt < $1.createdAt }.map { build in
+            System(id: .build(build.id), name: build.name, source: names[build.spaceID].map { "\($0) · building" } ?? "building",
+                   count: "", swatches: [])
+        }
+        cards.insert(contentsOf: pending, at: own.count)
+        if !query.isEmpty {
+            cards = cards.filter { card in
+                if matches(card.name) || matches(card.source) { return true }
+                if case .system(let ns) = card.id { return used.contains(ns) || matches(ns) }
+                return false
+            }
+        }
+        model.systems = cards
+        model.projects = spaces.filter { !$0.hidden }.map { Project(id: $0.id, name: $0.name) }
+        model.noMatch = !canvases.isEmpty && matching.isEmpty
         return model
     }
 
@@ -93,6 +145,8 @@ struct DesignsPageInputs: Equatable {
     var firstBoards: [DesignID: DesignsPageModel.FirstBoard]
     var filter: String
     var selection: DesignID?
+    var systems: [DesignSystemSummary]
+    var swatches: [String: [DesignSystemPresentation.Swatch]]
     /// The minute its relative times were worded in.
     var minute: Int
 }

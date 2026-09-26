@@ -105,7 +105,8 @@ public struct DesignTokens: Hashable, Sendable {
         return own.isEmpty ? (Self.fallback[role] ?? [], false) : (own, true)
     }
 
-    static func role(of name: String) -> Role? {
+    /// What a length token is for, read from its name; nil when the name says nothing.
+    public static func role(of name: String) -> Role? {
         let lower = name.lowercased()
         if ["radius", "radii", "round", "corner"].contains(where: lower.contains) { return .radius }
         if ["font", "text", "type", "fs-", "leading"].contains(where: lower.contains) { return .text }

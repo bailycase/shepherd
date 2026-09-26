@@ -286,6 +286,13 @@ public final class SessionServer: @unchecked Sendable {
     /// go to it directly; writes go through the server's design mutations, which commit and
     /// broadcast what they changed.
     public let designs: DesignStore
+    /// Every design system this host keeps (the support directory's `design-systems/`, plus the
+    /// built-ins the app registers). Reads go to it directly; writes, installs and re-syncs go
+    /// through the server.
+    public let designSystems: DesignSystemStore
+    /// A design system was written or re-synced. Delivered on the main actor; a hint to list the
+    /// systems again, not state.
+    public var onDesignSystemsChanged: (() -> Void)?
     /// Skills requests fetch from git, so they run here, one at a time, never on the server's
     /// queue.
     private let skillsQueue = DispatchQueue(label: "shepherd.skills", qos: .userInitiated)
@@ -492,6 +499,8 @@ public final class SessionServer: @unchecked Sendable {
         self.changes = ChangesService(directory: stateURL.deletingLastPathComponent().appendingPathComponent("changes", isDirectory: true),
                                       trash: trash)
         self.designs = DesignStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("designs", isDirectory: true))
+        self.designSystems = DesignSystemStore(directory: stateURL.deletingLastPathComponent()
+            .appendingPathComponent("design-systems", isDirectory: true))
         installChanges()
     }
 
@@ -1952,6 +1961,15 @@ public final class SessionServer: @unchecked Sendable {
                 let outcome = try await server.replyToDesignComment(designID, commentID: comment, text: text, author: .agent)
                 return .designComment(id: id, comment: outcome.comment)
             }
+        case .designSystemRead(let id, let agentID, let designID, let namespace):
+            designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client) { server, _ in
+                if let namespace { return .designSystem(id: id, system: try await server.designSystem(namespace)) }
+                return .designSystems(id: id, listing: try await server.designSystemListing(designID))
+            }
+        case .designSystemWrite(let id, let agentID, let designID, let system):
+            designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client) { server, _ in
+                .designSystemWritten(id: id, result: try await server.writeDesignSystem(system, for: designID))
+            }
         }
     }
 
@@ -1986,6 +2004,8 @@ public final class SessionServer: @unchecked Sendable {
             do {
                 answer = try await body(self, boardPath)
             } catch let error as DesignStoreError {
+                answer = .error(id: id, code: error.code, message: error.description)
+            } catch let error as DesignSystemError {
                 answer = .error(id: id, code: error.code, message: error.description)
             } catch let error as SessionServerError {
                 answer = .error(id: id, code: "design_refused", message: error.description)
@@ -2222,7 +2242,10 @@ public final class SessionServer: @unchecked Sendable {
              .designBoard(let id, _),
              .designWritten(let id, _),
              .designComments(let id, _),
-             .designComment(let id, _):
+             .designComment(let id, _),
+             .designSystems(let id, _),
+             .designSystem(let id, _),
+             .designSystemWritten(let id, _):
             return id
         }
     }
@@ -2948,6 +2971,108 @@ public final class SessionServer: @unchecked Sendable {
     public func designExportFiles(_ designID: DesignID, boards: [DesignPath]) async throws -> DesignExportFiles {
         guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
         return try await designs.exportFiles(designID, boards: boards)
+    }
+
+    // MARK: - Design systems
+
+    /// Every design system: the built-ins, then those this host built, by namespace.
+    public func designSystemSummaries() async -> [DesignSystemSummary] {
+        await designSystems.list()
+    }
+
+    /// One design system whole: its tokens, README and files.
+    public func designSystem(_ namespace: String) async throws -> DesignSystemRead {
+        guard DesignPath.isSystemNamespace(namespace) else { throw DesignSystemError.invalidNamespace(namespace) }
+        return try await designSystems.read(namespace)
+    }
+
+    /// Every file of a design system but Shepherd's record, by path: what its page draws its
+    /// specimens from. Read on the store's queue.
+    public func designSystemContents(_ namespace: String) async throws -> [String: Data] {
+        guard DesignPath.isSystemNamespace(namespace) else { throw DesignSystemError.invalidNamespace(namespace) }
+        return try await designSystems.contents(namespace).files
+    }
+
+    /// What `system_read` lists for a design's agent: every system, and the ones the design has
+    /// installed, its own first.
+    public func designSystemListing(_ designID: DesignID) async throws -> DesignSystemListing {
+        guard let design = state.designs.first(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        let systems = await designSystems.list()
+        var installed = try await designs.installedSystems(designID)
+        if let primary = design.systemNamespace, let at = installed.firstIndex(where: { $0.namespace == primary }) {
+            installed.insert(installed.remove(at: at), at: 0)
+        }
+        return DesignSystemListing(systems: systems, installed: installed, primary: design.systemNamespace)
+    }
+
+    /// Writes a design system for the agent of `designID`, which owns it once it has written it
+    /// (and only its agent writes it then). Its stylesheets are read from the design's project,
+    /// never written. With `install`, it is then copied into the design.
+    public func writeDesignSystem(_ write: DesignSystemWrite, for designID: DesignID) async throws -> DesignSystemWriteResult {
+        let state = self.state
+        guard let design = state.designs.first(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        guard DesignPath.isSystemNamespace(write.namespace) else { throw DesignSystemError.invalidNamespace(write.namespace) }
+        let space = state.spaces.first { $0.id == design.spaceID }
+        var summary: DesignSystemSummary
+        var changed = false
+        var notes: [String] = []
+        if write.writesFiles {
+            let written = try await designSystems.write(write, owner: designID, spaceID: space?.id,
+                                                        sourceRoot: space.map { URL(fileURLWithPath: $0.path, isDirectory: true) },
+                                                        at: Self.nowMilliseconds())
+            summary = written.summary
+            changed = written.changed
+            notes = written.notes
+            if changed { hopToMain { [weak self] in self?.onDesignSystemsChanged?() } }
+        } else {
+            guard write.install == true else {
+                throw DesignSystemError.invalidTokens(["nothing to do: pass tokens, files, sources or install"])
+            }
+            summary = try await designSystems.read(write.namespace).summary
+        }
+        var installed: DesignWriteResult?
+        if write.install == true {
+            installed = try await installDesignSystem(designID, namespace: write.namespace)
+        }
+        return DesignSystemWriteResult(summary: summary, changed: changed, installed: installed, notes: notes)
+    }
+
+    /// Installs a design system in a design: its files into `project/ds/<namespace>/` and its
+    /// record in canvas.json's `designSystems`, as one write, when the design is still at
+    /// `baseRevision`. The design is then drawn in it (`Design.systemNamespace`).
+    @discardableResult
+    public func installDesignSystem(_ designID: DesignID, namespace: String,
+                                    baseRevision: UInt64? = nil) async throws -> DesignWriteResult {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        guard DesignPath.isSystemNamespace(namespace) else { throw DesignSystemError.invalidNamespace(namespace) }
+        let (summary, files) = try await designSystems.contents(namespace)
+        let record = DesignIndex.SystemRecord.shepherd(title: summary.info.title, namespace: namespace,
+                                                        revision: summary.info.revision, copiedAt: Date())
+        let result = try await designs.installSystem(designID, namespace: namespace, record: record, files: files,
+                                                     baseRevision: baseRevision)
+        try await enqueue {
+            try self.commitDesignWrite(designID, result)
+            guard let index = self.store.state.designs.firstIndex(where: { $0.id == designID }),
+                  self.store.state.designs[index].systemNamespace != namespace else { return }
+            try self.mutateState { $0.designs[index].systemNamespace = namespace }
+        }
+        return result
+    }
+
+    /// Reads a design system's stylesheets again from its project (read-only) and updates the
+    /// tokens that came from them; the system's `syncedAt` moves either way. Designs keep the
+    /// copy they installed until it is installed again.
+    public func resyncDesignSystem(_ namespace: String) async throws -> DesignSystemSyncResult {
+        guard DesignPath.isSystemNamespace(namespace) else { throw DesignSystemError.invalidNamespace(namespace) }
+        let info = try await designSystems.read(namespace).summary
+        guard !info.builtIn else { throw DesignSystemError.readOnly(namespace) }
+        guard let spaceID = info.info.spaceID, let space = state.spaces.first(where: { $0.id == spaceID }) else {
+            throw DesignSystemError.noSources("\(namespace)'s project is gone, so there is nothing to read again")
+        }
+        let result = try await designSystems.resync(namespace, root: URL(fileURLWithPath: space.path, isDirectory: true),
+                                                    at: Self.nowMilliseconds())
+        hopToMain { [weak self] in self?.onDesignSystemsChanged?() }
+        return result
     }
 
     // MARK: - Design comments

@@ -14,8 +14,16 @@ struct DesignsDestination: View {
         DesignsPage(model: vm.designsPage, filter: vm.designsPageFilter, actions: DesignsPageActions(
             setFilter: { vm.designsPageFilter = $0 },
             open: { vm.openDesign($0) },
-            create: { vm.openNewDesign() }), thumbnail: { thumbnails.image($0) }, chrome: chrome)
+            create: { vm.openNewDesign() },
+            openSystem: { target in
+                switch target {
+                case .system(let namespace): vm.openDesignSystem(namespace)
+                case .build(let id): vm.openSystemBuild(id)
+                }
+            },
+            build: { vm.buildDesignSystem(in: $0) }), thumbnail: { thumbnails.image($0) }, chrome: chrome)
             .task(id: vm.designThumbnailSignature) { await vm.loadDesignThumbnails() }
+            .task { await vm.loadDesignSystems() }
     }
 }
 
@@ -24,12 +32,15 @@ struct DesignsPageActions {
     var setFilter: (String) -> Void
     var open: (DesignID) -> Void
     var create: () -> Void
+    var openSystem: (DesignSystemTarget) -> Void = { _ in }
+    /// "Build one from a repo" in a project.
+    var build: (SpaceID) -> Void = { _ in }
 }
 
 /// The Designs page (NavDesigns): the header ("Designs", "Filter designs", New design), then the
-/// recent designs as cards in rows of four and the design systems they are drawn in. P1 reads a
-/// design's system as its project, so a system card is its name and how many designs use it:
-/// the swatches, the source line and "Build one from a repo" come with design systems.
+/// recent designs as cards in rows of four, and the design systems in rows of three (swatches,
+/// name, source, how many designs use it) ending in "Build one from a repo". A system card opens
+/// its page.
 struct DesignsPage: View {
     let model: DesignsPageModel
     let filter: String
@@ -61,8 +72,11 @@ struct DesignsPage: View {
                             case .cards(let row):
                                 DesignCardRow(cards: row, open: actions.open, thumbnail: thumbnail)
                                     .equatable()
-                            case .systems(let systems):
-                                systemsGrid(systems)
+                            case .systems(let row, let tile, let first):
+                                DesignSystemCardRow(systems: row, tile: tile, projects: model.projects,
+                                                    open: actions.openSystem, build: actions.build)
+                                    .equatable()
+                                    .padding(.top, first ? 0 : NWPageMetrics.columnGap)
                             }
                         }
                     }
@@ -80,13 +94,14 @@ struct DesignsPage: View {
     enum Item: Identifiable {
         case label(String, first: Bool)
         case cards([DesignsPageModel.Card])
-        case systems([DesignsPageModel.System])
+        /// A row of system cards, whether the build tile ends it, and whether it is the first.
+        case systems([DesignsPageModel.System], tile: Bool, first: Bool)
 
         var id: String {
             switch self {
             case .label(let title, _): "label.\(title)"
             case .cards(let row): "row.\(row.first?.id.rawValue ?? "")"
-            case .systems: "systems"
+            case .systems(let row, let tile, _): "systems.\(row.first.map { "\($0.id)" } ?? (tile ? "tile" : ""))"
             }
         }
     }
@@ -97,27 +112,63 @@ struct DesignsPage: View {
             items.append(.label("Recent designs", first: true))
             items += model.rows.map(Item.cards)
         }
-        if !model.systems.isEmpty {
-            items.append(.label("Design systems", first: items.isEmpty))
-            items.append(.systems(model.systems))
-        }
+        items.append(.label("Design systems", first: items.isEmpty))
+        items += model.systemRows.enumerated().map { index, row in .systems(row.systems, tile: row.tile, first: index == 0) }
         return items
     }
+}
 
-    private func systemsGrid(_ systems: [DesignsPageModel.System]) -> some View {
-        Grid(horizontalSpacing: NWPageMetrics.columnGap, verticalSpacing: NWPageMetrics.columnGap) {
-            ForEach(Array(stride(from: 0, to: systems.count, by: AppLayout.designSystemColumns)), id: \.self) { start in
-                GridRow {
-                    let row = systems[start..<min(start + AppLayout.designSystemColumns, systems.count)]
-                    ForEach(row) { system in
-                        NWDesignSystemCard(name: system.name, count: system.count)
-                            .frame(maxWidth: .infinity)
-                    }
-                    ForEach(0..<(AppLayout.designSystemColumns - row.count), id: \.self) { _ in
-                        Color.clear.frame(maxWidth: .infinity).gridCellUnsizedAxes(.vertical)
-                    }
-                }
+/// A row of up to three design system cards, the last row ending in "Build one from a repo",
+/// redrawn only when one of its cards changes.
+struct DesignSystemCardRow: View, Equatable {
+    let systems: [DesignsPageModel.System]
+    let tile: Bool
+    let projects: [DesignsPageModel.Project]
+    let open: (DesignSystemTarget) -> Void
+    let build: (SpaceID) -> Void
+
+    nonisolated static func == (a: Self, b: Self) -> Bool {
+        a.systems == b.systems && a.tile == b.tile && (!a.tile || a.projects == b.projects)
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: NWPageMetrics.columnGap) {
+            ForEach(systems) { system in
+                NWDesignSystemCard(name: system.name, source: system.source, count: system.count,
+                                   colors: system.swatches.map { Color(light: $0.light, dark: $0.dark) }) { open(system.id) }
+                    .frame(maxWidth: .infinity)
             }
+            if tile {
+                buildTile
+                    .frame(maxWidth: .infinity)
+            }
+            ForEach(0..<max(0, DesignsPageModel.systemColumns - systems.count - (tile ? 1 : 0)), id: \.self) { _ in
+                Color.clear.frame(maxWidth: .infinity, maxHeight: 0)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// "Build one from a repo": the one project at once, a menu of them with more, and nothing
+    /// to read without one.
+    @ViewBuilder private var buildTile: some View {
+        if projects.count == 1, let project = projects.first {
+            Button { build(project.id) } label: { NWDesignSystemBuildTile() }
+                .buttonStyle(.plain)
+                .help("Build a design system from \(project.name)")
+        } else if projects.isEmpty {
+            NWDesignSystemBuildTile(enabled: false)
+                .help("Add a project to build a design system from it")
+        } else {
+            Menu {
+                ForEach(projects) { project in
+                    Button(project.name) { build(project.id) }
+                }
+            } label: { NWDesignSystemBuildTile() }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .help("Build a design system from a project")
         }
     }
 }

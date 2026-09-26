@@ -15,6 +15,9 @@
  *   DCLogic`), and renders the template with React from `renderVals()`: `{{dotted.holes}}` as
  *   text, whole-value and interpolated attributes, `<sc-if>`, `<sc-for>`, `<dc-import>`, and
  *   `hint-*` placeholders while values are missing;
+ * - mounts a design system's components with `<x-import component-from-global-scope="Ns.Name">`:
+ *   the component a bundle the board loads (`ds/<ns>/…`) put on `window`, its attributes as
+ *   props and its content as children;
  * - stamps each rendered element with `data-dc-tid` (an imported board's elements carry
  *   `data-dc-owner`, the tid of the `<dc-import>` that holds them);
  * - tells Shepherd's bridge (an isolated world) what happened through `shepherd-dc` DOM events,
@@ -33,6 +36,9 @@
 
   var React = window.React;
   var ReactDOM = window.ReactDOM;
+  // The page's own globals before any design system's bundle loads (the runtime comes first in
+  // the head): an `<x-import>` reaches only globals a bundle added after it.
+  var PAGE_GLOBALS = new Set(Object.getOwnPropertyNames(window));
   var h = React.createElement;
   var Fragment = React.Fragment;
 
@@ -271,12 +277,14 @@
     var element = current && current.template ? current.template.elements[tid] : null;
     if (!element) return null;
     var label = element.name === 'img' ? templateAttribute(element, 'alt') : templateText(element);
-    var named = element.name === 'dc-import' ? templateAttribute(element, 'name') : templateAttribute(element, 'data-el');
+    var named = element.name === 'dc-import' ? templateAttribute(element, 'name')
+      : element.name === 'x-import' ? templateAttribute(element, 'component-from-global-scope')
+      : templateAttribute(element, 'data-el');
     return {
       tid: tid,
       path: element.path,
       tag: element.name,
-      kind: element.name === 'dc-import' ? 'other' : kindOf(element),
+      kind: element.name === 'dc-import' || element.name === 'x-import' ? 'other' : kindOf(element),
       label: label ? String(label).slice(0, 200) : null,
       el: named && named.indexOf('{{') < 0 ? String(named).slice(0, 200) : null
     };
@@ -473,6 +481,7 @@
       case 'sc-if': return renderIf(element, scope, context);
       case 'sc-for': return renderFor(element, scope, context);
       case 'dc-import': return renderImport(element, scope, context);
+      case 'x-import': return renderGlobalImport(element, scope, context);
     }
     var custom = element.tag.indexOf('-') >= 0;
     var props = {};
@@ -692,6 +701,112 @@
       report('import', new Error('not a board name: ' + String(name)));
     }
     return h(ImportSlot, { url: url, frame: context, tid: element.tid, hint: hint, childProps: childProps });
+  }
+
+  // MARK: Design-system components
+
+  var GLOBAL_PATH = /^[A-Za-z_$][A-Za-z0-9_$]*(\.[A-Za-z_$][A-Za-z0-9_$]*){1,5}$/;
+  var NOT_EXPORTS = new Set(['__proto__', 'prototype', 'constructor']);
+
+  /** The component `Ns.Name` names: a global a design system's bundle added, then its own properties. */
+  function globalComponent(path) {
+    if (typeof path !== 'string' || !GLOBAL_PATH.test(path)) return null;
+    var parts = path.split('.');
+    if (PAGE_GLOBALS.has(parts[0])) return null;
+    var value = window;
+    for (var i = 0; i < parts.length; i++) {
+      if (NOT_EXPORTS.has(parts[i]) || value == null) return null;
+      var holder = Object(value);
+      if (!Object.prototype.hasOwnProperty.call(holder, parts[i])) return null;
+      value = holder[parts[i]];
+    }
+    if (typeof value === 'function') return value;
+    if (value && typeof value === 'object' && value.$$typeof) return value;
+    return null;
+  }
+
+  /** A component that fails to render draws nothing and says why; the board goes on. */
+  class ComponentBoundary extends React.Component {
+    constructor(props) {
+      super(props);
+      this.state = { failed: false };
+    }
+
+    static getDerivedStateFromError() {
+      return { failed: true };
+    }
+
+    componentDidCatch(error) {
+      report('component', new Error(this.props.path + ': ' + describe(error)));
+    }
+
+    render() {
+      return this.state.failed ? null : this.props.children;
+    }
+  }
+
+  /** Marks what a component drew as the `<x-import>`'s, so selection names the import. */
+  function claim(slot, owner) {
+    var walker = document.createTreeWalker(slot, NodeFilter.SHOW_ELEMENT, {
+      acceptNode: function (node) {
+        if (node.hasAttribute('data-dc-x-import')) return NodeFilter.FILTER_REJECT;
+        if (node.hasAttribute('data-dc-tid') || node.hasAttribute('data-dc-owner')) return NodeFilter.FILTER_SKIP;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    var node;
+    while ((node = walker.nextNode())) node.setAttribute('data-dc-owner', String(owner));
+  }
+
+  function GlobalSlot(props) {
+    var ref = React.useRef(null);
+    var owner = props.owner;
+    React.useLayoutEffect(function () {
+      var slot = ref.current;
+      if (!slot) return undefined;
+      claim(slot, owner);
+      var observer = new MutationObserver(function () { claim(slot, owner); });
+      observer.observe(slot, { childList: true, subtree: true });
+      return function () { observer.disconnect(); };
+    });
+    var slotProps = { ref: ref, 'data-dc-x-import': props.path };
+    // `style` on an `<x-import>` places and sizes its slot, which then answers for it; without
+    // one the slot takes no box, and what the component drew answers instead.
+    if (props.style) {
+      slotProps.STYLE = String(props.style);
+      if (props.stamp != null) slotProps['data-dc-tid'] = props.stamp;
+      else slotProps['data-dc-owner'] = owner;
+    } else {
+      slotProps.STYLE = 'display: contents';
+    }
+    var inner = props.component
+      ? h(ComponentBoundary, { path: props.path }, h.apply(null, [props.component, props.childProps].concat(props.children)))
+      : null;
+    return h('div', slotProps, inner);
+  }
+
+  function renderGlobalImport(element, scope, context) {
+    var path = attributeValue(element, 'component-from-global-scope', scope);
+    var component = globalComponent(path);
+    if (!component) report('component', new Error('no design system component ' + String(path)));
+    var childProps = {};
+    var style = null;
+    element.attrs.forEach(function (attr) {
+      var name = attr.name;
+      if (name === 'component-from-global-scope' || name.indexOf('hint-') === 0) return;
+      var value = attr.parts ? evaluate(attr.parts, scope) : attr.value;
+      if (name === 'style') { style = value; return; }
+      if (name === 'key' || name === 'ref' || name === 'dangerouslysetinnerhtml') return;
+      var prop = name === 'class' ? 'className' : name === 'for' ? 'htmlFor' : camelCase(name);
+      // Only a function from renderVals() handles an event; handler text never runs.
+      if (/^on[A-Z]/.test(prop) && typeof value !== 'function') return;
+      childProps[prop] = value;
+    });
+    return h(GlobalSlot, {
+      path: String(path), component: component, childProps: childProps, style: style,
+      stamp: context.owner == null ? element.tid : null, owner: context.owner == null ? element.tid : context.owner,
+      children: renderNodes(element.children, scope, context)
+    });
   }
 
   // MARK: Props

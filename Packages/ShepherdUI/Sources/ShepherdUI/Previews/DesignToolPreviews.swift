@@ -102,6 +102,42 @@ private let previewBoards = [
     }
 }
 
+#Preview("Design system page") {
+    let accent = Color(light: "#4f46e5", dark: "#4f46e5")
+    let surface = Color(light: "#f8fafc", dark: "#f8fafc")
+    NWPreviewBoth {
+        VStack(alignment: .leading, spacing: NW.Space.xl) {
+            NWDesignHeader("acme-web", style: .page, section: "Design systems", status: .init(.done, label: "Synced"), designs: {}) {
+                NWDesignSystemChip("acme-web", colors: [accent, Color(light: "#0f172a", dark: "#0f172a")], action: {})
+            }
+            HStack(alignment: .top, spacing: 0) {
+                NWSectionRail([.init(id: "colors", title: "Colors", count: 11), .init(id: "type", title: "Type", count: 4),
+                               .init(id: "components", title: "Components", count: 9)], selection: "colors")
+                    .frame(height: 220)
+                VStack(alignment: .leading, spacing: NW.Space.xl) {
+                    HStack(spacing: 14) {
+                        NWTokenSwatch("--accent", detail: "#4f46e5 · tokens.css:8", color: accent)
+                        NWTokenSwatch("--bg", detail: "#f8fafc · tokens.css:4", color: surface)
+                    }
+                    NWTypeSpecimen("display", spec: "26/700") { Text("Checkout funnel").font(.nwSans(26, .bold)) }
+                    NWComponentSpecimen("Button", template: "partials/button.html", background: surface) {
+                        Text("Export CSV").foregroundStyle(Color.nw.textOnLantern).padding(NW.Space.m).background(accent, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+                    }
+                    .frame(width: 280)
+                }
+                .padding(NW.Space.xl)
+            }
+            HStack(spacing: NW.Space.xl) {
+                NWDesignSystemCard(name: "acme-web", source: "dashboard-web · tokens.css", count: "3 designs", colors: [accent, surface])
+                NWDesignSystemBuildTile()
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(width: 600)
+        }
+        .frame(width: 900)
+    }
+}
+
 #Preview("Design header and chat tabs") {
     NWPreviewBoth {
         VStack(spacing: NW.Space.xl) {

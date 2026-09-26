@@ -263,6 +263,7 @@ private struct DestinationLayer: View {
         case .newThread?: NewThreadPage(vm: vm, chrome: chrome)
         case .designs?: DesignsDestination(vm: vm, chrome: chrome)
         case .newDesign?: NewDesignPage(vm: vm, chrome: chrome)
+        case .designSystem?: DesignSystemDestination(vm: vm, chrome: chrome)
         case .automations?: AutomationsDestination(vm: vm, chrome: chrome)
         case .hosts?: HostsDestination(vm: vm, chrome: chrome)
         case nil: EmptyView()
@@ -299,8 +300,17 @@ struct WorkspaceHeaderView: View {
                                  showChanges: { vm.openRemoteReview(remote, path: nil) }, rename: { vm.remoteRenameTarget = remote })
                         .id(remote)
                 }
+            } else if let agent = vm.selectedAgent, vm.activeTabID == agent.tabID, let design = vm.design(drawnBy: agent),
+                      design.buildsSystem {
+                DesignSystemHeader(model: vm.designSystemPage(.build(design.id)), toolbar: true, leadingInset: leadingInset,
+                                   showSidebar: showSidebar, designs: { vm.openDestination(.designs) })
+                    .equatable()
+                    .id(agent.id)
             } else if let agent = vm.selectedAgent, vm.activeTabID == agent.tabID, let design = vm.design(drawnBy: agent) {
-                DesignToolbar(name: design.name, system: vm.designSystemName(design), leadingInset: leadingInset,
+                let system = design.systemNamespace.flatMap { vm.designSystems.summary($0) }?.namespace
+                DesignToolbar(name: design.name, system: vm.designSystemName(design),
+                              swatches: vm.designSystemSwatches(system, count: 3),
+                              openSystem: system.map { namespace in { vm.openDesignSystem(namespace) } }, leadingInset: leadingInset,
                               showSidebar: showSidebar, designs: { vm.openDestination(.designs) }, screen: vm.designScreen(design.id),
                               export: { vm.openDesignExport(design.id) })
                     .equatable()

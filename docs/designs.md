@@ -83,6 +83,10 @@ elements).
   comments.json                the viewer's comments (Comments, below), beside project/
   assets/<id>.<ext>            uploads, served to boards as /_blob/<id>
   versions/<path>/<n>.dc.html  each board's last 20 earlier versions
+  project/ds/<namespace>/…     an installed design system's copy (Design systems, below)
+<support>/design-systems/<namespace>/
+  tokens.json, tokens.css, README.md, components/…   a design system's files
+  system.json                  Shepherd's record of it: revision, owner, sources, syncedAt
 ```
 
 - **The support directory**, so a design survives a worktree's deletion, stays with its edition
@@ -165,9 +169,12 @@ project's stylesheets, tokens and templates with its ordinary tools.
 | `design_read(path)` | `designRead` with `path` | `designBoard` | One board's whole source, fenced as data |
 | `board_write(path, source, baseRevision?)` | `designWriteBoard` | `designWritten` | `writeDesignBoard`: the checks under Writing, then an atomic write. It reads "Drew A.dc.html" for a new board and "Updated A.dc.html" for a rewrite (`DesignWriteResult.created`) |
 | `canvas_update(changes, baseRevision?)` | `designUpdateIndex` | `designWritten` | `updateDesignIndex` with `changes` as the merge patch |
-| `design_check(path?)` | none | | In the extension: every hex color (in style attributes, style and script blocks, `data-props`, SVG paint) and every px size in spacing, radius and type that no CSS custom property in the project declares, with the nearest token. Its first line is "Checked against <project> · N off-system values" |
+| `design_check(path?)` | `designSystemRead` | `designSystems` | In the extension: every hex color (in style attributes, style and script blocks, `data-props`, SVG paint) and every px size in spacing, radius and type that the design's installed systems don't hold (their colors and dark values, spacing, radii and type sizes), else that no CSS custom property in the project declares, with the board and lines it is on and the nearest token. Its first line is "Checked against <system or project> · N off-system values" |
 | `comment_list(all?)` | `designComments` | `designComments` | The viewer's open comments (all of them with `all`), oldest first: id, number, state, element id and name, and each one's words and replies, fenced as data |
 | `comment_reply(id, text)` | `designCommentReply` | `designComment` | An answer under a comment's pin (`replyToDesignComment`, author `agent`). No message resolves a comment: only the viewer does |
+| `system_read()` | `designSystemRead` | `designSystems` | Every design system this host keeps and the ones the design installed (its own first), fenced as data |
+| `system_read(namespace)` | `designSystemRead` with `namespace` | `designSystem` | One system whole: its tokens with the file and line each came from, its components, files and README, fenced as data |
+| `system_write(namespace, …)` | `designSystemWrite` | `designSystemWritten` | `writeDesignSystem`: a system's tokens, files and source stylesheets; with `install`, then `installDesignSystem` into the agent's design. With only a namespace and `install`, installs an existing system |
 
 - **Only the drawing agent.** The server answers a design message only when the sending agent's
   `designID` is that design (`not_your_design` otherwise), checks a board path against the
@@ -240,6 +247,169 @@ The skill asks for three directions and a phone version of the strongest, named 
 "A · phone"; desktop boards 1280×800 and phones 390×844, the root, `$preview` and frame the same
 size; frames 80 px apart in a row and rows 120 px apart; and `design_check` before every reply.
 
+## Design systems
+
+A design system is a named set of tokens, components and a README that Shepherd keeps apart
+from any design, so several designs can be drawn in one. Installed in a design, a copy of its
+files sits in the canvas under `ds/<namespace>/` and is recorded in canvas.json's
+`designSystems`, as the Design format installs one; boards link it from there, and
+`design_check` checks against it.
+
+### tokens.json
+
+`DesignSystemTokens` (ShepherdProtocol) reads a system's `tokens.json` in either of two shapes and
+keeps every key it doesn't name, at the top and on each token:
+
+- **Shepherd's schema** (`"format": "shepherd-tokens/1"`, what Shepherd writes):
+
+  ```json
+  {
+    "format": "shepherd-tokens/1", "name": "acme-web", "namespace": "acme-web",
+    "colors": [{"name": "--accent", "value": "#4f46e5", "dark": "#818cf8",
+                "source": {"file": "web/static/tokens.css", "line": 8}}],
+    "type": [{"name": "display", "size": 26, "weight": 700, "lineHeight": 1.2, "family": "Inter",
+              "tracking": -0.01, "transform": "uppercase", "sample": "Checkout funnel"}],
+    "spacing": [{"name": "--space-4", "px": 16, "source": {"file": "web/static/tokens.css", "line": 20}}],
+    "radii": [{"name": "--radius-md", "px": 8}],
+    "fonts": [{"name": "sans", "family": "Inter", "fallback": "system-ui, sans-serif"}],
+    "components": [{"name": "Button", "source": {"file": "templates/partials/button.html"},
+                    "specimen": "components/Button.html", "export": "Acme.Button"}]
+  }
+  ```
+
+  A color's `value` (and `dark`, its dark variant) is a hex, a color function or a named color;
+  `size` and `px` are px; a `source` is `{file, line}` or `"file:line"`, the file relative to the
+  project it was read from. A component's `specimen` is a file of the system showing it, and its
+  `export` the global its bundle mounts it by.
+- **A canvas's own shape** (the Shepherd canvas's `project/tokens.json`): `color.light` names the
+  colors, `color.dark` their dark values; `type` maps style names to `{font, size, weight,
+  lineHeight, tracking, transform}` with `font` naming one of `fonts`; `space` and `radius` map
+  step names to px (read as `space.4`, `radius.md`). A value in `color` that isn't a color (a
+  shadow) keeps the whole map where it was, and `size` and `motion` stay as unknown keys.
+- **Unreadable:** a token without its name or value, a list that isn't one.
+- **What a write may hold** (`problems()`): names of letters, digits and `. _ -` (a leading `--`
+  kept); colors that are colors, with nothing that could break out of a stylesheet (`;`, braces,
+  `url(`); type sizes of 1–400 and weights of 1–1000; steps of 0–10,000 px; a specimen by the
+  system's file grammar; an export as `Ns.Name` (no `__proto__`, `prototype` or `constructor`);
+  500 tokens and 200 components at most.
+- **tokens.css** is generated from the tokens (`css()`) unless the system brings its own: every
+  color and step on `:root` (a name that isn't a custom property reads `bg.canvas` →
+  `--bg-canvas`), `--font-<name>`, `--text-<style>-size`, `-weight` and `-line-height`, and the
+  dark values under `[data-theme="dark"]`, which a board opts into on its root. Its first line
+  (`/* Generated by Shepherd from tokens.json`) marks it as Shepherd's, so a later write or
+  re-sync rewrites it; a stylesheet without it is the author's and is left alone.
+- **Stylesheets** are read by `DesignSystemCSS.declarations`: every custom property with its file
+  and the line its name is on, comments skipped, `!important` dropped, values with parentheses
+  and commas kept whole. `DesignCSSDeclaration.label` is what the system's page lists: "--accent
+  #4f46e5 · tokens.css:8".
+
+### Where systems live
+
+`DesignSystemStore` (ShepherdSessions) keeps them in the support directory's
+`design-systems/<namespace>/` (`[a-z0-9][a-z0-9_-]{0,63}`), on its own queue:
+
+- **Files:** `tokens.json`, `tokens.css`, `README.md`, and whatever else the system needs
+  (`components/Button.html`, a bundle's `bundle.js` and `bundle.css`): relative paths of
+  `[A-Za-z0-9_][A-Za-z0-9_.-]*` segments, at most 6 deep, ending in json, css, js, md, html, svg
+  or txt; 64 files, 900,000 bytes each (a frame), 8 MB in all.
+- **`system.json`** is Shepherd's record (`DesignSystemInfo`), never one of the system's files and
+  never installed: its title, revision (moves with each write), when it was made, changed and
+  last synced, the design whose agent built it (`ownerDesignID`), the project it was read from
+  (`spaceID`) and its stylesheets there (`sources`, relative to the project).
+- **Built in:** Night Watch (`night-watch`), generated by the app from ShepherdUI's tokens
+  (`NightWatchSystem`: every `ThemeColors` and `SyntaxColors` role with its light and dark value,
+  the type ramp, the space and radius scales, Geist and Geist Mono) and registered with the
+  server at launch. It lives in memory, is listed first, installs like any system, and is never
+  written or synced.
+- **Links are never followed.** A `design-systems/<namespace>` that is a link or a file is no
+  system: it is not listed, and reading, writing or installing it refuses (`not_a_folder`). Inside
+  a system, a linked file is not one of its files, and a write never goes through a linked
+  folder (`invalid_file`); an install checks each file's folder under the design's
+  `ds/<namespace>/` the same way before it makes anything.
+- **At most 100** systems on a host.
+
+### Writing, installing, re-syncing
+
+| Mutation | What it does |
+| --- | --- |
+| `writeDesignSystem(_:for:)` | Writes a system for a design's agent. A new namespace becomes that design's; an existing one must be (`not_your_system`), and a built-in never is (`read_only_system`). `tokens` are checked (`invalid_tokens`) and written as given, other files written or (null) removed, `tokens.css` generated when the tokens change and the stylesheet is Shepherd's. `sources` are read from the design's project, never written: one that isn't there is noted, not refused. A `baseRevision` the system moved past is refused (`stale_revision`). Changed files move the revision and tell the app (`onDesignSystemsChanged`) |
+| `installDesignSystem(_:namespace:baseRevision:)` | Copies every file of a system but `system.json` into the design's `project/ds/<namespace>/` (files an earlier copy had and this one doesn't leave), and records it in canvas.json's `designSystems` (`title`, `namespace`, `version` (the system's revision), `copiedAt`, `"origin": "shepherd"`) in place of the earlier record of that folder, else last: one design revision. The design is then drawn in it (`Design.systemNamespace`, persisted). A folder whose record isn't Shepherd's (a system installed on claude.ai, with its `artifact`), or a `ds/<namespace>/` with no record, is kept as it is (`namespace_taken`); a canvas holds 4 systems |
+| `resyncDesignSystem(_:)` | Re-sync, manual: reads the system's `sources` again from its project (only inside it, at most 1 MB each) and takes back what changed (`DesignSystemTokens.resynced`): a color or step whose `source` names one of them takes its value and line there now, or leaves when it is no longer declared; a custom property no token names joins (a hex as a color, a length as a radius or spacing step by its name); type, fonts and components are the author's. The revision moves when the tokens change, `syncedAt` always ("synced 4m ago", `DesignSystemPresentation.synced`). Designs keep the copy they installed until it is installed again. A built-in, a system without sources or whose project is gone refuses (`no_sources`) |
+
+Reads: `designSystemSummaries()` (each system's record, whether it is built in, and its counts:
+colors, type styles, spacing and radius steps, components), `designSystem(_:)` (tokens, README
+up to 64 KB, files) and `designSystemListing(_:)` (what `system_read` lists for a design: every
+system, and the design's installed ones with the tokens of their copies, read from their
+`tokens.json`, else from the custom properties of their `tokens.css`, so a system installed on
+claude.ai is still checked against).
+
+### The agent's side
+
+- **Building one from a repository** ("Build one from a repo", DZSystem): the agent reads the
+  project's tokens file, templates and pages with its ordinary tools, writes the system with
+  `system_write` (tokens with their sources, specimens, a README, the stylesheets it read), and
+  reports what doesn't match (values the templates hard-code instead of a token). The repository
+  is only read.
+- **Drawing in one:** boards link `ds/<namespace>/tokens.css` (and a bundle's files) after the
+  `support.js` line, use its custom properties, and mount its components with `<x-import>` (The
+  runtime, above).
+- **What pi is told:** each run's facts list the design's installed systems inside the data fence,
+  and the rules say to draw in the installed system and to change a system only with
+  `system_write`.
+- **Activity lines:** `system_read` joins "Explored N files" (`ds/<namespace>`, or "design
+  systems"); `system_write` reads "Used system" with its namespace.
+
+### In the app
+
+- **The catalog** (`DesignSystemCatalog`, owned by the view model) holds the host's systems as
+  last read: each one's record and counts, and its tokens, README and file list. It reads them
+  again when the server says one changed (`onDesignSystemsChanged`: a write, a re-sync) and when
+  a page that shows them opens; a system whose revision didn't move keeps what was read.
+- **"Build one from a repo"** (NavDesigns' dashed tile, a menu of projects when there are
+  several) makes a design that builds a system (`Design.buildsSystem`, persisted, false in older
+  files) in the project, named after it, and starts its agent there with Settings' default model
+  and these words: "Build a design system from this project: read its tokens file, its component
+  templates and a few pages (read only), write the system with system_write, and tell me what
+  doesn't match." A project that has a build opens it instead. A build has no card and no Recents
+  row; its system (the one whose `ownerDesignID` is the build) is its page.
+- **A system's page** (DZSystem, `DesignSystemPageModel`): a build's page is its agent's layout
+  (`DesignSystemLayoutView`), the system beside the agent's 420pt chat with the Chat tab alone
+  (decision 12), mounted and hidden like any agent's; before the agent writes its system it says
+  "Reading <project>…". Any other system (Night Watch, or one a canvas's agent wrote) opens as the
+  Design systems page (`MainDestination.designSystem`), without a chat. The page:
+  - the header: "Design systems / acme-web", "Synced" once read from a project ("Syncing" while a
+    re-sync runs), and the system's chip;
+  - the section list, each with its count: Colors, Type, Spacing & radii, Components, and Boards
+    using it (the boards of the designs drawn in it); a section scrolls to its label;
+  - the name over "Read from `dashboard-web`: `web/static/tokens.css` and 9 templates in
+    `templates/partials/` · synced 4m ago" (a built-in: "Generated from ShepherdUI's tokens"; a
+    system whose project is gone: its counts), and **Re-sync** (`resyncDesignSystem`), disabled
+    for a system without stylesheets or project;
+  - colors as token swatches with the line each came from, type styles in the system's own face,
+    the spacing and radius steps, components, and the designs drawn in it.
+- **Specimens.** A component's `specimen` file is drawn by the board renderer, never as SwiftUI:
+  the page reads the system's files (`SessionServer.designSystemContents`), wraps each specimen
+  in a board of the tile's size on the system's background with its `tokens.css` linked
+  (`DesignSpecimenBoard`), and renders it off screen from those files held in memory
+  (`DesignSurface(designID:files:)`, `DesignSpecimens`), again only when the system's revision
+  moves. A specimen over 64 KB, or none, leaves its tile empty. Nothing is written to disk.
+- **The Designs page's systems** (NavDesigns): the systems built here by title, the builds still
+  reading their project ("dashboard-web · building"), then the built-ins, in lazy rows of three
+  ending in "Build one from a repo". A card has four of the system's colors (its accent, text,
+  background and a status color by name, then the rest), its source ("dashboard-web ·
+  tokens.css"; Night Watch: "shepherd · ShepherdUI Tokens") and how many designs are drawn in it,
+  and opens its page.
+- **More ▸ Design systems** opens the system page shown last, else the first system built here,
+  else Night Watch; it is selected while a system's page shows. **A design's system chip** opens
+  its system's page, and draws three of its colors.
+- **New design** (DZStart): the card is the system built from the chosen project ("acme-web",
+  "design system · dashboard-web", "found in web/static/tokens.css"), else the project itself,
+  "found in" its tokens file when a read-only walk finds one (`DesignSystemDetection`: a
+  stylesheet named for tokens, then variables or theme, shallowest first, else the one declaring
+  the most custom properties; at least three; links not followed), else at its folder. Its menu
+  picks another project or another system. Send installs the system in the new design before its
+  agent starts.
+
 ## The renderer
 
 `DesignSurfaceKit` (macOS and iOS) draws a board in a `WKWebView` on the device that shows it.
@@ -260,7 +430,9 @@ Boards are untrusted: an agent wrote them, or they came from someone else's canv
     resolves (links followed) inside `project/`.
   - `/_blob/<id>`: an upload in the design's `assets/`.
 
-  Anything else is a 404, and a board that isn't there fails its load.
+  Anything else is a 404, and a board that isn't there fails its load. A surface over files in
+  memory (a design system's, for its specimens) serves those files by the same grammar and the
+  runtime, and no uploads.
 - **A data store per design,** non-persistent, so nothing a board stores outlives the surface or
   reaches another design.
 - **Content rules** block every load except the scheme and Google Fonts
@@ -314,8 +486,18 @@ code is copied, fetched or imitated.
   board's own elements (a value past what a tweak writes is left out), `endPreview()` puts back
   exactly what they had, and `setProps(json)` redraws with new props; none writes anything.
   `DesignBoardView.previewStyle(_:)`, `previewProps(_:)` and `endPreview()` call them.
+- **Design-system components.** `<x-import component-from-global-scope="Acme.Button">` mounts
+  the component an installed system's bundle (loaded in the board's head from `ds/<namespace>/`)
+  put on `window`: a dotted path of own properties from a global the page didn't have before the
+  bundle (the runtime notes the page's globals when it loads, ahead of any bundle), never
+  `__proto__`, `prototype` or `constructor`, ending in a function or a React element type.
+  Attributes are props (kebab-case to camelCase, `class` to `className`; an `on…` prop only as a
+  function from `renderVals()`), the content is `children`, and `style` places and sizes its
+  slot, which then answers selection for it; without one the slot takes no box
+  (`display: contents`) and what the component drew answers, marked `data-dc-owner` with the
+  import's tid (as an import's drawing is). A component that isn't there, or throws while it
+  draws, draws nothing and is reported; the rest of the board draws.
 - **Not yet:**
-  - `<x-import>` (design-system components) comes with design systems.
   - A board's top-level props are canvas.json's `tweaks` for it, read at boot and handed to
     `replaceSource` again (Tweak).
   - A hole in the helmet draws empty.
@@ -377,8 +559,9 @@ was on keep their files and agents either way.
 
 - **The Designs destination** sits between New thread and Automations. Its page
   (`DesignsPage`, NavDesigns) shows recent designs as cards, most recently edited first, each
-  with its first board (the first in `order`) rendered off screen, and the systems they are drawn
-  in. Until design systems exist, a design's system is its project's name.
+  with its first board (the first in `order`) rendered off screen, and the host's design systems
+  (Design systems › In the app). A card names the design's system: the one installed in it last
+  (`Design.systemNamespace`), else its project's name.
 - **Recents** lists a design as one row (the nib and "4 boards"), placed by its last change. Its
   agent has no row of its own and takes no ⌘-digit; the palette leaves it out too.
 - **New design** (DZStart; the page's button, New thread's "Start a design") takes a brief and
@@ -663,3 +846,12 @@ couldn't reach the agent (the error dialog says so; it isn't sent again). Not dr
 plainly: the pages menu (a popup in the toolbar), notes (a title's and a sticky's size and look),
 moving a board (by its label or while picked whole), Duplicate's name and place for the copy, and
 the words Variations and another direction send.
+
+For design systems (Design systems › In the app): Tweak doesn't yet snap to an installed
+system's tokens (it reads the board's and the project's custom properties). Not drawn, and built
+plainly: a build still reading its project ("Reading <project>…" and nothing else), the Design
+systems page with no chat for a system without its own agent, a build on the grid before it has
+written its system, the Spacing & radii and Boards using it sections (rows in the type rows'
+anatomy), a type style without a sample (its name), and a failed build or re-sync (the error
+dialog). The chat's "Read dashboard-web · tokens.css · 9 partials · 3 pages" activity line isn't
+built: the agent's reads join "Explored N files".

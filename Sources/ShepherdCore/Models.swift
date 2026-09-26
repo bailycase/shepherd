@@ -307,6 +307,10 @@ public struct Design: Codable, Hashable, Sendable, Identifiable {
     /// How many boards its canvas lists. Live state the host derives from its files and
     /// broadcasts; never written to state.json (`ShepherdState.persisted`). Nil until read.
     public var boardCount: Int?
+    /// Made by "Build one from a repo": its agent builds a design system from the project, and
+    /// its screen is that system's page (DZSystem) rather than a canvas. It has no card and no
+    /// Recents row of its own. Decodes false from older state files.
+    public var buildsSystem: Bool
 
     public init(
         id: DesignID = DesignID(),
@@ -316,7 +320,8 @@ public struct Design: Codable, Hashable, Sendable, Identifiable {
         systemNamespace: String? = nil,
         createdAt: Double,
         lastActiveAt: Double? = nil,
-        boardCount: Int? = nil
+        boardCount: Int? = nil,
+        buildsSystem: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -326,6 +331,38 @@ public struct Design: Codable, Hashable, Sendable, Identifiable {
         self.createdAt = createdAt
         self.lastActiveAt = lastActiveAt ?? createdAt
         self.boardCount = boardCount
+        self.buildsSystem = buildsSystem
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, spaceID, agentID, systemNamespace, createdAt, lastActiveAt, boardCount, buildsSystem
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(DesignID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        spaceID = try c.decode(SpaceID.self, forKey: .spaceID)
+        agentID = try c.decodeIfPresent(AgentID.self, forKey: .agentID)
+        systemNamespace = try c.decodeIfPresent(String.self, forKey: .systemNamespace)
+        createdAt = try c.decode(Double.self, forKey: .createdAt)
+        lastActiveAt = try c.decode(Double.self, forKey: .lastActiveAt)
+        boardCount = try c.decodeIfPresent(Int.self, forKey: .boardCount)
+        buildsSystem = try c.decodeIfPresent(Bool.self, forKey: .buildsSystem) ?? false
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(spaceID, forKey: .spaceID)
+        try c.encodeIfPresent(agentID, forKey: .agentID)
+        try c.encodeIfPresent(systemNamespace, forKey: .systemNamespace)
+        try c.encode(createdAt, forKey: .createdAt)
+        try c.encode(lastActiveAt, forKey: .lastActiveAt)
+        try c.encodeIfPresent(boardCount, forKey: .boardCount)
+        // Only a system build says so, so a design's record reads as it did before.
+        if buildsSystem { try c.encode(buildsSystem, forKey: .buildsSystem) }
     }
 }
 

@@ -198,6 +198,17 @@ struct DesignModelTests {
         #expect(try Fixture.roundTrip(agent).designID == design.id)
     }
 
+    /// A system build ("Build one from a repo") says so; a design from before it, or any other
+    /// design, decodes and writes as it did.
+    @Test func aSystemBuildRoundTripsAndOlderDesignsDecodeAsCanvases() throws {
+        let build = Design(name: "dashboard-web", spaceID: SpaceID(), createdAt: 1, buildsSystem: true)
+        #expect(try Fixture.roundTrip(build) == build)
+        #expect(try Fixture.encodeObject(build)["buildsSystem"] as? Bool == true)
+        let older = try Fixture.decode(Design.self, #"{"id":"d1","name":"Checkout","spaceID":"s","createdAt":1,"lastActiveAt":2}"#)
+        #expect(!older.buildsSystem)
+        #expect(try Fixture.encodeObject(older)["buildsSystem"] == nil, "a canvas writes no buildsSystem")
+    }
+
     /// The board count is what the host reads from the design's files: never written to state.json.
     @Test func thePersistedStateDropsBoardCounts() {
         let design = Design(name: "Checkout", spaceID: SpaceID(), createdAt: 1, boardCount: 4)
