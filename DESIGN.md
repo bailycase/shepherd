@@ -7623,7 +7623,10 @@ tool work reads as activity lines.
 systems are the host's (docs/designs.md › Design systems › In the app); a design without one
 names its project. A system build still reading its project is a card with no swatches over
 "dashboard-web · building" (not drawn). With no designs the page shows its header and the
-systems. **iPhone: not built yet.**
+systems. Not drawn, and built plainly: each connected host that serves designs (`designs.v1`)
+lists its designs after This Mac's, under the host's name in the section label's style, in the
+same cards; one opens on the same canvas beside its agent's chat on the host (docs/designs.md ›
+Remote). **iPhone: not built yet.**
 
 **Mac** (NavDesigns): the Designs destination fills the main column.
 
