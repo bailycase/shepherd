@@ -76,7 +76,7 @@ decodes on a concurrent queue while its session holds its later records in order
 
 - selection and focus
 - collapsed spaces
-- the right pane (inspector or review)
+- the side pane (its Changes tab, or the subagent inspector over it) and pi's dots on it
 - sheets, settings, appearance, and remote hosts
 
 It calls the server directly, with no socket, and adopts its `onStateChanged` snapshots. A
@@ -114,9 +114,9 @@ SwiftUI's appearance by itself: Ghostty surfaces (a live `setTheme`) and the
 `shepherd-active-theme` variant marker watched by external editors such as Neovim.
 
 **Layout.** `RootView` lays the window out itself: the sidebar, the toolbar, the workspace, and
-the right pane (`RightPaneSplit`). `ShellLayout` (`AppLayout+Navigation.swift`) is the pure
-function that decides, from the window's width, whether the sidebar docks or overlays and
-whether the right pane docks or overlays the agent's layout. The right pane wraps the whole
+the side pane (`RightPaneSplit`, `SidePaneView`). `ShellLayout` (`AppLayout+Navigation.swift`) is
+the pure function that decides, from the window's width, whether the sidebar docks or overlays and
+whether the side pane docks or overlays the agent's layout. The side pane wraps the whole
 layout (`AgentLayoutView` in `WorkspaceView.swift`), never one of its panes, so a terminal split
 beside the thread never narrows what the dock rule measures.
 
@@ -200,7 +200,8 @@ authentication boundary ([SECURITY.md](SECURITY.md)).
     only after the dialog claims the token ([docs/agent-coordination.md](docs/agent-coordination.md))
   - `automation_*`, through `onAutomationRequest`
   - `notify`
-- **`shepherd-review.ts`:** `review_diff`, which opens the review pane.
+- **`shepherd-review.ts`:** `review_diff`, which readies the side pane's Changes tab (the user
+  opens it; the tab and the header's button take a dot).
 - **`shepherd-subagents.ts`:** publishes subagent runs with `setAgentChildren`.
 - **`shepherd-children.ts`:** opens a `helloChildren` control connection for subagent commands.
 

@@ -170,8 +170,7 @@ them except the navigator, which is each window's own ([Windows](#windows-ipad))
 | Send to… and drag | `Windows/WindowHooks.swift` (I) | each turn in `ThreadScreen` | `.turnTransfer(_ row: NativeThreadRow, thread: AgentRef)`, `SendToMenu(text:source:)` |
 | Text dropped on a composer | `Windows/WindowHooks.swift` (I) | `ThreadScreen`, on `ThreadComposer` | `.composerTextDrop(_ thread: AgentRef)` |
 | Terminal panel | `Terminal/TerminalPanelView.swift` (J) | `ThreadScreen`, on its content (the transcript with the composer) | `.threadTerminal(_ ref: AgentRef)`; adds nothing in compact width |
-| Terminal toggle | `Terminal/TerminalRoute.swift` (J) | `ThreadScreen`'s toolbar, iPad only | `TerminalToolbarButton(thread: AgentRef)` |
-| Terminal menu item | `Terminal/TerminalRoute.swift` (J) | the thread's options menu (menu items only) | `TerminalMenuItems(thread: AgentRef)` |
+| Terminal menu item | `Terminal/TerminalRoute.swift` (J) | the thread's options menu (menu items only; the terminal has no header button) | `TerminalMenuItems(thread: AgentRef)` |
 
 Each hook ships with the foundation's minimal version so the app builds and navigates end to end;
 the owning track replaces the body. Keep the signature. What a turn draws of its

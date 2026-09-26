@@ -50,7 +50,7 @@ agents at once?"
   tools. There are no global shells, no space shell workspaces, no agent rendered as a terminal,
   and no Terminal/Native switch.
 - **Words:** an agent's conversation is its *thread*, made of *turns* (yours and the agent's)
-  and *messages* (Main, Running: "Copy response", "Retry turn", "17 turns · 42k ctx").
+  and *messages* (Main, Running: "Copy response", "Retry turn").
 - **The agent, not pi:** copy calls the process it supervises "the agent" or "Agent" ("Agent is
   asking", "Goes when the agent finishes this turn", "the agent's session file"), and a version
   shown to people reads "agent 0.87.1". pi appears in exactly three places, all under Settings:
@@ -88,7 +88,7 @@ And the rules that follow from them:
   (the thread) to `bgRaised` (cards, the composer, menus), with `bgSunken` for code and headers.
   Separation is a hairline, never a shadow.
 - **One shadow.** `.nwPopover()` (menus, the palette, popovers) carries the system's only
-  shadow. The sidebar and the right pane borrow it (`.nwFloatShadow(_:)`) only while they float
+  shadow. The sidebar and the side pane borrow it (`.nwFloatShadow(_:)`) only while they float
   over the window, and the switch and slider knobs have a small knob shadow. No vibrancy, no
   translucency, no gradients except the fade above the composer.
 - **Honest affordances.** Never show a control that does nothing, a shortcut that isn't wired,
@@ -122,7 +122,11 @@ And the rules that follow from them:
 | NWControls: chords written ⌘ first ("⌘⇧B" in `.nwHelp`, keycaps ⌘ ⇧ B) | Apple's modifier order, ⌃⌥⇧⌘: `NWKeycap("⇧⌘B")`, "Review changes  ⇧⌘B" | The order macOS menus draw (Keyboard › Keycaps) |
 | `NWStatusDot` pulsing with a SwiftUI `.animation(….repeatForever())` started in `onAppear` (NWSwift) | The glow and the spinner are Core Animation layers started at a shared clock's phase (`NWLayerGlowDot`, `NWLayerSpinner`), same look and timing | A SwiftUI-driven spinner redrew its window every display frame (Motion, Performance) |
 | Running sidebar rows draw a sparkline | Running rows show elapsed time; `NWSparkline` exists but nothing uses it | Nothing records an agent's tool calls per minute |
-| The thread toolbar's status pill beside the title ("Running · 0:31", "Needs you", "Idle"; NWNavigation) | No pill: the title, then the counters | The thread, the composer and the sidebar row already say what the agent is doing (Principle 5; `NWThreadToolbar` has no status slot) |
+| The thread toolbar's status pill beside the title ("Running · 0:31", "Needs you", "Idle"; NWNavigation) | No pill: the breadcrumb, then the branch chip | The thread, the composer and the sidebar row already say what the agent is doing (Principle 5; `NWThreadToolbar` has no status slot) |
+| NWNavigation's toolbar: a subagents and a review toggle; TerminalSplit, TerminalPane, TerminalStates and iPadTerminal: a terminal toggle beside the side-pane button; Main: no side-pane button while the pane is closed; Subagents, SubagentsDone: no header buttons while a subagent is inspected | One side-pane button and the options menu, always there; no terminal, subagents or review toggle anywhere in the header or the pane's chrome. The terminal is ⌘J, the Pane menu and the palette (iPad and iPhone: the thread's options menu); subagents are the tray, ⌘I and the palette; the review is the side pane's Changes tab | The user's decisions (2026-09-25): "theres a single button in the top of the header to toggle the right sidebar", and "the terminal is only a toggle that pops it up from the bottom, no buttons or anything, it has nothing to do with the sidebar". Patched copies of the four terminal boards, without the header button, go to the canvas |
+| The branch chip's chevron (Main, QuestionAsk and the other thread boards); no board draws what it opens | A menu: Show Changes, Copy Branch Name, and for a local agent Copy Path and Show in Finder; the tooltip has the branch, the count and the full path | A chevron must open something (honest affordances); these are what the chip is about |
+| The iPad boards name the host on the chip in iPadTerminal ("build-01") but not in iPadThread | The host shows when more than one host is set up | On iPad every agent runs on another host; the name only tells hosts apart |
+| Review: the side-pane button filled `bgSelected` (with a `lineStrong` ring) while the pane is open | `lanternTint` with a `lanternText` glyph, ringless, like every toolbar toggle | NWNavigation and the Controls board: a toggle is lit in lantern while its pane is open |
 | Queue & steer: Steer "lands after the tool call the agent is running now; the rest of that step is skipped", and "Skipped the rest of that step · N planned edits" in the thread | "Lands once the agent’s current tool calls finish, before its next step", and no Skipped line | pi 0.87.1 runs every call in a batch before it reads a steer: nothing is skipped, so nothing may say so (honest affordances) |
 | Queue & steer: the stack and composer at radius 10, rows and fields at 7, chips at 5, the Send menu at 10 | 8 (the composer's), 6, 4, and the popover's 12 | The radius scale |
 | Queue & steer: 5px gaps (the Steering pill, "Steered", "From the queue", a compact chip); 1px lines outside each 40px row, the 32px header and the card | 6 in the pill, 4 elsewhere; lines drawn inside, so three rows make a 152pt stack (the board's 157) | The space scale's 4pt steps; every card and list in the app draws its lines inside (`nwBorder`, `NWHairline` overlays) |
@@ -156,9 +160,9 @@ And the rules that follow from them:
 | Subagents, SubagentsDone, SubagentsQueue and Review (the macOS page boards; the side-pane boards PaneStates, PaneBrowser, PaneArtifacts, PaneArtifactEdit and PaneFiles draw the same way): radius 10 cards and panes, 52pt toolbars and 48–52pt pane headers, 40pt card headers, 36pt file headers and 26pt file chips, 26–30pt buttons at radius 6–7, 13–14pt text, a 20pt `running` comment `+` and avatar, a comment's Edit at rest | The Night Watch boards' components (NWAgents, NWReview): radius 8, 44pt headers, 32pt file headers and 24pt chips, `s` (24pt) buttons, `ui` 12.5 text, a lantern avatar and an 18pt lantern `+` to match it, Edit and Delete on hover | The NW boards are the system; the radius, height and type scales, and Details on hover |
 | SubagentsDone: the inspector's "async · claude-sonnet · 11 turns · 19 tools · 118k tok"; "Fork as new agent" | NWAgents: "claude-sonnet · 11 turns · done 11:02"; "Fork" (its tooltip says the rest) | The NWAgents board |
 | Subagents, MobileSubagent: the transcript's live call "Building swift build --target ShepherdRemote 11s" with the output's tail | The live line with its verb, command and clock ("Building swift build --target ShepherdRemote 11s"), with no output lines | A run's session file holds only finished calls, and the run reports its call in flight but not its output |
-| Review: the diff is the side pane's Changes tab, titled by the tab | One pane titled "Review" (`NWPaneHeader`), View › Review Changes | The tabbed side pane is not built |
-| PaneStates: the pane never opens by itself; with it closed, its toolbar button takes a dot | An agent's `review_diff` opens the review (and brings it in front of an inspected subagent) | `review_diff` is how an agent shows you a diff (`shepherd-review.ts`) |
-| PaneStates widths: 380pt minimum (icon-only tabs), 760pt default for Files, the thread keeps 520pt, double-click the divider for half the window, ⇧⌘O pops the pane into a window | Today's pane follows the Navigation board: 480pt minimum, 600 default, at most half the column, the layout keeps 400; no double-click and no pop-out | The Navigation board's rule (`RightPaneSplit`); one window (Window and adaptive layout) |
+| PaneStates widths: the thread keeps 520pt, 760pt default for Files, double-click the divider for half the window, ⇧⌘O pops the pane into a window | 380pt minimum and 600 default as drawn, at most half the column, and the layout keeps 400; no double-click and no pop-out | The Navigation board's 400pt thread (`RightPaneSplit`); Files is not built; one window (Window and adaptive layout) |
+| PaneStates' ⋯ menu (`SidePaneOptions`): Split below, Open pane in its own window ⇧⌘O, Reset width, then Show tabs with a check per tab | Changes' own items (Expand All Files, Collapse All Files, Copy Review as Text), then Reset Width | With Changes the only tab, a split has nothing to show below it, Show tabs nothing to hide, and a window of its own would break the one-window rule and host the review a second time: none is offered until it works (never a dead item) |
+| PaneStates, Review, PaneBrowser, PaneArtifacts, PaneFiles: four tabs, Changes, Browser, Artifacts and Files | Changes alone | Only what Shepherd has (the user's decision, 2026-09-25: "dont show browser, artifacts, files, etc, only show the things we have"); the others join when they are built |
 | NWThread: inline code on `bgSunken` with a 1px `lineSubtle` line, radius 4, 1×5 padding | Prose draws it in mono 12 on a `lineSubtle` fill, with no line or padding. `NWInlineCode` draws the board's form where a view holds the code (only the Component Gallery today) | A run inside `Text` cannot carry a border or padding |
 | NWThread: a follow-up typed while pi works is a dashed bubble in the thread ("queued · sends when the turn ends", Edit, Send now) | It never enters the thread early: it waits in Up next above the composer and joins the thread where pi reads it | The Queue & steer boards replaced it; the host holds one queue that every viewer sees and edits |
 | Settings boards: controls drawn by hand larger than the Controls board's (30pt buttons, fields and popups at radius 7 in Geist 13; a 26pt segmented control on its own track; a 180pt slider with a 4pt track and an 18pt knob; a 30×28 stepper; 22pt keycaps at radius 5; 240pt fields and a 100pt port field; a 32pt search field with a plain "⌘F"), cards at radius 10, 10pt paddings and gaps (rows, nav rows, the icon-to-name gap, under the search field), mono-free sans section labels (Geist 11/600 caps in `textSecondary`), and hexes outside the palette (`#22262a`, `#1b1e21`, `#c1c5cb`, `#767c85`, `#23272c`, `#f58a86`, `#6fd49a`) | The Controls board's components at their sizes (`NWSegmentedPicker` m, `NWPopupMenu` 200×28, `NWStepper`, `NWValueSlider` 200pt, `.nw` fields 220pt and a port 88pt, `NWKeycap`, `NWSearchField` with keycaps); the radius and space scales (cards 8, controls 6, keycaps 4; 10pt steps to 8 or 12); `.nwSectionLabel()` (Foundations' micro mono caps in `textTertiary`); the nearest roles (`lineSubtle`, `textSecondary`, `textTertiary`, `bgSelected`, `failed`, `done`) | One anatomy per control and one section label across the app; the scales and roles are the contract (SettingsAdvanced's own Update channel row already draws the Controls board's segmented control) |
@@ -404,7 +408,7 @@ Packages/ShepherdUI/Sources/ShepherdUI/
   context menus are native `.contextMenu`.
 - **Review:** diff lines sit in a `LazyVStack` as `NW.Height.rowCompact` rows (22pt at 100%
   Density), for fast scrolling.
-- **Layout:** the Mac window lays itself out (minimum 720×600): the sidebar and the right pane
+- **Layout:** the Mac window lays itself out (minimum 720×600): the sidebar and the side pane
   dock when they fit and overlay below (Window and adaptive layout). The iPad client uses
   `NavigationSplitView` with `.inspector`.
 - **Light and dark:** both follow the system, and Settings ▸ Appearance can force either. Every
@@ -502,7 +506,7 @@ output, counts, times), both bundled (NWFoundations). Sizes are points:
   `.nwBorder(_:in:dash:)` (any shape, optionally dashed) use `NW.hairline(displayScale)`. Every
   border of a control, field, pill, keycap, banner, card, or bubble draws through them. Three
   kinds of line stay in points: the layout's dividers (pane splits and the edges of the docked
-  sidebar and right pane, 1pt, because the window's arithmetic counts them), the checkbox's
+  sidebar and side pane, 1pt, because the window's arithmetic counts them), the checkbox's
   1.5pt border (the Controls board draws it heavier than its 1px lines), and the strokes of
   status dots and glyphs.
 - **Elevation** (NWFoundations):
@@ -512,7 +516,7 @@ output, counts, times), both bundled (NWFoundations). Sizes are points:
     radius 12, and the system's only shadow, `popoverShadow` 12pt down with a 16pt radius (the
     board's `0 12px 32px`). Tooltips are the system's (`.nwHelp`), not popovers (see
     departures).
-  - `.nwFloatShadow(_:)`: the popover's shadow on the sidebar or right pane while it overlays
+  - `.nwFloatShadow(_:)`: the popover's shadow on the sidebar or side pane while it overlays
     the window, and nothing while docked.
   - `.nwFocusRing()`: running blue at `focusRing` (60% dark, 50% light), 2pt wide, 2pt outside
     the control (a 2pt gap, then the ring), for keyboard focus only, never on a click. It turns
@@ -587,7 +591,7 @@ overshoot as they grow from their anchor) and the confirmation pop (`.bouncy`, 4
 | `content` | 120ms | `.smooth` | a value or label changing in place: counts, status words, an icon | cross-fading (`nwContentTransition`) | unchanged; rolling digits and symbol swaps cross-fade |
 | `disclosure` | 180ms | `.smooth` | expanding and collapsing in place, the chevron turning | a 6pt nudge from the top, fading | a 120ms cross-fade |
 | `list` | 180ms | `.smooth` | rows arriving, leaving, reordering | a 6pt nudge, fading | a 120ms cross-fade |
-| `pane` | 180ms | `.smooth` | the right pane, the sidebar (docked or overlaid) | sliding from its edge, opaque | a 120ms cross-fade in place |
+| `pane` | 180ms | `.smooth` | the side pane, the sidebar (docked or overlaid) | sliding from its edge, opaque | a 120ms cross-fade in place |
 | `overlay` | 180ms | `.snappy` | the palette, composer menus, popovers | growing from 96% at its anchor, fading | a 120ms cross-fade |
 | `sheet` | 240ms | `.smooth` | in-window sheets, a whole-window swap (Settings), toasts | rising from its edge, fading | a 120ms cross-fade |
 | `emphasis` | 240ms | `.bouncy` | a small confirmation pop (viewed, copied, sent) | popping from 85% | nothing |
@@ -640,14 +644,14 @@ runs. Put it on what must not move, as close to it as possible.
 - **Long lists** animate what changed, never the whole list: a thread's `LazyVStack` must not
   animate every row when one turn arrives.
 - **Columns take their new width at once** while a pane or the sidebar slides beside them: the
-  thread beside a docked right pane, the main column beside the docked sidebar, and split
+  thread beside a docked side pane, the main column beside the docked sidebar, and split
   panes. A long thread relaid out on every frame of a slide drops frames (measured in a debug
   build: gaps up to 55ms beside one thread and 171ms with five mounted layouts, against under
   9ms for plain content), so the column snaps as the motion starts and the pane slides into or
   out of the room. Window resizes, divider drags, and docked ⇄ overlaid flips never animate.
 - **Selection** changes no row, so it lands at once; only rows arriving, leaving, reordering,
   or disclosing animate a list. Each agent's toolbar has its own identity, so switching never
-  animates one agent's status or counters into another's.
+  animates one agent's status or branch chip into another's.
 
 ## Performance
 
@@ -736,12 +740,12 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
 
 ```text
 ┌──────────────────┬──────────────────────────────────────────────┬──────────────────────┐
-│ ● ● ●            │ Title                       42k ctx  ⎇ ± ⋯   │ Review      ⋯  ×     │
+│ ● ● ●            │ Space / Title  ⧉ pi/branch ●3 ⌄       ◫  ⋯   │ ± Changes 4   ⋯  ×   │
 │ THIS MAC     19  ├──────────────────────────────────────────────┼──────────────────────┤
-│ ⌄ Shepherd    8  │         820pt thread column                  │ right pane:          │
-│   ● agent   ASK  │                       ┌──────────────┐       │ review or subagent   │
-│   ● agent    4m  │                       │ user bubble  │       │ inspector, 600pt     │
-│   ○ agent        │                       └──────────────┘       │ (min 480, ≤ half)    │
+│ ⌄ Shepherd    8  │         820pt thread column                  │ side pane:           │
+│   ● agent   ASK  │                       ┌──────────────┐       │ its tabs, or the     │
+│   ● agent    4m  │                       │ user bubble  │       │ subagent inspector,  │
+│   ○ agent        │                       └──────────────┘       │ 600pt (min 380, ≤ ½) │
 │ HORIZON          │   agent prose, 640pt measure                 │                      │
 │   ● Unreachable  │   ✎ Edited 4 files  +149 −63  ›              │                      │
 │                  │   ┌ composer ──────────────────────────┐     │                      │
@@ -784,15 +788,16 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
   each frame); a window resize that hides or docks it is instant.
 - **Toolbar inset.** While the sidebar is not docked, the toolbar's content moves a further 70pt
   in to clear the window controls (none in full screen) and leads with a sidebar button.
-- **Right pane** (review or subagent inspector, `RightPaneSplit`; NWNavigation). It always sits at
-  the window's trailing edge beside the agent's whole layout: the thread and the terminal panel
-  under it narrow together, and the dock rule measures the whole main column, never one side of a
-  split. It docks while the main column is at least 881pt (layout 400 + 1 + pane 480): 600pt by
-  default, at least 480, at most half the column, and the agent's layout always keeps 400
+- **Side pane** (its tabs, or the subagent inspector over them, `RightPaneSplit`; PaneStates,
+  NWNavigation). It always sits at the window's trailing edge beside the agent's whole layout:
+  the thread and the terminal panel under it narrow together, and the dock rule measures the whole
+  main column, never one side of a split. It docks while the main column is at least 781pt
+  (layout 400 + 1 + pane 380): 600pt by default, at least 380 (PaneStates; under 480 the tabs
+  drop their labels), at most half the column, and the agent's layout always keeps 400
   (`threadMinWidth`). Narrower, the pane overlays the layout from the trailing edge with the popover
   shadow. Its leading edge is the drag handle (9pt hit area, adjustable with VoiceOver in 40pt
   steps), and the width persists app-wide (`shepherd.rightPaneWidth`). No width is ever negative. It
-  slides in from the trailing edge (`.pane`), and its content cross-fades when the review and the
+  slides in from the trailing edge (`.pane`), and its content cross-fades when a tab and the
   inspector swap.
 - **Palette:** 620pt wide, or the window minus 16pt margins, and never taller than the window
   leaves room for (`NWPaletteMetrics.placement`).
@@ -804,7 +809,7 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
 ### Sidebar
 
 `SidebarView` (`SidebarView.swift`, remote sections in `RemoteSidebarSection.swift`) on `NWSidebar`:
-232pt on `bgBase` by default, and it keeps its width when a right pane opens (NWNavigation).
+232pt on `bgBase` by default, and it keeps its width when the side pane opens (NWNavigation).
 
 **Not built yet.** The boards draw a different sidebar: fixed destinations (New thread ⌘N,
 Missions, Designs, Automations, More), then Needs you, then Recents, and an account footer
@@ -912,7 +917,7 @@ are built, and each row is a plain value compared before it redraws.
     "This automation is no longer on the host." and Close.
 - **Width:** 232pt by default, 190–340, by dragging the trailing edge (a 9pt handle, adjustable
   with VoiceOver in 16pt steps) or in Settings ▸ Appearance. It never narrows the main column
-  below 720 and keeps its width while a right pane is open.
+  below 720 and keeps its width while the side pane is open.
 - **Interaction:** rows are tap views with button traits and accessibility actions, so they can
   also be dragged to reorder (with a 2pt running drop line, `NWDropIndicator`, at the row's top
   or bottom edge). Only drags that started in this sidebar qualify. Hover `+` glyphs are real
@@ -939,7 +944,7 @@ are built, and each row is a plain value compared before it redraws.
 
 **Not built yet** on the Mac (the iPad's `PadSidebar` has most of it). This is the sidebar every Mac
 board draws (NWNavigation, and the sidebars of NavNewThread, NavMissions, NavDesigns, NavAutomations
-and NavHosts). It is 232pt on `bgBase`, keeps its width when a right pane opens, and has four parts
+and NavHosts). It is 232pt on `bgBase`, keeps its width when the side pane opens, and has four parts
 from top to bottom, each following Settings ▸ Appearance ▸ Sidebar rows. Standard values are given
 first and Compact in parentheses; the boards draw no Comfortable sample.
 
@@ -1000,43 +1005,65 @@ first and Compact in parentheses; the boards draw no Comfortable sample.
 ### Toolbar
 
 `ThreadHeader` (`ThreadHeader.swift`) on `NWThreadToolbar`, placed by `WorkspaceHeaderView`
-(`RootView.swift`).
+(`RootView.swift`); Main, Review, QuestionAsk and PaneStates draw it.
 
 - **44pt** (`NWToolbarMetrics.height`) on `bgWindow` with a hairline beneath, 14pt leading and 8pt
-  trailing padding, unified with the title bar (it drags the window). Its items sit 10pt apart. The
-  counters leave 8pt before the buttons, and the buttons sit 2pt apart as 28pt `.nwIcon` circles
-  with 14pt `textSecondary` glyphs; an open pane's toggle is a `lanternTint` circle with its glyph
-  in `lanternText`.
+  trailing padding, unified with the title bar (it drags the window). Its items sit 10pt apart.
+  The trailing buttons sit 4pt apart as 28pt `.nwIcon` circles with 14pt `textSecondary` glyphs.
 - **From left to right:**
   - the sidebar button (`sidebar.left`, "Show sidebar") while the sidebar is not docked
-  - the agent's title in Geist 13 semibold `textPrimary`, truncating, with "space / title" in its
-    tooltip (a remote agent's space reads "⌁ host")
+  - the breadcrumb, 8pt apart: the space in Geist 13 `textSecondary`, a `textTertiary` "/", then
+    the agent's title in Geist 13 semibold `textPrimary`, truncating, with "space / title" in its
+    tooltip. A remote agent's space is its space on the host (else the host's name); the chip
+    names the host. When the toolbar can't hold everything at full length, the space and its "/"
+    go first (`ViewThatFits`), then the chip's branch and the title truncate.
+  - the branch chip (`NWBranchChip`, from `AgentBranchLabel`), 8pt after the title: where the
+    agent works. 24pt (`controlS`), radius 6, 8pt side padding, 6pt gaps, a 1px `lineStrong`
+    line:
+    - **a worktree Shepherd made** (Main): a 12pt `square.on.square` in `textSecondary`, the branch
+      in Geist Mono 11.5 `textPrimary` (truncating in the middle), "●3" in Geist Mono 10.5
+      `lanternText` (the files changed; left out at zero), then for a remote agent its host (a
+      10pt `display` glyph and the name in Geist 10.5 `textTertiary`, 2pt apart), and a 9pt
+      `chevron.down` in `textTertiary`.
+    - **the space's own checkout** (QuestionAsk: "chore/remove-homarr your checkout ●11 horizon"):
+      on `lanternTint` with a `lantern` line, a `house` glyph, the branch and "your checkout"
+      (Geist 11) in `lanternText`, the count, the host, and a `lanternText` chevron: pi edits the
+      files you work in.
+    - No chip for a directory that is no repository, or from a host too old to read one.
+    - **Clicking** opens its menu (no board draws one; see the departures): Show Changes (the side
+      pane on Changes), Copy Branch Name, and for a local agent Copy Path and Show in Finder. Its
+      tooltip: "Worktree · pi/swiftui-previews · 3 files changed" (or "no changes", and "· on
+      horizon"), then the checkout's path.
   - a spacer
-  - counters in micro `textTertiary`: "18 turns · 46k ctx · 3 subagents · 1.6m tok" (the tokens are
-    the subagents'). The turn count appears once the whole history is loaded, and the context once
-    pi has measured it (never "0 ctx": a first turn has none until pi's first reply). The tooltip
-    has the context tokens of the window with its percentage, the session's tokens, and the cost.
-  - the pane toggles (`NWPaneToggle`), lantern-tinted while their pane is open:
-    - terminal (TerminalToggle's glyph, a window with a panel along its bottom; the app draws
-      `terminal`, see Known gaps; ⌘J, "Show terminal" or "Hide terminal"), with a running-blue
-      badge dot (`NWToggleBadge`) while the panel is hidden and a tab printed
-    - subagents (`arrow.triangle.branch`, ⌘I, "Inspect subagents" or "Close subagent", only when the
-      thread has subagents)
-    - review (`plus.forwardslash.minus`, ⇧⌘B, "Review changes" or "Close review")
+  - the side-pane button (`NWSidePaneButton`, `sidebar.right`; PaneStates' SidePaneButton): "Show
+    side pane" or "Hide side pane" with ⇧⌘B, a `lanternTint` circle with its glyph in
+    `lanternText` while the pane shows (its tabs or an inspected subagent). It is the header's
+    only pane button: the terminal, review and subagents toggles are gone (the user's decision;
+    see the departures). While pi has opened something the tab strip can't show (the pane is
+    closed, or a subagent is inspected over it), it takes an 8pt `running` dot at its top
+    trailing corner, ringed 2pt in `bgWindow` (`NWToggleBadge`), and its tip (Side pane).
   - the options menu (`NWOptionsMenu`, "Thread options"): Refresh Thread, Load Older Messages (while
     older history exists), then Rename… after a divider.
-- **No status pill.** The board puts the agent's state beside the title (`NWStatusPill`: "Running ·
-  0:31", "Needs you", "Idle"). Nothing sits there in Shepherd, because the thread and the sidebar
-  row already say it (see Where Shepherd departs from the boards).
+- **Where the count comes from** (`Agent.checkout`, live state the host broadcasts, so a remote
+  viewer's chip matches): the host reads each local agent's checkout with one `git
+  --no-optional-locks status --porcelain=v2 --branch -z --untracked-files=all` off the main thread
+  (`CheckoutMonitor`, at most four at once, requests for an agent coalescing into one read), after
+  what changes it: the agent appearing, a tool call that may write files (any but read, grep,
+  find and ls; at most one read a second while pi edits), a turn starting or ending, selecting the
+  agent, the app coming to the front, and the review loading (a commit or a revert reloads it).
+  Never a git call per frame. The count matches the review's: tracked changes against HEAD and
+  untracked files.
+- **No status pill, no counters.** The board puts the agent's state beside the title
+  (`NWStatusPill`: "Running · 0:31", "Needs you", "Idle"); nothing sits there, because the thread and
+  the sidebar row already say it (see Where Shepherd departs from the boards). The boards swapped
+  the turn and context counters ("17 turns · 42k ctx") for the branch chip, and so does the app.
 - **The full-window boards' toolbar** (Main, Running, SlashMenu, ModelPicker, CommandPalette, and
-  the thread boards drawn with them) is 52pt with 20pt padding and a breadcrumb: the space in
-  Geist 13 `textSecondary`, a `textTertiary` "/", then the title in 13 semibold; its counters are
-  mono 11, and its ••• a 30pt circle with a `lineStrong` ring. NWNavigation's 44pt toolbar with
-  the title alone is the rule (see Composer, questions, and menus on the full-window boards); the
-  space is in the title's tooltip ("space / title").
+  the thread boards drawn with them) is 52pt with 20pt padding and a 30pt ••• with a `lineStrong`
+  ring. NWNavigation's 44pt and its ringless 28pt buttons are the rule, with the full-window
+  boards' breadcrumb and chip.
 - **Motion:** switching agents replaces the toolbar at once, even when the switch rides an
-  animation. A rename or a settled name cross-fades, the counters roll, and a toggle that comes or
-  goes slides in from the trailing edge (`.list`).
+  animation. A rename or a settled name cross-fades, the chip's count rolls, and the side-pane
+  button lights up however the pane opened (a menu, a key, a link).
 - **With no thread on screen**, the toolbar shows the title only: the selected space's name, or
   "Shepherd". Over a remote host's utility terminal it reads "<agent> · terminal".
 - **Pane headers** (`NWPaneHeader`, NWNavigation: "Title + mono subtitle, controls right, close
@@ -1045,8 +1072,9 @@ first and Compact in parentheses; the boards draw no Comfortable sample.
   Geist 13 semibold over a 1pt gap and a micro `textTertiary` subtitle ("4 files · +67 −58", the
   counts in `done` and `failed`). Then a spacer, the pane's controls (the review's Local · PR #24
   `NWSegmentedPicker`, a ••• `NWOptionsMenu`), and close (`xmark`, "Close pane" unless the pane
-  names it) always last. The review uses it ("Close review"); the subagent inspector has its own
-  header (`NWInspectorHeader`; Right pane, below).
+  names it) always last. The review uses it ("Close review") only in a layout pane of its own (an
+  older host's review leaf); the side pane has its tab strip, and the subagent inspector its own
+  header (`NWInspectorHeader`; Side pane, below).
 
 ### Empty workspace
 
@@ -1295,7 +1323,7 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   exactly as pi's history is. Nothing in it acts yet (retry, load older, subagent actions)
   until pi answers, and pi's first snapshot then lands on the same rows, so nothing moves or
   flashes. Only what pi alone knows arrives with that snapshot: the "/ commands" chip (and the
-  placeholder's "or / for commands"), and the toolbar's context counters. An agent whose file
+  placeholder's "or / for commands"). An agent whose file
   cannot be read stays blank until pi sends its history.
 - **Empty thread:** a framed `NWEmptyState` (a dashed `lineStrong` border, no crook): "New
   agent in `~/path`" (the path in Geist Mono 15 medium within the 17pt title), with "Describe
@@ -1666,7 +1694,7 @@ it (the palette's New agent with options…, New space on <host>…, and "PR #24
 Chips (`.nwComposerChip(active:)`) are 26pt ghost buttons with 8pt side padding and radius 6, in
 Geist 12 `textSecondary`, their parts 6pt apart, filled with `bgHover` on hover, on press, or
 while their menu is open. A new model or level cross-fades in its chip (`content`); typing and
-width changes stay instant. In a narrow thread (a docked right pane) the chips drop their words
+width changes stay instant. In a narrow thread (a docked side pane) the chips drop their words
 ("/" alone, the level without "Thinking") rather than truncate, once "Starting…" has dropped
 its own.
 
@@ -2215,30 +2243,53 @@ will use (Missions are not built; see "Where Shepherd departs from the boards").
   and No evidence; the board draws only Verified (`done`), so choose the other two's states
   when building.
 
-### Right pane: subagent inspector and review
+### Side pane: Changes and the subagent inspector
 
-One slot beside the agent's layout (`RightPaneSplit` around the whole layout, in
-`AgentLayoutView`) is shared by the subagent inspector and the review (NWAgents, NWReview;
-Subagents, SubagentsDone, Review); when both exist, the inspector wins. A tray row, a record
-line, and the footer's "3 subagents" open the inspector; the tray's Steer opens it with its
-Steer field focused. It sits at the
-workspace's trailing edge beside the thread and its terminal panel, at its full height, and the
-dock rule measures the main column, never the thread's own pane. Its sizes and adaptive rule are
-in "Window and adaptive layout" above. The pane holds one thing at a time; the tabbed side pane
-the page boards draw (Changes, Browser, Artifacts, Files) is not built yet (see "Side pane:
-Changes, Browser, Artifacts, Files" below).
+One pane per window beside the agent's layout (`RightPaneSplit` around the whole layout in
+`AgentLayoutView`, its tabs in `SidePaneView`; PaneStates, Review, Subagents, SubagentsDone). It
+sits at the workspace's trailing edge beside the thread and its terminal panel, at its full
+height, and the dock rule measures the main column, never the thread's own pane. Its sizes and
+adaptive rule are in "Window and adaptive layout" above. It shows only the tabs Shepherd has:
+**Changes**, the review. Browser, Artifacts and Files are specified below and are not built, so
+they have no tab and no placeholder (the user's decision, 2026-09-25: "dont show browser,
+artifacts, files, etc, only show the things we have"); each joins `SidePaneTab` when it is.
+A tray row, a record line, and the footer's "3 subagents" open the subagent inspector over the
+tabs; the tray's Steer opens it with its Steer field focused.
 
-- **Toggling:** ⇧⌘B (or the toolbar's review toggle, "Review changes" / "Close review", or View ›
-  Review Changes / Close Pane) closes the inspector if it is open, otherwise it opens or closes
-  the review. ⌘I (or the subagents toggle, "Inspect subagents" / "Close subagent", shown only when
-  the thread has subagents, or Agent › Inspect Subagent) inspects the thread's first live run
-  (else its last), or closes the inspector. Both toggles are lantern-tinted while their pane is
-  open. An agent's `review_diff` also opens the review.
+- **Showing and hiding:** ⇧⌘B, the header's side-pane button, or View › Show Side Pane / Hide Side
+  Pane. Showing opens the pane on its tab (Changes starts the review); hiding also closes an
+  inspected subagent, and discards the review like a cancel. ⌃1 (View › Changes) shows Changes in
+  front of an inspected subagent; it is fixed, like ⌃⇧1–9, and ⌃2–⌃4 wait for the other tabs.
+  Review Changes (a sidebar row's menu), the palette's Show changes, the chip's Show Changes, a
+  thread's "review ›" link and the inspector's file links show Changes too.
+- **Nothing opens by itself** (PaneStates): when pi opens something for the pane (today, an
+  agent's `review_diff`), the review is readied and the Changes tab takes a 6pt `running` dot
+  after its count. The pane never opens, and never switches tabs or covers an inspected subagent,
+  on its own. While the strip is out of sight (the pane closed, or a subagent inspected over it)
+  the header's button takes the dot instead, and a tip hangs under it for 4 seconds and again
+  while the button is hovered (`NWPaneNewsTip`: "Agent opened a review in Changes" in `caption` with
+  a 12pt glyph and the ⇧⌘B keycaps, on `bgRaised` at radius 12 with the popover shadow). Showing
+  the tab clears its dot; a request while Changes is on screen just reloads it.
+- **The tab strip** (`NWSidePaneTabs`; SidePaneTabs): 44pt so it lines up with the toolbar, on
+  `bgWindow` with a hairline beneath, 10pt side padding, tabs 2pt apart. A tab is 28pt, padding
+  0×10, radius 6, 6pt gaps: a 14pt glyph, the label in `ui` medium `textSecondary`, the count in
+  `micro` regular `textTertiary` (Changes: the review's files, once loaded), and pi's dot. The
+  current tab has the `bgSelected` fill, `textPrimary`, semibold; a tab's tooltip has its ⌃ chord.
+  Then a spacer, the pane's ⋯ menu and close ("Hide side pane" with ⇧⌘B), 28pt `nwIcon`s 4pt
+  apart. **Narrow:** under 480pt the labels drop (padding 0×9); glyphs, counts and dots stay.
+- **The ⋯ menu** (`SidePaneOptions`, "Pane options"): the current tab's items (Changes: Expand All
+  Files, Collapse All Files, a divider, Copy Review as Text), a divider, then Reset Width
+  (disabled at the default). Split below, Open pane in its own window and Show tabs are left out
+  until they can work (see the departures).
+- **The subagent inspector takes the pane over** (Subagents, SubagentsDone) with its own header
+  in place of the strip, whichever path inspects a run (⌘I, a tray row or card, the palette).
+  Closing it goes back to the tab underneath when the pane was open, and hides the pane when it
+  wasn't. The header's button stays lit while it shows.
 - **Layout:** the thread keeps running beside the pane. A pane never replaces the thread and
   never changes the persisted layout. The sidebar keeps its width. The pane slides in from the
-  trailing edge (`.pane`); when the inspector and the review swap, or a new review replaces
-  one, its content cross-fades (`.content`) while the pane stays put. Stepping between runs is
-  the inspector's own motion (below).
+  trailing edge (`.pane`); when the inspector and a tab swap, or a new review replaces one, its
+  content cross-fades (`.content`) while the pane stays put. Stepping between runs is the
+  inspector's own motion (below).
 
 **Subagent inspector** (`Thread/SubagentInspector.swift`):
 
@@ -2298,18 +2349,20 @@ Changes, Browser, Artifacts, Files" below).
   - **Not built yet** (SubagentsDone): "kept with the thread" in Geist Mono 11 `textTertiary`
     trailing the bar (`NWRunActions`' trailing slot).
 
-**Review** (`ReviewPane` in `DiffReviewView.swift`, state in `DiffReview.swift`):
+**Changes** (the review: `ReviewPane` in `DiffReviewView.swift`, state in `DiffReview.swift`):
 
-- **Header** (`NWPaneHeader`, 44pt like the toolbar beside it): "Review" in Geist 13 semibold,
-  with a `micro` line beneath, truncated in the middle: the scope, then "4 files · +67 −58" (the
-  counts in `done` and `failed`, cross-faded when they change). The scope leads with the
-  directory's name when an agent's `review_diff` points it outside the agent's own directory,
-  then the reference an agent asked for; for the plain local diff it reads "working tree vs
-  HEAD" (Review; the app leaves it off today, see Known gaps). "loading…" while loading. Then a
-  small (`s`) `NWSegmentedPicker` `Local | PR`, disabled while loading; the PR side names the
-  pull request ("PR #24", Review), which the app shows as "PR · <base ref>" once the base is
-  known (Known gaps). Then an options menu (`NWOptionsMenu` "Review options": Expand All Files,
-  Collapse All Files, a divider, Copy Review as Text), and close ("Close review").
+- **Bar** (Review board, `ChangesBar`): 40pt under the strip, 14pt leading and 12pt trailing
+  padding, a hairline beneath. The scope and totals fill it in Geist Mono 10.5 `textTertiary`,
+  truncated in the middle: "working tree vs HEAD · 4 files · +67 −58" (the counts in `done` and
+  `failed`, cross-faded when they change). The directory's name leads when an agent's
+  `review_diff` points it outside the agent's own directory, then the reference an agent asked for
+  in place of "working tree vs HEAD"; "loading…" while loading. Then a small (`s`)
+  `NWSegmentedPicker` `Local | PR`, disabled while loading; the PR side names the pull request
+  ("PR #24", Review), which the app shows as "PR · <base ref>" once the base is known (Known
+  gaps). Its options (Expand All Files, Collapse All Files, Copy Review as Text) are in the pane's ⋯
+  menu. In a layout pane of its own (an older host's review leaf) the review keeps `NWPaneHeader`
+  instead: "Review" over the same line, Local | PR, its own "Review options" ⋯, and close ("Close
+  review").
 - **File strip** (`NWFileStrip`, NWReview, on `bgBase` with a hairline beneath): 24pt chips 4pt
   apart inside 6pt padding, scrolling sideways (lazily). Each chip has its status letter (M
   `lantern`, A `done`, D `failed`, R `running`; Geist Mono 11 bold), the filename in Geist Mono 11,
@@ -2422,54 +2475,39 @@ Changes, Browser, Artifacts, Files" below).
 
 A review an agent opens (`review_diff`) is the host's view state; remote viewers open their own
 with ⇧⌘B. An agent may point its review at another repository or worktree (`cwd`); a new target
-starts the review over (comments, summary, viewed marks, folds), and asking again brings the
-review back in front of an inspected subagent.
+starts the review over (comments, summary, viewed marks, folds), and asking again reloads it in
+place, marking the tab again while it is out of sight. A review that is sent (Request changes, Ask
+agent to commit) closes the pane with it; one that fails to send stays, with its comments.
 
-### Side pane: Changes, Browser, Artifacts, Files (not built yet)
+### Side pane: Browser, Artifacts, Files (not built yet)
 
-**Not built yet.** The page boards grow the right pane into a side pane with four tabs (PaneStates,
-Review, PaneBrowser, PaneArtifacts, PaneArtifactEdit, PaneFiles). Today the pane shows only the
-review or the subagent inspector. When it is built, it follows this section; where the boards
-leave a choice open, it says so. The boards draw these surfaces at radius 10 (9 and 5 for some
-tiles and rows) with a 48pt tab bar beside a 52pt toolbar. This section gives their other values
-as drawn and maps radii onto the radius scale (8 for cards, panes and tiles, 6 for rows and
-controls, 12 for popovers), as the departures table records for the page boards; the tab bar
-takes the 44pt header height of every right-pane header, so it lines up with the toolbar.
-Confirm both when building.
+**Not built yet.** The page boards give the side pane three more tabs beside Changes (PaneStates,
+PaneBrowser, PaneArtifacts, PaneArtifactEdit, PaneFiles). None is shown until it is built. When
+one is, it joins the strip and the ⋯ menu above and follows this section; where the boards leave a
+choice open, it says so. The boards draw these surfaces at radius 10 (9 and 5 for some tiles and
+rows) beside a 52pt toolbar. This section gives their other values as drawn and maps radii onto the
+radius scale (8 for cards, panes and tiles, 6 for rows and controls, 12 for popovers), as the
+departures table records for the page boards.
 
-- **One pane per window, four tabs** (`SidePaneTabs`, PaneStates): Changes (the review, with its
-  count of changed files), Browser, Artifacts (with its count of new artifacts), Files. The tab
-  bar replaces the review's `NWPaneHeader`: 44pt, 10pt side padding, tabs 2pt apart, then the ⋯
-  menu and close as 28pt `nwIcon`s trailing. A tab is 28pt (`controlM`), padding 0×10, radius 6,
-  6pt gaps: a 14pt glyph, the label in `ui` medium `textSecondary`, and the count in `micro`
-  regular `textTertiary`. The current tab has the `bgSelected` fill, `textPrimary`, semibold.
-  ⌃1–⌃4 switch tabs; ⇧⌘B shows or hides the pane. The review's header content (scope and counts,
-  Local | PR) moves into the Changes tab under the bar; where its Expand/Collapse All Files and
-  Copy Review as Text go is not on the boards: decide when building.
-- **The agent opened something:** a 6pt `running` dot after the tab's label, and a brief popover under the
-  tab ("Agent opened localhost:5173/checkout" with the URL in mono, its age in `textTertiary`; Geist
-  12, a 12pt glyph). The pane never switches tabs on its own while you are reading. With the pane
-  closed, its toolbar toggle takes an 8pt `running` dot at its top trailing corner (a 2pt `bgWindow`
-  ring) and the popover reads "Agent opened a page in Browser" with the ⇧⌘B keycaps; nothing opens by
-  itself (see departures: an agent's `review_diff` still opens the review).
-- **Narrow:** under 480pt the labels drop (padding 0×9); glyphs, counts and dots stay.
-- **The ⋯ menu** (`SidePaneOptions`, `NWOptionsMenu`): Split below, Open pane in its own window
-  (⇧⌘O), Reset width, a divider, then "Show tabs" with a checkable row per tab. Changes can't be
-  hidden while the thread has edits.
+- **Their tabs** (`SidePaneTabs`, PaneStates): Browser (`globe`), Artifacts (with its count of new
+  artifacts) and Files, after Changes, taking ⌃2–⌃4. A tab the agent opened something in gets the dot and
+  a brief popover under it ("Agent opened localhost:5173/checkout" with the URL in mono and its age in
+  `textTertiary`; Geist 12, a 12pt glyph).
+- **The rest of the ⋯ menu** (`SidePaneOptions`), once there is more than one tab: Split below,
+  Open pane in its own window (⇧⌘O), Reset width, a divider, then "Show tabs" with a checkable row
+  per tab. Changes can't be hidden while the thread has edits.
 - **Split** (`SidePane · split`): drag a tab to the pane's bottom edge to split it (Browser over
   Files). The divider is 12pt on `bgBase` with a 36×4pt `lineStrong` grip (radius 2) between
   hairlines; the lower pane has a 34pt header (a 13pt glyph, the name in Geist Mono 12 semibold,
   the unsaved dot, and a 24pt Close split).
-- **Widths** (PaneStates): 380pt minimum, where the tabs show glyphs only; 600pt default for
-  Changes and Browser; 760pt default for Files (tree plus editor); double-clicking the divider
-  sets half the window; the thread keeps at least 520pt. Each thread remembers its tabs, split
-  and width. These differ from today's pane (see departures), and the pop-out window conflicts
-  with the one-window rule (Window and adaptive layout): decide before building it.
-- **Keys**, shown in menus and tooltips, never under the composer: ⇧⌘B show or hide the pane,
-  ⌃1–4 switch tabs, ⌘L the address bar, ⇧⌘C select an element, ⌘P go to file, ⌘S save a file or
-  artifact, ⇧⌘O pane in its own window. ⌃1–4 has no ⌘, so it is a fixed chord like ⌃⇧1–9; the
-  rest go through `KeybindingsStore`, and each must be added to `appOwnedChords` so a focused
-  terminal doesn't eat it.
+- **Widths** (PaneStates): 760pt default for Files (tree plus editor); double-clicking the divider
+  sets half the window; the thread keeps at least 520pt. Each thread remembers its tabs, split and
+  width. The pop-out window conflicts with the one-window rule (Window and adaptive layout): decide
+  before building it.
+- **Keys**, shown in menus and tooltips, never under the composer: ⌃2–4 switch to these tabs, ⌘L
+  the address bar, ⇧⌘C select an element, ⌘P go to file, ⌘S save a file or artifact, ⇧⌘O pane in
+  its own window. ⌃2–4 are fixed like ⌃1; the rest go through `KeybindingsStore`, and each must be
+  added to `appOwnedChords` so a focused terminal doesn't eat it.
 
 **Browser** (PaneBrowser, PaneStates): a WebKit view per thread. It shares cookies with nothing
 else, and it reaches the thread's host through Shepherd's tunnel, which forwards the port.
@@ -2635,7 +2673,7 @@ parses or restyles terminal output, and the thread pane itself never has a termi
 A real terminal under the thread, one keystroke away (TerminalSplit, TerminalPane and TerminalStates
 boards; `TerminalPanelGeometry`, `TerminalPanels`, `TerminalPanelViews.swift`; the iPad's in iOS ›
 Terminal). An agent's terminal panes live in a panel under its thread and composer, across the
-layout's whole width, and a docked right pane keeps its full height beside both (TerminalStates ›
+layout's whole width, and a docked side pane keeps its full height beside both (TerminalStates ›
 Panel: "The side pane keeps its full height"; TerminalPane). A new terminal opens in the thread's
 folder (its worktree) on the thread's host, so it sees what pi sees. The panel is a view of the
 agent's layout, which stays the one `PaneNode` tree the server persists and agents drive: each
@@ -2689,19 +2727,19 @@ splits.
   host's pane requests, and a failed one beeps. A terminal you open (+, Split right, ⌘D or ⇧⌘D)
   takes the keyboard. A terminal that appears any other way (an agent's `pane_open`, another device)
   opens the panel on its tab and leaves the keyboard where it was.
-- **Show and hide:** ⌘J, the Pane menu, or the toolbar's terminal toggle (TerminalToggle; the first
-  pane toggle, "Show terminal" or "Hide terminal"), which appears only while a thread with a layout
-  is on screen. The boards draw it as a 28pt circle with a 1px `lineStrong` ring and a 14pt
-  `textSecondary` glyph of a window with a panel along its bottom, filled `bgSelected` while the
-  panel is open. The Mac follows NWNavigation's pane toggle instead, as every toolbar toggle does: a
-  `lanternTint` circle with its glyph in `lanternText` while open (Toolbar); its glyph is `terminal`
-  today (Known gaps). Hidden, an 8pt `running` dot at its top trailing corner, ringed 2pt in
-  `bgWindow` (`NWToggleBadge`), says a tab has new output or exited (TerminalToggle · hidden: "A dot
-  means a tab has new output or exited"); on the Mac an exited shell's tab is gone, so there the dot
-  means new output. Showing gives the keyboard to the selected tab; hiding gives it back to the
-  thread. A layout seen for the first time with terminals shows its panel. The panel closes with its
-  last terminal, however it goes (its tab closed, the agent's `pane_close`, its shell exiting), and
-  the thread takes the layout again.
+- **Show and hide:** ⌘J, the Pane menu (Show or Hide Terminal), or the palette's terminal
+  commands, while a thread with a layout is on screen. The panel slides up from the bottom and is
+  only a toggle: there is no terminal button in the thread's header or anywhere in the side pane's
+  chrome, and it has nothing to do with the side pane (the user's decision, 2026-09-25: "the
+  terminal is only a toggle that pops it up from the bottom, no buttons or anything, it has nothing
+  to do with the sidebar"; the TerminalSplit, TerminalPane, TerminalStates and iPadTerminal boards'
+  header button is a departure, and patched copies without it go to the canvas). On iPad and
+  iPhone, with no ⌘J without a keyboard, the thread's options menu shows it (iOS › Terminal).
+  Showing gives the keyboard to the selected tab; hiding gives it back to the thread. A tab that
+  printed while the panel was hidden keeps its `running` dot for when it shows (Tab states). A
+  layout seen for the first time with terminals shows its panel. The panel closes with its last
+  terminal, however it goes (its tab closed, the agent's `pane_close`, its shell exiting), and the
+  thread takes the layout again.
 - **Empty** (the app's; no board): ⌘J with no terminals shows the strip over "No terminals in this
   thread yet." (`ui`, `textSecondary`) and New Terminal (secondary) beside the new-terminal chord as
   a keycap, centered on `bgWindow`.
@@ -3107,8 +3145,9 @@ automated step of the worktree flows can be turned off here.
   While the agent is working (QueueStates' Keyboard card, in its order: ↩ and ⌘↩ named for what they do
   under the Return setting, "Send, queued" or "Send and steer now"; Edit the last queued message ↑;
   Move the focused message ⌥↑↓; Delete the focused message ⌫; Steer the focused message ⌘↩; Stop the agent
-  Esc; only ⌘↩ records), a Window group (Show or hide the sidebar, the right pane), and Show or hide
-  terminal ⌘J and Maximize or restore terminal ⇧⌘↩ in Panes. Its Fixed group has the footnote
+  Esc; only ⌘↩ records), a Window group (Show or hide the sidebar, the side pane), and Show or hide
+  terminal ⌘J and Maximize or restore terminal ⇧⌘↩ in Panes. Its Fixed group (agents ⌘1–9, the side
+  pane's Changes ⌃1, Settings, sheets, Reset all) has the footnote
   "Changes apply immediately, everywhere a shortcut is shown."
 
 #### Advanced (SettingsAdvanced)
@@ -3533,11 +3572,11 @@ color is a role.
 circle, 28pt (`controlM`; 44 on iOS), the SF Symbol at 14pt medium, monochrome.
 
 - rest: no fill, `textSecondary`; hover: `bgHover`, `textPrimary`; pressed: `bgSelected`
-- on: `lanternTint` with the symbol in `lanternText` (a pane toggle while its pane is open,
+- on: `lanternTint` with the symbol in `lanternText` (the side-pane button while the pane shows,
   however it opened)
 - bordered: a 1px `lineStrong` ring (the board's `ellipsis`); focus: the ring as a circle
   (`.nwFocusRingCircle()`); disabled: 40%
-- The board's set: `sidebar.left`, `square.and.pencil` (hover), the review toggle (on),
+- The board's set: `sidebar.left`, `square.and.pencil` (hover), a pane toggle (on),
   `ellipsis` (bordered), `xmark` (focus), `paperclip` (disabled).
 
 **Links and rows** (app additions): `.nwLink` is inline text that acts ("Show all", "Reset"),
@@ -3747,7 +3786,7 @@ in UserDefaults under `shepherd.keybindings`).
 | ⌘D · ⇧⌘D · ⌘W | Split vertically · horizontally · close pane |
 | ⌥⌘→ · ⌥⌘← | Focus next · previous pane |
 | ⌘J · ⇧⌘↩ | Show or hide the terminal panel · maximize or restore it |
-| ⇧⌘S · ⇧⌘B | Show or hide the sidebar · the right pane |
+| ⇧⌘S · ⇧⌘B | Show or hide the sidebar · the side pane |
 | ⇧⌘M | Model picker |
 | ⌘. | Stop the agent |
 | ⌥⌘↑ · ⌥⌘↓ | Previous · next turn |
@@ -3758,6 +3797,8 @@ Fixed chords:
 
 - ⌘1–9 select agents in sidebar order (hold ⌘ to see the badges).
 - ⌃⇧1–9 jump to machines (this Mac is always ⌃⇧1).
+- ⌃1 shows the side pane's Changes tab (View › Changes); ⌃2–⌃4 wait for its other tabs. Settings ▸
+  Keyboard lists it under Fixed, and Ghostty leaves it to the app (`appOwnedChords`).
 - ⌘, opens Settings, and ⌘F searches it.
 - ⏎ confirms and ⎋ cancels in sheets.
 - In the composer, ↩ sends (while pi works, it queues or steers per Settings) and ⇧↩ inserts a
@@ -3793,7 +3834,7 @@ Review-pane keys are listed with the review.
     subagents, worker · reviewer · tests"
   - diff lines: "Removed line 16: …", with Comment as a named action; file chips: "FleetView.swift,
     modified, 10 added, 54 removed, viewed"
-- **Resizing:** the sidebar edge and the right pane's handle are adjustable elements that read
+- **Resizing:** the sidebar edge and the side pane's handle are adjustable elements that read
   their width.
 - **Modality:** the palette is modal for VoiceOver while it is up.
 - **Color:** status color is always paired with a word or a glyph shape, and contrast follows the
@@ -3839,11 +3880,11 @@ below collects the rest, and the places those sentences point here.
 - **Status and feedback:** an empty state's sentence is capped at 320pt (`Feedback.swift`), the
   board's at 280. A banner's icon is 13pt, the board's 15.
 - **Agents and review:**
-  - The review header leaves the scope off for the plain local diff ("4 files · +67 −58"); the
-    Review board leads with "working tree vs HEAD" (`ReviewHeader.subtitle`,
-    `Sources/ShepherdApp/DiffReviewView.swift`).
+  - A review in a layout pane of its own (an older host's review leaf) leaves the scope off for
+    the plain local diff ("4 files · +67 −58"); the Changes tab's bar leads with "working tree vs
+    HEAD" as the Review board does (`ReviewScope.text`, `Sources/ShepherdApp/DiffReviewView.swift`).
   - The PR side of Local | PR reads "PR · <base ref>"; the Review board names the pull request
-    ("PR #24") (`ReviewHeader.prLabel`).
+    ("PR #24") (`ReviewScope.prLabel`).
   - The Agents and Review components pad and space in 10pt where their boards do (the brief's
     vertical padding, the subagent question dock's, the action bar, a comment's sides, the review
     composer's field, a file header's leading inset,
@@ -3863,8 +3904,7 @@ below collects the rest, and the places those sentences point here.
   Fixed row, "Confirm or cancel in sheets" with ⎋, and the Reset link 8pt from its keycaps; pi's
   Update now split in two; and copy that differs (Remote's Token, Advanced's Reset
   settings). Instructions and Experiments are not built.
-- **Thread and terminal** (NWThread, TerminalSplit, TerminalPane, TerminalToggle against the
-  app):
+- **Thread and terminal** (NWThread, TerminalSplit, TerminalPane against the app):
   - Consecutive activity lines sit 6pt apart (`AppLayout.activitySpacing`), as NWThread draws
     them; ToolRows and Running draw 4pt.
   - A Run (bash) activity line draws `apple.terminal` (`Components/Thread/Activity.swift`); the
@@ -3872,9 +3912,7 @@ below collects the rest, and the places those sentences point here.
   - The terminal's cursor is `lantern` and its selection `running` at 18% dark and 28% light
     (`NightWatch.swift`); the boards draw a `textPrimary` block cursor and a 13% selection. The
     terminal font defaults to SF Mono 12.5 (`AppSettings`); the boards set Geist Mono 12 at 1.6.
-  - Split terminals' dividers are `lineSubtle`, the TerminalPane board's `lineStrong`; the
-    toolbar's terminal toggle is `terminal`, the TerminalToggle board's a window with a panel
-    along its bottom.
+  - Split terminals' dividers are `lineSubtle`, the TerminalPane board's `lineStrong`.
 - **A pi dialog posts no notification** (Notifications and Live Activities › The catalog):
   a confirm, select, input or editor dialog shows in the thread, but only a tool named like
   `ask` or `question` sets `blocked`, so any other question reaches no one outside the window
@@ -3967,11 +4005,9 @@ components first), with these differences for touch:
     grabber centered on the strip's top edge (an 88×22pt hit area) in place of a pointer handle,
     snapping and clamping as on the Mac, adjustable with VoiceOver, and hidden while maximized. The
     strip and key row stop growing at xxxLarge.
-  - **Toggle:** the thread header's terminal toggle, iPad only: a 40pt circle with no ring and an
-    18pt glyph, filled `bgSelected` with a `textPrimary` glyph while the panel is open
-    (iPadTerminal), with `NWToggleBadge` while hidden when a tab printed or exited. It is disabled
-    while the host is offline and the panel hidden. The thread's options menu has Show Terminal or
-    Hide Terminal (iPhone: Terminal), absent while the host is offline.
+  - **Toggle:** the thread's options menu: Show Terminal or Hide Terminal on iPad (iPhone:
+    Terminal), absent while the host is offline. There is no header button; iPadTerminal's is a
+    departure (Terminal panel › Show and hide).
   - **Key row** (`NWTerminalKeyRow`), while a terminal has the keyboard, under it and over the
     software keyboard: `bgWindow` with a `lineSubtle` hairline on top, 8pt top and bottom padding
     and 12pt sides, keys 6pt apart (the board adds 26pt under the row for the home indicator). Keys:
@@ -4174,10 +4210,12 @@ merges into one Home.
 `Thread/ThreadScreen.swift`, `ThreadTurns.swift`, `Composer/ThreadComposer.swift`. The thread
 follows the Mac's rules (Thread) with the phone's measures below.
 
-- **Header:** the inline title with the agent's name over its status line: "Idle · 17 turns · 42k"
-  at rest (the turn count only once the whole history is loaded), "Running · 0m 21s" with a clock
-  that ticks each second while a turn runs, "Needs you" with a glowing dot while pi asks. When the
-  line does not fit, the counters go first, then the clock; the word stays. Trailing, the thread's
+- **Header:** the inline title with the agent's name over its status line: the status word
+  ("Idle", "Running", "Needs you" with a glowing dot while pi asks), then where the agent works:
+  "· ⧉ pi/swiftui-previews" (a worktree's branch in mono `textTertiary`, truncating in the middle;
+  MobileThread, MobileQueue) or "· ⌂ your checkout" in `lanternText` for the space's own checkout
+  (MobileQuestion). The boards dropped the turn and context counts and the clock for it, and so
+  does the app; the word stays whole. Trailing, the thread's
   options (•••: Refresh, Subagents while the thread has runs, Terminal, then Rename…, Move up and
   Move down, and Delete agent… or Delete worktree agent…) at rest; while the agent runs, Stop (a
   `failed` stop square, "Stop agent" to VoiceOver) takes its place. The app keeps ••• beside Stop,
@@ -4385,7 +4423,7 @@ record lines, a list, and a screen per run.
 ### iPhone: Review (MobileChanges, MobileDiff, MobileCommit)
 
 `Review/ChangesScreen.swift`, `DiffScreen.swift`, `Commit/CommitScreen.swift`. The review is the
-Mac's (Right pane › Review); Commit… follows the Commit from review rule above.
+Mac's (Side pane › Changes); Commit… follows the Commit from review rule above.
 
 - **Changes** (MobileChanges), pushed from the changes card: "Changes" over "working tree vs HEAD"
   (or the PR), ••• trailing (Working tree vs HEAD or Pull request, Refresh, Ask agent to commit,
@@ -4691,18 +4729,20 @@ selected thread, or the Overview when none is. Other screens push over the detai
 `ThreadScreen` is shared with the phone; on iPad (regular width) it draws as follows.
 
 - **Header** (the system bar, the boards' 52pt, a `lineSubtle` hairline under it): Show sidebar
-  when the sidebar is hidden; the name at `.title` (16/600) and the status pill beside it
-  (`NWStatusPill`, with the running clock: "Running · 37m"); then, trailing, the counters
-  ("17 turns · 42k ctx", mono 11 `textTertiary`) and 44pt icon buttons in `textPrimary`.
+  when the sidebar is hidden; the name at `.title` (16/600), the branch chip (`NWBranchChip` as on
+  the Mac, without its chevron: the branch, the files changed, and the host when more than one is
+  set up; iPadThread: "pi/swiftui-previews ●3"), and the status pill (`NWStatusPill`, with the
+  running clock: "Running · 37m"); then, trailing, 44pt icon buttons in `textPrimary`. The
+  counters ("17 turns · 42k ctx") are gone, as on the boards.
 - **Header buttons on the board:** Subagents, Review changes, and Thread options (•••). A
   button whose pane is open takes a `runningTint` fill and a `running` glyph: Subagents while
   the inspector shows (iPadSubagents), Review changes while the review does (iPadReview);
-  iPadSteer's 76pt header draws the open one on `bgSelected` instead. The app puts the
-  terminal toggle, Stop (`stop.fill` in `failed`, while pi runs or asks; iPadSteer and iPadQueue
+  iPadSteer's 76pt header draws the open one on `bgSelected` instead. The app puts Stop
+  (`stop.fill` in `failed`, while pi runs or asks; iPadSteer and iPadQueue
   draw it) and ••• there instead; Subagents is in the ••• menu (while the thread has runs), a
   card's Open and the footer's link, and review opens from the changes card. The ••• menu:
-  Refresh, Subagents, the terminal items, Open in new window, and the agent actions (rename,
-  move, delete).
+  Refresh, Subagents, Show or Hide Terminal (the terminal has no header button), Open in new
+  window, and the agent actions (rename, move, delete).
 - **Column:** 780pt wide beside the sidebar (772pt in portrait), 24pt gutters, 24pt above the
   first turn; turns 26pt apart and a turn's parts 14pt apart. Beside the review the column is
   512pt (prose 15, bubbles 14), and beside the subagent inspector 672pt (prose 15, bubbles 15).
@@ -5784,7 +5824,7 @@ What exists today is data, not UI:
 - pi's `/missions` command (native subagents) prints those records as text, and Settings ▸ Pi's
   Native subagents subtitle mentions "durable missions". Nothing else in the app says mission.
 - Parts a mission reuses are built: a station's transcript and steer field are the subagent
-  inspector's (Right pane), its worktree is `GitWorktree`'s, a merge builds on Finalize
+  inspector's (Side pane), its worktree is `GitWorktree`'s, a merge builds on Finalize
   ([docs/worktrees.md](docs/worktrees.md)), and the review gate is drawn with the review pane's
   parts (`NWFileHeader`, `NWDiffView`, `NWHunkHeader`, `NWInlineComment`).
 
@@ -7226,15 +7266,15 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 
 | Board | Specified in | Status |
 | --- | --- | --- |
-| Main | Thread; Composer, questions, and menus; Toolbar | Built |
+| Main | Thread; Composer, questions, and menus; Toolbar (breadcrumb, branch chip, side-pane button) | Built |
 | Running | Thread (A turn while pi works); Composer, questions, and menus | Built |
 | SlashMenu | Composer, questions, and menus › Slash menu | Partial |
 | ModelPicker | Composer, questions, and menus › Model picker | Built |
 | CommandPalette | Command palette | Partial |
 | ToolRows | Thread › Activity lines | Built |
-| Review | Right pane › Review; Side pane | Partial |
-| Subagents | Subagents; Right pane › Subagent inspector | Partial |
-| SubagentsDone | Subagents; Right pane › Subagent inspector | Partial |
+| Review | Side pane › Changes; Side pane: Browser, Artifacts, Files (its other tabs) | Partial |
+| Subagents | Subagents; Side pane › Subagent inspector | Partial |
+| SubagentsDone | Subagents; Side pane › Subagent inspector | Partial |
 | SubagentsQueue | Subagents (One card with Up next); Up next (the queue) | Partial |
 | SettingsAppearance | Settings › Appearance; Density and row settings | Built |
 | SettingsAgents | Settings › Agents | Built |
@@ -7255,7 +7295,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | PaneArtifacts | Side pane (Artifacts) | Not built yet |
 | PaneArtifactEdit | Side pane (Artifacts › Editing in place) | Not built yet |
 | PaneFiles | Side pane (Files) | Not built yet |
-| PaneStates | Side pane; Right pane | Partial |
+| PaneStates | Side pane (tabs, dot, narrow, ⋯, button); Side pane: Browser, Artifacts, Files | Partial |
 | QueueStack | Up next (the queue) | Built |
 | QueueSteer | Up next (the queue); Thread › User turn (Steered) | Built |
 | QueueEdit | Up next (the queue); Composer › Send menu | Built |
@@ -7264,9 +7304,9 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | QuestionPick | Composer, questions, and menus › Questions | Partial |
 | QuestionAnswered | Composer, questions, and menus › Questions | Partial |
 | QuestionStates | Composer, questions, and menus › Questions; Keyboard | Partial |
-| TerminalSplit | Terminal panes; Terminal panel | Built |
-| TerminalPane | Terminal panes; Terminal panel (Split panes, Send output to pi) | Partial |
-| TerminalStates | Terminal panel | Partial |
+| TerminalSplit | Terminal panes; Terminal panel (no header button: departures) | Built |
+| TerminalPane | Terminal panes; Terminal panel (Split panes, Send output to pi; no header button: departures) | Partial |
+| TerminalStates | Terminal panel (no header toggle: departures) | Partial |
 
 **iOS**
 
@@ -7320,7 +7360,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | iPadNewThread | iOS: iPad › New thread | Partial |
 | iPadSteer | iOS: iPad › Up next and steering, Subagents | Partial |
 | iPadReviewSplit | iOS: iPad › Review | Built |
-| iPadCommit | iOS: iPad › Commit; Right pane › Review (Commit… sheet) | Built |
+| iPadCommit | iOS: iPad › Commit; Side pane › Changes (Commit… sheet) | Built |
 | iPadQueue | iOS: iPad › Up next and steering | Partial |
 | iPadQuestion | iOS: iPad › Questions | Partial |
 | iPadMissions | Missions › Missions: iPhone and iPad | Not built yet |
@@ -7336,7 +7376,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | iPadPaneBrowser | iOS: iPad › Side pane | Not built yet |
 | iPadPaneArtifacts | iOS: iPad › Side pane | Not built yet |
 | iPadPaneFiles | iOS: iPad › Side pane | Not built yet |
-| iPadTerminal | iOS (Terminal); Terminal panes | Partial |
+| iPadTerminal | iOS (Terminal); Terminal panes (the options menu shows it: departures) | Partial |
 
 **Notifications**
 
@@ -7400,9 +7440,9 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | LiveText | Thread › Live text, Activity lines (Live), Thinking (Live); Motion (`shimmer`); Up next (a steering row waits still); Subagents (a running tray row's words) | Built |
 | NWComposer, NWComposerLight | Composer, questions, and menus; Command palette | Partial |
 | NWNavigation, NWNavigationLight | Window and adaptive layout; Sidebar; Sidebar destinations, Needs you, and Recents; Toolbar | Partial |
-| NWAgents, NWAgentsLight | Subagents; Right pane › Subagent inspector; Mission components | Partial |
+| NWAgents, NWAgentsLight | Subagents; Side pane › Subagent inspector; Mission components | Partial |
 | SubagentTray | Subagents; iPhone: Subagents; iOS: iPad › Subagents | Partial |
-| NWReview, NWReviewLight | Right pane › Review | Built |
+| NWReview, NWReviewLight | Side pane › Changes | Built |
 | NWSwift, NWSwiftLight | Theme model › Building on ShepherdUI | Partial |
 | MXVocab, MXVocabLight | Missions › Missions: the map | Not built yet |
 | NWMissions, NWMissionsLight | Missions (Missions: shared parts and the screens that use them) | Not built yet |

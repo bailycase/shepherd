@@ -1,6 +1,7 @@
 // @ts-nocheck -- loaded by pi/jiti; this project intentionally has no Node TS workspace.
-// Shepherd diff review extension: opens a native diff review pane. The user's
-// review arrives later as a normal prompt message, so the tool does not block.
+// Shepherd diff review extension: readies a native diff review in the side pane's Changes
+// tab (the user opens it; nothing opens by itself). The user's review arrives later as a
+// normal prompt message, so the tool does not block.
 // Inert unless Shepherd's env is present.
 import * as net from "node:net";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -108,12 +109,13 @@ export default function shepherdReview(pi: ExtensionAPI) {
     name: "review_diff",
     label: "Review Diff",
     description:
-      "Open a native diff review pane in Shepherd showing the git diff. Returns immediately; " +
-      "the user's line comments and summary arrive later as a regular message when they submit. " +
+      "Ready a native diff review of the git diff in Shepherd's side pane (its Changes tab). Returns immediately; " +
+      "the pane does not open by itself: Shepherd marks it, and the user opens it when they choose. " +
+      "Their line comments and summary arrive later as a regular message when they submit. " +
       "Use cwd to review another repository or worktree without changing the agent's directory. " +
-      "Reuses the agent's open review pane and brings it back in front of an inspected subagent. " +
+      "Reuses the agent's review and reloads it. " +
       "Changing cwd discards the previous review comments and summary. Use before finalizing substantial changes.",
-    promptSnippet: "Open a native diff review pane; pass cwd to target another repository or worktree",
+    promptSnippet: "Ready a native diff review in Shepherd's Changes tab; pass cwd to target another repository or worktree",
     parameters: Type.Object({
       reference: Type.Optional(
         Type.String({
@@ -126,7 +128,7 @@ export default function shepherdReview(pi: ExtensionAPI) {
         Type.String({
           description:
             "Repository or worktree directory to review, such as '~/src/project-worktree'; " +
-            "omit to use the agent's directory, including when a review pane is already open",
+            "omit to use the agent's directory, including when a review is already open",
         }),
       ),
     }),
