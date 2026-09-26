@@ -120,22 +120,26 @@ final class ChangesLocked<Value>: @unchecked Sendable {
 /// git's machine output (`-z`) as the engine reads it. Pure, so the unit tests read it too.
 enum ChangesParse {
     /// `git diff --raw --numstat -z`: every file's status from the raw records and its counts
-    /// from the numstat ones.
-    static func files(rawNumstat data: Data) -> [ChangesFile] {
+    /// from the numstat ones. With `-w`, older gits still list a file whose only changes are
+    /// whitespace (its counts 0 and 0, its mode unchanged); `ignoringWhitespace` leaves it out, as
+    /// newer gits do.
+    static func files(rawNumstat data: Data, ignoringWhitespace: Bool = false) -> [ChangesFile] {
         let fields = data.split(separator: 0, omittingEmptySubsequences: false).map { String(decoding: $0, as: UTF8.self) }
-        var statuses: [(status: Character, old: String, new: String)] = []
+        var statuses: [(status: Character, old: String, new: String, sameMode: Bool)] = []
         var counts: [String: (added: Int, removed: Int, binary: Bool)] = [:]
         var index = 0
         while index < fields.count {
             let field = fields[index]
             if field.hasPrefix(":") {
                 // ":100644 100644 abc def M" then one path, or two for a rename or copy.
-                let status = field.split(separator: " ").last?.first ?? "M"
+                let parts = field.dropFirst().split(separator: " ")
+                let status = parts.last?.first ?? "M"
+                let sameMode = parts.count > 1 && parts[0] == parts[1]
                 let twoPaths = status == "R" || status == "C"
                 guard index + (twoPaths ? 2 : 1) < fields.count else { break }
                 let old = fields[index + 1]
                 let new = twoPaths ? fields[index + 2] : old
-                statuses.append((status, old, new))
+                statuses.append((status, old, new, sameMode))
                 index += twoPaths ? 3 : 2
             } else if !field.isEmpty {
                 // "3\t1\tpath", or "3\t1\t" then the old and new paths of a rename.
@@ -155,8 +159,11 @@ enum ChangesParse {
                 index += 1
             }
         }
-        return statuses.map { entry in
+        return statuses.compactMap { entry in
             let count = counts[entry.new] ?? (0, 0, false)
+            if ignoringWhitespace, entry.status == "M", entry.sameMode, count.added == 0, count.removed == 0, !count.binary {
+                return nil
+            }
             let status: ChangesFileStatus
             switch entry.status {
             case "A": status = .added

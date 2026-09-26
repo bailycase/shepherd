@@ -334,7 +334,7 @@ public final class ChangesService: @unchecked Sendable {
         var arguments = ["diff", "--no-color", "--no-ext-diff", "-M", "--raw", "--numstat", "-z"]
         if options.ignoreWhitespace { arguments.append("-w") }
         let result = try ChangesGit.checked(arguments + [revision.old, revision.new], in: repository.root)
-        let files = ChangesParse.files(rawNumstat: result.stdout)
+        let files = ChangesParse.files(rawNumstat: result.stdout, ignoringWhitespace: options.ignoreWhitespace)
         lists.insert(files, key)
         return files
     }
