@@ -116,13 +116,15 @@ private struct NWBoardAction: View {
 extension NWBoardActions {
     /// Where the bar goes over a board whose frame is `board` on screen: its bottom `actionsGap`
     /// above the board's label strip, its leading edge at the frame's middle (DZCanvas), kept
-    /// `inset` inside a canvas of `canvas`. Nil when the board is off screen.
+    /// `inset` inside a canvas of `canvas` along its width and 4pt from its top. Nil when the
+    /// board is off screen.
     public static func origin(over board: CGRect, bar: CGSize, canvas: CGSize,
                               inset: CGFloat = NWDesignMetrics.toolbarInset) -> CGPoint? {
         guard board.intersects(CGRect(origin: .zero, size: canvas)) else { return nil }
         let lift = NWDesignMetrics.labelHeight + NWDesignMetrics.labelGap + NWDesignMetrics.actionsGap
         let x = min(max(board.midX, inset), max(inset, canvas.width - bar.width - inset))
-        let y = max(board.minY - lift - bar.height, inset)
+        // Where the board sits too near the top for it (a fitted canvas), as high as it can go.
+        let y = max(board.minY - lift - bar.height, NW.Space.xs)
         return CGPoint(x: x, y: y)
     }
 }
@@ -233,20 +235,17 @@ struct NWCanvasNoteView: View, Equatable {
 }
 
 /// One board shown focused over the canvas (Present, Play): a `scrim` over everything, and the
-/// board fitted into the view in its frame with its label above it. A click on the scrim closes
-/// it. The slot draws the board's page, which takes its own events here, so its links work.
+/// board fitted into the view in its frame. A click on the scrim closes it. The slot draws the
+/// board's page, which takes its own events here, so its links work.
 public struct NWBoardPresentation<Slot: View>: View {
     let title: String
-    let size: String
     let boardSize: CGSize
     let close: () -> Void
     let slot: (CGFloat) -> Slot
 
-    /// `slot` draws the board at the zoom it is given.
-    public init(title: String, size: String, boardSize: CGSize, close: @escaping () -> Void,
-                @ViewBuilder slot: @escaping (CGFloat) -> Slot) {
+    /// `slot` draws the board at the zoom it is given; `title` names it for accessibility.
+    public init(title: String, boardSize: CGSize, close: @escaping () -> Void, @ViewBuilder slot: @escaping (CGFloat) -> Slot) {
         self.title = title
-        self.size = size
         self.boardSize = boardSize
         self.close = close
         self.slot = slot
@@ -261,23 +260,19 @@ public struct NWBoardPresentation<Slot: View>: View {
                     .onTapGesture(perform: close)
                     .accessibilityAddTraits(.isButton)
                     .accessibilityLabel("Close")
-                VStack(alignment: .leading, spacing: NWDesignMetrics.labelGap) {
-                    NWBoardLabel(title: title, size: size, selected: true)
-                        .frame(height: NWDesignMetrics.labelHeight)
-                    NWBoardSurface(size: CGSize(width: boardSize.width * zoom, height: boardSize.height * zoom), selected: false) {
-                        slot(zoom)
-                    }
+                NWBoardSurface(size: CGSize(width: boardSize.width * zoom, height: boardSize.height * zoom), selected: false) {
+                    slot(zoom)
                 }
-                .fixedSize()
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(title)
             }
         }
     }
 
-    /// The board fitted into a view of `size`, the canvas's fitted margins around it (and its
-    /// label above), never larger than 100%.
+    /// The board fitted into a view of `size` with the canvas's fitted margins around it, never
+    /// larger than 100%.
     public static func zoom(for board: CGSize, in size: CGSize) -> CGFloat {
-        let lift = NWDesignMetrics.labelHeight + NWDesignMetrics.labelGap
-        let room = CGSize(width: size.width - NWDesignMetrics.fitLeading * 2, height: size.height - NWDesignMetrics.fitTop * 2 - lift)
+        let room = CGSize(width: size.width - NWDesignMetrics.fitLeading * 2, height: size.height - NWDesignMetrics.fitTop * 2)
         guard board.width > 0, board.height > 0, room.width > 0, room.height > 0 else { return NWCanvasViewport.zoomRange.lowerBound }
         return NWCanvasViewport.clamp(min(1, room.width / board.width, room.height / board.height))
     }

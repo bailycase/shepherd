@@ -95,7 +95,7 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
                 NWBoardFrame(board: board, zoom: zoom) { slot(board) }
                     .equatable()
                     .fixedSize()
-                    .offset(x: origin.x, y: origin.y - lift)
+                    .placed(x: origin.x, y: origin.y - lift)
             }
             rings
             input
@@ -136,7 +136,7 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
             let rect = board.isNull ? .zero : viewport.screen(ring.element.rect.offsetBy(dx: board.minX, dy: board.minY))
             NWSelectionRing(ring.style, tag: ring.element.tag)
                 .frame(width: max(rect.width, 1), height: max(rect.height, 1))
-                .offset(x: rect.minX, y: rect.minY)
+                .placed(x: rect.minX, y: rect.minY)
                 .opacity(board.isNull ? 0 : 1)
         }
     }
@@ -149,7 +149,7 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
             let origin = viewport.screen(note.origin)
             NWCanvasNoteView(note: note, zoom: viewport.zoom)
                 .equatable()
-                .offset(x: origin.x, y: origin.y)
+                .placed(x: origin.x, y: origin.y)
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
@@ -162,7 +162,7 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
             let rect = CGRect(origin: origin, size: NWDesignMetrics.directionTileSize)
             if rect.intersects(CGRect(origin: .zero, size: size)) {
                 NWDirectionTile(action: anotherDirection)
-                    .offset(x: origin.x, y: origin.y)
+                    .placed(x: origin.x, y: origin.y)
             }
         }
     }
@@ -174,7 +174,7 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
             NWBoardActions(size: .compact, actions: actions.actions)
                 .fixedSize()
                 .onGeometryChange(for: CGSize.self) { $0.size } action: { actionsSize = $0 }
-                .offset(x: origin.x, y: origin.y)
+                .placed(x: origin.x, y: origin.y)
         }
     }
 
@@ -197,7 +197,7 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
         return ForEach(shown, id: \.0.id) { pin, corner in
             Button { openPin(pin.id) } label: { NWCommentPin(pin.number) }
                 .buttonStyle(.plain)
-                .offset(x: corner.x - half, y: corner.y - half)
+                .placed(x: corner.x - half, y: corner.y - half)
                 .help("Comment \(pin.number)")
         }
     }
@@ -216,7 +216,7 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(width: width)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { popoverHeight = $0 }
-                .offset(x: x, y: max(inset, y))
+                .placed(x: x, y: max(inset, y))
         }
     }
 
@@ -257,7 +257,15 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
     }
 }
 
-/// The canvas's dots: one device pixel each, every `spacing` points, moving with the canvas.
+extension View {
+    /// Puts a view at a point of the canvas without its size counting toward the canvas's, so a
+    /// board, a ring or a note larger than the view never widens it.
+    fileprivate func placed(x: CGFloat, y: CGFloat) -> some View {
+        frame(width: 0, height: 0, alignment: .topLeading)
+            .offset(x: x, y: y)
+    }
+}
+
 extension NWDesignCanvas where Popover == EmptyView {
     public init(boards: [NWCanvasBoard], viewport: Binding<NWCanvasViewport>, tool: Binding<NWCanvasTool>,
                 disabledTools: Set<NWCanvasTool> = [], selection: [NWCanvasElement] = [], hover: NWCanvasElement? = nil,
@@ -274,6 +282,7 @@ extension NWDesignCanvas where Popover == EmptyView {
     }
 }
 
+/// The canvas's dots: one device pixel each, every `spacing` points, moving with the canvas.
 public struct NWDotGrid: View {
     let spacing: CGFloat
     let phase: CGPoint

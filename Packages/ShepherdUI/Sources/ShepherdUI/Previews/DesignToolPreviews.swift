@@ -214,7 +214,7 @@ private let previewActions = NWBoardActions.Actions(comment: {}, tweak: {}, vari
             NWBoardActions(size: .compact, actions: NWBoardActions.Actions(comment: {}, tweak: {}, variations: {}, duplicate: {}))
             NWDesignCanvas(boards: previewBoards, viewport: $viewport, tool: $tool,
                            notes: [NWCanvasNote(id: "t1", kind: .title, origin: CGPoint(x: 0, y: -300), width: 2600, text: "Checkout"),
-                                   NWCanvasNote(id: "s1", kind: .sticky, origin: CGPoint(x: 520, y: 1000), text: "Keep the phone's total above the fold.")],
+                                   NWCanvasNote(id: "s1", kind: .sticky, origin: CGPoint(x: 1360, y: 1000), text: "Keep the phone's total above the fold.")],
                            actions: NWCanvasActions(board: "A.dc.html", actions: previewActions), anotherDirection: {},
                            pick: { _ in }) { board in
                 PreviewBoardPage(phone: board.frame.height > board.frame.width)
@@ -226,7 +226,7 @@ private let previewActions = NWBoardActions.Actions(comment: {}, tweak: {}, vari
 
 #Preview("Board presentation") {
     NWPreviewBoth {
-        NWBoardPresentation(title: "A · Funnel first", size: "1280 × 800", boardSize: CGSize(width: 1280, height: 800), close: {}) { _ in
+        NWBoardPresentation(title: "A · Funnel first", boardSize: CGSize(width: 1280, height: 800), close: {}) { _ in
             PreviewBoardPage(phone: false)
         }
         .frame(width: 720, height: 520)
