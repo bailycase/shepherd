@@ -22,7 +22,7 @@ final class RPCThreadState {
     static let widgetTitleBytes = 256
     static let widgetAggregateBytes = 32 * 1024
     static let operationTableSize = 256
-    static let supportedActions = ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents", "queue", "compact"]
+    static let supportedActions = ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents", "queue", "compact", "designContext"]
     /// pi answers `compact` only once the summary is written, which takes as long as a reply.
     static let compactTimeout: TimeInterval = 600
     /// Bytes of a child session file the transcript reader will scan (tail); older is unreachable.
@@ -355,10 +355,10 @@ final class RPCThreadState {
             settled()
             onTurnEvent?(.settled)
         case .messageStart(let message) where message.role == "user":
-            onTurnEvent?(.message(timestamp: message.timestamp, text: message.content.compactMap { block -> String? in
+            onTurnEvent?(.message(timestamp: message.timestamp, text: DesignViewRecord.strippingFence(from: message.content.compactMap { block -> String? in
                 if case .text(let text) = block { return text }
                 return nil
-            }.joined()))
+            }.joined())))
             userMessageStarted(message)
         case .messageEnd(let message) where message.role == "user":
             userMessageEnded(message)
@@ -483,7 +483,7 @@ final class RPCThreadState {
                 return
             }
             completion(Self.transcript(runID: runID, file: file, beforeEntryID: beforeEntryID))
-        case .send(let expectedSessionID, let generation, let operationID, _, _, _),
+        case .send(let expectedSessionID, let generation, let operationID, _, _, _, _),
              .abort(let expectedSessionID, let generation, let operationID),
              .answer(let expectedSessionID, let generation, let operationID, _, _),
              .setModel(let expectedSessionID, let generation, let operationID, _),
@@ -549,7 +549,7 @@ final class RPCThreadState {
             completion(Self.dispatchFailure(result) ?? accepted)
         }
         switch request {
-        case .send(_, _, _, let text, let delivery, let images):
+        case .send(_, _, _, let text, let delivery, let images, let designContext):
             let images = images ?? []
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.utf8.count <= Self.textLimit else {
                 completion(.failure(code: "invalid", message: "Send requires text up to 16 KiB and a valid delivery mode."))
@@ -559,7 +559,9 @@ final class RPCThreadState {
                 completion(.failure(code: "invalid", message: "Send accepts up to \(NativeImage.maxPerSend) images of \(NativeImage.maxBytes / 1024 / 1024) MiB each."))
                 return
             }
-            send(id: operationID, text: text, delivery: delivery, images: images, alone: olderClient, completion: completion)
+            // A record that breaks the grammar is dropped whole; the message still goes.
+            let context = designContext?.valid?.fenced()
+            send(id: operationID, text: text, delivery: delivery, images: images, alone: olderClient, context: context, completion: completion)
         case .abort:
             // Stopping refuses what pi is waiting on: a question has no Dismiss, and a turn
             // waiting on an answer would not stop.
@@ -823,7 +825,7 @@ final class RPCThreadState {
                         if case .text(let text) = block { return text }
                         return nil
                     }.joined()
-                    value.origin = self.origins[value.entryID]?.origin(text: text)
+                    value.origin = self.origins[value.entryID]?.origin(text: DesignViewRecord.strippingFence(from: text))
                     value.operationID = self.operationsByEntry[value.entryID]
                 }
             }
@@ -1619,6 +1621,8 @@ final class RPCThreadState {
         if let toolName = message.toolName { result.toolName = clip(toolName) }
         if let toolCallID = message.toolCallId { result.toolCallID = clip(toolCallID) }
         if let args { result.argumentsText = clip(json(args)) }
+        // A design view record the viewer's message carried is pi's to read, not the thread's.
+        var fenced = message.role == "user"
         for block in message.content {
             if result.blocks.count >= 128 || remaining == 0 {
                 truncated = true
@@ -1626,7 +1630,9 @@ final class RPCThreadState {
             }
             switch block {
             case .text(let text):
-                result.blocks.append(NativeThreadBlock(kind: .text, text: clip(text)))
+                let shown = fenced ? DesignViewRecord.strippingFence(from: text) : text
+                fenced = false
+                result.blocks.append(NativeThreadBlock(kind: .text, text: clip(shown)))
             case .thinking(let text):
                 // Streamed thinking arrives raw (pi-ai ends each summary part with a blank line);
                 // what a reader sees is normalized, the growing text as much as the settled one.
