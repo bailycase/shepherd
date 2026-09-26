@@ -320,6 +320,11 @@ keeps every key it doesn't name, at the top and on each token:
   the type ramp, the space and radius scales, Geist and Geist Mono) and registered with the
   server at launch. It lives in memory, is listed first, installs like any system, and is never
   written or synced.
+- **Links are never followed.** A `design-systems/<namespace>` that is a link or a file is no
+  system: it is not listed, and reading, writing or installing it refuses (`not_a_folder`). Inside
+  a system, a linked file is not one of its files, and a write never goes through a linked
+  folder (`invalid_file`); an install checks each file's folder under the design's
+  `ds/<namespace>/` the same way before it makes anything.
 - **At most 100** systems on a host.
 
 ### Writing, installing, re-syncing

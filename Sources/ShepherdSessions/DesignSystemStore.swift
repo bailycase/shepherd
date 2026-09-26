@@ -24,6 +24,8 @@ public enum DesignSystemError: Error, Hashable, Sendable, CustomStringConvertibl
     /// A design's `ds/<namespace>/` holds a system installed from elsewhere (claude.ai): it is
     /// kept as it is.
     case namespaceTaken(String)
+    /// `design-systems/<namespace>` is a link or a file, never followed.
+    case notAFolder(String)
     case io(String)
 
     public var code: String {
@@ -42,6 +44,7 @@ public enum DesignSystemError: Error, Hashable, Sendable, CustomStringConvertibl
         case .stale: return "stale_revision"
         case .noSources: return "no_sources"
         case .namespaceTaken: return "namespace_taken"
+        case .notAFolder: return "not_a_folder"
         case .io: return "io_failed"
         }
     }
@@ -64,6 +67,8 @@ public enum DesignSystemError: Error, Hashable, Sendable, CustomStringConvertibl
         case .noSources(let why): return why
         case .namespaceTaken(let name):
             return "the design's ds/\(name)/ holds a system installed from elsewhere; it is kept as it is, so install under another namespace"
+        case .notAFolder(let name):
+            return "design-systems/\(name) is not a folder of its own (a link is never followed); write the system under another namespace"
         case .io(let message): return message
         }
     }
@@ -107,8 +112,24 @@ public final class DesignSystemStore: @unchecked Sendable {
         queue.async { self.builtIns[builtIn.info.namespace] = builtIn }
     }
 
+    /// A system's folder: a folder of its own directly inside `design-systems/`, or not there
+    /// yet. Nil for a namespace off the grammar, or for a name that is a link (followed, it
+    /// would read or write outside the store).
     public func folder(for namespace: String) -> URL? {
-        DesignPath.isSystemNamespace(namespace) ? directory.appendingPathComponent(namespace, isDirectory: true) : nil
+        guard DesignPath.isSystemNamespace(namespace) else { return nil }
+        let folder = directory.appendingPathComponent(namespace, isDirectory: true)
+        if let type = (try? FileManager.default.attributesOfItem(atPath: folder.path))?[.type] as? FileAttributeType,
+           type != .typeDirectory {
+            return nil
+        }
+        return folder
+    }
+
+    /// `folder(for:)`, or why there is none.
+    private func ownFolder(_ namespace: String) throws -> URL {
+        guard DesignPath.isSystemNamespace(namespace) else { throw DesignSystemError.invalidNamespace(namespace) }
+        guard let folder = folder(for: namespace) else { throw DesignSystemError.notAFolder(namespace) }
+        return folder
     }
 
     // MARK: Reads
@@ -118,7 +139,7 @@ public final class DesignSystemStore: @unchecked Sendable {
         (try? await run {
             let builtIn = self.builtIns.values.sorted { $0.info.namespace < $1.info.namespace }.map(Self.summary)
             let names = ((try? FileManager.default.contentsOfDirectory(atPath: self.directory.path)) ?? [])
-                .filter { DesignPath.isSystemNamespace($0) && self.builtIns[$0] == nil }
+                .filter { self.folder(for: $0) != nil && self.builtIns[$0] == nil }
                 .sorted()
             let onDisk = names.compactMap { try? self.summaryOnQueue($0) }
             return builtIn + onDisk
@@ -156,7 +177,7 @@ public final class DesignSystemStore: @unchecked Sendable {
     func resync(_ namespace: String, root: URL, at now: Double) async throws -> DesignSystemSyncResult {
         try await run {
             guard self.builtIns[namespace] == nil else { throw DesignSystemError.readOnly(namespace) }
-            guard let folder = self.folder(for: namespace) else { throw DesignSystemError.invalidNamespace(namespace) }
+            let folder = try self.ownFolder(namespace)
             var info = try self.infoOnQueue(namespace)
             guard !info.sources.isEmpty else {
                 throw DesignSystemError.noSources("\(namespace) names no stylesheets to read again")
@@ -192,8 +213,9 @@ public final class DesignSystemStore: @unchecked Sendable {
     private func writeOnQueue(_ write: DesignSystemWrite, owner: DesignID, spaceID: SpaceID?, sourceRoot: URL?,
                               at now: Double) throws -> (summary: DesignSystemSummary, changed: Bool, notes: [String]) {
         let namespace = write.namespace
-        guard let folder = folder(for: namespace) else { throw DesignSystemError.invalidNamespace(namespace) }
+        guard DesignPath.isSystemNamespace(namespace) else { throw DesignSystemError.invalidNamespace(namespace) }
         guard builtIns[namespace] == nil else { throw DesignSystemError.readOnly(namespace) }
+        let folder = try ownFolder(namespace)
         let manager = FileManager.default
         let exists = manager.fileExists(atPath: folder.path)
         var info: DesignSystemInfo
@@ -316,14 +338,14 @@ public final class DesignSystemStore: @unchecked Sendable {
 
     private func loadOnQueue(_ namespace: String) throws -> (DesignSystemSummary, [String: Data]) {
         if let builtIn = builtIns[namespace] { return (Self.summary(builtIn), builtIn.files) }
-        guard let folder = folder(for: namespace) else { throw DesignSystemError.invalidNamespace(namespace) }
+        let folder = try ownFolder(namespace)
         let summary = try summaryOnQueue(namespace)
         return (summary, filesOnQueue(folder))
     }
 
     private func summaryOnQueue(_ namespace: String) throws -> DesignSystemSummary {
         if let builtIn = builtIns[namespace] { return Self.summary(builtIn) }
-        guard let folder = folder(for: namespace) else { throw DesignSystemError.invalidNamespace(namespace) }
+        let folder = try ownFolder(namespace)
         let info = try infoOnQueue(namespace)
         let tokens = (try? Data(contentsOf: folder.appendingPathComponent(DesignSystemFile.tokens))).map { try? DesignSystemTokens.decode($0) }
         return DesignSystemSummary(info: info, counts: tokens??.counts ?? DesignSystemCounts(), unreadable: tokens??.counts == nil)
@@ -337,7 +359,7 @@ public final class DesignSystemStore: @unchecked Sendable {
 
     /// system.json; a folder without one (made by hand) reads as nobody's.
     private func infoOnQueue(_ namespace: String) throws -> DesignSystemInfo {
-        guard let folder = folder(for: namespace) else { throw DesignSystemError.invalidNamespace(namespace) }
+        let folder = try ownFolder(namespace)
         guard FileManager.default.fileExists(atPath: folder.path) else { throw DesignSystemError.noSuchSystem(namespace) }
         let url = folder.appendingPathComponent(DesignSystemFile.info)
         guard let data = try? Data(contentsOf: url), let info = try? JSONDecoder().decode(DesignSystemInfo.self, from: data),
@@ -348,7 +370,7 @@ public final class DesignSystemStore: @unchecked Sendable {
     }
 
     private func saveInfo(_ info: DesignSystemInfo) throws {
-        guard let folder = folder(for: info.namespace) else { throw DesignSystemError.invalidNamespace(info.namespace) }
+        let folder = try ownFolder(info.namespace)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         let data: Data
