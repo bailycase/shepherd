@@ -215,7 +215,7 @@ struct ComposerMenuPerformanceTests {
             #expect(counts["composer.body", default: 0] >= 1, "'\(letter)': the field redrew: \(counts)")
             #expect(counts["composer.chips", default: 0] == 0, "'\(letter)': \(counts)")
             #expect(counts["thread.view", default: 0] == 0, "'\(letter)': \(counts)")
-            #expect(counts["composer.controlsMinimum", default: 0] >= 1, "'\(letter)': the minimum-size pass was answered: \(counts)")
+            #expect(counts["layout.composerControlsMinimum", default: 0] >= 1, "'\(letter)': the minimum-size pass was answered: \(counts)")
         }
     }
 
