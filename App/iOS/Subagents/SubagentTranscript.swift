@@ -233,6 +233,8 @@ private struct SubagentTurnItem: View {
                 .frame(maxWidth: .infinity, alignment: .trailing)
         case .compaction(let row):
             CompactionItem(row: row)
+        case .question(let row):
+            QuestionRecordView(row: row)
         }
     }
 }

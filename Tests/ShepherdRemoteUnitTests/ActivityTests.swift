@@ -294,6 +294,7 @@ struct TurnPresentationTests {
             case .retrying: "retrying"
             case .steer(_, let text, _, _): "steer:" + text
             case .compaction(let row): "compaction:" + row.title
+            case .question(let row): "question:" + row.question
             }
         }
     }

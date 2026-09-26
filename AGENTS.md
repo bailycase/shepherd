@@ -821,17 +821,29 @@ composer, two record lines in its thread, the inspector, and the palette. Subage
 waiting on you marks its parent's row. Child runs are display state and never persisted.
 
 **Switching is a visibility flip, never a remount.** `WorkspaceSelection.mountedTabs` keeps every
-mounted agent layout in the view tree, and selection only changes which one is visible (opacity,
-hit-testing, `nwMotionPaused`, and `isRendering`, where Ghostty occlusion stops hidden panes'
-render loops). A hidden thread suspends its store (`NativeThreadStore.suspend`) and keeps what it
-shows, so showing it again rebuilds the thread and its composer once, and its first pull catches
-it up without motion (docs/native-thread.md). The workspace hands each layout an Equatable
-`AgentLayoutModel` and nothing observable, so a status report reruns none of them. Things that
-silently bring back full-repaint lag:
+mounted agent layout in the view tree, and selection only changes which one is visible (a hosting
+view's `isHidden`, `nwMotionPaused`, and `isRendering`, where Ghostty occlusion stops hidden
+panes' render loops). A hidden thread suspends its store (`NativeThreadStore.suspend`) and keeps
+what it shows, so showing it again rebuilds the thread and its composer once, and its first pull
+catches it up without motion (docs/native-thread.md). The workspace hands each layout an
+Equatable `AgentLayoutModel` and nothing observable, so a status report reruns none of them.
 
-- reordering `mountedTabs` (ForEach identity)
-- using a conditional branch or `.hidden()` instead of `opacity(0)` (ConditionalContent destroys
-  the subtree)
+Each layout has a hosting view of its own (`AgentLayoutDeck`): an update in the visible one
+(a scroll step, a keystroke, a streamed reply) runs its own view graph alone, and a hidden one is
+an `isHidden` AppKit view, out of drawing, hit-testing and accessibility. The deck updates only
+when a layout's model changes, applies it in the caller's transaction, and hands a hidden layout
+the frozen size during a live resize. Before it, every layout shared one graph, and each hidden
+agent added about 0.4 M instructions to a scroll step and 1.2 M to a status report
+(`HiddenAgentsReport`; `ListPerformanceTests` pins the counts). Hiding a layout that holds the
+keyboard gives it up first, so focus never lands on whatever AppKit picks as the next key view.
+Taking a hidden host out of the window would be cheaper still, but it fires `onDisappear` (which
+stops a thread's store) and replays every appearance on the way back. Things that silently bring
+back full-repaint lag:
+
+- putting the layouts back in one view graph (a `ForEach` in the workspace), or giving the deck an
+  input that changes on every update
+- reordering or rekeying the deck's hosts (they are keyed by tab), or removing and re-adding a
+  hidden one
 - applying `setRenderingActive` fire-and-forget (the model retries; see
   [NOTES.md](Sources/TerminalSurfaceKit/NOTES.md))
 - a layout view reading the view model's state instead of its model
@@ -840,8 +852,8 @@ silently bring back full-repaint lag:
 
 **During a window live resize** hidden layouts keep the column size they had when it began
 (`WorkspaceView.frozenSize`), so a drag relays out only the visible layout and a hidden shell
-takes one grid (one SIGWINCH) when it ends. Their outer frame is bounded on both sides, so a
-frozen layout wider than the column never widens the shell.
+takes one grid (one SIGWINCH) when it ends. A hidden host's frame is AppKit's alone, so a frozen
+layout wider than the column never widens the shell.
 
 **At launch** only the visible layout mounts in the first frame; the rest wait in
 `pendingMountTabIDs` and mount after it, two per run-loop turn, the visible space first

@@ -350,6 +350,19 @@ public struct NativeQuestionOption: Equatable, Identifiable, Sendable {
     }
 }
 
+/// Which of pi's questions the user hid (Hide the question: the Mac's panel, the iPad's card).
+/// Only that one stays hidden: the next question pi asks arrives open. Keys name a question in
+/// its thread ("<session>:<dialog id>").
+public struct NativeQuestionHiding: Equatable, Sendable {
+    public private(set) var hiddenKey: String?
+
+    public init() {}
+
+    public func isHidden(_ key: String?) -> Bool { key != nil && key == hiddenKey }
+    public mutating func hide(_ key: String) { hiddenKey = key }
+    public mutating func show() { hiddenKey = nil }
+}
+
 /// A confirm question's two answers. pi's confirm takes yes or no; the asker words only the
 /// question, so the buttons say Yes and No (never an approval the asker did not offer).
 public enum NativeConfirmAnswers {

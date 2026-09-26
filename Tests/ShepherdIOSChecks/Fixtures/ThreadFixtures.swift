@@ -43,6 +43,16 @@ extension FixtureCatalog {
             FixtureScreen(name: "question", hosts: ThreadFixtures.hosts(), routes: [.thread(dock)]),
             FixtureScreen(name: "question-confirm", hosts: ThreadFixtures.hosts(dock: ThreadFixtures.confirm()), routes: [.thread(dock)]),
             FixtureScreen(name: "question-input", hosts: ThreadFixtures.hosts(dock: ThreadFixtures.input()), routes: [.thread(dock)]),
+            // iPadQuestion: Hide the question folds the card to one line so the thread reads; the
+            // agent still waits (on a phone the panel stays open).
+            FixtureScreen(name: "question-hidden", hosts: ThreadFixtures.hosts(), routes: [.thread(dock)],
+                          prepare: { _ in
+                              let session = NativeThreadSession(piSessionID: "fixture-session", generation: "fixture-generation")
+                              ComposerStates.shared.state(for: dock).questionHiding.hide(session.key + ":d-select")
+                          }),
+            // QuestionAnswered: where pi asked, "Agent asked:" and the question, the answer as the
+            // user's bubble with its time, and pi's turn carrying on; one nobody answered below.
+            FixtureScreen(name: "question-answered", hosts: ThreadFixtures.hosts(dock: ThreadFixtures.answered()), routes: [.thread(dock)]),
             // MobileQueue, iPadQueue: a steering message, two queued, a draft.
             FixtureScreen(name: "queue", hosts: ThreadFixtures.hosts(running: ThreadFixtures.queued()), routes: [.thread(running)],
                           prepare: { app in app.threads.store(for: running).draft = "Keep the PR title short" }),
@@ -326,6 +336,30 @@ enum ThreadFixtures {
         asking(NativeThreadDialog(id: "d-select", kind: .select, title: "How should I handle Horizon's uncommitted edits?", options: [
             "Compare, keep what's unique, then go through GitHub (Recommended)\nNew branch and PR for anything not merged. Nothing on Horizon is overwritten.",
             "Leave Horizon alone and deploy from a clean checkout\nHorizon keeps its edits. The deploy uses a fresh clone.",
+        ]))
+    }
+
+    /// QuestionAnswered: the question recorded where pi asked it, and the turn going on.
+    static func answered() -> NativeThreadSnapshot {
+        typealias F = FixtureData
+        func record(_ id: String, _ question: NativeQuestionRecord, at offset: Double) -> NativeThreadMessage {
+            NativeThreadMessage(entryID: "q:" + id, role: "question", blocks: [], timestamp: F.start + offset, question: question)
+        }
+        return rpc(F.snapshot([
+            F.user("d1", "Deploy the new media stack to Horizon."),
+            F.tool("d2", "bash", args: #"{"command":"git status && git fetch"}"#, output: "Your branch is behind 'origin/master' by 50 commits.",
+                   at: 4_000),
+            F.assistant("d3", "Horizon's checkout isn't clean, so I stopped before pulling:\n\n- 50 commits behind GitHub\n- 11 uncommitted files, one an encrypted secret\n- The Homarr removal is already merged",
+                        at: 9_000),
+            record("d-select", NativeQuestionRecord(
+                kind: .select, question: "How should I handle Horizon's uncommitted edits?",
+                answer: "Compare, keep what's unique, then go through GitHub (Recommended)\nNew branch and PR for anything not merged.",
+                outcome: .answered, askedAt: F.start + 10_000), at: 300_000),
+            F.tool("d4", "bash", args: #"{"command":"git push origin HEAD:horizon/media-support"}"#, output: "", at: 330_000),
+            F.assistant("d5", "Four of the eleven files were already in the merged Homarr PR. The other seven are on `horizon/media-support`. The encrypted secret stays on Horizon.",
+                        at: 340_000),
+            record("d-confirm", NativeQuestionRecord(kind: .confirm, question: "Push the deploy branch to origin?", outcome: .expired,
+                                                     askedAt: F.start + 341_000), at: 401_000),
         ]))
     }
 
