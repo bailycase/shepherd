@@ -137,10 +137,16 @@ struct DesignToolComponentTests {
         let bounds = Self.boards.bounds
         #expect(bounds == CGRect(x: 0, y: 0, width: 2640, height: 1764))
         let fitted = NWCanvasViewport.fitting(bounds, in: CGSize(width: 1100, height: 800))
-        #expect(fitted.screen(bounds.origin) == CGPoint(x: NWDesignMetrics.fitLeading, y: NWDesignMetrics.fitTop))
+        // DZCanvas: the top row's labels 52pt down, its frames 76pt down.
+        #expect(NWDesignMetrics.fitFrameTop == 76)
+        #expect(fitted.screen(bounds.origin) == CGPoint(x: NWDesignMetrics.fitLeading, y: NWDesignMetrics.fitFrameTop))
         #expect(fitted.zoom < 1)
         let screen = fitted.screen(bounds)
         #expect(screen.maxX <= 1100 - NWDesignMetrics.fitLeading + 0.001 && screen.maxY <= 800 - NWDesignMetrics.fitTop + 0.001)
+        // Fitted by its height, the boards still keep the room above and below.
+        let tall = NWCanvasViewport.fitting(bounds, in: CGSize(width: 4000, height: 600))
+        #expect(tall.screen(bounds.origin).y == NWDesignMetrics.fitFrameTop)
+        #expect(abs(tall.screen(bounds).maxY - (600 - NWDesignMetrics.fitTop)) < 0.001)
         let small = NWCanvasViewport.fitting(CGRect(x: 10, y: 10, width: 200, height: 100), in: CGSize(width: 1100, height: 800))
         #expect(small.zoom == 1)
         // Nothing drawn yet: the origin at the insets, at 100%.
@@ -186,10 +192,56 @@ struct DesignToolComponentTests {
         let canvas = CGSize(width: 1000, height: 700)
         let origin = try #require(NWBoardActions.origin(over: CGRect(x: 44, y: 200, width: 538, height: 336), bar: bar, canvas: canvas))
         #expect(origin == CGPoint(x: 313, y: 200 - 24 - 2 - 32))
-        // Near the trailing edge it stays 16pt inside; near the top, 4pt below it.
-        let edge = try #require(NWBoardActions.origin(over: CGRect(x: 800, y: 20, width: 538, height: 336), bar: bar, canvas: canvas))
-        #expect(edge == CGPoint(x: 1000 - 375 - 16, y: 4))
         #expect(NWBoardActions.origin(over: CGRect(x: 1200, y: 20, width: 538, height: 336), bar: bar, canvas: canvas) == nil)
+    }
+
+    /// Where the room above the label runs out, the bar flips 2pt under the board (above the
+    /// toolbar's band); where that doesn't fit either, it sits just inside the board's top edge,
+    /// on the canvas. Near the trailing edge it stays 16pt inside.
+    @Test(arguments: [
+        // Scrolled up to the canvas's top: under the board.
+        (CGRect(x: 800, y: 20, width: 538, height: 336), CGPoint(x: 1000 - 375 - 16, y: 20 + 336 + 2)),
+        // Its bottom too near the toolbar's band as well: just inside its top edge.
+        (CGRect(x: 44, y: 20, width: 538, height: 600), CGPoint(x: 313, y: 22)),
+        // Filling the canvas, its top scrolled away: 4pt from the canvas's top.
+        (CGRect(x: 44, y: -400, width: 538, height: 1400), CGPoint(x: 313, y: 4)),
+    ])
+    func theBoardActionsFlipUnderABoardWithNoRoomAboveAndClampWhenNeitherFits(board: CGRect, expected: CGPoint) throws {
+        let origin = try #require(NWBoardActions.origin(over: board, bar: CGSize(width: 375, height: 32), canvas: CGSize(width: 1000, height: 700)))
+        #expect(origin == expected)
+    }
+
+    /// Room above on the canvas isn't enough when the bar would lie over another board's label.
+    @Test func theBoardActionsNeverCoverALabel() throws {
+        let bar = CGSize(width: 375, height: 32)
+        let board = CGRect(x: 44, y: 200, width: 538, height: 336)
+        let label = CGRect(x: 400, y: 160, width: 160, height: 16)
+        let origin = try #require(NWBoardActions.origin(over: board, bar: bar, canvas: CGSize(width: 1000, height: 700), labels: [label]))
+        #expect(origin == CGPoint(x: 313, y: 538))
+        #expect(!CGRect(origin: origin, size: bar).intersects(label))
+    }
+
+    /// DZCanvas at its fitted zoom: over any board of the top row, the bar sits 18pt from the top,
+    /// 2pt above that row's labels, and covers none of them.
+    @Test(arguments: ["A.dc.html", "B.dc.html", "C.dc.html"])
+    func aFittedCanvasLeavesTheBoardActionsRoomAboveTheTopRow(_ selected: String) throws {
+        let frames: [String: CGRect] = [
+            "A.dc.html": CGRect(x: 0, y: 0, width: 1280, height: 800),
+            "B.dc.html": CGRect(x: 1360, y: 0, width: 1280, height: 800),
+            "C.dc.html": CGRect(x: 2720, y: 0, width: 1280, height: 800),
+            "A-phone.dc.html": CGRect(x: 0, y: 920, width: 390, height: 844),
+        ]
+        let rooms = NWLabelRoom.rooms(frames)
+        let boards = frames.keys.sorted().map { NWCanvasBoard(id: $0, frame: frames[$0]!, title: $0, size: "", labelRoom: rooms[$0]!) }
+        let canvas = CGSize(width: 786, height: 848)
+        let viewport = NWCanvasViewport.fitting(boards.bounds, in: canvas)
+        let labels = boards.compactMap { $0.labelRect(in: viewport) }
+        #expect(labels.count == 4)
+        let bar = CGSize(width: 375, height: NWDesignMetrics.compactActionsHeight)
+        let origin = try #require(NWBoardActions.origin(over: viewport.screen(frames[selected]!), bar: bar, canvas: canvas, labels: labels))
+        #expect(origin.y == NWDesignMetrics.fitTop - NWDesignMetrics.actionsGap - NWDesignMetrics.compactActionsHeight)
+        #expect(origin.y == 18)
+        #expect(!labels.contains { $0.intersects(CGRect(origin: origin, size: bar)) })
     }
 
     @Test func theDirectionTileFollowsTheLastBoard36PointsOn() {
