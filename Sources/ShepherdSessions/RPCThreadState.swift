@@ -169,7 +169,21 @@ final class RPCThreadState {
         didSet {
             dialogsHash = dialogs.hashValue
             dialogBytes = nil
+            let question = Self.question(in: dialogs)
+            if question != Self.question(in: oldValue) { onQuestionChanged?(question) }
         }
+    }
+    /// Called on the session queue when the question the thread asks first changes (its title,
+    /// nil once none is open): the sidebar's Needs you says why without reading the thread.
+    var onQuestionChanged: ((String?) -> Void)?
+
+    /// The first open question's title, trimmed; nil when none has one.
+    static func question(in dialogs: [NativeThreadDialog]) -> String? {
+        for dialog in dialogs {
+            let title = dialog.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !title.isEmpty { return title }
+        }
+        return nil
     }
     private var dialogBytes: [Int]?
     private var widgets: [(id: String, value: NativeThreadWidget)] = [] { didSet { widgetsHash = widgets.map(\.value).hashValue } }

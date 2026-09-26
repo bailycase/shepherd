@@ -41,10 +41,10 @@ agents at once?"
 
 - **Names:** agents name themselves with a short task title (`Fix plan mode`), never a persona or
   a sentence. A hand-typed rename is final.
-- **Spaces** are project folders that group agents in the sidebar. A space has no view of its
-  own.
-- **Remote hosts:** another Mac serving its agents is a section of the same sidebar, with the
-  same rows and the same thread.
+- **Spaces** are projects: the folders threads start in, listed by the New thread page's
+  workplace chip. A space has no view of its own, and the sidebar does not group by it.
+- **Remote hosts:** another Mac serving its agents joins the same sidebar lists (its threads
+  wear its name as a tag), with the same rows and the same thread.
 - **Terminals** exist only as panes of an agent's layout, shown in the terminal panel under its
   thread: the user opens one with ⌘D or the panel's +, or an agent opens one with its `pane_*`
   tools. There are no global shells, no space shell workspaces, no agent rendered as a terminal,
@@ -58,11 +58,11 @@ agents at once?"
   "Pi" item in the settings navigation, and the real `~/.pi/…` paths on Settings ▸
   Instructions. Code, logs, command lines, extension prompts, and these docs still name pi, the
   program.
-- **Not built yet.** The Main and Running boards give the sidebar destinations beside the
-  agents, among them **Missions** (one map from a goal to merged pull requests, across every
-  repository it touches) and **Designs** (HTML mockups on a canvas, drawn and refined with a
-  design agent). The Missions and Design tool boards specify them (see Sidebar destinations);
-  until they exist, nothing links to them.
+- **Not built yet, hidden until built.** The boards give the sidebar two more destinations,
+  **Missions** (one map from a goal to merged pull requests, across every repository it touches)
+  and **Designs** (HTML mockups on a canvas, drawn and refined with a design agent). The Missions
+  and Design tool boards specify them; until they exist, nothing shows or links to them (the
+  user's decision, 2026-09-25: "Hide them (Recommended)").
 
 ## Principles
 
@@ -138,12 +138,14 @@ And the rules that follow from them:
 | Queue & steer: the queue's keys are "shown in menus and tooltips only" | Also listed under Settings ▸ Keyboard ▸ While the agent is working, in the Keyboard card's order | Settings ▸ Keyboard lists every chord the app answers, and ⌘↩ is rebound there; nothing is written in or under the composer |
 | Background events as in-app toasts (`.nwToast`) | A system notification when an agent finishes a turn, fails one, or is blocked on a question, or one of its subagents asks, while you aren't watching it (`AgentNotifications`; see Notifications and Live Activities) | Reaches you outside the app |
 | Missions: the Missions page, the mission map, evidence review | Not built; specified in full under Missions, each part marked Not built yet | Out of scope for this pass |
-| NWAgents, NWSwift: `NWInboxItem`, mission control's inbox item with a leading rule in the state's color | Not built. The Mac has no inbox (its Needs you section is not built yet; Sidebar destinations, Needs you, and Recents); iPhone and iPad list Needs you as `NWAttentionCard`s (MobileInbox, iPadInbox), with no leading rule and no missions | Out of scope for this pass |
+| NWAgents, NWSwift: `NWInboxItem`, mission control's inbox item with a leading rule in the state's color | Not built. The Mac has no inbox: its Needs you is the sidebar's list (Sidebar); iPhone and iPad list Needs you as `NWAttentionCard`s (MobileInbox, iPadInbox), with no leading rule and no missions | Out of scope for this pass |
 | Controls: `.nwHelp` draws a 24pt popover-styled tip after 600ms of hover, the chord as keycaps | The system tooltip, with the chord appended as text ("Review changes  ⇧⌘B") | As every other tooltip in the app (see the Queue & steer row) |
 | Controls: `.pickerStyle(.nwSegmented)`, `.pickerStyle(.nwPopup)`, `Stepper(…).nwStyle()`, `Slider(…).tint(.nw.lantern)` | Views: `NWSegmentedPicker`, `NWPopupMenu` (a native `Menu` with an `NWPopupLabel`), `NWStepper`, `NWValueSlider` (its value in mono beside it) | SwiftUI has no public custom picker, stepper, or slider style; each represents itself to accessibility as the native control |
-| Controls: keycaps in menus and the palette only | Also Settings ▸ Keyboard, search fields (the board's own ⌘F), and empty states (the workspace's New agent, the terminal panel's New Terminal); never under the composer still holds | Those places teach a chord; Components and Empty workspace record the rule |
+| Controls: keycaps in menus and the palette only | Also Settings ▸ Keyboard, search fields (the board's own ⌘F), the sidebar's New thread (as NWNavigation draws it), and empty states (the terminal panel's New Terminal); never under the composer still holds | Those places teach a chord; Components records the rule |
 | Status & feedback: no modal alerts for agent events | One: an agent asking to delete another opens `PeerDeleteDialog` | Only the user deletes an agent, by a click (AGENTS.md › Agents never delete each other on their own) |
-| NavAutomations: an Automations page with a table (When, Starts, Host, Last run, Next), filters, and New automation | The sidebar's Automations footer for this Mac; a remote host's Automations disclosure and its Details and Runs sheet | Shepherd's automations have no schedule or trigger: one is on (it starts a run when Shepherd launches) or run by hand, and nothing on the Mac creates one yet but an agent's `automation_*` tools |
+| NavAutomations: When and Next columns, Scheduled and On an event tabs, a schedule or trigger per automation ("Every day · 02:00"), a run's outcome ("passed", "1 PR failed CI"), a "mission" kind, and Repos | The table without When and Next and with no tabs; the run's word and time ("finished · 6h ago"), every run starting a thread, and Folder in place of Repos (Automations page) | The user's decision, 2026-09-25 ("Build both, with what we have (Recommended)"): "Automations = table + detail with name, host, last run, prompt, runs, Run now (no schedules, triggers or next-run column)". Automations have no schedule or trigger, and a run's result is its thread |
+| NavHosts: daemon hosts ("Shepherd daemon · Linux"), Load, worktree disk use, Open in Finder, Open terminal and Logs, and missions in the explainer | This Mac and each remote host with Running, Worktrees (a count), Repos and Address, or Waiting, Last seen and Address while unreachable; Retry and Remove (Hosts page) | The user's decision, 2026-09-25 ("Build both, with what we have (Recommended)"): "Hosts = This Mac and each remote host's card with status, address, threads, Retry, Remove, Add host". Shepherd has no daemon, and nothing measures load or disk use |
+| The sidebar on every Mac board: Missions and Designs destinations, More ▸ Design systems and Archive, and the New thread page's mission and design cards | Hidden | The user's decision, 2026-09-25 ("Hide them (Recommended)"): not built yet, hidden until built |
 | MobileAutomations, iPadAutomations: a schedule or trigger per automation ("Every day 02:00", "New issue in checkout-svc", "When CI goes green on #24"), its model and repos, a run's outcome ("Passed · 3 migrations, all reversible", "1 PR failed CI"), a CI-checks bar on a running card, and a "mission" kind | "When Shepherd starts · folder" or "By hand", an On switch and a folder on the host, the run's status word with its time ("Finished · 12h ago"), and "Running · 4m" | As NavAutomations: the host has no schedules, triggers, models, repo lists or check tracking, and a run's result is its thread (iOS: Automations) |
 | MobileCommit: the sheet's title "Commit" | "Commit n files", as the Mac's commit sheet | The phone and the Mac share the commit form's parts |
 | iPadReview: Revert file in a file's header | Not offered on iOS | The remote protocol has no revert; the Mac's local review keeps it (docs/ios/README.md › Review) |
@@ -157,7 +159,7 @@ And the rules that follow from them:
 | Terminal: rename a tab, Kill process, New terminal on This Mac, Run in terminal, send output to pi | Not built | Out of scope for this pass |
 | TerminalTab · states: an exited tab stays, its output kept ("exited with an error; the output stays") | On the Mac a shell that exits closes its pane, so its tab goes at once; iOS shows the exited state until the host closes it | A process that exits on its own closes its pane (AGENTS.md › Sessions and views are separate) |
 | iPadTerminal: the key row reads esc, tab, ctrl, ⌥, ↑ ↓ ← →, `\|`, `~`, `/` | esc, tab, ctrl, ⌥, `\|`, `~`, `/`, `-`, then the arrows | A row that wraps in two on a phone keeps the arrows together (`TerminalKey`); `-` for flags |
-| Earlier boards, no longer on the canvas: a compose button beside the window controls and a "Jump to…" field above the sidebar tree | Neither comes back. The Search (⌘K) and Hide sidebar buttons today's boards draw there are the spec (Sidebar › Top bar, not built yet) | ⌘N (or a space's hover `+`) starts an agent, and the palette is a button, not a field |
+| Earlier boards, no longer on the canvas: a compose button beside the window controls and a "Jump to…" field above the sidebar tree | Neither comes back. The Search (⌘K) and Hide sidebar buttons today's boards draw there are the spec (Sidebar › Top bar) | ⌘N and the New thread destination start a thread, and the palette is a button, not a field |
 | Subagents, SubagentsDone and SubagentsQueue (the macOS page boards; the side-pane boards PaneStates, PaneBrowser, PaneArtifacts, PaneArtifactEdit and PaneFiles draw the same way): radius 10 cards and panes, 52pt toolbars and 48–52pt pane headers, 40pt card headers, 36pt file headers and 26pt file chips, 26–30pt buttons at radius 6–7, 13–14pt text, a 20pt `running` comment `+` and avatar, a comment's Edit at rest | The Night Watch boards' components (NWAgents, NWReview): radius 8, 44pt headers, 32pt file headers and 24pt chips, `s` (24pt) buttons, `ui` 12.5 text, a lantern avatar and an 18pt lantern `+` to match it, Edit and Delete on hover | The NW boards are the system; the radius, height and type scales, and Details on hover |
 | SubagentsDone: the inspector's "async · claude-sonnet · 11 turns · 19 tools · 118k tok"; "Fork as new agent" | NWAgents: "claude-sonnet · 11 turns · done 11:02"; "Fork" (its tooltip says the rest) | The NWAgents board |
 | Subagents, MobileSubagent: the transcript's live call "Building swift build --target ShepherdRemote 11s" with the output's tail | The live line with its verb, command and clock ("Building swift build --target ShepherdRemote 11s"), with no output lines | A run's session file holds only finished calls, and the run reports its call in flight but not its output |
@@ -169,6 +171,25 @@ And the rules that follow from them:
 | Settings boards: controls drawn by hand larger than the Controls board's (30pt buttons, fields and popups at radius 7 in Geist 13; a 26pt segmented control on its own track; a 180pt slider with a 4pt track and an 18pt knob; a 30×28 stepper; 22pt keycaps at radius 5; 240pt fields and a 100pt port field; a 32pt search field with a plain "⌘F"), cards at radius 10, 10pt paddings and gaps (rows, nav rows, the icon-to-name gap, under the search field), mono-free sans section labels (Geist 11/600 caps in `textSecondary`), and hexes outside the palette (`#22262a`, `#1b1e21`, `#c1c5cb`, `#767c85`, `#23272c`, `#f58a86`, `#6fd49a`) | The Controls board's components at their sizes (`NWSegmentedPicker` m, `NWPopupMenu` 200×28, `NWStepper`, `NWValueSlider` 200pt, `.nw` fields 220pt and a port 88pt, `NWKeycap`, `NWSearchField` with keycaps); the radius and space scales (cards 8, controls 6, keycaps 4; 10pt steps to 8 or 12); `.nwSectionLabel()` (Foundations' micro mono caps in `textTertiary`); the nearest roles (`lineSubtle`, `textSecondary`, `textTertiary`, `bgSelected`, `failed`, `done`) | One anatomy per control and one section label across the app; the scales and roles are the contract (SettingsAdvanced's own Update channel row already draws the Controls board's segmented control) |
 | SettingsRemote: a host's state as a colored word ("connected") | A state dot plus its word, and a failed host's sentence under it | Status is a dot or glyph plus a word (Principles) |
 | SettingsPi: Subagent display "Show subagent runs in the sidebar and open their inspector" | "Show subagent runs in their agent's thread, the inspector and the palette" | Subagents have no sidebar rows (Subagents); one waiting on you marks its parent's row |
+| SettingsPi: Sync pi theme "Use Shepherd's palette in pi and follow theme changes." | No row | Shepherd no longer themes pi: agents run pi over RPC and draw no pi TUI, and pi run by hand keeps its own theme |
+| SettingsRemote: Token "Delete the file to revoke every client." | "To revoke every client, delete the file and turn the listener off and on." | The listener reads the token when it starts; deleting the file alone revokes no one |
+| SettingsAdvanced: Reset settings "Restores appearance, font, agent and keyboard preferences. Spaces, agents and layouts are untouched." | "Restores appearance, terminal, agent, worktree, extension and keyboard preferences. Spaces, agents, layouts and Remote are untouched." | The reset covers every page but Remote, and the copy names what it touches |
+| SettingsInstructions: pi's own root files, `~/.pi/agent/AGENTS.md` and `~/.pi/agent/APPEND_SYSTEM.md`, in the paths, the steps and the copy ("The agent’s root files, read at the start of every session", "writes both files to each host's `~/.pi/agent/`") | Shepherd's own copies in its support directory, added to every session Shepherd starts (`shepherd-instructions.ts`): "The agent’s root files, read at the start of every session Shepherd starts", "writes both files to every host", steps named "Shepherd's AGENTS.md" and "Shepherd's APPEND_SYSTEM.md", and a note that the agent’s own files in `~/.pi/agent` still load just before them | Shepherd never writes the user's `~/.pi/agent` (AGENTS.md › Gotchas) |
+| SettingsInstructions: "new threads, mission stations and automations get this one" | "new agents and automations get this one" | Missions aren't built |
+| SettingsInstructionsHosts: the diff shows the lines around the differences | The whole file as a diff, scrolled to its first difference | Instruction files are short, and nothing hides behind a fold |
+| SettingsInstructionsHosts: every History row offers Restore | The newest row reads "current" | Restoring the file as it is would change nothing (honest affordances) |
+| SettingsSkills, SettingsSkillsBrowse, SettingsSkillsSearch: "every thread, mission and automation on every host gets the same set" | "every thread and automation on every host gets the same set" | Missions aren't built |
+| SkillsStates: "Hosts report their copies through the daemon" | Each host's Shepherd serves its skills over `skills.v1`, and the page asks every host | There is no daemon (AGENTS.md) |
+| SettingsSkillsBrowse: Trending, All time, Hot and Official with no key | Each needs a skills.sh API key: without one the list says so, with a field for the key; search and install need none | skills.sh's ranked lists (`/api/v1`) refuse a request without a key |
+| SettingsSkillsBrowse, SkillsStates: a ranked row's 24-hour change ("+8.1K") and a description beside each result; "· updated Sep 19" in the preview | Installs only in the list, the description in the preview (from its SKILL.md), and no date | skills.sh's lists report neither a change nor a description, nor when a skill last changed |
+| SkillsStates: "Topics narrow any tab" | A topic is a search of skills.sh, most installed first, whatever tab is chosen | skills.sh's lists take no topic |
+| SettingsSkillsBrowse: "Pick from all 16…" | "Pick from the whole repo…" | A repository's size is known only once a host looks it up |
+| SettingsExperiments: Learn from Missions, Threads, Automations | Threads and Automations | Missions aren't built |
+| SettingsExperiments: Hosts as a 190pt popup, "Follow Instructions"; a suggestion names "which hosts it applies to" and its chip retargets hosts | A note naming where lines go now, with Open Instructions; the chip retargets the file and reports the hosts; How it works says "for a root file, with the reason." | A line goes where Settings › Instructions sends This Mac's files, so a popup with one option would pick nothing (honest affordances) |
+| MobileInstructions, iPadSettingsInstructions: pi's root files, "Save once, written to each host's ~/.pi/agent/", the editor's path `~/.pi/agent/APPEND_SYSTEM.md`, "The agent reads these at the start of every session", a read order from "root AGENTS.md" | Shepherd's own copies: "Save once, written to every host", the host's instructions folder in the path, "The agent reads these at the start of every session Shepherd starts", the order's links named "Shepherd's AGENTS.md" and "Shepherd's APPEND_SYSTEM.md" | Shepherd never writes the user's `~/.pi/agent` (AGENTS.md › Gotchas) |
+| MobileExperiments: Learn from Missions, and a mission's folded-map glyph | Threads and Automations | Missions aren't built |
+| MobileInstructionsEdit: a key row of 32pt keys at least 38pt wide on `bgRaised`, over `bgSunken` | The terminal's key row (`NWTerminalKeyRow`: 34pt keycaps at least 44pt wide, over `bgWindow`) | One key row across the app, at touch size |
+| iPadSettingsInstructions: a 76pt header over each column, "Settings" over the list and the page's title with History and Save beside it | The bar, with the page's title; History and Save end the page's first row | The bar keeps back and the title where every iPad screen has them, and NW buttons keep their styles outside a toolbar |
 
 Additions the boards don't have:
 
@@ -192,7 +213,8 @@ Additions the boards don't have:
   Merge PR automatically, the Terminal page (no board draws it), Keyboard's Thread, While pi is
   working, and Window groups, the search's hits under each page, Remote's empty "No remote hosts"
   row, its Edit host form, each failed host's reason, and the listener's "Serving on port N" line,
-  and Shepherd Nightly's named Nightly channel.
+  Shepherd Nightly's named Nightly channel, and Instructions' History popover, Sync now for a host
+  that drifted, and the reasons a machine's files can't be shown (with Try again).
 - **The terminal panel's empty state** ("No terminals in this thread yet." and New Terminal).
 - **Thread additions** no board draws (Thread; Composer, questions, and menus): "↓ Jump to
   latest" while detached from the tail; turn jumps (⌥⌘↑ ⌥⌘↓); "Load older messages" and the
@@ -427,8 +449,6 @@ Packages/ShepherdUI/Sources/ShepherdUI/
 **Not built yet** (NWSwift's inventory for the future boards; each surface's own section or
 board holds its spec, and its parts go in a `Components/<Domain>/` folder of their own):
 
-- Navigation: `NWSidebarDestination`, a top-level sidebar destination above the agent tree
-  (NWNavigation: New thread, Missions, Designs, Automations, and More ▸; see Sidebar).
 - Agents: `NWMissionNode`, `NWInboxItem`, and `NWClaimRow` (NWAgents, NWSwift; specified under
   Mission components). Experimental surfaces reuse the same parts. The iPhone and iPad Needs you
   lists (MobileInbox, iPadInbox) are built from `NWAttentionCard` instead, with no state-colored
@@ -470,7 +490,7 @@ output, counts, times), both bundled (NWFoundations). Sizes are points:
 
 | Style (`NWTextStyle`) | Mac spec | iOS | Board use (NWFoundations) | Also in the app |
 | --- | --- | --- | --- | --- |
-| `display` | Geist 28/600/1.15 | 28 | Empty states, onboarding | Settings page titles today (the Settings boards draw them at 22/600; Known gaps). There is no onboarding, and empty-state titles follow the Status board at 17/600 (`Font.nwSans`) |
+| `display` | Geist 28/600/1.15 | 28 | Empty states, onboarding | Nothing in the Mac app: there is no onboarding, empty-state titles follow the Status board at 17/600, and Settings page titles the Settings boards at 22/600 (`Font.nwSans`) |
 | `title` | Geist 15/600/1.3 | 16 | Thread and pane titles | Dialog and sheet titles. The toolbar title and pane headers follow the Navigation board at 13/600 (`Font.nwSans(13, .semibold)`) |
 | `headline` | Geist 13.5/600/1.35 | 17 | Card titles, section heads | Markdown headings |
 | `body` | Geist 13.5/400/1.6 | 16/1.5 | Agent prose, bubbles | The composer field |
@@ -664,9 +684,10 @@ against a large fixture (300 agents in 40 spaces, 1,000 palette results, a 2,000
 300-file review, and a highlighted 40-file review beside a thread, a 500-turn thread, 200 subagent
 runs, 2,000 folders).
 
-- **Anything that can outgrow a screen is lazy.** The sidebar tree, the palette's results, the
-  thread and the inspector's transcript, the review's diff and file strip, an open subagent
-  tray, and the directory and model lists are `LazyVStack`s or `LazyHStack`s with stable ids. Eager stacks
+- **Anything that can outgrow a screen is lazy.** The sidebar's Needs you and Recents, the palette's
+  results, the thread and the inspector's transcript, the review's diff and file strip, an open
+  subagent tray, and the directory and model lists are `LazyVStack`s or `LazyHStack`s with stable
+  ids. Eager stacks
   are for lists bounded by design (Settings rows, a dialog's checklist, a composer menu). A lazy
   stack in a height-capped, fixed-size scroll view still hugs a short list (the palette does).
   A list inside one of the thread's own rows is measured before it is nested: a 300-file changes
@@ -680,16 +701,17 @@ runs, 2,000 folders).
 - **Rows are plain `Equatable` values.** Closures stay out of `==`. The highlight or the
   selection reaches a row as a `Bool`, so moving it redraws the row it leaves and the row it
   lands on; hover lives in the row itself. A store or the view model derives the rows once per
-  change (`SidebarTree`, `PaletteResults`, `DirectoryFilter`, the review's row cache): no
+  change (`SidebarDerivation.lists`, `PaletteResults`, `DirectoryFilter`, the review's row cache): no
   filtering, sorting, or formatting in `body`.
-- **A derivation is one pass over its inputs.** Group a collection once
-  (`sidebarAgentsBySpace`) rather than filtering all of it for each group, and read what is
-  memoized (the space forest) rather than building it again for a selection. At 1,500 agents in
-  200 spaces a status report took 59 ms and a selection 57 ms until both were.
-- **Rows are cheap to build**, since scrolling builds them. Platform-backed modifiers cost most:
-  one drop target covers the sidebar (`SidebarDropZone`, fed the frames the rows on screen
-  register) instead of one per row, and a control that shows only on hover (a diff line's `+`)
-  is built only while hovered, in a slot that is always laid out.
+- **A derivation is one pass over its inputs, once per change.** Group a collection once rather
+  than filtering all of it for each group, and read what is memoized rather than building it again
+  for a selection: the sidebar's lists derive once per change of what they read
+  (`sidebarLists`), and a selection or a scroll derives nothing. At 1,500 agents in 200 spaces a
+  status report took 59 ms and a selection 57 ms until the old tree's were.
+- **Rows are cheap to build**, since scrolling builds them. Platform-backed modifiers cost most: a
+  list row is a tap view rather than a `Button` (each brings an AppKit focus-ring view), and a
+  control that shows only on hover (a diff line's `+`) is built only while hovered, in a slot that
+  is always laid out.
 - **The review pane scrolls at the cost of the lines coming into view.** Its rows are built only
   as they scroll in, from rows and colors derived once per file (highlighted off the main thread
   on the Mac and on iOS, landing in one change). A row compares its line and its note (a comment,
@@ -712,6 +734,20 @@ runs, 2,000 folders).
 - **The overlaid sidebar casts its shadow from its fill**, as the floating right pane does
   (`nwFloatBackground`): on the sidebar itself, Core Animation redrew the shadow from its
   scrolling list every step.
+- **The chrome around a field compares before it redraws.** The composer's control row takes an
+  `Equatable` model of what it draws (`ComposerControls`), so a keystroke past the first
+  character, or the field losing focus to a menu, rebuilds the field and never the chips.
+  `ViewThatFits` builds and measures every alternative it is given, each with its tooltips and
+  accessibility, whenever it is rebuilt, and that was half of a keystroke's main-thread time and
+  a third of a menu's opening. It measures them again in the window's minimum-size pass, which
+  the scene's hosting view runs from a zero-width proposal after every change to a platform
+  view's intrinsic size (each keystroke in the field), so the row answers any proposal narrower
+  than a real layout's without measuring (`ComposerControlsMinimum`): its minimum is never the
+  window's, the thread column's is. The slash menu's matches are derived once per draft change
+  (`SlashMatchCache`), ⇧⌘M and the thinking menu's command reach the composer without a pass
+  over the thread, and the picker and the thinking menu compare their own inputs, so a composer
+  redraw for something else leaves their rows alone. `ComposerMenuPerformanceTests` pins each
+  as a count.
 - **Motion never scales with the list.** A list's motion watches a small key (a layout count, the
   rows' ids), never the rows themselves, and rows scrolled back into a lazy stack are simply
   there: an entrance plays only for what arrives while the list is on screen (`nwArrival`,
@@ -754,17 +790,17 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
 
 ```text
 ┌──────────────────┬──────────────────────────────────────────────┬──────────────────────┐
-│ ● ● ●            │ Space / Title  ⧉ pi/branch ●3 ⌄       ◫  ⋯   │ ± Changes 4   ⋯  ×   │
-│ THIS MAC     19  ├──────────────────────────────────────────────┼──────────────────────┤
-│ ⌄ Shepherd    8  │         820pt thread column                  │ side pane:           │
-│   ● agent   ASK  │                       ┌──────────────┐       │ its tabs, or the     │
-│   ● agent    4m  │                       │ user bubble  │       │ subagent inspector,  │
-│   ○ agent        │                       └──────────────┘       │ 600pt (min 380, ≤ ½) │
-│ HORIZON          │   agent prose, 640pt measure                 │                      │
-│   ● Unreachable  │   ✎ Edited 4 files  +149 −63  ›              │                      │
-│                  │   ┌ composer ──────────────────────────┐     │                      │
+│ ● ● ●      ⌕  ◧  │ Space / Title  ⧉ pi/branch ●3 ⌄       ◫  ⋯   │ ± Changes 4   ⋯  ×   │
+│ ⊕ New thread  ⌘N ├──────────────────────────────────────────────┼──────────────────────┤
+│ ⚡ Automations    │         820pt thread column                  │ side pane:           │
+│ › More           │                       ┌──────────────┐       │ its tabs, or the     │
+│ Needs you      1 │                       │ user bubble  │       │ subagent inspector,  │
+│ ● agent  why?    │                       └──────────────┘       │ 600pt (min 380, ≤ ½) │
+│ Recents          │   agent prose, 640pt measure                 │                      │
+│ ● agent       4m │   ✎ Edited 4 files  +149 −63  ›              │                      │
+│ ○ agent  horizon │   ┌ composer ──────────────────────────┐     │                      │
 ├──────────────────┤   └────────────────────────────────────┘     │                      │
-│ Automations    1 │                                              │                      │
+│ (B) Name     ⚙   │                                              │                      │
 └──────────────────┴──────────────────────────────────────────────┴──────────────────────┘
 ```
 
@@ -823,199 +859,112 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
 
 ### Sidebar
 
-`SidebarView` (`SidebarView.swift`, remote sections in `RemoteSidebarSection.swift`) on `NWSidebar`:
-232pt on `bgBase` by default, and it keeps its width when the side pane opens (NWNavigation).
+`SidebarView` (`SidebarView.swift`, its values in `SidebarModel.swift`) on `NWSidebar` (ShepherdUI,
+`Components/Navigation/Sidebar.swift`): the sidebar every Mac board draws (NWNavigation, and the
+sidebars of Main, Running, NavNewThread, NavAutomations and NavHosts). 232pt on `bgBase` by
+default, and it keeps its width when the side pane opens. Top to bottom: the top bar, the
+destinations, Needs you, Recents, and the footer. Each part follows Settings ▸ Appearance ▸ Sidebar
+rows: Standard values are given first and Compact in parentheses; the boards draw no Comfortable
+sample, so it takes Standard's spacing at its 36pt rows.
 
-**Not built yet.** The boards draw a different sidebar: fixed destinations (New thread ⌘N,
-Missions, Designs, Automations, More), then Needs you, then Recents, and an account footer
-(NWNavigation, NavNewThread, NavMissions, NavDesigns, NavAutomations, NavHosts, and every
-full-window macOS board). It is specified in full under Sidebar destinations, Needs you, and
-Recents, below.
+The user's decisions, 2026-09-25: "Match the canvas (Recommended)": Recents replaces the This Mac /
+host / space tree, ⌘N opens the New thread page instead of starting an agent at once, spaces become
+the projects of the New thread page's workplace chip, and drag order, nesting and collapsing go
+away. "Hide them (Recommended)": Missions, Designs, More ▸ Design systems and Archive are not built
+yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac user + this Mac
+(Recommended)": the footer shows the Mac's user and this Mac.
 
-Today the Mac's sidebar is the tree this section describes: This Mac and each remote host as
-sections, spaces as disclosure rows, agents nested beneath them, and Automations as the footer. The
-row anatomy, the states, the density, and the width are the boards' and apply to both.
+- **Top bar (44pt, `NWSidebarTopBar`):** room for the window controls, a spacer that drags the
+  window, then Search (a magnifying glass, "Search  ⌘K", opens the palette) and Hide sidebar
+  (`sidebar.left`, ⇧⌘S) as 26pt circular icon buttons (`.nwIcon`), 4pt apart with 8pt trailing
+  padding, each a 14pt `textSecondary` glyph. The chords come from `KeybindingsStore`.
+- **Destinations** (`NWSidebarDestination`; `SidebarDerivation.destinations`): a stack with 1pt
+  gaps, padded 2pt above and below and 8pt at the sides. **They never move:** their order is fixed.
+  Each is 30pt (24), radius 8 (`NW.Radius.m`), padded 8pt (6) at the sides, with a 20pt icon slot, a
+  9pt (7) gap, and the title in Geist 13 (12) regular `textPrimary`. The icons are 15pt (13) strokes
+  in `textSecondary`. Hover is `bgHover`; the selected destination is `bgSelected` with its title in
+  semibold and its icon in `textPrimary`. In order:
+  1. **New thread**: a `plus` in a 20pt `bgSelected` circle, and its chord trailing as keycaps
+     (`NWKeycap`, `KeybindingsStore`'s `.newAgent`). It opens the New thread page.
+  2. **Automations**: a `bolt`. It opens the Automations page.
+  3. **More**: a chevron in `textTertiary`, pointing right while closed and turned down while open.
+     It discloses its rows, indented to 22pt leading padding: **Hosts** (`display`), carrying "n
+     offline" in mono 10 `failed` while a host is neither connected nor connecting (NavHosts: "1
+     offline"), which opens the Hosts page; and **Extensions** (`puzzlepiece.extension`), which
+     opens Settings ▸ Pi, where the bundled extensions are. Opening Hosts opens More; the
+     disclosure is not kept across launches.
+- **Needs you** (`NWSidebarSection(.needsYou(count:))`): it appears only while something waits on
+  you: every agent on this Mac or a connected host that is blocked or has a subagent asking,
+  automation runs included. The header is "Needs you" in Geist 11.5 medium `lanternText` with the
+  count trailing in mono 10.5 `lanternText`, padded 14pt (10) above, 4pt below, and 8pt (6) at the
+  sides. Each row (`NWSidebarRow`) is 28pt (22), radius 8, padded 8pt (6), with a 14pt leading slot
+  and a 9pt (7) gap. The slot holds a thread's glowing 6pt `lantern` dot, or an automation run's
+  13pt (11) `bolt` in `lanternText`. The title is in the row font, truncating at the tail. The
+  reason trails in mono 10 `lanternText` ("retention?", "approve plan"): the question the agent's
+  thread asks (`Agent.waitingOn`), else the asking subagent's role or name, else "ASK", cut to 14
+  characters at a word (`SidebarDerivation.shortened`). Most recently active first.
+- **Recents** (`NWSidebarSection(.recents)`): every other agent, on this Mac and every connected
+  host, automation runs included, in one list, most recently active first. The header is "Recents"
+  in Geist 11.5 medium `textTertiary`, spaced like Needs you, and the rows are the same. The leading
+  slot is the thread's state dot (running blue, done green, failed red for a turn that ended in an
+  error, hollow while idle) or an automation run's `bolt` in `textTertiary`. The selected row is
+  `bgSelected` with its title in semibold. The trailing slot holds, in priority order:
+  1. the ⌘-digit hint on the first nine rows while ⌘ is held ("⌘3", micro `textTertiary`)
+  2. a remote agent's host as a tag: mono 10 `textTertiary`, padded 4pt at the sides, in a 1pt
+     `lineSubtle` border at radius 4 ("horizon"). Threads on this Mac carry no tag.
+  3. an automation run's word in mono 10: "done", or "failed" in `failed`; its elapsed time while it
+     runs
+  4. a running thread's elapsed time ("4m", counting live in mono 10 `textTertiary`). The board
+     draws a sparkline here (see Where Shepherd departs from the boards).
 
-The tree is one lazy list (`SidebarTree`): a fleet runs to hundreds of rows, only the rows on screen
-are built, and each row is a plain value compared before it redraws.
-
-- **Top bar (44pt, `NWSidebarMetrics.topBarHeight`):** room for the window controls, as tall as
-  the toolbar beside it: it drags the window, and the tree starts beneath it with the first
-  section's 12pt top padding. **Not built yet:** the boards put two 26pt circular icon buttons at
-  its trailing end, 4pt apart with 8pt trailing padding, each a 14pt `textSecondary` glyph: Search
-  (a magnifying glass, "Search (⌘K)", opens the palette) and Hide sidebar (`sidebar.left`, ⇧⌘S).
-  Today the top bar holds nothing else: ⌘K and the menus open the command palette, ⇧⌘S hides the
-  sidebar, and ⌘N, a space's hover `+`, the palette, and the menus start an agent.
-- **Sections** (`NWSidebarSection`): the label in micro mono caps (`.nwSectionLabel()`: 10.5,
-  uppercase, tracked as Typography says, `textTertiary`; at 70% opacity while folded) with a
-  trailing count in micro `textTertiary`, padded 12pt above, 8pt at the sides, and 4pt below.
-  Clicking the label folds the section. With remote hosts configured, hovering a header shows its
-  machine chord (⌃⇧n) in micro tertiary before the count. A header's detail is a count, or a word in
-  Geist 11 medium colored by its tone.
-  1. **This Mac**, with its agent count and a hover `+` for New Space…. With no spaces while a
-     host's section follows, a quiet status row says "No spaces" with New space….
-  2. One section per remote host. Connected: its agent count, or "n need you" in `lanternText`
-     (blocked agents plus subagents asking), and a hover `+` for a new space on the host. Otherwise
-     one status row (`NWSidebarNoticeRow`: a dot, the words in the row's title font in
-     `textTertiary`, and a small ghost button) stands in for its spaces: "Connecting…" (running
-     dot), "Unreachable" or why the host refused ("Token refused", "Update needed", "No token",
-     "Token locked") with Retry (failed dot), or "Off" with Connect (hollow dot). The three
-     cross-fade in one slot as the connection retries. A connected host with automations ends with
-     an **Automations** disclosure under its spaces (a space's row: its count, or how many runs wait
-     on you), closed by default and remembered per host.
-  3. **Automations** as the footer (`NWSidebarFooter`), behind a hairline and hidden while empty: a
-     12pt `bolt` in `textSecondary`, "Automations" in `ui` `textSecondary`, and a count badge
-     (`NWCountBadge`) that turns `attention` while an automation's agent needs you, padded 14pt at
-     the sides and 8pt above and below. Clicking it discloses the automation rows.
-- **Spaces** (`NWSidebarDisclosureRow`): a 9pt semibold chevron in `textSecondary` that turns 90°
-  while open, an 8pt gap, the name in the row font at medium weight, then a `⎇n` worktree count in
-  micro `textTertiary` and, in `lanternText`, how many questions wait on you (blocked agents plus
-  subagents asking; `SidebarAttention`), else the agent count. Clicking toggles the space; it has no
-  view of its own. A hover `+` (an 18pt `.nwIcon` with an 11pt glyph, `AppLayout.sidebarPlusSize`)
-  starts a new agent in the space. Nested projects indent by path containment, and agents nest
-  beneath their space.
-- **Rows** (`NWSidebarRow`): the density's height (Compact 22 · Standard 28 · Comfortable 36, each ×
-  Density; see Density and row settings), radius 6, 8pt leading padding plus 14pt per nesting level,
-  and a 9pt gap after the dot. Titles are `ui` (12.5) regular, 12 in Compact rows, in `textPrimary`.
-  The look follows the agent's state (NWNavigation's `NWSidebarRow` sample: running, needs you,
-  selected, idle, stuck, hover):
-  - A 6pt dot: `running` blue, `done` green, `failed` red (a finished turn that failed), a hollow
-    1pt `textTertiary` ring while idle, and `lantern` glowing (1.6s) while it, or one of its
-    subagents, needs you.
-  - **Stuck: not built yet.** The board's stuck row is a `failed` dot with how long it has been
-    stuck ("14m") in mono 10 `failed` trailing (`AgentState.stuck`, `.elapsed(since:tone: .stuck)`).
-    `NWSidebarRow` can draw it, but nothing in the app detects a stuck agent, and the boards don't
-    say what counts as stuck.
-  - `⎇` (micro, `textSecondary`) marks a worktree agent. The title truncates at the tail, with the
-    full title (and the worktree branch) in a tooltip.
-  - Hover is `bgHover`; selected is `bgSelected` with the title in semibold.
-- **Trailing slot** of an agent row, in priority order (`SidebarAgentRowModel.accessory`):
-  1. the ⌘-digit badge while ⌘ is held ("⌘3", micro `textTertiary`)
-  2. "ASK" in mono 10 `lanternText` while it, or one of its subagents, needs you
-  3. elapsed time while working ("4m", counting live in mono 10 `textTertiary`). The board draws a
-     running row's sparkline here (28×12, `running`); Shepherd shows the time instead (see Where
-     Shepherd departs from the boards).
+  The list takes the rest of the column, scrolls, and clips at the bottom. The boards' "n boards"
+  belongs to designs, which are hidden until built.
+- **Order** (`Agent.lastActiveAt`): the host stamps an agent when a turn starts or ends
+  (`AgentStatus.movesRecents`; asking and being answered happen inside a turn) and when a message is
+  sent to it, and the app stamps an agent it creates. A streamed token, a repeated status report or
+  a question never moves a row, so the list holds still while you read it. Agents no host has
+  stamped (older hosts and state files) follow, newest created first. `lastActiveAt` and `waitingOn`
+  are live state on `Agent`, broadcast to remote clients like a status; `waitingOn` is never written
+  to state.json. At launch the most recently active agent on this Mac shows.
+- **Hosts:** a connected host's agents join both lists, tagged. A host that drops keeps its threads
+  in Recents as it last sent them (NavHosts' `horizon` rows), dimmed (`NWListMetrics.dimmedOpacity`,
+  as on the iPad), never in Needs you since nothing there can be answered, and with a menu that
+  says "Host Offline"; opening one shows the host's connection state. A host not reached since
+  launch lists nothing. More ▸ Hosts says how many are offline, and the Hosts page carries their
+  notices and Retry.
+- **Footer** (`NWSidebarFooter`): behind a hairline, padded 10pt above and below and 12pt at the
+  sides, with a 10pt gap. It holds a 26pt `bgSelected` circle with the initial in Geist 11.5
+  semibold, the Mac user's full name (`NSFullUserName`) in `ui` medium over "This Mac · <the
+  computer's name>" in mono 10 `textTertiary`, and a Settings gear as a 26pt icon button (⌘,) at
+  the trailing end.
 - **Subagents have no rows.** They live in their agent's tray above the composer, the thread's
-  record lines, and the inspector (see Subagents below), and in the palette. A subagent waiting on you
-  surfaces through its agent's row, which takes the needs-you dot and "ASK", and counts toward
-  its space's and host's needs-you counts, so the row to click is always marked. Live and
-  finished subagents leave the agent's row as it is.
-- **Automation rows:** the automation's name, and its run's state: "running" (a run whose pi is
-  still starting included), "ASK", "done", "failed" (a `failed` dot: the run's last turn ended in an
-  error), or "stopped" (a hollow dot, not selectable). Clicking a row opens its run's thread, live
-  or finished. Live follows the host's own rule (`AutomationRun.isLive`, read from the run log's
-  open run), so a run reads done only once a turn has settled. The context menu has Stop while the
-  run is live, else Run Now, and Delete Automation. Run Now replaces a done run once the new run
-  exists: a done run on screen hands the workspace straight to the new run's thread, and one off
-  screen leaves the selection alone. A refused Run Now (a run live or still starting) shows
-  `ActionErrorDialog`.
-- **A remote host's automation rows** (`RemoteSidebarSection.swift`) nest one level under its
-  Automations disclosure with the same dots and words, plus "off" for one that does not start with
-  Shepherd. A row dims to 55% while a change to it waits on the host. Clicking a row opens its
-  run's thread, or its details while it has none. The context menu has Stop while its run is live,
-  else Run Now, a Starts with Shepherd check, Details and Runs…, and Delete Automation; on a host
-  from before automations over the remote protocol the menu says why it is read-only and disables
-  them. Details and Runs… is a sheet (`RemoteAutomationSheet`, NavAutomations' detail pane; see
-  Automations page below):
-  - the title is the name, and the subtitle "Starts a thread on <host> each run."; on a read-only
-    host the sheet's status line says why
-  - the On switch with what it means ("Runs when Shepherd starts on <host>", or "Runs only when you
-    run it"), then Status, Host and Folder rows (`NWFactRow`, host and folder in mono)
-  - the prompt (`NWAutomationPrompt`)
-  - the latest fourteen runs as bars as tall as each took (`NWRunBars`: done green, asked lantern,
-    interrupted failed, stopped tertiary), and every run the host kept under "Recent runs"
-    (`NWRunRow`), a run opening its thread while that thread exists. Before the runs arrive it says
-    "Reading runs…"; with none, "No runs yet."; from a host that can't list them, "Runs are not
-    available from this host."
-  - its footer is Close and Run Now, with Open Run while the last run's thread is there, or Open Run
-    and Stop while a run is live. An automation removed on the host while the sheet is open leaves
-    "This automation is no longer on the host." and Close.
+  record lines, and the inspector (see Subagents below), and in the palette. A subagent waiting
+  on you puts its agent in Needs you, with its name as the reason; live and finished subagents
+  leave the agent's row as it is.
 - **Width:** 232pt by default, 190–340, by dragging the trailing edge (a 9pt handle, adjustable
   with VoiceOver in 16pt steps) or in Settings ▸ Appearance. It never narrows the main column
   below 720 and keeps its width while the side pane is open.
-- **Interaction:** rows are tap views with button traits and accessibility actions, so they can
-  also be dragged to reorder (with a 2pt running drop line, `NWDropIndicator`, at the row's top
-  or bottom edge). Only drags that started in this sidebar qualify. Hover `+` glyphs are real
-  labeled buttons (and always present for VoiceOver). Hovering never moves or resizes anything:
-  the machine chord and the `+` are always laid out and only fade in, and the `+` takes the
-  count's slot (a header's floats over it, since it is taller than the label). Keyboard
-  selection (⌘1–9, ⌘↑/↓, ⌃⇧digits) scrolls the row into view.
-- **Context menus:**
-  - Spaces: New Agent, Rename…, New Worktree… and Import Existing Worktree… (git repositories
-    only), Remove Space….
-  - Agents: Rename…, Review Changes, then Finalize Worktree… and Delete Worktree Agent… for a
-    worktree agent, or Delete Agent.
-  - Remote agents: Rename…, Finalize Worktree… (worktree agents), Review Uncommitted Changes,
-    Review PR Changes, and Delete Agent or Delete Worktree Agent….
-  - Host headers: Check Worktree Operation… (one per pending operation, first), New Space…, and
-    Reconnect.
-- **Motion:** rows arriving, leaving, reordering, and disclosing animate `.list` (an agent row under
-  its space `.disclosure`), whatever changed them: a broadcast, a drop, a click, a reveal. Selecting
-  a row changes no row, so it lands at once. Counts roll (`.numeric()`), a count and a word
-  cross-fade in one slot, and a status report or a settled name changes only its row, in place
-  (`.content`).
-
-### Sidebar destinations, Needs you, and Recents
-
-**Not built yet** on the Mac (the iPad's `PadSidebar` has most of it). This is the sidebar every Mac
-board draws (NWNavigation, and the sidebars of NavNewThread, NavMissions, NavDesigns, NavAutomations
-and NavHosts). It is 232pt on `bgBase`, keeps its width when the side pane opens, and has four parts
-from top to bottom, each following Settings ▸ Appearance ▸ Sidebar rows. Standard values are given
-first and Compact in parentheses; the boards draw no Comfortable sample.
-
-- **Top bar (44pt):** the window controls, then Search (⌘K) and Hide sidebar (⇧⌘S) as 26pt
-  circular icon buttons (see Sidebar › Top bar).
-- **Destinations** (`NWSidebarDestination`, to be added to ShepherdUI's Navigation components;
-  NWNavigation shows `NWSidebarDestination(.missions, isSelected: true)`). They sit in a stack with
-  1pt gaps, padded 2pt above and below and 8pt at the sides. **Destinations never move:** their
-  order is fixed and they never reorder or hide. Each row is 30pt (24), radius 8 (`NW.Radius.m`),
-  padded 8pt (6) at the sides, with a 20pt icon slot, a 9pt gap (7), and the title in Geist 13 (12)
-  regular `textPrimary`. The icons are 15pt (13) strokes in `textSecondary`. Hover is `bgHover`; the
-  selected destination is `bgSelected` with its title in semibold and its icon in `textPrimary`. In
-  order:
-  1. **New thread**: a `plus` glyph (12pt) in a 20pt `bgSelected` circle, and its chord trailing as
-     keycaps (`NWKeycap`, "⌘" "N", 18pt, read from `KeybindingsStore`). It opens the New thread page
-     (below).
-  2. **Missions**: a folded-map glyph. It opens the Missions page.
-  3. **Designs**: a pen-nib glyph. It opens the Designs page.
-  4. **Automations**: a `bolt`. It opens the Automations page.
-  5. **More**: a chevron in `textTertiary`, pointing right while closed and down while open. It
-     discloses Hosts (a display glyph), Design systems (a palette), Extensions (a puzzle piece),
-     and Archive (an archive box). These are the same rows indented to 22pt leading padding. Hosts
-     carries "n offline" in mono 10 `failed` while a host is unreachable (NavHosts: "1 offline").
-     Design systems, Extensions and Archive are pages no board draws yet.
-- **Needs you** (`NWSidebarSection(.needsYou, count:)`): it appears only while something waits on
-  you, of any kind (a thread's question, a subagent asking, a mission's question, an automation run
-  that asked). The header is "Needs you" in Geist 11.5 medium `lanternText` with the count trailing
-  in mono 10.5 `lanternText`, padded 14pt (10) above, 4pt below, and 8pt (6) at the sides. Each row
-  is 28pt (22), radius 8, padded 8pt (6), with a 14pt leading slot and a 9pt (7) gap. The slot holds
-  the kind: a thread's glowing 6pt `lantern` dot, or the kind's 13pt (11) glyph in `lanternText` (a
-  mission's map). The title is in the row font, truncating at the tail. The reason trails in mono 10
-  `lanternText` ("retention?", "approve plan"; the iPad's `FleetAttention.reason`: "asked you", or
-  the subagent's name). Newest first.
-- **Recents** (`NWSidebarSection(.recents)`): every kind (threads, missions, designs, automation
-  runs) in one list, newest first. The header is "Recents" in Geist 11.5 medium `textTertiary`,
-  spaced like Needs you. The rows are the same as Needs you's. The leading slot is a thread's state
-  dot (running blue, done green, failed red, hollow while idle) or the kind's glyph in
-  `textTertiary` (a mission's map, a design's pen nib, an automation's bolt). The selected row is
-  `bgSelected` with its title in semibold. The trailing slot holds one of:
-  - a running thread's live sign (the board's 28×12 sparkline in `running`; Shepherd shows elapsed
-    time, see departures)
-  - "done" for a finished mission or automation run, in mono 10 `textTertiary`
-  - "n boards" for a design, in mono 10 `textTertiary`
-  - a remote host's name as a tag: mono 10 `textTertiary`, padded 4pt at the sides, with a 1pt
-    `lineSubtle` border at radius 4 ("horizon"). Threads on this Mac carry no tag.
-
-  An item waiting on you is in Needs you and not in Recents. The list takes the rest of the column
-  and clips at the bottom.
-- **Account footer:** behind a hairline, padded 10pt above and below and 12pt at the sides, with a
-  10pt gap. It holds a 26pt `bgSelected` circle with the initial in Geist 11.5 semibold, the name in
-  `ui` medium over the hosts in mono 10 `textTertiary` ("This Mac · build-01"), and a Settings gear
-  as a 26pt icon button at the trailing end (⌘,). Shepherd has no accounts, so whose name this shows
-  is undecided. The iPad's footer shows the hosts and Settings.
-- **Keyboard and VoiceOver** follow the tree's rules: rows are buttons with labels, and hovering
-  moves nothing. The shared model is `FleetModel` (`ShepherdRemote/Fleet.swift`), whose `needsYou`,
-  `recents`, and `offlineSummary` the iPad sidebar already draws.
+- **Interaction:** list rows are tap views with button traits and accessibility actions, and
+  destinations are buttons. Hovering never moves or resizes anything. ⌘1–9 select the first nine
+  Recents rows, ⌘↑/↓ walk Needs you then Recents and wrap, and keyboard selection scrolls the row
+  into view. Picking a row leaves a page for that thread.
+- **Context menus** keep every action an agent had:
+  - This Mac's threads: Rename…, Review Changes, then Finalize Worktree… and Delete Worktree
+    Agent… for a worktree agent, or Delete Agent.
+  - This Mac's automation runs: Stop while the run is live (a run whose pi is still starting
+    included; `AutomationRun.isLive`), else Run Now, then Delete Automation. Run Now replaces a done
+    run once the new run exists; a refused Run Now shows `ActionErrorDialog`.
+  - Remote threads: Rename…, Finalize Worktree… (worktree agents), Review Uncommitted Changes,
+    Review PR Changes, and Delete Agent or Delete Worktree Agent…, while the host is connected.
+- **Motion:** rows arriving, leaving and moving up animate `.list` (keyed on the rows' ids, never
+  the rows), and More's rows disclose (`.disclosure`). Selecting a row changes no row's place, so
+  it lands at once. A status report or a settled name changes only its row, in place (`.content`),
+  and counts roll (`.numeric()`).
+- **Gone with the tree:** drag reordering, collapsing spaces and hosts, space rows with their
+  counts and hover `+`, host sections and their notices, the Automations footer and a host's
+  Automations disclosure, and the ⌃⇧1–9 machine jumps. Their preference keys
+  (`shepherd.collapsedSpaces`, `collapsedHosts`, `localMachineCollapsed`, `automationsExpanded`,
+  `expandedRemoteAutomations`, `collapsedRemoteSpaces`) stay in older preferences, unread.
 
 ### Toolbar
 
@@ -1079,8 +1028,9 @@ first and Compact in parentheses; the boards draw no Comfortable sample.
 - **Motion:** switching agents replaces the toolbar at once, even when the switch rides an
   animation. A rename or a settled name cross-fades, the chip's count rolls, and the side-pane
   button lights up however the pane opened (a menu, a key, a link).
-- **With no thread on screen**, the toolbar shows the title only: the selected space's name, or
-  "Shepherd". Over a remote host's utility terminal it reads "<agent> · terminal".
+- **A page** (New thread, Automations, Hosts) covers the toolbar with its own 52pt header
+  (Destination pages). Over a remote host's utility terminal the toolbar reads "<agent> ·
+  terminal".
 - **Pane headers** (`NWPaneHeader`, NWNavigation: "Title + mono subtitle, controls right, close
   last"): at least 44pt on `bgWindow` with a hairline beneath, 12pt leading and 6pt trailing padding
   (`NWToolbarMetrics.paneLeadingPadding`, `paneTrailingPadding`), 8pt between items. The title is
@@ -1091,49 +1041,33 @@ first and Compact in parentheses; the boards draw no Comfortable sample.
   older host's review leaf); the side pane has its tab strip, and the subagent inspector its own
   header (`NWInspectorHeader`; Side pane, below).
 
-### Empty workspace
+### Nothing on screen
 
-With no agent on screen, `EmptyWorkspace` (`WorkspaceView.swift`) shows an `NWEmptyState` centred in
-the workspace, at most 420pt wide (`AppLayout.emptyWorkspaceMaxWidth`). It follows NWStatus's rule,
-"one sentence, one or two actions": the 28pt crook, the title in Geist 17 semibold, one sentence in
-12.5 `textSecondary` (at most 280pt wide, NWStatus; the app caps it at 320, see Known gaps), and the
-actions 6pt apart. Keycaps come from `KeybindingsStore` (`.newAgent`). The toolbar above it shows
-the selected space's name, or "Shepherd". The empty state fades in on a layer of its own while the
-layouts under it flip at once (`.content`), and its variants cross-fade into one another:
-
-- A space with no agents: "No agents in <space>", "Start one to work in <path>.", a primary
-  **New agent** button, and its keycaps.
-- A selected space that has agents, with none on screen: "No agent selected", "Pick one in the
-  sidebar, or start another in <space>.", and the same actions.
-- No spaces at all: "No spaces yet", "A space is a project folder your agents work in.", and a
-  primary **New space…** button. None at all means none on this Mac (the hidden automations
-  space is not one) and none on a connected host; with only a host's spaces it is the "No agent
-  selected" state below.
-- The workspace never stands in the hidden automations space with no agent: stopping a
-  selected run moves it to the first visible space.
-- Otherwise: "No agent selected", "Pick one in the sidebar, or start a new one.", and the New
-  agent keycaps.
-
-No Mac board draws an empty workspace. NWStatus draws only the component (`NWEmptyState`, "No
-agents on watch", with the rule above), and the boards' nearest surface is the New thread page
-(NavNewThread), which is what the first destination opens. Once destinations are built, deciding
-what an empty main column shows is part of that work.
+With no thread on screen (no agent at all, or the one shown went away with no earlier one to return
+to), the main column shows the New thread page (NavNewThread), the first destination. No board draws
+an empty workspace, and the tree's empty states (a space with no agents, no spaces) went with the
+tree.
 
 ### Destination pages
 
-**Not built yet.** Each sidebar destination opens a page in the main column, in place of a thread
-(NavNewThread, NavMissions, NavDesigns, NavAutomations, NavHosts). The pages share one frame:
+Each destination opens a page in the main column, in place of a thread (NavNewThread,
+NavAutomations, NavHosts; Missions and Designs are hidden until built). A page covers the whole
+column, the thread toolbar included, while every mounted layout stays mounted and hidden under it
+(`MainDestination`, `WorkspaceSelection.destination`), so leaving it is a flip; picking a row
+leaves it. The pages share one frame (ShepherdUI's Pages components, `NWPageMetrics`):
 
-- **Page header:** 52pt (the thread toolbar is 44) on `bgWindow`, with a hairline beneath, 24pt
-  leading and 16pt trailing padding, and 12pt between items. It holds the page title in `title`
-  (Geist 15 semibold); an optional subtitle in 12.5 `textTertiary` ("3 hosts · 1 offline"); a
-  spacer; a filter field ("Filter missions", "Filter designs", "Filter automations"; 220×28, radius
-  6, padded 10pt, a 1pt `lineSubtle` border and no fill, a 12pt `textTertiary` magnifying glass 8pt
-  before a 12pt `textTertiary` placeholder); and the page's one primary button (`.nw(.primary)`,
-  28pt, radius 6, padded 10pt, a 13pt `plus` 6pt before the label in 12.5 semibold: "New mission",
-  "New design", "New automation", "Add host"). Build the field on `NWSearchField`, whose chrome
-  today is heavier than the board's (13pt glass, 12.5 text, the field border).
-- **State tabs** (Missions, Automations), under the header, padded 16pt above, 12pt below, and 24pt
+- **Page header** (`NWPageHeader`, through the app's `DestinationPageHeader`): 52pt (the thread
+  toolbar is 44) on `bgWindow`, with a hairline beneath, 24pt leading and 16pt trailing padding,
+  and 12pt between items. It holds the page title in `title` (Geist 15 semibold); an optional
+  subtitle in 12.5 `textTertiary` ("3 hosts · 1 offline"); a spacer; and the page's own controls: a
+  filter field ("Filter automations"; 220×28, radius 6, padded 10pt, a 1pt `lineSubtle` border and
+  no fill, a 12pt `textTertiary` magnifying glass 8pt before a 12pt `textTertiary` placeholder) and
+  the page's one primary button (`.nw(.primary)`, 28pt, radius 6, padded 10pt, a 13pt `plus` 6pt
+  before the label in 12.5 semibold: "New automation", "Add host"). New thread has neither. The
+  field is `NWPageFilterField`, lighter than `NWSearchField` as the board draws it. While the
+  sidebar is not docked the header leads with the Show sidebar button and clears the window
+  controls, as the toolbar does, and its empty area drags the window.
+- **State tabs** (Missions; the Automations page has none, since automations have no schedule), under the header, padded 16pt above, 12pt below, and 24pt
   at the sides. They are 28pt tall, padded 10pt at the sides, radius 6, and 2pt apart. Each is the
   label in 12.5 and its count in mono 10.5 `textTertiary`. The selected tab is `bgSelected`,
   `textPrimary` and semibold; the others are `textSecondary`.
@@ -1146,33 +1080,51 @@ what an empty main column shows is part of that work.
 
 ### New thread page
 
-**Not built yet** (NavNewThread; "⌘N or the first destination"). Today ⌘N starts an agent at once in
-the selected space, with an empty thread and a ready composer (Thread › Empty thread), and ⇧⌘T opens
-the New agent sheet.
+`NewThreadPage` (`NewThreadPage.swift`; NavNewThread, "⌘N or the first destination"), its draft in
+`NewThreadState` (`NewThreadModel.swift`), kept while the page is away. ⌘N, the New thread
+destination, the palette's New thread and File ▸ New Thread open it with the field focused; a space
+from the palette or the Space menu opens it in that project, and adding a folder opens it in the new
+one. The New agent sheet (⇧⌘T) stays for its directory and base fields.
 
 - The header reads "New thread". The body centres one column vertically, padded 40pt at the sides
   and 80pt below, with 24pt gaps.
 - **Heading:** "What should the agent work on?" in Geist 26 semibold, tracked −2%. This is outside
   the ramp; set it with `Font.nwSans`.
 - **Composer:** the thread's `NWComposer`, 720pt wide, drawn focused (a `textTertiary` border and a
-  3pt `bgSelected` ring). The placeholder is "Describe the task, or / for commands…". Its control
-  row is the thread's (attach, "/ commands", the model chip, Thinking with its level, and Send, a
-  28pt `lantern` circle), plus one chip only this page has. The **workplace chip** follows attach:
-  a 12pt `textSecondary` repo glyph and the repo in mono ("shepherd"), a `textTertiary` "·", a
-  display glyph and the host in mono ("This Mac"), and a 10pt `textTertiary` chevron, as a 26pt
-  chip in 12 `textSecondary`. It picks where the thread will run. The boards draw it only on this
-  page, before a thread exists; Principle 5 keeps a working directory out of a running thread's
-  composer.
-- **Suggestions:** three equal cards under the composer, 38pt below it (the column's 24pt gap plus
-  14), 720pt across and 10pt apart. Each is padded 12pt above and below and 14pt at the sides,
-  radius 8, with a 1pt `lineSubtle` border, hover `bgHover`, and 5pt gaps. It holds a kicker in 11.5
+  3pt `bgSelected` ring). The placeholder is "Describe the task…". Its control row is the workplace
+  chip, the model chip, Thinking with its level (only while the model takes one), and Send, a 28pt
+  `lantern` circle at 35% until there is a prompt and a project. ↩ sends and ⇧↩ adds a line. Why
+  Send cannot go is its tooltip ("Describe the task first.", "Add a project to start a thread.",
+  "Loading build-01's defaults…"), and a failure shows under the card in `failed`.
+- **Workplace chip** (`NWPlaceChipLabel`): a 12pt `textSecondary` folder glyph and the project in
+  mono ("shepherd"), a `textTertiary` "·", a display glyph and the host in mono ("This Mac"), and a
+  10pt `textTertiary` chevron, as a 26pt chip in 12 `textSecondary`. It picks where the thread runs,
+  and opens the **workplace menu** (`NWPlaceMenu`, the composer menus' anatomy, 320pt, 8pt under the
+  card): one section per host, This Mac then each connected host, listing its projects (its visible
+  spaces, nested ones flat, each with its path in mono 11 `textTertiary` and a check on the chosen
+  one), each section ending in "Add folder…" (this Mac's directory picker, or the host's); then,
+  when the chosen project is a git checkout on this Mac or on a host that makes worktrees, **New
+  worktree** with its switch and "Keeps the checkout clean. Merge it from Review.". The board draws
+  no worktree control, so it lives in the chip's menu: its branch is generated and its base resolved
+  per Settings ▸ Worktrees, as the New agent sheet does. A project on this Mac has a context menu
+  with what the sidebar's space rows offered: Rename…, New Worktree… and Import Existing Worktree…
+  (git checkouts), and Remove Space…; the palette offers Rename space… and Remove space… for the
+  chosen project while the page shows. A host's project offers New Agent with Options….
+- The page opens in the project of the thread last on screen (a remote thread's, on its host), else
+  the one chosen before, else This Mac's first, else a connected host's first.
+- **Model and Thinking:** the target's defaults (Settings ▸ Agents on this Mac, the host's
+  `creationOptions` on a host), changed through the model picker (ModelPicker) and the thinking menu,
+  which open under the card, over what is beneath.
+- **Send** creates the agent with the prompt as its opening message (on this Mac `startAgent`, on a
+  host `createAgent`), opens its thread, and clears the draft.
+- **Suggestions:** the cards under the composer, 38pt below it (the column's 24pt gap plus 14),
+  three to the 720pt row, 10pt apart. Each is padded 12pt above and below and 14pt at the sides,
+  radius 8, with a 1pt `lineSubtle` border, hover `bgHover`, and 5pt gaps: a kicker in 11.5
   `textTertiary` with a 12pt `textSecondary` glyph 8pt before it, a title in 13 medium truncating at
-  the tail, and a detail in 11 `textTertiary`:
-  - "Continue" (a speech bubble), the most recent running thread's title, "running · 42m"
-  - "Bigger than one thread?" (a map), "Start a mission instead", "plans across repos"
-  - "Need a mockup first?" (a pen nib), "Start a design", "HTML boards on a canvas"
-
-  The mission and design cards wait on Missions and Designs.
+  the tail, and a detail in 11 `textTertiary`. Only **Continue** is built: a speech bubble, the most
+  recent running thread's title, and "running · 42m" (since its turn began, counting). Clicking it
+  opens that thread; with nothing running there is no card. The mission and design cards ("Bigger
+  than one thread?", "Need a mockup first?") are hidden until Missions and Designs are built.
 
 ### Missions page
 
@@ -1208,75 +1160,90 @@ are specified with the rest of the design tool, under Design tool › Designs.
 
 ### Automations page
 
-**Not built yet** (NavAutomations; "schedules and event triggers, with runs"). Today this Mac's
-automations are the sidebar's footer rows, and a host's are a disclosure under its section with the
-Details and Runs sheet (Sidebar). Shepherd's automations have no schedule or trigger, so the page's
-When and Next columns and its Scheduled and On an event tabs don't apply while that holds (see Where
-Shepherd departs from the boards).
+NavAutomations, as `AutomationsPage` (`Sources/ShepherdApp/Pages/`), from the sidebar's
+Automations destination. One table holds every host's automations, This Mac's first
+(`AutomationsPageModel`, derived per change from `AutomationsModel`, the presentation the iOS
+client shares, with This Mac as one more host). Shepherd's automations have no schedule or
+trigger: one is on (it starts a run when Shepherd starts on its host) or run by hand. So the
+board's When and Next columns and its Scheduled and On an event tabs are left out (the user's
+decision, 2026-09-25: "Automations = table + detail with name, host, last run, prompt, runs, Run
+now (no schedules, triggers or next-run column)").
 
-- **Header:** "Automations", "Filter automations", and **New automation**. **Not built yet** on the
-  Mac: nothing on the Mac creates or edits an automation (the iOS client's form has Name, Prompt,
-  Where it runs, and Starts with Shepherd; iOS: Automations).
-- **Tabs:** All · Scheduled · On an event, with counts.
-- **Table**, columns Automation · When · Starts · Host · Last run · Next (2fr · 1.25fr · 76pt · 76pt
-  · 1.15fr · 64pt, 16pt gaps). Rows are padded 12pt above and below.
-  - **Automation:** its switch (`.nwSwitch`, 30×18: `lantern` on, `lineStrong` off), 10pt before the
-    name in 13 semibold, truncating.
-  - **When:** a 12pt glyph (a clock for a schedule, a bolt for an event) and the rule in 12
-    `textSecondary` ("Every day · 02:00", "When CI goes green on #24").
-  - **Starts:** a glyph and "thread" (a speech bubble) or "mission" (a map) in 12 `textSecondary`.
-  - **Host:** mono 11 `textSecondary`.
-  - **Last run:** a 6pt dot and the outcome with its age in 12, colored by outcome: `done` ("passed
-    · 6h ago", "merged · 5h ago"), `lanternText` with a `lantern` dot ("asked you · 1h ago"),
-    `failed` ("1 PR failed CI · 3d ago"), or a hollow `textTertiary` dot ("paused · host offline").
-  - **Next:** mono 11 `textTertiary` ("in 17h", "on event", "finished", "paused").
-- **Detail pane:** 360pt at the trailing edge with a hairline on its leading side, for the selected
-  row. The sections under its header are padded 14pt above and below and 18pt at the sides, with
-  a hairline between them.
-  - **Header,** padded 16pt above and below and 18pt at the sides: the name in 15 semibold over
-    "Starts a thread on build-01 every night" in 12 `textTertiary`.
-  - **Prompt:** "PROMPT" in mono 10.5 caps `textTertiary`, 8pt above the prompt in 12.5 at 1.55 line
-    height, padded 10pt above and below and 12pt at the sides, radius 8, on `bgSunken` with a
-    `lineSubtle` border (`NWAutomationPrompt`).
-  - **Facts:** When, Host, Repos, Model (`NWFactRow`, a 90pt label column in `textSecondary`, values
-    mono except When, 6pt apart).
-  - **Recent runs:** "RECENT RUNS", then 28pt rows in 12, each a 6pt dot by outcome, the date in
-    mono `textSecondary` ("Sep 24 02:00"), the outcome in `textTertiary` ("3 migrations · all
-    reversible", "lock timeout on orders_idx"), and the duration trailing in mono 10.5
-    `textTertiary`.
+- **Header** (`NWPageHeader`): "Automations", "Filter automations" (`NWPageFilterField`: name,
+  host or prompt), and **New automation**.
+- **Table**, columns Automation · Starts · Host · Last run (`2fr · 76pt · 76pt · 1.15fr`,
+  `NWTableColumns`, 16pt gaps), under its labels (`NWTableHead`, 16pt below the header). Each row
+  is an `NWAutomationTableRow`, padded 12pt above and below with a hairline above, `bgSelected`
+  when selected; a click selects it.
+  - **Automation:** its switch (`NWAutomationSwitch`, 30×18), 10pt before the name in 13
+    semibold. The switch turns it on or off on its host, disabled while the host can't take it.
+  - **Starts:** a speech bubble and "thread" in 12 `textSecondary`: every run starts a thread.
+  - **Host:** "This Mac" or the host's name, mono 11 `textSecondary`.
+  - **Last run:** a 6pt dot and the run's word with its time in 12, colored by how it went
+    (`NWRunOutcomeLabel`): "running · 4m" `running`, "asked you · 1h ago" `lanternText` with a
+    glowing `lantern` dot, "finished · 6h ago" `done`, "interrupted · 3d ago" `failed`, and quiet
+    (a hollow `textTertiary` dot, `textTertiary` words) for stopped, "not run yet", "off" and
+    "host offline". Empty until the host's runs are read.
+  - **Context menu:** Open Run while its run's thread exists, Stop while the run is live else Run
+    Now, Edit…, and Delete Automation (it stops the run too), each disabled where the host can't
+    take it. These are the actions the sidebar's Automations rows had.
+  - **Empty:** "No automations yet. …" or "No automations match “…”." in the table's place.
+- **Detail pane:** 360pt at the trailing edge with a hairline on its leading side, for the
+  selected row (the first row while none is chosen). Sections are padded 14pt above and below and
+  18pt at the sides, with a hairline between them.
+  - **Header,** padded 16pt: the name in `title` over "Starts a thread on build-01 when Shepherd
+    starts" (or "when you run it") in 12 `textTertiary`.
+  - **Prompt:** "PROMPT" (`NWPageSectionLabel`), 8pt above the prompt on `bgSunken` with a
+    `lineSubtle` border, radius 8 (`NWPageQuote`).
+  - **Facts** (`NWPageFact`, a 90pt label column in `textSecondary`, 6pt apart): When ("When
+    Shepherd starts" or "By hand"), Host (mono), Folder (mono, in place of the board's Repos: an
+    automation has one folder), and Model (mono) only where its run's thread says which.
+  - **Recent runs:** "RECENT RUNS", then every run the host kept, newest first, in 28pt rows
+    (`NWAutomationRunLine`): the dot, the start in mono 12 `textSecondary` ("Sep 24 02:00"), the
+    word in 12 `textTertiary`, and how long it took in mono 10.5 `textTertiary`. A run whose thread
+    still exists opens it. Before the runs arrive: "Reading runs…"; with none: "No runs yet."; from
+    a host that can't list them: "Runs aren't available from this host."
   - **Footer** pinned under a hairline, padded 12pt above and below and 14pt at the sides: **Run
-    now** (secondary, small, a play glyph), a spacer, and **Edit** (ghost, small).
-- **This Mac's automations** have no details view yet. Their footer rows open their run's thread
-  (live or finished) and do nothing without one.
+    now** (secondary, small, a play glyph; **Stop** while a run is live), why nothing can change
+    here when the host is offline or too old, a spacer, and **Edit** (ghost, small).
+- **New automation and Edit** open `AutomationEditorSheet`: Host (for a new one, when a connected
+  host serves automations), Name, Folder (with Choose…, the directory browser on that host),
+  Prompt, and On. Saving never starts a run. This Mac saves through its server; a host through
+  `RemoteAutomationRequest.create`/`.update`, the fields the iOS form has.
+- The page reads every automation's runs when it opens and whenever a run starts, settles or ends
+  (this Mac's run log, each connected host's `runs`).
 
 ### Hosts page
 
-**Not built yet** (NavHosts; More ▸ Hosts, "where agents run"). Today hosts are managed in Settings
-▸ Remote (add, edit, reconnect, remove) and shown as sidebar sections with their status rows
-(Sidebar).
+NavHosts, as `HostsPage` (`Sources/ShepherdApp/Pages/`), from More ▸ Hosts: This Mac and each
+remote host as a card with the facts Shepherd has (`HostsPageModel`). Shepherd has no daemon and
+nothing measures load or worktree disk use, so the board's daemon facts, Load, worktree sizes,
+Open in Finder, Open terminal and Logs are left out (the user's decision, 2026-09-25: "Hosts =
+This Mac and each remote host's card with status, address, threads, Retry, Remove, Add host").
+Hosts are still added and edited in Settings ▸ Remote.
 
-- **Header:** "Hosts", the subtitle "3 hosts · 1 offline", and **Add host**. There is no filter.
+- **Header:** "Hosts", the subtitle "3 hosts · 1 offline" (This Mac counts; the offline part only
+  while one is), and **Add host**, which opens Settings ▸ Remote's host form. There is no filter.
 - **Explainer:** one paragraph in 12.5 `textSecondary`, at most 720pt wide: "Where agents run.
-  Threads run on the host you pick when you start them; missions run on a daemon so they survive
-  your laptop sleeping. Remote threads show the host's name as a tag in Recents." The missions and
-  daemon parts wait on Missions and daemon hosts; Shepherd has no daemon (AGENTS.md).
-- **Host cards,** 14pt under the explainer, three columns with 16pt gaps, each a 1pt `lineSubtle`
-  border at radius 10. The board draws the middle card's border in `lineStrong` and doesn't say
-  which state that is.
-  - **Head,** padded 14pt above and below and 16pt at the sides, with a hairline beneath and 10pt
-    gaps: a 30pt tile (radius 8, `bgSunken`, `lineSubtle` border) with a 15pt display glyph; the
-    name in mono 14 semibold over what runs there in 11.5 `textTertiary` ("Shepherd app · agent 0.8.2",
-    "Shepherd daemon · Linux · agent 0.8.2", "daemon · macOS · offline 3h"); and the state trailing in
-    12 with a 6pt dot: "Connected" in `done`, "Unreachable" in `failed`.
-  - **Facts,** padded 10pt above and below and 16pt at the sides: rows at least 26pt tall, a 110pt
-    label column in 12.5 `textSecondary`, and values in mono 11.5 `textPrimary`. A connected host
-    shows Running ("2 threads", "2 missions · 5 stations"), Worktrees with their disk use ("11 · 3.2
-    GB"), and Repos ("shepherd, dashboard-web") or, for a daemon, Load ("6 of 16 cores"). An
-    unreachable host shows Waiting ("2 threads, 1 automation"), Last seen ("Sep 24 07:12"), and
-    Address ("horizon.local:7040").
+  Threads run on the host you pick when you start them. Remote threads show the host's name as a
+  tag in Recents." The board's missions sentence waits on Missions.
+- **Host cards** (`NWHostPageCard`), 14pt under the explainer, three to a row with 16pt gaps,
+  equal heights, each a 1pt `lineSubtle` border at radius 10.
+  - **Head,** padded 14pt above and below and 16pt at the sides, with a hairline beneath: the 30pt
+    tile with a display glyph; the name in mono 14 semibold over "Shepherd app · agent 0.8.2"
+    (pi's version, This Mac only) or "Shepherd app", plus "· offline 3h" once a host has dropped;
+    and the connection trailing in 12 with a 6pt dot: "Connected" `done`, "Connecting" `running`,
+    "Not connected" `idle`, or the failure's word in `failed` ("Unreachable", "Token refused",
+    "Update needed").
+  - **Facts** (`NWPageFact`, 110pt labels, mono 11.5 values, rows at least 26pt): a connected host
+    shows Running ("2 threads", or "none"), Worktrees (how many threads work on one, when any),
+    Repos (its projects), and, for a remote host, Address. An unreachable one shows Waiting from
+    its last state ("2 threads, 1 automation"), Last seen ("Sep 24 07:12", when it dropped this
+    launch), and Address. A failure that retrying won't fix (a refused token, another version)
+    adds its sentence under the facts; this is where the sidebar's host notices went.
   - **Actions** under a hairline, padded 10pt above and below and 14pt at the sides, 8pt apart,
-    small: This Mac has Open in Finder (ghost); a daemon has Open terminal and Logs (ghost); an
-    unreachable host has Retry (secondary, with an `arrow.clockwise`) and Remove (ghost).
+    small, remote hosts only: Retry (secondary, `arrow.clockwise`) while neither connected nor
+    connecting, and Remove (ghost), which asks first ("Remove build-01?"). This Mac has none.
 
 ### Thread
 
@@ -1852,7 +1819,7 @@ composer card, not just its field. Its rules (QuestionStates › Rules):
 2. **Context stays in the thread.** What pi found is in its message just above; the dock holds
    the question, the options, and your answer, nothing else.
 3. **Label:** a question mark in lantern and a lantern outline. The thread and the sidebar show
-   Needs you (the sidebar row's glowing dot and "ASK").
+   Needs you (the sidebar's Needs you row, its glowing dot and the question as its reason).
 4. **Options** are numbered, and the number is the key. Each says what happens and what it
    costs. pi's recommendation is marked **Recommended**, never preselected.
 5. **A note:** picking an option opens a note field inside it; the note goes with the answer.
@@ -1959,7 +1926,8 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
   the field and sends it when it can; ⇥ completes "/name " to keep typing. Esc closes it for the
   draft as typed; typing more reopens it. The list is pi's command registry, never hard-coded, so
   pi's interactive built-ins, which the boards draw (/resume, /reload), appear only if pi's
-  `get_commands` starts returning them. Its rows are lazy, a highlight moving redraws only the two
+  `get_commands` starts returning them. Settings ▸ Skills ▸ Skills in the / menu, off, leaves the
+  skills out (on the Mac). Its rows are lazy, a highlight moving redraws only the two
   rows it moves between, and only ↑↓ scroll the highlight into view (the pointer's is already under
   the pointer).
 - **Not built yet:** argument hints after the name in `textTertiary` ("/resume [session]",
@@ -2398,7 +2366,7 @@ Steer field focused.
 - **Showing and hiding:** ⇧⌘B, the header's side-pane button, or View › Show Side Pane / Hide Side
   Pane. Showing opens the pane on its tab (Changes starts the review); hiding also closes an
   inspected subagent, and discards the review like a cancel. ⌃1 (View › Changes) shows Changes in
-  front of an inspected subagent; it is fixed, like ⌃⇧1–9, and ⌃2–⌃4 wait for the other tabs.
+  front of an inspected subagent; it is fixed, like ⌘1–9, and ⌃2–⌃4 wait for the other tabs.
   Review Changes (a sidebar row's menu), the palette's Show changes, the chip's Show Changes, a
   thread's "review ›" link and the inspector's file links show Changes too.
 - **Nothing opens by itself** (PaneStates): when pi opens something for the pane (today, an
@@ -3081,8 +3049,7 @@ Settings replaces the window content in place (`SettingsView.swift`; the boards 
 through SettingsExperiments). ⌘, toggles it, and "Back to Shepherd" or Esc returns; the swap
 cross-fades on the `sheet` motion, and a page picked in the nav cross-fades on `content`. Every row
 is wired: a row exists only if changing it changes the app, and a change applies at once, with no
-Save or Apply (the one exception will be Instructions, not built yet, which edits files and saves
-with ⌘S).
+Save or Apply (the one exception is Instructions, which edits files and saves with ⌘S).
 
 - **Navigation** (the same on every Settings board): a 232pt column on `bgBase` with a `lineSubtle`
   hairline (`NWHairline`) on its trailing edge. Top to bottom:
@@ -3094,14 +3061,13 @@ with ⌘S).
     filters at once
   - the pages, one `NWSettingsNavRow` each, `NW.Space.xxs` apart, in this order: Appearance
     (`circle.lefthalf.filled`) · Terminal (`terminal`) · Agents (`person.2`) · Worktrees
-    (`arrow.branch`) · Pi (`pi`) · Instructions (`doc.text`) · Remote
+    (`arrow.branch`) · Pi (`pi`) · Instructions (`doc.text`) · Skills (`graduationcap`) · Remote
     (`dot.radiowaves.left.and.right`) · Keyboard (`keyboard`) · Advanced (`gearshape`) ·
     Experiments (`flask`). A row is 32pt × density (`NW.Height.scaled(32)`), radius `s`, with
     `NW.Space.m` side padding: a 15pt medium icon in `textSecondary` (`textPrimary` when selected),
     then, `NW.Space.m` after it, the name in Geist 13 `textPrimary`. The selected page sits on
-    `bgSelected` with its name at medium (500) weight; hover is `bgHover`. **Not built yet:**
-    Instructions and Experiments; the app's nav has the other eight, and the Remote icon is
-    `desktopcomputer`.
+    `bgSelected` with its name at medium (500) weight; hover is `bgHover`
+    (`NWSettingsNavMetrics`).
   - "Shepherd x.y.z · agent x.y.z" pinned at the bottom in mono `micro`, `textTertiary`, aligned with
     the rows' icons: the app's own name, so "Shepherd Nightly …" there.
 - **Search:** typing narrows the nav to pages with a match (a row's title, or a keyword such as
@@ -3120,17 +3086,20 @@ with ⌘S).
     footnote `NW.Space.m` under the card, `NW.Space.xs` in. The card is radius `NW.Radius.m` with a
     1px `lineSubtle` line, filled `bgWindow` like the page it sits on: flat, drawn by its line
     alone. `NWHairline`s separate its rows.
-  - a row (`NWCardRow`, through `SettingsRow`): at least 52pt × density, `NW.Space.l` top and bottom
-    and `NW.Space.xl` at the sides, the text and the control `NW.Space.xxl` apart. The title in
-    Geist 13.5/500 (`Font.nw(.body, weight: .medium)`, `textPrimary`), `NW.Space.xxs` over its
-    description in Geist 12.5/1.45 (`Font.nw(.ui, weight: .regular)`, `textSecondary`). A row may
-    have no description (Sidebar width, Port, Thinking). The control trails, centered on the row.
+  - a row (`NWCardRow` with `style: .settings`, through `SettingsRow`): at least 52pt × density,
+    `NW.Space.l` top and bottom and `NW.Space.xl` at the sides, the text and the control
+    `NW.Space.xxl` apart. The title in Geist 13.5/500 (`Font.nw(.body, weight: .medium)`,
+    `textPrimary`), `NW.Space.xxs` over its description in Geist 12.5/1.45 (`textSecondary`). A row
+    may have no description (Sidebar width, Port, Thinking). The control trails, centered on the
+    row. The card row's default style is the compact one sheets and the phone's forms use.
   - inside a description, a flag, file or tool name is inline code: mono 11.5 on `bgSunken`, radius
     `xs`, `NW.Space.xs` side padding and no line, lighter than the standalone `NWInlineCode`
     ("passes no `--model` at all", "with `review_diff`", "Runs `pi update` once a day"). Where a
     description explains the options, their names are set at medium (500) weight, a step brighter
     than the text around them (`textPrimary`; the board's #c1c5cb is off the palette): "**Remote
-    default** starts clean…".
+    default** starts clean…". Descriptions and page explanations are written with that markup
+    (`` `code` ``, `**name**`) and drawn by `NWMarkupText`, which parses each string once and pads
+    the code's fill by kerning the characters around it.
   - rows without a title (a form's Add host, pi's version and update buttons, a remote host) are
     `SettingsActionRow`s: the same padding and minimum height, their own content leading, actions
     trailing `NW.Space.s` apart.
@@ -3159,13 +3128,14 @@ with ⌘S).
   - small buttons (`size: .s`): `.secondary` for actions (Reveal, Check now, Edit), `.danger` for
     one that removes or resets (Remove, Reset…), `.ghost` for Cancel, `.nwLink` for a text action
     inside a row (a shortcut's Reset)
-- **Footnotes and problems:** a footnote is Geist 12/1.5 (`Font.nwSans(12)`) in `textTertiary`: a
-  sentence or two about the whole group, never a mono paragraph. An inline problem (the listener's
-  bind error) sits in its row, `NW.Space.xs` under the description: an `xmark` glyph (12pt,
-  `failed`), then, `NW.Space.s` after it, one sentence in the description's size in `failed` that
-  says what happened in plain words ("Couldn't start: port 7433 is already in use."). It discloses,
-  and the card grows with it (`disclosure`). Never show an errno or a raw error as the message; the
-  technical reason may be the line's tooltip.
+- **Footnotes and problems:** a footnote is Geist 12/1.5 (`nwText(size:lineHeight:)`) in
+  `textTertiary`: a sentence or two about the whole group, never a mono paragraph. An inline problem
+  (the listener's bind error) sits in its row, `NW.Space.xs` under the description
+  (`NWInlineProblem`): an `xmark` glyph (12pt, `failed`), then, `NW.Space.s` after it, one sentence
+  in the description's size in `failed` that says what happened in plain words ("Couldn't start:
+  port 7433 is already in use."). It discloses, and the card grows with it (`disclosure`). Never
+  show an errno or a raw error as the message; the technical reason is the line's tooltip
+  (`RemoteListenerFailure` words the listener's).
 - **Status inside a row** is a state dot plus its word (`NWStatusDot`, the word in the state's text
   color): a remote host's connection, pi's update status. A failed remote host adds what happened
   and what to do as its problem ("studio refused the token. Edit the host to paste its current
@@ -3289,9 +3259,11 @@ automated step of the worktree flows can be turned off here.
     Updating extensions… / Updating pi and extensions… (running) · Update available · x.y.z
     (attention) · the error, in words (failed) · Not checked yet (idle) · Up to date, plus " ·
     extensions updated" once they have been (done). The words and the dot cross-fade (`content`).
-    Actions: Check now ("Checking…" while it runs) and Update now, disabled until there is something
-    to update. The app splits Update now into Update pi and Update extensions, each disabled until
-    it can run, "Updating…" while it does, and "Extensions updated" after.
+    Actions: Check now ("Checking…" while it runs) and Update now ("Updating…" while it runs),
+    disabled until there is something to update. Update now runs whatever there is in one run
+    (`PiUpdateManager.updateNow`): `pi update` when a check found pi out of date or none has run
+    yet, and `pi update --extensions` until the extensions have been updated, since nothing tells
+    Shepherd whether they are current.
 
 #### Remote (SettingsRemote)
 
@@ -3320,8 +3292,9 @@ automated step of the worktree flows can be turned off here.
   - Listener, "Let other Macs with your token connect to agents here.": a switch. While it is bound
     the description reads "Serving on port 7433. Other Macs with your token connect to agents here."
     A bind failure is the row's problem, "Couldn't start: port 7433 is already in use."
-  - Token, "Paste this into the other Mac's Token field. Delete the file to revoke every client.": a
-    `PathRow` for `remote-token` with Reveal.
+  - Token, "Paste this into the other Mac's Token field. To revoke every client, delete the file and
+    turn the listener off and on." (the board: "Delete the file to revoke every client."; see the
+    departures): a `PathRow` for `remote-token` with Reveal.
 
 #### Keyboard (SettingsKeyboard)
 
@@ -3351,8 +3324,8 @@ automated step of the worktree flows can be turned off here.
   Move the focused message ⌥↑↓; Delete the focused message ⌫; Steer the focused message ⌘↩; Stop the
   agent Esc; only ⌘↩ records), a Window group (Show or hide the sidebar, the side pane), and Show or hide
   terminal ⌘J and Maximize or restore terminal ⇧⌘↩ in Panes. Its Fixed group (agents ⌘1–9, the side
-  pane's Changes ⌃1, Settings, sheets, Reset all) has the footnote
-  "Changes apply immediately, everywhere a shortcut is shown."
+  pane's Changes ⌃1, Settings, sheets) has the footnote "Changes apply immediately, everywhere a
+  shortcut is shown."
 
 #### Advanced (SettingsAdvanced)
 
@@ -3369,173 +3342,356 @@ automated step of the worktree flows can be turned off here.
   as Shepherd." Last, "Version 0.1.0 (1)" (the short version and the build) with Check for updates.
   Debug builds have no updater: the group holds only the version row, with no button, and Sparkle's
   rows disclose once it reports it can update.
-- **Reset:** Reset settings, "Restores appearance, font, agent and keyboard preferences. Spaces,
-  agents and layouts are untouched.": Reset… (danger) opens `ResetSettingsDialog` ("Reset settings
-  to defaults?", "Your spaces, agents and pane layouts are not affected.", Cancel and a destructive
-  Reset).
+- **Reset:** Reset settings, "Restores appearance, terminal, agent, worktree, extension and keyboard
+  preferences. Spaces, agents, layouts and Remote are untouched." (the board: "Restores appearance,
+  font, agent and keyboard preferences. Spaces, agents and layouts are untouched."; see the
+  departures): Reset… (danger) opens `ResetSettingsDialog` ("Reset settings to defaults?", "Your
+  spaces, agents and pane layouts are not affected.", Cancel and a destructive Reset). Remote's
+  hosts and its listener stay as they are (`AppSettings.Key.resettable`).
 
-#### Wide pages: Instructions and Experiments
+#### Wide pages: Instructions, Skills and Experiments
 
-**Not built yet.** These two pages are wider than the 720pt column: the page fills the detail area
-on `bgWindow`, 44pt from the top, 40pt at the sides, 32pt at the bottom, with its blocks 20pt apart.
-Under the header (the same 22/600 title and `body` explanation, capped at 820pt) sits a main column
-that takes the room and a fixed side column of reference and history (330pt on Instructions, 320pt
-on Experiments), 28pt and 32pt apart. Their section labels sit `NW.Space.xxs` in and `NW.Space.m`
+These three pages are wider than the 720pt column (`SettingsSection.isWide`): the page fills the detail area on `bgWindow`, 44pt from the top, 40pt at the sides, 32pt at
+the bottom, with its blocks 20pt apart (`AppLayout.settingsWide*`). It doesn't scroll as a whole:
+its editor and its side column scroll inside themselves, and the strip at its top still drags the
+window. Under the header (the same 22/600 title and `body` explanation, capped at 820pt) sits a main column
+that takes the room and a fixed side column of reference and history (330pt on Instructions, 280pt
+on Skills, 320pt on Experiments), 28pt apart (32pt on Experiments). Their section labels sit `NW.Space.xxs` in and `NW.Space.m`
 above what they label, and a label may carry a trailing text action ("Add all"). Lists in the side
 column (files, history, steps, what was added) are bare rows separated by `lineSubtle` hairlines,
 not cards; only Instructions' reading order uses small cards.
 
 #### Instructions (SettingsInstructions)
 
-**Not built yet.** The page edits pi's two root instruction files, which every pi session reads at
-its start: `AGENTS.md` ("how you work") and `APPEND_SYSTEM.md` ("rules that override everything
-else"). It sits between Pi and Remote in the nav, with `doc.text`. Header: "Instructions", then
-"The agent’s root files, read at the start of every session: `AGENTS.md` for how you work,
+The page (`SettingsInstructions.swift`, `InstructionsModel`) edits the two root instruction files
+Shepherd hands every agent it starts: `AGENTS.md` ("how you work") and `APPEND_SYSTEM.md` ("rules
+that override everything else"). They are Shepherd's own copies, never pi's: they live in
+`instructions/` in Shepherd's support directory (`ShepherdPaths.instructionsDirectory`), and the
+instructions extension (`shepherd-instructions.ts`) adds them to each session Shepherd starts, so
+`~/.pi/agent` is never written, and pi run by hand in a terminal doesn't read them. The page sits
+between Pi and Skills in the nav, with `doc.text`. Header: "Instructions", then "The agent’s root
+files, read at the start of every session Shepherd starts: `AGENTS.md` for how you work,
 `APPEND_SYSTEM.md` for rules that override everything else. Repos can still add their own
-AGENTS.md." (file names in mono). The paths it shows are the real ones, `~/.pi/agent/…`, one of
-the three places copy says pi (the board draws them as `~/.agent/agent/…`).
+AGENTS.md." (file names in mono; see the departures).
 
-- **Same on every host:** a card (radius `m`, a `lineSubtle` line, `bgWindow`,
-  `NW.Space.l`/`NW.Space.xl` padding): the title "Same on every host" in the row title style, under
-  it "Save once; Shepherd writes both files to each host's `~/.pi/agent/`. Offline hosts catch up
-  when they're back." in `textSecondary`, and a switch trailing (on in this board).
-- **Host chips** under it, 8pt apart and wrapping: one per machine (This Mac, then each remote
-  host). A chip is 34pt tall, radius `m`, `NW.Space.l` side padding and 8pt gaps: a 13pt
-  `desktopcomputer` glyph in `textSecondary`, the host's name in mono 12.5, a 7pt state dot, and its
-  state word in Geist 11 in the state's color. With Same on every host on, the chips report sync:
-  "synced" and "synced 2m ago" (done), "offline · will sync" (a `textTertiary` dot and word).
-  The host whose copy is open (This Mac) is selected: a 1px `textPrimary` line on `bgSelected`, its
-  name semibold; the others have a `lineStrong` line on no fill, names at 500.
-- **File tabs:** `AGENTS.md` and `APPEND_SYSTEM.md` as underline tabs 22pt apart over a `lineSubtle`
-  rule. A tab is the file name in mono 13 (semibold `textPrimary` and a 2pt `textPrimary` underline
-  when chosen; 500 `textSecondary` otherwise) beside a Geist 11.5 `textTertiary` note of what it is
-  for and its size: "how you work · ~640 tokens", "rules that win · ~90 tokens".
-- **The editor**, 12pt under the tabs, filling the column: a card with a 1px `lineStrong` line,
-  radius `m`, on `bgWindow`.
+- **Same on every host:** a flat card (`NWGroupCard` on `bgWindow`) holding one settings row: "Same
+  on every host", under it "Save once; Shepherd writes both files to every host. Offline hosts
+  catch up when they're back.", and the switch trailing. On by default, and remembered.
+- **Host chips** under it, 8pt apart and wrapping (`InstructionsHostChip`): one per machine, This
+  Mac and then each remote host in the sidebar's order. A chip is at least 34pt, radius `m`,
+  `NW.Space.l` side padding and 8pt gaps: a 13pt `desktopcomputer` glyph in `textSecondary`, the
+  host's name in mono 12.5, a 7pt state dot, and its state word in Geist 11 in the state's color
+  (`InstructionsPresentation.hostChip`). With Same on every host on, the chips report the sync and
+  pick nothing: This Mac says "synced" once every connected host matches ("not synced" in
+  `textTertiary` until then); a host "synced" or "synced 2m ago" (`done`), "differs · 3 lines"
+  (`lanternText`), "offline · will sync" or "offline" (`textTertiary`), "needs update" for a host
+  whose Shepherd predates Instructions (`textTertiary`), "checking…" (`running`), or "couldn't read"
+  (`failed`). The machine whose copy is open (This Mac) is selected: a 1px `textPrimary` line on
+  `bgSelected`, its name semibold; the others have a `lineStrong` line on no fill, names at 500.
+- **A host that drifted** (an addition): with Same on every host on, connected hosts whose files
+  differ from This Mac's (saved there by another client, or kept different before the switch was
+  turned on) are named under the chips in the footnote style ("build-01 differs from This Mac.")
+  beside a small secondary **Sync now**, which writes This Mac's files there. Any save does the
+  same for every host, since it writes both files.
+- **File tabs:** `AGENTS.md` and `APPEND_SYSTEM.md` as underline tabs 22pt apart over a
+  `lineSubtle` rule. A tab is the file name in mono 13 (semibold `textPrimary` and a 2pt
+  `textPrimary` underline when chosen; 500 `textSecondary` otherwise) over a Geist 11.5
+  `textTertiary` note of what it is for and its size, live as you type: "how you work · ~640
+  tokens", "rules that win · ~90 tokens", "… · empty" (`InstructionsText.sizeNote`: about four
+  characters a token, tens past a hundred).
+- **The editor**, 12pt under the tabs, filling the column and never under 180pt: a card with a 1px
+  `lineStrong` line, radius `m`, on `bgWindow`.
   - Its header (`bgSunken`, a `lineSubtle` rule under it, 8pt × 12pt padding): the file's path in
-    mono 12 `textSecondary` (`~/.pi/agent/AGENTS.md`); "● edited" in Geist 11.5 `lanternText` while
-    there are unsaved changes; then trailing, 24pt buttons: History and Revert (ghost, 12/500
-    `textSecondary`), and the primary Save, which names where it writes ("Save to 3 hosts", or
-    "Save" for one host) with its ⌘S in mono 10.5 at 60% inside the button (lantern fill,
-    `textOnLantern`, 12/600). With nothing edited, Save and Revert disable (honest affordances); ⌘S
-    saves while the page is open.
-  - Its body: the file as plain Markdown text, mono 12.5 on 21pt lines, 10pt above and below, with a
-    34pt gutter of line numbers (mono 10.5, `textTertiary`, right-aligned, 12pt before the text).
-    Highlighting is light: heading markers in `textTertiary` and heading text semibold
-    `textPrimary`; list bullets in `lanternText`; code spans in `synString`; everything else
-    `textSecondary`. A line changed since the last save is tinted `lanternTint` across the editor.
+    mono 12 `textSecondary`, middle-truncated with the whole path on hover
+    (`~/Library/Application Support/Shepherd/instructions/AGENTS.md`); "● edited" in Geist 11.5
+    `lanternText` while there are unsaved changes; then trailing, 24pt buttons: History and Revert
+    (ghost, 12/500 `textSecondary`), and the primary Save, which names where it writes ("Save to 3
+    hosts", "Save" when This Mac is the only machine, "Save to build-01" per host) with its ⌘S in
+    mono 10.5 at 60% inside the button (lantern fill, `textOnLantern`, 12/600). With nothing
+    edited, Save and Revert disable (honest affordances); ⌘S saves while the page is open. Unsaved
+    edits are kept per machine and file while Shepherd runs, so switching tabs, hosts or pages
+    loses nothing.
+  - **History** (with Same on every host on; per host the side column lists it) opens a popover on
+    `bgRaised`, 380pt wide, scrolling past 340pt: This Mac's saves of the open file as the per-host
+    History list draws them. Restore puts a version back as a new save ("Restored the Sep 19
+    version"), sent to every host with Same on every host on. A machine keeps the newest 30 saves
+    of each file.
+  - Its body (`InstructionsEditor`, a TextKit 1 `NSTextView`): the file as plain Markdown text,
+    mono 12.5 on 21pt lines, 10pt above and below, with a 34pt gutter of line numbers (mono 10.5,
+    `textTertiary`, right-aligned, 12pt before the text), and no smart quotes, dashes or
+    corrections. Highlighting is light (`InstructionsText.highlight`): heading markers in
+    `textTertiary` and heading text semibold `textPrimary`; list bullets and numbers in
+    `lanternText`; code spans in `synString`; everything else `textSecondary`. A line changed since
+    the last save is tinted `lanternTint` across the editor (`InstructionsText.changedLines`).
+  - A machine whose files can't be shown says why in their place, centered in `caption`
+    `textTertiary`: "horizon is offline. Its files show here once it's connected.", "horizon runs
+    a Shepherd from before Instructions. Update it there to edit its files from here.", "Reading
+    horizon's files…" over a spinner, or "Couldn't read horizon's files: …" with Try again.
+  - A save, copy or restore that fails says so under the card (`NWInlineProblem`).
 - **How the agent reads them** (the side column, 330pt): five steps in order, each a small card (radius
   `m`, a `lineSubtle` line, `bgRaised`, 8pt × 10pt padding) joined by a 10pt connector (a 1.5pt
-  `lineStrong` line under the number column): the step number in mono 10.5 `textTertiary` (16pt
-  wide), a title in mono 11.5 semibold (truncating) over a note in Geist 11 `textTertiary`:
+  `lineStrong` line 17pt in, under the number column): the step number in mono 10.5 `textTertiary`
+  (16pt wide), a title in mono 11.5 semibold (truncating) over a note in Geist 11 `textTertiary`:
   1. "Agent’s system prompt", "built in"
-  2. "~/.pi/agent/AGENTS.md", "this file · every repo"
+  2. "Shepherd's AGENTS.md", "this file · every repo"
   3. "AGENTS.md in parent folders", "if any"
   4. "the repo's AGENTS.md", "most specific context"
-  5. "~/.pi/agent/APPEND_SYSTEM.md", "appended last · wins"
+  5. "Shepherd's APPEND_SYSTEM.md", "appended last · wins"
 
   The open file's step is marked: a `lanternText` line on `lanternTint` (step 2 for `AGENTS.md`,
-  step 5 for `APPEND_SYSTEM.md`). Under the steps, a 12/1.5 `textTertiary` note: "Later files win.
-  Running sessions keep the version they started with; new threads, mission stations and automations
-  get this one." (Mission stations wait for Missions.)
-- **Where it writes:** the paths shown are the root of the pi Shepherd runs
-  (`PiConfig.agentDirectory`). Before building, settle this page against pi isolation: Shepherd must
-  never write the user's own `~/.pi/agent/`, so with a bundled pi the page edits that pi's home and
-  shows its path. Saving to a remote host needs a write request in the remote protocol; an offline
-  host takes the save when it reconnects.
+  step 5 for `APPEND_SYSTEM.md`, whose note then leads with "this file · " instead). Under the
+  steps, a 12/1.5 `textTertiary` note: "Later files win. pi's own files in ~/.pi/agent still load,
+  each just before Shepherd's. A session reads them when it starts: running agents keep the
+  version they started with, new agents and automations get this one."
+- **Where it writes:** This Mac's files are the server's `InstructionsStore` (`AGENTS.md`,
+  `APPEND_SYSTEM.md` and `history.json` in `instructions/`); a remote host's are its own store,
+  read and saved over the remote protocol (`instructions.v1`: fetch, save, restore). A host that is
+  offline when a save goes out is owed both files and takes them when it connects again
+  (remembered across launches). A save that arrives from another client shows on the page at once.
 
 #### Instructions per host (SettingsInstructionsHosts)
 
-**Not built yet.** With Same on every host off, each machine keeps its own root files and the page
-edits one host at a time. The explanation reads "Per host: each machine keeps its own root files.",
-and the switch's card "Off: each host keeps its own files. Pick a host to edit it."
+With Same on every host off, each machine keeps its own root files and the page edits one machine
+at a time. The explanation reads "Per host: each machine keeps its own root files.", and the
+switch's row "Off: each host keeps its own files. Pick a host to edit it."
 
-- **Host chips** pick the host to edit (the selected chip as above) and report how its files compare
-  with This Mac's: a `done` dot and no word when they match; "differs · 2 lines" (`lanternText`
-  dot and word) when they don't; "offline" (`textTertiary`). This Mac's chip, the reference, shows
-  its dot alone.
+- **Host chips** pick the machine to edit (the selected chip as above; hover `bgHover`) and report
+  how its copy of the open file compares with This Mac's: a `done` dot and no word when they match;
+  "differs · 2 lines" (`lanternText` dot and word) when they don't; "kept different"
+  (`textTertiary`) once kept; "offline" (`textTertiary`). This Mac's chip, the reference, shows its
+  dot alone.
 - **Comparing a host that differs:** the editor card's header reads "build-01 compared with This
   Mac" (both names in mono, "compared with" in `textTertiary`, Geist 12.5), with a small segmented
-  control (`NWSegmentedPicker` s, 20pt) trailing: Diff · build-01's file. Diff shows the file as the
-  review's diff lines do, mono 12 on 22pt lines, a 34pt number gutter and a 14pt sign column:
-  removed lines `−` in `failed` on `failedTint`, added lines `+` in `done` on `doneTint`, context in
-  `textSecondary` with a blank sign. "build-01's file" opens that host's file in the editor.
-- **Resolve** (a section label under the editor): three buttons, 28pt, wrapping: "Copy This Mac's to
-  build-01" and "Copy build-01's to all hosts" (secondary), "Keep build-01 different" (ghost). Under
-  them a 12/1.5 `textTertiary` note ends "Shepherd shows the difference once, then stops asking.":
-  keeping a host different is remembered, and Shepherd stops asking about that difference.
+  control (`NWSegmentedPicker` s, 20pt) trailing: Diff · build-01's file. Diff shows the whole file
+  as a diff from This Mac's copy to the host's, scrolled to its first difference: mono 12 on 22pt
+  lines, a 34pt number gutter 8pt before a 14pt sign column: removed lines `−` in `failed` on
+  `failedTint`, added lines `+` in `done` on `doneTint`, context in `textSecondary` with a blank
+  sign. "build-01's file" opens that host's file in the editor, with "● edited", Revert and "Save
+  to build-01" beside the control.
+- **Resolve** (a section label under the editor): three 28pt buttons, wrapping: "Copy This Mac's to
+  build-01" and "Copy build-01's to all hosts" (secondary; all hosts includes This Mac), "Keep
+  build-01 different" (ghost). Under them a 12/1.5 `textTertiary` note: "A copy replaces AGENTS.md
+  there; the version it replaces stays in that host's history. Keep a host different when a line
+  only makes sense on it: Shepherd shows the difference once, then stops asking." Keeping is
+  remembered by both copies' fingerprint (`InstructionsPresentation.fingerprint`), so a later
+  change on either side is flagged again.
 - **The side column:**
-  - Files on each host: a row per host, at least 48pt, a hairline above each: a 14pt
-    `desktopcomputer` glyph, the name in mono 12.5 semibold over its agent directory in mono 10.5
-    `textTertiary` (`/Users/baily/.pi/agent`, `/home/baily/.pi/agent`); trailing and right-aligned,
-    when it last changed in Geist 11.5 ("edited 2m ago", "edited Sep 19"; "last seen 07:12" for an
-    offline host) over a Geist 11 note: which files it holds ("AGENTS · APPEND", `textTertiary`), "2
-    lines differ" (`lanternText`), or "matched This Mac" (`textTertiary`).
-  - The other file's status in one line under its name as a label ("APPEND_SYSTEM.md", then "Same on
-    all three hosts." in 12.5 `textSecondary`).
-  - History · build-01: the chosen host's saves, newest first, rows at least 30pt with a hairline
-    above each: the date in mono `textTertiary` in a 60pt column ("Sep 19"), what changed in 12
-    `textSecondary` ("Added the Docker socket line", "Synced from This Mac", "Created by Shepherd"),
-    and Restore as a trailing `running` text action.
+  - Files on each host: a row per machine, at least 48pt, a hairline above each: a 14pt
+    `desktopcomputer` glyph, the name in mono 12.5 semibold over its instructions directory in mono
+    10.5 `textTertiary` (middle-truncated); trailing and right-aligned
+    (`InstructionsPresentation.hostRow`), when its files last changed in Geist 11.5 ("edited 2m
+    ago", "edited Sep 19", "no saves yet"; "last seen 07:12" for an offline host) over a Geist 11
+    note: This Mac's files ("AGENTS · APPEND", `textTertiary`), "2 lines differ" (`lanternText`),
+    "matches This Mac" or "kept different" (`textTertiary`), or how an offline host last compared
+    ("matched This Mac", "1 line differed").
+  - The other file's status in one line under its name as a label ("APPEND_SYSTEM.md", then "Same
+    on all three hosts.", "Differs on build-01.", or "Same on This Mac and build-01; horizon isn't
+    connected." in 12.5 `textSecondary`), once there is a remote host.
+  - History · build-01: the chosen machine's saves of the open file, newest first, rows at least
+    30pt with a hairline above each: the date in mono `textTertiary` in a 60pt column ("Sep 19", or
+    the time for a save today, "14:02"), what changed in 12 `textSecondary` ("Added “Never
+    force-push.”", "Synced from This Mac", "Restored the Sep 02 version"), and Restore as a
+    trailing `running` text action; the newest reads "current".
+
+#### Skills (SettingsSkills, SkillsStates)
+
+The page (`SettingsSkills.swift`, `ClientSkills`) manages the agent skills pi reads from each
+host's `~/.agents/skills` (docs/skills.md): folders of instructions and scripts the agent picks up
+when a task calls for them. Skills are global: with Same skills on every host on, every install,
+update, switch and removal goes to every host, and a host that is offline catches up when it's
+back. The page sits between Instructions and Remote in the nav, with `graduationcap`.
+
+- **Header:** "Skills", then "Instructions and scripts the agent picks up when a task calls for
+  them. Skills are global: every thread and automation on every host gets the same set." (capped at
+  700pt), and trailing, bottom-aligned: Add from repo… (secondary, `plus`) and Browse skills.sh
+  (primary, a glass). Both open sheets (below). The blocks are 18pt apart, the list and the 280pt
+  rail 28pt apart.
+- **Toolbar:** a 240pt `NWSearchField` ("Filter installed skills", names and descriptions), then
+  All · On · Updates with their counts ("All 8", "On 7", "Updates 2", an `NWSegmentedPicker`), a
+  spacer, "Checked 2h ago" in 12 `textTertiary` (when the first host last looked for updates:
+  "Checked just now", "Not checked yet"; it ages by the minute), and Update N (small secondary,
+  `arrow.down.to.line`) while any skill has a newer commit.
+- **The list** (a card at radius 10, `bgWindow`, a `lineSubtle` line): a 30pt header row on
+  `bgSunken` with section labels (Skill, Source, Use, Updated) over rows at least 54pt, with 16pt
+  column gaps and sides, hairlines between (`SkillsListRow`, Equatable, lazy):
+  - the switch (a 30pt column): on or off on every host. Off moves the skill out of the folder pi
+    reads, without deleting it.
+  - the name in mono 13/600 (`textSecondary` while off) over its description in 12.5
+    `textSecondary`, one line each; both come from SKILL.md's frontmatter.
+  - Source (176pt): the repository in mono 11.5 `textSecondary`, truncating in the middle, or
+    Local with a folder glyph (`textTertiary`) for a folder copied in by hand ("It never
+    updates.").
+  - Use (84pt): "Auto" in a bordered 20pt tag, or "/skill only" in mono on `bgSelected`.
+  - Updated (60pt): the day it last changed ("Sep 18", mono 11.5 `textTertiary`); the Update pill
+    (`NWUpdatePill`, 22pt, `lanternText` on `lanternTint`) while a newer commit waits, which
+    installs it; "Updating" shimmering while it goes (nothing spins).
+  - a chevron: a click anywhere on the row opens its detail in place, below it, one row at a time
+    (`bgHover` while open or hovered).
+  - Empty: "No skills yet. Browse skills.sh, or add them from a repo.", "No skill matches “…”.",
+    "No skill is on.", "Every skill is up to date.", or "Reading skills…".
+- **The detail** (`SkillDetail`, on `bgSunken` under a hairline, 62pt in, 14pt apart): three
+  columns 28pt apart under section labels:
+  - **Use it:** two radio options (`NWRadioOption`): Automatically, "The agent reads it when a
+    task calls for it. Its description sits in every prompt, about 90 tokens." (the estimate is
+    the skill's own), and "Only when I type /skill:pdf", "Stays out of the agent’s prompt until
+    you call it." A choice rewrites the skill's SKILL.md (`disable-model-invocation`) on every
+    host; updates keep it.
+  - **Version:** the repository and folder ("anthropics/skills › skills/pdf", mono 12),
+    "Installed 3f2a91c · Aug 30", and while a newer commit waits "New 8c04e1d · Sep 22 · 3 files
+    changed" in `lanternText` with Update (small primary) and What changed (small ghost, GitHub's
+    comparison). A Local skill says "Copied into the skills folder by hand. It never updates."
+  - **Hosts:** a row per host (`NWHostStateRow`: a check, a filled dot while it changes there, a
+    hollow one while it's away; the name in a 70pt mono column; the state): "installed",
+    "updating", "not installed", "offline · updates later", "needs a newer Shepherd".
+  - Under a hairline: the top of the skill's folder as chips (`NWSkillFileChip`: "SKILL.md",
+    "reference.md", "scripts/ 8" with a code glyph for scripts, a folder glyph for other folders),
+    then Open SKILL.md (small secondary) and Show folder (small ghost), which act on This Mac's copy
+    and disable when This Mac hasn't got one, and Remove (small danger): it takes the skill off every
+    host, with Undo in the toast ("Removed pdf from every host").
+- **The rail** (280pt, sections 22pt apart):
+  - **How the agent uses them:** "The agent sees the name and description of every automatic
+    skill. When a task matches one, it reads that skill’s files and follows them. Type /skill:name
+    to use one on purpose." (12.5/1.55, the command in mono `textPrimary`), then the In every prompt
+    card (radius 10, `bgWindow`): "In every prompt" with "~610 tokens" (mono), a 6pt bar
+    (`NWBudgetBar`) with a segment per skill that is on (`running` for an automatic one, a rule for a
+    /skill one), and "6 automatic skills. Full files load only when used." Its tooltip: "The context
+    meter counts this as part of the system prompt."
+  - **Options**, rows between hairlines, each a title (13/500) over a note (12/1.45) and its
+    switch: Skills in the / menu ("List every skill as /skill:name in the composer’s slash menu.";
+    off, the slash menu leaves skills out), Same skills on every host ("Installs, updates and
+    removals go to all hosts. Offline hosts catch up."; kept per Mac), and Update automatically
+    ("Off: new versions wait here with an Update badge."; each host's own, set on every host).
+  - **Hosts** with the skills folder trailing its label ("~/.agents/skills", mono), then a row per
+    host: "up to date", "2 updates", "offline", "offline · catches up" while it's owed changes,
+    "checking", "needs a newer Shepherd", "couldn't read"; then "Skills you copy into that folder
+    by hand show up as Local."
+- **States:** a change shows at once; one a host refuses springs back, its reason inline over the
+  list with Dismiss. Each host checks its skills for newer commits once a day.
+- **Not built yet:** project skills (`.agents/skills` inside a repository) and per-agent skill sets
+  (SkillsStates' Not yet).
+
+#### Browse skills.sh and Add from repo (SettingsSkillsBrowse, SettingsSkillsSearch, SettingsSkillsRepo)
+
+Two sheets (`SkillsSheets.swift`, 1060 × 812, at least 860 × 600, `bgWindow`): a 17/600 title over
+a 12.5 `textSecondary` line, the header's trailing action and a 28pt round close button (Esc);
+then a list (560pt) beside the selected item's preview, a hairline between.
+
+- **Browse skills.sh:** "The open directory of agent skills. Anything you install goes to all your
+  hosts.", with Open skills.sh (small ghost).
+  - A 38pt search field ("Search skills, repos and owners", a glass, 14pt text, a clear button; a
+    `lantern` line while focused), focused when the sheet opens.
+  - Without a search: Trending · All time · Hot · Official (`NWSegmentedPicker`), a rule, then
+    topics as 26pt capsules (All, React, Next.js, Design & UI, Databases, Testing, Docs & files,
+    Agent workflows; the chosen one on `bgSelected`). With one: "9 skills for “postgres”" and
+    Sort: Installs or Name.
+  - The list: a 30pt header ("Trending", "Hot · last hour", "React · Trending"; Installs) over
+    rows at least 58pt (`SkillResultRow`): the place in a ranked list (mono 11.5), the name in mono
+    13/600 with the search's matches in `lanternText` and skills.sh's Official seal
+    (`NWOfficialSeal`), the repository in mono 11.5 `textTertiary`, and a 96pt column with the
+    installs ("3.6M", mono 12) over Install (small secondary), "1 of 3 hosts" with a 64 × 3 meter
+    (a segment per host: `done`, `running`, a rule) while it installs, "Installed" with a check in
+    `done`, or the Update pill. The selected row is on `bgSelected`.
+  - The preview: the name in mono 18/600, its repository, the seal and "131K installs"; Install
+    (primary) with "Use: Automatically" (a menu: Automatically, Only with /skill), or Installed,
+    or Update; View on skills.sh. While it installs, a card on `bgSunken`: "Installing · 1 of 3
+    hosts" shimmering, Cancel, and each host's step ("installed · ready in new threads", "copying
+    files", "offline · installs when it's back"). Then the description, the SKILL.md (a card: a
+    34pt header with "SKILL.md" and "~1,900 tokens when used", its lines numbered in a 34pt column,
+    mono 13 on 20pt lines with the instructions editor's highlighting, fading out at the bottom;
+    240pt tall, 280pt in a search), Files as chips with what its scripts are ("3 scripts the agent
+    can run: init_skill.py, package_skill.py, quick_validate.py", "No scripts. Instructions and
+    references only."), and More in anthropics/skills: the list's other skills from it as capsules
+    (✓ when installed) and Pick from the whole repo…, which opens Add from repo on it.
+  - Loading says "Loading skills.sh…"; no match, "No skills match."; a ranked list without a key
+    says "skills.sh’s rankings need an API key. Search and install work without one." with a field
+    for the key (Save), and Get a key.
+- **Add skills from a repo:** "A GitHub owner/repo or URL, or a folder on this Mac. Shepherd copies
+  the skills you pick into ~/.agents/skills on every host."
+  - A 38pt field on `bgRaised` (a branch glyph, or a folder's for a path; mono 13.5) with Look up
+    (large secondary, Return), and once found "16 skills · main @ 8c04e1d" in it.
+  - The picker: a 34pt bar on `bgSunken` with a checkbox for all the new ones, "3 of 13 new skills"
+    and Select all new, over rows 34pt tall (`SkillPickRow`): a checkbox, the name in mono 12.5/600
+    (168pt), the description, and for one already installed "Installed" (dimmed, ticked, fixed) or
+    "Installed · update" (`lanternText`). A click selects a row for the preview beside: the name,
+    "anthropics/skills › skills/docx", the description, its SKILL.md (340pt) and files.
+  - A 60pt footer on `bgSunken`: "Use them" with Automatically · Only with /skill, where they go
+    ("This Mac, build-01 now · horizon when it’s back") or the install's line while it runs, then
+    Cancel and "Install 3 skills" (primary). The sheet closes once every host that could take them
+    has them. A repository with one new skill installs it at once; a URL that points into a skill's
+    folder ticks that skill.
+  - A folder on this Mac is read here and copied to each host as its files (up to 640 KB), Local
+    there. Look-up failures say why under the field ("acme/skills has no skills: no folder in it
+    holds a SKILL.md.").
 
 #### Experiments (SettingsExperiments)
 
-**Not built yet.** The last page of the nav, with `flask`: features still being tried, each off
-until the user turns it on. Header: "Experiments", then "Features we're still trying out. Each is
-off until you turn it on." Its one experiment today is Suggested instructions.
+The last page of the nav, with `flask` (`SettingsExperiments.swift`, `SuggestionsModel`): features
+still being tried, each off until the user turns it on. Header: "Experiments", then "Features
+we're still trying out. Each is off until you turn it on." Its one experiment today is Suggested
+instructions. The experiment lives on the host (`SuggestionsStore`, `suggestions.json` beside the
+instructions): agents suggest through the instructions extension's `suggest_instruction`, which an
+agent gets only while the experiment is on for its kind and names the files it may suggest for
+(`SHEPHERD_SUGGEST_FILES`); remote clients read and act on it over `suggestions.v1`.
 
 - **An experiment card:** a card with a 1px `lineStrong` line, radius `m`, on `bgWindow`.
   - The top, 14pt × 16pt padding, aligned to the top: a 36pt tile (radius `m`; the board's 9,
     `lanternTint`) holding the experiment's glyph (18pt, `lanternText`; `flask` here); the name in
-    Geist 14/600 ("Suggested instructions") beside a small mono 10.5 tag in `lanternText` on
-    `lanternTint` (18pt tall, radius `xs`) saying since when it has been on ("on since Sep 12");
-    under them its description in 12.5/1.5 `textSecondary`, at most 620pt wide: "When an agent
-    learns something the hard way (a re-run, a failed check, a correction from you) it drafts one
-    line for your root instructions. Nothing is written until you add it."; the switch trailing.
+    Geist 14/600 ("Suggested instructions") beside, while it is on, a small mono 10.5 tag in
+    `lanternText` on `lanternTint` (18pt tall, radius `xs`) saying since when ("on since Sep 12";
+    `SuggestionsPresentation.sinceTag`); under them its description in 12.5/1.5 `textSecondary`, at
+    most 620pt wide: "When an agent learns something the hard way (a re-run, a failed check, a
+    correction from you) it drafts one line for your root instructions. Nothing is written until you
+    add it."; the switch trailing.
   - Its options, while on, under a hairline on `bgBase`: rows of at least 48pt with a 13/500 title
-    over a 12 `textSecondary` description and the control trailing:
-    - Learn from, "Where agents may notice a lesson.": `.nwCheckbox`es 14pt apart for Missions,
-      Threads, Automations (all on).
+    over a 12/1.45 `textSecondary` note and the controls trailing, hairlines between:
+    - Learn from, "Where agents may notice a lesson.": `.nwCheckbox`es 14pt apart for Threads and
+      Automations (both on).
     - Can suggest for, "APPEND_SYSTEM.md overrides everything else, so it stays off unless you want
-      it.": `AGENTS.md` (on) and `APPEND_SYSTEM.md` (off).
-    - Hosts, "Follows Settings › Instructions. Right now that's every host, unless a lesson only
-      applies to one.": a 190pt popup, "Follow Instructions".
+      it.": AGENTS.md (on) and APPEND_SYSTEM.md (off).
+    - Hosts, "Lines go where Settings › Instructions sends them: right now that's every host." (or
+      "This Mac alone." per host), with Open Instructions as a trailing `running` text action.
 - **Waiting for you · 3** (a label with the count, and "Add all" trailing as a `running` text
-  action): the drafted lines, newest first, cards 8pt apart. A suggestion card is radius `m`, a
+  action once two or more wait), shown while the experiment is on: the drafted lines, newest
+  first, cards 8pt apart; with none, "Nothing is waiting. When an agent learns something the hard
+  way, its line shows up here." in the footnote style. A suggestion card is radius `m`, a
   `lineSubtle` line on `bgRaised`, 12pt × 14pt padding, three lines 8pt apart:
-  - where it came from: a 13pt glyph for the source (a mission's map in `lanternText`; an
-    automation's `bolt` and a thread's bubble in `textSecondary`), its name in 12.5/600, and the
-    source's kind and age in 12 `textTertiary` ("mission · 2h ago", "automation · yesterday",
-    "thread · Sep 19"); trailing, a 24pt target chip (radius `s`, a `lineStrong` line, Geist 11.5)
-    that retargets it: a doc glyph and the file in mono (`AGENTS.md`), a `textTertiary` "·", a
-    `desktopcomputer` glyph and the hosts in `textSecondary` ("every host", "build-01"), and a
-    chevron
+  - where it came from: a 13pt glyph for the source (an automation's `bolt`, a thread's
+    `bubble.left`, `textSecondary`), its name in 12.5/600, and the source's kind and age in 12
+    `textTertiary` ("automation · 2h ago", "thread · yesterday", "thread · Sep 19";
+    `SuggestionsPresentation.origin`); trailing, a 24pt target chip (radius `s`, a `lineStrong`
+    line, Geist 11.5) that retargets its file: a `doc.text` glyph and the file in mono
+    (`AGENTS.md`), a `textTertiary` "·", a `desktopcomputer` glyph and where it goes in
+    `textSecondary` ("every host", or "This Mac" per host), and a chevron. It is a menu of the two
+    files.
   - the line itself as it would be added: mono 12.5/1.5 on `doneTint` (radius `s`, 6pt × 10pt
     padding), a `done` "+ " before the Markdown (its bullet in `lanternText`, code spans in
-    `synString`)
-  - the reason in 12 `textSecondary` ("A missing checkout_id made two services re-run their
-    stations."), then 24pt buttons: Dismiss and Edit first (ghost), and "Add to AGENTS.md"
-    (secondary), which names the target file
-- **How it works** (side column): three numbered steps separated by hairlines, the number in an 18pt
-  `lineStrong` ring (mono 10.5 `textSecondary`), a 12.5/1.5 sentence whose lead is semibold and
-  whose rest is `textSecondary`: "An agent hits something it had to learn" a re-run, a red check, or
-  you telling it no. · "It drafts one line" for a root file, with the reason and which hosts it
-  applies to. · "You decide" Add it, edit it first, or dismiss it. Dismissed lines aren't suggested
-  again.
-- **Added from suggestions:** rows of at least 44pt, a hairline above each: the added line in 12.5
-  over "Sep 18 · from Ledger cleanup" in 11 `textTertiary`, and Undo as a trailing `running` text
-  action.
+    `synString`, the rest `textPrimary`). Edit first turns it into a mono field (⏎ adds it).
+  - the reason in 12/1.45 `textSecondary` ("A missing checkout_id made two services re-run their
+    steps."), then 24pt buttons: Dismiss and Edit first (ghost; Cancel while editing), and "Add to
+    AGENTS.md" (secondary), which names the target file.
+- **How it works** (side column, 320pt): three numbered steps separated by hairlines, the number in
+  an 18pt `lineStrong` ring (mono 10.5 `textSecondary`), a 12.5/1.5 sentence whose lead is
+  semibold and whose rest is `textSecondary`: "An agent hits something it had to learn" a re-run,
+  a red check, or you telling it no. · "It drafts one line" for a root file, with the reason. ·
+  "You decide" Add it, edit it first, or dismiss it. Dismissed lines aren't suggested again.
+- **Added from suggestions** (once a line was added): rows of at least 44pt, a hairline above each:
+  the added line in 12.5 without its bullet over "Sep 18 · from Ledger cleanup" in 11
+  `textTertiary`, and Undo as a trailing `running` text action.
 - **About experiments:** a 12/1.5 `textTertiary` note, "Experiments can change or go away. Turning
   this one off keeps the lines you added and drops what's waiting.", and a small secondary Send
-  feedback button with a bubble glyph.
+  feedback button with `bubble.left`, which opens a new issue for Shepherd on GitHub.
 - **Rules:** nothing is written to an instruction file until the user adds a line (Add, Add all, or
-  Edit first then save); a dismissed line is never suggested again; Undo removes an added line from
-  its file. Missions as a source waits for Missions.
+  Edit first then Add); a line goes in last, as a Markdown list item; a lesson already waiting, in
+  its file, or dismissed before is never suggested again (`InstructionsText.lineKey`: its words,
+  whatever the case, spacing or Markdown); Undo removes an added line from its file. Adding a line
+  changes This Mac's instructions, which reach every host with Same on every host on, and a draft
+  open on the Instructions page keeps the line. The host keeps the newest 30 lines waiting and
+  added, and 300 dismissed.
 
 ### Dialogs and sheets
 
 Creation sheets (New Agent, New Worktree, Finalize Worktree, the directory picker, the remote
-worktree sheet, a remote automation's Details and Runs, the review's Commit…) and every
+worktree sheet, the automation editor, the review's Commit…) and every
 confirmation share one anatomy, `NWDialog` (`NWDialogMetrics`), flat on `bgWindow`, built from
 the Controls and Status & feedback parts (no board draws a Mac dialog). The creation sheets and
 Delete Worktree Agent take `.dialogSheetFrame()`: the window is `bgWindow` from the first frame,
@@ -3715,14 +3871,15 @@ composing chrome by hand. Debug builds have a **Component Gallery** (View menu,
 | --- | --- | --- |
 | Controls | `.buttonStyle(.nw(_:size:tint:))` (primary, secondary, ghost, danger, dangerFill; s 24 · m 28 · l 32), `.nwIcon` and `.nwIcon(bordered:isOn:size:tint:)` (a circle, 28pt, 44 on iOS; "on" is lantern tint), `.nwLink`, `.nwRow(selected:)`, `.nwRowBackground(selected:hovering:)`; `.toggleStyle(.nwSwitch)` (30×18) and `.nwCheckbox` (14pt); `NWSegmentedPicker` (m 24, s 20), `NWPopupMenu` and `NWPopupLabel`, `NWValueSlider`, `NWStepper`; `.textFieldStyle(.nw)` and `.nw(mono:error:)` (28pt, radius 6), `.nwField(focused:error:mono:)`, `.textFieldStyle(.nwSearch)`, `NWSearchField`; `NWKeycap`, `NWCountBadge`, `NWTag`, `.nwHelp(_:shortcut:)` | across the app; the radio group is not built |
 | Status | `NWStatusPill` (20pt, radius 4; a glyph in place of its dot), `NWStatusDot` (6pt), `NWStateGlyph` (14pt), `.progressViewStyle(.nwSpinner)` and `.nwBar` (4pt), `NWStepStrip`, `NWSparkline`, `NWBanner`, `.nwToast(item:)` with `NWToast`, `NWEmptyState`, `.nwShimmer()`, `NWWordmark`, `NWCrook` | across the app; `NWSparkline` and `.nwToast(item:)` have no app use (see departures), and `.nwShimmer()` none yet |
-| Containers | `NWSectionHeader`, `NWGroupCard`, `NWCardRow`, `NWHairline`, `NWChoiceRow` (`NWChoiceRowMetrics`), `NWFlowLayout` | `SettingsComponents.swift`; hairlines everywhere; `NWChoiceRow` in the iOS client's New thread pickers; `NWFlowLayout` for wrapping chips and answers (iOS) |
-| Navigation | `NWSidebar`, `NWSidebarSection`, `NWSidebarRow`, `NWSidebarDisclosureRow`, `NWSidebarNoticeRow`, `NWSidebarFooter`, `NWDropIndicator`, `NWDensity`; `NWThreadToolbar`, `NWPaneToggle`, `NWOptionsMenu`, `NWPaneHeader`; `.nwCommandPalette(isPresented:)`, `NWPaletteCard`, `NWPaletteSearchRow`, `NWPaletteSectionHeader`, `NWPaletteRow` | `SidebarView.swift`, `RemoteSidebarSection.swift`, `ThreadHeader.swift`, `RootView.swift`, `CommandPaletteView.swift`; the review's header (`DiffReviewView.swift`) and the inspector's ⋯ menu (`Thread/SubagentInspector.swift`) |
+| Containers | `NWSectionHeader`, `NWGroupCard`, `NWCardRow`, `NWHairline`, `NWChoiceRow` (`NWChoiceRowMetrics`), `NWFlowLayout`, `NWMarkupText` | `SettingsComponents.swift`; hairlines everywhere; `NWMarkupText` for Settings' descriptions (Mac and iOS); `NWChoiceRow` in the iOS client's New thread pickers; `NWFlowLayout` for wrapping chips and answers (iOS) |
+| Navigation | `NWSidebar`, `NWSidebarTopBar`, `NWSidebarDestination`, `NWSidebarSection`, `NWSidebarRow`, `NWSidebarFooter`, `NWDropIndicator`, `NWDensity`; `NWThreadToolbar`, `NWPaneToggle`, `NWOptionsMenu`, `NWPaneHeader`; `.nwCommandPalette(isPresented:)`, `NWPaletteCard`, `NWPaletteSearchRow`, `NWPaletteSectionHeader`, `NWPaletteRow` | `SidebarView.swift`, `ThreadHeader.swift`, `RootView.swift`, `CommandPaletteView.swift`; the review's header (`DiffReviewView.swift`) and the inspector's ⋯ menu (`Thread/SubagentInspector.swift`) |
 | Thread | `NWUserBubble` (its time shown while `revealed`; `origin: .steered`), `NWQueueDivider`, `NWAgentProse`, `NWCodeBlock`, `NWThinking`, `NWActivityLine`, `NWActivityCalls`, `NWChangesCard`, `NWDiffStat`, `NWInlineCode`, `NWAttachmentChip`, `NWTurnFooter` (shown while `revealed`), `NWTurnError`, `NWJumpToLatest`, `.nwShimmer(active:)` (live text) | `Thread/ThreadView.swift`, `ThreadTurns.swift` (with each turn's `MessageHover`), `ThreadTools.swift`, `ThreadMarkdown.swift` |
-| Composer | `NWComposer`, `.nwComposerChip(active:)`, `NWChipChevron`, `NWComposerActionButton` (outlined Stop, Send's ring), `NWMenuHeader`, `NWSlashMenu`, `NWModelPicker`, `NWThinkingMenu`, `NWSendMenu`; the queue: `NWQueueStack`, `NWQueueRow`, `NWQueueEditor`, `NWQueueDeletedRow`, `NWQueueMoreRow`, `NWQueueNumber`, `NWQueueGlyph`, `NWGripGlyph`, `NWQueueMetrics` | `Thread/Composer.swift`, `Thread/QueueStack.swift` |
+| Composer | `NWComposer`, `.nwComposerChip(active:)`, `NWChipChevron`, `NWComposerActionButton` (outlined Stop, Send's ring), `NWMenuHeader`, `NWSlashMenu`, `NWModelPicker`, `NWThinkingMenu`, `NWSendMenu`, `NWPlaceMenu` and `NWPlaceChipLabel` (the New thread page's workplace); the queue: `NWQueueStack`, `NWQueueRow`, `NWQueueEditor`, `NWQueueDeletedRow`, `NWQueueMoreRow`, `NWQueueNumber`, `NWQueueGlyph`, `NWGripGlyph`, `NWQueueMetrics` | `Thread/Composer.swift`, `Thread/QueueStack.swift` |
 | Agents | `NWSubagentTray` (`NWSubagentTrayRun`, `NWSubagentTraySummary`, `NWSubagentTrayRow`, `NWSubagentTrayMoreRow`), `NWDockStack`, `NWSubagentRecordLine`, `NWSubagentQuestionDock`, `NWInspectorHeader`, `NWRunBrief`, `NWRunActions`, `NWBranchGlyph`, `NWElapsedText`, `NWDuration`, `NWInlineMarkup`, `.nwRunArrival`; touch forms for iOS (the tray's `.pad` and `.phone` sizes, `NWRunCard`, `NWRunHeader`, `NWRunTabs`, `NWSteerField`, …) | `Thread/Subagents.swift`, `Thread/SubagentInspector.swift`, `Thread/SubagentPresentation.swift`; the iOS client |
 | Review | The Changes pane: `NWScopeButton`, `NWViewedPill`, `NWCompareRow`, `NWFileStrip`, `NWFileHeader`, `NWViewedCheckbox`, `NWDiffView` over `NWChangesRow`s (`NWDiffLine`, `NWSplitDiffLine`, `NWDiffHatch`, `NWDiffFoldRow`), `NWInlineComment`, `NWCommentEditor`, `NWReviewSendBar`, `NWChangesFileList`, the menus (`NWChangesMenu`, `NWChangesMenuRow`, `NWChangesMenuToggle`, `NWChangesMenuSearch`), `NWDiffMetrics`, `NWChangesMetrics`; the commit form (`NWCommitMessageEditor`, `NWCommitFileRow`, `NWCommitOptionRow`); touch forms for iOS (`NWTouchDiffLine`, `NWSplitDiffRow`, `NWTouchFileStrip`, `NWLineCommentBar`, `NWReviewFileRow`, `NWReviewComposer`, …) | `DiffReviewView.swift`, `ChangesMenus.swift`, `ChangesRows.swift`, `ReviewCommitSheet.swift`; the iOS client |
 | Dialogs | `NWDialog` (`NWDialogMetrics`), `NWDialogStatus`, `NWSheetRow`, `NWChecklistRow`, `NWSettingsNavRow` | `DialogSheet.swift`, `AppDialogs.swift`, the sheets, `QuitConfirmation.swift`, `SettingsView.swift` |
-| Automations | `NWAutomationRow` (a row with its switch), `NWAutomationSwitch`, `NWFactRow` and `NWFactText`, `NWAutomationPrompt`, `NWRunBars`, `NWRunRow`, `NWAutomationMetrics` | `RemoteAutomationSheet.swift`; the iOS client's `Automations/` |
+| Automations | `NWAutomationRow` (a row with its switch), `NWAutomationSwitch`, `NWFactRow` and `NWFactText`, `NWAutomationPrompt`, `NWRunBars`, `NWRunRow`, `NWAutomationMetrics`; the Mac's table: `NWAutomationTableRow`, `NWRunOutcome` and `NWRunOutcomeLabel`, `NWAutomationRunLine` | `Pages/AutomationsPage.swift`; the iOS client's `Automations/` |
+| Pages | `NWPageHeader`, `NWPageFilterField`, `NWTableColumns` and `NWTableHead`, `.nwPageCard()`, `NWPageFact`, `NWPageSectionLabel`, `NWPageQuote`, `NWPageMetrics`; `NWHostPageCard` and `NWHostFact` (`NWHostPageMetrics`, in `Fleet/`) | `Pages/` (the sidebar destinations' pages) |
 | Design tool (not built yet; `Components/DesignTool/`) | `NWDesignCanvas`, `NWBoardFrame`, `NWSelectionRing`, `NWCommentPin`, `NWBoardActions`, `NWCanvasToolbar`, `NWCommentCard`, `NWCommentThread`, `NWTweakRow`, `NWTokenChip`, `NWTweakScope`, `NWDesignSystemChip`, `NWTokenSwatch`, `NWExportFormatCard`, `NWLiveLinkField`, and `NWActivityLine`'s `.drew` and `.checked` kinds (see Design tool) | nothing yet |
 | Missions map (not built yet; `Components/MissionMap/`) | `NWMissionMap`, `NWStation`, `NWTerminus`, `NWFlowWire`, `NWDataWire`, `NWForkBar`, `NWJoinBar`, `NWOutcomeChip`, `NWPinRow`, `NWLane`, `NWFog`, `NWFrontierChip` (see Missions: the map) | nothing yet |
 | Mission screens (not built yet; `Components/Missions/`) | `NWMissionHeader`, `NWPhaseBar`, `NWBudgetMeter`, `NWHostChip`, `NWChoiceCard`, the mission question card, `NWPlannerNote`, `NWAttemptRow`, `NWCheckpointRow`, `NWSpendBar`, `NWTrainCard`, `NWTrainGateRow`, `NWTrainRuleRow`, `NWRepoTimeline`, `NWPathLockRow`, `NWContractRow`, `NWDiffAnnotation`, `NWTraceSpan`, `NWMergeActions`, `NWRollbackRow`, `NWTemplateInput`; iPhone: `NWMissionLiveActivity`, `NWMissionNotification`, `NWLaneStrip`; in `Components/Agents`: `NWMissionNode`, `NWInboxItem`, `NWClaimRow` (see Missions: motion, keyboard and parts to build; Mission components) | nothing yet |
@@ -3768,8 +3925,8 @@ color is a role.
 - **With a shortcut:** only on the view's main action. The chord is bound (⌘⏎:
   `.keyboardShortcut(.return, modifiers: .command)`) and drawn after the title in Geist Mono
   10.5 regular at 60% opacity, 6pt after it ("Land ⌘⏎", "New agent ⌘N"). **Not built yet:** no
-  button draws its chord. The Changes pane's Send to agent binds ⌘↩ and names it in its tooltip,
-  and the empty workspace puts `NWKeycap`s beside New agent (Known gaps). In a sheet the primary
+  button draws its chord. The Changes pane's Send to agent binds ⌘↩ and names it in its tooltip
+  (Known gaps). In a sheet the primary
   is the ⏎ default instead (Dialogs and sheets).
 
 **Icon buttons** (`.buttonStyle(.nwIcon)`, `.nwIcon(bordered:isOn:size:tint:)`): always a
@@ -3849,8 +4006,7 @@ one 28pt, radius 6, on `bgRaised` with a 1px `lineStrong` line):
 - **Count badge** (`NWCountBadge(3, tone: .attention)`): a capsule at least 18×16 with 5pt side
   padding, Geist Mono 10 semibold: `neutral` is `textSecondary` on `bgSelected` ("19"),
   `attention` `textOnLantern` on `lantern` (needs you, "3"), `failed` white on `failed` ("1").
-  Its digits roll when the count changes. The sidebar's Automations footer uses neutral and
-  attention.
+  Its digits roll when the count changes.
 - **Tag** (`NWTag("worker")`, `NWTag("claude-sonnet", mono: true)`): roles, models, kinds. 18pt,
   6pt side padding, radius 4, `textSecondary` on `bgSelected`, Geist 11 (Geist Mono 10.5 when
   `mono`).
@@ -3955,7 +4111,7 @@ thread, Automations).
   in `bgSelected`, 10pt apart, the bars at 70%, 52%, 64%, and 40% of the width. The block pulses
   between 55% and full opacity over 1.4s (`shimmer`), static under Reduce Motion and while
   hidden (`nwMotionPaused`). **Not built yet:** the modifier exists, but a loading host shows a
-  "Connecting…" sidebar row and a "connecting to <host>…" pane placeholder instead.
+  "connecting to <host>…" pane placeholder instead.
 
 ## Keyboard
 
@@ -3966,7 +4122,7 @@ in UserDefaults under `shepherd.keybindings`).
 - **One source:** menus, palette keycaps, Settings ▸ Keyboard, copy that names a chord
   (Settings ▸ Agents and Terminal), and the Ghostty unbind list all read the store. Hardcoding a
   chord in a view is a bug, and a hint is never shown for a chord that isn't wired.
-- **Rules for a rebound chord:** it must include ⌘, must not use a digit (⌘1–9, ⌃⇧1–9), must not
+- **Rules for a rebound chord:** it must include ⌘, must not use a digit (⌘1–9), must not
   be ⌘, or a plain ⌘ system or terminal chord (⌘Q, ⌘H, ⌘M, ⌘C, ⌘V, ⌘X, ⌘A, ⌘Z), and must not be
   another action's chord.
 - **Keycaps** (`NWKeycap`; Controls, Composer & menus): one cap per key, modifiers first in
@@ -3983,10 +4139,10 @@ in UserDefaults under `shepherd.keybindings`).
 
 | Default | Action |
 | --- | --- |
-| ⌘N · ⇧⌘T · ⇧⌘N | New agent in current checkout · with options… · new space… |
+| ⌘N · ⇧⌘T · ⇧⌘N | New thread (the page) · new agent with options… · new space… |
 | ⌘R · ⇧⌘W | Rename agent · delete agent |
 | ⌘K | Command palette |
-| ⌘↓ · ⌘↑ | Next · previous agent |
+| ⌘↓ · ⌘↑ | Next · previous agent in the sidebar (Needs you, then Recents) |
 | ⌘D · ⇧⌘D · ⌘W | Split vertically · horizontally · close pane |
 | ⌥⌘→ · ⌥⌘← | Focus next · previous pane |
 | ⌘J · ⇧⌘↩ | Show or hide the terminal panel · maximize or restore it |
@@ -3999,8 +4155,8 @@ in UserDefaults under `shepherd.keybindings`).
 
 Fixed chords:
 
-- ⌘1–9 select agents in sidebar order (hold ⌘ to see the badges).
-- ⌃⇧1–9 jump to machines (this Mac is always ⌃⇧1).
+- ⌘1–9 select the first nine Recents rows (hold ⌘ to see them). ⌃⇧1–9 jumped between the tree's
+  machine sections and went with them: a focused terminal keeps them now.
 - ⌃1 shows the side pane's Changes tab (View › Changes); ⌃2–⌃4 wait for its other tabs. Settings ▸
   Keyboard lists it under Fixed, and Ghostty leaves it to the app (`appOwnedChords`).
 - ⌘, opens Settings, and ⌘F searches it.
@@ -4022,8 +4178,8 @@ The Changes pane's keys are listed with the pane (Side pane › Changes).
 ## Accessibility and motion
 
 - **Controls:** every control is a real `Button`, `Toggle`, or text field, or carries button
-  traits and actions (sidebar rows are tap views so they can also be dragged). Icon-only buttons
-  carry an `accessibilityLabel`, and hover-only affordances (the sidebar's `+`, a message's time
+  traits and actions (sidebar rows are tap views, so a long list builds no focus-ring view per
+  row). Icon-only buttons carry an `accessibilityLabel`, and hover-only affordances (a message's time
   and a turn's footer, a comment's Edit and Delete, a diff line's `+`) are always reachable as
   buttons or named actions for VoiceOver.
 - **Rows read as one element:**
@@ -4078,8 +4234,8 @@ below collects the rest, and the places those sentences point here.
   where the board's is `ghost`. `dangerFill` lifts on hover like `primary` (`Buttons.swift`); the
   board's stays put. Primary's and dangerFill's hover and pressed fills are 12% and 10% mixes toward
   white and black, near but not the board's hexes (dark hover `#f4b352` against `#f7b84f`). No
-  button draws its chord after its title: the Changes pane's Send to agent names ⌘↩ only in its tooltip,
-  and the empty workspace puts keycaps beside New agent (`WorkspaceView.swift`). `NWPopupMenu`
+  button draws its chord after its title: the Changes pane's Send to agent names ⌘↩ only in its
+  tooltip. `NWPopupMenu`
   defaults to a 180pt minimum width (`Pickers.swift`); the board's popups are 200.
 - **Status and feedback:** an empty state's sentence is capped at 320pt (`Feedback.swift`), the
   board's at 280. A banner's icon is 13pt, the board's 15.
@@ -4104,20 +4260,6 @@ below collects the rest, and the places those sentences point here.
     picker's "A commit…"; a commits range (touch has no ⇧); Rich preview and Open in your editor;
     a draft pull request from Commit… (`RemoteCommitOptions` has no draft).
   - A comment's author: the boards draw the initial "B"; the touch clients say "You".
-- **Settings (the boards against `SettingsView.swift`, `SettingsComponents.swift`,
-  `NWSettingsNavRow`, `NWCardRow`, `NWGroupCard`):** the nav's window-controls strip 38pt
-  (`AppLayout.trafficLightHeight`) instead of 44; page titles in `display` (28) instead of 22/600;
-  nav rows 28pt at `ui` with a semibold selection instead of 32pt at Geist 13 and 500, rows 1pt
-  apart instead of 2, nav icons at 13.5 instead of 15, the Back row 28pt, and the Remote icon
-  `desktopcomputer`; 32pt page gutters instead of 48; group cards on `bgRaised` instead of flat on
-  `bgWindow`; row titles in `ui` (12.5) and descriptions and footnotes in `caption` (11.5) instead
-  of 13.5/500, 12.5, and 12; 16pt between a row's text and its control instead of 24, 3pt between
-  title and description instead of 2, 6pt under the page title instead of 4; descriptions without
-  inline code or emphasized option names; the listener's problem without its `xmark` and showing the
-  raw bind error; the remote host line all in mono; Keyboard's Reset all as a danger button in a
-  Fixed row, "Confirm or cancel in sheets" with ⎋, and the Reset link 8pt from its keycaps; pi's
-  Update now split in two; and copy that differs (Remote's Token, Advanced's Reset
-  settings). Instructions and Experiments are not built.
 - **Thread and terminal** (NWThread, TerminalSplit, TerminalPane against the app):
   - Consecutive activity lines sit 6pt apart (`AppLayout.activitySpacing`), as NWThread draws
     them; ToolRows and Running draw 4pt.
@@ -4127,6 +4269,13 @@ below collects the rest, and the places those sentences point here.
     (`NightWatch.swift`); the boards draw a `textPrimary` block cursor and a 13% selection. The
     terminal font defaults to SF Mono 12.5 (`AppSettings`); the boards set Geist Mono 12 at 1.6.
   - Split terminals' dividers are `lineSubtle`, the TerminalPane board's `lineStrong`.
+- **Sidebar and New thread** (NWNavigation, NavNewThread against `SidebarView.swift` and
+  `NewThreadPage.swift`):
+  - The New thread composer has no attach button and no "/ commands" chip, and its placeholder
+    drops ", or / for commands": no pi runs before the thread exists to list its commands, and the
+    opening prompt carries no images.
+  - A Needs you reason is the question's own title cut to 14 characters ("Retention…"), where the
+    boards condense it ("retention?").
 - **A pi dialog posts no notification** (Notifications and Live Activities › The catalog):
   a confirm, select, input or editor dialog shows in the thread, but only a tool named like
   `ask` or `question` sets `blocked`, so any other question reaches no one outside the window
@@ -4799,7 +4948,8 @@ keyboard is up while the query is empty.
 - **Not built yet:** under the hosts, a card of 52pt rows: Design systems ("2 · acme-web, Night
   Watch", a palette glyph), Extensions ("6 installed", a puzzle glyph), and Archive ("41
   threads", a box glyph), each pushing its list. Design systems and Archive wait for the Mac;
-  Extensions lists the bundled and installed pi extensions each host loads.
+  Extensions opens Settings ▸ Extensions (built: the bundled and installed pi extensions each host
+  loads).
 
 ### iPhone: Settings (MobileSettings)
 
@@ -4810,26 +4960,56 @@ keyboard is up while the query is empty.
 - **First card** (no head): Appearance (a palette glyph; "System", "Light" or "Dark"), then
   Notifications (a bell; "Needs you").
 - **Agents:** Defaults (a sparkle; the default model, "claude-opus"), Instructions (a page;
-  "AGENTS.md, APPEND"), Extensions (a puzzle; "6").
+  "AGENTS.md, APPEND"), Skills (a graduation cap; "8 · 2 updates"), Extensions (a puzzle; "6").
 - **Machines:** Hosts (a display; "1 offline", or the count), then Worktrees (a branch).
 - **A card of its own:** Experiments (a flask; "1 on").
 - **About:** a 24pt Shepherd icon (the crook in `lantern` on `textOnLantern`'s dark, 6pt corners),
-  "Shepherd 0.1.0", and "agent 0.87.1" (mono 13 `textTertiary`) trailing. The app shows "build N"
-  there, since the host reports no pi version, and draws the crook at 15pt with no tile.
-- **In the app** the screen is `bgWindow` with 16pt sides, a value is 12 (`.caption`), and Hosts
-  shows "1 offline" as a problem (mono `failed`) or the host count ("None" with no hosts).
-- **Built today:** Appearance (System, Light, Dark for this device; "System follows this device's
-  appearance. Shepherd on a Mac keeps its own."), Machines ▸ Hosts (the hosts as cards, and the host
-  form), and About.
+  "Shepherd 0.1.0", and "agent 0.87.1" (mono 13 `textTertiary`) trailing.
+- **In the app** the screen is `bgWindow` with 16pt sides, a value is 12 (`.caption`), Hosts shows
+  "1 offline" as a problem (mono `failed`) or the host count ("None" with no hosts), and
+  Appearance keeps the half-filled circle the Mac's Settings uses. A value shows once a host has
+  answered (`SettingsStore`): Defaults, Extensions and About's agent are the settings host's (the
+  one their pages last showed, else the first that serves its settings), Instructions the first
+  host whose files read, and Experiments "1 on" or "Off" once any host serves suggestions. About
+  says "build N" until a host reports its agent's version. Every Settings screen reads every host as it
+  appears, again as a host connects, and on pull to refresh.
 - **Not built yet:** Notifications (which events notify: Needs you by default; it waits for push
-  notifications), Agents ▸ Defaults (the model and thinking a new thread starts with), Extensions
-  (the extensions each host loads), Machines ▸ Worktrees (the Mac's worktree settings for new
-  threads), Instructions and Experiments (below).
+  notifications; see Settings ▸ Notifications).
+
+#### A host's settings (Defaults, Worktrees, Extensions)
+
+No board draws these pages: they are the Mac's Settings ▸ Agents, Worktrees and Pi (SettingsAgents,
+SettingsWorktrees, SettingsPi) as a host keeps them (`hostSettings.v1`), in iOS Settings' anatomy
+(`Settings/HostSettingsScreens.swift`): a large title and an explanation (`.caption`,
+`textSecondary`), then `SettingsSection` heads over `NWListCard`s of rows, each the title at `ui`
+over a note (12.5/1.45 `textTertiary`, its `code` and **names** marked as the Mac marks them,
+`NWMarkupText`) with its control trailing: an `.nwSwitch`, or a menu naming the current value
+beside up-down chevrons.
+
+- **Which host:** with several hosts, a first card, Host, whose menu lists them ("horizon ·
+  offline"); the three pages share the choice. With one host there is no card.
+- **Defaults:** New threads: Model (a menu of "Use the agent’s default", then the host's catalog,
+  keeping the current model when the catalog lacks it; mono) and Thinking (Off … Max). While the
+  agent is working:
+  When a turn ends, send the queue (One per turn, All at once).
+- **Worktrees:** New worktrees: Base branch (Remote default, Current branch) and Fetch before
+  creating. Finalize: Commit remaining work, Generate PR descriptions, Delete local branch, Merge PR
+  automatically and, while that is on, Merge method (Squash, Merge, Rebase), over "Shepherd never
+  deletes the remote branch: merging the PR cleans it up on GitHub."
+- **Extensions:** Bundled with Shepherd: a switch for each extension the host bundles, with its
+  note. Installed on <host>: the host's own packages and extensions in mono ("None yet…" without).
+  Updates: Update the agent daily and Update extensions daily, over "<host> runs agent 0.87.1."
+- **States:** a spinner while the host answers; offline, "<host> is offline. Its settings show here
+  once it's back."; a Shepherd from before `hostSettings.v1`, "…is too old to share its settings.
+  Update it to change them here."; a failed read, its reason in `failed`. A change shows at once
+  and goes to the host; one it refuses springs back, its reason in a banner.
 
 ### iPhone: Instructions (MobileInstructions, MobileInstructionsEdit)
 
-**Not built yet.** Settings ▸ Instructions edits the global instructions pi reads at the start of
-every session. It waits for the Mac's Instructions page (SettingsInstructions).
+Settings ▸ Instructions edits the root instructions every session Shepherd starts reads, on
+every host (`Settings/InstructionsScreens.swift`; the Mac's page is SettingsInstructions). Each
+host keeps Shepherd's own copies in its support folder and serves them over `instructions.v1`;
+`ClientInstructions` (ShepherdRemote) holds every rule.
 
 - **The page** (MobileInstructions): "‹ Settings", the large title "Instructions", on `bgBase` with
   14pt sides and 10pt apart. "The agent reads these at the start of every session, on every host."
@@ -4848,14 +5028,88 @@ every session. It waits for the Mac's Instructions page (SettingsInstructions).
   being edited on `lanternTint`; a `lantern` caret. Over the keyboard, a key row on `bgSunken` with
   a `lineSubtle` rule: 32pt keys at least 38pt wide on `bgRaised`, 6pt corners, mono 14: `#`, `-`,
   `` ` ``, `**`, Tab.
-- **Where it writes:** the board saves into each host's `~/.pi/agent/`, which Shepherd must never
-  write (AGENTS.md › Gotchas: never install anything into `~/.pi/agent/`). Decide where these files
-  live on the host before building it.
+- **In the app** the page is `bgWindow` with 16pt sides and reads "The agent reads these at the
+  start of every session Shepherd starts, on every host.", and the switch's note is
+  "Save once, written to every host." ("Each host keeps its own." when off): Shepherd writes its
+  own copies, never `~/.pi/agent` (departures). With Same on every host on (the default, kept per
+  device) the page edits the first host whose files read and a save writes both files to every
+  host; a host offline then is owed them ("offline · will sync", remembered on the device) and
+  takes them the next time the page reads it. A host whose files differ reads "differs · 2 lines"
+  in `lanternText`, and Sync now under the card gives each such host the first host's files. Off,
+  a host's row shows the files it holds ("AGENTS · APPEND"), and a tap picks the host the page
+  edits (a `lantern` check). A file's row says "edited" in `lanternText` while its draft waits;
+  drafts last until saved, or until the app quits.
+- **The app's editor** (`InstructionsTextEditor`, TextKit) draws as the Mac's does: its
+  highlighting, and every line changed since the last save tinted, not only the one being typed;
+  its sizes follow Dynamic Type up to 22pt. The key row is the terminal's (`NWTerminalKeyRow`);
+  `` ` `` and `**` wrap a selection, and Tab indents two spaces. Save reads "Save" whatever the scope
+  (VoiceOver hears "Save to 3 hosts"), and a spinner takes its place while it writes; a failed save
+  shows its reason in a banner over the file.
+
+### iPhone: Skills (MobileSkills)
+
+Settings ▸ Skills on the phone and the iPad (`Settings/SkillsScreens.swift`; the Mac's page is
+SettingsSkills): every host's agent skills, the same on every host, over `skills.v1`.
+`ClientSkills` (ShepherdRemote) holds every rule, as on the Mac.
+
+- **The page** (MobileSkills): "‹ Settings", the large title "Skills" and a 36pt round + (Add from
+  repo) in the bar, on `bgBase` with 14pt sides, 10pt apart. "Global: every host gets the same
+  skills. Tap one for how it’s used, its files and hosts." (13.5/1.5 `textSecondary`), a 40pt search
+  field on a filled track at radius 10 ("Search skills.sh", 15), then "Installed · 8" (13/600
+  `textSecondary`) with "Update 2" (13.5/500 `running`) trailing, over a card of rows at least 58pt
+  (8pt × 14pt padding, 10pt gaps): the name in mono 14/600 over its description at 12.5
+  `textTertiary` ("/skill only · House style for table-driven Go tests." for one only /skill
+  loads), the Update pill (22pt, 12/600) while a newer commit waits, and its switch (off: the
+  track in `lineStrong`). Under the card: "horizon is offline. It gets changes when it’s back."
+  (12.5/1.5 `textTertiary`).
+- **In the app** the page is `bgWindow` with 16pt sides; the field is the touch search field
+  (`NWTouchSearchField`); Installed · 8 and Update 2 are the lists' header and link; "Updating"
+  shimmers in a row while its update goes; and several hosts away read "horizon, build-02 are
+  offline. They get changes when they’re back." A tap on a row opens the skill, its switch turns it
+  on or off on every host, and Update N installs every newer commit. Removing a skill (from its
+  detail) comes back to the list with "Removed pdf from every host" and Undo in a banner. Without a
+  host, or with none online, too old or unreadable, the page says so in place of the list, and
+  reads every host again on pull to refresh.
+- **Search:** typing asks skills.sh (a quarter second after the last key): "9 skills for
+  “postgres”" over a card of results, the name in mono 14/600 with the search's matches in
+  `lanternText` and the Official seal, "supabase/agent-skills · 71K installs" under it, and a 96pt
+  end with Install (small secondary), "1 of 3 hosts" shimmering while it installs, "Installed"
+  with a check in `done`, or the Update pill. Clearing the field shows the installed skills again.
+- **A result** (no board draws it) opens its preview: the name in mono 17/600 with the seal, the
+  line under it, and the description; Use it (Automatically or Only with /skill, a menu row, with
+  what it means), Install (large primary) and where it goes ("Studio, build-01 now · MacBook Air
+  when it's back"), or Installed with Open, or Update; while it installs, "Installing · 1 of 3
+  hosts" with Cancel over a card of each host's step. Then SKILL.md (a card: the file and "~1,400
+  tokens when used" in a 36pt header on `bgSunken`, its first 60 lines numbered in a 28pt column,
+  mono 12 on 19pt lines with the instructions editor's highlighting, and "40 more lines"), Files as
+  chips with what its scripts are, Pick from all of anthropics/skills (Add from repo on it) and View
+  on skills.sh.
+- **A skill** (no board draws it) opens its detail: the name in mono 17/600 and its description;
+  On (a switch: "Agents can use it." or "No agent sees it until it's back on."); Use it, the Mac's
+  two radio options in a card; Version (the repository and folder, "Installed 3f2a91c · Aug 30",
+  and "New 8c04e1d · Sep 22 · 3 files changed" in `lanternText` with Update and What changed; or
+  Local); Hosts (a display glyph, the host in mono, its state trailing: "installed" in `done`,
+  "updating" in `running`, "offline · updates later" in `textTertiary`); Files as chips; and
+  "Remove from every host" (large danger).
+- **Add from repo** (no board draws it): "A GitHub owner/repo or URL. Shepherd copies the skills
+  you pick into ~/.agents/skills on every host.", a 44pt mono field on `bgRaised` with Look up,
+  then "3 of 13 new skills" with Select all new over a card of the repository's skills (a tick
+  circle, the name in mono 14/600, "Installed" or "Installed · update" for one already here,
+  dimmed and fixed, and the description), "16 skills · main @ 8c04e1d", Use them (a menu row),
+  where they go, and "Install 3 skills" (large primary). While it installs, each host's step shows
+  in place; the screen closes once every host that could take them has them. A repository with one
+  new skill ticks it; a URL into a skill's folder ticks that one. The phone has no folders to add.
+- **On iPad** the page shows beside the Settings list (Skills after Instructions), and a skill, a
+  result or Add from repo opens over the detail.
+- **Not built yet:** Same skills on every host as a switch on the phone and the iPad, which follow
+  it on (the Mac's option is kept per Mac); skills.sh's ranked lists, which need a key the Mac
+  keeps.
 
 ### iPhone: Experiments (MobileExperiments)
 
-**Not built yet.** Settings ▸ Experiments: features still being tried, each off until turned on. It
-waits for the Mac's Experiments page (SettingsExperiments).
+Settings ▸ Experiments: features still being tried, each off until turned on
+(`Settings/ExperimentsScreens.swift`; the Mac's page is SettingsExperiments). Its one experiment
+spans every host (`suggestions.v1`); `ClientSuggestions` (ShepherdRemote) holds every rule.
 
 - **The page:** "‹ Settings", the large title "Experiments", on `bgBase`, 14pt sides, 10pt apart.
   "Still being tried out. Each is off until you turn it on." (13.5/1.5 `textSecondary`).
@@ -4870,8 +5124,21 @@ waits for the Mac's Experiments page (SettingsExperiments).
   bubble for a thread and a bolt for an automation in `textSecondary`), the suggested line in mono
   13/1.45 with a `done` "+ " before it and code spans in the syntax string color, where it came from
   under it ("Checkout funnel events · AGENTS.md", "… · build-01"; 12 `textTertiary`), and a chevron
-  that opens it to add or dismiss. Nothing is written until you add it. Adding writes the root
-  AGENTS.md, so it waits on the same decision as Instructions' Where it writes.
+  that opens it to add or dismiss. Nothing is written until you add it.
+- **In the app** the page is `bgWindow` with 16pt sides, and Learn from lists Threads and
+  Automations (Missions aren't built). The switch and the choices change every host that serves
+  suggestions, and show at once. A line leaves off its Markdown bullet and names its host once
+  more than one host serves suggestions. Add all shows from two lines up; with none, "Nothing is
+  waiting. When an agent learns something the hard way, its line shows up here." While it is on,
+  Open Instructions follows the lines. With no host serving suggestions the switch is off and
+  dimmed, over why (no host online, or a Shepherd too old).
+- **A suggestion** (no board; pushed from its row, titled "Suggestion"): the source's glyph and
+  name with its host's badge over "thread · 2h ago"; The line (mono 13 on `doneTint`, editable, one
+  line: Return ends the edit); Why (the agent's reason at `body` in `textSecondary`); Goes to (a
+  File menu, AGENTS.md or APPEND_SYSTEM.md, noted "On <host>. Nothing is written until you add
+  it."); then Add to AGENTS.md (primary, naming the file) and Dismiss (ghost). Either goes back to
+  the list; a refusal stays, with its reason. A line added or dismissed elsewhere reads "This line
+  was added or dismissed."
 
 ### iOS: iPad
 
@@ -5451,19 +5718,23 @@ design agent's note floating over it; Design tool › On iPad specifies it.
 
 #### Settings (iPadSettingsInstructions)
 
-Built: Settings pushes over the detail as one list: Appearance (System, Light, Dark), Machines ›
-Hosts (the count, or "n offline"), and About.
+Settings is a list beside the page: a 300pt column (a 1px `lineSubtle` trailing edge) headed
+"Settings"; rows at least 48pt, 12pt inset and gap, radius 10: a 17pt `textSecondary` glyph and
+the label at 15/500; the open page's row on `bgSelected`, its glyph `textPrimary` and label
+semibold. Pages: Appearance, Agents, Worktrees, Pi, Instructions, Skills, Notifications, Hosts,
+Keyboard, Experiments. Agents, Worktrees, Pi and Keyboard are the host's settings, as the Mac shows them.
 
-**Not built yet: Settings as a list beside the page.** A 300pt column (a 1px `lineSubtle`
-trailing edge) headed "Settings"; rows at least 48pt, 12pt inset and gap, radius 10: a 17pt
-`textSecondary` glyph and the label at 15/500; the open page's row on `bgSelected`, its glyph
-`textPrimary` and label semibold. Pages: Appearance, Agents, Worktrees, Pi, Instructions,
-Notifications, Hosts, Keyboard, Experiments. Agents, Worktrees, Pi and Keyboard are the host's
-settings, as the Mac shows them; Notifications waits for push; Instructions and Experiments wait
-for the Mac.
+- **In the app** (`SettingsScreen` at regular width; a compact window gets the phone's list): the
+  list is Appearance, Agents, Worktrees, Pi, Instructions, Skills, Hosts and Experiments, 10pt in from its
+  edges with rows 2pt apart, and "Shepherd 0.1.0 · agent 0.87.1" under them ("pi 0.87.1" while
+  the Pi page is open, as on the Mac). Beside it is the phone's own page (Agents is Defaults, Pi is
+  Extensions) with its title in the bar, which says no
+  "Settings" of its own. A page that opens another (Experiments' Open Instructions) switches the
+  list in place.
+- **Not built yet:** Keyboard (the host's chords) and Notifications (it waits for push).
 
-**Not built yet: Instructions** (editing the instructions pi reads on every host; the Mac's page
-is Settings › Instructions, SettingsInstructions):
+**Instructions** (editing the instructions pi reads on every host; the Mac's page is Settings ›
+Instructions, SettingsInstructions; `Settings/InstructionsScreens.swift`):
 
 - **Header:** "Instructions", History (secondary) and "Save to 3 hosts" (primary).
 - **Scope:** Every host | Per host (a 300pt segmented control: a `bgSelected` track at radius 9,
@@ -5481,9 +5752,19 @@ is Settings › Instructions, SettingsInstructions):
   folders → repo AGENTS.md → APPEND_SYSTEM.md (the last on `lanternTint` with a `lanternText`
   line, in `textPrimary`). Under it at 12.5/1.5 `textTertiary`: "APPEND_SYSTEM.md is added to the
   end of the agent’s system prompt, so these rules beat anything in an AGENTS.md. Keep it short."
-- The board edits `~/.pi/agent/APPEND_SYSTEM.md`. Shepherd never writes into `~/.pi/agent/`
-  (AGENTS.md › Gotchas) and keeps its own pi apart from the user's, so the files it edits must
-  be decided before this is built.
+- **In the app** the bar holds the title, and History and Save (NW buttons at `l`) end the page's
+  first row, after the scope control and its state, dropping under them where the row is too
+  narrow. The state names every host ("Studio, build-01 synced · horizon when it's back", "…
+  build-02 differs"), with Sync now as a link while one differs; Per host swaps it for a menu of
+  the host being edited. The path is the host's own instructions folder, the editor is the
+  phone's (`InstructionsTextEditor`) at the iPad's sizes, and it fills the height left: the read
+  order and its note step aside while the keyboard is up. The chips name Shepherd's files
+  ("Shepherd's AGENTS.md", "Shepherd's APPEND_SYSTEM.md"), marking the open one, and the note
+  speaks for the open file (AGENTS.md: "Shepherd's AGENTS.md comes before any folder's or repo's
+  AGENTS.md, so a repo's own file can refine it."). History opens a 360pt popover of the open
+  file's saves on the host edited, newest first: a summary over "07:12 · from iPhone", and Restore
+  on all but the newest ("current"); with Same on every host on, a restore reaches every host. The
+  iPad has no key row.
 
 #### Side pane (iPadPaneBrowser, iPadPaneArtifacts, iPadPaneFiles)
 
@@ -7045,9 +7326,8 @@ tool work reads as activity lines.
   between Missions and Automations, its glyph the pen nib (the boards' nib; `pencil.tip` is the
   nearest SF Symbol), selected in `bgSelected` with its title semibold. A design in Recents shows
   the nib (13pt, `textTertiary`) in place of the status dot and its board count in mono 10
-  `textTertiary` ("Checkout funnel dashboard  4 boards"). The Mac sidebar today is the
-  This Mac / host / space tree (Sidebar); the destination list, Designs third, is specified under
-  Sidebar destinations, Needs you, and Recents and is not built yet.
+  `textTertiary` ("Checkout funnel dashboard  4 boards"). The Mac sidebar's destinations are
+  built (Sidebar); Designs is hidden until the design tool is.
 - **iPad sidebar** (iPadSidebar and every iPad board with the sidebar): the same Designs
   destination between Missions and Automations, in its 44pt rows at 15, and design rows in
   Recents with their board count ("4 boards").
@@ -7504,7 +7784,7 @@ board as specified here, give or take what Known gaps and the departures table l
 **Partial** means some of it is built and the rest is marked **Not built yet** where it is
 specified; **Not built yet** means none of its surface exists. A board is judged on its own
 subject: the destinations sidebar that most macOS boards draw around it is NWNavigation's and
-NavNewThread's, the Settings nav's Instructions and Experiments rows are those boards', and a
+NavNewThread's, the Settings nav's Instructions, Skills and Experiments rows are those boards', and a
 full-window board's larger sizes and second lines give way to the component boards (Composer,
 questions, and menus), except SlashMenu's and ModelPicker's, which specify their menus.
 
@@ -7534,14 +7814,19 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | SettingsRemote | Settings › Remote | Built |
 | SettingsKeyboard | Settings › Keyboard; Keyboard | Built |
 | SettingsAdvanced | Settings › Advanced | Built |
-| SettingsInstructions | Settings › Wide pages, Instructions | Not built yet |
-| SettingsInstructionsHosts | Settings › Instructions per host | Not built yet |
-| SettingsExperiments | Settings › Experiments | Not built yet |
-| NavNewThread | Sidebar destinations, Needs you, and Recents; New thread page | Partial |
+| SettingsInstructions | Settings › Wide pages, Instructions | Built |
+| SettingsInstructionsHosts | Settings › Instructions per host | Built |
+| SettingsSkills | Settings › Wide pages, Skills | Built |
+| SettingsSkillsBrowse | Settings › Browse skills.sh and Add from repo | Built |
+| SettingsSkillsSearch | Settings › Browse skills.sh and Add from repo | Built |
+| SettingsSkillsRepo | Settings › Browse skills.sh and Add from repo | Built |
+| SkillsStates | Settings › Skills; Browse skills.sh and Add from repo | Built |
+| SettingsExperiments | Settings › Experiments | Built |
+| NavNewThread | Sidebar; New thread page | Built |
 | NavMissions | Missions page; Missions | Not built yet |
 | NavDesigns | Designs page; Design tool › Designs | Not built yet |
-| NavAutomations | Automations page; Sidebar (automation rows, Details and Runs) | Partial |
-| NavHosts | Hosts page; Settings › Remote | Partial |
+| NavAutomations | Automations page; Sidebar | Partial |
+| NavHosts | Hosts page; Sidebar; Settings › Remote | Partial |
 | PaneBrowser | Side pane (Browser) | Not built yet |
 | PaneArtifacts | Side pane (Artifacts) | Not built yet |
 | PaneArtifactEdit | Side pane (Artifacts › Editing in place) | Not built yet |
@@ -7595,9 +7880,10 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | MobileAutomations | iOS: Automations | Partial |
 | MobileMore | iPhone: More | Partial |
 | MobileSettings | iPhone: Settings | Partial |
-| MobileInstructions | iPhone: Instructions | Not built yet |
-| MobileInstructionsEdit | iPhone: Instructions | Not built yet |
-| MobileExperiments | iPhone: Experiments | Not built yet |
+| MobileInstructions | iPhone: Instructions | Built |
+| MobileInstructionsEdit | iPhone: Instructions | Built |
+| MobileSkills | iPhone: Skills | Built |
+| MobileExperiments | iPhone: Experiments | Built |
 
 **iPadOS**
 
@@ -7694,7 +7980,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | LiveText | Thread › Live text, Activity lines (Live), Thinking (Live); Motion (`shimmer`); Up next (a steering row waits still); Subagents (a running tray row's words) | Built |
 | NWComposer, NWComposerLight | Composer, questions, and menus; Command palette | Partial |
 | ContextIdeas | Composer, questions, and menus › Context meter; Thread › Compactions | Partial |
-| NWNavigation, NWNavigationLight | Window and adaptive layout; Sidebar; Sidebar destinations, Needs you, and Recents; Toolbar | Partial |
+| NWNavigation, NWNavigationLight | Window and adaptive layout; Sidebar; Toolbar | Partial |
 | NWAgents, NWAgentsLight | Subagents; Side pane › Subagent inspector; Mission components | Partial |
 | ChangesStates | Side pane › Changes; Thread › Changes card; Keyboard | Partial |
 | SubagentTray | Subagents; iPhone: Subagents; iOS: iPad › Subagents | Partial |

@@ -44,17 +44,6 @@ struct WorkspaceView: View {
                     RemoteAgentPane(vm: vm, ref: remote)
                         .id(remote)
                 }
-
-                // The empty state cross-fades on a layer of its own; the layouts under it still
-                // flip at once.
-                let empty = visibleTabID == nil && vm.selectedRemoteAgent == nil
-                ZStack {
-                    if empty {
-                        EmptyWorkspace(vm: vm)
-                            .nwTransition(.content)
-                    }
-                }
-                .nwAnimation(.content, value: empty)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.nw.bgWindow)
@@ -116,65 +105,6 @@ final class LiveResizeColumn {
             override func hitTest(_ point: NSPoint) -> NSView? { nil }
         }
     }
-}
-
-/// No agent on screen: a space with no agents yet, or no spaces at all. Its variants cross-fade
-/// into one another.
-struct EmptyWorkspace: View {
-    var vm: ShepherdViewModel
-    private var keys: KeybindingsStore { .shared }
-
-    enum Variant: Equatable {
-        case space(SpaceID, hasAgents: Bool)
-        case noSpaces
-        case noSelection
-    }
-
-    /// No spaces means none anywhere: not on this Mac (its hidden automations space aside), and
-    /// none on a connected host, whose spaces the sidebar lists to pick from.
-    static func variant(selected: Space?, agents: [Agent], localSpaces: [Space], remoteSpaces: Int) -> Variant {
-        if let space = selected { return .space(space.id, hasAgents: agents.contains { $0.spaceID == space.id }) }
-        return localSpaces.allSatisfy(\.hidden) && remoteSpaces == 0 ? .noSpaces : .noSelection
-    }
-
-    private var variant: Variant {
-        Self.variant(selected: vm.selectedSpace, agents: vm.state.agents, localSpaces: vm.state.spaces,
-                     remoteSpaces: vm.remoteSpaceCount)
-    }
-
-    var body: some View {
-        ZStack {
-            switch variant {
-            case .space(_, let hasAgents):
-                if let space = vm.selectedSpace {
-                    NWEmptyState(Text(hasAgents ? "No agent selected" : "No agents in \(space.name)"),
-                                 message: hasAgents ? "Pick one in the sidebar, or start another in \(space.name)."
-                                                    : "Start one to work in \(space.path.abbreviatingWithTilde).") {
-                        Button("New agent") { vm.quickCreateAgent(in: space.id) }
-                            .buttonStyle(.nw(.primary))
-                        NWKeycap(keys.display(.newAgent))
-                    }
-                }
-            case .noSpaces:
-                NWEmptyState(Text("No spaces yet"), message: "A space is a project folder your agents work in.") {
-                    Button("New space…") { vm.addSpaceFromPanel() }
-                        .buttonStyle(.nw(.primary))
-                }
-            case .noSelection:
-                NWEmptyState(Text("No agent selected"), message: "Pick one in the sidebar, or start a new one.") {
-                    NWKeycap(keys.display(.newAgent))
-                }
-            }
-        }
-        .nwContentTransition(.crossFade)
-        .nwAnimation(.content, value: variant)
-        .frame(maxWidth: AppLayout.emptyWorkspaceMaxWidth)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-private extension String {
-    var abbreviatingWithTilde: String { (self as NSString).abbreviatingWithTildeInPath }
 }
 
 // MARK: Agent layout

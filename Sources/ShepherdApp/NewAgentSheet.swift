@@ -469,7 +469,7 @@ struct NewAgentSheet: View {
                                 } catch {
                                     errorText = "\(error)"
                                 }
-                            } else if let id = await vm.addSpace(at: URL(fileURLWithPath: path), createInitialAgent: false) {
+                            } else if let id = await vm.addSpace(at: URL(fileURLWithPath: path)) {
                                 spaceID = id
                             }
                         }

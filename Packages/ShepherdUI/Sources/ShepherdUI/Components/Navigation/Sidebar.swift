@@ -1,23 +1,24 @@
 import SwiftUI
 
-/// The sidebar column (Navigation board): a 44pt top bar that leaves room for the window
-/// controls and drags the window, the scrolling tree, and a footer behind a 1px rule. On
-/// `bgBase`; the caller draws the trailing edge.
+/// The sidebar column (NWNavigation, `NWSidebar`): the 44pt top bar (room for the window
+/// controls, then Search and Hide sidebar at its trailing end; it drags the window), the
+/// destinations and lists, and the footer behind a 1px rule. On `bgBase`; the caller draws the
+/// trailing edge.
 public struct NWSidebar<Content: View, Footer: View>: View {
+    let topBar: NWSidebarTopBar
     @ViewBuilder let content: () -> Content
     @ViewBuilder let footer: () -> Footer
 
-    public init(@ViewBuilder content: @escaping () -> Content, @ViewBuilder footer: @escaping () -> Footer) {
+    public init(topBar: NWSidebarTopBar, @ViewBuilder content: @escaping () -> Content,
+                @ViewBuilder footer: @escaping () -> Footer) {
+        self.topBar = topBar
         self.content = content
         self.footer = footer
     }
 
     public var body: some View {
         VStack(spacing: 0) {
-            Color.clear
-                .contentShape(Rectangle())
-                .nwWindowDrag()
-                .frame(height: NWSidebarMetrics.topBarHeight)
+            topBar
             content()
                 .frame(maxHeight: .infinity, alignment: .top)
             footer()
@@ -27,194 +28,314 @@ public struct NWSidebar<Content: View, Footer: View>: View {
 }
 
 extension NWSidebar where Footer == EmptyView {
-    public init(@ViewBuilder content: @escaping () -> Content) {
-        self.init(content: content, footer: { EmptyView() })
+    public init(topBar: NWSidebarTopBar, @ViewBuilder content: @escaping () -> Content) {
+        self.init(topBar: topBar, content: content, footer: { EmptyView() })
     }
 }
 
-/// The sidebar's fixed measures (Navigation board).
+/// The sidebar's fixed measures (NWNavigation). Row heights follow `NWDensity`.
 public enum NWSidebarMetrics {
     /// The top bar: room for the window controls, unified with the title bar (the toolbar
     /// beside it is as tall).
     public static let topBarHeight: CGFloat = 44
-    /// Horizontal inset of the tree inside the column.
-    public static let treeInset: CGFloat = 6
-    /// The tree's rows sit 1pt apart.
+    /// The top bar's Search and Hide sidebar buttons: 26pt circles 4pt apart, 8pt from the edge.
+    public static let topBarButton: CGFloat = 26
+    public static let topBarButtonGap: CGFloat = 4
+    public static let topBarTrailing: CGFloat = 8
+    /// The destinations and lists sit 8pt in from the column's sides, rows 1pt apart.
+    public static let listInset: CGFloat = 8
     public static let rowSpacing: CGFloat = 1
-    /// Leading padding of a row's content, and the step each nesting level adds.
-    public static let rowPadding: CGFloat = 8
-    public static let indentStep: CGFloat = 14
-    /// Gap between a row's dot and its title.
-    public static let rowGap: CGFloat = 9
+    /// The destinations' stack is padded 2pt above and below.
+    public static let destinationsPadding: CGFloat = 2
+    /// A destination is 2pt taller than a list row at the same density (30 against 28, 24
+    /// against 22).
+    public static let destinationExtra: CGFloat = 2
+    /// A destination's icon slot, and the New thread circle in it.
+    public static let destinationIconSlot: CGFloat = 20
+    /// More's rows (Hosts, Extensions) lead 22pt in instead of 8.
+    public static let destinationChildLeading: CGFloat = 22
+    /// A list row's leading slot (a dot or a kind's glyph).
+    public static let rowSlot: CGFloat = 14
+    /// The footer's avatar and Settings button.
+    public static let footerAvatar: CGFloat = 26
+    /// The trailing reason a Needs you row shows ("retention?") is cut to this many characters.
+    public static let reasonLength = 14
 }
 
-/// What a sidebar section header shows after its label.
-public enum NWSidebarSectionDetail: Equatable, Sendable {
-    case none
-    case count(Int)
-    /// A connection or attention word, colored by `tone` when it carries one.
-    case text(String, tone: AgentState?)
+/// The measures that change with the row density: Standard is the boards' value, Compact the
+/// Compact sample's; Comfortable takes Standard's spacing at its own height.
+extension NWDensity {
+    /// A row's side padding and the gap after its leading slot.
+    public var sidebarRowPadding: CGFloat { self == .compact ? NW.Space.s : NW.Space.m }
+    public var sidebarRowGap: CGFloat { self == .compact ? 7 : 9 }
+    /// A section header's top padding.
+    public var sidebarHeaderTop: CGFloat { self == .compact ? 10 : 14 }
+    /// A destination's title and icon.
+    @MainActor public var destinationFont: Font { self == .compact ? .nwSans(12) : .nwSans(13) }
+    @MainActor public func destinationFont(weight: Font.Weight) -> Font {
+        self == .compact ? .nwSans(12, weight) : .nwSans(13, weight)
+    }
+    public var destinationIcon: CGFloat { self == .compact ? 13 : 15 }
+    /// A list row's glyph (an automation's bolt).
+    public var rowGlyph: CGFloat { self == .compact ? 11 : 13 }
+    /// A destination's height at the current density scale.
+    @MainActor public var destinationHeight: CGFloat { rowHeight + NWSidebarMetrics.destinationExtra }
 }
 
-/// A section label with its count or state ("THIS MAC 19", "HORIZON Unreachable"). Clicking the
-/// label toggles the section; `accessory` (a hover `+`) sits beside it as its own button.
-public struct NWSidebarSection<Accessory: View>: View {
-    public typealias Detail = NWSidebarSectionDetail
+// MARK: Top bar
+
+/// The 44pt top bar: the window controls' room, a spacer that drags the window, then Search
+/// (⌘K) and Hide sidebar (⇧⌘S) as 26pt circular icon buttons with 14pt glyphs.
+public struct NWSidebarTopBar: View {
+    let searchShortcut: String?
+    let hideShortcut: String?
+    let search: (() -> Void)?
+    let hide: (() -> Void)?
+
+    public init(searchShortcut: String? = nil, hideShortcut: String? = nil, search: (() -> Void)?, hide: (() -> Void)?) {
+        self.searchShortcut = searchShortcut
+        self.hideShortcut = hideShortcut
+        self.search = search
+        self.hide = hide
+    }
+
+    public var body: some View {
+        HStack(spacing: NWSidebarMetrics.topBarButtonGap) {
+            Color.clear
+                .contentShape(Rectangle())
+                .nwWindowDrag()
+            if let search {
+                button("magnifyingglass", label: "Search", shortcut: searchShortcut, action: search)
+            }
+            if let hide {
+                button("sidebar.left", label: "Hide sidebar", shortcut: hideShortcut, action: hide)
+            }
+        }
+        .padding(.trailing, NWSidebarMetrics.topBarTrailing)
+        .frame(height: NWSidebarMetrics.topBarHeight)
+    }
+
+    private func button(_ symbol: String, label: String, shortcut: String?, action: @escaping () -> Void) -> some View {
+        Button(action: action) { Image(systemName: symbol) }
+            .buttonStyle(.nwIcon(size: NWSidebarMetrics.topBarButton))
+            .nwHelp(label, shortcut: shortcut)
+            .accessibilityLabel(label)
+    }
+}
+
+// MARK: Destinations
+
+/// A destination (NWNavigation, `NWSidebarDestination`): New thread with its chord, Automations,
+/// More and More's rows. 30pt (24 in Compact), radius 8, a 20pt icon slot, the title in Geist 13
+/// (12). The selected one is `bgSelected` with its title in semibold and its icon in
+/// `textPrimary`; hover is `bgHover`. A button; compared without its action.
+public struct NWSidebarDestination: View, Equatable {
+    public enum Icon: Equatable, Sendable {
+        /// A 15pt (13) stroke in `textSecondary`.
+        case symbol(String)
+        /// New thread's `plus` in a 20pt `bgSelected` circle.
+        case newThread
+        /// More's chevron in `textTertiary`: right while closed, down while open.
+        case disclosure(open: Bool)
+    }
+
+    public enum Trailing: Equatable, Sendable {
+        case none
+        /// A chord as keycaps ("⌘N").
+        case keycaps(String)
+        /// A problem in mono 10 `failed` ("1 offline").
+        case alert(String)
+    }
 
     let title: String
-    let detail: Detail
-    let collapsed: Bool
-    let hoverHint: String?
-    let toggle: (() -> Void)?
-    @ViewBuilder let accessory: () -> Accessory
+    let icon: Icon
+    let selected: Bool
+    let child: Bool
+    let trailing: Trailing
+    let action: () -> Void
+    @Environment(\.nwDensity) private var density
     @State private var hovering = false
-    /// The accessory's width once laid out; zero while it draws nothing (a disconnected host).
-    @State private var accessoryWidth: CGFloat = 0
-    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 
-    public init(_ title: String, detail: Detail = .none, collapsed: Bool = false, hoverHint: String? = nil,
-                toggle: (() -> Void)? = nil, @ViewBuilder accessory: @escaping () -> Accessory) {
+    /// `child` indents one of More's rows.
+    public init(_ title: String, icon: Icon, selected: Bool = false, child: Bool = false, trailing: Trailing = .none,
+                action: @escaping () -> Void) {
         self.title = title
-        self.detail = detail
-        self.collapsed = collapsed
-        self.hoverHint = hoverHint
-        self.toggle = toggle
-        self.accessory = accessory
+        self.icon = icon
+        self.selected = selected
+        self.child = child
+        self.trailing = trailing
+        self.action = action
     }
 
-    /// `hovering` starts the header hovered, for previews and tests.
-    init(_ title: String, detail: Detail = .none, collapsed: Bool = false, hoverHint: String? = nil,
-         toggle: (() -> Void)? = nil, hovering: Bool, @ViewBuilder accessory: @escaping () -> Accessory) {
-        self.init(title, detail: detail, collapsed: collapsed, hoverHint: hoverHint, toggle: toggle, accessory: accessory)
-        _hovering = State(initialValue: hovering)
+    public nonisolated static func == (a: NWSidebarDestination, b: NWSidebarDestination) -> Bool {
+        a.title == b.title && a.icon == b.icon && a.selected == b.selected && a.child == b.child && a.trailing == b.trailing
     }
 
-    /// Hovering never moves or resizes the header: the hint and the accessory are always laid
-    /// out and only fade, and the accessory (taller than the label) floats over the count's slot
-    /// instead of joining the row. Always shown for VoiceOver.
     public var body: some View {
-        let showsAccessory = accessoryWidth > 0 && (NWPlatform.showsHoverDetails || hovering || voiceOver)
-        Button { toggle?() } label: {
-            HStack(spacing: NW.Space.s) {
-                Text(title).nwSectionLabel().lineLimit(1)
-                    .opacity(collapsed ? 0.7 : 1)
+        let _ = NWRenderProbe.tick("sidebar.destination")
+        Button(action: action) {
+            HStack(spacing: density.sidebarRowGap) {
+                iconView
+                    .frame(width: NWSidebarMetrics.destinationIconSlot, height: NWSidebarMetrics.destinationIconSlot)
+                Text(title)
+                    .font(density.destinationFont(weight: selected ? .semibold : .regular))
+                    .foregroundStyle(.nw.textPrimary)
+                    .lineLimit(1)
                 Spacer(minLength: NW.Space.xs)
-                if let hoverHint {
-                    Text(hoverHint).font(.nw(.micro, weight: .regular)).foregroundStyle(.nw.textTertiary)
-                        .opacity(hovering ? 1 : 0)
-                        .accessibilityHidden(true)
-                }
-                // One slot: a count rolls, and a count ⇄ a word cross-fades, in place.
-                ZStack(alignment: .trailing) { detailView }
-                    .nwContentTransition(.numeric())
-                    .nwAnimation(.content, value: detail)
-                    .opacity(showsAccessory ? 0 : 1)
-                    .frame(minWidth: accessoryWidth, alignment: .trailing)
+                trailingView
             }
-            .contentShape(Rectangle())
+            .padding(.leading, child ? NWSidebarMetrics.destinationChildLeading : density.sidebarRowPadding)
+            .padding(.trailing, density.sidebarRowPadding)
+            .frame(maxWidth: .infinity, minHeight: density.destinationHeight, alignment: .leading)
+            .nwRowBackground(selected: selected, hovering: hovering, radius: NW.Radius.m)
+            .contentShape(RoundedRectangle(cornerRadius: NW.Radius.m))
         }
         .buttonStyle(NWPlainPressStyle())
-        .disabled(toggle == nil)
-        .accessibilityLabel(accessibilityText)
-        .accessibilityAddTraits(.isHeader)
-        .overlay(alignment: .trailing) {
-            accessory()
-                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { accessoryWidth = $0 }
-                .opacity(showsAccessory ? 1 : 0)
-                .allowsHitTesting(showsAccessory)
-                .accessibilityHidden(!showsAccessory)
-        }
-        .padding(EdgeInsets(top: NW.Space.l, leading: NW.Space.m, bottom: NW.Space.xs, trailing: NW.Space.m))
         .onHover { hovering = $0 }
         .nwAnimation(.hover, value: hovering)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    @ViewBuilder private var detailView: some View {
-        switch detail {
+    @ViewBuilder private var iconView: some View {
+        switch icon {
+        case .symbol(let name):
+            Image(systemName: name)
+                .font(.system(size: density.destinationIcon - 2, weight: .regular))
+                .foregroundStyle(selected ? Color.nw.textPrimary : Color.nw.textSecondary)
+                .accessibilityHidden(true)
+        case .newThread:
+            Image(systemName: "plus")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.nw.textPrimary)
+                .frame(width: NWSidebarMetrics.destinationIconSlot, height: NWSidebarMetrics.destinationIconSlot)
+                .background(Color.nw.bgSelected, in: Circle())
+                .accessibilityHidden(true)
+        case .disclosure(let open):
+            Image(systemName: "chevron.right")
+                .font(.system(size: density.destinationIcon - 5, weight: .semibold))
+                .foregroundStyle(.nw.textTertiary)
+                .rotationEffect(.degrees(open ? 90 : 0))
+                .nwAnimation(.disclosure, value: open)
+                .accessibilityHidden(true)
+        }
+    }
+
+    @ViewBuilder private var trailingView: some View {
+        switch trailing {
         case .none:
             EmptyView()
-        case .count(let count):
-            if count > 0 {
-                Text("\(count)").font(.nw(.micro, weight: .regular)).foregroundStyle(.nw.textTertiary).monospacedDigit()
+        case .keycaps(let chord):
+            NWKeycap(chord)
+        case .alert(let text):
+            Text(text).font(.nwMono(10)).foregroundStyle(.nw.failed).lineLimit(1).fixedSize()
+                .nwContentTransition(.numeric())
+        }
+    }
+}
+
+// MARK: Lists
+
+/// A list's header (NWNavigation, `NWSidebarSection`): "Needs you" in Geist 11.5 medium
+/// `lanternText` with its count in mono 10.5, or "Recents" in `textTertiary`. Padded 14pt (10)
+/// above, 4pt below, and 8pt (6) at the sides.
+public struct NWSidebarSection: View, Equatable {
+    public enum Kind: Equatable, Sendable {
+        case needsYou(count: Int)
+        case recents
+    }
+
+    let kind: Kind
+    @Environment(\.nwDensity) private var density
+
+    public init(_ kind: Kind) { self.kind = kind }
+
+    public nonisolated static func == (a: NWSidebarSection, b: NWSidebarSection) -> Bool { a.kind == b.kind }
+
+    public var body: some View {
+        let attention = if case .needsYou = kind { true } else { false }
+        let tone = attention ? Color.nw.lanternText : Color.nw.textTertiary
+        HStack(spacing: NW.Space.s) {
+            Text(attention ? "Needs you" : "Recents")
+                .font(.nwSans(11.5, .medium))
+                .foregroundStyle(tone)
+            Spacer(minLength: NW.Space.xs)
+            if case .needsYou(let count) = kind {
+                Text("\(count)")
+                    .font(.nwMono(10.5))
+                    .foregroundStyle(tone)
+                    .monospacedDigit()
+                    .nwContentTransition(.numeric())
+                    .nwAnimation(.content, value: count)
             }
-        case .text(let text, let tone):
-            Text(text).font(.nwSans(11, .medium)).foregroundStyle(tone?.textColor ?? .nw.textTertiary).lineLimit(1)
         }
-    }
-
-    private var accessibilityText: String {
-        var parts = [title]
-        switch detail {
-        case .count(let count) where count > 0: parts.append("\(count)")
-        case .text(let text, _): parts.append(text)
-        default: break
-        }
-        if toggle != nil { parts.append(collapsed ? "collapsed" : "expanded") }
-        return parts.joined(separator: ", ")
+        .padding(EdgeInsets(top: density.sidebarHeaderTop, leading: density.sidebarRowPadding, bottom: NW.Space.xs,
+                            trailing: density.sidebarRowPadding))
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
     }
 }
 
-extension NWSidebarSection where Accessory == EmptyView {
-    public init(_ title: String, detail: Detail = .none, collapsed: Bool = false, hoverHint: String? = nil,
-                toggle: (() -> Void)? = nil) {
-        self.init(title, detail: detail, collapsed: collapsed, hoverHint: hoverHint, toggle: toggle) { EmptyView() }
-    }
-}
-
-/// One agent or automation in the tree (Navigation board, `NWSidebarRow`). Its look
-/// follows the state: a 6pt dot (hollow while idle, glowing while it needs you), the title
-/// (semibold when selected), and one trailing accessory. Rows nest by `depth`; height is the
-/// environment's `nwDensity`, as a minimum. Interaction is the caller's.
+/// One item in Needs you or Recents (NWNavigation, `NWSidebarRow`): a 14pt leading slot (the
+/// thread's state dot, or the kind's glyph), the title in the row font (semibold when selected),
+/// and one trailing accessory. The density's height (a minimum), radius 8; hover `bgHover`,
+/// selected `bgSelected`. Interaction is the caller's.
 public struct NWSidebarRow: View, Equatable {
+    public enum Leading: Equatable, Sendable {
+        /// The state dot: hollow while idle, glowing while it needs you.
+        case dot(AgentState)
+        /// A kind's glyph (an automation's bolt): `lanternText` while it needs you, else
+        /// `textTertiary`.
+        case glyph(String, attention: Bool)
+    }
+
     public enum Accessory: Equatable, Sendable {
         case none
-        /// Needs you: "ASK" in lantern text.
-        case ask
-        /// Live elapsed time since a moment ("4m"), in tertiary, or `failed` for a stuck or
-        /// failed run.
-        case elapsed(since: Date, tone: AgentState)
-        /// A fixed duration or word ("14m", "done", "stopped").
+        /// Why it needs you, in mono 10 `lanternText` ("retention?", "ASK").
+        case reason(String)
+        /// Live elapsed time since a moment ("4m"), in `textTertiary`.
+        case elapsed(since: Date)
+        /// A word in mono 10, `textTertiary` or its tone's color ("done", "failed").
         case text(String, tone: AgentState? = nil)
+        /// A remote host's name as a tag: mono 10 `textTertiary` in a 1pt `lineSubtle` border.
+        case tag(String)
         /// The ⌘-digit hint while ⌘ is held.
         case shortcut(String)
     }
 
     let title: String
-    let state: AgentState
+    let leading: Leading
     let selected: Bool
-    let depth: Int
-    let worktree: Bool
     let dimmed: Bool
     let accessory: Accessory
     @Environment(\.nwDensity) private var density
     @State private var hovering = false
 
-    public init(_ title: String, state: AgentState, selected: Bool = false, depth: Int = 0, worktree: Bool = false,
-                dimmed: Bool = false, accessory: Accessory = .none) {
+    public init(_ title: String, leading: Leading, selected: Bool = false, dimmed: Bool = false, accessory: Accessory = .none) {
         self.title = title
-        self.state = state
+        self.leading = leading
         self.selected = selected
-        self.depth = depth
-        self.worktree = worktree
         self.dimmed = dimmed
         self.accessory = accessory
     }
 
+    /// A thread's row: its state dot.
+    public init(_ title: String, state: AgentState, selected: Bool = false, dimmed: Bool = false, accessory: Accessory = .none) {
+        self.init(title, leading: .dot(state), selected: selected, dimmed: dimmed, accessory: accessory)
+    }
+
     public nonisolated static func == (a: NWSidebarRow, b: NWSidebarRow) -> Bool {
-        a.title == b.title && a.state == b.state && a.selected == b.selected && a.depth == b.depth
-            && a.worktree == b.worktree && a.dimmed == b.dimmed && a.accessory == b.accessory
+        a.title == b.title && a.leading == b.leading && a.selected == b.selected && a.dimmed == b.dimmed
+            && a.accessory == b.accessory
     }
 
     public var body: some View {
         let _ = NWRenderProbe.tick("sidebar.row")
         // A status report, a settled name, or ⌘ held changes one part in place (`.content`);
         // selection is not animated here, so it lands at once.
-        HStack(spacing: NWSidebarMetrics.rowGap) {
-            NWSidebarDot(state: state)
-                .nwAnimation(.content, value: state)
-            if worktree {
-                Text("⎇").font(.nw(.micro)).foregroundStyle(.nw.textSecondary).accessibilityHidden(true)
-            }
+        HStack(spacing: density.sidebarRowGap) {
+            leadingView
+                .frame(width: NWSidebarMetrics.rowSlot)
+                .nwAnimation(.content, value: leading)
             Text(title)
                 .font(density.rowTitleFont(weight: selected ? .semibold : .regular))
                 .foregroundStyle(.nw.textPrimary)
@@ -226,14 +347,25 @@ public struct NWSidebarRow: View, Equatable {
             NWSidebarAccessoryView(accessory: accessory)
                 .nwAnimation(.content, value: accessory)
         }
-        .padding(.leading, NWSidebarMetrics.rowPadding + CGFloat(depth) * NWSidebarMetrics.indentStep)
-        .padding(.trailing, NWSidebarMetrics.rowPadding)
+        .padding(.horizontal, density.sidebarRowPadding)
         .frame(maxWidth: .infinity, minHeight: density.rowHeight, alignment: .leading)
-        .nwRowBackground(selected: selected, hovering: hovering)
-        .contentShape(RoundedRectangle(cornerRadius: NW.Radius.s))
+        .nwRowBackground(selected: selected, hovering: hovering, radius: NW.Radius.m)
+        .contentShape(RoundedRectangle(cornerRadius: NW.Radius.m))
         .onHover { hovering = $0 }
         .nwAnimation(.hover, value: hovering)
-        .opacity(dimmed ? 0.55 : 1)
+        .opacity(dimmed ? NWListMetrics.dimmedOpacity : 1)
+    }
+
+    @ViewBuilder private var leadingView: some View {
+        switch leading {
+        case .dot(let state):
+            NWSidebarDot(state: state)
+        case .glyph(let name, let attention):
+            Image(systemName: name)
+                .font(.system(size: density.rowGlyph - 1, weight: .regular))
+                .foregroundStyle(attention ? Color.nw.lanternText : Color.nw.textTertiary)
+                .accessibilityHidden(true)
+        }
     }
 }
 
@@ -270,153 +402,93 @@ private struct NWSidebarAccessoryView: View {
         switch accessory {
         case .none:
             EmptyView()
-        case .ask:
-            Text("ASK").font(.nwMono(10, .medium)).foregroundStyle(.nw.lanternText).fixedSize()
-        case .elapsed(let since, let tone):
+        case .reason(let text):
+            Text(text).font(.nwMono(10)).foregroundStyle(.nw.lanternText).lineLimit(1).fixedSize()
+        case .elapsed(let since):
             TimelineView(NWElapsedSchedule(start: since)) { context in
                 Text(NWDuration.text(context.date.timeIntervalSince(since)))
-                    .font(.nwMono(10)).foregroundStyle(color(tone)).monospacedDigit().fixedSize()
+                    .font(.nwMono(10)).foregroundStyle(.nw.textTertiary).monospacedDigit().fixedSize()
             }
         case .text(let text, let tone):
-            Text(text).font(.nwMono(10)).foregroundStyle(tone.map(color) ?? .nw.textTertiary).fixedSize()
+            Text(text).font(.nwMono(10)).foregroundStyle(color(tone)).lineLimit(1).fixedSize()
+        case .tag(let name):
+            Text(name)
+                .font(.nwMono(10))
+                .foregroundStyle(.nw.textTertiary)
+                .lineLimit(1)
+                .padding(.horizontal, NW.Space.xs)
+                .nwBorder(Color.nw.lineSubtle, radius: NW.Radius.xs)
+                .fixedSize()
         case .shortcut(let text):
             Text(text).font(.nw(.micro, weight: .regular)).foregroundStyle(.nw.textTertiary).fixedSize()
         }
     }
 
-    private func color(_ tone: AgentState) -> Color {
+    private func color(_ tone: AgentState?) -> Color {
         switch tone {
-        case .failed, .stuck: .nw.failed
-        case .attention: .nw.lanternText
+        case .failed?, .stuck?: .nw.failed
+        case .attention?: .nw.lanternText
         default: .nw.textTertiary
         }
     }
 }
 
-/// A group row that discloses the rows under it (a space): chevron, name, and a trailing slot
-/// for counts and a hover `+`.
-public struct NWSidebarDisclosureRow<Trailing: View>: View {
-    let title: String
-    let expanded: Bool
-    let depth: Int
-    @ViewBuilder let trailing: (_ hovering: Bool) -> Trailing
-    @Environment(\.nwDensity) private var density
-    @State private var hovering = false
+// MARK: Footer
 
-    public init(_ title: String, expanded: Bool, depth: Int = 0,
-                @ViewBuilder trailing: @escaping (_ hovering: Bool) -> Trailing) {
-        self.title = title
-        self.expanded = expanded
-        self.depth = depth
-        self.trailing = trailing
+/// The sidebar's footer (NWNavigation): behind a hairline, a 26pt `bgSelected` circle with the
+/// initial, the name in `ui` medium over where it runs in mono 10 `textTertiary` ("This Mac ·
+/// build-01"), and a Settings gear. Padded 10pt above and below and 12pt at the sides.
+public struct NWSidebarFooter: View, Equatable {
+    let name: String
+    let detail: String
+    let settingsShortcut: String?
+    let settings: () -> Void
+
+    public init(name: String, detail: String, settingsShortcut: String? = nil, settings: @escaping () -> Void) {
+        self.name = name
+        self.detail = detail
+        self.settingsShortcut = settingsShortcut
+        self.settings = settings
+    }
+
+    public nonisolated static func == (a: NWSidebarFooter, b: NWSidebarFooter) -> Bool {
+        a.name == b.name && a.detail == b.detail && a.settingsShortcut == b.settingsShortcut
+    }
+
+    /// The avatar's letter: the name's first, capitalized.
+    public static func initial(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).first.map { String($0).uppercased() } ?? ""
     }
 
     public var body: some View {
-        let _ = NWRenderProbe.tick("sidebar.spaceRow")
-        HStack(spacing: NW.Space.m) {
-            Image(systemName: "chevron.right")
-                .font(.system(size: 9, weight: .semibold))
-                .rotationEffect(.degrees(expanded ? 90 : 0))
-                .foregroundStyle(.nw.textSecondary)
-                .frame(width: 10)
-                .accessibilityHidden(true)
-            Text(title)
-                .font(density.rowTitleFont(weight: .medium))
+        HStack(spacing: 10) {
+            Text(Self.initial(name))
+                .font(.nwSans(11.5, .semibold))
                 .foregroundStyle(.nw.textPrimary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer(minLength: NW.Space.xs)
-            trailing(hovering)
-        }
-        .padding(.leading, NWSidebarMetrics.rowPadding + CGFloat(depth) * NWSidebarMetrics.indentStep)
-        .padding(.trailing, NWSidebarMetrics.rowPadding)
-        .frame(maxWidth: .infinity, minHeight: density.rowHeight, alignment: .leading)
-        .nwRowBackground(selected: false, hovering: hovering)
-        .contentShape(RoundedRectangle(cornerRadius: NW.Radius.s))
-        .onHover { hovering = $0 }
-        .nwAnimation(.hover, value: hovering)
-    }
-}
-
-/// A status line in place of a section's rows ("Unreachable · 3h", Retry).
-public struct NWSidebarNoticeRow: View {
-    let state: AgentState
-    let text: String
-    let actionTitle: String?
-    let action: (() -> Void)?
-    @Environment(\.nwDensity) private var density
-
-    public init(_ state: AgentState, text: String, actionTitle: String? = nil, action: (() -> Void)? = nil) {
-        self.state = state
-        self.text = text
-        self.actionTitle = actionTitle
-        self.action = action
-    }
-
-    public var body: some View {
-        HStack(spacing: NWSidebarMetrics.rowGap) {
-            NWSidebarDot(state: state)
-            Text(text)
-                .font(density.rowTitleFont())
-                .foregroundStyle(.nw.textTertiary)
-                .lineLimit(1)
-            Spacer(minLength: NW.Space.xs)
-            if let actionTitle, let action {
-                Button(actionTitle, action: action).buttonStyle(.nw(.ghost, size: .s))
+                .frame(width: NWSidebarMetrics.footerAvatar, height: NWSidebarMetrics.footerAvatar)
+                .background(Color.nw.bgSelected, in: Circle())
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(name).font(.nw(.ui, weight: .medium)).foregroundStyle(.nw.textPrimary).lineLimit(1)
+                Text(detail).font(.nwMono(10)).foregroundStyle(.nw.textTertiary).lineLimit(1)
             }
+            .accessibilityElement(children: .combine)
+            Spacer(minLength: 0)
+            Button(action: settings) { Image(systemName: "gearshape") }
+                .buttonStyle(.nwIcon(size: NWSidebarMetrics.footerAvatar))
+                .nwHelp("Settings", shortcut: settingsShortcut)
+                .accessibilityLabel("Settings")
         }
-        .padding(.horizontal, NWSidebarMetrics.rowPadding)
-        .frame(maxWidth: .infinity, minHeight: density.rowHeight, alignment: .leading)
-        .accessibilityElement(children: .combine)
-    }
-}
-
-/// The footer row under the tree ("Automations 1"): an icon, a title, and a count badge. A
-/// button: it discloses the rows it summarizes.
-public struct NWSidebarFooter: View {
-    let title: String
-    let systemImage: String
-    let count: Int
-    let tone: NWCountBadge.Tone
-    let expanded: Bool
-    let action: () -> Void
-
-    public init(_ title: String, systemImage: String, count: Int, tone: NWCountBadge.Tone = .neutral,
-                expanded: Bool, action: @escaping () -> Void) {
-        self.title = title
-        self.systemImage = systemImage
-        self.count = count
-        self.tone = tone
-        self.expanded = expanded
-        self.action = action
-    }
-
-    public var body: some View {
-        Button(action: action) {
-            HStack(spacing: NW.Space.m) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.nw.textSecondary)
-                    .frame(width: 13)
-                Text(title).font(.nw(.ui, weight: .regular)).foregroundStyle(.nw.textSecondary).lineLimit(1)
-                Spacer(minLength: NW.Space.xs)
-                NWCountBadge(count, tone: tone)
-                    .nwContentTransition(.numeric())
-                    .nwAnimation(.content, value: count)
-                    .nwAnimation(.content, value: tone)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, NW.Space.m)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(NWPlainPressStyle())
+        .padding(.vertical, 10)
+        .padding(.horizontal, NW.Space.l)
         .overlay(alignment: .top) { NWHairline() }
-        .accessibilityLabel("\(title), \(count), \(expanded ? "expanded" : "collapsed")")
     }
 }
 
-/// The 2pt drop line a reorder drag shows at a row's top or bottom edge: `running` in the
-/// sidebar, `lantern` in the composer's queue.
+// MARK: Shared
+
+/// The 2pt drop line a reorder drag shows at a row's top or bottom edge (`lantern` in the
+/// composer's queue).
 public struct NWDropIndicator: View {
     /// The line's height.
     public static let thickness: CGFloat = 2

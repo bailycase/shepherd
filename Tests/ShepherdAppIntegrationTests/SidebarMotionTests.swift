@@ -10,7 +10,7 @@ import Testing
 
 /// The sidebar's motion, recorded from off-screen windows over a real server and view model:
 /// sliding in docked (the main column snapping) and overlaid in a narrow window (only fading
-/// under Reduce Motion), disclosing a space's rows, and easing a row's status dot. Selecting a
+/// under Reduce Motion), a thread moving up Recents, and easing a row's status dot. Selecting a
 /// row lands at once. Removal transitions complete at once in an off-screen window, so these
 /// watch what arrives.
 @Suite("Sidebar motion", .mainActorExclusive, .timingSensitive)
@@ -28,7 +28,7 @@ struct SidebarMotionTests {
         let size = CGSize(width: 1280, height: 600)
         let window = OffscreenWindow(size: size, dark: false, RootView(vm: vm))
         defer { window.close() }
-        // Through the first section's header, under the window controls.
+        // Through the first destination, under the window controls.
         let row = CGRect(x: 0, y: 62, width: size.width, height: 1)
         _ = await MotionProbe.record(window, region: row, timeout: 0.5) {}
 
@@ -100,21 +100,26 @@ struct SidebarMotionTests {
     /// A column down the sidebar through the rows' titles.
     private let titles = CGRect(x: 60, y: 0, width: 1, height: 500)
 
-    /// Expanding a space discloses its agents and moves the rows below; selecting a row lands at
-    /// once (⌘1–9, ⌘↑/↓, a click, the palette all go through `selectAgent`).
-    @Test func expandingASpaceDisclosesItsRowsAndSelectionLandsAtOnce() async throws {
+    /// A turn starting moves its thread up Recents, and the rows between ease to their new
+    /// places; selecting a row lands at once (⌘1–9, ⌘↑/↓, a click, the palette all go through
+    /// `selectSidebarRow`).
+    @Test func aThreadMovingUpRecentsEasesAndSelectionLandsAtOnce() async throws {
         let app = try AppHarness()
         defer { app.stop() }
-        let (vm, one, agents) = try await twoSpaces(app)
-        vm.collapsedSpaces = [one.id]
+        let (vm, _, agents) = try await twoSpaces(app)
         let window = sidebarWindow(vm)
         defer { window.close() }
         _ = await MotionProbe.record(window, region: titles, timeout: 0.5) {}
 
-        let disclosing = await MotionProbe.record(window, region: titles) { vm.toggleSpaceCollapsed(one.id) }
-        #expect(!disclosing.inBetween.isEmpty, "the rows disclose")
+        var state = app.server.state
+        let last = try #require(vm.sidebarLists.recents.last)
+        let index = try #require(state.agents.firstIndex { $0.id == last.id.agentID })
+        state.agents[index].lastActiveAt = Date().timeIntervalSince1970 * 1000
+        let server = app.server, next = state
+        let moving = await MotionProbe.record(window, region: titles) { Task { try? await server.putState(next) } }
+        #expect(vm.sidebarLists.recents.first?.id == last.id)
+        #expect(!moving.inBetween.isEmpty, "the rows move to their new places")
 
-        // Let the disclosure's spring settle everywhere, not just in the titles' column.
         let full = CGRect(x: 0, y: 0, width: AppLayout.sidebarDefaultWidth, height: 500)
         _ = await MotionProbe.record(window, region: full, timeout: 0.6) {}
         let selecting = await MotionProbe.record(window, region: full) { vm.selectAgent(agents[4].agent.id) }
@@ -130,7 +135,7 @@ struct SidebarMotionTests {
         let window = sidebarWindow(vm)
         defer { window.close() }
         _ = await MotionProbe.record(window, region: titles, timeout: 0.5) {}
-        // The dots' column, down the whole tree.
+        // The dots' column, down the whole list.
         let dots = CGRect(x: 0, y: 0, width: 40, height: 500)
 
         var state = app.server.state

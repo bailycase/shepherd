@@ -34,10 +34,6 @@ struct AppDialogs: ViewModifier {
                     vm.remoteRenameTarget = nil
                 }
             }
-            .sheet(item: $vm.remoteAutomationItem) { item in
-                RemoteAutomationSheet(vm: vm, key: item.value)
-                    .dialogSheetFrame()
-            }
             .sheet(item: $vm.remoteWorktreeItem) { item in
                 RemoteWorktreeSheet(vm: vm, target: item.target, finalize: item.finalize)
                     .dialogSheetFrame()
@@ -124,7 +120,8 @@ struct AppDialogs: ViewModifier {
                         vm.spacePickerTarget = nil
                         Task {
                             do {
-                                _ = try await vm.addRemoteSpace(hostID: hostID, path: path)
+                                let spaceID = try await vm.addRemoteSpace(hostID: hostID, path: path)
+                                vm.openNewThread(in: spaceID, hostID: hostID)
                             } catch {
                                 vm.remoteActionError = "Couldn't add the space on \(connection.config.name): \(error)"
                             }

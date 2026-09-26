@@ -43,7 +43,6 @@ extension ShepherdViewModel {
             selectionHistory.removeAll { $0 == agentID }
             subagentInspector.runByAgent.removeValue(forKey: agentID)
         }
-        collapsedSpaces.remove(id)
         if selectedAgentID.map(doomedAgents.contains) == true {
             selectedAgentID = nil
         }

@@ -60,7 +60,21 @@ public enum RemoteProtocol {
     /// compactions in the thread) and serves `NativeThreadRequest.compact`. Older hosts send
     /// neither, and clients draw no context meter.
     public static let nativeContextCapability = "native.context.v1"
-    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability]
+    /// The host serves `RemoteRequest.instructions`: its root instruction files for pi, their
+    /// history, save and restore (Settings ▸ Instructions). Older hosts have none to show.
+    public static let instructionsCapability = "instructions.v1"
+    /// The host serves `RemoteRequest.suggestions`: Settings ▸ Experiments ▸ Suggested
+    /// instructions (the experiment's settings, the lines waiting, and those added). Older hosts
+    /// have no experiments.
+    public static let suggestionsCapability = "suggestions.v1"
+    /// The host serves `RemoteRequest.hostSettings`: what its Settings ▸ Agents, Worktrees and Pi
+    /// set, its Shepherd and pi versions, and one change at a time. Older hosts show none.
+    public static let hostSettingsCapability = "hostSettings.v1"
+    /// The host serves `RemoteRequest.skills`: the agent skills in its ~/.agents/skills (on, off,
+    /// how each is used, updates), installs from a repository or a copied folder, and removal
+    /// with undo (Settings ▸ Skills). Older hosts have none to show.
+    public static let skillsCapability = "skills.v1"
+    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, skillsCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -402,6 +416,14 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     /// Manage one automation (`RemoteProtocol.automationsCapability`). A `create` names the new
     /// automation's id.
     case automation(id: Int, automationID: AutomationID, request: RemoteAutomationRequest)
+    /// Read or save the host's root instructions (`RemoteProtocol.instructionsCapability`).
+    case instructions(id: Int, request: RemoteInstructionsRequest)
+    /// Read or act on the host's suggested instructions (`RemoteProtocol.suggestionsCapability`).
+    case suggestions(id: Int, request: RemoteSuggestionsRequest)
+    /// Read or change the host's settings (`RemoteProtocol.hostSettingsCapability`).
+    case hostSettings(id: Int, request: RemoteHostSettingsRequest)
+    /// Read or change the host's agent skills (`RemoteProtocol.skillsCapability`).
+    case skills(id: Int, request: RemoteSkillsRequest)
 
     private enum CodingKeys: String, CodingKey {
         case request
@@ -418,6 +440,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case openPane, closePane, resizePaneSplit
         case listDir, listModels, addSpace, createAgent, agentAction, agentQuery, upload, creationOptions
         case automation
+        case instructions, suggestions, hostSettings, skills
     }
 
     public init(from decoder: Decoder) throws {
@@ -429,6 +452,18 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             self = .automation(id: try c.decode(Int.self, forKey: .id),
                                automationID: try c.decode(AutomationID.self, forKey: .automationID),
                                request: try c.decode(RemoteAutomationRequest.self, forKey: .request))
+        case .instructions:
+            self = .instructions(id: try c.decode(Int.self, forKey: .id),
+                                 request: try c.decode(RemoteInstructionsRequest.self, forKey: .request))
+        case .suggestions:
+            self = .suggestions(id: try c.decode(Int.self, forKey: .id),
+                                request: try c.decode(RemoteSuggestionsRequest.self, forKey: .request))
+        case .hostSettings:
+            self = .hostSettings(id: try c.decode(Int.self, forKey: .id),
+                                 request: try c.decode(RemoteHostSettingsRequest.self, forKey: .request))
+        case .skills:
+            self = .skills(id: try c.decode(Int.self, forKey: .id),
+                           request: try c.decode(RemoteSkillsRequest.self, forKey: .request))
         case .hello:
             self = .hello(
                 id: try c.decode(Int.self, forKey: .id),
@@ -570,6 +605,22 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(id, forKey: .id)
             try c.encode(automationID, forKey: .automationID)
             try c.encode(request, forKey: .request)
+        case .instructions(let id, let request):
+            try c.encode(Kind.instructions, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(request, forKey: .request)
+        case .suggestions(let id, let request):
+            try c.encode(Kind.suggestions, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(request, forKey: .request)
+        case .hostSettings(let id, let request):
+            try c.encode(Kind.hostSettings, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(request, forKey: .request)
+        case .skills(let id, let request):
+            try c.encode(Kind.skills, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(request, forKey: .request)
         case .stateFetch(let id):
             try c.encode(Kind.stateFetch, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -677,12 +728,21 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     case agentCreated(id: Int, agentID: AgentID)
     /// An automation request's answer (`RemoteRequest.automation`).
     case automationResult(id: Int, result: RemoteAutomationResult)
+    /// The host's root instructions after an instructions request (`RemoteRequest.instructions`).
+    case instructions(id: Int, snapshot: InstructionsSnapshot)
+    /// The host's suggested instructions after a suggestions request (`RemoteRequest.suggestions`).
+    case suggestions(id: Int, snapshot: SuggestionsSnapshot)
+    /// The host's settings after a settings request (`RemoteRequest.hostSettings`).
+    case hostSettings(id: Int, settings: HostSettings)
+    /// A skills request's answer (`RemoteRequest.skills`).
+    case skills(id: Int, result: RemoteSkillsResult)
 
     private enum CodingKeys: String, CodingKey {
         case result
         case type, id, protocolVersion, capabilities, code, message, state
         case sessionID, data, exitCode, spaceID, agentID, paneID
         case path, parent, dirs, models, defaultModel, withoutThinking, thinkingLevels, attachment, options
+        case snapshot, settings
     }
 
     private enum Kind: String, Codable {
@@ -690,6 +750,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case agentResult, helloOk, ok, paneOpened, error, state, stateChanged, attached, output, sessionExited
         case dirListing, models, spaceAdded, agentCreated, uploadResult, creationOptions
         case automationResult
+        case instructions, suggestions, hostSettings, skills
     }
 
     public init(from decoder: Decoder) throws {
@@ -713,6 +774,18 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case .automationResult:
             self = .automationResult(id: try c.decode(Int.self, forKey: .id),
                                      result: try c.decode(RemoteAutomationResult.self, forKey: .result))
+        case .instructions:
+            self = .instructions(id: try c.decode(Int.self, forKey: .id),
+                                 snapshot: try c.decode(InstructionsSnapshot.self, forKey: .snapshot))
+        case .suggestions:
+            self = .suggestions(id: try c.decode(Int.self, forKey: .id),
+                                snapshot: try c.decode(SuggestionsSnapshot.self, forKey: .snapshot))
+        case .hostSettings:
+            self = .hostSettings(id: try c.decode(Int.self, forKey: .id),
+                                 settings: try c.decode(HostSettings.self, forKey: .settings))
+        case .skills:
+            self = .skills(id: try c.decode(Int.self, forKey: .id),
+                           result: try c.decode(RemoteSkillsResult.self, forKey: .result))
         case .ok:
             self = .ok(id: try c.decode(Int.self, forKey: .id))
         case .paneOpened:
@@ -811,6 +884,22 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encode(result, forKey: .result)
         case .automationResult(let id, let result):
             try c.encode(Kind.automationResult, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(result, forKey: .result)
+        case .instructions(let id, let snapshot):
+            try c.encode(Kind.instructions, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(snapshot, forKey: .snapshot)
+        case .suggestions(let id, let snapshot):
+            try c.encode(Kind.suggestions, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(snapshot, forKey: .snapshot)
+        case .hostSettings(let id, let settings):
+            try c.encode(Kind.hostSettings, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(settings, forKey: .settings)
+        case .skills(let id, let result):
+            try c.encode(Kind.skills, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(result, forKey: .result)
         case .ok(let id):
