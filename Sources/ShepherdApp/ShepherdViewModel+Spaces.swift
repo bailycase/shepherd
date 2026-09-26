@@ -47,7 +47,7 @@ extension ShepherdViewModel {
             selectedAgentID = nil
         }
         if selectedSpaceID == id {
-            selectedSpaceID = state.spaces.first?.id
+            selectedSpaceID = visibleSpaces.first?.id
             if selectedAgentID == nil {
                 selectedAgentID = state.agents.first { $0.spaceID == selectedSpaceID }?.id
             }
