@@ -26,6 +26,8 @@ struct EmbeddedExtensionTests {
         "shepherd-inspect.mjs": InspectExtension.extensionSource,
         "shepherd-instructions.ts": InstructionsExtension.extensionSource,
         "shepherd-design.ts": DesignExtension.extensionSource,
+        "shepherd-mcp.ts": MCPExtension.extensionSource,
+        "shepherd-mcp-client.mjs": MCPExtension.clientSource,
     ]
 
     /// The design skill the design extension hands pi: its canonical copy lives beside the
