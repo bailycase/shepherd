@@ -739,6 +739,11 @@ runs, 2,000 folders).
   over the thread, and the picker and the thinking menu compare their own inputs, so a composer
   redraw for something else leaves their rows alone. `ComposerMenuPerformanceTests` pins each
   as a count.
+- **The composer changing height never reruns the thread.** Its measured height lives in its own
+  observed value (`ComposerInset`), read only by the scroll view's inset modifier, so a question
+  taking the card's place or giving it back (or Up next growing) redraws the composer, never the
+  thread's body or its toolbar; the lazy stack only lays the rows on screen out again for the
+  new inset (`ListPerformanceTests`).
 - **Motion never scales with the list.** A list's motion watches a small key (a layout count, the
   rows' ids), never the rows themselves, and rows scrolled back into a lazy stack are simply
   there: an entrance plays only for what arrives while the list is on screen (`nwArrival`,
@@ -890,9 +895,17 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   sides. Each row (`NWSidebarRow`) is 28pt (22), radius 8, padded 8pt (6), with a 14pt leading slot
   and a 9pt (7) gap. The slot holds a thread's glowing 6pt `lantern` dot, or an automation run's
   13pt (11) `bolt` in `lanternText`. The title is in the row font, truncating at the tail. The
-  reason trails in mono 10 `lanternText` ("retention?", "approve plan"): the question the agent's
-  thread asks (`Agent.waitingOn`), else the asking subagent's role or name, else "ASK", cut to 14
-  characters at a word (`SidebarDerivation.shortened`). Most recently active first.
+  reason trails in mono 10 `lanternText` ("retention?", "approve plan"): the agent's own word or
+  two for its question (`Agent.waitingReason`) when its asking tool gave one, else the question
+  its thread asks (`Agent.waitingOn`); for an asking subagent, its own reason
+  (`ChildQuestion.short`), else its role or name; else "ASK". Cut to 14 characters at a word
+  (`NeedsYouReason`, shared with the iPad). Most recently active first. The agent is asked for the reason
+  (the user's decision, 2026-09-25: "Ask the agent for a short reason"): Shepherd's status
+  extension gives every asking tool (named like `ask` or `question`, the same rule that sets
+  `blocked`) an optional `short` parameter, described to the model as 1–3 words for this sidebar,
+  and takes it out of the call before the tool runs; the host reads it from the call's arguments
+  and pairs it with the dialog that call opens. A child's `shepherd_parent_message` takes the
+  same `short`. An agent that gives none, and an older host, fall back to the question cut short.
 - **Recents** (`NWSidebarSection(.recents)`): every other agent, on this Mac and every connected
   host, automation runs included, in one list, most recently active first. The header is "Recents"
   in Geist 11.5 medium `textTertiary`, spaced like Needs you, and the rows are the same. The leading
@@ -913,9 +926,10 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   (`AgentStatus.movesRecents`; asking and being answered happen inside a turn) and when a message is
   sent to it, and the app stamps an agent it creates. A streamed token, a repeated status report or
   a question never moves a row, so the list holds still while you read it. Agents no host has
-  stamped (older hosts and state files) follow, newest created first. `lastActiveAt` and `waitingOn`
-  are live state on `Agent`, broadcast to remote clients like a status; `waitingOn` is never written
-  to state.json. At launch the most recently active agent on this Mac shows.
+  stamped (older hosts and state files) follow, newest created first. `lastActiveAt`, `waitingOn`
+  and `waitingReason` are live state on `Agent`, broadcast to remote clients like a status;
+  `waitingOn` and `waitingReason` are never written to state.json. At launch the most recently
+  active agent on this Mac shows.
 - **Hosts:** a connected host's agents join both lists, tagged. A host that drops keeps its threads
   in Recents as it last sent them (NavHosts' `horizon` rows), dimmed (`NWListMetrics.dimmedOpacity`,
   as on the iPad), never in Needs you since nothing there can be answered, and with a menu that
@@ -929,8 +943,8 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   the trailing end.
 - **Subagents have no rows.** They live in their agent's tray above the composer, the thread's
   record lines, and the inspector (see Subagents below), and in the palette. A subagent waiting
-  on you puts its agent in Needs you, with its name as the reason; live and finished subagents
-  leave the agent's row as it is.
+  on you puts its agent in Needs you, with its own short reason, else its name, as the reason;
+  live and finished subagents leave the agent's row as it is.
 - **Width:** 232pt by default, 190–340, by dragging the trailing edge (a 9pt handle, adjustable
   with VoiceOver in 16pt steps) or in Settings ▸ Appearance. It never narrows the main column
   below 720 and keeps its width while the side pane is open.
@@ -1081,11 +1095,21 @@ one. The New agent sheet (⇧⌘T) stays for its directory and base fields.
 - **Heading:** "What should the agent work on?" in Geist 26 semibold, tracked −2%. This is outside
   the ramp; set it with `Font.nwSans`.
 - **Composer:** the thread's `NWComposer`, 720pt wide, drawn focused (a `textTertiary` border and a
-  3pt `bgSelected` ring). The placeholder is "Describe the task…". Its control row is the workplace
-  chip, the model chip, Thinking with its level (only while the model takes one), and Send, a 28pt
-  `lantern` circle at 35% until there is a prompt and a project. ↩ sends and ⇧↩ adds a line. Why
-  Send cannot go is its tooltip ("Describe the task first.", "Add a project to start a thread.",
-  "Loading build-01's defaults…"), and a failure shows under the card in `failed`.
+  3pt `bgSelected` ring). The placeholder is "Describe the task…". Its control row is attach, the
+  workplace chip, the model chip, Thinking with its level (only while the model takes one), and
+  Send, a 28pt `lantern` circle at 35% until there is a prompt and a project. ↩ sends and ⇧↩ adds a
+  line. Why Send cannot go is its tooltip ("Describe the task first.", "Add a project to start a
+  thread.", "Loading build-01's defaults…"), and a failure shows under the card in `failed`.
+- **Images** (the user's decision, 2026-09-25: "Build it (Recommended)") attach as in a thread's
+  composer (Composer › Images, `ComposerAttachments`): by drop, paste, or the paperclip, the
+  composer's attach button, always shown here; resized on the way in, at most four of 2 MiB each,
+  as chips above the field. They go to pi in the opening prompt itself, on this Mac and on a host
+  (`createAgent`'s images, docs/native-thread.md). What cannot go shows under the card in `failed`
+  and holds Send: the composer's own messages, "The images come to over 5 MiB together. Remove one
+  to send.", and on a host from before `agent.create.images.v1` "Update Shepherd on build-01 to
+  start a thread with images.", which would otherwise drop them; nothing is created. Images too
+  big for one remote request fail the send the same way ("Images exceed the remote payload
+  limit. Send fewer or smaller images.").
 - **Workplace chip** (`NWPlaceChipLabel`): a 12pt `textSecondary` folder glyph and the project in
   mono ("shepherd"), a `textTertiary` "·", a display glyph and the host in mono ("This Mac"), and a
   10pt `textTertiary` chevron, as a 26pt chip in 12 `textSecondary`. It picks where the thread runs,
@@ -1105,8 +1129,8 @@ one. The New agent sheet (⇧⌘T) stays for its directory and base fields.
 - **Model and Thinking:** the target's defaults (Settings ▸ Agents on this Mac, the host's
   `creationOptions` on a host), changed through the model picker (ModelPicker) and the thinking menu,
   which open under the card, over what is beneath.
-- **Send** creates the agent with the prompt as its opening message (on this Mac `startAgent`, on a
-  host `createAgent`), opens its thread, and clears the draft.
+- **Send** creates the agent with the prompt and its images as its opening message (on this Mac
+  `startAgent`, on a host `createAgent`), opens its thread, and clears the draft.
 - **Suggestions:** the cards under the composer, 38pt below it (the column's 24pt gap plus 14),
   three to the 720pt row, 10pt apart. Each is padded 12pt above and below and 14pt at the sides,
   radius 8, with a 1pt `lineSubtle` border, hover `bgHover`, and 5pt gaps: a kicker in 11.5
@@ -1705,8 +1729,8 @@ it (the palette's New agent with options…, New space on <host>…, and "PR #24
   `lineStrong` hairline, no fill, `bgHover` under the pointer, the square in `failed`) and Send
   takes the corner, 6pt apart; filled Stop ⇄ outlined Stop + Send cross-fades (`content`).
   Tooltips: "Send (↩)", or while pi works "Queue (↩) · Steer now (⌘↩)"; "Stop the agent's turn"
-  ("Stop the agent and its subagents" while subagents are live); "Answer the question first"
-  while a question waits.
+  ("Stop the agent and its subagents" while subagents are live). While a question waits, the
+  question dock takes the whole card's place (below).
 
 Chips (`.nwComposerChip(active:)`) are 26pt ghost buttons with 8pt side padding and radius 6, in
 Geist 12 `textSecondary`, their parts 6pt apart, filled with `bgHover` on hover, on press, or
@@ -1777,39 +1801,102 @@ that removes it ("Remove <name>" to VoiceOver). Problems show as a `failed` bann
 "At most 4 images per message.", "<name> is not an image Shepherd can attach.", or "<name> is
 over 2 MiB after resizing."
 
-**Questions** from pi or an extension (select, confirm, input, editor) take the composer's
-place, never a row in the scrolling thread, so a blocked agent is always answerable (QuestionAsk,
-QuestionPick, QuestionAnswered, QuestionStates). pi stops and asks once; the thread above keeps
-what pi found, and the question holds only the question, its answers, and yours.
+**Questions** from pi or an extension (select, confirm, input, editor), and a subagent's opened
+from its row, take the composer's place, never a row in the scrolling thread, so a blocked agent
+is always answerable (QuestionAsk, QuestionPick, QuestionAnswered, QuestionStates). pi stops and
+asks once; the thread above keeps what pi found, and the question holds only the question, its
+answers, and yours.
 
-**Today** (`QuestionPanel` in `Composer.swift`) the question replaces only the field, inside the
-composer card, and the control row stays under it with Send disabled ("Answer the question
-first"):
+**The question dock** (`Thread/QuestionDock.swift` on ShepherdUI's `NWQuestionDock`; the shared
+presentation is `NativeQuestionPrompt` in ShepherdRemote, for the touch clients too). It replaces
+the whole composer card, not just its field, for pi's own question and a subagent's alike. Its
+rules (QuestionStates › Rules):
 
-- the head (`NWQuestionHead`, QuestionAsk), shared with a subagent's question dock: 26pt tall,
-  its parts 7pt apart: a 13pt `questionmark.circle` and "Agent is asking" in Geist 12 semibold
-  (`.nwSans(12, .semibold)`), both `lanternText`; "1 / N" in micro tertiary when several wait;
-  and, trailing, Hide the question, a 26pt round `.nwIcon` (transparent, a 14pt `chevron.down` in
-  `textSecondary`). VoiceOver reads the head as one header, "Agent is asking", and the button as
-  "Hide the question"
-- the question's title in `ui`
-- the message in mono on `bgSunken` (radius 8, a `lineSubtle` line, scrolling past 140pt)
-- a select's options as buttons that answer on click (the first primary), a confirm's Yes
-  (primary) and No (y/n while the panel has focus), or an input's or editor's field (mono and
-  5–12 lines for an editor) with Submit; each with a ghost Dismiss that cancels
-- "The agent may stop waiting for this answer" in micro tertiary when the question has a timeout; "An
-  external editor is open · finish it before answering here" or "This question is too large to
-  show here" when it cannot be answered here
-- 10pt between its parts (`AppLayout.questionSpacing`); the card eases to the panel's height
-  (`disclosure`), and the panel fades in (`content`)
-- **Hidden** (QuestionStates › hidden): Hide the question shrinks the panel to one line in the
-  card (`NWQuestionHiddenLine`), so you can read the thread. It still holds the composer's place,
-  because pi is still waiting: a 14pt glyph in `lanternText`, the title in `headline` (13.5
-  semibold, truncating), a small secondary **Answer** (24pt) and a 26pt Show the question
-  (`chevron.up`), 10pt apart; either button brings the panel back. Only that question stays
-  hidden: the next one pi asks arrives open (`QuestionHiding`). Esc does not hide it yet (see
-  Keyboard)
-- once answered, the panel goes and the field returns, and the thread keeps the record below
+1. **It takes the composer's place.** While pi waits, the bottom of the thread is the question:
+   no attach, model, or thinking controls, no Send or Stop, nothing to confuse with a normal
+   message. Widgets, a banner, the subagents and Up next stay above it.
+2. **Context stays in the thread.** What pi found is in its message just above; the dock holds
+   the question, the options, and your answer, nothing else.
+3. **Label:** a question mark in lantern and a lantern outline. The thread and the sidebar show
+   Needs you (the sidebar's Needs you row, its glowing dot and the question as its reason).
+4. **Options** are numbered, and the number is the key. Each says what happens and what it
+   costs. The asker's recommendation is marked **Recommended**, never preselected.
+5. **A note:** picking an option opens a note field inside it; the note goes with the answer
+   (only for an asker that takes one; see What each asker takes).
+6. **Something else…** is the last row; typing there answers in your own words (the same).
+7. **Answer** is the only button. It lights up once an option is picked or Something else has
+   text. There is no Dismiss: pi is waiting on an answer.
+8. **After:** the composer comes back (the field takes the keyboard again), and the thread
+   keeps the record where pi asked (below).
+
+- **The dock** (`NWQuestionDock`, `NWQuestionDockMetrics`): `bgRaised`, radius 12, a 1px
+  `lantern` line inside a 3pt `lanternTint` ring (`.nwQuestionCard()`), 12pt above and below
+  and 14pt at the sides, 12pt between its parts, as wide as the composer card:
+  - the 26pt head (`NWQuestionHead`): a 13pt `questionmark.circle` and "Agent is asking" in
+    Geist 12 semibold (`.nwSans(12, .semibold)`), both `lanternText`, 7pt apart; "1 / N" in
+    micro tertiary when several wait; trailing, Hide the question, a 26pt round `.nwIcon`
+    (transparent, a 14pt `chevron.down` in `textSecondary`; tooltip "Hide the question (Esc)").
+    VoiceOver reads the head as one header, "Agent is asking", and the button as "Hide the
+    question"
+  - the question in Geist 16 semibold at 1.35, tracked -0.5% (`Font.nwSans(16, .semibold)`;
+    15 for a yes or a no and an open question, as the Kinds cards draw it), inline code and
+    emphasis as in prose (`NWProseInline`)
+  - the asker's longer message, when it has one (a confirm's), in mono on `bgSunken` (radius 8, a
+    `lineSubtle` line, scrolling past 140pt): an app addition no board draws
+  - the options, 6pt apart. An option is a card on `bgWindow` with a 1px `lineSubtle` line,
+    radius 8, 10pt above and below and 12pt at the sides, its parts 11pt apart: its number in a
+    20pt rounded square (a `lineStrong` line, mono 11 `textSecondary`; radius 4, `NW.Radius.xs`,
+    for the board's 5); the title in `headline` (13.5 semibold) over its description in `ui`
+    regular `textSecondary` at 1.45, 3pt apart; and, trailing at the top, a 20pt
+    **Recommended** tag (`lanternTint` fill, `lanternText` 11 semibold, radius 4, 7pt side
+    padding). `NativeQuestionOption` splits an option into number, title, description (the
+    lines after the first), and a trailing "(Recommended)". A click picks it (tooltip: its title
+    and number). More than six options scroll inside a 360pt lazy stack.
+  - **Something else…** (when the asker takes words of its own): a row at least 38pt tall with
+    its number and "Something else…" in 13.5 `textTertiary`; it is a field in place, and typing
+    there picks it.
+  - a footer over a `lineSubtle` hairline, 12pt below the options: trailing, **Answer**
+    (`.nw(.primary, size: .m)`, 28pt; tooltip "Answer (↩)"), disabled (40%) until there is an
+    answer. Leading, in micro tertiary, "The agent may stop waiting for this answer" when the
+    question has a timeout, or why it cannot be answered here ("An external editor is open ·
+    finish it before answering here", "This question is too large to show here"), which also
+    disables its options.
+- **Picked** (QuestionPick): the option takes a `lantern` line on `lanternTint` and its number
+  fills (`lantern`, `textOnLantern` semibold). The Recommended tag stays where it was. For an
+  asker that takes a note, a note field opens 8pt under its description (`bgWindow`, radius 6, a
+  `lineStrong` line, 7pt above and below and 10pt at the sides, Geist 13 at 1.45, the caret in
+  `lantern`, "Add a note…"). Picking another option moves the pick; nothing is answered until
+  Answer or ↩.
+- **Kinds** (QuestionStates › Kinds of question), one dock shaped by the answer the asker needs
+  (`NativeQuestionKind`):
+  - **Yes or no:** a confirm, or two options of at most 24 characters with nothing under them:
+    side by side, 6pt apart, each 44pt (its number, the title in semibold, Recommended; its parts
+    10pt apart), answering on click. Answer shows only with Something else; without it the dock
+    has no footer (a confirm's is only its timeout line).
+  - **Open question:** no options (pi's input and editor, a subagent's question without
+    answers): a field at least 64pt tall (`bgWindow`, radius 8, a `lineStrong` line, 10pt above
+    and below and 12pt at the sides, 13.5 at 1.5; up to 6 lines, 12 for an editor, then it
+    scrolls) holding the asker's prefill, and Answer. It takes the keyboard when it arrives in
+    the focused thread.
+  - **From a subagent:** "<name> is asking" with the branch glyph, the question at 14.5, option
+    titles at 13 over 12 (SubagentTray › Answer → question dock; see Subagents).
+- **Hidden** (QuestionStates): Esc or Hide the question shrinks the dock to one 46pt line
+  (`NWQuestionDockHidden`), so you can read the thread; it still holds the composer's place,
+  because pi is still waiting. The line is the same lantern card (radius 12, 14pt leading and 8pt
+  trailing padding, 10pt between its parts): a 14pt glyph in `lanternText`, the question in 13.5
+  semibold (truncating; inline code as in the dock), a small secondary **Answer** (24pt), and a 26pt Show the question
+  (`chevron.up`; tooltip "Show the question (Esc)"). Esc, Answer or Show the question brings the
+  dock back, with what was picked and typed. Only that question stays hidden: the next one pi
+  asks arrives open (`NativeQuestionHiding`, the iPad's rule too).
+- **Keys** (QuestionStates › Keyboard; shown in tooltips): 1–9 pick an option (a yes or a no
+  answers at once; Something else's number puts the keyboard in it), ↩ answers, Esc hides or
+  shows the question. They are the dock's while its thread has the keyboard
+  (`QuestionKeyMonitor`), from its own fields too (where numbers type and ⇧↩ breaks a line),
+  never with ⌘, ⌃ or ⌥ held (⌘1–9 still select agents), and never from another text field (the
+  palette's search, a terminal).
+- **Stopping** (⌘., Agent ▸ Stop) is how a question is refused: it cancels the questions pi is
+  waiting on (their asker gets pi's cancelled answer), then stops the turn. The thread records
+  each as not answered.
 - **The record** (QuestionAnswered; `QuestionRecord` on the board; `NWQuestionRecord`, from
   `NativeQuestionRecordRow`): where pi asked, the thread keeps one line in Geist 12.5
   `textTertiary` (a 12pt `questionmark.circle`, "Agent asked:", and the question in
@@ -1820,96 +1907,40 @@ first"):
   or the text you typed for an input or editor in the bubble's regular weight; and "2:51 PM ·
   answered" in mono 10.5 tertiary beneath, on hover like every bubble's time. pi's turn carries
   on under it; the record is part of the agent's turn, but its time is the answer's, so it moves
-  neither the turn's duration nor its Copy. A question nobody answered (dismissed, or its timeout
-  passed) keeps its line alone, ending "· not answered" in `textTertiary`, with no bubble.
-  VoiceOver reads it as one element ("Agent asked: …, you answered: …"). The host keeps it
-  (docs/native-thread.md › Questions): a thread row every client draws, remote and iOS
+  neither the turn's duration nor its Copy. A question nobody answered (refused by Stop,
+  dismissed on a touch client, or its timeout passed) keeps its line alone, ending "· not
+  answered" in `textTertiary`, with no bubble. VoiceOver reads it as one element ("Agent asked: …, you answered: …"). The host keeps
+  it (docs/native-thread.md › Questions): a thread row every client draws, remote and iOS
   included, placed after the call that asked and before pi's next reply, and kept per pi
-  session beside the queue's origins, so it survives a relaunch. When a tool asked, its own
-  activity line stays too
+  session beside the queue's origins, so it survives a relaunch. A question still open when pi
+  moves to another session (`/new`, `/resume`) is not recorded. When a tool asked, its own
+  activity line stays too. A subagent's question is not recorded here: its answer joins the
+  child's transcript as the user's message.
+- **Not built with it:** your note under the option's title, 4pt apart (QuestionAnswered), since
+  none of pi's dialogs takes a note (What each asker takes).
 
-**Not built yet: the question dock** (QuestionAsk, QuestionStates). It replaces the whole
-composer card, not just its field. Its rules (QuestionStates › Rules):
+**What each asker takes** (Honest affordances: the dock offers only what the asker can take;
+`NativeQuestionPrompt.takesNote`, `takesOther`):
 
-1. **It takes the composer's place.** While pi waits, the bottom of the thread is the question:
-   no attach, model, or thinking controls, nothing to confuse with a normal message.
-2. **Context stays in the thread.** What pi found is in its message just above; the dock holds
-   the question, the options, and your answer, nothing else.
-3. **Label:** a question mark in lantern and a lantern outline. The thread and the sidebar show
-   Needs you (the sidebar's Needs you row, its glowing dot and the question as its reason).
-4. **Options** are numbered, and the number is the key. Each says what happens and what it
-   costs. pi's recommendation is marked **Recommended**, never preselected.
-5. **A note:** picking an option opens a note field inside it; the note goes with the answer.
-6. **Something else…** is always the last row; typing there answers in your own words.
-7. **Answer** is the only button. It lights up once an option is picked or Something else has
-   text. There is no Dismiss: pi is waiting on an answer.
-8. **After:** the composer comes back, and the thread keeps one line with the question and your
-   answer as a bubble.
+| Asker | Kind | Takes back | Note | Something else |
+| --- | --- | --- | --- | --- |
+| pi's select (`ctx.ui.select`) | choice, or yes or no | one of its options, exactly as offered | no | no |
+| pi's confirm (`ctx.ui.confirm`) | yes or no | true or false | no | no |
+| pi's input (`ctx.ui.input`) | open | a string | — | — |
+| pi's editor (`ctx.ui.editor`) | open, 12 lines | a string, as typed | — | — |
+| A subagent (`shepherd_parent_message`, `needsReply`, up to six `options`) | choice, yes or no, or open | any text, sent to the run as a message (the option as offered, then the note after a blank line) | yes | yes |
 
-- **The dock** (`QuestionDock(question:options:recommended:)` on the board): `bgRaised`, radius
-  12, a 1px `lantern` line inside a 3pt `lanternTint` ring, 12pt above and below and 14pt at the
-  sides, 12pt between its parts, as wide as the composer card:
-  - a 26pt header (built: `NWQuestionHead`, on today's panel and a subagent's dock): a 13pt
-    question-mark glyph and "Agent is asking" in Geist 12 semibold, both
-    `lanternText`, 7pt apart; trailing, a 26pt icon button, Hide the question (a 14pt chevron,
-    `textSecondary`)
-  - the question in Geist 16 semibold at 1.35, tracked -0.5% (`Font.nwSans(16, .semibold)`; the
-    Kinds cards draw it at 15), inline code as in prose
-  - the options, 6pt apart. An option is a card on `bgWindow` with a 1px `lineSubtle` line, radius
-    8, 10pt above and below and 12pt at the sides, its parts 11pt apart: its number in a 20pt
-    rounded square (a `lineStrong` line, mono 11 `textSecondary`; radius 4, `NW.Radius.xs`, for
-    the board's 5); the title in `headline` (13.5 semibold) over its description in `ui` regular
-    `textSecondary` at 1.45, 3pt apart; and, trailing at the top, a 20pt **Recommended** tag
-    (`lanternTint` fill, `lanternText` 11 semibold, radius 4, 7pt side padding). The shared
-    `NativeQuestionOption` (ShepherdRemote) already splits an option into number, title,
-    description, and a trailing "(Recommended)".
-  - **Something else…**: a row at least 38pt tall with its number and "Something else…" in 13.5
-    `textTertiary`; typing there makes it a field in place.
-  - a footer over a `lineSubtle` hairline, 12pt below the options: trailing, **Answer**
-    (`.nw(.primary, size: .m)`, 28pt), disabled (40%) until there is an answer
-- **Picked** (QuestionPick): the option takes a `lantern` line on `lanternTint`, its number fills
-  (`lantern`, `textOnLantern` semibold), and a note field opens 8pt under its description
-  (`bgWindow`, radius 6, a `lineStrong` line, 7pt above and below and 10pt at the sides, Geist 13
-  at 1.45, the caret in `lantern`). The Recommended tag stays where it was. Picking another option
-  moves the pick; nothing is answered until Answer or ↩.
-- **Kinds** (QuestionStates › Kinds of question), one dock shaped by the answer pi needs:
-  - **Yes or no:** short options side by side, 6pt apart, each 44pt (its number, the title in
-    semibold, Recommended), answering on click; Answer is only for Something else.
-  - **Pick several:** rows at least 40pt with a 14pt checkbox (`.nwCheckbox`: lantern with a check
-    when ticked), the label (mono 13 semibold for a host or a path), and a note in 12
-    `textTertiary`; a ticked row takes the picked style. Answer says how many ("Answer with 2
-    hosts").
-  - **Open question:** no options and nothing recommended: a field at least 64pt tall
-    (`bgWindow`, radius 8, a `lineStrong` line, 10pt above and below and 12pt at the sides, 13.5
-    at 1.5) and Answer.
-  - **From a subagent:** "<name> is asking" (the question at 14.5, option titles at 13 over 12).
-    It takes over only in the subagent's own view (the inspector, in place of its Steer
-    composer); the parent thread keeps its composer. Today a subagent's question is answered on
-    its card (Subagents › Needs you).
-- **Hidden** (QuestionStates): Esc shrinks the dock to one 46pt line, so you can read the thread;
-  it still holds the composer's place. The line is the same lantern card (radius 12, 14pt
-  leading and 8pt trailing padding, 10pt between its parts): a 14pt glyph in `lanternText`, the
-  question in 13.5 semibold (truncating), a small secondary **Answer** (24pt), and a 26pt Show
-  the question button. Esc or Show the question brings the dock back.
-- **The record** is built (above). Not built with it: your note under the option's title, 4pt
-  apart (QuestionAnswered), since no asker takes a note yet (What pi can take).
-- **Keys** (QuestionStates › Keyboard; shown in menus and tooltips): 1–9 pick an option, ↩
-  answers, Esc hides or shows the question.
-- **What pi can take:** pi's select answer is one of the options it offered, with no note or free
-  text, and pi has no multi-select. By Honest affordances, the dock shows the note field,
-  Something else, and Pick several only for an asker that can take them. What each asking path
-  accepts (pi 0.87.1's RPC mode):
-  - **select** (`ctx.ui.select`): one string. pi hands back whatever value comes, but the
-    extension compares it with its options, so anything else reads as no pick; no note, no
-    multi-select. **confirm:** yes or no. **input** and **editor:** free text, one string.
-    Dismiss is a cancel (select and input resolve to nothing, confirm to no); a timeout or pi's
-    abort resolves the same way on pi's side, and pi does not tell the host.
-  - **Shepherd's own extensions** ask nothing today: the status extension only reads a tool named
-    like ask or question as Blocked, and the asking tools people run (`ask_user`) come from
-    other extensions and ask through the select and input above.
-  - **A subagent's question** (Subagents › Needs you) is answered with a message to the child,
-    free text, so a note or Something else could reach it; its answer already joins the child's
-    transcript as the user's message.
+An asking tool (any tool named `ask` or `question`, such as `ask_user`) asks through the dialogs
+above, so its question is the row of the dialog it opens. Its `short` reason is for the sidebar's
+Needs you (Sidebar); the dock never shows it.
+
+**Not built yet: Pick several** (QuestionStates › Kinds: rows at least 40pt with a 14pt
+`.nwCheckbox`, the label in mono 13 semibold for a host or a path and a note in 12
+`textTertiary`, a ticked row in the picked style, and "Answer with 2 hosts"). No asker takes
+several answers: pi's select returns one option, and a subagent's options are offered to pick
+one. It waits for an asker that says it takes several. Any of pi's dialogs can also be cancelled (pi returns undefined or
+false to its asker), which only Stop does. pi's `custom` UI is not supported in RPC mode, so a
+tool built on it never reaches Shepherd.
 
 **Extension widgets** (an extension's `setWidget` text, ANSI stripped) appear above the card as a
 micro caps title and its text. Machine payloads, `setStatus`, and `notify` are not shown.
@@ -2255,7 +2286,7 @@ its agent's row instead (see Sidebar). Behavior is specified in
 [native-subagents.md](docs/native-subagents.md).
 
 The components are ShepherdUI's Agents set (`Components/Agents/SubagentTray.swift`,
-`SubagentQuestionDock.swift`). `NativeSubagentTray` (ShepherdRemote, shared with iOS) derives the
+and the question dock, `Components/Composer/QuestionDock.swift`). `NativeSubagentTray` (ShepherdRemote, shared with iOS) derives the
 tray's header and rows once per change on the thread store (`NativeThreadStore.tray`), and the
 turn's record (`NativeSubagentRecord`) with its presentation; `SubagentPresentation` maps them onto
 the components' values, and `Thread/Subagents.swift` lays out the tray. State always comes from
@@ -2319,19 +2350,19 @@ the components' values, and `Thread/Subagents.swift` lays out the tray. State al
   and accessibility actions carry Open (or Close the Inspector), Answer…, and the run's controls
   (Pause or Continue and Stop while live, Re-run once finished). Controls are disabled while the
   thread can't take commands (its agent is off screen, or its host has no subagent control).
-- **Answer → the question dock** (SubagentTray › Answer → question dock;
-  `NWSubagentQuestionDock`): the run's question takes over the composer area, the tray and Up
-  next with it, until it is answered or hidden. `bgRaised`, radius 12, a 1px `lantern` line and a
-  3pt `lanternTint` ring, padding 10×12, 12pt gaps: the shared 26pt head (`NWQuestionHead`, as on
-  pi's own question, with a 13pt `lanternText` branch glyph and "reviewer is asking"; Hide the
-  question closes the dock), the question in Geist 13.5 semibold (inline Markdown), then its answers as
-  numbered cards 6pt apart (padding 8×10, radius 8, `bgWindow` with a `lineSubtle` line; a 20pt
-  number box at radius 5 in `lineStrong`, `.nwMono(11)`; the title in `ui` semibold and the lines
-  after it in `caption` `textSecondary`; "Recommended" on `lanternTint` in Geist 11 semibold when
-  the run marked the answer so). A chosen card takes `lanternTint` and a `lantern` line, its
-  number filled. Under a hairline, Answer (lantern `m`, ↩) sends the chosen answer to that run
-  only, before its next turn; a question with no answers takes a reply field instead ("Reply to
-  reviewer…").
+- **Answer → the question dock** (SubagentTray › Answer → question dock; QuestionStates › from a
+  subagent): the run's question takes over the composer area, the tray and Up next with it, until
+  it is answered or hidden, in the same dock as pi's own questions (`NWQuestionDock`, see
+  Composer, questions, and menus › The question dock): the shared head with a 13pt `lanternText`
+  branch glyph and "reviewer is asking" (Hide the question, or Esc, closes the dock; its row's
+  Answer opens it again), the question in Geist 14.5 semibold (inline Markdown), then its answers
+  as numbered cards (titles in Geist 13 semibold over 12 `textSecondary`), the first the run
+  marked "Recommended". Its answer is a message to the run, so a picked card opens its note field
+  and Something else… is the last row; a question with no answers is an open question ("Reply to
+  reviewer…"). Answer (↩) sends the option as the run offered it (with the note after a blank
+  line) or the words typed to that run only, before its next turn. SubagentTray draws the dock
+  smaller (10×12 padding, the question at 13.5, 8×10 cards with 12.5 titles over 11.5, and no
+  Something else); the dock follows QuestionStates, which draws every asker's dock.
 - **In the thread** (`NWSubagentRecordLine`, SubagentTray › SubagentRecord): an activity line in
   look (26pt, 12.5 `textSecondary`, the meta in `.nwMono(11)` `textTertiary`, a 13pt branch glyph
   and a 10pt chevron; a real button with the row hover; with no run to open, no chevron, its
@@ -3901,8 +3932,8 @@ composing chrome by hand. Debug builds have a **Component Gallery** (View menu,
 | Containers | `NWSectionHeader`, `NWGroupCard`, `NWCardRow`, `NWHairline`, `NWChoiceRow` (`NWChoiceRowMetrics`), `NWFlowLayout`, `NWMarkupText` | `SettingsComponents.swift`; hairlines everywhere; `NWMarkupText` for Settings' descriptions (Mac and iOS); `NWChoiceRow` in the iOS client's New thread pickers; `NWFlowLayout` for wrapping chips and answers (iOS) |
 | Navigation | `NWSidebar`, `NWSidebarTopBar`, `NWSidebarDestination`, `NWSidebarSection`, `NWSidebarRow`, `NWSidebarFooter`, `NWDropIndicator`, `NWDensity`; `NWThreadToolbar`, `NWPaneToggle`, `NWOptionsMenu`, `NWPaneHeader`; `.nwCommandPalette(isPresented:)`, `NWPaletteCard`, `NWPaletteSearchRow`, `NWPaletteSectionHeader`, `NWPaletteRow` | `SidebarView.swift`, `ThreadHeader.swift`, `RootView.swift`, `CommandPaletteView.swift`; the review's header (`DiffReviewView.swift`) and the inspector's ⋯ menu (`Thread/SubagentInspector.swift`) |
 | Thread | `NWUserBubble` (its time shown while `revealed`; `origin: .steered`), `NWQueueDivider`, `NWAgentProse`, `NWCodeBlock`, `NWThinking`, `NWActivityLine`, `NWActivityCalls`, `NWChangesCard`, `NWDiffStat`, `NWInlineCode`, `NWAttachmentChip`, `NWTurnFooter` (shown while `revealed`), `NWTurnError`, `NWJumpToLatest`, `.nwShimmer(active:)` (live text) | `Thread/ThreadView.swift`, `ThreadTurns.swift` (with each turn's `MessageHover`), `ThreadTools.swift`, `ThreadMarkdown.swift` |
-| Composer | `NWComposer`, `.nwComposerChip(active:)`, `NWChipChevron`, `NWComposerActionButton` (outlined Stop, Send's ring), `NWMenuHeader`, `NWSlashMenu`, `NWModelPicker`, `NWThinkingMenu`, `NWSendMenu`, `NWPlaceMenu` and `NWPlaceChipLabel` (the New thread page's workplace); the queue: `NWQueueStack`, `NWQueueRow`, `NWQueueEditor`, `NWQueueDeletedRow`, `NWQueueMoreRow`, `NWQueueNumber`, `NWQueueGlyph`, `NWGripGlyph`, `NWQueueMetrics` | `Thread/Composer.swift`, `Thread/QueueStack.swift` |
-| Agents | `NWSubagentTray` (`NWSubagentTrayRun`, `NWSubagentTraySummary`, `NWSubagentTrayRow`, `NWSubagentTrayMoreRow`), `NWDockStack`, `NWSubagentRecordLine`, `NWSubagentQuestionDock`, `NWInspectorHeader`, `NWRunBrief`, `NWRunActions`, `NWBranchGlyph`, `NWElapsedText`, `NWDuration`, `NWInlineMarkup`, `.nwRunArrival`; touch forms for iOS (the tray's `.pad` and `.phone` sizes, `NWRunCard`, `NWRunHeader`, `NWRunTabs`, `NWSteerField`, …) | `Thread/Subagents.swift`, `Thread/SubagentInspector.swift`, `Thread/SubagentPresentation.swift`; the iOS client |
+| Composer | `NWComposer`, `.nwComposerChip(active:)`, `NWChipChevron`, `NWComposerActionButton` (outlined Stop, Send's ring), `NWMenuHeader`, `NWSlashMenu`, `NWModelPicker`, `NWThinkingMenu`, `NWSendMenu`, `NWPlaceMenu` and `NWPlaceChipLabel` (the New thread page's workplace); the question dock: `NWQuestionDock` (`NWQuestionDockContent`, `NWQuestionDockMetrics`, `.nwQuestionCard()`), `NWQuestionHead`, `NWQuestionDockHidden` (over `NWQuestionHiddenLine`); the queue: `NWQueueStack`, `NWQueueRow`, `NWQueueEditor`, `NWQueueDeletedRow`, `NWQueueMoreRow`, `NWQueueNumber`, `NWQueueGlyph`, `NWGripGlyph`, `NWQueueMetrics` | `Thread/Composer.swift`, `Thread/QuestionDock.swift`, `Thread/QueueStack.swift` |
+| Agents | `NWSubagentTray` (`NWSubagentTrayRun`, `NWSubagentTraySummary`, `NWSubagentTrayRow`, `NWSubagentTrayMoreRow`), `NWDockStack`, `NWSubagentRecordLine`, `NWInspectorHeader`, `NWRunBrief`, `NWRunActions`, `NWBranchGlyph`, `NWElapsedText`, `NWDuration`, `NWInlineMarkup`, `.nwRunArrival`; touch forms for iOS (the tray's `.pad` and `.phone` sizes, `NWRunCard`, `NWRunHeader`, `NWRunTabs`, `NWSteerField`, …) | `Thread/Subagents.swift`, `Thread/SubagentInspector.swift`, `Thread/SubagentPresentation.swift`; the iOS client |
 | Review | The Changes pane: `NWScopeButton`, `NWViewedPill`, `NWCompareRow`, `NWFileStrip`, `NWFileHeader`, `NWViewedCheckbox`, `NWDiffView` over `NWChangesRow`s (`NWDiffLine`, `NWSplitDiffLine`, `NWDiffHatch`, `NWDiffFoldRow`), `NWInlineComment`, `NWCommentEditor`, `NWReviewSendBar`, `NWChangesFileList`, the menus (`NWChangesMenu`, `NWChangesMenuRow`, `NWChangesMenuToggle`, `NWChangesMenuSearch`), `NWDiffMetrics`, `NWChangesMetrics`; the commit form (`NWCommitMessageEditor`, `NWCommitFileRow`, `NWCommitOptionRow`); touch forms for iOS (`NWTouchDiffLine`, `NWSplitDiffRow`, `NWTouchFileStrip`, `NWLineCommentBar`, `NWReviewFileRow`, `NWReviewComposer`, …) | `DiffReviewView.swift`, `ChangesMenus.swift`, `ChangesRows.swift`, `ReviewCommitSheet.swift`; the iOS client |
 | Dialogs | `NWDialog` (`NWDialogMetrics`), `NWDialogStatus`, `NWSheetRow`, `NWChecklistRow`, `NWSettingsNavRow` | `DialogSheet.swift`, `AppDialogs.swift`, the sheets, `QuitConfirmation.swift`, `SettingsView.swift` |
 | Automations | `NWAutomationRow` (a row with its switch), `NWAutomationSwitch`, `NWFactRow` and `NWFactText`, `NWAutomationPrompt`, `NWRunBars`, `NWRunRow`, `NWAutomationMetrics`; the Mac's table: `NWAutomationTableRow`, `NWRunOutcome` and `NWRunOutcomeLabel`, `NWAutomationRunLine` | `Pages/AutomationsPage.swift`; the iOS client's `Automations/` |
@@ -4196,9 +4227,10 @@ Fixed chords:
   move the focused message and ⌫ deletes it.
 - The composer's menus: ↑↓ move, ⏎ chooses, Esc closes, and ⇥ completes a slash command. The
   palette: ↑↓, ↩ runs, ⇥ cycles its scope, Esc closes.
-- **Not built yet** (QuestionStates › Keyboard): in the question dock, 1–9 pick an option, ↩
-  answers, and Esc hides or shows the question. Today a confirm answers to y or n while its panel
-  has focus, and Esc does nothing while a question waits (it never stops pi then).
+- The question dock (QuestionStates › Keyboard): 1–9 pick an option (a yes or a no answers at
+  once), ↩ answers, and Esc hides or shows the question, while its thread has the keyboard; never
+  with ⌘, ⌃ or ⌥ held. Esc never stops pi while a question waits; ⌘. (Stop) refuses the question
+  and stops the turn.
 
 The Changes pane's keys are listed with the pane (Side pane › Changes).
 
@@ -4270,7 +4302,7 @@ below collects the rest, and the places those sentences point here.
   - A review from an older host (no `changes.v1`) keeps two scopes (Uncommitted and Pull request)
     and compares the working tree against HEAD, or the PR's merge base, the old way.
   - The Agents and Review components pad and space in 10pt where their boards do (the brief's
-    vertical padding, the subagent question dock's, the action bar, a comment's sides, the changes
+    vertical padding, the action bar, a comment's sides, the changes
     card's head, the toolbar's gaps, a file header's leading inset,
     `AppLayout.steerTopInset`), which is not a step on the space scale ("Padding and gaps use only
     these steps").
@@ -4298,11 +4330,8 @@ below collects the rest, and the places those sentences point here.
   - Split terminals' dividers are `lineSubtle`, the TerminalPane board's `lineStrong`.
 - **Sidebar and New thread** (NWNavigation, NavNewThread against `SidebarView.swift` and
   `NewThreadPage.swift`):
-  - The New thread composer has no attach button and no "/ commands" chip, and its placeholder
-    drops ", or / for commands": no pi runs before the thread exists to list its commands, and the
-    opening prompt carries no images.
-  - A Needs you reason is the question's own title cut to 14 characters ("Retention…"), where the
-    boards condense it ("retention?").
+  - The New thread composer has no "/ commands" chip, and its placeholder drops ", or / for
+    commands": no pi runs before the thread exists to list its commands.
 - **A pi dialog posts no notification** (Notifications and Live Activities › The catalog):
   a confirm, select, input or editor dialog shows in the thread, but only a tool named like
   `ask` or `question` sets `blocked`, so any other question reaches no one outside the window
@@ -5250,7 +5279,8 @@ selected thread, or the Overview when none is. Other screens push over the detai
   and a 16pt `textTertiary` glyph for a design, a mission or an automation run.
 - **Needs you rows** end in the reason in mono 10 `lanternText`. The boards summarize the
   question ("retention?", "approve plan", "orders stuck") or name the subagent that asks
-  ("reviewer"); the app writes "asked you", "needs you", or the subagent's name.
+  ("reviewer"); the app writes the agent's own short reason when it gave one, cut as on the Mac
+  (`NeedsYouReason`), else "asked you" or "needs you", and a subagent's own reason, else its name.
 - **Recents rows** end in the host tag (mono 10 `textTertiary` in a 1px `lineSubtle` box at
   radius 4) only when threads from several hosts mix. Running rows draw no sparkline (see
   Where Shepherd departs). **Not built yet:** a design's row (the diamond glyph, and "4 boards"
@@ -7878,8 +7908,8 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | QueueSteer | Up next (the queue); Thread › User turn (Steered) | Built |
 | QueueEdit | Up next (the queue); Composer › Send menu | Built |
 | QueueStates | Up next (the queue); Settings › Agents, Keyboard | Partial |
-| QuestionAsk | Composer, questions, and menus › Questions | Partial |
-| QuestionPick | Composer, questions, and menus › Questions | Partial |
+| QuestionAsk | Composer, questions, and menus › Questions | Built |
+| QuestionPick | Composer, questions, and menus › Questions | Built |
 | QuestionAnswered | Composer, questions, and menus › Questions (The record) | Built |
 | QuestionStates | Composer, questions, and menus › Questions; Keyboard | Partial |
 | TerminalSplit | Terminal panes; Terminal panel (no header button: departures) | Built |

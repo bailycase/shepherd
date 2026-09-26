@@ -174,25 +174,26 @@ struct ComposerDock<Queue: View>: View {
 }
 
 /// A subagent's question in the composer's place, from its row's Answer (SubagentTray ›
-/// Answer → question dock). The answer steers only that run.
+/// Answer → question dock): the question dock, labelled with the subagent. The answer steers
+/// only that run; hiding it (Hide the question, Esc) closes the dock, and its row's Answer
+/// opens it again.
 struct SubagentQuestion: View {
     let run: ChildRun
     let enabled: Bool
+    /// The thread has the keyboard: the dock takes its keys.
+    let focused: Bool
     let actions: SubagentActions
     let hide: () -> Void
 
     var body: some View {
-        let question = run.question?.text ?? run.attentionText ?? ""
-        NWSubagentQuestionDock(
-            name: nativeRunNames(run).name, question: question,
-            options: NativeQuestionOption.options(run.question?.options ?? []).map {
-                NWQuestionDockOption(number: $0.number, title: $0.title, detail: $0.detail, recommended: $0.recommended, value: $0.value)
-            },
-            enabled: enabled,
-            answer: { reply in
-                actions.command(run, .message, reply, .steer)
-                hide()
-            },
-            hide: hide)
+        let prompt = NativeQuestionPrompt(runID: run.runID, name: nativeRunNames(run).name,
+                                          question: run.question?.text ?? run.attentionText ?? "", options: run.question?.options)
+        QuestionDock(prompt: prompt, enabled: enabled, hidden: false, focused: focused) { answer in
+            guard let reply = prompt.messageReply(answer) else { return }
+            actions.command(run, .message, reply, .steer)
+            hide()
+        } setHidden: { hidden in
+            if hidden { hide() }
+        }
     }
 }

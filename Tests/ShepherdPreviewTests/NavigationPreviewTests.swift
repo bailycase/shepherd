@@ -39,6 +39,7 @@ extension PreviewTests {
             agents.append(agent); tabs.append(tab)
         }
         agents[1].waitingOn = "Approve the plan?"
+        agents[1].waitingReason = "approve plan"
         var (billing, billingTab) = try await workspace.agent("Migrate invoices to v2", in: other, order: 0, status: .idle)
         billing.lastActiveAt = now - 30 * 60_000
         agents.append(billing); tabs.append(billingTab)
@@ -66,6 +67,41 @@ extension PreviewTests {
         defer { workspace.stop() }
         try await Preview.render("sidebar-\(density.rawValue)", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 760)) {
             SidebarView(vm: workspace.vm).nwDensity(density)
+        }
+    }
+
+    /// Needs you's reasons (NWNavigation, Main): the agent's own word or two when its asking tool
+    /// gave one ("retention?", "approve plan"), the question cut short when it gave none, and an
+    /// asking subagent's own reason ("token names?") beside one that gave none (its name).
+    @Test func sidebarNeedsYouReasons() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let space = Space(name: "Shepherd", path: workspace.dir.path)
+        let rows: [(String, AgentStatus, String?, String?)] = [
+            ("Checkout funnel events", .blocked, "Retention: 30 days or 13 months?", "retention?"),
+            ("Deploy media stack", .blocked, "How should I handle Horizon’s uncommitted edits?", nil),
+            ("Restyle native UI", .working, nil, nil),
+            ("Dock review pane", .blocked, "Approve the plan as written?", "approve plan"),
+            ("Triage new Sentry issues", .working, nil, nil),
+            ("Fix pay button jump", .done, nil, nil),
+        ]
+        var agents: [Agent] = [], tabs: [ShepherdCore.Tab] = []
+        let now = Date().timeIntervalSince1970 * 1000
+        for (index, row) in rows.enumerated() {
+            var (agent, tab) = try await workspace.agent(row.0, in: space, order: index, status: row.1)
+            agent.lastActiveAt = now - Double(index) * 60_000
+            agent.waitingOn = row.2
+            agent.waitingReason = row.3
+            agents.append(agent); tabs.append(tab)
+        }
+        try await workspace.seed(ShepherdState(spaces: [space], tabs: tabs, agents: agents))
+        let vm = workspace.vm
+        var labelled = Threads.liveRuns[1]
+        labelled.question?.short = "token names?"
+        vm.applyAgentChildren(agents[2].id, [labelled])
+        vm.applyAgentChildren(agents[4].id, [Threads.liveRuns[1]])
+        try await Preview.render("sidebar-needs-you-reasons", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 460)) {
+            SidebarView(vm: vm)
         }
     }
 
@@ -292,6 +328,27 @@ extension PreviewTests {
         }
         vm.openNewThread()
         try await Preview.render(surface, size: CGSize(width: width, height: 760)) {
+            RootView(vm: vm)
+        }
+    }
+
+    /// The New thread composer with two images attached (drop, paste or the paperclip), and with
+    /// a fifth refused ("At most 4 images per message.") under the card.
+    @Test(arguments: ["new-thread-attachments", "new-thread-attachments-full"])
+    func newThreadWithAttachments(surface: String) async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        try await workspace.seed(ShepherdState(spaces: [Space(name: "shepherd", path: workspace.dir.path)]))
+        vm.openNewThread()
+        vm.newThread.prompt = "Match the sidebar to these screenshots"
+        let names = surface == "new-thread-attachments" ? ["sidebar-light.png", "sidebar-dark.png"]
+            : ["sidebar-light.png", "sidebar-dark.png", "needs-you.png", "recents.png", "hosts.png"]
+        vm.newThread.attachments.add(names.map { name in
+            (name, ImageAttachment(name: name, image: NativeImage(mimeType: "image/png", data: Data(count: 8)),
+                                   thumbnail: Image(systemName: "photo")))
+        })
+        try await Preview.render(surface, size: CGSize(width: 1280, height: 760)) {
             RootView(vm: vm)
         }
     }

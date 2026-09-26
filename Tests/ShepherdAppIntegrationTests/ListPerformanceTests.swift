@@ -234,6 +234,35 @@ struct ListPerformanceTests {
         }
     }
 
+    /// A question arriving takes the composer's place, and answering it gives the place back:
+    /// both redraw the composer, never the thread's body or its toolbar. The rows on screen are
+    /// laid out again for the new inset (a screenful at most), none off screen.
+    @Test func aQuestionArrivingAndAnsweredRedrawsOnlyTheComposer() async throws {
+        let thread = try await chromeThread(running: true)
+        defer { thread.close() }
+        // The 800pt window shows about a dozen of its 120 turns.
+        let screenful = 20
+        var asking = thread.snapshot
+        asking.revision += 1
+        asking.dialogs = [NativeThreadDialog(id: "d1", kind: .select, title: "How should I handle Horizon’s uncommitted edits?",
+                                             options: ["Compare first (Recommended)\nDiff the 11 files.", "Leave Horizon alone\nDeploy from a clean checkout."])]
+        var answered = asking
+        answered.revision += 1
+        answered.dialogs = []
+
+        for (step, next) in [("arriving", asking), ("answered", answered)] {
+            let rows = try await counting(thread.window) { await thread.serve(next) }
+
+            #expect(thread.store.dialogs.count == next.dialogs.count)
+            #expect(rows["composer.body", default: 0] >= 1, "\(step): the composer changed: \(rows)")
+            for key in ["thread.view", "thread.header", "toolbar.thread"] {
+                #expect(rows[key, default: 0] == 0, "\(step): \(key): \(rows)")
+            }
+            let turns = rows["thread.agentTurn", default: 0] + rows["thread.userTurn", default: 0]
+            #expect(turns <= screenful, "\(step): only the rows on screen: \(rows)")
+        }
+    }
+
     /// A poll that moves only the context count redraws nothing in the chrome: the toolbar shows
     /// no counters, so neither it nor the composer nor the thread redraws.
     @Test func aStatsOnlyPollRedrawsNoToolbar() async throws {

@@ -33,6 +33,16 @@ public enum NativeThreadRequest: Codable, Hashable, Sendable {
 public struct NativeImage: Codable, Hashable, Sendable {
     public static let maxBytes = 2 * 1024 * 1024
     public static let maxPerSend = 4
+    /// One send's images together: base64-expanded, one prompt line stays under RPCSession's
+    /// 8 MiB stdin queue.
+    public static let maxBytesPerSend = 5 * 1024 * 1024
+
+    /// What one send takes: the count, each image's size and type, and their total.
+    public static func fitOneSend(_ images: [NativeImage]) -> Bool {
+        images.count <= maxPerSend
+            && images.allSatisfy { $0.data.count <= maxBytes && $0.mimeType.hasPrefix("image/") }
+            && images.reduce(0) { $0 + $1.data.count } <= maxBytesPerSend
+    }
     public var mimeType: String
     public var data: Data
     /// The file it came from, for the queue's attachment chips. Absent from older clients.

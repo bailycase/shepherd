@@ -84,7 +84,7 @@ final class RPCThreadState {
     var onServable: (() -> Void)?
     private var announcedServable = false
     /// A new agent's opening prompt, held until the thread serves (`sendOpeningPrompt`).
-    private var openingPrompt: (text: String, id: UUID)?
+    private var openingPrompt: (text: String, images: [NativeImage], id: UUID)?
     /// Requests get a snapshot rather than `native_starting`.
     var isServable: Bool { piSessionID != nil && !historyPending }
     private(set) var generation = UUID().uuidString
@@ -171,21 +171,56 @@ final class RPCThreadState {
         didSet {
             dialogsHash = dialogs.hashValue
             dialogBytes = nil
-            let question = Self.question(in: dialogs)
-            if question != Self.question(in: oldValue) { onQuestionChanged?(question) }
+            if dialogReasons.count > dialogs.count {
+                let open = Set(dialogs.map(\.id))
+                dialogReasons = dialogReasons.filter { open.contains($0.key) }
+            }
+            let question = Self.question(in: dialogs, reasons: dialogReasons)
+            if question != askedQuestion {
+                askedQuestion = question
+                onQuestionChanged?(question)
+            }
         }
     }
-    /// Called on the session queue when the question the thread asks first changes (its title,
-    /// nil once none is open): the sidebar's Needs you says why without reading the thread.
-    var onQuestionChanged: ((String?) -> Void)?
+    /// Called on the session queue when the question the thread asks first changes (nil once
+    /// none is open): the sidebar's Needs you says why without reading the thread.
+    var onQuestionChanged: ((AgentQuestion?) -> Void)?
+    private var askedQuestion: AgentQuestion?
+    /// The short reason of each open dialog an asking tool opened, by dialog id.
+    private var dialogReasons: [String: String] = [:]
+    /// Asking tools running now and the short reason each gave (nil for none), oldest first.
+    private var askingCalls: [(id: String, reason: String?)] = []
 
-    /// The first open question's title, trimmed; nil when none has one.
-    static func question(in dialogs: [NativeThreadDialog]) -> String? {
+    /// What the thread asks first: a question's title, and the agent's word or two for it
+    /// ("retention?") when its asking tool gave one.
+    struct AgentQuestion: Equatable {
+        var title: String
+        var reason: String?
+    }
+
+    /// The first open question with a title, trimmed; nil when none has one.
+    static func question(in dialogs: [NativeThreadDialog], reasons: [String: String] = [:]) -> AgentQuestion? {
         for dialog in dialogs {
             let title = dialog.title.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !title.isEmpty { return title }
+            if !title.isEmpty { return AgentQuestion(title: title, reason: reasons[dialog.id]) }
         }
         return nil
+    }
+
+    /// Whether a tool waits on the user, by name: the status extension's rule (`ask_user`,
+    /// `question`), which also gives such tools the `short` parameter.
+    static func asksUser(_ toolName: String) -> Bool {
+        toolName.contains(#/(?i)(?:^|[^a-z0-9])(?:ask|question)(?:[^a-z0-9]|$)/#)
+    }
+
+    /// Longest short reason kept; the sidebar shows far less.
+    static let shortReasonLimit = 120
+
+    /// An asking call's `short` argument as one trimmed line, or nil when it gave none.
+    static func shortReason(in args: JSONValue?) -> String? {
+        guard case .object(let fields) = args, case .string(let text) = fields["short"] else { return nil }
+        let line = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return line.isEmpty ? nil : String(line.prefix(shortReasonLimit))
     }
     private var dialogBytes: [Int]?
     private var widgets: [(id: String, value: NativeThreadWidget)] = [] { didSet { widgetsHash = widgets.map(\.value).hashValue } }
@@ -311,6 +346,7 @@ final class RPCThreadState {
             refreshStats()
         case .agentSettled:
             running = false
+            askingCalls.removeAll()
             settled()
             onTurnEvent?(.settled)
         case .messageStart(let message) where message.role == "user":
@@ -357,12 +393,17 @@ final class RPCThreadState {
             // The ring moves once per reply, never per token.
             refreshStats()
         case .toolExecutionStart(let id, let name, let args):
+            if Self.asksUser(name) {
+                askingCalls.removeAll { $0.id == id }
+                askingCalls.append((id, Self.shortReason(in: args)))
+            }
             upsertTool(id: id, name: name, args: args, content: [], isError: nil, status: "running")
         case .toolExecutionUpdate(let id, let name, let args, let partial):
             upsertTool(id: id, name: name, args: args, content: partial?.content ?? [], isError: nil, status: "running")
         case .toolExecutionEnd(let id, let name, let result, let isError):
             let stopped = isError && stopRequested
             if stopped { stoppedCalls.insert(id) }
+            askingCalls.removeAll { $0.id == id }
             upsertTool(id: id, name: name, args: nil, content: result?.content ?? [], isError: isError, status: stopped ? "aborted" : "complete")
             onToolFinished?(name)
         case .queueUpdate(let steering, let followUp):
@@ -504,16 +545,15 @@ final class RPCThreadState {
                 completion(.failure(code: "invalid", message: "Send requires text up to 16 KiB and a valid delivery mode."))
                 return
             }
-            // Per-image cap from the contract; the aggregate keeps one prompt line
-            // under RPCSession's 8 MiB stdin queue once base64-expanded.
-            guard images.count <= NativeImage.maxPerSend,
-                  images.allSatisfy({ $0.data.count <= NativeImage.maxBytes && $0.mimeType.hasPrefix("image/") }),
-                  images.reduce(0, { $0 + $1.data.count }) <= Self.imageBytesLimit else {
+            guard NativeImage.fitOneSend(images) else {
                 completion(.failure(code: "invalid", message: "Send accepts up to \(NativeImage.maxPerSend) images of \(NativeImage.maxBytes / 1024 / 1024) MiB each."))
                 return
             }
             send(id: operationID, text: text, delivery: delivery, images: images, alone: olderClient, completion: completion)
         case .abort:
+            // Stopping refuses what pi is waiting on: a question has no Dismiss, and a turn
+            // waiting on an answer would not stop.
+            refuseDialogs()
             stop { settle($0) }
         case .queue(_, _, _, let action):
             perform(action, operationID: operationID, completion: completion)
@@ -718,7 +758,7 @@ final class RPCThreadState {
         announcedServable = true
         if let opening = openingPrompt {
             openingPrompt = nil
-            deliverOpeningPrompt(opening.text, id: opening.id)
+            deliverOpeningPrompt(opening.text, images: opening.images, id: opening.id)
         }
         onServable?()
     }
@@ -726,21 +766,25 @@ final class RPCThreadState {
     /// A new agent's opening prompt (`OpeningPrompt`), sent the moment the thread serves: in the
     /// same queue turn, before any request is answered, so the first snapshot a client gets shows
     /// it (pending until pi starts it) and none shows the thread without it.
-    func sendOpeningPrompt(_ text: String, id: UUID) {
+    func sendOpeningPrompt(_ text: String, images: [NativeImage] = [], id: UUID) {
         guard isServable else {
-            openingPrompt = (text, id)
+            openingPrompt = (text, images, id)
             return
         }
-        deliverOpeningPrompt(text, id: id)
+        deliverOpeningPrompt(text, images: images, id: id)
     }
 
-    private func deliverOpeningPrompt(_ text: String, id: UUID) {
+    private func deliverOpeningPrompt(_ text: String, images: [NativeImage], id: UUID) {
         let sessionID = session.id
         guard text.utf8.count <= Self.textLimit else {
             ShepherdLog.warning("rpc session \(sessionID) refused its opening prompt: over \(Self.textLimit) bytes")
             return
         }
-        send(id: id, text: text, delivery: .followUp, images: []) { result in
+        guard NativeImage.fitOneSend(images) else {
+            ShepherdLog.warning("rpc session \(sessionID) refused its opening prompt: its images are over the limits")
+            return
+        }
+        send(id: id, text: text, delivery: .followUp, images: images) { result in
             guard case .failure(let code, let message) = result else { return }
             ShepherdLog.warning("rpc session \(sessionID) refused its opening prompt: \(code) \(message)")
         }
@@ -1037,6 +1081,17 @@ final class RPCThreadState {
 
     // MARK: - Dialogs and widgets
 
+    /// Cancels every question pi waits on that can be answered here (its asker gets pi's
+    /// cancelled answer); the next commit drops them from the thread, which records each as
+    /// not answered.
+    private func refuseDialogs() {
+        let open = dialogs.filter { $0.unavailable == nil }
+        guard !open.isEmpty else { return }
+        for dialog in open { session.send(.extensionUIResponse(id: dialog.id, cancelled: true)) }
+        dialogs.removeAll { $0.unavailable == nil }
+        if session.isAlive { for dialog in open { recordQuestion(dialog, answer: .cancel) } }
+    }
+
     private func handleUIRequest(_ request: RPCExtensionUIRequest) {
         switch request.method {
         case "select", "confirm", "input", "editor":
@@ -1048,9 +1103,13 @@ final class RPCThreadState {
             if Self.bytes(dialog) > Self.dialogBytes {
                 dialog = NativeThreadDialog(id: request.id, kind: kind, title: "Dialog too large for native thread", unavailable: "payload-limit")
             }
-            dialogs.removeAll { $0.id == request.id }
-            dialogs.append(dialog)
+            // A dialog an asking tool opens carries that call's reason (the newest, should two run).
+            // One assignment, so the question changes once and its reason is not pruned first.
+            var next = dialogs.filter { $0.id != request.id }
+            next.append(dialog)
+            dialogReasons[request.id] = askingCalls.last?.reason ?? nil
             askedAt[request.id] = Date().timeIntervalSince1970 * 1000
+            dialogs = next
             if let timeout = request.timeout, timeout > 0 {
                 // pi auto-resolves on its side; we only stop showing it, and the thread says it
                 // went unanswered.

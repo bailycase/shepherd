@@ -377,7 +377,8 @@ Sources/
                        parser: tables, lists, images, details, footnotes), NativeActivity
                        (activity lines, the changes card), NativeQueueRules (the queue's rules,
                        host and client), NativeContextPresentation (the context ring, its
-                       details, compaction lines),
+                       details, compaction lines), NativeQuestionDock (a question's kind, what
+                       its asker takes, the answer and the dock's keys),
                        TerminalPanel (a layout's terminal tabs, the key row's bytes, the panel's
                        height, RemoteTerminalLink), AutomationPresentation (automation rows, runs
                        and what a client may do), AgentBranchPresentation (the header's branch
@@ -427,7 +428,8 @@ Sources/
     TerminalPanels (each layout's terminal panel: shown, tab, maximized, activity),
       TerminalPanelLayout (TerminalPanelGeometry, pure), TerminalPanelViews (strip, divider)
     Thread/            ThreadView, ThreadTurns, ThreadTools (activity lines), ThreadMarkdown,
-                       Composer, QueueStack ("Up next", the queue above the composer),
+                       Composer, QuestionDock (a question in the composer's place),
+                       QueueStack ("Up next", the queue above the composer),
                        ContextMeter (the ring beside Send, its details, compaction lines),
                        Subagents, SubagentPresentation, SubagentInspector
     TerminalSessions (TerminalSessionStore), AgentStartQueue (launch order of restored pi),
@@ -602,7 +604,8 @@ variables are blanked.
   - native thread requests, with the context and Compact now behind `native.context.v1`
   - attach, detach, input, resize, and acknowledged paste
   - pane open, close, and split resize
-  - `listDir`, `listModels`, `addSpace`, and `createAgent` with `creationOptions`
+  - `listDir`, `listModels`, `addSpace`, and `createAgent` with `creationOptions` (and the
+    opening prompt's images behind `agent.create.images.v1`)
   - chunked uploads (32 MiB per file)
   - `agentQuery`/`agentAction`: rename, delete, reorder, review, subagents, search, worktree
     info/setup/finalize/delete, `terminals` (what each terminal pane runs; answered by the

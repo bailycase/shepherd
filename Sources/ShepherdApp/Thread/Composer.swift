@@ -48,8 +48,7 @@ struct Composer: View {
     var steerSubagent: ((ChildRun) -> Void)? = nil
     /// The run open in the inspector: its tray row wears the selection.
     var inspectedRunID: String? = nil
-    @State private var attachments: [ImageAttachment] = []
-    @State private var attachmentError: String?
+    @State private var attachments = ComposerAttachments()
     @State private var dropTargeted = false
     @State private var commandIndex = 0
     /// Esc closes the slash menu for the draft as typed; typing more reopens it.
@@ -105,6 +104,13 @@ struct Composer: View {
         var blank: Bool
     }
 
+    /// When the field claims the keyboard: the thread taking it, or a question giving the card
+    /// back.
+    private struct FieldClaim: Equatable {
+        var focused: Bool
+        var question: Bool
+    }
+
     /// How long pi may keep the thread waiting before the composer says it is starting: `delay`
     /// over a thread that draws something, no more than `AppLayout.blankStartingIndicatorDelay`
     /// over one that is still blank.
@@ -158,7 +164,7 @@ struct Composer: View {
 
     /// What sits above the card: a banner, the notice, extension widgets, the queue.
     private var accessories: [String] {
-        let banner = store.loadError != nil ? "lost" : attachmentError != nil ? "attachment" : store.notice != nil ? "notice" : nil
+        let banner = store.loadError != nil ? "lost" : attachments.error != nil ? "attachment" : store.notice != nil ? "notice" : nil
         return [banner].compactMap { $0 } + store.widgets.map(\.id) + (queueStack.isVisible ? ["queue"] : [])
             + (showsTray ? ["tray"] : []) + (answeringRun != nil ? ["answering"] : [])
     }
@@ -183,7 +189,7 @@ struct Composer: View {
         return store.subagents.first { $0.runID == answering && nativeRunPhase($0) == .needsYou }
     }
 
-    /// The question in place of the field, by the identity its panel takes.
+    /// pi's question in the composer's place, by the identity its dock takes.
     private var questionKey: String? {
         guard let dialog = dialogs.first, let session = store.session else { return nil }
         return session.key + ":" + dialog.id
@@ -191,8 +197,8 @@ struct Composer: View {
 
     /// Everything here is anchored to the bottom of the thread: what opens above the card grows
     /// up from it while the card stays put. Menus float over the thread from the card's corner
-    /// and take no room in the composer; a question replaces the field and the card eases to its
-    /// height; banners, widgets, and attachments nudge in. Each is keyed on its own state, so
+    /// and take no room in the composer; a question takes the whole card's place (the question
+    /// dock); banners, widgets, and attachments nudge in. Each is keyed on its own state, so
     /// typing and filtering stay instant.
     var body: some View {
         let _ = NWRenderProbe.tick("composer.body")
@@ -214,7 +220,7 @@ struct Composer: View {
                         .buttonStyle(.nw(.secondary, size: .s))
                 }
                 .nwTransition(.list, edge: .bottom)
-            } else if let attachmentError {
+            } else if let attachmentError = attachments.error {
                 NWBanner(.failed, title: attachmentError)
                     .nwTransition(.list, edge: .bottom)
             } else if let notice = store.notice {
@@ -235,15 +241,30 @@ struct Composer: View {
                 .zIndex(queueStack.dragging == nil ? 0 : 1)
                 .nwTransition(.list, edge: .bottom)
             }
-            // A subagent's question answered from its row takes the card's place until it is
-            // answered or hidden.
+            // A question takes the card's place (the question dock): a subagent's answered from
+            // its row until it is answered or hidden, else pi's own while pi waits on it.
             Group {
                 if let run = answeringRun, let subagents {
-                    SubagentQuestion(run: run, enabled: active && store.supports("subagents"), actions: subagents) {
+                    SubagentQuestion(run: run, enabled: active && store.supports("subagents"), focused: active && isFocused,
+                                     actions: subagents) {
                         answering = nil
                         composing = true
                     }
                     .id(run.runID)
+                    .nwTransition(.content)
+                } else if let dialog = dialogs.first, let session = store.session, let questionKey {
+                    QuestionDock(prompt: NativeQuestionPrompt(dialog: dialog), count: dialogs.count,
+                                 enabled: active && store.supports("answer"), hidden: questionHiding.isHidden(questionKey),
+                                 focused: active && isFocused) { answer in
+                        guard let reply = NativeQuestionPrompt(dialog: dialog).dialogAnswer(answer) else { return }
+                        Task {
+                            await store.answer(dialogID: dialog.id, sessionID: session.piSessionID,
+                                               generation: session.generation, answer: reply)
+                        }
+                    } setHidden: { hidden in
+                        if hidden { questionHiding.hide(questionKey) } else { questionHiding.show() }
+                    }
+                    .id(questionKey)
                     .nwTransition(.content)
                 } else {
                     card
@@ -262,7 +283,7 @@ struct Composer: View {
                 }
         }
         .nwAnimation(.list, value: accessories)
-        .nwAnimation(.list, value: attachments.map(\.id))
+        .nwAnimation(.list, value: attachments.ids)
         .nwAnimation(.disclosure, value: questionKey)
         .nwAnimation(.disclosure, value: questionHiding)
         // What a catch-up brings lands at once, however it changes the composer; keyed on what
@@ -300,10 +321,11 @@ struct Composer: View {
             dismissal.watch(false)
             keyMonitor.watch(false)
         }
-        // Let any deferred AppKit focus release finish before claiming the field.
-        .task(id: active && isFocused) {
+        // Let any deferred AppKit focus release finish before claiming the field (again once a
+        // question gives the card back).
+        .task(id: FieldClaim(focused: active && isFocused, question: questionKey != nil || answeringRun != nil)) {
             composing = false
-            guard active && isFocused else { return }
+            guard active && isFocused, questionKey == nil, answeringRun == nil else { return }
             await Task.yield()
             guard !Task.isCancelled else { return }
             composing = true
@@ -344,7 +366,7 @@ struct Composer: View {
         .modifier(ThreadCommandHandler(key: commandKey, active: active, handle: handleCommand))
         .fileImporter(isPresented: $picking, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result else { return }
-            attachmentError = nil
+            attachments.clearError()
             Task {
                 let resolved = await AppImageDrop.resolve(urls.map { NSItemProvider(contentsOf: $0) ?? NSItemProvider() })
                 attach(urls: resolved)
@@ -452,38 +474,14 @@ struct Composer: View {
         // The context details float over the thread without the card taking focus's look.
         let focused = composing || dropTargeted || (menuOpen && menu != .context)
         return NWComposer(isFocused: focused) {
-            ForEach(attachments) { attachment in
+            ForEach(attachments.items) { attachment in
                 NWAttachmentChip(attachment.name, thumbnail: attachment.thumbnail) {
-                    attachments.removeAll { $0.id == attachment.id }
+                    attachments.remove(attachment.id)
                 }
                 .nwTransition(.list, edge: .leading)
             }
         } field: {
-            // The card eases to the new height as a question takes the field's place (or gives
-            // it back); what arrives fades in, and what leaves goes at once rather than
-            // lingering over the controls.
-            if let dialog = dialogs.first, let session = store.session, let questionKey {
-                // The card swaps its field for the question so it can never scroll out of view.
-                // Hidden, it keeps one line there: pi is still waiting on it.
-                if questionHiding.isHidden(questionKey) {
-                    NWQuestionHiddenLine(.agent, question: dialog.title) { questionHiding.show() }
-                        .id(questionKey + ":hidden")
-                        .nwEntrance(.content)
-                } else {
-                    QuestionPanel(dialog: dialog, count: dialogs.count, enabled: active && store.supports("answer")) { answer in
-                        Task {
-                            await store.answer(dialogID: dialog.id, sessionID: session.piSessionID,
-                                               generation: session.generation, answer: answer)
-                        }
-                    } hide: {
-                        questionHiding.hide(questionKey)
-                    }
-                    .id(questionKey)
-                    .nwEntrance(.content)
-                }
-            } else {
-                field.nwEntrance(.content)
-            }
+            field.nwEntrance(.content)
         } controls: {
             ComposerControls(model: controlsModel, actions: controlsActions, store: store).equatable()
         }
@@ -566,12 +564,13 @@ struct Composer: View {
     /// What the control row draws, gathered once per composer render so the row can compare it
     /// before redrawing (`ComposerControls`): past the first character, typing changes none of
     /// it, and neither does the field losing focus to a menu.
+    /// The card shows only while no question waits (the question dock takes its place).
     private var controlsModel: ComposerControlsModel {
-        let working = running && dialogs.isEmpty
+        let working = running
         let draftEmpty = store.draft.isEmpty
         let stops = working && draftEmpty
         return ComposerControlsModel(
-            active: active, canAttach: canAttach, attachFull: attachments.count >= NativeImage.maxPerSend,
+            active: active, canAttach: canAttach, attachFull: attachments.isFull,
             hasCommands: !commands.isEmpty, commandsActive: commandQuery != nil,
             model: store.model, modelChangeable: store.supportedActions.contains("setModel"), modelEnabled: store.supports("setModel"),
             modelsOpen: menu == .models,
@@ -579,8 +578,8 @@ struct Composer: View {
             thinkingOpen: menu == .thinking,
             startingShown: startingShown, busy: store.busy, stops: stops, beside: working && !draftEmpty && !store.busy,
             sendRinged: menu == .send, contextOpen: menu == .context, stopEnabled: active && store.supports("abort"),
-            actionEnabled: stops ? active && store.supports("abort") : canSend && dialogs.isEmpty,
-            stopHelp: stopHelp, actionHelp: stops ? stopHelp : !dialogs.isEmpty ? "Answer the question first" : sendHelp(working: working))
+            actionEnabled: stops ? active && store.supports("abort") : canSend,
+            stopHelp: stopHelp, actionHelp: stops ? stopHelp : sendHelp(working: working))
     }
 
     /// What the row's controls do. Each reads the store and the composer's own state as it runs,
@@ -694,7 +693,7 @@ struct Composer: View {
     }
 
     private func sendDraft(delivery: NativeThreadDelivery) {
-        let images = attachments.map(\.image)
+        let images = attachments.images
         Task {
             let before = store.sentCount
             await store.send(images: images, delivery: delivery)
@@ -776,7 +775,7 @@ struct Composer: View {
     /// Dropped or pasted images become attachments through the same resize rules as terminal
     /// drops (longest edge 2000px, JPEG stays JPEG, everything else PNG).
     private func attach(_ providers: [NSItemProvider]) {
-        attachmentError = nil
+        attachments.clearError()
         Task {
             let urls = await AppImageDrop.resolve(providers)
             attach(urls: urls)
@@ -784,21 +783,7 @@ struct Composer: View {
     }
 
     private func attach(urls: [URL]) {
-        for url in urls {
-            guard attachments.count < NativeImage.maxPerSend else {
-                attachmentError = "At most \(NativeImage.maxPerSend) images per message."
-                return
-            }
-            guard let attachment = ImageAttachment(url: url) else {
-                attachmentError = "\(url.lastPathComponent) is not an image Shepherd can attach."
-                continue
-            }
-            guard attachment.image.data.count <= NativeImage.maxBytes else {
-                attachmentError = "\(url.lastPathComponent) is over \(NativeImage.maxBytes / 1024 / 1024) MiB after resizing."
-                continue
-            }
-            attachments.append(attachment)
-        }
+        attachments.add(urls: urls)
     }
 }
 
@@ -1136,105 +1121,6 @@ func nativeContextTooltip(_ stats: NativeThreadStats?) -> String {
     return parts.joined(separator: " · ")
 }
 
-// MARK: Questions
-
-/// A question from pi or an extension (select / confirm / input / editor), in place of the
-/// field so it can never scroll away. Shepherd has no permission model: these are questions,
-/// answered with the values the asker offered.
-struct QuestionPanel: View {
-    let dialog: NativeThreadDialog
-    /// Pending questions in total; the head shows the first as "1 / N".
-    var count = 1
-    let enabled: Bool
-    let answer: (NativeDialogAnswer) -> Void
-    /// Shrinks the question to its hidden line; pi keeps waiting.
-    let hide: () -> Void
-    @State private var text: String
-
-    init(dialog: NativeThreadDialog, count: Int = 1, enabled: Bool, answer: @escaping (NativeDialogAnswer) -> Void,
-         hide: @escaping () -> Void) {
-        self.dialog = dialog
-        self.count = count
-        self.enabled = enabled
-        self.answer = answer
-        self.hide = hide
-        _text = State(initialValue: dialog.prefill ?? "")
-    }
-
-    var body: some View {
-        let blocked = !enabled || dialog.unavailable != nil
-        VStack(alignment: .leading, spacing: AppLayout.questionSpacing) {
-            NWQuestionHead(.agent, count: count, hide: hide)
-            Text(dialog.title).font(Font.nw(.ui)).foregroundStyle(Color.nw.textPrimary).textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-            if let message = dialog.message {
-                ScrollView {
-                    Text(message).font(Font.nw(.mono)).foregroundStyle(Color.nw.textPrimary).textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .frame(maxHeight: AppLayout.questionMessageMaxHeight)
-                .padding(.horizontal, NW.Space.l).padding(.vertical, NW.Space.m)
-                .background(Color.nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-                .nwBorder(Color.nw.lineSubtle, radius: NW.Radius.m)
-            }
-            if let unavailable = dialog.unavailable {
-                Text(unavailable == "external-editor" ? "An external editor is open · finish it before answering here" : "This question is too large to show here")
-                    .font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
-                    .nwTransition(.content)
-            }
-            Group {
-                switch dialog.kind {
-                case .confirm:
-                    HStack(spacing: NW.Space.m) {
-                        Button("Yes") { answer(.confirm(value: true)) }.buttonStyle(NWButtonStyle(.primary, size: .m))
-                        Button("No") { answer(.confirm(value: false)) }.buttonStyle(NWButtonStyle(.secondary))
-                        Spacer(minLength: 0)
-                        Button("Dismiss") { answer(.cancel) }.buttonStyle(NWButtonStyle(.ghost, size: .s))
-                    }
-                    // Y/N answer only while the panel itself has focus, so typing in the composer
-                    // can never answer by accident.
-                    .focusable()
-                    .onKeyPress(characters: .init(charactersIn: "yYnN")) { press in
-                        guard !blocked else { return .ignored }
-                        answer(.confirm(value: press.characters.lowercased() == "y"))
-                        return .handled
-                    }
-                case .select:
-                    FlowLayout(spacing: NW.Space.s) {
-                        ForEach(Array((dialog.options ?? []).enumerated()), id: \.offset) { index, option in
-                            Button(option) { answer(.select(value: option)) }
-                                .buttonStyle(NWButtonStyle(index == 0 ? .primary : .secondary))
-                                .accessibilityLabel("Choose \(option)")
-                        }
-                        Button("Dismiss") { answer(.cancel) }.buttonStyle(NWButtonStyle(.ghost))
-                    }
-                case .input, .editor:
-                    TextField(dialog.placeholder ?? "Answer", text: $text, axis: .vertical)
-                        .lineLimit(dialog.kind == .editor ? 5...12 : 1...5)
-                        .nwField(mono: dialog.kind == .editor)
-                        .autocorrectionDisabled()
-                        .accessibilityLabel(dialog.kind == .editor ? "Editor answer" : "Answer")
-                    HStack(spacing: NW.Space.m) {
-                        Button("Submit") { answer(dialog.kind == .editor ? .editor(value: text) : .input(value: text)) }
-                            .buttonStyle(NWButtonStyle(.primary))
-                        Button("Dismiss") { answer(.cancel) }.buttonStyle(NWButtonStyle(.ghost))
-                    }
-                }
-            }
-            .disabled(blocked)
-            if dialog.timeout != nil {
-                Text("The agent may stop waiting for this answer").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
-            }
-        }
-        // An external editor opening or closing dims the answers and says why.
-        .nwAnimation(.content, value: blocked)
-        .padding(.top, NW.Space.xxs)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(NWQuestionAsker.agent.title): \(dialog.title)")
-    }
-}
-
 // MARK: Sending while pi works
 
 /// What Esc does in the composer, the first that applies: close the open menu, close the
@@ -1419,60 +1305,5 @@ struct WidgetRow: View {
         }
         .textSelection(.enabled)
         .accessibilityElement(children: .combine)
-    }
-}
-
-/// A resized image waiting in the composer. `image.data` is the bytes pi will receive; the
-/// thumbnail is decoded once, here.
-struct ImageAttachment: Identifiable {
-    let id = UUID()
-    let name: String
-    let image: NativeImage
-    let thumbnail: Image?
-
-    /// nil when the file is not a raster image.
-    init?(url: URL) {
-        guard let type = UTType(filenameExtension: url.pathExtension.lowercased()), type.conforms(to: .image),
-              let data = try? Data(contentsOf: url), NSBitmapImageRep(data: data) != nil else { return nil }
-        name = url.lastPathComponent
-        image = NativeImage(mimeType: type == .jpeg ? "image/jpeg" : type == .gif ? "image/gif" : type == .webP ? "image/webp" : "image/png", data: data)
-        thumbnail = NSImage(data: data).map { Image(nsImage: $0) }
-    }
-}
-
-/// Left-to-right wrapping row (answer buttons, a result's file links). `lineSpacing` separates
-/// wrapped rows (the item spacing unless given); items wider than the row are offered its width.
-struct FlowLayout: Layout {
-    var spacing: CGFloat = 8
-    var lineSpacing: CGFloat?
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        place(in: proposal.width ?? .infinity, subviews: subviews).size
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let placement = place(in: bounds.width, subviews: subviews)
-        for (index, subview) in subviews.enumerated() {
-            let origin = placement.origins[index]
-            subview.place(at: CGPoint(x: bounds.minX + origin.x, y: bounds.minY + origin.y),
-                          proposal: ProposedViewSize(placement.sizes[index]))
-        }
-    }
-
-    private func place(in width: CGFloat, subviews: Subviews) -> (size: CGSize, origins: [CGPoint], sizes: [CGSize]) {
-        var origins: [CGPoint] = []
-        var sizes: [CGSize] = []
-        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, maxX: CGFloat = 0
-        for subview in subviews {
-            var size = subview.sizeThatFits(.unspecified)
-            if size.width > width { size = subview.sizeThatFits(ProposedViewSize(width: width, height: nil)) }
-            if x > 0, x + size.width > width { x = 0; y += rowHeight + (lineSpacing ?? spacing); rowHeight = 0 }
-            origins.append(CGPoint(x: x, y: y))
-            sizes.append(size)
-            x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
-            maxX = max(maxX, x - spacing)
-        }
-        return (CGSize(width: maxX, height: y + rowHeight), origins, sizes)
     }
 }

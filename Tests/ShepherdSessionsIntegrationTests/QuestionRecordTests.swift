@@ -76,6 +76,27 @@ struct QuestionRecordTests {
         #expect(done.dialogs.isEmpty)
     }
 
+    /// Stop refuses the question pi waits on (the Mac's dock has no Dismiss); the thread
+    /// records it as not answered, where pi asked it.
+    @Test func aQuestionRefusedByStopIsRecordedAsNotAnswered() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        let asking = try await ask(pi)
+        let dialog = try #require(asking.dialogs.first)
+        let op = UUID()
+        #expect(try await pi.request(.abort(expectedSessionID: asking.piSessionID, generation: asking.generation,
+                                            operationID: op)) == .accepted(operationID: op))
+
+        let done = try await settled(pi)
+        let turn = Array(done.messages.suffix(5))
+        #expect(turn.map(\.role) == ["user", "assistant", "toolResult", "question", "assistant"])
+        #expect(turn[3].entryID == "q:\(dialog.id)")
+        let record = try #require(turn[3].question)
+        #expect(record.outcome == .dismissed && record.answer == nil && record.confirmed == nil)
+        #expect(done.dialogs.isEmpty)
+    }
+
     /// A question asked before pi moved to another session (`/new`, `/resume`) belongs to the
     /// one it left, so answering it records nothing in the new one.
     @Test func aQuestionFromTheSessionBeforeIsNotRecordedInTheNextOne() async throws {
