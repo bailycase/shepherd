@@ -7962,7 +7962,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | MobileWorkspace | iPhone: New thread and Where it runs | Partial |
 | MobileSteer | iPhone: Up next and questions; iPhone: Subagents | Partial |
 | MobileSubagents | iPhone: Subagents | Built |
-| MobileSubagent | iPhone: Subagents | Partial |
+| MobileSubagent | iPhone: Subagents | Built |
 | MobileQueue | iPhone: Up next and questions | Partial |
 | MobileQueueMenu | iPhone: Up next and questions | Built |
 | MobileQuestion | iPhone: Up next and questions | Partial |
