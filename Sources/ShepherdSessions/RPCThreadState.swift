@@ -881,12 +881,12 @@ final class RPCThreadState {
     /// figure to show.
     static func projectStats(_ data: JSONValue) -> NativeThreadStats {
         let usage = data["contextUsage"]
-        let tokens = usage?["tokens"]?.doubleValue.map { Int($0) }.flatMap { $0 > 0 ? $0 : nil }
+        let tokens = usage?["tokens"]?.countValue.flatMap { $0 > 0 ? $0 : nil }
         return NativeThreadStats(
             contextTokens: tokens,
-            contextWindow: usage?["contextWindow"]?.doubleValue.map { Int($0) },
+            contextWindow: usage?["contextWindow"]?.countValue,
             contextPercent: tokens == nil ? nil : usage?["percent"]?.doubleValue,
-            totalTokens: data["tokens"]?["total"]?.doubleValue.map { Int($0) },
+            totalTokens: data["tokens"]?["total"]?.countValue,
             cost: data["cost"]?.doubleValue
         )
     }
@@ -1043,11 +1043,11 @@ final class RPCThreadState {
     /// repeat of the same key (two messages pi stamped in one millisecond) counts the earlier
     /// ones in history and the run so far.
     func liveEntryID(for message: RPCMessage) -> String {
-        guard let time = message.timestamp, time.isFinite else {
+        guard let time = message.timestamp.flatMap(Self.millisecondKey) else {
             sequence += 1
             return "provisional:user:\(sequence)"
         }
-        let key = "user:\(Int64(time))"
+        let key = "user:\(time)"
         func matches(_ id: String) -> Bool { id == key || id.hasPrefix(key + "#") }
         let repeats = history.count { matches($0.entryID) } + live.count { $0.kind == .user && matches($0.value.entryID) }
         return repeats == 0 ? key : "\(key)#\(repeats)"
@@ -1198,10 +1198,10 @@ final class RPCThreadState {
             dialogReasons[request.id] = askingCalls.last?.reason ?? nil
             askedAt[request.id] = Date().timeIntervalSince1970 * 1000
             dialogs = next
-            if let timeout = request.timeout, timeout > 0 {
+            if let delay = Self.dialogTimeout(request.timeout) {
                 // pi auto-resolves on its side; we only stop showing it, and the thread says it
                 // went unanswered.
-                queue.asyncAfter(deadline: .now() + .milliseconds(Int(timeout))) { [weak self] in
+                queue.asyncAfter(deadline: .now() + delay) { [weak self] in
                     guard let self, let index = self.dialogs.firstIndex(where: { $0.id == request.id }) else { return }
                     self.recordQuestion(self.dialogs.remove(at: index), answer: nil)
                     self.commit()
@@ -1567,6 +1567,18 @@ final class RPCThreadState {
         }
     }
 
+    /// When a dialog pi opened with `timeout` (ms) stops showing; nil for none. An extension
+    /// passes any number, and one past `Int.max` milliseconds waits as long as Dispatch can.
+    static func dialogTimeout(_ timeout: Double?) -> DispatchTimeInterval? {
+        guard let timeout, timeout > 0, let milliseconds = Int(reportedCount: timeout) else { return nil }
+        return .milliseconds(milliseconds)
+    }
+
+    /// pi's millisecond timestamp as an entry id writes it; nil for one no `Int64` holds.
+    static func millisecondKey(_ time: Double) -> Int64? {
+        Int64(exactly: time.rounded(.towardZero))
+    }
+
     /// A history entry's id names the message, never its place in pi's list, so a message keeps
     /// its id across refreshes and when it is read from pi's session file before pi answers
     /// (history pages start at different places). A tool result is its call ("t:<call id>");
@@ -1577,8 +1589,8 @@ final class RPCThreadState {
         let key: String
         if message.role == "toolResult", let call = message.toolCallId, !call.isEmpty {
             key = "t:\(call)"
-        } else if let time = message.timestamp, time.isFinite {
-            key = "\(message.role.isEmpty ? "custom" : message.role):\(Int64(time))"
+        } else if let time = message.timestamp.flatMap(millisecondKey) {
+            key = "\(message.role.isEmpty ? "custom" : message.role):\(time)"
         } else {
             return "m:\(index)"
         }
@@ -1667,7 +1679,7 @@ final class RPCThreadState {
             result.model = message.model.map(clip)
         }
         if message.role == "compactionSummary" {
-            result.compaction = NativeCompaction(phase: .done, tokensBefore: message.tokensBefore.map { Int($0) },
+            result.compaction = NativeCompaction(phase: .done, tokensBefore: message.tokensBefore.flatMap(Int.init(reportedCount:)),
                                                  summary: message.summary.map(clip))
         }
         if let isError = message.isError { result.isError = isError }

@@ -209,9 +209,9 @@ public func nativeDurationText(_ seconds: Double, live: Bool = false) -> String 
         let text = String(format: "%.1f", seconds)
         return (text.hasSuffix(".0") ? String(text.dropLast(2)) : text) + "s"
     }
-    let whole = Int(seconds)
+    let whole = Int(reportedCount: seconds) ?? 0
     if whole < 3600 { return String(format: "%dm %02ds", whole / 60, whole % 60) }
-    return String(format: "%dh %02dm", whole / 3600, (whole % 3600) / 60)
+    return String(format: "%ldh %02ldm", whole / 3600, (whole % 3600) / 60)
 }
 
 /// The iOS client's header pill; the Mac toolbar shows no pill (DESIGN.md › Status language).
@@ -453,7 +453,7 @@ public func nativeSubagentElapsed(_ run: ChildRun, now: Date) -> Double? {
 
 /// Sidebar right slot: "37m", "48s", "2h".
 public func nativeSubagentShortDuration(_ seconds: Double) -> String {
-    let whole = Int(max(0, seconds))
+    let whole = Int(reportedCount: seconds) ?? 0
     switch whole {
     case ..<60: return "\(whole)s"
     case ..<3600: return "\(whole / 60)m"

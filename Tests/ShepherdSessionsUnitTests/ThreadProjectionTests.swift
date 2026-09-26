@@ -525,6 +525,43 @@ struct ThreadProjectionTests {
         #expect(stats.contextWindow == 200_000)
     }
 
+    /// pi passes a models.json `contextWindow` through as written, so "unlimited" can be 1e20 or
+    /// the largest double: a count past `Int.max` is `Int.max`, and a negative one is unknown.
+    @Test(arguments: [
+        (#"{"contextUsage":{"tokens":8123,"contextWindow":1e20,"percent":0},"tokens":{"total":20400}}"#,
+         NativeThreadStats(contextTokens: 8123, contextWindow: .max, contextPercent: 0, totalTokens: 20400)),
+        (#"{"contextUsage":{"tokens":8123,"contextWindow":1.7976931348623157e308,"percent":0},"tokens":{"total":20400}}"#,
+         NativeThreadStats(contextTokens: 8123, contextWindow: .max, contextPercent: 0, totalTokens: 20400)),
+        (#"{"contextUsage":{"tokens":8123,"contextWindow":9223372036854775808,"percent":0},"tokens":{"total":20400}}"#,
+         NativeThreadStats(contextTokens: 8123, contextWindow: .max, contextPercent: 0, totalTokens: 20400)),
+        (#"{"contextUsage":{"tokens":8123,"contextWindow":0,"percent":null},"tokens":{"total":20400}}"#,
+         NativeThreadStats(contextTokens: 8123, contextWindow: 0, totalTokens: 20400)),
+        (#"{"contextUsage":{"tokens":8123,"contextWindow":-200000,"percent":-4},"tokens":{"total":-1}}"#,
+         NativeThreadStats(contextTokens: 8123, contextPercent: -4)),
+        (#"{"contextUsage":{"tokens":8123,"contextWindow":1e-18,"percent":8.123e23},"tokens":{"total":20400}}"#,
+         NativeThreadStats(contextTokens: 8123, contextWindow: 0, contextPercent: 8.123e23, totalTokens: 20400)),
+        (#"{"contextUsage":{"tokens":1e20,"contextWindow":1e20,"percent":100},"tokens":{"total":1.7976931348623157e308}}"#,
+         NativeThreadStats(contextTokens: .max, contextWindow: .max, contextPercent: 100, totalTokens: .max)),
+        (#"{"contextUsage":{"tokens":-8123,"contextWindow":200000,"percent":-4},"tokens":{"total":"many"}}"#,
+         NativeThreadStats(contextWindow: 200_000)),
+    ])
+    func countsBeyondAnIntClampAndNegativeOnesAreUnknown(json: String, stats: NativeThreadStats) throws {
+        #expect(RPCThreadState.projectStats(try decode(json)) == stats)
+    }
+
+    /// An extension gives a dialog any timeout: past `Int.max` milliseconds the dialog waits as
+    /// long as Dispatch can, and none, zero, or a negative one never times out.
+    @Test(arguments: [
+        (10_000.0 as Double?, DispatchTimeInterval.milliseconds(10_000) as DispatchTimeInterval?), (10_000.9, .milliseconds(10_000)),
+        (0.5, .milliseconds(0)), (1e20, .milliseconds(.max)), (.greatestFiniteMagnitude, .milliseconds(.max)),
+        (nil, nil), (0, nil), (-1, nil), (-1e20, nil),
+    ] as [(Double?, DispatchTimeInterval?)])
+    func aDialogTimesOutAfterAnyTimeoutAnExtensionGives(_ timeout: Double?, _ delay: DispatchTimeInterval?) {
+        #expect(RPCThreadState.dialogTimeout(timeout) == delay)
+        let now = DispatchTime.now()
+        if let delay { #expect(now + delay >= now) }
+    }
+
     // MARK: - Widgets
 
     @Test(arguments: [

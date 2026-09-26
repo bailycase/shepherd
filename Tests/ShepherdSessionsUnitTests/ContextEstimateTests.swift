@@ -124,6 +124,41 @@ struct ContextEstimateTests {
         #expect(PiConfig.compactionSettings(model: "anthropic/opus", cwd: repo.path, in: agent) == expected)
     }
 
+    /// The sizes a compaction reports are pi's numbers as it wrote them: a size past `Int.max` is
+    /// `Int.max`, and a negative one is no size.
+    @Test(arguments: [
+        (184_000.0, 184_000 as Int?), (184_000.7, 184_000), (1e20, .max), (.greatestFiniteMagnitude, .max), (-1, nil),
+    ] as [(Double, Int?)])
+    func compactionSizesPastAnIntClamp(_ reported: Double, _ expected: Int?) {
+        let message = RPCMessage(role: "compactionSummary", content: [], timestamp: 50, summary: "## Goal", tokensBefore: reported)
+        #expect(RPCThreadState.estimate([message]).before == expected)
+        #expect(RPCThreadState.project(entryID: "compactionSummary:50", message: message).compaction?.tokensBefore == expected)
+        let note = RPCThreadState.CompactionNote(summary: "S", reason: .manual,
+                                                 result: RPCCompactionResult(summary: "S", tokensBefore: reported, estimatedTokensAfter: reported))
+        #expect(note == RPCThreadState.CompactionNote(summary: "S", reason: .manual, before: expected, after: expected))
+    }
+
+    /// The split scales to pi's total, however large: a context of `Int.max` from an estimate of
+    /// one token is all messages.
+    @Test func theSplitScalesToAnyTotal() throws {
+        let estimate = RPCThreadState.ContextEstimate(messages: 1)
+        #expect(try #require(RPCThreadState.scaled(estimate, to: .max)).split.messages == .max)
+        #expect(try #require(RPCThreadState.scaled(estimate, to: 42_000)).split.messages == 42_000)
+        #expect(try #require(RPCThreadState.scaled(estimate, to: nil)).split.messages == 1)
+        #expect(RPCThreadState.scaled(RPCThreadState.ContextEstimate(), to: 42_000) == nil)
+    }
+
+    /// An entry id is "<role>:<ms>" from pi's timestamp; one no `Int64` holds keeps its place instead.
+    @Test(arguments: [
+        (1_758_539_340_000.0, "user:1758539340000"), (1_758_539_340_000.7, "user:1758539340000"), (-0.5, "user:0"),
+        (1e20, "m:3"), (-1e20, "m:3"), (.greatestFiniteMagnitude, "m:3"),
+    ] as [(Double, String)])
+    func entryIDsTakeTimestampsAnInt64Holds(_ timestamp: Double, _ id: String) {
+        var seen: [String: Int] = [:]
+        let message = RPCMessage(role: "user", content: [.text("hi")], timestamp: timestamp)
+        #expect(RPCThreadState.historyEntryID(message, index: 3, seen: &seen) == id)
+    }
+
     /// A compaction summary in history carries what the agent kept and the size it replaced.
     @Test func aCompactionSummaryProjectsItsCompaction() {
         let row = RPCThreadState.project(entryID: "compactionSummary:5",
