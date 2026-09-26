@@ -131,3 +131,41 @@ private let previewBoards = [
         .frame(width: 520)
     }
 }
+
+#Preview("Tweak") {
+    @Previewable @State var padding = 24.0
+    @Previewable @State var radius = 12
+    @Previewable @State var rounded = true
+    @Previewable @State var scope = NWTweakScope.Scope.every
+    NWPreviewBoth {
+        VStack(spacing: 0) {
+            NWTweakHeader(board: "A · Funnel first", element: "card · Checkout funnel", note: "Changes show on the canvas as you drag.")
+            NWTweakGroup("Layout") {
+                NWTweakRow("Padding", layout: .slider) {
+                    NWValueSlider("Padding", value: $padding, in: 0...48, step: 4) { "\(Int($0))" }
+                }
+                NWTweakRow("Radius") {
+                    NWSegmentedPicker("Radius", selection: $radius, options: [(8, "8"), (12, "12"), (16, "16")], size: .s)
+                }
+            }
+            NWTweakGroup("Bars") {
+                NWTweakRow("Color") {
+                    NWTokenChipFlow {
+                        NWTokenChip("accent", swatch: Color(light: "#4f46e5", dark: "#4f46e5"), isSelected: true) {}
+                        NWTokenChip("slate", swatch: Color(light: "#475569", dark: "#475569"), isSelected: false) {}
+                        NWTokenChip("success", swatch: Color(light: "#059669", dark: "#059669"), isSelected: false) {}
+                    }
+                }
+                NWTweakRow("Rounded") { Toggle("Rounded", isOn: $rounded).toggleStyle(.nwSwitch).labelsHidden() }
+            }
+            NWTweakGroup("Apply to", divided: false) {
+                NWTweakRow("Scope") { NWTweakScope(selection: $scope, every: "Every funnel card") }
+                NWTweakNote("Every funnel card: A and A · phone. Values snap to acme-web tokens.")
+            }
+            Spacer(minLength: 0)
+            NWTweakFooter(canReset: true, reset: {}, ask: {})
+        }
+        .frame(width: 420, height: 560)
+        .background(Color.nw.bgWindow)
+    }
+}
