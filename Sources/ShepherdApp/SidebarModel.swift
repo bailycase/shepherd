@@ -157,17 +157,9 @@ enum SidebarDerivation {
         return "ASK"
     }
 
-    /// One line, at most `NWSidebarMetrics.reasonLength` characters: cut at a word where one
-    /// ends past the middle, with an ellipsis.
+    /// One line, at most `NWSidebarMetrics.reasonLength` characters (`NeedsYouReason`).
     static func shortened(_ text: String) -> String {
-        let flat = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
-        let limit = NWSidebarMetrics.reasonLength
-        guard flat.count > limit else { return flat }
-        let clipped = flat.prefix(limit - 1)
-        if let space = clipped.lastIndex(of: " "), clipped.distance(from: clipped.startIndex, to: space) >= limit / 2 {
-            return clipped[..<space].trimmingCharacters(in: .punctuationCharacters) + "…"
-        }
-        return clipped.trimmingCharacters(in: .whitespaces) + "…"
+        NeedsYouReason.shortened(text, limit: NWSidebarMetrics.reasonLength)
     }
 
     private static func nonEmpty(_ text: String) -> String? {

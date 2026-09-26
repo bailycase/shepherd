@@ -856,7 +856,7 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   two for its question (`Agent.waitingReason`) when its asking tool gave one, else the question
   its thread asks (`Agent.waitingOn`); for an asking subagent, its own reason
   (`ChildQuestion.short`), else its role or name; else "ASK". Cut to 14 characters at a word
-  (`SidebarDerivation.shortened`). Most recently active first. The agent is asked for the reason
+  (`NeedsYouReason`, shared with the iPad). Most recently active first. The agent is asked for the reason
   (the user's decision, 2026-09-25: "Ask the agent for a short reason"): Shepherd's status
   extension gives every asking tool (named like `ask` or `question`, the same rule that sets
   `blocked`) an optional `short` parameter, described to the model as 1–3 words for this sidebar,
@@ -885,7 +885,8 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   a question never moves a row, so the list holds still while you read it. Agents no host has
   stamped (older hosts and state files) follow, newest created first. `lastActiveAt`, `waitingOn`
   and `waitingReason` are live state on `Agent`, broadcast to remote clients like a status;
-  `waitingOn` and `waitingReason` are never written to state.json. At launch the most recently active agent on this Mac shows.
+  `waitingOn` and `waitingReason` are never written to state.json. At launch the most recently
+  active agent on this Mac shows.
 - **Hosts:** a connected host's agents join both lists, tagged. A host that drops keeps its threads
   in Recents as it last sent them (NavHosts' `horizon` rows), dimmed (`NWListMetrics.dimmedOpacity`,
   as on the iPad), never in Needs you since nothing there can be answered, and with a menu that
@@ -4885,8 +4886,8 @@ selected thread, or the Overview when none is. Other screens push over the detai
   and a 16pt `textTertiary` glyph for a design, a mission or an automation run.
 - **Needs you rows** end in the reason in mono 10 `lanternText`. The boards summarize the
   question ("retention?", "approve plan", "orders stuck") or name the subagent that asks
-  ("reviewer"); the app writes the agent's own short reason when it gave one (as on the Mac),
-  else "asked you" or "needs you", and a subagent's own reason, else its name.
+  ("reviewer"); the app writes the agent's own short reason when it gave one, cut as on the Mac
+  (`NeedsYouReason`), else "asked you" or "needs you", and a subagent's own reason, else its name.
 - **Recents rows** end in the host tag (mono 10 `textTertiary` in a 1px `lineSubtle` box at
   radius 4) only when threads from several hosts mix. Running rows draw no sparkline (see
   Where Shepherd departs). **Not built yet:** a design's row (the diamond glyph, and "4 boards"
