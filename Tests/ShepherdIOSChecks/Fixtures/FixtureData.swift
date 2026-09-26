@@ -38,6 +38,14 @@ struct FixtureHostData {
     /// Answers a request before the default handler (agent queries, transcripts, …); nil
     /// falls through.
     var reply: (@Sendable (RemoteRequest) -> RemoteReply?)? = nil
+    /// What Settings reads: the host's settings, its root instructions and its suggested ones.
+    /// nil answers as a host without them.
+    var hostSettings: HostSettings? = FixtureData.hostSettings()
+    var instructions: InstructionsSnapshot? = FixtureData.instructions()
+    var suggestions: SuggestionsSnapshot? = SuggestionsSnapshot()
+    /// Settings ▸ Skills: the host's skills, and what looking up a repository finds there.
+    var skills: SkillsSnapshot? = FixtureData.skills()
+    var repoSkills: RepoSkills? = nil
     /// What the host says it understands; nil is everything this build knows (an older host
     /// leaves some out).
     var capabilities: [String]? = nil

@@ -3,6 +3,7 @@ import ShepherdUI
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSessions
 
 // MARK: Remote hosts
 
@@ -89,7 +90,8 @@ struct RemoteSettings: View {
 
             SettingsGroup(title: "Serve this Mac",
                           footnote: "Remote sessions run on the host Mac; your VPN is the transport and the token keeps other devices out.") {
-                SettingsRow(title: "Listener", subtitle: vm.remoteListenerStatus, problem: vm.remoteListenerProblem) {
+                SettingsRow(title: "Listener", subtitle: vm.remoteListenerStatus, problem: vm.remoteListenerProblem,
+                            problemHelp: vm.remoteListenerProblemDetail) {
                     SettingsSwitch(label: "Listener", isOn: Binding(
                         get: { vm.remoteListenerEnabled },
                         set: { vm.setRemoteListenerEnabled($0) }
@@ -127,6 +129,36 @@ enum RemoteSettingsDefaults {
     static let port = ShepherdEdition.current.defaultRemoteListenerPort
 }
 
+/// Why the listener couldn't start, as Settings ▸ Remote says it: one plain sentence under the
+/// Listener row, and the technical reason only as that line's tooltip.
+struct RemoteListenerFailure: Equatable {
+    let sentence: String
+    let detail: String
+
+    init(_ error: Error, port: UInt16) {
+        sentence = Self.sentence(for: error, port: port)
+        detail = String(describing: error)
+    }
+
+    static func sentence(for error: Error, port: UInt16) -> String {
+        switch error {
+        case SessionServerError.system(let call, let code) where call == "bind":
+            switch code {
+            case EADDRINUSE: return "Couldn't start: port \(port) is already in use."
+            case EACCES: return "Couldn't start: port \(port) needs administrator rights."
+            case EADDRNOTAVAIL: return "Couldn't start: this Mac has no network address to serve on."
+            default: return "Couldn't start: this Mac didn't let Shepherd use port \(port)."
+            }
+        case SessionServerError.system(let call, _) where call == "chmod":
+            return "Couldn't start: Shepherd couldn't protect its token file."
+        case is CocoaError:
+            return "Couldn't start: Shepherd couldn't read or write its token file."
+        default:
+            return "Couldn't start the listener."
+        }
+    }
+}
+
 /// "horizon" over "horizon.internal:7433 · connected · 5 agents", with Edit, Reconnect, Remove.
 /// A failed connection's word says why ("unreachable", "token refused"), its sentence sits
 /// under it as the row's problem, and the client's own reason is the problem's tooltip.
@@ -150,12 +182,14 @@ struct RemoteHostRow: View {
         let (word, state) = status
         let agents = connection.phase == .connected ? " · \(connection.state.agents.count) agents" : ""
         SettingsActionRow {
-            VStack(alignment: .leading, spacing: NW.Space.xs) {
-                Text(config.name).font(.nw(.ui)).foregroundStyle(Color.nw.textPrimary)
+            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+                Text(config.name).font(.nw(.body, weight: .medium)).foregroundStyle(Color.nw.textPrimary)
                 HStack(spacing: NW.Space.s) {
                     NWStatusDot(state)
-                    Text("\(Text("\(config.host):\(String(config.port)) · ").foregroundStyle(Color.nw.textSecondary))\(Text(word).foregroundStyle(state.textColor))\(Text(agents).foregroundStyle(Color.nw.textSecondary))")
-                        .font(.nw(.mono))
+                    // The address in mono; the rest in the description's Geist.
+                    Text("\(Text(verbatim: "\(config.host):\(String(config.port))").font(.nwMono(AppLayout.settingsAddressSize)))\(Text(verbatim: " · "))\(Text(word).foregroundStyle(state.textColor))\(Text(agents))")
+                        .foregroundStyle(Color.nw.textSecondary)
+                        .nwText(size: NWTextStyle.ui.size, lineHeight: NWCardRowMetrics.settingsDescriptionLineHeight)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .nwContentTransition(.crossFade)
@@ -163,11 +197,8 @@ struct RemoteHostRow: View {
                 // Connecting… → connected · 5 agents, or unreachable: the word and dot fade.
                 .nwComponentAnimation(.content, value: state)
                 if let failure = connection.phase.failure {
-                    Text(failure.message(host: config.name))
-                        .font(.nw(.caption))
-                        .foregroundStyle(Color.nw.failed)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .help(failure.detail)
+                    NWInlineProblem(failure.message(host: config.name), help: failure.detail)
+                        .padding(.top, NW.Space.xs - NW.Space.xxs)
                 }
             }
             // A new reason discloses under the status line and the row grows with it.

@@ -33,6 +33,40 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// Skills with a sourced skill waiting on an update, two used only through /skill (one off),
+    /// and the page's rail: installed from a scratch repository on this Mac, no network.
+    @Test func settingsSkillsInstalled() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let repo = try makeScratchRepo(files: [
+            "skills/pdf/SKILL.md": "---\nname: pdf\ndescription: Read, fill, merge and split PDFs.\n---\n# PDF\n",
+            "skills/pdf/reference.md": "# Reference\n",
+            "skills/pdf/scripts/fill.py": "print('fill')\n",
+            "skills/frontend-design/SKILL.md": "---\nname: frontend-design\ndescription: Production-grade UI that doesn’t look generic.\n---\n",
+            "skills/webapp-testing/SKILL.md": "---\nname: webapp-testing\ndescription: Tests local web apps with Playwright.\n---\n",
+        ])
+        let store = workspace.server.skills
+        let url = "file://" + repo.path
+        try store.install(repo: url, paths: ["skills/pdf", "skills/frontend-design", "skills/webapp-testing"], commit: nil,
+                          invocation: nil)
+        try "---\nname: pdf\ndescription: Read, fill, merge and split PDFs.\n---\n# PDF\n\nFill forms first.\n"
+            .write(to: repo.appendingPathComponent("skills/pdf/SKILL.md"), atomically: true, encoding: .utf8)
+        try git(["commit", "-qam", "Fill forms first"], in: repo)
+        try store.checkUpdates()
+        for (name, description) in [("go-table-tests", "House style for table-driven Go tests."),
+                                    ("changelog", "Drafts a CHANGELOG entry since the last tag.")] {
+            let text = "---\nname: \(name)\ndescription: \(description)\n---\n"
+            try store.installFiles(name: name, files: [SkillFile(path: "SKILL.md", contents: Data(text.utf8))], invocation: .slashOnly)
+        }
+        try store.setOn("changelog", on: false)
+        let vm = workspace.vm
+        vm.settingsSection = .skills
+        try await Preview.render("settings-skills-installed", size: CGSize(width: 1440, height: 900),
+                                 ready: { vm.skills.row("pdf", in: vm.skillsHosts)?.skill.update != nil }) {
+            SettingsView(vm: vm)
+        }
+    }
+
     /// Remote with a configured host that cannot be reached.
     @Test func settingsRemoteWithHosts() async throws {
         let workspace = try PreviewWorkspace()
@@ -67,6 +101,69 @@ struct SettingsPreviewTests {
             .padding(AppLayout.settingsGutter)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Color.nw.bgWindow)
+        }
+    }
+
+    private nonisolated static let instructionsSample = """
+        # How I work
+
+        ## Stack
+        - Swift 6 and SwiftUI on macOS 26. Packages build with `swift build`.
+        - Tests use Swift Testing, never XCTest.
+
+        ## Before you say you're done
+        - `swift test` passes.
+        - Small commits, imperative subjects, no emoji.
+
+        """
+
+    /// Instructions with both files saved and an unsaved edit: the changed line tinted, "● edited"
+    /// in the header, Save lit.
+    @Test func settingsInstructionsEdited() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        try workspace.server.instructions.save(.agents, content: Self.instructionsSample)
+        try workspace.server.instructions.save(.appendSystem, content: "Never force-push to main.\n")
+        let model = workspace.vm.instructions
+        await model.refresh()
+        model.setText(Self.instructionsSample.replacingOccurrences(of: "passes.", with: "passes and `swiftformat --lint .` is clean."),
+                      file: .agents, on: .local)
+        workspace.vm.settingsSection = .instructions
+        try await Preview.render("settings-instructions-edited", size: CGSize(width: 1440, height: 900)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
+
+    /// Experiments with Suggested instructions on: three lines waiting (a thread's, an
+    /// automation's for APPEND_SYSTEM.md, and one being edited first) and one already added.
+    @Test func settingsExperimentsWithSuggestions() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let store = workspace.server.suggestions
+        try store.configure(SuggestedInstructionsSettings(enabled: true, files: [.agents, .appendSystem]))
+        let now = Date().timeIntervalSince1970
+        let lines: [(String, String, InstructionFile, SuggestionSource, Double)] = [
+            ("Prefer table-driven tests in Go.", "Three tests repeated one setup.", .agents,
+             SuggestionSource(kind: .thread, name: "Ledger cleanup"), 200_000),
+            ("Don't skip or retry a flaky test; find the race.", "You corrected the agent after it added t.Skip().", .agents,
+             SuggestionSource(kind: .thread, name: "Fix flaky ledger test"), 90_000),
+            ("Run `go mod tidy` and commit go.sum with any dependency bump.", "CI failed twice on a stale go.sum.", .appendSystem,
+             SuggestionSource(kind: .automation, name: "Nightly dependency bump"), 7_200),
+            ("Ask for join keys before adding an event.", "A missing checkout_id made two services re-run their steps.", .agents,
+             SuggestionSource(kind: .thread, name: "Checkout funnel events"), 600),
+        ]
+        for (line, reason, file, source, ago) in lines {
+            _ = try store.suggest(line: line, reason: reason, file: file, source: source, now: Date(timeIntervalSince1970: now - ago))
+        }
+        let oldest = try #require(store.snapshot().waiting.last)
+        try store.add(oldest.id)
+        let model = workspace.vm.suggestions
+        await model.refresh()
+        let editing = try #require(model.snapshot.waiting.first)
+        model.edit(editing)
+        workspace.vm.settingsSection = .experiments
+        try await Preview.render("settings-experiments-suggestions", size: CGSize(width: 1440, height: 900)) {
+            SettingsView(vm: workspace.vm)
         }
     }
 

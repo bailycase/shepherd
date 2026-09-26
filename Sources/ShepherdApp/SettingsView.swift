@@ -5,7 +5,8 @@ import ShepherdCore
 import ShepherdProtocol
 
 /// Settings replaces the window content in place. A 232pt nav on `bgBase` (Back to Shepherd,
-/// search on ⌘F, the pages, the versions pinned at the bottom) beside a 720pt content column.
+/// search on ⌘F, the pages, the versions pinned at the bottom) beside a 720pt content column, or
+/// a wide page (Instructions, Skills, Experiments) that fills the detail area.
 ///
 /// Everything here is wired: a row exists only if changing it changes the app.
 struct SettingsView: View {
@@ -50,25 +51,25 @@ struct SettingsView: View {
     private var nav: some View {
         let sections = matchingSections
         return VStack(alignment: .leading, spacing: 0) {
-            // Traffic-light strip: draggable, nothing else lives up here.
+            // The window controls' strip: draggable, nothing else lives up here.
             Color.clear
-                .frame(height: AppLayout.trafficLightHeight)
+                .frame(height: AppLayout.settingsWindowStripHeight)
                 .contentShape(Rectangle())
                 .gesture(WindowDragGesture())
 
             Button { vm.showSettings = false } label: {
                 HStack(spacing: NW.Space.m) {
                     Image(systemName: "chevron.left")
-                        .font(.nw(.ui, weight: .semibold))
+                        .font(.nwSans(NWSettingsNavMetrics.textSize, .semibold))
                         .imageScale(.small)
                         .frame(width: NW.Space.xl)
                         .accessibilityHidden(true)
-                    Text("Back to Shepherd").font(.nw(.ui))
+                    Text("Back to Shepherd").font(.nwSans(NWSettingsNavMetrics.textSize))
                     Spacer(minLength: 0)
                 }
                 .foregroundStyle(Color.nw.textSecondary)
                 .padding(.horizontal, NW.Space.m)
-                .frame(minHeight: NW.Height.row)
+                .frame(minHeight: AppLayout.settingsBackRowHeight)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.nwRow())
@@ -144,34 +145,54 @@ struct SettingsView: View {
         app + (agent.map { " · \(section == .pi ? "pi" : "agent") \($0)" } ?? "")
     }
 
-    private var detail: some View {
-        ScrollView(.vertical) {
-            Group {
-                switch vm.settingsSection {
-                case .appearance: AppearanceSettings(vm: vm)
-                case .terminal: TerminalSettings(vm: vm)
-                case .agents: AgentSettings()
-                case .pi: PiSettings()
-                case .worktrees: WorktreeSettings()
-                case .remote: RemoteSettings(vm: vm, store: vm.remoteHosts)
-                case .keyboard: KeyboardSettings(vm: vm)
-                case .advanced: AdvancedSettings(vm: vm)
-                }
-            }
-            .nwTransition(.content)
-            .frame(maxWidth: AppLayout.settingsContentWidth, alignment: .leading)
-            .padding(.top, AppLayout.settingsTop)
-            .padding(.bottom, AppLayout.settingsBottom)
-            .padding(.horizontal, AppLayout.settingsGutter)
-            .frame(maxWidth: .infinity)
-            // A page picked in the nav cross-fades in place; search switches pages at once.
-            .nwAnimation(.content, value: vm.settingsSection)
+    @ViewBuilder private var page: some View {
+        switch vm.settingsSection {
+        case .appearance: AppearanceSettings(vm: vm)
+        case .terminal: TerminalSettings(vm: vm)
+        case .agents: AgentSettings()
+        case .pi: PiSettings()
+        case .worktrees: WorktreeSettings()
+        case .instructions: InstructionsSettings(model: vm.instructions)
+        case .skills: SkillsSettings(vm: vm, model: vm.skills)
+        case .remote: RemoteSettings(vm: vm, store: vm.remoteHosts)
+        case .keyboard: KeyboardSettings(vm: vm)
+        case .advanced: AdvancedSettings(vm: vm)
+        case .experiments:
+            ExperimentsSettings(model: vm.suggestions, instructions: vm.instructions) { vm.settingsSection = .instructions }
         }
-        .scrollContentBackground(.hidden)
+    }
+
+    private var detail: some View {
+        Group {
+            if vm.settingsSection.isWide {
+                // A wide page fills the area and scrolls inside itself (its editor, its side column).
+                Group { page }
+                    .nwTransition(.content)
+                    .padding(.top, AppLayout.settingsWideTop)
+                    .padding(.horizontal, AppLayout.settingsWideSides)
+                    .padding(.bottom, AppLayout.settingsWideBottom)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            } else {
+                ScrollView(.vertical) {
+                    Group { page }
+                        .nwTransition(.content)
+                        .frame(maxWidth: AppLayout.settingsContentWidth, alignment: .leading)
+                        .padding(.top, AppLayout.settingsTop)
+                        .padding(.bottom, AppLayout.settingsBottom)
+                        .padding(.horizontal, AppLayout.settingsGutter)
+                        .frame(maxWidth: .infinity)
+                        // A page picked in the nav cross-fades in place; search switches pages at once.
+                        .nwAnimation(.content, value: vm.settingsSection)
+                }
+                .scrollContentBackground(.hidden)
+                .nwTransition(.content)
+            }
+        }
+        .nwAnimation(.content, value: vm.settingsSection.isWide)
         .background(Color.nw.bgWindow)
         .overlay(alignment: .top) {
             // The window has no title bar; the strip above the content still drags it.
-            Color.clear.frame(height: AppLayout.trafficLightHeight).contentShape(Rectangle()).gesture(WindowDragGesture())
+            Color.clear.frame(height: AppLayout.settingsWindowStripHeight).contentShape(Rectangle()).gesture(WindowDragGesture())
         }
     }
 }
@@ -198,7 +219,7 @@ private struct SettingsSearchHit: View {
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case appearance, terminal, agents, worktrees, pi, remote, keyboard, advanced
+    case appearance, terminal, agents, worktrees, pi, instructions, skills, remote, keyboard, advanced, experiments
 
     var id: String { rawValue }
 
@@ -209,9 +230,12 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .agents: return "Agents"
         case .worktrees: return "Worktrees"
         case .pi: return "Pi"
+        case .instructions: return "Instructions"
+        case .skills: return "Skills"
         case .remote: return "Remote"
         case .keyboard: return "Keyboard"
         case .advanced: return "Advanced"
+        case .experiments: return "Experiments"
         }
     }
 
@@ -223,9 +247,13 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .agents: ["Default model", "Default thinking level", "Return while the agent is working", "When a turn ends, send the queue"]
         case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically"]
         case .pi: ["Name agents automatically", "Panes and agent tools", "Diff review tool", "Native subagents", "Subagent display", "Concurrency", "Update pi daily", "Update extensions daily", "Check now"]
+        case .instructions: ["Same on every host", "AGENTS.md", "APPEND_SYSTEM.md", "History"]
+        case .skills: ["Installed skills", "Browse skills.sh", "Add from repo", "Skills in the / menu", "Same skills on every host",
+                       "Update automatically"]
         case .remote: ["Hosts", "Add host", "Listener", "Token"]
         case .keyboard: ["Shortcuts", "Reset all shortcuts"]
         case .advanced: ["Workspace state", "Extension socket", "Update channel", "Check for updates", "Reset settings"]
+        case .experiments: ["Suggested instructions", "Learn from", "Can suggest for", "Waiting for you", "Added from suggestions"]
         }
     }
 
@@ -239,9 +267,15 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                        "When a turn ends, send the queue": ["queue", "follow-up", "one per turn", "all at once"]]
         case .worktrees: ["Base branch": ["git", "origin"], "Merge PR automatically": ["github", "pull request"]]
         case .pi: ["Native subagents": ["children", "workflows"], "Update pi daily": ["version", "upgrade"]]
+        case .instructions: ["Same on every host": ["sync", "hosts"], "AGENTS.md": ["system prompt", "how you work", "context"],
+                             "APPEND_SYSTEM.md": ["system prompt", "override"], "History": ["restore", "undo"]]
+        case .skills: ["Installed skills": ["SKILL.md", ".agents", "agent skills"], "Browse skills.sh": ["directory", "search", "install"],
+                       "Add from repo": ["github", "git", "folder"], "Skills in the / menu": ["slash", "command", "composer"],
+                       "Same skills on every host": ["sync", "hosts"], "Update automatically": ["update", "upgrade"]]
         case .remote: ["Hosts": ["vpn", "tailscale", "ssh"], "Listener": ["port", "serve"]]
         case .keyboard: ["Shortcuts": ["hotkey", "keybinding", "chord"]]
         case .advanced: ["Update channel": ["beta", "nightly", "sparkle"], "Workspace state": ["state.json"]]
+        case .experiments: ["Suggested instructions": ["lessons", "learned"], "Learn from": ["threads", "automations"]]
         }
     }
 
@@ -263,9 +297,15 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .agents: return "person.2"
         case .worktrees: return "arrow.branch"
         case .pi: return "pi"
-        case .remote: return "desktopcomputer"
+        case .instructions: return "doc.text"
+        case .skills: return "graduationcap"
+        case .remote: return "dot.radiowaves.left.and.right"
         case .keyboard: return "keyboard"
         case .advanced: return "gearshape"
+        case .experiments: return "flask"
         }
     }
+
+    /// A wide page fills the detail area instead of the 720pt column.
+    var isWide: Bool { self == .instructions || self == .skills || self == .experiments }
 }

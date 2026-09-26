@@ -19,7 +19,7 @@ struct WorktreeSettings: View {
                      explanation: "How new worktrees are created, and what Finalize does when an agent's work is done.") {
             SettingsGroup(title: "New worktrees") {
                 SettingsRow(title: "Base branch",
-                            subtitle: "Remote default starts clean from origin's default branch. Current branch stacks on your checkout's in-progress work. The New Worktree sheet lets you override it.") {
+                            subtitle: "**Remote default** starts clean from origin's default branch. **Current branch** stacks on your checkout's in-progress work. The New Worktree sheet lets you override it.") {
                     NWSegmentedPicker("Base branch", selection: $settings.worktreeBaseMode,
                                       options: [(WorktreeBaseMode.fresh, "Remote default"), (.head, "Current branch")])
                 }

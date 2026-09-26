@@ -19,11 +19,11 @@ struct ExtensionMessageTests {
              .helloChildren, .childCommandResult, .listPanes, .openPane, .closePane, .focusPane,
              .sendPaneInput, .readPane, .requestReview, .listAgents, .sendToAgent, .spawnAgent,
              .coordinateAgent, .agentResponse, .cancelAgentRequest, .createAutomation, .listAutomations,
-             .updateAutomation, .deleteAutomation, .startAutomation, .stopAutomation:
+             .updateAutomation, .deleteAutomation, .startAutomation, .stopAutomation, .suggestInstruction:
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 27
+    static let caseCount = 28
 
     static let samples: [ExtensionMessage] = [
         .setAgentStatus(agentID: agent, status: .blocked),
@@ -59,6 +59,8 @@ struct ExtensionMessageTests {
         .deleteAutomation(id: 13, automationID: automation),
         .startAutomation(id: 14, automationID: automation),
         .stopAutomation(id: 15, automationID: automation),
+        .suggestInstruction(id: 20, agentID: agent, line: "- Run `go mod tidy` with any dependency bump.",
+                            reason: "CI failed twice on a stale go.sum.", file: .appendSystem),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -115,6 +117,11 @@ struct ExtensionMessageTests {
          .createAutomation(id: 1, name: "pr-watch #4821", prompt: "Watch the PR.", cwd: "/tmp/repo", enabled: true, start: true)),
         (#"{"type":"updateAutomation","id":3,"automationID":"au1","enabled":false}"#,
          .updateAutomation(id: 3, automationID: automation, name: nil, prompt: nil, cwd: nil, enabled: false)),
+        // No file means AGENTS.md; a missing reason is an empty one.
+        (#"{"type":"suggestInstruction","id":2,"agentID":"a1","line":"- Ask for join keys first.","reason":"Two services re-ran."}"#,
+         .suggestInstruction(id: 2, agentID: agent, line: "- Ask for join keys first.", reason: "Two services re-ran.", file: nil)),
+        (#"{"type":"suggestInstruction","id":3,"agentID":"a1","line":"- Never force-push.","file":"APPEND_SYSTEM.md"}"#,
+         .suggestInstruction(id: 3, agentID: agent, line: "- Never force-push.", reason: "", file: .appendSystem)),
     ]
 
     @Test(arguments: handWritten)
@@ -155,11 +162,11 @@ struct ExtensionReplyTests {
     static func caseName(_ reply: ExtensionReply) -> String {
         switch reply {
         case .childCommand, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .automations,
-             .agents, .message, .agentRequest, .agentResult:
+             .agents, .message, .agentRequest, .agentResult, .suggestion:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 12
+    static let caseCount = 13
 
     static let samples: [ExtensionReply] = [
         .childCommand(id: 1, runID: "native-1", action: .message, text: "Replace everywhere", mode: .steer),
@@ -181,6 +188,7 @@ struct ExtensionReplyTests {
         .agentRequest(id: 0, requestID: "server-token", targetAgentID: AgentID(rawValue: "a2"),
                       request: AgentCoordinationRequest(operation: .steer, text: "[from: worker] change course")),
         .agentResult(id: 19, result: AgentCoordinationResult(text: "request cancelled", code: "cancelled")),
+        .suggestion(id: 20, outcome: .dismissed),
     ]
 
     @Test func samplesCoverEveryCase() {

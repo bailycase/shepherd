@@ -142,12 +142,20 @@ final class PiUpdateManager {
         }
     }
 
-    func updatePiNow() {
-        runUpdates([["update"]], target: .pi)
+    /// Settings ▸ Pi ▸ Update now: offered while there is something to update.
+    var canUpdate: Bool { canUpdatePi || canUpdateExtensions }
+
+    /// Updates whatever there is to update, in one run.
+    func updateNow() {
+        let commands = Self.updateNowArguments(pi: canUpdatePi, extensions: canUpdateExtensions)
+        guard !commands.isEmpty else { return }
+        runUpdates(commands, target: Self.target(for: commands))
     }
 
-    func updateExtensionsNow() {
-        runUpdates([["update", "--extensions"]], target: .extensions)
+    /// Update now runs pi's update when a check found pi out of date (or none has run yet), and
+    /// the extensions' until they have been updated: whichever apply, pi first.
+    static func updateNowArguments(pi: Bool, extensions: Bool) -> [[String]] {
+        automaticUpdateArguments(updatePi: pi, updateExtensions: extensions)
     }
 
     static func automaticUpdateArguments(
