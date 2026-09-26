@@ -113,7 +113,7 @@ public final class PiSkillsLoader: @unchecked Sendable {
             return (nil, PiSkills.Problem.timedOut.rawValue)
         }
         process.waitUntilExit()
-        if let decoded = try? JSONDecoder().decode(Output.self, from: data.value) { return (decoded, nil) }
+        if let decoded = Output.decode(data.value) { return (decoded, nil) }
         // A login shell that can't find node says so with 127.
         return (nil, process.terminationStatus == 127 ? PiSkills.Problem.nodeNotFound.rawValue : PiSkills.Problem.failed.rawValue)
     }
@@ -148,6 +148,16 @@ public final class PiSkillsLoader: @unchecked Sendable {
             self.skills = skills
             self.shadowed = shadowed
             self.problem = problem
+        }
+
+        /// The script's answer from its stdout: the last line that decodes, since a login shell's
+        /// startup files may print before node runs.
+        static func decode(_ data: Data) -> Output? {
+            let decoder = JSONDecoder()
+            for line in data.split(separator: UInt8(ascii: "\n")).reversed() {
+                if let output = try? decoder.decode(Output.self, from: Data(line)) { return output }
+            }
+            return nil
         }
 
         init(from decoder: Decoder) throws {
