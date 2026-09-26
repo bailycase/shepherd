@@ -93,6 +93,20 @@ public enum DesignExportNames {
         return text.isEmpty ? "Design" : text
     }
 
+    /// What the save panel suggests, and whether it names a folder: one file for a ZIP or a PDF
+    /// (named for the design) and for a single board's page or image; a folder holding one per
+    /// board otherwise.
+    public static func destination(_ format: DesignExportFormat, boards: [DesignPath], design: String) -> (name: String, isFolder: Bool) {
+        switch format {
+        case .zip: return (fileName(design) + ".zip", false)
+        case .pdf: return (fileName(design) + ".pdf", false)
+        case .html, .png:
+            guard boards.count == 1, let board = boards.first else { return (fileName(design), true) }
+            let name = format == .html ? html(board) : png(board)
+            return (name.split(separator: "/").last.map(String.init) ?? name, false)
+        }
+    }
+
     /// From the page at `from` (a path in the export's folder), the relative way to `to`.
     public static func relative(_ to: String, from: String) -> String {
         let depth = from.split(separator: "/").count - 1
@@ -144,6 +158,35 @@ public enum DesignBundle {
         return copy.inSync()
     }
 
+    /// A standalone page's links to other boards (`href="Cart.dc.html"`, relative to `page`, or
+    /// from the canvas root with a leading `/`) pointed at their exported pages when the export
+    /// holds them; every other link as it was.
+    public static func rewritingBoardLinks(_ html: String, page: DesignPath, exported: Set<DesignPath>) -> String {
+        let ns = html as NSString
+        let folder = page.rawValue.split(separator: "/").dropLast().map(String.init)
+        let from = DesignExportNames.html(page)
+        var out = ""
+        var last = 0
+        for match in linkPattern.matches(in: html, range: NSRange(location: 0, length: ns.length)) {
+            let target = ns.substring(with: match.range(at: 2))
+            var parts = target.hasPrefix("/") ? [] : folder
+            var valid = true
+            for segment in target.split(separator: "/", omittingEmptySubsequences: true).map(String.init) where segment != "." {
+                if segment == ".." {
+                    if parts.isEmpty { valid = false; break }
+                    parts.removeLast()
+                } else {
+                    parts.append(segment)
+                }
+            }
+            guard valid, let path = DesignPath(parts.joined(separator: "/")), exported.contains(path) else { continue }
+            let rewritten = DesignExportNames.relative(DesignExportNames.html(path), from: from)
+            out += ns.substring(with: NSRange(location: last, length: match.range(at: 2).location - last)) + rewritten
+            last = match.range(at: 2).location + match.range(at: 2).length
+        }
+        return out + ns.substring(from: last)
+    }
+
     /// Every upload `text` names by its `/_blob/<id>` url, once each, in order.
     public static func blobIDs(in text: String) -> [String] {
         let ns = text as NSString
@@ -189,6 +232,8 @@ public enum DesignBundle {
 
     private static let importPattern = try! NSRegularExpression(
         pattern: "<dc-import\\b[^>]*?\\sname\\s*=\\s*([\"'])([A-Za-z0-9_][A-Za-z0-9_.-]*)\\1", options: [.caseInsensitive])
+    private static let linkPattern = try! NSRegularExpression(
+        pattern: "(\\shref\\s*=\\s*\")([^\"#?]+\\.dc\\.html)(?=[\"#?])", options: [.caseInsensitive])
     private static let blobPattern = try! NSRegularExpression(pattern: "/_blob/([A-Za-z0-9_-]{1,128})")
 }
 
