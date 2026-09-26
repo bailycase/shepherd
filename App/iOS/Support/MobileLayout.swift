@@ -17,6 +17,8 @@ enum MobileLayout {
     static let activitySpacing: CGFloat = NW.Space.xxs
     /// A thread's readable measure on iPad (iPadThread's 780pt column); the phone uses its full width.
     static let threadMaxWidth: CGFloat = 780
+    /// A question's card on iPad, wider than the thread's column (iPadQuestion).
+    static let questionMaxWidth: CGFloat = 900
     /// The iPad thread's and composer's side gutters (iPadThread's 24pt; the phone keeps `gutter`).
     static let padThreadGutter: CGFloat = NW.Space.xxl
     /// A note's indent from its rule.
