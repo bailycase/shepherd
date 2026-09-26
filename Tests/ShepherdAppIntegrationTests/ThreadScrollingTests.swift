@@ -25,7 +25,7 @@ private final class ThreadHarness {
         window = OffscreenWindow(size: CGSize(width: 900, height: 600), dark: false)
         let request: NativeThreadStore.Request = { [weak self] value in
             guard let self else { return .failure(code: "gone", message: "harness released") }
-            if case .send(_, _, let operation, _, _, _) = value { return .accepted(operationID: operation) }
+            if case .send(_, _, let operation, _, _, _, _) = value { return .accepted(operationID: operation) }
             return .snapshot(value: self.snapshot)
         }
         window.show(ThreadView(store: store, active: true, isFocused: false, request: request, commandKey: "thread")

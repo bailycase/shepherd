@@ -34,10 +34,29 @@ private let previewBoards = [
     @Previewable @State var viewport = NWCanvasViewport(offset: CGPoint(x: 44, y: 52), zoom: 0.24)
     @Previewable @State var tool = NWCanvasTool.select
     NWPreviewBoth {
-        NWDesignCanvas(boards: previewBoards, viewport: $viewport, tool: $tool, disabledTools: [.comment], select: { _ in }) { board in
+        NWDesignCanvas(boards: previewBoards, viewport: $viewport, tool: $tool, disabledTools: [.comment],
+                       selection: [NWCanvasElement(id: "B.dc.html#12:1/0/1", board: "B.dc.html", rect: CGRect(x: 48, y: 280, width: 760, height: 320),
+                                                   tag: "card · Checkout funnel")],
+                       hover: NWCanvasElement(id: "B.dc.html#30:1/0/2", board: "B.dc.html", rect: CGRect(x: 832, y: 280, width: 400, height: 320)),
+                       pick: { _ in }) { board in
             PreviewBoardPage(phone: board.frame.height > board.frame.width)
         }
         .frame(width: 720, height: 520)
+    }
+}
+
+#Preview("Selection ring") {
+    NWPreviewBoth {
+        HStack(alignment: .top, spacing: NW.Space.xxl) {
+            PreviewBoardPage(phone: false)
+                .frame(width: 260, height: 140)
+                .overlay { NWSelectionRing(.selected, tag: "card · Checkout funnel").padding(NW.Space.xl) }
+            PreviewBoardPage(phone: false)
+                .frame(width: 260, height: 140)
+                .overlay { NWSelectionRing(.hover).padding(NW.Space.xl) }
+        }
+        .padding(.top, NW.Space.xxl)
+        .padding(NW.Space.m)
     }
 }
 

@@ -146,6 +146,7 @@ And the rules that follow from them:
 | NavAutomations: When and Next columns, Scheduled and On an event tabs, a schedule or trigger per automation ("Every day · 02:00"), a run's outcome ("passed", "1 PR failed CI"), a "mission" kind, and Repos | The table without When and Next and with no tabs; the run's word and time ("finished · 6h ago"), every run starting a thread, and Folder in place of Repos (Automations page) | The user's decision, 2026-09-25 ("Build both, with what we have (Recommended)"): "Automations = table + detail with name, host, last run, prompt, runs, Run now (no schedules, triggers or next-run column)". Automations have no schedule or trigger, and a run's result is its thread |
 | NavHosts: daemon hosts ("Shepherd daemon · Linux"), Load, worktree disk use, Open in Finder, Open terminal and Logs, and missions in the explainer | This Mac and each remote host with Running, Worktrees (a count), Repos and Address, or Waiting, Last seen and Address while unreachable; Retry and Remove (Hosts page) | The user's decision, 2026-09-25 ("Build both, with what we have (Recommended)"): "Hosts = This Mac and each remote host's card with status, address, threads, Retry, Remove, Add host". Shepherd has no daemon, and nothing measures load or disk use |
 | The sidebar on every Mac board: Missions and Designs destinations, More ▸ Design systems and Archive, and the New thread page's mission and design cards | Hidden; Designs and the design card show while Settings ▸ Experiments ▸ Design tool is on | The user's decision, 2026-09-25 ("Hide them (Recommended)"): not built yet, hidden until built. The Design tool ships behind its experiment, off by default (the design tool plan's decision 2) |
+| DZCanvas: each board's label 24pt above its frame | Where the row above is closer than the label (rows 120 apart are about 20pt at the opening 17%), the label moves down toward its frame, keeping at least 2pt, and isn't drawn where even that doesn't fit; a label running past a narrow board stops before the next board along (`NWLabelRoom`) | At a low zoom the second row's labels lay over the first row's boards |
 | MobileAutomations, iPadAutomations: a schedule or trigger per automation ("Every day 02:00", "New issue in checkout-svc", "When CI goes green on #24"), its model and repos, a run's outcome ("Passed · 3 migrations, all reversible", "1 PR failed CI"), a CI-checks bar on a running card, and a "mission" kind | "When Shepherd starts · folder" or "By hand", an On switch and a folder on the host, the run's status word with its time ("Finished · 12h ago"), and "Running · 4m" | As NavAutomations: the host has no schedules, triggers, models, repo lists or check tracking, and a run's result is its thread (iOS: Automations) |
 | MobileCommit: the sheet's title "Commit" | "Commit n files", as the Mac's commit sheet | The phone and the Mac share the commit form's parts |
 | iPadReview: Revert file in a file's header | Not offered on iOS | The remote protocol has no revert; the Mac's local review keeps it (docs/ios/README.md › Review) |
@@ -7529,7 +7530,8 @@ review pane's.
 
 **Partly built, on the Mac, behind Settings ▸ Experiments ▸ Design tool (off by default).** Built:
 the Designs destination and page, design rows in Recents, New thread's Start a design, New design,
-and a design's canvas beside its chat, with the design agent and live reload (docs/designs.md).
+and a design's canvas beside its chat, with the design agent, live reload, and Select (elements and
+boards picked on the canvas, their view record sent with each chat message; docs/designs.md).
 Not built: comments, Tweak, design systems, export, the live link, Present, and every iPhone and
 iPad part; each subsection below says what of it is built. The iOS
 client's first release leaves it out until the Mac has it ([docs/ios](docs/ios/README.md)), and its
@@ -7693,8 +7695,9 @@ opens this page in the main column, with the sidebar showing and Designs selecte
 **Partly built** (`DesignScreen`: a design agent's layout). Built: the header (44pt, the app's
 toolbar; the system chip is a label, Present and Export draw disabled), the canvas with its board
 frames and toolbar (Comment disabled), and the chat pane with its Chat tab alone and the agent's
-thread; its composer is `NWComposer`'s card at radius 8. Not built: Tweak and Comments tabs and the
-tabs' •••, pins, the board actions bar, "Ask for another direction", and multiple selection. A
+thread; its composer is `NWComposer`'s card at radius 8, and Select (Selection, below). Not built:
+Tweak and Comments tabs and the tabs' •••, pins, the board actions bar, and "Ask for another
+direction". A
 board frame's outline is `lineStrong` and its shadow the popover's (the board's black 30% and 35%
 are off the tokens). Opening a design fills the main column: the header, then the canvas beside a
 420pt chat pane. The boards draw it with the sidebar hidden.
@@ -7717,7 +7720,8 @@ are off the tokens). Opening a design fills the main column: the header, then th
     `textSecondary`) and, 8pt after it, its size in mono 10.5 `textTertiary`. The frame is the
     board's page at the canvas's zoom, radius 4, with a 1px black 30% outline and a soft drop
     shadow (0, 12, 32 at black 35%). A selected board wears a 2pt `running` ring outside the
-    frame. Several boards can be selected at once (DZExport shows two); how is not drawn.
+    frame. Several boards can be selected at once (DZExport shows two); how is not drawn, and
+    Shepherd uses shift (Selection, below).
   - **"Ask for another direction"**: after the last board (36pt after it on DZCanvas), a
     300×190 dashed tile (1px `lineStrong`, radius 6), `plus` (16pt) over "Ask for another
     direction" in 12 `textTertiary`, 6pt apart, centered. It asks the agent for one more
@@ -7729,6 +7733,15 @@ are off the tokens). Opening a design fills the main column: the header, then th
     8, 6pt gap, a 13pt glyph in `textSecondary`, the label in 12.5 `textPrimary`. (DZCanvas draws it
     smaller: a 32pt bar at radius 10 with 26pt items at radius 6 in 12.) Comment pins a comment to
     the board's element you pick next; Tweak opens the Tweak tab.
+  - **Selection** (built; Select): a click on a board picks the element under it, a click on a
+    board's label (or where the board names nothing) picks the board whole, shift adds or takes
+    away, and a click on the empty canvas clears. Selected elements wear `NWSelectionRing` (Tweak,
+    below: the ring over its `runningTint` fill, the handles), and the latest one its tag
+    ("card · Checkout funnel": what it is, then its `data-el` name or its first words). The
+    element under the pointer wears the ring alone, with no fill, handles or tag. None of the
+    boards draws a hovered element, several selected elements, or which of them carries the tag,
+    so these are Shepherd's until one does. What the canvas shows (boards on screen, the
+    selection) goes with every message the chat sends, as data for the agent.
   - **Comment pins** (`NWCommentPin`) on their elements, numbered in order (below).
   - **The canvas toolbar** (`NWCanvasToolbar`), 16pt from the bottom-leading corner: a 38pt
     `bgRaised` bar, 4pt padding, radius 12, the popover's line and shadow. Three 30pt circle
@@ -7797,8 +7810,8 @@ are off the tokens). Opening a design fills the main column: the header, then th
 
 **Not built yet.** Tweak (the board action or the tab) edits the selected element directly.
 
-- **On the canvas**, the element (`NWSelectionRing`) wears a 1.5pt `running` ring (on
-  NWDesignTool over a `runningTint` fill), 8pt square handles on its corners (white, a 1.5pt
+- **On the canvas**, the element (`NWSelectionRing`, built with Select) wears a 1.5pt `running`
+  ring (on NWDesignTool over a `runningTint` fill, which Shepherd draws), 8pt square handles on its corners (white, a 1.5pt
   `running` line, radius 2), and a tag 4pt above its top-leading corner naming it: 18pt, 6pt
   padding, radius 4, `running` fill, white mono 10.5 ("card · Checkout funnel"). Its comment
   pin and thread stay beside it. Changes show on the canvas as you drag.
@@ -7908,8 +7921,8 @@ selected on the canvas already ticked.
 ### Design components (NWDesignTool, NWDesignToolLight)
 
 **Partly built** (`Packages/ShepherdUI/.../Components/DesignTool/`, each with a `#Preview` in both
-appearances): `NWDesignCanvas`, `NWBoardFrame`, `NWCanvasToolbar`, `NWDesignSystemChip`, and the
-page parts `NWDesignCard`, `NWDesignSystemCard`, `NWDesignStartCard`, `NWDesignHeader` and
+appearances): `NWDesignCanvas`, `NWBoardFrame`, `NWCanvasToolbar`, `NWDesignSystemChip`,
+`NWSelectionRing` (with `NWSelectionTag`), and the page parts `NWDesignCard`, `NWDesignSystemCard`, `NWDesignStartCard`, `NWDesignHeader` and
 `NWDesignPaneTabs`. The rest of the table is not built yet.
 
 Night Watch's Design tool page names these components, dark and light ("Light ·
@@ -7921,7 +7934,7 @@ both appearances:
 | --- | --- |
 | `NWDesignCanvas` | The pannable, zoomable canvas on `bgBase` with its 22pt dot grid, holding the board frames, pins and threads (NWSwift; no specimen on NWDesignTool: see A design: canvas and chat) |
 | `NWBoardFrame(board, isSelected:)` | A board with its label above, its size in mono, and a `running` ring when selected |
-| `NWSelectionRing(element)` | Picks an element inside a board for comments or tweaks |
+| `NWSelectionRing(element)` | Picks an element inside a board for comments or tweaks (built: `.selected` with its tag, `.hover` the ring alone) |
 | `NWCommentPin(number)` | The numbered pin, lantern "because a pin is something you asked for" |
 | `NWBoardActions(selection)` | Comment, Tweak, Variations, Duplicate, and •••, floating over the selected board |
 | `NWCanvasToolbar(tool:, zoom:)` | Select, comment, pan, and the zoom |

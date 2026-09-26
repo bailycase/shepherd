@@ -59,6 +59,10 @@ public final class NWPalette: Sendable {
     public let scrim: Color
     /// Labels on a `failed` fill (the dangerFill button, the failed count badge).
     public let textOnFailed: Color
+    /// Labels on a `running` fill: the design canvas's selection tag (NWDesignTool, DZTweak).
+    public let textOnRunning: Color
+    /// The design canvas's selection handles: white squares on a `running` line (NWDesignTool).
+    public let selectionHandle: Color
     /// The primary button's fill lifted on hover and sunk while pressed, and the dangerFill
     /// button's sunk fill (the Controls board's hexes; `NWButtonFills`).
     public let lanternHover: Color
@@ -134,6 +138,8 @@ public final class NWPalette: Sendable {
         let scrimBlack = HexColor(red: 0, green: 0, blue: 0, alpha: 0.3)
         scrim = Color(light: scrimBlack, dark: scrimBlack)
         textOnFailed = Color(light: "#ffffff", dark: "#ffffff")
+        textOnRunning = Color(light: "#ffffff", dark: "#ffffff")
+        selectionHandle = Color(light: "#ffffff", dark: "#ffffff")
         lanternHover = Color(light: NWButtonFills.lanternHover.light, dark: NWButtonFills.lanternHover.dark)
         lanternPressed = Color(light: NWButtonFills.lanternPressed.light, dark: NWButtonFills.lanternPressed.dark)
         failedPressed = Color(light: NWButtonFills.failedPressed.light, dark: NWButtonFills.failedPressed.dark)

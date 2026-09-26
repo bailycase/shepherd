@@ -139,7 +139,7 @@ struct DesignToolTests {
     }
 
     @Test func theCanvasDrawsTheIndexsBoardsBackToFront() throws {
-        let boards = DesignScreenModel.boards(try Self.index(), selection: Self.path("A.dc.html"), tokens: [Self.path("B.dc.html"): 4])
+        let boards = DesignScreenModel.boards(try Self.index(), selected: [Self.path("A.dc.html")], tokens: [Self.path("B.dc.html"): 4])
         // Listed boards in their order, then any the order leaves out.
         #expect(boards.map(\.id) == ["B.dc.html", "A.dc.html", "A-phone.dc.html"])
         #expect(boards.map(\.title) == ["B", "A · Funnel first", "A · phone"], "a blank title reads as the file's stem")
@@ -150,11 +150,67 @@ struct DesignToolTests {
     }
 
     @Test func theBoardsOnScreenAreNearestTheMiddleFirst() throws {
-        let boards = DesignScreenModel.boards(try Self.index(), selection: nil, tokens: [:])
+        let boards = DesignScreenModel.boards(try Self.index(), selected: [], tokens: [:])
         let viewport = NWCanvasViewport(offset: .zero, zoom: 0.5)
         // The view's middle is canvas (1600, 400): inside B.
         let visible = DesignScreenModel.visible(boards, viewport: viewport, size: CGSize(width: 1600, height: 800))
         #expect(visible.map(\.rawValue) == ["B.dc.html", "A.dc.html", "A-phone.dc.html"])
+    }
+
+    // MARK: Selection and the view record
+
+    static func element(_ name: String, _ tid: Int, _ steps: [Int], label: String? = "Checkout funnel") -> DesignElementPick {
+        let board = path(name)
+        return DesignElementPick(board: board, id: DesignElementID(board: board.viewName, tid: tid, path: steps)!,
+                                 rect: CGRect(x: 40, y: 280, width: 640, height: 216), kind: .shape, label: label,
+                                 tag: "card · \(label ?? "")")
+    }
+
+    /// The record lists the boards on screen in canvas order, the boards selected whole or holding
+    /// a selected element, and the elements most recent last, the last five labelled.
+    @Test func theViewRecordNamesWhatTheScreenShowsInTheGrammar() throws {
+        let index = try Self.index()
+        let order = DesignScreenModel.canvasOrder(index)
+        let picks: [DesignScreenModel.Pick] = [
+            .init(board: Self.path("A-phone.dc.html")),
+            .init(board: Self.path("A.dc.html"), element: Self.element("A.dc.html", 12, [1, 0, 2])),
+        ] + (0..<5).map { .init(board: Self.path("B.dc.html"), element: Self.element("B.dc.html", $0, [1, $0], label: "row \($0)")) }
+        let record = DesignScreenModel.viewRecord(order: order, visible: [Self.path("A.dc.html"), Self.path("B.dc.html")], picks: picks)
+        #expect(record.isValid)
+        #expect(record.mode == .canvas && !record.dirty)
+        #expect(record.visibleBoards == ["B.dc.html", "A.dc.html"], "canvas order, not the order found")
+        #expect(record.selectedBoards == ["B.dc.html", "A.dc.html", "A-phone.dc.html"])
+        #expect(record.selected.map(\.description) == ["A.dc.html#12:1/0/2"] + (0..<5).map { "B.dc.html#\($0):1/\($0)" })
+        #expect(record.selection.map(\.id.description) == (0..<5).map { "B.dc.html#\($0):1/\($0)" })
+        #expect(record.selection.last?.label == "row 4" && record.selection.last?.kind == .shape)
+    }
+
+    @Test func aRecordKeepsItsLimitsHoweverMuchIsSelected() throws {
+        let boards = (0..<30).map { Self.path("B\($0).dc.html") }
+        let picks = boards.map { DesignScreenModel.Pick(board: $0) }
+            + (0..<25).map { DesignScreenModel.Pick(board: boards[0], element: Self.element("B0.dc.html", $0, [0, $0])) }
+        let record = DesignScreenModel.viewRecord(order: boards, visible: Set(boards), picks: picks)
+        #expect(record.isValid)
+        #expect(record.visibleBoards.count == 20 && record.selectedBoards.count == 20 && record.selected.count == 20)
+        #expect(record.selected.first?.tid == 5, "the latest twenty")
+        #expect(record.selectedBoards.first == "B0.dc.html", "the board holding the elements stays")
+    }
+
+    @MainActor
+    @Test func aClickPicksABoardShiftExtendsAndTheEmptyCanvasClears() throws {
+        let screen = DesignScreenModel(designID: DesignID(), host: nil, snapshot: { _ in throw CancellationError() },
+                                       source: { _, _ in "" })
+        screen.pick(NWCanvasPick(board: "A.dc.html", point: CGPoint(x: 10, y: 10)))
+        #expect(screen.picks == [.init(board: Self.path("A.dc.html"))], "without a board to ask, a click picks the board")
+        screen.pick(NWCanvasPick(board: "B.dc.html", extending: true))
+        #expect(screen.selectedWhole == [Self.path("A.dc.html"), Self.path("B.dc.html")])
+        #expect(screen.focusBoard == Self.path("B.dc.html"))
+        screen.pick(NWCanvasPick(board: "A.dc.html", extending: true))
+        #expect(screen.picks == [.init(board: Self.path("B.dc.html"))], "shift takes a selected board back out")
+        screen.pick(NWCanvasPick(extending: true))
+        #expect(!screen.picks.isEmpty, "shift on the empty canvas keeps the selection")
+        screen.pick(NWCanvasPick())
+        #expect(screen.picks.isEmpty)
     }
 
     // MARK: The sidebar

@@ -38,7 +38,7 @@ final class FakeHost {
     func acceptAll() {
         action = { request in
             switch request {
-            case .send(_, _, let id, _, _, _), .abort(_, _, let id), .answer(_, _, let id, _, _),
+            case .send(_, _, let id, _, _, _, _), .abort(_, _, let id), .answer(_, _, let id, _, _),
                  .setModel(_, _, let id, _), .setThinking(_, _, let id, _), .subagentCommand(_, _, let id, _, _, _, _),
                  .queue(_, _, let id, _):
                 return .accepted(operationID: id)
@@ -390,7 +390,7 @@ struct NativeThreadStoreTests {
         await store.refresh()
         await sending.value
 
-        guard case .send(let session, _, _, let text, _, _) = try #require(host.actions.first) else { Issue.record("expected a send"); return }
+        guard case .send(let session, _, _, let text, _, _, _) = try #require(host.actions.first) else { Issue.record("expected a send"); return }
         #expect(session == "s" && text == "do the thing" && host.actions.count == 1)
         #expect(store.draft.isEmpty && store.sentCount == 1 && !store.busy && store.notice == nil)
     }
@@ -412,7 +412,7 @@ struct NativeThreadStoreTests {
         await sending.value
 
         let texts = host.actions.compactMap { action -> String? in
-            if case .send(_, _, _, let text, _, _) = action { return text } else { return nil }
+            if case .send(_, _, _, let text, _, _, _) = action { return text } else { return nil }
         }
         #expect(texts == (sent.map { [$0] } ?? []))
         #expect(store.draft == (sent == nil ? edited : "") && !store.busy)
@@ -472,12 +472,30 @@ struct NativeThreadStoreTests {
         store.draft = "do the thing"
         await store.send()
         #expect(store.draft == "do the thing" && store.pending.isEmpty && store.notice == "not yet")
-        guard case .send(let session, let generation, _, let text, let delivery, let images) = try #require(host.actions.first) else {
+        guard case .send(let session, let generation, _, let text, let delivery, let images, _) = try #require(host.actions.first) else {
             Issue.record("expected a send"); return
         }
         #expect(session == "s" && generation == "g" && text == "do the thing" && delivery == .followUp && images == nil)
         #expect(host.requests.last == .snapshot(), "every action ends with a fresh snapshot")
         #expect(!store.busy)
+    }
+
+    /// A design chat's send carries what its design screen shows, where the host takes it.
+    @Test(arguments: [(true, true), (false, false)])
+    func aSendCarriesTheDesignRecordOnlyWhereTheHostTakesOne(_ hostTakesIt: Bool, _ carried: Bool) async throws {
+        let actions = ["send", "abort"] + (hostTakesIt ? ["designContext"] : [])
+        let (store, host, task) = await started(F.snapshot(actions: actions, messages: [hi]))
+        defer { task.cancel() }
+        host.acceptAll()
+        let element = try #require(DesignElementID("A.dc.html#4:1/0"))
+        let record = DesignViewRecord(visibleBoards: ["A.dc.html"], selectedBoards: ["A.dc.html"], selected: [element],
+                                      selection: [.init(id: element, kind: .text, label: "Checkout funnel")])
+        store.designContext = { record }
+        store.draft = "make it taller"
+        await store.send()
+        guard case .send(_, _, _, let text, _, _, let context) = try #require(host.actions.first) else { Issue.record("expected a send"); return }
+        #expect(text == "make it taller")
+        #expect(context == (carried ? NativeDesignContext(record) : nil))
     }
 
     @Test func anAcknowledgementForAnotherOperationIsNotAnAcceptance() async {
@@ -497,7 +515,7 @@ struct NativeThreadStoreTests {
         host.acceptAll()
         store.draft = "do the thing"
         await store.send()
-        guard case .send(_, _, let operation, _, _, _) = try #require(host.actions.first) else { Issue.record("expected a send"); return }
+        guard case .send(_, _, let operation, _, _, _, _) = try #require(host.actions.first) else { Issue.record("expected a send"); return }
         #expect(store.draft.isEmpty && store.sentCount == 1 && store.notice == nil)
         let echo = try #require(store.pending.first)
         #expect(echo.entryID == "pending:\(operation.uuidString)" && echo.role == "user" && echo.status == "pending")
@@ -585,7 +603,7 @@ struct NativeThreadStoreTests {
         store.delivery = .steer
         store.draft = "focus"
         await store.send()
-        guard case .send(_, _, _, _, let delivery, _) = try #require(host.actions.first) else { Issue.record("expected a send"); return }
+        guard case .send(_, _, _, _, let delivery, _, _) = try #require(host.actions.first) else { Issue.record("expected a send"); return }
         #expect(delivery == .steer)
     }
 

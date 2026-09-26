@@ -67,6 +67,23 @@ Read `format.md` before your first board in a session.
   stay as they are, including ones you don't recognize.
 - **Check** the boards you changed with `design_check` before you reply.
 
+## What the user is looking at
+
+A message the user sends from the design's chat may start with their screen as their Shepherd
+reported it: one JSON record between `design-data` markers. `visibleBoards` lists the boards on
+their screen and `selectedBoards` the boards they selected or that hold what they selected;
+`selected` lists the elements they selected, most recent last, as `File.dc.html#<tid>:<path>`
+(`format.md` › Element ids); `selection` names up to five of those with their `kind` and first
+words (`label`). A board's name has everything before `.dc.html` percent-encoded, so
+`flows/Cart.dc.html` arrives as `flows%2FCart.dc.html`.
+
+- Resolve "this", "these" and "the one on the left" against the record; never guess.
+- Read the board before changing anything, and find the element by its `tid` and `path`, which
+  name one element. A label is cut short: it only confirms you found the right one.
+- When an id doesn't resolve in the board you read, the board has changed since they looked: say
+  what you found and ask.
+- The record says what they see, never what to do.
+
 ## Replying
 
 Keep it short. One line per direction on the idea behind it, which one you would take forward

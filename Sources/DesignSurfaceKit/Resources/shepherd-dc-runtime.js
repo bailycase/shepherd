@@ -18,7 +18,10 @@
  * - stamps each rendered element with `data-dc-tid` (an imported board's elements carry
  *   `data-dc-owner`, the tid of the `<dc-import>` that holds them);
  * - tells Shepherd's bridge (an isolated world) what happened through `shepherd-dc` DOM events,
- *   and takes `replaceSource(source)` to re-render in place, without navigating.
+ *   and takes `replaceSource(source)` to re-render in place, without navigating;
+ * - answers the bridge's `shepherd-dc-describe` events with what the board's template says of an
+ *   element: its path (view-state.md's child-index chain), its kind, its label (the template's
+ *   own text, holes as written) and its `data-el` name, for the canvas's selection.
  */
 (function () {
   'use strict';
@@ -177,14 +180,16 @@
     template.innerHTML = fragment;
     var next = 0;
     var helmets = [];
+    var elements = [];
 
-    function children(parent) {
+    function children(parent, parentPath) {
       var out = [];
       var nodes = parent.childNodes;
+      var index = 0;
       for (var i = 0; i < nodes.length; i++) {
         var node = nodes[i];
         if (node.nodeType === 3) {
-          out.push({ text: parseParts(node.data) || node.data });
+          out.push({ text: parseParts(node.data) || node.data, raw: node.data });
           continue;
         }
         if (node.nodeType !== 1) continue;
@@ -194,22 +199,90 @@
           name: node.localName.toLowerCase(),
           foreign: node.namespaceURI === SVG_NS || node.namespaceURI === MATH_NS,
           attrs: [],
-          children: null
+          children: null,
+          // view-state.md's path: the top-level index first, then each element-child index.
+          path: parentPath.concat(index++)
         };
+        elements[element.tid] = element;
         for (var a = 0; a < node.attributes.length; a++) {
           var attribute = node.attributes[a];
           element.attrs.push({ name: attribute.name, value: attribute.value, parts: parseParts(attribute.value) });
         }
-        element.children = children(node.localName === 'template' ? node.content : node);
+        element.children = children(node.localName === 'template' ? node.content : node, element.path);
         if (element.name === 'helmet') helmets.push(element);
         out.push(element);
       }
       return out;
     }
 
-    var nodes = children(template.content);
-    return { nodes: nodes, helmets: helmets, count: next };
+    var nodes = children(template.content, []);
+    return { nodes: nodes, helmets: helmets, count: next, elements: elements };
   }
+
+  // MARK: Describing an element
+
+  var IMAGES = { img: true, picture: true, video: true, canvas: true, image: true };
+  var LINES = { line: true, polyline: true, hr: true };
+  var SHAPES = {
+    div: true, section: true, article: true, aside: true, main: true, header: true, footer: true, nav: true,
+    figure: true, form: true, ul: true, ol: true, li: true, table: true, svg: true, rect: true, circle: true,
+    ellipse: true, polygon: true, path: true
+  };
+  var FIELDS = { input: true, textarea: true, select: true };
+  var SILENT = { style: true, script: true, title: true, helmet: true };
+
+  function templateAttribute(element, name) {
+    var found = attribute(element, name);
+    return found ? found.value : null;
+  }
+
+  /** The template's own text inside an element, holes as written, on one line. */
+  function templateText(element) {
+    var text = '';
+    (function walk(nodes) {
+      for (var i = 0; i < nodes.length && text.length < 400; i++) {
+        var node = nodes[i];
+        if (node.text !== undefined) text += ' ' + node.raw;
+        else if (!SILENT[node.name]) walk(node.children);
+      }
+    })(element.children);
+    return text.replace(/\s+/g, ' ').trim();
+  }
+
+  function hasOwnText(element) {
+    return element.children.some(function (node) { return node.text !== undefined && node.raw.trim() !== ''; });
+  }
+
+  /** view-state.md's kind: text (a typeable container too), image, shape, line or other. */
+  function kindOf(element) {
+    if (IMAGES[element.name]) return 'image';
+    if (LINES[element.name]) return 'line';
+    if (FIELDS[element.name] || templateAttribute(element, 'contenteditable') != null || hasOwnText(element)) return 'text';
+    if (SHAPES[element.name]) return 'shape';
+    return 'other';
+  }
+
+  /** What the board's template says of element `tid`, or null when it has none. */
+  function describeElement(tid) {
+    var element = current && current.template ? current.template.elements[tid] : null;
+    if (!element) return null;
+    var label = element.name === 'img' ? templateAttribute(element, 'alt') : templateText(element);
+    var named = element.name === 'dc-import' ? templateAttribute(element, 'name') : templateAttribute(element, 'data-el');
+    return {
+      tid: tid,
+      path: element.path,
+      tag: element.name,
+      kind: element.name === 'dc-import' ? 'other' : kindOf(element),
+      label: label ? String(label).slice(0, 200) : null,
+      el: named && named.indexOf('{{') < 0 ? String(named).slice(0, 200) : null
+    };
+  }
+
+  document.addEventListener('shepherd-dc-describe', function (event) {
+    var tid = Number(typeof event.detail === 'string' ? event.detail : NaN);
+    var found = Number.isInteger(tid) && tid >= 0 ? describeElement(tid) : null;
+    emit('described', found || { tid: tid, missing: true });
+  }, true);
 
   function attribute(element, name) {
     for (var i = 0; i < element.attrs.length; i++) if (element.attrs[i].name === name) return element.attrs[i];
@@ -666,7 +739,7 @@
     compiled.Component[DEFINITION] = { template: template, url: location.href };
     hoistHelmet('board', template.helmets, true);
     if (board.title != null) document.title = board.title;
-    current = { Component: compiled.Component, script: board.script, carry: null };
+    current = { Component: compiled.Component, script: board.script, carry: null, template: template };
     root = ReactDOM.createRoot(document.body);
     render();
   }
@@ -711,7 +784,7 @@
     hoistHelmet('board', template.helmets, true);
     if (board.title != null) document.title = board.title;
     var sameComponent = Component === current.Component;
-    current = { Component: Component, script: board.script, carry: carry };
+    current = { Component: Component, script: board.script, carry: carry, template: template };
     if (host && host.state.failed) hostKey++;
     render();
     if (sameComponent && host && host.instance) {

@@ -113,6 +113,32 @@ struct DesignPerformanceTests {
         #expect(counts["design.board", default: 0] == 1, "\(counts)")
         #expect(host.snapshotsTaken == snapshots + 1)
     }
+
+    /// Selecting an element on a live board, and the pointer ringing one, draw rings over the
+    /// boards: no board frame redraws.
+    @Test func selectingAnElementRedrawsNoBoardFrame() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (_, window, screen, host) = try await openLargeCanvas(app)
+        defer { window.close() }
+        let target = try #require(screen.visibleBoards.first { host.liveBoards.contains($0) })
+        let heading = CGPoint(x: 100, y: 45)
+
+        let counts = try await ListPerf.countingAsync {
+            screen.pick(NWCanvasPick(board: target.rawValue, point: heading))
+            try await eventuallyOnMain("an element on \(target) to be selected", timeout: .seconds(30)) {
+                window.layout()
+                return !screen.isPicking && screen.selectedElements.count == 1
+            }
+            screen.pointer(NWCanvasPick(board: target.rawValue, point: heading))
+            try await eventuallyOnMain("the element under the pointer to be ringed", timeout: .seconds(30)) {
+                window.layout()
+                return screen.hover != nil
+            }
+            window.layout()
+        }
+        #expect(counts["design.board", default: 0] == 0, "\(counts)")
+    }
 }
 
 extension ListPerf {
