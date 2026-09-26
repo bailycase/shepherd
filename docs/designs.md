@@ -156,7 +156,7 @@ with its SHA-256, listed or not), `designBoard(_:path:)` and `designVersions(_:p
 
 ## The design agent
 
-A design is drawn by an ordinary pi agent whose `Agent.designID` names it. Its launch adds
+A design is drawn by a pi agent whose `Agent.designID` names it. Its launch adds
 `-e shepherd-design.ts` and two variables: `SHEPHERD_DESIGN_ID` (the extension is inert without
 it) and `SHEPHERD_DESIGN_SKILL_DIR`. Its working directory is its space's, so it reads the
 project's stylesheets, tokens and templates with its ordinary tools.
@@ -191,6 +191,26 @@ project's stylesheets, tokens and templates with its ordinary tools.
   `.drew`), "Updated A and A · phone" (the edit glyph), or "Arranged the canvas"; `design_check`
   reads "Checked against acme-web · 0 off-system values" (`.checked`). Board names follow the
   skill's files: `A.dc.html` reads "A", `A-phone.dc.html` "A · phone".
+
+### Design agents and ordinary threads
+
+An agent draws a design while its `designID` names one in the workspace
+(`ShepherdState.isDesignAgent`). Its thread is that design's Chat tab and nothing else. Only it
+gets `shepherd-design.ts`, the design skill, the design facts in its prompt,
+`SHEPHERD_DESIGN_ID` and `SHEPHERD_DESIGN_SKILL_DIR`. A thread with no design never gets any of
+them, whether the experiment is on or off. The rule holds in both directions:
+
+- **Peers.** A design agent launches without the panes extension, so it has no `pane_*`,
+  `agent_*`, `automation_*` or `notify` tools. The server also refuses `listAgents`,
+  `sendToAgent`, `spawnAgent` and `coordinateAgent` from it or aimed at it, with `not_a_thread`,
+  so an older installed copy of the extension can't get around the rule. agent_list leaves it
+  out.
+- **The Mac's chrome.** A design agent has no sidebar row, no ⌘-digit and no palette row, and
+  the palette's transcript search never reads its chat.
+- **Remote clients.** Another Mac, or an iPhone or iPad, gets the host's state without
+  `designs`, without their agents, and without those agents' layouts
+  (`ShepherdState.withoutDesigns`). There is no remote design screen yet. A Mac client also
+  skips any design agent that an older host still sends.
 
 ### Comments
 
