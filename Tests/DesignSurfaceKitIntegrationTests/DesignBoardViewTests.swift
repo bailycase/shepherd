@@ -194,6 +194,35 @@ struct DesignBoardViewTests {
         #expect(try await harness.text(view, "return document.getElementById('title').textContent") == "Checkout")
     }
 
+    /// A surface over files in memory (a design system's, drawn as specimens) serves exactly
+    /// those files and the runtime, and a board among them draws with its stylesheet.
+    @Test func aSurfaceInMemoryServesOnlyItsOwnFiles() async throws {
+        let board = """
+            <!doctype html>
+            <html><head><meta charset="utf-8"><script src="./support.js"></script>
+            <link rel="stylesheet" href="tokens.css"></head>
+            <body><x-dc><div id="chip" style="width: 200px; height: 60px; background: var(--accent);">Chip</div></x-dc></body></html>
+            """
+        let surface = DesignSurface(designID: DesignID(), files: [
+            "_specimen.dc.html": Data(board.utf8),
+            "tokens.css": Data(":root { --accent: #0a141e; }\n".utf8),
+            "components/Chip.html": Data("<span>Chip</span>".utf8),
+        ], network: .none)
+        #expect(surface.folder == nil)
+        let view = DesignBoardView(surface: surface, board: try #require(DesignPath("_specimen.dc.html")),
+                                   size: CGSize(width: 200, height: 60))
+        try await view.load()
+        let reached = try await view.webView.callAsyncJavaScript("""
+            const probe = async (url) => { try { return String((await fetch(url)).status); } catch (e) { return 'blocked'; } };
+            return [
+              await probe('/project/tokens.css'), await probe('/project/components/Chip.html'), await probe('/project/support.js'),
+              await probe('/project/canvas.json'), await probe('/_blob/abc123'), await probe('/project/%2E%2E/tokens.css'),
+              getComputedStyle(document.getElementById('chip')).backgroundColor
+            ].join(',');
+            """, arguments: [:], in: nil, contentWorld: .page) as? String
+        #expect(reached == "200,200,200,404,404,404,rgb(10, 20, 30)")
+    }
+
     // MARK: Snapshots
 
     @Test func aSnapshotHasTheBoardsSize() async throws {
