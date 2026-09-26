@@ -3,7 +3,7 @@ import SwiftUI
 // The head every Mac question starts with (QuestionAsk, QuestionPick, QuestionStates): who is
 // asking in lantern, then Hide the question. The agent's own question and a subagent's share it;
 // only the glyph and the name differ. Hidden, a question shrinks to one line
-// (QuestionStates › hidden) that still holds the composer's place.
+// (QuestionStates › hidden, in `NWQuestionDockHidden`) that still holds the composer's place.
 
 public enum NWQuestionHeadMetrics {
     public static let height: CGFloat = 26
@@ -56,11 +56,14 @@ struct NWQuestionAskerGlyph: View {
 public struct NWQuestionHead: View {
     let asker: NWQuestionAsker
     let count: Int
+    let hideHelp: String
     let hide: () -> Void
 
-    public init(_ asker: NWQuestionAsker, count: Int = 1, hide: @escaping () -> Void) {
+    /// `hideHelp`: Hide the question's tooltip, with its key when it has one.
+    public init(_ asker: NWQuestionAsker, count: Int = 1, hideHelp: String = "Hide the question", hide: @escaping () -> Void) {
         self.asker = asker
         self.count = count
+        self.hideHelp = hideHelp
         self.hide = hide
     }
 
@@ -82,7 +85,7 @@ public struct NWQuestionHead: View {
             }
             Button(action: hide) { Image(systemName: "chevron.down") }
                 .buttonStyle(.nwIcon(size: NWQuestionHeadMetrics.hideButton))
-                .help("Hide the question")
+                .help(hideHelp)
                 .accessibilityLabel("Hide the question")
         }
         // Another question queuing behind this one counts up.
@@ -96,11 +99,13 @@ public struct NWQuestionHead: View {
 public struct NWQuestionHiddenLine: View {
     let asker: NWQuestionAsker
     let question: String
+    let showHelp: String
     let show: () -> Void
 
-    public init(_ asker: NWQuestionAsker, question: String, show: @escaping () -> Void) {
+    public init(_ asker: NWQuestionAsker, question: String, showHelp: String = "Show the question", show: @escaping () -> Void) {
         self.asker = asker
         self.question = question
+        self.showHelp = showHelp
         self.show = show
     }
 
@@ -116,7 +121,7 @@ public struct NWQuestionHiddenLine: View {
                 .accessibilityLabel("Answer the question")
             Button(action: show) { Image(systemName: "chevron.up") }
                 .buttonStyle(.nwIcon(size: NWQuestionHeadMetrics.hideButton))
-                .help("Show the question")
+                .help(showHelp)
                 .accessibilityLabel("Show the question")
         }
         .frame(minHeight: NWQuestionHeadMetrics.height)

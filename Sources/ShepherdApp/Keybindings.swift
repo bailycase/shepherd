@@ -379,6 +379,10 @@ final class KeybindingsStore {
     /// The composer's ↩ (fixed): it sends, or queues or steers per Settings while pi works.
     var sendDisplay: String { KeyChord(key: "return").display }
 
+    /// The question dock's keys (fixed; QuestionStates › Keyboard) as its tooltips spell them:
+    /// ↩ answers, Esc hides or shows it, and 1–9 pick its options.
+    var questionKeys: NWQuestionDockKeys { NWQuestionDockKeys(answer: sendDisplay, hide: "Esc") }
+
     // MARK: Assignment
 
     enum AssignmentError: Error, Equatable, CustomStringConvertible {
