@@ -15,6 +15,10 @@ struct SearchEntry: Identifiable, Equatable {
         case delete(AgentRef)
         case newThread
         case settings
+        /// A host's design (designs track).
+        case openDesign(HostDesignRef)
+        /// New design with the query as its brief (iPhone; MobileSearch).
+        case newDesign(brief: String)
     }
 
     let id: String
@@ -33,7 +37,7 @@ struct SearchEntry: Identifiable, Equatable {
 }
 
 struct SearchEntrySection: Identifiable, Equatable {
-    enum Kind: Hashable { case threads, conversations, actions }
+    enum Kind: Hashable { case threads, designs, conversations, actions }
 
     let kind: Kind
     let title: String
@@ -99,6 +103,9 @@ final class MobileSearchStore {
         var hosts: [SearchHost] = []
         var sessions: [UUID: UUID] = [:]
         var actions: ThreadActions?
+        /// The designs of hosts that serve them (MobileSearch's Designs section).
+        var designs: [RemoteDesignTile] = []
+        var designsServed = false
     }
 
     /// Starts following `hosts`; `thread` is the thread on screen, for the palette's actions.
@@ -231,9 +238,18 @@ final class MobileSearchStore {
             SearchEntrySection(kind: section.kind == .threads ? .threads : .conversations, title: section.title,
                                entries: section.rows.map(Self.entry))
         }
+        let designs = Self.designEntries(inputs.designs, query: query)
+        if !designs.isEmpty {
+            // After the threads whose titles match, before the conversations (MobileSearch).
+            let at = next.firstIndex { $0.kind != .threads } ?? next.count
+            next.insert(SearchEntrySection(kind: .designs, title: "Designs", entries: designs), at: at)
+        }
         if includesActions {
             let actions = Self.actions(inputs.actions, query: query)
             if !actions.isEmpty { next.append(SearchEntrySection(kind: .actions, title: "Actions", entries: actions)) }
+        } else if inputs.designsServed, !isIdle {
+            // The phone's results end in New design with the query as its brief; the iPad palette draws none.
+            next.append(SearchEntrySection(kind: .actions, title: "Actions", entries: [Self.newDesign(query)]))
         }
         let searching: String? = results.progress.isSearching || pauseTask != nil && results.searchesConversations
             ? "Searching conversations" + (results.progress.total > 0 ? " · \(results.progress.searched) of \(results.progress.total)" : "…")
@@ -286,11 +302,15 @@ final class MobileSearchStore {
 
     private static func inputs(_ hosts: MobileHosts, thread: AgentRef?) -> Inputs {
         var inputs = Inputs()
+        let designs = MobileDesigns.of(hosts)
         for host in hosts.hosts {
             let online = host.phase.isConnected
             let searchable = online && host.supports(RemoteProtocol.agentInspectionCapability)
             let spaces = Dictionary(host.state.spaces.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
-            for agent in host.state.agents {
+            // Where a host serves designs, a design's agent is its design's row (Designs), not a thread.
+            let drawn = designs.serving.contains(host.id)
+                ? Set(host.state.designs.filter { !$0.buildsSystem }.map(\.id)) : []
+            for agent in host.state.agents where agent.designID.map({ !drawn.contains($0) }) ?? true {
                 inputs.targets.append(SearchTarget(host: host.id, hostName: host.name, agent: agent.id, title: agent.name,
                                                    status: agent.status, space: spaces[agent.spaceID], online: online,
                                                    searchable: searchable))
@@ -302,6 +322,8 @@ final class MobileSearchStore {
         if let thread, let host = hosts.host(thread.host), let agent = host.agent(thread.agent) {
             inputs.actions = ThreadActions(ref: thread, agent: agent, host: host)
         }
+        inputs.designs = designs.model.tiles
+        inputs.designsServed = designs.model.available
         return inputs
     }
 }
@@ -332,6 +354,35 @@ struct ThreadActions: Equatable {
 }
 
 extension MobileSearchStore {
+    /// The designs whose names match `query`, best first: the nib, the name with the match
+    /// marked, and "acme-web · 4 boards" (MobileSearch).
+    static func designEntries(_ designs: [RemoteDesignTile], query: String) -> [SearchEntry] {
+        let needle = CrossHostSearch.normalized(query)
+        guard !needle.isEmpty else { return [] }
+        var ranked: [(entry: SearchEntry, rank: Int, index: Int)] = []
+        for (index, design) in designs.enumerated() {
+            guard let rank = CrossHostSearch.rank(query: needle, in: design.name) else { continue }
+            let detail = RemoteDesignPresentation.searchDetail(system: design.system, boards: design.boards)
+            let entry = SearchEntry(id: "design:\(design.ref.host.uuidString)/\(design.ref.design.rawValue)", action: .openDesign(design.ref),
+                                    leading: .symbol("pencil.tip"),
+                                    title: CrossHostSearch.segments(design.name, highlighting: needle).map(run),
+                                    detail: [NWHighlightRun(detail)], host: design.hostTag, dimmed: false,
+                                    spoken: "\(design.name), design, \(detail)", thread: nil, snippet: nil)
+            ranked.append((entry, rank, index))
+        }
+        ranked.sort { $0.rank != $1.rank ? $0.rank < $1.rank : $0.index < $1.index }
+        return ranked.map(\.entry)
+    }
+
+    /// New design, "“funnel” as the brief".
+    static func newDesign(_ query: String) -> SearchEntry {
+        let brief = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return SearchEntry(id: "action:New design", action: .newDesign(brief: brief), leading: .symbol("pencil.tip"),
+                           title: [NWHighlightRun("New design")],
+                           detail: RemoteDesignPresentation.briefParts(brief).map { NWHighlightRun($0.text, highlighted: $0.highlighted) },
+                           host: nil, dimmed: false, spoken: "New design, “\(brief)” as the brief", thread: nil, snippet: nil)
+    }
+
     /// The palette's actions, filtered and ranked by `query` (all of them while it is empty).
     static func actions(_ thread: ThreadActions?, query: String) -> [SearchEntry] {
         var all: [(title: String, detail: String?, symbol: String, action: SearchEntry.Action)] = []
