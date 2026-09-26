@@ -497,13 +497,15 @@ struct NWCanvasInput: NSViewRepresentable {
 
         // MARK: Space
 
-        /// Space held over the canvas pans, unless a text field has the keyboard.
+        /// Space held over the canvas pans, unless a text field or a board's page has the keyboard.
         private func startMonitoring() {
             guard keyMonitor == nil else { return }
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
                 guard let self, event.window === self.window, event.charactersIgnoringModifiers == " ",
                       event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting(.capsLock).isEmpty else { return event }
                 if event.window?.firstResponder is NSText { return event }
+                // A presented board's page has the keyboard (a field in a prototype): its space.
+                if let web = NSClassFromString("WKWebView"), event.window?.firstResponder?.isKind(of: web) == true { return event }
                 let inside = self.bounds.contains(self.convert(event.window?.mouseLocationOutsideOfEventStream ?? .zero, from: nil))
                 if event.type == .keyDown {
                     guard inside || self.spaceHeld else { return event }
