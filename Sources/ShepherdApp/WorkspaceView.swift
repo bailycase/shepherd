@@ -470,11 +470,12 @@ struct PaneTreeView: View {
     }
 }
 
-/// Dividers are 1pt `lineSubtle`, tinted `focusDivider` where they border the focused pane.
+/// Dividers between terminals are 1pt `lineStrong` (TerminalPane), tinted `focusDivider` where
+/// they border the focused pane.
 @MainActor
 func paneSeparatorColor(_ split: PaneNode, focused: PaneID?) -> Color {
-    guard let focused, case .split(_, _, let first, let second) = split else { return Color.nw.lineSubtle }
-    return first.contains(focused) || second.contains(focused) ? Color.nw.focusDivider : Color.nw.lineSubtle
+    guard let focused, case .split(_, _, let first, let second) = split else { return Color.nw.lineStrong }
+    return first.contains(focused) || second.contains(focused) ? Color.nw.focusDivider : Color.nw.lineStrong
 }
 
 struct PaneSeparatorView: View {
