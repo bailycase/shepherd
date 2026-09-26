@@ -1303,7 +1303,8 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   bubbles are at most 600pt and agent prose keeps a 640pt measure inside it; there are no speaker
   labels. 28pt top margin, 28pt between turns, 14pt between a turn's parts, 10pt between blocks
   inside one part ("From the queue" above its bubbles), 6pt between
-  one turn's bubbles, and 4pt between consecutive activity lines (the app uses 6pt today).
+  one turn's bubbles, and 6pt between consecutive activity lines (NWThread; ToolRows and Running
+  draw 4pt, see Known gaps).
 - **Following:** the thread follows the tail only while the reader is within 80pt of the bottom
   (`NativeScrollFollower`). Only a live scroll gesture or a wheel tick detaches it; content
   growth, the composer resizing, and history swaps never do. While a gesture is live, layout
@@ -1405,7 +1406,7 @@ the turn has finished, the changes card and the footer end it. A running turn ha
 - **Code blocks** (`HighlightedCodeBlock` on `NWCodeBlock`): `bgSunken`, a 1px `lineSubtle` line,
   radius 8, as wide as the prose measure. A 28pt header (12pt leading, 6pt trailing, a hairline
   beneath) holds the language (or "code") in mono 10.5 tertiary and a 22pt copy button (`doc.on.doc`
-  in `textSecondary`; the app draws `square.on.square`, see Known gaps) that appears on hover or
+  in `textSecondary`) that appears on hover or
   keyboard focus and turns into a check with a pop for 1.5s after a copy. Code in mono 12 at 1.6
   with 10×12 padding, in the Syntax roles (`synKeyword`, `synType`, `synString`, `synComment`, …),
   scrolling sideways only when its longest line does not fit, never wrapped. Tree-sitter colors it
@@ -1529,7 +1530,7 @@ tools merge only with the same tool. Consecutive lines form one part of the turn
   | --- | --- | --- | --- |
   | Explore (read, grep, find, glob, ls) | `magnifyingglass` | "Explored 7 files" · "read 5 · search 2 · 0.9s" | "Reading", "Searching", "Listing" |
   | Edit (edit, write) | `pencil` | "Edited 4 files" · "+149 −63" | "Editing", "Writing" |
-  | Run (bash) | `terminal` (the app draws `apple.terminal`; Known gaps) | "Ran tests and a build" · "17 passed · build ok · 1m 02s"; "Committed" · "3 files changed" (Running); "Committed and pushed"; "Ran 2 commands" | "Running tests", "Building", "Committing", "Pushing", "Running" |
+  | Run (bash) | `terminal` | "Ran tests and a build" · "17 passed · build ok · 1m 02s"; "Committed" · "3 files changed" (Running); "Committed and pushed"; "Ran 2 commands" | "Running tests", "Building", "Committing", "Pushing", "Running" |
   | Subagents (spawns without a card) | `arrow.triangle.branch` | "Started 2 subagents" · "reviewer · tests" | "Starting a subagent" |
   | Other | `wrench.adjustable` | "Used <tool>" or "Used <tool> n times" | "Running <tool>" |
 
@@ -4310,12 +4311,6 @@ it. A sentence elsewhere that states a board's value and adds what the app does 
 uses 6pt today"), or a paragraph marked **Not built yet**, is a gap in its own right; the list
 below collects the rest, and the places those sentences point here.
 
-- **Foundations** (NWFoundations against ShepherdUI):
-  - Section labels track 5% (`nwSectionLabel()`, `Tokens/Typography.swift`); the board's is 6%.
-  - The small wordmark tracks −3% (`NWWordmark`, `Components/Status/Wordmark.swift`); the
-    board's is −2% (−3% is the large one's).
-  - Copy draws `square.on.square` (`NWCopyGlyph`, `Components/Thread/Messages.swift`: code blocks
-    and the turn footer); the board's is `doc.on.doc`, which the iOS menus use.
 - **Controls:** sheets draw Cancel as `secondary` (`DialogSheet.swift`, and each creation sheet),
   where the board's is `ghost`. `dangerFill` lifts on hover like `primary` (`Buttons.swift`); the
   board's stays put. Primary's and dangerFill's hover and pressed fills are 12% and 10% mixes toward
@@ -4349,8 +4344,6 @@ below collects the rest, and the places those sentences point here.
 - **Thread and terminal** (NWThread, TerminalSplit, TerminalPane against the app):
   - Consecutive activity lines sit 6pt apart (`AppLayout.activitySpacing`), as NWThread draws
     them; ToolRows and Running draw 4pt.
-  - A Run (bash) activity line draws `apple.terminal` (`Components/Thread/Activity.swift`); the
-    board's symbol is `terminal`.
   - The terminal's cursor is `lantern` and its selection `running` at 18% dark and 28% light
     (`NightWatch.swift`); the boards draw a `textPrimary` block cursor and a 13% selection. The
     terminal font defaults to SF Mono 12.5 (`AppSettings`); the boards set Geist Mono 12 at 1.6.

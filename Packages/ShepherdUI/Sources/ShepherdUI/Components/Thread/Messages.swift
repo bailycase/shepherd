@@ -234,7 +234,7 @@ struct NWFenceKind: Equatable {
     }
 }
 
-/// A copy button's glyph (code blocks, the turn footer): two squares that turn into a check
+/// A copy button's glyph (code blocks, the turn footer): `doc.on.doc`, turning into a check
 /// for a moment after each copy, replacing the symbol and popping.
 struct NWCopyGlyph: View {
     let copied: Bool
@@ -242,7 +242,7 @@ struct NWCopyGlyph: View {
     let copies: Int
 
     var body: some View {
-        Image(systemName: copied ? "checkmark" : "square.on.square").font(.system(size: 12))
+        Image(systemName: copied ? "checkmark" : "doc.on.doc").font(.system(size: 12))
             .nwContentTransition(.symbol)
             .nwAnimation(.content, value: copied)
             .nwPop(trigger: copies)
