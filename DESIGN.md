@@ -136,7 +136,7 @@ And the rules that follow from them:
 | Queue & steer: a row's actions take room only while it is hovered | An 82pt slot is always laid out, empty at rest | Details on hover: hovering never re-truncates the text |
 | Queue & steer: message times at rest | On hover (Details on hover) | The thread's rule |
 | Queue & steer: the queue's keys are "shown in menus and tooltips only" | Also listed under Settings ▸ Keyboard ▸ While the agent is working, in the Keyboard card's order | Settings ▸ Keyboard lists every chord the app answers, and ⌘↩ is rebound there; nothing is written in or under the composer |
-| Background events as in-app toasts (`.nwToast`) | A system notification when an agent finishes a turn, fails one, or is blocked on a question, or one of its subagents asks, while you aren't watching it (`AgentNotifications`; see Notifications and Live Activities) | Reaches you outside the app |
+| Background events as in-app toasts (`.nwToast`) | A system notification when a thread finishes a turn, fails one, or asks a question, or one of its subagents asks, or a connected host goes away, while you aren't watching it (`AgentNotifications`; see Notifications and Live Activities) | Reaches you outside the app |
 | Missions: the Missions page, the mission map, evidence review | Not built; specified in full under Missions, each part marked Not built yet | Out of scope for this pass |
 | NWAgents, NWSwift: `NWInboxItem`, mission control's inbox item with a leading rule in the state's color | Not built. The Mac has no inbox: its Needs you is the sidebar's list (Sidebar); iPhone and iPad list Needs you as `NWAttentionCard`s (MobileInbox, iPadInbox), with no leading rule and no missions | Out of scope for this pass |
 | Controls: `.nwHelp` draws a 24pt popover-styled tip after 600ms of hover, the chord as keycaps | The system tooltip, with the chord appended as text ("Review changes  ⇧⌘B") | As every other tooltip in the app (see the Queue & steer row) |
@@ -4359,10 +4359,6 @@ below collects the rest, and the places those sentences point here.
   `NewThreadPage.swift`):
   - The New thread composer has no "/ commands" chip, and its placeholder drops ", or / for
     commands": no pi runs before the thread exists to list its commands.
-- **A pi dialog posts no notification** (Notifications and Live Activities › The catalog):
-  a confirm, select, input or editor dialog shows in the thread, but only a tool named like
-  `ask` or `question` sets `blocked`, so any other question reaches no one outside the window
-  (`Extensions/shepherd-status.ts`, `AgentNotifications.agentStatusChanged`).
 - **iOS** (the phone and iPad boards against `App/iOS` and ShepherdUI's Fleet parts):
   - List heads (`NWListHeader`) are `.caption` semibold in `textTertiary`; the boards' are 13/600
     in `textSecondary` on iPhone and 13/500 on iPad. Two-line rows are 56pt everywhere
@@ -6008,8 +6004,9 @@ NotifPhoneReply, NotifPhoneReview, NotifPhoneSummary, NotifSettings, NotifiPadBa
 NotifiPadCenter, NotifMac) and the lock-screen boards (MobileLock, MobileAnswer, MobileLiveLock,
 MobileIsland, iPadLock).
 
-**What is built:** only the Mac's banners for its own agents (`AgentNotifications`, worded by
-`AgentBanners`; On the Mac today, below). The iOS client posts no notifications and has no Live
+**What is built:** only the Mac's notifications, for its own agents and every connected host's
+(`AgentNotifications`, worded by `AgentBanners`, posted by `ShepherdViewModel+Notifications.swift`;
+On the Mac today, below). The iOS client posts no notifications and has no Live
 Activities or widgets: it drops every host's connection in the background, and a push needs a relay
 that doesn't exist yet ([docs/ios](docs/ios/README.md) › Not in the first release). On iPhone and
 iPad, Home's Needs you inbox stands in: questions and blocked threads across hosts, answered in
@@ -6057,11 +6054,12 @@ draws emphasis (a Live Activity, the iPad boards' buttons); Finished work's acti
 - **Which setting covers a kind** (NotifSettings › Send me): Questions and approvals (planner,
   subagent and automation questions, plans, reviews), Blocked work (stuck lanes, empty budgets),
   Failures (failed turns, failed automations, hosts going offline), Finished work.
-- **Built:** on the Mac, and only partly, Subagent question, Turn failed and Turn finished, plus a
-  blocked agent's question (see On the Mac today). An automation's run is an ordinary agent wearing
-  the automation's name, so its question, failure and finish post as that agent's. Nothing else in
-  the table exists yet: Missions, plan approval, budgets, Designs, and host notifications are not
-  built.
+- **Built:** on the Mac, Subagent question, Automation question, Turn failed, Turn finished and Host
+  offline, plus a thread's own question (any pi dialog: "Question"), each as this table words it
+  (see On the Mac today). An automation's run is an ordinary agent wearing the automation's name,
+  so its question asks as Automation question, and its failure and finish post as that agent's
+  (Automation failed and Automation passed have no kind of their own yet). Nothing else in the
+  table exists yet: Missions, plan approval, budgets and Designs are not built.
 
 ### Rules for sending
 
@@ -6084,14 +6082,15 @@ As the board lists them (NotifCatalog › Rules):
    stack.
 7. **Never a permission prompt.** No notification asks to allow a command or a tool. They carry
    decisions about the work, not about the agent's access (Principles › No permission model).
-   **Built:** the Mac's banners carry status and questions only.
+   **Built:** the Mac's notifications carry turns, questions and hosts only.
 8. **Approving code needs Face ID.** An action that merges or pushes is `.authenticationRequired`,
    so a locked phone can't start a merge train. NotifPhoneReview asks for Face ID even on an
    unlocked phone; `.authenticationRequired` alone asks only for an unlocked device, so that needs
    Shepherd's own Face ID check before it acts.
 9. **Quiet while you watch.** No notification for a thread that's open on screen; its Live Activity,
-   or the view itself, already shows it. **Built on the Mac:** a status or subagent banner is
-   skipped while its agent is selected and Shepherd is frontmost.
+   or the view itself, already shows it. **Built on the Mac:** nothing posts about a thread while
+   it is selected and Shepherd is frontmost (a remote thread too), nor about a host whose thread is
+   on screen; a question seen that way does not post later either.
 
 ### Anatomy
 
@@ -6109,8 +6108,9 @@ A notification, top to bottom (NotifCatalog › Anatomy; NotifPhoneBanner):
 
 **A tap opens the thing it names,** straight to what asked, even from a cold launch: the mission (at
 the station that asked, MXNav), the thread at its question, the automation's run, the review, the
-boards. **Built on the Mac:** a click brings Shepherd forward and selects the agent, and a click
-that launches Shepherd still lands; a banner whose agent is gone only brings Shepherd forward.
+boards. **Built on the Mac:** a click brings Shepherd forward and selects the thread (a remote one
+too), and a click that launches Shepherd still lands; a host's opens the Hosts page; a banner whose
+thread is gone only brings Shepherd forward.
 
 Words follow the boards: sentence case, the thing's own name, " · " between parts, figures as digits
 ("3 tries", "4 PRs", "10 of 10 passed"), durations as the app writes them ("2h58", "1h38").
@@ -6229,61 +6229,75 @@ icon (radius 6) beside the title (14pt semibold) and its meta (a mono 10pt "TIME
 
 ### On the Mac today
 
-`AgentNotifications` posts, and `AgentBanners` words, a banner for this Mac's own agents
-(`Tests/ShepherdAppUnitTests/AgentBannersTests.swift` pins the rules):
+`AgentNotifications` posts, and `AgentBanners` words, a notification for this Mac's agents and for
+every connected host's (`ShepherdViewModel+Notifications.swift` decides when;
+`Tests/ShepherdAppUnitTests/AgentBannersTests.swift` pins the words and the rules):
 
-| Moment | Title | Body | Sound |
-| --- | --- | --- | --- |
-| A turn finished | the agent | "Agent finished" | no |
-| A turn failed | the agent | "Turn failed", then the error's first line | yes |
-| The agent is blocked on a question (a tool named like `ask` or `question` sets `blocked`) | the agent | "Agent needs your input" | yes |
-| A subagent asks a question | the agent | "Subagent *label* needs your input", then the question's first line | yes |
-| The agent's `notify` tool | the tool's title | the agent's name, then the tool's body | yes |
+| Moment | Title | Subtitle | Body | Actions | Level |
+| --- | --- | --- | --- | --- | --- |
+| A turn finished | the thread | Turn finished | the first line of the agent's closing reply, its Markdown dropped ("Done. 3 files changed, tests pass."), or "Finished its turn." | Review | Passive, no sound |
+| A turn failed | the thread | Turn failed | the error's first line, or "The model request failed." | Retry, Open | Active |
+| The thread asks (any pi dialog: confirm, select, input, editor) | the thread | Question, or Automation question for an automation's run | the question | the dock's choices: each option (Yes and No for a confirm), and Reply… for an input or editor | Active |
+| An asking tool waits and no question follows within 2s | the thread | Question | "Waiting on your answer." | none: a click opens it | Active |
+| A subagent asks | "*thread* · *subagent*" | Subagent question | the question | each option it offered, then Reply… ("Reply to *subagent*…") | Active |
+| A connected host goes away (Shepherd retries it) | "*host* is offline" | Host | "Remote agents resume when it’s back." | Retry | Active |
+| The agent's `notify` tool | the tool's title | none | the agent's name, then the tool's body | none | Active |
 
-- **When:** a status banner posts only when a turn ends (working to done) or the agent becomes
-  blocked (working to blocked); idle churn from a launch or a session restart posts nothing. Nothing
-  posts while you watch that agent (it is selected and Shepherd is frontmost), except the `notify`
-  tool, which always posts because the agent asked.
-- **Quotes:** an error or question is cut to its first line, at most 200 characters, ending in "…"
-  when cut.
-- **Replacing:** an agent's own banners replace each other (one per agent). Each subagent's question
-  has its own, posted once per question however often its extension republishes, and again only when
-  the question changes. Every `notify` is its own.
-- **Clicking** brings Shepherd forward and selects the agent (see Anatomy). Banners from the
+- **Every host's threads:** a remote thread's questions and its subagents' post as this Mac's do,
+  and a host that drops while connected posts Host offline once (NotifMac). A remote turn's end
+  posts nothing yet (see below).
+- **When:** a turn's banner posts only when a turn ends (working to done); idle churn from a launch
+  or a session restart posts nothing. A question posts when the thread starts asking it (the host's
+  `waitingOn`, so any dialog, not only a tool named like `ask`). Nothing posts about a thread while
+  you watch it, except the `notify` tool, which always posts because the agent asked.
+- **Actions** (the catalog's categories, one per set of actions; macOS shows the first as the
+  banner's button and the rest under **Options**): Retry sends the prompt that opened the failed
+  turn again, once the agent is idle; Review selects the thread and opens its Changes; Retry on a
+  host reconnects at once; an option answers pi's dialog or steers the subagent that asked with the
+  option, and Reply… opens a field whose **Send** does the same with the words typed. Answering and
+  retrying never bring Shepherd forward; Open and Review do. A question answered meanwhile takes
+  nothing. Glyphs follow the boards: `arrow.clockwise` on Retry, `text.bubble` on Reply…,
+  `chevron.right` on Open.
+- **Grouped by the thing:** every banner carries its thread's `threadIdentifier` (a remote thread's
+  names its host too; a host's is its own), so macOS stacks a thread's banners together.
+- **Quotes:** an error, question or result is cut to its first line, at most 200 characters, ending
+  in "…" when cut.
+- **Replacing and removing:** a thread's turn banners replace each other, and so do its questions;
+  each subagent's question has its own, posted once per question however often its extension
+  republishes, and again only when the question changes. A question's banner comes down once it is
+  answered (anywhere: here, in the thread, or on another device), a host's once it is back, and a
+  deleted thread's with it. Every `notify` is its own.
+- **Clicking** brings Shepherd forward and selects the thread (see Anatomy). Banners from the
   previous run are removed at launch, because their sessions died with it.
-- **Frontmost:** banners show while Shepherd is in front, for the agents you aren't watching.
+- **Frontmost:** banners show while Shepherd is in front, for the threads you aren't watching.
 - **Permission** is asked the first time Shepherd has something to post (alerts and sound), never at
   launch. Notifications are turned on and off in System Settings ▸ Notifications; Shepherd has no
   toggle of its own. Only the `notify` tool has a switch: Settings ▸ Pi's bundled panes extension
   ("…manage automations and send notifications") carries it.
-- **Not yet as the catalog says:** no subtitle and fixed phrases instead of the kind and a
-  one-sentence result; no actions, Reply… or Review; no `threadIdentifier` (macOS stacks every
-  banner under Shepherd); no interruption levels; a subagent's title is its agent's name rather than
-  "*thread* · *subagent*"; an answered question's banner stays until it is replaced or Shepherd
-  relaunches; a pi dialog (confirm, select, input, editor) that doesn't set `blocked` posts nothing;
-  a remote host's agents and a lost host post nothing.
+- **Not yet as the catalog says:** a remote thread's turn finishing or failing posts nothing (the
+  host's state doesn't say whether a turn failed, so its end can't be worded); Automation failed and
+  Automation passed post as the run's Turn failed and Turn finished; and the NotifMac items under Mac,
+  below.
 
 ### Mac
 
-**Not built yet** (NotifMac): the Mac follows the catalog with the Mac's own notification styles.
+NotifMac: the Mac follows the catalog with the Mac's own notification styles. Built as On the Mac
+today describes: questions take a typed answer inline (Reply… with **Send**, to whoever asked),
+finished work is Passive with **Review**, the first action is the banner's button and **Options**
+holds the rest, banners stack by thread, and every host's threads notify here. **Not built yet:**
 
-- **Anything that needs you is an alert,** so it stays until you act. The first action is its button
-  ("Retry with hint"), and **Options** holds the rest of the choices ("Replan the lane", "Take over
-  in a thread", "Open mission", "Mute this mission"). A stuck lane shows "TIME SENSITIVE".
-- **Questions take a typed answer inline:** a Planner question opens a reply field with **Send**,
-  and the answer goes to whoever asked.
-- **Finished work is a banner** and leaves on its own: Turn finished ("Done. 3 files changed, tests
-  pass.") with **Review**.
+- **Anything that needs you is an alert,** so it stays until you act, and finished work a banner
+  that leaves on its own. macOS sets alert or banner style per app, in System Settings, not per
+  notification, so this needs a decision before it is built.
 - **Stacks:** the board draws the rest collapsed as "2 more from Shepherd · Merge PR #24 after CI,
-  Nightly migrations"; the catalog's rule (grouped by the thing, not the app) is the rule.
-- **Every host's threads:** the board's sidebar holds another Mac's threads ("horizon"), and the
-  catalog's Turn failed example ("Fix remote nightly") is one of them, so a remote host's work
-  notifies on this Mac as its own does.
+  Nightly migrations"; the catalog's rule (grouped by the thing, not the app) is the rule, and the
+  system draws the stack.
+- A stuck lane's "TIME SENSITIVE", its Retry with hint and the rest of its Options ("Replan the
+  lane", "Take over in a thread", "Open mission", "Mute this mission"), and a Planner question:
+  Missions are not built. Time Sensitive also needs the Time Sensitive Notifications entitlement,
+  on the Mac as on iPhone.
 - **Mute** from Options ("Mute this mission"), and from a thread's or mission's ••• menu (Settings,
   below).
-- **Platform limits:** macOS sets alert or banner style per app, in System Settings, not per
-  notification, so "alerts for Needs you, banners for finished work" needs a decision before it is
-  built. Time Sensitive needs the Time Sensitive Notifications entitlement, on the Mac as on iPhone.
 - The board's backdrop (Missions, Designs, a Needs you section and Recents in the sidebar) is the
   Missions and Design tool boards', not the Mac's sidebar (Sidebar).
 
