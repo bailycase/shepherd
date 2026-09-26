@@ -1,3 +1,4 @@
+import QuartzCore
 import SwiftUI
 import Testing
 @testable import ShepherdUI
@@ -12,14 +13,14 @@ struct MotionTests {
         (Motion.hover, 0.12), (.content, 0.12),
         (.disclosure, 0.18), (.list, 0.18), (.pane, 0.18), (.overlay, 0.18),
         (.sheet, 0.24), (.emphasis, 0.24), (.scroll, 0.24),
-        (.glow, 1.6), (.spin, 1), (.shimmer, 1.4),
+        (.glow, 1.6), (.spin, 1), (.shimmer, 1.8), (.pulse, 1.4),
     ])
     func everyMotionIsAnchoredToABoardDuration(_ motion: Motion, duration: TimeInterval) {
         #expect(motion.duration == duration)
     }
 
-    @Test func onlyTheGlowTheSpinnerAndTheShimmerLoop() {
-        #expect(Motion.allCases.filter(\.isContinuous) == [.glow, .spin, .shimmer])
+    @Test func onlyTheGlowTheSpinnerTheShimmerAndThePulseLoop() {
+        #expect(Motion.allCases.filter(\.isContinuous) == [.glow, .spin, .shimmer, .pulse])
         #expect(Motion.allCases.filter(\.isContinuous).allSatisfy { $0.spring == nil })
     }
 
@@ -69,7 +70,7 @@ struct MotionTests {
         (Motion.hover, Motion.hover.animation(reduceMotion: false)), (.content, Motion.content.animation(reduceMotion: false)),
         (.disclosure, Motion.crossFade), (.list, Motion.crossFade), (.pane, Motion.crossFade),
         (.overlay, Motion.crossFade), (.sheet, Motion.crossFade),
-        (.emphasis, nil), (.scroll, nil), (.glow, nil), (.spin, nil), (.shimmer, nil),
+        (.emphasis, nil), (.scroll, nil), (.glow, nil), (.spin, nil), (.shimmer, nil), (.pulse, nil),
     ])
     func reduceMotionKeepsFadesAndDropsMovement(_ motion: Motion, animation: Animation?) {
         #expect(motion.animation(reduceMotion: true) == animation)
@@ -86,6 +87,7 @@ struct MotionTests {
         (.overlay, nil, .grow(.top)), (.overlay, .bottom, .grow(.bottom)),
         (.emphasis, nil, .pop), (.hover, nil, .fade), (.content, .leading, .fade),
         (.scroll, nil, .identity), (.glow, nil, .identity), (.spin, nil, .identity), (.shimmer, nil, .identity),
+        (.pulse, nil, .identity),
     ] as [(Motion, Edge?, Motion.TransitionStyle)])
     func transitionsComeFromTheirEdges(_ motion: Motion, edge: Edge?, style: Motion.TransitionStyle) {
         #expect(motion.transitionStyle(reduceMotion: false, edge: edge) == style)
@@ -152,9 +154,30 @@ struct MotionTests {
         #expect(abs(NWPhase.spinnerLineWidth(size: size) - width) < 1e-6)
     }
 
-    @Test func theShimmerPulsesBetweenDimAndFull() {
+    @Test func thePulseRisesFromDimToFullAndBack() {
         let start = Date(timeIntervalSinceReferenceDate: 0)
-        #expect(abs(NWPhase.shimmerOpacity(start) - 0.55) < 1e-9)
-        #expect(abs(NWPhase.shimmerOpacity(start.addingTimeInterval(0.7)) - 1) < 1e-9)
+        #expect(abs(NWPhase.pulseOpacity(start) - 0.55) < 1e-9)
+        #expect(abs(NWPhase.pulseOpacity(start.addingTimeInterval(0.7)) - 1) < 1e-9)
+    }
+
+    /// NWFoundations: the shimmer is 1.8s linear, live text only. The highlight moves from
+    /// before the text to past it at a constant pace, so each pass starts and ends on plain
+    /// tertiary text and the loop has no seam.
+    @Test func theShimmersHighlightCrossesItsTextAtAConstantPace() {
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        #expect(Motion.shimmer.animation(reduceMotion: false) == .linear(duration: 1.8).repeatForever(autoreverses: false))
+        #expect(NWPhase.shimmerCenter(start) == NWPhase.shimmerStart)
+        #expect(abs(NWPhase.shimmerCenter(start.addingTimeInterval(0.9)) - 0.5) < 1e-9)
+        let first = NWPhase.shimmerPoints(center: NWPhase.shimmerStart), last = NWPhase.shimmerPoints(center: NWPhase.shimmerEnd)
+        #expect(first.end.x <= 0 && last.start.x >= 1, "the text is outside the band at both ends of a pass")
+    }
+
+    @Test func theShimmersBandSlidesOnTheRenderServerInStepWithTheClock() throws {
+        let now = Date(timeIntervalSinceReferenceDate: 0.45)
+        let group = NWLayerMotion.shimmer(now: now)
+        #expect(group.duration == Motion.shimmer.duration && group.repeatCount == .infinity)
+        #expect(abs(group.timeOffset - 0.45) < 1e-9)
+        let keyPaths = (group.animations ?? []).compactMap { ($0 as? CABasicAnimation)?.keyPath }
+        #expect(keyPaths == ["startPoint", "endPoint"])
     }
 }

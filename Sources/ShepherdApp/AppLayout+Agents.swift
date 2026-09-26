@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// Subagent surfaces: the cards' stack in the thread and the inspector in the right pane. The
-/// cards, strip, ledger, and inspector parts carry their own dimensions (ShepherdUI, Agents).
+/// Subagent surfaces: the tray above the composer and the inspector in the right pane. The
+/// tray's rows and the inspector's parts carry their own dimensions (ShepherdUI, Agents).
 extension AppLayout {
-    /// Between sibling cards, and between the strip and the cards under it.
-    static let subagentStackSpacing: CGFloat = 8
+    /// Rows an open tray shows before it scrolls inside, so it never takes the thread's room.
+    static let trayExpandedMaxRows = 8
 
     // Inspector
     static let inspectorPadding: CGFloat = 14

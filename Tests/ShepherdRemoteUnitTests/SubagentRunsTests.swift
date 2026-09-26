@@ -84,28 +84,42 @@ struct SubagentRunsTests {
         #expect(summary.question == "Which base?")
     }
 
-    @Test func theCallInFlightIsTheCardsLineAndTheTranscriptsTail() {
+    @Test func theCallInFlightIsTheCardsLineAndTheTranscriptsLiveLine() throws {
         var run = Self.run("w", role: "worker")
         run.currentTool = "bash"
-        run.lastActivity = ChildActivity(kind: ChildActivity.runningKind, tool: "bash", preview: "sleep 25", at: Self.start)
-        #expect(nativeRunSummary(run).detail == "bash sleep 25")
-        #expect(nativeRunWorking(run) == "Running bash sleep 25…")
+        run.lastActivity = ChildActivity(kind: ChildActivity.runningKind, tool: "bash", preview: "swift build --target ShepherdRemote", at: Self.start)
+        #expect(nativeRunSummary(run).detail == "bash swift build --target ShepherdRemote")
+        let burst = try #require(nativeRunLive(run), "no live line")
+        #expect(burst.state == .running && burst.label == "Building" && burst.meta == "swift build --target ShepherdRemote")
+        #expect(burst.startedAt == Self.start && burst.tail.isEmpty, "timed from the call's start; a transcript has no output to tail")
     }
 
-    /// A finished call never names the one running now: an older host reports finished calls only.
+    /// LiveText: one thing moves at the end of a live run's transcript, and only a call in
+    /// flight: between calls nothing shows (no "Thinking…" there). A finished call never names
+    /// the one running now (an older host reports finished calls only), and waiting (a question,
+    /// a pause with nothing left to finish) is not working.
     @Test(arguments: [
-        (nil, nil, nil, "Thinking…"),
-        (true, "bash", ChildActivity(kind: ChildActivity.runningKind, tool: "bash", preview: "sleep 25", at: 1), "Pause requested"),
-        (nil, "bash", ChildActivity(tool: "bash", preview: "swift build", at: 1), "Running bash…"),
-        (nil, "bash", nil, "Running bash…"),
-        (nil, "edit", ChildActivity(kind: ChildActivity.runningKind, tool: "read", preview: "A.swift", at: 1), "Running edit…"),
-        (nil, "edit", ChildActivity(kind: ChildActivity.runningKind, tool: "edit", preview: "Sources/App/ThreadView.swift", at: 1), "Running edit ThreadView.swift…"),
-    ] as [(Bool?, String?, ChildActivity?, String)])
-    func aLiveRunsTailNamesOnlyTheCallInFlight(paused: Bool?, tool: String?, activity: ChildActivity?, line: String) {
+        (nil, false, nil, nil, "none"),
+        (true, false, nil, nil, "none"),
+        (nil, true, nil, nil, "none"),
+        (true, false, "bash", ChildActivity(kind: ChildActivity.runningKind, tool: "bash", preview: "sleep 25", at: 1), "Running · sleep 25"),
+        (nil, false, "bash", ChildActivity(tool: "bash", preview: "swift build", at: 1), "Running"),
+        (nil, false, "edit", ChildActivity(kind: ChildActivity.runningKind, tool: "read", preview: "A.swift", at: 1), "Editing"),
+        (nil, false, "edit", ChildActivity(kind: ChildActivity.runningKind, tool: "edit", preview: "Sources/App/ThreadView.swift", at: 1),
+         "Editing · Sources/App/ThreadView.swift"),
+        (nil, false, "grep", ChildActivity(kind: ChildActivity.runningKind, tool: "grep", preview: "Sources", at: 1), "Searching · Sources"),
+    ] as [(Bool?, Bool, String?, ChildActivity?, String)])
+    func aLiveRunsTailIsOnlyTheCallInFlight(paused: Bool?, asking: Bool, tool: String?, activity: ChildActivity?, tail: String) {
         var run = Self.run("w", paused: paused)
+        run.needsAttention = asking
         run.currentTool = tool
         run.lastActivity = activity
-        #expect(nativeRunWorking(run) == line)
+        let described = nativeRunLive(run).map { burst in [burst.label, burst.meta].filter { !$0.isEmpty }.joined(separator: " · ") } ?? "none"
+        #expect(described == tail)
+    }
+
+    @Test func anEndedRunHasNoLiveTail() {
+        #expect(nativeRunLive(Self.run("t", state: "complete")) == nil)
     }
 
     @Test func aFinishedRunShowsItsFirstSentenceDiffAndMeta() {
@@ -184,13 +198,6 @@ struct SubagentRunsTests {
         #expect(mixed?.text == "1 done · 1 failed")
         #expect(mixed?.phase == .failed)
         #expect(nativeRunTally([]) == nil)
-    }
-
-    @Test func theWaitingLineNamesTheLiveRuns() {
-        #expect(nativeRunWaitingLabel([Self.run("worker", startedAt: 1), Self.run("reviewer", startedAt: 2, needsAttention: true),
-                                       Self.run("tests", state: "complete")]) == "Waiting on worker and reviewer")
-        #expect(nativeRunWaitingLabel((1...4).map { Self.run("lane\($0)") }) == "Waiting on 4 subagents")
-        #expect(nativeRunWaitingLabel([Self.run("tests", state: "complete")]) == nil)
     }
 
     @Test func aFinishedGroupStatusSpansFirstStartToLastEnd() {

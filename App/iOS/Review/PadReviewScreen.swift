@@ -75,6 +75,7 @@ private struct PadReviewPane: View {
                     }
                 }
                 .scrollDismissesKeyboard(.interactively)
+                .task(id: ReviewColorsKey(file: file.id, version: store.filesVersion)) { await store.highlight(file.id) }
             } else {
                 ScrollView { ReviewLoadState(store: store) { Task { await store.load(hosts: hosts) } }.padding(MobileLayout.gutter) }
             }
@@ -256,6 +257,7 @@ private struct PadFullReview: View {
                         }
                     }
                     .scrollDismissesKeyboard(.interactively)
+                    .task(id: ReviewColorsKey(file: file.id, version: store.filesVersion)) { await store.highlight(file.id) }
                 } else {
                     ScrollView { ReviewLoadState(store: store) { Task { await store.load(hosts: hosts) } }.padding(MobileLayout.gutter) }
                 }

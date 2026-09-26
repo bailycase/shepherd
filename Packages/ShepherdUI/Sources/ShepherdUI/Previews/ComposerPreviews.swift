@@ -97,9 +97,21 @@ private struct NWPreviewComposerControls: View {
 #Preview("Send menu") {
     NWPreviewBoth {
         NWSendMenu(options: [
-            NWSendOption(id: "queue", title: "Queue", detail: "Goes when pi finishes this turn.", glyph: .queue, shortcut: "↩"),
-            NWSendOption(id: "steer", title: "Steer now", detail: "Lands once pi’s current tool calls finish, before its next step.",
+            NWSendOption(id: "queue", title: "Queue", detail: "Goes when the agent finishes this turn.", glyph: .queue, shortcut: "↩"),
+            NWSendOption(id: "steer", title: "Steer now", detail: "Lands once the agent’s current tool calls finish, before its next step.",
                          glyph: .symbol("arrow.turn.down.right"), shortcut: "⌘↩"),
         ], onChoose: { _ in }, onClose: {})
+    }
+}
+
+#Preview("Question head") {
+    NWPreviewBoth {
+        VStack(alignment: .leading, spacing: NW.Space.xl) {
+            NWQuestionHead(.agent) {}
+            NWQuestionHead(.agent, count: 2) {}
+            NWQuestionHead(.subagent("reviewer")) {}
+            NWQuestionHiddenLine(.agent, question: "How should I handle Horizon’s uncommitted edits?") {}
+        }
+        .frame(width: 600)
     }
 }

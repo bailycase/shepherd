@@ -6,10 +6,9 @@ import ShepherdUI
 /// The active theme variant: a theme definition plus the light/dark side currently in effect.
 /// App chrome never reads this for colors (views use `Color.nw`, which follows each view's own
 /// appearance); it drives what cannot follow appearance on its own — Ghostty surfaces and the
-/// pi theme file for a pi run by hand in a shell.
+/// variant marker for external editors.
 struct ShepherdTheme: Identifiable, Equatable {
     typealias Terminal = TerminalColors
-    typealias PiColors = ShepherdUI.PiColors
 
     let definition: ThemeDefinition
     let isDark: Bool
@@ -20,7 +19,6 @@ struct ShepherdTheme: Identifiable, Equatable {
     var name: String { "\(definition.name) \(isDark ? "Dark" : "Light")" }
     var variant: ThemeVariant { definition.variant(dark: isDark) }
     var terminal: TerminalColors { variant.terminal }
-    var pi: PiColors { variant.pi }
 
     static let nightWatchDark = ShepherdTheme(definition: .nightWatch, isDark: true)
     static let nightWatchLight = ShepherdTheme(definition: .nightWatch, isDark: false)

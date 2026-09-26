@@ -196,15 +196,23 @@ public func nativeRunActivity(_ run: ChildRun) -> String {
     return run.currentTool ?? "working"
 }
 
-/// A live run's last line in its transcript: "Pause requested", the call in flight with its
-/// command or file ("Running bash swift test…"), else "Thinking…".
-public func nativeRunWorking(_ run: ChildRun) -> String {
-    if run.paused == true { return "Pause requested" }
-    guard let tool = run.currentTool else { return "Thinking…" }
-    guard let call = run.lastActivity, call.isRunning, call.tool == tool, let preview = call.preview, !preview.isEmpty else {
-        return "Running \(tool)…"
-    }
-    return "Running \(tool) \(nativeRunFileName(preview))…"
+/// A live run's call in flight, the line that ends its transcript (LiveText, Subagents). A
+/// transcript reads the child's session file, which holds only finished calls, so the call is
+/// built from what the run reports: its tool, and the command or path of its running
+/// `lastActivity` (an older host reports only the tool), timed from when it began. It has no
+/// output to tail. nil between calls (a transcript shows no "Thinking…"), while the run asks,
+/// and once it has ended.
+public func nativeRunLive(_ run: ChildRun) -> NativeActivityBurst? {
+    guard !run.isTerminal, !run.needsAttention, let tool = run.currentTool else { return nil }
+    let activity = run.lastActivity.flatMap { $0.isRunning && $0.tool == tool ? $0 : nil }
+    let preview = activity?.preview.flatMap { $0.isEmpty ? nil : $0 }
+    let key = ["bash", "powershell"].contains(tool) ? "command" : "path"
+    let arguments = preview.flatMap { try? JSONSerialization.data(withJSONObject: [key: $0]) }.map { String(decoding: $0, as: UTF8.self) }
+    var call = NativeActivityCall(NativeThreadMessage(
+        entryID: "live:" + run.id, role: "toolResult", blocks: [], toolName: tool, toolCallID: "live:" + run.id,
+        argumentsText: arguments, status: "running", startedAt: activity?.at))
+    if call.detail.isEmpty, let preview { call.detail = preview }
+    return nativeActivityBurst([call])
 }
 
 /// A native child asks through `shepherd_parent_message`, so that call's time is when it began
@@ -300,14 +308,6 @@ public func nativeRunTally(_ runs: [ChildRun]) -> (text: String, phase: NativeRu
     let text = !live && !phases.contains(.failed) ? "all done" : parts.joined(separator: " · ")
     let lead = [NativeRunPhase.running, .needsYou, .queued, .paused, .failed].first(where: phases.contains) ?? .done
     return (text, lead)
-}
-
-/// "Waiting on worker and reviewer": the live runs the turn waits for; nil when none is live.
-public func nativeRunWaitingLabel(_ runs: [ChildRun]) -> String? {
-    let live = runs.filter { !$0.isTerminal || $0.needsAttention }.sorted { ($0.startedAt ?? 0) < ($1.startedAt ?? 0) }
-    guard !live.isEmpty else { return nil }
-    if live.count > 3 { return "Waiting on \(nativeCount(live.count, "subagent"))" }
-    return "Waiting on " + nativeJoinedList(live.map { nativeRunNames($0).name })
 }
 
 /// A finished group's status: "all done · 45m" or "2 done · 1 failed · 45m", from its first

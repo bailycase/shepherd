@@ -85,6 +85,8 @@ final class RPCThreadState {
     private(set) var revision: UInt64 = 0
     /// Called on the session queue each time `revision` moves.
     var onRevision: (() -> Void)?
+    /// Called on the session queue when pi finishes a tool call, with the tool's name.
+    var onToolFinished: ((String) -> Void)?
     private var signature = 0
     /// From `agent_start` until `agent_settled`: pi's own `isStreaming`. A run's `agent_end` is not
     /// its end: pi may retry, compact, or continue before it settles, and until then a prompt
@@ -303,6 +305,7 @@ final class RPCThreadState {
             let stopped = isError && stopRequested
             if stopped { stoppedCalls.insert(id) }
             upsertTool(id: id, name: name, args: nil, content: result?.content ?? [], isError: isError, status: stopped ? "aborted" : "complete")
+            onToolFinished?(name)
         case .queueUpdate(let steering, let followUp):
             piQueueChanged(steering: steering, followUp: followUp)
         case .extensionUIRequest(let request):
@@ -332,7 +335,7 @@ final class RPCThreadState {
     /// (its `hello` listed no `native.queue.v1`); its queued sends go to pi alone.
     func handle(_ request: NativeThreadRequest, olderClient: Bool = false, completion: @escaping (NativeThreadResult) -> Void) {
         guard let piSessionID, !historyPending else {
-            completion(.failure(code: NativeThreadCode.starting, message: "pi is starting."))
+            completion(.failure(code: NativeThreadCode.starting, message: "The agent is starting."))
             return
         }
         commit()
@@ -408,9 +411,9 @@ final class RPCThreadState {
         case .success(let response) where response.success:
             return nil
         case .success(let response):
-            return .failure(code: "dispatch_failed", message: response.error.map { "pi refused it: \($0)" } ?? "pi refused it.")
+            return .failure(code: "dispatch_failed", message: response.error.map { "The agent refused it: \($0)" } ?? "The agent refused it.")
         case .failure(.timeout):
-            return .failure(code: "outcome_unknown", message: "pi did not answer in time. Check the thread before trying again; nothing will be resent automatically.")
+            return .failure(code: "outcome_unknown", message: "The agent did not answer in time. Check the thread before trying again; nothing will be resent automatically.")
         case .failure(let error):
             return .failure(code: "dispatch_failed", message: error.description)
         }
@@ -481,7 +484,7 @@ final class RPCThreadState {
             // pi never answers extension_ui_response; the write is the dispatch.
             session.send(command)
             dialogs.remove(at: index)
-            completion(session.isAlive ? accepted : .failure(code: "dispatch_failed", message: "pi is not running."))
+            completion(session.isAlive ? accepted : .failure(code: "dispatch_failed", message: "The agent is not running."))
         case .subagentCommand(_, _, _, let runID, let action, let text, let mode):
             // Unknown runs and empty replies never reach the socket; the dispatch itself is the
             // server's (it owns the children extension's connection).
