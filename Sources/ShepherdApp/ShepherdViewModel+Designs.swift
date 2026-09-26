@@ -122,11 +122,12 @@ extension ShepherdViewModel {
         }
     }
 
-    /// Starts the agent that draws `design`, with the default model, and selects it. It lives in
-    /// the reserved designs space and works in the design's own folder (a system build: in the
-    /// project it reads). `brief` is its opening message.
+    /// Starts the agent that draws `design`, with the default model, and selects it (unless
+    /// `select` is false: another device asked). It lives in the reserved designs space and works
+    /// in the design's own folder (a system build: in the project it reads). `brief` is its
+    /// opening message.
     @discardableResult
-    func startDesignAgent(_ design: Design, brief: String?, images: [NativeImage]) async throws -> AgentID {
+    func startDesignAgent(_ design: Design, brief: String?, images: [NativeImage], select: Bool = true) async throws -> AgentID {
         let folder: String
         if design.buildsSystem {
             guard let space = design.sourceSpaceID.flatMap({ id in state.spaces.first { $0.id == id } }) else {
@@ -151,7 +152,7 @@ extension ShepherdViewModel {
         config.initialImages = images
         config.initialName = design.name
         config.designID = design.id
-        let agentID = try await startAgent(config, focusWindow: false)
+        let agentID = try await startAgent(config, selectAfter: select, focusWindow: false)
         try await server.setDesignAgent(design.id, agentID: agentID)
         return agentID
     }
@@ -160,14 +161,29 @@ extension ShepherdViewModel {
     /// it, starts its agent with the brief as its first message, and opens the canvas.
     @discardableResult
     func createDesign(brief: String, images: [NativeImage], system: String? = nil) async throws -> DesignID {
-        let design = Design(name: Self.provisionalName(for: brief), createdAt: SessionServer.nowMilliseconds())
-        _ = try await server.createDesign(design)
-        // Installed before the agent starts, so its first turn reads it among the design's systems.
-        if let system { _ = try await server.installDesignSystem(design.id, namespace: system) }
-        adopt(server.state)
+        let design = try await makeDesign(brief: brief, system: system)
         // A design whose agent failed to start still opens later, and starts one then.
         try await startDesignAgent(design, brief: brief, images: images)
         return design.id
+    }
+
+    /// Another device's New design (`RemoteDesignRequest.create`): made as this Mac's is, with
+    /// nothing selected or opened here. An agent that fails to start is started when the design
+    /// is next opened, so the design is answered either way.
+    func createRemoteDesign(_ request: RemoteDesignCreate) async throws -> RemoteDesignCreated {
+        let design = try await makeDesign(brief: request.brief, system: request.systemNamespace)
+        let agent = try? await startDesignAgent(design, brief: request.brief, images: [], select: false)
+        return RemoteDesignCreated(designID: design.id, agentID: agent)
+    }
+
+    /// The design record and folder, with `system` installed before any agent starts, so its
+    /// first turn reads it among the design's systems.
+    private func makeDesign(brief: String, system: String?) async throws -> Design {
+        let design = Design(name: Self.provisionalName(for: brief), createdAt: SessionServer.nowMilliseconds())
+        _ = try await server.createDesign(design)
+        if let system { _ = try await server.installDesignSystem(design.id, namespace: system) }
+        adopt(server.state)
+        return design
     }
 
     // MARK: Screens

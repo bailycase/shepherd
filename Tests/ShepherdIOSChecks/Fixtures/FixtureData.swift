@@ -188,7 +188,7 @@ enum FixtureData {
 enum FixtureCatalog {
     static var all: [FixtureScreen] {
         home + thread + context + newThread + subagents + review + changes + commit + search + settings + automations + windows + terminal
-            + designPad + designPadMarkup
+            + designs + designPad + designPadMarkup
     }
 
     static func screen(named name: String) -> FixtureScreen? {

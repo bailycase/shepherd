@@ -240,6 +240,11 @@ final class FixtureHost: @unchecked Sendable {
             // Commit from review changes the host's repository.
             mutation("agentQuery.commit")
             return [.error(id: id, code: "fixture", message: refused)]
+        case .design(let id, let request):
+            // Reading designs changes nothing; a comment, a tweak, a move or a new design writes.
+            guard request.writes else { return nil }
+            mutation("design." + Self.kind(request))
+            return [.error(id: id, code: "fixture", message: refused)]
         case .agentQuery(let id, _, .changesUndoTurn), .agentQuery(let id, _, .changesRedoTurn):
             // Undo and Redo change the agent's working tree.
             mutation("agentQuery.changesUndoTurn")

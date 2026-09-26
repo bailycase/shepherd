@@ -56,7 +56,8 @@ Dependencies point inward:
 - ShepherdUI imports no Shepherd module; the app maps its states onto `AgentState`.
 - Only `ShepherdApp/TerminalHost.swift` imports TerminalSurfaceKit, and only
   `ShepherdApp/DesignHost.swift` imports DesignSurfaceKit (on iOS, only
-  `App/iOS/DesignPad/PadDesignRenderer.swift`).
+  `App/iOS/Designs/DesignHost.swift` for the iPhone's screens and
+  `App/iOS/DesignPad/PadDesignRenderer.swift` for the iPad's).
 - Only TerminalSurfaceKit imports GhosttyTerminal.
 - DesignSurfaceKit imports neither Sessions nor App: it is handed a design's folder (or a
   design system's files in memory, for its specimens) and serves it read-only.
