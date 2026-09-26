@@ -436,3 +436,16 @@ extension ShepherdState {
         return state
     }
 }
+
+extension ShepherdState {
+    /// Whether an agent draws one of this workspace's designs. Its thread is that design's chat,
+    /// never an ordinary thread (docs/designs.md › Design agents and ordinary threads).
+    public func isDesignAgent(_ agent: Agent) -> Bool {
+        guard let design = agent.designID else { return false }
+        return designs.contains { $0.id == design }
+    }
+
+    public func isDesignAgent(_ agentID: AgentID) -> Bool {
+        agents.first { $0.id == agentID }.map(isDesignAgent) ?? false
+    }
+}
