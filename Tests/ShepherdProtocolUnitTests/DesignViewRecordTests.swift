@@ -17,6 +17,10 @@ struct DesignViewRecordTests {
 
     @Test func aRecordInsideTheGrammarIsValid() {
         #expect(Self.good.isValid)
+        #expect(Self.changed { record in
+            record.page = "page-1"
+            record.pageName = "Flows"
+        }.isValid)
         #expect(DesignViewRecord().isValid)
         #expect(DesignViewRecord(mode: .focused, visibleBoards: ["A.dc.html"]).isValid)
     }
@@ -47,6 +51,12 @@ struct DesignViewRecordTests {
         ("a label on two lines", changed { $0.selection[0].label = "Checkout\nfunnel" }),
         ("an empty label", changed { $0.selection[0].label = "" }),
         ("a selection while focused", changed { $0.mode = .focused }),
+        ("a page outside the id grammar", changed { $0.page = "page one" }),
+        ("a page name without a page", changed { $0.pageName = "Flows" }),
+        ("a page name on two lines", changed { record in
+            record.page = "flows"
+            record.pageName = "Flows\nand more"
+        }),
     ]
 
     @Test(arguments: malformed)
@@ -105,6 +115,18 @@ struct DesignViewRecordTests {
         let json = try JSONDecoder().decode(DesignViewRecord.self, from: Data(lines[2].utf8))
         #expect(json == Self.good)
         #expect(lines[2].contains(#""flows%2FCart.dc.html""#))
+    }
+
+    /// A record without pages writes no page keys; one with a page writes view-state.md's names.
+    @Test func aPageRidesAsPageAndPageName() throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let plain = try #require(String(data: try encoder.encode(DesignViewRecord()), encoding: .utf8))
+        #expect(!plain.contains("page"))
+        let paged = DesignViewRecord(page: "flows", pageName: "Flows")
+        let json = try #require(String(data: try encoder.encode(paged), encoding: .utf8))
+        #expect(json.contains(#""page":"flows""#) && json.contains(#""pageName":"Flows""#))
+        #expect(try JSONDecoder().decode(DesignViewRecord.self, from: Data(json.utf8)) == paged)
     }
 
     @Test func aNonceIsTwelveLowercaseHexDigitsAndNewEachTime() {

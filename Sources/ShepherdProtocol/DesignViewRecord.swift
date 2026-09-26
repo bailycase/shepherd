@@ -37,6 +37,10 @@ public struct DesignViewRecord: Codable, Hashable, Sendable {
     }
 
     public var mode: Mode
+    /// The page the canvas shows (canvas.json's page id); nil on a canvas without pages.
+    public var page: String?
+    /// That page's name as the viewer sees it, cut to about 60 characters; nil without pages.
+    public var pageName: String?
     /// Up to 20 boards on screen, in canvas.json's order, by view name (`DesignPath.viewName`).
     public var visibleBoards: [String]
     /// Up to 20 boards selected whole or holding a selected element; empty while focused.
@@ -56,9 +60,11 @@ public struct DesignViewRecord: Codable, Hashable, Sendable {
     public static let labelLength = 60
     static let maxLabelLength = 64
 
-    public init(mode: Mode = .canvas, visibleBoards: [String] = [], selectedBoards: [String] = [],
-                selected: [DesignElementID] = [], selection: [Selection] = [], dirty: Bool = false) {
+    public init(mode: Mode = .canvas, page: String? = nil, pageName: String? = nil, visibleBoards: [String] = [],
+                selectedBoards: [String] = [], selected: [DesignElementID] = [], selection: [Selection] = [], dirty: Bool = false) {
         self.mode = mode
+        self.page = page
+        self.pageName = pageName
         self.visibleBoards = visibleBoards
         self.selectedBoards = selectedBoards
         self.selected = selected
@@ -68,11 +74,14 @@ public struct DesignViewRecord: Codable, Hashable, Sendable {
 
     /// Whether the record keeps view-state.md's grammar: its limits, every board a view name,
     /// every selection among `selected`, every selected element on a selected board, labels
-    /// short and on one line, and nothing selected while focused.
+    /// short and on one line, a page named by an index id (and a name only with a page), and
+    /// nothing selected while focused.
     public var isValid: Bool {
         guard visibleBoards.count <= Self.maxBoards, selectedBoards.count <= Self.maxBoards,
               selected.count <= Self.maxSelected, selection.count <= Self.maxSelection,
               (visibleBoards + selectedBoards).allSatisfy(DesignElementID.isBoardName) else { return false }
+        if let page, !DesignPath.isIndexID(page) { return false }
+        if let pageName, page == nil || !Self.isLabel(pageName) { return false }
         if mode == .focused, !(selectedBoards.isEmpty && selected.isEmpty && selection.isEmpty) { return false }
         let boards = Set(selectedBoards)
         guard selected.allSatisfy({ boards.contains($0.board) }) else { return false }
