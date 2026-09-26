@@ -5343,7 +5343,9 @@ selected thread, or the Overview when none is. Other screens push over the detai
   origin's 16pt glyph in `lanternText` for anything else (a mission's map, an automation's
   bolt; the app leads a subagent's item with its branch glyph); in Recents, a 6pt `running` dot
   while it runs, a hollow 6pt `textTertiary` dot at rest, a 6pt `failed` dot for a failed one,
-  and a 16pt `textTertiary` glyph for a design, a mission or an automation run.
+  and a 16pt `textTertiary` glyph for a design, a mission or an automation run. **Not built
+  yet:** the failed dot and the trailing "failed" (iPadThreadError): a remote client hears no
+  turn failure from the host (Status language), so a failed thread's row reads done.
 - **Needs you rows** end in the reason in mono 10 `lanternText`. The boards summarize the
   question ("retention?", "approve plan", "orders stuck") or name the subagent that asks
   ("reviewer"); the app writes the agent's own short reason when it gave one, cut as on the Mac
@@ -8030,7 +8032,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | Board | Specified in | Status |
 | --- | --- | --- |
 | iPadThread | iOS: iPad › Shell and sidebar, Thread, Composer and commands | Partial |
-| iPadThreadError | iOS: iPad › Thread (Header); Thread › Errors (touch sizes) | Built |
+| iPadThreadError | iOS: iPad › Thread (Header), Shell and sidebar (Rows: the failed row); Thread › Errors (touch sizes) | Partial |
 | iPadReview | iOS: iPad › Review | Built |
 | iPadSubagents | iOS: iPad › Subagents | Partial |
 | iPadPortrait | iOS: iPad › Shell and sidebar, Composer and commands | Partial |
