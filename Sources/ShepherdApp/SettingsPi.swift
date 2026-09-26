@@ -3,6 +3,8 @@ import ShepherdUI
 import ShepherdSessions
 
 struct PiSettings: View {
+    /// This Mac's pi, whose models.json names the subagent model choices.
+    let pi: PiSetup
     @Bindable private var settings = AppSettings.shared
     private var updates: PiUpdateManager { .shared }
     @State private var modelOptions: [String] = []
@@ -78,7 +80,10 @@ struct PiSettings: View {
                         .accessibilityLabel("Agent discovery")
                     }
                 }
-                .task { modelOptions = await Task.detached(priority: .userInitiated) { Array(Set(PiConfig.modelIDs())).sorted() }.value }
+                .task {
+                    let home = pi.home
+                    modelOptions = await Task.detached(priority: .userInitiated) { Array(Set(PiConfig.modelIDs(in: home))).sorted() }.value
+                }
                 .nwTransition(.disclosure)
             }
 

@@ -680,7 +680,8 @@ struct Composer: View {
     }
 
     private func loadModels() async {
-        let loaded = if let listModels { await listModels() } else { await ModelCatalog.loadLocal() }
+        // Without a host's listing, this Mac's: the app's pi (the composition root's setup).
+        let loaded = if let listModels { await listModels() } else { await ModelCatalog.loadLocal(from: PiSetup.app.catalog) }
         catalog = loaded
         picker?.update(loaded)
     }

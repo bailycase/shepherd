@@ -36,7 +36,7 @@ extension ShepherdViewModel {
             throw PiSessionFile.ForkFailure(message: "The subagent's session file is not known.")
         }
         let cwd = run.cwd ?? agentCwd(agent)
-        let sessionID = try PiSessionFile.fork(sessionFile: file, cwd: cwd)
+        let sessionID = try PiSessionFile.fork(sessionFile: file, cwd: cwd, sessionsRoot: server.pi.sessionsRoot)
         var config = NewAgentConfig(spaceID: agent.spaceID, workingDirectory: cwd, model: run.model ?? agent.model,
                                     thinking: run.thinking.flatMap(ThinkingLevel.init(rawValue:)) ?? agent.thinkingLevel ?? .medium,
                                     initialPrompt: nil)

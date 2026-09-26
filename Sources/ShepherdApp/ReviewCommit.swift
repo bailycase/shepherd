@@ -3,6 +3,7 @@ import Foundation
 import Observation
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSessions
 
 // A direct commit from review (AGENTS.md › Only these paths mutate repositories): the files the
 // reviewer ticked, with the message they confirmed, then optionally a push to the branch's
@@ -212,13 +213,14 @@ enum ReviewCommitGit {
 
     /// A message drafted from the diff of `paths` by the model that drafts PR descriptions,
     /// else the plain one written from the file list.
-    @MainActor static func draftMessage(root: String, paths: [String], runner: @escaping Runner) async -> (title: String, body: String, drafted: Bool) {
+    @MainActor static func draftMessage(root: String, paths: [String], engine: PiEngine,
+                                        runner: @escaping Runner) async -> (title: String, body: String, drafted: Bool) {
         let wanted = Set(paths)
         let files = (try? await Task.detached { try GitDiff.load(cwd: root, reference: nil) }.value) ?? []
         let chosen = files.filter { file in [file.oldPath, file.newPath, file.displayPath].contains { $0.map(wanted.contains) ?? false } }
         let fallback = reviewCommitFallbackMessage(reviewCommitFiles(chosen) { _ in "" })
         guard !chosen.isEmpty else { return (fallback.title, fallback.body, false) }
-        let output = await runner(WorktreePRDescriptionGenerator.draftCommand(prompt: prompt(context: promptContext(chosen))), root)
+        let output = await runner(WorktreePRDescriptionGenerator.draftCommand(prompt: prompt(context: promptContext(chosen)), engine: engine), root)
         guard output.status == 0, let message = reviewCommitMessage(fromModel: output.stdout) else {
             return (fallback.title, fallback.body, false)
         }

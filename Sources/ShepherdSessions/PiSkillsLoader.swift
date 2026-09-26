@@ -15,7 +15,8 @@ import ShepherdProtocol
 public final class PiSkillsLoader: @unchecked Sendable {
     /// How node starts.
     public enum Launch: Sendable {
-        /// `node` through a login shell, as agents start pi, with pi found on that shell's PATH.
+        /// The engine's node through a login shell, as agents start pi, told where the engine's pi
+        /// is (`PiLaunch.skillsReader`).
         case loginShell
         /// This node, importing pi from this package (tests).
         case node(URL, package: URL)
@@ -25,6 +26,7 @@ public final class PiSkillsLoader: @unchecked Sendable {
     public static let timeout: TimeInterval = 20
 
     private let agentDirectory: URL
+    private let engine: PiEngine
     private let launch: Launch
     private let environment: [String: String]
     private let timeout: TimeInterval
@@ -32,10 +34,12 @@ public final class PiSkillsLoader: @unchecked Sendable {
     private let lock = NSLock()
     private var cached: (installed: String, fingerprint: [String: Double], skills: PiSkills)?
 
-    /// `environment` is the child's (tests move `HOME` with it); `agentDirectory` is pi's.
-    public init(agentDirectory: URL = PiConfig.agentDirectory(), launch: Launch = .loginShell,
+    /// `environment` is the child's (tests move `HOME` with it); `agentDirectory` is pi's, and
+    /// `engine` the pi a `.loginShell` launch reads.
+    public init(agentDirectory: URL, engine: PiEngine, launch: Launch = .loginShell,
                 environment: [String: String] = ProcessInfo.processInfo.environment, timeout: TimeInterval = PiSkillsLoader.timeout) {
         self.agentDirectory = agentDirectory.standardizedFileURL
+        self.engine = engine
         self.launch = launch
         self.environment = environment
         self.timeout = timeout
@@ -80,8 +84,9 @@ public final class PiSkillsLoader: @unchecked Sendable {
         env["PI_OFFLINE"] = "1"
         switch launch {
         case .loginShell:
-            process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-            process.arguments = ["-l", "-c", #"exec node --input-type=module - "$(command -v pi 2>/dev/null)""#]
+            let line = PiLaunch.skillsReader(engine: engine)
+            process.executableURL = URL(fileURLWithPath: line.argv[0])
+            process.arguments = Array(line.argv.dropFirst())
         case .node(let node, let package):
             process.executableURL = node
             process.arguments = ["--input-type=module", "-", ""]

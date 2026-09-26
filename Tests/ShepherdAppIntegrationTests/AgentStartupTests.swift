@@ -336,8 +336,8 @@ struct AgentStartupTests {
     }
 
     /// The stub pi's history, as pi would have written it into the agent's session file.
-    private static func writeStubHistory(sessionID: String, cwd: String) throws {
-        let directory = PiSessionFile.projectDirectory(forCwd: cwd)
+    private static func writeStubHistory(sessionID: String, cwd: String, sessionsRoot: URL) throws {
+        let directory = PiSessionFile.projectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let lines = [
             #"{"type":"session","version":3,"id":"\#(sessionID)","timestamp":"2026-09-24T00:00:00.000Z","cwd":"\#(PiSessionFile.realPath(cwd))"}"#,
@@ -357,11 +357,12 @@ struct AgentStartupTests {
         try Self.holdPi(in: app.dir)
         let space = Fixture.space(path: app.dir.path)
         let agent = Fixture.agent("worker", in: space, piSession: SessionID())
-        try Self.writeStubHistory(sessionID: agent.agent.effectivePiSessionID, cwd: space.path)
+        try Self.writeStubHistory(sessionID: agent.agent.effectivePiSessionID, cwd: space.path, sessionsRoot: app.server.pi.sessionsRoot)
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
         let store = vm.threadStores.store(for: agent.agent.id)
         let server = app.server, id = agent.agent.id
-        let preview = PiSessionFile.previewLoader(sessionID: agent.agent.effectivePiSessionID, cwd: space.path)
+        let preview = PiSessionFile.previewLoader(sessionID: agent.agent.effectivePiSessionID, cwd: space.path,
+                                                  sessionsRoot: app.server.pi.sessionsRoot)
         let polling = Task { await store.run(request: { try await server.nativeThread(agentID: id, request: $0) }, preview: preview) }
         defer { polling.cancel(); store.stop() }
 

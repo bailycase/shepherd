@@ -9,21 +9,23 @@ public enum PiConfig {
 
     /// `~/.pi/agent`, or wherever `PI_CODING_AGENT_DIR` moves it, the same way pi resolves it.
     /// A blank value is ignored and `~` is expanded.
-    public static func agentDirectory(
-        environment: [String: String] = ProcessInfo.processInfo.environment
-    ) -> URL {
+    public static func agentDirectory(environment: [String: String]) -> URL {
+        agentDirectory(environment: environment,
+                       otherwise: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".pi/agent", isDirectory: true))
+    }
+
+    /// The directory `environment`'s `PI_CODING_AGENT_DIR` names, else `fallback`.
+    public static func agentDirectory(environment: [String: String], otherwise fallback: URL) -> URL {
         if let override = environment[agentDirectoryEnvKey],
            !override.trimmingCharacters(in: .whitespaces).isEmpty {
             return URL(fileURLWithPath: (override as NSString).expandingTildeInPath, isDirectory: true)
                 .standardizedFileURL
         }
-        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".pi/agent", isDirectory: true)
+        return fallback
     }
 
     /// Where pi keeps its session files: `<agent directory>/sessions`.
-    public static func sessionsDirectory(
-        environment: [String: String] = ProcessInfo.processInfo.environment
-    ) -> URL {
+    public static func sessionsDirectory(environment: [String: String]) -> URL {
         agentDirectory(environment: environment).appendingPathComponent("sessions", isDirectory: true)
     }
 
@@ -31,7 +33,7 @@ public enum PiConfig {
     /// `thinkingLevelMap` (`providers.<name>.models[]`), with a `modelOverrides.<id>` map laid
     /// over it, as pi composes them. A level mapped to null is present with a nil value (pi
     /// drops it); a level absent from the map is absent. Empty when unreadable.
-    public static func thinkingLevelMaps(in directory: URL = agentDirectory()) -> [String: [String: String?]] {
+    public static func thinkingLevelMaps(in directory: URL) -> [String: [String: String?]] {
         guard let data = try? Data(contentsOf: directory.appendingPathComponent("models.json")),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let providers = root["providers"] as? [String: Any] else { return [:] }
@@ -64,7 +66,7 @@ public enum PiConfig {
     /// provider and whether it reasons (pi's default is no). Other shapes are read leniently:
     /// arrays of strings or of objects with an "id"/"name", at the top level or under wrapper
     /// keys, taken as they are and assumed to reason.
-    public static func modelEntries(in directory: URL = agentDirectory()) -> [PiModelCatalog.Entry] {
+    public static func modelEntries(in directory: URL) -> [PiModelCatalog.Entry] {
         guard let data = try? Data(contentsOf: directory.appendingPathComponent("models.json")),
               let root = try? JSONSerialization.jsonObject(with: data) else { return [] }
         var entries: [PiModelCatalog.Entry] = []
@@ -112,14 +114,14 @@ public enum PiConfig {
     }
 
     /// `modelEntries`' ids.
-    public static func modelIDs(in directory: URL = agentDirectory()) -> [String] {
+    public static func modelIDs(in directory: URL) -> [String] {
         modelEntries(in: directory).map(\.id)
     }
 
     /// The model pi starts a new session with when none is passed, as "provider/id" (settings.json's
     /// defaultProvider and defaultModel), if both are set. Never the bare id: several providers can
     /// serve one id, and `--model` with a bare id may pick another.
-    public static func defaultModel(in directory: URL = agentDirectory()) -> String? {
+    public static func defaultModel(in directory: URL) -> String? {
         guard let object = settings(in: directory),
               let provider = object["defaultProvider"] as? String, !provider.isEmpty,
               let model = object["defaultModel"] as? String, !model.isEmpty else { return nil }
@@ -129,7 +131,7 @@ public enum PiConfig {
     /// The pi packages and extensions pi loads from its own settings.json, as declared there: each
     /// package's source ("npm:@example/pi-tools@1.0.0", in the string or the object form), then
     /// each extension path. Shepherd's own come by `-e` and are not among them.
-    public static func installedExtensions(in directory: URL = agentDirectory()) -> [String] {
+    public static func installedExtensions(in directory: URL) -> [String] {
         guard let object = settings(in: directory) else { return [] }
         let packages = (object["packages"] as? [Any] ?? []).compactMap { entry -> String? in
             if let source = entry as? String { return source }
@@ -145,7 +147,7 @@ public enum PiConfig {
     /// `.pi/settings.json` over the agent directory's, a `compaction.modelOverrides` entry for the
     /// model over the ordinary values, each field falling back on its own to pi's default. Read
     /// only; a value pi would reject reads as the default.
-    public static func compactionSettings(model: String?, cwd: String?, in directory: URL = agentDirectory()) -> PiCompactionSettings {
+    public static func compactionSettings(model: String?, cwd: String?, in directory: URL) -> PiCompactionSettings {
         var merged: [String: Any] = [:]
         var overrides: [String: Any] = [:]
         for object in [settings(in: directory), cwd.flatMap { settings(in: URL(fileURLWithPath: $0).appendingPathComponent(".pi")) }] {

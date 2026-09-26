@@ -82,23 +82,26 @@ struct ModelCatalog: Sendable {
 
     // MARK: This Mac's catalog
 
-    @MainActor private static var local: ModelCatalog?
-    @MainActor private static var loadingLocal: Task<ModelCatalog, Never>?
+    /// Each pi catalog's derived catalog, and the derivation in flight, by the catalog's identity.
+    @MainActor private static var local: [ObjectIdentifier: ModelCatalog] = [:]
+    @MainActor private static var loadingLocal: [ObjectIdentifier: Task<ModelCatalog, Never>] = [:]
 
-    /// `pi --list-models` on this Mac, asked once per process however many threads want it at
-    /// once (every mounted composer does as the app opens), and derived off the main actor. A
-    /// failed ask is not kept, so the next one tries again.
+    /// `pi --list-models` on this Mac (`source`, a `PiSetup`'s catalog), asked once per catalog
+    /// however many threads want it at once (every mounted composer does as the app opens), and
+    /// derived off the main actor. A failed ask is not kept, so the next one tries again.
     @MainActor
-    static func loadLocal() async -> ModelCatalog {
-        if let local { return local }
-        let task = loadingLocal ?? Task.detached(priority: .utility) {
-            let entries = PiModelCatalog.entries()
-            return ModelCatalog(entries, levels: ModelListing(entries: entries, defaultModel: nil, levelMaps: PiConfig.thinkingLevelMaps()).thinkingLevels)
+    static func loadLocal(from source: PiModelCatalog) async -> ModelCatalog {
+        let key = ObjectIdentifier(source)
+        if let cached = local[key] { return cached }
+        let task = loadingLocal[key] ?? Task.detached(priority: .utility) {
+            let entries = source.entries()
+            return ModelCatalog(entries, levels: ModelListing(entries: entries, defaultModel: nil,
+                                                              levelMaps: PiConfig.thinkingLevelMaps(in: source.home)).thinkingLevels)
         }
-        loadingLocal = task
+        loadingLocal[key] = task
         let catalog = await task.value
-        loadingLocal = nil
-        if !catalog.isEmpty { local = catalog }
+        loadingLocal[key] = nil
+        if !catalog.isEmpty { local[key] = catalog }
         return catalog
     }
 

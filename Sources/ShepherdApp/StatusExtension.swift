@@ -1,6 +1,7 @@
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdSessions
 
 /// Command spec for an app-spawned session.
 struct SessionCommand {
@@ -49,11 +50,14 @@ enum StatusExtension {
         return url.path
     }
 
-    /// argv + env for an agent: `pi --mode rpc` through a login shell (so the user's PATH
-    /// resolves), reopening the pi session the agent was last in, with status reporting wired
-    /// to the app's socket. The opening prompt is not passed positionally; RPC mode ignores
-    /// positional messages, so the app sends it as the first `prompt` command instead.
+    /// argv + env for an agent: `pi --mode rpc` in `cwd` through a login shell (so the user's
+    /// PATH resolves), reopening the pi session the agent was last in, with status reporting
+    /// wired to the app's socket (`PiLaunch.agent` builds the line). The opening prompt is not
+    /// passed positionally; RPC mode ignores positional messages, so the app sends it as the
+    /// first `prompt` command instead.
     static func command(
+        engine: PiEngine,
+        cwd: String,
         agentID: AgentID,
         piSessionID: String,
         socketPath: String,
@@ -73,18 +77,16 @@ enum StatusExtension {
         model: String?,
         thinking: ThinkingLevel?
     ) -> SessionCommand {
-        var cmd = "exec pi --mode rpc --session-id \(shellQuoted(piSessionID))"
-        if let model { cmd += " --model \(shellQuoted(model))" }
-        if let thinking { cmd += " --thinking \(shellQuoted(thinking.rawValue))" }
-        cmd += " -e \(shellQuoted(extensionPath))"
-        for path in [instructions?.extensionPath, panesExtensionPath, reviewExtensionPath, subagentsExtensionPath, childrenExtensionPath,
-                     namerExtensionPath, design?.extensionPath, mcp?.extensionPath].compactMap({ $0 }) {
-            cmd += " -e \(shellQuoted(path))"
-        }
+        let extensions = [extensionPath, instructions?.extensionPath, panesExtensionPath, reviewExtensionPath, subagentsExtensionPath,
+                          childrenExtensionPath, namerExtensionPath, design?.extensionPath, mcp?.extensionPath].compactMap { $0 }
+        let line = PiLaunch.agent(engine: engine, cwd: cwd, sessionID: piSessionID, model: model, thinking: thinking?.rawValue,
+                                  extensions: extensions)
         var env = [
             "SHEPHERD_AGENT_ID": agentID.rawValue,
             "SHEPHERD_SOCKET": socketPath,
             "SHEPHERD_EXT_STATUS": extensionPath,
+            // The pi a native child starts when pi's runtime isn't node (shepherd-children.ts).
+            PiLaunch.childExecutableEnvKey: PiLaunch.childExecutable(engine: engine),
         ]
         if let instructions { env["SHEPHERD_INSTRUCTIONS_DIR"] = instructions.directory }
         // Settings ▸ Experiments ▸ Suggested instructions, while on for this agent: the files its
@@ -112,12 +114,7 @@ enum StatusExtension {
             if mcp.useRepoConfig { env["SHEPHERD_EXT_MCP_PROJECT"] = "1" }
         }
         if let model { env["SHEPHERD_MODEL"] = model }
-        return SessionCommand(argv: ["/bin/zsh", "-l", "-c", cmd], env: env)
-    }
-
-    /// Single-quote wrapping with '"'"' escaping for embedded single quotes.
-    private static func shellQuoted(_ value: String) -> String {
-        "'" + value.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
+        return SessionCommand(argv: line.argv, env: env)
     }
 
     /// Embedded extension source. Extensions/shepherd-status.ts is the canonical

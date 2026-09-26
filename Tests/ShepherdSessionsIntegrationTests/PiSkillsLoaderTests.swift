@@ -117,7 +117,7 @@ struct PiSkillsLoaderTests {
         func loader(timeout: TimeInterval = PiSkillsLoader.timeout, package: URL? = nil, hang: Bool = false) throws -> PiSkillsLoader {
             var environment = ["HOME": home.path, "PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"]
             if hang { environment["STAND_IN_PI_HANG"] = "1" }
-            return PiSkillsLoader(agentDirectory: agent, launch: .node(try PiSkillsLoaderTests.node(), package: package ?? self.package),
+            return PiSkillsLoader(agentDirectory: agent, engine: .userPi, launch: .node(try PiSkillsLoaderTests.node(), package: package ?? self.package),
                                   environment: environment, timeout: timeout)
         }
 
