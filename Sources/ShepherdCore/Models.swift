@@ -125,6 +125,9 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     /// calls, turns, commits and focus, and broadcast so remote clients draw the same header.
     /// Nil until the host has read it, when the directory is no repository, and from older hosts.
     public var checkout: AgentCheckout?
+    /// The design this agent draws (the Design tool): its extension and skill load with it.
+    /// Decodes nil from older state files; startup clears it when the design is gone.
+    public var designID: DesignID?
 
     public init(
         id: AgentID = AgentID(),
@@ -143,7 +146,8 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         lastActiveAt: Double? = nil,
         waitingOn: String? = nil,
         waitingReason: String? = nil,
-        checkout: AgentCheckout? = nil
+        checkout: AgentCheckout? = nil,
+        designID: DesignID? = nil
     ) {
         self.id = id
         self.name = name
@@ -162,6 +166,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         self.waitingOn = waitingOn
         self.waitingReason = waitingReason
         self.checkout = checkout
+        self.designID = designID
     }
 
     /// The pi session to launch this agent with. Falls back to the agent's id,
@@ -172,7 +177,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case id, name, spaceID, tabID, paneID, status, model, thinkingLevel, nameIsFinal
-        case piSessionID, worktreeBranch, worktreeBase, worktreePath, lastActiveAt, waitingOn, waitingReason, checkout, runtime
+        case piSessionID, worktreeBranch, worktreeBase, worktreePath, lastActiveAt, waitingOn, waitingReason, checkout, designID, runtime
     }
 
     public init(from decoder: Decoder) throws {
@@ -202,6 +207,8 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         waitingReason = try c.decodeIfPresent(String.self, forKey: .waitingReason)
         // Absent before the header's branch chip, and from hosts that don't read it.
         checkout = try c.decodeIfPresent(AgentCheckout.self, forKey: .checkout)
+        // Absent before the Design tool.
+        designID = try c.decodeIfPresent(DesignID.self, forKey: .designID)
         // `runtime` is ignored: agents from the terminal era ("terminal") relaunch over RPC in
         // the same pi session, which is the whole migration.
     }
@@ -225,6 +232,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(waitingOn, forKey: .waitingOn)
         try c.encodeIfPresent(waitingReason, forKey: .waitingReason)
         try c.encodeIfPresent(checkout, forKey: .checkout)
+        try c.encodeIfPresent(designID, forKey: .designID)
         // Older remote clients default a missing runtime to terminal and would try to attach a
         // PTY that does not exist.
         try c.encode(SessionRuntime.rpc, forKey: .runtime)
@@ -278,22 +286,68 @@ public struct Automation: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
+/// A design (the Design tool): a canvas of HTML boards drawn by its design agent. Its files live
+/// in the support directory's `designs/<id>/` (docs/designs.md); this record is what the
+/// workspace keeps about it.
+public struct Design: Codable, Hashable, Sendable, Identifiable {
+    public var id: DesignID
+    /// The name on its card and in Recents, kept equal to its canvas.json `title`.
+    public var name: String
+    /// The project it belongs to: its agent works in this space's directory.
+    public var spaceID: SpaceID
+    /// The agent that draws it. Nil until one is attached, and cleared when that agent is
+    /// removed: opening the design then starts a fresh one.
+    public var agentID: AgentID?
+    /// The design system it is drawn in (a `ds/<namespace>` folder name), if any.
+    public var systemNamespace: String?
+    /// When it was created and last changed (ms since 1970). A board write moves
+    /// `lastActiveAt` as live state, written to state.json along with another change.
+    public var createdAt: Double
+    public var lastActiveAt: Double
+    /// How many boards its canvas lists. Live state the host derives from its files and
+    /// broadcasts; never written to state.json (`ShepherdState.persisted`). Nil until read.
+    public var boardCount: Int?
+
+    public init(
+        id: DesignID = DesignID(),
+        name: String,
+        spaceID: SpaceID,
+        agentID: AgentID? = nil,
+        systemNamespace: String? = nil,
+        createdAt: Double,
+        lastActiveAt: Double? = nil,
+        boardCount: Int? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.spaceID = spaceID
+        self.agentID = agentID
+        self.systemNamespace = systemNamespace
+        self.createdAt = createdAt
+        self.lastActiveAt = lastActiveAt ?? createdAt
+        self.boardCount = boardCount
+    }
+}
+
 /// The server's authoritative snapshot.
 public struct ShepherdState: Codable, Hashable, Sendable {
     public var spaces: [Space]
     public var tabs: [Tab]
     public var agents: [Agent]
     public var automations: [Automation]
+    public var designs: [Design]
 
-    public init(spaces: [Space] = [], tabs: [Tab] = [], agents: [Agent] = [], automations: [Automation] = []) {
+    public init(spaces: [Space] = [], tabs: [Tab] = [], agents: [Agent] = [], automations: [Automation] = [],
+                designs: [Design] = []) {
         self.spaces = spaces
         self.tabs = tabs
         self.agents = agents
         self.automations = automations
+        self.designs = designs
     }
 
     private enum CodingKeys: String, CodingKey {
-        case spaces, tabs, agents, automations
+        case spaces, tabs, agents, automations, designs
     }
 
     public init(from decoder: Decoder) throws {
@@ -303,6 +357,8 @@ public struct ShepherdState: Codable, Hashable, Sendable {
         agents = try c.decode([Agent].self, forKey: .agents)
         // Absent in pre-automation state files.
         automations = try c.decodeIfPresent([Automation].self, forKey: .automations) ?? []
+        // Absent before the Design tool.
+        designs = try c.decodeIfPresent([Design].self, forKey: .designs) ?? []
         // `subagents` in older state.json files is ignored: agents now nest
         // their children inside their own pi process (pi-subagents), so
         // Shepherd has no separate entity to track.
@@ -311,13 +367,18 @@ public struct ShepherdState: Codable, Hashable, Sendable {
 
 extension ShepherdState {
     /// The state as state.json keeps it: without what only a running host knows (the question
-    /// each agent waits on, and its short reason).
+    /// each agent waits on and its short reason, and each design's board count).
     public var persisted: ShepherdState {
-        guard agents.contains(where: { $0.waitingOn != nil || $0.waitingReason != nil }) else { return self }
+        let waiting = agents.contains(where: { $0.waitingOn != nil || $0.waitingReason != nil })
+        let counted = designs.contains(where: { $0.boardCount != nil })
+        guard waiting || counted else { return self }
         var state = self
         for index in state.agents.indices {
             state.agents[index].waitingOn = nil
             state.agents[index].waitingReason = nil
+        }
+        for index in state.designs.indices {
+            state.designs[index].boardCount = nil
         }
         return state
     }
