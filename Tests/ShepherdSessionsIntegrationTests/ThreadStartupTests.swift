@@ -80,6 +80,30 @@ struct ThreadStartupTests {
         #expect(pi.stdin("prompt").count == 1)
     }
 
+    /// Images attached to a new thread go to pi with its opening prompt, in the same prompt, and
+    /// the pending row counts them.
+    @Test func theOpeningPromptsImagesGoToPiWithIt() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h, env: ["STUB_PI_STARTUP_GATE": Self.gate])
+        let png = NativeImage(mimeType: "image/png", data: Data([0x89, 0x50, 0x4E, 0x47]))
+        let jpeg = NativeImage(mimeType: "image/jpeg", data: Data([0xFF, 0xD8]))
+        let opening = try #require(OpeningPrompt("tools:0 Match this", images: [png, jpeg], agentID: pi.agent.id))
+        await h.server.sendOpeningPrompt(opening, sessionID: pi.sessionID)
+
+        FileManager.default.createFile(atPath: h.dir.appendingPathComponent(Self.gate).path, contents: nil)
+        let prompt = try await pi.waitForStdin("prompt")
+        #expect(prompt["message"] as? String == opening.text)
+        let images = try #require(prompt["images"] as? [[String: Any]])
+        #expect(images.map { $0["mimeType"] as? String } == ["image/png", "image/jpeg"])
+        #expect(images.first?["data"] as? String == png.data.base64EncodedString())
+        let settled = try await pi.snapshot("the opening turn to settle") { s in
+            !s.running && s.provisional.isEmpty && s.messages.contains { $0.role == "assistant" }
+        }
+        let landed = try #require(settled.messages.first { $0.role == "user" && $0.operationID == opening.operationID })
+        #expect(landed.blocks.filter { $0.kind == .unsupportedImage }.count == 2)
+    }
+
     /// The server tells the app the moment an agent's pi serves its thread, once, whether the
     /// agent's pane was bound to that pi before it served or only after.
     @Test(arguments: [true, false])

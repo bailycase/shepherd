@@ -280,7 +280,7 @@ extension ShepherdViewModel {
         // A new agent's thread is known to be empty: it draws at once, ready to type into, while
         // pi boots behind it. A resumed session (a forked transcript) is read from its file.
         // Its opening prompt shows at once too, as the row the host's first snapshot will carry.
-        let opening = OpeningPrompt(config.initialPrompt, agentID: agentID)
+        let opening = OpeningPrompt(config.initialPrompt, images: config.initialImages, agentID: agentID)
         if config.piSessionID == nil {
             let empty = PiSessionPreview.empty(
                 sessionID: agent.effectivePiSessionID,

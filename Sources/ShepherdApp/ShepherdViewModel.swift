@@ -16,6 +16,8 @@ struct NewAgentConfig {
     var model: String?
     var thinking: ThinkingLevel
     var initialPrompt: String?
+    /// Go to pi with the opening prompt (the New thread page's attachments).
+    var initialImages: [NativeImage] = []
     /// A caller-chosen starting name (worktree agents wear their branch
     /// leaf). Provisional like a prompt-derived name: pi's namer retitles it
     /// from the agent's first prompt when auto-naming is on.
@@ -512,6 +514,7 @@ final class ShepherdViewModel {
                 thinking: request.thinking ?? self.settings.defaultThinking,
                 initialPrompt: request.initialPrompt
             )
+            config.initialImages = request.initialImages
             Task { @MainActor in
                 do {
                     if let branch = request.worktreeBranch {
