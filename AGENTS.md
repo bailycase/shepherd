@@ -66,7 +66,13 @@ update channel. It starts with an empty support directory; nothing is copied fro
 Info.plist takes the executable, the names, and the feed file (`SHEPHERD_APPCAST`) from build
 settings, and each configuration compiles only its own icon.
 
+**The pi engine** (Node plus pi's bundle, pinned in `scripts/pi-engine-pin.json`) ships inside the
+Mac app, unused until the switch to it lands ([docs/pi-engine.md](docs/pi-engine.md)). Stage it
+once, and again whenever the pin changes, before any Mac build: every configuration's "Embed pi
+engine" phase copies it from `.build/pi-engine` and fails, saying so, when it is missing or stale.
+
 ```bash
+python3 scripts/pi_engine.py stage           # downloads to .build/pi-engine-cache, checks the pin
 xcodebuild -project Shepherd.xcodeproj -scheme 'Shepherd (Dev)' -destination 'platform=macOS' \
   -onlyUsePackageVersionsFromResolvedFile build
 swift build                                  # every package target
@@ -121,6 +127,7 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
   never looked up on PATH.
 - **`SHEPHERD_PREVIEW_DIR`**, **`SHEPHERD_LIVE_MODEL`**, and **`SHEPHERD_PERF_REPORT`** switch on
   the preview renders, the live-model run, and the long-list timing report (see Testing).
+  **`SHEPHERD_ENGINE_SMOKE`** names a built app (or `.build/pi-engine`) for the engine smoke.
   **`SHEPHERD_BENCHMARK`** switches on the benchmarks that print timings: `ComposerMenuBenchmarkTests`
   (the composer's menus over a full model catalog), `DataPathBenchmarks` (the server's data path),
   and `PiSessionFileTests`' runtime-state check.
@@ -262,6 +269,14 @@ runs them.
 **Live model:** the opt-in use-case run against a real model is gated on `SHEPHERD_LIVE_MODEL`
 (e.g. `cpa/~anthropic/claude-haiku-latest`). It never runs by default.
 
+**Engine smoke:** `EngineSmokeTests` runs the shipped engine for real, opt-in, gated on
+`SHEPHERD_ENGINE_SMOKE` (a built `Shepherd.app`, or the staged `.build/pi-engine`). Its node and
+pi run against a scratch pi home, with the child's `HOME`, `TMPDIR` and working directory scratch
+too: `get_state`, a TypeScript fixture extension loaded through jiti, and an RPC `bash` command.
+It runs the x86_64 slice under Rosetta where it can, and a scratch copy signed with the hardened
+runtime (`scripts/sign-engine.sh`), so the engine's entitlements are checked too. It never reaches
+a model: the home's one provider points at a closed port and no prompt is sent.
+
 **Long lists** (DESIGN.md › Performance) are measured, not guessed:
 
 - `NWRenderProbe` (ShepherdUI, debug builds only) counts row bodies while a test records:
@@ -303,6 +318,10 @@ each release lands in, the legacy aliases, `verify-app`, `verify-ios`, and which
 Xcode project, `App/Info.plist`, `App/iOS/ExportOptions.plist`, `ShepherdEdition.swift`,
 `AppUpdater.swift`, and the Release workflow (its `testflight` input included), so a bundle id,
 feed name or signing setting that drifts from the script fails before a release builds.
+`Tests/Release/test_pi_engine.py` tests `scripts/pi_engine.py` against archives built in memory
+(what staging keeps and refuses, and `verify-app`'s engine checks), the pin, the engine's
+entitlements, `sign-app.sh`'s per-slice signing of node (on macOS), the "Embed pi engine" phase,
+and the Release workflow's staging and signing steps.
 
 **Tests never take the user's focus or drive their mouse or keyboard.**
 
@@ -424,6 +443,7 @@ timing-sensitive tests. Docs-only changes (`docs/**`, `*.md`) don't trigger it.
 ```text
 App/
   ShepherdLauncher.swift   Mac @main shim.   Shepherd.entitlements   iOS/  the iPhone and iPad client
+  Engine.entitlements, Engine-x86_64.entitlements   the pi engine's node, per slice
   Info.plist               names, executable, and feed from build settings
   AppIcon.icon, AppIconNightly.icon   Shepherd's and Shepherd Nightly's icons
 Sources/
@@ -485,7 +505,8 @@ Sources/
                        session), AutomationRunLog (each automation's runs), PTYSession,
                        SessionScreen (SwiftTerm), StateStore,
                        PaneRequest (pane/review/automation requests + outcomes), RemoteFileUpload,
-                       PiEngine (which pi runs), PiLaunch (every line that starts it), PiSetup
+                       PiEngine (which pi runs; BundledPiEngine, the one the app ships),
+                       PiLaunch (every line that starts it), PiSetup
                        (the engine, pi's home and "your pi", passed in), PiModelCatalog, PiConfig,
                        PiSessionPreview (a thread from pi's session file),
                        InstructionsStore (Settings ▸ Instructions' files and their history),
@@ -632,7 +653,9 @@ Tests/
   Release/                Python tests for scripts/release.py
   ShepherdIOSChecks/      the iOS client's scripts
 scripts/               release.py (the release workflow's rules), sign-app.sh (release
-                       signing), sync-embedded-extension.py, ci_mtimes.py (CI's incremental builds)
+                       signing), sync-embedded-extension.py, ci_mtimes.py (CI's incremental builds),
+                       pi_engine.py + pi-engine-pin.json (stage and verify the pi engine),
+                       sign-engine.sh (node, slice by slice)
 Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
 ```
 
@@ -1240,7 +1263,10 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   appcast.
   - `scripts/sign-app.sh` signs inside-out, never with `--deep`: every nested item first, then
     the app with `App/Shepherd.entitlements` (both apps). Only nested apps and XPC services keep
-    their own entitlements.
+    their own entitlements, and the pi engine's node gets the engine's: `scripts/sign-engine.sh`
+    signs each slice with its own (`App/Engine.entitlements`, allow-jit, for arm64;
+    `App/Engine-x86_64.entitlements` adds allow-unsigned-executable-memory, without which V8
+    aborts at startup under the hardened runtime). `node` is never stripped.
   - The iOS client is archived unsigned and signed only at export, with the team's
     cloud-managed Apple Distribution certificate through the `APP_STORE_CONNECT_*` API key
     (`-allowProvisioningUpdates`). There is no `.p12` and no keychain.
