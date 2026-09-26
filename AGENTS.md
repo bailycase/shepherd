@@ -654,7 +654,6 @@ Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
   other launch of pi (the catalog, drafts, the updater) and of the node beside it (the Skills
   reader, the MCP probe) is built by `PiLaunch` too; nothing else names either.
 - The `cd` runs after the login shell's startup files, so a `cd` in them can't move pi.
-
 - The session ID is the agent's current pi session. `PiSessionFile` seeds a session header if
   pi has none yet.
 - `--model`/`--thinking` go only to a fresh session.
