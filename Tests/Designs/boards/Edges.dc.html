@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Parser edges</title>
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist">
+  <style>body { margin: 0 } a > b { color: #111 }</style>
+</helmet>
+<div style="width: 640px; height: 480px; display: flex; flex-direction: column; gap: 8px">
+  <!-- a comment with <div> inside is not an element -->
+  <sc-if value="{{open}}" hint-placeholder-val="{{ true }}">
+    <p>Opening paragraph<p>A second paragraph closes the first
+    <div>A block closes an open paragraph</div>
+  </sc-if>
+  <sc-for list="{{cards}}" as="card" hint-placeholder-count="2">
+    <dc-import name="Card" item="{{ card }}" hint-size="200px,120px"></dc-import>
+  </sc-for>
+  <ul><li>One<li>Two<ul><li>Nested</ul><li>Three</ul>
+  <dl><dt>Term<dd>Definition<dt>Another</dl>
+  <table><tr><td>Implied tbody<td>and row</tr><tr><th>Header</table>
+  <table><thead><tr><th>Name</th></tr></thead><tbody><tr><td>Value</td></tr></tbody></table>
+  <svg width="16" height="16" viewBox="0 0 16 16"><path d="M1 1h14"/><g><circle cx="8" cy="8" r="3"/><rect width="2" height="2"/></g></svg>
+  <textarea placeholder="Raw text"><div>not an element</div></textarea>
+  <select><option>A<option>B<optgroup label="G"><option>C</select>
+  <img src="/_blob/abc" alt="Photo"><br><input type="text"><hr>
+  <h2>Heading<h3>A heading closes an open heading</h3>
+  <a href="Main.dc.html"><span>Link</span></a>
+  <button type="button" onClick="{{ toggle }}">Toggle</button>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":640,"height":480}}'>
+class Component extends DCLogic {
+  state = { open: true };
+  renderVals() {
+    return { open: this.state.open, cards: [{ title: 'A' }, { title: 'B' }], toggle: () => this.setState({ open: !this.state.open }) };
+  }
+}
+</script>
+</body>
+</html>

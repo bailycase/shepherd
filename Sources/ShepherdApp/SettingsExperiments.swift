@@ -163,9 +163,10 @@ private struct ExperimentOptionRow<Control: View>: View {
             Spacer(minLength: 0)
             HStack(spacing: AppLayout.experimentCheckboxSpacing) { control }
         }
-        .padding(.vertical, NW.Space.m + NW.Space.xxs)
-        .padding(.horizontal, NW.Space.xl)
+        // As a Settings row: the content at least 48pt, 10pt inside the top and bottom.
         .frame(minHeight: AppLayout.experimentOptionMinHeight)
+        .padding(.vertical, NWCardRowMetrics.settingsVerticalPadding)
+        .padding(.horizontal, NW.Space.xl)
         .overlay(alignment: .top) { NWHairline() }
         .accessibilityElement(children: .contain)
     }
@@ -182,7 +183,7 @@ private struct WaitingSuggestions: View {
     var body: some View {
         let waiting = model.snapshot.waiting
         VStack(alignment: .leading, spacing: NW.Space.m) {
-            NWSectionHeader(SuggestionsPresentation.waitingTitle(waiting.count)) {
+            NWSectionHeader(SuggestionsPresentation.waitingTitle(waiting.count), style: .settings) {
                 if waiting.count > 1 {
                     Button("Add all") { Task { await model.addAll() } }
                         .buttonStyle(.nwLink(font: .nwSans(AppLayout.suggestionOriginSize)))
@@ -363,7 +364,7 @@ private struct ExperimentsSideColumn: View {
         let nw = Color.nw
         VStack(alignment: .leading, spacing: AppLayout.experimentsSideSpacing) {
             VStack(alignment: .leading, spacing: NW.Space.m) {
-                NWSectionHeader("How it works").padding(.horizontal, NW.Space.xxs)
+                NWSectionHeader("How it works", style: .settings).padding(.horizontal, NW.Space.xxs)
                 VStack(spacing: 0) {
                     ForEach(Array(Self.steps.enumerated()), id: \.offset) { index, step in
                         HStack(alignment: .firstTextBaseline, spacing: NW.Space.m + NW.Space.xxs) {
@@ -387,7 +388,7 @@ private struct ExperimentsSideColumn: View {
             }
             if !model.snapshot.added.isEmpty {
                 VStack(alignment: .leading, spacing: NW.Space.m) {
-                    NWSectionHeader("Added from suggestions").padding(.horizontal, NW.Space.xxs)
+                    NWSectionHeader("Added from suggestions", style: .settings).padding(.horizontal, NW.Space.xxs)
                     VStack(spacing: 0) {
                         ForEach(model.snapshot.added) { added in
                             HStack(spacing: NW.Space.m + NW.Space.xxs) {
@@ -417,7 +418,7 @@ private struct ExperimentsSideColumn: View {
                 .nwTransition(.disclosure)
             }
             VStack(alignment: .leading, spacing: NW.Space.m) {
-                NWSectionHeader("About experiments").padding(.horizontal, NW.Space.xxs)
+                NWSectionHeader("About experiments", style: .settings).padding(.horizontal, NW.Space.xxs)
                 SettingsNote(text: "Experiments can change or go away. Turning this one off keeps the lines you added and drops what's waiting.")
                     .padding(.horizontal, NW.Space.xxs)
                 Button { openURL(ExperimentsSettings.feedbackURL) } label: {

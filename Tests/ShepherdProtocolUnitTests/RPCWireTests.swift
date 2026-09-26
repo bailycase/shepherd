@@ -233,7 +233,12 @@ struct RPCWireTests {
         (#"{"type":"compaction_end","reason":"overflow","result":{"summary":"S","tokensBefore":203000,"estimatedTokensAfter":21000,"firstKeptEntryId":"k"},"aborted":false,"willRetry":true}"#,
          .compactionEnd(reason: "overflow", result: RPCCompactionResult(summary: "S", tokensBefore: 203_000, estimatedTokensAfter: 21_000, firstKeptEntryId: "k"),
                         aborted: false, willRetry: true, errorMessage: nil)),
-        (#"{"type":"auto_retry_start","attempt":1}"#, .unknown(type: "auto_retry_start")),
+        (#"{"type":"auto_retry_start","attempt":2,"maxAttempts":3,"delayMs":4000,"errorMessage":"529 overloaded"}"#,
+         .autoRetryStart(attempt: 2, maxAttempts: 3, delayMs: 4000, errorMessage: "529 overloaded")),
+        (#"{"type":"auto_retry_start"}"#, .autoRetryStart(attempt: 1, maxAttempts: 0, delayMs: 0, errorMessage: nil)),
+        (#"{"type":"auto_retry_end","success":false,"attempt":3,"finalError":"529 overloaded"}"#, .autoRetryEnd(success: false)),
+        (#"{"type":"auto_retry_end","success":true,"attempt":1}"#, .autoRetryEnd(success: true)),
+        (#"{"type":"entry_appended","entry":{}}"#, .unknown(type: "entry_appended")),
         (#"{"reason":"threshold"}"#, .unknown(type: "")),
     ]
 
@@ -255,6 +260,14 @@ struct RPCWireTests {
         #expect(system.toolsAdded?.first?["name"]?.stringValue == "read" && system.toolsRemoved?.count == 1)
         let user = try JSONDecoder().decode(RPCMessage.self, from: Data(#"{"role":"user","content":"hi","summary":"not mine","sections":{"a":"b"}}"#.utf8))
         #expect(user.summary == nil && user.sections == nil)
+    }
+
+    /// A failed reply carries the provider and model it went to; other messages don't read them.
+    @Test func aFailedReplyDecodesItsProviderAndModel() throws {
+        let failed = try JSONDecoder().decode(RPCMessage.self, from: Data(#"{"role":"assistant","content":[],"stopReason":"error","errorMessage":"401","provider":"openai","model":"gpt-5"}"#.utf8))
+        #expect(failed.provider == "openai" && failed.model == "gpt-5")
+        let reply = try JSONDecoder().decode(RPCMessage.self, from: Data(#"{"role":"assistant","content":[],"stopReason":"stop","provider":"openai","model":"gpt-5"}"#.utf8))
+        #expect(reply.provider == nil && reply.model == nil)
     }
 
     @Test(arguments: simpleEvents)
