@@ -115,6 +115,11 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     /// sidebar's Needs you can say why without reading the thread. Never written to state.json
     /// (`ShepherdState.persisted`). Nil when nothing is asked, and from older hosts.
     public var waitingOn: String?
+    /// The agent's own word or two for that question ("retention?"), when its asking tool
+    /// carried one (the status extension's `short`). Live like `waitingOn`, set and cleared with
+    /// it, and never written to state.json. Nil when the agent gave none, and from older hosts:
+    /// the sidebar then cuts the question itself.
+    public var waitingReason: String?
     /// The branch the agent's checkout is on and how many files differ from its HEAD, as the host
     /// last read them (`git status`). Live state: refreshed by the host after the agent's tool
     /// calls, turns, commits and focus, and broadcast so remote clients draw the same header.
@@ -137,6 +142,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         worktreePath: String? = nil,
         lastActiveAt: Double? = nil,
         waitingOn: String? = nil,
+        waitingReason: String? = nil,
         checkout: AgentCheckout? = nil
     ) {
         self.id = id
@@ -154,6 +160,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         self.worktreePath = worktreePath
         self.lastActiveAt = lastActiveAt
         self.waitingOn = waitingOn
+        self.waitingReason = waitingReason
         self.checkout = checkout
     }
 
@@ -165,7 +172,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case id, name, spaceID, tabID, paneID, status, model, thinkingLevel, nameIsFinal
-        case piSessionID, worktreeBranch, worktreeBase, worktreePath, lastActiveAt, waitingOn, checkout, runtime
+        case piSessionID, worktreeBranch, worktreeBase, worktreePath, lastActiveAt, waitingOn, waitingReason, checkout, runtime
     }
 
     public init(from decoder: Decoder) throws {
@@ -192,6 +199,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         // Absent before Recents, and from hosts that don't report them.
         lastActiveAt = try c.decodeIfPresent(Double.self, forKey: .lastActiveAt)
         waitingOn = try c.decodeIfPresent(String.self, forKey: .waitingOn)
+        waitingReason = try c.decodeIfPresent(String.self, forKey: .waitingReason)
         // Absent before the header's branch chip, and from hosts that don't read it.
         checkout = try c.decodeIfPresent(AgentCheckout.self, forKey: .checkout)
         // `runtime` is ignored: agents from the terminal era ("terminal") relaunch over RPC in
@@ -215,6 +223,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(worktreePath, forKey: .worktreePath)
         try c.encodeIfPresent(lastActiveAt, forKey: .lastActiveAt)
         try c.encodeIfPresent(waitingOn, forKey: .waitingOn)
+        try c.encodeIfPresent(waitingReason, forKey: .waitingReason)
         try c.encodeIfPresent(checkout, forKey: .checkout)
         // Older remote clients default a missing runtime to terminal and would try to attach a
         // PTY that does not exist.
@@ -302,11 +311,14 @@ public struct ShepherdState: Codable, Hashable, Sendable {
 
 extension ShepherdState {
     /// The state as state.json keeps it: without what only a running host knows (the question
-    /// each agent waits on).
+    /// each agent waits on, and its short reason).
     public var persisted: ShepherdState {
-        guard agents.contains(where: { $0.waitingOn != nil }) else { return self }
+        guard agents.contains(where: { $0.waitingOn != nil || $0.waitingReason != nil }) else { return self }
         var state = self
-        for index in state.agents.indices { state.agents[index].waitingOn = nil }
+        for index in state.agents.indices {
+            state.agents[index].waitingOn = nil
+            state.agents[index].waitingReason = nil
+        }
         return state
     }
 

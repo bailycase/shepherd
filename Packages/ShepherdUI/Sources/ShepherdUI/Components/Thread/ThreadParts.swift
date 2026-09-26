@@ -13,9 +13,8 @@ public enum NWThreadMetrics {
     public static let activityIcon: CGFloat = 13
     public static let chevron: CGFloat = 10
     /// A live line (LiveText: the running call, live thinking): 26pt on every platform, since
-    /// nothing on it takes a tap; live thinking's chevron is 11pt.
+    /// nothing on it takes a tap.
     public static let liveHeight: CGFloat = 26
-    public static let liveChevron: CGFloat = 11
     /// A call row in an expanded line.
     public static let callRowHeight: CGFloat = touchable(22)
     /// The calls list's kind column ("edit", "bash"), before it widens for longer names.

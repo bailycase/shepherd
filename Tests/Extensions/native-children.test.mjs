@@ -108,7 +108,7 @@ function fixtureServer() {
         { index: 1, id: "edit-call", type: "function", function: { name: "edit", arguments: JSON.stringify({ path: file, oldText: "two", newText: "two\nthree\nfour" }) } },
       ] }, "tool_calls");
     } else if (last.role === "user" && text.includes("ASK_PARENT")) {
-      say({ tool_calls: [{ index: 0, id: "parent-call", type: "function", function: { name: "shepherd_parent_message", arguments: JSON.stringify({ message: "Need a decision", needsReply: true, options: ["Replace everywhere", "Rename new ones"] }) } }] }, "tool_calls");
+      say({ tool_calls: [{ index: 0, id: "parent-call", type: "function", function: { name: "shepherd_parent_message", arguments: JSON.stringify({ message: "Need a decision", needsReply: true, options: ["Replace everywhere", "Rename new ones"], short: " token\n names? " }) } }] }, "tool_calls");
     } else {
       if (text.includes("SLOW")) await sleep(700);
       say({ content: last.role === "tool" ? "tool finished" : `reply:${text}` }, text.includes("TOKEN_LIMIT") ? "length" : "stop");
@@ -375,7 +375,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     const asked = (await h.call("wait", { ids: [ask.id], timeoutSeconds: 30 }))[0];
     assert(asked.needsReply); assert(h.messages.some((m) => m.message.content.includes("Needs reply")));
     const askCard = h.projections.at(-1).children.find((c) => c.runID === ask.id);
-    assert.deepEqual(askCard.question, { text: "Need a decision", options: ["Replace everywhere", "Rename new ones"] });
+    assert.deepEqual(askCard.question, { text: "Need a decision", options: ["Replace everywhere", "Rename new ones"], short: "token names?" });
     assert.equal(askCard.lastActivity.tool, "shepherd_parent_message"); assert.equal(askCard.toolCalls, 1);
     assert(Number.isFinite(askCard.lastActivity.at));
     await h.shutdown();
@@ -388,6 +388,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     assert.equal((await h.call("result", { id: limited.id })).stopReason, "length");
     assert(h.projections.at(-1).children.some((c) => c.runID === ask.id && c.needsAttention));
     assert.deepEqual(h.projections.at(-1).children.find((c) => c.runID === ask.id).question.options, ["Replace everywhere", "Rename new ones"], "question options survive a parent restart");
+    assert.equal(h.projections.at(-1).children.find((c) => c.runID === ask.id).question.short, "token names?", "and so does its short reason");
     // The control channel reconnects with the new parent; a card answer resumes the settled child.
     await until(() => control.sockets.length === 2);
     assert.deepEqual(await childCommand({ runID: ask.id, action: "message", text: "card answer", mode: "steer" }), { type: "childCommandResult", id: 1 });

@@ -96,6 +96,16 @@ enum StatusExtension {
         // question-style tools). While one is executing the agent is blocked.
         const USER_WAIT_TOOL = /(?:^|[^a-z0-9])(?:ask|question)(?:[^a-z0-9]|$)/i;
 
+        // Shepherd's sidebar says in a word or two why an agent waits ("retention?").
+        // The asking tools belong to other extensions, so each gets an optional
+        // `short` parameter, described so a model fills it. Shepherd reads it from
+        // the call's arguments; the tool itself never receives it.
+        const SHORT_REASON = {
+          type: "string",
+          description:
+            "Optional: what you need from the user in 1-3 words, shown beside this thread in Shepherd's sidebar while it waits (e.g. \"retention?\", \"approve plan\").",
+        };
+
         export default function shepherdStatus(pi: ExtensionAPI) {
           const agentID = process.env.SHEPHERD_AGENT_ID ?? "";
           const socketPath = process.env.SHEPHERD_SOCKET ?? "";
@@ -110,6 +120,32 @@ enum StatusExtension {
           let reportedSession: string | undefined;
           let sentSession: string | undefined;
           const pendingWaits = new Set<string>();
+          // Asking tools whose schema carries the `short` added here (a tool with its
+          // own `short` keeps it, and receives it).
+          const shortTools = new Set<string>();
+          const shortSchemas = new WeakSet<object>();
+
+          // Idempotent; rerun before each prompt so a tool registered or reloaded
+          // since is covered too.
+          function offerShortReason() {
+            try {
+              shortTools.clear();
+              for (const tool of pi.getAllTools()) {
+                if (!USER_WAIT_TOOL.test(tool.name)) continue;
+                const schema = tool.parameters as unknown as { properties?: Record<string, unknown> } | undefined;
+                const properties = schema?.properties;
+                if (!schema || !properties || typeof properties !== "object") continue;
+                if (!shortSchemas.has(schema)) {
+                  if ("short" in properties) continue;
+                  properties.short = { ...SHORT_REASON };
+                  shortSchemas.add(schema);
+                }
+                shortTools.add(tool.name);
+              }
+            } catch {
+              // Swallow; the sidebar falls back to the question itself.
+            }
+          }
 
           function flush() {
             if (!connected || !socket) return;
@@ -199,6 +235,7 @@ enum StatusExtension {
             pendingWaits.clear();
             connect();
             send("idle");
+            offerShortReason();
             // Fires for startup, /new, /resume, and /reload, so this covers every way
             // the current session can change.
             try {
@@ -206,6 +243,18 @@ enum StatusExtension {
             } catch {
               // Swallow; session tracking must never break the session.
             }
+          });
+
+          pi.on("before_agent_start", () => {
+            offerShortReason();
+          });
+
+          pi.on("tool_call", (event) => {
+            try {
+              if (shortTools.has(event.toolName) && event.input && typeof event.input === "object") {
+                delete (event.input as Record<string, unknown>).short;
+              }
+            } catch {}
           });
 
           pi.on("agent_start", () => {

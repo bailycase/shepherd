@@ -153,6 +153,7 @@ And the rules that follow from them:
 | iPad sidebar footer: the person (avatar, name, "This Mac · build-01") and Settings | The hosts ("2 of 3 offline" and their names, opening Settings ▸ Hosts) and Settings | Shepherd has no accounts, only hosts (docs/ios/README.md › iPad: "a footer with the hosts and Settings") |
 | ModelPicker: ⌘M opens the model picker (the ⌘M hint in its search field) | **⇧⌘M**, the hint the search field shows (from `KeybindingsStore`), and the palette's Choose model… row and the menu bar | ⌘M is the system Minimize chord |
 | ModelPicker: each row's second line describes the model ("Faster, cheaper", "Fastest") | Model rows' second line lists the model's thinking levels instead of the board's notes ("Off · Minimal · Low · Medium · High", or "No thinking"), on the Mac and in the iOS picker | The user's decision, 2026-09-25 (pi has no model descriptions) |
+| LiveText, ContextCompacted: live "› Thinking…" wears the disclosure's chevron | No chevron on a row with nothing to open: live "Thinking…", a thought the model kept back, a `<details>` with nothing inside, an activity or subagent record line with nothing behind it. Its place stays, so every label sits where a chevron's row puts it and nothing moves when a row becomes one that opens; such a row is not a button and offers VoiceOver no expand | The user's decision, 2026-09-25: "also for the thinking and blocks in such, if there is nothing to expand / show like when the model is thinking, dont show the carat". Patched copies of LiveText and ContextCompacted, their live chevrons left out, go to the canvas |
 | NWComposer and Running: while pi runs, the placeholder "Queue a follow-up — sent when the turn ends" | The idle placeholder stays ("Follow up, or / for commands…"), as QueueSteer and QuestionAnswered draw it beside Stop | Dropped with the queue and steer redesign: ↩ queues or steers per Settings ▸ Agents, so "sent when the turn ends" would be wrong under Steer |
 | Terminal: ⌃\` shows the panel, ⌃⇧\` opens a tab, ⌘K clears, ⇧⌘[ ] switch tabs | **⌘J** shows or hides it; + or ⌘D opens a tab; no clear or tab-switch chord | Every rebindable chord needs ⌘, ⌘K is the palette, and a tab is one click away |
 | Terminal: the terminal on `bgBase` (Mac and iPad panels) | On `bgWindow`, the theme's terminal background | Terminal panes keep one surface everywhere |
@@ -886,9 +887,17 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   sides. Each row (`NWSidebarRow`) is 28pt (22), radius 8, padded 8pt (6), with a 14pt leading slot
   and a 9pt (7) gap. The slot holds a thread's glowing 6pt `lantern` dot, or an automation run's
   13pt (11) `bolt` in `lanternText`. The title is in the row font, truncating at the tail. The
-  reason trails in mono 10 `lanternText` ("retention?", "approve plan"): the question the agent's
-  thread asks (`Agent.waitingOn`), else the asking subagent's role or name, else "ASK", cut to 14
-  characters at a word (`SidebarDerivation.shortened`). Most recently active first.
+  reason trails in mono 10 `lanternText` ("retention?", "approve plan"): the agent's own word or
+  two for its question (`Agent.waitingReason`) when its asking tool gave one, else the question
+  its thread asks (`Agent.waitingOn`); for an asking subagent, its own reason
+  (`ChildQuestion.short`), else its role or name; else "ASK". Cut to 14 characters at a word
+  (`NeedsYouReason`, shared with the iPad). Most recently active first. The agent is asked for the reason
+  (the user's decision, 2026-09-25: "Ask the agent for a short reason"): Shepherd's status
+  extension gives every asking tool (named like `ask` or `question`, the same rule that sets
+  `blocked`) an optional `short` parameter, described to the model as 1–3 words for this sidebar,
+  and takes it out of the call before the tool runs; the host reads it from the call's arguments
+  and pairs it with the dialog that call opens. A child's `shepherd_parent_message` takes the
+  same `short`. An agent that gives none, and an older host, fall back to the question cut short.
 - **Recents** (`NWSidebarSection(.recents)`): every other agent, on this Mac and every connected
   host, automation runs included, in one list, most recently active first. The header is "Recents"
   in Geist 11.5 medium `textTertiary`, spaced like Needs you, and the rows are the same. The leading
@@ -909,9 +918,10 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   (`AgentStatus.movesRecents`; asking and being answered happen inside a turn) and when a message is
   sent to it, and the app stamps an agent it creates. A streamed token, a repeated status report or
   a question never moves a row, so the list holds still while you read it. Agents no host has
-  stamped (older hosts and state files) follow, newest created first. `lastActiveAt` and `waitingOn`
-  are live state on `Agent`, broadcast to remote clients like a status; `waitingOn` is never written
-  to state.json. At launch the most recently active agent on this Mac shows.
+  stamped (older hosts and state files) follow, newest created first. `lastActiveAt`, `waitingOn`
+  and `waitingReason` are live state on `Agent`, broadcast to remote clients like a status;
+  `waitingOn` and `waitingReason` are never written to state.json. At launch the most recently
+  active agent on this Mac shows.
 - **Hosts:** a connected host's agents join both lists, tagged. A host that drops keeps its threads
   in Recents as it last sent them (NavHosts' `horizon` rows), dimmed (`NWListMetrics.dimmedOpacity`,
   as on the iPad), never in Needs you since nothing there can be answered, and with a menu that
@@ -925,8 +935,8 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   the trailing end.
 - **Subagents have no rows.** They live in their agent's tray above the composer, the thread's
   record lines, and the inspector (see Subagents below), and in the palette. A subagent waiting
-  on you puts its agent in Needs you, with its name as the reason; live and finished subagents
-  leave the agent's row as it is.
+  on you puts its agent in Needs you, with its own short reason, else its name, as the reason;
+  live and finished subagents leave the agent's row as it is.
 - **Width:** 232pt by default, 190–340, by dragging the trailing edge (a 9pt handle, adjustable
   with VoiceOver in 16pt steps) or in Settings ▸ Appearance. It never narrows the main column
   below 720 and keeps its width while the side pane is open.
@@ -1368,11 +1378,19 @@ the turn has finished, the changes card and the footer end it. A running turn ha
     italic 12 `textSecondary`, 6pt apart ("Thought for 1m 04s" past a minute; "Thought" when
     shorter than half a second or untimed). The whole label is the button.
   - Expanded: 8pt beneath, the text in italic 12.5 at 1.55 in `textSecondary`, 12pt past a 2pt
-    `lineStrong` rule, at the prose measure. It opens and closes with `disclosure`.
-  - Live (LiveText): the disclosure's chevron, still, 11pt in `textTertiary`, and "Thinking…" in
-    italic `ui` (12.5) shimmering, 8pt apart on a 26pt row, with no clock. It is the thread's live line
-    between tools (see Live text), and when thinking ends it cross-fades in place into what the
-    finished row is (below), or leaves.
+    `lineStrong` rule, at the prose measure. It opens and closes with `disclosure`. The text is
+    Markdown (reasoning summaries are: GPT's open with a bold title, "**Inspecting SSH
+    config**", then a paragraph), drawn by the prose parts in thinking's voice: bold, italic,
+    code spans and links inline (as in prose); paragraphs, lists and quotes as blocks, 8pt
+    apart; headings semibold at the same size; fenced code as a code block. It is parsed once per
+    change of the turn (`NativeTurnPresentation`, memoised by the store, so a reply streaming
+    under it never parses it again), and live thinking, which shows no text, is never parsed.
+    The host normalizes the text first (docs/native-thread.md › Thinking text), so a summary
+    part pi left empty leaves no gap.
+  - Live (LiveText): "Thinking…" in italic `ui` (12.5) shimmering on a 26pt row, with no clock
+    and no chevron (nothing opens yet; see the departures), its words where the finished row's
+    are. It is the thread's live line between tools (see Live text), and when thinking ends it
+    cross-fades in place into what the finished row is (below), or leaves.
   - Finished, by what the stretch carries. Providers often keep their reasoning back
     (Anthropic's redacted or omitted thinking, OpenAI's encrypted reasoning, a proxy that
     streams none), and pi keeps that as a thinking block with no text; readable text is
@@ -1380,9 +1398,10 @@ the turn has finished, the changes card and the footer end it. A running turn ha
     folded row shows only the blocks that have it.
     1. Readable text: the disclosure above.
     2. No readable text, timed at half a second or more: "Thought for 10s" as a plain line, the
-       collapsed label's words, type and color with no chevron. It is not a control (no hover,
-       no press, no focus); its tooltip and VoiceOver say "Thought for 10 seconds. The model
-       didn't share its reasoning."
+       collapsed label's words, type and color with no chevron, where a disclosure's label
+       sits (the chevron's place stays). It is not a control (no hover, no press, no focus);
+       its tooltip and VoiceOver say "Thought for 10 seconds. The model didn't share its
+       reasoning."
     3. No readable text and no such time: no row.
 
     The NWThread board draws only the first; the other two are app states it does not draw.
@@ -1404,7 +1423,7 @@ the turn has finished, the changes card and the footer end it. A running turn ha
   - A tool is running: its own activity line is the indicator (Activity lines › Live), with
     nothing under it but its output.
   - Between tools (no call running, no thinking or reply streaming; also before pi's reply has
-    a row): the turn ends in live thinking, "› Thinking…" shimmering. When pi's thinking streams
+    a row): the turn ends in live thinking, "Thinking…" shimmering. When pi's thinking streams
     it is the same line, and it settles into "Thought for Ns".
   - Replying: the text being written is the indicator; no line joins it.
   - A running call the subagent record or the tray stands for (`shepherd_child_wait`) still
@@ -1462,7 +1481,8 @@ tools merge only with the same tool. Consecutive lines form one part of the turn
   turning down) when it expands, 8pt apart, with 4pt leading and 8pt trailing padding. It hugs
   its content and sits 4pt left of the column, so its glyph lines up with the prose. The label
   never truncates; the meta truncates at its tail. It is a real button with a radius-6 `bgHover`
-  fill on hover; a line with nothing behind it has no chevron and does nothing.
+  fill on hover; a line with nothing behind it draws no chevron (its place stays) and is not a
+  button: no hover, no press, no focus, and VoiceOver hears only its words.
 
   | Kind | Glyph | Done | Running |
   | --- | --- | --- | --- |
@@ -1610,6 +1630,8 @@ text.
 - **HTML is never rendered raw.** `<details><summary>` becomes a disclosure
   (`NWProseDetails`), collapsed: a 10pt chevron and the summary in body medium, the whole line
   a button. Open, its blocks sit 12pt past a 2pt `lineStrong` rule, as expanded thinking does.
+  One with nothing inside is its summary alone, where the chevron's row puts it: no chevron,
+  not a button.
   `<br>` breaks the line, `<kbd>` is a keycap (`ui` on `bgSelected`), and `<b>`, `<i>`, `<s>`,
   `<code>`, `<sup>`, `<sub>` and `<a href>` style their text. `<img>`, `<hr>` and `<h1>`–`<h6>`
   become their blocks, other known tags are stripped to their text, and comments are dropped.
@@ -2294,7 +2316,8 @@ the components' values, and `Thread/Subagents.swift` lays out the tray. State al
   reviewer…").
 - **In the thread** (`NWSubagentRecordLine`, SubagentTray › SubagentRecord): an activity line in
   look (26pt, 12.5 `textSecondary`, the meta in `.nwMono(11)` `textTertiary`, a 13pt branch glyph
-  and a 10pt chevron; a real button with the row hover). "Started 3 subagents · worker · reviewer
+  and a 10pt chevron; a real button with the row hover; with no run to open, no chevron, its
+  place kept, and not a button). "Started 3 subagents · worker · reviewer
   · tests" (at most six names, then "+2 more") takes the first spawn call's place; later spawns
   and the parent's `shepherd_child_wait` and `shepherd_child_result` calls leave no line, and the
   activity lines around them run on as one (a burst of one kind still merges across them). Once every run has finished, "3 subagents finished · 45m ·
@@ -4260,8 +4283,6 @@ below collects the rest, and the places those sentences point here.
   - The New thread composer has no attach button and no "/ commands" chip, and its placeholder
     drops ", or / for commands": no pi runs before the thread exists to list its commands, and the
     opening prompt carries no images.
-  - A Needs you reason is the question's own title cut to 14 characters ("Retention…"), where the
-    boards condense it ("retention?").
 - **A pi dialog posts no notification** (Notifications and Live Activities › The catalog):
   a confirm, select, input or editor dialog shows in the thread, but only a tool named like
   `ask` or `question` sets `blocked`, so any other question reaches no one outside the window
@@ -4589,8 +4610,8 @@ follows the Mac's rules (Thread) with the phone's measures below.
   `textSecondary`, the label ("Pushing") and the command (mono 11) shimmering, the elapsed seconds
   in mono 11 `textTertiary`, then the call's last three output lines in mono 11 at 1.6 line height,
   indented 21pt, the newest in `textSecondary` and the rest `textTertiary`. Nothing spins, and no
-  "Working…" row sits under it; between tools the turn ends in "› Thinking…", shimmering, as on the
-  Mac (Thread › Live text).
+  "Working…" row sits under it; between tools the turn ends in "Thinking…", shimmering, as on the
+  Mac (Thread › Live text), with no chevron.
 - **"Edited N files" card** (`NWTurnChangesCard`, ChangesStates › ChangesCard): 1px
   `lineSubtle`, 12pt corners, on `bgWindow`. Its head (10×10×12 inset): a 36pt tile (`bgSunken`,
   a 1px `lineSubtle` line, radius 8) with the ± glyph in `textSecondary`; "Edited 2 files" (15/600)
@@ -4770,7 +4791,7 @@ record lines, a list, and a screen per run.
     THE PARENT" (`.nwSectionLabel()`), then the goal at 14/1.45. The app adds "step 1 of 3 · 34%".
   - Its transcript: prose at 15/1.5, activity lines 32pt tall at 14; the running call live with its
     verb ("Building") and command shimmering and its elapsed seconds, as in the thread; nothing
-    shows between calls (LiveText's "› Thinking…" is the thread's alone). The app draws the live
+    shows between calls (LiveText's "Thinking…" is the thread's alone). The app draws the live
     call without the board's output tail: the child's session holds no streamed output (Where
     Shepherd departs from the boards).
   - Its question, while it waits on you, on `lanternTint` with its answers.
@@ -5206,7 +5227,8 @@ selected thread, or the Overview when none is. Other screens push over the detai
   and a 16pt `textTertiary` glyph for a design, a mission or an automation run.
 - **Needs you rows** end in the reason in mono 10 `lanternText`. The boards summarize the
   question ("retention?", "approve plan", "orders stuck") or name the subagent that asks
-  ("reviewer"); the app writes "asked you", "needs you", or the subagent's name.
+  ("reviewer"); the app writes the agent's own short reason when it gave one, cut as on the Mac
+  (`NeedsYouReason`), else "asked you" or "needs you", and a subagent's own reason, else its name.
 - **Recents rows** end in the host tag (mono 10 `textTertiary` in a 1px `lineSubtle` box at
   radius 4) only when threads from several hosts mix. Running rows draw no sparkline (see
   Where Shepherd departs). **Not built yet:** a design's row (the diamond glyph, and "4 boards"
