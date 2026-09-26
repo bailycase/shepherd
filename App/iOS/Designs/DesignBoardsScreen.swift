@@ -13,6 +13,7 @@ struct DesignBoardsScreen: View {
     let ref: HostDesignRef
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
+    @State private var watchToken = UUID()
 
     var body: some View {
         let designs = MobileDesigns.of(hosts)
@@ -50,6 +51,14 @@ struct DesignBoardsScreen: View {
         .background(Color.nw.bgWindow)
         .refreshable { await designs.sync(ref) }
         .task { await designs.sync(ref) }
+        // Boards the agent draws while this is on screen show as they land.
+        .onAppear {
+            designs.watch(ref, on: true, token: watchToken) { changed, files, _ in
+                guard files, changed == ref else { return }
+                Task { await designs.sync(ref) }
+            }
+        }
+        .onDisappear { designs.watch(ref, on: false, token: watchToken) }
         .navigationTitle(name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
