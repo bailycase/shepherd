@@ -47,8 +47,10 @@ struct FixtureHostData {
     var skills: SkillsSnapshot? = FixtureData.skills()
     var repoSkills: RepoSkills? = nil
     /// What the host says it understands; nil is everything this build knows (an older host
-    /// leaves some out).
+    /// leaves some out), with designs.v1 only where it has `designs`.
     var capabilities: [String]? = nil
+    /// The designs it serves (designs.v1, as with its Design tool on); nil serves none.
+    var designs: FixtureDesigns? = nil
 }
 
 /// Fixed ids and builders every track's fixtures share, so screens agree with each other.
@@ -179,6 +181,7 @@ enum FixtureData {
 enum FixtureCatalog {
     static var all: [FixtureScreen] {
         home + thread + context + newThread + subagents + review + changes + commit + search + settings + automations + windows + terminal
+            + designs
     }
 
     static func screen(named name: String) -> FixtureScreen? {
