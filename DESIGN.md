@@ -722,6 +722,19 @@ runs, 2,000 folders).
   floats: on its content, Core Animation redrew the shadow from the scrolling diff every step.
   `ListPerformanceTests` pins each: rows per scroll step, one row per comment, no thread row while
   the pane scrolls, no AppKit view for a hovered `+`, no shadowed layer while docked.
+- **Hidden agents stay out of the visible one's updates.** Each mounted layout has a hosting view of
+  its own (`AgentLayoutDeck`), and a hidden one is a hidden AppKit view: a scroll step, a keystroke,
+  a streamed reply or a status report runs the visible layout's graph alone, and AppKit walks the
+  same views and layers beside thirty hidden agents as beside none. In one view graph each hidden
+  agent added about 0.4 M instructions to a scroll step and 1.2 M to a status report (a 1 pt step of
+  the Changes pane: 10.3 M alone, 22.5 M beside 30 hidden agents, now 13.6 M; a status report 39 M,
+  now 1.6 M). What still grows (a keystroke, 25 M alone and 35 M beside 30) is AppKit's
+  display-cycle walks and SwiftUI's window-wide focus, which no public API reaches.
+  `ListPerformanceTests` pins it by counts; `SHEPHERD_PERF_REPORT=1 swift test --filter
+  HiddenAgentsReport` prints the instructions.
+- **The overlaid sidebar casts its shadow from its fill**, as the floating right pane does
+  (`nwFloatBackground`): on the sidebar itself, Core Animation redrew the shadow from its
+  scrolling list every step.
 - **The chrome around a field compares before it redraws.** The composer's control row takes an
   `Equatable` model of what it draws (`ComposerControls`), so a keystroke past the first
   character, or the field losing focus to a menu, rebuilds the field and never the chips.
@@ -815,7 +828,8 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
   pane (between split terminals the TerminalPane board draws `lineStrong`; Known gaps); dragging one
   keeps each side at least 160pt (`splitPaneMinSpan`), between 15% and 85%.
 - **Switching agents flips visibility; it never remounts.** Every mounted layout stays in the
-  view tree, and hidden ones are `opacity(0)`. This is what makes switching instant.
+  view tree, each in a hosting view of its own, and hidden ones are hidden views. This is what
+  makes switching instant.
 
 **Adaptive rules** (`ShellLayout`, pure and unit-tested in `ShellLayoutTests`):
 
