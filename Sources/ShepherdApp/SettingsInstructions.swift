@@ -541,7 +541,7 @@ private struct InstructionsReadingOrder: View {
                     stepCard(index + 1, title: step.title, note: step.note, marked: step.file == file)
                 }
             }
-            SettingsNote(text: "Later files win. The agent’s own files in ~/.pi/agent still load, each just before Shepherd's. "
+            SettingsNote(text: "Later files win. pi's own files in Shepherd's pi home still load, each just before Shepherd's. "
                 + "A session reads them when it starts: running agents keep the version they started with, "
                 + "new agents and automations get this one.")
                 .padding(.horizontal, NW.Space.xxs)
