@@ -148,7 +148,19 @@ final class DesignRendering {
 final class DesignHost {
     struct Board: Equatable {
         var size: CGSize
+        /// The file's hash.
         var sha: String
+        /// Its tweaked props as JSON (canvas.json's `tweaks` for it); nil when it has none.
+        var props: String?
+
+        init(size: CGSize, sha: String, props: String? = nil) {
+            self.size = size
+            self.sha = sha
+            self.props = props
+        }
+
+        /// What the board draws: its file and its props. Snapshots and live views are kept by it.
+        var drawing: String { props.map { sha + "+" + $0 } ?? sha }
     }
 
     let designID: DesignID
@@ -220,8 +232,8 @@ final class DesignHost {
     func isDrawn(_ paths: [DesignPath]) -> Bool {
         paths.allSatisfy { path in
             guard let board = boards[path] else { return true }
-            if let slot = slots[path], slot.ready, slot.sha == board.sha { return true }
-            return images.sha(path) == board.sha
+            if let slot = slots[path], slot.ready, slot.sha == board.drawing { return true }
+            return images.sha(path) == board.drawing
         }
     }
 
@@ -244,7 +256,7 @@ final class DesignHost {
                 if old.size != board.size {
                     // A new size lays the page out again: load it afresh.
                     releaseSlot(path)
-                } else if slot.ready, slot.sha != board.sha {
+                } else if slot.ready, slot.sha != board.drawing {
                     reload(path, slot: slot)
                 }
             }
@@ -313,6 +325,27 @@ final class DesignHost {
         return found
     }
 
+    // MARK: Tweak previews
+
+    /// Shows style changes in a board's live view without writing them (a tweak being dragged).
+    /// False when the board has no live view drawn: its snapshot shows the change once written.
+    func previewStyle(_ path: DesignPath, _ changes: [Int: [String: String?]]) async -> Bool {
+        guard let slot = slots[path], slot.ready else { return false }
+        return await slot.view.previewStyle(changes) > 0
+    }
+
+    /// Draws a board's live view with props `json` without writing them.
+    func previewProps(_ path: DesignPath, _ json: String) async -> Bool {
+        guard let slot = slots[path], slot.ready else { return false }
+        return await slot.view.previewProps(json)
+    }
+
+    /// Puts back what a board's previews changed (a tweak that wasn't kept).
+    func endPreview(_ path: DesignPath) async {
+        guard let slot = slots[path], slot.ready else { return }
+        await slot.view.endPreview()
+    }
+
     /// The board's live view once it has drawn, making it wanted if it has none.
     private func readyView(_ path: DesignPath) async -> DesignBoardView? {
         guard isActive, boards[path] != nil else { return nil }
@@ -349,7 +382,7 @@ final class DesignHost {
         guard let board = boards[path] else { return }
         let view = DesignBoardView(surface: surface, board: path, size: board.size)
         view.zoom = zoom
-        let slot = Slot(view: view, sha: board.sha, wanted: stamp)
+        let slot = Slot(view: view, sha: board.drawing, wanted: stamp)
         slots[path] = slot
         rasterizer.noteWebViews()
         slot.task = Task { [weak self, weak slot] in
@@ -363,7 +396,7 @@ final class DesignHost {
                 return
             }
             guard let self, self.slots[path] === slot, !Task.isCancelled else { return }
-            if let current = self.boards[path], current.sha != slot.sha {
+            if let current = self.boards[path], current.drawing != slot.sha {
                 // Written after the view read the file: show what is there now.
                 slot.ready = true
                 self.reload(path, slot: slot)
@@ -394,15 +427,14 @@ final class DesignHost {
     /// refuses (logic that doesn't compile) leaves the board as it was.
     private func reload(_ path: DesignPath, slot: Slot) {
         guard let board = boards[path] else { return }
-        let sha = board.sha
-        slot.sha = sha
+        slot.sha = board.drawing
         slot.task?.cancel()
         slot.task = Task { [weak self, weak slot] in
             guard let self, let slot, let source = self.source else { return }
             do {
                 let text = try await source(path)
                 guard self.slots[path] === slot, !Task.isCancelled else { return }
-                try await slot.view.replaceSource(text)
+                try await slot.view.replaceSource(text, props: board.props ?? "{}")
                 self.reloads += 1
                 self.redrawn?(path)
             } catch DesignBoardError.refused {
@@ -428,19 +460,20 @@ final class DesignHost {
     }
 
     private func rasterizeIfStale(_ path: DesignPath) {
-        guard let board = boards[path], images.sha(path) != board.sha, failed[path] != board.sha else { return }
+        let drawing = boards[path]?.drawing
+        guard let board = boards[path], let drawing, images.sha(path) != drawing, failed[path] != drawing else { return }
         rasterizer.enqueue(DesignRasterizer.Job(key: "\(designID.rawValue)/\(path.rawValue)", surface: surface, path: path,
-                                                size: board.size, sha: board.sha, priority: .canvas,
+                                                size: board.size, sha: drawing, priority: .canvas,
                                                 wanted: { [weak self] in
                                                     guard let self, self.isActive, self.slots[path] == nil,
                                                           self.visible.contains(path) else { return false }
-                                                    return self.boards[path]?.sha == board.sha && self.images.sha(path) != board.sha
+                                                    return self.boards[path]?.drawing == drawing && self.images.sha(path) != drawing
                                                 }) { [weak self] image in
             guard let self else { return }
-            guard let image else { self.failed[path] = board.sha; return }
-            guard self.boards[path]?.sha == board.sha else { return }
+            guard let image else { self.failed[path] = drawing; return }
+            guard self.boards[path]?.drawing == drawing else { return }
             self.snapshotsTaken += 1
-            self.images.store(image, sha: board.sha, for: path, keeping: self.onScreen)
+            self.images.store(image, sha: drawing, for: path, keeping: self.onScreen)
             self.bump(path)
         })
     }

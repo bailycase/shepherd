@@ -83,23 +83,30 @@ struct DesignCommentPopover: View {
     }
 }
 
-/// The chat pane (DZCanvas): its tabs (Chat, and Comments with the open comments' count; Tweak
-/// comes with its own change), then the design agent's thread, whose composer has attach and Send
-/// only, or the open comments' cards. The thread stays mounted under the Comments tab.
+/// The chat pane (DZCanvas, DZTweak): its tabs, Chat (the design agent's thread, whose composer
+/// has attach and Send only), Comments (the open comments' cards, with their count) and Tweak (the
+/// selection's controls). The thread stays mounted under the other tabs, hidden, so switching tabs
+/// never rebuilds it.
 struct DesignChatPane: View {
     var vm: ShepherdViewModel
     @Bindable var screen: DesignScreenModel
     let model: AgentLayoutModel
     let thread: AgentLayoutModel.Thread
 
+    private func tabs(open: Int) -> [NWDesignPaneTabs.Tab] {
+        var tabs = [NWDesignPaneTabs.Tab(id: DesignPaneTab.chat.rawValue, title: "Chat"),
+                    NWDesignPaneTabs.Tab(id: DesignPaneTab.comments.rawValue, title: "Comments", count: open > 0 ? open : nil)]
+        if screen.tweak != nil { tabs.append(NWDesignPaneTabs.Tab(id: DesignPaneTab.tweak.rawValue, title: "Tweak")) }
+        return tabs
+    }
+
     var body: some View {
         let open = screen.openComments.count
-        let commentsShown = screen.paneTab == .comments
+        let tab = screen.paneTab == .tweak && screen.tweak == nil ? .chat : screen.paneTab
+        let chat = tab == .chat
         VStack(spacing: 0) {
-            NWDesignPaneTabs([NWDesignPaneTabs.Tab(id: DesignPaneTab.chat.rawValue, title: "Chat"),
-                              NWDesignPaneTabs.Tab(id: DesignPaneTab.comments.rawValue, title: "Comments", count: open > 0 ? open : nil)],
-                             selection: screen.paneTab.rawValue) { id in
-                if let tab = DesignPaneTab(rawValue: id) { screen.paneTab = tab }
+            NWDesignPaneTabs(tabs(open: open), selection: tab.rawValue) { id in
+                screen.paneTab = DesignPaneTab(rawValue: id) ?? .chat
             }
             ZStack {
                 if let pane = model.tab.layout.leaf(withID: thread.paneID) {
@@ -108,28 +115,36 @@ struct DesignChatPane: View {
                         session: vm.sessions.session(for: pane, in: model.tab),
                         store: vm.threadStores.store(for: agentID),
                         active: model.isVisible,
-                        isFocused: model.focusedPaneID == thread.paneID,
+                        isFocused: chat && model.focusedPaneID == thread.paneID,
                         request: { [vm] in try await vm.server.nativeThread(agentID: agentID, request: $0) },
                         preview: PiSessionFile.previewLoader(sessionID: thread.piSessionID, cwd: pane.cwd),
                         commandKey: ThreadCommandCenter.key(local: agentID),
                         agentName: thread.agentName,
                         workingDirectory: pane.cwd,
                         designChat: true)
-                        .environment(\.designCommentCards, screen.commentCards)
-                        .opacity(commentsShown ? 0 : 1)
-                        .allowsHitTesting(!commentsShown)
-                        .accessibilityHidden(commentsShown)
+                    .environment(\.designCommentCards, screen.commentCards)
+                    .opacity(chat ? 1 : 0)
+                    .allowsHitTesting(chat)
+                    .accessibilityHidden(!chat)
                 }
-                if commentsShown {
+                if tab == .comments {
                     DesignCommentsList(cards: screen.openCards) { screen.openThread($0.uuidString) }
                         .background(Color.nw.bgWindow)
+                }
+                if let tweak = screen.tweak, tab == .tweak {
+                    DesignTweakPane(model: tweak, target: screen.tweakTarget) { [vm] in
+                        // "Ask the agent instead…": the chat, its composer taking the keyboard; the
+                        // message it sends carries the selection as data.
+                        screen.paneTab = .chat
+                        vm.focusedPaneID = thread.paneID
+                    }
                 }
             }
         }
         .frame(maxHeight: .infinity)
         .background(Color.nw.bgWindow)
         .overlay(alignment: .leading) { NWHairline(.vertical) }
-        .simultaneousGesture(TapGesture().onEnded { [vm] in vm.focusedPaneID = thread.paneID })
+        .simultaneousGesture(TapGesture().onEnded { [vm] in if screen.paneTab == .chat { vm.focusedPaneID = thread.paneID } })
     }
 }
 

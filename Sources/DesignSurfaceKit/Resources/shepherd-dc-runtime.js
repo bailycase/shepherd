@@ -21,7 +21,11 @@
  *   and takes `replaceSource(source)` to re-render in place, without navigating;
  * - answers the bridge's `shepherd-dc-describe` events with what the board's template says of an
  *   element: its path (view-state.md's child-index chain), its kind, its label (the template's
- *   own text, holes as written) and its `data-el` name, for the canvas's selection.
+ *   own text, holes as written) and its `data-el` name, for the canvas's selection;
+ * - hands the board its top-level props: the values canvas.json's `tweaks` key holds for it
+ *   (Shepherd's Tweak), read at boot and given again with `replaceSource`;
+ * - previews a tweak in place while it is dragged (`previewStyle`, `setProps`) and puts the
+ *   board back as it was (`endPreview`) when the tweak isn't kept.
  */
 (function () {
   'use strict';
@@ -690,6 +694,32 @@
     return h(ImportSlot, { url: url, frame: context, tid: element.tid, hint: hint, childProps: childProps });
   }
 
+  // MARK: Props
+
+  /** The board's path under the project, as canvas.json keys it. */
+  function boardKey() {
+    var path = location.pathname;
+    if (path.indexOf('/project/') !== 0) return null;
+    try { return decodeURIComponent(path.slice('/project/'.length)); } catch (_) { return null; }
+  }
+
+  function plainObject(value) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+  }
+
+  /** The board's tweaked props from canvas.json's text: `tweaks[<board path>]`. */
+  function tweaksIn(text) {
+    if (!text) return {};
+    try {
+      var canvas = plainObject(JSON.parse(text));
+      var tweaks = canvas && plainObject(canvas.tweaks);
+      var key = boardKey();
+      return (tweaks && key && plainObject(tweaks[key])) || {};
+    } catch (_) {
+      return {};
+    }
+  }
+
   // MARK: The board
 
   class Host extends React.Component {
@@ -729,7 +759,7 @@
   var hostKey = 0;
   var current = null;
 
-  function mount(board) {
+  function mount(board, props) {
     var compiled = compileComponent(board.script, location.pathname.split('/').pop());
     if (compiled.error) {
       report('logic', compiled.error);
@@ -739,7 +769,7 @@
     compiled.Component[DEFINITION] = { template: template, url: location.href };
     hoistHelmet('board', template.helmets, true);
     if (board.title != null) document.title = board.title;
-    current = { Component: compiled.Component, script: board.script, carry: null, template: template };
+    current = { Component: compiled.Component, script: board.script, carry: null, template: template, props: props || {} };
     root = ReactDOM.createRoot(document.body);
     render();
   }
@@ -750,14 +780,17 @@
       ref: function (instance) { host = instance; },
       component: current.Component,
       frame: { owner: null, chain: [location.href], url: location.href },
-      boardProps: {},
+      boardProps: current.props,
       carry: current.carry
     });
     ReactDOM.flushSync(function () { root.render(element); });
   }
 
-  /** Re-renders the board from new source in place: no navigation, and its state is kept. */
-  function replaceSource(source) {
+  /**
+   * Re-renders the board from new source in place: no navigation, and its state is kept.
+   * `props` (JSON text), when given, are its top-level props from now on.
+   */
+  function replaceSource(source, props) {
     if (!root || !current) return { ok: false, error: 'the board has not started' };
     var board = readBoard(String(source));
     if (!board) return { ok: false, error: 'the board has no <x-dc> template' };
@@ -780,16 +813,83 @@
       report('template', error);
       return { ok: false, error: describe(error) };
     }
+    var nextProps = current.props;
+    if (typeof props === 'string') nextProps = tweaksObject(props);
     Component[DEFINITION] = { template: template, url: location.href };
     hoistHelmet('board', template.helmets, true);
     if (board.title != null) document.title = board.title;
     var sameComponent = Component === current.Component;
-    current = { Component: Component, script: board.script, carry: carry, template: template };
+    current = { Component: Component, script: board.script, carry: carry, template: template, props: nextProps };
+    // What a preview changed is what the new source says now.
+    previews = new Map();
     if (host && host.state.failed) hostKey++;
     render();
     if (sameComponent && host && host.instance) {
       ReactDOM.flushSync(function () { host.instance.forceUpdate(); });
     }
+    emit('rendered');
+    return { ok: true };
+  }
+
+  function tweaksObject(json) {
+    try { return plainObject(JSON.parse(json)) || {}; } catch (_) { return {}; }
+  }
+
+  // MARK: Previews
+
+  /** Each element a preview changed, with the values it had before: node → {property: [value, priority]}. */
+  var previews = new Map();
+  var PROPERTY = /^(--[A-Za-z0-9_-]{1,62}|[a-z][a-z-]{0,62})$/;
+  var VALUE = /^[A-Za-z0-9 #.%(),_+\/-]{0,200}$/;
+
+  /**
+   * Shows style changes on the board's own elements without writing them: `changes` is
+   * `[{tid, style: {property: value}}]`, an empty value taking the property out. Every rendering
+   * of each element changes (a loop draws one element many times). Returns how many changed.
+   */
+  function previewStyle(changes) {
+    if (!Array.isArray(changes)) return 0;
+    var changed = 0;
+    changes.forEach(function (change) {
+      var tid = change && change.tid;
+      var style = change && plainObject(change.style);
+      if (!Number.isInteger(tid) || tid < 0 || !style) return;
+      var nodes = document.querySelectorAll('[data-dc-tid="' + tid + '"]');
+      for (var i = 0; i < nodes.length; i++) {
+        var node = nodes[i];
+        if (!node.style) continue;
+        var saved = previews.get(node);
+        if (!saved) previews.set(node, saved = {});
+        for (var property in style) {
+          var value = style[property];
+          if (!PROPERTY.test(property) || typeof value !== 'string' || !VALUE.test(value)) continue;
+          if (!(property in saved)) saved[property] = [node.style.getPropertyValue(property), node.style.getPropertyPriority(property)];
+          if (value === '') node.style.removeProperty(property);
+          else node.style.setProperty(property, value, saved[property][1]);
+        }
+        changed++;
+      }
+    });
+    return changed;
+  }
+
+  /** Puts back every value a preview changed. */
+  function endPreview() {
+    previews.forEach(function (saved, node) {
+      for (var property in saved) {
+        if (saved[property][0] === '') node.style.removeProperty(property);
+        else node.style.setProperty(property, saved[property][0], saved[property][1]);
+      }
+    });
+    previews = new Map();
+    return true;
+  }
+
+  /** The board's top-level props (JSON text), drawn at once: a data-props tweak being dragged. */
+  function setProps(json) {
+    if (!root || !current) return { ok: false, error: 'the board has not started' };
+    current.props = tweaksObject(json);
+    render();
     emit('rendered');
     return { ok: true };
   }
@@ -814,13 +914,17 @@
   }
 
   function boot() {
+    // canvas.json holds the board's tweaked props; a canvas that can't be read gives none.
+    var canvas = fetch('/project/canvas.json', { cache: 'no-store' }).then(function (response) {
+      return response.ok ? response.text() : '';
+    }).catch(function () { return ''; });
     fetch(location.href, { cache: 'no-store' }).then(function (response) {
       if (!response.ok) throw new Error('could not read the board (' + response.status + ')');
-      return response.text();
-    }).then(function (source) {
-      var board = readBoard(source);
+      return Promise.all([response.text(), canvas]);
+    }).then(function (read) {
+      var board = readBoard(read[0]);
       if (!board) throw new Error('the board has no <x-dc> template');
-      mount(board);
+      mount(board, tweaksIn(read[1]));
       var preview = board.props && board.props.$preview;
       return settle().then(function () {
         var size = preview && typeof preview.width === 'number' && typeof preview.height === 'number'
@@ -833,7 +937,7 @@
     });
   }
 
-  var api = Object.freeze({ replaceSource: replaceSource });
+  var api = Object.freeze({ replaceSource: replaceSource, previewStyle: previewStyle, endPreview: endPreview, setProps: setProps });
   Object.defineProperty(window, '__shepherdDC', { value: api, writable: false, configurable: false, enumerable: false });
 
   if (document.readyState === 'loading') {

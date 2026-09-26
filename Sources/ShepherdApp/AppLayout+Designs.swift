@@ -34,4 +34,6 @@ extension AppLayout {
     /// The Comments tab: the chat's 18pt padding and 14pt between its cards.
     static let designCommentsPadding: CGFloat = 18
     static let designCommentsSpacing: CGFloat = 14
+    /// A data-props text field in the Tweak tab (not drawn: the board's slider width).
+    static let designTweakFieldWidth: CGFloat = 190
 }

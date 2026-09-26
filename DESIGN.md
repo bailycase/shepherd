@@ -7531,9 +7531,10 @@ review pane's.
 **Partly built, on the Mac, behind Settings ▸ Experiments ▸ Design tool (off by default).** Built:
 the Designs destination and page, design rows in Recents, New thread's Start a design, New design,
 and a design's canvas beside its chat, with the design agent, live reload, Select (elements and
-boards picked on the canvas, their view record sent with each chat message; docs/designs.md), and
-comments (pins, threads, cards in the chat and the Comments tab, answered by the agent).
-Not built: Tweak, design systems, export, the live link, Present, and every iPhone and iPad part;
+boards picked on the canvas, their view record sent with each chat message; docs/designs.md),
+comments (pins, threads, cards in the chat and the Comments tab, answered by the agent), and
+Tweak (its tab, written once per gesture, with Reset and Undo over each board's versions).
+Not built: design systems, export, the live link, Present, and every iPhone and iPad part;
 each subsection below says what of it is built. The iOS
 client's first release leaves it out until the Mac has it ([docs/ios](docs/ios/README.md)), and its
 search draws no Designs section (`MobileSearchScreen`). The canvas marks the whole page an
@@ -7823,7 +7824,15 @@ Comments), as below, with these choices the boards leave open:
 
 ### Tweak (DZTweak)
 
-**Not built yet.** Tweak (the board action or the tab) edits the selected element directly.
+**Built (Mac), from the tab** (`DesignTweakPane`; docs/designs.md › Tweak): the header, groups of
+`NWTweakRow`s, `NWTokenChip`s, `NWTweakScope` with its note, and the footer. The board action
+waits for the actions bar. The groups are a fixed set (Layout, Color, Text) plus the board's
+data-props by their section, not DZTweak's per-element ones (Bars, Labels). Sliders are
+`NWValueSlider` at its own 200pt and 44pt (the board's 190 and 36 are not settled). Not drawn,
+so the least that is honest: the tab with nothing selected (its header says to select an
+element), a tweak that couldn't be written (the header's note says so), a data-props text field,
+and a design without tokens for a role (its note says values snap to Shepherd's scale). Tweak
+(the board action or the tab) edits the selected element directly.
 
 - **On the canvas**, the element (`NWSelectionRing`, built with Select) wears a 1.5pt `running`
   ring (on NWDesignTool over a `runningTint` fill, which Shepherd draws), 8pt square handles on its corners (white, a 1.5pt
@@ -7937,8 +7946,10 @@ selected on the canvas already ticked.
 
 **Partly built** (`Packages/ShepherdUI/.../Components/DesignTool/`, each with a `#Preview` in both
 appearances): `NWDesignCanvas`, `NWBoardFrame`, `NWCanvasToolbar`, `NWDesignSystemChip`,
-`NWSelectionRing` (with `NWSelectionTag`), `NWCommentPin`, `NWCommentThread`, `NWCommentCard`, and
-the page parts `NWDesignCard`, `NWDesignSystemCard`, `NWDesignStartCard`, `NWDesignHeader` and
+`NWSelectionRing` (with `NWSelectionTag`), `NWCommentPin`, `NWCommentThread`, `NWCommentCard`,
+the Tweak parts `NWTweakRow` (with `NWTweakHeader`, `NWTweakGroup`, `NWTweakNote` and
+`NWTweakFooter`), `NWTokenChip` (with `NWTokenChipFlow`) and `NWTweakScope`, and the page parts
+`NWDesignCard`, `NWDesignSystemCard`, `NWDesignStartCard`, `NWDesignHeader` and
 `NWDesignPaneTabs`. The rest of the table is not built yet.
 
 Night Watch's Design tool page names these components, dark and light ("Light ·

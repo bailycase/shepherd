@@ -137,10 +137,19 @@ extension ShepherdViewModel {
     func designScreen(_ id: DesignID) -> DesignScreenModel {
         if let screen = designScreens[id] { return screen }
         let server = server
+        let project = design(id).flatMap { design in state.spaces.first { $0.id == design.spaceID } }.map { URL(fileURLWithPath: $0.path) }
+        let tweak = DesignTweakIO(
+            snapshot: { try await server.designSnapshot(id) },
+            board: { try await server.designBoard(id, path: $0) },
+            writeBoards: { try await server.writeDesignBoards(id, sources: $0, baseRevision: $1) },
+            updateIndex: { try await server.updateDesignIndex(id, patch: $0, baseRevision: $1) },
+            restore: { try await server.restoreDesignVersions(id, $0, ifCurrent: $1) },
+            projectTokens: { await DesignProjectTokens.read(project) })
         let screen = DesignScreenModel(designID: id, host: designRendering.host(for: id),
                                        snapshot: { try await server.designSnapshot($0) },
                                        source: { try await server.designBoard($0, path: $1).source },
-                                       comments: designCommentActions())
+                                       comments: designCommentActions(), tweak: tweak)
+        if let design = design(id) { screen.tweak?.systemName = designSystemName(design) }
         designScreens[id] = screen
         return screen
     }
