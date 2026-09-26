@@ -32,6 +32,24 @@ struct RemoteHostClientTests {
         #expect(error.description == description)
     }
 
+    /// An older host still sends its designs and their agents; this client shows them nowhere,
+    /// on a Mac, an iPhone or an iPad, since it has no design screen and would draw a thread.
+    @Test func aHostsDesignsAndTheirAgentsNeverReachTheClientsState() {
+        let space = Space(name: "web", path: "/tmp/web")
+        let threadTab = Tab(spaceID: space.id, order: 0, layout: .leaf(LeafPane(cwd: space.path)))
+        let drawerTab = Tab(spaceID: space.id, order: 1, layout: .leaf(LeafPane(cwd: space.path)))
+        let designID = DesignID()
+        let thread = Agent(name: "Fix login bug", spaceID: space.id, tabID: threadTab.id)
+        let drawer = Agent(name: "Landing hero", spaceID: space.id, tabID: drawerTab.id, status: .blocked, designID: designID)
+        let sent = ShepherdState(spaces: [space], tabs: [threadTab, drawerTab], agents: [thread, drawer],
+                                 designs: [Design(id: designID, name: "Landing hero", spaceID: space.id, agentID: drawer.id, createdAt: 1)])
+
+        let shown = RemoteHostClient.shown(sent)
+        #expect(shown.agents.map(\.id) == [thread.id])
+        #expect(shown.tabs.map(\.id) == [threadTab.id])
+        #expect(shown.designs.isEmpty)
+    }
+
     @Test func aNewClientAdvertisesNoCapabilities() {
         #expect(RemoteHostClient().capabilities.isEmpty)
     }

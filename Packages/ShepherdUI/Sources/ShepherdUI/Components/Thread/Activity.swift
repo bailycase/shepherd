@@ -29,14 +29,12 @@ public struct NWActivityLine: View {
     let isExpanded: Bool
     let accessibilityText: String
     let action: (() -> Void)?
-    let runInTerminal: (() -> Void)?
     /// At the accessibility text sizes (iOS) the label wraps rather than widening the thread.
     @Environment(\.dynamicTypeSize) private var typeSize
 
-    /// `action` toggles the calls; nil for a line with nothing behind it. `runInTerminal`, for a
-    /// finished command, puts Run in terminal at the line's trailing end (TerminalStates).
+    /// `action` toggles the calls; nil for a line with nothing behind it.
     public init(kind: Kind, label: String, meta: String, status: Status = .done, isExpanded: Bool = false,
-                accessibilityLabel: String? = nil, action: (() -> Void)? = nil, runInTerminal: (() -> Void)? = nil) {
+                accessibilityLabel: String? = nil, action: (() -> Void)? = nil) {
         self.kind = kind
         self.label = label
         self.meta = meta
@@ -44,7 +42,6 @@ public struct NWActivityLine: View {
         self.isExpanded = isExpanded
         self.accessibilityText = accessibilityLabel ?? [label, meta].filter { !$0.isEmpty }.joined(separator: ", ")
         self.action = action
-        self.runInTerminal = runInTerminal
     }
 
     /// When the call ends, the live line cross-fades into its finished line in place and its
@@ -56,15 +53,6 @@ public struct NWActivityLine: View {
             ZStack(alignment: .leading) {
                 if let live {
                     liveHeader(since: live.since).nwTransition(.content)
-                } else if let runInTerminal {
-                    HStack(spacing: NW.Space.m) {
-                        finished
-                        Button(action: runInTerminal) { Label("Run in terminal", systemImage: "terminal") }
-                            .buttonStyle(.nw(.secondary, size: .s))
-                            .fixedSize()
-                            .help("Open in a new terminal tab, typed out but not run")
-                    }
-                    .nwTransition(.content)
                 } else {
                     finished.nwTransition(.content)
                 }

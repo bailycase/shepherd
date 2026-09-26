@@ -144,6 +144,8 @@ extension AppLayout {
     static let skillsSummarySize: CGFloat = 12.5
     static let skillsMetaSize: CGFloat = 11.5
     static let skillsTagHeight: CGFloat = 20
+    /// A group's title row (Installed, From your pi setup, From pi packages): 34pt tall.
+    static let skillsGroupHeight: CGFloat = 34
     /// A row's detail: its blocks start under the skill's name (16 + 30 + 16), 14pt apart, its
     /// three columns 28pt apart.
     static let skillsDetailLeading: CGFloat = 62

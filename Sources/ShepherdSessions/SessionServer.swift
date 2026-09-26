@@ -186,6 +186,13 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// This Mac's pi, asked for the skills it loads from outside ~/.agents/skills (one loader, so
+    /// one cache).
+    public static let piSkillsReader: SkillsStore.PiSkillsReader = {
+        let loader = PiSkillsLoader()
+        return { loader.read(installedDirectory: $0) }
+    }()
+
     /// Shared instance the app uses; tests construct their own with scratch
     /// paths.
     public static let shared = SessionServer(
@@ -500,9 +507,11 @@ public final class SessionServer: @unchecked Sendable {
 
     /// `modelCatalog` answers remote model listings; tests pass a stand-in so nothing runs pi.
     /// `skillsDirectory` is where this host's skills live, ~/.agents/skills unless a test passes
-    /// its own. `trash` is where an Undo moves the files a turn created; tests pass their own.
+    /// its own; `piSkills` reads the skills pi loads from elsewhere (tests pass nil, or their own).
+    /// `trash` is where an Undo moves the files a turn created; tests pass their own.
     public init(socketPath: String, stateURL: URL, modelCatalog: @escaping ModelCatalog = SessionServer.piModelCatalog,
-                skillsDirectory: URL? = nil, trash: @escaping ChangesService.Trash = ChangesService.systemTrash) {
+                skillsDirectory: URL? = nil, piSkills: SkillsStore.PiSkillsReader? = SessionServer.piSkillsReader,
+                trash: @escaping ChangesService.Trash = ChangesService.systemTrash) {
         self.socketPath = socketPath
         self.store = StateStore(url: stateURL)
         self.modelCatalog = modelCatalog
@@ -512,7 +521,8 @@ public final class SessionServer: @unchecked Sendable {
         self.instructions = instructions
         self.suggestions = SuggestionsStore(url: instructions.directory.appendingPathComponent("suggestions.json"), instructions: instructions)
         self.skills = SkillsStore(directory: skillsDirectory ?? ShepherdPaths.agentSkillsDirectory(),
-                                  stateDirectory: stateURL.deletingLastPathComponent().appendingPathComponent("skills", isDirectory: true))
+                                  stateDirectory: stateURL.deletingLastPathComponent().appendingPathComponent("skills", isDirectory: true),
+                                  piSkills: piSkills)
         self.changes = ChangesService(directory: stateURL.deletingLastPathComponent().appendingPathComponent("changes", isDirectory: true),
                                       trash: trash)
         self.designs = DesignStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("designs", isDirectory: true))
@@ -596,13 +606,17 @@ public final class SessionServer: @unchecked Sendable {
             || state.designs.contains { $0.agentID.map { !agents.contains($0) } == true }
     }
 
-    /// Forgets designs whose folders are gone, and clears an agent's design or a design's agent
-    /// that no longer exists: opening such a design starts a fresh agent.
+    /// Forgets designs whose folders are gone, with the agents that drew them (a design's chat
+    /// never becomes a thread), and clears a design's agent that no longer exists: opening such a
+    /// design starts a fresh agent.
     static func reconcileDesigns(_ state: inout ShepherdState, missing: Set<DesignID>) {
         state.designs.removeAll { missing.contains($0.id) }
         let designs = Set(state.designs.map(\.id))
-        for i in state.agents.indices where state.agents[i].designID.map({ !designs.contains($0) }) == true {
-            state.agents[i].designID = nil
+        let drawers = Set(state.agents.filter { $0.designID.map { !designs.contains($0) } == true }.map(\.id))
+        if !drawers.isEmpty {
+            let tabs = Set(state.agents.filter { drawers.contains($0.id) }.map(\.tabID))
+            state.agents.removeAll { drawers.contains($0.id) }
+            state.tabs.removeAll { tabs.contains($0.id) || $0.inspectorFor.map(drawers.contains) == true }
         }
         let agents = Set(state.agents.map(\.id))
         for i in state.designs.indices where state.designs[i].agentID.map({ !agents.contains($0) }) == true {
@@ -1009,6 +1023,13 @@ public final class SessionServer: @unchecked Sendable {
             request = try NDJSON.decode(RemoteRequest.self, from: line)
         } catch {
             ShepherdLog.warning("undecodable remote request on fd \(client.fd): \(error)")
+            // A request this host does not know (a kind or an action a client from another
+            // version sends) is refused like any unsupported one once the client has said hello.
+            // A frame without an id has no reply to take, so it still closes the connection.
+            if client.authenticated, let id = (try? NDJSON.decode(RemoteRequestID.self, from: line))?.id {
+                send(.error(id: id, code: "unsupported", message: "The host does not take this request."), to: client)
+                return
+            }
             disconnect(client)
             return
         }
@@ -1209,7 +1230,7 @@ public final class SessionServer: @unchecked Sendable {
                 }
             }
         case .stateFetch(let id):
-            let state = store.state
+            let state = store.state.withoutDesigns
             send(.state(id: id, state: client.knowsLegacyThinkingOnly ? state.legacyThinkingLevels() : state), to: client)
         case .attach(let id, let sessionID, let cols, let rows, let viewportGeneration):
             remoteAttach(
@@ -1844,9 +1865,10 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Push a fresh state snapshot to every authenticated remote client.
     /// Runs on the server queue alongside the mutation that produced it.
-    private func broadcastRemoteState(_ state: ShepherdState) {
+    private func broadcastRemoteState(_ full: ShepherdState) {
         let remotes = clients.values.filter { $0.isRemote && $0.authenticated }
         guard !remotes.isEmpty else { return }
+        let state = full.withoutDesigns
         guard let payload = Self.stateChangedPayload(state) else { return }
         // Encoded a second time only while an older client is connected and an agent has a level
         // it cannot decode.
@@ -2011,12 +2033,14 @@ public final class SessionServer: @unchecked Sendable {
                 finishAgentRequest(token, result: .init(text: "request cancelled", code: "cancelled"))
             }
         case .listAgents(let id, let agentID):
+            guard !refusesDesignPeer(id: id, sender: agentID, client: client) else { return }
             routeAgentPeerRequest(.list(agentID: agentID), requestID: id, client: client)
         case .sendToAgent(let id, let agentID, let targetAgentID, let text):
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 reply(.error(id: id, code: "invalid", message: "text is required"), to: client)
                 return
             }
+            guard !refusesDesignPeer(id: id, sender: agentID, target: targetAgentID, client: client) else { return }
             routeAgentPeerRequest(
                 .send(agentID: agentID, targetAgentID: targetAgentID, text: text),
                 requestID: id,
@@ -2027,6 +2051,7 @@ public final class SessionServer: @unchecked Sendable {
                 reply(.error(id: id, code: "invalid", message: "cwd and prompt are required"), to: client)
                 return
             }
+            guard !refusesDesignPeer(id: id, sender: agentID, client: client) else { return }
             routeAgentPeerRequest(
                 .spawn(agentID: agentID, cwd: cwd, prompt: prompt),
                 requestID: id,
@@ -2171,6 +2196,7 @@ public final class SessionServer: @unchecked Sendable {
             reply(.error(id: id, code: "no_such_agent", message: "registered sender and existing target required"), to: client)
             return
         }
+        guard !refusesDesignPeer(id: id, sender: agentID, target: targetAgentID, client: client) else { return }
         guard agentID != targetAgentID || request.operation == .read else {
             reply(.error(id: id, code: "self_control", message: "an agent cannot control, wait for, or delete itself"), to: client)
             return
@@ -2224,6 +2250,22 @@ public final class SessionServer: @unchecked Sendable {
         } else if let target {
             reply(.agentRequest(id: 0, requestID: token, targetAgentID: targetAgentID, request: forwarded), to: target)
         }
+    }
+
+    /// A design's agent is no peer thread: it neither lists, messages, spawns, reads nor controls
+    /// agents, and none of them reach it. Refused here as well as in its launch (no panes
+    /// extension), so an older installed extension cannot get around it.
+    private func refusesDesignPeer(id: Int, sender: AgentID, target: AgentID? = nil, client: ExtensionConnection) -> Bool {
+        let state = store.state
+        if state.isDesignAgent(sender) {
+            reply(.error(id: id, code: "not_a_thread", message: "a design's agent does not coordinate with threads"), to: client)
+            return true
+        }
+        if let target, state.isDesignAgent(target) {
+            reply(.error(id: id, code: "not_a_thread", message: "\(target) draws a design; it is not a thread"), to: client)
+            return true
+        }
+        return false
     }
 
     private func finishAgentRequest(_ token: String, result: AgentCoordinationResult) {
@@ -2986,17 +3028,33 @@ public final class SessionServer: @unchecked Sendable {
         try await enqueue { try self.commitDesignWrite(designID, result) }
     }
 
-    /// Forgets a design and removes its folder. Its agent stays an ordinary agent.
+    /// Forgets a design and removes its folder. The agents that drew it go with it, their
+    /// processes stopped, the way Delete Agent does: a design's chat never becomes a thread.
     public func deleteDesign(_ designID: DesignID) async throws {
         try await enqueue {
             guard self.store.state.designs.contains(where: { $0.id == designID }) else {
                 throw SessionServerError.noSuchDesign(designID)
             }
+            let drawers = Set(self.store.state.agents.filter { $0.designID == designID }.map(\.id))
+            let doomedTabs = self.store.state.tabs.filter { tab in
+                self.store.state.agents.contains { drawers.contains($0.id) && $0.tabID == tab.id }
+                    || tab.inspectorFor.map(drawers.contains) == true
+            }
+            let doomedTabIDs = Set(doomedTabs.map(\.id))
+            let sessions = Set(doomedTabs.flatMap { $0.layout.leaves.compactMap(\.sessionID) })
             try self.mutateState {
                 $0.designs.removeAll { $0.id == designID }
-                for i in $0.agents.indices where $0.agents[i].designID == designID {
-                    $0.agents[i].designID = nil
+                $0.agents.removeAll { drawers.contains($0.id) }
+                $0.tabs.removeAll { doomedTabIDs.contains($0.id) }
+                for i in $0.automations.indices where $0.automations[i].agentID.map(drawers.contains) == true {
+                    $0.automations[i].agentID = nil
                 }
+                for i in $0.designs.indices where $0.designs[i].agentID.map(drawers.contains) == true {
+                    $0.designs[i].agentID = nil
+                }
+            }
+            for sessionID in sessions {
+                self.killSessionOnQueue(sessionID)
             }
         }
         try await designs.delete(designID)
@@ -3560,10 +3618,9 @@ public final class SessionServer: @unchecked Sendable {
     /// Types `command` and Return into a fresh shell once its line editor reads, so the command
     /// shows once, at the prompt. Written sooner, the terminal echoes it as typeahead before the
     /// shell draws its prompt, and the line editor then shows it again. A shell with no line
-    /// editor gets it after `timeout`. `submit` false leaves it typed at the prompt, not run (Run
-    /// in terminal).
-    public func typeCommand(_ command: String, sessionID: SessionID, submit: Bool = true, timeout: TimeInterval = 5) {
-        let data = Data((submit ? command + "\n" : command).utf8)
+    /// editor gets it after `timeout`.
+    public func typeCommand(_ command: String, sessionID: SessionID, timeout: TimeInterval = 5) {
+        let data = Data((command + "\n").utf8)
         let deadline = DispatchTime.now() + timeout
         queue.async { self.typeWhenLineEditorReads(data, sessionID: sessionID, deadline: deadline) }
     }
@@ -3958,6 +4015,11 @@ public final class SessionServer: @unchecked Sendable {
         }
         return addr
     }
+}
+
+/// The id of a remote request the host could not decode, so it can refuse it.
+private struct RemoteRequestID: Decodable {
+    let id: Int
 }
 
 // MARK: - Changes

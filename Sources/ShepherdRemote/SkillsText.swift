@@ -154,8 +154,12 @@ public enum SkillsText {
     /// What one automatic skill adds to every prompt: its name, description and SKILL.md's path,
     /// in pi's `<skill>` block. `directory` is where the host keeps skills ("~/.agents/skills").
     public static func promptTokens(name: String, summary: String, directory: String = "~/.agents/skills") -> Int {
-        let home = directory.hasPrefix("~") ? "/Users/shepherd" + directory.dropFirst() : directory
-        let location = "\(home)/\(name)/SKILL.md"
+        promptTokens(name: name, summary: summary, location: "\(directory)/\(name)/SKILL.md")
+    }
+
+    /// The same for a skill whose SKILL.md is at `location` (with `~` for the home).
+    public static func promptTokens(name: String, summary: String, location: String) -> Int {
+        let location = location.hasPrefix("~") ? "/Users/shepherd" + location.dropFirst() : location
         let block = "  <skill>\n    <name>\(escaped(name))</name>\n    <description>\(escaped(summary))</description>\n"
             + "    <location>\(escaped(location))</location>\n  </skill>\n"
         return estimate(characters: block.count)
@@ -163,9 +167,14 @@ public enum SkillsText {
 
     /// What every automatic skill that is on costs in every prompt, the preamble included.
     public static func promptTokens(_ skills: [InstalledSkill], directory: String = "~/.agents/skills") -> Int {
-        let automatic = skills.filter { $0.isOn && $0.invocation == .automatic }
+        promptTokens(skills.filter { $0.isOn && $0.invocation == .automatic }.map { ($0.name, $0.summary, "\(directory)/\($0.name)/SKILL.md") })
+    }
+
+    /// What these automatic skills (a name, a description and a SKILL.md each) cost in every
+    /// prompt, the preamble included.
+    public static func promptTokens(_ automatic: [(name: String, summary: String, location: String)]) -> Int {
         guard !automatic.isEmpty else { return 0 }
-        return promptPreambleTokens + automatic.reduce(0) { $0 + promptTokens(name: $1.name, summary: $1.summary, directory: directory) }
+        return promptPreambleTokens + automatic.reduce(0) { $0 + promptTokens(name: $1.name, summary: $1.summary, location: $1.location) }
     }
 
     /// A whole file when the agent reads it, in tokens.

@@ -85,9 +85,81 @@ public enum SkillsPresentation {
 
     /// The In every prompt card's note: "6 automatic skills. Full files load only when used."
     public static func automaticCount(_ skills: [InstalledSkill]) -> String {
-        let count = skills.filter { $0.isOn && $0.invocation == .automatic }.count
+        automaticCount(skills.filter { $0.isOn && $0.invocation == .automatic }.count)
+    }
+
+    /// The same for a count of automatic skills the agent loads.
+    public static func automaticCount(_ count: Int) -> String {
         guard count > 0 else { return "No automatic skills. Only /skill loads one." }
         return "\(count) automatic \(count == 1 ? "skill" : "skills"). Full files load only when used."
+    }
+
+    // MARK: pi's own skills
+
+    /// A read-only group's title.
+    public static func groupTitle(_ kind: PiSkillGroup.Kind) -> String {
+        switch kind {
+        case .setup: "From your pi setup"
+        case .packages: "From pi packages"
+        }
+    }
+
+    /// Why a group is read-only, for its tooltip.
+    public static func groupNote(_ kind: PiSkillGroup.Kind) -> String {
+        switch kind {
+        case .setup: "In pi’s own folder or named in its settings. Shepherd lists them and never changes them."
+        case .packages: "Brought by the packages in pi’s settings. pi installs and updates them."
+        }
+    }
+
+    /// A pi skill's Source column: its package, or the folder that holds it ("~/.pi/agent/skills").
+    public static func source(_ skill: PiSkill) -> String {
+        skill.origin == .package ? (skill.package ?? "package") : folder(of: skill.path)
+    }
+
+    /// Why a skill is listed but not used: "Not used: pi uses the one in ~/.pi/agent/skills."
+    public static func shadowNote(_ winner: String) -> String {
+        "Not used: pi uses the one in \(folder(of: winner))."
+    }
+
+    /// The folder a skill sits in: SKILL.md's folder's parent, or a lone file's folder.
+    public static func folder(of path: String) -> String {
+        let file = path as NSString
+        let folder = file.deletingLastPathComponent
+        return file.lastPathComponent == "SKILL.md" ? (folder as NSString).deletingLastPathComponent : folder
+    }
+
+    /// Why pi's own skills couldn't be listed, from `PiSkills.problem`.
+    public static func piProblem(_ problem: String) -> String {
+        switch PiSkills.Problem(rawValue: problem) {
+        case .piNotFound: "Couldn’t find pi, so the skills from your pi setup aren’t listed."
+        case .nodeNotFound: "Couldn’t find node to ask pi for its skills."
+        case .piUnsupported: "This pi is too old to list its skills here. Update pi in Settings ▸ Pi."
+        case .timedOut: "pi took too long to list its skills."
+        case .failed, nil: "Couldn’t read the skills from your pi setup."
+        }
+    }
+
+    /// Under the list: why a repository's own skills aren't here.
+    public static let repositorySkillsNote =
+        "A repository’s own skills (.pi/skills, .agents/skills) load only in that repository’s threads, so they aren’t listed here."
+
+    /// One of pi's own skills under its name on the phone: "Not used: …" when pi passes it over,
+    /// else "/skill only · …" or its description.
+    public static func mobileSummary(_ skill: PiSkill) -> String {
+        if let winner = skill.shadowedBy { return shadowNote(winner) }
+        return skill.invocation == .slashOnly ? "/skill only · \(skill.summary)" : skill.summary
+    }
+
+    /// Under the phone's read-only groups: whose pi they come from, and where a repository's own
+    /// skills are.
+    public static func piFootnote(host: String) -> String {
+        "Read-only: from \(host)’s own pi, which Shepherd never changes. " + repositorySkillsNote
+    }
+
+    /// A host that predates reporting pi's own skills.
+    public static func piNotReported(_ host: String) -> String {
+        "\(host)’s Shepherd doesn’t list the skills from its pi setup. Update it to see them here."
     }
 
     /// The Settings list's value on the iPhone and the iPad: "8 · 2 updates", "8", "None".
