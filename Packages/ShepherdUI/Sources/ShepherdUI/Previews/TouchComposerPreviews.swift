@@ -66,12 +66,15 @@ import SwiftUI
 
 #Preview("Question") {
     NWPreviewBoth {
-        NWQuestionCard(docked: false, count: 2) {
-            Text("How should I handle Horizon's uncommitted edits?").font(.nw(.headline))
-            NWQuestionOptionCard(number: 1, title: "Compare, keep what's unique, then go through GitHub",
-                                 detail: "New branch and PR for anything not merged.", recommended: true, selected: true)
-            NWQuestionOptionCard(number: 2, title: "Leave Horizon alone and deploy from a clean checkout")
-            Button("Answer") {}.buttonStyle(.nw(.primary, size: .l))
+        VStack(spacing: NW.Space.xl) {
+            NWQuestionCard(docked: false, count: 2, hide: {}) {
+                Text("How should I handle Horizon's uncommitted edits?").font(.nw(.headline))
+                NWQuestionOptionCard(number: 1, title: "Compare, keep what's unique, then go through GitHub",
+                                     detail: "New branch and PR for anything not merged.", recommended: true, selected: true)
+                NWQuestionOptionCard(number: 2, title: "Leave Horizon alone and deploy from a clean checkout")
+                Button("Answer") {}.buttonStyle(.nw(.primary, size: .l))
+            }
+            NWQuestionCardHiddenLine(question: "How should I handle Horizon's uncommitted edits?") {}
         }
         .frame(width: 400)
     }

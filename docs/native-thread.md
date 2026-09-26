@@ -575,7 +575,8 @@ components ([DESIGN.md](../DESIGN.md) specifies their look):
     (`QueueStackState`: the editor, Undo rows, expansion, a drag) around `NativeQueueRules`
   - the Send menu, and the keys that send while pi works (↩ per Settings, ⌘↩ the other)
   - the slash menu, fed from pi's command registry
-  - the question panel and extension widgets
+  - the question panel (Hide the question keeps only that question folded:
+    `NativeQuestionHiding`, shared with the iPad's card) and extension widgets
 - **`Subagents`** and **`SubagentPresentation`:** the tray above the composer, with the store's
   tray (`NativeSubagentTray`) mapped onto the components' values.
 - **`SubagentInspector`:** the inspector, hosted over the side pane's tabs
