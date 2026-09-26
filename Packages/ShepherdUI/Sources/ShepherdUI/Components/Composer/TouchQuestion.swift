@@ -60,8 +60,9 @@ public struct NWQuestionCard<Content: View>: View {
                 .accessibilityElement(children: .combine)
                 if let hide {
                     NWQuestionCardToggle(hidden: false, action: hide)
-                        // The circle overhangs the head rather than making it taller.
-                        .padding(.vertical, -(NWTouchQuestionMetrics.hideButton - NWQuestionHeadMetrics.height) / 2)
+                        // The circle (a 44pt touch target on iOS) overhangs the head rather than
+                        // making it taller.
+                        .frame(height: NWQuestionHeadMetrics.height)
                 }
             }
             .frame(minHeight: NWQuestionHeadMetrics.height)
