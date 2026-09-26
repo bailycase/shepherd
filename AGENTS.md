@@ -84,7 +84,7 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
 - **`SHEPHERD_SUPPORT_DIR`** moves the support directory: the socket, `state.json`, installed
   extensions, `remote-token`, `automation-runs.json`, Settings ▸ Instructions' files
   (`instructions/`), Settings ▸ Skills' state and git caches (`skills/`), designs (`designs/`;
-  docs/designs.md), and subagent artifacts. It wins over the edition's own folder
+  docs/designs.md), design systems (`design-systems/`), and subagent artifacts. It wins over the edition's own folder
   (`Shepherd`, or `Shepherd Nightly` in Shepherd Nightly).
 - **`SHEPHERD_SKILLS_DIR`** moves the skills folder Settings ▸ Skills manages (default
   `~/.agents/skills`, the folder pi reads skills from; docs/skills.md). Tests point it at a scratch
@@ -318,6 +318,11 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   written once where the board lands, Duplicate adding one board (file and entry, one revision),
   Variations reaching the agent with the board fenced in its record, a Play link moving between
   the design's boards only (a real board view), and pages and notes shown a page at a time.
+  Design systems: tokens.json in both shapes (unknown keys kept), the stylesheet reader's lines,
+  re-sync, Night Watch complete for every role in both variants, installing into a design (and
+  never over a folder installed from elsewhere), system_write only by the owning design's agent,
+  the project only read, `<x-import>` in a real board view, and design_check's off-system values
+  with their lines.
 - **Server:** every `SessionServer` state mutation.
 - **Changes:** every scope on a scratch repository, the proof that reading changes leaves the
   index, HEAD, refs, the stash, `.git` and every file alone, and Undo, Redo and the refusal on a
@@ -410,7 +415,10 @@ Sources/
                        DesignBoardCheck (what a board may hold), DesignStyle/DesignTokens/DesignProps
                        (Tweak: inline-style splices at parser offsets, token snapping, data-props
                        and canvas.json's tweaks), DesignCanvasLayout (pages, notes, where a
-                       duplicate goes), DesignFiles (snapshots, reads, write results).
+                       duplicate goes), DesignFiles (snapshots, reads, write results),
+                       DesignSystemTokens (a design system's tokens.json in Shepherd's schema or a
+                       canvas's own shape, tokens.css, the stylesheet reader, re-sync) and
+                       DesignSystemFiles (a system's files, record, listing, writes).
   ShepherdRemote/      RemoteHostClient, NativeThreadStore (@Observable), NativeThreadPresentation,
                        NativeTurnPresentation (a turn's items), NativeMarkdown (the prose
                        parser: tables, lists, images, details, footnotes), NativeActivity
@@ -428,7 +436,8 @@ Sources/
                        SuggestionsPresentation (Experiments' words), ClientSettings (the iOS
                        client's Settings models: a host's settings, its instructions and
                        suggestions over the remote protocol), HostSettingsPresentation,
-                       ClientSkills (Settings ▸ Skills' model on every platform), SkillsText
+                       ClientSkills (Settings ▸ Skills' model on every platform),
+                       DesignSystemPresentation ("synced 4m ago", a token's source), SkillsText
                        (SKILL.md's frontmatter, prompt tokens, repository references),
                        SkillsPresentation (its words), SkillsDirectory (skills.sh), ShepherdLog.
                        Shared with the iOS client.
@@ -448,7 +457,9 @@ Sources/
                        diffs, the base picker, each agent's turns and their Undo; docs/changes.md),
                        DesignStore (each design's files in the support directory's designs/, on
                        its own queue, with a revision per design, each board's last 20
-                       versions, and its comments.json; docs/designs.md).
+                       versions, its comments.json, and installed systems under ds/;
+                       docs/designs.md), DesignSystemStore (design systems in the support
+                       directory's design-systems/, their owners and sources, built-ins).
   TerminalSurfaceKit/  Ghostty adapter for terminal panes; see its NOTES.md.
   DesignSurfaceKit/    The Design tool's board renderer (macOS and iOS; docs/designs.md): DesignSurface
                        (a design's sandbox: a non-persistent data store, the shepherd-design://
@@ -480,7 +491,8 @@ Sources/
       DesignScreenModel (a design's canvas state and its pulls; the board actions, moves,
       Present and Play, pages), DesignHost (the only DesignSurfaceKit import: live views, the
       rasterizer, snapshots, thumbnails, tweak previews, the presented board), DesignTweak (the Tweak tab's controls, pure), DesignTweakModel (its writes,
-      one per gesture, Reset and Undo), DesignTweakPane, DesignProjectTokens
+      one per gesture, Reset and Undo), DesignTweakPane, DesignProjectTokens, NightWatchSystem
+      (Night Watch as a built-in design system, from ShepherdUI's tokens)
     TerminalPanels (each layout's terminal panel: shown, tab, maximized, activity),
       TerminalPanelLayout (TerminalPanelGeometry, pure), TerminalPanelViews (strip, divider)
     Thread/            ThreadView, ThreadTurns, ThreadTools (activity lines), ThreadMarkdown,
@@ -542,7 +554,8 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
                           every session Shepherd starts (never ~/.pi/agent); suggest_instruction
                           (Settings ▸ Experiments ▸ Suggested instructions)
   shepherd-design.ts      the design agent's design_read, board_write, canvas_update,
-                          design_check, comment_list and comment_reply; hands pi the design skill
+                          design_check, comment_list, comment_reply, system_read and
+                          system_write; hands pi the design skill
                           (design-skill/: SKILL.md, format.md); see docs/designs.md
 Tests/
   <Module>UnitTests/, *IntegrationTests/, ShepherdPreviewTests/   the tiers above
