@@ -61,7 +61,12 @@ a zsh login shell, so the user's `PATH` resolves:
   it, pending until pi starts it, and none shows the thread without it. Its send's operation id
   is the agent's id (`OpeningPrompt`), so the client that created the agent (the Mac's New
   Agent, a remote Mac's or iOS's New thread) previews the same pending row while pi starts, and
-  the row keeps its identity when the host's lands and when pi starts the turn.
+  the row keeps its identity when the host's lands and when pi starts the turn. Images attached
+  on the Mac's New thread page go with it in that same prompt (`OpeningPrompt.images`, held and
+  checked with the send limits), and its pending row counts them. A remote Mac sends them in
+  `createAgent`'s `initialImages`, only to a host with `agent.create.images.v1` (an older host
+  would drop them), and only when the request fits one 1 MiB frame; the host refuses images it
+  could not send before it creates anything.
 
 Quitting the app kills every child. On relaunch each agent respawns in its pi session with its
 history intact. State files from before RPC agents decode unchanged: `Agent` ignores the
@@ -171,13 +176,16 @@ events come out on stdout, one record per LF.
   - A question with a timeout disappears when pi resolves it on its own.
   - The first answer wins, whether it comes from this Mac or a remote client. A second answer
     gets `dialog_unavailable`.
+  - `abort` refuses every question pi waits on first (an `extension_ui_response` with
+    `cancelled`), then stops the turn: the Mac's dock has no Dismiss, and a turn waiting on an
+    answer would not stop. Each refused question is recorded as `dismissed` (below).
   - Questions need no pi patch; they are part of pi's RPC protocol.
   - **The record** (QuestionAnswered): once a question ends, the thread keeps it where pi asked,
     as a row of role `"question"` with entry id `q:<dialog id>`, no blocks, stamped when it
     ended, carrying a `NativeQuestionRecord` (kind, the question, the chosen option or typed
-    text or Yes/No, when pi asked, and the outcome: `answered`, `dismissed` for a Dismiss, or
-    `expired` when the timeout passed, stamped at pi's timeout). It joins the live rows when
-    it ends and moves into history under the same id at the next refresh, placed before the
+    text or Yes/No, when pi asked, and the outcome: `answered`, `dismissed` for a Dismiss (a touch
+    client's) or a Stop, or `expired` when the timeout passed, stamped at pi's timeout). It joins
+    the live rows when it ends and moves into history under the same id at the next refresh, placed before the
     first message that started once it ended (a tool result counts from its call), so after the
     call that asked and before pi's next reply, where the live thread showed it. A question too
     large to show here is not recorded, nor one still open when pi moved to another session
@@ -585,7 +593,8 @@ components ([DESIGN.md](../DESIGN.md) specifies their look):
     (`QueueStackState`: the editor, Undo rows, expansion, a drag) around `NativeQueueRules`
   - the Send menu, and the keys that send while pi works (↩ per Settings, ⌘↩ the other)
   - the slash menu, fed from pi's command registry
-  - the question panel (Hide the question keeps only that question folded:
+  - the question dock (`QuestionDock`, pi's question or a subagent's in the card's place, from
+    `NativeQuestionPrompt`; Hide the question keeps only that question folded:
     `NativeQuestionHiding`, shared with the iPad's card) and extension widgets
 - **`Subagents`** and **`SubagentPresentation`:** the tray above the composer, with the store's
   tray (`NativeSubagentTray`) mapped onto the components' values.

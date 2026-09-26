@@ -121,12 +121,14 @@ struct RemoteControlTests {
         let client = try await r.typed()
         defer { client.disconnect() }
 
+        let image = NativeImage(mimeType: "image/png", data: Data([0x89, 0x50, 0x4E, 0x47]), name: "shot.png")
         let id = try await client.createAgent(spaceID: space.id, cwd: "/tmp/checkout", model: "some/model", thinking: .high, initialPrompt: "hello",
-                                              worktreeBranch: "worktree/x", worktreeBase: "origin/main", worktreeFetchFirst: false)
+                                              worktreeBranch: "worktree/x", worktreeBase: "origin/main", worktreeFetchFirst: false,
+                                              initialImages: [image])
         #expect(id == minted)
         let request = try #require(seen.current)
         #expect(request.spaceID == space.id && request.cwd == "/tmp/checkout" && request.model == "some/model")
-        #expect(request.thinking == .high && request.initialPrompt == "hello")
+        #expect(request.thinking == .high && request.initialPrompt == "hello" && request.initialImages == [image])
         #expect(request.worktreeBranch == "worktree/x" && request.worktreeBase == "origin/main" && request.worktreeFetchFirst == false)
     }
 
@@ -150,6 +152,22 @@ struct RemoteControlTests {
         r.server.onRemoteCreateAgent = { _, done in done(.failure(RemoteCreateAgentError("pi is not installed"))) }
         try client.send(create(3, space.id))
         #expect(try await client.next() == .error(id: 3, code: "create_failed", message: "pi is not installed"))
+
+        // Images pi would refuse once the agent exists are refused before anything is made.
+        r.server.onRemoteCreateAgent = { _, done in reached.withValue { $0 = true }; done(.success(AgentID())) }
+        let image = NativeImage(mimeType: "image/png", data: Data([1]))
+        let invalid: [(prompt: String?, images: [NativeImage])] = [
+            ("look", Array(repeating: image, count: NativeImage.maxPerSend + 1)),
+            ("look", [NativeImage(mimeType: "text/plain", data: Data([1]))]),
+            (nil, [image]),
+        ]
+        for (offset, request) in invalid.enumerated() {
+            let id = 10 + offset
+            try client.send(.createAgent(id: id, spaceID: space.id, cwd: nil, model: nil, thinking: nil, initialPrompt: request.prompt,
+                                         initialImages: request.images))
+            guard case .error(id, "invalid", _) = try await client.next() else { Issue.record("expected invalid for \(offset)"); return }
+        }
+        #expect(!reached.current)
     }
 
     @Test func creationOptionsComeFromTheHost() async throws {

@@ -33,6 +33,15 @@ struct OpeningPromptTests {
         #expect(preview.model == "anthropic/claude-sonnet" && preview.thinking == "medium" && !preview.running)
     }
 
+    /// Images attached on the New thread page show in the row as the host's pending row has them.
+    @Test func itsImagesShowInItsRow() throws {
+        let images = [NativeImage(mimeType: "image/png", data: Data([1])), NativeImage(mimeType: "image/jpeg", data: Data([2]))]
+        let prompt = try #require(OpeningPrompt("Match this", images: images, agentID: Self.agent))
+        #expect(prompt.images == images)
+        #expect(prompt.pendingRow(at: 1) == .pendingSend(operationID: prompt.operationID, text: "Match this", images: 2, timestamp: 1))
+        #expect(OpeningPrompt(" ", images: images, agentID: Self.agent) == nil, "images never go without a prompt")
+    }
+
     /// Over a thread the client already drew (a new agent's known-empty one), only the row is added.
     @Test func aPreviewKeepsWhatTheClientAlreadyKnew() throws {
         let prompt = try #require(OpeningPrompt("Fix the build", agentID: Self.agent))

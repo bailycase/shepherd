@@ -344,3 +344,27 @@ struct NativeThreadWireTests {
         #expect(page.earlierCount == 0 && page.olderCursor == nil)
     }
 }
+
+/// What one send's images may be, on the host (a send, an opening prompt) and before a client
+/// creates a thread with them.
+@Suite("Native images per send")
+struct NativeImageLimitTests {
+    private static let mib = 1024 * 1024
+
+    private static func images(_ sizes: [Int], type: String = "image/png") -> [NativeImage] {
+        sizes.map { NativeImage(mimeType: type, data: Data(count: $0)) }
+    }
+
+    @Test(arguments: [
+        ([Int](), "image/png", true),
+        ([1, 1, 1, 1], "image/png", true),
+        ([mib, mib, mib, mib], "image/png", true),
+        ([1, 1, 1, 1, 1], "image/png", false),
+        ([2 * mib + 1], "image/png", false),
+        ([2 * mib, 2 * mib, 2 * mib], "image/png", false),
+        ([1], "text/plain", false),
+    ])
+    func oneSendTakesFourImagesOfTwoMiBAndFiveInAll(sizes: [Int], type: String, fits: Bool) {
+        #expect(NativeImage.fitOneSend(Self.images(sizes, type: type)) == fits)
+    }
+}

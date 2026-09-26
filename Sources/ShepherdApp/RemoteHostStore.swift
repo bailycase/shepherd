@@ -94,6 +94,8 @@ final class RemoteHostStore {
         var skillsClient: (any SkillsClient)? { phase == .connected ? client : nil }
         /// The host takes every level pi has in `createAgent` (older hosts: Off to High).
         var supportsAllThinkingLevels: Bool { client?.capabilities.contains(RemoteProtocol.thinkingLevelsCapability) == true }
+        /// The host takes a new thread's images with its opening prompt.
+        var supportsCreateAgentImages: Bool { client?.capabilities.contains(RemoteProtocol.createAgentImagesCapability) == true }
         var supportsWorktreeCreation: Bool {
             client?.capabilities.isSuperset(of: [RemoteProtocol.creationOptionsCapability, RemoteProtocol.worktreeActionsCapability]) == true
         }
@@ -435,7 +437,8 @@ final class RemoteHostStore {
         initialPrompt: String?,
         worktreeBranch: String? = nil,
         worktreeBase: String? = nil,
-        worktreeFetchFirst: Bool? = nil
+        worktreeFetchFirst: Bool? = nil,
+        initialImages: [NativeImage] = []
     ) async throws -> AgentID {
         guard let client = connections.first(where: { $0.id == hostID })?.client else {
             throw RemoteHostClientError.disconnected
@@ -448,7 +451,8 @@ final class RemoteHostStore {
             initialPrompt: initialPrompt,
             worktreeBranch: worktreeBranch,
             worktreeBase: worktreeBase,
-            worktreeFetchFirst: worktreeFetchFirst
+            worktreeFetchFirst: worktreeFetchFirst,
+            initialImages: initialImages
         )
     }
 

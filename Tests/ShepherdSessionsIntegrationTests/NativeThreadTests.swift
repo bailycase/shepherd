@@ -323,6 +323,36 @@ struct NativeThreadTests {
         try await eventually("the answered question to clear") { h.server.state.agents.first?.waitingOn == nil }
     }
 
+    /// An asking tool's `short` rides with its question as the agent's live `waitingReason`:
+    /// broadcast, never written to state.json, and cleared with the answer. A question asked
+    /// without one carries none, so the sidebar cuts the question instead.
+    @Test func anAskingToolsShortReasonRidesWithItsQuestion() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        let question = "Retention: 30 days or 13 months?"
+        _ = try await pi.send("ask-short", from: try await pi.ready())
+        let asked = try await pi.snapshot("the question") { !$0.dialogs.isEmpty }
+        try await eventually("the reason on the agent") { h.server.state.agents.first?.waitingReason == "retention?" }
+        #expect(h.server.state.agents.first?.waitingOn == question)
+        try await eventually("the reason in a broadcast") {
+            h.broadcasts.current.contains { $0.agents.first?.waitingReason == "retention?" }
+        }
+        try await h.server.addSpace(Fixture.space("added"))
+        #expect(try h.persisted().agents.first?.waitingReason == nil)
+        #expect(h.server.state.agents.first?.waitingReason == "retention?", "and it stays live")
+
+        _ = try await pi.request(.answer(expectedSessionID: asked.piSessionID, generation: asked.generation, operationID: UUID(),
+                                         dialogID: "uuid-4", answer: .select(value: "30 days")))
+        try await eventually("the answered question and its reason to clear") {
+            h.server.state.agents.first.map { $0.waitingOn == nil && $0.waitingReason == nil } == true
+        }
+
+        _ = try await pi.send("ask-long", from: try await pi.snapshot { !$0.running && $0.dialogs.isEmpty })
+        try await eventually("the question without a reason") { h.server.state.agents.first?.waitingOn == question }
+        #expect(h.server.state.agents.first?.waitingReason == nil)
+    }
+
     @Test func aSelectQuestionTakesAValueOrACancel() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
@@ -338,6 +368,26 @@ struct NativeThreadTests {
         _ = try await pi.request(.answer(expectedSessionID: again.piSessionID, generation: again.generation, operationID: UUID(), dialogID: "uuid-3", answer: .cancel))
         let cancel = try await pi.waitForStdin("extension_ui_response", count: 2)
         #expect(cancel["cancelled"] as? Bool == true && cancel["value"] == nil)
+    }
+
+    /// A question has no Dismiss: stopping the turn refuses it (pi's cancelled answer) before
+    /// the abort, so a turn waiting on an answer still stops, and the question leaves the thread.
+    @Test func stoppingRefusesTheQuestionPiWaitsOnFirst() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        _ = try await pi.send("select", from: try await pi.ready())
+        let asked = try await pi.snapshot("the question") { !$0.dialogs.isEmpty }
+
+        let op = UUID()
+        #expect(try await pi.request(.abort(expectedSessionID: asked.piSessionID, generation: asked.generation, operationID: op)) == .accepted(operationID: op))
+        _ = try await pi.waitForStdin("abort")
+
+        let types = pi.stdin().compactMap { $0["type"] as? String }.filter { $0 == "extension_ui_response" || $0 == "abort" }
+        #expect(types == ["extension_ui_response", "abort"], "refused, then stopped")
+        #expect(pi.stdin("extension_ui_response").first?["cancelled"] as? Bool == true)
+        let stopped = try await pi.snapshot("the question to leave the thread") { $0.dialogs.isEmpty && !$0.running }
+        #expect(stopped.dialogs.isEmpty)
     }
 
     @Test func answeringAQuestionThatIsNotPendingFails() async throws {

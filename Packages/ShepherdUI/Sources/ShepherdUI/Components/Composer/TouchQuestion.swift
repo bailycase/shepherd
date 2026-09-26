@@ -72,7 +72,7 @@ public struct NWQuestionCard<Content: View>: View {
         .padding(.top, NW.Space.xl)
         .padding(.bottom, docked ? NW.Space.m : NW.Space.xl)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background { NWQuestionCardChrome(docked: docked) }
+        .background { NWTouchQuestionCardChrome(docked: docked) }
         .accessibilityElement(children: .contain)
     }
 }
@@ -110,7 +110,7 @@ public struct NWQuestionCardHiddenLine: View {
         .padding(.trailing, NW.Space.xs)
         .padding(.vertical, NW.Space.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background { NWQuestionCardChrome(docked: false) }
+        .background { NWTouchQuestionCardChrome(docked: false) }
         .accessibilityElement(children: .contain)
     }
 }
@@ -134,7 +134,7 @@ private struct NWQuestionCardToggle: View {
 
 /// The card's fill and lantern line. Docked, the panel runs on under the home indicator, so its
 /// line has no bottom edge.
-private struct NWQuestionCardChrome: View {
+private struct NWTouchQuestionCardChrome: View {
     let docked: Bool
 
     var body: some View {
