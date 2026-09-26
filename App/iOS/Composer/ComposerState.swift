@@ -38,12 +38,19 @@ final class ComposerState {
     var trayCollapsed = false
     var trayExpanded = false
     var answeringRun: String?
+    /// The context ring's details are open (a sheet).
+    var showingContext = false
+    /// What the context details asked the thread to bring into view (Largest, Show summary).
+    private(set) var findRequest: ThreadFindRequest?
     @ObservationIgnored private var undo: [NativeQueueUndo] = []
     @ObservationIgnored private var queue: [NativeQueuedMessage] = []
     @ObservationIgnored private var undoTasks: [String: Task<Void, Never>] = [:]
 
     /// How long a deleted message's Undo row stays.
     static let undoWindow: Duration = .seconds(5)
+
+    /// Asks the thread to bring `entryID` into view.
+    func find(_ entryID: String) { findRequest = ThreadFindRequest(entryID: entryID) }
 
     // MARK: Attachments
 

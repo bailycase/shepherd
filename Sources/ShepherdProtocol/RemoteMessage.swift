@@ -56,7 +56,11 @@ public enum RemoteProtocol {
     /// thread snapshots carry the turns it recorded (`NativeThreadSnapshot.turnChanges`). Older
     /// hosts review the working tree only (`RemoteAgentQuery.review`).
     public static let changesCapability = "changes.v1"
-    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability]
+    /// The host reports what fills each agent's context window (`NativeThreadSnapshot.context`,
+    /// compactions in the thread) and serves `NativeThreadRequest.compact`. Older hosts send
+    /// neither, and clients draw no context meter.
+    public static let nativeContextCapability = "native.context.v1"
+    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)

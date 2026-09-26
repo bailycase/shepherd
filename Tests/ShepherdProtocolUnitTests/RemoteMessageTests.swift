@@ -492,6 +492,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.reviewCommitCapability,
             RemoteProtocol.thinkingLevelsCapability,
             RemoteProtocol.changesCapability,
+            RemoteProtocol.nativeContextCapability,
         ]
         #expect(Set(RemoteProtocol.capabilities) == Set(named))
         #expect(RemoteProtocol.capabilities.count == named.count)
@@ -511,6 +512,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.reviewCommitCapability == "review.commit.v1")
         #expect(RemoteProtocol.automationsCapability == "automations.v1")
         #expect(RemoteProtocol.thinkingLevelsCapability == "thinking.levels.v1")
+        #expect(RemoteProtocol.nativeContextCapability == "native.context.v1")
     }
 
     /// Commit info from a host that sends only some fields still reads, with defaults.

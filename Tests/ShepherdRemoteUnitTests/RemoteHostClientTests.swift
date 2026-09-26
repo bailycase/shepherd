@@ -61,10 +61,25 @@ struct RemoteHostClientTests {
         .setModel(expectedSessionID: "s", generation: "g", operationID: UUID(), model: "p/m"),
         .send(expectedSessionID: "s", generation: "g", operationID: UUID(), text: "t", delivery: .followUp,
               images: [NativeImage(mimeType: "image/png", data: Data([1]))]),
+        .compact(expectedSessionID: "s", generation: "g", operationID: UUID(), instructions: "keep"),
     ])
     func nativeThreadsNeedAHostThatAdvertisesThem(_ request: NativeThreadRequest) async {
         let client = RemoteHostClient()
         #expect(await code { _ = try await client.nativeThread(agentID: AgentID(), request: request) } == "update_required")
+    }
+
+    /// Each newer request needs the capability of the host that serves it; Compact now needs a
+    /// host that reports the context (`native.context.v1`).
+    @Test(arguments: [
+        (NativeThreadRequest.compact(expectedSessionID: "s", generation: "g", operationID: UUID()), RemoteProtocol.nativeContextCapability),
+        (.queue(expectedSessionID: "s", generation: "g", operationID: UUID(), action: .clear), RemoteProtocol.nativeQueueCapability),
+        (.setThinking(expectedSessionID: "s", generation: "g", operationID: UUID(), level: "high"), RemoteProtocol.nativeThreadV2Capability),
+    ])
+    func newerRequestsNeedTheirCapability(_ request: NativeThreadRequest, capability: String) {
+        let all = Set(RemoteProtocol.capabilities)
+        #expect(RemoteHostClient.missingCapability(request, capabilities: all) == nil)
+        #expect(RemoteHostClient.missingCapability(request, capabilities: all.subtracting([capability])) != nil)
+        #expect(RemoteHostClient.missingCapability(.snapshot(), capabilities: all.subtracting([capability])) == nil)
     }
 
     @Test(arguments: [

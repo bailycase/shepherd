@@ -10,6 +10,8 @@ extension AppLayout {
     static let proseMaxWidth: CGFloat = 640
     static let userMaxWidth: CGFloat = 600
     static let gutter: CGFloat = 32
+    /// Older pages the context meter's Largest and Show summary load, at most, to find an entry.
+    static let findPageLimit = 20
     /// Gutter when the window is too narrow for the column plus the full gutter.
     static let gutterCompact: CGFloat = 16
     static let threadTop: CGFloat = 28

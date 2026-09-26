@@ -145,18 +145,21 @@ struct PiSessionPreviewTests {
         #expect(preview.messages.count == RPCThreadState.pageSize)
     }
 
-    /// After a compaction pi's context is its summary, the entries it kept, and what followed.
+    /// After a compaction pi's context is its summary, the entries it kept, and what followed;
+    /// the thread shows the compaction where it happened, after the entries it kept.
     @Test func aCompactionKeepsWhatPiKeeps() throws {
         var entries = chain((0..<6).map { user("m\($0)", at: Double($0 + 1)) })
         entries.append(["type": "compaction", "id": "c", "parentId": "e5", "timestamp": "2026-09-24T00:00:01.500Z",
                         "summary": "earlier work", "firstKeptEntryId": "e4", "tokensBefore": 10])
-        entries.append(["type": "message", "id": "after", "parentId": "c", "timestamp": "2026-09-24T00:00:02.000Z", "message": user("after", at: 9)])
+        entries.append(["type": "message", "id": "after", "parentId": "c", "timestamp": "2026-09-24T00:00:02.000Z",
+                        "message": user("after", at: 1_790_208_002_000)])
         let (url, remove) = try sessionFile(entries)
         defer { remove() }
 
         let preview = try #require(PiSessionPreview.snapshot(file: url, sessionID: "s"))
 
-        #expect(preview.messages.map(\.entryID) == ["compactionSummary:1790208001500", "user:5", "user:6", "user:9"])
+        #expect(preview.messages.map(\.entryID) == ["user:5", "user:6", "compactionSummary:1790208001500", "user:1790208002000"])
+        #expect(preview.messages[2].compaction == NativeCompaction(phase: .done, tokensBefore: 10, summary: "earlier work"))
         #expect(preview.olderCursor == nil)
     }
 
