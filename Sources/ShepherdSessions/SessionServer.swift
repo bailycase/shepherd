@@ -401,6 +401,9 @@ public final class SessionServer: @unchecked Sendable {
     /// Tests only: handed to every RPC session this server creates afterwards, to run on the
     /// decode queue before each record it decodes off the server queue.
     var beforeOffQueueDecode: (() -> Void)?
+    /// Tests only: what this host tells a remote client it can do, to stand in for an older host.
+    /// Set before a client connects.
+    var advertisedCapabilities = RemoteProtocol.capabilities
     /// Which agent's own pane runs each session, for the store version it was built from.
     private var sessionAgents: (version: UInt64, agents: [SessionID: AgentID])?
 
@@ -909,7 +912,7 @@ public final class SessionServer: @unchecked Sendable {
             send(.helloOk(
                 id: id,
                 protocolVersion: RemoteProtocol.version,
-                capabilities: RemoteProtocol.capabilities
+                capabilities: advertisedCapabilities
             ), to: client)
             ShepherdLog.info("remote client '\(clientName)' authenticated (fd \(client.fd))")
             return
