@@ -426,9 +426,8 @@ enum DesignExtension {
                 // An older Shepherd lists no systems: check against the project.
               }
               const tokens = installed.length > 0 ? systemTokens(installed) : collectTokens(cwd);
-              const system = installed.length > 0
-                ? installed.map((one) => oneLine(one.title ?? one.namespace, 60)).join(" + ")
-                : path.basename(cwd);
+              // Namespaces keep the folder grammar; a record's title is the design's data.
+              const system = installed.length > 0 ? installed.map((one) => one.namespace).join(" + ") : path.basename(cwd);
               let paths: string[];
               if (params.path) {
                 paths = [params.path];
@@ -1041,18 +1040,21 @@ enum DesignExtension {
               : `${boards} against ${tokens.count} custom properties in ${files}.`,
           ];
           if (tokens.sizes.size === 0) lines.push("Sizes were not checked: the tokens declare no px or rem sizes.");
+          // Token names come from the project's or the system's files: the findings are fenced as data.
+          const off: string[] = [];
           for (const finding of findings) {
-            const off = [...finding.colors, ...finding.sizes];
-            if (off.length === 0) continue;
-            lines.push(`${finding.path}:`);
-            for (const item of off.slice(0, 20)) {
+            const found = [...finding.colors, ...finding.sizes];
+            if (found.length === 0) continue;
+            off.push(`${finding.path}:`);
+            for (const item of found.slice(0, 20)) {
               const where = item.lines.length
                 ? ` · ${finding.path}:${item.lines.slice(0, 6).join(", ")}${item.lines.length > 6 ? ", …" : ""}`
                 : "";
-              lines.push(`- ${item.value} ×${item.count}${where}${item.nearest ? ` (nearest ${item.nearest})` : ""}`);
+              off.push(`- ${item.value} ×${item.count}${where}${item.nearest ? ` (nearest ${oneLine(item.nearest, 120)})` : ""}`);
             }
-            if (off.length > 20) lines.push(`- … and ${off.length - 20} more`);
+            if (found.length > 20) off.push(`- … and ${found.length - 20} more`);
           }
+          if (off.length > 0) lines.push(fenced(off.join("\n")));
           return lines.join("\n");
         }
 
