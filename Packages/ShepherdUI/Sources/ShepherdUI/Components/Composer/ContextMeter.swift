@@ -30,6 +30,8 @@ public enum NWContextMetrics {
     public static let buttonHeight: CGFloat = 30
     public static let keepMinHeight: CGFloat = 52
     public static let icon: CGFloat = 12
+    /// A sheet's own inset above the header (iPad and iPhone): clear of the drag indicator.
+    public static let sheetTop: CGFloat = NW.Space.xxl
 }
 
 /// The ring's fill, by how full the window is: `calm` under 60%, `warning` to 85%, `critical`
@@ -144,6 +146,8 @@ private struct NWContextMeterStyle: ButtonStyle {
                 .onHover { hovering = $0 }
                 .nwAnimation(.hover, value: hovering)
                 .nwFocusRing(radius: NWContextMetrics.buttonSize / 2)
+                // A 44pt target on touch; nothing changes on the Mac.
+                .nwTouchTarget(height: NWContextMetrics.buttonSize, width: NWContextMetrics.buttonSize)
         }
     }
 }
@@ -272,19 +276,30 @@ public struct NWContextDetailsActions {
 /// now. Past 85% it leads with the problem and a field for what the summary should keep; while
 /// compacting there is nothing to press; just compacted, the agent's estimate and Show summary.
 public struct NWContextDetails: View {
+    /// Above the ring on the Mac; a sheet on iPad and iPhone, where a tap opens the details.
+    public enum Presentation: Equatable, Sendable {
+        /// The board's 340pt (or 300pt) popover, with its own surface.
+        case popover
+        /// As wide as the sheet, on the sheet's surface, with touch-sized rows and buttons.
+        case sheet
+    }
+
     let model: NWContextDetailsModel
     let actions: NWContextDetailsActions
+    let presentation: Presentation
     /// Compact now… opens the field for what to keep.
     @State private var composing = false
     @State private var keep = ""
     @FocusState private var keepFocused: Bool
 
-    public init(_ model: NWContextDetailsModel, actions: NWContextDetailsActions) {
+    public init(_ model: NWContextDetailsModel, actions: NWContextDetailsActions, presentation: Presentation = .popover) {
         self.model = model
         self.actions = actions
+        self.presentation = presentation
     }
 
     private var critical: Bool { model.variant == .almostFull }
+    private var sheet: Bool { presentation == .sheet }
 
     public var body: some View {
         let nw = Color.nw
@@ -312,9 +327,21 @@ public struct NWContextDetails: View {
                 actionsArea
             }
         }
-        .frame(width: model.width, alignment: .leading)
-        .nwPopover()
+        .modifier(DetailsSurface(presentation: presentation, width: model.width))
         .nwAnimation(.disclosure, value: composing)
+    }
+
+    /// The popover's width and surface, or a sheet's full width on the sheet's own surface.
+    private struct DetailsSurface: ViewModifier {
+        let presentation: Presentation
+        let width: CGFloat
+
+        func body(content: Content) -> some View {
+            switch presentation {
+            case .popover: content.frame(width: width, alignment: .leading).nwPopover()
+            case .sheet: content.frame(maxWidth: .infinity, alignment: .leading).padding(.top, NWContextMetrics.sheetTop - NW.Space.l)
+            }
+        }
     }
 
     private var header: some View {
@@ -404,7 +431,7 @@ public struct NWContextDetails: View {
                     Spacer(minLength: NW.Space.m)
                     Text(row.value).font(.nwMono(11.5)).foregroundStyle(nw.textSecondary)
                 }
-                .frame(height: NWContextMetrics.rowHeight)
+                .frame(minHeight: NWContextMetrics.rowHeight)
                 .padding(.horizontal, NWContextMetrics.side)
             }
             if let free = model.free {
@@ -414,7 +441,7 @@ public struct NWContextDetails: View {
                     Spacer(minLength: NW.Space.m)
                     Text(free).font(.nwMono(11.5)).foregroundStyle(nw.textTertiary)
                 }
-                .frame(height: NWContextMetrics.rowHeight)
+                .frame(minHeight: NWContextMetrics.rowHeight)
                 .padding(.horizontal, NWContextMetrics.side)
             }
         }
@@ -427,14 +454,14 @@ public struct NWContextDetails: View {
             HStack {
                 Text("Largest").font(.nwMono(10, .medium)).tracking(0.6).textCase(.uppercase)
                 Spacer(minLength: NW.Space.m)
-                Text("click to find in thread").font(.nwMono(10))
+                Text(sheet ? "tap to find in thread" : "click to find in thread").font(.nwMono(10))
             }
             .foregroundStyle(nw.textTertiary)
             .frame(height: NWContextMetrics.largestHeaderHeight - NW.Space.s, alignment: .bottom)
             .padding(.top, NW.Space.s)
             .padding(.horizontal, NWContextMetrics.side)
             ForEach(model.items) { item in
-                NWContextItemRow(item: item) { actions.find(item.id) }
+                NWContextItemRow(item: item, touch: sheet) { actions.find(item.id) }
             }
         }
     }
@@ -446,7 +473,7 @@ public struct NWContextDetails: View {
             Button(action: actions.showSummary) {
                 Label { Text("Show summary") } icon: { Image(systemName: "text.alignleft").font(.system(size: NWContextMetrics.icon - 2, weight: .medium)) }
             }
-            .buttonStyle(NWContextButtonStyle(primary: false))
+            .buttonStyle(NWContextButtonStyle(primary: false, touch: sheet))
             .padding(.top, 10).padding(.horizontal, NWContextMetrics.side).padding(.bottom, NWContextMetrics.side)
         case .empty:
             Color.clear.frame(height: NWContextMetrics.side)
@@ -462,7 +489,7 @@ public struct NWContextDetails: View {
                     .padding(.top, 10).padding(.horizontal, NWContextMetrics.side).padding(.bottom, NWContextMetrics.side)
             } else {
                 Button { composing = true; keepFocused = true } label: { compactLabel("Compact now…") }
-                    .buttonStyle(NWContextButtonStyle(primary: false))
+                    .buttonStyle(NWContextButtonStyle(primary: false, touch: sheet))
                     .disabled(!model.compactOffered || !actions.compactEnabled)
                     .help(actions.compactHelp ?? "")
                     .padding(.top, 10).padding(.horizontal, NWContextMetrics.side).padding(.bottom, NWContextMetrics.side)
@@ -492,7 +519,7 @@ public struct NWContextDetails: View {
 
     private func compactButton(primary: Bool, title: String) -> some View {
         Button(action: compact) { compactLabel(title) }
-            .buttonStyle(NWContextButtonStyle(primary: primary))
+            .buttonStyle(NWContextButtonStyle(primary: primary, touch: sheet))
             .disabled(!model.compactOffered || !actions.compactEnabled)
             .help(actions.compactHelp ?? "")
     }
@@ -572,6 +599,8 @@ public struct NWContextDetails: View {
 /// under the pointer, and a click finds it in the thread.
 private struct NWContextItemRow: View {
     let item: NWContextDetailsModel.Item
+    /// A touch row: at least 44pt.
+    let touch: Bool
     let action: () -> Void
     @State private var hovering = false
 
@@ -587,7 +616,7 @@ private struct NWContextItemRow: View {
                 Text(item.value).font(.nwMono(11)).foregroundStyle(nw.textSecondary)
             }
             .padding(.horizontal, NW.Space.m)
-            .frame(height: NWContextMetrics.rowHeight)
+            .frame(minHeight: touch ? NW.Height.touch : NWContextMetrics.rowHeight)
             .background(hovering ? nw.bgHover : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.s))
             .contentShape(Rectangle())
         }
@@ -604,14 +633,17 @@ private struct NWContextItemRow: View {
 /// `bgWindow` with a `lineStrong` line.
 struct NWContextButtonStyle: ButtonStyle {
     let primary: Bool
+    /// A sheet's button: 44pt tall.
+    var touch = false
 
     func makeBody(configuration: Configuration) -> some View {
-        ButtonBody(configuration: configuration, primary: primary)
+        ButtonBody(configuration: configuration, primary: primary, touch: touch)
     }
 
     private struct ButtonBody: View {
         let configuration: Configuration
         let primary: Bool
+        let touch: Bool
         @Environment(\.isEnabled) private var enabled
         @State private var hovering = false
 
@@ -623,7 +655,7 @@ struct NWContextButtonStyle: ButtonStyle {
                 .labelStyle(NWContextLabelStyle())
                 .font(.nwSans(12.5, primary ? .semibold : .medium))
                 .foregroundStyle(primary ? nw.textOnLantern : nw.textPrimary)
-                .frame(maxWidth: .infinity, minHeight: NWContextMetrics.buttonHeight)
+                .frame(maxWidth: .infinity, minHeight: touch ? NW.Height.touch : NWContextMetrics.buttonHeight)
                 .background(primary ? AnyShapeStyle(nw.lantern.mix(with: .white, by: active ? 0.12 : 0))
                                     : AnyShapeStyle(active ? nw.bgHover : nw.bgWindow), in: shape)
                 .overlay { if !primary { shape.strokeBorder(nw.lineStrong, lineWidth: 1) } }

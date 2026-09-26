@@ -14,6 +14,8 @@ public enum NWCompactionMetrics {
     public static let copySize: CGFloat = 24
     /// The divider and the open summary, 14pt apart.
     public static let openGap: CGFloat = 14
+    /// Show summary's line, which a touch target pads to 44pt.
+    public static let toggleHeight: CGFloat = 16
 }
 
 /// One line where a compaction happened, like other thread events: rules on either side of an
@@ -44,44 +46,74 @@ public struct NWCompactionDivider: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        let warning = tone == .warning
-        HStack(spacing: NWCompactionMetrics.ruleGap) {
-            rule
+        // The one line when it fits; on a phone (or at a large text size) the rules go first,
+        // then Show summary moves under the words, which wrap.
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: NWCompactionMetrics.ruleGap) {
+                rule
+                HStack(spacing: NWCompactionMetrics.partGap) {
+                    words
+                    summaryToggle(separated: true)
+                }
+                .lineLimit(1)
+                .fixedSize()
+                rule
+            }
             HStack(spacing: NWCompactionMetrics.partGap) {
-                if !running {
-                    Image(systemName: warning ? "exclamationmark.triangle" : "arrow.down.right.and.arrow.up.left")
-                        .font(.system(size: NWCompactionMetrics.icon - 1, weight: .medium))
-                        .foregroundStyle(warning ? nw.lanternText : nw.textTertiary)
-                }
-                Group {
-                    if running { Text(title).nwShimmer() } else { Text(title) }
-                }
-                .font(.nwSans(12)).foregroundStyle(warning ? nw.lanternText : nw.textSecondary)
-                if let tokens { Text(tokens).font(.nwMono(11)).foregroundStyle(nw.textTertiary) }
-                if let expanded {
-                    Text("·").font(.nwSans(12)).foregroundStyle(nw.lineStrong)
-                    Button(action: toggle) {
-                        HStack(spacing: NW.Space.xs) {
-                            Text(expanded ? "Hide summary" : "Show summary").font(.nwSans(12)).foregroundStyle(nw.textPrimary)
-                            Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                                .font(.system(size: NWCompactionMetrics.chevron - 1, weight: .semibold))
-                                .foregroundStyle(nw.textTertiary)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(expanded ? "Hide what the agent kept" : "Show what the agent kept")
-                }
+                words
+                summaryToggle(separated: true)
             }
             .lineLimit(1)
             .fixedSize()
-            rule
+            VStack(spacing: NW.Space.xs) {
+                HStack(alignment: .firstTextBaseline, spacing: NWCompactionMetrics.partGap) { words }
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                summaryToggle(separated: false)
+            }
         }
         .frame(maxWidth: .infinity)
         .help(help ?? "")
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isHeader)
+    }
+
+    /// The glyph, what happened, and the sizes.
+    @ViewBuilder private var words: some View {
+        let nw = Color.nw
+        let warning = tone == .warning
+        if !running {
+            Image(systemName: warning ? "exclamationmark.triangle" : "arrow.down.right.and.arrow.up.left")
+                .font(.system(size: NWCompactionMetrics.icon - 1, weight: .medium))
+                .foregroundStyle(warning ? nw.lanternText : nw.textTertiary)
+        }
+        Group {
+            if running { Text(title).nwShimmer() } else { Text(title) }
+        }
+        .font(.nwSans(12)).foregroundStyle(warning ? nw.lanternText : nw.textSecondary)
+        if let tokens { Text(tokens).font(.nwMono(11)).foregroundStyle(nw.textTertiary).fixedSize() }
+    }
+
+    /// "· Show summary", or Hide summary while it is open.
+    @ViewBuilder private func summaryToggle(separated: Bool) -> some View {
+        let nw = Color.nw
+        if let expanded {
+            if separated { Text("·").font(.nwSans(12)).foregroundStyle(nw.lineStrong) }
+            Button(action: toggle) {
+                HStack(spacing: NW.Space.xs) {
+                    Text(expanded ? "Hide summary" : "Show summary").font(.nwSans(12)).foregroundStyle(nw.textPrimary)
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: NWCompactionMetrics.chevron - 1, weight: .semibold))
+                        .foregroundStyle(nw.textTertiary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .fixedSize()
+            // A 44pt target on touch; nothing changes on the Mac.
+            .nwTouchTarget(height: NWCompactionMetrics.toggleHeight)
+            .accessibilityLabel(expanded ? "Hide what the agent kept" : "Show what the agent kept")
+        }
     }
 
     private var rule: some View {
@@ -124,9 +156,11 @@ public struct NWCompactionSummary: View {
             HStack(spacing: NW.Space.m) {
                 Image(systemName: "text.alignleft").font(.system(size: NWCompactionMetrics.icon - 1, weight: .medium))
                     .foregroundStyle(nw.textTertiary)
-                Text("What the agent kept").font(.nwSans(12, .semibold)).foregroundStyle(nw.textPrimary)
-                Text([size, "written by the agent"].compactMap { $0 }.joined(separator: " · "))
-                    .font(.nwMono(10.5)).foregroundStyle(nw.textTertiary)
+                // The size beside the title when it fits; on a phone it goes under it.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: NW.Space.m) { title; meta }
+                    VStack(alignment: .leading, spacing: NW.Space.xxs) { title; meta }
+                }
                 Spacer(minLength: NW.Space.m)
                 Button(action: copy) {
                     Image(systemName: "doc.on.doc").font(.system(size: 12))
@@ -161,5 +195,14 @@ public struct NWCompactionSummary: View {
         .nwCard(fill: nw.bgSunken, line: nw.lineSubtle)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("What the agent kept")
+    }
+
+    private var title: some View {
+        Text("What the agent kept").font(.nwSans(12, .semibold)).foregroundStyle(Color.nw.textPrimary).lineLimit(1).fixedSize()
+    }
+
+    private var meta: some View {
+        Text([size, "written by the agent"].compactMap { $0 }.joined(separator: " · "))
+            .font(.nwMono(10.5)).foregroundStyle(Color.nw.textTertiary).lineLimit(1).fixedSize()
     }
 }

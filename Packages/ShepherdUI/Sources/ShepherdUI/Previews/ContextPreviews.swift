@@ -48,6 +48,30 @@ private let previewFull = NWContextDetailsModel(
     }
 }
 
+#Preview("Context details, sheet") {
+    // iPad and iPhone: the details as a sheet, as wide as it is.
+    NWPreviewBoth {
+        HStack(alignment: .top, spacing: NW.Space.xl) {
+            NWContextDetails(previewSplit, actions: NWContextDetailsActions(), presentation: .sheet)
+            NWContextDetails(previewFull, actions: NWContextDetailsActions(), presentation: .sheet)
+        }
+        .frame(width: 780)
+        .background(Color.nw.bgRaised)
+    }
+}
+
+#Preview("Compaction, narrow") {
+    // A phone's width: the rules go, then Show summary moves under the words.
+    NWPreviewBoth {
+        VStack(spacing: NW.Space.l) {
+            NWCompactionDivider(title: "Compacted automatically", tokens: "184k → 23k", expanded: false)
+            NWCompactionDivider(title: "Context overflowed · compacted and retried", tokens: "203k → 21k", tone: .warning, expanded: false)
+            NWCompactionSummary(size: "2.1k", sections: [NWSummarySection(id: 0, title: "Goal", text: "Make native thread rows match the spec.")]) {}
+        }
+        .frame(width: 340)
+    }
+}
+
 #Preview("Compaction") {
     NWPreviewBoth {
         VStack(spacing: NW.Space.l) {
