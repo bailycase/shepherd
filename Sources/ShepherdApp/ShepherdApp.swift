@@ -64,6 +64,7 @@ public struct ShepherdMacApp: App {
                 .task {
                     vm.applyRemoteListenerSetting()
                     PiUpdateManager.shared.start()
+                    vm.startSkillChecks()
                 }
         }
         .windowStyle(.hiddenTitleBar)

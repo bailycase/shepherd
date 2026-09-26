@@ -199,7 +199,18 @@ keep the version for real breaks.
   the split, the largest items, which find their turn in the thread, and Compact now with what
   to keep). A compaction is a line in the thread whose Show summary opens what the agent kept.
 - **Settings:** Appearance (System, Light, Dark), the hosts as cards with Retry, and a host form
-  (add, edit, forget; a blank token keeps the saved one).
+  (add, edit, forget; a blank token keeps the saved one). A host's own settings as the Mac's
+  Settings sets them (`hostSettings.v1`): Defaults (model, thinking, the queue), Worktrees and
+  Extensions, with a host picker when there are several. Instructions: the root AGENTS.md and
+  APPEND_SYSTEM.md every session Shepherd starts reads (`instructions.v1`), the same on every
+  host or per host, in an editor with line numbers and a Markdown key row. Skills: the agent
+  skills every host keeps in ~/.agents/skills (`skills.v1`), the same on every host: each on or
+  off, Update for a newer commit, a skill's detail (how the agent uses it, its version, its hosts,
+  its files, Remove with Undo), a search of skills.sh with Install on every host, and Add from repo.
+  A host that is offline takes each change when it's back. Experiments: Suggested instructions
+  across every host (`suggestions.v1`), the lines agents drafted to add, edit first or dismiss. On
+  iPad the list sits beside the page. The rules live in ShepherdRemote (`ClientHostSettings`,
+  `ClientInstructions`, `ClientSkills`, `ClientSuggestions`), held by `SettingsStore`.
 - **New thread (`NewThread/`):** the prompt, then chips for repo, host, model and thinking (only
   for a model that takes a level: Off, Minimal, Low, Medium and High, with Extra high and Max where
   the host's catalog says the model has them, and Off to High on a host without

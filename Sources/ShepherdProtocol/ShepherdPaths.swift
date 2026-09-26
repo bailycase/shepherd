@@ -54,5 +54,43 @@ public enum ShepherdPaths {
     ) -> URL {
         supportDirectory(environment: environment).appendingPathComponent("remote-token")
     }
+
+    /// Shepherd's root instructions for pi (Settings ▸ Instructions): `AGENTS.md`,
+    /// `APPEND_SYSTEM.md` and their history. The instructions extension reads them from here, so
+    /// pi's own `~/.pi/agent` is never written.
+    public static func instructionsDirectory(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL {
+        supportDirectory(environment: environment).appendingPathComponent("instructions", isDirectory: true)
+    }
+
+    /// Overrides where this host's agent skills live (Settings ▸ Skills). Tests point it at a
+    /// scratch folder, so they never touch the user's skills; pi itself always reads
+    /// `~/.agents/skills`.
+    public static let skillsDirectoryEnvKey = "SHEPHERD_SKILLS_DIR"
+
+    /// The agent skills every pi session on this host can use: the Agent Skills folder pi reads
+    /// at startup, `~/.agents/skills` (a folder per skill, each with a SKILL.md).
+    public static func agentSkillsDirectory(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL {
+        if let override = environment[skillsDirectoryEnvKey],
+           !override.trimmingCharacters(in: .whitespaces).isEmpty {
+            return URL(fileURLWithPath: (override as NSString).expandingTildeInPath, isDirectory: true)
+                .standardizedFileURL
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".agents", isDirectory: true)
+            .appendingPathComponent("skills", isDirectory: true)
+    }
+
+    /// What Shepherd keeps beside the skills (Settings ▸ Skills): the skills that are off, the
+    /// ones just removed (for Undo), each installed skill's source, and a cache of the
+    /// repositories they came from.
+    public static func skillsStateDirectory(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL {
+        supportDirectory(environment: environment).appendingPathComponent("skills", isDirectory: true)
+    }
 }
 

@@ -600,6 +600,40 @@ struct ListPerformanceTests {
         #expect(rows["tray.row", default: 0] <= 2, "\(rows)")
     }
 
+    // MARK: Skills
+
+    /// Settings ▸ Skills over 200 skills: opening builds the rows on screen and some ahead of them,
+    /// never the whole list, and one skill turning off redraws its row alone.
+    @Test func oneSkillChangingRedrawsOnlyItsRow() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let vm = try await app.start()
+        for index in 0..<200 {
+            let name = "skill-\(index + 100)"
+            let text = "---\nname: \(name)\ndescription: Skill number \(index).\n---\n"
+            try app.server.skills.installFiles(name: name, files: [SkillFile(path: "SKILL.md", contents: Data(text.utf8))],
+                                                invocation: .automatic)
+        }
+        await vm.skills.refresh(vm.skillsHosts)
+        let size = CGSize(width: 1200, height: 800)
+        var window: OffscreenWindow!
+        let opened = ListPerf.counting {
+            window = OffscreenWindow(size: size, dark: true, SkillsSettings(vm: vm, model: vm.skills))
+            ListPerf.settle(window)
+        }
+        defer { window.close() }
+        // About a dozen rows fit under the page's header; the lazy stack builds some ahead of
+        // them (50 here, at any speed). All 200 would mean it isn't lazy.
+        #expect(opened["skills.row", default: 0] <= 80, "\(opened)")
+
+        var snapshot = try #require(vm.skills.state(of: vm.skillsHosts[0]).snapshot)
+        snapshot.skills[0].isOn = false
+        let changed = ListPerf.counting {
+            ListPerf.time(window) { vm.skills.hostChanged(ShepherdViewModel.thisMacSkills, snapshot) }
+        }
+        #expect(changed["skills.row", default: 0] <= 2, "\(changed)")
+    }
+
     // MARK: Review
 
     private func review(_ files: [DiffFile]) -> OffscreenWindow {

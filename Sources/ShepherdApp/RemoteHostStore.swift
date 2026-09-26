@@ -47,7 +47,14 @@ final class RemoteHostStore {
     final class Connection: Identifiable {
         /// Editable in Settings; the store reconnects after a change.
         fileprivate(set) var config: HostConfig
-        var phase: Phase = .disconnected { didSet { onProjectionChanged?() } }
+        var phase: Phase = .disconnected {
+            didSet {
+                if oldValue == .connected, phase != .connected { lastConnected = Date() }
+                onProjectionChanged?()
+            }
+        }
+        /// When the connection last dropped, this launch: an offline host's "last seen".
+        private(set) var lastConnected: Date?
         var state = ShepherdState() { didSet { onProjectionChanged?() } }
         fileprivate(set) var children: [AgentID: [ChildRun]] = [:] { didSet { onProjectionChanged?() } }
         @ObservationIgnored fileprivate var onProjectionChanged: (() -> Void)?
@@ -77,6 +84,12 @@ final class RemoteHostStore {
         var supportsChanges: Bool { client?.capabilities.contains(RemoteProtocol.changesCapability) == true }
         /// The host serves automations over the protocol; older hosts show them read-only.
         var supportsAutomations: Bool { client?.capabilities.contains(RemoteProtocol.automationsCapability) == true }
+        /// The host serves its root instructions (Settings ▸ Instructions).
+        var supportsInstructions: Bool { client?.capabilities.contains(RemoteProtocol.instructionsCapability) == true }
+        /// The host serves Settings ▸ Skills (`skills.v1`).
+        var supportsSkills: Bool { client?.capabilities.contains(RemoteProtocol.skillsCapability) == true }
+        /// What Settings ▸ Skills reads and changes the host's skills through, while it's connected.
+        var skillsClient: (any SkillsClient)? { phase == .connected ? client : nil }
         /// The host takes every level pi has in `createAgent` (older hosts: Off to High).
         var supportsAllThinkingLevels: Bool { client?.capabilities.contains(RemoteProtocol.thinkingLevelsCapability) == true }
         var supportsWorktreeCreation: Bool {
@@ -125,18 +138,23 @@ final class RemoteHostStore {
 
     @ObservationIgnored var onProjectionChanged: (() -> Void)?
     @ObservationIgnored var onDropError: ((String) -> Void)?
+    /// A host connected (again): what waits on it can go now (Settings ▸ Instructions' sync).
+    @ObservationIgnored var onHostConnected: ((UUID) -> Void)?
     private(set) var connections: [Connection] = [] { didSet { onProjectionChanged?() } }
 
     private let defaults: UserDefaults
     private let childRefreshInterval: Duration
+    /// False keeps every host disconnected: a unit test's hosts, which never open a socket.
+    private let connects: Bool
 
     var hosts: [HostConfig] {
         connections.map(\.config)
     }
 
-    init(defaults: UserDefaults = .standard, childRefreshInterval: Duration = .seconds(3)) {
+    init(defaults: UserDefaults = .standard, childRefreshInterval: Duration = .seconds(3), connects: Bool = true) {
         self.defaults = defaults
         self.childRefreshInterval = childRefreshInterval
+        self.connects = connects
         if let data = defaults.data(forKey: Self.defaultsKey),
            let configs = try? JSONDecoder().decode([HostConfig].self, from: data) {
             connections = configs.map(Connection.init)
@@ -207,7 +225,7 @@ final class RemoteHostStore {
     // MARK: - Connection lifecycle
 
     private func connect(_ connection: Connection) {
-        guard connections.contains(where: { $0 === connection }) else { return }
+        guard connects, connections.contains(where: { $0 === connection }) else { return }
         connection.retryPending = false
         connection.onProjectionChanged = { [weak self] in self?.onProjectionChanged?() }
         connection.transportID = UUID()
@@ -237,6 +255,7 @@ final class RemoteHostStore {
                 connection.phase = .connected
                 connection.startChildRefresh(client: client, every: childRefreshInterval)
                 connection.reconnectDelay = .seconds(1)
+                self.onHostConnected?(connection.id)
             } catch {
                 if connection.client === client {
                     connection.client = nil
@@ -360,6 +379,16 @@ final class RemoteHostStore {
             throw RemoteHostClientError.disconnected
         }
         return try await client.automation(key.automation, request: request)
+    }
+
+    /// Reads or saves a host's root instructions (Settings ▸ Instructions).
+    @discardableResult
+    func instructions(hostID: UUID, request: RemoteInstructionsRequest = .fetch) async throws -> InstructionsSnapshot {
+        guard let connection = connections.first(where: { $0.id == hostID }),
+              connection.phase == .connected, let client = connection.client else {
+            throw RemoteHostClientError.disconnected
+        }
+        return try await client.instructions(request)
     }
 
     func creationOptions(hostID: UUID, spaceID: SpaceID, cwd: String?, fetchFirst: Bool?) async throws -> RemoteCreationOptions {
