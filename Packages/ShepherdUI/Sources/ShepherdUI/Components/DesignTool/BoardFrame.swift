@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// A board on the canvas (NWBoardFrame; DZCanvas): its label 24pt above it (the name in 12
-/// semibold, `textPrimary` when selected, else `textSecondary`, then its size in mono 10.5
-/// `textTertiary`), and the board's page at the canvas's zoom in a radius-4 frame with a hairline
+/// A board on the canvas (NWBoardFrame; DZCanvas): its label 24pt above it where the boards
+/// around it leave room (the name in 12 semibold, `textPrimary` when selected, else
+/// `textSecondary`, then its size in mono 10.5 `textTertiary`), and the board's page at the canvas's zoom in a radius-4 frame with a hairline
 /// and a soft drop shadow. A selected board wears a 2pt `running` ring outside the frame.
 ///
 /// The slot draws the board: a live view, or a snapshot. The frame compares its board and zoom
@@ -24,10 +24,16 @@ public struct NWBoardFrame<Slot: View>: View, Equatable {
     public var body: some View {
         let _ = NWRenderProbe.tick("design.board")
         let size = CGSize(width: board.frame.width * zoom, height: board.frame.height * zoom)
-        VStack(alignment: .leading, spacing: NWDesignMetrics.labelGap) {
+        // A board drawn narrower than its label (a phone at a low zoom) lets it run past, up to
+        // the next board; where the row above is closer than the label, it moves down toward
+        // the frame, and isn't drawn where it would lie over that row (`NWLabelRoom`).
+        let label = board.labelRoom.layout(width: size.width, zoom: zoom)
+        VStack(alignment: .leading, spacing: 0) {
             NWBoardLabel(title: board.title, size: board.size, selected: board.isSelected)
-                // A board drawn narrower than its label (a phone at a low zoom) lets it run past.
-                .frame(width: max(size.width, NWDesignMetrics.labelMinWidth), height: NWDesignMetrics.labelHeight, alignment: .leading)
+                .frame(width: label.width, height: NWDesignMetrics.labelHeight, alignment: .leading)
+                .padding(.bottom, label.gap)
+                .frame(height: NWDesignMetrics.labelHeight + NWDesignMetrics.labelGap, alignment: .bottom)
+                .opacity(label.shown ? 1 : 0)
             NWBoardSurface(size: size, selected: board.isSelected) { slot }
         }
         .accessibilityElement(children: .ignore)

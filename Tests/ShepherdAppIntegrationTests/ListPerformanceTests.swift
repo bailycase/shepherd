@@ -882,7 +882,7 @@ struct ListPerformanceTests {
         defer { store.stop() }
         let window = OffscreenWindow(size: CGSize(width: 1300, height: 800), dark: true, HStack(spacing: 0) {
             ThreadView(store: store, active: true, isFocused: false, request: { value in
-                if case .send(_, _, let operation, _, _, _) = value { return .accepted(operationID: operation) }
+                if case .send(_, _, let operation, _, _, _, _) = value { return .accepted(operationID: operation) }
                 return .snapshot(value: snapshot)
             }, commandKey: "perf")
             .frame(width: 700)

@@ -157,6 +157,67 @@ struct DesignFlowTests {
         try await eventuallyOnMain("the selected board to go live again") { host.liveBoards.contains(DesignPath("A.dc.html")!) }
     }
 
+    /// Select: a click names the element under it (the board's own hit test), the pointer rings
+    /// what it is over, a rewrite finds the selection again, and the chat's messages carry what the
+    /// canvas shows.
+    @Test func aClickSelectsTheElementUnderItAndTheChatCarriesWhatTheCanvasShows() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, window, design, drawer, _) = try await openCanvas(app)
+        defer { window.close() }
+        let screen = vm.designScreen(design.id)
+        let host = try #require(screen.host)
+        let a = DesignPath("A.dc.html")!
+
+        // The fixture's first card on A is 396 wide from x 32, under the heading; this is its padding.
+        screen.pick(NWCanvasPick(board: a.rawValue, point: CGPoint(x: 420, y: 150)))
+        try await eventuallyOnMain("the card to be selected") { screen.selectedElements.count == 1 }
+        let card = try #require(screen.selectedElements.first)
+        #expect(card.id.description == "A.dc.html#7:1/1/0")
+        #expect(card.kind == .shape && card.tag == "card · Step 1 90%")
+        #expect(abs(card.rect.minX - 32) < 1 && abs(card.rect.width - 396) < 1 && card.rect.contains(CGPoint(x: 420, y: 150)), "\(card.rect)")
+        #expect(host.liveBoards.contains(a), "the board holding the selection stays live")
+        #expect(screen.selectionRings.map(\.tag) == ["card · Step 1 90%"])
+
+        // Shift adds the heading; a plain click on the empty canvas clears.
+        screen.pick(NWCanvasPick(board: a.rawValue, point: CGPoint(x: 100, y: 45), extending: true))
+        try await eventuallyOnMain("the heading to join") { screen.selectedElements.count == 2 }
+        #expect(screen.selectedElements.last?.id.description == "A.dc.html#5:1/0/1")
+        #expect(screen.selectedElements.last?.label == "Checkout funnel")
+
+        let record = try #require(screen.viewRecord)
+        #expect(record.isValid)
+        #expect(record.selected.map(\.description) == ["A.dc.html#7:1/1/0", "A.dc.html#5:1/0/1"])
+        #expect(record.selectedBoards == ["A.dc.html"])
+        #expect(record.visibleBoards.contains("A.dc.html"))
+        let store = vm.threadStores.store(for: drawer.agent.id)
+        #expect(store.designContext?() == record, "the chat sends what the canvas shows")
+
+        // The pointer over B's heading rings it.
+        screen.pointer(NWCanvasPick(board: "B.dc.html", point: CGPoint(x: 100, y: 45)))
+        try await eventuallyOnMain("B's heading to be ringed", timeout: .seconds(30)) { screen.hover?.id.description == "B.dc.html#5:1/0/1" }
+        screen.pointer(nil)
+        #expect(screen.hover == nil)
+
+        // A rewrite that moves the heading down finds it again where it is drawn now.
+        let written = try await app.server.writeDesignBoard(design.id, path: a, source: DesignFixtures.source(DesignFixtures.checkout[0])
+            .replacingOccurrences(of: "gap: 18px\">", with: "gap: 18px; padding-top: 132px\">"))
+        try await eventuallyOnMain("the heading to be found where it moved", timeout: .seconds(30)) {
+            screen.snapshot?.boards[a] == written.sha256 && screen.selectedElements.last.map { $0.rect.minY > 100 } == true
+        }
+
+        // Clicks land in order: one whose board is still being asked never overtakes a later one.
+        screen.pick(NWCanvasPick(board: "B.dc.html", point: CGPoint(x: 100, y: 45)))
+        screen.pick(NWCanvasPick())
+        try await eventuallyOnMain("the clicks to settle", timeout: .seconds(30)) { !screen.isPicking }
+        #expect(screen.picks.isEmpty, "the click on the empty canvas came last")
+
+        screen.pick(NWCanvasPick(board: a.rawValue, point: CGPoint(x: 100, y: 45)))
+        try await eventuallyOnMain("the heading to be selected again", timeout: .seconds(30)) { !screen.isPicking }
+        screen.pick(NWCanvasPick())
+        #expect(screen.picks.isEmpty && screen.viewRecord?.selected.isEmpty == true)
+    }
+
     /// One write to a board is one revision pushed and one board reloaded in place (the live one,
     /// with no new view); the others are untouched. New boards appear and removed ones leave.
     @Test func aBoardTheAgentRewritesReloadsInPlaceAlone() async throws {

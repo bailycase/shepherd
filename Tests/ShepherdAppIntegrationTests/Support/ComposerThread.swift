@@ -32,7 +32,7 @@ final class ComposerThread {
         let request: NativeThreadStore.Request = { [weak self] value in
             guard let self else { return .failure(code: "gone", message: "harness released") }
             switch value {
-            case .send(_, _, let operation, _, _, _): return .accepted(operationID: operation)
+            case .send(_, _, let operation, _, _, _, _): return .accepted(operationID: operation)
             default: return .snapshot(value: self.snapshot)
             }
         }

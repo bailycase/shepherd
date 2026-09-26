@@ -218,6 +218,9 @@ public final class NativeThreadStore {
     /// Told when the poll loop starts (true: the thread is on screen) and when it ends, so the
     /// host pushes revisions only for threads on screen (`revisionAvailable`).
     @ObservationIgnored public var onLiveChange: ((Bool) -> Void)?
+    /// A design agent's chat: what the design screen shows as a message leaves
+    /// (`DesignViewRecord`), sent with it where the host takes one (`designContext`).
+    @ObservationIgnored public var designContext: (() -> DesignViewRecord?)?
     /// The poll loop runs: the thread is on screen, and a pushed revision pulls it.
     public var isLive: Bool { request != nil }
     /// When the current stretch of `native_starting` answers began.
@@ -892,8 +895,9 @@ public final class NativeThreadStore {
               supports("send"), let current = snapshot else { return }
         let operation = UUID()
         let attached: [NativeImage]? = images.isEmpty || !supports("sendImages") ? nil : images
+        let context = supports("designContext") ? designContext?().map(NativeDesignContext.init) : nil
         await perform(.send(expectedSessionID: current.piSessionID, generation: current.generation,
-                            operationID: operation, text: text, delivery: delivery, images: attached),
+                            operationID: operation, text: text, delivery: delivery, images: attached, designContext: context),
                       operation: operation, current: current, sentText: text, delivery: delivery, images: attached ?? [])
     }
 

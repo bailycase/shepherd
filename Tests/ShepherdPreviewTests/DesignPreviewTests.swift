@@ -85,6 +85,37 @@ struct DesignPreviewTests {
         }
     }
 
+    /// Select (NWSelectionRing; NWDesignTool, DZTweak): a card on A selected with its tag, the
+    /// bars under the pointer ringed, and B selected whole by its label. Rects are the fixture
+    /// board's layout (a capture draws snapshots, so nothing live is asked).
+    @Test func designScreenSelect() async throws {
+        let (workspace, checkout, _) = try await designWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        vm.selectSidebarRow(.design(checkout.id))
+        let screen = vm.designScreen(checkout.id)
+        let a = try #require(DesignPath("A.dc.html"))
+        func element(_ tid: Int, _ path: [Int], _ rect: CGRect, kind: DesignElementKind, label: String?, tag: String) throws -> DesignElementPick {
+            DesignElementPick(board: a, id: try #require(DesignElementID(board: a.viewName, tid: tid, path: path)), rect: rect,
+                              kind: kind, label: label, tag: tag)
+        }
+        let card = try element(7, [1, 1, 0], CGRect(x: 32, y: 78, width: 396, height: 80), kind: .shape, label: "Step 1 90%",
+                               tag: "card · Step 1 90%")
+        let bars = try element(16, [1, 2], CGRect(x: 32, y: 176, width: 1216, height: 592), kind: .shape, label: nil, tag: "card")
+        screen.setSelection([.init(board: try #require(DesignPath("B.dc.html"))), .init(board: a, element: card)], hover: bars)
+        // Close enough on A to read the tag (the canvas opens fitted, at about 17%).
+        let close = NWCanvasViewport(offset: CGPoint(x: NWDesignMetrics.fitLeading, y: NWDesignMetrics.fitTop), zoom: 0.55)
+        try await Preview.render("app-window-design-select", size: Self.windowSize, ready: {
+            if screen.snapshot != nil, screen.viewport != close { screen.viewport = close }
+            return screen.viewport == close && screen.isDrawn
+        }) {
+            RootView(vm: vm)
+        }
+        let record = try #require(screen.viewRecord)
+        #expect(record.isValid && record.selected.map(\.description) == ["A.dc.html#7:1/1/0"])
+        #expect(record.selectedBoards == ["A.dc.html", "B.dc.html"])
+    }
+
     /// The Designs destination selected on its page, with design rows in Recents.
     @Test func appWindowDesigns() async throws {
         let (workspace, _, _) = try await designWorkspace()

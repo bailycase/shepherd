@@ -78,7 +78,7 @@ struct NativeThreadStoreQueueTests {
         let seen = queueSeenAtEachPull(store, host)
         var sent: UUID?
         host.action = { [self] request in
-            guard case .send(_, _, let op, let text, _, _) = request else { return .failure(code: "x", message: "x") }
+            guard case .send(_, _, let op, let text, _, _, _) = request else { return .failure(code: "x", message: "x") }
             sent = op
             // The host queues it; its next snapshot says so.
             host.snapshot = snapshot(revision: 2, items: [NativeQueuedMessage(id: op, text: text, sentAt: 42)])
@@ -100,7 +100,7 @@ struct NativeThreadStoreQueueTests {
         host.acceptAll()
         store.draft = "turn left"
         await store.send(delivery: .steer)
-        guard case .send(_, _, _, _, let delivery, _) = try #require(host.actions.first) else { Issue.record("expected a send"); return }
+        guard case .send(_, _, _, _, let delivery, _, _) = try #require(host.actions.first) else { Issue.record("expected a send"); return }
         #expect(delivery == .steer)
         #expect(seen() == [["turn left", "a"]])
     }
@@ -112,7 +112,7 @@ struct NativeThreadStoreQueueTests {
         let png = NativeImage(mimeType: "image/png", data: Data([1, 2]), name: "checkout.png")
         store.draft = "look"
         await store.send(images: [png])
-        guard case .send(_, _, let op, _, _, let images) = try #require(host.actions.first) else { return }
+        guard case .send(_, _, let op, _, _, let images, _) = try #require(host.actions.first) else { return }
         #expect(images == [png])
         #expect(store.queuedImages(op) == [png])
         #expect(store.queuedImages(UUID()).isEmpty)
@@ -143,7 +143,7 @@ struct NativeThreadStoreQueueTests {
         defer { task.cancel() }
         var sent: UUID?
         host.action = { request in
-            guard case .send(_, _, let op, _, _, _) = request else { return .failure(code: "x", message: "x") }
+            guard case .send(_, _, let op, _, _, _, _) = request else { return .failure(code: "x", message: "x") }
             sent = op
             return .accepted(operationID: op)
         }

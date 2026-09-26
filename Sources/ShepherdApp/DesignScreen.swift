@@ -22,11 +22,16 @@ struct DesignLayoutView: View {
         }
         .onChange(of: model.isVisible, initial: true) { vm.designVisibility(designID, visible: model.isVisible) }
         .onDisappear { vm.designVisibility(designID, visible: false) }
+        .onAppear { [vm] in
+            // The chat's messages carry what the canvas shows as they leave.
+            let screen = vm.designScreen(designID)
+            vm.threadStores.store(for: thread.agentID).designContext = { [weak screen] in screen?.viewRecord }
+        }
     }
 }
 
-/// The canvas: the design's boards, the tool, and the zoom. Comments come later, so the Comment
-/// tool draws disabled.
+/// The canvas: the design's boards, the tool, the zoom, and the selection ringed over the boards.
+/// Comments come later, so the Comment tool draws disabled.
 struct DesignCanvasPane: View {
     @Bindable var screen: DesignScreenModel
 
@@ -34,7 +39,9 @@ struct DesignCanvasPane: View {
         let host = screen.host
         let zoom = screen.viewport.zoom
         NWDesignCanvas(boards: screen.boards, viewport: $screen.viewport, tool: $screen.tool, disabledTools: [.comment],
-                       select: { screen.select($0) }, resized: { screen.resized($0) }, zooming: { screen.setZooming($0) }) { board in
+                       selection: screen.selectionRings, hover: screen.hoverRing,
+                       pick: { screen.pick($0) }, point: { screen.pointer($0) },
+                       resized: { screen.resized($0) }, zooming: { screen.setZooming($0) }) { board in
             if let host, let path = DesignPath(board.id) {
                 DesignBoardSlot(host: host, path: path, zoom: zoom, content: board.content)
             }

@@ -293,7 +293,7 @@ struct ListPerformanceReport {
         var body: some View {
             HStack(spacing: 0) {
                 ThreadView(store: store, active: true, isFocused: false, request: { [snapshot] value in
-                    if case .send(_, _, let operation, _, _, _) = value { return .accepted(operationID: operation) }
+                    if case .send(_, _, let operation, _, _, _, _) = value { return .accepted(operationID: operation) }
                     return .snapshot(value: snapshot)
                 }, commandKey: "perf")
                 .frame(width: 700)
@@ -311,7 +311,7 @@ struct ListPerformanceReport {
         var snapshot = ListFixtures.threadSnapshot(turns: turns, running: true)
         let store = NativeThreadStore()
         let request: NativeThreadStore.Request = { value in
-            if case .send(_, _, let operation, _, _, _) = value { return .accepted(operationID: operation) }
+            if case .send(_, _, let operation, _, _, _, _) = value { return .accepted(operationID: operation) }
             return .snapshot(value: snapshot)
         }
         let small = ListFixtures.threadSnapshot(turns: 5)
