@@ -3156,7 +3156,9 @@ splits.
   Every chord resolves through `KeybindingsStore`, shows in the Pane menu ("Show or Hide Terminal",
   "Maximize or Restore Terminal", and New Terminal without one) and in the strip's tooltips, and is
   unbound in Ghostty (`appOwnedChords`) so a focused terminal never eats it. ⌥⌘←/→ move among the
-  panes on screen.
+  panes on screen. Plain Space belongs to the terminal while its surface is first responder,
+  before AppKit or SwiftUI can use it to activate a control. It follows the terminal's normal
+  text-input path, including input-method composition; unfocused terminals leave it alone.
 
 ### Command palette
 
