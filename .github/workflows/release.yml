@@ -139,8 +139,10 @@ jobs:
           # new ShepherdApp sources — nightly 0217 shipped a build break that
           # `swift test` had already passed). Release builds are rare enough
           # that a clean rebuild beats a wrong binary. Keyed per configuration:
-          # the two apps build different ones.
-          key: xcode-${{ runner.os }}-${{ env.CONFIGURATION }}-${{ steps.xcode.outputs.version }}-${{ hashFiles('Package.resolved', 'Sources/**/*.swift', 'App/**/*.swift') }}
+          # the two apps build different ones. Keyed on the engine's pin too: a
+          # restored app holding another pin's engine fails the "Embed pi engine"
+          # phase, whose sandbox can't remove files the new pin doesn't declare.
+          key: xcode-${{ runner.os }}-${{ env.CONFIGURATION }}-${{ steps.xcode.outputs.version }}-${{ hashFiles('Package.resolved', 'Sources/**/*.swift', 'App/**/*.swift', 'scripts/pi-engine-pin.json') }}
 
       # The pi engine (Node and pi's bundle) the Mac target's "Embed pi engine" phase copies
       # into Contents/Helpers and Contents/Resources/pi-engine. Staging downloads Node from
