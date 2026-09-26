@@ -12,8 +12,10 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
         id: SpaceID = SpaceID(),
         name: String,
         path: String,
-        hidden: Bool = false
+        hidden: Bool = false,
+        reproMarker: String? = nil
     ) {
+        _ = reproMarker
         self.id = id
         self.name = name
         self.path = path
