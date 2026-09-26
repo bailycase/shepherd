@@ -2600,7 +2600,9 @@ send the review.
   marks a file the agent is editing now. **Not built yet:** ⌘1–9 to jump to a file (ChangesStates):
   those chords select agents.
 - **File headers** (`NWFileHeader`, 36pt on `bgRaised` between hairlines, pinned while their file
-  scrolls; 10pt leading and 8pt trailing padding, 8pt gaps): a 9pt fold chevron, the status letter
+  scrolls, and while at the top of the list casting a short shadow onto the rows under it
+  (`nwPinnedBackground`: ChangesSplit's 0 6 12 −8 black at 60%, as the popover's shadow color at
+  radius 6, 6pt down); 10pt leading and 8pt trailing padding, 8pt gaps): a 9pt fold chevron, the status letter
   (mono 11 bold), the path in `code` (the directory `textTertiary`, the name semibold
   `textPrimary`, truncated at the head), the file's diff stat in mono 11; then **Viewed**
   (`NWViewedCheckbox`: a 14pt box, radius 4, a 1.5pt `lineStrong` line, lantern with a check once
@@ -4322,8 +4324,8 @@ below collects the rest, and the places those sentences point here.
     these steps").
 - **The Changes pane: open, waiting on the user's call** (not decided departures; each either
   gets built as its board draws it or becomes a departure once the user says so):
-  - Mac: a pinned file header's shadow under its bottom hairline (ChangesSplit); the maximized
-    pane's 52pt rail with the window controls and Back to the thread (ChangesWide); ⌘1–9 to jump
+  - Mac: the maximized pane's 52pt rail with the window controls and Back to the thread
+    (ChangesWide); ⌘1–9 to jump
     to a file (ChangesStates), chords that select agents today; Rich preview (the engine sends no
     file contents).
   - iPad: the sidebar stays in landscape, so the docked pane is narrower than the board's 640pt;
