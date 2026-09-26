@@ -1472,8 +1472,8 @@ tools merge only with the same tool. Consecutive lines form one part of the turn
   turning down) when it expands, 8pt apart, with 4pt leading and 8pt trailing padding. It hugs
   its content and sits 4pt left of the column, so its glyph lines up with the prose. The label
   never truncates; the meta truncates at its tail. It is a real button with a radius-6 `bgHover`
-  fill on hover; a line with nothing behind it draws no chevron (its place stays) and does
-  nothing.
+  fill on hover; a line with nothing behind it draws no chevron (its place stays) and is not a
+  button: no hover, no press, no focus, and VoiceOver hears only its words.
 
   | Kind | Glyph | Done | Running |
   | --- | --- | --- | --- |
@@ -2308,7 +2308,7 @@ the components' values, and `Thread/Subagents.swift` lays out the tray. State al
 - **In the thread** (`NWSubagentRecordLine`, SubagentTray › SubagentRecord): an activity line in
   look (26pt, 12.5 `textSecondary`, the meta in `.nwMono(11)` `textTertiary`, a 13pt branch glyph
   and a 10pt chevron; a real button with the row hover; with no run to open, no chevron, its
-  place kept, and it does nothing). "Started 3 subagents · worker · reviewer
+  place kept, and not a button). "Started 3 subagents · worker · reviewer
   · tests" (at most six names, then "+2 more") takes the first spawn call's place; later spawns
   and the parent's `shepherd_child_wait` and `shepherd_child_result` calls leave no line, and the
   activity lines around them run on as one (a burst of one kind still merges across them). Once every run has finished, "3 subagents finished · 45m ·
