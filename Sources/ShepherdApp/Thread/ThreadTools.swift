@@ -36,7 +36,6 @@ struct ActivityLineView: View, Equatable {
     @State private var expandedCalls: Set<String>
     @State private var sheet: CallSheet?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.threadCommands) private var commands
 
     /// `expanded` and `expandedCalls` open the line, and calls in it, from the start.
     init(burst: NativeActivityBurst, review: ((String) -> Void)? = nil, expanded: Bool = false, expandedCalls: Set<String> = []) {
@@ -62,8 +61,7 @@ struct ActivityLineView: View, Equatable {
         VStack(alignment: .leading, spacing: 0) {
             NWActivityLine(kind: kind, label: burst.label, meta: burst.meta, status: status, isExpanded: expanded,
                            accessibilityLabel: burst.accessibilityLabel,
-                           action: burst.expandable ? toggle : nil,
-                           runInTerminal: lineCommand.flatMap { command in commands?.runInTerminal.map { run in { run(command) } } })
+                           action: burst.expandable ? toggle : nil)
             if expanded {
                 NWActivityCalls(burst.calls.map(row), onSelect: select, onShowAll: showOutput) { row in
                     if let call = burst.calls.first(where: { $0.id == row.id }) { menu(call) }
@@ -75,12 +73,6 @@ struct ActivityLineView: View, Equatable {
         .sheet(item: $sheet) { sheet in
             ToolOutputSheet(title: sheet.title, output: sheet.text, truncated: sheet.truncated) { self.sheet = nil }
         }
-    }
-
-    /// The command a finished line of one shell call ran: Run in terminal opens it (TerminalStates).
-    private var lineCommand: String? {
-        guard burst.state != .running, burst.calls.count == 1, let call = burst.calls.first, !call.running else { return nil }
-        return call.command
     }
 
     private var kind: NWActivityLine.Kind {
@@ -144,9 +136,6 @@ struct ActivityLineView: View, Equatable {
         }
         if call.kind == .edit, let path = call.path, let review {
             Button("Review \((path as NSString).lastPathComponent)") { review(path) }
-        }
-        if !call.running, let command = call.command, let run = commands?.runInTerminal {
-            Button("Run in Terminal") { run(command) }
         }
         if !call.output.isEmpty {
             Button("Open Output") { showOutput(call.id) }

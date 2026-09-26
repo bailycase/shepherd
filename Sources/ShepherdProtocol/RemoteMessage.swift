@@ -79,8 +79,9 @@ public enum RemoteProtocol {
     /// with undo (Settings ▸ Skills). Older hosts have none to show.
     public static let skillsCapability = "skills.v1"
     /// The host takes the terminal panel's actions on an agent's terminal panes
-    /// (`RemoteAgentAction.renameTerminal`, `.killTerminalProcess`, `.typeInTerminal`): Rename
-    /// tab, Kill process and Run in terminal. Older hosts leave them off.
+    /// (`RemoteAgentAction.renameTerminal`, `.killTerminalProcess`): Rename tab and Kill
+    /// process. Older hosts leave them off. A host answers an older client's `typeInTerminal`
+    /// (Run in terminal, since removed) with `unsupported`.
     public static let terminalControlCapability = "terminal.control.v1"
     /// The host takes a send's `designContext` (what the sender's design screen showed) and hands
     /// it to pi fenced as data. An older host would drop it, so a client leaves it out there.
@@ -182,20 +183,17 @@ public enum RemoteAgentAction: Codable, Hashable, Sendable {
     case deleteKeepingWorktree
     case reorder(target: AgentID)
     /// Names a terminal tab (its first pane); nil goes back to naming it after what it runs
-    /// (`terminalControlCapability`, like the two below).
+    /// (`terminalControlCapability`, like the one below).
     case renameTerminal(paneID: PaneID, title: String?)
     /// Kills the command running in a terminal pane (its foreground process group), never the
     /// shell at its prompt.
     case killTerminalProcess(paneID: PaneID)
-    /// Types `text` at a terminal pane's prompt once its shell reads, without running it (Run in
-    /// terminal).
-    case typeInTerminal(paneID: PaneID, text: String)
 
     /// The capability a host must advertise before the action is sent to it.
     public var capability: String {
         switch self {
         case .rename, .deleteKeepingWorktree, .reorder: RemoteProtocol.agentActionsCapability
-        case .renameTerminal, .killTerminalProcess, .typeInTerminal: RemoteProtocol.terminalControlCapability
+        case .renameTerminal, .killTerminalProcess: RemoteProtocol.terminalControlCapability
         }
     }
 }
