@@ -79,4 +79,20 @@ struct FleetOverviewTests {
     func aFinishedRowIsStampedWithItsTimeTodayItsWeekdayThisWeekAndItsDateBefore(offset: TimeInterval, stamp: String) {
         #expect(FleetFinishedDay.stamp(Self.ms(Self.now.addingTimeInterval(offset)), now: Self.now, calendar: Self.calendar) == stamp)
     }
+
+    @Test(arguments: [
+        ("error", false, AgentStatus.done, true),
+        ("error", true, .working, false),
+        ("complete", false, .done, false),
+    ] as [(String, Bool, AgentStatus, Bool)])
+    func aThreadWhoseLastTurnEndedInAnErrorReadsFailed(status: String, running: Bool, agent: AgentStatus, failed: Bool) {
+        let digest = FleetTests.digest(FleetTests.snapshot([
+            Fixture.message("user", "go"),
+            NativeThreadMessage(entryID: "a", role: "assistant", blocks: [], status: status, timestamp: 2_000),
+        ], running: running))
+        let model = FleetModel(hosts: [FleetTests.host(FleetTests.studio, "Studio", agents: [FleetTests.agent("pay", agent)])],
+                               digests: [FleetTests.ref("pay"): digest])
+        #expect(digest.lastTurnFailed == (status == "error" && !running))
+        #expect(model.recents.map(\.failed) == [failed])
+    }
 }
