@@ -14,7 +14,7 @@ final class RightPaneState {
     var open: Set<SidePaneOwner> = []
     /// Each pane's tab, while it is not the first.
     var tabs: [SidePaneOwner: SidePaneTab] = [:]
-    /// Tabs pi opened something in since you last showed them.
+    /// Tabs the agent opened something in since you last showed them.
     var news: [SidePaneOwner: Set<SidePaneTab>] = [:]
     /// Panes over their whole layout (ChangesWide), the thread hidden under them.
     var maximized: Set<SidePaneOwner> = []
