@@ -36,10 +36,10 @@ public final class DesignSurface {
         return components.url!
     }
 
-    /// The board's path when `url` names a board of this design, as an in-project link does.
+    /// The board's path when `url` names a board of this design, as an in-project link does
+    /// (relative to the board, or from the canvas root with a leading `/`).
     public func board(at url: URL) -> DesignPath? {
-        guard case .project(let segments) = DesignRoute(url: url, host: designID.rawValue) else { return nil }
-        return DesignPath(segments.joined(separator: "/"))
+        DesignRoute.linkedPath(url, host: designID.rawValue).flatMap(DesignPath.init)
     }
 
     func makeConfiguration() -> WKWebViewConfiguration {

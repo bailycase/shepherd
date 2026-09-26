@@ -186,6 +186,9 @@ struct DesignBoardViewTests {
         try await eventuallyOnMain("the navigation to be refused") { view.navigationsRefused >= 1 }
         _ = try await harness.page(view, "document.getElementById('next').click()")
         try await eventuallyOnMain("the link to reach the host") { harness.events.contains(.link(DesignPath("Next.dc.html")!)) }
+        // A leading `/` is the canvas root.
+        _ = try await harness.page(view, "document.getElementById('rooted').click()")
+        try await eventuallyOnMain("the rooted link to reach the host") { harness.events.contains(.link(DesignPath("flows/Cart.dc.html")!)) }
         #expect(view.navigationsStarted == 1)
         #expect(view.webView.url == harness.surface.url(for: DesignPath("Main.dc.html")!))
         #expect(try await harness.text(view, "return document.getElementById('title').textContent") == "Checkout")

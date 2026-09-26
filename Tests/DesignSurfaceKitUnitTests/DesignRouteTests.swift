@@ -43,6 +43,28 @@ import Testing
         #expect(DesignRoute(url: URL(string: url), host: Self.host) == .refused)
     }
 
+    /// A link on a board, as WebKit resolves it against the board's URL.
+    @Test(arguments: [
+        ("shepherd-design://d1/project/Cart.dc.html", "Cart.dc.html"),
+        ("shepherd-design://d1/project/flows/Cart.dc.html#top", "flows/Cart.dc.html"),
+        // A leading `/` is the canvas root.
+        ("shepherd-design://d1/Cart.dc.html", "Cart.dc.html"),
+        ("shepherd-design://d1/flows/Cart.dc.html", "flows/Cart.dc.html"),
+    ])
+    func aLinkNamesAFileOfTheProject(_ url: String, _ path: String) {
+        #expect(DesignRoute.linkedPath(URL(string: url)!, host: Self.host) == path)
+    }
+
+    @Test(arguments: [
+        "shepherd-design://d2/Cart.dc.html",
+        "shepherd-design://d1/",
+        "shepherd-design://d1/..%2FCart.dc.html",
+        "https://d1/Cart.dc.html",
+    ])
+    func aLinkOutsideTheProjectNamesNoFile(_ url: String) {
+        #expect(DesignRoute.linkedPath(URL(string: url)!, host: Self.host) == nil)
+    }
+
     @Test func theContentSecurityPolicyAllowsOnlyTheDesign() {
         let offline = DesignSandbox.contentSecurityPolicy(network: .none)
         let fonts = DesignSandbox.contentSecurityPolicy(network: .googleFonts)

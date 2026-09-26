@@ -158,8 +158,9 @@ Boards are untrusted: an agent wrote them, or they came from someone else's canv
 - **A CSP on every response:** scripts only from the design and never inline (`'unsafe-eval'` is
   there because the runtime compiles a board's logic), styles from the design, inline, and Google
   Fonts, and no frames, workers, objects, forms, or connections elsewhere.
-- **No navigation.** Every navigation is refused. An in-project link comes back to the host as
-  `.link(path)`, and a `#fragment` link scrolls. No window opens, and nothing downloads.
+- **No navigation.** Every navigation is refused. An in-project link (relative to the board, or
+  from the canvas root with a leading `/`) comes back to the host as `.link(path)`, and a
+  `#fragment` link scrolls. No window opens, and nothing downloads.
 
 ### The runtime
 
