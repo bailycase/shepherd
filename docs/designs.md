@@ -1,8 +1,8 @@
 # Designs
 
 The Design tool (an experiment, off by default) keeps each design as a canvas of HTML boards
-that a design agent draws. This page covers the files and how they change. The canvas, the board
-renderer, the agent's tools and the remote protocol come with later changes.
+that a design agent draws. This page covers the files, how they change, and how a board is
+drawn. The canvas, the agent's tools and the remote protocol come with later changes.
 
 ## The format
 
@@ -128,3 +128,105 @@ with its SHA-256, listed or not) and `designBoard(_:path:)`.
   - Warnings, passed back with the write: `innerHTML`, a key handler on the window or the
     document, and a missing `$preview`.
 - **Limits:** 512 files per design, and no new board whose stem another board already has.
+
+## The renderer
+
+`DesignSurfaceKit` (macOS and iOS) draws a board in a `WKWebView` on the device that shows it.
+`DesignSurface` is one design's sandbox, shared by its board views; `DesignBoardView` is one
+board, sized to its canvas frame: `load()` waits until it has drawn, `replaceSource(_:)` re-renders
+it in place, `snapshot()` returns it as an image, and `onEvent` reports `booted`, `resized`,
+`problem`, `link` and `terminated`.
+
+### What a board can reach
+
+Boards are untrusted: an agent wrote them, or they came from someone else's canvas.
+
+- **One scheme.** A board loads from `shepherd-design://<design>/project/<path>`, and the scheme
+  serves only:
+  - `project/…/support.js`: Shepherd's runtime (React, ReactDOM, then `shepherd-dc-runtime.js`),
+    whatever the folder holds there.
+  - `project/**`: the design's files, each segment by the path grammar, and only when the file
+    resolves (links followed) inside `project/`.
+  - `/_blob/<id>`: an upload in the design's `assets/`.
+
+  Anything else is a 404, and a board that isn't there fails its load.
+- **A data store per design,** non-persistent, so nothing a board stores outlives the surface or
+  reaches another design.
+- **Content rules** block every load except the scheme and Google Fonts
+  (`fonts.googleapis.com/css2`, `fonts.gstatic.com`). A surface made with `network: .none` blocks
+  those too.
+- **A CSP on every response:** scripts only from the design and never inline (`'unsafe-eval'` is
+  there because the runtime compiles a board's logic), styles from the design, inline, and Google
+  Fonts, and no frames, workers, objects, forms, or connections elsewhere.
+- **No navigation.** Every navigation is refused. An in-project link comes back to the host as
+  `.link(path)`, and a `#fragment` link scrolls. No window opens, and nothing downloads.
+
+### The runtime
+
+`shepherd-dc-runtime.js` is written from `format.md` and `view-state.md` alone. No Claude Design
+code is copied, fetched or imitated.
+
+- **The template.** It reads the board's source, takes the text after the `<x-dc>` open tag up to
+  the last `</x-dc>` (or to the end, while a file is still arriving), and parses it as
+  `<template>.innerHTML` does.
+- **Helmet.** `<helmet>`'s `style`, `link` and `meta` move to the head.
+- **Logic.** The `<script type="text/x-dc" data-dc-script>` class (`class Component extends
+  DCLogic`) is a React class component: `props`, `state`, `setState`, `forceUpdate` and the
+  lifecycle, with `render()` drawing the template from `renderVals()`. A board without logic
+  draws with no values. Logic that doesn't compile is reported, and the markup still draws.
+- **Holes** are dotted lookups into `renderVals()` and the loops around them (`item`, `$index`),
+  or literals. Anything else draws nothing, as the format says.
+- **Attributes.** `x="{{ path }}"` is the raw value, `x="a {{p}} b"` a string, and `class` and
+  `for` map to `className` and `htmlFor`.
+  - An HTML element keeps its `style` text exactly as written: the browser reads it, shorthands
+    and `!important` included. SVG and a bound style object go through React's style object.
+  - Only a function from `renderVals()` handles an event (`onClick="{{ pick }}"`); handler text
+    never runs.
+  - A value written on a control (`<input value>`, `checked`) is where it starts, not a value it
+    is held to.
+- **Control flow.** `<sc-if value>` and `<sc-for list as>` work as the format describes. While a
+  value is missing, `hint-placeholder-val` and `hint-placeholder-count` stand in.
+- **Imports.** `<dc-import name="Card">` fetches the sibling `Card.dc.html` and draws it inline.
+  Its other attributes become props, kebab-case to camelCase. `hint-size` sizes the placeholder
+  until it arrives. A board that imports itself, or imports nested more than eight deep, draws the
+  placeholder.
+- **Element ids.** Every element is numbered depth-first from 0, `DesignTemplate`'s numbering,
+  and each one drawn carries `data-dc-tid`, the hoisted helmet included. What an import draws
+  carries `data-dc-owner`, the tid of the `<dc-import>` that holds it, since selection stops at
+  the import.
+- **Not yet:**
+  - `<x-import>` (design-system components) comes with design systems.
+  - Top-level props (Tweak values) are empty until Tweak.
+  - A hole in the helmet draws empty.
+  - A change to a board's `<head>` lines, or to a board it imports, shows at its next `load()`,
+    not on `replaceSource`.
+
+### The bridge
+
+A script in a content world of Shepherd's own (`shepherd-design-bridge`) is the only one that can
+post to the view. It listens for the runtime's `shepherd-dc` events and the page's uncaught errors,
+measures the board itself, and posts checked values: `booted` (what it drew, and its `$preview`),
+`size` changes after that, and errors with their phase. `replaceSource` calls the runtime in the
+board's own world, where a board can only affect itself.
+
+- **Live reload.** `replaceSource` keeps the document. The same logic keeps its state, and new
+  logic takes over the old state. Logic that doesn't compile is refused, and the board keeps
+  what it showed.
+- **`booted`** comes once imports, fonts and images have settled, or after three seconds.
+- **Snapshots** are `boardSize` from the top left, at the view's backing scale (1× offscreen).
+
+### React
+
+React 18.3.1's production UMD builds (`react`, `react-dom`) are the one vendored dependency, MIT
+(`Resources/react/LICENSE`), loaded only inside board web views. They are the npm 18.3.1 tarballs'
+files; the tarballs matched the registry's integrity hashes when vendored. `DesignRuntimeTests`
+pins their SHA-256, so a changed file fails until it is vetted and pinned again.
+
+### Fidelity
+
+`DesignCanvasFidelityCheck` (opt-in, `SHEPHERD_DESIGN_CANVAS`) renders a whole canvas. Every one
+of the 122 local boards of Shepherd's own canvas boots without a problem. Each draws its canvas
+frame, except `ToolRows.dc.html`, whose root and `$preview` are 760×520 on a 760×700 frame.
+Snapshots checked by eye draw as authored: Geist from Google Fonts, inline SVG icons, grids,
+and the boards' dark and light surfaces.
+

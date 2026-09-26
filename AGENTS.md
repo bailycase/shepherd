@@ -107,6 +107,10 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
   **`SHEPHERD_BENCHMARK`** switches on the benchmarks that print timings: `ComposerMenuBenchmarkTests`
   (the composer's menus over a full model catalog), `DataPathBenchmarks` (the server's data path),
   and `PiSessionFileTests`' runtime-state check.
+- **`SHEPHERD_DESIGN_CANVAS`** points `DesignCanvasFidelityCheck` at a design folder (one holding
+  `project/canvas.json`): it renders every board at its canvas size, with Google Fonts, reports
+  what each drew, and with `SHEPHERD_PREVIEW_DIR` set writes each snapshot to
+  `design-canvas/<board>.png` there, to compare by eye against the canvas's own thumbnails.
 - **`SHEPHERD_TIMING_TESTS=1`** runs the timing-sensitive tests even where `CI=true` skips them
   (see Testing).
 - **`PI_CODING_AGENT_DIR`** is pi's own: it moves pi's config and sessions away from
@@ -120,8 +124,8 @@ Tests come in tiers, and the switch is `--filter` on target names.
 
 | Tier | Targets | What belongs there |
 | --- | --- | --- |
-| Unit | `ShepherdCoreUnitTests`, `ShepherdProtocolUnitTests`, `ShepherdUIUnitTests`, `ShepherdRemoteUnitTests`, `ShepherdSessionsUnitTests`, `ShepherdAppUnitTests`, `ShepherdCLIUnitTests`, `TerminalSurfaceKitUnitTests` | Pure logic |
-| Integration | `ShepherdSessionsIntegrationTests`, `ShepherdAppIntegrationTests` | Real processes, sockets, git, windows |
+| Unit | `ShepherdCoreUnitTests`, `ShepherdProtocolUnitTests`, `ShepherdUIUnitTests`, `ShepherdRemoteUnitTests`, `ShepherdSessionsUnitTests`, `ShepherdAppUnitTests`, `ShepherdCLIUnitTests`, `TerminalSurfaceKitUnitTests`, `DesignSurfaceKitUnitTests` | Pure logic |
+| Integration | `ShepherdSessionsIntegrationTests`, `ShepherdAppIntegrationTests`, `DesignSurfaceKitIntegrationTests` | Real processes, sockets, git, windows, web views |
 | Previews | `ShepherdPreviewTests` | Offscreen renders of every surface |
 
 **Unit tests** must not use `Process`, sockets, `SessionServer.start()`, `NSWindow` or
@@ -289,7 +293,10 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   case (table-driven), plus the `NativeThread` wire types against the golden
   `Tests/Extensions/native-thread-wire.json`.
 - **Designs:** canvas.json round trips with unknown keys (the Shepherd canvas among them), the
-  board path grammar, and element numbering against the golden `Tests/Designs/element-ids.json`.
+  board path grammar, and element numbering against the golden `Tests/Designs/element-ids.json`,
+  by `DesignTemplate` and by the board runtime (the tids it stamps in a real web view). The board
+  sandbox (what a board may reach, and that no navigation leaves it), live reload without a
+  navigation, and the vendored React's pinned checksums.
 - **Server:** every `SessionServer` state mutation.
 - **Changes:** every scope on a scratch repository, the proof that reading changes leaves the
   index, HEAD, refs, the stash, `.git` and every file alone, and Undo, Redo and the refusal on a
@@ -418,6 +425,13 @@ Sources/
                        DesignStore (each design's files in the support directory's designs/, on
                        its own queue, with a revision per design; docs/designs.md).
   TerminalSurfaceKit/  Ghostty adapter for terminal panes; see its NOTES.md.
+  DesignSurfaceKit/    The Design tool's board renderer (macOS and iOS; docs/designs.md): DesignSurface
+                       (a design's sandbox: a non-persistent data store, the shepherd-design://
+                       scheme), DesignBoardView (one board's WKWebView: load, replaceSource,
+                       snapshot, events), DesignSchemeHandler, DesignRoute and DesignSandbox (what
+                       is served; the CSP and content rules), DesignRuntime. Resources: Shepherd's
+                       board runtime (shepherd-dc-runtime.js), the isolated bridge
+                       (shepherd-dc-bridge.js), and React 18.3.1 UMD (MIT, pinned).
   ShepherdApp/         The Mac app:
     ShepherdApp.swift (the Window scene, AppDelegate), RootView (+ WorkspaceHeaderView),
       SidebarView (+ SidebarModel: destinations, Needs you, Recents, footer), NewThreadPage (+
@@ -500,6 +514,7 @@ Tests/
   Extensions/             node tests for the bundled extensions (+ native-thread-wire.json)
   Designs/                design fixtures: real and synthetic boards, the Shepherd canvas.json,
                           and element-ids.json (WebKit's numbering of each board's elements)
+  DesignSurfaceKitIntegrationTests/Fixtures/  a small design (loops, conditionals, an import)
   Release/                Python tests for scripts/release.py
   ShepherdIOSChecks/      the iOS client's scripts
 scripts/               release.py (the release workflow's rules), sign-app.sh (release
@@ -786,6 +801,16 @@ ignored dispositions and every kill escalates to SIGKILL.
 that imports TerminalSurfaceKit; everything else uses `AppTerminalModel`/`AppTerminalView`, so
 engine API drift breaks exactly one file. GhosttyTerminal also exports `TerminalSurfaceView` and
 `TerminalSurface`, so never import it alongside TerminalSurfaceKit.
+
+**DesignSurfaceKit is a sandbox.** Boards are untrusted HTML and JS (an agent's, or an imported
+canvas). Each design renders in its own non-persistent data store, loads only through
+`shepherd-design://<design>/` (plus Google Fonts), and never navigates; the CSP, the content rules
+and the navigation policy enforce it together, and `aBoardReachesOnlyItsOwnDesign` proves it.
+Shepherd's runtime is written from the documented format only: never copy, fetch or imitate
+Claude Design's code (`support.js`, `dc-runtime.js`, `app.js`). React is the one vendored
+dependency, loaded only inside board web views; a new version is vetted and its checksum pinned
+in `DesignRuntimeTests`. The app will reach DesignSurfaceKit through one file, as it does
+TerminalSurfaceKit.
 
 **Status transitions.** `AgentStatus.canTransition` allows `done → working` (a finished agent
 starting a new turn). The server applies extension reports unconditionally and logs table
