@@ -404,6 +404,12 @@ public struct NWListCard<Content: View>: View {
 /// for a subagent, a bolt for an automation run), or, for a thread (`symbol` nil), the glowing
 /// 8pt lantern dot.
 public struct NWAttentionCard<Actions: View>: View {
+    /// A card (MobileInbox, iPadOverview), or a flat item of the iPad inbox's list (iPadInbox:
+    /// no line, `bgSelected` while chosen).
+    public enum Style: Sendable {
+        case card, item
+    }
+
     let symbol: String?
     let origin: String
     let title: String
@@ -412,10 +418,11 @@ public struct NWAttentionCard<Actions: View>: View {
     let since: Date?
     let host: String?
     let selected: Bool
+    let style: Style
     @ViewBuilder let actions: () -> Actions
 
     public init(symbol: String?, origin: String, title: String, question: String, message: String? = nil, since: Date? = nil,
-                host: String? = nil, selected: Bool = false, @ViewBuilder actions: @escaping () -> Actions) {
+                host: String? = nil, selected: Bool = false, style: Style = .card, @ViewBuilder actions: @escaping () -> Actions) {
         self.symbol = symbol
         self.origin = origin
         self.title = title
@@ -424,12 +431,13 @@ public struct NWAttentionCard<Actions: View>: View {
         self.since = since
         self.host = host
         self.selected = selected
+        self.style = style
         self.actions = actions
     }
 
     public var body: some View {
         let nw = Color.nw
-        VStack(alignment: .leading, spacing: NW.Space.s) {
+        let card = VStack(alignment: .leading, spacing: NW.Space.s) {
             // The kind, host and time share a line when they fit; otherwise the host and time drop under.
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: NW.Space.s) {
@@ -454,12 +462,21 @@ public struct NWAttentionCard<Actions: View>: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            NWWrapStack(spacing: NW.Space.m, lineSpacing: NW.Space.xs) { actions() }
-                .padding(.top, NW.Space.xxs)
+            if style == .card {
+                NWWrapStack(spacing: NW.Space.m, lineSpacing: NW.Space.xs) { actions() }
+                    .padding(.top, NW.Space.xxs)
+            }
         }
         .padding(NW.Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .nwCard(radius: NWListMetrics.cardRadius, fill: selected ? nw.bgSelected : nil, line: selected ? nw.lineStrong : nil)
+        Group {
+            switch style {
+            case .card:
+                card.nwCard(radius: NWListMetrics.cardRadius, fill: selected ? nw.bgSelected : nil, line: selected ? nw.lineStrong : nil)
+            case .item:
+                card.background(selected ? nw.bgSelected : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+            }
+        }
         .accessibilityElement(children: .contain)
     }
 
