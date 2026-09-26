@@ -99,6 +99,20 @@ enum SubagentPresentation {
         plural(count - AppLayout.inspectorMaxFiles, "more file")
     }
 
+    /// "turn 4 of 11" (SubagentsDone): where a finished run's transcript is read, counted in the
+    /// run's turns (one per reply of the model, as the header's count) up to the first reply
+    /// at or after the topmost turn on screen, of `total` (the transcript's own count when the run
+    /// reported none). Nil with no replies, or no turn on screen.
+    static func position(turns: [NativeTurn], top: String?, total: Int?) -> String? {
+        guard let top, let index = turns.firstIndex(where: { $0.id == top }) else { return nil }
+        let replies = { (turn: NativeTurn) in turn.messages.count { $0.role == "assistant" } }
+        let all = turns.reduce(0) { $0 + replies($1) }
+        guard all > 0 else { return nil }
+        let before = turns[..<index].reduce(0) { $0 + replies($1) }
+        let count = max(total ?? all, all)
+        return "turn \(min(before + 1, count)) of \(count)"
+    }
+
     // MARK: Helpers
 
     /// The layout truncates; this only keeps a runaway first sentence short.

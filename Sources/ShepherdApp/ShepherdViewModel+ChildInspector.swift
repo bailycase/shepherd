@@ -45,7 +45,7 @@ extension ShepherdViewModel {
         return try await startAgent(config)
     }
 
-    private func agentCwd(_ agent: Agent) -> String {
+    func agentCwd(_ agent: Agent) -> String {
         state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd
             ?? state.spaces.first { $0.id == agent.spaceID }?.path
             ?? NSHomeDirectory()
