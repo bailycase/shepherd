@@ -6242,7 +6242,7 @@ every connected host's (`ShepherdViewModel+Notifications.swift` decides when;
 | The thread asks (any pi dialog: confirm, select, input, editor) | the thread | Question, or Automation question for an automation's run | the question | the dock's choices: each option (Yes and No for a confirm), and Reply… for an input or editor | Active |
 | An asking tool waits and no question follows within 2s | the thread | Question | "Waiting on your answer." | none: a click opens it | Active |
 | A subagent asks | "*thread* · *subagent*" | Subagent question | the question | each option it offered, then Reply… ("Reply to *subagent*…") | Active |
-| A connected host goes away (Shepherd retries it) | "*host* is offline" | Host | "Remote agents resume when it’s back." | Retry | Active |
+| A connected host goes away (Shepherd retries it) | "*host* is offline" | Host offline | "Remote agents resume when it’s back." | Retry | Active |
 | The agent's `notify` tool | the tool's title | none | the agent's name, then the tool's body | none | Active |
 
 - **Every host's threads:** a remote thread's questions and its subagents' post as this Mac's do,

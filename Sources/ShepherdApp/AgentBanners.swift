@@ -152,7 +152,7 @@ enum AgentBanners {
     static func hostOffline(name: String, hostID: UUID) -> AgentBanner {
         let target = BannerTarget.host(hostID)
         return AgentBanner(identifier: identifier("offline", target), target: target, title: "\(name) is offline",
-                           subtitle: "Host", body: "Remote agents resume when it’s back.", level: .active,
+                           subtitle: "Host offline", body: "Remote agents resume when it’s back.", level: .active,
                            actions: [.reconnect], group: "host:\(target.key)")
     }
 
