@@ -964,13 +964,15 @@ struct ComposerControls: View, Equatable {
 /// the row's height, and every other proposal reaches the row as it is. Placed, the row gets the
 /// width it answered, as a stack would have proposed it.
 struct ComposerControlsMinimum: Layout {
+    // Its probes count layout passes, not bodies, so they stay out of "composer." (which the
+    // redraw budgets read as the composer drawing).
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         guard let row = subviews.first else { return .zero }
         if let width = proposal.width, width < AppLayout.composerControlsNarrowest {
-            MainActor.assumeIsolated { NWRenderProbe.tick("composer.controlsMinimum") }
+            MainActor.assumeIsolated { NWRenderProbe.tick("layout.composerControlsMinimum") }
             return CGSize(width: max(0, width), height: NWComposerMetrics.actionSize)
         }
-        MainActor.assumeIsolated { NWRenderProbe.tick("composer.controlsMeasured") }
+        MainActor.assumeIsolated { NWRenderProbe.tick("layout.composerControlsMeasured") }
         return row.sizeThatFits(proposal)
     }
 
