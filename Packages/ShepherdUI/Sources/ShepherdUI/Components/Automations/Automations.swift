@@ -21,12 +21,14 @@ public enum NWAutomationMetrics {
     /// A live run's card: its ring outside the running line, and its spinner.
     public static let runRing: CGFloat = 3
     public static let runSpinner: CGFloat = 13
+    /// How a live run is going ("Running · 4m"): the board's 13pt, between caption and ui.
+    public static let runStatusSize: CGFloat = 13
 }
 
 /// A run going now, as its own card (MobileAutomations' Running now): a spinner, the
 /// automation's name, and its host trailing, then how the run is going ("Running · 4m"). A
 /// working run's card takes a `running` line inside a 3pt `runningTint` ring; one that asked
-/// you a `lanternText` line, the bolt and "Asked you" in lanternText. A tap opens the run.
+/// you a `lanternText` line, the bolt and "Asked you" in lanternText. A tap opens the automation.
 public struct NWAutomationRunCard: View, Equatable {
     let title: String
     let host: String?
@@ -61,7 +63,7 @@ public struct NWAutomationRunCard: View, Equatable {
     private var card: some View {
         let nw = Color.nw
         let shape = RoundedRectangle(cornerRadius: NWListMetrics.cardRadius)
-        return VStack(alignment: .leading, spacing: NW.Space.s) {
+        return VStack(alignment: .leading, spacing: NW.Space.m) {
             HStack(spacing: NW.Space.m) {
                 Group {
                     if asking {
@@ -74,11 +76,11 @@ public struct NWAutomationRunCard: View, Equatable {
                 Text(title).font(.nw(.ui, weight: .semibold)).foregroundStyle(nw.textPrimary).lineLimit(2)
                 Spacer(minLength: NW.Space.m)
                 if let host {
-                    Text(host).font(.nw(.micro)).foregroundStyle(nw.textTertiary).lineLimit(1)
+                    Text(host).font(.nw(.micro, weight: .regular)).foregroundStyle(nw.textTertiary).lineLimit(1)
                 }
             }
             statusLine
-                .font(.nw(.caption))
+                .font(.nwSans(NWAutomationMetrics.runStatusSize))
                 .foregroundStyle(asking ? nw.lanternText : nw.textSecondary)
         }
         .padding(NW.Space.l)
@@ -93,7 +95,7 @@ public struct NWAutomationRunCard: View, Equatable {
         }
         .contentShape(shape)
         .accessibilityElement(children: .combine)
-        .accessibilityHint(open == nil ? "" : "Opens its run")
+        .accessibilityHint(open == nil ? "" : "Opens the automation")
     }
 
     @ViewBuilder private var statusLine: some View {
