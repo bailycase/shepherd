@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
@@ -224,6 +225,32 @@ struct RemoteDesignTests {
         try Data("changed".utf8).write(to: folder.appendingPathComponent("styles/Inter.woff2"))
         #expect(try await refusal(raw, 5, .file(designID: id, path: listed.path, sha256: listed.sha256, offset: head.data.count))
             == RemoteDesignCode.staleFile)
+    }
+
+    /// The typed client end to end: a design's files synced into the cache by hash, an upload
+    /// fetched in pieces, and a watched design's change delivered as a hint to pull.
+    @Test func aClientSyncsADesignAndHearsItChange() async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        host.server.setDesignsServed(true)
+        let id = try await design(host, assetBytes: RemoteProtocol.designChunkBytes + 7)
+        let client = try await host.typed()
+        defer { client.disconnect() }
+        let heard = Locked<[UInt64?]>([])
+        client.onDesignChanged = { designID, revision, _ in if designID == id { heard.withValue { $0.append(revision) } } }
+
+        let files = RemoteDesignSource(key: RemoteDesignCache.Key(host: UUID(), design: id), cache: RemoteDesignCache()) { client }
+        let index = try await files.sync()
+        #expect(await files.projectFile("styles/app.css") == Data(":root { --accent: #4f46e5; }\n".utf8))
+        #expect(try await files.source(Self.board).contains("48,210 people"))
+        #expect(await files.blob("3f2a91c0")?.data == Self.bytes(RemoteProtocol.designChunkBytes + 7))
+
+        _ = try await client.design(.watch(designIDs: [id]))
+        let written = try await host.server.writeDesignBoard(id, path: Self.board, source: DesignTests.board(root: Self.card, extra: "<b>z</b>"))
+        try await eventually("the change to be pushed") { heard.current.contains(written.revision) }
+        #expect(try await files.sync().snapshot.revision == written.revision)
+        #expect(try await files.source(Self.board).contains("<b>z</b>"))
+        #expect(index.snapshot.revision < written.revision)
     }
 
     // MARK: Security

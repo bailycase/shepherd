@@ -132,8 +132,9 @@ struct RemoteDesignMessageTests {
         #expect(Set(object.keys) == ["type", "designID", "revision"])
     }
 
-    /// A client lists the capability so the host sends it pushes.
-    @Test func aClientListsDesigns() {
+    /// A client lists the capability so the host sends it pushes; the host lists it to serve.
+    @Test func bothSidesListDesigns() {
+        #expect(RemoteProtocol.capabilities.contains(RemoteProtocol.designsCapability))
         #expect(RemoteProtocol.clientCapabilities.contains(RemoteProtocol.designsCapability))
     }
 

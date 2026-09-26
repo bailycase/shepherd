@@ -597,6 +597,28 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
     }
 
+    /// Reads or changes the host's designs (`designsCapability`, served while the host's Design
+    /// tool is on). A host without it throws `update_required` before anything is sent: an older
+    /// Shepherd, or the experiment off there.
+    public func design(_ request: RemoteDesignRequest) async throws -> RemoteDesignResult {
+        guard capabilities.contains(RemoteProtocol.designsCapability) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: Self.designsRefusal)
+        }
+        if Self.overFrame(.design(id: 0, request: request)) {
+            throw RemoteHostClientError.rejected(code: "too_large", message: "The change exceeds the remote payload limit.")
+        }
+        // A listing reads every design's files on the host; a comment waits for the agent's queue.
+        let reply = try await self.request(timeout: 30) { .design(id: $0, request: request) }
+        switch reply {
+        case .design(_, let result): return result
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected design reply")
+        }
+    }
+
+    /// Why a host without `designsCapability` shows no designs.
+    public static let designsRefusal = "Turn on Settings ▸ Experiments ▸ Design tool on the host, or update Shepherd there, to see its designs."
+
     public func detach(sessionID: SessionID) {
         queue.async { self.sendRequest(.detach(sessionID: sessionID)) }
     }
