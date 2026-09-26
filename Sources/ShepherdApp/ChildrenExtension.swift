@@ -49,6 +49,8 @@ enum ChildrenExtension {
           const value = String(text ?? "");
           return Buffer.byteLength(value) <= limit ? value : Buffer.from(value).subarray(0, limit).toString("utf8").replace(/\uFFFD$/, "");
         };
+        // A question's sidebar reason ("retention?"): one line, or undefined when not given.
+        const shortReason = (value) => typeof value === "string" && value.trim() ? clip(value.trim().replace(/\s+/g, " "), 120) : undefined;
         const result = (data) => ({ content: [{ type: "text", text: JSON.stringify(data) }], details: data });
         // Same rule as the desktop tool row preview: an obvious action field first, then the first result line.
         export function toolPreview(args, resultText) {
@@ -210,8 +212,9 @@ enum ChildrenExtension {
             pi.registerTool({
               name: "shepherd_parent_message", label: "message parent",
               description: "Send a bounded progress message or question to your parent. For a question, set needsReply and finish this turn; the parent can continue your session with an answer.",
-              parameters: Type.Object({ message: textSchema, needsReply: Type.Optional(Type.Boolean()), options: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 200 }), { maxItems: 6 })) }),
-              async execute(_id, params) { return result({ shepherdParentMessage: params.message, needsReply: params.needsReply === true, options: params.needsReply === true ? params.options : undefined }); },
+              parameters: Type.Object({ message: textSchema, needsReply: Type.Optional(Type.Boolean()), options: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 200 }), { maxItems: 6 })),
+                short: Type.Optional(Type.String({ description: "For a question: what you need in 1-3 words, shown beside your parent's thread in Shepherd's sidebar while you wait (e.g. \"retention?\", \"approve plan\")." })) }),
+              async execute(_id, params) { return result({ shepherdParentMessage: params.message, needsReply: params.needsReply === true, options: params.needsReply === true ? params.options : undefined, short: params.needsReply === true ? shortReason(params.short) : undefined }); },
             });
             return;
           }
@@ -245,7 +248,7 @@ enum ChildrenExtension {
           };
           const summary = (run) => ({ id: run.id, role: run.role, state: run.state, task: run.task, startedAt: run.startedAt, endedAt: run.endedAt, currentTool: run.currentTool, latestTool: run.latestTool, model: run.model, cwd: run.cwd,
             workflowId: run.workflowId, settled: run.settled, missionId: run.missionId, missionWarning: run.missionWarning, thinking: run.thinking, context: run.context, tools: run.tools, sessionFile: run.sessionFile, output: run.output, error: run.error, needsReply: run.needsReply, stopReason: run.lastStop, omittedInFlight: run.omittedInFlight,
-            turns: run.turns, toolCalls: run.toolCalls, tokens: run.tokens, contextPercent: run.contextPercent, files: fileChanges(run), added: run.added, removed: run.removed, lastActivity: run.lastActivity, questionOptions: run.questionOptions, questionText: run.questionText, exitCode: run.exitCode, toolCallID: run.toolCallID, stepIndex: run.stepIndex });
+            turns: run.turns, toolCalls: run.toolCalls, tokens: run.tokens, contextPercent: run.contextPercent, files: fileChanges(run), added: run.added, removed: run.removed, lastActivity: run.lastActivity, questionOptions: run.questionOptions, questionText: run.questionText, questionShort: run.questionShort, exitCode: run.exitCode, toolCallID: run.toolCallID, stepIndex: run.stepIndex });
           // Card projection for the native thread (DESIGN.md › Subagents). Every field
           // past asyncDir is optional on the Swift side; undefined keys vanish in JSON.stringify.
           function card(run) {
@@ -258,7 +261,7 @@ enum ChildrenExtension {
               step: workflow && run.stepIndex ? { index: run.stepIndex, total: Math.max(workflow.claims.size, run.stepIndex) } : undefined,
               turns: run.turns, toolCalls: run.toolCalls, tokens: run.tokens, contextPercent: run.contextPercent, lastActivity: run.lastActivity,
               paused: run.paused === true,
-              question: run.needsReply ? { text: run.questionText ?? clip(run.output, 600), options: run.questionOptions } : undefined,
+              question: run.needsReply ? { text: run.questionText ?? clip(run.output, 600), options: run.questionOptions, short: run.questionShort } : undefined,
               result: run.state === "complete" ? { files: run.files?.size ?? 0, added: run.added ?? 0, removed: run.removed ?? 0, tools: run.toolCalls ?? 0, tokens: run.tokens ?? 0 } : undefined,
               exitReason: run.state === "failed" ? [run.exitCode ? `exit ${run.exitCode}` : undefined, clip(run.error, 200)].filter(Boolean).join(" · ") : undefined,
               toolCallID: run.toolCallID, task: clip(run.task, 600), output: run.state === "complete" ? clip(run.output, 600) : undefined,
@@ -419,6 +422,7 @@ enum ChildrenExtension {
                   run.questionOptions = run.needsReply && Array.isArray(details.options) ? details.options.filter((o) => typeof o === "string").slice(0, 6) : undefined;
                   run.output = clip(details.shepherdParentMessage);
                   run.questionText = run.needsReply ? clip(run.output, 600) : undefined;
+                  run.questionShort = run.needsReply ? shortReason(details.short) : undefined;
                   notify(run, `${run.needsReply ? "Needs reply: " : ""}${run.output}`);
                 }
               }
@@ -467,7 +471,7 @@ enum ChildrenExtension {
             run.pending = new Map(); run.exited = false; run.cancelled = false; run.settled = false;
             run.paused = false;
             run.stopping = undefined; run.output = ""; run.error = undefined; run.stderr = ""; run.lastStop = undefined; run.availableTools = undefined;
-            run.needsReply = false; run.questionOptions = undefined; run.questionText = undefined; run.exitCode = undefined; run.endedAt = undefined; run.startedAt = Date.now(); run.state = "running";
+            run.needsReply = false; run.questionOptions = undefined; run.questionText = undefined; run.questionShort = undefined; run.exitCode = undefined; run.endedAt = undefined; run.startedAt = Date.now(); run.state = "running";
             run.toolArgs = new Map(); run.files ??= new Map();
             run.closed = new Promise((resolve) => { run.resolveClosed = resolve; });
             const env = { ...process.env };
@@ -633,7 +637,7 @@ enum ChildrenExtension {
                 runs.set(data.id, { ...data, dir, sessionFile: path.join(dir, "session.jsonl"), output: clip(status.output), error: status.error,
                   needsReply: status.needsReply === true, lastStop: status.stopReason,
                   turns: status.turns, toolCalls: status.toolCalls, tokens: status.tokens, contextPercent: status.contextPercent, added: status.added, removed: status.removed,
-                  files: new Map((Array.isArray(status.files) ? status.files : []).map((f) => typeof f === "string" ? [f, { added: 0, removed: 0 }] : [f.path, { added: f.added ?? 0, removed: f.removed ?? 0 }])), lastActivity: status.lastActivity?.kind === "running" ? { ...status.lastActivity, kind: "tool" } : status.lastActivity, questionOptions: status.questionOptions, questionText: status.questionText, exitCode: status.exitCode,
+                  files: new Map((Array.isArray(status.files) ? status.files : []).map((f) => typeof f === "string" ? [f, { added: 0, removed: 0 }] : [f.path, { added: f.added ?? 0, removed: f.removed ?? 0 }])), lastActivity: status.lastActivity?.kind === "running" ? { ...status.lastActivity, kind: "tool" } : status.lastActivity, questionOptions: status.questionOptions, questionText: status.questionText, questionShort: shortReason(status.questionShort), exitCode: status.exitCode,
                   tools: Array.isArray(status.tools) ? data.tools.filter((name) => status.tools.includes(name)) : data.tools,
                   missionId: status.missionId ?? data.missionId,
                   state: ["complete", "failed", "stopped"].includes(status.state) ? status.state : "stopped", startedAt: status.startedAt ?? data.startedAt, endedAt: status.endedAt, latestTool: status.latestTool });

@@ -215,8 +215,10 @@ extension ShepherdViewModel {
     /// Create and spawn an agent. `selectAfter: false` (remote requests)
     /// leaves the host GUI's selection and window focus alone — an agent
     /// created from another Mac must not yank the host user's keyboard.
+    /// `focusWindow: false` selects it without making the window key: the New thread page sends
+    /// from the key window already.
     @discardableResult
-    func startAgent(_ config: NewAgentConfig, selectAfter: Bool = true) async throws -> AgentID {
+    func startAgent(_ config: NewAgentConfig, selectAfter: Bool = true, focusWindow: Bool = true) async throws -> AgentID {
         guard let space = state.spaces.first(where: { $0.id == config.spaceID }) else {
             throw AgentStartFailure(message: "space no longer exists")
         }
@@ -280,7 +282,7 @@ extension ShepherdViewModel {
         // A new agent's thread is known to be empty: it draws at once, ready to type into, while
         // pi boots behind it. A resumed session (a forked transcript) is read from its file.
         // Its opening prompt shows at once too, as the row the host's first snapshot will carry.
-        let opening = OpeningPrompt(config.initialPrompt, agentID: agentID)
+        let opening = OpeningPrompt(config.initialPrompt, images: config.initialImages, agentID: agentID)
         if config.piSessionID == nil {
             let empty = PiSessionPreview.empty(
                 sessionID: agent.effectivePiSessionID,
@@ -293,6 +295,8 @@ extension ShepherdViewModel {
         // state while pi boots behind it.
         if selectAfter {
             selectAgent(agentID)
+        }
+        if selectAfter, focusWindow {
             // A new agent is something you immediately talk to, so the window must be key
             // for its composer to take focus; it may not be when the New Agent sheet was just
             // dismissed.

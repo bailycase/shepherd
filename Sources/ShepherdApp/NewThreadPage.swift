@@ -6,16 +6,19 @@ import ShepherdRemote
 import ShepherdUI
 
 /// The New thread page (NavNewThread; ⌘N or the first destination): "What should the agent work
-/// on?", the composer with the workplace chip (project · host, with the worktree option in its
-/// menu), the model and thinking chips and Send, and the Continue card for the most recent
-/// running thread. Sending creates the agent with the prompt as its opening message and opens
-/// its thread. The mission and design cards wait on Missions and Designs, so they are not shown.
+/// on?", the composer with attach, the workplace chip (project · host, with the worktree option
+/// in its menu), the model and thinking chips and Send, and the Continue card for the most recent
+/// running thread. Sending creates the agent with the prompt and its images as its opening
+/// message and opens its thread. The mission and design cards wait on Missions and Designs, so
+/// they are not shown.
 struct NewThreadPage: View {
     var vm: ShepherdViewModel
     let chrome: PageHeaderChrome
     @FocusState private var composing: Bool
     @State private var menu: Menu?
     @State private var picker: ModelPickerState?
+    @State private var dropTargeted = false
+    @State private var picking = false
 
     private enum Menu: Equatable { case place, models, thinking }
 
@@ -35,8 +38,8 @@ struct NewThreadPage: View {
                 composer
                     .frame(maxWidth: AppLayout.newThreadComposerWidth)
                     .zIndex(1)
-                if let error = draft.error {
-                    Text(error).font(.nw(.caption)).foregroundStyle(Color.nw.failed)
+                if let notice = draft.notice(vm) {
+                    Text(notice).font(.nw(.caption)).foregroundStyle(Color.nw.failed)
                         .frame(maxWidth: AppLayout.newThreadComposerWidth, alignment: .leading)
                         .nwTransition(.content)
                 }
@@ -51,14 +54,25 @@ struct NewThreadPage: View {
             .onTapGesture { if menu != nil { menu = nil } }
         }
         .background(Color.nw.bgWindow)
-        .nwAnimation(.content, value: draft.error)
+        .nwAnimation(.content, value: draft.notice(vm))
         .onChange(of: draft.focusRequest, initial: true) { composing = true }
+        .fileImporter(isPresented: $picking, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
+            guard case .success(let urls) = result else { return }
+            draft.attach(urls: urls)
+        }
     }
 
     // MARK: Composer
 
     private var composer: some View {
-        NWComposer(isFocused: composing || menu != nil) {
+        NWComposer(isFocused: composing || menu != nil || dropTargeted) {
+            ForEach(draft.attachments.items) { attachment in
+                NWAttachmentChip(attachment.name, thumbnail: attachment.thumbnail) {
+                    draft.attachments.remove(attachment.id)
+                }
+                .nwTransition(.list, edge: .leading)
+            }
+        } field: {
             TextField(text: Binding(get: { draft.prompt }, set: { draft.prompt = $0 }),
                       prompt: Text("Describe the task…").foregroundStyle(Color.nw.textTertiary),
                       axis: .vertical) {
@@ -80,9 +94,15 @@ struct NewThreadPage: View {
                 menu = nil
                 return .handled
             }
+            .onPasteCommand(of: [.image, .fileURL]) { draft.attach($0) }
             .accessibilityLabel("What should the agent work on?")
         } controls: {
             controls
+        }
+        .nwAnimation(.list, value: draft.attachments.ids)
+        .onDrop(of: [.image, .fileURL], isTargeted: $dropTargeted) { providers in
+            draft.attach(providers)
+            return true
         }
         .overlay(alignment: .bottomLeading) { menus }
     }
@@ -93,6 +113,11 @@ struct NewThreadPage: View {
         let levels = draft.thinkingLevels(vm)
         let blocker = draft.blocker(vm)
         return HStack(spacing: NW.Space.xxs) {
+            Button { picking = true } label: { Image(systemName: "paperclip") }
+                .buttonStyle(.nwIcon(size: NWComposerMetrics.chipHeight))
+                .disabled(draft.attachments.isFull)
+                .help("Attach images (drop or paste also works), up to \(NativeImage.maxPerSend)")
+                .accessibilityLabel("Attach file")
             Button { toggle(.place) } label: { NWPlaceChipLabel(project: chip.project, host: chip.host) }
                 .buttonStyle(.nwComposerChip(active: menu == .place))
                 .help(draft.worktree ? "In a new worktree of \(chip.project) on \(chip.host)" : "\(chip.project) on \(chip.host)")
