@@ -114,18 +114,30 @@ private struct NWBoardAction: View {
 }
 
 extension NWBoardActions {
-    /// Where the bar goes over a board whose frame is `board` on screen: its bottom `actionsGap`
-    /// above the board's label strip, its leading edge at the frame's middle (DZCanvas), kept
-    /// `inset` inside a canvas of `canvas` along its width and 4pt from its top. Nil when the
-    /// board is off screen.
-    public static func origin(over board: CGRect, bar: CGSize, canvas: CGSize,
+    /// Where the bar goes over a board whose frame is `board` on screen, its leading edge at the
+    /// frame's middle (DZCanvas), kept `inset` inside a canvas of `canvas` along its width. Its
+    /// bottom sits `actionsGap` above the board's label, as the board draws it. Where that leaves
+    /// the canvas or covers one of `labels` (a board scrolled up to the canvas's top), it flips
+    /// `actionsGap` under the board, above the canvas toolbar's band. Where neither fits, it sits
+    /// just inside the board's top edge, kept on the canvas. Nil when the board is off screen.
+    public static func origin(over board: CGRect, bar: CGSize, canvas: CGSize, labels: [CGRect] = [],
                               inset: CGFloat = NWDesignMetrics.toolbarInset) -> CGPoint? {
         guard board.intersects(CGRect(origin: .zero, size: canvas)) else { return nil }
-        let lift = NWDesignMetrics.labelHeight + NWDesignMetrics.labelGap + NWDesignMetrics.actionsGap
+        let M = NWDesignMetrics.self
+        let margin = NW.Space.xs
         let x = min(max(board.midX, inset), max(inset, canvas.width - bar.width - inset))
-        // Where the board sits too near the top for it (a fitted canvas), as high as it can go.
-        let y = max(board.minY - lift - bar.height, NW.Space.xs)
-        return CGPoint(x: x, y: y)
+        let floor = canvas.height - M.toolbarHeight - inset - margin
+        func fits(_ y: CGFloat) -> Bool {
+            guard y >= margin, y + bar.height <= floor else { return false }
+            let rect = CGRect(x: x, y: y, width: bar.width, height: bar.height)
+            return !labels.contains { $0.intersects(rect) }
+        }
+        let above = board.minY - M.labelHeight - M.labelGap - M.actionsGap - bar.height
+        if fits(above) { return CGPoint(x: x, y: above) }
+        let below = board.maxY + M.actionsGap
+        if fits(below) { return CGPoint(x: x, y: below) }
+        let inside = min(board.minY + M.actionsGap, canvas.height - bar.height - margin)
+        return CGPoint(x: x, y: max(inside, margin))
     }
 }
 
