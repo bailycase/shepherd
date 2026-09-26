@@ -93,7 +93,7 @@ struct DesignImportIntegrationTests {
         #expect(Set(snapshot.boards.keys) == [try DesignPath.validate("Minimal.dc.html")])
     }
 
-    enum BadFolder: String, CaseIterable, Sendable { case link, linkedProject, noCanvas, badName, unreadableCanvas, unknownSpace }
+    enum BadFolder: String, CaseIterable, Sendable { case link, linkedProject, noCanvas, badName, oversize, unreadableCanvas, unknownSpace }
 
     @Test(arguments: BadFolder.allCases)
     func aFolderThatCantBecomeADesignLeavesNothingBehind(_ bad: BadFolder) async throws {
@@ -116,6 +116,13 @@ struct DesignImportIntegrationTests {
             try FileManager.default.removeItem(at: project.appendingPathComponent("canvas.json"))
         case .badName:
             try Data("x".utf8).write(to: project.appendingPathComponent("My Board.dc.html"))
+        case .oversize:
+            // Sparse: over the cap on disk without writing it.
+            let big = project.appendingPathComponent("Big.dc.html")
+            #expect(FileManager.default.createFile(atPath: big.path, contents: nil))
+            let handle = try FileHandle(forWritingTo: big)
+            try handle.truncate(atOffset: UInt64(DesignImport.maxFileBytes + 1))
+            try handle.close()
         case .unreadableCanvas:
             try Data(#"{"v":2}"#.utf8).write(to: project.appendingPathComponent("canvas.json"))
         case .unknownSpace:
