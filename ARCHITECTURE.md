@@ -223,6 +223,13 @@ authentication boundary ([SECURITY.md](SECURITY.md)).
   Suggested instructions is on for the agent (`SHEPHERD_SUGGEST_FILES`), its `suggest_instruction`
   sends `suggestInstruction` and reads back what became of the line; the server keeps it in
   `SuggestionsStore` until the user adds or dismisses it.
+- **`shepherd-design.ts`:** the design agent's tools, loaded only for an agent with a
+  `designID` (`SHEPHERD_DESIGN_ID`). `design_read`, `board_write` and `canvas_update` send
+  `designRead`, `designWriteBoard` and `designUpdateIndex`; the server answers them itself, only
+  for the agent that draws the design, by reading and writing through `DesignStore` off its queue
+  (`design`, `designBoard`, `designWritten`). `design_check` runs in the extension against the
+  project's CSS custom properties. It hands pi the design skill through `resources_discover` and
+  adds the design's facts to each run's system prompt ([docs/designs.md](docs/designs.md)).
 
 The server owns PTYs but not layouts, so pane requests from an agent (and from remote clients,
 through `onRemotePaneRequest`) are forwarded to the GUI and answered with a `PaneOutcome`.
