@@ -309,12 +309,14 @@ keep the version for real breaks.
   pan, pinch, tap to select or, with Comment, to pin a comment; pins open their threads; the
   board actions and Play work as on the Mac. Every change goes to the host through its own
   checks. In Split View beside a thread (iPadSplitView) the boards stack in one column and the
-  design agent's reply offers "Send to the thread". Pencil markup is not built yet: the canvas
-  leaves an Apple Pencil's touches to a layer over it (`PadDesignMarkupLayer`). Details:
-  docs/designs.md › On iPad.
+  design agent's reply offers "Send to the thread". With an Apple Pencil the viewer marks up the
+  boards and writes notes beside the marks; Done reads them on the iPad (the handwriting with
+  Vision, on the device) and sends the design agent one record, and its proposed comments come
+  back in the chat with Apply both and Keep as comments (hosts that offer `design.markup.v1`).
+  Details: docs/designs.md › On iPad, › Pencil markup.
 
 ## Not in the first release
 
 Push notifications and Live Activities (they need a relay: the phone's socket drops in the
-background), QR pairing and TLS, and everything waiting on the Mac (Missions, designs on iPhone
-and Pencil markup, daemon hosts).
+background), QR pairing and TLS, and everything waiting on the Mac (Missions, designs on iPhone,
+daemon hosts).

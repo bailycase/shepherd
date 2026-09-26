@@ -151,6 +151,17 @@ ring and the Tweak tab) and `design-pad-comments` (the Comments tab and a pin's 
 row by row and prints `FIXTURE CHECK FAILED` if more than the plan's two web views were ever
 alive, in the renderer or in the window.
 
+**Pencil markup on iPad.** The simulator has no Pencil, so `design-pad-markup` puts iPadDesign's
+ink on the canvas as PencilKit strokes (the handwriting is a script face's letters traced as
+strokes) and reads it as Done does, without sending it: Vision reads the notes on the simulator
+and the boards say what is under each mark. It prints `FIXTURE CHECK ok design-pad-markup read 2
+strokes · 2 notes: circle on A-phone.dc.html#… "thicker bars on phone"; underline on A.dc.html#…
+"counts here too?"`, or `FAILED` unless the loop is on the phone's Steps list and the line on A's
+KPI row, each with its note. `design-pad-markup-reply` shows the agent's answer: the markup line,
+its words, and the two proposals with Apply both and Keep as comments. Run both with
+`-r landscape`. A real Pencil (drawing while a finger pans, the palette, Done against a host)
+is checked on a device.
+
 **Adding a screen:** see [CONTRACTS.md › Fixture screens](CONTRACTS.md#fixture-screens).
 
 ## Not yet validated
