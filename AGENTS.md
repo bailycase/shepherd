@@ -89,6 +89,8 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
 - **`SHEPHERD_SKILLS_DIR`** moves the skills folder Settings ▸ Skills manages (default
   `~/.agents/skills`, the folder pi reads skills from; docs/skills.md). Tests point it at a scratch
   folder; pi itself always reads `~/.agents/skills`.
+- **`SHEPHERD_MCP_CONFIG`** moves the MCP servers file Settings ▸ MCP servers manages (default
+  `~/.config/mcp/mcp.json`, shared with other MCP clients). Tests point it at a scratch file.
 - **`SHEPHERD_THEME=night-watch-dark|night-watch-light`** forces an appearance at launch (the
   older `shepherd-dark` still means dark), which is handy for screenshots. Resetting settings
   returns to it.
@@ -97,7 +99,11 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
     `SHEPHERD_INSTRUCTIONS_DIR` (where the instructions extension reads Settings ▸ Instructions'
     `AGENTS.md` and `APPEND_SYSTEM.md`).
   - With the matching extension on: `SHEPHERD_EXT_PANES`, `SHEPHERD_NATIVE_CHILDREN`,
-    `SHEPHERD_EXT_CHILDREN`, and `SHEPHERD_CHILD_*`.
+    `SHEPHERD_EXT_CHILDREN`, and `SHEPHERD_CHILD_*`; for Settings ▸ Pi ▸ MCP servers,
+    `SHEPHERD_EXT_MCP` (the installed `shepherd-mcp.ts`), `SHEPHERD_EXT_MCP_CLIENT` (the installed
+    `shepherd-mcp-client.mjs`), `SHEPHERD_EXT_MCP_CONFIG` (the config path the app resolved),
+    `SHEPHERD_EXT_MCP_CACHE` (`<support>/mcp/tools.json`), and `SHEPHERD_EXT_MCP_PROJECT=1` while
+    Settings ▸ MCP servers ▸ Also use a repo's .mcp.json is on.
   - Per agent: `SHEPHERD_NEEDS_NAME`, `SHEPHERD_AUTOMATION`, `SHEPHERD_MODEL`,
     `SHEPHERD_SUGGEST_FILES` (the files its `suggest_instruction` may draft a line for, while
     Settings ▸ Experiments ▸ Suggested instructions is on for its kind of agent), and, for an
@@ -179,8 +185,8 @@ Tests come in tiers, and the switch is `--filter` on target names.
 `signal`, `chdir`, or `umask`, or change any other global that a concurrent test could observe.
 
 - When a test bundle loads, before any test runs, `Tests/ShepherdTestIsolation` (linked through
-  `ShepherdTestKit`) points `SHEPHERD_SUPPORT_DIR`, `SHEPHERD_SKILLS_DIR`, `PI_CODING_AGENT_DIR`,
-  and `ZDOTDIR` at a scratch root for that process, and clears the agent-only `SHEPHERD_*` variables a run started
+  `ShepherdTestKit`) points `SHEPHERD_SUPPORT_DIR`, `SHEPHERD_SKILLS_DIR`, `SHEPHERD_MCP_CONFIG`,
+  `PI_CODING_AGENT_DIR`, and `ZDOTDIR` at a scratch root for that process, and clears the agent-only `SHEPHERD_*` variables a run started
   from a Shepherd agent inherits. It also puts a `bin/` first on `PATH`, holding stand-ins for
   `gh` and `pi` that refuse to run, and the scratch `ZDOTDIR`'s `.zshenv` and `.zlogin` keep it
   first in every zsh a test starts. Without them, a login shell from a minimal environment
@@ -336,7 +342,7 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
 - **Core:** the status transition table, `PaneNode` operations, and state validation.
 - **Migration:** terminal-era `runtime` keys, global shells and space shells dropped at startup,
   and review leaves.
-- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all fourteen files, and
+- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all sixteen files, and
   the design skill's two files).
 - **Themes:** every theme variant complete, and the WCAG contrast rules met.
 - **App logic:** keybindings (defaults, validation, stored overrides for removed actions
@@ -539,8 +545,10 @@ Sources/
     RemoteHostStore, AgentPeers, AgentNotifications, ChildRuns, PiSessionFile, PiUpdateManager,
       AppUpdater (Sparkle: UpdateChannel, UpdateChannelStore, ChannelDelegate),
       NightlyMovedNotice
-    Status/Namer/Panes/Review/Subagents/Children/Inspect/Instructions/DesignExtension.swift
-      embedded extensions (DesignExtension also carries the design skill)
+    Status/Namer/Panes/Review/Subagents/Children/Inspect/Instructions/Design/MCPExtension.swift
+      embedded extensions (DesignExtension also carries the design skill; MCPExtension the client)
+    MCP/MCPAgentReports, ShepherdViewModel+MCP   what agents report about each MCP server, and
+      their credential requests
   shepherd-cli/        `shepherd --import herdr` (writes state.json while Shepherd is not running).
 Packages/
   ShepherdUI/          Night Watch, its own local package (module ShepherdUI; macOS 26, iOS 27;
@@ -581,6 +589,10 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
   shepherd-pi-skills.mjs  not an extension: Settings ▸ Skills runs it on node to ask pi's own
                           loader which skills pi loads from outside ~/.agents/skills
                           (PiSkillsLoader; docs/skills.md › Outside skills)
+  shepherd-mcp.ts         the mcp tool (search, describe, call) and direct <server>_<tool> tools
+                          over the servers in Settings ▸ MCP servers; credentials from the app
+  shepherd-mcp-client.mjs the dependency-free MCP client (stdio, Streamable HTTP, legacy SSE),
+                          also run by the app as `node shepherd-mcp-client.mjs probe`
 Tests/
   <Module>UnitTests/, *IntegrationTests/, ShepherdPreviewTests/   the tiers above
   ShepherdTestIsolation/  C, run when a test bundle loads: scratch root, PATH, ZDOTDIR
@@ -779,19 +791,20 @@ the same change.
 - A new `SessionServer` mutation needs an integration test.
 - New persisted fields decode with defaults, so older `state.json` files keep loading.
 
-**Embedded extensions have one canonical copy.** The fourteen files in `Extensions/` are canonical,
+**Embedded extensions have one canonical copy.** The sixteen files in `Extensions/` are canonical,
 and so is the design skill in `Extensions/design-skill/`. One is not an extension:
 `shepherd-pi-skills.mjs` is embedded in `Sources/ShepherdSessions/PiSkillsLoader.swift`
 (`scriptSource`) and run on node, never loaded by pi.
-pi loads the copies that the nine `Sources/ShepherdApp/*Extension.swift` files write to the
+pi loads the copies that the ten `Sources/ShepherdApp/*Extension.swift` files write to the
 support directory from embedded string literals. `installedPath()` rewrites an installed copy
 whenever its content differs, so drift ships bugs. `ChildrenExtension.swift` carries children,
 children-config, children-ui, workflow, and missions, and installs `InspectExtension`'s
 `shepherd-inspect.mjs`. `DesignExtension.swift` also writes the design skill's `SKILL.md` and
-`format.md` to the support directory's `design-skill/`.
+`format.md` to the support directory's `design-skill/`. `MCPExtension.swift` carries
+`shepherd-mcp.ts` and `shepherd-mcp-client.mjs`, installed side by side.
 
 - Edit a `.ts`/`.mjs` file (or a design skill file) and its literal in the same change, with
-  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all fourteen pairs
+  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all sixteen pairs
   and the skill's two files.
 - Extensions stay dependency-free and inert without their environment variables.
 - They must never throw into pi or keep the process alive (unref'd sockets and timers).
