@@ -134,8 +134,11 @@ struct Composer: View {
         active && store.acceptsSend && !store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
     private var canAttach: Bool { store.supportedActions.contains("sendImages") }
-    /// pi answers `/name` prompts itself; the list comes from its command registry.
-    private var commands: [NativeCommand] { store.commands }
+    /// pi answers `/name` prompts itself; the list comes from its command registry. Its skills'
+    /// commands stay out unless Settings ▸ Skills lists them.
+    private var commands: [NativeCommand] {
+        AppSettings.shared.skillsInSlashMenu ? store.commands : store.commands.filter { $0.source != "skill" }
+    }
     private var commandQuery: String? {
         guard !commands.isEmpty, store.draft.hasPrefix("/"), !store.draft.contains(where: \.isWhitespace),
               store.draft != dismissedQuery else { return nil }

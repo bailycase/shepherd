@@ -42,6 +42,8 @@ enum StatusExtension {
         namerExtensionPath: String? = nil,
         needsName: Bool = false,
         isAutomation: Bool = false,
+        instructions: (extensionPath: String, directory: String)? = nil,
+        suggestFiles: [String] = [],
         model: String?,
         thinking: ThinkingLevel?
     ) -> SessionCommand {
@@ -49,7 +51,7 @@ enum StatusExtension {
         if let model { cmd += " --model \(shellQuoted(model))" }
         if let thinking { cmd += " --thinking \(shellQuoted(thinking.rawValue))" }
         cmd += " -e \(shellQuoted(extensionPath))"
-        for path in [panesExtensionPath, reviewExtensionPath, subagentsExtensionPath, childrenExtensionPath, namerExtensionPath].compactMap({ $0 }) {
+        for path in [instructions?.extensionPath, panesExtensionPath, reviewExtensionPath, subagentsExtensionPath, childrenExtensionPath, namerExtensionPath].compactMap({ $0 }) {
             cmd += " -e \(shellQuoted(path))"
         }
         var env = [
@@ -57,6 +59,10 @@ enum StatusExtension {
             "SHEPHERD_SOCKET": socketPath,
             "SHEPHERD_EXT_STATUS": extensionPath,
         ]
+        if let instructions { env["SHEPHERD_INSTRUCTIONS_DIR"] = instructions.directory }
+        // Settings ▸ Experiments ▸ Suggested instructions, while on for this agent: the files its
+        // suggest_instruction may draft a line for.
+        if instructions != nil, !suggestFiles.isEmpty { env["SHEPHERD_SUGGEST_FILES"] = suggestFiles.joined(separator: ",") }
         if let panesExtensionPath { env["SHEPHERD_EXT_PANES"] = panesExtensionPath }
         if let childrenExtensionPath {
             env["SHEPHERD_NATIVE_CHILDREN"] = "1"
