@@ -287,8 +287,8 @@ extension RPCThreadState {
     /// treats it as a plain prompt. A fenced design record (`context`) goes ahead of the text.
     func dispatch(id: UUID, text: String, context: String? = nil, images: [NativeImage], parts: [NativeQueuePart]?, items batch: [QueueItem],
                   completion: @escaping (NativeThreadResult) -> Void) {
-        let expectsMessage = !isExtensionCommand(text)
         let prompt = Self.prompt(text, context: context)
+        let expectsMessage = !isExtensionCommand(prompt)
         dispatches.append(Dispatch(id: id, text: prompt, parts: parts, items: batch, expectsMessage: expectsMessage))
         if expectsMessage {
             var row = NativeThreadMessage.pendingSend(operationID: id, text: text, images: images.count,
@@ -333,9 +333,10 @@ extension RPCThreadState {
     }
 
     /// The fenced design record ahead of the text, except for a command, which pi reads only at
-    /// the start of a message.
+    /// the start of a message. A design comment is never a command: its fence always goes first,
+    /// so words that start with "/" stay words.
     static func prompt(_ text: String, context: String?) -> String {
-        guard let context, !text.hasPrefix("/") else { return text }
+        guard let context, !text.hasPrefix("/") || DesignCommentFence.opens(context) else { return text }
         return context + text
     }
 
@@ -537,7 +538,9 @@ extension RPCThreadState {
         }
         let id = liveEntryID(for: message)
         var value = Self.project(entryID: id, message: message)
-        value.origin = origin.map(Self.clipped)
+        // A design comment keeps the origin its fence gives it (`project`).
+        if value.origin?.designComment != nil { origin = nil }
+        value.origin = value.origin ?? origin.map(Self.clipped)
         value.operationID = operationID
         live.append(LiveItem(kind: .user, value: value, raw: message, ended: false))
         if let origin { recordOrigin(origin, entryID: id) }

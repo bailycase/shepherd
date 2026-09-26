@@ -128,6 +128,25 @@ struct NativeThreadStoreTests {
         #expect(store.rows.last?.recordedTurn?.state == .undone)
     }
 
+    // MARK: Design comments
+
+    /// A message carrying a design comment names it on its row, and the reply to it names it too,
+    /// so a design's chat draws the reply inside the comment's card.
+    @Test func aDesignCommentsRowAndItsReplyNameTheComment() async {
+        let id = UUID()
+        var comment = F.user("Show the counts", id: "u1")
+        comment.origin = .designComment(id: id)
+        let plain = F.user("and the phone", id: "u2")
+        let (store, _, task) = await started(F.snapshot(messages: [comment, hi, plain]))
+        defer { task.cancel() }
+        #expect(store.rows.map(\.designComment) == [id, id, nil])
+        #expect(store.rows.map(\.commentAnswered) == [true, false, false])
+
+        let (unanswered, _, other) = await started(F.snapshot(messages: [F.assistant("hello", id: "a0"), comment]))
+        defer { other.cancel() }
+        #expect(unanswered.rows.last?.designComment == id && unanswered.rows.last?.commentAnswered == false)
+    }
+
     // MARK: Turn errors
 
     /// A thread whose last reply failed reads failed until a new turn starts; while pi retries,

@@ -158,4 +158,52 @@ struct DesignToolComponentTests {
         #expect(NWCanvasBoard.sizeLabel(CGSize(width: 1280, height: 800)) == "1280 × 800")
         #expect(NWCanvasBoard.sizeLabel(CGSize(width: 389.6, height: 844.2)) == "390 × 844")
     }
+
+    /// A comment's age as the boards say it: "now", then minutes, hours and days, never "ago".
+    @Test(arguments: [(0.0, "now"), (59, "now"), (60, "1m"), (125, "2m"), (3_600, "1h"), (86_399, "23h"), (86_400, "1d"), (-30, "now")])
+    func aCommentsAgeReadsTheBoardsWay(secondsAgo: Double, text: String) {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        #expect(nwCommentAge(since: (1_000_000 - secondsAgo) * 1000, now: now) == text)
+    }
+
+    /// The card split around an answer leaves its open edge unlined, so the two rows read as one card.
+    @Test(arguments: [(VerticalEdge.bottom, CGFloat(40)), (.top, 0)])
+    func anOpenCardOutlineRunsFromOneEndOfItsOpenEdgeToTheOther(open: VerticalEdge, y: CGFloat) {
+        let rect = CGRect(x: 0, y: 0, width: 100, height: 40)
+        let path = NWOpenCardOutline(radius: 10, open: open).path(in: rect)
+        var start: CGPoint?
+        path.forEach { if case .move(let point) = $0 { start = point } }
+        #expect(start == CGPoint(x: 0, y: y) && path.currentPoint == CGPoint(x: 100, y: y))
+        #expect(path.boundingRect == rect)
+    }
+
+    // MARK: Board actions, the direction tile, presenting
+
+    /// DZCanvas: the bar's bottom 2pt above the board's label (58pt above the frame), its leading
+    /// edge at the frame's middle, kept inside the canvas; none for a board off screen.
+    @Test func theBoardActionsSitOverTheBoardsLabelFromItsMiddle() throws {
+        let bar = CGSize(width: 375, height: 32)
+        let canvas = CGSize(width: 1000, height: 700)
+        let origin = try #require(NWBoardActions.origin(over: CGRect(x: 44, y: 200, width: 538, height: 336), bar: bar, canvas: canvas))
+        #expect(origin == CGPoint(x: 313, y: 200 - 24 - 2 - 32))
+        // Near the trailing edge it stays 16pt inside; near the top, 4pt below it.
+        let edge = try #require(NWBoardActions.origin(over: CGRect(x: 800, y: 20, width: 538, height: 336), bar: bar, canvas: canvas))
+        #expect(edge == CGPoint(x: 1000 - 375 - 16, y: 4))
+        #expect(NWBoardActions.origin(over: CGRect(x: 1200, y: 20, width: 538, height: 336), bar: bar, canvas: canvas) == nil)
+    }
+
+    @Test func theDirectionTileFollowsTheLastBoard36PointsOn() {
+        // DZCanvas: A · phone at 626 × 480, 164 wide on screen, and the tile at 826.
+        #expect(NWDirectionTile.origin(after: CGRect(x: 626, y: 480, width: 164, height: 354)) == CGPoint(x: 826, y: 480))
+    }
+
+    @Test(arguments: [
+        // Fits the view with the canvas's margins, never over 100%.
+        (CGSize(width: 1280, height: 800), CGSize(width: 1000, height: 700), CGFloat(912) / 1280),
+        (CGSize(width: 390, height: 844), CGSize(width: 1000, height: 700), CGFloat(596) / 844),
+        (CGSize(width: 200, height: 100), CGSize(width: 1000, height: 700), CGFloat(1)),
+    ])
+    func aPresentedBoardFitsTheView(_ board: CGSize, _ view: CGSize, _ zoom: CGFloat) {
+        #expect(abs(NWBoardPresentation<EmptyView>.zoom(for: board, in: view) - zoom) < 0.0001)
+    }
 }

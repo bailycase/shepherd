@@ -3,16 +3,26 @@ import SwiftUI
 /// The design canvas (NWDesignCanvas; DZCanvas): `bgBase` with 1px `lineStrong` dots every
 /// 22pt, the boards at their canvas positions in their frames, and the canvas toolbar in the
 /// bottom-leading corner. It pans (two-finger scroll, the Pan tool, space-drag) and zooms (pinch,
-/// ⌘-scroll) about the pointer. With Select, a click reports what it landed on (`pick`: a point
-/// on a board, a board's label, or the empty canvas; shift extends), and the pointer's moves over
-/// the boards are reported too (`point`); the selected and hovered elements are ringed over their
-/// boards (`NWSelectionRing`) from the rects the boards reported.
+/// ⌘-scroll) about the pointer. With Select or Comment, a click reports what it landed on (`pick`:
+/// a point on a board, a board's label, or the empty canvas; shift extends), and the pointer's
+/// moves over the boards are reported too (`point`); the selected and hovered elements are ringed
+/// over their boards (`NWSelectionRing`) from the rects the boards reported.
+///
+/// Comments' pins (`NWCommentPin`) sit on their elements' top-trailing corners over the boards,
+/// and one thing may open beside a pin, under its element (`popover`: a comment's thread, or the
+/// editor for a new one), kept inside the canvas.
+///
+/// Notes (titles and stickies) sit on the canvas under the boards, read-only. With Select, a drag
+/// that starts on a board's label, or on a board selected whole, moves the board (`move`: its
+/// offset in canvas points as it goes, then once more when it ends); any other drag pans. The
+/// board actions (`NWBoardActions`) float over one board, and "Ask for another direction"
+/// (`NWDirectionTile`) follows the last board.
 ///
 /// Only the boards on screen are built, each an `NWBoardFrame` compared by value, so a pan
 /// moves frames without redrawing them and a change to one board redraws that board alone. The
 /// slot draws a board's page (a live view or a snapshot); the canvas takes every event, so
-/// nothing inside a board is interactive.
-public struct NWDesignCanvas<Slot: View>: View {
+/// nothing inside a board is interactive. Pins and the popover take their own.
+public struct NWDesignCanvas<Slot: View, Popover: View>: View {
     let boards: [NWCanvasBoard]
     @Binding var viewport: NWCanvasViewport
     @Binding var tool: NWCanvasTool
@@ -27,25 +37,51 @@ public struct NWDesignCanvas<Slot: View>: View {
     /// True while a zoom gesture runs (a pinch, a burst of ⌘-scroll), false once it rests: live
     /// views stand still while the canvas scales, and re-render at the zoom it lands on.
     let zooming: (Bool) -> Void
+    let pins: [NWCanvasPin]
+    /// A pin was clicked: its comment's id.
+    let openPin: (String) -> Void
+    /// The element the popover opens under (its board and rect), or nil for none.
+    let popoverAnchor: NWCanvasElement?
+    let notes: [NWCanvasNote]
+    /// The board the actions float over, and what they do; nil for none.
+    let actions: NWCanvasActions?
+    /// "Ask for another direction", after the last board; nil draws no tile.
+    let anotherDirection: (() -> Void)?
+    /// A board being dragged: nil when boards don't move.
+    let move: ((NWBoardMove) -> Void)?
     let slot: (NWCanvasBoard) -> Slot
+    let popover: () -> Popover
     @State private var size: CGSize = .zero
+    @State private var popoverHeight: CGFloat = 0
+    @State private var actionsSize: CGSize = .zero
 
     public init(boards: [NWCanvasBoard], viewport: Binding<NWCanvasViewport>, tool: Binding<NWCanvasTool>,
                 disabledTools: Set<NWCanvasTool> = [], selection: [NWCanvasElement] = [], hover: NWCanvasElement? = nil,
+                pins: [NWCanvasPin] = [], openPin: @escaping (String) -> Void = { _ in }, popoverAnchor: NWCanvasElement? = nil,
+                notes: [NWCanvasNote] = [], actions: NWCanvasActions? = nil, anotherDirection: (() -> Void)? = nil,
+                move: ((NWBoardMove) -> Void)? = nil,
                 pick: @escaping (NWCanvasPick) -> Void, point: @escaping (NWCanvasPick?) -> Void = { _ in },
                 resized: @escaping (CGSize) -> Void = { _ in }, zooming: @escaping (Bool) -> Void = { _ in },
-                @ViewBuilder slot: @escaping (NWCanvasBoard) -> Slot) {
+                @ViewBuilder slot: @escaping (NWCanvasBoard) -> Slot, @ViewBuilder popover: @escaping () -> Popover) {
         self.boards = boards
         _viewport = viewport
         _tool = tool
         self.disabledTools = disabledTools
         self.selection = selection
         self.hover = hover
+        self.pins = pins
+        self.openPin = openPin
+        self.popoverAnchor = popoverAnchor
+        self.notes = notes
+        self.actions = actions
+        self.anotherDirection = anotherDirection
+        self.move = move
         self.pick = pick
         self.point = point
         self.resized = resized
         self.zooming = zooming
         self.slot = slot
+        self.popover = popover
     }
 
     public var body: some View {
@@ -53,15 +89,20 @@ public struct NWDesignCanvas<Slot: View>: View {
         let lift = NWDesignMetrics.labelHeight + NWDesignMetrics.labelGap
         ZStack(alignment: .topLeading) {
             NWDotGrid(spacing: NWDesignMetrics.gridSpacing, phase: viewport.offset)
+            noteLayer
             ForEach(boards.visible(in: viewport, size: size)) { board in
                 let origin = viewport.screen(board.frame.origin)
                 NWBoardFrame(board: board, zoom: zoom) { slot(board) }
                     .equatable()
                     .fixedSize()
-                    .offset(x: origin.x, y: origin.y - lift)
+                    .placed(x: origin.x, y: origin.y - lift)
             }
             rings
             input
+            directionTile
+            pinLayer
+            actionsLayer
+            popoverLayer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .overlay(alignment: .bottomLeading) {
@@ -95,8 +136,87 @@ public struct NWDesignCanvas<Slot: View>: View {
             let rect = board.isNull ? .zero : viewport.screen(ring.element.rect.offsetBy(dx: board.minX, dy: board.minY))
             NWSelectionRing(ring.style, tag: ring.element.tag)
                 .frame(width: max(rect.width, 1), height: max(rect.height, 1))
-                .offset(x: rect.minX, y: rect.minY)
+                .placed(x: rect.minX, y: rect.minY)
                 .opacity(board.isNull ? 0 : 1)
+        }
+    }
+
+    /// The notes on screen, under the boards; they take no events.
+    private var noteLayer: some View {
+        let bounds = CGRect(origin: .zero, size: size)
+        let shown = notes.filter { viewport.screen($0.bounds).intersects(bounds) }
+        return ForEach(shown) { note in
+            let origin = viewport.screen(note.origin)
+            NWCanvasNoteView(note: note, zoom: viewport.zoom)
+                .equatable()
+                .placed(x: origin.x, y: origin.y)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    /// "Ask for another direction", 36pt after the last board, while it is on screen.
+    @ViewBuilder private var directionTile: some View {
+        if let anotherDirection, let last = boards.last {
+            let origin = NWDirectionTile.origin(after: viewport.screen(last.frame))
+            let rect = CGRect(origin: origin, size: NWDesignMetrics.directionTileSize)
+            if rect.intersects(CGRect(origin: .zero, size: size)) {
+                NWDirectionTile(action: anotherDirection)
+                    .placed(x: origin.x, y: origin.y)
+            }
+        }
+    }
+
+    /// The board actions over their board, kept inside the canvas.
+    @ViewBuilder private var actionsLayer: some View {
+        if let actions, let board = boards.first(where: { $0.id == actions.board }),
+           let origin = NWBoardActions.origin(over: viewport.screen(board.frame), bar: actionsSize, canvas: size) {
+            NWBoardActions(size: .compact, actions: actions.actions)
+                .fixedSize()
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { actionsSize = $0 }
+                .placed(x: origin.x, y: origin.y)
+        }
+    }
+
+    /// Where a board's element is on screen; nil when its board isn't on the canvas.
+    private func screenRect(of rect: CGRect, on board: String, frames: [String: CGRect]) -> CGRect? {
+        guard let frame = frames[board] else { return nil }
+        return viewport.screen(rect.offsetBy(dx: frame.minX, dy: frame.minY))
+    }
+
+    /// Each pin centered on its element's top-trailing corner, over boards on screen.
+    private var pinLayer: some View {
+        let frames = Dictionary(boards.map { ($0.id, $0.frame) }, uniquingKeysWith: { a, _ in a })
+        let half = NWDesignMetrics.pinSize / 2
+        let bounds = CGRect(origin: .zero, size: size).insetBy(dx: -half, dy: -half)
+        let shown = pins.compactMap { pin -> (NWCanvasPin, CGPoint)? in
+            guard let rect = screenRect(of: pin.rect, on: pin.board, frames: frames) else { return nil }
+            let corner = CGPoint(x: rect.maxX, y: rect.minY)
+            return bounds.contains(corner) ? (pin, corner) : nil
+        }
+        return ForEach(shown, id: \.0.id) { pin, corner in
+            Button { openPin(pin.id) } label: { NWCommentPin(pin.number) }
+                .buttonStyle(.plain)
+                .placed(x: corner.x - half, y: corner.y - half)
+                .help("Comment \(pin.number)")
+        }
+    }
+
+    /// The popover under its element, its trailing edge at the pin's, inside the canvas.
+    @ViewBuilder private var popoverLayer: some View {
+        let frames = Dictionary(boards.map { ($0.id, $0.frame) }, uniquingKeysWith: { a, _ in a })
+        if let anchor = popoverAnchor, let rect = screenRect(of: anchor.rect, on: anchor.board, frames: frames) {
+            let width = NWDesignMetrics.threadWidth
+            let inset = NWDesignMetrics.toolbarInset
+            let trailing = rect.maxX + NWDesignMetrics.pinSize / 2
+            let x = min(max(trailing - width, inset), max(inset, size.width - width - inset))
+            let below = rect.maxY + NWDesignMetrics.threadGap
+            let y = min(below, max(inset, size.height - popoverHeight - inset))
+            popover()
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: width)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { popoverHeight = $0 }
+                .placed(x: x, y: max(inset, y))
         }
     }
 
@@ -106,6 +226,17 @@ public struct NWDesignCanvas<Slot: View>: View {
             pan: { viewport.pan(by: $0) },
             zoom: { factor, anchor in viewport.zoom(by: factor, about: anchor) },
             click: { location, extending in pick(boards.pick(at: location, viewport: viewport, extending: extending)) },
+            grab: { location in
+                // A board moves by its label, or wherever it is while it is selected whole.
+                guard move != nil else { return nil }
+                let found = boards.pick(at: location, viewport: viewport)
+                guard let id = found.board, let board = boards.first(where: { $0.id == id }) else { return nil }
+                return found.point == nil || board.isSelected ? id : nil
+            },
+            drag: { id, translation, ended in
+                move?(NWBoardMove(board: id, offset: CGSize(width: translation.width / viewport.zoom,
+                                                            height: translation.height / viewport.zoom), ended: ended))
+            },
             move: { location in
                 guard let location else { point(nil); return }
                 let found = boards.pick(at: location, viewport: viewport)
@@ -123,6 +254,31 @@ public struct NWDesignCanvas<Slot: View>: View {
             })
             .onTapGesture { location in pick(boards.pick(at: location, viewport: viewport)) }
         #endif
+    }
+}
+
+extension View {
+    /// Puts a view at a point of the canvas without its size counting toward the canvas's, so a
+    /// board, a ring or a note larger than the view never widens it.
+    fileprivate func placed(x: CGFloat, y: CGFloat) -> some View {
+        frame(width: 0, height: 0, alignment: .topLeading)
+            .offset(x: x, y: y)
+    }
+}
+
+extension NWDesignCanvas where Popover == EmptyView {
+    public init(boards: [NWCanvasBoard], viewport: Binding<NWCanvasViewport>, tool: Binding<NWCanvasTool>,
+                disabledTools: Set<NWCanvasTool> = [], selection: [NWCanvasElement] = [], hover: NWCanvasElement? = nil,
+                pins: [NWCanvasPin] = [], openPin: @escaping (String) -> Void = { _ in },
+                notes: [NWCanvasNote] = [], actions: NWCanvasActions? = nil, anotherDirection: (() -> Void)? = nil,
+                move: ((NWBoardMove) -> Void)? = nil,
+                pick: @escaping (NWCanvasPick) -> Void, point: @escaping (NWCanvasPick?) -> Void = { _ in },
+                resized: @escaping (CGSize) -> Void = { _ in }, zooming: @escaping (Bool) -> Void = { _ in },
+                @ViewBuilder slot: @escaping (NWCanvasBoard) -> Slot) {
+        self.init(boards: boards, viewport: viewport, tool: tool, disabledTools: disabledTools, selection: selection,
+                  hover: hover, pins: pins, openPin: openPin, popoverAnchor: nil, notes: notes, actions: actions,
+                  anotherDirection: anotherDirection, move: move, pick: pick, point: point, resized: resized,
+                  zooming: zooming, slot: slot) { EmptyView() }
     }
 }
 
@@ -174,9 +330,14 @@ struct NWCanvasInput: NSViewRepresentable {
     struct Handlers {
         var pan: (CGSize) -> Void
         var zoom: (CGFloat, CGPoint) -> Void
-        /// A click with Select, and whether shift was held.
+        /// A click with Select or Comment, and whether shift was held.
         var click: (CGPoint, Bool) -> Void
-        /// The pointer moving with Select (nil once it leaves the canvas, or a drag starts).
+        /// With Select, the board a drag starting here moves; nil pans.
+        var grab: (CGPoint) -> String? = { _ in nil }
+        /// A board being moved: how far the pointer has gone since the drag started, and whether it
+        /// has ended.
+        var drag: (String, CGSize, Bool) -> Void = { _, _, _ in }
+        /// The pointer moving with Select or Comment (nil once it leaves the canvas, or a drag starts).
         var move: (CGPoint?) -> Void
         var zooming: (Bool) -> Void
     }
@@ -202,6 +363,9 @@ struct NWCanvasInput: NSViewRepresentable {
         var handlers: Handlers?
         var tool: NWCanvasTool = .select
         private var dragOrigin: CGPoint?
+        /// Where a drag began, and the board it moves (nil: it pans).
+        private var dragStart: CGPoint?
+        private var grabbed: String?
         private var dragged = false
         private var spaceHeld = false
         private var keyMonitor: Any?
@@ -236,7 +400,7 @@ struct NWCanvasInput: NSViewRepresentable {
         }
 
         override func mouseMoved(with event: NSEvent) {
-            guard tool == .select, !panning, dragOrigin == nil else { return }
+            guard tool != .pan, !panning, dragOrigin == nil else { return }
             handlers?.move(location(event))
         }
 
@@ -288,27 +452,40 @@ struct NWCanvasInput: NSViewRepresentable {
 
         override func mouseDown(with event: NSEvent) {
             dragOrigin = location(event)
+            dragStart = dragOrigin
             dragged = false
+            grabbed = tool == .select && !panning ? dragOrigin.flatMap { handlers?.grab($0) } : nil
             if panning { window?.invalidateCursorRects(for: self) }
         }
 
         override func mouseDragged(with event: NSEvent) {
-            guard let origin = dragOrigin else { return }
+            guard let origin = dragOrigin, let start = dragStart else { return }
             let point = location(event)
             let delta = CGSize(width: point.x - origin.x, height: point.y - origin.y)
             if !dragged, abs(delta.width) + abs(delta.height) < 3 { return }
             if !dragged { handlers?.move(nil) }
             dragged = true
-            // Select drags the canvas too: there is nothing on it to move yet.
-            handlers?.pan(delta)
-            dragOrigin = point
+            if let grabbed {
+                handlers?.drag(grabbed, CGSize(width: point.x - start.x, height: point.y - start.y), false)
+            } else {
+                // Select drags the canvas where it holds no board to move.
+                handlers?.pan(delta)
+                dragOrigin = point
+            }
         }
 
         override func mouseUp(with event: NSEvent) {
             defer {
                 dragOrigin = nil
+                dragStart = nil
                 dragged = false
+                grabbed = nil
                 window?.invalidateCursorRects(for: self)
+            }
+            if dragged, let grabbed, let start = dragStart {
+                let point = location(event)
+                handlers?.drag(grabbed, CGSize(width: point.x - start.x, height: point.y - start.y), true)
+                return
             }
             guard !dragged, !panning else { return }
             handlers?.click(location(event), event.modifierFlags.contains(.shift))
@@ -320,13 +497,15 @@ struct NWCanvasInput: NSViewRepresentable {
 
         // MARK: Space
 
-        /// Space held over the canvas pans, unless a text field has the keyboard.
+        /// Space held over the canvas pans, unless a text field or a board's page has the keyboard.
         private func startMonitoring() {
             guard keyMonitor == nil else { return }
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
                 guard let self, event.window === self.window, event.charactersIgnoringModifiers == " ",
                       event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting(.capsLock).isEmpty else { return event }
                 if event.window?.firstResponder is NSText { return event }
+                // A presented board's page has the keyboard (a field in a prototype): its space.
+                if let web = NSClassFromString("WKWebView"), event.window?.firstResponder?.isKind(of: web) == true { return event }
                 let inside = self.bounds.contains(self.convert(event.window?.mouseLocationOutsideOfEventStream ?? .zero, from: nil))
                 if event.type == .keyDown {
                     guard inside || self.spaceHeld else { return event }

@@ -34,10 +34,12 @@ private let previewBoards = [
     @Previewable @State var viewport = NWCanvasViewport(offset: CGPoint(x: 44, y: 52), zoom: 0.24)
     @Previewable @State var tool = NWCanvasTool.select
     NWPreviewBoth {
-        NWDesignCanvas(boards: previewBoards, viewport: $viewport, tool: $tool, disabledTools: [.comment],
+        NWDesignCanvas(boards: previewBoards, viewport: $viewport, tool: $tool,
                        selection: [NWCanvasElement(id: "B.dc.html#12:1/0/1", board: "B.dc.html", rect: CGRect(x: 48, y: 280, width: 760, height: 320),
                                                    tag: "card · Checkout funnel")],
                        hover: NWCanvasElement(id: "B.dc.html#30:1/0/2", board: "B.dc.html", rect: CGRect(x: 832, y: 280, width: 400, height: 320)),
+                       pins: [NWCanvasPin(id: "c1", board: "B.dc.html", rect: CGRect(x: 48, y: 280, width: 760, height: 320), number: 1),
+                              NWCanvasPin(id: "c2", board: "A-phone.dc.html", rect: CGRect(x: 24, y: 120, width: 342, height: 200), number: 2)],
                        pick: { _ in }) { board in
             PreviewBoardPage(phone: board.frame.height > board.frame.width)
         }
@@ -74,7 +76,7 @@ private let previewBoards = [
 #Preview("Canvas toolbar") {
     @Previewable @State var tool = NWCanvasTool.select
     NWPreviewBoth {
-        NWCanvasToolbar(tool: $tool, zoom: "42%", disabled: [.comment])
+        NWCanvasToolbar(tool: $tool, zoom: "42%")
     }
 }
 
@@ -132,6 +134,37 @@ private let previewBoards = [
     }
 }
 
+#Preview("Comment pins, thread and card") {
+    @Previewable @State var reply = ""
+    NWPreviewBoth {
+        HStack(alignment: .top, spacing: NW.Space.xxl) {
+            VStack(spacing: NW.Space.l) {
+                HStack(spacing: NW.Space.xl) {
+                    NWCommentPin(1)
+                    NWCommentPin(2)
+                    NWCommentPin(12)
+                }
+                NWCommentPin(3, size: .card)
+            }
+            NWCommentThread(author: "You", age: "2m", text: "Show the absolute counts next to the percentages.",
+                            entries: [NWCommentEntry(id: "r1", author: "Design agent", age: "1m",
+                                                     text: "Done on A and A · phone. Want the drop-off line in counts too?")],
+                            reply: $reply, onResolve: {}, onReply: {})
+            VStack(spacing: 0) {
+                NWCommentCard(number: 1, target: "A · Checkout funnel", meta: "You · 2m",
+                              text: "Show the absolute counts next to the percentages.", continues: true)
+                Text("Done. Counts sit next to each percentage on both boards.")
+                    .font(.nwSans(13))
+                    .nwCommentAnswer(bridge: 0)
+                NWCommentCard(number: 2, target: "A · phone", meta: "You · now", text: "Bigger total.")
+                    .padding(.top, NW.Space.l)
+            }
+            .frame(width: 380)
+        }
+        .padding(NW.Space.l)
+    }
+}
+
 #Preview("Tweak") {
     @Previewable @State var padding = 24.0
     @Previewable @State var radius = 12
@@ -167,5 +200,36 @@ private let previewBoards = [
         }
         .frame(width: 420, height: 560)
         .background(Color.nw.bgWindow)
+    }
+}
+
+private let previewActions = NWBoardActions.Actions(comment: {}, tweak: {}, variations: {}, duplicate: {}, play: {})
+
+#Preview("Board actions and another direction") {
+    @Previewable @State var viewport = NWCanvasViewport(offset: CGPoint(x: 44, y: 96), zoom: 0.24)
+    @Previewable @State var tool = NWCanvasTool.select
+    NWPreviewBoth {
+        VStack(alignment: .leading, spacing: NW.Space.xl) {
+            NWBoardActions(actions: previewActions)
+            NWBoardActions(size: .compact, actions: NWBoardActions.Actions(comment: {}, tweak: {}, variations: {}, duplicate: {}))
+            NWDesignCanvas(boards: previewBoards, viewport: $viewport, tool: $tool,
+                           notes: [NWCanvasNote(id: "t1", kind: .title, origin: CGPoint(x: 0, y: -300), width: 2600, text: "Checkout"),
+                                   NWCanvasNote(id: "s1", kind: .sticky, origin: CGPoint(x: 1360, y: 1000), text: "Keep the phone's total above the fold.")],
+                           actions: NWCanvasActions(board: "A.dc.html", actions: previewActions), anotherDirection: {},
+                           pick: { _ in }) { board in
+                PreviewBoardPage(phone: board.frame.height > board.frame.width)
+            }
+            .frame(width: 720, height: 520)
+        }
+    }
+}
+
+#Preview("Board presentation") {
+    NWPreviewBoth {
+        NWBoardPresentation(title: "A · Funnel first", boardSize: CGSize(width: 1280, height: 800), close: {}) { _ in
+            PreviewBoardPage(phone: false)
+        }
+        .frame(width: 720, height: 520)
+        .background(Color.nw.bgBase)
     }
 }

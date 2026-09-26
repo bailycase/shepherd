@@ -113,6 +113,12 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// `canvas_update`: a JSON merge patch for the design's canvas.json (`DesignIndex.merging`).
     /// Answered with `designWritten`.
     case designUpdateIndex(id: Int, agentID: AgentID, designID: DesignID, changes: JSONValue, baseRevision: UInt64?)
+    /// `comment_list`: the design's comments (`ExtensionReply.designComments`).
+    case designComments(id: Int, agentID: AgentID, designID: DesignID)
+    /// `comment_reply`: the design agent's answer under a comment's pin, once the change it asked
+    /// for is made (`ExtensionReply.designComment`). `commentID` stays a string so a bad one is
+    /// answered (`no_such_comment`). The agent can't resolve a comment: only the viewer does.
+    case designCommentReply(id: Int, agentID: AgentID, designID: DesignID, commentID: String, text: String)
 
     private enum CodingKeys: String, CodingKey {
         case type, id, agentID, status, name, piSessionID, children
@@ -121,7 +127,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case prompt, enabled, start, automationID, targetAgentID, request, requestID, result
         case error
         case line, reason, file
-        case designID, path, source, baseRevision, changes
+        case designID, path, source, baseRevision, changes, commentID
     }
 
     private enum Kind: String, Codable {
@@ -132,7 +138,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case startAutomation, stopAutomation
         case listAgents, sendToAgent, spawnAgent, coordinateAgent, agentResponse, cancelAgentRequest
         case suggestInstruction
-        case designRead, designWriteBoard, designUpdateIndex
+        case designRead, designWriteBoard, designUpdateIndex, designComments, designCommentReply
     }
 
     public init(from decoder: Decoder) throws {
@@ -321,6 +327,20 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                 changes: try c.decode(JSONValue.self, forKey: .changes),
                 baseRevision: try c.decodeIfPresent(UInt64.self, forKey: .baseRevision)
             )
+        case .designComments:
+            self = .designComments(
+                id: try c.decode(Int.self, forKey: .id),
+                agentID: try c.decode(AgentID.self, forKey: .agentID),
+                designID: try c.decode(DesignID.self, forKey: .designID)
+            )
+        case .designCommentReply:
+            self = .designCommentReply(
+                id: try c.decode(Int.self, forKey: .id),
+                agentID: try c.decode(AgentID.self, forKey: .agentID),
+                designID: try c.decode(DesignID.self, forKey: .designID),
+                commentID: try c.decode(String.self, forKey: .commentID),
+                text: try c.decode(String.self, forKey: .text)
+            )
         }
     }
 
@@ -488,6 +508,18 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(designID, forKey: .designID)
             try c.encode(changes, forKey: .changes)
             try c.encodeIfPresent(baseRevision, forKey: .baseRevision)
+        case .designComments(let id, let agentID, let designID):
+            try c.encode(Kind.designComments, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(designID, forKey: .designID)
+        case .designCommentReply(let id, let agentID, let designID, let commentID, let text):
+            try c.encode(Kind.designCommentReply, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(designID, forKey: .designID)
+            try c.encode(commentID, forKey: .commentID)
+            try c.encode(text, forKey: .text)
         }
     }
 }
@@ -826,6 +858,10 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     case designBoard(id: Int, board: DesignBoardSource)
     /// What a `designWriteBoard` or `designUpdateIndex` left behind.
     case designWritten(id: Int, result: DesignWriteResult)
+    /// A `designComments`: every comment of the design, open and resolved, with their revision.
+    case designComments(id: Int, comments: DesignComments)
+    /// A `designCommentReply`: the comment with the reply under it.
+    case designComment(id: Int, comment: DesignComment)
 
     private enum CodingKeys: String, CodingKey {
         case requestID, targetAgentID, request, result
@@ -833,13 +869,14 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case runID, action, mode
         case outcome
         case snapshot, board
+        case comments, comment
     }
 
     private enum Kind: String, Codable {
         case childCommand, agentRequest, agentResult
         case ok, error, panes, paneOpened, paneContent, reviewResult, automations, agents, message
         case suggestion
-        case design, designBoard, designWritten
+        case design, designBoard, designWritten, designComments, designComment
     }
 
     public init(from decoder: Decoder) throws {
@@ -929,6 +966,16 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
                 id: try c.decode(Int.self, forKey: .id),
                 result: try c.decode(DesignWriteResult.self, forKey: .result)
             )
+        case .designComments:
+            self = .designComments(
+                id: try c.decode(Int.self, forKey: .id),
+                comments: try c.decode(DesignComments.self, forKey: .comments)
+            )
+        case .designComment:
+            self = .designComment(
+                id: try c.decode(Int.self, forKey: .id),
+                comment: try c.decode(DesignComment.self, forKey: .comment)
+            )
         }
     }
 
@@ -1005,6 +1052,14 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             try c.encode(Kind.designWritten, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(result, forKey: .result)
+        case .designComments(let id, let comments):
+            try c.encode(Kind.designComments, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(comments, forKey: .comments)
+        case .designComment(let id, let comment):
+            try c.encode(Kind.designComment, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(comment, forKey: .comment)
         }
     }
 }

@@ -10,7 +10,8 @@ import ShepherdProtocol
 // A design on screen keeps at most `DesignLivePlan.liveCap` live web views: the selected board,
 // the board under the pointer with Select, and the boards nearest the middle of the view,
 // recycled least recently wanted first. Selection asks a live board what is under a point
-// (`hitTest`), so the board under the pointer is always one of them. Every
+// (`hitTest`), so the board under the pointer is always one of them. A board presented (Present,
+// Play) is the only live one while it is shown, and takes its own events there. Every
 // other board draws its snapshot, taken by one shared off-screen view (`DesignRasterizer`), so
 // the app never holds more than six web views however large the canvas. A hidden design gives
 // its live views up and keeps its snapshots.
@@ -68,7 +69,7 @@ extension DesignElementPick {
     /// grammar can't name it on this board.
     init?(_ hit: DesignHit, on board: DesignPath) {
         guard let id = hit.id(on: board) else { return nil }
-        self.init(board: board, id: id, rect: hit.rect, kind: hit.kind, label: hit.label, tag: hit.tag)
+        self.init(board: board, id: id, rect: hit.rect, kind: hit.kind, label: hit.label, tag: hit.tag, words: hit.name ?? hit.label)
     }
 }
 
@@ -185,6 +186,13 @@ final class DesignHost {
     @ObservationIgnored private var selected: DesignPath?
     /// The board under the pointer with Select.
     @ObservationIgnored private var hovered: DesignPath?
+    /// The board shown focused (Present, Play): the one live view while it is, drawn by the
+    /// presentation at its own zoom.
+    private(set) var presented: DesignPath?
+    @ObservationIgnored private var presentedZoom: CGFloat = 1
+    /// Told when a live board's link asks for another board of the design (Play); the host never
+    /// navigates.
+    @ObservationIgnored var linked: ((_ from: DesignPath, _ to: DesignPath) -> Void)?
     /// Told when a live board draws new source (a live reload, or a fresh load of a new version),
     /// so a selection on it is found again where it is drawn now.
     @ObservationIgnored var redrawn: ((DesignPath) -> Void)?
@@ -219,10 +227,34 @@ final class DesignHost {
     var liveCount: Int { slots.count }
     var liveBoards: Set<DesignPath> { Set(slots.keys) }
 
-    /// The live view a board draws in, once it has drawn and while no zoom gesture runs.
+    /// The live view a board draws in on the canvas, once it has drawn and while no zoom gesture
+    /// runs; the presented board draws its snapshot there.
     func liveView(_ path: DesignPath) -> DesignBoardView? {
-        guard !zooming, let slot = slots[path], slot.ready else { return nil }
+        guard !zooming, path != presented, let slot = slots[path], slot.ready else { return nil }
         return slot.view
+    }
+
+    /// The presented board's live view, once it has drawn.
+    func presentedView() -> DesignBoardView? {
+        guard let presented, let slot = slots[presented], slot.ready else { return nil }
+        return slot.view
+    }
+
+    /// Shows `path` focused (nil: back to the canvas). While it is, it is the only live board.
+    func present(_ path: DesignPath?) {
+        guard presented != path else { return }
+        let previous = presented
+        presented = path
+        if let previous, let slot = slots[previous] { slot.view.zoom = zoom }
+        if let path { bump(path) }
+        if let previous { bump(previous) }
+        plan()
+    }
+
+    /// The zoom the presentation draws its board at.
+    func setPresentedZoom(_ zoom: CGFloat) {
+        presentedZoom = zoom
+        if let presented, let slot = slots[presented], slot.view.zoom != zoom { slot.view.zoom = zoom }
     }
 
     /// The board's last snapshot, which may be of an older version while a new one renders.
@@ -271,7 +303,7 @@ final class DesignHost {
         self.selected = selected
         if self.zoom != zoom {
             self.zoom = zoom
-            for slot in slots.values { slot.view.zoom = zoom }
+            for (path, slot) in slots where path != presented { slot.view.zoom = zoom }
         }
         plan()
     }
@@ -367,9 +399,16 @@ final class DesignHost {
     private func plan() {
         guard isActive else { return }
         stamp += 1
-        let wanted = DesignLivePlan.wanted(visible: visible.filter { boards[$0] != nil },
+        let wanted: [DesignPath]
+        if let presented, boards[presented] != nil {
+            // Presented, a board is the one live view: the canvas under it draws snapshots.
+            for path in Array(slots.keys) where path != presented { releaseSlot(path) }
+            wanted = Array([presented].prefix(liveCap))
+        } else {
+            wanted = DesignLivePlan.wanted(visible: visible.filter { boards[$0] != nil },
                                            selected: selected.flatMap { boards[$0] != nil ? $0 : nil },
                                            hovered: hovered.flatMap { boards[$0] != nil ? $0 : nil }, zoom: zoom, cap: liveCap)
+        }
         for path in wanted { slots[path]?.wanted = stamp }
         let assignment = DesignLivePlan.assign(slots: slots.mapValues(\.wanted), wanted: wanted, cap: liveCap)
         for path in assignment.evict { releaseSlot(path) }
@@ -381,7 +420,7 @@ final class DesignHost {
     private func makeSlot(_ path: DesignPath) {
         guard let board = boards[path] else { return }
         let view = DesignBoardView(surface: surface, board: path, size: board.size)
-        view.zoom = zoom
+        view.zoom = path == presented ? presentedZoom : zoom
         let slot = Slot(view: view, sha: board.drawing, wanted: stamp)
         slots[path] = slot
         rasterizer.noteWebViews()
@@ -411,7 +450,15 @@ final class DesignHost {
         }
         slot.view.onEvent = { [weak self, weak slot] event in
             guard let self, let slot, self.slots[path] === slot else { return }
-            if case .terminated = event { self.releaseSlot(path); self.plan() }
+            switch event {
+            case .terminated:
+                self.releaseSlot(path)
+                self.plan()
+            case .link(let target):
+                self.linked?(path, target)
+            default:
+                break
+            }
         }
     }
 
@@ -711,6 +758,27 @@ struct DesignBoardSlot: View {
     }
 }
 
+/// The presented board's page (Present, Play): its live view, which takes its own events so its
+/// links work, else its snapshot. `content` (the board's token) tells SwiftUI it changed.
+struct DesignPresentedSlot: View {
+    let host: DesignHost
+    let path: DesignPath
+    let zoom: CGFloat
+    let content: Int
+
+    var body: some View {
+        if let view = host.presentedView() {
+            InteractiveDesignBoard(view: view, zoom: zoom) { host.setPresentedZoom($0) }
+        } else if let image = host.image(path) {
+            Image(decorative: image, scale: 1)
+                .resizable()
+                .interpolation(.high)
+        } else {
+            Color.clear
+        }
+    }
+}
+
 /// A card's thumbnail: the first board's snapshot, top-aligned in its frame.
 struct DesignThumbnailSlot: View {
     let image: CGImage?
@@ -753,7 +821,8 @@ private struct LiveDesignBoard: NSViewRepresentable {
         override var isFlipped: Bool { true }
 
         func show(_ view: DesignBoardView) {
-            guard board !== view else { return }
+            // The presentation may have taken the view meanwhile: take it back.
+            guard board !== view || view.superview !== self else { return }
             clear()
             board = view
             view.removeFromSuperview()
@@ -772,5 +841,54 @@ private struct LiveDesignBoard: NSViewRepresentable {
         }
 
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+}
+
+/// Hosts the presented board's view: unlike the canvas's, it takes events, so a click reaches the
+/// page (its handlers, and its links, which come back to the host as `.link`).
+private struct InteractiveDesignBoard: NSViewRepresentable {
+    let view: DesignBoardView
+    let zoom: CGFloat
+    let setZoom: (CGFloat) -> Void
+
+    func makeNSView(context: Context) -> Container {
+        let container = Container()
+        container.show(view)
+        return container
+    }
+
+    func updateNSView(_ container: Container, context: Context) {
+        container.show(view)
+        setZoom(zoom)
+        container.needsLayout = true
+    }
+
+    static func dismantleNSView(_ container: Container, coordinator: ()) {
+        container.clear()
+    }
+
+    final class Container: NSView {
+        private weak var board: DesignBoardView?
+
+        override var isFlipped: Bool { true }
+
+        func show(_ view: DesignBoardView) {
+            guard board !== view || view.superview !== self else { return }
+            clear()
+            board = view
+            view.removeFromSuperview()
+            addSubview(view)
+            needsLayout = true
+        }
+
+        func clear() {
+            if let board, board.superview === self { board.removeFromSuperview() }
+            board = nil
+        }
+
+        override func layout() {
+            super.layout()
+            if let board, board.frame != bounds { board.frame = bounds }
+        }
     }
 }

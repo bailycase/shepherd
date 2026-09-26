@@ -1942,6 +1942,16 @@ public final class SessionServer: @unchecked Sendable {
                 let result = try await server.updateDesignIndex(designID, patch: changes, baseRevision: baseRevision)
                 return .designWritten(id: id, result: result)
             }
+        case .designComments(let id, let agentID, let designID):
+            designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client) { server, _ in
+                .designComments(id: id, comments: try await server.designComments(designID))
+            }
+        case .designCommentReply(let id, let agentID, let designID, let commentID, let text):
+            designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client) { server, _ in
+                guard let comment = UUID(uuidString: commentID) else { throw DesignStoreError.noSuchComment(commentID) }
+                let outcome = try await server.replyToDesignComment(designID, commentID: comment, text: text, author: .agent)
+                return .designComment(id: id, comment: outcome.comment)
+            }
         }
     }
 
@@ -2210,7 +2220,9 @@ public final class SessionServer: @unchecked Sendable {
              .suggestion(let id, _),
              .design(let id, _),
              .designBoard(let id, _),
-             .designWritten(let id, _):
+             .designWritten(let id, _),
+             .designComments(let id, _),
+             .designComment(let id, _):
             return id
         }
     }
@@ -2896,6 +2908,104 @@ public final class SessionServer: @unchecked Sendable {
         let result = try await designs.updateIndex(designID, patch: patch, baseRevision: baseRevision)
         try await enqueue { try self.commitDesignWrite(designID, result) }
         return result
+    }
+
+    /// Copies a board beside itself as a new board (Duplicate): its file and its canvas entry
+    /// as one write, when the design is still at `baseRevision`. Answers the copy's path.
+    public func duplicateDesignBoard(_ designID: DesignID, path: DesignPath,
+                                     baseRevision: UInt64? = nil) async throws -> DesignDuplicate {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        let duplicate = try await designs.duplicateBoard(designID, path: path, baseRevision: baseRevision)
+        try await enqueue { try self.commitDesignWrite(designID, duplicate.result) }
+        return duplicate
+    }
+
+    // MARK: - Design comments
+
+    /// What a comment or reply made on the canvas left behind: the comment as kept, and why it
+    /// didn't reach the design agent (nil: it went to pi, or waits in its queue).
+    public struct DesignCommentOutcome: Sendable {
+        public var comment: DesignComment
+        public var undelivered: String?
+    }
+
+    /// A design's comments, open and resolved.
+    public func designComments(_ designID: DesignID) async throws -> DesignComments {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        return try await designs.comments(designID)
+    }
+
+    /// Pins a comment to a board's element (checked against the board's source), when the
+    /// comments are still at `baseRevision`, and hands it to the design's agent as a turn of its
+    /// own through the host queue: at once while pi is idle, else after the turn it is working
+    /// on, never into it.
+    public func addDesignComment(_ designID: DesignID, draft: DesignCommentDraft,
+                                 baseRevision: UInt64? = nil) async throws -> DesignCommentOutcome {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        let comment = try await designs.addComment(designID, draft: draft, baseRevision: baseRevision, at: Self.nowMilliseconds())
+        await enqueueValue { self.designRevised(designID) }
+        let undelivered = await deliverDesignComment(designID, id: comment.id, text: comment.text,
+                                                     fence: DesignCommentFence(comment).fenced())
+        return DesignCommentOutcome(comment: comment, undelivered: undelivered)
+    }
+
+    /// Adds a reply under a comment. The viewer's reply goes to the design's agent like a comment
+    /// (fenced, marked a reply); the agent's (`comment_reply`) goes nowhere else.
+    public func replyToDesignComment(_ designID: DesignID, commentID: UUID, text: String, author: DesignCommentAuthor = .user,
+                                     baseRevision: UInt64? = nil) async throws -> DesignCommentOutcome {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        let comment = try await designs.replyToComment(designID, commentID: commentID, author: author, text: text,
+                                                       baseRevision: baseRevision, at: Self.nowMilliseconds())
+        await enqueueValue { self.designRevised(designID) }
+        guard author == .user, let reply = comment.replies.last else { return DesignCommentOutcome(comment: comment) }
+        let undelivered = await deliverDesignComment(designID, id: reply.id, text: reply.text,
+                                                     fence: DesignCommentFence(comment, reply: true).fenced())
+        return DesignCommentOutcome(comment: comment, undelivered: undelivered)
+    }
+
+    /// Resolves a comment, or opens it again. Only the viewer resolves: no extension message
+    /// reaches this.
+    @discardableResult
+    public func resolveDesignComment(_ designID: DesignID, commentID: UUID, resolved: Bool = true,
+                                     baseRevision: UInt64? = nil) async throws -> DesignComment {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        let comment = try await designs.setCommentResolved(designID, commentID: commentID, resolved: resolved,
+                                                           baseRevision: baseRevision, at: Self.nowMilliseconds())
+        await enqueueValue { self.designRevised(designID) }
+        return comment
+    }
+
+    /// Hands a comment (or a reply under one) to the design's agent as its own queued turn: the
+    /// fence, then the viewer's words, going to pi alone. Why it couldn't, or nil.
+    private func deliverDesignComment(_ designID: DesignID, id: UUID, text: String, fence: String) async -> String? {
+        await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
+            queue.async {
+                let design = self.store.state.designs.first { $0.id == designID }
+                guard let agent = self.store.state.agents.first(where: { $0.id == design?.agentID })
+                        ?? self.store.state.agents.first(where: { $0.designID == designID }) else {
+                    continuation.resume(returning: "The design has no agent.")
+                    return
+                }
+                guard let tab = self.store.state.tabs.first(where: { $0.id == agent.tabID }),
+                      let paneID = agent.paneID, let sessionID = tab.layout.leaf(withID: paneID)?.sessionID,
+                      let session = self.sessions[sessionID], let thread = session.thread, session.isAlive else {
+                    continuation.resume(returning: "The design agent isn't running.")
+                    return
+                }
+                guard thread.isServable else {
+                    continuation.resume(returning: "The design agent is starting.")
+                    return
+                }
+                self.noteAgentSend(agent.id)
+                thread.send(id: id, text: text, delivery: .followUp, images: [], alone: true, context: fence) { result in
+                    if case .failure(_, let message) = result {
+                        continuation.resume(returning: message)
+                    } else {
+                        continuation.resume(returning: nil)
+                    }
+                }
+            }
+        }
     }
 
     /// Server queue: what a write to a design's files changes in its record. A new title is
