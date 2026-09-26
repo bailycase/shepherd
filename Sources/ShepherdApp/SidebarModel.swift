@@ -117,6 +117,8 @@ struct SidebarSource: Equatable {
     var localChildren: [AgentID: [ChildRun]] = [:]
     /// This Mac's agents whose last turn ended in an error.
     var failedTurns: Set<AgentID> = []
+    /// This Mac's agents whose pi stopped before it served, waiting for Retry.
+    var cannotStart: Set<AgentID> = []
     /// When each of This Mac's agents entered its status: a running row's elapsed time.
     var statusSince: [AgentID: Date] = [:]
     /// Each automation's open run (`AutomationRun.isLive`).
@@ -144,7 +146,8 @@ enum SidebarDerivation {
             let needsYou = agent.status == .blocked || children.contains(where: \.needsAttention)
             let run = automation.flatMap { source.openRuns[$0.id] }.flatMap { $0.agentID == agent.id ? $0 : nil }
             let row = localRow(agent, automation: automation, run: run, children: children, needsYou: needsYou,
-                               failed: source.failedTurns.contains(agent.id), since: source.statusSince[agent.id])
+                               failed: source.failedTurns.contains(agent.id), cannotStart: source.cannotStart.contains(agent.id),
+                               since: source.statusSince[agent.id])
             entries.append((row, needsYou, agent.lastActiveAt ?? -1, 0, index))
         }
         if source.designs {
@@ -201,7 +204,7 @@ enum SidebarDerivation {
     }
 
     private static func localRow(_ agent: Agent, automation: Automation?, run: AutomationRun?, children: [ChildRun],
-                                 needsYou: Bool, failed: Bool, since: Date?) -> SidebarListRow {
+                                 needsYou: Bool, failed: Bool, cannotStart: Bool = false, since: Date?) -> SidebarListRow {
         let failed = failed && agent.status == .done
         let live = automation != nil && AutomationRow.isLive(agent, run: run)
         let leading: NWSidebarRow.Leading
@@ -211,6 +214,10 @@ enum SidebarDerivation {
             leading = automation == nil ? .dot(.attention) : .glyph("bolt", attention: true)
             accessory = .reason(reason(question: agent.waitingOn, short: agent.waitingReason, children: children))
             word = "needs you"
+        } else if cannotStart {
+            leading = automation == nil ? .dot(.failed) : .glyph("bolt", attention: false)
+            accessory = .text("can't start", tone: .failed)
+            word = "can't start"
         } else if automation != nil {
             leading = .glyph("bolt", attention: false)
             if live {

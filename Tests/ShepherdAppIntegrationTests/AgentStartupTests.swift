@@ -253,8 +253,7 @@ struct AgentStartupTests {
         defer { app.stop() }
         let broken = app.dir.appendingPathComponent("broken")
         try FileManager.default.createDirectory(at: broken, withIntermediateDirectories: true)
-        // Its pi exits only once the test has seen it on screen: an exit before that retires it
-        // and moves the selection on to a healthy agent.
+        // Its pi exits only once the test has seen it on screen.
         try Self.holdPi(in: broken, exit: 1)
         let space = Fixture.space(path: app.dir.path)
         var agents = [Fixture.agent("broken", in: space, order: 0, cwd: broken.path, piSession: SessionID())]
@@ -268,7 +267,8 @@ struct AgentStartupTests {
         let others = Set(agents.dropFirst().map(\.agent.id))
 
         Self.releasePi(in: broken)
-        try await eventuallyOnMain("the broken agent's pi to exit and retire it") { !vm.state.agents.contains { $0.id == brokenID } }
+        try await eventuallyOnMain("the broken agent's pi to exit, keeping the agent") { vm.cannotStart.contains(brokenID) }
+        #expect(vm.state.agents.contains { $0.id == brokenID })
         let exited = ContinuousClock.now
         try await eventuallyAsync("the others to start") {
             let alive = Set(await server.listSessions().filter(\.isAlive).map(\.id))
@@ -392,9 +392,9 @@ struct AgentStartupTests {
         #expect(shown.rows.allSatisfy { $0 == fromDisk }, "the rows never changed on the way: \(shown.rows)")
     }
 
-    /// pi not installed, or a broken config: the launch ends in the real error (the pane's
-    /// exit, then the agent retired as always), never an endless start.
-    @Test func aPiThatExitsWhileStartingEndsInItsErrorNotAnEndlessStart() async throws {
+    /// pi not installed, or a broken config: the launch ends in the reason, with the agent kept
+    /// (AgentStartProblemTests has every cause), never an endless start.
+    @Test func aPiThatExitsWhileStartingEndsInItsReasonNotAnEndlessStart() async throws {
         try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
@@ -417,13 +417,11 @@ struct AgentStartupTests {
 
         Self.releasePi(in: app.dir)
 
-        try await eventuallyOnMain("the pane to show pi's exit", timeout: .seconds(20)) { pane.phase == .exited(127) }
-        try await eventuallyOnMain("the agent to be retired") { server.state.agents.isEmpty && vm.state.agents.isEmpty }
-        // The retirement reaches the thread with the server's broadcast (its store is pruned) or
-        // the next poll, whichever lands first.
-        try await eventuallyOnMain("the retired agent's thread to stop starting") { !store.starting }
-        let error = await #expect(throws: RemoteHostClientError.self) { _ = try await server.nativeThread(agentID: id, request: .snapshot()) }
-        guard case .rejected(NativeThreadCode.unavailable, _)? = error else { Issue.record("got \(String(describing: error))"); return }
+        try await eventuallyOnMain("the pane to show pi stopped", timeout: .seconds(20)) { pane.phase == .stopped }
+        try await eventuallyOnMain("the thread to say why") { store.startProblem?.kind == .engineMissing }
+        #expect(!store.starting && store.loadError == nil)
+        #expect(store.startProblem?.exitCode == 127)
+        #expect(server.state.agents.map(\.id) == [id] && vm.state.agents.map(\.id) == [id])
     }
 
     /// Only a pi that was serving and went away is a lost connection.

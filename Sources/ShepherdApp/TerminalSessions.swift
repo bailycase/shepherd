@@ -39,6 +39,9 @@ final class TerminalSessionStore {
             case live
             case failed(String)
             case exited(Int32?)
+            /// An agent's pi stopped before it served (or Shepherd stopped it): the agent stays,
+            /// its thread says why, and Retry starts pi again (DESIGN.md › Thread › Can't start).
+            case stopped
         }
 
         let paneID: PaneID
@@ -193,9 +196,7 @@ final class TerminalSessionStore {
     var reserveCheckoutForLaunch: ((String) throws -> (() -> Void))?
     private var sessions: [PaneID: PaneSession] = [:]
     private var paneBySession: [SessionID: PaneID] = [:]
-    private struct PendingExit {
-        let code: Int32?
-    }
+    private typealias PendingExit = SessionExit
 
     /// A very short-lived child can exit before the create/adopt continuation
     /// installs its pane mapping. Keep that exit until adoption catches up.
@@ -249,6 +250,10 @@ final class TerminalSessionStore {
     /// Fired when a pane's process exits, after the local session is marked
     /// exited and before it is dropped from the store.
     var onPaneSessionExited: ((PaneID) -> Void)?
+    /// Fired when an agent's pi stops before it served (or Shepherd stopped it), with why (nil for a
+    /// stop Shepherd asked for): the agent stays, waiting for Retry. Fired again with nil and false
+    /// when Retry starts it.
+    var onAgentStopped: ((AgentID, NativeStartProblem?, Bool) -> Void)?
     /// Fired the moment an agent's pi begins serving its thread
     /// (`SessionServer.onNativeThreadServable`).
     var onThreadServable: ((AgentID) -> Void)?
@@ -264,7 +269,6 @@ final class TerminalSessionStore {
             self?.session(forSessionID: sessionID)?.receive(data, sequence: sequence)
         }
         server.onSessionExited = { [weak self] sessionID, exit in
-            let exitCode = exit.code
             guard let self, !self.handledExits.contains(sessionID) else { return }
             self.aliveSessions.remove(sessionID)
             guard self.paneBySession[sessionID] != nil else {
@@ -278,10 +282,10 @@ final class TerminalSessionStore {
                 // The PTY can finish between createSession and adopt. Do not
                 // drop that exit, or the pane will wait forever for a session
                 // that is already dead.
-                self.pendingExits[sessionID] = PendingExit(code: exitCode)
+                self.pendingExits[sessionID] = exit
                 return
             }
-            self.processExit(sessionID: sessionID, exitCode: exitCode)
+            self.processExit(sessionID: sessionID, exit: exit)
         }
         server.onStateChanged = { [weak self] state in
             self?.serverState = state
@@ -428,24 +432,51 @@ final class TerminalSessionStore {
     /// Process the exit before dropping the local mapping. The view-model's
     /// callback removes the pane from its layout during this turn; only after
     /// that handoff is the server-side dead session retired.
-    private func processExit(sessionID: SessionID, exitCode: Int32?) {
+    private func processExit(sessionID: SessionID, exit: SessionExit) {
         guard !handledExits.contains(sessionID) else { return }
         guard let paneID = paneBySession[sessionID] else {
-            pendingExits[sessionID] = PendingExit(code: exitCode)
+            pendingExits[sessionID] = exit
             return
         }
         handledExits.insert(sessionID)
         // Read before the view model retires the agent: a pi that exits while it boots frees its
         // place in the launch queue now, not when its hold runs out.
-        let agentID = serverState?.agents.first { $0.paneID == paneID }?.id
-        sessions[paneID]?.phase = .exited(exitCode)
-        onPaneSessionExited?(paneID)
-        sessions.removeValue(forKey: paneID)
+        let agent = serverState?.agents.first { $0.paneID == paneID }
         paneBySession.removeValue(forKey: sessionID)
         detachedSessionIDs.remove(sessionID)
-        if let agentID { startFinished(agentID) }
+        if exit.keepsAgent, let agent, let session = sessions[paneID], session.isRPC {
+            // The agent waits with its pane session, so the pane's view never spawns pi again
+            // on its own: only Retry does (`retryStart`).
+            session.phase = .stopped
+            session.sessionID = nil
+            startFinished(agent.id)
+            onAgentStopped?(agent.id, exit.startProblem, true)
+        } else {
+            sessions[paneID]?.phase = .exited(exit.code)
+            onPaneSessionExited?(paneID)
+            sessions.removeValue(forKey: paneID)
+            if let agent { startFinished(agent.id) }
+        }
         Task { [weak self] in
             await self?.server.retireSession(sessionID: sessionID)
+        }
+    }
+
+    /// Retry for an agent whose pi stopped before it served: starts its pi again in the same pane.
+    /// `newConversation` (a pi that didn't find the conversation it was resuming) starts it
+    /// without that check, as pi would on its own.
+    func retryStart(_ agentID: AgentID, newConversation: Bool = false) {
+        guard let state = serverState, let agent = state.agents.first(where: { $0.id == agentID }),
+              let paneID = agent.paneID, let tab = state.tabs.first(where: { $0.id == agent.tabID }),
+              let pane = tab.layout.leaf(withID: paneID), let session = sessions[paneID],
+              session.isRPC, session.phase == .stopped else { return }
+        session.phase = .connecting
+        onAgentStopped?(agentID, nil, false)
+        let stopped = pane.sessionID
+        Task { [weak self] in
+            guard let self else { return }
+            if let stopped { await self.server.retryStart(sessionID: stopped) }
+            await self.start(session, pane: pane, tab: tab, checksResume: !newConversation)
         }
     }
 
@@ -587,6 +618,8 @@ final class TerminalSessionStore {
             // RPC mode ignores a positional prompt; the opening prompt goes to the server below.
             let command = try Self.rpcAgentCommand(for: agent, cwd: cwd, engine: server.pi.engine, sessionIsFresh: fresh, isAutomation: isAutomation,
                                                     suggestFiles: suggestionFiles(isAutomation: isAutomation))
+            // A forked transcript resumes: pi not finding it is a start problem, never a new session.
+            let resuming = fresh ? nil : agent.effectivePiSessionID
             guard ownsPane(session, pane: pane, tabID: tab.id, expectedAgentID: agent.id),
                   session.sessionID == nil,
                   liveBinding(forPane: pane.id) == nil else {
@@ -602,7 +635,8 @@ final class TerminalSessionStore {
                     rows: session.lastRows,
                     env: command.env.isEmpty ? nil : command.env,
                     runtime: .rpc
-                )
+                ),
+                resuming: resuming
             )
             createdSessionID = info.id
             aliveSessions.insert(info.id)
@@ -788,9 +822,11 @@ final class TerminalSessionStore {
     }
 
     /// Spawns the pane's process, or adopts the live one already bound to it. True only when it
-    /// spawned one.
+    /// spawned one. `checksResume`: an agent's pi that doesn't find the conversation it resumes is
+    /// stopped (`SessionServer.createSession(params:resuming:)`); Retry's Start new conversation
+    /// turns it off.
     @discardableResult
-    private func start(_ session: PaneSession, pane: LeafPane, tab: Tab) async -> Bool {
+    private func start(_ session: PaneSession, pane: LeafPane, tab: Tab, checksResume: Bool = true) async -> Bool {
         var createdSessionID: SessionID?
         do {
             try await ensureBootstrapped()
@@ -819,6 +855,7 @@ final class TerminalSessionStore {
             // shell in the leaf cwd.
             let cwd = Self.resolvedCwd(pane.cwd)
             let command: SessionCommand
+            var resuming: String?
             if let agentID = pane.agentID,
                let agent = serverState?.agents.first(where: { $0.id == agentID }) {
                 guard session.isRPC, isRPCPane(pane, agent: agent) else {
@@ -829,6 +866,7 @@ final class TerminalSessionStore {
                 let fresh = await Self.prepareSessionFile(for: agent, cwd: cwd, sessionsRoot: server.pi.sessionsRoot)
                 command = try Self.rpcAgentCommand(for: agent, cwd: cwd, engine: server.pi.engine, sessionIsFresh: fresh,
                                                    suggestFiles: suggestionFiles(isAutomation: false))
+                if checksResume, !fresh { resuming = agent.effectivePiSessionID }
             } else {
                 command = ShellIntegration.command(shell: AppSettings.shared.shellCommand)
             }
@@ -848,7 +886,8 @@ final class TerminalSessionStore {
                     rows: session.lastRows,
                     env: command.env.isEmpty ? nil : command.env,
                     runtime: session.isRPC ? .rpc : .pty
-                )
+                ),
+                resuming: resuming
             )
             createdSessionID = info.id
             aliveSessions.insert(info.id)
@@ -901,18 +940,16 @@ final class TerminalSessionStore {
 
         if let earlyExit = pendingExits.removeValue(forKey: sessionID) {
             aliveSessions.remove(sessionID)
-            processExit(sessionID: sessionID, exitCode: earlyExit.code)
+            processExit(sessionID: sessionID, exit: earlyExit)
             return
         }
 
-        guard let info = await server.sessionInfo(sessionID: sessionID) else {
+        guard let info = await server.sessionInfo(sessionID: sessionID), info.isAlive else {
             aliveSessions.remove(sessionID)
-            processExit(sessionID: sessionID, exitCode: nil)
-            return
-        }
-        if !info.isAlive {
-            aliveSessions.remove(sessionID)
-            processExit(sessionID: sessionID, exitCode: nil)
+            // An agent's pi that died meanwhile: its exit is on its way to the main queue (the
+            // server reports every one) and says whether the agent stays, so it decides.
+            if session.isRPC, !handledExits.contains(sessionID) { return }
+            processExit(sessionID: sessionID, exit: SessionExit(code: nil))
             return
         }
 

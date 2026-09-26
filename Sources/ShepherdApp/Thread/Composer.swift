@@ -51,6 +51,9 @@ struct Composer: View {
     /// A design's chat (DZCanvas): attach and Send only, with no commands, model, thinking or
     /// context ring.
     var designChat = false
+    /// Retry in the Can't start banner (true: start a new conversation); nil for a remote agent,
+    /// whose banner says to retry on its host.
+    var restartPi: ((Bool) -> Void)? = nil
     @State private var attachments = ComposerAttachments()
     @State private var dropTargeted = false
     @State private var commandIndex = 0
@@ -168,7 +171,7 @@ struct Composer: View {
 
     /// What sits above the card: a banner, the notice, extension widgets, the queue.
     private var accessories: [String] {
-        let banner = store.loadError != nil ? "lost" : attachments.error != nil ? "attachment" : store.notice != nil ? "notice" : nil
+        let banner = store.startProblem != nil ? "cannotStart" : store.loadError != nil ? "lost" : attachments.error != nil ? "attachment" : store.notice != nil ? "notice" : nil
         return [banner].compactMap { $0 } + store.widgets.map(\.id) + (queueStack.isVisible ? ["queue"] : [])
             + (showsTray ? ["tray"] : []) + (answeringRun != nil ? ["answering"] : [])
     }
@@ -218,7 +221,25 @@ struct Composer: View {
                 .padding(.horizontal, NW.Space.xs)
                 .nwTransition(.list, edge: .bottom)
             }
-            if let error = store.loadError {
+            if let problem = store.startProblem {
+                NWBanner(.failed, title: problem.title, message: problem.message(host: restartPi == nil ? store.hostName ?? "the host" : nil)) {
+                    if let restartPi {
+                        if problem.kind == .resumedAsNew {
+                            Button("Start new conversation") {
+                                store.restarting()
+                                restartPi(true)
+                            }
+                            .buttonStyle(.nw(.ghost, size: .s))
+                        }
+                        Button("Retry") {
+                            store.restarting()
+                            restartPi(false)
+                        }
+                        .buttonStyle(.nw(.secondary, size: .s))
+                    }
+                }
+                .nwTransition(.list, edge: .bottom)
+            } else if let error = store.loadError {
                 NWBanner(.failed, title: "Lost connection to the agent process.", message: error) {
                     Button("Reconnect") { Task { await store.refresh(fresh: true) } }
                         .buttonStyle(.nw(.secondary, size: .s))

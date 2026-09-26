@@ -286,6 +286,65 @@ struct NativeThreadStoreTests {
         #expect(store.ready && !store.previewing && store.messages == [hi] && store.snapshot?.generation == "g")
     }
 
+    // MARK: Can't start
+
+    static let notSignedIn = NativeStartProblem(kind: .notSignedIn, exitCode: 1, lines: ["No models available."])
+
+    /// The host's snapshot for a pi that stopped before it served: the thread keeps what it drew
+    /// from disk, nothing waits for pi, and no send is offered.
+    @Test func aStartProblemKeepsThePreviewAndOffersNoSend() async {
+        let (store, host, task) = await startedWhileStarting()
+        defer { task.cancel() }
+        let fromDisk = F.assistant("from disk", id: "a")
+        store.preview(F.snapshot(generation: "preview", messages: [fromDisk]))
+        store.draft = "hello"
+        var stopped = F.snapshot(generation: "start-problem", messages: [])
+        stopped.startProblem = Self.notSignedIn
+        host.snapshot = stopped
+        host.starting = false
+        await store.refresh()
+        #expect(store.startProblem == Self.notSignedIn)
+        #expect(!store.ready && !store.starting && store.loadError == nil && !store.awaitingPi)
+        #expect(store.previewing && store.messages == [fromDisk], "the thread keeps its history from disk")
+        #expect(!store.acceptsSend && store.draft == "hello")
+        #expect(store.pollInterval == .seconds(2))
+    }
+
+    /// Retry takes the problem away at once and the thread is starting; pi serving clears it too.
+    @Test func retryStartsAgainAndServingClearsTheProblem() async {
+        let (store, host, task) = await startedWhileStarting()
+        defer { task.cancel() }
+        var stopped = F.snapshot(generation: "start-problem", messages: [])
+        stopped.startProblem = Self.notSignedIn
+        host.snapshot = stopped
+        host.starting = false
+        await store.refresh()
+        #expect(store.startProblem != nil)
+
+        store.restarting()
+        #expect(store.startProblem == nil && store.starting && store.acceptsSend)
+
+        host.snapshot = F.snapshot(messages: [hi])
+        await store.refresh()
+        #expect(store.ready && store.startProblem == nil && store.messages == [hi])
+    }
+
+    /// A send waiting for pi to start gives up when the host says pi stopped.
+    @Test func aSendWaitingForPiGivesUpWhenItCannotStart() async {
+        let (store, host, task) = await startedWhileStarting()
+        defer { task.cancel() }
+        store.draft = "hello"
+        let sending = Task { await store.send() }
+        await until { store.busy }
+        var stopped = F.snapshot(generation: "start-problem", messages: [])
+        stopped.startProblem = Self.notSignedIn
+        host.snapshot = stopped
+        host.starting = false
+        await store.refresh()
+        await sending.value
+        #expect(!store.busy && store.draft == "hello" && host.actions.isEmpty)
+    }
+
     /// Disk never overwrites what pi served, even once the thread has stopped.
     @Test func aPreviewNeverReplacesPisThread() async {
         let (store, _, task) = await started()

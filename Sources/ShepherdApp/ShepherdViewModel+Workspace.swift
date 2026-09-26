@@ -313,6 +313,13 @@ extension ShepherdViewModel {
 
     // MARK: Session lifecycle
 
+    /// Retry in an agent's Can't start banner: starts its pi again (`newConversation`: without
+    /// looking for the conversation it was resuming).
+    func retryAgentStart(_ agentID: AgentID, newConversation: Bool = false) {
+        threadStores.store(for: agentID).restarting()
+        sessions.retryStart(agentID, newConversation: newConversation)
+    }
+
     /// A process ended: its pane closes. An agent whose process ended is
     /// retired with its whole layout (auxiliary shells die too; the pi
     /// transcript stays on disk). A space's last shell respawns fresh so the
