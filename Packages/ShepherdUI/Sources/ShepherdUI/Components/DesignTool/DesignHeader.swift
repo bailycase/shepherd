@@ -1,5 +1,16 @@
 import SwiftUI
 
+/// A pill after a design header's title: a system's sync state ("Synced", done).
+public struct NWDesignHeaderStatus: Equatable, Sendable {
+    public let state: AgentState
+    public let label: String
+
+    public init(_ state: AgentState, label: String) {
+        self.state = state
+        self.label = label
+    }
+}
+
 /// The Design tool's header (DZStart, DZCanvas, DZSystem): a sidebar button while the sidebar is
 /// not docked, the breadcrumb (the nib in 14pt `textTertiary`, the section, "Designs" or "Design
 /// systems", in 13 `textTertiary`, "/", then the page in 13 semibold, and a status pill after it
@@ -14,16 +25,7 @@ public struct NWDesignHeader<Trailing: View>: View {
         case toolbar
     }
 
-    /// A pill after the title: a system's sync state ("Synced", done).
-    public struct Status: Equatable, Sendable {
-        public let state: AgentState
-        public let label: String
-
-        public init(_ state: AgentState, label: String) {
-            self.state = state
-            self.label = label
-        }
-    }
+    public typealias Status = NWDesignHeaderStatus
 
     let title: String
     let style: Style

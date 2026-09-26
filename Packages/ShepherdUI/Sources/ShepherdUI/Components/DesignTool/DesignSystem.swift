@@ -94,6 +94,7 @@ public struct NWTokenSwatch: View {
     }
 
     public var body: some View {
+        let _ = NWRenderProbe.tick("design.swatch")
         let shape = RoundedRectangle(cornerRadius: NWDesignMetrics.tokenSwatchRadius)
         VStack(alignment: .leading, spacing: NW.Space.s) {
             shape.fill(color)
@@ -205,10 +206,12 @@ public struct NWComponentSpecimen<Specimen: View>: View {
 /// A label: the page makes it a button or a menu.
 public struct NWDesignSystemBuildTile: View {
     let title: String
+    let enabled: Bool
     @State private var hovering = false
 
-    public init(_ title: String = "Build one from a repo") {
+    public init(_ title: String = "Build one from a repo", enabled: Bool = true) {
         self.title = title
+        self.enabled = enabled
     }
 
     public var body: some View {
@@ -225,12 +228,13 @@ public struct NWDesignSystemBuildTile: View {
         .padding(.vertical, NWDesignMetrics.cardPaddingVertical)
         .padding(.horizontal, NWDesignMetrics.cardPaddingHorizontal)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(hovering ? Color.nw.bgHover : .clear, in: shape)
+        .background(hovering && enabled ? Color.nw.bgHover : .clear, in: shape)
         .overlay {
             shape.strokeBorder(Color.nw.lineStrong, style: StrokeStyle(lineWidth: NWDesignMetrics.lineWidth,
                                                                         dash: NWDesignMetrics.directionTileDash))
         }
         .contentShape(shape)
+        .nwEnabledOpacity(enabled)
         .onHover { hovering = $0 }
         .nwAnimation(.hover, value: hovering)
     }

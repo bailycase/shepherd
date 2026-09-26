@@ -44,12 +44,16 @@ extension ShepherdViewModel {
         let firstBoards = designRendering.thumbnails.entries.mapValues {
             DesignsPageModel.FirstBoard(size: $0.size, version: $0.version)
         }
+        let systems = designSystems.summaries
+        let swatches = Dictionary(systems.map { ($0.namespace, designSystemSwatches($0.namespace, count: 4)) },
+                                  uniquingKeysWith: { first, _ in first })
         let inputs = DesignsPageInputs(designs: state.designs, spaces: state.spaces, firstBoards: firstBoards,
-                                       filter: designsPageFilter, selection: designsPageSelection,
-                                       minute: Int(now.timeIntervalSince1970 / 60))
+                                       filter: designsPageFilter, selection: designsPageSelection, systems: systems,
+                                       swatches: swatches, minute: Int(now.timeIntervalSince1970 / 60))
         if let cached = designsPageCache, cached.inputs == inputs { return cached.model }
         let model = DesignsPageModel.make(designs: inputs.designs, spaces: inputs.spaces, firstBoards: inputs.firstBoards,
-                                          filter: inputs.filter, selection: inputs.selection, now: now)
+                                          filter: inputs.filter, selection: inputs.selection, now: now,
+                                          systems: inputs.systems, swatches: inputs.swatches)
         designsPageCache = (inputs, model)
         return model
     }
@@ -57,12 +61,12 @@ extension ShepherdViewModel {
     /// Changes whenever a design's boards may have changed: the page reads their first boards
     /// again then.
     var designThumbnailSignature: [String] {
-        state.designs.map { "\($0.id.rawValue)/\($0.lastActiveAt)/\($0.boardCount ?? -1)" }
+        state.designs.filter { !$0.buildsSystem }.map { "\($0.id.rawValue)/\($0.lastActiveAt)/\($0.boardCount ?? -1)" }
     }
 
     /// Reads each design's first board for its card.
     func loadDesignThumbnails() async {
-        for design in state.designs {
+        for design in state.designs where !design.buildsSystem {
             guard let snapshot = try? await server.designSnapshot(design.id) else { continue }
             designRendering.thumbnails.update(design.id, snapshot: snapshot)
         }

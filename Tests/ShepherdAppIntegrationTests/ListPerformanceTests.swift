@@ -3,6 +3,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSessions
 import ShepherdTestSupport
 import SwiftUI
 import Testing
@@ -186,6 +187,78 @@ struct ListPerformanceTests {
         #expect(moved > 0)
         #expect(counts["design.card", default: 0] <= 2 * (arriving + Self.designRowsOnScreen * DesignsPageModel.columns), "\(counts)")
         #expect(counts["design.card", default: 0] < 120)
+    }
+
+    // MARK: Design systems
+
+    /// A system card's height (its 12pt padding and two lines) with the gap under it.
+    private static let systemRowHeight: CGFloat = 2 * NWDesignMetrics.cardPaddingVertical + 32 + NWPageMetrics.columnGap
+    /// A row of swatches: the 56pt swatch, its two lines and the gap under it.
+    private static let swatchRowHeight: CGFloat = NWDesignMetrics.tokenSwatchHeight + 2 * NW.Space.s + 28 + AppLayout.designSystemColorGap
+
+    /// `count` systems in the server's store, as folders it lists (the store's cap is 100), each
+    /// with `colors` colors.
+    private func writeSystems(_ app: AppHarness, count: Int, colors: Int = 4) throws {
+        let directory = app.server.designSystems.directory
+        for index in 0..<count {
+            let namespace = String(format: "system-%03d", index)
+            let folder = directory.appendingPathComponent(namespace, isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let tokens = DesignSystemTokens(name: namespace, namespace: namespace, colors: (0..<colors).map { color in
+                DesignSystemTokens.Color(name: "--color-\(color)", value: String(format: "#%06x", color * 997 % 0xffffff))
+            })
+            try tokens.encoded().write(to: folder.appendingPathComponent(DesignSystemFile.tokens))
+            let info = DesignSystemInfo(namespace: namespace, title: namespace, revision: 1, createdAt: 1)
+            try JSONEncoder().encode(info).write(to: folder.appendingPathComponent(DesignSystemFile.info))
+        }
+    }
+
+    /// The Designs page over the store's 100 systems (no designs): only the system rows on
+    /// screen are built.
+    @Test func openingTheDesignsPageBuildsOnlyTheSystemCardsOnScreen() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        app.settings.designToolEnabled = true
+        let vm = try await app.start(with: ShepherdState(spaces: [Fixture.space(path: app.dir.path)]))
+        vm.designNetwork = .none
+        try writeSystems(app, count: DesignSystemStore.maxSystems)
+        await vm.loadDesignSystems()
+        #expect(vm.designSystems.summaries.count == DesignSystemStore.maxSystems)
+        vm.openDestination(.designs)
+        var window: OffscreenWindow!
+        let counts = ListPerf.counting {
+            window = OffscreenWindow(size: Self.designsSize, dark: true, DesignsDestination(vm: vm))
+            ListPerf.settle(window)
+        }
+        defer { window.close() }
+        let onScreen = (Int((Self.designsSize.height - NWPageMetrics.headerHeight) / Self.systemRowHeight) + 1) * DesignsPageModel.systemColumns
+        #expect(counts["design.systemCard", default: 0] > 0)
+        #expect(counts["design.systemCard", default: 0] <= 2 * (onScreen + DesignsPageModel.systemColumns), "\(counts)")
+        #expect(counts["design.systemCard", default: 0] < DesignSystemStore.maxSystems)
+    }
+
+    /// A system's page over 300 colors: only the rows of swatches on screen are built.
+    @Test func openingASystemsPageBuildsOnlyTheSwatchesOnScreen() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        app.settings.designToolEnabled = true
+        let vm = try await app.start(with: ShepherdState(spaces: [Fixture.space(path: app.dir.path)]))
+        vm.designNetwork = .none
+        try writeSystems(app, count: 1, colors: 300)
+        await vm.loadDesignSystems()
+        vm.openDesignSystem("system-000")
+        #expect(vm.shownDestination == .designSystem)
+        var window: OffscreenWindow!
+        let counts = ListPerf.counting {
+            window = OffscreenWindow(size: Self.designsSize, dark: true, DesignSystemDestination(vm: vm))
+            ListPerf.settle(window)
+        }
+        defer { window.close() }
+        let onScreen = (Int((Self.designsSize.height - NWPageMetrics.headerHeight) / Self.swatchRowHeight) + 1)
+            * AppLayout.designSystemColorColumns
+        #expect(counts["design.swatch", default: 0] > 0)
+        #expect(counts["design.swatch", default: 0] <= 2 * (onScreen + AppLayout.designSystemColorColumns), "\(counts)")
+        #expect(counts["design.swatch", default: 0] < 300)
     }
 
     // MARK: A design's comments
