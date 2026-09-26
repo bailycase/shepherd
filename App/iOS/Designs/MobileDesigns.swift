@@ -4,9 +4,9 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-/// Every host's designs on the phone (designs track): one `RemoteDesignLibrary` per host over a
-/// shared file cache, following each host's connection and its Design tool as it turns on and
-/// off (`designs.v1`). Views read `model` (the Designs screen's tiles and systems), each design's
+/// Every host's designs on the phone (designs track): each host's `RemoteDesignLibrary` (shared
+/// with the iPad's designs, `HostDesignLibraries`), following each host's connection and its
+/// Design tool as it turns on and off (`designs.v1`). Views read `model` (the Designs screen's tiles and systems), each design's
 /// index and comments, and what a host says it serves; they never derive rows.
 ///
 /// A host that doesn't offer `designs.v1` (an older Shepherd, or its Design tool off) shows no
@@ -27,9 +27,9 @@ final class MobileDesigns {
     private(set) var serving: Set<UUID> = []
 
     @ObservationIgnored private let hosts: MobileHosts
-    @ObservationIgnored let cache: RemoteDesignCache
-    @ObservationIgnored private var libraries: [UUID: RemoteDesignLibrary] = [:]
-    @ObservationIgnored private var sessions: [UUID: UUID] = [:]
+    @ObservationIgnored private let libraries: HostDesignLibraries
+    /// Each host's connection as last seen, and whether it offered designs.
+    @ObservationIgnored private var connections: [UUID: (session: UUID?, serves: Bool)] = [:]
     @ObservationIgnored private var signatures: [UUID: String] = [:]
     /// The screens watching each design, by their tokens: a design is watched while any is.
     @ObservationIgnored private var watchers: [HostDesignRef: Set<UUID>] = [:]
@@ -50,19 +50,23 @@ final class MobileDesigns {
 
     private init(hosts: MobileHosts) {
         self.hosts = hosts
-        let folder = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("designs", isDirectory: true)
-        cache = RemoteDesignCache(directory: folder, memoryBudget: MobileDesignLayout.cacheMemoryBudget)
+        libraries = HostDesignLibraries.of(hosts)
+        libraries.observe("phone") { [weak self] host, design, revision, comments in
+            self?.changed(HostDesignRef(host: host, design: design), files: revision != nil, comments: comments != nil)
+        }
         track()
     }
 
     // MARK: Hosts
 
-    /// Reads the hosts under observation tracking, follows each new connection, and tracks again.
+    /// Reads the hosts under observation tracking, follows each new connection and what it
+    /// offers, and tracks again. A host serves designs while it is connected and offers
+    /// `designs.v1` (its Design tool on); MobileHosts follows `capabilitiesChanged`.
     private func track() {
         let inputs = withObservationTracking {
             hosts.hosts.map { host in
-                (id: host.id, session: host.session, client: host.connectedClient,
+                (host: host, session: host.session,
+                 serves: host.connectedClient != nil && host.supports(RemoteProtocol.designsCapability),
                  signature: host.state.designs.map { "\($0.id.rawValue)/\($0.lastActiveAt)/\($0.boardCount ?? -1)/\($0.agentID?.rawValue ?? "")" }
                     .joined(separator: ",") + "|" + host.state.agents.filter { $0.designID != nil }
                     .map { "\($0.id.rawValue):\($0.status.rawValue)" }.joined(separator: ","))
@@ -70,56 +74,32 @@ final class MobileDesigns {
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in self?.track() }
         }
-        let live = Set(inputs.map(\.id))
-        for id in Set(libraries.keys).subtracting(live) {
-            libraries.removeValue(forKey: id)?.connect(nil, available: false)
-            sessions[id] = nil
+        let live = Set(inputs.map(\.host.id))
+        for id in Set(connections.keys).subtracting(live) {
+            libraries.forget(id)
+            connections[id] = nil
             signatures[id] = nil
+            watchers = watchers.filter { $0.key.host != id }
+            setServing(id, false)
         }
         var changed = false
         for input in inputs {
-            let library = libraries[input.id] ?? {
-                let made = RemoteDesignLibrary(hostID: input.id, cache: cache)
-                libraries[input.id] = made
-                return made
-            }()
-            if sessions[input.id] != input.session {
-                sessions[input.id] = input.session
-                follow(input.id, client: input.client, library: library)
+            let id = input.host.id
+            libraries.connect(input.host)
+            let connection = (session: input.session, serves: input.serves)
+            if connections[id]?.session != connection.session || connections[id]?.serves != connection.serves {
+                connections[id] = connection
+                setServing(id, input.serves)
                 changed = true
+                if input.serves { Task { await list(id) } }
             }
-            if signatures[input.id] != input.signature {
-                signatures[input.id] = input.signature
+            if signatures[id] != input.signature {
+                signatures[id] = input.signature
                 changed = true
-                if library.available { Task { await list(input.id) } }
+                if input.serves { Task { await list(id) } }
             }
         }
         if changed { derive() }
-    }
-
-    /// A host's new connection (or none): its library takes it, pushes come here, and a host that
-    /// serves designs lists them.
-    private func follow(_ id: UUID, client: RemoteHostClient?, library: RemoteDesignLibrary) {
-        let serves = client?.capabilities.contains(RemoteProtocol.designsCapability) == true
-        library.connect(client, available: serves)
-        setServing(id, serves)
-        guard let client else { return }
-        client.onCapabilitiesChanged = { [weak self, weak client] capabilities in
-            MainActor.assumeIsolated {
-                guard let self, let client, self.hosts.host(id)?.connectedClient === client else { return }
-                let serves = capabilities.contains(RemoteProtocol.designsCapability)
-                library.connect(client, available: serves)
-                self.setServing(id, serves)
-                if serves { Task { await self.list(id) } } else { self.derive() }
-            }
-        }
-        client.onDesignChanged = { [weak self, weak client] design, revision, comments in
-            MainActor.assumeIsolated {
-                guard let self, let client, self.hosts.host(id)?.connectedClient === client else { return }
-                self.changed(HostDesignRef(host: id, design: design), files: revision != nil, comments: comments != nil)
-            }
-        }
-        if serves { Task { await list(id) } }
     }
 
     private func setServing(_ id: UUID, _ serves: Bool) {
@@ -129,7 +109,7 @@ final class MobileDesigns {
     }
 
     func library(_ host: UUID) -> RemoteDesignLibrary? {
-        serving.contains(host) ? libraries[host] : nil
+        serving.contains(host) ? libraries.library(host) : nil
     }
 
     func source(_ ref: HostDesignRef) -> RemoteDesignSource? {
@@ -163,7 +143,7 @@ final class MobileDesigns {
     private func derive() {
         let serving = hosts.hosts.filter { self.serving.contains($0.id) && $0.phase.isConnected }
         let next = RemoteDesignsModel(hosts: serving.map { host in
-            RemoteDesignsModel.Host(id: host.id, name: host.name, listing: libraries[host.id]?.listing, state: host.state)
+            RemoteDesignsModel.Host(id: host.id, name: host.name, listing: library(host.id)?.listing, state: host.state)
         }, now: Date())
         if next != model { model = next }
         DesignRendering.shared.prune(keeping: Set(next.tiles.map(\.ref)))
@@ -222,7 +202,7 @@ final class MobileDesigns {
             if watchers[ref]?.isEmpty == true { watchers[ref] = nil }
             observers[token] = nil
         }
-        libraries[ref.host]?.watch(Set(watchers.keys.filter { $0.host == ref.host }.map(\.design)))
+        libraries.watch(Set(watchers.keys.filter { $0.host == ref.host }.map(\.design)), on: ref.host, for: "phone")
     }
 
     private func changed(_ ref: HostDesignRef, files: Bool, comments: Bool) {
@@ -264,7 +244,7 @@ final class MobileDesigns {
 
     func design(_ ref: HostDesignRef) -> Design? {
         hosts.host(ref.host)?.state.designs.first { $0.id == ref.design }
-            ?? libraries[ref.host]?.listing?.designs.first { $0.id == ref.design }?.design
+            ?? library(ref.host)?.listing?.designs.first { $0.id == ref.design }?.design
     }
 
     /// The agent that draws it, while its host has one.
@@ -281,7 +261,7 @@ final class MobileDesigns {
     }
 
     func summary(_ ref: HostDesignRef) -> RemoteDesignSummary? {
-        libraries[ref.host]?.listing?.designs.first { $0.id == ref.design }
+        library(ref.host)?.listing?.designs.first { $0.id == ref.design }
     }
 }
 

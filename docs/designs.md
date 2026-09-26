@@ -1009,7 +1009,8 @@ a VPN or trusted network is the transport boundary, as for everything else it se
 The iOS client's designs track (`App/iOS/Designs`; docs/ios/CONTRACTS.md) shows a host's designs
 only while that host offers `designs.v1`, and follows its Design tool as it turns on and off
 (`capabilitiesChanged`). Boards render on the phone from the files each host served by hash
-(`RemoteDesignCache` in the phone's caches folder); nothing renders on the host.
+(`RemoteDesignCache` in the app's caches folder, shared with the iPad's store through
+`HostDesignLibraries`); nothing renders on the host.
 
 - **Rendering.** `DesignHost.swift` is the phone's one file that imports DesignSurfaceKit (the
   iPad's is `PadDesignRenderer.swift`). At most two web views live: the board on screen, and one
@@ -1049,10 +1050,11 @@ only while that host offers `designs.v1`, and follows its Design tool as it turn
 `designs.v1`: a host that stops offering it (its experiment off) takes its designs away at once,
 through `capabilitiesChanged`.
 
-- **The store** (`PadDesigns`) keeps one `RemoteDesignLibrary` per host over one
-  `RemoteDesignCache` (48 MB in memory, files also under the app's Caches), each design's canvas
-  for the app's run, and which designs are on screen in any window: their hosts push changes for
-  those alone.
+- **The store** (`PadDesigns`) keeps each design's canvas for the app's run, and which designs
+  are on screen in any window: their hosts push changes for those alone. It shares each host's
+  `RemoteDesignLibrary` and the one `RemoteDesignCache` (48 MB in memory, files also under the
+  app's Caches) with the iPhone's store (`HostDesignLibraries`), which tells a host the designs
+  either has on screen, since a connection keeps one watched set, and hands its pushes to both.
 - **Rendering** (`PadDesignRenderer.swift`, the iPad's one file that imports DesignSurfaceKit):
   one live board in the app (`DesignTouchLivePlan`: the board a tap asks about, then the
   selected one, then the one nearest the middle; a design taking it takes it from any other on

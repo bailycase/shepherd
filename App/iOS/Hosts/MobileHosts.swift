@@ -29,7 +29,8 @@ final class MobileHost: Identifiable {
     @ObservationIgnored fileprivate var backoff = RemoteReconnectBackoff()
     @ObservationIgnored fileprivate var stateRevision = 0
     /// The host pushed a change to a design this device watches (`designs.v1`): its files'
-    /// revision, its comments' revision, or both. Set by the designs' store.
+    /// revision, its comments' revision, or both. Set by `HostDesignLibraries`, which hands it to
+    /// the iPhone's and the iPad's designs alike.
     @ObservationIgnored var onDesignChanged: ((DesignID, UInt64?, UInt64?) -> Void)?
 
     init(record: RemoteHostRecord) {

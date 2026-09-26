@@ -21,7 +21,7 @@ Never commit a `project.pbxproj` change for a new file.
 
 | Track | Owns | Builds |
 | --- | --- | --- |
-| Foundation | `App/`, `Support/`, `Hosts/MobileHosts.swift`, `Hosts/HostTokens.swift`, `Thread/ThreadStores.swift`, `Tests/ShepherdIOSChecks/{run.sh,run-simulator.sh,MobileHostsCheck.swift,ThreadSimulatorFixture.swift,FixtureHost.swift,Fixtures/FixtureData.swift}`, this page | the shell, navigation, hosts store, fixtures harness |
+| Foundation | `App/`, `Support/`, `Hosts/MobileHosts.swift`, `Hosts/HostTokens.swift`, `Hosts/HostDesignLibraries.swift`, `Thread/ThreadStores.swift`, `Tests/ShepherdIOSChecks/{run.sh,run-simulator.sh,MobileHostsCheck.swift,ThreadSimulatorFixture.swift,FixtureHost.swift,Fixtures/FixtureData.swift}`, this page | the shell, navigation, hosts store, fixtures harness |
 | A. Home & hosts | `Home/`, `Settings/`, `Hosts/` (UI files), `Fixtures/HomeFixtures.swift`, `Fixtures/SettingsFixtures.swift` | Home, Needs you, Recents, the iPad sidebar and overview, Settings, the hosts list and form |
 | B. Thread & composer | `Thread/` (not `ThreadStores.swift`), `Composer/`, `Fixtures/ThreadFixtures.swift` | the thread screen, composer, queue and steer, model and thinking, images, slash commands, the question panel |
 | C. New thread | `NewThread/`, `Fixtures/NewThreadFixtures.swift` | the creation flow and Where it runs |
@@ -146,8 +146,12 @@ them except the navigator, which is each window's own ([Windows](#windows-ipad))
 
 `@Environment(\.mobileWindow)` is the window a view is in (its `MobileWindowSeed`).
 
-- The designs track (`MobileDesigns`) owns every client's `onDesignChanged` and
-  `onCapabilitiesChanged`, set as each connection is followed; nothing else sets them.
+- `MobileHosts` owns every client's `onDesignChanged` and `onCapabilitiesChanged`: a host's
+  `capabilities` follow the pushes, and `MobileHost.onDesignChanged` hears its design pushes.
+  `HostDesignLibraries` (`Hosts/`) alone sets that hook, and keeps one `RemoteDesignLibrary` per
+  host over one file cache for both design tracks (K and L): each says which designs it has on
+  screen (`watch(_:on:for:)`), the host is told them all, and every track hears the pushes
+  (`observe`).
 - The terminal track (`MobileTerminals`) owns every client's `onOutput` and `onSessionExited`,
   wiring each new connection's client on its first attach: nothing else sets them.
 - Talk to a host with `hosts.host(ref.host)?.connectedClient` (a `RemoteHostClient`). Key work
@@ -181,10 +185,10 @@ them except the navigator, which is each window's own ([Windows](#windows-ipad))
 | Home roots | `Home/` (A) | `PhoneShell`, `PadShell` | `HomeScreen()`, `PadSidebar()`, `PadOverview()` |
 | Settings root | `Settings/SettingsScreen.swift` (A) | `PhoneShell` | `SettingsScreen()` |
 | Automations root | `Automations/AutomationsScreen.swift` (H) | `HomeDestination` for `.home(.automations)` | `AutomationsScreen()` |
-| Open a design | `DesignPad/PadDesignRoute.swift` (K) | the iPad sidebar's Designs row and design rows | `PadDesignHooks.open(_ ref: PadDesignRef, navigator:)`, `PadDesignHooks.openList(navigator:)` |
-| Designs in the sidebar | `DesignPad/PadDesigns.swift` (K) | `PadSidebar` | `PadDesigns.of(hosts).available`, `.recents(_ threads: [FleetThreadRow]) -> [PadRecent]` (Recents with the designs among the threads, design agents' threads left out) |
-| A design's chat | `DesignPad/MobileLayout+DesignPad.swift` (K) | `ThreadComposer`, `ThreadTranscript` | `\.composerDesignChat`: one field with Send and a 16pt gutter |
-| Pencil markup | `DesignPad/PadDesignMarkup.swift` (K) | `PadDesignCanvasView`, over the canvas; `ThreadTranscript` in a design's chat | `PadDesignMarkupLayer(canvas:available:)`; the canvas leaves `.pencil` touches to it. `\.designMarkupCanvas` gives a design's chat its canvas, for `PadMarkupReadLine` and `PadMarkupProposalsView` |
+| Open a design | `DesignPad/PadDesignRoute.swift` (L) | the iPad sidebar's Designs row and design rows | `PadDesignHooks.open(_ ref: PadDesignRef, navigator:)`, `PadDesignHooks.openList(navigator:)` |
+| Designs in the sidebar | `DesignPad/PadDesigns.swift` (L) | `PadSidebar` | `PadDesigns.of(hosts).available`, `.recents(_ threads: [FleetThreadRow]) -> [PadRecent]` (Recents with the designs among the threads; Fleet's own design rows, the phone's, left out) |
+| A design's chat | `DesignPad/MobileLayout+DesignPad.swift` (L) | `ThreadComposer`, `ThreadTranscript` | `\.composerDesignChat`: one field with Send and a 16pt gutter |
+| Pencil markup | `DesignPad/PadDesignMarkup.swift` (L) | `PadDesignCanvasView`, over the canvas; `ThreadTranscript` in a design's chat | `PadDesignMarkupLayer(canvas:available:)`; the canvas leaves `.pencil` touches to it. `\.designMarkupCanvas` gives a design's chat its canvas, for `PadMarkupReadLine` and `PadMarkupProposalsView` |
 | Open or add an automation | `Automations/AutomationsRoute.swift` (H) | anything that names one | `AutomationsHooks.open(_ key: AutomationKey, navigator:)`, `AutomationsHooks.create(host: UUID? = nil, navigator:)` |
 | Open in new window | `Windows/WindowHooks.swift` (I) | the thread's options menu, the iPad sidebar's rows, the palette's rows and preview | `OpenInNewWindowButton(thread: AgentRef, prominent: Bool = false, before: (() -> Void)? = nil)` |
 | Send to… and drag | `Windows/WindowHooks.swift` (I) | each turn in `ThreadScreen` | `.turnTransfer(_ row: NativeThreadRow, thread: AgentRef)`, `SendToMenu(text:source:)` |
