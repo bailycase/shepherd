@@ -602,7 +602,8 @@ function designFacts(current: Snapshot | undefined, designID: string, skillDirec
   }
   lines.push(
     "- Read the design with design_read and change it only with board_write and canvas_update. Never write its files " +
-      "with any other tool, and never change the project's repository: read its tokens, templates and pages only.",
+      "with any other tool, even though your working folder may hold them, and never change a repository: a design " +
+      "belongs to no project, and a system build only reads its project's tokens, templates and pages.",
     "- Run design_check before you reply, and fix or name what it finds.",
     "- Draw in the design's installed design system (system_read lists them): link ds/<namespace>/tokens.css and use its " +
       "tokens. Build or change a system only with system_write, and install one with its install flag.",

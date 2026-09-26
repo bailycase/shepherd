@@ -42,7 +42,7 @@ struct RemoteHostClientTests {
         let thread = Agent(name: "Fix login bug", spaceID: space.id, tabID: threadTab.id)
         let drawer = Agent(name: "Landing hero", spaceID: space.id, tabID: drawerTab.id, status: .blocked, designID: designID)
         let sent = ShepherdState(spaces: [space], tabs: [threadTab, drawerTab], agents: [thread, drawer],
-                                 designs: [Design(id: designID, name: "Landing hero", spaceID: space.id, agentID: drawer.id, createdAt: 1)])
+                                 designs: [Design(id: designID, name: "Landing hero", agentID: drawer.id, createdAt: 1)])
 
         let shown = RemoteHostClient.shown(sent)
         #expect(shown.agents.map(\.id) == [thread.id])
