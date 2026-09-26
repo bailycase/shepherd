@@ -4,7 +4,8 @@ import ShepherdUI
 /// Search on iPhone (MobileSearch board): a field and Cancel across the top, then the threads
 /// whose title matches and the conversations that mention the query, each on its own card, with
 /// snippets and host tags. Opening a result pushes its thread over search, so Back returns to
-/// the results. Missions and designs don't exist yet, so neither do their sections.
+/// the results. Designs (where a host serves them) follow the threads, and the results end in New
+/// design with the query as its brief. Missions don't exist yet, so neither does their section.
 struct MobileSearchScreen: View {
     let initialQuery: String
     @Environment(MobileHosts.self) private var hosts
@@ -27,7 +28,12 @@ struct MobileSearchScreen: View {
             .padding(.vertical, NW.Space.m)
             .frame(maxWidth: MobileLayout.threadMaxWidth)
             SearchResultsList(sections: store.sections, status: store.status, idle: store.isIdle, query: store.query) { entry in
-                if case .open(let ref) = entry.action { navigator.open(.thread(ref)) }
+                switch entry.action {
+                case .open(let ref): navigator.open(.thread(ref))
+                case .openDesign(let ref): DesignsHooks.open(ref, navigator: navigator)
+                case .newDesign(let brief): DesignsHooks.create(brief: brief, navigator: navigator)
+                default: break
+                }
             }
         }
         .background(Color.nw.bgWindow)

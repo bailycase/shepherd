@@ -47,6 +47,8 @@ enum RemoteDesignSamples {
         .system(namespace: "acme-web"),
         .watch(designIDs: [design]),
         .watch(designIDs: []),
+        .create(RemoteDesignCreate(brief: "A checkout funnel for the \"growth\" team", systemNamespace: "acme-web")),
+        .create(RemoteDesignCreate(brief: "funnel")),
         .sendMarkup(designID: design, markup: markup),
         .settleProposals(designID: design, proposals: ["call-7#0"], deliver: true, baseRevision: 5),
         .settleProposals(designID: design, proposals: ["call-7#0", "call-7#1"], deliver: false, baseRevision: nil),
@@ -85,6 +87,8 @@ enum RemoteDesignSamples {
         .boardsWritten(RemoteDesignBoardsWrite(result: written, shas: ["A.dc.html": String(repeating: "c", count: 64)], versions: ["A.dc.html": 4])),
         .duplicated(path: DesignPath("A-copy.dc.html")!, result: written),
         .system(DesignSystemRead(summary: system, tokens: nil, readme: "# acme-web\n", files: ["tokens.css", "tokens.json"])),
+        .created(designID: design, agentID: AgentID(rawValue: "agent")),
+        .created(designID: design, agentID: nil),
         .markupSent(undelivered: nil),
         .markupSent(undelivered: "The design agent is starting."),
         .proposalsSettled([kept, settled], undelivered: nil),
@@ -115,22 +119,22 @@ struct RemoteDesignMessageTests {
     static func caseName(_ request: RemoteDesignRequest) -> String {
         switch request {
         case .list, .index, .boards, .file, .asset, .comments, .addComment, .replyToComment, .resolveComment, .writeBoards,
-             .updateIndex, .duplicateBoard, .restoreVersions, .system, .watch, .sendMarkup, .settleProposals:
+             .updateIndex, .duplicateBoard, .restoreVersions, .system, .watch, .create, .sendMarkup, .settleProposals:
             Wire.caseName(request)
         }
     }
 
     static func caseName(_ result: RemoteDesignResult) -> String {
         switch result {
-        case .listing, .index, .files, .chunk, .comments, .comment, .written, .boardsWritten, .duplicated, .system, .markupSent,
-             .proposalsSettled, .ok:
+        case .listing, .index, .files, .chunk, .comments, .comment, .written, .boardsWritten, .duplicated, .system, .created,
+             .markupSent, .proposalsSettled, .ok:
             Wire.caseName(result)
         }
     }
 
     @Test func samplesCoverEveryCase() {
-        #expect(Set(S.requests.map(Self.caseName)).count == 17)
-        #expect(Set(S.results.map(Self.caseName)).count == 13)
+        #expect(Set(S.requests.map(Self.caseName)).count == 18)
+        #expect(Set(S.results.map(Self.caseName)).count == 14)
     }
 
     @Test(arguments: [
@@ -186,10 +190,21 @@ struct RemoteDesignMessageTests {
         (.boards(designID: RemoteDesignSamples.design, paths: nil, knownShas: [:]), RemoteDesignSamples.design, false),
         (.updateIndex(designID: RemoteDesignSamples.design, patch: .null, baseRevision: nil), RemoteDesignSamples.design, true),
         (.addComment(designID: RemoteDesignSamples.design, draft: RemoteDesignSamples.draft, baseRevision: nil), RemoteDesignSamples.design, true),
+        (.create(RemoteDesignCreate(brief: "funnel")), nil, true),
     ])
     func aRequestNamesItsDesignAndWhetherItWrites(_ request: RemoteDesignRequest, _ design: DesignID?, _ writes: Bool) {
         #expect(request.designID == design)
         #expect(request.writes == writes)
+    }
+
+    @Test(arguments: [
+        ("  A checkout funnel\n", "A checkout funnel" as String?),
+        (" \n ", nil),
+        (String(repeating: "a", count: RemoteDesignCreate.maxBriefBytes), String(repeating: "a", count: RemoteDesignCreate.maxBriefBytes)),
+        (String(repeating: "a", count: RemoteDesignCreate.maxBriefBytes + 1), nil),
+    ])
+    func aBriefIsTrimmedAndBounded(_ raw: String, _ kept: String?) {
+        #expect(RemoteDesignCreate.brief(raw) == kept)
     }
 
     /// Several boards written at once travel keyed by path and come back in the host's shape.

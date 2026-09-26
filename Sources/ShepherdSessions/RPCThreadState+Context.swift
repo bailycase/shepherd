@@ -55,8 +55,7 @@ extension RPCThreadState {
         compactingRun = nil
         let index = live.lastIndex { if case .compaction = $0.kind { true } else { false } }
         if let result, let summary = result.summary {
-            compactionNotes.append(CompactionNote(summary: summary, reason: reason, before: result.tokensBefore.map { Int($0) },
-                                                  after: result.estimatedTokensAfter.map { Int($0) }))
+            compactionNotes.append(CompactionNote(summary: summary, reason: reason, result: result))
             if compactionNotes.count > Self.compactionNoteLimit { compactionNotes.removeFirst() }
             // History brings the summary where it happened; the live row goes with that refresh.
             if let index {
@@ -125,16 +124,9 @@ extension RPCThreadState {
                 ?? (estimate.total > 0 ? estimate.total : nil)
         }
         let total = tokens ?? estimateAfter
-        var split: NativeContextSplit?
-        var largest: [NativeContextItem] = []
-        if let estimate, estimate.total > 0 {
-            let scale = total.map { Double($0) / Double(estimate.total) } ?? 1
-            func scaled(_ value: Int) -> Int { Int((Double(value) * scale).rounded()) }
-            split = NativeContextSplit(system: scaled(estimate.system), instructions: scaled(estimate.instructions),
-                                       messages: scaled(estimate.messages), toolResults: scaled(estimate.toolResults),
-                                       instructionFiles: estimate.instructionFiles)
-            largest = estimate.largest.map { NativeContextItem(entryID: $0.entryID, kind: $0.kind, label: $0.label, tokens: scaled($0.tokens)) }
-        }
+        let scaled = estimate.flatMap { Self.scaled($0, to: total) }
+        let split = scaled?.split
+        let largest = scaled?.largest ?? []
         let auto = autoCompaction ?? settings.enabled
         let next = NativeThreadContext(
             tokens: tokens, window: window,
@@ -143,6 +135,19 @@ extension RPCThreadState {
             before: estimate?.before, split: split, largest: largest, compacting: compactingRun,
             summaryEntryID: estimate?.summaryEntryID)
         if next != context { context = next }
+    }
+
+    /// The estimate's split and largest items scaled to pi's `total` (as they are without one);
+    /// nil for an empty estimate.
+    static func scaled(_ estimate: ContextEstimate, to total: Int?) -> (split: NativeContextSplit, largest: [NativeContextItem])? {
+        guard estimate.total > 0 else { return nil }
+        let scale = total.map { Double($0) / Double(estimate.total) } ?? 1
+        func scaled(_ value: Int) -> Int { Int(reportedCount: (Double(value) * scale).rounded()) ?? 0 }
+        let split = NativeContextSplit(system: scaled(estimate.system), instructions: scaled(estimate.instructions),
+                                       messages: scaled(estimate.messages), toolResults: scaled(estimate.toolResults),
+                                       instructionFiles: estimate.instructionFiles)
+        let largest = estimate.largest.map { NativeContextItem(entryID: $0.entryID, kind: $0.kind, label: $0.label, tokens: scaled($0.tokens)) }
+        return (split, largest)
     }
 
     /// pi's messages as the host sizes them (four characters a token, as pi estimates): its
@@ -199,7 +204,7 @@ extension RPCThreadState {
                 if message.role == "compactionSummary" {
                     result.summaryEntryID = entryID
                     result.summary = message.summary
-                    result.before = message.tokensBefore.map { Int($0) }
+                    result.before = message.tokensBefore.flatMap(Int.init(reportedCount:))
                 }
             default:
                 for case .toolCall(let id, let name, let args) in message.content { calls[id] = (name, args) }
@@ -288,5 +293,13 @@ extension RPCThreadState {
         }
         // Nothing kept that this host had shown: everything it had was summarized.
         return previous + next
+    }
+}
+
+extension RPCThreadState.CompactionNote {
+    /// The sizes pi reported with the compaction's result.
+    init(summary: String, reason: NativeCompactionReason, result: RPCCompactionResult) {
+        self.init(summary: summary, reason: reason, before: result.tokensBefore.flatMap(Int.init(reportedCount:)),
+                  after: result.estimatedTokensAfter.flatMap(Int.init(reportedCount:)))
     }
 }
