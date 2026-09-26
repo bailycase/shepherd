@@ -1020,5 +1020,9 @@ through `capabilitiesChanged`.
   revision reads the design again and goes once more. A send carries the canvas's view record.
 - **Split View:** in a window narrower than 760pt the boards stack in one column, the chat is
   behind the header's button, and the design agent's latest reply floats over the canvas. "Send
-  to the thread" attaches the boards (as the iPad drew them) and a line naming the design to the
-  composer of the thread another window shows, and brings that window forward.
+  to the thread" (`DesignSpecHandoff`) attaches the boards picked on the page shown, else the
+  page's boards (four at most, what one message takes), drawn first where they aren't yet, to
+  the composer of the thread another window shows, with "Use the attached boards as the spec.",
+  and brings that window forward; the viewer sends it. Nothing the design's files say (its
+  title, a board's name) goes into that message: the thread it goes to reads no fence.
+- **Export** shares the page's boards as PNGs through the share sheet, drawing any not drawn yet.

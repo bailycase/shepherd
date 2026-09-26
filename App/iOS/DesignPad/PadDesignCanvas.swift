@@ -653,11 +653,10 @@ final class PadDesignCanvas {
 
     // MARK: Export
 
-    /// The page's boards as this iPad drew them, as PNG files in a temporary folder of their own:
-    /// what Export shares. Boards not drawn yet are left out.
-    func exportPNGs(name: String) -> [URL]? {
-        let paths = boards.compactMap { DesignPath($0.id) }
-        let images = host.pngs(paths)
+    /// The page's boards as this iPad draws them, as PNG files in a temporary folder of their
+    /// own: what Export shares. A board off screen is drawn for it first.
+    func exportPNGs(name: String) async -> [URL]? {
+        let images = await host.pngs(boards.compactMap { DesignPath($0.id) })
         guard !images.isEmpty else {
             problem = "Nothing is drawn yet to export."
             return nil
@@ -666,7 +665,7 @@ final class PadDesignCanvas {
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             return try images.map { image in
-                let url = folder.appendingPathComponent(DesignExportNames.fileName(name) + " - " + image.name)
+                let url = folder.appendingPathComponent(DesignExportNames.fileName(name) + " - " + image.path.stem + ".png")
                 try image.data.write(to: url, options: .atomic)
                 return url
             }
@@ -674,6 +673,23 @@ final class PadDesignCanvas {
             problem = "Couldn't export the boards: \(error.localizedDescription)"
             return nil
         }
+    }
+
+    // MARK: Send to the thread
+
+    /// What "Send to the thread" hands another thread's composer (`DesignSpecHandoff`): the
+    /// boards picked on the page shown, else the page's boards, as this iPad draws them, and a
+    /// line with none of the design's own words. Nil when nothing could be drawn.
+    func handoff() async -> (images: [(data: Data, name: String)], text: String)? {
+        guard let index = snapshot?.index else { return nil }
+        let picked = selectedWhole.union(selectedElements.map(\.board))
+        let paths = DesignSpecHandoff.boards(order: Self.canvasOrder(index), onPage: { index.isOnPage($0, self.page) }, picked: picked)
+        let images = await host.pngs(paths)
+        guard !images.isEmpty else {
+            problem = "Nothing is drawn yet to send."
+            return nil
+        }
+        return (images.enumerated().map { ($0.element.data, DesignSpecHandoff.imageName($0.offset)) }, DesignSpecHandoff.message)
     }
 
     // MARK: Present and Play

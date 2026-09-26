@@ -55,6 +55,28 @@ public enum DesignTouchLivePlan {
     }
 }
 
+/// Split View's "Send to the thread" (iPadSplitView): the boards the viewer chose, as images for
+/// another thread's composer, and a line that carries none of the design's own text. Board
+/// titles, names and file names are the agent's (or an imported canvas's) words; the thread
+/// they go to reads no fence, so none of them rides the message. The viewer sees both in the
+/// composer and sends them, or not.
+public enum DesignSpecHandoff {
+    /// What the composer gets beside the images.
+    public static let message = "Use the attached boards as the spec."
+
+    /// The boards of the page shown that are picked (whole, or holding a picked element), else
+    /// every board of that page; in canvas order, at most `limit` (what one message takes).
+    public static func boards(order: [DesignPath], onPage: (DesignPath) -> Bool, picked: Set<DesignPath>,
+                              limit: Int = NativeImage.maxPerSend) -> [DesignPath] {
+        let page = order.filter(onPage)
+        let chosen = page.filter(picked.contains)
+        return Array((chosen.isEmpty ? page : chosen).prefix(max(0, limit)))
+    }
+
+    /// An image's name in the composer: the board's place, never its file name.
+    public static func imageName(_ index: Int) -> String { "Board \(index + 1).png" }
+}
+
 /// The iPad sidebar's Recents with designs among the threads (iPadSidebar): a design is one row
 /// with its boards, and its agent's thread is never listed (the design is its row).
 public enum DesignRecents {

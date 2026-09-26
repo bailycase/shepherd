@@ -32,6 +32,32 @@ struct DesignTouchPlanTests {
         #expect(wanted == live.map { Self.paths[$0] })
     }
 
+    // MARK: Send to the thread
+
+    @Test func sendingToTheThreadTakesThePickedBoardsInCanvasOrder() {
+        let picked: Set = [Self.paths[3], Self.paths[1]]
+        #expect(DesignSpecHandoff.boards(order: Self.paths, onPage: { _ in true }, picked: picked) == [Self.paths[1], Self.paths[3]])
+    }
+
+    @Test func withNothingPickedItTakesThePageShownAndNoOtherPage() {
+        let onPage: (DesignPath) -> Bool = { $0 != Self.paths[1] }
+        #expect(DesignSpecHandoff.boards(order: Array(Self.paths.prefix(4)), onPage: onPage, picked: [])
+                == [Self.paths[0], Self.paths[2], Self.paths[3]])
+        // A board of another page never rides along, picked or not.
+        #expect(DesignSpecHandoff.boards(order: Array(Self.paths.prefix(4)), onPage: onPage, picked: [Self.paths[1]])
+                == [Self.paths[0], Self.paths[2], Self.paths[3]])
+    }
+
+    @Test func itTakesNoMoreBoardsThanOneMessageHolds() {
+        #expect(DesignSpecHandoff.boards(order: Self.paths, onPage: { _ in true }, picked: []).count == NativeImage.maxPerSend)
+    }
+
+    /// The target thread reads no fence: nothing the design's files say goes into its message.
+    @Test func theMessageAndImageNamesCarryNoneOfTheDesignsText() {
+        #expect(DesignSpecHandoff.message == "Use the attached boards as the spec.")
+        #expect(DesignSpecHandoff.imageName(0) == "Board 1.png")
+    }
+
     @Test func aNewBoardTakesTheViewOfTheOneNoLongerWanted() {
         let assignment = DesignTouchLivePlan.assign(slots: [Self.paths[0]: 3], wanted: [Self.paths[1]])
         #expect(assignment == DesignTouchLivePlan.Assignment(evict: [Self.paths[0]], create: [Self.paths[1]]))
