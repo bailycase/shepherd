@@ -148,6 +148,17 @@ struct ContextEstimateTests {
         #expect(RPCThreadState.scaled(RPCThreadState.ContextEstimate(), to: 42_000) == nil)
     }
 
+    /// An entry id is "<role>:<ms>" from pi's timestamp; one no `Int64` holds keeps its place instead.
+    @Test(arguments: [
+        (1_758_539_340_000.0, "user:1758539340000"), (1_758_539_340_000.7, "user:1758539340000"), (-0.5, "user:0"),
+        (1e20, "m:3"), (-1e20, "m:3"), (.greatestFiniteMagnitude, "m:3"),
+    ] as [(Double, String)])
+    func entryIDsTakeTimestampsAnInt64Holds(_ timestamp: Double, _ id: String) {
+        var seen: [String: Int] = [:]
+        let message = RPCMessage(role: "user", content: [.text("hi")], timestamp: timestamp)
+        #expect(RPCThreadState.historyEntryID(message, index: 3, seen: &seen) == id)
+    }
+
     /// A compaction summary in history carries what the agent kept and the size it replaced.
     @Test func aCompactionSummaryProjectsItsCompaction() {
         let row = RPCThreadState.project(entryID: "compactionSummary:5",
