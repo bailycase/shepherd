@@ -1649,6 +1649,10 @@ final class RPCThreadState {
                     // A design comment: the chat draws its card.
                     result.origin = .designComment(id: comment.fence.comment)
                 }
+                if fenced, let markup = DesignMarkupFence.parse(text) {
+                    // Pencil markup: the chat draws what the agent read.
+                    result.origin = .designMarkup(strokes: markup.markup.strokes.count, notes: markup.markup.noteCount)
+                }
                 let shown = fenced ? DesignViewRecord.strippingFence(from: text) : text
                 fenced = false
                 result.blocks.append(NativeThreadBlock(kind: .text, text: clip(shown)))

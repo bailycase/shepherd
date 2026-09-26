@@ -74,11 +74,18 @@ final class RemoteHostStore {
         @ObservationIgnored fileprivate var panes: [SessionID: RemotePaneSession] = [:]
 
         let id: UUID
+        /// The host's designs (`designs.v1`, while its Design tool is on): its listing and each
+        /// design's files, fetched by hash into the store's cache.
+        let designs: RemoteDesignLibrary
 
-        init(config: HostConfig) {
+        init(config: HostConfig, designCache: RemoteDesignCache = RemoteDesignCache()) {
             self.config = config
             self.id = config.id
+            designs = RemoteDesignLibrary(hostID: config.id, cache: designCache)
         }
+
+        /// The host serves designs now (observed: it can change while connected).
+        var supportsDesigns: Bool { designs.available }
 
         var supportsInspection: Bool { client?.capabilities.contains(RemoteProtocol.agentInspectionCapability) == true }
         var supportsReviewCommit: Bool { client?.capabilities.contains(RemoteProtocol.reviewCommitCapability) == true }
@@ -146,6 +153,11 @@ final class RemoteHostStore {
     @ObservationIgnored var onDropError: ((String) -> Void)?
     /// A host connected (again): what waits on it can go now (Settings ▸ Instructions' sync).
     @ObservationIgnored var onHostConnected: ((UUID) -> Void)?
+    /// A design a host serves changed (one on screen here): its files' revision, its comments',
+    /// or both.
+    @ObservationIgnored var onDesignChanged: ((UUID, DesignID, UInt64?, UInt64?) -> Void)?
+    /// Every host's design files, by hash (in memory).
+    let designCache = RemoteDesignCache()
     private(set) var connections: [Connection] = [] { didSet { onProjectionChanged?() } }
 
     private let defaults: UserDefaults
@@ -163,7 +175,7 @@ final class RemoteHostStore {
         self.connects = connects
         if let data = defaults.data(forKey: Self.defaultsKey),
            let configs = try? JSONDecoder().decode([HostConfig].self, from: data) {
-            connections = configs.map(Connection.init)
+            connections = configs.map { Connection(config: $0, designCache: designCache) }
         }
         for connection in connections {
             connect(connection)
@@ -172,7 +184,7 @@ final class RemoteHostStore {
 
     func addHost(name: String, host: String, port: UInt16, token: String) {
         let config = HostConfig(name: name, host: host, port: port, token: token)
-        let connection = Connection(config: config)
+        let connection = Connection(config: config, designCache: designCache)
         connections.append(connection)
         persist()
         connect(connection)
@@ -199,6 +211,7 @@ final class RemoteHostStore {
         connection.stopChildRefresh()
         connection.client?.disconnect()
         connection.client = nil
+        connection.designs.connect(nil, available: false)
         for pane in connection.panes.values {
             pane.phase = .failed("host removed")
         }
@@ -217,6 +230,7 @@ final class RemoteHostStore {
         connection.panes.removeAll()
         let oldClient = connection.client
         connection.client = nil
+        connection.designs.connect(nil, available: false)
         oldClient?.disconnect()
         connection.reconnectDelay = .seconds(1)
         connect(connection)
@@ -234,6 +248,10 @@ final class RemoteHostStore {
         guard connects, connections.contains(where: { $0 === connection }) else { return }
         connection.retryPending = false
         connection.onProjectionChanged = { [weak self] in self?.onProjectionChanged?() }
+        let hostID = connection.id
+        connection.designs.onDesignChanged = { [weak self] design, revision, comments in
+            self?.onDesignChanged?(hostID, design, revision, comments)
+        }
         connection.transportID = UUID()
         connection.phase = .connecting
         connection.reconnectTask = Task { [weak self, weak connection] in
@@ -259,6 +277,7 @@ final class RemoteHostStore {
                     connection.state = state
                 }
                 connection.phase = .connected
+                connection.designs.connect(client, available: client.capabilities.contains(RemoteProtocol.designsCapability))
                 connection.startChildRefresh(client: client, every: childRefreshInterval)
                 connection.reconnectDelay = .seconds(1)
                 self.onHostConnected?(connection.id)
@@ -301,10 +320,20 @@ final class RemoteHostStore {
                   let pane = connection.panes.removeValue(forKey: sessionID) else { return }
             pane.phase = .exited(code)
         }
+        client.onDesignChanged = { [weak connection] design, revision, comments in
+            guard let connection, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            connection.designs.changed(design, revision: revision, commentsRevision: comments)
+        }
+        client.onCapabilitiesChanged = { [weak self, weak connection, weak client] capabilities in
+            guard let connection, let client, connection.client === client, connection.phase == .connected else { return }
+            connection.designs.connect(client, available: capabilities.contains(RemoteProtocol.designsCapability))
+            self?.onProjectionChanged?()
+        }
         client.onDisconnected = { [weak self, weak connection] reason in
             guard let self, let connection,
                   connection.client.map(ObjectIdentifier.init) == clientID else { return }
             connection.client = nil
+            connection.designs.connect(nil, available: false)
             connection.stopChildRefresh()
             for pane in connection.panes.values {
                 pane.phase = .failed("disconnected: \(reason)")

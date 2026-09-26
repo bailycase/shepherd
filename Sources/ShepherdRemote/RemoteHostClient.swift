@@ -51,7 +51,20 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// A connection `connect` returned died (readable EOF, write failure, or
     /// `disconnect`). Fired at most once, on the main queue.
     public var onDisconnected: ((String) -> Void)?
-    public private(set) var capabilities: Set<String> = []
+    /// A design this client watches changed on the host (`RemoteDesignRequest.watch`): its files'
+    /// new revision, its comments', or both. A hint to pull. Main queue.
+    public var onDesignChanged: ((DesignID, UInt64?, UInt64?) -> Void)?
+    /// What the host offers changed while connected (its Design tool turned on or off);
+    /// `capabilities` already holds the new list. Main queue.
+    public var onCapabilitiesChanged: ((Set<String>) -> Void)?
+    /// What the host offers. Written on the client's queue (at hello, and when the host pushes a
+    /// change) and read from any thread, so it sits behind a lock.
+    public private(set) var capabilities: Set<String> {
+        get { capabilityLock.lock(); defer { capabilityLock.unlock() }; return storedCapabilities }
+        set { capabilityLock.lock(); storedCapabilities = newValue; capabilityLock.unlock() }
+    }
+    private let capabilityLock = NSLock()
+    private var storedCapabilities: Set<String> = []
 
     private let queue = DispatchQueue(label: "shepherd.remote.client")
     private var connectionGeneration = UUID()
@@ -79,6 +92,8 @@ public final class RemoteHostClient: @unchecked Sendable {
         case state(ShepherdState)
         case output(SessionID, Data)
         case exited(SessionID, Int32?)
+        case designChanged(DesignID, UInt64?, UInt64?)
+        case capabilities(Set<String>)
     }
     private var pendingEvents: [PushedEvent] = []
     private var deliveryInFlight = false
@@ -168,7 +183,7 @@ public final class RemoteHostClient: @unchecked Sendable {
                     guard connectionGeneration == attempt else { throw RemoteHostClientError.disconnected }
                     established = true
                 }
-                return Self.shown(state)
+                return Self.shown(state, capabilities: Set(capabilities))
             } catch {
                 queue.sync {
                     if connectionGeneration == attempt { teardown(reason: "connection failed") }
@@ -589,6 +604,31 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
     }
 
+    /// Reads or changes the host's designs (`designsCapability`, served while the host's Design
+    /// tool is on). A host without it throws `update_required` before anything is sent: an older
+    /// Shepherd, or the experiment off there.
+    public func design(_ request: RemoteDesignRequest) async throws -> RemoteDesignResult {
+        guard capabilities.contains(RemoteProtocol.designsCapability) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: Self.designsRefusal)
+        }
+        if let needed = request.capability, !capabilities.contains(needed) {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to send it Pencil markup.")
+        }
+        if Self.overFrame(.design(id: 0, request: request)) {
+            throw RemoteHostClientError.rejected(code: "too_large", message: "The change exceeds the remote payload limit.")
+        }
+        // A listing reads every design's files on the host; a comment waits for the agent's queue.
+        let reply = try await self.request(timeout: 30) { .design(id: $0, request: request) }
+        switch reply {
+        case .design(_, let result): return result
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected design reply")
+        }
+    }
+
+    /// Why a host without `designsCapability` shows no designs.
+    public static let designsRefusal = "Turn on Settings ▸ Experiments ▸ Design tool on the host, or update Shepherd there, to see its designs."
+
     public func detach(sessionID: SessionID) {
         queue.async { self.sendRequest(.detach(sessionID: sessionID)) }
     }
@@ -834,11 +874,13 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
     }
 
-    /// A host's workspace as this client shows it. A client has no design screen, so a design's
-    /// agent would show as a thread: an older host that still sends designs loses them here
-    /// (docs/designs.md › Design agents and ordinary threads).
-    static func shown(_ state: ShepherdState) -> ShepherdState {
-        state.withoutDesigns
+    /// A host's workspace as this client shows it. Designs and the agents that draw them stay
+    /// only while the host serves designs (`designs.v1`), where a design's screen shows them.
+    /// Elsewhere a design's agent would show as a thread, so a host that sends designs without
+    /// serving them (one from before the rule) loses them here (docs/designs.md › Design agents
+    /// and ordinary threads).
+    static func shown(_ state: ShepherdState, capabilities: Set<String>) -> ShepherdState {
+        capabilities.contains(RemoteProtocol.designsCapability) ? state : state.withoutDesigns
     }
 
     private func handleLine(_ line: Data) {
@@ -854,12 +896,12 @@ public final class RemoteHostClient: @unchecked Sendable {
              .state(let id, _), .attached(let id, _),
              .dirListing(let id, _, _, _), .models(let id, _, _, _, _),
              .spaceAdded(let id, _), .agentCreated(let id, _), .automationResult(let id, _), .instructions(let id, _),
-             .suggestions(let id, _), .hostSettings(let id, _), .skills(let id, _):
+             .suggestions(let id, _), .hostSettings(let id, _), .skills(let id, _), .design(let id, _):
             resumePending(id: id, with: reply)
         case .error(let id, _, _):
             resumePending(id: id, with: reply)
         case .stateChanged(let state):
-            push(.state(Self.shown(state)))
+            push(.state(Self.shown(state, capabilities: capabilities)))
         case .output(let sessionID, let data):
             if case .output(let last, var merged)? = pendingEvents.last, last == sessionID {
                 merged.append(data)
@@ -869,6 +911,11 @@ public final class RemoteHostClient: @unchecked Sendable {
             }
         case .sessionExited(let sessionID, let code):
             push(.exited(sessionID, code))
+        case .designChanged(let designID, let revision, let commentsRevision):
+            push(.designChanged(designID, revision, commentsRevision))
+        case .capabilitiesChanged(let list):
+            capabilities = Set(list)
+            push(.capabilities(Set(list)))
         }
     }
 
@@ -891,6 +938,8 @@ public final class RemoteHostClient: @unchecked Sendable {
                 case .state(let state): self.onStateChanged?(state)
                 case .output(let sessionID, let data): self.onOutput?(sessionID, data)
                 case .exited(let sessionID, let code): self.onSessionExited?(sessionID, code)
+                case .designChanged(let designID, let revision, let comments): self.onDesignChanged?(designID, revision, comments)
+                case .capabilities(let capabilities): self.onCapabilitiesChanged?(capabilities)
                 }
             }
             self.queue.async { [weak self] in

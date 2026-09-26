@@ -78,6 +78,35 @@ struct TerminalFirstResponderTests {
         #expect(selection.lineHeight > 0 && selection.origin.x >= 0 && selection.origin.y >= 0)
     }
 
+    @Test func plainAndShiftSpaceReachTheTerminal() async throws {
+        let panes = Panes()
+        defer { panes.window.close() }
+        var input = Data()
+        panes.left.onInput = { input.append($0) }
+        panes.show(leftFocused: true, rightFocused: false)
+        try await eventuallyOnMain("the left surface to take the keyboard") {
+            panes.firstResponder != nil && panes.firstResponder === panes.surface(of: panes.left)
+        }
+        let surface = try #require(panes.surface(of: panes.left))
+        for modifiers: NSEvent.ModifierFlags in [[], .shift] {
+            input.removeAll()
+            let event = try #require(NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 1,
+                windowNumber: panes.window.window.windowNumber, context: nil,
+                characters: " ", charactersIgnoringModifiers: " ", isARepeat: false, keyCode: 49))
+            let handled = surface.performKeyEquivalent(with: event)
+            if modifiers.isEmpty {
+                #expect(handled, "plain Space must not fall through to SwiftUI control activation")
+                let other = try #require(panes.surface(of: panes.right))
+                #expect(!other.performKeyEquivalent(with: event), "an unfocused terminal leaves Space alone")
+            }
+            if !handled { surface.keyDown(with: event) }
+            try await eventuallyOnMain("space to reach the terminal with modifiers \(modifiers)") {
+                input == Data(" ".utf8)
+            }
+        }
+    }
+
     @Test func releasingFocusOnlyGivesUpThePanesOwnSurface() async throws {
         let panes = Panes()
         defer { panes.window.close() }
