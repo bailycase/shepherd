@@ -117,11 +117,15 @@ public final class DesignStore: @unchecked Sendable {
         }
     }
 
-    /// The designs among `ids` whose folder has no readable canvas: startup forgets them. Blocks
-    /// the caller on the store's queue; call it off the server's.
+    /// The designs among `ids` whose folder has no canvas.json: startup forgets them. A canvas
+    /// that is there but unreadable keeps its design, so nothing is forgotten over a bad edit.
+    /// Blocks the caller on the store's queue; call it off the server's.
     func missingDesigns(among ids: [DesignID]) -> Set<DesignID> {
         queue.sync {
-            Set(ids.filter { (try? self.load($0)) == nil })
+            Set(ids.filter { id in
+                guard let url = try? self.indexURL(id) else { return true }
+                return !FileManager.default.fileExists(atPath: url.path)
+            })
         }
     }
 
@@ -199,12 +203,13 @@ public final class DesignStore: @unchecked Sendable {
             let url = try self.fileURL(id, path)
             do {
                 let folder = url.deletingLastPathComponent()
-                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                // A linked folder could lead outside the design: write only inside it.
-                guard let project = self.projectFolder(for: id),
-                      (folder.resolvingSymlinksInPath().path + "/").hasPrefix(project.resolvingSymlinksInPath().path + "/") else {
+                // A linked folder could lead outside the design: check the deepest folder that
+                // exists before making any, and write only inside the design.
+                guard let project = self.projectFolder(for: id), Self.isInside(Self.deepestExisting(folder), project) else {
                     throw DesignStoreError.invalidPath(path.rawValue, .parentReference)
                 }
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                guard Self.isInside(folder, project) else { throw DesignStoreError.invalidPath(path.rawValue, .parentReference) }
                 try data.write(to: url, options: .atomic)
             } catch let error as DesignStoreError {
                 throw error
@@ -248,7 +253,8 @@ public final class DesignStore: @unchecked Sendable {
             } catch {
                 throw DesignStoreError.io("could not write canvas.json: \(error.localizedDescription)")
             }
-            for path in removed {
+            // Only files the store found inside the design: never one through a linked folder.
+            for path in removed where files[path] != nil {
                 if let url = try? self.fileURL(id, path) { try? FileManager.default.removeItem(at: url) }
                 files[path] = nil
             }
@@ -345,6 +351,20 @@ public final class DesignStore: @unchecked Sendable {
     private func fileURL(_ id: DesignID, _ path: DesignPath) throws -> URL {
         guard let project = projectFolder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
         return project.appendingPathComponent(path.rawValue)
+    }
+
+    /// Whether `folder`, with its links resolved, is `project` or inside it.
+    private static func isInside(_ folder: URL, _ project: URL) -> Bool {
+        (folder.resolvingSymlinksInPath().path + "/").hasPrefix(project.resolvingSymlinksInPath().path + "/")
+    }
+
+    /// `folder`, or its nearest ancestor that exists.
+    private static func deepestExisting(_ folder: URL) -> URL {
+        var url = folder
+        while !FileManager.default.fileExists(atPath: url.path), url.pathComponents.count > 1 {
+            url = url.deletingLastPathComponent()
+        }
+        return url
     }
 
     static func sha256(_ data: Data) -> String {
