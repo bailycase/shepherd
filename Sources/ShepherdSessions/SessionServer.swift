@@ -219,6 +219,10 @@ public final class SessionServer: @unchecked Sendable {
     /// streaming turn costs a main hop per frame, and an agent no one watches costs none. A hint
     /// to pull, not state: it may land after callbacks the server queued later.
     public var onThreadRevision: ((AgentID) -> Void)?
+    /// A watched design's files (`watchDesignRevisions`) moved to a new revision. Paced like
+    /// `onThreadRevision`: on the main actor, at most once per display frame, every design revised
+    /// while one delivery waits riding it. A hint to pull the design's snapshot, not state.
+    public var onDesignRevision: ((DesignID) -> Void)?
     /// An agent's pi finished a tool call (its name). The app reads the agent's checkout again
     /// after calls that may have changed files. Delivered on the main actor.
     public var onAgentToolFinished: ((AgentID, String) -> Void)?
@@ -398,36 +402,36 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    /// Watched agents whose thread revised since the last main-queue delivery: filled on the
-    /// server queue, drained on the main queue, which also sets what is watched.
-    private final class RevisedThreads: @unchecked Sendable {
+    /// Watched keys (agents' threads, designs) that revised since the last main-queue delivery:
+    /// filled on the server queue, drained on the main queue, which also sets what is watched.
+    final class RevisionPacer<Key: Hashable>: @unchecked Sendable {
         private let lock = NSLock()
-        private var order: [AgentID] = []
-        private var members: Set<AgentID> = []
-        private var watched: Set<AgentID> = []
+        private var order: [Key] = []
+        private var members: Set<Key> = []
+        private var watched: Set<Key> = []
         private var lastDelivery: DispatchTime?
 
-        func watch(_ agentIDs: Set<AgentID>) {
+        func watch(_ keys: Set<Key>) {
             lock.lock()
             defer { lock.unlock() }
-            watched = agentIDs
+            watched = keys
         }
 
-        /// When to deliver, for the first watched agent since the last drain: a frame after the
-        /// last delivery, or now. Nil when the agent is not watched or a delivery is scheduled.
-        func insert(_ agentID: AgentID) -> DispatchTime? {
+        /// When to deliver, for the first watched key since the last drain: a frame after the
+        /// last delivery, or now. Nil when the key is not watched or a delivery is scheduled.
+        func insert(_ key: Key) -> DispatchTime? {
             lock.lock()
             defer { lock.unlock() }
-            guard watched.contains(agentID), members.insert(agentID).inserted else { return nil }
-            order.append(agentID)
+            guard watched.contains(key), members.insert(key).inserted else { return nil }
+            order.append(key)
             guard order.count == 1 else { return nil }
             let now = DispatchTime.now()
             guard let lastDelivery else { return now }
             return max(now, lastDelivery + SessionServer.revisionPushSpacing)
         }
 
-        /// The agents to tell the app about now, those still watched.
-        func drain() -> [AgentID] {
+        /// The keys to tell the app about now, those still watched.
+        func drain() -> [Key] {
             lock.lock()
             defer { lock.unlock() }
             lastDelivery = .now()
@@ -438,7 +442,8 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    private let revisedThreads = RevisedThreads()
+    private let revisedThreads = RevisionPacer<AgentID>()
+    private let revisedDesigns = RevisionPacer<DesignID>()
     /// Tests only: handed to every RPC session this server creates afterwards, to run on the
     /// decode queue before each record it decodes off the server queue.
     var beforeOffQueueDecode: (() -> Void)?
@@ -2870,6 +2875,7 @@ public final class SessionServer: @unchecked Sendable {
     /// persisted; the board count and `lastActiveAt` are live, like an agent's status.
     private func commitDesignWrite(_ designID: DesignID, _ result: DesignWriteResult) throws {
         guard result.changed, let index = store.state.designs.firstIndex(where: { $0.id == designID }) else { return }
+        designRevised(designID)
         let now = Self.nowMilliseconds()
         let title = result.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !title.isEmpty, store.state.designs[index].name != title {
@@ -3454,6 +3460,24 @@ public final class SessionServer: @unchecked Sendable {
     /// stores' poll loops run). Replaces the last set; none are watched until the app says.
     public func watchThreadRevisions(of agentIDs: Set<AgentID>) {
         revisedThreads.watch(agentIDs)
+    }
+
+    /// The designs whose revisions `onDesignRevision` reports: the app's designs on screen.
+    /// Replaces the last set; none are watched until the app says.
+    public func watchDesignRevisions(of designIDs: Set<DesignID>) {
+        revisedDesigns.watch(designIDs)
+    }
+
+    /// Server queue: tell the app a watched design's files changed, paced like a thread's
+    /// revisions.
+    private func designRevised(_ designID: DesignID) {
+        guard let deadline = revisedDesigns.insert(designID) else { return }
+        DispatchQueue.main.asyncAfter(deadline: deadline) { [weak self] in
+            guard let self else { return }
+            for designID in self.revisedDesigns.drain() {
+                self.onDesignRevision?(designID)
+            }
+        }
     }
 
     /// Server queue: the RPC thread state behind an agent's pane, if it is an RPC agent.
