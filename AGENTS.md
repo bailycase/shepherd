@@ -98,9 +98,11 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
     `AGENTS.md` and `APPEND_SYSTEM.md`).
   - With the matching extension on: `SHEPHERD_EXT_PANES`, `SHEPHERD_NATIVE_CHILDREN`,
     `SHEPHERD_EXT_CHILDREN`, and `SHEPHERD_CHILD_*`.
-  - Per agent: `SHEPHERD_NEEDS_NAME`, `SHEPHERD_AUTOMATION`, `SHEPHERD_MODEL`, and
+  - Per agent: `SHEPHERD_NEEDS_NAME`, `SHEPHERD_AUTOMATION`, `SHEPHERD_MODEL`,
     `SHEPHERD_SUGGEST_FILES` (the files its `suggest_instruction` may draft a line for, while
-    Settings ▸ Experiments ▸ Suggested instructions is on for its kind of agent).
+    Settings ▸ Experiments ▸ Suggested instructions is on for its kind of agent), and, for an
+    agent that draws a design, `SHEPHERD_DESIGN_ID` and `SHEPHERD_DESIGN_SKILL_DIR` (the design
+    skill the app writes to the support directory's `design-skill/`; docs/designs.md).
 - **`SHEPHERD_PR_DESCRIPTION_MODEL`** overrides the model that drafts finalize PR bodies.
 - **`SHEPHERD_PREVIEW_DIR`**, **`SHEPHERD_LIVE_MODEL`**, and **`SHEPHERD_PERF_REPORT`** switch on
   the preview renders, the live-model run, and the long-list timing report (see Testing).
@@ -304,7 +306,8 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
 - **Core:** the status transition table, `PaneNode` operations, and state validation.
 - **Migration:** terminal-era `runtime` keys, global shells and space shells dropped at startup,
   and review leaves.
-- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all twelve).
+- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all thirteen, and the
+  design skill's two files).
 - **Themes:** every theme variant complete, and the WCAG contrast rules met.
 - **App logic:** keybindings (defaults, validation, stored overrides for removed actions
   ignored), palette and settings search, workspace selection and parking, sidebar ordering and
@@ -476,8 +479,8 @@ Sources/
     RemoteHostStore, AgentPeers, AgentNotifications, ChildRuns, PiSessionFile, PiUpdateManager,
       AppUpdater (Sparkle: UpdateChannel, UpdateChannelStore, ChannelDelegate),
       NightlyMovedNotice
-    Status/Namer/Panes/Review/Subagents/Children/Inspect/InstructionsExtension.swift
-      embedded extensions
+    Status/Namer/Panes/Review/Subagents/Children/Inspect/Instructions/DesignExtension.swift
+      embedded extensions (DesignExtension also carries the design skill)
   shepherd-cli/        `shepherd --import herdr` (writes state.json while Shepherd is not running).
 Packages/
   ShepherdUI/          Night Watch, its own local package (module ShepherdUI; macOS 26, iOS 27;
@@ -504,6 +507,9 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
   shepherd-instructions.ts  Settings ▸ Instructions' AGENTS.md and APPEND_SYSTEM.md, added to
                           every session Shepherd starts (never ~/.pi/agent); suggest_instruction
                           (Settings ▸ Experiments ▸ Suggested instructions)
+  shepherd-design.ts      the design agent's design_read, board_write, canvas_update and
+                          design_check; hands pi the design skill (design-skill/: SKILL.md,
+                          format.md); see docs/designs.md
 Tests/
   <Module>UnitTests/, *IntegrationTests/, ShepherdPreviewTests/   the tiers above
   ShepherdTestIsolation/  C, run when a test bundle loads: scratch root, PATH, ZDOTDIR
@@ -696,15 +702,18 @@ the same change.
 - A new `SessionServer` mutation needs an integration test.
 - New persisted fields decode with defaults, so older `state.json` files keep loading.
 
-**Embedded extensions have one canonical copy.** The twelve files in `Extensions/` are canonical.
-pi loads the copies that the eight `Sources/ShepherdApp/*Extension.swift` files write to the
+**Embedded extensions have one canonical copy.** The thirteen files in `Extensions/` are canonical,
+and so is the design skill in `Extensions/design-skill/`.
+pi loads the copies that the nine `Sources/ShepherdApp/*Extension.swift` files write to the
 support directory from embedded string literals. `installedPath()` rewrites an installed copy
 whenever its content differs, so drift ships bugs. `ChildrenExtension.swift` carries children,
 children-config, children-ui, workflow, and missions, and installs `InspectExtension`'s
-`shepherd-inspect.mjs`.
+`shepherd-inspect.mjs`. `DesignExtension.swift` also writes the design skill's `SKILL.md` and
+`format.md` to the support directory's `design-skill/`.
 
-- Edit a `.ts`/`.mjs` file and its literal in the same change, with
-  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all twelve pairs.
+- Edit a `.ts`/`.mjs` file (or a design skill file) and its literal in the same change, with
+  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all thirteen pairs
+  and the skill's two files.
 - Extensions stay dependency-free and inert without their environment variables.
 - They must never throw into pi or keep the process alive (unref'd sockets and timers).
 - The panes extension speaks the request/reply half of `ExtensionMessage`/`ExtensionReply`.

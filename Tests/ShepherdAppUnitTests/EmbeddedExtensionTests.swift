@@ -25,6 +25,14 @@ struct EmbeddedExtensionTests {
         "shepherd-missions.ts": ChildrenExtension.missionsSource,
         "shepherd-inspect.mjs": InspectExtension.extensionSource,
         "shepherd-instructions.ts": InstructionsExtension.extensionSource,
+        "shepherd-design.ts": DesignExtension.extensionSource,
+    ]
+
+    /// The design skill the design extension hands pi: its canonical copy lives beside the
+    /// extensions, and the app writes these literals to `<support>/design-skill/`.
+    private static let designSkill: [String: String] = [
+        "SKILL.md": DesignExtension.skillSource,
+        "format.md": DesignExtension.formatSource,
     ]
 
     @Test(arguments: embedded.keys.sorted())
@@ -32,6 +40,16 @@ struct EmbeddedExtensionTests {
         let canonical = try Data(contentsOf: Self.extensionsDirectory.appendingPathComponent(filename))
         let literal = try #require(Self.embedded[filename])
         #expect(Data(literal.utf8) == canonical, "embedded copy drifted from Extensions/\(filename)")
+    }
+
+    @Test(arguments: designSkill.keys.sorted())
+    func theEmbeddedDesignSkillIsByteIdenticalToItsCanonicalSource(filename: String) throws {
+        let folder = Self.extensionsDirectory.appendingPathComponent("design-skill", isDirectory: true)
+        let canonical = try Data(contentsOf: folder.appendingPathComponent(filename))
+        let literal = try #require(Self.designSkill[filename])
+        #expect(Data(literal.utf8) == canonical, "embedded copy drifted from Extensions/design-skill/\(filename)")
+        let files = try FileManager.default.contentsOfDirectory(atPath: folder.path)
+        #expect(Set(files) == Set(Self.designSkill.keys))
     }
 
     /// A new file under Extensions/ must get an embedded copy (and a row above).

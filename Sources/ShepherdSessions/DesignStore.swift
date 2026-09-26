@@ -189,10 +189,11 @@ public final class DesignStore: @unchecked Sendable {
             let data = Data(source.utf8)
             let sha = Self.sha256(data)
             if files[path] == sha {
-                return DesignWriteResult(revision: design.revision, changed: false, sha256: sha, warnings: warnings,
-                                         title: design.index.title, boardCount: design.index.boards.count)
+                return DesignWriteResult(revision: design.revision, changed: false, sha256: sha, created: false,
+                                         warnings: warnings, title: design.index.title, boardCount: design.index.boards.count)
             }
-            if files[path] == nil {
+            let created = files[path] == nil
+            if created {
                 guard files.count < Self.maxFiles else { throw DesignStoreError.tooManyFiles }
                 let stem = path.stem.lowercased()
                 let others = Set(files.keys).union(design.index.boards.keys)
@@ -219,8 +220,8 @@ public final class DesignStore: @unchecked Sendable {
             files[path] = sha
             design.files = files
             try self.commit(&design, id)
-            return DesignWriteResult(revision: design.revision, changed: true, sha256: sha, warnings: warnings,
-                                     title: design.index.title, boardCount: design.index.boards.count)
+            return DesignWriteResult(revision: design.revision, changed: true, sha256: sha, created: created,
+                                     warnings: warnings, title: design.index.title, boardCount: design.index.boards.count)
         }
     }
 
