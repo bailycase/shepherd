@@ -100,12 +100,17 @@ the app opens the screen's routes, waits for a thread's first snapshot, settles,
 
 **What it checks.** A screen that never becomes ready fails, and so does one that asks a host to
 change anything (a send, an abort, an agent action, a terminal attach or input): the fixture
-host refuses those and prints `FIXTURE MUTATION`. Each run also prints the requests every host
+host refuses those and prints `FIXTURE MUTATION` (Undo and Redo of a turn included). Each run also prints the requests every host
 received (`FIXTURE REQUESTS`). A screen can also measure what it draws and print
 `FIXTURE CHECK ok|FAILED: …`, which the script echoes and fails on: `thread-follow` checks that
 the reply ends above the composer, and `thread-jump` (a drag up from the tail, stepped through
 the scroll view's pan recognizer) that new output leaves the thread where the reader left it,
-with "Jump to latest" showing. `composer-focus` focuses the composer as a tap does and checks
+with "Jump to latest" showing. The `context-*` screens (Fixtures/ContextFixtures.swift) draw the context ring
+beside Send and its sheet: `context-ring` (68%, amber), `context-details` (the split and Largest),
+`context-full` (almost full, the field for what to keep), `context-compacting`, and
+`context-compacted` and `context-compacted-details` (what the agent kept open in the thread, the
+dashed ring, the estimate). `ThreadStoreCheck` also covers the ring's store side: no ring from a
+host without context, the ring changing only with the usage, and Compact now's instructions. `composer-focus` focuses the composer as a tap does and checks
 that the field keeps the focus above the keyboard and, on an iPad in portrait, that the sidebar
 stays a hidden overlay; `composer-focus-rotate` focuses in landscape, turns the iPad to portrait,
 and checks the same with no second tap (the field keeps the focus through the turn) (run both in portrait; `-r landscape` shots draw the keyboard
@@ -123,6 +128,14 @@ expect. With it, a screen can open more windows (CONTRACTS.md › Fixture screen
 and `windows-sent` draw two windows side by side as Split View does, and `windows-new` opens a
 real second window, which the simulator's full-screen mode shows over the first. Windows the
 system restores from an earlier run are closed before a screen starts.
+
+**The Changes pane's screens.** `review`, `diff`, `review-comment`, `review-base`, `review-pr`,
+`review-empty`, `review-error` (MobileChanges, MobileDiff) and `changes-pad`, `changes-pad-full`,
+`changes-pad-commit`, `changes-pad-base`, `changes-pad-turn`, `changes-pad-collapsed` (iPadReview,
+iPadReviewSplit, iPadCommit, on an iPad in landscape) run against a host with `changes.v1`;
+`review-legacy` against one without it (today's working-tree review). The thread's card:
+`thread` (Undo), `thread-undone` (Redo), `thread-card-legacy` (an older host: no Undo), and
+`changes-card` (the iPad's "Edited 5 files").
 
 **Adding a screen:** see [CONTRACTS.md › Fixture screens](CONTRACTS.md#fixture-screens).
 

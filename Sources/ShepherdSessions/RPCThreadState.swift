@@ -22,7 +22,9 @@ final class RPCThreadState {
     static let widgetTitleBytes = 256
     static let widgetAggregateBytes = 32 * 1024
     static let operationTableSize = 256
-    static let supportedActions = ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents", "queue"]
+    static let supportedActions = ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents", "queue", "compact"]
+    /// pi answers `compact` only once the summary is written, which takes as long as a reply.
+    static let compactTimeout: TimeInterval = 600
     /// Bytes of a child session file the transcript reader will scan (tail); older is unreachable.
     static let transcriptReadLimit = 8 * 1024 * 1024
     /// Beside a native child's session: one `{"text","at"}` line per message the user sent it
@@ -41,6 +43,8 @@ final class RPCThreadState {
             case tool(String)
             case user
             case pending(UUID)
+            /// A compaction pi is running, or one that stopped or failed (`NativeCompaction`).
+            case compaction(String)
         }
         var kind: Kind
         /// Assigning it forgets its hash and size, so a commit rehashes only the rows that changed.
@@ -98,6 +102,21 @@ final class RPCThreadState {
     /// from a pi without the command.
     private(set) var thinkingLevels: [String]?
     private(set) var stats: NativeThreadStats?
+    /// pi's `autoCompactionEnabled` (get_state).
+    private(set) var autoCompaction: Bool?
+    /// The host's estimate of pi's context, from its messages; refreshed with history.
+    var estimate: ContextEstimate?
+    /// A compaction pi is running (`compaction_start` until `compaction_end`).
+    var compactingRun: NativeCompactionRun?
+    /// Compactions this host saw finish, by the summary pi wrote: why, and pi's estimate after.
+    var compactionNotes: [CompactionNote] = []
+    /// Installed by SessionServer: pi's compaction settings for a model ("provider/id"), read
+    /// from pi's settings files (never written).
+    var compactionSettings: (String?) -> PiCompactionSettings = { _ in PiCompactionSettings() }
+    /// The settings for `settingsModel`, read once per model.
+    var settingsFor: (model: String?, value: PiCompactionSettings)?
+    /// What the snapshot's `context` shows, rebuilt whenever a part of it changes.
+    var context: NativeThreadContext?
     // A commit combines hashes taken when each part was assigned (the lists here, each
     // provisional and tool entry), so a streamed delta rehashes only the message it grew.
     private(set) var commands: [NativeCommand]? { didSet { commandsHash = commands.hashValue } }
@@ -192,6 +211,14 @@ final class RPCThreadState {
 
     /// Installed by SessionServer: the queue was expected to go when pi settled, and did not.
     var onIdleAfterQueue: (() -> Void)?
+    /// Installed by SessionServer: where a turn starts and ends, for the Changes engine's
+    /// snapshots of the working tree (`ChangesService`). Called on the session queue.
+    var onTurnEvent: ((TurnEvent) -> Void)?
+    /// The agent's recorded turns, as the server last set them (`setTurnChanges`).
+    private(set) var turnChanges: [ChangesTurn]? { didSet { turnChangesHash = turnChanges.hashValue } }
+    private var turnChangesHash = Optional<[ChangesTurn]>.none.hashValue
+    /// Whether the server has set them since the thread started.
+    private(set) var turnChangesSet = false
     /// The server held back a "done" report because the queue was about to go.
     var doneHeld = false
 
@@ -247,6 +274,10 @@ final class RPCThreadState {
     func handle(_ event: RPCEvent) {
         switch event {
         case .agentStart:
+            // A compaction that stopped or failed says so until the next run.
+            live.removeAll { if case .compaction = $0.kind { $0.value.compaction?.phase != .running } else { false } }
+            // A retry's second start is the same turn; the engine tells them apart.
+            onTurnEvent?(.started)
             running = true
             runFailed = false
             runError = nil
@@ -260,7 +291,12 @@ final class RPCThreadState {
         case .agentSettled:
             running = false
             settled()
+            onTurnEvent?(.settled)
         case .messageStart(let message) where message.role == "user":
+            onTurnEvent?(.message(timestamp: message.timestamp, text: message.content.compactMap { block -> String? in
+                if case .text(let text) = block { return text }
+                return nil
+            }.joined()))
             userMessageStarted(message)
         case .messageEnd(let message) where message.role == "user":
             userMessageEnded(message)
@@ -297,6 +333,8 @@ final class RPCThreadState {
             }
             upsertAssistant(ended, ended: true)
             currentAssistant = nil
+            // The ring moves once per reply, never per token.
+            refreshStats()
         case .toolExecutionStart(let id, let name, let args):
             upsertTool(id: id, name: name, args: args, content: [], isError: nil, status: "running")
         case .toolExecutionUpdate(let id, let name, let args, let partial):
@@ -312,6 +350,10 @@ final class RPCThreadState {
             handleUIRequest(request)
         case .extensionError(let path, let event, let error):
             ShepherdLog.warning("rpc session \(session.id) extension error in \(path ?? "?") (\(event ?? "?")): \(error)")
+        case .compactionStart(let reason):
+            compactionStarted(reason: NativeCompactionReason(pi: reason))
+        case .compactionEnd(let reason, let result, let aborted, let willRetry, let error):
+            compactionEnded(reason: NativeCompactionReason(pi: reason), result: result, aborted: aborted, willRetry: willRetry, error: error)
         case .turnStart, .turnEnd, .unknown:
             break
         }
@@ -326,6 +368,15 @@ final class RPCThreadState {
     /// Server queue: full replacement from a setAgentChildren publish.
     func setSubagents(_ rows: [ChildRun]) {
         subagents = rows
+        commit()
+    }
+
+    /// Server queue: the agent's turns as the Changes engine recorded them.
+    func setTurnChanges(_ turns: [ChangesTurn]?) {
+        turnChangesSet = true
+        let turns = turns?.isEmpty == true ? nil : turns
+        guard turns != turnChanges else { return }
+        turnChanges = turns
         commit()
     }
 
@@ -366,7 +417,8 @@ final class RPCThreadState {
              .setModel(let expectedSessionID, let generation, let operationID, _),
              .setThinking(let expectedSessionID, let generation, let operationID, _),
              .subagentCommand(let expectedSessionID, let generation, let operationID, _, _, _, _),
-             .queue(let expectedSessionID, let generation, let operationID, _):
+             .queue(let expectedSessionID, let generation, let operationID, _),
+             .compact(let expectedSessionID, let generation, let operationID, _):
             guard expectedSessionID == piSessionID, generation == self.generation else {
                 completion(.failure(code: "stale_session", message: "Refresh the thread before acting."))
                 return
@@ -503,6 +555,8 @@ final class RPCThreadState {
             dispatchSubagentCommand(runID, action, text, mode) { error in
                 completion(error.map { .failure(code: "child_command_failed", message: $0) } ?? accepted)
             }
+        case .compact(_, _, _, let instructions):
+            compact(instructions: instructions, operationID: operationID, completion: completion)
         case .snapshot, .subagentTranscript:
             completion(.failure(code: "invalid", message: "Not an action."))
         }
@@ -621,6 +675,8 @@ final class RPCThreadState {
                 self.model = nil
             }
             self.thinking = data["thinkingLevel"]?.stringValue
+            self.autoCompaction = data["autoCompactionEnabled"]?.boolValue
+            self.updateContext()
             if let streaming = data["isStreaming"]?.boolValue, streaming != self.running {
                 self.running = streaming
                 // A settle this thread did not see (it came before the bootstrap) still lets the
@@ -668,12 +724,17 @@ final class RPCThreadState {
         }
     }
 
-    private func refreshMessages(timeout: TimeInterval = 10, done: ((Result<RPCResponse, RPCError>) -> Void)? = nil) {
+    func refreshMessages(timeout: TimeInterval = 10, done: ((Result<RPCResponse, RPCError>) -> Void)? = nil) {
         session.request(.getMessages, timeout: timeout) { [weak self] result in
             defer { done?(result) }
             guard let self, case .success(let response) = result, response.success,
                   let messages = response.messages else { return }
             let history = Self.projectHistory(self.markingStopped(messages)) { value, message in
+                if message.role == "compactionSummary", let summary = message.summary,
+                   let note = self.compactionNotes.last(where: { $0.summary == summary }) {
+                    value.compaction?.reason = note.reason
+                    value.compaction?.tokensAfter = note.after
+                }
                 if let id = message.toolCallId, message.role == "toolResult", let started = self.toolStarts[id] {
                     value.startedAt = started
                 }
@@ -690,18 +751,23 @@ final class RPCThreadState {
                     value.operationID = self.operationsByEntry[value.entryID]
                 }
             }
-            if history != self.history {
-                self.history = history
+            let kept = Self.keepingSummarized(previous: self.history, next: history)
+            if kept != self.history {
+                self.history = kept
                 self.historyVersion += 1
             }
+            let estimate = Self.estimate(messages)
+            if estimate != self.estimate { self.estimate = estimate }
             // message_end precedes persistence; a refresh means everything ended is now history.
             self.live.removeAll { item in
                 switch item.kind {
                 case .assistant, .user: item.ended
                 case .tool: item.value.status == "complete" || item.value.status == "aborted"
                 case .pending: false
+                case .compaction: item.ended
                 }
             }
+            self.updateContext()
             self.commit()
         }
     }
@@ -718,10 +784,11 @@ final class RPCThreadState {
         }
     }
 
-    private func refreshStats(timeout: TimeInterval = 10) {
+    func refreshStats(timeout: TimeInterval = 10) {
         session.request(.getSessionStats, timeout: timeout) { [weak self] result in
             guard let self, case .success(let response) = result, response.success, let data = response.data else { return }
             self.stats = Self.projectStats(data)
+            self.updateContext()
             self.commit()
         }
     }
@@ -774,6 +841,10 @@ final class RPCThreadState {
         currentAssistant = nil
         projectionClipped = false
         operationsByEntry.removeAll()
+        estimate = nil
+        compactingRun = nil
+        compactionNotes.removeAll()
+        context = nil
         resetQueueForNewSession()
         signature = 0
         bumpRevision()
@@ -1037,8 +1108,10 @@ final class RPCThreadState {
         hasher.combine(thinkingLevels)
         hasher.combine(piSessionID)
         hasher.combine(stats)
+        hasher.combine(context)
         hasher.combine(commandsHash)
         hasher.combine(subagentsHash)
+        hasher.combine(turnChangesHash)
         hasher.combine(queueHash())
         #if DEBUG
         bytesHashedByLastCommit = bytesHashedSinceCommit
@@ -1101,7 +1174,8 @@ final class RPCThreadState {
             model: model, thinking: thinking, thinkingLevels: thinkingLevels, supportedActions: Self.supportedActions, dialogsSupported: true,
             dialogs: [], widgets: widgets.map(\.value), messages: [], provisional: [],
             clipped: projectionClipped || dialogs.contains { $0.unavailable == "payload-limit" },
-            runtime: "rpc", stats: stats, commands: commands, subagents: subagents
+            runtime: "rpc", stats: stats, commands: commands, subagents: subagents, context: context,
+            turnChanges: turnChanges
         )
         // The rest encodes without the queue, which adds `,"queue":` and its cached size.
         let queue = queueValue
@@ -1295,7 +1369,9 @@ final class RPCThreadState {
             }
         }
         var seen: [String: Int] = [:]
-        return messages.enumerated().compactMap { index, message in
+        return chronological(messages).enumerated().compactMap { index, message in
+            // pi's structured system prompt rides in the message list; the thread never shows it.
+            if message.role == "system" { return nil }
             if message.role == "custom" && message.display != true { return nil }
             if message.role == "custom" && message.customType == "shepherd-child" { return nil }
             let args = message.role == "toolResult" ? message.toolCallId.flatMap { arguments[$0] } : nil
@@ -1388,6 +1464,10 @@ final class RPCThreadState {
         if let error = message.errorMessage, !error.isEmpty, message.stopReason != "aborted" {
             result.blocks.append(NativeThreadBlock(kind: .text, text: clip(error)))
         }
+        if message.role == "compactionSummary" {
+            result.compaction = NativeCompaction(phase: .done, tokensBefore: message.tokensBefore.map { Int($0) },
+                                                 summary: message.summary.map(clip))
+        }
         if let isError = message.isError { result.isError = isError }
         if let stop = message.stopReason, !stop.isEmpty { result.status = clip(stop) }
         result.timestamp = message.timestamp
@@ -1404,4 +1484,14 @@ final class RPCThreadState {
     private static func json(_ value: JSONValue) -> String {
         (try? argumentEncoder.encode(value)).map { String(decoding: $0, as: UTF8.self) } ?? "{}"
     }
+}
+
+/// A turn's edges, as the Changes engine hears them.
+enum TurnEvent: Equatable {
+    /// pi started a run.
+    case started
+    /// A user message joined the thread (the first one names the turn).
+    case message(timestamp: Double?, text: String)
+    /// pi's run settled.
+    case settled
 }

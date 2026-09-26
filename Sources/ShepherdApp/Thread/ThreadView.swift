@@ -37,11 +37,18 @@ struct ThreadView: View {
     var inspectedRunID: String? = nil
     /// Opens the review pane at a file (a changed file, the changes card, an edit call).
     var review: ((String) -> Void)? = nil
+    /// The changes cards' Review, Undo and Redo, where the host records turns.
+    var turnActions: TurnChangesActions? = nil
     /// The models the host offers, for the composer's model picker.
     var listModels: (() async -> ModelCatalog)? = nil
     /// The composer's "Up next" state, when a test or preview drives it.
     var queueState: QueueStackState? = nil
+    /// Previews: the composer opens with the context ring's details showing.
+    var contextDetailsOpen = false
     @State private var follower = NativeScrollFollower()
+    /// What the context details ask the thread to find (Largest, Show summary). A stable object,
+    /// not a closure, so the composer is not redrawn with every render of the thread.
+    @State private var finder = ThreadFinder()
     /// Narrow windows drop to 16pt gutters so the column keeps its width, not its margins.
     @State private var gutter = AppLayout.gutter
     @State private var hovering = false
@@ -103,6 +110,7 @@ struct ThreadView: View {
                     .frame(maxWidth: AppLayout.threadMaxWidth)
                     .padding(.horizontal, gutter)
                     .frame(maxWidth: .infinity)
+                    .environment(\.compactionExpansion, store.compactions)
                     // A local agent's images draw from its folder; a remote agent's files are not here.
                     .environment(\.nwProseFileRoot, workingDirectory.map {
                         URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true)
@@ -154,6 +162,10 @@ struct ThreadView: View {
                 .modifier(ThreadCommandHandler(key: commandKey, active: active) { command in
                     handle(command, proxy: proxy)
                 })
+                .onChange(of: finder.request) { _, request in
+                    guard let request else { return }
+                    Task { await find(request.entryID, proxy: proxy) }
+                }
                 // The composer draws "Jump to latest" over the fade it lays on the thread and under
                 // its card and menus, so the pill reads clearly and never covers an open menu.
                 Composer(store: store, active: active, isFocused: isFocused, agentName: agentName, hasTurns: !rows.isEmpty,
@@ -161,7 +173,7 @@ struct ThreadView: View {
                          jumpToLatest: follower.showsJump(running: running) ? {
                              follower.jumpToLatest()
                              proxy.scrollTo(Self.bottomID, anchor: .bottom)
-                         } : nil, queueState: queueState,
+                         } : nil, finder: finder, queueState: queueState, contextDetailsOpen: contextDetailsOpen,
                          inspectSubagent: inspectSubagent, steerSubagent: steerSubagent, inspectedRunID: inspectedRunID)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
             }
@@ -206,7 +218,8 @@ struct ThreadView: View {
         } else if let presentation = row.presentation {
             AgentTurn(presentation: presentation, live: row.live, subagents: TurnSubagents(store.placements[row.id]),
                       subagentActions: subagentActions, startedAt: row.startedAt,
-                      retry: retryAction(row, running: running), review: review, thinking: thinking, arriving: arriving,
+                      retry: retryAction(row, running: running), review: review, recordedTurn: row.recordedTurn,
+                      turnActions: turnActions, thinking: thinking, arriving: arriving,
                       settled: settled)
                 .equatable()
         }
@@ -253,6 +266,22 @@ struct ThreadView: View {
             follower.beginJump()
             withNWAnimation(.scroll) { proxy.scrollTo(userTurns[target], anchor: .top) }
         }
+    }
+
+    /// Brings the turn holding `entryID` (a tool result, a compaction) to the top of the
+    /// thread, loading older pages until it is there (the context meter's Largest and Show
+    /// summary).
+    private func find(_ entryID: String, proxy: ScrollViewProxy) async {
+        var pages = 0
+        while store.rows.first(where: { $0.turn.messages.contains { $0.entryID == entryID } }) == nil,
+              store.olderCursor != nil, pages < AppLayout.findPageLimit {
+            await store.loadOlder()
+            pages += 1
+        }
+        guard let row = store.rows.first(where: { $0.turn.messages.contains { $0.entryID == entryID } }) else { NSSound.beep(); return }
+        jumpedTurn = nil
+        follower.beginJump()
+        withNWAnimation(.scroll) { proxy.scrollTo(row.id, anchor: .top) }
     }
 
     /// How far the visible bottom sits above the end of the content (`NativeScrollProbe`): 0 at
@@ -410,3 +439,16 @@ struct ThreadCommandHandler: ViewModifier {
     }
 }
 
+/// A request to bring an entry into view, from the composer's context details.
+@MainActor
+@Observable
+final class ThreadFinder {
+    struct Request: Equatable {
+        let entryID: String
+        let id = UUID()
+    }
+
+    private(set) var request: Request?
+
+    func find(_ entryID: String) { request = Request(entryID: entryID) }
+}

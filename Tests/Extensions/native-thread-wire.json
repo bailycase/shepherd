@@ -465,5 +465,174 @@
         }
       }
     }
+  },
+  {
+    "type": "nativeThread",
+    "id": 20,
+    "result": {
+      "snapshot": {
+        "value": {
+          "piSessionID": "session",
+          "generation": "generation",
+          "revision": 10,
+          "running": false,
+          "supportedActions": [
+            "send"
+          ],
+          "dialogsSupported": true,
+          "dialogs": [],
+          "messages": [],
+          "provisional": [],
+          "clipped": false,
+          "runtime": "rpc",
+          "turnChanges": [
+            {
+              "id": "00000000-0000-0000-0000-000000000031",
+              "messageTimestamp": 1790281446000,
+              "prompt": "Wrap errors with context",
+              "startedAt": 1790281446100,
+              "endedAt": 1790281686000,
+              "state": "ready",
+              "files": [
+                {
+                  "path": "ledger/outbox.go",
+                  "status": "M",
+                  "added": 9,
+                  "removed": 3,
+                  "isBinary": false
+                },
+                {
+                  "path": "ledger/refund.go",
+                  "status": "A",
+                  "added": 3,
+                  "removed": 0,
+                  "isBinary": false
+                },
+                {
+                  "path": "ledger/codec.go",
+                  "oldPath": "ledger/json.go",
+                  "status": "R",
+                  "added": 0,
+                  "removed": 0,
+                  "isBinary": false
+                }
+              ],
+              "fileCount": 3,
+              "added": 12,
+              "removed": 3,
+              "canUndo": true,
+              "canRedo": false
+            },
+            {
+              "id": "00000000-0000-0000-0000-000000000032",
+              "startedAt": 1790281700000,
+              "state": "unavailable",
+              "reason": "Shepherd quit before this turn ended.",
+              "files": [],
+              "fileCount": 0,
+              "added": 0,
+              "removed": 0,
+              "canUndo": false,
+              "canRedo": false
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "type": "nativeThread",
+    "id": 21,
+    "agentID": "agent",
+    "request": {
+      "compact": {
+        "expectedSessionID": "session",
+        "generation": "generation",
+        "operationID": "00000000-0000-0000-0000-000000000004",
+        "instructions": "Keep the preview findings"
+      }
+    }
+  },
+  {
+    "type": "nativeThread",
+    "id": 22,
+    "result": {
+      "snapshot": {
+        "value": {
+          "piSessionID": "session",
+          "generation": "generation",
+          "revision": 8,
+          "running": false,
+          "supportedActions": [
+            "send",
+            "compact"
+          ],
+          "dialogsSupported": true,
+          "dialogs": [],
+          "messages": [
+            {
+              "entryID": "compactionSummary:5",
+              "role": "compactionSummary",
+              "blocks": [],
+              "truncated": false,
+              "timestamp": 5,
+              "compaction": {
+                "phase": "done",
+                "reason": "threshold",
+                "tokensBefore": 184000,
+                "tokensAfter": 23000,
+                "summary": "## Goal\nShip it"
+              }
+            }
+          ],
+          "provisional": [
+            {
+              "entryID": "compaction:9",
+              "role": "compaction",
+              "blocks": [],
+              "truncated": false,
+              "compaction": {
+                "phase": "running",
+                "reason": "manual",
+                "tokensBefore": 92000
+              }
+            }
+          ],
+          "clipped": false,
+          "runtime": "rpc",
+          "context": {
+            "tokens": 42000,
+            "window": 200000,
+            "autoCompactAt": 183616,
+            "autoCompact": true,
+            "keepRecent": 20000,
+            "before": 184000,
+            "split": {
+              "system": 6800,
+              "instructions": 1400,
+              "messages": 9100,
+              "toolResults": 24800,
+              "instructionFiles": [
+                "AGENTS.md"
+              ]
+            },
+            "largest": [
+              {
+                "entryID": "t:call_read",
+                "kind": "file",
+                "label": "DesktopNativeThreadView.swift",
+                "tokens": 8200
+              }
+            ],
+            "compacting": {
+              "reason": "manual",
+              "startedAt": 1000,
+              "tokens": 92000
+            },
+            "summaryEntryID": "compactionSummary:5"
+          }
+        }
+      }
+    }
   }
 ]

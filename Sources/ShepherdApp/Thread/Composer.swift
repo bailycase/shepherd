@@ -17,6 +17,8 @@ import ShepherdSessions
 struct Composer: View {
     /// The thread's coordinate space: the menus measure the room above the card in it.
     static let threadSpace = "composer.thread"
+    /// The card's own: the context details line up with the ring in it.
+    static let cardSpace = "composer.card"
 
     @Bindable var store: NativeThreadStore
     let active: Bool
@@ -32,8 +34,12 @@ struct Composer: View {
     var commandKey: String? = nil
     /// Set while the thread is detached from its tail: what "Jump to latest" does.
     var jumpToLatest: (() -> Void)? = nil
+    /// Brings an entry into view (the context details' Largest and Show summary).
+    var finder: ThreadFinder? = nil
     /// The "Up next" stack's state, from a test or preview that drives it; else the composer's own.
     var queueState: QueueStackState? = nil
+    /// Previews: open with the context ring's details showing.
+    var contextDetailsOpen = false
     /// Opens a subagent in the inspector; nil hides the tray (a thread with no inspector). The
     /// composer takes the thread's own closures, never ones built per render, so a revision the
     /// thread adopts leaves the composer alone.
@@ -63,6 +69,9 @@ struct Composer: View {
     /// Kept as the answer, not the room, so a live resize redraws the composer only when the
     /// menu would change sides.
     @State private var sendMenuFitsBeside = false
+    /// How far the context ring's trailing edge sits in from the card's: its details open above
+    /// it, trailing edges aligned.
+    @State private var meterInset: CGFloat = 0
     @State private var dismissal = ComposerMenuDismissal()
     /// Owned here, not by the thread: claiming the keyboard redraws the composer alone.
     @FocusState private var composing: Bool
@@ -103,11 +112,11 @@ struct Composer: View {
         blank ? min(delay, AppLayout.blankStartingIndicatorDelay) : delay
     }
 
-    private enum Menu: Equatable { case models, thinking, send }
+    private enum Menu: Equatable { case models, thinking, send, context }
 
     /// The menu over the card, whichever path opened it (typing "/", a chip, ⇧⌘M, Esc, holding
     /// Send).
-    private enum OpenMenu: Equatable { case none, slash, models, thinking, send }
+    private enum OpenMenu: Equatable { case none, slash, models, thinking, send, context }
 
     // One effective state: a lost connection wins over a cached running snapshot (error maps
     // to Send + an inline error, never Stop).
@@ -139,6 +148,7 @@ struct Composer: View {
         case .models: .models
         case .thinking: .thinking
         case .send: .send
+        case .context: .context
         case nil: .none
         }
     }
@@ -243,6 +253,7 @@ struct Composer: View {
                     Self.sendMenuBeside(room: (proxy.bounds(of: .named(Self.threadSpace))?.maxX ?? proxy.size.width) - proxy.size.width)
                 } action: { sendMenuFitsBeside = $0 }
                 .overlay(alignment: .topLeading) { menus(query: query) }
+                .overlay(alignment: .topTrailing) { contextDetails }
                 .overlay(alignment: sendMenuFitsBeside ? .bottomTrailing : .topTrailing) {
                     sendMenu(beside: sendMenuFitsBeside)
                 }
@@ -323,6 +334,7 @@ struct Composer: View {
             // One menu at a time: typing a command takes over from a chip's menu.
             if query != nil { menu = nil }
         }
+        .task { if contextDetailsOpen { menu = .context } }
         // The catalog decides whether the thinking chip applies; this Mac's is asked once per process.
         .task { if catalog?.isEmpty != false { await loadModels() } }
         // ⇧⌘M and the thinking menu's command, watched apart from the thread and the composer.
@@ -415,8 +427,27 @@ struct Composer: View {
 
     // MARK: Card
 
+    /// The context ring's details, above the ring, trailing edges aligned (ContextDetails).
+    private var contextDetails: some View {
+        ZStack(alignment: .bottomTrailing) {
+            if menu == .context {
+                ContextDetailsPopover(store: store, active: active, find: { id in
+                    menu = nil
+                    finder?.find(id)
+                }, close: { menu = nil; composing = true })
+                .background { ComposerMenuRegion(dismissal: dismissal) }
+                .nwTransition(.overlay, anchor: .bottomTrailing)
+            }
+        }
+        .fixedSize()
+        .padding(.trailing, meterInset)
+        .alignmentGuide(.top) { $0[.bottom] + AppLayout.menuGap }
+        .nwAnimation(.overlay, value: menu == .context)
+    }
+
     private var card: some View {
-        let focused = composing || dropTargeted || menuOpen
+        // The context details float over the thread without the card taking focus's look.
+        let focused = composing || dropTargeted || (menuOpen && menu != .context)
         return NWComposer(isFocused: focused) {
             ForEach(attachments) { attachment in
                 NWAttachmentChip(attachment.name, thumbnail: attachment.thumbnail) {
@@ -451,8 +482,9 @@ struct Composer: View {
                 field.nwEntrance(.content)
             }
         } controls: {
-            ComposerControls(model: controlsModel, actions: controlsActions).equatable()
+            ComposerControls(model: controlsModel, actions: controlsActions, store: store).equatable()
         }
+        .coordinateSpace(.named(Self.cardSpace))
         .onDrop(of: [.image, .fileURL], isTargeted: canAttach ? $dropTargeted : nil) { providers in
             guard canAttach else { return false }
             attach(providers)
@@ -543,7 +575,7 @@ struct Composer: View {
             thinking: store.thinking, thinkingShown: thinkingAvailable, thinkingEnabled: store.supports("setThinking"),
             thinkingOpen: menu == .thinking,
             startingShown: startingShown, busy: store.busy, stops: stops, beside: working && !draftEmpty && !store.busy,
-            sendRinged: menu == .send, stopEnabled: active && store.supports("abort"),
+            sendRinged: menu == .send, contextOpen: menu == .context, stopEnabled: active && store.supports("abort"),
             actionEnabled: stops ? active && store.supports("abort") : canSend && dialogs.isEmpty,
             stopHelp: stopHelp, actionHelp: stops ? stopHelp : !dialogs.isEmpty ? "Answer the question first" : sendHelp(working: working))
     }
@@ -567,7 +599,9 @@ struct Composer: View {
             holdSend: {
                 sendHeld = true
                 openSendMenu()
-            })
+            },
+            context: { menu = menu == .context ? nil : .context },
+            meterInset: { meterInset = max(0, $0) })
     }
 
     private var stopHelp: String {
@@ -790,6 +824,8 @@ struct ComposerControlsModel: Equatable {
     /// Stop stands aside outlined: pi works, with a draft to send.
     var beside: Bool
     var sendRinged: Bool
+    /// The context ring's details are open.
+    var contextOpen: Bool
     var stopEnabled: Bool
     var actionEnabled: Bool
     var stopHelp: String
@@ -806,10 +842,13 @@ struct ComposerControlsActions {
     var send: () -> Void
     var sendMenu: () -> Void
     var holdSend: () -> Void
+    var context: () -> Void
+    /// How far the ring's trailing edge sits in from the card's.
+    var meterInset: (CGFloat) -> Void
 }
 
-/// The composer's control row: attach · / commands · model · thinking · Send or Stop, with full
-/// chip labels when they fit; in a narrow thread (a docked right pane) the chips drop their words
+/// The composer's control row: attach · / commands · model · thinking, then the context ring and
+/// Send or Stop, with full chip labels when they fit; in a narrow thread (a docked right pane) the chips drop their words
 /// ("/", the thinking level alone) instead of truncating mid-word, after "Starting…" drops
 /// its own. `ViewThatFits` builds and measures every alternative, each with its tooltips and
 /// accessibility, whenever the row is rebuilt, so the row compares what it draws first: a
@@ -818,20 +857,35 @@ struct ComposerControlsActions {
 struct ComposerControls: View, Equatable {
     let model: ComposerControlsModel
     let actions: ComposerControlsActions
+    /// Handed to the ring, which reads its meter; the row itself reads nothing from it.
+    let store: NativeThreadStore
 
-    static func == (a: Self, b: Self) -> Bool { a.model == b.model }
+    static func == (a: Self, b: Self) -> Bool { a.model == b.model && a.store === b.store }
 
     var body: some View {
         ComposerControlsMinimum {
-            ViewThatFits(in: .horizontal) {
-                chips(compact: false, startingLabel: true)
-                // "Starting…" gives up its words before the chips do.
-                chips(compact: false, startingLabel: false)
-                chips(compact: true, startingLabel: false)
+            HStack(spacing: NW.Space.xxs) {
+                ViewThatFits(in: .horizontal) {
+                    chips(compact: false, startingLabel: true)
+                    // "Starting…" gives up its words before the chips do.
+                    chips(compact: false, startingLabel: false)
+                    chips(compact: true, startingLabel: false)
+                }
+                // A new model or level cross-fades. Only these: typing and width changes stay instant.
+                .nwAnimation(.content, value: [model.model, model.thinking])
+                // The ring and the action, 6pt apart, keep their place whatever the chips drop; out
+                // of the fitting candidates, each is built once (a streamed chunk redraws neither).
+                HStack(spacing: NW.Space.s) {
+                    ContextMeterButton(store: store, expanded: model.contextOpen, toggle: actions.context)
+                        .equatable()
+                        .onGeometryChange(for: CGFloat.self) { proxy in
+                            (proxy.bounds(of: .named(Composer.cardSpace))?.width ?? 0)
+                                - proxy.frame(in: .named(Composer.cardSpace)).maxX
+                        } action: { actions.meterInset($0) }
+                    primary
+                }
             }
         }
-        // A new model or level cross-fades. Only these: typing and width changes stay instant.
-        .nwAnimation(.content, value: [model.model, model.thinking])
     }
 
     private func chips(compact: Bool, startingLabel: Bool) -> some View {
@@ -859,7 +913,6 @@ struct ComposerControls: View, Equatable {
             thinkingChip(compact: compact)
             Spacer(minLength: NW.Space.m)
             if model.startingShown { startingIndicator(label: startingLabel).nwTransition(.content) }
-            primary
         }
         .nwAnimation(.content, value: model.startingShown)
     }

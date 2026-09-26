@@ -28,6 +28,8 @@ extension MobileLayout {
     static let queueHoldRenewal: Duration = .seconds(60)
     /// The editor sheet's field: at least this many lines.
     static let queueEditorLines = 3
+    /// Older pages the context sheet's Largest and Show summary load, at most, to find an entry.
+    static let findPageLimit = 20
     /// A wide question panel (iPad) lays its options in columns at least this wide.
     static let questionColumn: CGFloat = NWTouchQuestionMetrics.columnMinWidth
 }

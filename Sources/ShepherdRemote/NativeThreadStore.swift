@@ -27,6 +27,12 @@ public struct NativeThreadRow: Equatable, Identifiable, Sendable {
     /// The opening prompt's text (a reply's Retry) and time (its footer).
     public var promptText: String?
     public var startedAt: Double?
+    /// The turn the host recorded for this reply (`NativeThreadSnapshot.turnChanges`): its
+    /// changes card, with Undo and Redo.
+    public var recordedTurn: ChangesTurn? = nil
+    /// A finished reply's "Edited N files" card for the touch thread: the host's record of its
+    /// turn (`recordedTurn`), else its edit calls.
+    public var changes: NativeChangesCard? = nil
 
     public var id: String { turn.id }
     public var isUser: Bool { turn.isUser }
@@ -123,6 +129,14 @@ public final class NativeThreadStore {
     /// `NativeThinkingLevel.fallback` from a host that does not say.
     public private(set) var thinkingLevels: [NativeThinkingLevel] = NativeThinkingLevel.fallback { didSet { chromeVersion &+= 1 } }
     public private(set) var stats: NativeThreadStats?
+    /// The ring beside Send; nil from a host that reports no context (no ring). It changes
+    /// only when the usage does, so the ring redraws alone and never with a streamed chunk.
+    public private(set) var contextMeter: NativeContextMeter? { didSet { chromeVersion &+= 1 } }
+    /// What the ring's details show, derived with it.
+    public private(set) var contextDetails: NativeContextDetails?
+    @ObservationIgnored private var contextInputs: (context: NativeThreadContext?, model: String?, replying: Bool, unset: Bool) = (nil, nil, false, true)
+    /// Which compactions in the thread show what the agent kept (Show summary).
+    public let compactions = NativeCompactionExpansion()
     public private(set) var supportedActions: Set<String> = [] { didSet { bothVersions() } }
     public private(set) var clipped = false { didSet { threadVersion &+= 1 } }
     /// The thread's own running state: `settledRunning` unless the connection is lost (a
@@ -386,8 +400,11 @@ public final class NativeThreadStore {
             }
             kept.insert(turn.id)
             let prompt = opener.map { $0.messages.flatMap(\.blocks).filter { $0.kind == .text }.map(\.text).joined(separator: "\n") }
+            let startedAt = opener?.messages.first?.timestamp
+            let recordedTurn = changesTurn(forMessageAt: startedAt, in: snapshot?.turnChanges)
+            let card = isLive ? nil : nativeChangesCard(turn: recordedTurn, changes: presentation.changes)
             rows.append(NativeThreadRow(turn: turn, presentation: presentation, live: isLive, promptText: prompt,
-                                        startedAt: opener?.messages.first?.timestamp))
+                                        startedAt: startedAt, recordedTurn: recordedTurn, changes: card))
         }
         if presentationCache.count > kept.count { presentationCache = presentationCache.filter { kept.contains($0.key) } }
         if rows != self.rows { self.rows = rows }
@@ -420,6 +437,16 @@ public final class NativeThreadStore {
         if hostRunning != self.hostRunning { self.hostRunning = hostRunning }
         let running = loadError == nil && settledRunning
         if running != self.running { self.running = running }
+        // The meter and its details derive from the context, the model and whether the agent is
+        // replying alone, so a streamed chunk (same context) formats nothing.
+        if contextInputs.unset || contextInputs.context != value?.context || contextInputs.model != value?.model
+            || contextInputs.replying != running {
+            contextInputs = (value?.context, value?.model, running, false)
+            let meter = NativeContextMeter(value?.context, replying: running)
+            if meter != contextMeter { contextMeter = meter }
+            let details = value?.context.map { NativeContextDetails(context: $0, model: value?.model) }
+            if details != contextDetails { contextDetails = details }
+        }
         let thinking = showsThinking(running: running, dialogs: dialogs)
         if thinking != showsThinking { showsThinking = thinking }
         let userTurns = turns.count(where: \.isUser)
@@ -981,6 +1008,16 @@ public final class NativeThreadStore {
         return page
     }
 
+    /// pi's `compact`, keeping what `instructions` asks for. pi stops a run to compact, so the
+    /// host takes it only while the agent is idle. Gated by `compact` in `supportedActions`.
+    public func compact(instructions: String?) async {
+        guard supports("compact"), let current = snapshot else { return }
+        let text = instructions?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let operation = UUID()
+        await perform(.compact(expectedSessionID: current.piSessionID, generation: current.generation, operationID: operation,
+                               instructions: text?.isEmpty == false ? text : nil), operation: operation, current: current)
+    }
+
     public func abort() async {
         guard supports("abort"), let current = snapshot else { return }
         let operation = UUID()
@@ -1090,5 +1127,25 @@ private final class PollWake {
         } onCancel: {
             Task { @MainActor in self.waiters.removeValue(forKey: id)?.resume() }
         }
+    }
+}
+
+/// Which compactions in a thread show what the agent kept: toggled by their Show summary, and
+/// opened by the ring's details. Its own object, so a toggle redraws only the compaction lines.
+@MainActor
+@Observable
+public final class NativeCompactionExpansion {
+    public private(set) var expanded: Set<String> = []
+
+    public init() {}
+
+    public func isExpanded(_ id: String) -> Bool { expanded.contains(id) }
+
+    public func toggle(_ id: String) {
+        if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
+    }
+
+    public func expand(_ id: String) {
+        if !expanded.contains(id) { expanded.insert(id) }
     }
 }

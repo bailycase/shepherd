@@ -188,7 +188,10 @@ extension PreviewTests {
         split.layout = .split(axis: .vertical, ratio: 0.5, first: tab.layout, second: .leaf(terminal))
         try await workspace.seed(ShepherdState(spaces: [space], tabs: [split], agents: [agent]))
         let files = Reviews.session().files
-        vm.reviewDiffLoader = { _, reference in (files, reference) }
+        vm.changesEngineOverride = { _, _ in
+            ChangesBoard.engine(files, list: ChangesBoard.listed(files, scope: .uncommitted,
+                                                                  comparison: ChangesComparison(head: "Working tree", base: "HEAD")))
+        }
         vm.selectAgent(agent.id)
         vm.toggleRightPane()
         let store = vm.threadStores.store(for: agent.id)

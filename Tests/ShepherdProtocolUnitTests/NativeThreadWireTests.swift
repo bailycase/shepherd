@@ -57,6 +57,8 @@ struct NativeThreadWireTests {
         .subagentTranscript(expectedSessionID: "s", runID: "native-1", beforeEntryID: "c:9"),
         .send(expectedSessionID: "s", generation: "g", operationID: op, text: "see", delivery: .followUp,
               images: [NativeImage(mimeType: "image/png", data: Data([1]), name: "checkout.png")]),
+        .compact(expectedSessionID: "s", generation: "g", operationID: op),
+        .compact(expectedSessionID: "s", generation: "g", operationID: op, instructions: "Keep the preview findings"),
     ] + queueActions.map { .queue(expectedSessionID: "s", generation: "g", operationID: op, action: $0) }
 
     /// Every queue action, as a request carries it.
@@ -132,6 +134,48 @@ struct NativeThreadWireTests {
             ], mode: .oneAtATime, paused: true, notice: "pi refused it.")
         )),
     ]
+
+    /// Every context field and a compaction in history and in the live rows (v4).
+    static let contextSnapshot = NativeThreadSnapshot(
+        piSessionID: "s", generation: "g", revision: 6, running: false, supportedActions: ["send", "compact"], dialogsSupported: true,
+        dialogs: [],
+        messages: [NativeThreadMessage(entryID: "compactionSummary:5", role: "compactionSummary", blocks: [], timestamp: 5,
+                                       compaction: NativeCompaction(phase: .done, reason: .threshold, tokensBefore: 184_000, tokensAfter: 23_000,
+                                                                    summary: "## Goal\nShip it", willRetry: false))],
+        provisional: [NativeThreadMessage(entryID: "compaction:9", role: "compaction", blocks: [],
+                                          compaction: NativeCompaction(phase: .stopped, reason: .manual, tokensBefore: 92_000))],
+        clipped: false, runtime: "rpc",
+        context: NativeThreadContext(
+            tokens: 42_000, window: 200_000, autoCompactAt: 183_616, autoCompact: true, keepRecent: 20_000, estimate: nil, before: 184_000,
+            split: NativeContextSplit(system: 6_800, instructions: 1_400, messages: 9_100, toolResults: 24_800, instructionFiles: ["AGENTS.md"]),
+            largest: [NativeContextItem(entryID: "t:c1", kind: .file, label: "ThreadView.swift", tokens: 8_200),
+                      NativeContextItem(entryID: "t:c2", kind: .command, label: "swift test", tokens: 6_100)],
+            compacting: NativeCompactionRun(reason: .overflow, startedAt: 1_000, tokens: 203_000), summaryEntryID: "compactionSummary:5"))
+
+    @Test func aContextSnapshotRoundTrips() throws {
+        #expect(try Wire.roundTrip(NativeThreadResult.snapshot(value: Self.contextSnapshot)) == .snapshot(value: Self.contextSnapshot))
+    }
+
+    /// An older host sends no context: the client draws no ring. A context with nothing known
+    /// yet decodes to empty parts, and omits them on the wire.
+    @Test func anOlderSnapshotHasNoContextAndAnEmptyOneStaysSmall() throws {
+        #expect(try Wire.decode(NativeThreadSnapshot.self, Self.v1Snapshot).context == nil)
+        let empty = try Self.snapshot(adding: ["context": [String: Any]()])
+        #expect(empty.context == NativeThreadContext())
+        #expect((try Wire.object(empty)["context"] as? [String: Any])?.isEmpty == true)
+    }
+
+    /// Values a newer pi or host adds read as unknown rather than failing the snapshot.
+    @Test func unknownReasonsPhasesAndKindsDecodeLeniently() throws {
+        let snapshot = try Self.snapshot(adding: [
+            "context": ["compacting": ["reason": "budget", "startedAt": 1], "largest": [["entryID": "t:x", "kind": "image", "label": "a.png", "tokens": 3]]],
+            "messages": [["entryID": "e", "role": "compaction", "blocks": [], "truncated": false, "compaction": ["phase": "paused"]]],
+        ])
+        #expect(snapshot.context?.compacting?.reason == .unknown)
+        #expect(snapshot.context?.largest.first?.kind == .tool)
+        #expect(snapshot.messages.first?.compaction?.phase == .done)
+        #expect(NativeCompactionReason(pi: "threshold") == .threshold && NativeCompactionReason(pi: nil) == .unknown)
+    }
 
     @Test(arguments: results)
     func resultsRoundTrip(_ result: NativeThreadResult) throws {

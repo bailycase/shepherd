@@ -15,14 +15,16 @@ struct PiAgent {
     var server: SessionServer { host.server }
 
     /// `env` adds to the stub's environment (its `STUB_PI_STARTUP_*` options, for one).
-    static func launch(on host: ScratchServer, env: [String: String] = [:]) async throws -> PiAgent {
+    /// `cwd` is where the stub runs (the server's scratch directory unless a test needs a repository).
+    static func launch(on host: ScratchServer, env: [String: String] = [:], cwd: URL? = nil) async throws -> PiAgent {
         let log = host.dir.appendingPathComponent("stdin-\(UUID().uuidString.prefix(6)).log")
+        let directory = (cwd ?? host.dir).path
         let session = try await host.server.createSession(params: CreateSessionParams(
-            cwd: host.dir.path, command: StubPi.command, env: env.merging(["STUB_PI_LOG": log.path]) { $1 }, runtime: .rpc))
-        let existing = host.server.state.spaces.first { $0.path == host.dir.path }
-        let space = existing ?? Space(name: "rpc", path: host.dir.path)
+            cwd: directory, command: StubPi.command, env: env.merging(["STUB_PI_LOG": log.path]) { $1 }, runtime: .rpc))
+        let existing = host.server.state.spaces.first { $0.path == directory }
+        let space = existing ?? Space(name: "rpc", path: directory)
         if existing == nil { try await host.server.addSpace(space) }
-        let pane = LeafPane(sessionID: session.id, cwd: host.dir.path)
+        let pane = LeafPane(sessionID: session.id, cwd: directory)
         let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
         let agent = Agent(name: "rpc", spaceID: space.id, tabID: tab.id, paneID: pane.id)
         try await host.server.addAgent(agent, withTab: tab)
