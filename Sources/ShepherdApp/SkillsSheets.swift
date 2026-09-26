@@ -134,9 +134,9 @@ struct SkillsDirectorySheet: View {
         return VStack(spacing: 0) {
             if !searching && failure == nil {
                 HStack {
-                    Text(topic.map { "\($0) · \(ranking.title)" } ?? ranking.heading).nwSectionLabel()
+                    Text(topic.map { "\($0) · \(ranking.title)" } ?? ranking.heading).nwSettingsLabel(table: true)
                     Spacer()
-                    Text("Installs").nwSectionLabel()
+                    Text("Installs").nwSettingsLabel(table: true)
                 }
                 .padding(.leading, NW.Space.m + NW.Space.xxs)
                 .padding(.trailing, NW.Space.xl)
@@ -249,7 +249,7 @@ struct SkillsDirectorySheet: View {
     @ViewBuilder private func moreFrom(_ skill: DirectorySkill, hosts: [SkillsHost]) -> some View {
         let others = results.filter { $0.source == skill.source && $0.id != skill.id }
         VStack(alignment: .leading, spacing: NW.Space.m) {
-            Text("More in \(skill.source)").nwSectionLabel()
+            Text("More in \(skill.source)").nwSettingsLabel(table: true)
             NWFlowLayout(spacing: NW.Space.s) {
                 ForEach(others) { other in
                     Button { selected = other.id } label: {
@@ -1006,7 +1006,7 @@ private struct SkillFilesBlock: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NW.Space.m) {
-            Text("Files").nwSectionLabel()
+            Text("Files").nwSettingsLabel(table: true)
             NWFlowLayout(spacing: NW.Space.s) {
                 ForEach(entries) { entry in
                     NWSkillFileChip(SkillsPresentation.chip(entry), count: entry.isDirectory ? entry.fileCount : nil,

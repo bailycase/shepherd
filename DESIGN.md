@@ -169,8 +169,7 @@ And the rules that follow from them:
 | PaneStates, the Changes boards, PaneBrowser, PaneArtifacts, PaneFiles: four tabs, Changes, Browser, Artifacts and Files | Changes alone | Only what Shepherd has (the user's decision, 2026-09-25: "dont show browser, artifacts, files, etc, only show the things we have"); the others join when they are built |
 | NWThread: inline code on `bgSunken` with a 1px `lineSubtle` line, radius 4, 1×5 padding | Prose draws it in mono 12 on a `lineSubtle` fill, with no line or padding. `NWInlineCode` draws the board's form where a view holds the code (only the Component Gallery today) | A run inside `Text` cannot carry a border or padding |
 | NWThread: a follow-up typed while pi works is a dashed bubble in the thread ("queued · sends when the turn ends", Edit, Send now) | It never enters the thread early: it waits in Up next above the composer and joins the thread where pi reads it | The Queue & steer boards replaced it; the host holds one queue that every viewer sees and edits |
-| Settings boards: controls drawn by hand larger than the Controls board's (30pt buttons, fields and popups at radius 7 in Geist 13; a 26pt segmented control on its own track; a 180pt slider with a 4pt track and an 18pt knob; a 30×28 stepper; 22pt keycaps at radius 5; 240pt fields and a 100pt port field; a 32pt search field with a plain "⌘F"), cards at radius 10, 10pt paddings and gaps (rows, nav rows, the icon-to-name gap, under the search field), mono-free sans section labels (Geist 11/600 caps in `textSecondary`), and hexes outside the palette (`#22262a`, `#1b1e21`, `#c1c5cb`, `#767c85`, `#23272c`, `#f58a86`, `#6fd49a`) | The Controls board's components at their sizes (`NWSegmentedPicker` m, `NWPopupMenu` 200×28, `NWStepper`, `NWValueSlider` 200pt, `.nw` fields 220pt and a port 88pt, `NWKeycap`, `NWSearchField` with keycaps); the radius and space scales (cards 8, controls 6, keycaps 4; 10pt steps to 8 or 12); `.nwSectionLabel()` (Foundations' micro mono caps in `textTertiary`); the nearest roles (`lineSubtle`, `textSecondary`, `textTertiary`, `bgSelected`, `failed`, `done`) | One anatomy per control and one section label across the app; the scales and roles are the contract (SettingsAdvanced's own Update channel row already draws the Controls board's segmented control) |
-| SettingsRemote: a host's state as a colored word ("connected") | A state dot plus its word, and a failed host's sentence under it | Status is a dot or glyph plus a word (Principles) |
+| Settings boards: hexes outside the palette (`#22262a`, `#1b1e21`, `#c1c5cb`, `#767c85`, `#23272c`, `#f58a86`, `#6fd49a`) | The nearest roles (`lineSubtle`, `textSecondary`, `textTertiary`, `bgSelected`, `failed`, `done`) | The roles are the contract; a new color is a theme role |
 | SettingsPi: Subagent display "Show subagent runs in the sidebar and open their inspector" | "Show subagent runs in their agent's thread, the inspector and the palette" | Subagents have no sidebar rows (Subagents); one waiting on you marks its parent's row |
 | SettingsPi: Sync pi theme "Use Shepherd's palette in pi and follow theme changes." | No row | Shepherd no longer themes pi: agents run pi over RPC and draw no pi TUI, and pi run by hand keeps its own theme |
 | SettingsRemote: Token "Delete the file to revoke every client." | "To revoke every client, delete the file and turn the listener off and on." | The listener reads the token when it starts; deleting the file alone revokes no one |
@@ -3188,22 +3187,23 @@ is wired: a row exists only if changing it changes the app, and a change applies
 Save or Apply (the one exception is Instructions, which edits files and saves with ⌘S).
 
 - **Navigation** (the same on every Settings board): a 232pt column on `bgBase` with a `lineSubtle`
-  hairline (`NWHairline`) on its trailing edge. Top to bottom:
+  hairline (`NWHairline`) on its trailing edge, its contents 10pt in from either side
+  (`NWSettingsNavMetrics.sidePadding`). Top to bottom:
   - the 44pt strip for the window controls: it drags the window and holds nothing else
-  - **Back to Shepherd**: `chevron.left` and the words in Geist 13, `textSecondary`, in a 30pt row
-    (Esc does the same)
-  - the search field (`NWSearchField`, "Search settings", its ⌘F keycap trailing while it is
-    empty), `NW.Space.m` above and `NW.Space.l` below; it takes focus when Settings opens, so typing
+  - **Back to Shepherd**: `chevron.left` in a 10pt column, then 8pt after it the words in Geist 13,
+    `textSecondary`, in a 30pt row 8pt in (Esc does the same)
+  - the search field (`NWSearchField` at the Settings scale: 34pt, radius 8, 10pt in, Geist 13,
+    "Search settings", a plain mono 11 "⌘F" in `textTertiary` trailing while it is empty), 10pt
+    under Back and `NW.Space.l` above the pages; it takes focus when Settings opens, so typing
     filters at once
   - the pages, one `NWSettingsNavRow` each, `NW.Space.xxs` apart, in this order: Appearance
     (`circle.lefthalf.filled`) · Terminal (`terminal`) · Agents (`person.2`) · Worktrees
     (`arrow.branch`) · Pi (`pi`) · Instructions (`doc.text`) · Skills (`graduationcap`) · Remote
     (`dot.radiowaves.left.and.right`) · Keyboard (`keyboard`) · Advanced (`gearshape`) ·
-    Experiments (`flask`). A row is 32pt × density (`NW.Height.scaled(32)`), radius `s`, with
-    `NW.Space.m` side padding: a 15pt medium icon in `textSecondary` (`textPrimary` when selected),
-    then, `NW.Space.m` after it, the name in Geist 13 `textPrimary`. The selected page sits on
-    `bgSelected` with its name at medium (500) weight; hover is `bgHover`
-    (`NWSettingsNavMetrics`).
+    Experiments (`flask`). A row is 32pt × density (`NW.Height.scaled(32)`), radius `s`, 10pt in:
+    a 13pt symbol in a 15pt box in `textSecondary` (`textPrimary` when selected), then, 10pt after
+    it, the name in Geist 13 `textPrimary`. The selected page sits on `bgSelected` with its name at
+    medium (500) weight; hover is `bgHover` (`NWSettingsNavMetrics`).
   - "Shepherd x.y.z · agent x.y.z" pinned at the bottom in mono `micro`, `textTertiary`, aligned with
     the rows' icons: the app's own name, so "Shepherd Nightly …" there.
 - **Search:** typing narrows the nav to pages with a match (a row's title, or a keyword such as
@@ -3211,19 +3211,21 @@ Save or Apply (the one exception is Instructions, which edits files and saves wi
   (`caption`, `textSecondary`, indented past the icon); clicking one opens its page. When the page
   on screen has no match, the first page that does opens at once (no cross-fade per keystroke). With
   nothing matching, the nav says "No matching settings" in `caption`/`textTertiary`.
-- **Content** (every page but Instructions and Experiments): the page on `bgWindow`, a 720pt column
+- **Content** (every page but Instructions, Skills and Experiments): the page on `bgWindow`, a 720pt column
   centered in it, 44pt from the top, 48pt from the sides and the bottom; the page scrolls, and the
   strip at its top still drags the window. Top to bottom:
   - the header: the page's name in Geist 22/600, tracked −1% (`Font.nwSans(22, .semibold)`,
     `textPrimary`, a header for VoiceOver), and `NW.Space.xs` under it one line in
-    `body`/`textSecondary` that says what the page is for
-  - groups, 28pt apart (from the header too). A group is a section label (`NWSectionHeader`,
+    Geist 13.5/1.5 `textSecondary` that says what the page is for
+  - groups, 28pt apart (from the header too). A group is a section label (`NWSectionHeader` with
+    `style: .settings`: `nwSettingsLabel()`, Geist 11/600 caps tracked 6% in `textSecondary`,
     `NW.Space.xs` in from the card's edge), `NW.Space.m` above an `NWGroupCard`, and an optional
-    footnote `NW.Space.m` under the card, `NW.Space.xs` in. The card is radius `NW.Radius.m` with a
-    1px `lineSubtle` line, filled `bgWindow` like the page it sits on: flat, drawn by its line
-    alone. `NWHairline`s separate its rows.
-  - a row (`NWCardRow` with `style: .settings`, through `SettingsRow`): at least 52pt × density,
-    `NW.Space.l` top and bottom and `NW.Space.xl` at the sides, the text and the control
+    footnote `NW.Space.m` under the card, `NW.Space.xs` in. The card is radius 10
+    (`NWCardRowMetrics.settingsCardRadius`) with a 1px `lineSubtle` line, filled `bgWindow` like the
+    page it sits on: flat, drawn by its line alone. `NWHairline`s separate its rows.
+  - a row (`NWCardRow` with `style: .settings`, through `SettingsRow`): its content at least 52pt ×
+    density, 10pt above and below it (`NWCardRowFrame`; so 72pt at the least, as the canvas renders
+    the boards' rows) and `NW.Space.xl` at the sides, the text and the control
     `NW.Space.xxl` apart. The title in Geist 13.5/500 (`Font.nw(.body, weight: .medium)`,
     `textPrimary`), `NW.Space.xxs` over its description in Geist 12.5/1.45 (`textSecondary`). A row
     may have no description (Sidebar width, Port, Thinking). The control trails, centered on the
@@ -3235,7 +3237,8 @@ Save or Apply (the one exception is Instructions, which edits files and saves wi
     than the text around them (`textPrimary`; the board's #c1c5cb is off the palette): "**Remote
     default** starts clean…". Descriptions and page explanations are written with that markup
     (`` `code` ``, `**name**`) and drawn by `NWMarkupText`, which parses each string once and pads
-    the code's fill by kerning the characters around it.
+    the code's fill by kerning the characters around it. Code breaks only at its spaces, never
+    after a hyphen (`--model` stays whole).
   - rows without a title (a form's Add host, pi's version and update buttons, a remote host) are
     `SettingsActionRow`s: the same padding and minimum height, their own content leading, actions
     trailing `NW.Space.s` apart.
@@ -3243,27 +3246,34 @@ Save or Apply (the one exception is Instructions, which edits files and saves wi
     `SettingsRow`, `SettingsActionRow`, `SettingsNote`, `SettingsSwitch`, `SettingsTextField`,
     `PathRow`. A page composes these and the shared components; a part only one page has (the font
     preview, the shortcut recorder, a remote host's row) is built from the same tokens.
-- **Controls** are the Controls board's components at their own sizes, nothing hand-drawn per page
-  (the Settings boards draw larger ones; see Where Shepherd departs from the boards):
-  - `NWSegmentedPicker` (m, 24pt) for 2–4 options: a `bgSunken` track with a `lineSubtle` line, the
-    chosen segment on `bgSelected` with a `lineStrong` ring in semibold `textPrimary`, the others in
-    `textSecondary`
-  - `NWPopupMenu` (at least 200pt, 28pt, radius `s`, `bgRaised`) for longer lists: the value in mono
-    when it is an id (a model, a shell path), in Geist when it is a word ("Use the agent’s default · …",
-    "Inherit parent", "System font"); a fallback, where there is one, comes first, then a divider,
-    then the choices
+- **Controls** are the shared components at the Settings boards' sizes: `SettingsPage` and
+  `SettingsGroup` set `.nwControlScale(.settings)`, and every Night Watch control inside takes the
+  size these boards draw (`NWSettingsControlMetrics`), nothing hand-drawn per page:
+  - `NWSegmentedPicker`: 26pt segments 12pt in, 2pt apart, on a `lineSubtle` track 3pt in at
+    radius 8; the chosen one on `bgWindow` at radius 6 with the knob's small shadow, in semibold
+    `textPrimary`, the others 500 `textSecondary`. Advanced's Update channel alone keeps the
+    Controls board's control, as SettingsAdvanced draws it (`.nwControlScale(.standard)`).
+  - `NWPopupMenu` for longer lists: 32pt at radius 7 on `bgRaised` with a `lineStrong` line, sized
+    to its value (12pt before it, up-down chevrons in `textTertiary` 10pt after); the value in mono
+    when it is an id (a model, a shell path), in Geist 13 when it is a word ("Use the agent’s
+    default · …", "Inherit parent", "System font"); a fallback, where there is one, comes first,
+    then a divider, then the choices
   - the lantern switch (`SettingsSwitch`, `.nwSwitch`, 30×18) for booleans; the row's title is its
     accessibility label
-  - `NWStepper` for a small count, and `NWValueSlider` for a range: 200pt, a 3pt `lineStrong` track
-    filled with lantern to a 14pt knob, its value trailing in mono (at least 44pt wide,
-    right-aligned) with its unit ("105%", "239 pt"); double-clicking the value returns it to its
-    neutral value, and only that reset animates
-  - `SettingsTextField`: 220pt `.nw` fields (a port 88pt) labelled for VoiceOver, with an example as
-    the prompt; mono for addresses, ports, and tokens; a token is a secure field
-  - `NWKeycap`s for shortcuts, one cap per key (⇧ ⌘ N)
-  - small buttons (`size: .s`): `.secondary` for actions (Reveal, Check now, Edit), `.danger` for
-    one that removes or resets (Remove, Reset…), `.ghost` for Cancel, `.nwLink` for a text action
-    inside a row (a shortcut's Reset)
+  - `NWStepper` for a small count (30pt at radius 7: 30pt buttons around a 34pt mono 13 value,
+    `lineSubtle` rules between), and `NWValueSlider` for a range: a 180 × 4 `lineSubtle` track
+    filled with lantern to an 18pt knob in a 1px `lineStrong` line, centered on the value, and the
+    value 12pt after it in mono 12 (44pt, right-aligned) with its unit ("105%", "239 pt");
+    double-clicking the value returns it to its neutral value, and only that reset animates
+  - `SettingsTextField`: 240pt fields (a port 100pt), 30pt at radius 7, 10pt in, 12.5 whether mono
+    or not, labelled for VoiceOver, with an example as the prompt; mono for addresses, ports, and
+    tokens; a token is a secure field
+  - `NWKeycap`s for shortcuts, one 22pt cap per key (at least 22 wide, radius 5, mono 11.5 in
+    `textPrimary`, 4pt apart: ⇧ ⌘ N)
+  - buttons, whatever their size: 32pt at radius 7, 12pt in, Geist 13/500 on `bgWindow` with a
+    `lineStrong` line: `.secondary` for actions (Reveal, Check now, Edit), `.danger` for one that
+    removes or resets (Remove, Reset…), `.ghost` for Cancel, `.nwLink` for a text action inside a
+    row (a shortcut's Reset, Geist 12, 6pt either side)
 - **Footnotes and problems:** a footnote is Geist 12/1.5 (`nwText(size:lineHeight:)`) in
   `textTertiary`: a sentence or two about the whole group, never a mono paragraph. An inline problem
   (the listener's bind error) sits in its row, `NW.Space.xs` under the description
@@ -3272,8 +3282,9 @@ Save or Apply (the one exception is Instructions, which edits files and saves wi
   port 7433 is already in use."). It discloses, and the card grows with it (`disclosure`). Never
   show an errno or a raw error as the message; the technical reason is the line's tooltip
   (`RemoteListenerFailure` words the listener's).
-- **Status inside a row** is a state dot plus its word (`NWStatusDot`, the word in the state's text
-  color): a remote host's connection, pi's update status. A failed remote host adds what happened
+- **Status inside a row** is its word in the state's text color: a remote host's connection (the
+  word alone, as SettingsRemote draws it), pi's update status (led by a 6pt `NWStatusDot`, as
+  SettingsPi draws it). A failed remote host adds what happened
   and what to do as its problem ("studio refused the token. Edit the host to paste its current
   token."), with the client's technical reason only as that line's tooltip.
 - **Never in `body`:** the installed font families are enumerated once per launch
@@ -3326,12 +3337,13 @@ settings." The chord is read from `KeybindingsStore`, so a rebind never leaves t
     Medium · High · Extra high · Max, default Medium (pi uses the nearest level a model has).
 - **While the agent is working** (the queue's settings; QueueStates' card holds this copy, "Same two
   choices on every platform"):
-  - Return while the agent is working, "⌘↩ always does the other one.": Queue · Steer, default Queue. The
-    chord is the store's alternate send. SettingsAgents also explains each choice ("Queue waits for
-    the turn to end. Steer lands after the tool call the agent is running."); QueueStates' card drops that
-    sentence, and its Steer half is retired (Where Shepherd departs from the boards).
-  - When a turn ends, send the queue, "All at once arrives as one turn, in order." (SettingsAgents:
-    "…in the order you queued it."): One per turn · All at once, default All at once. It is the
+  - Return while the agent is working, "Queue waits for the turn to end. Steer lands once the
+    agent’s current tool calls finish. ⌘↩ always does the other one.": Queue · Steer, default Queue.
+    The chord is the store's alternate send. Steer's sentence is Up next's (SettingsAgents' "lands
+    after the tool call the agent is running" is retired with the Queue & steer row of Where
+    Shepherd departs from the boards).
+  - When a turn ends, send the queue, "All at once arrives as one turn, in the order you queued
+    it.": One per turn · All at once, default All at once. It is the
     host's default for its agents; Up next's ••• menu sets one agent's own.
 
 #### Worktrees (SettingsWorktrees)
@@ -3406,7 +3418,7 @@ automated step of the worktree flows can be turned off here.
 "Connect to agents on other Macs over your VPN, or let other Macs connect to this one."
 
 - **Hosts:** one row per host (`RemoteHostRow`, a `SettingsActionRow`): the name as its title; under
-  it a line led by the connection's `NWStatusDot`: the address in mono 12
+  it a line: the address in mono 12
   (`horizon.starlight.internal:7433`), then " · " and the connection's word in its state's text
   color, and " · 5 agents" while connected, in the description's Geist. The words: connected (done),
   connecting… (running), disconnected (idle), or a failure's headline in lower case (unreachable,
@@ -3440,8 +3452,9 @@ automated step of the worktree flows can be turned off here.
   sheet ("New agent with options…"), and its keycaps trailing. Clicking the keycaps records: they
   become "Press keys…" (`caption` in `running` on `runningTint`, a `running` hairline, radius `xs`),
   the next chord is proposed, and ⎋ cancels. A chord the rules reject (Keyboard) is refused with its
-  reason as the row's problem. A changed shortcut shows Reset (`.nwLink`) just before its keycaps,
-  `NW.Space.xs` away. A change reaches every menu, keycap, and terminal surface at once.
+  reason as the row's problem. A changed shortcut shows Reset (`.nwLink`, Geist 12, 6pt either
+  side) just before its keycaps, `NW.Space.xs` away. A change reaches every menu, keycap, and
+  terminal surface at once.
 - **Groups on the board:**
   - Agents: New agent in current checkout ⌘N · New agent with options… ⇧⌘T · New space… ⇧⌘N · Rename
     agent… ⌘R · Next agent · Previous agent · Command palette. The board shows Next agent, Previous
@@ -3492,7 +3505,8 @@ the bottom, with its blocks 20pt apart (`AppLayout.settingsWide*`). It doesn't s
 its editor and its side column scroll inside themselves, and the strip at its top still drags the
 window. Under the header (the same 22/600 title and `body` explanation, capped at 820pt) sits a main column
 that takes the room and a fixed side column of reference and history (330pt on Instructions, 280pt
-on Skills, 320pt on Experiments), 28pt apart (32pt on Experiments). Their section labels sit `NW.Space.xxs` in and `NW.Space.m`
+on Skills, 320pt on Experiments), 28pt apart (32pt on Experiments). Their section labels (`nwSettingsLabel()`; a list's column heads and a detail's labels are
+`nwSettingsLabel(table: true)`, 10.5 in `textTertiary`) sit `NW.Space.xxs` in and `NW.Space.m`
 above what they label, and a label may carry a trailing text action ("Add all"). Lists in the side
 column (files, history, steps, what was added) are bare rows separated by `lineSubtle` hairlines,
 not cards; only Instructions' reading order uses small cards.
@@ -3720,7 +3734,7 @@ then a list (560pt) beside the selected item's preview, a hairline between.
     topics as 26pt capsules (All, React, Next.js, Design & UI, Databases, Testing, Docs & files,
     Agent workflows; the chosen one on `bgSelected`). With one: "9 skills for “postgres”" and
     Sort: Installs or Name.
-  - The list: a 30pt header ("Trending", "Hot · last hour", "React · Trending"; Installs) over
+  - The list: a 30pt header ("Trending · last 24 hours", "Hot · last hour", "React · Trending"; Installs) over
     rows at least 58pt (`SkillResultRow`): the place in a ranked list (mono 11.5), the name in mono
     13/600 with the search's matches in `lanternText` and skills.sh's Official seal
     (`NWOfficialSeal`), the repository in mono 11.5 `textTertiary`, and a 96pt column with the
@@ -3778,7 +3792,8 @@ agent gets only while the experiment is on for its kind and names the files it m
     most 620pt wide: "When an agent learns something the hard way (a re-run, a failed check, a
     correction from you) it drafts one line for your root instructions. Nothing is written until you
     add it."; the switch trailing.
-  - Its options, while on, under a hairline on `bgBase`: rows of at least 48pt with a 13/500 title
+  - Its options, while on, under a hairline on `bgBase`: rows whose content is at least 48pt, 10pt
+    in from their top and bottom (68pt, as the canvas renders them), with a 13/500 title
     over a 12/1.45 `textSecondary` note and the controls trailing, hairlines between:
     - Learn from, "Where agents may notice a lesson.": `.nwCheckbox`es 14pt apart for Threads and
       Automations (both on).
