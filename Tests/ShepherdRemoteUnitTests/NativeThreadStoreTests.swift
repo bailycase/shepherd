@@ -517,6 +517,40 @@ struct NativeThreadStoreTests {
         #expect(context == (carried ? NativeDesignContext(record) : nil))
     }
 
+    /// Files attached beside the draft (a design's boards) go under the words as their paths, and
+    /// leave the composer with the message; a refused send keeps them.
+    @Test func attachedFilesGoWithTheMessageAndLeaveWithIt() async throws {
+        let (store, host, task) = await started()
+        defer { task.cancel() }
+        let files = [NativeAttachedFile(name: "A.html", path: "/drops/d1/A.html"),
+                     NativeAttachedFile(name: "tokens.css", path: "/drops/d1/tokens.css")]
+        store.attach(files: files)
+        store.attach(files: [NativeAttachedFile(name: "A.html", path: "/drops/d1/A.html")])
+        #expect(store.attachedFiles == files, "each file once")
+        #expect(store.hasDraft, "files alone are something to send")
+
+        host.action = { _ in .failure(code: "busy", message: "not yet") }
+        store.draft = "Build this"
+        await store.send()
+        #expect(store.attachedFiles == files && store.draft == "Build this")
+        guard case .send(_, _, _, let text, _, _, _) = try #require(host.actions.last) else { Issue.record("expected a send"); return }
+        #expect(text == "Build this\n\nAttached files:\n- /drops/d1/A.html\n- /drops/d1/tokens.css")
+
+        host.acceptAll()
+        await store.send()
+        #expect(store.attachedFiles.isEmpty && store.draft.isEmpty && store.sentCount == 1)
+
+        store.attach(files: [files[1]])
+        store.detachFile(files[1].id)
+        #expect(store.attachedFiles.isEmpty && !store.hasDraft)
+    }
+
+    @Test(arguments: [("", "Attached files:\n- /a.html"), ("  ", "Attached files:\n- /a.html"), ("Hi", "Hi\n\nAttached files:\n- /a.html")])
+    func anAttachedFilesMessageListsThemUnderTheWords(_ words: String, _ message: String) {
+        #expect(NativeAttachedFile.message(words, files: [NativeAttachedFile(name: "a.html", path: "/a.html")]) == message)
+        #expect(NativeAttachedFile.message(words, files: []) == words)
+    }
+
     @Test func anAcknowledgementForAnotherOperationIsNotAnAcceptance() async {
         let (store, host, task) = await started()
         defer { task.cancel() }
