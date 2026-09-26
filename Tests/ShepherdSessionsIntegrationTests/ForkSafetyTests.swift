@@ -16,7 +16,7 @@ struct ForkSafetyTests {
         let h = try ScratchServer(dir: makeScratchDirectory("fork"))
         defer { h.stop() }
         let exits = Locked<[SessionID: Int32?]>([:])
-        h.server.onSessionExited = { id, code in exits.withValue { $0[id] = code } }
+        h.server.onSessionExited = { id, exit in exits.withValue { $0[id] = exit.code } }
         // Other threads instantiating tuple metadata, as any generic code does on first use; each
         // instantiation holds the runtime's tuple-metadata lock the child's loop then needs.
         let stop = Locked(false)

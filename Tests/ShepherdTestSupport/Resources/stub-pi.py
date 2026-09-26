@@ -77,9 +77,14 @@ $STUB_PI_HISTORY_BYTES seeds that many bytes of prior history (see below).
 Startup, like a pi that takes a while to boot (or fails to), before stdin is read:
   $STUB_PI_STARTUP_DELAY  seconds to wait
   $STUB_PI_STARTUP_GATE   a file in the cwd to wait for (up to 60 s)
+  $STUB_PI_STARTUP_NEW_SESSION  write pi's warning (in chalk's yellow) that it found no session
+                          with the `--session-id` it was given and creates one, then go on
   $STUB_PI_STARTUP_EXIT   exit with this code instead of serving
+  $STUB_PI_STARTUP_STDERR what it writes to stderr before that exit (default
+                          "stub-pi: failed to start"), as pi's own error would be
 A pi launched the way the app launches it gets no test env, so `stub-pi-startup.json` in the
-cwd ({"delay": 1.5, "gate": "release-pi", "exit": 127}) sets the same.
+cwd ({"delay": 1.5, "gate": "release-pi", "newSession": true, "exit": 1, "stderr": "..."}) sets
+the same.
 
 Every stdin line is appended to $STUB_PI_LOG when set, so tests can assert
 on what the client actually wrote.
@@ -514,12 +519,20 @@ def startup():
     delay = os.environ.get("STUB_PI_STARTUP_DELAY") or config.get("delay")
     gate = os.environ.get("STUB_PI_STARTUP_GATE") or config.get("gate")
     code = os.environ.get("STUB_PI_STARTUP_EXIT") or config.get("exit")
+    new_session = os.environ.get("STUB_PI_STARTUP_NEW_SESSION") or config.get("newSession")
+    message = os.environ.get("STUB_PI_STARTUP_STDERR") or config.get("stderr") or "stub-pi: failed to start"
     if delay:
         time.sleep(float(delay))
     if gate:
         wait_for_file(gate, timeout=60.0)
+    if new_session:
+        args = sys.argv[1:]
+        session_id = args[args.index("--session-id") + 1] if "--session-id" in args[:-1] else "stub-session"
+        sys.stderr.write(f"\x1b[33mWarning: No project session found with id '{session_id}'; "
+                         "creating a new session with that id.\x1b[39m\n")
+        sys.stderr.flush()
     if code is not None:
-        sys.stderr.write("stub-pi: failed to start\n")
+        sys.stderr.write(message.rstrip("\n") + "\n")
         sys.stderr.flush()
         sys.exit(int(code))
 

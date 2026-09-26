@@ -98,6 +98,15 @@ struct PiStartRecordTests {
         }
     }
 
+    /// The warning read before pi served still names the problem once it has.
+    @Test func aWarningBeforeServingOutlivesServing() {
+        var record = PiStartRecord(resuming: "abc-123")
+        let stops = record.note(stderr: Self.warning)
+        record.served()
+        #expect(stops && record.keepsAgent)
+        #expect(record.problem(exitCode: nil)?.lines.count == 1)
+    }
+
     @Test func anotherSessionsWarningIsNotThisOnes() {
         var record = PiStartRecord(resuming: "other")
         let stops = record.note(stderr: Self.warning)
