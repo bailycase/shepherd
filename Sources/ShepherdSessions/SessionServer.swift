@@ -200,7 +200,7 @@ public final class SessionServer: @unchecked Sendable {
     /// own pi read as plain files (one loader per server, so one cache).
     public static func piSkillsReader(_ pi: PiSetup) -> SkillsStore.PiSkillsReader {
         let locator = pi.yourPi
-        let loader = PiSkillsLoader(agentDirectory: pi.home, engine: pi.engine, yourPi: { locator.resolve() })
+        let loader = PiSkillsLoader(agentDirectory: pi.home, engine: pi.engine, yourPi: { locator.resolve() }, ready: { pi.prepare() == nil })
         return { loader.read(installedDirectory: $0) }
     }
 

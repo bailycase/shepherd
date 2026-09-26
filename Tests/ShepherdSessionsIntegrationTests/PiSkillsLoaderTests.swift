@@ -115,10 +115,10 @@ struct PiSkillsLoaderTests {
         }
 
         func loader(timeout: TimeInterval = PiSkillsLoader.timeout, package: URL? = nil, hang: Bool = false,
-                    yourPi: YourPi? = nil) throws -> PiSkillsLoader {
+                    yourPi: YourPi? = nil, ready: @escaping @Sendable () -> Bool = { true }) throws -> PiSkillsLoader {
             var environment = ["HOME": home.path, "PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"]
             if hang { environment["STAND_IN_PI_HANG"] = "1" }
-            return PiSkillsLoader(agentDirectory: agent, engine: PiSetup.app.engine, yourPi: { yourPi },
+            return PiSkillsLoader(agentDirectory: agent, engine: PiSetup.app.engine, yourPi: { yourPi }, ready: ready,
                                   launch: .node(try PiSkillsLoaderTests.node(), package: package ?? self.package),
                                   environment: environment, timeout: timeout)
         }
@@ -134,6 +134,32 @@ struct PiSkillsLoaderTests {
         let places = path + ["/opt/homebrew/bin", "/usr/local/bin", "/run/current-system/sw/bin", NSHomeDirectory() + "/.nix-profile/bin"]
         let found = places.map { $0 + "/node" }.first { FileManager.default.isExecutableFile(atPath: $0) }
         return URL(fileURLWithPath: try #require(found, "these tests run the loader on node"))
+    }
+
+    /// pi's loader reads Shepherd's home only once it is ready: a home Shepherd won't start pi in
+    /// is never read.
+    @Test func aHomeThatIsNotReadyIsNeverRead() throws {
+        let fixture = try Fixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let skills = try fixture.loader(ready: { false }).read(installedDirectory: fixture.installed)
+        #expect(skills.problem == PiSkills.Problem.failed.rawValue)
+        #expect(fixture.runs == 0, "pi's loader never ran")
+    }
+
+    /// The server's reader readies Shepherd's home first, which drops a `packages` key: resolving
+    /// a package pi can't find in the home would run the user's npm and read their global install.
+    @Test func theServersReaderDropsPackagesBeforePiReadsTheHome() throws {
+        let fixture = try Fixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let setup = PiSetup(engine: PiSetup.app.engine, home: fixture.root.appendingPathComponent("support/pi", isDirectory: true))
+        try FileManager.default.createDirectory(at: setup.home, withIntermediateDirectories: true)
+        try #"{"packages":["npm:@acme/team-skills"],"theme":"dark"}"#.write(to: setup.files.settings, atomically: true, encoding: .utf8)
+
+        _ = SessionServer.piSkillsReader(setup)(fixture.installed)
+
+        let settings = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: setup.files.settings)) as? [String: Any])
+        #expect(settings["packages"] == nil)
+        #expect(settings["theme"] as? String == "dark")
     }
 
     @Test func theLoaderListsWhatPiLoadsOutsideShepherdsFolder() throws {
