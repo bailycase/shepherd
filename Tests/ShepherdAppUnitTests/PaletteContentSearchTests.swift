@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import ShepherdTestKit
+import ShepherdProtocol
 @testable import ShepherdApp
 
 /// "Found in conversations" matches only what was said: user and assistant text, never pi's
@@ -47,6 +48,19 @@ struct PaletteContentSearchTests {
 
     @Test func theNewestMessageThatMatchesGivesTheSnippet() {
         #expect(snippet("marmalade") == "The Seville marmalade in breakfast.md uses them; it needs a…")
+    }
+
+    /// A design chat's message carries the viewer's screen fenced ahead of it for pi: only what
+    /// they typed is searched.
+    @Test func aDesignViewRecordFencedAheadOfAMessageNeverMatches() throws {
+        let board = try #require(DesignElementID("A.dc.html#7:1/1/0"))
+        let record = DesignViewRecord(visibleBoards: ["A.dc.html"], selectedBoards: ["A.dc.html"], selected: [board],
+                                      selection: [.init(id: board, kind: .shape, label: "Checkout funnel")])
+        let text = record.fenced(nonce: "0123456789ab") + "Make the funnel card taller"
+        let message = #"{"type":"message","message":{"role":"user","content":[{"type":"text","text":\#(try jsonString(text))}]}}"#
+        #expect(snippet("Checkout", in: message) == nil)
+        #expect(snippet("design-data", in: message) == nil)
+        #expect(snippet("funnel card", in: message) == "Make the funnel card taller")
     }
 
     @Test func aSnippetIsOneLineCutAtWordsAroundTheMatch() throws {
