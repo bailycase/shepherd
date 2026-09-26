@@ -1,3 +1,4 @@
+import ShepherdUI
 import SwiftUI
 
 /// The thread column and its composer (NWThread and NWComposer boards). The components' own
@@ -55,6 +56,11 @@ extension AppLayout {
     static let menuMargin: CGFloat = 8
     /// The thinking chip's lightbulb.
     static let chipSymbol: CGFloat = 11
+    /// Half the narrowest width a real layout ever proposes the control row (the narrowest
+    /// thread column less the composer's compact gutters and the row's own side paddings, 352pt).
+    /// A narrower proposal is the window's minimum-size pass, which asks at no width or the
+    /// paddings' (`ComposerControlsMinimum`); halving leaves a margin on both sides.
+    static let composerControlsNarrowest: CGFloat = (threadMinWidth - 2 * gutterCompact - 2 * NW.Space.s) / 2
     /// Holding Send this long while pi works opens the Send menu (as a right-click does).
     static let sendHoldDelay: Duration = .milliseconds(500)
 

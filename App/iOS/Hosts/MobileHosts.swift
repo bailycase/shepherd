@@ -67,7 +67,9 @@ final class MobileHosts {
 
     private(set) var hosts: [MobileHost] = []
 
-    @ObservationIgnored private let defaults: UserDefaults
+    /// Where the phone keeps its preferences: the hosts' records here, and Settings' own
+    /// (`SettingsStore`).
+    @ObservationIgnored let defaults: UserDefaults
     @ObservationIgnored private let tokens: HostTokens
     @ObservationIgnored private let clientName: String
     @ObservationIgnored private let makeClient: () -> RemoteHostClient

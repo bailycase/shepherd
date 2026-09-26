@@ -207,7 +207,7 @@ struct WorktreeAgentTests {
         defer { sandbox.remove() }
         try git(["worktree", "add", "-q", "-b", "worktree/feature", sandbox.root.appendingPathComponent("linked/feature").path], in: sandbox.repo)
         let vm = try await app.start()
-        let spaceID = try #require(await vm.addSpace(at: sandbox.repo, createInitialAgent: false))
+        let spaceID = try #require(await vm.addSpace(at: sandbox.repo))
 
         vm.importExistingWorktreeFromPanel(in: spaceID)
         guard case .importWorktree(let first) = vm.spacePickerTarget else { Issue.record("no import picker"); return }
@@ -228,7 +228,7 @@ struct WorktreeAgentTests {
         let foreign = second.root.appendingPathComponent("foreign")
         try git(["worktree", "add", "-q", "-b", "worktree/wrong-space", foreign.path], in: second.repo)
         let vm = try await app.start()
-        let spaceID = try #require(await vm.addSpace(at: first.repo, createInitialAgent: false))
+        let spaceID = try #require(await vm.addSpace(at: first.repo))
 
         #expect(await vm.importExistingCheckout(at: foreign, into: spaceID) == nil)
 

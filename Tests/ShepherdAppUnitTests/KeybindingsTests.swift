@@ -88,7 +88,7 @@ struct KeybindingsTests {
 
     @Test func settingsRowsUseSentenceCase() {
         #expect(ShortcutAction.toggleSidebar.sentenceTitle == "Show or hide sidebar")
-        #expect(ShortcutAction.newAgent.sentenceTitle == "New agent in current checkout")
+        #expect(ShortcutAction.newAgent.sentenceTitle == "New thread")
     }
 
     /// Settings copy that names a rebindable chord reads it from the store, so a rebind never
@@ -303,13 +303,10 @@ struct NavigationKeyTests {
         #expect(classify(digit: 3, modifiers: .command) == .agentDigit(3))
     }
 
-    @Test func controlShiftDigitJumpsToAMachine() {
-        #expect(classify(digit: 2, modifiers: [.control, .shift]) == .machineJump(2))
-    }
-
-    /// ⌃1–9 selected shells; with shells gone it is terminal input again.
+    /// ⌃1–9 selected shells and ⌃⇧1–9 jumped between machines; with shells and the machine
+    /// sections gone, both are the focused view's again.
     @Test(arguments: [
-        NSEvent.ModifierFlags(), [.control], [.command, .option], [.command, .shift],
+        NSEvent.ModifierFlags(), [.control], [.control, .shift], [.command, .option], [.command, .shift],
         [.control, .shift, .option], [.control, .shift, .command],
     ])
     func digitsWithOtherModifiersFallThrough(modifiers: NSEvent.ModifierFlags) {
