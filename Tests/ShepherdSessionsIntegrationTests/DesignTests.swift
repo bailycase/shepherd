@@ -277,6 +277,21 @@ struct DesignTests {
         try await expectUntouched(before, h, design.id)
     }
 
+    @Test func aBoardIsNeverWrittenThroughALinkedFolder() async throws {
+        let (h, design, _) = try await serverWithDesign()
+        defer { h.stop() }
+        let outside = try makeScratchDirectory("outside")
+        defer { try? FileManager.default.removeItem(at: outside) }
+        let project = try #require(h.server.designs.projectFolder(for: design.id))
+        try FileManager.default.createSymbolicLink(at: project.appendingPathComponent("linked"), withDestinationURL: outside)
+        let path = try Self.path("linked/Board.dc.html")
+
+        await #expect(throws: DesignStoreError.invalidPath(path.rawValue, .parentReference)) {
+            try await h.server.writeDesignBoard(design.id, path: path, source: Self.board())
+        }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: outside.path).isEmpty)
+    }
+
     @Test func writingWhatTheBoardAlreadyHoldsChangesNothing() async throws {
         let (h, design, _) = try await serverWithDesign()
         defer { h.stop() }
