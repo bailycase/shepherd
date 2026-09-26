@@ -20,6 +20,57 @@ one) keeps a skill out of the prompt, so only `/skill:name` loads it.
 Shepherd never writes into `~/.pi/agent`. `~/.agents/skills` is the folder pi and other agents
 share for skills, and Settings ▸ Skills is the only thing in Shepherd that changes it.
 
+pi loads skills from more places than that folder, and the page lists them all (below, Outside
+skills): only `~/.agents/skills` is Shepherd's to change.
+
+## Outside skills
+
+The composer's / menu lists every skill the running pi loaded (`get_commands`), so Settings ▸
+Skills lists them too (the user's decision of 2026-09-26: "Show all, read-only"). Besides
+`~/.agents/skills`, a session outside any repository loads:
+
+- **pi's agent directory's `skills/`** (`~/.pi/agent/skills`, or `$PI_CODING_AGENT_DIR/skills`),
+- **the `skills` paths in pi's settings.json,**
+- **the skills of the pi packages in its `packages`.**
+
+The page groups them as From your pi setup (the first two) and From pi packages, read-only. A
+repository's own skills (`.pi/skills`, `.agents/skills`, once it's trusted) load only in its
+threads, and Settings is global, so the page says so rather than listing them. Skills an
+extension adds while it runs (`resources_discover`) aren't known without running it, so they show
+only in a thread's / menu.
+
+**Asking pi.** To list exactly what an agent gets, a host asks pi's own loader:
+`PiSkillsLoader` (ShepherdSessions) runs `Extensions/shepherd-pi-skills.mjs` (embedded as
+`PiSkillsLoader.scriptSource`, byte-identical) on the node pi runs on, through a login shell as
+agents start pi, with the source on stdin and pi's executable (`command -v pi`) as its argument.
+The script finds pi's package above the executable (or in a wrapper script's text), imports it,
+and calls what pi's resource loader calls: `DefaultPackageManager.resolve` with pi's settings,
+then `loadSkills` in pi's order of precedence. It prints each skill's name, description, SKILL.md,
+where it comes from (`source`, `origin`, the package's name) and the ones pi passes over for a
+same-named skill that comes first (a collision's loser, with the winner). It only reads:
+
+- pi's settings go through a storage that never writes (no lock file, no migration),
+- nothing missing is installed (`PI_OFFLINE`, and a resolve that skips),
+- no extension runs, and project trust is off.
+
+The host leaves its own folder's skills to the Installed group, marks an installed skill pi
+passes over (`PiSkills.shadowedInstalled`), and names each path with `~`. The run takes about half
+a second, so a result is kept until one of the folders it came from changes (the modification
+dates of pi's directory, settings and skills folder, `~/.agents/skills`, each skill's file and
+folders, and each package), and a failure is never kept. A read that takes 20 seconds is stopped.
+Without node or pi, or with a pi too old for the calls, the answer says why
+(`PiSkills.problem`: `pi_not_found`, `node_not_found`, `pi_unsupported`, `timed_out`, `failed`) and
+the page shows it in place of the group.
+
+**Over the protocol.** Every skills answer's `SkillsSnapshot` carries the host's `pi`
+(`PiSkills`, decoded with defaults; `skills.pi.v1`), read outside the store's lock, so a change
+never drops the groups off a page. A host that predates it sends none, and the page says that
+host's Shepherd doesn't list them. The groups are the first host's own (This Mac on the Mac): Same
+skills on every host never touches them.
+
+**What a prompt costs** (below) counts every skill the agent loads, pi's own included, and not one
+pi passes over.
+
 ## On a host
 
 `SkillsStore` (ShepherdSessions) owns a host's skills:
@@ -153,8 +204,10 @@ Installing never downloads from skills.sh: a host installs the skill from its gi
 
 `SkillsText.promptTokens` estimates what the automatic skills add to every prompt: pi's fixed
 preamble and one block per skill (its name, description and location), at about four characters
-a token. The Mac's page shows the total and a segment per skill that is on; a skill only /skill
-loads costs nothing until it's called. Its full files cost what they hold, and only when read.
+a token. The Mac's page shows the total and a segment per skill the agent loads
+(`ClientSkills.loadedSkills`: the installed ones that are on, less any pi passes over, then pi's
+own); a skill only /skill loads costs nothing until it's called. Its full files cost what they
+hold, and only when read.
 
 ## Tests
 
@@ -164,6 +217,17 @@ loads costs nothing until it's called. Its full files cost what they hold, and o
   GUI hearing each change and not reads.
 - `ClientSkillsTests`, `SkillsTextTests`, `SkillsDirectoryTests` (unit): the shared model, the
   frontmatter and token rules, skills.sh's answers, and the pages' words.
-- `SettingsPreviewTests.settingsSkillsInstalled`, `ListPerformanceTests` (one skill changing
-  redraws only its row), and the iOS fixture screens `settings-skills`, `settings-skill`,
-  `settings-skills-repo` and `settings-pad-skills`.
+- `PiSkillsReportTests` (unit): how pi's answer becomes the groups (where each comes from, the
+  ones pi passes over, Shepherd's own folder left out, package names, `~`).
+  `ClientPiSkillsTests` (unit): the groups in the filter, the search, the counts and the prompt.
+- `PiSkillsLoaderTests` (integration): the loader on node against fixture folders and a stand-in
+  pi package (grouping, keeping a result until a folder changes, no pi, a pi that never answers),
+  and a store's answers carrying them into the page's model. `RemoteSkillsTests` carries them to
+  a client.
+- `Tests/Extensions/pi-skills.test.mjs` (node, the installed pi): the script lists exactly what
+  pi's own `DefaultResourceLoader` loads, marks the passed-over, finds pi from its executable, and
+  writes nothing into pi's directory.
+- `SettingsPreviewTests.settingsSkillsInstalled` and `.settingsSkillsFromPi`,
+  `ListPerformanceTests` (one skill changing redraws only its row, installed or pi's own), and the
+  iOS fixture screens `settings-skills`, `settings-skill`, `settings-skills-repo` and
+  `settings-pad-skills`.
