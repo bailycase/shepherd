@@ -185,6 +185,44 @@ public struct RemoteDesignBoardsWrite: Codable, Hashable, Sendable {
     }
 }
 
+/// A new design as another device asks for it (iPhone's New design): the brief, the project it
+/// belongs to, and the design system to draw it in. The host makes it as its own New design
+/// does: the design, the system installed, and its agent started with the brief.
+public struct RemoteDesignCreate: Codable, Hashable, Sendable {
+    public var brief: String
+    public var spaceID: SpaceID
+    /// A design system the host has (`ds/<namespace>` name); nil draws in none.
+    public var systemNamespace: String?
+
+    public init(brief: String, spaceID: SpaceID, systemNamespace: String? = nil) {
+        self.brief = brief
+        self.spaceID = spaceID
+        self.systemNamespace = systemNamespace
+    }
+
+    /// A brief is at most this many UTF-8 bytes, as a comment is.
+    public static let maxBriefBytes = DesignComment.maxTextBytes
+
+    /// The brief as sent: trimmed; nil when blank or too long.
+    public static func brief(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.utf8.count <= maxBriefBytes else { return nil }
+        return trimmed
+    }
+}
+
+/// What a host's New design made for another device: the design, and its agent (nil when the
+/// agent didn't start; the host starts one when the design is next opened there).
+public struct RemoteDesignCreated: Hashable, Sendable {
+    public var designID: DesignID
+    public var agentID: AgentID?
+
+    public init(designID: DesignID, agentID: AgentID?) {
+        self.designID = designID
+        self.agentID = agentID
+    }
+}
+
 /// Client → host, inside `RemoteRequest.design` (`designsCapability`). Paths travel as the
 /// client wrote them; the host checks each against the grammar before touching a file.
 public enum RemoteDesignRequest: Codable, Hashable, Sendable {
@@ -218,11 +256,13 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
     /// The designs this client shows: the host pushes `designChanged` for these alone. Replaces
     /// the last set.
     case watch(designIDs: [DesignID])
+    /// Makes a design and starts its agent with the brief, as the host's New design does.
+    case create(RemoteDesignCreate)
 
     /// The design it touches, if one.
     public var designID: DesignID? {
         switch self {
-        case .list, .system, .watch: nil
+        case .list, .system, .watch, .create: nil
         case .index(let id), .boards(let id, _, _), .file(let id, _, _, _), .asset(let id, _, _), .comments(let id),
              .addComment(let id, _, _), .replyToComment(let id, _, _, _), .resolveComment(let id, _, _, _),
              .writeBoards(let id, _, _), .updateIndex(let id, _, _), .duplicateBoard(let id, _, _), .restoreVersions(let id, _, _):
@@ -233,7 +273,7 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
     /// Whether it changes the design (a write, a comment).
     public var writes: Bool {
         switch self {
-        case .addComment, .replyToComment, .resolveComment, .writeBoards, .updateIndex, .duplicateBoard, .restoreVersions: true
+        case .addComment, .replyToComment, .resolveComment, .writeBoards, .updateIndex, .duplicateBoard, .restoreVersions, .create: true
         default: false
         }
     }
@@ -253,6 +293,9 @@ public enum RemoteDesignResult: Codable, Hashable, Sendable {
     case boardsWritten(RemoteDesignBoardsWrite)
     case duplicated(path: DesignPath, result: DesignWriteResult)
     case system(DesignSystemRead)
+    /// A design made (`create`), and the agent drawing it (nil when it failed to start: the host
+    /// starts one when the design is next opened there).
+    case created(designID: DesignID, agentID: AgentID?)
     case ok
 }
 
