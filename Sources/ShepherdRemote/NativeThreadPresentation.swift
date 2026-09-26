@@ -453,7 +453,7 @@ public func nativeSubagentElapsed(_ run: ChildRun, now: Date) -> Double? {
 
 /// Sidebar right slot: "37m", "48s", "2h".
 public func nativeSubagentShortDuration(_ seconds: Double) -> String {
-    let whole = Int(max(0, seconds))
+    let whole = Int(reportedCount: seconds) ?? 0
     switch whole {
     case ..<60: return "\(whole)s"
     case ..<3600: return "\(whole / 60)m"

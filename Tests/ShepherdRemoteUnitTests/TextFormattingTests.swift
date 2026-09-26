@@ -13,7 +13,7 @@ struct TextFormattingTests {
         #expect(nativeDurationText(seconds, live: live) == expected)
     }
 
-    @Test(arguments: [(0.0, "0s"), (48, "48s"), (37 * 60 + 21, "37m"), (7300, "2h"), (-5, "0s")] as [(Double, String)])
+    @Test(arguments: [(0.0, "0s"), (48, "48s"), (37 * 60 + 21, "37m"), (7300, "2h"), (-5, "0s"), (1e20, "2562047788015215h")] as [(Double, String)])
     func shortDurationUsesOneUnit(seconds: Double, expected: String) {
         #expect(nativeSubagentShortDuration(seconds) == expected)
     }
