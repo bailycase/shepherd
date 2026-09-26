@@ -185,7 +185,65 @@ struct ThreadStoreCheck {
         reconnect.cancel()
         store.stop()
         await reconnect.value
-        print("PASS: thread revisions, history/live merge, stale responses/session, exact acceptance, edited/unknown drafts, no replay, typed dialogs, external editor, abort, stop/reconnect")
+        try await contextCheck()
+        print("PASS: thread revisions, history/live merge, stale responses/session, exact acceptance, edited/unknown drafts, no replay, typed dialogs, external editor, abort, stop/reconnect, context ring and compact")
+    }
+
+    /// The context ring the iPad and iPhone composer draws: none from a host that reports no
+    /// context, redrawn only when the usage changes, and Compact now as pi's compact.
+    @MainActor
+    static func contextCheck() async throws {
+        let store = NativeThreadStore()
+        var current = try snapshot(ids: ["c1"])
+        var requests: [NativeThreadRequest] = []
+        let run = Task {
+            await store.run { request in
+                requests.append(request)
+                switch request {
+                case .snapshot(_, _, let revision):
+                    if revision == current.revision {
+                        return .unchanged(piSessionID: current.piSessionID, generation: current.generation, revision: current.revision)
+                    }
+                    return .snapshot(value: current)
+                case .compact(_, _, let operationID, _):
+                    return .accepted(operationID: operationID)
+                default:
+                    return .failure(code: "unexpected", message: "fixture")
+                }
+            }
+        }
+        try await wait { store.ready }
+        precondition(store.contextMeter == nil && store.contextDetails == nil, "a host without context drew a ring")
+        await store.compact(instructions: "keep")
+        precondition(!requests.contains { if case .compact = $0 { true } else { false } }, "compact sent to a host without it")
+
+        current.revision += 1
+        current.supportedActions.append("compact")
+        current.context = NativeThreadContext(tokens: 136_000, window: 200_000, autoCompactAt: 183_616, autoCompact: true)
+        await store.refresh()
+        precondition(store.contextMeter?.ring == .fill(0.68, .warning), "68% is amber: \(String(describing: store.contextMeter))")
+        let meter = store.contextMeter
+
+        // A streamed reply changes the thread, not the ring.
+        current.revision += 1
+        current.messages[0].blocks[0].text += " and more"
+        await store.refresh()
+        precondition(store.contextMeter == meter)
+
+        // After each accepted action the store pulls the thread again.
+        func lastCompact() -> NativeThreadRequest? { requests.last { if case .compact = $0 { true } else { false } } }
+        await store.compact(instructions: "  Keep the preview findings\n")
+        guard case .compact(let session, _, _, let instructions) = lastCompact() else { fatalError("compact missing") }
+        precondition(session == "session" && instructions == "Keep the preview findings", "what to keep: \(String(describing: instructions))")
+        try await wait { store.supports("compact") }
+        await store.compact(instructions: "   ")
+        precondition(requests.count { if case .compact = $0 { true } else { false } } == 2, "second compact missing")
+        guard case .compact(_, _, _, let none) = lastCompact() else { fatalError("compact missing") }
+        precondition(none == nil, "an empty field sends no instructions")
+
+        run.cancel()
+        store.stop()
+        await run.value
     }
 
     static func snapshot(ids: [String], cursor: String? = nil, revision: UInt64 = 1, running: Bool = false, dialogs: Bool = false) throws -> NativeThreadSnapshot {
