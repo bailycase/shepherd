@@ -2,6 +2,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSessions
 import ShepherdUI
 
 /// An element picked on a board: its id as a view record names it, where the board draws it (in
@@ -25,6 +26,18 @@ struct DesignCommentActions {
     var add: (DesignID, DesignCommentDraft, UInt64?) async throws -> (DesignComment, String?)
     var reply: (DesignID, UUID, String, UInt64?) async throws -> (DesignComment, String?)
     var resolve: (DesignID, UUID, UInt64?) async throws -> DesignComment
+    /// Says what went wrong (the app's error dialog).
+    var report: (String) -> Void
+}
+
+/// What a design's canvas asks its host to do to the design (the board actions, a board moved):
+/// the server's mutations, and a message to the design agent carrying a view record.
+struct DesignCanvasActions {
+    var snapshot: (DesignID) async throws -> DesignSnapshot
+    var duplicate: (DesignID, DesignPath, UInt64?) async throws -> DesignDuplicate
+    var updateIndex: (DesignID, JSONValue, UInt64?) async throws -> DesignWriteResult
+    /// Sends the design agent a message with a view record; false when the design has no agent.
+    var ask: (DesignID, String, DesignViewRecord) async -> Bool
     /// Says what went wrong (the app's error dialog).
     var report: (String) -> Void
 }
@@ -59,6 +72,12 @@ final class DesignCommentCards {
 /// board's label or on nothing named picks the board whole, shift adds or takes away, and a click
 /// on the empty canvas clears it. The element under the pointer is ringed as it moves. What the
 /// screen shows goes with every message the chat sends (`viewRecord`).
+///
+/// The board actions work on the board picked whole last: Comment, Tweak, Variations and
+/// "Ask for another direction" (messages to the design agent, the board named in their view
+/// record), and Duplicate. A board dragged by its label moves, written once when it lands. Present
+/// (and Play on an interactive board) shows one board focused, its in-project links moving
+/// between boards. A canvas with pages shows one page's boards and notes at a time.
 ///
 /// Live reload: a pushed revision (`SessionServer.onDesignRevision`) pulls the snapshot, and
 /// only the boards whose hash changed reload (`DesignHost.update`); new boards appear and
@@ -104,6 +123,19 @@ final class DesignScreenModel {
     /// The chat's cards, by comment.
     let commentCards = DesignCommentCards()
 
+    // Pages, moving, presenting
+    /// The page the canvas shows (canvas.json's page id); nil on a canvas without pages.
+    private(set) var page: String?
+    /// A board being dragged, and how far it has come (canvas points).
+    private(set) var moving: NWBoardMove?
+    /// Boards moved and written, where they now stand, until the snapshot says so.
+    private(set) var movedTo: [DesignPath: CGPoint] = [:]
+    /// The board shown focused (Present, Play); nil on the canvas.
+    private(set) var presented: DesignPath?
+    @ObservationIgnored private let canvasActions: DesignCanvasActions?
+    /// Tests: index writes made for moves.
+    @ObservationIgnored private(set) var moveWrites = 0
+
     @ObservationIgnored let host: DesignHost?
     @ObservationIgnored private let fetchSnapshot: Snapshot
     @ObservationIgnored private let commentActions: DesignCommentActions?
@@ -136,36 +168,70 @@ final class DesignScreenModel {
     static let restDelay: Duration = .milliseconds(120)
 
     init(designID: DesignID, host: DesignHost?, snapshot: @escaping Snapshot, source: @escaping Source,
-         comments: DesignCommentActions? = nil, tweak: DesignTweakIO? = nil) {
+         comments: DesignCommentActions? = nil, tweak: DesignTweakIO? = nil, actions: DesignCanvasActions? = nil) {
         self.designID = designID
         self.host = host
         fetchSnapshot = snapshot
         commentActions = comments
+        canvasActions = actions
         self.tweak = tweak.map { DesignTweakModel(designID: designID, io: $0, host: host) }
         host?.source = { path in try await source(designID, path) }
         host?.redrawn = { [weak self] path in self?.relocate(on: path) }
+        host?.linked = { [weak self] from, to in self?.follow(link: to, from: from) }
         self.tweak?.previewed = { [weak self] path in self?.remeasure(path) }
     }
 
     // MARK: Boards
 
-    /// Every board as the canvas draws it, back to front.
+    /// Every board of the page as the canvas draws it, back to front, a board being dragged where
+    /// it has come to.
     var boards: [NWCanvasBoard] {
         guard let snapshot else { return [] }
         let tokens = host?.tokens ?? [:]
-        return Self.boards(snapshot.index, selected: selectedWhole, tokens: tokens, rooms: labelRooms)
+        var boards = Self.boards(snapshot.index, page: page, selected: selectedWhole, tokens: tokens, rooms: labelRooms)
+        if !movedTo.isEmpty || moving != nil {
+            for index in boards.indices {
+                guard let path = DesignPath(boards[index].id) else { continue }
+                if let point = movedTo[path] { boards[index].frame.origin = point }
+                if let moving, moving.board == boards[index].id {
+                    boards[index].frame.origin.x += moving.offset.width
+                    boards[index].frame.origin.y += moving.offset.height
+                }
+            }
+        }
+        return boards
     }
 
-    static func boards(_ index: DesignIndex, selected: Set<DesignPath>, tokens: [DesignPath: Int],
+    static func boards(_ index: DesignIndex, page: String? = nil, selected: Set<DesignPath>, tokens: [DesignPath: Int],
                        rooms: [String: NWLabelRoom] = [:]) -> [NWCanvasBoard] {
         canvasOrder(index).compactMap { path in
-            guard let board = index.boards[path] else { return nil }
+            guard let board = index.boards[path], index.isOnPage(path, page) else { return nil }
             let title = board.title?.trimmingCharacters(in: .whitespacesAndNewlines)
             return NWCanvasBoard(id: path.rawValue, frame: CGRect(x: board.x, y: board.y, width: board.w, height: board.h),
                                  title: title?.isEmpty == false ? title! : path.stem,
                                  size: NWCanvasBoard.sizeLabel(CGSize(width: board.w, height: board.h)),
                                  isSelected: selected.contains(path), content: tokens[path] ?? 0,
                                  labelRoom: rooms[path.rawValue] ?? .open)
+        }
+    }
+
+    /// The page's title and sticky notes (drawings aren't drawn yet).
+    var notes: [NWCanvasNote] {
+        guard let snapshot else { return [] }
+        return Self.notes(snapshot.index, page: page)
+    }
+
+    static func notes(_ index: DesignIndex, page: String?) -> [NWCanvasNote] {
+        (index.notes ?? [:]).sorted { $0.key < $1.key }.compactMap { id, note in
+            guard index.page(of: note) == page, let x = note.x, let y = note.y,
+                  let text = note.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+            let kind: NWCanvasNote.Kind
+            switch note.shown {
+            case .title: kind = .title
+            case .sticky: kind = .sticky
+            case .drawing: return nil
+            }
+            return NWCanvasNote(id: id, kind: kind, origin: CGPoint(x: x, y: y), width: note.width.map { CGFloat($0) }, text: text)
         }
     }
 
@@ -176,9 +242,11 @@ final class DesignScreenModel {
         return listed + rest
     }
 
-    static func labelRooms(_ index: DesignIndex) -> [String: NWLabelRoom] {
-        NWLabelRoom.rooms(Dictionary(index.boards.map { ($0.key.rawValue, CGRect(x: $0.value.x, y: $0.value.y, width: $0.value.w, height: $0.value.h)) },
-                                     uniquingKeysWith: { a, _ in a }))
+    /// Each board's room for its label among the other boards of its page.
+    static func labelRooms(_ index: DesignIndex, page: String? = nil) -> [String: NWLabelRoom] {
+        let shown = index.boards.filter { index.isOnPage($0.key, page) }
+        return NWLabelRoom.rooms(Dictionary(shown.map { ($0.key.rawValue, CGRect(x: $0.value.x, y: $0.value.y, width: $0.value.w, height: $0.value.h)) },
+                                            uniquingKeysWith: { a, _ in a }))
     }
 
     /// The boards on screen, nearest the middle of the view first.
@@ -219,11 +287,25 @@ final class DesignScreenModel {
 
     private func apply(_ next: DesignSnapshot) {
         guard snapshot != next else { return }
-        if snapshot?.index.boards != next.index.boards { labelRooms = Self.labelRooms(next.index) }
+        let previous = snapshot?.index
+        if page == nil || next.index.pages?.contains(where: { $0.id == page }) != true {
+            let opening = next.index.openingPage
+            if page != opening { page = opening }
+        }
+        if previous?.boards != next.index.boards || previous?.pages != next.index.pages {
+            labelRooms = Self.labelRooms(next.index, page: page)
+        }
         snapshot = next
-        let kept = picks.filter { next.index.boards[$0.board] != nil }
+        // A move shows where it went until the index has it (or has moved on without it).
+        let landed = movedTo.filter { path, point in
+            guard let board = next.index.boards[path] else { return false }
+            return CGPoint(x: board.x, y: board.y) != point
+        }
+        if landed != movedTo { movedTo = landed }
+        let kept = picks.filter { next.index.boards[$0.board] != nil && next.index.isOnPage($0.board, page) }
         if kept != picks { picks = kept }
         if let hover, next.index.boards[hover.board] == nil { self.hover = nil }
+        if let presented, next.index.boards[presented] == nil { present(nil) }
         var boards: [DesignPath: DesignHost.Board] = [:]
         for (path, board) in next.index.boards {
             guard let sha = next.boards[path] else { continue }
@@ -624,15 +706,207 @@ final class DesignScreenModel {
         openComments.compactMap { commentCards.cards[$0.id] }
     }
 
+    // MARK: Pages
+
+    /// The canvas's pages in its order: id and name (the id where it has none).
+    var pages: [(id: String, name: String)] {
+        (snapshot?.index.pages ?? []).map { ($0.id, $0.name?.isEmpty == false ? $0.name! : $0.id) }
+    }
+
+    /// The page shown's name; nil on a canvas without pages.
+    var pageName: String? {
+        guard let page else { return nil }
+        return pages.first { $0.id == page }?.name
+    }
+
+    /// Shows another page: its boards and notes, fitted as a design opens; what was selected on
+    /// the page left goes.
+    func showPage(_ id: String) {
+        guard id != page, let index = snapshot?.index, index.pages?.contains(where: { $0.id == id }) == true else { return }
+        page = id
+        labelRooms = Self.labelRooms(index, page: id)
+        let kept = picks.filter { index.isOnPage($0.board, id) }
+        if kept != picks { picks = kept }
+        hover = nil
+        closeComment()
+        fitted = false
+        fitIfNeeded()
+        planLive()
+    }
+
+    // MARK: Moving a board
+
+    /// A board dragged by its label (or while selected whole): it follows the pointer, and where
+    /// it lands is written once, as its `x` and `y` in canvas.json, when the drag ends.
+    /// Answers the write when the drag ends somewhere new.
+    @discardableResult
+    func move(_ move: NWBoardMove) -> Task<Void, Never>? {
+        guard let path = DesignPath(move.board), let board = snapshot?.index.boards[path] else { moving = nil; return nil }
+        guard move.ended else {
+            if moving != move { moving = move }
+            return nil
+        }
+        moving = nil
+        let start = movedTo[path] ?? CGPoint(x: board.x, y: board.y)
+        let to = CGPoint(x: (start.x + move.offset.width).rounded(), y: (start.y + move.offset.height).rounded())
+        guard to != start, let actions = canvasActions else { return nil }
+        movedTo[path] = to
+        let patch = JSONValue.object(["boards": .object([path.rawValue: .object(["x": .number(to.x), "y": .number(to.y)])])])
+        return Task {
+            do {
+                try await writeIndex(patch, actions: actions)
+                await refresh()
+            } catch {
+                actions.report("Couldn't move \(nativeBoardName(path.rawValue)): \(error)")
+            }
+            if movedTo[path] == to { movedTo[path] = nil }
+        }
+    }
+
+    /// Writes an index change at the revision the canvas read; a stale one reads the design again
+    /// and goes once more.
+    private func writeIndex(_ patch: JSONValue, actions: DesignCanvasActions) async throws {
+        moveWrites += 1
+        do {
+            _ = try await actions.updateIndex(designID, patch, snapshot?.revision)
+        } catch DesignStoreError.stale {
+            let fresh = try await actions.snapshot(designID)
+            moveWrites += 1
+            _ = try await actions.updateIndex(designID, patch, fresh.revision)
+        }
+    }
+
+    // MARK: Board actions
+
+    /// The board the actions float over: the last pick when it is a board picked whole, while
+    /// nothing is presented and the canvas can act.
+    var actionsBoard: DesignPath? {
+        guard canvasActions != nil, presented == nil, moving == nil, let pick = picks.last, pick.element == nil,
+              snapshot?.index.boards[pick.board] != nil else { return nil }
+        return pick.board
+    }
+
+    /// Whether a board runs as a prototype (`is_interactive`): it offers Play.
+    func isInteractive(_ path: DesignPath) -> Bool {
+        snapshot?.index.boards[path]?.isInteractive == true
+    }
+
+    /// Whether the canvas can ask the design agent for more ("Ask for another direction").
+    var canAsk: Bool { canvasActions != nil && !(snapshot?.index.boards.isEmpty ?? true) }
+
+    /// The words Variations and "Ask for another direction" send; the board they are about goes
+    /// in the message's view record, as data.
+    static let variationsMessage = "Draw variations of the selected board as new boards beside it."
+    static let anotherDirectionMessage = "Draw another direction as a new board."
+
+    /// Variations: asks the design agent for variations of `path`, the record naming it selected.
+    @discardableResult
+    func askForVariations(of path: DesignPath) -> Task<Void, Never>? {
+        ask(Self.variationsMessage, record: record(selecting: [Pick(board: path)]))
+    }
+
+    /// "Ask for another direction": one more direction, nothing selected in the record.
+    @discardableResult
+    func askForAnotherDirection() -> Task<Void, Never>? {
+        ask(Self.anotherDirectionMessage, record: record(selecting: []))
+    }
+
+    private func ask(_ text: String, record: DesignViewRecord?) -> Task<Void, Never>? {
+        guard let actions = canvasActions, let record else { return nil }
+        let designID = designID
+        return Task {
+            if !(await actions.ask(designID, text, record)) {
+                actions.report("The design has no agent to ask. Open it again to start one.")
+            }
+        }
+    }
+
+    /// The record this screen shows, with `picks` in place of its selection.
+    private func record(selecting picks: [Pick]) -> DesignViewRecord? {
+        guard let snapshot else { return nil }
+        let visible = Set(Self.onScreen(boards, viewport: viewport, size: canvasSize))
+        return Self.viewRecord(order: Self.canvasOrder(snapshot.index), visible: visible, picks: picks,
+                               page: page, pageName: pageName)
+    }
+
+    /// Duplicate: a copy of the board beside it, picked whole once it is there.
+    @discardableResult
+    func duplicate(_ path: DesignPath) -> Task<Void, Never>? {
+        guard let actions = canvasActions else { return nil }
+        return Task {
+            do {
+                let copy: DesignDuplicate
+                do {
+                    copy = try await actions.duplicate(designID, path, snapshot?.revision)
+                } catch DesignStoreError.stale {
+                    copy = try await actions.duplicate(designID, path, try await actions.snapshot(designID).revision)
+                }
+                await refresh()
+                if snapshot?.index.boards[copy.path] != nil { take(Pick(board: copy.path), extending: false) }
+            } catch {
+                actions.report("Couldn't duplicate \(nativeBoardName(path.rawValue)): \(error)")
+            }
+        }
+    }
+
+    // MARK: Present and Play
+
+    /// Whether Present has a board to show.
+    var canPresent: Bool { !(snapshot?.index.boards.isEmpty ?? true) }
+
+    /// Present: the last picked board focused, else the one nearest the middle of the view, else
+    /// the page's first; Present again goes back to the canvas.
+    func togglePresent() {
+        if presented != nil { present(nil); return }
+        let target = focusBoard ?? visibleBoards.first ?? boards.first.flatMap { DesignPath($0.id) }
+        present(target)
+    }
+
+    /// Shows `path` focused over the canvas (nil: back to the canvas). Its links move between the
+    /// design's boards.
+    func present(_ path: DesignPath?) {
+        let path = path.flatMap { snapshot?.index.boards[$0] != nil ? $0 : nil }
+        guard presented != path else { return }
+        presented = path
+        if path != nil {
+            hover = nil
+            closeComment()
+        }
+        host?.present(path)
+        if path == nil { planLive() }
+    }
+
+    /// A presented board's link: another board of this design takes its place; anything else is
+    /// left alone (the board never navigates).
+    func follow(link: DesignPath, from: DesignPath) {
+        guard presented == from, let snapshot, let target = Self.playTarget(link, in: snapshot.index) else { return }
+        present(target)
+    }
+
+    /// Where a Play link goes: a board the design lists; nil for anything else.
+    static func playTarget(_ link: DesignPath, in index: DesignIndex) -> DesignPath? {
+        index.boards[link] != nil ? link : nil
+    }
+
     // MARK: The view record
 
     /// What this screen shows, as the chat's messages carry it (view-state.md): the boards on
     /// screen in canvas order, the boards selected whole or holding a selected element, and the
     /// selected elements, most recent last.
+    /// While a board is presented, the record is `focused` on it, with nothing selected.
     var viewRecord: DesignViewRecord? {
         guard let snapshot else { return nil }
-        let visible = Set(Self.onScreen(boards, viewport: viewport, size: canvasSize))
-        return Self.viewRecord(order: Self.canvasOrder(snapshot.index), visible: visible, picks: picks)
+        if let presented {
+            let page = Self.recordPage(page)
+            return DesignViewRecord(mode: .focused, page: page, pageName: page == nil ? nil : pageName.flatMap(DesignViewRecord.label),
+                                    visibleBoards: [presented.viewName])
+        }
+        return record(selecting: picks)
+    }
+
+    /// A page id as a record carries it: nil when it breaks the id grammar.
+    private static func recordPage(_ page: String?) -> String? {
+        page.flatMap { DesignPath.isIndexID($0) ? $0 : nil }
     }
 
     /// The boards whose frames a view of `size` shows.
@@ -642,7 +916,8 @@ final class DesignScreenModel {
         return boards.filter { $0.frame.intersects(shown) }.compactMap { DesignPath($0.id) }
     }
 
-    static func viewRecord(order: [DesignPath], visible: Set<DesignPath>, picks: [Pick]) -> DesignViewRecord {
+    static func viewRecord(order: [DesignPath], visible: Set<DesignPath>, picks: [Pick], page: String? = nil,
+                           pageName: String? = nil) -> DesignViewRecord {
         let elements = Array(picks.compactMap(\.element).suffix(DesignViewRecord.maxSelected))
         let holding = Set(elements.map(\.board))
         let whole = Set(picks.filter { $0.element == nil }.map(\.board))
@@ -651,8 +926,11 @@ final class DesignScreenModel {
             selectedBoards.append(path)
         }
         selectedBoards = order.filter(Set(selectedBoards).contains)
+        let page = recordPage(page)
         return DesignViewRecord(
             mode: .canvas,
+            page: page,
+            pageName: page == nil ? nil : pageName.flatMap(DesignViewRecord.label),
             visibleBoards: Array(order.filter(visible.contains).prefix(DesignViewRecord.maxBoards)).map(\.viewName),
             selectedBoards: selectedBoards.map(\.viewName),
             selected: elements.map(\.id),

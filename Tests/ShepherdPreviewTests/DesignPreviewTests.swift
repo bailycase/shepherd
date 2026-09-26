@@ -245,6 +245,58 @@ struct DesignPreviewTests {
         }
     }
 
+    /// The board actions over A picked whole (DZCanvas), "Ask for another direction" after the
+    /// last board, and a canvas with two pages: its title and sticky notes, and the pages menu in
+    /// the toolbar.
+    @Test func designScreenActionsPagesAndNotes() async throws {
+        let (workspace, checkout, _) = try await designWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        _ = try await workspace.server.updateDesignIndex(checkout.id, patch: .object([
+            "pages": .array([.object(["id": .string("flows"), "name": .string("Checkout flows")]),
+                             .object(["id": .string("system"), "name": .string("System")])]),
+            "notes": .object([
+                "t1": .object(["kind": .string("title1"), "x": .number(0), "y": .number(-420), "maxW": .number(4000),
+                               "text": .string("Checkout funnel — three directions and a phone")]),
+                "s1": .object(["kind": .string("sticky"), "x": .number(0), "y": .number(1900), "w": .number(560),
+                               "text": .string("Keep the phone's total above the fold.")]),
+            ]),
+        ]))
+        vm.selectSidebarRow(.design(checkout.id))
+        let screen = vm.designScreen(checkout.id)
+        let a = try #require(DesignPath("A.dc.html"))
+        let view = NWCanvasViewport(offset: CGPoint(x: NWDesignMetrics.fitLeading, y: 150), zoom: 0.24)
+        try await Preview.render("app-window-design-actions", size: Self.windowSize, ready: {
+            if screen.snapshot?.index.pages?.count == 2 {
+                if screen.picks.isEmpty { screen.select(a.rawValue) }
+                if screen.viewport != view { screen.viewport = view }
+            }
+            return screen.viewport == view && screen.isDrawn && screen.actionsBoard == a && screen.notes.count == 2
+        }) {
+            RootView(vm: vm)
+        }
+    }
+
+    /// Present (decision 11): the selected board focused over the canvas's scrim, its label above.
+    @Test func designScreenPresent() async throws {
+        let (workspace, checkout, _) = try await designWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        vm.selectSidebarRow(.design(checkout.id))
+        let screen = vm.designScreen(checkout.id)
+        let a = try #require(DesignPath("A.dc.html"))
+        try await Preview.render("app-window-design-present", size: Self.windowSize, ready: {
+            if screen.snapshot != nil, screen.presented == nil {
+                screen.select(a.rawValue)
+                screen.togglePresent()
+            }
+            return screen.presented == a && screen.host?.image(a) != nil
+        }) {
+            RootView(vm: vm)
+        }
+        #expect(screen.viewRecord?.mode == .focused)
+    }
+
     /// The Designs destination selected on its page, with design rows in Recents.
     @Test func appWindowDesigns() async throws {
         let (workspace, _, _) = try await designWorkspace()
