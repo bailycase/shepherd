@@ -25,6 +25,20 @@ import SwiftUI
     }
 }
 
+#Preview("Question record") {
+    NWPreviewBoth {
+        VStack(alignment: .leading, spacing: NW.Space.xl) {
+            NWQuestionRecord(question: "How should I handle Horizon’s uncommitted edits?",
+                             title: "Compare, keep what’s unique, then go through GitHub", answered: true,
+                             timestamp: "2:51 PM · answered", revealed: true)
+            NWQuestionRecord(question: "Name for the release branch?", text: "release/2026-09", answered: true,
+                             timestamp: "2:53 PM · answered", revealed: true)
+            NWQuestionRecord(question: "Clear the session?", answered: false)
+        }
+        .frame(width: 640)
+    }
+}
+
 #Preview("Rich prose") {
     NWPreviewBoth {
         NWAgentProse([

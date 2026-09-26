@@ -82,7 +82,7 @@ struct Composer: View {
     /// The run whose question is open in the composer's place (from its row's Answer).
     @State private var answering: String?
     /// pi's question the user shrank to its hidden line.
-    @State private var questionHiding = QuestionHiding()
+    @State private var questionHiding = NativeQuestionHiding()
     /// The queued message with keyboard focus, if one has it.
     @FocusState private var focusedRow: String?
     /// ⌘↩ reaches the composer before any key equivalent in its window.

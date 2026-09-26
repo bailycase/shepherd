@@ -224,7 +224,10 @@ Additions the boards don't have:
   note; a call's output sheet and context menu (Show Call, Review <file>, Open Output, Copy
   Output); extension widgets above the composer; the Stop all confirmation; the "Lost connection
   to the agent process." banner; several waiting questions ("1 / N") and a question's timeout
-  note.
+  note; and a question's record for a confirm (Yes or No), a typed answer, and a question nobody
+  answered ("· not answered").
+- **The iPad's folded question card** (iOS: iPad › Questions): iPadQuestion draws Hide the
+  question but not what it folds to.
 - **A confirmation before closing a terminal tab** on iOS, naming the tab and how many shells stop.
 
 ## Theme model
@@ -1837,7 +1840,8 @@ rules (QuestionStates › Rules):
 6. **Something else…** is the last row; typing there answers in your own words (the same).
 7. **Answer** is the only button. It lights up once an option is picked or Something else has
    text. There is no Dismiss: pi is waiting on an answer.
-8. **After:** the composer comes back (the field takes the keyboard again).
+8. **After:** the composer comes back (the field takes the keyboard again), and the thread
+   keeps the record where pi asked (below).
 
 - **The dock** (`NWQuestionDock`, `NWQuestionDockMetrics`): `bgRaised`, radius 12, a 1px
   `lantern` line inside a 3pt `lanternTint` ring (`.nwQuestionCard()`), 12pt above and below
@@ -1897,7 +1901,7 @@ rules (QuestionStates › Rules):
   semibold (truncating; inline code as in the dock), a small secondary **Answer** (24pt), and a 26pt Show the question
   (`chevron.up`; tooltip "Show the question (Esc)"). Esc, Answer or Show the question brings the
   dock back, with what was picked and typed. Only that question stays hidden: the next one pi
-  asks arrives open (`QuestionHiding`).
+  asks arrives open (`NativeQuestionHiding`, the iPad's rule too).
 - **Keys** (QuestionStates › Keyboard; shown in tooltips): 1–9 pick an option (a yes or a no
   answers at once; Something else's number puts the keyboard in it), ↩ answers, Esc hides or
   shows the question. They are the dock's while its thread has the keyboard
@@ -1905,14 +1909,29 @@ rules (QuestionStates › Rules):
   never with ⌘, ⌃ or ⌥ held (⌘1–9 still select agents), and never from another text field (the
   palette's search, a terminal).
 - **Stopping** (⌘., Agent ▸ Stop) is how a question is refused: it cancels the questions pi is
-  waiting on (their asker gets pi's cancelled answer), then stops the turn.
-- **Not built yet: the record** (QuestionAnswered): once answered the dock goes and the field
-  returns; nothing in the thread records the question yet, except the asking tool's own
-  activity line when a tool asked. A select, confirm, input or editor dialog from an extension
-  leaves no trace. The board keeps one line where pi asked, in Geist 12.5 `textTertiary` (a 12pt
-  glyph, "Agent asked:", and the question in `textSecondary` medium, 7pt apart) and, 8pt below,
-  your answer as a user bubble: the option's title in semibold with your note under it, 4pt
-  apart, and "2:51 PM · answered" in mono 10.5 tertiary beneath.
+  waiting on (their asker gets pi's cancelled answer), then stops the turn. The thread records
+  each as not answered.
+- **The record** (QuestionAnswered; `QuestionRecord` on the board; `NWQuestionRecord`, from
+  `NativeQuestionRecordRow`): where pi asked, the thread keeps one line in Geist 12.5
+  `textTertiary` (a 12pt `questionmark.circle`, "Agent asked:", and the question in
+  `textSecondary` medium, 7pt apart; one line, truncating, the whole question in its tooltip; on
+  iPhone and iPad the question wraps to three lines, "not answered" riding its last)
+  and, 8pt below, your answer as a user bubble (`NWUserBubble` with a title): the option's
+  title in semibold (its description and "(Recommended)" left out), or Yes or No for a confirm,
+  or the text you typed for an input or editor in the bubble's regular weight; and "2:51 PM ·
+  answered" in mono 10.5 tertiary beneath, on hover like every bubble's time. pi's turn carries
+  on under it; the record is part of the agent's turn, but its time is the answer's, so it moves
+  neither the turn's duration nor its Copy. A question nobody answered (refused by Stop,
+  dismissed on a touch client, or its timeout passed) keeps its line alone, ending "· not
+  answered" in `textTertiary`, with no bubble. VoiceOver reads it as one element ("Agent asked: …, you answered: …"). The host keeps
+  it (docs/native-thread.md › Questions): a thread row every client draws, remote and iOS
+  included, placed after the call that asked and before pi's next reply, and kept per pi
+  session beside the queue's origins, so it survives a relaunch. A question still open when pi
+  moves to another session (`/new`, `/resume`) is not recorded. When a tool asked, its own
+  activity line stays too. A subagent's question is not recorded here: its answer joins the
+  child's transcript as the user's message.
+- **Not built with it:** your note under the option's title, 4pt apart (QuestionAnswered), since
+  none of pi's dialogs takes a note (What each asker takes).
 
 **What each asker takes** (Honest affordances: the dock offers only what the asker can take;
 `NativeQuestionPrompt.takesNote`, `takesOther`):
@@ -4789,6 +4808,9 @@ differs.
 - **Not built yet:** a last option "Something else…" (a 46pt card, its number, the text in
   `textTertiary`) that opens a field for a free answer to a select. pi's select takes only an
   offered option, so it waits for the picker block's `allowOther`.
+- **After:** the thread keeps the record where pi asked (Composer, questions, and menus ›
+  Questions › The record), on iPhone and iPad alike, its time showing at rest (touch has no
+  hover).
 
 ### iPhone: Subagents (MobileSteer, MobileSubagents, MobileSubagent)
 
@@ -5398,8 +5420,17 @@ header's pill turns "Needs you" (attention, glowing).
 
 - **Card:** `bgRaised`, a 1px `lantern` line, radius 16, a 3pt `lanternTint` ring outside it;
   14×18 inset (16 at the bottom), parts 12pt apart.
-- **Head** (26pt): a 13pt glyph and "Agent is asking" at 13/600, both `lanternText`; **not built yet:** Hide the question (a 40pt
-  circle, trailing), which folds the card to read the thread and never answers it.
+- **Head** (26pt): a 13pt glyph and "Agent is asking" at 13/600, both `lanternText`; and,
+  trailing, **Hide the question**: a 40pt circle (`.nwIcon`, a 44pt touch target) with an 18pt
+  `chevron.down` in `textSecondary`, overhanging the head rather than growing it, which folds the
+  card to read the thread and never answers it ("Hide the question" to VoiceOver). Only on the
+  card: the phone's docked panel has none.
+- **Folded** (`NWQuestionCardHiddenLine`; no board draws it, so it follows the Mac's hidden
+  line, QuestionStates › hidden): the same lantern card around one row, 16pt leading and 4pt
+  trailing: a 14pt glyph in `lanternText`, the question in `headline` (truncating), a secondary
+  **Answer** (m), and Show the question (the same 40pt circle, `chevron.up`); either button
+  unfolds it. It still holds the composer's place, because the agent is still waiting. Only that
+  question stays folded: the next one arrives open (`NativeQuestionHiding`, the Mac's rule).
 - **The question:** 19/600/1.35.
 - **Answers,** numbered, side by side in two columns when each gets at least 220pt, 8pt apart;
   one column otherwise:
@@ -7893,7 +7924,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | QueueStates | Up next (the queue); Settings › Agents, Keyboard | Partial |
 | QuestionAsk | Composer, questions, and menus › Questions | Built |
 | QuestionPick | Composer, questions, and menus › Questions | Built |
-| QuestionAnswered | Composer, questions, and menus › Questions | Partial |
+| QuestionAnswered | Composer, questions, and menus › Questions (The record) | Built |
 | QuestionStates | Composer, questions, and menus › Questions; Keyboard | Partial |
 | TerminalSplit | Terminal panes; Terminal panel (no header button: departures) | Built |
 | TerminalPane | Terminal panes; Terminal panel (Split panes, Send output to pi; no header button: departures) | Partial |

@@ -11,8 +11,20 @@ import ShepherdRemote
 ///
 /// A part is kept as its length, not its text: the text is pi's message, split where the
 /// queue joined it (`NativeQueueRules.separator`).
+///
+/// The same file keeps the session's question records (`NativeQuestionRecord`, newest
+/// `questionLimit`): pi's session holds no UI dialogs, so what pi asked and what the user
+/// answered would otherwise leave the thread with the app.
 final class ThreadOriginStore: @unchecked Sendable {
     static let limit = 512
+    static let questionLimit = 256
+
+    /// One question pi asked, by its dialog id, and when it ended (ms): where the thread shows it.
+    struct Question: Codable, Hashable, Sendable {
+        var id: String
+        var record: NativeQuestionRecord
+        var endedAt: Double
+    }
 
     /// What the file keeps for one message.
     struct Record: Codable, Hashable, Sendable {
@@ -65,6 +77,8 @@ final class ThreadOriginStore: @unchecked Sendable {
         var version = 1
         /// Oldest first.
         var entries: [Entry] = []
+        /// Oldest first. Absent from files written before questions were kept.
+        var questions: [Question]?
     }
 
     private struct Entry: Codable {
@@ -83,20 +97,26 @@ final class ThreadOriginStore: @unchecked Sendable {
     /// Everything recorded for `sessionID`, oldest first; empty when nothing was, or the file
     /// is unreadable.
     func load(sessionID: String) -> [(id: String, record: Record)] {
-        guard let data = try? Data(contentsOf: url(for: sessionID)),
-              let file = try? JSONDecoder().decode(File.self, from: data) else { return [] }
-        return file.entries.map { ($0.id, $0.record) }
+        file(sessionID)?.entries.map { ($0.id, $0.record) } ?? []
     }
 
-    /// Saves the session's records (the caller's whole list, oldest first), newest `limit` kept.
-    func save(sessionID: String, records: [(id: String, record: Record)]) {
+    /// The questions recorded for `sessionID`, oldest first; empty when none were.
+    func loadQuestions(sessionID: String) -> [Question] {
+        file(sessionID)?.questions ?? []
+    }
+
+    /// Saves the session's records and questions (the caller's whole lists, oldest first), the
+    /// newest `limit` and `questionLimit` kept.
+    func save(sessionID: String, records: [(id: String, record: Record)], questions: [Question] = []) {
         let entries = records.suffix(Self.limit).map { Entry(id: $0.id, record: $0.record) }
+        let questions = Array(questions.suffix(Self.questionLimit))
         let url = url(for: sessionID)
         let directory = directory
         writes.async {
             do {
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                try JSONEncoder().encode(File(entries: Array(entries))).write(to: url, options: .atomic)
+                let file = File(entries: Array(entries), questions: questions.isEmpty ? nil : questions)
+                try JSONEncoder().encode(file).write(to: url, options: .atomic)
             } catch {
                 ShepherdLog.warning("thread origins for \(sessionID) not saved: \(error)")
             }
@@ -106,6 +126,11 @@ final class ThreadOriginStore: @unchecked Sendable {
     /// Waits for every write queued so far: the server stopping, so a relaunch reads them, and tests.
     func flush() {
         writes.sync {}
+    }
+
+    private func file(_ sessionID: String) -> File? {
+        guard let data = try? Data(contentsOf: url(for: sessionID)) else { return nil }
+        return try? JSONDecoder().decode(File.self, from: data)
     }
 
     private func url(for sessionID: String) -> URL {
