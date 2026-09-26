@@ -70,9 +70,18 @@ import SwiftUI
             NWQuestionCard(docked: false, count: 2, hide: {}) {
                 Text("How should I handle Horizon's uncommitted edits?").font(.nw(.headline))
                 NWQuestionOptionCard(number: 1, title: "Compare, keep what's unique, then go through GitHub",
-                                     detail: "New branch and PR for anything not merged.", recommended: true, selected: true)
-                NWQuestionOptionCard(number: 2, title: "Leave Horizon alone and deploy from a clean checkout")
+                                     detail: "New branch and PR for anything not merged.", recommended: true, selected: true) {}
+                NWQuestionOptionCard(number: 2, title: "Leave Horizon alone and deploy from a clean checkout") {}
                 Button("Answer") {}.buttonStyle(.nw(.primary, size: .l))
+            }
+            NWQuestionCard(docked: true, asker: .subagent("reviewer"), hide: {}) {
+                Text("Rename the new tokens, or replace the old ones everywhere?").font(.nw(.headline))
+                NWQuestionOptionCard(number: 1, title: "Replace everywhere", selected: true) {} footer: {
+                    NWQuestionNoteField(text: .constant("Keep the old names as aliases for one release."))
+                }
+                NWQuestionOptionCard(number: 2, title: "Rename new ones") {}
+                NWQuestionOtherCard(number: 3, selected: false) { TextField("Something else…", text: .constant("")) }
+                Button("Answer") {}.buttonStyle(.nwReviewBar(.primary))
             }
             NWQuestionCardHiddenLine(question: "How should I handle Horizon's uncommitted edits?") {}
         }
