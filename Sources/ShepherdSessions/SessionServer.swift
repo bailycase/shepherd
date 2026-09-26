@@ -181,6 +181,13 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// This Mac's pi, asked for the skills it loads from outside ~/.agents/skills (one loader, so
+    /// one cache).
+    public static let piSkillsReader: SkillsStore.PiSkillsReader = {
+        let loader = PiSkillsLoader()
+        return { loader.read(installedDirectory: $0) }
+    }()
+
     /// Shared instance the app uses; tests construct their own with scratch
     /// paths.
     public static let shared = SessionServer(
@@ -483,9 +490,11 @@ public final class SessionServer: @unchecked Sendable {
 
     /// `modelCatalog` answers remote model listings; tests pass a stand-in so nothing runs pi.
     /// `skillsDirectory` is where this host's skills live, ~/.agents/skills unless a test passes
-    /// its own. `trash` is where an Undo moves the files a turn created; tests pass their own.
+    /// its own; `piSkills` reads the skills pi loads from elsewhere (tests pass nil, or their own).
+    /// `trash` is where an Undo moves the files a turn created; tests pass their own.
     public init(socketPath: String, stateURL: URL, modelCatalog: @escaping ModelCatalog = SessionServer.piModelCatalog,
-                skillsDirectory: URL? = nil, trash: @escaping ChangesService.Trash = ChangesService.systemTrash) {
+                skillsDirectory: URL? = nil, piSkills: SkillsStore.PiSkillsReader? = SessionServer.piSkillsReader,
+                trash: @escaping ChangesService.Trash = ChangesService.systemTrash) {
         self.socketPath = socketPath
         self.store = StateStore(url: stateURL)
         self.modelCatalog = modelCatalog
@@ -495,7 +504,8 @@ public final class SessionServer: @unchecked Sendable {
         self.instructions = instructions
         self.suggestions = SuggestionsStore(url: instructions.directory.appendingPathComponent("suggestions.json"), instructions: instructions)
         self.skills = SkillsStore(directory: skillsDirectory ?? ShepherdPaths.agentSkillsDirectory(),
-                                  stateDirectory: stateURL.deletingLastPathComponent().appendingPathComponent("skills", isDirectory: true))
+                                  stateDirectory: stateURL.deletingLastPathComponent().appendingPathComponent("skills", isDirectory: true),
+                                  piSkills: piSkills)
         self.changes = ChangesService(directory: stateURL.deletingLastPathComponent().appendingPathComponent("changes", isDirectory: true),
                                       trash: trash)
         self.designs = DesignStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("designs", isDirectory: true))
