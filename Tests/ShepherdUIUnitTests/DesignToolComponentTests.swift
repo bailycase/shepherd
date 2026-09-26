@@ -158,4 +158,22 @@ struct DesignToolComponentTests {
         #expect(NWCanvasBoard.sizeLabel(CGSize(width: 1280, height: 800)) == "1280 × 800")
         #expect(NWCanvasBoard.sizeLabel(CGSize(width: 389.6, height: 844.2)) == "390 × 844")
     }
+
+    /// A comment's age as the boards say it: "now", then minutes, hours and days, never "ago".
+    @Test(arguments: [(0.0, "now"), (59, "now"), (60, "1m"), (125, "2m"), (3_600, "1h"), (86_399, "23h"), (86_400, "1d"), (-30, "now")])
+    func aCommentsAgeReadsTheBoardsWay(secondsAgo: Double, text: String) {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        #expect(nwCommentAge(since: (1_000_000 - secondsAgo) * 1000, now: now) == text)
+    }
+
+    /// The card split around an answer leaves its open edge unlined, so the two rows read as one card.
+    @Test(arguments: [(VerticalEdge.bottom, CGFloat(40)), (.top, 0)])
+    func anOpenCardOutlineRunsFromOneEndOfItsOpenEdgeToTheOther(open: VerticalEdge, y: CGFloat) {
+        let rect = CGRect(x: 0, y: 0, width: 100, height: 40)
+        let path = NWOpenCardOutline(radius: 10, open: open).path(in: rect)
+        var start: CGPoint?
+        path.forEach { if case .move(let point) = $0 { start = point } }
+        #expect(start == CGPoint(x: 0, y: y) && path.currentPoint == CGPoint(x: 100, y: y))
+        #expect(path.boundingRect == rect)
+    }
 }

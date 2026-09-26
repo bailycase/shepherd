@@ -194,6 +194,24 @@ public struct NWCanvasElement: Identifiable, Equatable, Sendable {
     }
 }
 
+/// A comment's pin on the canvas (`NWCommentPin`), on its element's top-trailing corner.
+public struct NWCanvasPin: Identifiable, Equatable, Sendable {
+    /// The comment's id.
+    public let id: String
+    /// The board it is on (`NWCanvasBoard.id`).
+    public var board: String
+    /// Where its element is drawn, in the board's own points.
+    public var rect: CGRect
+    public var number: Int
+
+    public init(id: String, board: String, rect: CGRect, number: Int) {
+        self.id = id
+        self.board = board
+        self.rect = rect
+        self.number = number
+    }
+}
+
 /// Where a click or the pointer landed on the canvas.
 public struct NWCanvasPick: Equatable, Sendable {
     /// The board under it, front-most first; nil over the empty canvas.
