@@ -90,7 +90,9 @@ struct KeyboardSettings: View {
                         vm.rebuildSurfaces()
                         clearError()
                     }
-                    .buttonStyle(.nwLink)
+                    // SettingsKeyboard: Geist 12, 6pt either side, just before the caps.
+                    .buttonStyle(.nwLink(font: .nwSans(AppLayout.shortcutResetSize)))
+                    .padding(.horizontal, NW.Space.s)
                     .accessibilityLabel("Reset \(title)")
                     .nwTransition(.disclosure)
                 }
@@ -141,7 +143,7 @@ private struct ShortcutRecorder: View {
                         .font(.nw(.caption))
                         .foregroundStyle(Color.nw.running)
                         .padding(.horizontal, NW.Space.m)
-                        .frame(minHeight: NW.Height.controlS - NW.Space.xxs)
+                        .frame(minHeight: NWSettingsControlMetrics.keycapHeight)
                         .background(Color.nw.runningTint, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
                         .nwBorder(Color.nw.running, radius: NW.Radius.xs)
                 } else {

@@ -62,7 +62,7 @@ struct SettingsView: View {
                     Image(systemName: "chevron.left")
                         .font(.nwSans(NWSettingsNavMetrics.textSize, .semibold))
                         .imageScale(.small)
-                        .frame(width: NW.Space.xl)
+                        .frame(width: AppLayout.settingsBackGlyphWidth)
                         .accessibilityHidden(true)
                     Text("Back to Shepherd").font(.nwSans(NWSettingsNavMetrics.textSize))
                     Spacer(minLength: 0)
@@ -74,12 +74,13 @@ struct SettingsView: View {
             }
             .buttonStyle(.nwRow())
             .keyboardShortcut(.escape, modifiers: [])
-            .padding(.horizontal, NW.Space.s)
+            .padding(.horizontal, NWSettingsNavMetrics.sidePadding)
 
             NWSearchField("Search settings", text: $searchText, shortcut: "⌘F")
                 .focused($searchFocused)
-                .padding(.horizontal, NW.Space.m)
-                .padding(.top, NW.Space.m)
+                .nwControlScale(.settings)
+                .padding(.horizontal, NWSettingsNavMetrics.sidePadding)
+                .padding(.top, AppLayout.settingsSearchTop)
                 .padding(.bottom, NW.Space.l)
                 .task {
                     // Typing filters immediately after opening; delayed a beat because focusing
@@ -108,7 +109,7 @@ struct SettingsView: View {
                             .padding(.top, NW.Space.xs)
                     }
                 }
-                .padding(.horizontal, NW.Space.s)
+                .padding(.horizontal, NWSettingsNavMetrics.sidePadding)
             }
             .scrollIndicators(.hidden)
 
@@ -117,7 +118,8 @@ struct SettingsView: View {
                 .font(.nw(.micro))
                 .foregroundStyle(Color.nw.textTertiary)
                 .lineLimit(1)
-                .padding(.horizontal, NW.Space.s + NW.Space.m)
+                // Aligned with the rows' icons.
+                .padding(.horizontal, NWSettingsNavMetrics.sidePadding + NWSettingsNavMetrics.rowPadding)
                 .padding(.bottom, NW.Space.l)
         }
         .frame(width: AppLayout.settingsNavWidth)
@@ -209,7 +211,7 @@ private struct SettingsSearchHit: View {
                 .font(.nw(.caption))
                 .foregroundStyle(Color.nw.textSecondary)
                 .lineLimit(1)
-                .padding(.leading, NW.Space.m + NW.Space.xl + NW.Space.m)
+                .padding(.leading, NWSettingsNavMetrics.rowPadding + NWSettingsNavMetrics.iconSize + NWSettingsNavMetrics.iconGap)
                 .frame(maxWidth: .infinity, minHeight: NW.Height.controlS, alignment: .leading)
                 .contentShape(Rectangle())
         }

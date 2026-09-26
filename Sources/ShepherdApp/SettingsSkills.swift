@@ -209,7 +209,7 @@ private struct SkillsListHeader: View {
     }
 
     private func label(_ text: String) -> some View {
-        Text(text).nwSectionLabel().lineLimit(1)
+        Text(text).nwSettingsLabel(table: true).lineLimit(1)
     }
 }
 
@@ -450,7 +450,7 @@ private struct SkillDetail: View {
 
     private func block<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: NW.Space.m) {
-            Text(title).nwSectionLabel()
+            Text(title).nwSettingsLabel(table: true)
             content()
         }
     }
@@ -486,7 +486,7 @@ private struct SkillsRail: View {
         let skills = model.reference(in: hosts).flatMap { model.state(of: $0).snapshot?.skills } ?? []
         VStack(alignment: .leading, spacing: AppLayout.skillsRailSpacing) {
             VStack(alignment: .leading, spacing: NW.Space.m) {
-                NWSectionHeader("How the agent uses them").padding(.horizontal, NW.Space.xxs)
+                NWSectionHeader("How the agent uses them", style: .settings).padding(.horizontal, NW.Space.xxs)
                 let command = Text("/skill:name").font(.nwMono(AppLayout.skillsRailTextSize - 0.5)).foregroundStyle(nw.textPrimary)
                 // One literal, so `command` is interpolated as styled text.
                 Text("The agent sees the name and description of every automatic skill. When a task matches one, it reads that skill’s files and follows them. Type \(command) to use one on purpose.")
@@ -517,7 +517,7 @@ private struct SkillsRail: View {
                 .help("The context meter counts this as part of the system prompt.")
             }
             VStack(alignment: .leading, spacing: 0) {
-                NWSectionHeader("Options").padding(.horizontal, NW.Space.xxs).padding(.bottom, NW.Space.m)
+                NWSectionHeader("Options", style: .settings).padding(.horizontal, NW.Space.xxs).padding(.bottom, NW.Space.m)
                 option("Skills in the / menu", note: "List every skill as /skill:name in the composer’s slash menu.",
                        isOn: $settings.skillsInSlashMenu)
                 option("Same skills on every host", note: "Installs, updates and removals go to all hosts. Offline hosts catch up.",
@@ -526,7 +526,7 @@ private struct SkillsRail: View {
                        isOn: Binding(get: { model.autoUpdate(in: hosts) }, set: { model.setAutoUpdate($0, in: vm.skillsHosts) }))
             }
             VStack(alignment: .leading, spacing: NW.Space.s) {
-                NWSectionHeader("Hosts") {
+                NWSectionHeader("Hosts", style: .settings) {
                     Text(model.directory(in: hosts))
                         .font(.nwMono(AppLayout.skillsMetaSize - 0.5))
                         .foregroundStyle(nw.textTertiary)
