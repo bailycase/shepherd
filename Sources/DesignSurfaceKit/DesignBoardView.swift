@@ -59,8 +59,8 @@ public enum DesignBoardError: Error, Equatable, Sendable {
 
 /// One board of a design, live: a `WKWebView` in the design's sandbox, loaded from
 /// `shepherd-design://`, that runs Shepherd's runtime and reports through a bridge in a content
-/// world of its own. It is sized to the board (its canvas `w` × `h` in points); the canvas
-/// scales it.
+/// world of its own. The page always lays out at the board's size (its canvas `w` × `h` in CSS
+/// pixels); the view is `boardSize × zoom` points and scales what the page draws to fit.
 ///
 /// Board content is untrusted: loads other than the design's scheme (and Google Fonts, when the
 /// surface allows them) are blocked by content rules and a CSP, every navigation is refused
@@ -76,22 +76,52 @@ public final class DesignBoardView: DesignPlatformView {
 
     /// The board's CSS pixel size: its page lays out at this size whatever the zoom.
     public var boardSize: CGSize {
-        didSet { frame.size = scaledSize }
+        didSet {
+            guard boardSize != oldValue else { return }
+            frame.size = scaledSize
+            layOutPage()
+        }
     }
 
-    /// The canvas's zoom: the view is `boardSize × zoom` points, and the page draws sharp at that
-    /// scale (WebKit's page zoom) rather than being scaled as a picture.
+    /// The canvas's zoom: the view is `boardSize × zoom` points. The page never lays out at the
+    /// zoom: WebKit's page zoom moves the layout viewport by a rounded pixel at fractional zooms,
+    /// and below about 0.56 its minimum font size swells 16px text until it wraps. So the web view
+    /// is the board at `renderScale` (1, 2 or 4) and is scaled to the view's size.
     public var zoom: CGFloat = 1 {
         didSet {
-            guard zoom != oldValue, zoom.isFinite, zoom > 0 else { return }
-            webView.pageZoom = zoom
+            guard zoom.isFinite, zoom > 0 else {
+                zoom = oldValue
+                return
+            }
+            guard zoom != oldValue else { return }
+            renderScale = Self.renderScale(for: zoom)
             frame.size = scaledSize
         }
     }
 
+    /// The page zoom the web view draws at: 1 up to the board's own size, then 2 and 4 so text
+    /// stays sharp when zoomed in. Whole numbers keep the web view exactly the board's size in
+    /// CSS pixels; below 1 the board draws at its size and is scaled down.
+    public private(set) var renderScale: CGFloat = 1 {
+        didSet {
+            guard renderScale != oldValue else { return }
+            renderScaleChanges += 1
+            layOutPage()
+        }
+    }
+
+    public nonisolated static func renderScale(for zoom: CGFloat) -> CGFloat {
+        guard zoom.isFinite, zoom > 1 else { return 1 }
+        return zoom > 2 ? 4 : 2
+    }
+
     private var scaledSize: CGSize { CGSize(width: boardSize.width * zoom, height: boardSize.height * zoom) }
+    /// The web view's size in its own points: the board at `renderScale`.
+    private var pageSize: CGSize { CGSize(width: boardSize.width * renderScale, height: boardSize.height * renderScale) }
 
     let webView: WKWebView
+    /// Tests: how often the web view took a new page zoom (never on a zoom within one scale).
+    private(set) var renderScaleChanges = 0
     /// Navigations the page started, the first load included. `replaceSource` never adds one.
     private(set) var navigationsStarted = 0
     /// Navigations the board asked for and was refused.
@@ -121,18 +151,63 @@ public final class DesignBoardView: DesignPlatformView {
         webView.uiDelegate = delegate
         webView.allowsBackForwardNavigationGestures = false
         webView.allowsLinkPreview = false
+        webView.autoresizingMask = []
         #if canImport(AppKit) && !targetEnvironment(macCatalyst)
         webView.allowsMagnification = false
-        webView.autoresizingMask = [.width, .height]
         #else
-        webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         webView.scrollView.isScrollEnabled = false
         #endif
         addSubview(webView)
+        layOutPage()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    // MARK: Geometry
+
+    /// The web view at `pageSize` with the matching page zoom, scaled to the view's bounds.
+    private func layOutPage() {
+        if webView.pageZoom != renderScale { webView.pageZoom = renderScale }
+        #if canImport(AppKit) && !targetEnvironment(macCatalyst)
+        webView.frame = CGRect(origin: .zero, size: pageSize)
+        scaleToFrame()
+        #else
+        placeWebView()
+        #endif
+    }
+
+    #if canImport(AppKit) && !targetEnvironment(macCatalyst)
+    public override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        scaleToFrame()
+    }
+
+    /// Bounds of the page's size in a frame of the view's: AppKit scales the web view to fit,
+    /// and converts events and hit tests the same way.
+    private func scaleToFrame() {
+        let page = pageSize
+        guard frame.width > 0, frame.height > 0, page.width > 0, page.height > 0, bounds.size != page else { return }
+        setBoundsSize(page)
+    }
+    #else
+    public override func layoutSubviews() {
+        super.layoutSubviews()
+        placeWebView()
+    }
+
+    /// The web view at the page's size, centred and scaled to the view's bounds: UIKit converts
+    /// touches through the transform.
+    private func placeWebView() {
+        let page = pageSize
+        guard page.width > 0, page.height > 0 else { return }
+        webView.transform = .identity
+        webView.bounds = CGRect(origin: .zero, size: page)
+        webView.center = CGPoint(x: bounds.midX, y: bounds.midY)
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        webView.transform = CGAffineTransform(scaleX: bounds.width / page.width, y: bounds.height / page.height)
+    }
+    #endif
 
     // MARK: Loading
 
@@ -187,7 +262,7 @@ public final class DesignBoardView: DesignPlatformView {
     public func snapshot(width: CGFloat? = nil) async throws -> CGImage {
         guard contentSize != nil else { throw DesignBoardError.notBooted }
         let configuration = WKSnapshotConfiguration()
-        configuration.rect = CGRect(origin: .zero, size: scaledSize)
+        configuration.rect = CGRect(origin: .zero, size: pageSize)
         configuration.snapshotWidth = NSNumber(value: Double(width ?? boardSize.width))
         configuration.afterScreenUpdates = true
         let image = try await webView.takeSnapshot(configuration: configuration)
