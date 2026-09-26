@@ -27,7 +27,7 @@ enum DesignRuntime {
     static let bridgeScript: String = resource("shepherd-dc-bridge.js").map { String(decoding: $0, as: UTF8.self) } ?? ""
 
     static func resource(_ path: String) -> Data? {
-        guard let url = Bundle.module.resourceURL?.appendingPathComponent("Resources/" + path) else { return nil }
+        guard let url = Bundle.module.resourceURL?.appendingPathComponent(path) else { return nil }
         return try? Data(contentsOf: url)
     }
 }

@@ -65,7 +65,13 @@ let package = Package(
         .target(
             name: "DesignSurfaceKit",
             dependencies: ["ShepherdCore", "ShepherdProtocol"],
-            resources: [.copy("Resources")]
+            // Copied by name, never as a folder called Resources: a flat bundle holding one reads
+            // as the bundle's resource folder itself, and every lookup under it misses.
+            resources: [
+                .copy("Resources/react"),
+                .copy("Resources/shepherd-dc-runtime.js"),
+                .copy("Resources/shepherd-dc-bridge.js"),
+            ]
         ),
         .target(
             name: "ShepherdApp",
