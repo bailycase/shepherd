@@ -36,8 +36,8 @@ protocol MCPProbeRunner: Sendable {
 }
 
 /// The real runner: the same client agents use, run with the engine's node in a login shell, so
-/// it finds exactly what an agent would: `/bin/zsh -l -c 'exec node "$0" probe' <client.mjs>`
-/// (`PiLaunch.mcpProbe`).
+/// it finds exactly what an agent would: `/bin/zsh -l -c '… exec node "$0" probe' <client.mjs>`,
+/// with the shell's pi, jiti and Node settings dropped first (`PiLaunch.mcpProbe`).
 struct NodeProbeRunner: MCPProbeRunner {
     /// Whose node runs the client.
     var engine: PiEngine

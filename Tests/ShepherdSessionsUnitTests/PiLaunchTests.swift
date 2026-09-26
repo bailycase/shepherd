@@ -20,6 +20,9 @@ struct PiLaunchTests {
     static let cwd = "/Users/me/My Project/it's"
     static let status = "/Users/me/Library/Application Support/Shepherd/shepherd-status.ts"
     static let panes = "/Users/me/Library/Application Support/Shepherd/shepherd-panes.ts"
+    /// What a line running Shepherd's own node after a login shell drops first.
+    static let clearing = "_shepherd_ca=${NODE_EXTRA_CA_CERTS-}; unset -m 'PI_*' 'JITI_*' 'NODE_*' 'OPENSSL_CONF'; "
+        + "[[ -n $_shepherd_ca ]] && export NODE_EXTRA_CA_CERTS=$_shepherd_ca; unset _shepherd_ca; "
 
     struct Row: CustomTestStringConvertible, Sendable {
         let name: String
@@ -57,12 +60,12 @@ struct PiLaunchTests {
             script: #"print -r -u2 -- 'Shepherd won'"'"'t start pi: the homes overlap'; exit 78"#),
         Row(name: "the MCP probe, on the engine's node",
             line: PiLaunch.mcpProbe(engine: engine, client: "/Users/me/Library/Application Support/Shepherd/shepherd-mcp-client.mjs"),
-            script: #"exec '/Applications/Shepherd.app/Contents/Helpers/node' "$0" probe"#,
+            script: clearing + #"exec '/Applications/Shepherd.app/Contents/Helpers/node' "$0" probe"#,
             positional: ["/Users/me/Library/Application Support/Shepherd/shepherd-mcp-client.mjs"]),
         Row(name: "the MCP probe on the tests' node",
             line: PiLaunch.mcpProbe(engine: PiEngine(command: ["/scratch/pi-engine"], packageDirectory: nil, version: nil, node: .onPath("node")),
                                     client: "/c.mjs"),
-            script: #"exec node "$0" probe"#,
+            script: clearing + #"exec node "$0" probe"#,
             positional: ["/c.mjs"]),
     ]
 
