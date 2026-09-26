@@ -4,10 +4,9 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-/// The terminal panel's own actions (NewTerminalMenu, Run in terminal): name a tab, kill what a
-/// tab runs, and open a command in a new tab typed out but not run. A local agent's go to this
-/// Mac's server; a remote agent's to its host (`terminalControlCapability`), which serves them
-/// here for its own agents with the same rules.
+/// The terminal panel's own actions (NewTerminalMenu): name a tab and kill what a tab runs. A
+/// local agent's go to this Mac's server; a remote agent's to its host
+/// (`terminalControlCapability`), which serves them here for its own agents with the same rules.
 extension ShepherdViewModel {
     struct TerminalControlError: Error, CustomStringConvertible {
         let description: String
@@ -38,15 +37,6 @@ extension ShepherdViewModel {
         guard let session = leaf.sessionID, await server.killForegroundCommand(sessionID: session) else {
             throw TerminalControlError("Nothing is running in that terminal.")
         }
-    }
-
-    /// Types `text` at a pane's prompt once its shell reads, without running it.
-    func typeInTerminal(_ paneID: PaneID, of agentID: AgentID, text: String) async throws {
-        _ = try terminalLeaf(paneID, of: agentID)
-        guard let session = await sessions.awaitSession(forPane: paneID, timeout: .seconds(10)) else {
-            throw TerminalControlError("That terminal's shell did not start.")
-        }
-        server.typeCommand(text, sessionID: session, submit: false)
     }
 
     // MARK: From the panel

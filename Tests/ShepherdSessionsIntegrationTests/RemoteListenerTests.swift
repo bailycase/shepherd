@@ -107,6 +107,20 @@ struct RemoteListenerTests {
         guard case .state(10, _) = try await client.next() else { Issue.record("expected state"); return }
     }
 
+    /// An older client's Run in terminal (`typeInTerminal`, since removed) gets the refusal for a
+    /// request the host does not know, not a dropped connection. Its agent does not exist here, so
+    /// an action the host still knew would be refused `no_such_agent` instead.
+    @Test func anOlderClientsRunInTerminalIsRefusedAndKeepsTheConnection() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let client = try await r.raw()
+        let frame = #"{"type":"agentAction","id":11,"agentID":"gone","action":{"typeInTerminal":{"paneID":"p","text":"ls"}}}"#
+        try client.sendRaw(Data((frame + "\n").utf8))
+        #expect(try await client.next() == .error(id: 11, code: "unsupported", message: "The host does not take this request."))
+        try client.send(.stateFetch(id: 12))
+        guard case .state(12, _) = try await client.next() else { Issue.record("expected state"); return }
+    }
+
     @Test func aSecondHelloIsAnErrorButKeepsTheConnection() async throws {
         let r = try RemoteHost()
         defer { r.stop() }
