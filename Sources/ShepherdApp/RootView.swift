@@ -49,6 +49,8 @@ struct RootView: View {
                     leadingInset: docked || isFullScreen ? 0 : AppLayout.trafficLightInset,
                     showSidebar: docked ? nil : { vm.toggleSidebar() }
                 )
+                // Over the workspace: the side-pane button's tip hangs below the toolbar.
+                .zIndex(1)
                 // Once, after an update moved this copy off the retired nightly channel. It
                 // leaves at once: easing the column's height would relay out every mounted
                 // layout on each frame.
@@ -193,7 +195,8 @@ private struct SidebarOverlayDismissal: ViewModifier {
 // MARK: Workspace header
 
 /// The 44pt toolbar over the workspace: the thread toolbar for the agent on screen (local or
-/// remote), else the space's name. The window has no other title.
+/// remote), else the space's name. The window has no other title. It sits over the workspace, so
+/// the side-pane button's tip can hang below it.
 struct WorkspaceHeaderView: View {
     var vm: ShepherdViewModel
     /// Clears the window controls while the sidebar is not docked (zero in full screen).
@@ -211,16 +214,20 @@ struct WorkspaceHeaderView: View {
                 if vm.remoteInspectingAgent == remote {
                     PlainHeader(title: "\(agent.name) · terminal", leadingInset: leadingInset, showSidebar: showSidebar)
                 } else {
-                    threadHeader(store: vm.remoteThreadStores.store(for: remote), project: "⌁ \(connection.config.name)",
-                                 title: agent.name, rename: { vm.remoteRenameTarget = remote })
+                    let space = connection.state.spaces.first { $0.id == agent.spaceID }?.name
+                    threadHeader(store: vm.remoteThreadStores.store(for: remote), owner: .remote(remote),
+                                 project: space ?? connection.config.name, title: agent.name,
+                                 branch: AgentBranchLabel(agent: agent, host: connection.config.name), directory: nil,
+                                 showChanges: { vm.openRemoteReview(remote, path: nil) }, rename: { vm.remoteRenameTarget = remote })
                         .id(remote)
                 }
             } else if let agent = vm.selectedAgent, vm.activeTabID == agent.tabID,
                       let space = vm.state.spaces.first(where: { $0.id == agent.spaceID }) {
-                threadHeader(store: vm.threadStores.store(for: agent.id), project: space.name, title: agent.name,
-                             rename: { vm.agentRenameTarget = agent.id })
+                threadHeader(store: vm.threadStores.store(for: agent.id), owner: .local(agent.id), project: space.name, title: agent.name,
+                             branch: AgentBranchLabel(agent: agent), directory: vm.checkoutDirectory(of: agent.id),
+                             showChanges: { vm.openReview(agentID: agent.id, path: nil) }, rename: { vm.agentRenameTarget = agent.id })
                     // One toolbar per agent: switching replaces it at once instead of animating
-                    // one agent's status and counters into another's.
+                    // one agent's chip and pane button into another's.
                     .id(agent.id)
             } else {
                 PlainHeader(title: vm.selectedSpace?.name ?? "Shepherd", leadingInset: leadingInset, showSidebar: showSidebar)
@@ -242,15 +249,14 @@ struct WorkspaceHeaderView: View {
 
     /// Compared by value: this header reruns for every status report, and the toolbar under it
     /// reruns only when what it shows changed.
-    private func threadHeader(store: NativeThreadStore, project: String, title: String,
+    private func threadHeader(store: NativeThreadStore, owner: SidePaneOwner, project: String, title: String,
+                              branch: AgentBranchLabel?, directory: String?, showChanges: @escaping () -> Void,
                               rename: @escaping () -> Void) -> EquatableView<ThreadHeader> {
-        ThreadHeader(store: store, project: project, title: title, leadingInset: leadingInset, showSidebar: showSidebar,
-                     reviewOpen: vm.isReviewPaneShowing, inspectorOpen: vm.isInspectorShowing,
-                     reviewShortcut: keys.display(.toggleRightPane), inspectShortcut: keys.display(.inspectSubagent),
-                     toggleReview: { vm.toggleReviewPane() }, toggleSubagents: { vm.toggleSubagentPane() }, rename: rename,
-                     terminalOpen: vm.isTerminalPanelShowing, terminalNews: vm.terminalHasNews,
-                     terminalShortcut: keys.display(.toggleTerminal),
-                     toggleTerminal: vm.canShowTerminalPanel ? { vm.toggleTerminalPanel() } : nil)
+        let pane = vm.sidePaneButton(for: owner)
+        return ThreadHeader(store: store, project: project, title: title, leadingInset: leadingInset, showSidebar: showSidebar,
+                            branch: branch, directory: directory,
+                            paneOpen: pane.isOn, paneNews: pane.news, paneShortcut: keys.display(.toggleRightPane),
+                            togglePane: { vm.toggleRightPane() }, showChanges: showChanges, rename: rename)
             .equatable()
     }
 }

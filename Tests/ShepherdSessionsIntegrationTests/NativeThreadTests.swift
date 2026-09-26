@@ -69,6 +69,23 @@ struct NativeThreadTests {
         #expect(done.messages[4].startedAt == toolStarted, "history keeps the start time the host observed")
     }
 
+    /// Each finished tool call reaches the app with its agent and the tool's name, so the header
+    /// can read that agent's checkout again.
+    @Test func aFinishedToolCallTellsTheAppWhichAgentItWas() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let finished = Locked<[(AgentID, String)]>([])
+        h.server.onAgentToolFinished = { agentID, name in finished.withValue { $0.append((agentID, name)) } }
+        let pi = try await PiAgent.launch(on: h)
+        let idle = try await pi.ready()
+
+        _ = try await pi.send("hello", from: idle)
+
+        try await eventually("the tool call to be reported") { !finished.current.isEmpty }
+        #expect(finished.current.map(\.0) == [pi.agent.id])
+        #expect(finished.current.map(\.1) == ["bash"])
+    }
+
     @Test func imagesTravelWithThePromptAndAreBounded() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }

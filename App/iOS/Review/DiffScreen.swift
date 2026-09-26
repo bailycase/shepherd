@@ -40,6 +40,7 @@ struct DiffScreen: View {
             .padding(.top, NW.Space.xs)
         }
         .scrollDismissesKeyboard(.interactively)
+        .task(id: ReviewColorsKey(file: file?.id, version: store.filesVersion)) { if let file { await store.highlight(file.id) } }
         .background(Color.nw.bgWindow)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if let label = store.selectionLabel, let selection = store.selection, selection.fileID == file?.id {

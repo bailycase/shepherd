@@ -67,18 +67,19 @@ struct ShellLayoutTests {
         // column, preferred → mode, pane width, thread width
         (1207.0, nil as Double?, ShellLayout.PaneMode.docked, 600.0, 606.0),
         (1207.0, 900.0, .docked, 603.5, 602.5),
-        (1207.0, 100.0, .docked, 480.0, 726.0),
-        // At the threshold the 480 minimum wins over "at most half", and the thread keeps 400.
-        (881.0, nil, .docked, 480.0, 400.0),
+        (1207.0, 100.0, .docked, 380.0, 826.0),
+        (881.0, nil, .docked, 440.5, 439.5),
+        // At the threshold the 380 minimum wins over "at most half", and the thread keeps 400.
+        (781.0, nil, .docked, 380.0, 400.0),
         (960.0, 700.0, .docked, 480.0, 479.0),
         // Narrower, the pane overlays the thread instead of squeezing it.
-        (880.0, nil, .overlay, 600.0, 880.0),
+        (780.0, nil, .overlay, 600.0, 780.0),
         (720.0, 480.0, .overlay, 480.0, 720.0),
         // The overlaid pane and its 1pt edge fit the column exactly.
         (300.0, nil, .overlay, 299.0, 300.0),
         (0.0, nil, .overlay, 0.0, 0.0),
     ])
-    func theRightPaneDocksWhileTheThreadKeepsFourHundredPoints(column: Double, preferred: Double?, mode: ShellLayout.PaneMode,
+    func theSidePaneDocksWhileTheThreadKeepsFourHundredPoints(column: Double, preferred: Double?, mode: ShellLayout.PaneMode,
                                                                 width: Double, content: Double) {
         let pane = ShellLayout.rightPane(containerWidth: column, preferredWidth: preferred.map { CGFloat($0) })
         #expect(pane == ShellLayout.Pane(mode: mode, width: width, contentWidth: content))

@@ -129,7 +129,7 @@ system restores from an earlier run are closed before a screen starts.
 ## Not yet validated
 
 - A real pi session driven from a phone against the current RPC host.
-- Physical-device signing, and the TestFlight upload itself. The nightly lane is in place
+- Physical-device signing, and the TestFlight upload itself. The TestFlight lane is in place
   ([README.md › Distribution](README.md#distribution)), but only its first real run proves the
   cloud-signed export and upload.
 - VoiceOver navigation end to end (labels are set; no automated pass yet).

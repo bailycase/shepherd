@@ -2,7 +2,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 
-// Subagents track's screens: the cards in a thread (MobileSteer), the list (MobileSubagents), a
+// Subagents track's screens: the tray above the composer (MobileSteer), the list (MobileSubagents), a
 // running run with its steer field (MobileSubagent), a run waiting on you (iPadSteer) and a
 // finished group with a finished run (iPadSubagents). Transcripts come from the host's
 // `subagentTranscript` answers below.
@@ -12,6 +12,8 @@ extension FixtureCatalog {
         let done = SubagentFixtures.ref(SubagentFixtures.restyled)
         return [
             FixtureScreen(name: "subagents-thread", hosts: SubagentFixtures.hosts(), routes: [.thread(live)]),
+            // MobileSteer, iPadSteer: the subagents, then Up next, in one card.
+            FixtureScreen(name: "subagents-queue", hosts: SubagentFixtures.hosts(queued: true), routes: [.thread(live)]),
             FixtureScreen(name: "subagents", hosts: SubagentFixtures.hosts(), routes: [.thread(live), .subagents(.list(live))]),
             FixtureScreen(name: "subagent-run", hosts: SubagentFixtures.hosts(),
                           routes: [.thread(live), .subagents(.run(live, runID: SubagentFixtures.worker))]),
@@ -41,12 +43,19 @@ enum SubagentFixtures {
 
     /// The default hosts, with two more agents on Studio: one whose turn waits on three live
     /// runs, one whose three runs have finished.
-    static func hosts() -> [FixtureHostData] {
+    static func hosts(queued: Bool = false) -> [FixtureHostData] {
         var hosts = FixtureData.hosts()
         guard let index = hosts.firstIndex(where: { $0.id == FixtureData.studio }) else { return hosts }
         hosts[index].state.agents.insert(FixtureData.agent(restyle, "Restyle native UI", .working), at: 0)
         hosts[index].state.agents.insert(FixtureData.agent(restyled, "Restyle to spec", .idle), at: 1)
-        hosts[index].threads[restyle] = liveThread()
+        var live = liveThread()
+        if queued {
+            live.queue = NativeQueue(items: [
+                NativeQueuedMessage(id: UUID(), text: "Keep the sidebar at 232pt when a pane opens.", sentAt: FixtureData.start, state: .steering),
+                NativeQueuedMessage(id: UUID(), text: "Then re-run the snapshot tests.", sentAt: FixtureData.start),
+            ])
+        }
+        hosts[index].threads[restyle] = live
         hosts[index].threads[restyled] = finishedThread()
         hosts[index].reply = { request in
             guard case .nativeThread(let id, _, .subagentTranscript(_, let runID, _)) = request else { return nil }
@@ -72,6 +81,8 @@ enum SubagentFixtures {
             FixtureData.user("m1", "Restyle all of Shepherd's native UI to match the design spec. Split it up if that's faster.", at: started),
             FixtureData.assistant("m2", spawnNote, at: started + 5_000),
             FixtureData.tool("m3", "shepherd_child_start", args: #"{"workflow":"restyle"}"#, at: started + 8_000),
+            // It waits on them: that call runs, so the thread's own tail stays still (MobileSteer).
+            FixtureData.tool("m4", "shepherd_child_wait", args: "{}", status: "running", at: started + 9_000),
         ], running: true, subagents: liveRuns() + earlierRuns())
     }
 
@@ -101,14 +112,14 @@ enum SubagentFixtures {
                      attentionText: "Two token names collide", role: "reviewer", model: "anthropic/opus", context: "async", turns: 3,
                      tokens: 40_000,
                      lastActivity: ChildActivity(tool: "shepherd_parent_message", at: now - 2 * 60_000),
-                     question: ChildQuestion(text: "Two token names collide with existing `Tokens.textSecondary`. Rename the new ones, or replace the old ones everywhere?",
+                     question: ChildQuestion(text: "Two token names collide with existing `Tokens.textSecondary`. Rename or replace the token names?",
                                              options: ["Replace everywhere", "Rename new ones"]),
                      toolCallID: "call-m3", task: "Check each step of the restyle against the spec and flag deviations."),
             ChildRun(runID: tests, label: "tests: run", state: "complete", startedAt: now - 25 * 60_000,
                      endedAt: now - 25 * 60_000 + 242_000, role: "tests", model: "anthropic/sonnet", context: "async", turns: 9,
                      toolCalls: 19, tokens: 118_000, result: ChildResultSummary(files: 2, added: 96, removed: 3, tools: 19, tokens: 118_000),
                      toolCallID: "call-m3", task: "Cover the presentation layer on both simulators.",
-                     summary: "Added 6 presentation tests · all 14 pass."),
+                     summary: "Added 6 presentation tests · 14 pass."),
         ]
     }
 
@@ -128,18 +139,19 @@ enum SubagentFixtures {
         return [
             ChildRun(runID: worker, label: "worker: restyle", state: "complete", startedAt: start + 6_000, endedAt: start + 6_000 + 41 * 60_000,
                      role: "worker", model: "anthropic/fable-5-1", turns: 78, toolCalls: 82, tokens: 922_000,
-                     result: ChildResultSummary(files: 5, added: 318, removed: 64, tools: 82, tokens: 922_000), toolCallID: "call-f3",
+                     result: ChildResultSummary(files: 5, added: 190, removed: 58, tools: 82, tokens: 922_000), toolCallID: "call-f3",
                      task: "Restyle the thread, sidebar, composer and iOS app to the spec.",
                      summary: "Restyled thread, sidebar, composer and iOS to the spec."),
             ChildRun(runID: reviewer, label: "reviewer: check", state: "complete", startedAt: start + 7_000, endedAt: start + 7_000 + 12 * 60_000,
-                     role: "reviewer", model: "anthropic/opus", turns: 14, toolCalls: 26, tokens: 180_000, toolCallID: "call-f3",
+                     role: "reviewer", model: "anthropic/opus", turns: 14, toolCalls: 26, tokens: 180_000,
+                     result: ChildResultSummary(files: 0, added: 32, removed: 3, tools: 26, tokens: 180_000), toolCallID: "call-f3",
                      task: "Check each step of the restyle against the spec.",
-                     summary: "2 spec deviations found and fixed; asked once about token naming."),
+                     summary: "2 spec deviations fixed · you chose replace everywhere."),
             ChildRun(runID: tests, label: "tests: run", state: "complete", startedAt: start + 8_000, endedAt: start + 8_000 + 4 * 60_000,
                      role: "tests", model: "anthropic/claude-sonnet", turns: 11, toolCalls: 19, tokens: 118_000,
                      result: ChildResultSummary(files: 2, added: 96, removed: 3, tools: 19, tokens: 118_000), toolCallID: "call-f3",
                      task: "Cover the presentation layer: preview text per tool kind, DiffStat counts, duration formatting. Run on both simulators.",
-                     summary: "Added 6 tests; all 14 pass on macOS and iPadOS."),
+                     summary: "Added 6 presentation tests · 14 pass."),
         ]
     }
 

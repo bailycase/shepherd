@@ -180,6 +180,129 @@ struct ListPerformanceReport {
         report.add(name, "scroll: rows", counts: scrolling)
     }
 
+    /// A big review as the pane shows it in use: 40 files of Swift, TypeScript, and Go with every
+    /// file highlighted, a 3,000-line new file opened whole, a file of very long lines, and six
+    /// inline comments, docked beside a running 50-turn thread.
+    @Test func reviewRealistic() async throws {
+        let name = "review (40 files, 3k-line file, long lines, highlighted)"
+        let files = ListFixtures.realisticReview()
+        let model = ListFixtures.reviewModel(files)
+        model.session.comments = ListFixtures.realisticComments(files)
+        let snapshot = ListFixtures.threadSnapshot(turns: 50, running: true)
+        let store = NativeThreadStore()
+        defer { store.stop() }
+        let host = ReviewBesideThread(store: store, snapshot: snapshot, model: model)
+        let small = ListFixtures.reviewModel([ListFixtures.diffFile("Warm.swift", lines: 40)])
+        warmUp(size: CGSize(width: 1300, height: 800)) { ReviewPaneContent(model: small) }
+
+        var window: OffscreenWindow!
+        var openMS = 0.0
+        let opening = try await countingAsync {
+            let start = ContinuousClock.now
+            window = OffscreenWindow(size: CGSize(width: 1300, height: 800), dark: true, host)
+            try await eventuallyOnMain("the thread to load") { store.ready }
+            ListPerf.settle(window)
+            openMS = ListPerf.milliseconds(ContinuousClock.now - start)
+        }
+        defer { window.close() }
+        report.add(name, "open beside the thread", ms: openMS)
+        report.add(name, "open: rows", counts: opening)
+
+        let highlightStart = ContinuousClock.now
+        let highlighting = try await countingAsync {
+            var landed = model.highlights.count
+            try await eventuallyOnMain("every file to be highlighted", timeout: .seconds(120)) {
+                if model.highlights.count != landed {
+                    landed = model.highlights.count
+                    ListPerf.settle(window)
+                }
+                return landed == files.count
+            }
+        }
+        report.add(name, "highlight every file: wall", ms: ListPerf.milliseconds(ContinuousClock.now - highlightStart))
+        report.add(name, "highlight every file: rows", counts: highlighting)
+
+        var expand = 0.0
+        let expanding = ListPerf.counting { expand = ListPerf.time(window) { model.expandFile(files[5].id) } }
+        report.add(name, "open the 3k-line file whole", ms: expand)
+        report.add(name, "open the 3k-line file whole: rows", counts: expanding)
+
+        let scroll = try #require(ListPerf.scrollView(in: window, trailing: true))
+        // Small steps (a trackpad's) through the first files and into the 3k-line file and back,
+        // then big ones (a flung wheel) through the whole diff and back.
+        for (step, steps) in [(CGFloat(40), 750), (200, 5000)] {
+            ListPerf.jump(window, scroll, toEnd: false)
+            var down = ListPerf.Scroll(), up = ListPerf.Scroll()
+            let scrollingDown = ListPerf.counting { down = ListPerf.scroll(window, scroll, step: step, steps: steps) }
+            let scrollingUp = ListPerf.counting { up = ListPerf.scroll(window, scroll, step: -step, steps: steps) }
+            report.add(name + " ↓ \(Int(step)) pt", scroll: down)
+            report.add(name, "scroll ↓ \(Int(step)) pt: rows per 100 steps", counts: scrollingDown.mapValues { $0 * 100 / max(1, down.steps.count) })
+            report.add(name + " ↑ \(Int(step)) pt", scroll: up)
+            report.add(name, "scroll ↑ \(Int(step)) pt: rows per 100 steps", counts: scrollingUp.mapValues { $0 * 100 / max(1, up.steps.count) })
+        }
+
+        // Comments on lines in view: the editor opens, then the comment lands.
+        ListPerf.jump(window, scroll, toEnd: false)
+        var comments: [Double] = []
+        let commenting = ListPerf.counting {
+            for index in 0..<5 {
+                let line = files[0].hunks[0].lines[10 + index]
+                comments.append(ListPerf.time(window) { model.startComment(fileID: files[0].id, lineID: line.id) })
+                comments.append(ListPerf.time(window) { model.saveComment("Rename this.", fileID: files[0].id, lineID: line.id) })
+            }
+        }
+        report.add(name, "comment ×5 (open + save): mean", ms: comments.reduce(0, +) / Double(comments.count))
+        report.add(name, "comment ×5 (open + save): rows", counts: commenting)
+    }
+
+    /// The right pane's rendering while it scrolls, docked and floating over the thread: the
+    /// layers that cast a shadow, and the main thread's cost to draw the window's layers on the
+    /// CPU after each step (a stand-in for the render server's work, which the app doesn't see).
+    @Test(arguments: [(CGFloat(1400), "docked"), (800, "floating")])
+    func reviewPaneRendering(width: CGFloat, mode: String) async throws {
+        let name = "review pane rendering (\(mode))"
+        let files = ListFixtures.realisticReview()
+        let model = ListFixtures.reviewModel(files)
+        let window = OffscreenWindow(size: CGSize(width: width, height: 800), dark: true,
+                                     RightPaneSplit(state: RightPaneState(), showPane: true) { Color.clear } pane: { ReviewPaneContent(model: model) })
+        defer { window.close() }
+        try await eventuallyOnMain("every file to be highlighted", timeout: .seconds(120)) { model.highlights.count == files.count }
+        ListPerf.settle(window)
+        let shadows = ListPerf.shadowedLayers(in: window)
+        report.add(name, "shadowed layers (subtree sizes)", shadows.isEmpty ? "none" : shadows.map { "\($0.subtree)" }.joined(separator: ", "))
+
+        let scroll = try #require(ListPerf.scrollView(in: window, trailing: true))
+        var cpu: [Double] = [], instructions: [Double] = []
+        for _ in 0..<150 {
+            _ = ListPerf.scroll(window, scroll, step: 22, steps: 1)
+            let start = ListPerf.threadCPU(), retired = ListPerf.instructions()
+            _ = FrameTimer.capture(window, window.host.bounds)
+            cpu.append(ListPerf.threadCPU() - start)
+            instructions.append(ListPerf.instructions() - retired)
+        }
+        report.add(name, "draw the window after a 22 pt step ×150: CPU mean · instructions mean",
+                   String(format: "%.2f ms · %.1f M", cpu.reduce(0, +) / 150, instructions.reduce(0, +) / 150))
+    }
+
+    /// The review docked beside its agent's running thread, as `AgentLayoutView` lays them out.
+    private struct ReviewBesideThread: View {
+        let store: NativeThreadStore
+        let snapshot: NativeThreadSnapshot
+        let model: ReviewPaneModel
+
+        var body: some View {
+            HStack(spacing: 0) {
+                ThreadView(store: store, active: true, isFocused: false, request: { [snapshot] value in
+                    if case .send(_, _, let operation, _, _, _) = value { return .accepted(operationID: operation) }
+                    return .snapshot(value: snapshot)
+                }, commandKey: "perf")
+                .frame(width: 700)
+                ReviewPaneContent(model: model)
+                    .frame(width: 600)
+            }
+        }
+    }
+
     // MARK: Thread
 
     @Test(arguments: [50, 500])
@@ -303,21 +426,24 @@ struct ListPerformanceReport {
 
     private struct GroupHost: View {
         let runs: [ChildRun]
+        let state: SubagentTrayState = {
+            let state = SubagentTrayState()
+            state.expanded = true
+            return state
+        }()
 
         var body: some View {
-            ScrollView {
-                SubagentStack(runs: runs, turnLive: runs.contains { !$0.isTerminal },
-                              actions: SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }))
-                    .padding(NW.Space.l)
-            }
-            .frame(width: 800, height: 800)
-            .background(Color.nw.bgWindow)
+            SubagentTrayView(tray: NativeSubagentTray(runs), state: state, runs: runs,
+                             actions: SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }), answer: { _ in })
+                .padding(NW.Space.l)
+                .frame(width: 800, height: 800, alignment: .top)
+                .background(Color.nw.bgWindow)
         }
     }
 
     @Test(arguments: ["running", "complete"])
     func subagents(state: String) throws {
-        let name = "subagents (200 runs, \(state == "complete" ? "ledger" : "strip"))"
+        let name = "subagents (200 runs in the open tray, \(state))"
         let runs = (0..<200).map { ListFixtures.run($0, state: state) }
         let window = open(name, size: CGSize(width: 800, height: 800)) { GroupHost(runs: runs) }
         defer { window.close() }

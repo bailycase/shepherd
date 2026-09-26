@@ -142,7 +142,7 @@ enum HomeFixtureData {
                                 role: "reviewer")
         return FixtureData.snapshot([
             FixtureData.user("s1", "Restyle the native UI on the new tokens."),
-            FixtureData.assistant("s2", "Waiting on worker and reviewer.", at: now - FixtureData.start - 120_000),
+            FixtureData.assistant("s2", SubagentFixtures.spawnNote, at: now - FixtureData.start - 120_000),
         ], running: true, subagents: [reviewer])
     }
 }

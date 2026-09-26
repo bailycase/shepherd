@@ -4,10 +4,10 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdTestSupport
-import ShepherdUI
 import SwiftUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdUI
 
 /// Budgets for the long lists (DESIGN.md › Performance), over realistic large fixtures in
 /// off-screen windows. The budgets count row bodies (`NWRenderProbe`), which a slower machine
@@ -188,9 +188,9 @@ struct ListPerformanceTests {
         return thread
     }
 
-    /// A poll that moves only the context count redraws the toolbar's counters: not the
-    /// composer, the header around them, or the thread.
-    @Test func aStatsOnlyPollRedrawsOnlyTheCounters() async throws {
+    /// A poll that moves only the context count redraws nothing in the chrome: the toolbar shows
+    /// no counters, so neither it nor the composer nor the thread redraws.
+    @Test func aStatsOnlyPollRedrawsNoToolbar() async throws {
         let thread = try await chromeThread(running: false)
         defer { thread.close() }
         var next = thread.snapshot
@@ -199,8 +199,7 @@ struct ListPerformanceTests {
 
         let rows = try await counting(thread.window) { await thread.serve(next) }
 
-        #expect(rows["thread.counters", default: 0] == 1, "\(rows)")
-        for key in ["composer.body", "thread.header", "thread.view"] {
+        for key in ["thread.header", "toolbar.thread", "thread.view"] {
             #expect(rows[key, default: 0] == 0, "\(key): \(rows)")
         }
     }
@@ -225,7 +224,7 @@ struct ListPerformanceTests {
         // On CI's macOS 26 VM the composer redrew for every chunk (5 bodies, 15 chip rows); a
         // Mac redraws none. A known issue there until the cause is found, a failure everywhere else.
         withKnownIssue("CI's VM redraws the composer for each streamed chunk", isIntermittent: true) {
-            for key in ["composer.body", "composer.chips", "thread.header", "thread.counters", "toolbar.thread"] {
+            for key in ["composer.body", "composer.chips", "thread.header", "toolbar.thread"] {
                 #expect(rows[key, default: 0] == 0, "\(key): \(rows)")
             }
         } when: {
@@ -503,9 +502,9 @@ struct ListPerformanceTests {
                                     provisional: [], clipped: false, subagents: runs)
     }
 
-    /// A finished workflow's ledger in the thread builds only the rows on screen, even though
-    /// it sits inside one of the thread's own lazy rows.
-    @Test func aLedgerOfTwoHundredRunsInAThreadBuildsOnlyTheRowsOnScreen() async throws {
+    /// A finished workflow of two hundred runs: the tray above the composer shows four rows and
+    /// "Show 196 more", and the thread records the runs in two lines, never a row each.
+    @Test func aWorkflowOfTwoHundredRunsShowsFourTrayRows() async throws {
         let runs = (0..<200).map { index in
             var run = ListFixtures.run(index, state: "complete")
             run.toolCallID = "spawn-\(index)"
@@ -517,46 +516,61 @@ struct ListPerformanceTests {
         NWRenderProbe.start()
         window = OffscreenWindow(size: CGSize(width: 900, height: 800), dark: true,
                                  ThreadView(store: store, active: true, isFocused: false, request: { _ in .snapshot(value: snapshot) },
-                                            commandKey: "ledger", inspectSubagent: { _ in }))
+                                            commandKey: "tray", inspectSubagent: { _ in }))
         defer {
             store.stop()
             window.close()
         }
-        try await eventuallyOnMain("the thread to load") { store.ready }
+        try await eventuallyOnMain("the thread to load") { store.ready && store.tray != nil }
         ListPerf.settle(window)
         let rows = NWRenderProbe.stop()
 
-        #expect(rows["runs.ledgerRow", default: 0] > 0, "the ledger shows: \(rows)")
-        // About twenty rows fit; the lazy stack builds some ahead of the ones on screen (about 50
-        // here, at any speed). On macOS 26 (CI) the ledger built 121, and 112 built with Xcode 26
-        // on macOS 27, while the thread around it built the same rows as here.
-        withKnownIssue("older SwiftUI builds more of a ledger nested in the thread's lazy stack", isIntermittent: true) {
-            #expect(rows["runs.ledgerRow", default: 0] <= 80, "\(rows)")
-        } when: { ListPerf.olderLazyStacks }
+        #expect(rows["tray.row", default: 0] > 0, "the tray shows: \(rows)")
+        #expect(rows["tray.row", default: 0] <= 8, "\(rows)")
     }
 
-    private struct Stack: View {
+    /// An open tray of two hundred runs scrolls inside, building only the rows in view.
+    private struct TrayHost: View {
         let runs: [ChildRun]
+        let state: SubagentTrayState
 
         var body: some View {
-            SubagentStack(runs: runs, turnLive: true, actions: SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }))
+            SubagentTrayView(tray: NativeSubagentTray(runs), state: state, runs: runs,
+                             actions: SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }), answer: { _ in })
                 .frame(width: 800)
         }
     }
 
-    /// Among two hundred live runs folded into the strip, one changing state redraws its own
-    /// segment; the rest keep theirs (and so does hovering, which each segment keeps itself).
-    @Test func oneRunChangingRedrawsOnlyItsSegmentOfTheStrip() throws {
+    @Test func anOpenTrayOfTwoHundredRunsBuildsOnlyTheRowsInView() throws {
         let runs = (0..<200).map { ListFixtures.run($0) }
-        let window = OffscreenWindow(size: CGSize(width: 800, height: 400), dark: true, Stack(runs: runs))
+        let state = SubagentTrayState()
+        state.expanded = true
+        var window: OffscreenWindow!
+        let rows = ListPerf.counting {
+            window = OffscreenWindow(size: CGSize(width: 800, height: 500), dark: true, TrayHost(runs: runs, state: state))
+            ListPerf.settle(window)
+        }
+        defer { window.close() }
+
+        #expect(rows["tray.row", default: 0] > 0, "\(rows)")
+        #expect(rows["tray.row", default: 0] <= 2 * AppLayout.trayExpandedMaxRows, "\(rows)")
+    }
+
+    /// Among two hundred live runs, one changing state redraws its own row; the rest keep theirs.
+    @Test func oneRunChangingRedrawsOnlyItsTrayRow() throws {
+        let runs = (0..<200).map { ListFixtures.run($0) }
+        let state = SubagentTrayState()
+        state.expanded = true
+        let window = OffscreenWindow(size: CGSize(width: 800, height: 500), dark: true, TrayHost(runs: runs, state: state))
         defer { window.close() }
         ListPerf.settle(window)
         var next = runs
-        next[5].state = "complete"
+        next[2].state = "complete"
+        next[2].endedAt = 2_000
 
-        let rows = ListPerf.counting { ListPerf.time(window) { window.show(Stack(runs: next)) } }
+        let rows = ListPerf.counting { ListPerf.time(window) { window.show(TrayHost(runs: next, state: state)) } }
 
-        #expect(rows["runs.stripSegment", default: 0] <= 2, "\(rows)")
+        #expect(rows["tray.row", default: 0] <= 2, "\(rows)")
     }
 
     // MARK: Skills
@@ -582,7 +596,7 @@ struct ListPerformanceTests {
         }
         defer { window.close() }
         // About a dozen rows fit under the page's header; the lazy stack builds some ahead of
-        // them (50 here, at any speed), as the ledger's does. All 200 would mean it isn't lazy.
+        // them (50 here, at any speed). All 200 would mean it isn't lazy.
         #expect(opened["skills.row", default: 0] <= 80, "\(opened)")
 
         var snapshot = try #require(vm.skills.state(of: vm.skillsHosts[0]).snapshot)
@@ -622,6 +636,106 @@ struct ListPerformanceTests {
         }
         #expect(rows["diff.line", default: 0] > 100, "the diff scrolled: \(rows)")
         #expect(rows["diff.commentButton", default: 0] == 0, "\(rows)")
+    }
+
+    /// A hovered line's `+` is built with no AppKit view behind it (a `Button` brings two): the
+    /// pointer resting over a scrolling diff hovers a new line every step.
+    @Test func aHoveredLinesPlusBringsNoAppKitView() throws {
+        func views(_ view: NSView) -> Int { 1 + view.subviews.reduce(0) { $0 + views($1) } }
+        let lines = ListFixtures.diffFile("Big.swift", lines: 30).hunks[0].lines.map { line in
+            NWDiffLineContent(id: "\(line.id)", key: line.id, kind: line.kind.diffKind, oldNumber: line.oldLine, newNumber: line.newLine,
+                              text: AttributedString(line.text), source: line.text)
+        }
+        func window(hovering: Bool) -> OffscreenWindow {
+            OffscreenWindow(size: CGSize(width: 600, height: 800), dark: true, VStack(spacing: 0) {
+                ForEach(lines) { NWDiffLine($0, onComment: {}, hovering: hovering) }
+            })
+        }
+        var rest: OffscreenWindow!, hovered: OffscreenWindow!
+        let buttons = ListPerf.counting {
+            rest = window(hovering: false)
+            hovered = window(hovering: true)
+            ListPerf.settle(rest)
+            ListPerf.settle(hovered)
+        }
+        defer {
+            rest.close()
+            hovered.close()
+        }
+        #expect(buttons["diff.commentButton", default: 0] == lines.count, "every hovered line shows its +: \(buttons)")
+        #expect(views(hovered.host) == views(rest.host))
+    }
+
+    /// Opening a comment's editor on a line and saving it redraws that line's row, not every row
+    /// on screen: rows compare their line and its note, never the closures.
+    @Test func commentingOnALineRedrawsOnlyThatLine() throws {
+        let files = ListFixtures.realisticReview()
+        let model = ListFixtures.reviewModel(files)
+        model.session.comments = ListFixtures.realisticComments(files)
+        let window = OffscreenWindow(size: CGSize(width: 600, height: 800), dark: true, ReviewPaneContent(model: model))
+        defer { window.close() }
+        ListPerf.settle(window)
+
+        let line = files[0].hunks[0].lines[10]
+        let rows = ListPerf.counting {
+            ListPerf.time(window) { model.startComment(fileID: files[0].id, lineID: line.id) }
+            ListPerf.time(window) { model.saveComment("Rename this.", fileID: files[0].id, lineID: line.id) }
+        }
+        #expect(model.session.commentsByFile[files[0].id]?[line.id]?.text == "Rename this.")
+        #expect(rows["diff.row", default: 0] <= 2, "\(rows)")
+        #expect(rows["diff.line", default: 0] <= 2, "\(rows)")
+        #expect(rows["review.comment", default: 0] <= 1, "\(rows)")
+    }
+
+    /// Scrolling a highlighted diff builds the rows that come into view and nothing else: no
+    /// section, header, or comment on screen draws again, and the thread beside it never does.
+    @Test func scrollingTheReviewBuildsOnlyTheRowsComingIntoView() async throws {
+        let files = ListFixtures.realisticReview()
+        let model = ListFixtures.reviewModel(files)
+        model.session.comments = ListFixtures.realisticComments(files)
+        let snapshot = ListFixtures.threadSnapshot(turns: 50, running: true)
+        let store = NativeThreadStore()
+        defer { store.stop() }
+        let window = OffscreenWindow(size: CGSize(width: 1300, height: 800), dark: true, HStack(spacing: 0) {
+            ThreadView(store: store, active: true, isFocused: false, request: { value in
+                if case .send(_, _, let operation, _, _, _) = value { return .accepted(operationID: operation) }
+                return .snapshot(value: snapshot)
+            }, commandKey: "perf")
+            .frame(width: 700)
+            ReviewPaneContent(model: model).frame(width: 600)
+        })
+        defer { window.close() }
+        try await eventuallyOnMain("the thread to load") { store.ready }
+        try await eventuallyOnMain("every file to be highlighted", timeout: .seconds(120)) { model.highlights.count == files.count }
+        model.expandFile(files[5].id)
+        ListPerf.settle(window)
+        let scroll = try #require(ListPerf.scrollView(in: window, trailing: true))
+        // Past the first file's comments, then into the 3,000-line file.
+        _ = ListPerf.scroll(window, scroll, step: 400, steps: 30)
+
+        let step: CGFloat = 88
+        var moved: CGFloat = 0
+        let rows = ListPerf.counting { moved = ListPerf.scroll(window, scroll, step: step, steps: 100).distance }
+        let linesIntoView = Int(moved / NW.Height.rowCompact)
+        #expect(moved > 5000, "the diff scrolled \(moved) pt")
+        #expect(rows["diff.row", default: 0] <= linesIntoView + 10, "\(linesIntoView) lines came into view: \(rows)")
+        #expect(rows["review.comment", default: 0] == 0, "\(rows)")
+        #expect(rows.keys.filter { $0.hasPrefix("thread.") || $0.hasPrefix("composer.") }.isEmpty, "the thread beside it redrew: \(rows)")
+    }
+
+    /// The right pane casts its shadow only while it floats over the thread, and from its fill
+    /// alone: a shadow on the pane's content is redrawn from every layer inside it on each
+    /// scroll step, and before this the docked pane still carried a clear one on three layers.
+    @Test(arguments: [(width: CGFloat(1400), floating: false), (width: 800, floating: true)])
+    func theRightPaneCastsItsShadowFromItsFillOnlyWhileFloating(width: CGFloat, floating: Bool) throws {
+        let model = ListFixtures.reviewModel([ListFixtures.diffFile("Big.swift", lines: 200)])
+        let window = OffscreenWindow(size: CGSize(width: width, height: 800), dark: true,
+                                     RightPaneSplit(state: RightPaneState(), showPane: true) { Color.clear } pane: { ReviewPaneContent(model: model) })
+        defer { window.close() }
+        ListPerf.settle(window)
+        let shadows = ListPerf.shadowedLayers(in: window)
+        #expect(shadows.count == (floating ? 1 : 0), "\(shadows.map(\.layer))")
+        #expect(shadows.allSatisfy { $0.subtree == 1 }, "a shadow over the pane's content: \(shadows.map(\.subtree))")
     }
 
     // MARK: Palette

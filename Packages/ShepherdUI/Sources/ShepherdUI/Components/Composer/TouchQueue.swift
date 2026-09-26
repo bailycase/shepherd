@@ -26,8 +26,12 @@ public enum NWTouchQueueMetrics {
 ///
 /// A paused queue says so in its header, and, with no hover to reveal the Mac's per-row Send now
 /// or tooltip, shows Send now there (the ••• menu's Send all now), its reason as the hint.
+///
+/// Unframed, it draws no card of its own: it is Up next's section of the dock (`NWDockStack`),
+/// under the subagents, and rounds only its bottom corners.
 public struct NWTouchQueueCard<Rows: View, Options: View>: View {
     let count: Int
+    let framed: Bool
     let paused: String?
     let resume: (() -> Void)?
     @ViewBuilder let rows: () -> Rows
@@ -36,9 +40,10 @@ public struct NWTouchQueueCard<Rows: View, Options: View>: View {
     /// `count` is every message in the queue, steering ones included. `paused` says why the
     /// queue waits (pi was stopped, or a turn failed), nil while it goes on its own; `resume`
     /// sends what it holds now, shown only while it is paused.
-    public init(count: Int, paused: String? = nil, resume: (() -> Void)? = nil,
+    public init(count: Int, paused: String? = nil, resume: (() -> Void)? = nil, framed: Bool = true,
                 @ViewBuilder rows: @escaping () -> Rows, @ViewBuilder options: @escaping () -> Options) {
         self.count = count
+        self.framed = framed
         self.paused = paused
         self.resume = resume
         self.rows = rows
@@ -47,14 +52,16 @@ public struct NWTouchQueueCard<Rows: View, Options: View>: View {
 
     public var body: some View {
         let nw = Color.nw
-        let shape = RoundedRectangle(cornerRadius: NW.Radius.l)
+        let radius = NW.Radius.l
+        let shape = UnevenRoundedRectangle(cornerRadii: RectangleCornerRadii(
+            topLeading: framed ? radius : 0, bottomLeading: radius, bottomTrailing: radius, topTrailing: framed ? radius : 0))
         VStack(spacing: 0) {
             NWTouchQueueHeader(count: count, paused: paused, resume: paused == nil ? nil : resume, options: options)
             rows().overlay(alignment: .top) { NWHairline() }
         }
-        .background(nw.bgRaised, in: shape)
+        .background(framed ? nw.bgRaised : .clear, in: shape)
         .clipShape(shape)
-        .nwBorder(nw.lineStrong, radius: NW.Radius.l)
+        .nwBorder(framed ? nw.lineStrong : .clear, radius: radius)
         .accessibilityElement(children: .contain)
     }
 }
