@@ -130,7 +130,7 @@ extension ShepherdViewModel {
                 notifications.remove([AgentBanners.identifier("offline", offline)])
             }
             guard connection.phase == .connected else { continue }
-            for agent in connection.state.agents {
+            for agent in connection.state.agents where !connection.state.isDesignAgent(agent) {
                 let ref = RemoteAgentRef(hostID: connection.id, agentID: agent.id)
                 let target = BannerTarget.remote(ref)
                 live.insert(ref)

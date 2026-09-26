@@ -240,6 +240,17 @@ struct DesignModelTests {
         #expect(!state.isDesignAgent(stray), "a design that is gone makes no design agent")
         #expect(!state.isDesignAgent(AgentID()))
     }
+
+    /// What a remote client gets: no design, and no design's agent or its layout.
+    @Test func aRemoteClientsStateLeavesOutDesignsAndTheirAgents() {
+        let (state, thread, drawer, stray) = drawnState()
+        let remote = state.withoutDesigns
+        #expect(remote.designs.isEmpty)
+        #expect(remote.agents.map(\.id) == [thread.id, stray.id])
+        #expect(!remote.tabs.contains { $0.id == drawer.tabID })
+        #expect(remote.tabs.contains { $0.id == thread.tabID })
+        #expect(Fixture.state().withoutDesigns.agents.count == 1)
+    }
 }
 
 @Suite("Automation model")

@@ -1174,7 +1174,7 @@ public final class SessionServer: @unchecked Sendable {
                 }
             }
         case .stateFetch(let id):
-            let state = store.state
+            let state = store.state.withoutDesigns
             send(.state(id: id, state: client.knowsLegacyThinkingOnly ? state.legacyThinkingLevels() : state), to: client)
         case .attach(let id, let sessionID, let cols, let rows, let viewportGeneration):
             remoteAttach(
@@ -1700,9 +1700,10 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Push a fresh state snapshot to every authenticated remote client.
     /// Runs on the server queue alongside the mutation that produced it.
-    private func broadcastRemoteState(_ state: ShepherdState) {
+    private func broadcastRemoteState(_ full: ShepherdState) {
         let remotes = clients.values.filter { $0.isRemote && $0.authenticated }
         guard !remotes.isEmpty else { return }
+        let state = full.withoutDesigns
         guard let payload = Self.stateChangedPayload(state) else { return }
         // Encoded a second time only while an older client is connected and an agent has a level
         // it cannot decode.

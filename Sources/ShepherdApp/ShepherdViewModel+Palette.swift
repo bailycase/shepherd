@@ -110,7 +110,7 @@ extension ShepherdViewModel {
                                      title: agent.name, subtitle: context, icon: "bubble.left"))
         }
         for connection in remoteHosts.connections where connection.phase == .connected {
-            for agent in connection.state.agents {
+            for agent in connection.state.agents where !connection.state.isDesignAgent(agent) {
                 items.append(PaletteItem(id: "remoteAgent.\(connection.id.uuidString).\(agent.id.rawValue)",
                                          kind: .remoteAgent(hostID: connection.id, agentID: agent.id), section: .agents,
                                          title: agent.name, subtitle: connection.config.name, icon: "bubble.left"))
