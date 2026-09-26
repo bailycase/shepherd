@@ -192,7 +192,40 @@ extension AppLayout {
     static let skillsRepoFieldHeight: CGFloat = 38
     static let skillsRepoFieldTextSize: CGFloat = 13.5
 
-    // Settings ▸ Experiments: the experiments beside a 320pt side column, 32pt apart.
+    // Settings ▸ MCP servers (SettingsMCP): the servers beside the same 280pt rail as Skills.
+    static let mcpBlockSpacing: CGFloat = 18
+    static let mcpColumnSpacing: CGFloat = 28
+    static let mcpRailWidth: CGFloat = 280
+    static let mcpRailSpacing: CGFloat = 22
+    static let mcpExplanationWidth: CGFloat = 700
+    static let mcpFilterWidth: CGFloat = 240
+    static let mcpCardRadius: CGFloat = 10
+    static let mcpRailTextSize: CGFloat = 12.5
+    static let mcpRailLineHeight: CGFloat = 1.55
+    static let mcpNoteSize: CGFloat = 12
+    static let mcpNoteLineHeight: CGFloat = 1.45
+    static let mcpOptionTitleSize: CGFloat = 13
+    static let mcpPathSize: CGFloat = 11
+    // The Add server sheet (SettingsMCPAdd, SettingsMCPLocal): 720pt wide (760 for Local),
+    // 22pt sides, 34pt fields at radius 7, a 60pt footer.
+    static let mcpSheetWidth: CGFloat = 720
+    static let mcpSheetLocalWidth: CGFloat = 760
+    static let mcpSheetMinHeight: CGFloat = 520
+    static let mcpSheetSides: CGFloat = 22
+    static let mcpSheetTitleSize: CGFloat = 17
+    static let mcpSheetTextSize: CGFloat = 12.5
+    static let mcpSheetCloseSize: CGFloat = 28
+    static let mcpSheetFieldHeight: CGFloat = 34
+    static let mcpSheetFieldRadius: CGFloat = 7
+    static let mcpSheetFooterHeight: CGFloat = 60
+    static let mcpSheetNameWidth: CGFloat = 200
+    static let mcpSheetEnvKeyWidth: CGFloat = 250
+    static let mcpSheetHostNameWidth: CGFloat = 80
+    static let mcpSheetJSONHeight: CGFloat = 260
+    static let mcpToolsSheetWidth: CGFloat = 460
+    static let mcpToolsSheetHeight: CGFloat = 520
+
+
     static let experimentsSideWidth: CGFloat = 320
     static let experimentsColumnSpacing: CGFloat = 32
     /// Between the main column's blocks, and the side column's.
