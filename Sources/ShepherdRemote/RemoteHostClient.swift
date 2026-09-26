@@ -183,7 +183,7 @@ public final class RemoteHostClient: @unchecked Sendable {
                     guard connectionGeneration == attempt else { throw RemoteHostClientError.disconnected }
                     established = true
                 }
-                return Self.shown(state)
+                return Self.shown(state, capabilities: Set(capabilities))
             } catch {
                 queue.sync {
                     if connectionGeneration == attempt { teardown(reason: "connection failed") }
@@ -871,11 +871,13 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
     }
 
-    /// A host's workspace as this client shows it. A client has no design screen, so a design's
-    /// agent would show as a thread: an older host that still sends designs loses them here
-    /// (docs/designs.md › Design agents and ordinary threads).
-    static func shown(_ state: ShepherdState) -> ShepherdState {
-        state.withoutDesigns
+    /// A host's workspace as this client shows it. Designs and the agents that draw them stay
+    /// only while the host serves designs (`designs.v1`), where a design's screen shows them.
+    /// Elsewhere a design's agent would show as a thread, so a host that sends designs without
+    /// serving them (one from before the rule) loses them here (docs/designs.md › Design agents
+    /// and ordinary threads).
+    static func shown(_ state: ShepherdState, capabilities: Set<String>) -> ShepherdState {
+        capabilities.contains(RemoteProtocol.designsCapability) ? state : state.withoutDesigns
     }
 
     private func handleLine(_ line: Data) {
@@ -896,7 +898,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case .error(let id, _, _):
             resumePending(id: id, with: reply)
         case .stateChanged(let state):
-            push(.state(Self.shown(state)))
+            push(.state(Self.shown(state, capabilities: capabilities)))
         case .output(let sessionID, let data):
             if case .output(let last, var merged)? = pendingEvents.last, last == sessionID {
                 merged.append(data)

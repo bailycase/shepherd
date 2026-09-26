@@ -536,10 +536,13 @@ public final class SessionServer: @unchecked Sendable {
             self.designsServed = served
             let capabilities = self.offeredCapabilities
             guard let payload = try? NDJSON.encode(RemoteReply.capabilitiesChanged(capabilities: capabilities)) else { return }
-            for client in self.clients.values where client.isRemote && client.authenticated && client.knowsDesigns {
+            let readers = self.clients.values.filter { $0.isRemote && $0.authenticated && $0.knowsDesigns }
+            for client in readers {
                 if !served { client.watchedDesigns.removeAll() }
                 self.enqueuePayload(payload, to: client)
             }
+            // What they are sent of the workspace changed with it: its designs and their agents.
+            if !self.store.state.designs.isEmpty { self.broadcastRemoteState(self.store.state, to: readers) }
         }
     }
 
@@ -1285,7 +1288,7 @@ public final class SessionServer: @unchecked Sendable {
                 }
             }
         case .stateFetch(let id):
-            let state = store.state.withoutDesigns
+            let state = remoteState(store.state, for: client)
             send(.state(id: id, state: client.knowsLegacyThinkingOnly ? state.legacyThinkingLevels() : state), to: client)
         case .attach(let id, let sessionID, let cols, let rows, let viewportGeneration):
             remoteAttach(
@@ -1879,22 +1882,39 @@ public final class SessionServer: @unchecked Sendable {
     /// Push a fresh state snapshot to every authenticated remote client.
     /// Runs on the server queue alongside the mutation that produced it.
     private func broadcastRemoteState(_ full: ShepherdState) {
-        let remotes = clients.values.filter { $0.isRemote && $0.authenticated }
+        broadcastRemoteState(full, to: clients.values.filter { $0.isRemote && $0.authenticated })
+    }
+
+    /// Each client's view of `full` (`remoteState`), encoded once per view actually sent: with
+    /// or without designs, and with legacy thinking levels only while an older client is
+    /// connected and an agent has a level it cannot decode.
+    private func broadcastRemoteState(_ full: ShepherdState, to remotes: [ExtensionConnection]) {
         guard !remotes.isEmpty else { return }
-        let state = full.withoutDesigns
-        guard let payload = Self.stateChangedPayload(state) else { return }
-        // Encoded a second time only while an older client is connected and an agent has a level
-        // it cannot decode.
-        let legacyOnly = state.usesOnlyLegacyThinkingLevels
-        var legacyPayload: Data??
+        var payloads: [RemoteStateView: Data?] = [:]
         for client in remotes {
-            guard client.knowsLegacyThinkingOnly, !legacyOnly else {
-                enqueuePayload(payload, to: client)
-                continue
+            let designs = seesDesigns(client) && !full.designs.isEmpty
+            let legacy = client.knowsLegacyThinkingOnly
+            let view = RemoteStateView(designs: designs, legacy: legacy)
+            if payloads[view] == nil {
+                let state = designs ? full : full.withoutDesigns
+                payloads[view] = .some(Self.stateChangedPayload(legacy && !state.usesOnlyLegacyThinkingLevels
+                    ? state.legacyThinkingLevels() : state))
             }
-            if legacyPayload == nil { legacyPayload = .some(Self.stateChangedPayload(state.legacyThinkingLevels())) }
-            if let data = legacyPayload ?? nil { enqueuePayload(data, to: client) }
+            if let data = payloads[view] ?? nil { enqueuePayload(data, to: client) }
         }
+    }
+
+    /// Whether a remote client is sent the host's designs and the agents that draw them: only
+    /// while the host serves designs (`designs.v1`, its experiment on) and the client reads them.
+    /// Any other client has no design screen, so a design's agent would show there as a thread
+    /// (docs/designs.md › Design agents and ordinary threads).
+    private func seesDesigns(_ client: ExtensionConnection) -> Bool {
+        client.knowsDesigns && offeredCapabilities.contains(RemoteProtocol.designsCapability)
+    }
+
+    /// The workspace as `client` is sent it (`seesDesigns`).
+    private func remoteState(_ state: ShepherdState, for client: ExtensionConnection) -> ShepherdState {
+        seesDesigns(client) ? state : state.withoutDesigns
     }
 
     private static func stateChangedPayload(_ state: ShepherdState) -> Data? {
@@ -4041,6 +4061,12 @@ public final class SessionServer: @unchecked Sendable {
         }
         return addr
     }
+}
+
+/// One way a state broadcast is encoded for remote clients (`SessionServer.remoteState`).
+private struct RemoteStateView: Hashable {
+    var designs: Bool
+    var legacy: Bool
 }
 
 /// The id of a remote request the host could not decode, so it can refuse it.
