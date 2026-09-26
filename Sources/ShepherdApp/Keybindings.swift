@@ -3,7 +3,8 @@ import AppKit
 import SwiftUI
 import ShepherdUI
 
-/// The app shortcuts a user may rebind. Fixed chords (⌘1–9 agent selection,
+/// The app shortcuts a user may rebind (`newAgent` keeps its stored name; it opens the New thread
+/// page). Fixed chords (⌘1–9 Recents,
 /// hold-⌘ badges, ⌘, Settings, ⏎/⎋ in sheets) are deliberately not here:
 /// they are structural conventions, not preferences.
 enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
@@ -21,7 +22,7 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
 
     var title: String {
         switch self {
-        case .newAgent: return "New Agent in Current Checkout"
+        case .newAgent: return "New Thread"
         case .newAgentOptions: return "New Agent with Options…"
         case .newSpace: return "New Space…"
         case .renameAgent: return "Rename Agent…"
@@ -297,7 +298,7 @@ struct KeyChord: Codable, Hashable {
     }
 
     /// Digit-row value for a key code, layout-independent — the digit
-    /// families (⌘1–9, shell digits, ⌃⇧1–9) must match by physical key
+    /// families (⌘1–9, shell digits) must match by physical key
     /// because `charactersIgnoringModifiers` does not ignore shift (⇧1
     /// reads "!"), mirroring ghostty's `physical:` unbind spellings.
     static func digit(keyCode: UInt16) -> Int? {

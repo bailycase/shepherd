@@ -27,20 +27,20 @@ struct RemoteHostTests {
         let connection = try await remote.connect(local.remoteHosts)
         vm.selectAgent(agents[0].agent.id)
 
-        vm.selectRemoteAgent(hostID: connection.id, agentID: agents[0].agent.id)
+        // Recents: This Mac's two, then the host's two (untimed, newest first).
+        vm.selectRemoteAgent(hostID: connection.id, agentID: agents[1].agent.id)
         vm.selectAdjacentAgent(1)
         let target = try #require(vm.selectedRemoteAgent)
 
-        #expect(target == RemoteAgentRef(hostID: connection.id, agentID: agents[1].agent.id))
+        #expect(target == RemoteAgentRef(hostID: connection.id, agentID: agents[0].agent.id))
         #expect(vm.selectedAgentID == agents[0].agent.id, "the local selection is kept for coming back")
         vm.openUserReview()
         #expect(vm.remoteReviews[target] != nil && vm.reviewSessions.isEmpty)
-        #expect(!vm.dropRemoteAgent(payload: ShepherdViewModel.dragPayload(agent: agents[0].agent.id), on: target))
 
         try await local.remoteHosts.agentAction(target, action: .rename(name: "remote only"))
         try await local.remoteHosts.agentAction(target, action: .deleteKeepingWorktree)
 
-        #expect(remote.host.server.state.agents.map(\.id) == [agents[0].agent.id])
+        #expect(remote.host.server.state.agents.map(\.id) == [agents[1].agent.id])
         #expect(local.server.state == original && vm.state == original)
     }
 
@@ -110,11 +110,10 @@ struct RemoteHostTests {
         let vm = try await local.start()
         let connection = try await remote.connect(local.remoteHosts)
         let target = RemoteAgentRef(hostID: connection.id, agentID: agent.agent.id)
-        vm.collapsedHosts.insert(connection.id)
 
         hostVM.applyAgentChildren(agent.agent.id, [ChildRun(runID: "run", label: "hidden child", state: "running")])
         try await eventuallyOnMain("the child to reach the client") { vm.remoteChildren[target]?.first?.state == "running" }
-        #expect(vm.paletteItems.contains { $0.title == "hidden child" }, "a collapsed host's children stay searchable")
+        #expect(vm.paletteItems.contains { $0.title == "hidden child" }, "a host's children are searchable")
 
         hostVM.applyAgentChildren(agent.agent.id, [ChildRun(runID: "run", label: "hidden child", state: "blocked", needsAttention: true)])
         try await eventuallyOnMain("the child's attention to reach the client") { vm.remoteChildren[target]?.first?.needsAttention == true }
@@ -127,8 +126,9 @@ struct RemoteHostTests {
         #expect(vm.blockedCount == 0)
     }
 
-    /// Subagents have no sidebar rows: one waiting on you makes its agent's row ask and counts
-    /// as needing you, on the host's own sidebar and on a client's, until it is answered.
+    /// Subagents have no sidebar rows: one waiting on you puts its agent in Needs you, with the
+    /// subagent's name as the reason, on the host's own sidebar and on a client's, until it is
+    /// answered.
     @Test func aWaitingSubagentAsksThroughItsAgentsRowOnTheHostAndItsClients() async throws {
         let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
@@ -143,24 +143,26 @@ struct RemoteHostTests {
         let asking = ChildRun(runID: "run", label: "reviewer", state: "running", needsAttention: true)
 
         hostVM.applyAgentChildren(agent.id, [asking])
-        let hostRow = hostVM.sidebarRowModel(for: agent, depth: 1)
-        #expect(hostRow.state == .attention && hostRow.accessory == .ask)
-        #expect(SidebarAttention.count(hostVM.state.agents, children: hostVM.childRuns.rows) == 1)
+        let hostRow = try #require(hostVM.sidebarLists.needsYou.first)
+        #expect(hostRow.id == .local(agent.id) && hostRow.leading == .dot(.attention) && hostRow.accessory == .reason("reviewer"))
         try await eventuallyOnMain("the question to reach the client") { vm.remoteChildren[target]?.first?.needsAttention == true }
-        let clientRow = vm.remoteSidebarRowModel(for: agent, on: connection)
-        #expect(clientRow.state == .attention && clientRow.accessory == .ask)
-        #expect(SidebarAttention.count(connection.state.agents, children: connection.children) == 1)
+        let clientRow = try #require(vm.sidebarLists.needsYou.first)
+        #expect(clientRow.id == .remote(target) && clientRow.leading == .dot(.attention) && clientRow.accessory == .reason("reviewer"))
+        #expect(vm.blockedCount == 1)
 
         var answered = asking
         answered.needsAttention = false
         hostVM.applyAgentChildren(agent.id, [answered])
-        #expect(hostVM.sidebarRowModel(for: agent, depth: 1).state == .idle)
+        #expect(hostVM.sidebarLists.needsYou.isEmpty)
+        #expect(hostVM.sidebarLists.recents.first?.leading == .dot(.idle))
         try await eventuallyOnMain("the answer to reach the client") { vm.remoteChildren[target]?.first?.needsAttention == false }
-        #expect(vm.remoteSidebarRowModel(for: agent, on: connection).accessory == .none)
-        #expect(SidebarAttention.count(connection.state.agents, children: connection.children) == 0)
+        #expect(vm.sidebarLists.needsYou.isEmpty)
+        #expect(vm.sidebarLists.recents.first?.accessory == .tag(connection.config.name))
     }
 
-    @Test func quickCreateWhileARemoteAgentIsSelectedCreatesOnTheHostOnly() async throws {
+    /// ⌘N over a remote thread opens New thread in that thread's project on its host, and
+    /// sending creates the agent there with the prompt as its opening message.
+    @Test func newThreadOverARemoteThreadCreatesOnTheHostOnly() async throws {
         let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let space = Fixture.space("remote", path: "/remote/project")
@@ -176,13 +178,21 @@ struct RemoteHostTests {
         let connection = try await remote.connect(local.remoteHosts)
         vm.selectRemoteAgent(hostID: connection.id, agentID: agent.agent.id)
 
-        vm.quickCreateAgent()
+        vm.openNewThread()
+        #expect(vm.shownDestination == .newThread)
+        #expect(vm.newThread.place == NewThreadPlace(host: connection.id, space: space.id))
+        vm.newThread.prompt = "Fix the flaky upload test"
+        // This host has no view model to answer its defaults: they fail, and the host's own
+        // defaults apply.
+        try await eventuallyOnMain("the host's defaults to settle") { vm.newThread.blocker(vm) == nil }
+        vm.newThread.send(vm)
 
         try await eventuallyOnMain("the new remote agent to be selected") {
             vm.selectedRemoteAgent == RemoteAgentRef(hostID: connection.id, agentID: minted)
         }
         #expect(requests.all.map(\.spaceID) == [space.id] && requests.all.map(\.cwd) == [space.path])
-        #expect(!vm.showNewAgentSheet)
+        #expect(requests.all.map(\.initialPrompt) == ["Fix the flaky upload test"])
+        #expect(vm.shownDestination == nil && vm.newThread.prompt.isEmpty)
         #expect(local.server.state.agents.isEmpty)
     }
 

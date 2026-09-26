@@ -137,26 +137,4 @@ struct ShellMotionTests {
         }
         return false
     }
-
-    /// Selecting another empty space cross-fades the empty state's words.
-    @Test(.timingSensitive) func theEmptyWorkspaceCrossFadesBetweenSpaces() async throws {
-        let app = try AppHarness()
-        defer { app.stop() }
-        let one = Fixture.space("one", path: app.dir.appendingPathComponent("one").path)
-        let two = Fixture.space("two", path: app.dir.appendingPathComponent("two").path)
-        let vm = try await app.start(with: ShepherdState(spaces: [one, two]))
-        vm.selectSpace(one.id)
-        let size = CGSize(width: 1280, height: 600)
-        let window = OffscreenWindow(size: size, dark: false, RootView(vm: vm))
-        defer { window.close() }
-        // Down the middle of the workspace beside the sidebar, where the empty state's words sit.
-        let column = AppLayout.sidebarDefaultWidth + AppLayout.dividerWidth
-        let band = CGRect(x: column + (size.width - column) / 2 - 200, y: 0, width: 400, height: size.height)
-        _ = await MotionProbe.record(window, region: band, timeout: 0.5) {}
-
-        let recording = await MotionProbe.record(window, region: band) { vm.selectSpace(two.id) }
-
-        #expect(!recording.settled.matches(recording.before), "the words changed")
-        #expect(!recording.inBetween.isEmpty, "they cross-fade")
-    }
 }

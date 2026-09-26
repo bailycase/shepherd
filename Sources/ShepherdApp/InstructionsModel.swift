@@ -265,7 +265,7 @@ final class InstructionsModel {
             return InstructionsPresentation.hostRow(
                 files(of: hostID), lastKnown: remote[hostID]?.snapshot, local: local, file: file,
                 keptDifferent: isKeptDifferent(hostID, file: file),
-                lastConnected: remoteHosts.connections.first { $0.id == hostID }?.lastConnected, now: now
+                lastConnected: remoteHosts.connections.first { $0.id == hostID }?.lastSeen, now: now
             )
         }
     }

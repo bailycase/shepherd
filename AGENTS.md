@@ -12,8 +12,10 @@ agents.
   does the iPad; the iPhone opens them full screen. On the Mac they are real PTYs rendered with
   libghostty; the iOS client attaches to the host's over the remote protocol and renders them
   with SwiftTerm. There are no global shells and no space shell workspaces.
-- **Spaces** are plain groups in the sidebar. With no agent selected, the workspace shows an
-  empty state.
+- **Spaces** are projects: the folders threads start in. The sidebar has no tree; it lists
+  destinations (New thread, Automations, More ▸ Hosts and Extensions), then Needs you and Recents
+  (every agent, local and remote, most recently active first). The New thread page's workplace
+  chip lists each host's spaces, flat. With no agent on screen, the main column shows New thread.
 - **Lifetime:** there is no daemon. Sessions live and die with the app. On relaunch the workspace
   (spaces, agents, pane layouts) restores from `state.json`, every agent resumes its pi session
   over RPC, and every terminal pane respawns a fresh shell.
@@ -408,17 +410,21 @@ Sources/
   TerminalSurfaceKit/  Ghostty adapter for terminal panes; see its NOTES.md.
   ShepherdApp/         The Mac app:
     ShepherdApp.swift (the Window scene, AppDelegate), RootView (+ WorkspaceHeaderView),
-      SidebarView, RemoteSidebarSection, ThreadHeader, WorkspaceView, WorkspaceSelection,
+      SidebarView (+ SidebarModel: destinations, Needs you, Recents, footer), NewThreadPage (+
+      NewThreadModel), ThreadHeader, WorkspaceView, WorkspaceSelection (+ MainDestination),
       RightPaneSplit and SidePane (the side pane and its tabs), CheckoutMonitor (each agent's
       branch and changed files, read off the main thread), AppCommands (menus, MenuState),
       AppDialogs (every sheet)
-    AppLayout (+Navigation, +Thread, +Agents, +Settings; ShellLayout's adaptive rules live in
-      +Navigation), AgentStateMapping (app lifecycles → AgentState)
-    ShepherdViewModel(+Navigation, +Creation, +Workspace, +Spaces, +Reorder, +Palette, +Shell,
+    AppLayout (+Navigation, +Thread, +Agents, +Settings, +Pages; ShellLayout's adaptive rules live
+      in +Navigation), AgentStateMapping (app lifecycles → AgentState)
+    ShepherdViewModel(+Navigation, +Creation, +Workspace, +Spaces, +Palette, +Shell,
       +RightPane, +Review, +ChildInspector, +Automations, +Dialogs, +RemoteActions,
       +RemoteInspection, +RemoteWorktrees, +RemoteAutomations, +Terminal, +HostSettings,
-      +Skills),
-      RemoteAutomationSheet
+      +Skills, +Pages)
+    Pages/             the sidebar destinations' pages: AutomationsPage and HostsPage (views over
+                       AutomationsPageModel and HostsPageModel, derived per change), their
+                       destinations (PageDestinations: runs read, sheets), AutomationEditorSheet,
+                       PageHeader (every page's header, New thread's too)
     TerminalPanels (each layout's terminal panel: shown, tab, maximized, activity),
       TerminalPanelLayout (TerminalPanelGeometry, pure), TerminalPanelViews (strip, divider)
     Thread/            ThreadView, ThreadTurns, ThreadTools (activity lines), ThreadMarkdown,
@@ -687,10 +693,11 @@ from ShepherdUI (Night Watch) or `AppLayout`:
 - a Mac screen's own dimensions from `AppLayout`, in the file for its domain:
   `AppLayout+Navigation.swift` (window, sidebar, toolbar, side pane, palette),
   `AppLayout+Thread.swift` (thread, composer), `AppLayout+Agents.swift` (subagent stack,
-  inspector), `AppLayout+Settings.swift` (Settings, sheet sizes), and `AppLayout.swift` for
-  anything else. A component's own measures stay with it in ShepherdUI (`NWThreadMetrics`,
-  `NWComposerMetrics`, `NWSidebarMetrics`, `NWToolbarMetrics`, `NWPaletteMetrics`,
-  `NWDiffMetrics`, `NWDialogMetrics`).
+  inspector), `AppLayout+Settings.swift` (Settings, sheet sizes), `AppLayout+Pages.swift` (the
+  Automations and Hosts pages), and `AppLayout.swift` for anything else. A component's own
+  measures stay with it in ShepherdUI (`NWThreadMetrics`, `NWComposerMetrics`,
+  `NWSidebarMetrics`, `NWToolbarMetrics`, `NWPaletteMetrics`, `NWDiffMetrics`,
+  `NWDialogMetrics`, `NWPageMetrics`).
 
 Use a shared component before hand-rolling chrome. A reusable part goes in the package, under
 `Components/<Domain>/` with a `#Preview` in both appearances; composition that knows about agents
@@ -729,7 +736,7 @@ are `@MainActor @Observable` classes, owned with `@State` and bound with `@Binda
 **Keybindings resolve through the store.** Menus, palette keycaps, Settings ▸ Keyboard, and the
 Ghostty unbind list all read `KeybindingsStore`, and hardcoding a chord in a view is a bug.
 
-- A rebound chord must include ⌘. ⌘1–9 (agents), ⌃⇧1–9 (machine jumps), ⌘,, and the plain ⌘
+- A rebound chord must include ⌘. ⌘1–9 (the first nine Recents rows), ⌘,, and the plain ⌘
   system and terminal chords are reserved.
 - A focused Ghostty surface eats any key equivalent it has a binding for, so every chord the app
   chrome uses must be unbound in `appOwnedChords` (`TerminalSurfaceModel.swift`). Rebindable
@@ -856,9 +863,10 @@ agent and its auxiliary processes while the app runs, and quitting the app termi
 **Only these paths mutate repositories** ([docs/worktrees.md](docs/worktrees.md)):
 
 - **Creating a worktree:** `git worktree add --no-track -b` (`GitWorktree.swift`), from the New
-  Agent sheet's worktree option or a space's New Worktree… sheet. The base is resolved per
-  Settings ▸ Worktrees: `origin/<default>` after a fetch by default. It is visible and editable in
-  the sheet, and recorded as `Agent.worktreeBase`.
+  Agent sheet's worktree option, a project's New Worktree… sheet, or the New thread page's New
+  worktree switch. The base is resolved per Settings ▸ Worktrees: `origin/<default>` after a
+  fetch by default. It is visible and editable in the sheets (the page takes the resolved base),
+  and recorded as `Agent.worktreeBase`.
 - **Delete Worktree Agent:** confirmed, and it warns about unreconciled work.
 - **Finalize Worktree** (`WorktreeFinalize.swift`): commit → push → `gh pr create` → optional
   opt-in merge → clean gate → remove worktree → delete local branch. Each step gates the next,

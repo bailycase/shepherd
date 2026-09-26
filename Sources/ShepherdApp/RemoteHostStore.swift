@@ -49,12 +49,14 @@ final class RemoteHostStore {
         fileprivate(set) var config: HostConfig
         var phase: Phase = .disconnected {
             didSet {
-                if oldValue == .connected, phase != .connected { lastConnected = Date() }
+                if oldValue == .connected, phase != .connected { lastSeen = Date() }
+                if phase == .connected, lastSeen != nil { lastSeen = nil }
                 onProjectionChanged?()
             }
         }
-        /// When the connection last dropped, this launch: an offline host's "last seen".
-        private(set) var lastConnected: Date?
+        /// When the connection last dropped, this launch (the Hosts page's Last seen); nil while
+        /// connected, or when it never connected. Never persisted.
+        fileprivate(set) var lastSeen: Date?
         var state = ShepherdState() { didSet { onProjectionChanged?() } }
         fileprivate(set) var children: [AgentID: [ChildRun]] = [:] { didSet { onProjectionChanged?() } }
         @ObservationIgnored fileprivate var onProjectionChanged: (() -> Void)?
@@ -668,5 +670,20 @@ final class RemotePaneSession {
     func detach() {
         viewportDebounce?.cancel()
         client?.detach(sessionID: sessionID)
+    }
+}
+
+extension RemoteHostStore.Phase {
+    enum Kind: Hashable { case disconnected, connecting, connected, failed(RemoteHostFailure.Kind) }
+
+    /// The phase with its failure's kind, not its detail: what the workspace's placeholders
+    /// cross-fade between (a retry that fails the same way again changes nothing on screen).
+    var kind: Kind {
+        switch self {
+        case .disconnected: .disconnected
+        case .connecting: .connecting
+        case .connected: .connected
+        case .failed(let failure): .failed(failure.kind)
+        }
     }
 }
