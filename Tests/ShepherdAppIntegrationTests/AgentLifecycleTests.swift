@@ -173,13 +173,13 @@ struct AgentLifecycleTests {
     }
 }
 
-/// Agents launched the way the app launches them: `zsh -l -c "exec pi --mode rpc …"` with
-/// the stub standing in for `pi` on PATH.
+/// Agents launched the way the app launches them (`PiLaunch.agent`), with the stub as the engine
+/// (`SHEPHERD_PI_ENGINE`), never a `pi` found on PATH.
 @Suite("Agents launched like the app", .mainActorExclusive)
 @MainActor
 struct AgentLaunchTests {
     @Test func startingAnAgentSpawnsPiOverRPCAndSendsTheOpeningPrompt() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
@@ -199,7 +199,8 @@ struct AgentLaunchTests {
         let piPane = try #require(agent.paneID)
         let sessionID = try #require(vm.sessions.liveSession(forPane: piPane))
         let info = try #require(await app.server.sessionInfo(sessionID: sessionID))
-        #expect(info.command.last?.contains("exec pi --mode rpc --session-id") == true)
+        #expect(info.command.last?.contains("&& exec '\(TestProcess.piEngine.path)' --mode rpc --session-id") == true)
+        #expect(info.command.last?.hasPrefix("cd -- '\(app.dir.path)' && ") == true)
         let server = app.server
         try await eventuallyAsync("pi to receive the opening prompt", timeout: .seconds(20)) {
             guard case .snapshot(let snapshot)? = try? await server.nativeThread(agentID: id, request: .snapshot()) else { return false }
@@ -208,7 +209,7 @@ struct AgentLaunchTests {
     }
 
     @Test func aRestoredAgentWithoutARunningPiRespawnsWhenItsPaneMounts() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
@@ -225,7 +226,7 @@ struct AgentLaunchTests {
     }
 
     @Test func importingALinkedWorktreeStartsAnAgentCarryingItsIdentity() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         let repo = try makeScratchRepo()

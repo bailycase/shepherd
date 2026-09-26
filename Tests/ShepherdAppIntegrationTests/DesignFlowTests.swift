@@ -30,7 +30,7 @@ struct DesignFlowTests {
     // MARK: Creating and opening
 
     @Test func newDesignMakesTheDesignStartsItsAgentWithTheBriefAndOpensTheCanvas() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         let (vm, space) = try await start(app)
@@ -74,7 +74,7 @@ struct DesignFlowTests {
     }
 
     @Test func openingADesignWhoseAgentIsGoneStartsAFreshOne() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         let (vm, _) = try await start(app)
@@ -100,7 +100,7 @@ struct DesignFlowTests {
 
     /// Import Claude Design Folder… makes a standalone design, with or without a project.
     @Test func importingAFolderMakesAStandaloneDesign() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         app.settings.designToolEnabled = true
