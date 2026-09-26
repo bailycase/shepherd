@@ -232,7 +232,14 @@ enum RemoteSamples {
             InstalledSkill(name: "changelog", summary: "Drafts a \"CHANGELOG\" entry.", isOn: false, invocation: .slashOnly,
                            updatedAt: 1_690_000_000),
         ],
-        checkedAt: 1_700_000_500, autoUpdate: true)
+        checkedAt: 1_700_000_500, autoUpdate: true,
+        pi: PiSkills(agentDirectory: "~/.pi/agent", skills: [
+            PiSkill(name: "review", summary: "Reviews a diff.", path: "~/.pi/agent/skills/review/SKILL.md", origin: .agentDirectory),
+            PiSkill(name: "lint", summary: "Runs the linters.", path: "~/code/skills/lint/SKILL.md", origin: .settingsPath,
+                    invocation: .slashOnly),
+            PiSkill(name: "review", summary: "Another review.", path: "~/.pi/agent/npm/node_modules/@acme/skills/review/SKILL.md",
+                    origin: .package, package: "@acme/skills", shadowedBy: "~/.pi/agent/skills/review/SKILL.md"),
+        ], shadowedInstalled: ["pdf": "~/.pi/agent/skills/pdf/SKILL.md"]))
     static let repoSkills = RepoSkills(
         repo: "anthropics/skills", branch: "main", commit: "8c04e1d0",
         skills: [
@@ -255,7 +262,11 @@ enum RemoteSamples {
         .checkUpdates,
         .configure(autoUpdate: true),
     ]
-    static let skillsResults: [RemoteSkillsResult] = [.skills(skills), .skills(SkillsSnapshot(directory: "~/.agents/skills")), .repo(repoSkills)]
+    static let skillsResults: [RemoteSkillsResult] = [
+        .skills(skills), .skills(SkillsSnapshot(directory: "~/.agents/skills")),
+        .skills(SkillsSnapshot(directory: "~/.agents/skills", pi: PiSkills(agentDirectory: "~/.pi/agent", problem: "pi_not_found"))),
+        .repo(repoSkills),
+    ]
 }
 
 @Suite("Remote requests")
@@ -501,10 +512,21 @@ struct RemoteReplyTests {
         #expect(try Wire.roundTrip(RemoteReply.skills(id: 1, result: result)) == .skills(id: 1, result: result))
     }
 
+    /// pi's skills from a newer host: a kind of origin this client doesn't know reads as pi's
+    /// settings, and missing lists read as empty.
+    @Test func piSkillsFromANewerHostDecodeWithDefaults() throws {
+        let pi = try Wire.decode(PiSkills.self, #"{"skills":[{"name":"x","summary":"","path":"~/x/SKILL.md","origin":"extension","invocation":"automatic"}]}"#)
+        #expect(pi.agentDirectory == "~/.pi/agent")
+        #expect(pi.skills.map(\.origin) == [.settingsPath])
+        #expect(pi.shadowedInstalled.isEmpty && pi.problem == nil)
+        #expect(pi.skills[0].isUsed)
+    }
+
     /// A host that predates Update automatically sends no `autoUpdate`: it reads as off.
     @Test func aSkillsSnapshotWithoutAutoUpdateReadsAsOff() throws {
         let snapshot = try Wire.decode(SkillsSnapshot.self, #"{"directory":"~/.agents/skills","skills":[]}"#)
         #expect(snapshot == SkillsSnapshot(directory: "~/.agents/skills"))
+        #expect(snapshot.pi == nil)
         #expect(RemoteSamples.skills.skill("pdf")?.update?.filesChanged == 3)
         #expect(RemoteSamples.skills.skill("nothing") == nil)
     }
@@ -691,6 +713,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.createAgentImagesCapability,
             RemoteProtocol.instructionsCapability, RemoteProtocol.suggestionsCapability,
             RemoteProtocol.hostSettingsCapability, RemoteProtocol.skillsCapability,
+            RemoteProtocol.piSkillsCapability,
             RemoteProtocol.terminalControlCapability,
             RemoteProtocol.designContextCapability,
         ]
@@ -718,6 +741,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.suggestionsCapability == "suggestions.v1")
         #expect(RemoteProtocol.hostSettingsCapability == "hostSettings.v1")
         #expect(RemoteProtocol.skillsCapability == "skills.v1")
+        #expect(RemoteProtocol.piSkillsCapability == "skills.pi.v1")
         #expect(RemoteProtocol.designContextCapability == "design.context.v1")
     }
 

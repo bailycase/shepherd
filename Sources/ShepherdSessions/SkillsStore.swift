@@ -66,36 +66,58 @@ public final class SkillsStore: @unchecked Sendable {
     /// What every preview in one answer may add up to, under the 1 MiB frame cap.
     static let previewBudget = 600 * 1024
 
+    /// What reads the skills this host's pi loads from outside `directory` (`PiSkillsLoader`).
+    public typealias PiSkillsReader = @Sendable (_ installedDirectory: URL) -> PiSkills
+
     public let directory: URL
     public let stateDirectory: URL
     private let now: () -> Date
     private let lock = NSLock()
     private let gitLock = NSLock()
+    private let piLock = NSLock()
+    private var reader: PiSkillsReader?
 
-    public init(directory: URL, stateDirectory: URL, now: @escaping () -> Date = Date.init) {
+    public init(directory: URL, stateDirectory: URL, now: @escaping () -> Date = Date.init, piSkills: PiSkillsReader? = nil) {
         self.directory = directory
         self.stateDirectory = stateDirectory
         self.now = now
+        reader = piSkills
+    }
+
+    /// Reads the skills pi loads from elsewhere into every answer (`SkillsSnapshot.pi`); nil
+    /// leaves them out.
+    public var piSkills: PiSkillsReader? {
+        get { piLock.withLock { reader } }
+        set { piLock.withLock { reader = newValue } }
     }
 
     // MARK: Requests
 
-    /// A remote client's request (`RemoteRequest.skills`), or the Mac's own page's.
+    /// A remote client's request (`RemoteRequest.skills`), or the Mac's own page's. Every answer
+    /// with the host's skills carries pi's own beside them, read outside the store's lock.
     public func perform(_ request: RemoteSkillsRequest) throws -> RemoteSkillsResult {
         switch request {
-        case .fetch: .skills(snapshot())
+        case .fetch: .skills(withPi(snapshot()))
         case .lookUp(let repo): .repo(try lookUp(repo))
         case .install(let repo, let paths, let commit, let invocation):
-            .skills(try install(repo: repo, paths: paths, commit: commit, invocation: invocation))
+            .skills(withPi(try install(repo: repo, paths: paths, commit: commit, invocation: invocation)))
         case .installFiles(let name, let files, let invocation):
-            .skills(try installFiles(name: name, files: files, invocation: invocation))
-        case .setOn(let name, let on): .skills(try setOn(name, on: on))
-        case .setInvocation(let name, let invocation): .skills(try setInvocation(name, invocation))
-        case .remove(let name): .skills(try remove(name))
-        case .restore(let name): .skills(try restore(name))
-        case .checkUpdates: .skills(try checkUpdates())
-        case .configure(let autoUpdate): .skills(try configure(autoUpdate: autoUpdate))
+            .skills(withPi(try installFiles(name: name, files: files, invocation: invocation)))
+        case .setOn(let name, let on): .skills(withPi(try setOn(name, on: on)))
+        case .setInvocation(let name, let invocation): .skills(withPi(try setInvocation(name, invocation)))
+        case .remove(let name): .skills(withPi(try remove(name)))
+        case .restore(let name): .skills(withPi(try restore(name)))
+        case .checkUpdates: .skills(withPi(try checkUpdates()))
+        case .configure(let autoUpdate): .skills(withPi(try configure(autoUpdate: autoUpdate)))
         }
+    }
+
+    /// `snapshot` with the skills pi loads from elsewhere, when a reader is set.
+    public func withPi(_ snapshot: SkillsSnapshot) -> SkillsSnapshot {
+        guard let reader = piSkills else { return snapshot }
+        var snapshot = snapshot
+        snapshot.pi = reader(directory)
+        return snapshot
     }
 
     /// The skills as they are now, by name.
@@ -374,7 +396,7 @@ public final class SkillsStore: @unchecked Sendable {
     public func checkUpdatesIfDue() -> SkillsSnapshot? {
         let checkedAt = lock.withLock { loadRecords().checkedAt }
         if let checkedAt, now().timeIntervalSince1970 - checkedAt < Self.checkInterval { return nil }
-        return try? checkUpdates()
+        return (try? checkUpdates()).map(withPi)
     }
 
     // MARK: Records
