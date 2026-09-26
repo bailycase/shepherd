@@ -31,7 +31,7 @@ import SwiftUI
 #Preview("Needs you card") {
     NWPreviewBoth {
         VStack(spacing: NW.Space.l) {
-            NWAttentionCard(symbol: "bubble.left", origin: "Thread", title: "Dock review pane",
+            NWAttentionCard(symbol: nil, origin: "Thread", title: "Dock review pane",
                             question: "Where should review dock?", since: Date().addingTimeInterval(-840), host: "Studio") {
                 Button("Beside the thread") {}.buttonStyle(.nw(.primary))
                 Button("Over the thread") {}.buttonStyle(.nw(.secondary))
@@ -53,7 +53,7 @@ import SwiftUI
             NWHostCard(name: "Studio", address: "studio.local:7433", state: .done, status: "Connected",
                        summary: "2 threads running · Shepherd, horizon", openLabel: "Edit Studio", open: {}) { EmptyView() }
             NWHostCard(name: "MacBook Air", address: "10.0.0.24:7433", state: .failed, status: "Offline",
-                       summary: "Connection refused", summaryTone: .failed) {
+                       summary: "Connection refused", summaryTone: .failed, detail: "Last seen today 07:12") {
                 Button("Retry", systemImage: "arrow.clockwise") {}.buttonStyle(.nw(.secondary))
             }
         }

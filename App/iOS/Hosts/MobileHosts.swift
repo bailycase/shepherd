@@ -19,6 +19,8 @@ final class MobileHost: Identifiable {
     /// Work tied to one connection (a thread's poll loop) keys on it.
     fileprivate(set) var session: UUID?
     fileprivate(set) var capabilities: Set<String> = []
+    /// When this device's connection to it last ended (saved apart from the record).
+    fileprivate(set) var lastSeen: Date?
 
     @ObservationIgnored fileprivate(set) var client: RemoteHostClient?
     @ObservationIgnored fileprivate var attempt = UUID()
@@ -64,6 +66,9 @@ final class MobileHosts {
     /// The migrated host whose token has not moved yet: the Keychain refuses reads while the
     /// device is locked, and the app can launch then, so the move is retried until it lands.
     static let legacyTokenKey = "shepherd.ios.host.pendingToken"
+    /// When each host's connection last ended, by id (seconds since 1970): "Last seen" for a host
+    /// the phone cannot reach now. Apart from the records, which hold only what the user entered.
+    static let lastSeenKey = "shepherd.ios.hosts.lastSeen"
 
     private(set) var hosts: [MobileHost] = []
 
@@ -92,6 +97,8 @@ final class MobileHosts {
         }
         defaults.removeObject(forKey: Self.legacyKey)
         hosts = records.map(MobileHost.init)
+        let seen = defaults.dictionary(forKey: Self.lastSeenKey) as? [String: Double] ?? [:]
+        for host in hosts { host.lastSeen = seen[host.id.uuidString].map(Date.init(timeIntervalSince1970:)) }
         moveLegacyToken()
     }
 
@@ -164,10 +171,18 @@ final class MobileHosts {
         let host = hosts.remove(at: index)
         disconnect(host)
         persist()
+        persistLastSeen()
     }
 
     private func persist() {
         defaults.set(RemoteHostRecord.encodeList(hosts.map(\.record)), forKey: Self.recordsKey)
+    }
+
+    private func persistLastSeen() {
+        let seen = Dictionary(uniqueKeysWithValues: hosts.compactMap { host in
+            host.lastSeen.map { (host.id.uuidString, $0.timeIntervalSince1970) }
+        })
+        defaults.set(seen, forKey: Self.lastSeenKey)
     }
 
     // MARK: Connections
@@ -210,6 +225,12 @@ final class MobileHosts {
         host.client = nil
         client?.disconnect()
         if host.session != nil { host.session = nil }
+        // A connection ending (it dropped, or the app went to the background) is when the host
+        // was last seen.
+        if host.phase == .connected {
+            host.lastSeen = Date()
+            persistLastSeen()
+        }
         host.set(.disconnected)
     }
 
