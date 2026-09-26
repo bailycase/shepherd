@@ -176,11 +176,31 @@ public enum DesignStyleEdit {
     /// `8px 12px`, `rgba(0, 0, 0, 0.1)`.
     public static func isSafeValue(_ text: String) -> Bool {
         guard (1...200).contains(text.utf8.count), text.trimmingCharacters(in: .whitespaces) == text else { return false }
-        return text.utf8.allSatisfy { b in
+        let characters = text.utf8.allSatisfy { b in
             (0x30...0x39).contains(b) || (0x41...0x5A).contains(b) || (0x61...0x7A).contains(b)
                 || " #.%(),-_+/".utf8.contains(b)
         }
+        guard characters else { return false }
+        // Only functions that compute a color or a length: never one that loads (`url()`,
+        // `image-set()`).
+        var name = ""
+        for c in text.lowercased() {
+            if c == "(" {
+                guard safeFunctions.contains(name) else { return false }
+                name = ""
+            } else if c.isLetter || c.isNumber || c == "-" || c == "_" {
+                name.append(c)
+            } else {
+                name = ""
+            }
+        }
+        return true
     }
+
+    static let safeFunctions: Set<String> = [
+        "var", "calc", "min", "max", "clamp", "rgb", "rgba", "hsl", "hsla", "hwb", "lab", "lch", "oklab", "oklch",
+        "color-mix",
+    ]
 
     private static func startTag(of element: DesignTemplateElement, in bytes: [UInt8]) -> StartTag? {
         guard let range = element.tagRange, !unstyled.contains(element.name) else { return nil }
@@ -221,9 +241,9 @@ public enum DesignStyleEdit {
         guard !style.isBoundWhole else { throw .bound("style") }
         if attribute.quote == nil {
             // An unquoted value can't take a space: write the attribute's value again, quoted,
-            // with the same declarations and the changes.
+            // with the same declarations and the changes. A bare `style` gains its `=`.
             let text = try rewritten(attribute.text(bytes), style: style, ordered, base: attribute.value.lowerBound)
-            return [(attribute.value, Array("\"\(text)\"".utf8))]
+            return [(attribute.value, Array("\(attribute.isBare ? "=" : "")\"\(text)\"".utf8))]
         }
         let appended = ordered.compactMap { property, value -> String? in
             guard let value, style.declaration(property) == nil else { return nil }
@@ -360,6 +380,8 @@ struct StartTag {
         let value: Range<Int>
         /// `"` or `'`; nil when unquoted (or bare).
         let quote: UInt8?
+        /// Written without `=` (`<div style>`): its value is the empty range after its name.
+        var isBare = false
 
         func text(_ bytes: [UInt8]) -> String { String(decoding: bytes[value], as: UTF8.self) }
     }
@@ -392,7 +414,8 @@ struct StartTag {
             while probe < end, HTMLBytes.isSpace(bytes[probe]) { probe += 1 }
             var value = i..<i
             var quote: UInt8?
-            if probe < end, bytes[probe] == UInt8(ascii: "=") {
+            let isBare = !(probe < end && bytes[probe] == UInt8(ascii: "="))
+            if !isBare {
                 i = probe + 1
                 while i < end, HTMLBytes.isSpace(bytes[i]) { i += 1 }
                 if i < end, bytes[i] == UInt8(ascii: "\"") || bytes[i] == UInt8(ascii: "'") {
@@ -409,7 +432,7 @@ struct StartTag {
             }
             // A repeated attribute keeps its first value, as HTML does.
             if !attributes.contains(where: { $0.name == name }) {
-                attributes.append(Attribute(name: name, value: value, quote: quote))
+                attributes.append(Attribute(name: name, value: value, quote: quote, isBare: isBare))
             }
         }
         self.attributes = attributes

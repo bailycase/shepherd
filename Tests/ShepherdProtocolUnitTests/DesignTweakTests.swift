@@ -23,6 +23,8 @@ struct DesignStyleEditTests {
         (#" style="padding: 4px !important""#, ["padding": "24px"], #" style="padding: 24px !important""#),
         (#" style='padding: 4px'"#, ["padding": "var(--space-6)"], #" style='padding: var(--space-6)'"#),
         (#" style=padding:4px"#, ["padding": "24px"], #" style="padding:24px""#),
+        (#" style"#, ["padding": "24px"], #" style="padding: 24px""#),
+        (#" style class="card""#, ["padding": "24px"], #" style="padding: 24px" class="card""#),
         (#" style="font-family: &quot;Geist&quot;; padding: 2px""#, ["padding": "8px"], #" style="font-family: &quot;Geist&quot;; padding: 8px""#),
         (#" style="width: {{ pct }}%""#, ["padding": "8px"], #" style="width: {{ pct }}%; padding: 8px""#),
         (#" style="background: url(a;b.png); padding: 2px""#, ["padding": "8px"], #" style="background: url(a;b.png); padding: 8px""#),
@@ -59,7 +61,8 @@ struct DesignStyleEditTests {
         #expect(throws: problem) { try DesignStyleEdit.apply([property: "8px"], to: 0, in: Self.board(attributes)) }
     }
 
-    @Test(arguments: ["24px; color: red", "\"x\"", "url(<b>)", "a}b", #"a\b"#, ""])
+    @Test(arguments: ["24px; color: red", "\"x\"", "url(<b>)", "a}b", #"a\b"#, "", "url(//x.test/a.png)",
+                      "image-set(x.png 1x)", "var(--a, url(b))"])
     func aValueATweakNeverWritesIsRefused(_ value: String) {
         #expect(throws: DesignStyleEdit.Problem.unsafe(value)) {
             try DesignStyleEdit.apply(["padding": value], to: 0, in: Self.board(#" style="padding: 2px""#))
