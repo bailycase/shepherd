@@ -146,7 +146,7 @@ enum MountedWorkspace {
         for index in 0..<count { agents.append(try await app.liveAgent("agent \(index)", in: space, order: index)) }
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents))
         let files = [ListFixtures.diffFile("Sources/A.swift", lines: 12)]
-        vm.reviewDiffLoader = { _, _ in (files, nil) }
+        vm.changesEngineOverride = { _, _ in .fixed(files) }
         vm.selectAgent(agents[0].agent.id)
         return (vm, agents)
     }

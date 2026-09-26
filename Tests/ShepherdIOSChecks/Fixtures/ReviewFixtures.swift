@@ -37,9 +37,19 @@ extension FixtureCatalog {
             FixtureScreen(name: "review-pr", hosts: ReviewFixture.hosts(), routes: [thread, changes], prepare: { app in
                 let store = ReviewStores.shared.store(for: ref)
                 await ReviewFixture.loaded(store)
-                store.pullRequest = true
-                await ReviewFixture.until { store.filesArePR && !store.loading }
+                store.pick(.pullRequest)
+                await ReviewFixture.until { store.list?.scope == .pullRequest && !store.loading }
             }),
+            // The base picker over the phone's changes (ChangesStates › BasePicker).
+            FixtureScreen(name: "review-base", hosts: ReviewFixture.hosts(), routes: [thread, changes], prepare: { app in
+                let store = ReviewStores.shared.store(for: ref)
+                await ReviewFixture.loaded(store)
+                store.pickingBase = true
+                await ReviewFixture.until { store.branches != nil }
+            }),
+            // A host without the Changes engine: today's working tree review, the same screens.
+            FixtureScreen(name: "review-legacy", hosts: ReviewFixture.hosts(legacy: true), routes: [thread, changes],
+                          prepare: ReviewFixture.annotate),
             FixtureScreen(name: "review-empty", hosts: ReviewFixture.hosts(files: []), routes: [thread, changes]),
             FixtureScreen(name: "review-error", hosts: ReviewFixture.hosts(reviewError: ReviewFixture.loadError), routes: [thread, changes],
                           prepare: { _ in
@@ -206,9 +216,20 @@ enum ReviewFixture {
     ], prURL: "https://github.com/example/shepherd/pull/24")
 
     /// The shared hosts, with Studio answering the review's reads for the preview agent.
+    /// `legacy` is a host without the Changes engine (`changes.v1`), which answers `review` only.
     static func hosts(files: [DiffFile] = files, worktree: Bool = false, checksPass: Bool = true,
-                      operation: RemoteWorktreeOperation? = nil, reviewError: String? = nil) -> [FixtureHostData] {
+                      operation: RemoteWorktreeOperation? = nil, reviewError: String? = nil, legacy: Bool = false) -> [FixtureHostData] {
         var hosts = FixtureData.hosts()
+        if legacy {
+            // An older host neither answers the engine nor records turns.
+            hosts[0].capabilities = RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.changesCapability }
+            hosts[0].threads[FixtureData.preview] = FixtureData.thread(turn: nil)
+        }
+        // The MobileChanges board's branch, compared against main.
+        let changes = ChangesFixture.reply(ChangesFixture.Repo(
+            files: files, branch: "agent/pay-button-jump", base: "origin/main", baseName: "main", mergeBase: "4be2c01",
+            lastTurn: FixtureData.previewTurn(), turnFiles: ["Sources/ShepherdApp/DesktopNativeThreadView.swift", "App/iOS/ThreadView.swift"],
+            listError: reviewError))
         if let index = hosts[0].state.agents.firstIndex(where: { $0.id == FixtureData.preview }) {
             // The review screens choose: the shared fixture's worktree only where they ask for one.
             hosts[0].state.agents[index].worktreeBranch = worktree ? branch : nil
@@ -234,7 +255,7 @@ enum ReviewFixture {
             case .worktreeStatus(let operationID) where operationID == operation?.id:
                 result = .worktreeOperation(operation!)
             default:
-                return nil
+                return legacy ? nil : changes(request)
             }
             return .agentResult(id: id, result: result)
         }
@@ -245,18 +266,20 @@ enum ReviewFixture {
     @MainActor static func annotate(_ app: MobileApp) async {
         let store = ReviewStores.shared.store(for: FixtureData.ref(FixtureData.preview))
         await loaded(store)
+        await ChangesFixture.filesLoaded(store)
         store.toggleViewed("Sources/ShepherdApp/DesktopNativeThreadView.swift")
-        guard let file = store.file(fleet),
+        guard let file = store.diff(fleet),
               let line = file.hunks.first?.lines.first(where: { $0.text.contains("Button(\"Reconnect\"") }) else { return }
-        let comment = ReviewComment(text: "Keep reconnect reachable from the row. HostCard drops it and flaky Wi-Fi users lose the one-tap retry.",
-                                    line: line, in: file)
-        store.setComment(comment, fileID: file.id, lineID: line.id)
+        store.select(fileID: file.id, lineID: line.id)
+        store.draft = "Keep reconnect reachable from the row. HostCard drops it and flaky Wi-Fi users lose the one-tap retry."
+        store.saveDraft()
     }
 
     /// Selects FleetView's new HostCard line, as a tap does, with `draft` as the comment typed so far.
     @MainActor static func selectLine(_ app: MobileApp, draft: String = "") async {
         let store = ReviewStores.shared.store(for: FixtureData.ref(FixtureData.preview))
-        guard let file = store.file(fleet),
+        await ChangesFixture.filesLoaded(store)
+        guard let file = store.diff(fleet),
               let line = file.hunks.first?.lines.first(where: { $0.kind == .added && $0.text.contains("HostCard(") }) else { return }
         store.select(fileID: file.id, lineID: line.id)
         store.draft = draft

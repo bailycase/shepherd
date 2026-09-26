@@ -362,6 +362,10 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
     public var subagents: [NativeSubagent]?
     /// v3: the messages the host holds for pi. nil from older hosts (they send straight to pi).
     public var queue: NativeQueue?
+    /// The agent's recent turns as the host recorded them in its working tree, oldest first: the
+    /// "Edited N files" cards and their Undo (`RemoteProtocol.changesCapability`). nil from older
+    /// hosts, and for an agent outside a git repository.
+    public var turnChanges: [ChangesTurn]?
 
     public var isRPC: Bool { runtime == "rpc" }
 
@@ -370,7 +374,8 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         thinking: String? = nil, thinkingLevels: [String]? = nil, supportedActions: [String], dialogsSupported: Bool, dialogs: [NativeThreadDialog],
         widgets: [NativeThreadWidget]? = nil, messages: [NativeThreadMessage], olderCursor: String? = nil,
         provisional: [NativeThreadMessage], clipped: Bool, runtime: String? = nil, stats: NativeThreadStats? = nil,
-        commands: [NativeCommand]? = nil, subagents: [NativeSubagent]? = nil, queue: NativeQueue? = nil
+        commands: [NativeCommand]? = nil, subagents: [NativeSubagent]? = nil, queue: NativeQueue? = nil,
+        turnChanges: [ChangesTurn]? = nil
     ) {
         self.piSessionID = piSessionID
         self.generation = generation
@@ -392,6 +397,7 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         self.commands = commands
         self.subagents = subagents
         self.queue = queue
+        self.turnChanges = turnChanges
     }
 }
 

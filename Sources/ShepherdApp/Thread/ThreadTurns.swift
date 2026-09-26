@@ -120,6 +120,9 @@ struct AgentTurn: View, Equatable {
     var retry: (() -> Void)? = nil
     /// Opens the review pane at a file.
     var review: ((String) -> Void)? = nil
+    /// The turn the host recorded (its "Edited N files" card, with Undo and Redo).
+    var recordedTurn: ChangesTurn? = nil
+    var turnActions: TurnChangesActions? = nil
     /// The live turn is between tools (`NativeThreadStore.showsThinking`): it ends in the live
     /// "Thinking…" (LiveText).
     var thinking = false
@@ -136,6 +139,7 @@ struct AgentTurn: View, Equatable {
     /// `hover` seeds the pointer state, for previews and tests.
     init(presentation: NativeTurnPresentation, live: Bool, subagents: TurnSubagents = TurnSubagents(),
          subagentActions: SubagentActions? = nil, startedAt: Double? = nil, retry: (() -> Void)? = nil, review: ((String) -> Void)? = nil,
+         recordedTurn: ChangesTurn? = nil, turnActions: TurnChangesActions? = nil,
          thinking: Bool = false, arriving: Bool = false, settled: Bool = true, hover: MessageHover? = nil) {
         self.presentation = presentation
         self.live = live
@@ -144,6 +148,8 @@ struct AgentTurn: View, Equatable {
         self.startedAt = startedAt
         self.retry = retry
         self.review = review
+        self.recordedTurn = recordedTurn
+        self.turnActions = turnActions
         self.thinking = thinking
         self.arriving = arriving
         self.settled = settled
@@ -159,7 +165,8 @@ struct AgentTurn: View, Equatable {
 
     static func == (lhs: AgentTurn, rhs: AgentTurn) -> Bool {
         lhs.presentation == rhs.presentation && lhs.live == rhs.live && lhs.subagents == rhs.subagents
-            && lhs.startedAt == rhs.startedAt && lhs.thinking == rhs.thinking
+            && lhs.startedAt == rhs.startedAt && lhs.thinking == rhs.thinking && lhs.recordedTurn == rhs.recordedTurn
+            && (lhs.turnActions == nil) == (rhs.turnActions == nil)
             && (lhs.retry == nil) == (rhs.retry == nil) && (lhs.review == nil) == (rhs.review == nil)
             && (lhs.subagentActions == nil) == (rhs.subagentActions == nil)
             && lhs.subagentActions?.inspectedRunID == rhs.subagentActions?.inspectedRunID
@@ -189,7 +196,7 @@ struct AgentTurn: View, Equatable {
             if thinking { NWThinking.live() }
             if !live, !presentation.items.isEmpty {
                 Group {
-                    if let changes = presentation.changes { changesCard(changes) }
+                    if let changes = cardChanges { changesCard(changes) }
                     footer
                 }
                 .nwArrival(entering, .list, edge: .bottom)
@@ -248,6 +255,13 @@ struct AgentTurn: View, Equatable {
         }
     }
 
+    /// The card the turn ends with: the host's record of it when there is one (its files as the
+    /// repository saw them), else the files the turn's edit calls named.
+    private var cardChanges: NativeTurnChanges? {
+        if let recordedTurn { return NativeTurnChanges(turn: recordedTurn) }
+        return presentation.changes
+    }
+
     /// Opens the turn's first subagent; nil while nothing can open it.
     private var openFirstRun: (() -> Void)? {
         guard let subagentActions, let first = subagents.first else { return nil }
@@ -255,14 +269,7 @@ struct AgentTurn: View, Equatable {
     }
 
     private func changesCard(_ changes: NativeTurnChanges) -> some View {
-        NWChangesCard(
-            title: changes.title, added: changes.added, removed: changes.removed,
-            files: changes.files.map {
-                NWChangedFile(path: $0.path, directory: $0.directory, name: $0.name,
-                              status: NWChangedFile.Status(rawValue: $0.status.rawValue) ?? .modified, added: $0.added, removed: $0.removed)
-            },
-            onReview: review.flatMap { review in changes.files.first.map { file in { review(file.path) } } },
-            onOpen: review)
+        TurnChangesCard(changes: changes, actions: turnActions, review: review)
     }
 
     /// Copy and retry, then "2:44 PM · 3m 12s · 23 tool calls" and "3 subagents" as a link to
@@ -354,4 +361,58 @@ enum TurnPresentationMemo {
 @MainActor
 final class TurnShown {
     var appeared = false
+}
+
+/// What a changes card can do (ChangesCard): open the Changes pane on the turn (at a file), and
+/// undo or redo the turn. Undo and Redo answer with why they refused, or nil.
+struct TurnChangesActions {
+    var review: (_ turnID: UUID?, _ path: String?) -> Void
+    var undo: (UUID) async -> String?
+    var redo: (UUID) async -> String?
+}
+
+/// The "Edited N files" card with its own Undo and Redo state: busy while one runs, and the
+/// refusal under the card until the next try.
+private struct TurnChangesCard: View {
+    let changes: NativeTurnChanges
+    let actions: TurnChangesActions?
+    let review: ((String) -> Void)?
+    @State private var busy = false
+    @State private var notice: String?
+
+    var body: some View {
+        let turnID = changes.turnID
+        NWChangesCard(
+            title: changes.title, added: changes.added, removed: changes.removed,
+            files: changes.files.map {
+                NWChangedFile(path: $0.path, directory: $0.directory, name: $0.name,
+                              status: NWChangedFile.Status(rawValue: $0.status.rawValue) ?? .modified, added: $0.added, removed: $0.removed)
+            },
+            total: changes.fileCount, phase: changes.undone ? .undone : .edited, busy: busy, notice: notice,
+            onReview: reviewAction(turnID: turnID),
+            onOpen: openAction(turnID: turnID),
+            onUndo: turnID.flatMap { id in changes.canUndo && !changes.undone ? actions.map { actions in { run { await actions.undo(id) } } } : nil },
+            onRedo: turnID.flatMap { id in changes.canRedo && changes.undone ? actions.map { actions in { run { await actions.redo(id) } } } : nil })
+    }
+
+    private func reviewAction(turnID: UUID?) -> (() -> Void)? {
+        if let actions { return { actions.review(turnID, nil) } }
+        return review.flatMap { review in changes.files.first.map { file in { review(file.path) } } }
+    }
+
+    private func openAction(turnID: UUID?) -> ((String) -> Void)? {
+        if let actions { return { actions.review(turnID, $0) } }
+        return review
+    }
+
+    private func run(_ work: @escaping () async -> String?) {
+        guard !busy else { return }
+        busy = true
+        notice = nil
+        Task {
+            let refusal = await work()
+            busy = false
+            notice = refusal
+        }
+    }
 }
