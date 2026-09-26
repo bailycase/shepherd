@@ -51,9 +51,10 @@ extension FleetAttention {
         }
     }
 
-    var symbol: String {
+    /// The card's origin glyph; a thread's is the glowing dot (nil).
+    var symbol: String? {
         switch origin {
-        case .thread: "bubble.left"
+        case .thread: nil
         case .automation: "bolt"
         case .subagent: "arrow.triangle.branch"
         }

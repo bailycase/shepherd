@@ -4351,12 +4351,8 @@ below collects the rest, and the places those sentences point here.
   `ask` or `question` sets `blocked`, so any other question reaches no one outside the window
   (`Extensions/shepherd-status.ts`, `AgentNotifications.agentStatusChanged`).
 - **iOS** (the phone and iPad boards against `App/iOS` and ShepherdUI's Fleet parts):
-  - List heads (`NWListHeader`) are `.caption` semibold in `textTertiary`; the boards' are 13/600
-    in `textSecondary` on iPhone and 13/500 on iPad. Two-line rows are 56pt everywhere
-    (`NWListMetrics.twoLineRowHeight`), where Home and Search draw 52, and row dots are 7pt
-    (`NWListMetrics.dot`), the boards' 8 on iPhone.
-  - Glyphs that need you (Needs you rows and cards, the iPad sidebar) are `lantern`
-    (`AgentState.attention`, `NWAttentionCard`); the boards' are `lanternText`.
+  - List heads (`NWListHeader`) are 13/600 in `textSecondary`, as the iPhone boards draw them;
+    the iPad's are 13/500. Row dots are 7pt (`NWListMetrics.dot`), the boards' 8 on iPhone.
   - User bubbles are the Mac's (`NWUserBubble`: at most 600pt, 10×14); the iPhone boards cap them
     at 300 and the iPad's at 520 with 12×16. The iPad thread column is 760pt
     (`MobileLayout.threadMaxWidth`) against 780, with turns 24 and parts 12 against 26 and 14.
@@ -4617,7 +4613,7 @@ merges into one Home.
 - **Needs you** (head in `lanternText` with its count): 52pt rows, each a glowing 8pt `lantern` dot
   for a thread, or the origin's 15pt glyph in `lanternText` (a bolt for an automation run, a branch
   for a subagent); the thread's name, the question in `lanternText` mono 11 under it, and (the
-  app's, with several hosts) its host badge. The app draws the glyph in `lantern` (Known gaps). At
+  app's, with several hosts) its host badge. At
   most two rows (`HomeLimits.needsYou`), then a 44pt link row: "See all N" when more wait, else
   "Answer in Needs you". A row opens where the question is answered (the thread, or the asking
   subagent's run). The board shortens a plan's question to "approve plan" ("Dock review pane");
@@ -4966,8 +4962,7 @@ connected hosts, newest first.
     automation run, a folded map for a mission; a glowing 8pt `lantern` dot for a thread) and
     "Subagent · Restyle native UI", "Thread", "Automation · Triage new Sentry issues" (12
     `textTertiary`), with the time since trailing ("now", "2m", "14m", "1h"). The app adds the
-    host's badge when there are several hosts, and draws the glyph in `lantern` (`NWAttentionCard`;
-    Known gaps).
+    host's badge when there are several hosts (`NWAttentionCard`).
   - The title (15/600): the thread's name, or who asks ("reviewer asks"). An automation's card is
     titled by its question ("Is this a regression from #231?") over the asker's context ("NilPointer
     in PlaceOrder started 40 minutes after #231 merged.").

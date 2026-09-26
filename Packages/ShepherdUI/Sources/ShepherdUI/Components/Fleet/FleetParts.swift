@@ -8,14 +8,17 @@ import SwiftUI
 public enum NWListMetrics {
     /// A one-line row (the boards' 48pt, over the touch minimum).
     public static let rowHeight: CGFloat = 48
-    /// A title over a status line.
-    public static let twoLineRowHeight: CGFloat = 56
+    /// A title over a status line: the boards' 52pt in thread and search lists (Home, Search,
+    /// More). Choice lists (56), review files (58) and automations (64) have their own rows.
+    public static let twoLineRowHeight: CGFloat = 52
     /// A card of rows (the boards' 12pt corners).
     public static let cardRadius: CGFloat = NW.Radius.l
     /// The leading column (dot or symbol), so titles line up whatever leads them.
     public static let leadingWidth: CGFloat = 20
     /// The status dot in a row.
     public static let dot: CGFloat = 7
+    /// A Needs you card's glowing dot for a thread (MobileInbox).
+    public static let attentionDot: CGFloat = 8
     /// A symbol in a row's leading column.
     public static let symbol: CGFloat = 15
     /// How far a host's address may shrink to stay on one line before it truncates.
@@ -32,8 +35,8 @@ public enum NWRowClock: Equatable, Sendable {
     case ago(Date)
 }
 
-/// A list section's head: "Needs you  4" in lantern, "Recents" in tertiary, with an optional
-/// trailing count or action.
+/// A list section's head (13/600): "Needs you  4" in lantern, "Recents" in secondary, with an
+/// optional trailing count (mono, tertiary) or action.
 public struct NWListHeader<Trailing: View>: View {
     let title: String
     let attention: Bool
@@ -49,7 +52,7 @@ public struct NWListHeader<Trailing: View>: View {
         HStack(spacing: NW.Space.m) {
             Text(title)
                 .font(.nw(.caption, weight: .semibold))
-                .foregroundStyle(attention ? Color.nw.lanternText : Color.nw.textTertiary)
+                .foregroundStyle(attention ? Color.nw.lanternText : Color.nw.textSecondary)
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: NW.Space.xs)
             trailing()
@@ -62,7 +65,7 @@ extension NWListHeader where Trailing == Text? {
     public init(_ title: String, attention: Bool = false, count: Int? = nil) {
         self.init(title, attention: attention) {
             count.map {
-                Text("\($0)").font(.nw(.caption, weight: .medium))
+                Text("\($0)").font(.nw(.mono))
                     .foregroundStyle(attention ? Color.nw.lanternText : Color.nw.textTertiary)
             }
         }
@@ -226,9 +229,10 @@ public struct NWListRow: View, Equatable {
                 NWStatusDot(state, size: NWListMetrics.dot)
             }
         case .symbol(let name, let tone):
+            // A glyph that needs you is lanternText; only a status dot glows in lantern.
             Image(systemName: name)
                 .font(.nw(.ui, weight: .medium))
-                .foregroundStyle(tone?.color ?? Color.nw.textSecondary)
+                .foregroundStyle(tone == .attention ? Color.nw.lanternText : tone?.color ?? Color.nw.textSecondary)
                 .accessibilityHidden(true)
         }
     }
@@ -270,9 +274,11 @@ public struct NWListCard<Content: View>: View {
 }
 
 /// A Needs you card (MobileInbox, iPadOverview): where it comes from and when, the thread, the
-/// question, and the answers that fit in place.
+/// question, and the answers that fit in place. Its origin is a glyph in `lanternText` (a branch
+/// for a subagent, a bolt for an automation run), or, for a thread (`symbol` nil), the glowing
+/// 8pt lantern dot.
 public struct NWAttentionCard<Actions: View>: View {
-    let symbol: String
+    let symbol: String?
     let origin: String
     let title: String
     let question: String
@@ -282,7 +288,7 @@ public struct NWAttentionCard<Actions: View>: View {
     let selected: Bool
     @ViewBuilder let actions: () -> Actions
 
-    public init(symbol: String, origin: String, title: String, question: String, message: String? = nil, since: Date? = nil,
+    public init(symbol: String?, origin: String, title: String, question: String, message: String? = nil, since: Date? = nil,
                 host: String? = nil, selected: Bool = false, @ViewBuilder actions: @escaping () -> Actions) {
         self.symbol = symbol
         self.origin = origin
@@ -333,10 +339,16 @@ public struct NWAttentionCard<Actions: View>: View {
 
     private var originLine: some View {
         HStack(spacing: NW.Space.s) {
-            Image(systemName: symbol)
-                .font(.nw(.caption, weight: .semibold))
-                .foregroundStyle(Color.nw.lantern)
-                .accessibilityHidden(true)
+            Group {
+                if let symbol {
+                    Image(systemName: symbol)
+                        .font(.nw(.caption, weight: .semibold))
+                        .foregroundStyle(Color.nw.lanternText)
+                } else {
+                    NWStatusDot(.attention, size: NWListMetrics.attentionDot)
+                }
+            }
+            .accessibilityHidden(true)
             Text(origin).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary).lineLimit(2)
         }
     }
