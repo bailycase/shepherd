@@ -1010,7 +1010,8 @@ The iOS client's designs track (`App/iOS/Designs`; docs/ios/CONTRACTS.md) shows 
 only while that host offers `designs.v1`, and follows its Design tool as it turns on and off
 (`capabilitiesChanged`). Boards render on the phone from the files each host served by hash
 (`RemoteDesignCache` in the app's caches folder, shared with the iPad's store through
-`HostDesignLibraries`); nothing renders on the host.
+`HostDesignLibraries`); nothing renders on the host. In the iPad's split view a design found in
+search opens on its canvas (On iPad, below).
 
 - **Rendering.** `DesignHost.swift` is the phone's one file that imports DesignSurfaceKit (the
   iPad's is `PadDesignRenderer.swift`). At most two web views live: the board on screen, and one

@@ -35,8 +35,12 @@ enum DesignsRoute: Hashable, Codable {
 /// Where other screens open designs (Home's row, Recents, search, More).
 @MainActor
 enum DesignsHooks {
+    /// A design's boards on the phone; in the iPad's split view, its canvas (DesignPad/).
     static func open(_ ref: HostDesignRef, navigator: MobileNavigator) {
-        navigator.open(.designs(.design(ref)))
+        switch navigator.layout {
+        case .pad: PadDesignHooks.open(PadDesignRef(host: ref.host, design: ref.design), navigator: navigator)
+        case .phone: navigator.open(.designs(.design(ref)))
+        }
     }
 
     static func create(brief: String = "", host: UUID? = nil, navigator: MobileNavigator) {
