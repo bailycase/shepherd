@@ -83,6 +83,9 @@ final class DesignTweakModel {
     /// change (nil where it declared none), and each board's props before theirs.
     @ObservationIgnored private var originals: [DesignPath: [Int: [String: String?]]] = [:]
     @ObservationIgnored private var propOriginals: [DesignPath: [String: JSONValue?]] = [:]
+    /// Where each remembered element was in its template (tid → path), so a Reset after a later
+    /// write never lands on another element.
+    @ObservationIgnored private var originalPaths: [DesignPath: [Int: [Int]]] = [:]
     /// Previews go one at a time; the latest waits.
     @ObservationIgnored private var previewing: Task<Void, Never>?
     @ObservationIgnored private var pendingPreview: [DesignPath: [Int: [String: String?]]]?
@@ -318,20 +321,28 @@ final class DesignTweakModel {
                 let base = try await baseRevision(fresh: attempt > 0)
                 var sources: [DesignPath: String] = [:]
                 var edits = changes
-                if attempt > 0, !isReset, let target, let refound = try await refind(target) { edits = refound.mapValues { tids in
+                // The elements as the board holds them now: an agent's write may have moved them
+                // since the change was worked out.
+                if !isReset, let target, let refound = try await refind(target) { edits = refound.mapValues { tids in
                     Dictionary(uniqueKeysWithValues: tids.map { ($0, changes.values.first?.values.first ?? [:]) })
                 } }
                 for (path, elements) in edits {
                     let current = try await source(path)
+                    let elements = isReset ? unmoved(elements, on: path, in: current.source) : elements
                     if !isReset { remember(elements, on: path, in: current.source) }
+                    guard !elements.isEmpty else { continue }
                     sources[path] = try DesignStyleEdit.apply(elements, in: current.source)
                 }
+                guard !sources.isEmpty else { throw DesignTweakProblem.elementChanged }
                 writes += 1
                 let written = try await io.writeBoards(sources, base)
                 for (path, text) in sources {
                     if let sha = written.shas[path] { self.sources[path] = DesignBoardSource(path: path, source: text, sha256: sha, revision: written.result.revision) }
                 }
-                if isReset { originals = originals.filter { changes[$0.key] == nil } }
+                if isReset {
+                    originals = originals.filter { changes[$0.key] == nil }
+                    originalPaths = originalPaths.filter { changes[$0.key] == nil }
+                }
                 snapshot = (try? await io.snapshot()) ?? snapshot
                 registerUndo(.boards(written.versions, written.shas), name: name)
                 report(nil)
@@ -361,23 +372,41 @@ final class DesignTweakModel {
     private func refind(_ target: DesignTweakTarget) async throws -> [DesignPath: [Int]]? {
         guard let id = target.element else { return nil }
         let source = try await self.source(target.board)
-        guard let template = DesignTemplate(board: source.source), template.element(for: id) != nil else {
+        // The path anchors the element: a write above it moves its tid, not its place.
+        guard let template = DesignTemplate(board: source.source),
+              let element = template.element(for: id) ?? template.elements.first(where: { $0.path == id.path }) else {
             throw DesignTweakProblem.elementChanged
         }
-        if scope == .every, let name = elementName(target, in: source.source) {
+        if scope == .every, let name = DesignStyleEdit.attribute("data-el", of: element.tid, in: source.source),
+           !name.isEmpty, !name.contains("{{") {
             try await loadNamed(name)
             return named
         }
-        return [target.board: [id.tid]]
+        return [target.board: [element.tid]]
     }
 
-    /// Keeps each element's declared values before this session's first change to them.
+    /// Keeps each element's declared values before this session's first change to them, and
+    /// where it was in its template.
     private func remember(_ elements: [Int: [String: String?]], on path: DesignPath, in source: String) {
+        let template = DesignTemplate(board: source)
         for (tid, properties) in elements {
             guard let style = DesignStyleEdit.style(of: tid, in: source) else { continue }
+            if originalPaths[path]?[tid] == nil, let element = template?.elements[safe: tid] {
+                originalPaths[path, default: [:]][tid] = element.path
+            }
             for property in properties.keys where originals[path]?[tid]?[property] == nil {
                 originals[path, default: [:]][tid, default: [:]][property] = .some(style.value(property))
             }
+        }
+    }
+
+    /// The elements of a Reset still where they were when remembered: one a later write moved is
+    /// left alone rather than having another element's values put on it.
+    private func unmoved(_ elements: [Int: [String: String?]], on path: DesignPath, in source: String) -> [Int: [String: String?]] {
+        guard let template = DesignTemplate(board: source) else { return [:] }
+        return elements.filter { tid, _ in
+            guard let remembered = originalPaths[path]?[tid] else { return false }
+            return template.elements[safe: tid]?.path == remembered
         }
     }
 
@@ -566,4 +595,8 @@ enum DesignTweakProblem: Error, CustomStringConvertible {
 
 private extension String {
     var nonEmpty: String? { isEmpty ? nil : self }
+}
+
+private extension Array {
+    subscript(safe index: Int) -> Element? { indices.contains(index) ? self[index] : nil }
 }

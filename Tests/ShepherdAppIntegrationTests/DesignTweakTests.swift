@@ -15,14 +15,14 @@ import Testing
 @Suite("Design tweak", .mainActorExclusive)
 @MainActor
 struct DesignTweakTests {
-    static func board(_ title: String, note: String = "") -> String {
+    static func board(_ title: String, note: String = "", helmet: String = "") -> String {
         """
         <!doctype html>
         <html lang="en">
         <head><meta charset="utf-8"><title>\(title)</title><script src="./support.js"></script></head>
         <body>
         <x-dc>
-        <helmet><style>:root{--accent:#4f46e5;--slate:#475569;--space-4:16px;--space-6:24px;--space-8:32px}</style></helmet>
+        <helmet><style>:root{--accent:#4f46e5;--slate:#475569;--space-4:16px;--space-6:24px;--space-8:32px}</style>\(helmet)</helmet>
         <div style="width: 400px; height: 300px; display: flex; flex-direction: column; gap: 16px">
         <div data-el="funnel card" style="background: #ffffff; border-radius: 12px; padding: 20px 24px"><span style="font-size: 14px; color: #0f172a">Checkout funnel</span></div>
         <p>{{ note }}\(note)</p>
@@ -130,6 +130,24 @@ struct DesignTweakTests {
         #expect(opened.tweak.writes == 2, "the stale write, then the one made again")
         #expect(try await revision(opened) == before + 1)
         #expect(opened.tweak.presentation.problem == nil)
+    }
+
+    /// The agent's write moved the card's tid (a new element in the helmet) but not its place:
+    /// the tweak lands on the card, found by its path, and never on what took its tid.
+    @Test func aTweakAfterAWriteThatMovedTheElementLandsOnItByItsPath() async throws {
+        let opened = try await open()
+        defer { opened.app.stop() }
+        opened.tweak.setStep(.padding, index: 0, phase: .changed)
+        let agent = Self.board("A", helmet: #"<link rel="preconnect" href="https://fonts.googleapis.com">"#)
+        _ = try await opened.app.server.writeDesignBoard(opened.design.id, path: Self.a, source: agent)
+
+        opened.tweak.setStep(.padding, index: 0, phase: .ended)
+        try await eventuallyReading("the tweak to land on the card") {
+            DesignStyleEdit.style(of: 4, in: try await self.source(opened))?.value("padding") == "var(--space-4)"
+        }
+        let written = try await source(opened)
+        #expect(DesignStyleEdit.style(of: 3, in: written)?.value("padding") == nil, "the element now at tid 3 is untouched")
+        #expect(written == agent.replacingOccurrences(of: "padding: 20px 24px", with: "padding: var(--space-4)"))
     }
 
     @Test func everyElementOfTheNameIsWrittenAsOneChange() async throws {
