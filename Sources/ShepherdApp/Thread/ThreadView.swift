@@ -46,6 +46,8 @@ struct ThreadView: View {
     /// Retry in the composer's Can't start banner (true: start a new conversation); nil for a
     /// remote agent, whose pi only its host starts.
     var restartPi: ((Bool) -> Void)? = nil
+    /// Sign in… in that banner, when pi found no model; nil where it can't be offered.
+    var signInToPi: (() -> Void)? = nil
     /// The composer's "Up next" state, when a test or preview drives it.
     var queueState: QueueStackState? = nil
     /// Previews: the composer opens with the context ring's details showing.
@@ -186,7 +188,7 @@ struct ThreadView: View {
                              proxy.scrollTo(Self.bottomID, anchor: .bottom)
                          } : nil, finder: finder, queueState: queueState, contextDetailsOpen: contextDetailsOpen,
                          inspectSubagent: inspectSubagent, steerSubagent: steerSubagent, inspectedRunID: inspectedRunID,
-                         designChat: designChat, restartPi: restartPi)
+                         designChat: designChat, restartPi: restartPi, signInToPi: signInToPi)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { [composerInset] in
                         if composerInset.height != $0 { composerInset.height = $0 }
                     }

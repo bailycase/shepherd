@@ -54,6 +54,9 @@ struct Composer: View {
     /// Retry in the Can't start banner (true: start a new conversation); nil for a remote agent,
     /// whose banner says to retry on its host.
     var restartPi: ((Bool) -> Void)? = nil
+    /// Sign in… in that banner when pi found no model: Shepherd's pi in a terminal beside the
+    /// agent (Settings ▸ Pi ▸ Sign in); nil where it can't be offered (a design, a remote agent).
+    var signInToPi: (() -> Void)? = nil
     @State private var attachments = ComposerAttachments()
     @State private var dropTargeted = false
     @State private var commandIndex = 0
@@ -230,6 +233,10 @@ struct Composer: View {
                                 restartPi(true)
                             }
                             .buttonStyle(.nw(.ghost, size: .s))
+                        }
+                        if problem.kind == .notSignedIn, let signInToPi {
+                            Button("Sign in…") { signInToPi() }
+                                .buttonStyle(.nw(.ghost, size: .s))
                         }
                         Button("Retry") {
                             store.restarting()

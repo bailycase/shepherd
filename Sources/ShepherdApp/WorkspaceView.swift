@@ -618,7 +618,8 @@ struct PaneLeafView: View, Equatable {
                         review: { [vm] turnID, path in vm.selectAgent(agentID); vm.openTurnReview(.local(agentID), turnID: turnID, path: path) },
                         undo: { [vm] in await vm.undoTurn(.local(agentID), turnID: $0) },
                         redo: { [vm] in await vm.redoTurn(.local(agentID), turnID: $0) }),
-                    restartPi: { [vm] in vm.retryAgentStart(agentID, newConversation: $0) }
+                    restartPi: { [vm] in vm.retryAgentStart(agentID, newConversation: $0) },
+                    signInToPi: { [vm] in vm.openPiSignIn(besideAgent: agentID) }
                 )
             } else {
                 LiveTerminalPane(
@@ -655,6 +656,8 @@ struct AgentThreadPane: View {
     var turnActions: TurnChangesActions? = nil
     /// Retry for a pi that stopped before it served (true: start a new conversation).
     var restartPi: ((Bool) -> Void)? = nil
+    /// Sign in… for a pi that found no model (Settings ▸ Pi ▸ Sign in, beside this agent).
+    var signInToPi: (() -> Void)? = nil
     /// A design's chat (`ThreadView.designChat`).
     var designChat = false
 
@@ -667,7 +670,7 @@ struct AgentThreadPane: View {
                 ThreadView(store: store, active: active, isFocused: isFocused, request: request, preview: preview, commandKey: commandKey,
                            agentName: agentName, workingDirectory: workingDirectory, inspectSubagent: inspectSubagent,
                            steerSubagent: steerSubagent, inspectedRunID: inspectedRunID, review: review, turnActions: turnActions,
-                           restartPi: restartPi, designChat: designChat)
+                           restartPi: restartPi, signInToPi: signInToPi, designChat: designChat)
             case .failed(let reason):
                 PanePlaceholder(text: "session unavailable · \(reason)")
                     .nwTransition(.content)

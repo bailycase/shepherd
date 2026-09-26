@@ -160,7 +160,8 @@ struct SettingsView: View {
         case .appearance: AppearanceSettings(vm: vm)
         case .terminal: TerminalSettings(vm: vm)
         case .agents: AgentSettings(pi: vm.server.pi)
-        case .pi: PiSettings(pi: vm.server.pi)
+        case .pi: PiSettings(pi: vm.server.pi,
+                             signIn: vm.selectedRemoteAgent == nil ? vm.selectedAgentID.map { id in { [vm] in vm.openPiSignIn(besideAgent: id) } } : nil)
         case .worktrees: WorktreeSettings()
         case .instructions: InstructionsSettings(model: vm.instructions)
         case .skills: SkillsSettings(vm: vm, model: vm.skills)
@@ -258,7 +259,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .terminal: ["Font family", "Font size", "Shell"]
         case .agents: ["Default model", "Default thinking level", "Return while the agent is working", "When a turn ends, send the queue"]
         case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically"]
-        case .pi: ["Name agents automatically", "Panes and agent tools", "Diff review tool", "Native subagents", "Subagent display", "MCP servers", "Concurrency"]
+        case .pi: ["Shepherd's pi", "Sign in", "Name agents automatically", "Panes and agent tools", "Diff review tool", "Native subagents", "Subagent display", "MCP servers", "Concurrency"]
         case .instructions: ["Same on every host", "AGENTS.md", "APPEND_SYSTEM.md", "History"]
         case .skills: ["Installed skills", "From your pi setup", "From pi packages", "Browse skills.sh", "Add from repo",
                        "Skills in the / menu", "Same skills on every host", "Update automatically"]
@@ -281,7 +282,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                        "Return while the agent is working": ["steer", "queue", "enter", "follow-up"],
                        "When a turn ends, send the queue": ["queue", "follow-up", "one per turn", "all at once"]]
         case .worktrees: ["Base branch": ["git", "origin"], "Merge PR automatically": ["github", "pull request"]]
-        case .pi: ["Native subagents": ["children", "workflows"]]
+        case .pi: ["Native subagents": ["children", "workflows"], "Sign in": ["login", "log in", "api key", "provider", "auth"],
+                   "Shepherd's pi": ["version", "engine", "home", "folder"]]
         case .instructions: ["Same on every host": ["sync", "hosts"], "AGENTS.md": ["system prompt", "how you work", "context"],
                              "APPEND_SYSTEM.md": ["system prompt", "override"], "History": ["restore", "undo"]]
         case .skills: ["Installed skills": ["SKILL.md", ".agents", "agent skills"],

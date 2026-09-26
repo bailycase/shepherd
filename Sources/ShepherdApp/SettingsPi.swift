@@ -3,14 +3,28 @@ import ShepherdUI
 import ShepherdSessions
 
 struct PiSettings: View {
-    /// This Mac's pi, whose models.json names the subagent model choices.
+    /// Shepherd's pi on this Mac, whose models.json names the subagent model choices.
     let pi: PiSetup
+    /// Opens Shepherd's pi to sign in, beside the agent selected on this Mac; nil with none.
+    var signIn: (() -> Void)? = nil
     @Bindable private var settings = AppSettings.shared
     @State private var modelOptions: [String] = []
 
     var body: some View {
         SettingsPage(title: "Pi",
-                     explanation: "Extensions Shepherd bundles into pi, and defaults for native subagents.") {
+                     explanation: "Shepherd's own pi, the extensions Shepherd bundles into it, and defaults for native subagents.") {
+            SettingsGroup(title: "Shepherd's pi",
+                          footnote: "Shepherd runs its own copy of pi, with its own sign-ins, settings and conversations. The pi in your terminal is yours: Shepherd never runs it or changes its files.") {
+                PathRow(title: pi.engine.version.map { "pi \($0)" } ?? "pi",
+                        subtitle: "Included with Shepherd, and updated with it. Its home:", url: pi.home)
+                SettingsRow(title: "Sign in",
+                            subtitle: "Opens Shepherd's pi in a terminal beside the selected agent. Type `/login` there. Your terminal's pi stays signed in as it is.") {
+                    Button("Open pi") { signIn?() }
+                        .buttonStyle(.nw(.secondary, size: .s))
+                        .disabled(signIn == nil)
+                        .help(signIn == nil ? "Select an agent on this Mac first." : "")
+                }
+            }
             SettingsGroup(title: "Bundled extensions",
                           footnote: "Applies to agents launched on this Mac, including automations and remote agents. Running agents keep their extensions until restarted. Status and session tracking are always on.") {
                 SettingsRow(title: "Name agents automatically",
