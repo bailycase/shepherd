@@ -4,11 +4,19 @@ import WebKit
 /// Serves one design over `shepherd-design://<design>/`: the runtime at any `project/…/support.js`,
 /// the design's `project/` files, and its uploads at `/_blob/<id>`. Everything else is a 404.
 /// There is no `file://` access; a file is served only if it resolves, links followed, inside
-/// the folder it was asked from.
+/// the folder it was asked from. A surface over files in memory serves those alone.
 @MainActor
 final class DesignSchemeHandler: NSObject, WKURLSchemeHandler {
+    /// Where a surface's files come from.
+    enum Files: Sendable {
+        /// A design's folder: `project/` and `assets/`.
+        case folder(URL)
+        /// Files by project path, with no uploads.
+        case memory([String: Data])
+    }
+
     let host: String
-    let folder: URL
+    let files: Files
     let network: DesignSandbox.Network
 
     /// Files larger than this are refused, as the canvas caps a text file.
@@ -16,9 +24,9 @@ final class DesignSchemeHandler: NSObject, WKURLSchemeHandler {
 
     private var live: Set<ObjectIdentifier> = []
 
-    init(host: String, folder: URL, network: DesignSandbox.Network) {
+    init(host: String, files: Files, network: DesignSandbox.Network) {
         self.host = host
-        self.folder = folder
+        self.files = files
         self.network = network
     }
 
@@ -28,10 +36,10 @@ final class DesignSchemeHandler: NSObject, WKURLSchemeHandler {
         let request = task.request
         let route = request.httpMethod.map { $0 == "GET" || $0 == "HEAD" } ?? true
             ? DesignRoute(url: request.url, host: host) : .refused
-        let folder = folder
+        let files = files
         nonisolated(unsafe) let task = task
         Task {
-            let body = await Task.detached(priority: .userInitiated) { Self.read(route, folder: folder) }.value
+            let body = await Task.detached(priority: .userInitiated) { Self.read(route, files: files) }.value
             guard self.live.remove(id) != nil, let url = request.url else { return }
             // A page that isn't there fails its navigation (WebKit hands a custom scheme's
             // navigation response over without its status); a missing subresource is a 404.
@@ -68,11 +76,33 @@ final class DesignSchemeHandler: NSObject, WKURLSchemeHandler {
         var type: String
     }
 
+    nonisolated static func read(_ route: DesignRoute, files: Files) -> Body? {
+        switch files {
+        case .folder(let folder):
+            return read(route, folder: folder)
+        case .memory(let files):
+            switch route {
+            case .runtime:
+                return runtime
+            case .project(let segments):
+                let path = segments.joined(separator: "/")
+                guard let data = files[path], data.count <= maxFileBytes else { return nil }
+                return Body(data: data, type: DesignSandbox.contentType(forExtension: (path as NSString).pathExtension))
+            case .blob, .refused:
+                return nil
+            }
+        }
+    }
+
+    /// Shepherd's runtime, served at any `support.js`.
+    nonisolated static var runtime: Body? {
+        DesignRuntime.supportScript.map { Body(data: $0, type: DesignSandbox.contentType(forExtension: "js")) }
+    }
+
     nonisolated static func read(_ route: DesignRoute, folder: URL) -> Body? {
         switch route {
         case .runtime:
-            guard let data = DesignRuntime.supportScript else { return nil }
-            return Body(data: data, type: DesignSandbox.contentType(forExtension: "js"))
+            return runtime
         case .project(let segments):
             let base = folder.appendingPathComponent("project", isDirectory: true)
             var file = base
