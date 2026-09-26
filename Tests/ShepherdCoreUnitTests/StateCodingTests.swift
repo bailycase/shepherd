@@ -211,7 +211,9 @@ struct DesignModelTests {
     }
 
     /// Designs stand alone (2026-09-26): a design decodes with or without the space it used to
-    /// belong to, ignores a stored one, and writes none. An older build's space was its project.
+    /// belong to and ignores a stored one. It still writes a `spaceID` no space has, because older
+    /// builds and remote clients can't decode a design without one. An older build's space was
+    /// its project.
     @Test(arguments: [
         #"{"id":"d1","name":"Checkout","createdAt":1,"lastActiveAt":2}"#,
         #"{"id":"d1","name":"Checkout","spaceID":"s1","createdAt":1,"lastActiveAt":2}"#,
@@ -220,7 +222,8 @@ struct DesignModelTests {
         let design = try Fixture.decode(Design.self, json)
         #expect(design.name == "Checkout" && design.sourceSpaceID == nil)
         let written = try Fixture.encodeObject(design)
-        #expect(written["spaceID"] == nil && written["sourceSpaceID"] == nil)
+        #expect(written["sourceSpaceID"] == nil)
+        #expect(written["spaceID"] as? String == "standalone-design", "older readers still find one")
         #expect(try Fixture.roundTrip(design) == design)
     }
 
@@ -229,7 +232,7 @@ struct DesignModelTests {
                                        #"{"id":"d1","name":"web","spaceID":"s1","createdAt":1,"lastActiveAt":1,"buildsSystem":true}"#)
         #expect(build.sourceSpaceID == SpaceID(rawValue: "s1"))
         let written = try Fixture.encodeObject(build)
-        #expect(written["spaceID"] == nil && written["sourceSpaceID"] as? String == "s1")
+        #expect(written["spaceID"] as? String == "s1" && written["sourceSpaceID"] as? String == "s1")
     }
 
     /// The reserved designs space says so; every other space decodes and writes as it did.
