@@ -2658,7 +2658,7 @@ send the review.
   (`NWSidePaneRail`) replaces the sidebar and the toolbar, on `bgBase` with a `lineStrong` edge,
   holding the window controls stacked at its top (12pt circles 6pt apart, 14pt down; Shepherd draws
   them, `NWWindowControls`, and hides the window's own while the rail shows; none in full screen)
-  and, 18pt under them, Back to the thread (a 32pt bordered circle with `text.bubble`), which
+  and, 28pt under them (a 10pt gap, an 8pt spacer, a 10pt gap), Back to the thread (a 32pt bordered circle with `text.bubble`), which
   restores the pane beside the thread as Restore the thread does. Hidden layouts keep the column's
   size meanwhile, so only the visible layout relays out.
 - **Commit… sheet** (`ReviewCommitSheet`, 520pt, from the toolbar's Commit…; derived from the
