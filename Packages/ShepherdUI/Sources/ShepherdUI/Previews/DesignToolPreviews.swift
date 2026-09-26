@@ -309,3 +309,23 @@ private let previewActions = NWBoardActions.Actions(comment: {}, tweak: {}, vari
         .background(Color.nw.sheetScrim)
     }
 }
+
+#Preview("Pencil markup") {
+    @Previewable @State var tool = NWMarkupPalette.Tool.pen
+    @Previewable @State var ink = NWMarkupPalette.Ink.lantern
+    NWPreviewBoth {
+        VStack(alignment: .leading, spacing: NW.Space.xxl) {
+            NWMarkupPalette(tool: $tool, ink: $ink, done: {})
+            NWMarkupPalette(tool: .constant(.eraser), ink: .constant(.running), reading: true, done: {})
+            NWMarkupProposals(cards: [
+                .init(id: "c#0", number: 2, target: "A · phone › Steps list", text: "Thicker bars on phone."),
+                .init(id: "c#1", number: 3, target: "A › KPI row", text: "Show counts next to the percentages here too."),
+            ], state: .open, footnote: "Handwriting in the chat box works too: Scribble turns it into text.", apply: {}, keep: {})
+            .frame(width: 328)
+            NWMarkupProposals(cards: [.init(id: "c#0", number: 2, target: "A · phone › Steps list", text: "Thicker bars on phone.")],
+                              state: .settled("On the canvas as comment 2."), apply: {}, keep: {})
+            .frame(width: 328)
+        }
+        .padding(NW.Space.l)
+    }
+}
