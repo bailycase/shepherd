@@ -881,12 +881,12 @@ final class RPCThreadState {
     /// figure to show.
     static func projectStats(_ data: JSONValue) -> NativeThreadStats {
         let usage = data["contextUsage"]
-        let tokens = usage?["tokens"]?.doubleValue.map { Int($0) }.flatMap { $0 > 0 ? $0 : nil }
+        let tokens = usage?["tokens"]?.countValue.flatMap { $0 > 0 ? $0 : nil }
         return NativeThreadStats(
             contextTokens: tokens,
-            contextWindow: usage?["contextWindow"]?.doubleValue.map { Int($0) },
+            contextWindow: usage?["contextWindow"]?.countValue,
             contextPercent: tokens == nil ? nil : usage?["percent"]?.doubleValue,
-            totalTokens: data["tokens"]?["total"]?.doubleValue.map { Int($0) },
+            totalTokens: data["tokens"]?["total"]?.countValue,
             cost: data["cost"]?.doubleValue
         )
     }
@@ -1663,7 +1663,7 @@ final class RPCThreadState {
             result.model = message.model.map(clip)
         }
         if message.role == "compactionSummary" {
-            result.compaction = NativeCompaction(phase: .done, tokensBefore: message.tokensBefore.map { Int($0) },
+            result.compaction = NativeCompaction(phase: .done, tokensBefore: message.tokensBefore.flatMap(Int.init(reportedCount:)),
                                                  summary: message.summary.map(clip))
         }
         if let isError = message.isError { result.isError = isError }
