@@ -221,6 +221,13 @@ extension View {
         font(.nw(style, size: size)).lineSpacing(style.lineSpacing(size))
     }
 
+    /// A one-off size the ramp does not name, set at its own line height (a Settings description
+    /// at 12.5/1.45, a footnote at 12/1.5): the font plus the extra leading that reaches it.
+    @MainActor public func nwText(size: CGFloat, weight: Font.Weight = .regular, mono: Bool = false, lineHeight: CGFloat) -> some View {
+        font(mono ? .nwMono(size, weight) : .nwSans(size, weight))
+            .lineSpacing(NWLineSpacing.extra(size: size, weight: weight, mono: mono, lineHeight: lineHeight))
+    }
+
     /// The section label treatment ("THIS MAC", "AUTOMATIONS"): micro mono, uppercase, tracked,
     /// tertiary.
     @MainActor public func nwSectionLabel() -> some View {
@@ -228,5 +235,29 @@ extension View {
             .textCase(.uppercase)
             .tracking(NWTextStyle.micro.size * 0.05)
             .foregroundStyle(.nw.textTertiary)
+    }
+}
+
+/// Extra leading for the one-off sizes `nwText(size:weight:mono:lineHeight:)` sets, measured once
+/// per scaled size: building a CoreText font on every render would be too slow.
+@MainActor enum NWLineSpacing {
+    private struct Key: Hashable {
+        let size: CGFloat
+        let weight: Font.Weight
+        let mono: Bool
+        let lineHeight: CGFloat
+    }
+
+    private static var cache: [Key: CGFloat] = [:]
+
+    static func extra(size: CGFloat, weight: Font.Weight, mono: Bool, lineHeight: CGFloat) -> CGFloat {
+        let scaled = size * ThemeStore.shared.textScale
+        let key = Key(size: scaled, weight: weight, mono: mono, lineHeight: lineHeight)
+        if let cached = cache[key] { return cached }
+        let ct = CTFontCreateWithName(NWFonts.postScriptName(mono: mono, weight: weight) as CFString, scaled, nil)
+        let natural = CTFontGetAscent(ct) + CTFontGetDescent(ct) + CTFontGetLeading(ct)
+        let extra = max(0, (scaled * lineHeight - natural).rounded(.toNearestOrEven))
+        cache[key] = extra
+        return extra
     }
 }

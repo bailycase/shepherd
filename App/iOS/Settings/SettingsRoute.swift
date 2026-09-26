@@ -1,14 +1,37 @@
 import SwiftUI
 import ShepherdUI
+import ShepherdProtocol
+import ShepherdRemote
 
 /// Settings' screens (home track). `open` shows them in the Settings tab on iPhone and over
-/// the detail on iPad.
+/// the detail on iPad, where Settings' own pages show beside its list instead (`SettingsPage`).
 enum SettingsRoute: Hashable, Codable {
     case root
     case hosts
     /// A host's form; nil adds one.
     case host(UUID?)
     case appearance
+    /// What a host's new threads start with: the model, thinking, and how the queue goes.
+    case defaults
+    /// How a host creates and finalizes worktrees.
+    case worktrees
+    /// The pi extensions a host loads, and its daily updates.
+    case piExtensions
+    /// The root instructions every session Shepherd starts reads.
+    case instructions
+    /// One root instruction file in the editor.
+    case instructionsFile(InstructionFile)
+    /// Every host's agent skills: each on or off, their updates, and a search of skills.sh.
+    case skills
+    /// One installed skill: how the agent uses it, its version, which hosts have it, its files.
+    case skill(String)
+    /// A skill on skills.sh before it's installed: what it does, its files, and Install.
+    case skillResult(DirectorySkill)
+    /// Add skills from a repository, looking up the one given at once.
+    case skillsRepo(String?)
+    case experiments
+    /// A suggested line waiting on a host: edit it, choose its file, add it or dismiss it.
+    case suggestion(UUID)
 }
 
 struct SettingsDestination: View {
@@ -20,6 +43,79 @@ struct SettingsDestination: View {
         case .hosts: HostsScreen()
         case .host(let id): HostEditorScreen(hostID: id)
         case .appearance: AppearanceScreen()
+        case .defaults: DefaultsScreen()
+        case .worktrees: WorktreesScreen()
+        case .piExtensions: PiExtensionsScreen()
+        case .instructions: InstructionsScreen()
+        case .instructionsFile(let file): InstructionsEditorScreen(file: file)
+        case .skills: SkillsScreen()
+        case .skill(let name): SkillDetailScreen(name: name)
+        case .skillResult(let skill): SkillResultScreen(skill: skill)
+        case .skillsRepo(let repo): AddSkillsScreen(initialRepo: repo)
+        case .experiments: ExperimentsScreen()
+        case .suggestion(let id): SuggestionScreen(id: id)
         }
     }
+}
+
+/// A page of Settings: pushed from the list on iPhone, shown beside it on iPad
+/// (iPadSettingsInstructions). The iPad's list names two of them as the Mac does ("Agents",
+/// "Pi"); the phone's rows say what they hold ("Defaults", "Extensions").
+enum SettingsPage: String, CaseIterable, Hashable, Codable {
+    case appearance, defaults, worktrees, pi, instructions, skills, hosts, experiments
+
+    var title: String {
+        switch self {
+        case .appearance: "Appearance"
+        case .defaults: "Defaults"
+        case .worktrees: "Worktrees"
+        case .pi: "Extensions"
+        case .instructions: "Instructions"
+        case .skills: "Skills"
+        case .hosts: "Hosts"
+        case .experiments: "Experiments"
+        }
+    }
+
+    /// Its name in the iPad's list.
+    var listTitle: String {
+        switch self {
+        case .defaults: "Agents"
+        case .pi: "Pi"
+        default: title
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .appearance: "circle.lefthalf.filled"
+        case .defaults: "sparkles"
+        case .worktrees: "arrow.branch"
+        case .pi: "puzzlepiece.extension"
+        case .instructions: "doc.text"
+        case .skills: "graduationcap"
+        case .hosts: "desktopcomputer"
+        case .experiments: "flask"
+        }
+    }
+
+    /// Its screen on its own, as the phone pushes it.
+    var route: SettingsRoute {
+        switch self {
+        case .appearance: .appearance
+        case .defaults: .defaults
+        case .worktrees: .worktrees
+        case .pi: .piExtensions
+        case .instructions: .instructions
+        case .skills: .skills
+        case .hosts: .hosts
+        case .experiments: .experiments
+        }
+    }
+}
+
+extension EnvironmentValues {
+    /// A Settings page shown beside the iPad's list rather than on its own: it keeps the bar's
+    /// title inline, and opens another page in place.
+    @Entry var settingsColumn = false
 }
