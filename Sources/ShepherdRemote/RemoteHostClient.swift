@@ -469,7 +469,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     }
 
     public func agentAction(agentID: AgentID, action: RemoteAgentAction) async throws {
-        guard capabilities.contains(RemoteProtocol.agentActionsCapability) else {
+        guard capabilities.contains(RemoteProtocol.agentActionsCapability), capabilities.contains(action.capability) else {
             throw RemoteHostClientError.rejected(
                 code: "update_required", message: "Update Shepherd on the host to use remote agent actions."
             )

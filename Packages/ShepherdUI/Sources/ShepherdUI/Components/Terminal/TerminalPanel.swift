@@ -88,10 +88,17 @@ public struct NWTerminalTabBar<Trailing: View>: View {
     let close: ((String) -> Void)?
     let newTab: (() -> Void)?
     let newTabHelp: String
+    let menu: ((_ tab: String?, _ anchor: CGFloat) -> Void)?
     @ViewBuilder let trailing: () -> Trailing
+    /// Where + and each tab start along the strip, for the menu to hang from.
+    @State private var anchors: [String: CGFloat] = [:]
 
+    /// `menu`, where given, opens the new terminal menu (NewTerminalMenu) from + (`tab` nil) and
+    /// from a right-click on a tab, at `anchor` along the strip; + then opens the menu rather
+    /// than a tab.
     public init(_ tabs: [NWTerminalTab], selection: String?, select: @escaping (String) -> Void,
                 close: ((String) -> Void)? = nil, newTab: (() -> Void)? = nil, newTabHelp: String = "New terminal",
+                menu: ((_ tab: String?, _ anchor: CGFloat) -> Void)? = nil,
                 @ViewBuilder trailing: @escaping () -> Trailing) {
         self.tabs = tabs
         self.selection = selection
@@ -99,8 +106,12 @@ public struct NWTerminalTabBar<Trailing: View>: View {
         self.close = close
         self.newTab = newTab
         self.newTabHelp = newTabHelp
+        self.menu = menu
         self.trailing = trailing
     }
+
+    private static var space: String { "nwTerminalTabBar" }
+    private static var plusAnchor: String { "+" }
 
     public var body: some View {
         HStack(spacing: NW.Space.xxs) {
@@ -109,12 +120,19 @@ public struct NWTerminalTabBar<Trailing: View>: View {
                     ForEach(tabs) { tab in
                         NWTerminalTabView(tab: tab, isSelected: tab.id == selection, select: { select(tab.id) },
                                           close: close.map { close in { close(tab.id) } })
+                            .modifier(AnchorReader(id: tab.id, anchors: $anchors))
+                            #if os(macOS)
+                            .nwSecondaryClick(enabled: menu != nil) { menu?(tab.id, anchors[tab.id] ?? 0) }
+                            #endif
                     }
                     if let newTab {
-                        Button(action: newTab) { Image(systemName: "plus") }
+                        Button {
+                            if let menu { menu(nil, anchors[Self.plusAnchor] ?? 0) } else { newTab() }
+                        } label: { Image(systemName: "plus") }
                             .buttonStyle(.nwIcon(size: NWTerminalMetrics.buttonSize))
                             .nwHelp(newTabHelp)
                             .accessibilityLabel(newTabHelp)
+                            .modifier(AnchorReader(id: Self.plusAnchor, anchors: $anchors))
                     }
                 }
             }
@@ -133,8 +151,21 @@ public struct NWTerminalTabBar<Trailing: View>: View {
         .background(Color.nw.bgWindow)
         .overlay(alignment: .top) { NWHairline(color: .nw.lineStrong) }
         .overlay(alignment: .bottom) { NWHairline() }
+        .coordinateSpace(.named(Self.space))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Terminal tabs")
+    }
+
+    /// Notes where a tab or + starts along the strip, scrolled or not.
+    private struct AnchorReader: ViewModifier {
+        let id: String
+        @Binding var anchors: [String: CGFloat]
+
+        func body(content: Content) -> some View {
+            content.onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(NWTerminalTabBar.space)).minX } action: {
+                anchors[id] = $0
+            }
+        }
     }
 }
 
@@ -494,3 +525,42 @@ public struct NWTerminalMenu<Content: View>: View {
             .accessibilityAddTraits(.isModal)
     }
 }
+
+#if os(macOS)
+import AppKit
+
+extension View {
+    /// A right-click (or a Control-click) on the view calls `action`; every other click passes
+    /// through to the view as before.
+    public func nwSecondaryClick(enabled: Bool = true, _ action: @escaping () -> Void) -> some View {
+        overlay { if enabled { NWSecondaryClickCatcher(action: action) } }
+    }
+}
+
+private struct NWSecondaryClickCatcher: NSViewRepresentable {
+    let action: () -> Void
+
+    func makeNSView(context: Context) -> Catcher {
+        let view = Catcher()
+        view.action = action
+        return view
+    }
+
+    func updateNSView(_ view: Catcher, context: Context) { view.action = action }
+
+    final class Catcher: NSView {
+        var action: (() -> Void)?
+
+        /// Only a secondary click lands here; everything else falls to the views under it.
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            guard let event = NSApp.currentEvent else { return nil }
+            let secondary = event.type == .rightMouseDown
+                || (event.type == .leftMouseDown && event.modifierFlags.contains(.control))
+            return secondary ? super.hitTest(point) : nil
+        }
+
+        override func rightMouseDown(with event: NSEvent) { action?() }
+        override func mouseDown(with event: NSEvent) { action?() }
+    }
+}
+#endif

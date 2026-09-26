@@ -143,6 +143,8 @@ final class ShepherdViewModel {
     var remoteInspectingAgent: RemoteAgentRef?
     var remoteInspectionRequest = UUID()
     var remoteRenameTarget: RemoteAgentRef?
+    /// A terminal tab being renamed (the panel's Rename tab).
+    var terminalRenameTarget: TerminalRenameTarget?
     var remoteActionError: String?
 
     /// Configured remote Shepherd hosts and their live connections.
@@ -487,6 +489,8 @@ final class ShepherdViewModel {
         }
         // Agents drive their own panes through the server's extension socket.
         installPaneControl()
+        // A finished command's activity line opens it in a new terminal tab, typed out.
+        threadCommands.runInTerminal = { [weak self] in self?.runInTerminal($0) }
         installReviewHandler()
         // Any pi session can create automations through the same socket.
         installAutomationControl()
@@ -514,6 +518,9 @@ final class ShepherdViewModel {
                     case .rename(let name): try await self.server.renameAgent(agentID, to: name)
                     case .reorder(let target): try await self.server.reorderAgent(agentID, onto: target)
                     case .deleteKeepingWorktree: try await self.deleteAgentPersisted(agentID)
+                    case .renameTerminal(let paneID, let title): try self.renameTerminalPane(paneID, of: agentID, to: title)
+                    case .killTerminalProcess(let paneID): try await self.killTerminalProcess(paneID, of: agentID)
+                    case .typeInTerminal(let paneID, let text): try await self.typeInTerminal(paneID, of: agentID, text: text)
                     }
                     completion(.success(()))
                 } catch {

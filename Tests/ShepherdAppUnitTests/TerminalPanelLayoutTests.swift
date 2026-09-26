@@ -192,4 +192,12 @@ struct TerminalPanelsTests {
         let row = RemoteTerminalActivity(paneID: pane.id, sessionID: SessionID(), process: process, command: command, outputSequence: 0)
         #expect(TerminalPanels.title(row: command == nil && process == nil ? nil : row, pane: pane) == title)
     }
+
+    /// Rename tab names it whatever it runs; a blank name goes back to what it runs.
+    @Test(arguments: [("logs", "logs"), ("  ", "make dev")])
+    func aRenamedTabKeepsItsName(name: String, title: String) {
+        let pane = LeafPane(cwd: "/tmp/repo", title: name)
+        let row = RemoteTerminalActivity(paneID: pane.id, sessionID: SessionID(), process: "make", command: "make dev", outputSequence: 0)
+        #expect(TerminalPanels.title(row: row, pane: pane) == title)
+    }
 }

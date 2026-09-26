@@ -322,6 +322,36 @@ extension PreviewTests {
         }
     }
 
+    /// The new terminal menu (TerminalStates › NewTerminalMenu), opened from + over the panel.
+    @Test func appWindowTerminalMenu() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        let space = Space(name: "payments", path: workspace.dir.path)
+        let (agent, tab) = try await workspace.agent("Add refund events", in: space, order: 0, live: true)
+        let thread = try #require(agent.paneID)
+        let shell = LeafPane(cwd: space.path, title: "go test"), logs = LeafPane(cwd: space.path)
+        var panel = tab
+        panel.layout = tab.layout.splitting(pane: thread, axis: .horizontal, newPane: shell)!
+            .splitting(pane: thread, axis: .horizontal, newPane: logs)!
+        try await workspace.seed(ShepherdState(spaces: [space], tabs: [panel], agents: [agent]))
+        vm.selectAgent(agent.id)
+        let key = TerminalPanelKey(host: nil, tab: panel.id)
+        vm.terminalPanels.update(key) {
+            $0.shown = true
+            $0.chosenTab = shell.id
+            $0.chosenPanes = [shell.id]
+        }
+        vm.terminalPanels.menu = TerminalMenuRequest(key: key, tab: shell.id, anchor: 150)
+        let store = vm.threadStores.store(for: agent.id)
+        let shells = [shell, logs].map { vm.sessions.session(for: $0, in: panel) }
+        try await Preview.render("app-window-terminal-menu", size: CGSize(width: 1440, height: 900), ready: {
+            store.ready && shells.allSatisfy { $0.phase == .live }
+        }) {
+            RootView(vm: vm)
+        }
+    }
+
     /// The window with the sidebar hidden: the toolbar runs under the window controls.
     @Test func sidebarHiddenHeader() async throws {
         let workspace = try PreviewWorkspace()

@@ -155,9 +155,9 @@ And the rules that follow from them:
 | ModelPicker: each row's second line describes the model ("Faster, cheaper", "Fastest") | Model rows' second line lists the model's thinking levels instead of the board's notes ("Off · Minimal · Low · Medium · High", or "No thinking"), on the Mac and in the iOS picker | The user's decision, 2026-09-25 (pi has no model descriptions) |
 | LiveText, ContextCompacted: live "› Thinking…" wears the disclosure's chevron | No chevron on a row with nothing to open: live "Thinking…", a thought the model kept back, a `<details>` with nothing inside, an activity or subagent record line with nothing behind it. Its place stays, so every label sits where a chevron's row puts it and nothing moves when a row becomes one that opens; such a row is not a button and offers VoiceOver no expand | The user's decision, 2026-09-25: "also for the thinking and blocks in such, if there is nothing to expand / show like when the model is thinking, dont show the carat". Patched copies of LiveText and ContextCompacted, their live chevrons left out, go to the canvas |
 | NWComposer and Running: while pi runs, the placeholder "Queue a follow-up — sent when the turn ends" | The idle placeholder stays ("Follow up, or / for commands…"), as QueueSteer and QuestionAnswered draw it beside Stop | Dropped with the queue and steer redesign: ↩ queues or steers per Settings ▸ Agents, so "sent when the turn ends" would be wrong under Steer |
-| Terminal: ⌃\` shows the panel, ⌃⇧\` opens a tab, ⌘K clears, ⇧⌘[ ] switch tabs | **⌘J** shows or hides it; + or ⌘D opens a tab; no clear or tab-switch chord | Every rebindable chord needs ⌘, ⌘K is the palette, and a tab is one click away |
+| Terminal: ⌃\` shows the panel, ⌃⇧\` opens a tab, ⌘K clears, ⇧⌘[ ] switch tabs | **⌘J** shows or hides it; ⌘D opens a tab (+ opens the new terminal menu); no clear or tab-switch chord | Every rebindable chord needs ⌘, ⌘K is the palette, and a tab is one click away |
 | Terminal: the terminal on `bgBase` (Mac and iPad panels) | On `bgWindow`, the theme's terminal background | Terminal panes keep one surface everywhere |
-| Terminal: rename a tab, Kill process, New terminal on This Mac, Run in terminal, send output to pi | Not built | Out of scope for this pass |
+| Terminal: send output to pi | Not built | Out of scope for this pass |
 | TerminalTab · states: an exited tab stays, its output kept ("exited with an error; the output stays") | On the Mac a shell that exits closes its pane, so its tab goes at once; iOS shows the exited state until the host closes it | A process that exits on its own closes its pane (AGENTS.md › Sessions and views are separate) |
 | iPadTerminal: the key row reads esc, tab, ctrl, ⌥, ↑ ↓ ← →, `\|`, `~`, `/` | esc, tab, ctrl, ⌥, `\|`, `~`, `/`, `-`, then the arrows | A row that wraps in two on a phone keeps the arrows together (`TerminalKey`); `-` for flags |
 | Earlier boards, no longer on the canvas: a compose button beside the window controls and a "Jump to…" field above the sidebar tree | Neither comes back. The Search (⌘K) and Hide sidebar buttons today's boards draw there are the spec (Sidebar › Top bar) | ⌘N and the New thread destination start a thread, and the palette is a button, not a field |
@@ -2972,7 +2972,8 @@ splits.
   `SessionServer.terminalActivity` (a remote agent's host answers `RemoteAgentQuery.terminals`),
   polled every 2 s while the layout is on screen; an older host leaves plain tabs named for the
   folder.
-- **Actions:** + opens a new tab (a pane split off the thread). Split right (⌘D in a terminal)
+- **Actions:** + opens the new terminal menu, whose first row opens a new tab (a pane split off the
+  thread). Split right (⌘D in a terminal)
   splits the tab's focused pane to the right, and ⇧⌘D splits it down; ⌘D or ⇧⌘D on the thread opens
   a new tab. Closing a tab closes all its panes (as ⌘W closes one), never the thread's, and the Mac
   doesn't ask first. A new pane starts in its neighbor's folder; a remote agent's go through its
@@ -3036,29 +3037,38 @@ splits.
   (ghost, 24pt: a 13pt copy glyph and the label in 12pt medium `textSecondary`). Both buttons are
   radius 6 with 8pt side padding and 6pt between glyph and label. The selection itself reads as
   selected lines on `running` at 13%.
-- **New terminal menu** (NewTerminalMenu: "+ or right-click"). **Not built yet;** today + opens a
-  tab at once (see the departures). On the board, + and a right-click on a tab open a 290pt menu:
-  `bgRaised`, a 1px `lineStrong` border, radius 10 on the board, 6pt padding and the popover's
-  shadow. Rows are radius 6 with 8pt side padding and 9pt gaps: a 13pt `textSecondary` glyph, the
-  title in `ui` (12.5pt), and the chord as keycaps (`NWKeycap`) at the trailing end; the highlighted
-  row sits on `bgSelected`. Two-line rows are at least 36pt, with a detail in 11pt `textTertiary`
-  under the title; one-line rows are 30pt. In order:
-  - "New terminal in the worktree", detail "<space> on <host>" (`terminal`), with the new-terminal
-    chord: "New tabs start in the thread's worktree on its host, so the terminal sees what the agent sees."
-  - "New terminal on This Mac", detail the folder it opens in (`desktopcomputer`), for a remote
-    thread.
-  - "Split right" (`rectangle.split.2x1`), with its chord.
-  - "Rename tab" (`pencil`).
-  - "Kill process" (`xmark`).
-- **Run in terminal** (TerminalStates). **Not built yet.** "Any command line from the agent can be opened
-  in a new tab, typed out but not run." The board puts a Run in terminal button (secondary, small:
-  24pt, a 13pt `terminal` glyph and the label in 12pt medium `textPrimary`) at the trailing end of a
-  Run (bash) activity line. It opens a new tab in the thread's worktree on its host with the command
-  typed after the prompt and the cursor after it, and runs nothing.
+- **New terminal menu** (`NWTerminalMenu`, `TerminalMenuLayer`; NewTerminalMenu: "+ or
+  right-click"). + and a right-click (or ⌃-click) on a tab open a 290pt menu hanging 4pt under the
+  strip from + or that tab: `bgRaised`, a 1px `lineStrong` border, radius 10, 6pt padding and the
+  popover's shadow. Its rows are the Changes menus' (`NWChangesMenuRow`): radius 6 with 8pt side
+  padding and 9pt gaps, a 13pt `textSecondary` glyph, the title in `ui` (12.5pt), and the chord as
+  keycaps (`NWKeycap`) at the trailing end; hovering fills `bgHover`. Two-line rows are at least
+  36pt, with a detail in 11pt `textTertiary` under the title; one-line rows are 30pt. A click
+  anywhere else or esc closes it. In order:
+  - "New terminal in the worktree", detail "<space> on <host>" ("payments on This Mac"; `terminal`),
+    with the new-terminal chord (⌘D): "New tabs start in the thread's worktree on its host, so the
+    terminal sees what the agent sees."
+  - For the tab (right-clicked, else the selected one): "Split right" (`rectangle.split.2x1`, ⌘D),
+    which splits that tab's focused pane; "Rename tab" (`pencil`), which asks for the name in a
+    rename sheet (a blank name goes back to naming the tab after what it runs; the name rides on
+    the tab's first pane, `LeafPane.title`, so it persists and every viewer sees it); and "Kill
+    process" (`xmark`), which kills the command running in the tab's focused pane with its whole
+    process group (SIGKILL) and leaves its shell, disabled while the shell sits at its prompt. On a
+    host's agent Rename tab and Kill process go through the host (`terminal.control.v1`) and are
+    disabled against an older host.
+  - **Not built:** "New terminal on This Mac" (for a remote thread): a remote agent's layout is its
+    host's, so a pane of this Mac has no place in it (see Known gaps).
+- **Run in terminal** (TerminalStates: "Any command line from the agent can be opened in a new
+  tab, typed out but not run"). A finished Run (bash) activity line of one command carries Run in
+  terminal at its trailing end (secondary, small: 24pt, a 13pt `terminal` glyph and the label in
+  12pt medium `textPrimary`), and each command's call row offers Run in Terminal in its context
+  menu. It opens a new tab in the thread's worktree on its host, the tab takes the keyboard, and
+  the command's whole line is typed after the prompt once the shell reads (`typeCommand(submit:
+  false)`; on a host, `typeInTerminal`), with nothing run.
 - **Keys** (Keyboard: "Shown in menus and tooltips"). The board's are Show or hide the terminal ⌃\`,
   New terminal ⌃⇧\`, Split right ⌘D, Maximize or restore ⇧⌘↩, Close the tab ⌘W, Clear ⌘K, and Next
   or previous tab ⇧⌘[ and ⇧⌘]. Shepherd's (see the departures and Keyboard): ⌘J shows or hides the
-  panel, + or ⌘D (⇧⌘D) on the thread opens a tab, ⌘D splits right and ⇧⌘D splits down in a terminal,
+  panel, ⌘D (⇧⌘D) on the thread opens a tab (+ opens the new terminal menu), ⌘D splits right and ⇧⌘D splits down in a terminal,
   ⇧⌘↩ maximizes or restores, and ⌘W closes the focused pane; there is no clear or tab-switch chord.
   Every chord resolves through `KeybindingsStore`, shows in the Pane menu ("Show or Hide Terminal",
   "Maximize or Restore Terminal", and New Terminal without one) and in the strip's tooltips, and is
@@ -4344,11 +4354,11 @@ below collects the rest, and the places those sentences point here.
     picker's "A commit…"; a commits range (touch has no ⇧); Rich preview and Open in your editor;
     a draft pull request from Commit… (`RemoteCommitOptions` has no draft).
   - A comment's author: the boards draw the initial "B"; the touch clients say "You".
-- **Thread and terminal** (NWThread, TerminalSplit, TerminalPane against the app):
+- **Thread and terminal** (NWThread, TerminalSplit, TerminalPane, TerminalStates against the app):
+  - The new terminal menu has no "New terminal on This Mac" for a remote thread (TerminalStates):
+    a pane of this Mac cannot join a layout its host owns. Waiting on the user's call.
   - Consecutive activity lines sit 6pt apart (`AppLayout.activitySpacing`), as NWThread draws
     them; ToolRows and Running draw 4pt.
-  - A Run (bash) activity line draws `apple.terminal` (`Components/Thread/Activity.swift`); the
-    board's symbol is `terminal`.
   - The terminal font defaults to SF Mono 12.5 (`AppSettings`); the boards set Geist Mono 12 at
     1.6.
 - **Sidebar and New thread** (NWNavigation, NavNewThread against `SidebarView.swift` and

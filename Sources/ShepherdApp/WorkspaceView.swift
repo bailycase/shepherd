@@ -409,6 +409,11 @@ struct PaneTreeView: View {
                         .frame(width: content.width, height: content.height)
                         .offset(x: content.minX, y: content.minY)
                 }
+                if let bar = geometry.tabBar {
+                    TerminalMenuLayer(vm: vm, target: target, bar: bar, tabs: geometry.tabs)
+                        .frame(width: geo.size.width, height: geo.size.height)
+                        .zIndex(3)
+                }
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
             .nwAnimation(.content, value: panel.shown)
@@ -862,6 +867,11 @@ private struct RemotePaneTreeView: View {
                     TerminalPanelEmpty(vm: vm, target: target)
                         .frame(width: content.width, height: content.height)
                         .offset(x: content.minX, y: content.minY)
+                }
+                if let bar = geometry.tabBar {
+                    TerminalMenuLayer(vm: vm, target: target, bar: bar, tabs: geometry.tabs)
+                        .frame(width: geo.size.width, height: geo.size.height)
+                        .zIndex(3)
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)

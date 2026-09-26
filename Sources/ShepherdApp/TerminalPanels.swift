@@ -11,6 +11,14 @@ struct TerminalPanelKey: Hashable {
     var tab: TabID
 }
 
+/// The new terminal menu, open on a panel: from + (the selected tab) or a right-click on a tab.
+struct TerminalMenuRequest: Equatable {
+    let key: TerminalPanelKey
+    let tab: PaneID?
+    /// Where it hangs, from the strip's leading edge.
+    let anchor: CGFloat
+}
+
 /// Each agent layout's terminal panel (TerminalSplit, TerminalStates boards): shown or hidden,
 /// the tab on screen, maximized, and what its terminals run. The panes themselves stay the
 /// layout's (`PaneNode`): the panel is how the Mac shows them, under the thread. Device-local
@@ -38,6 +46,9 @@ final class TerminalPanels {
     private(set) var activity: [TerminalPanelKey: [PaneID: RemoteTerminalActivity]] = [:]
     /// Each session's news (`RemoteTerminalActivity.news`) when it was last on screen.
     private(set) var seen: [SessionID: UInt64] = [:]
+    /// The new terminal menu, while it is open (NewTerminalMenu): which panel, the tab it acts
+    /// on, and where along the strip it hangs.
+    var menu: TerminalMenuRequest?
 
     /// The panes each layout had when last reconciled: a pane that appears opens the panel on it.
     @ObservationIgnored private var known: [TerminalPanelKey: Set<PaneID>] = [:]
@@ -152,9 +163,10 @@ final class TerminalPanels {
         }
     }
 
-    /// The running command ("make dev"), else the program at the prompt ("zsh"), else the
-    /// folder the pane started in.
+    /// The name Rename tab gave it, else the running command ("make dev"), else the program at
+    /// the prompt ("zsh"), else the folder the pane started in.
     static func title(row: RemoteTerminalActivity?, pane: LeafPane?) -> String {
+        if let title = pane?.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty { return title }
         if let command = row?.command, !command.isEmpty { return String(command.prefix(40)) }
         if let process = row?.process, !process.isEmpty { return process }
         if let cwd = pane?.cwd, !cwd.isEmpty {
