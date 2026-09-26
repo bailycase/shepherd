@@ -11,54 +11,34 @@ public enum NWToolbarMetrics {
     public static let paneTrailingPadding: CGFloat = 6
 }
 
-/// A pane toggle in a toolbar: an icon button that lights up in lantern tint while its pane is
-/// open.
-public struct NWPaneToggle: Equatable, Sendable {
-    public let systemImage: String
-    public let label: String
-    public let shortcut: String?
-    public let isOn: Bool
-    /// A running-blue dot on the button: something behind the closed pane changed (a terminal
-    /// printed while its panel was hidden).
-    public let badge: Bool
-
-    public init(systemImage: String, label: String, shortcut: String? = nil, isOn: Bool, badge: Bool = false) {
-        self.systemImage = systemImage
-        self.label = label
-        self.shortcut = shortcut
-        self.isOn = isOn
-        self.badge = badge
-    }
-}
-
-/// The thread toolbar (Navigation board, `NWThreadToolbar`): 44pt, the title, then counters in
-/// mono and the pane toggles and options menu at the trailing end. Nothing sits beside the title:
-/// the thread and the sidebar already say what an agent is doing. A sidebar button leads
-/// while the sidebar is not docked; `leadingInset` clears the window controls.
-public struct NWThreadToolbar<Options: View>: View {
+/// The thread toolbar (`NWThreadToolbar`; Main, Review, QuestionAsk boards): 44pt, the space and
+/// the title as a breadcrumb ("Shepherd / Investigate…"), an accessory beside them (the branch
+/// chip), and the trailing controls (the side-pane button and the options menu). No status sits
+/// beside the title: the thread and the sidebar already say what an agent is doing. A sidebar
+/// button leads while the sidebar is not docked; `leadingInset` clears the window controls. The
+/// space gives way first when the toolbar narrows, then the chip's branch and the title truncate.
+public struct NWThreadToolbar<Accessory: View, Trailing: View>: View {
     let title: String
+    let project: String?
     let titleHelp: String?
-    let counters: String?
-    let countersHelp: String?
     let leadingInset: CGFloat
     let sidebar: (() -> Void)?
     let sidebarLabel: String
-    let toggles: [(toggle: NWPaneToggle, action: () -> Void)]
-    @ViewBuilder let options: () -> Options
+    @ViewBuilder let accessory: () -> Accessory
+    @ViewBuilder let trailing: () -> Trailing
 
-    public init(_ title: String, titleHelp: String? = nil, counters: String? = nil, countersHelp: String? = nil,
+    public init(_ title: String, project: String? = nil, titleHelp: String? = nil,
                 leadingInset: CGFloat = 0, sidebar: (() -> Void)? = nil, sidebarLabel: String = "Show sidebar",
-                toggles: [(NWPaneToggle, () -> Void)] = [],
-                @ViewBuilder options: @escaping () -> Options) {
+                @ViewBuilder accessory: @escaping () -> Accessory,
+                @ViewBuilder trailing: @escaping () -> Trailing) {
         self.title = title
+        self.project = project
         self.titleHelp = titleHelp
-        self.counters = counters
-        self.countersHelp = countersHelp
         self.leadingInset = leadingInset
         self.sidebar = sidebar
         self.sidebarLabel = sidebarLabel
-        self.toggles = toggles.map { (toggle: $0.0, action: $0.1) }
-        self.options = options
+        self.accessory = accessory
+        self.trailing = trailing
     }
 
     public var body: some View {
@@ -70,6 +50,37 @@ public struct NWThreadToolbar<Options: View>: View {
                     .nwHelp(sidebarLabel)
                     .accessibilityLabel(sidebarLabel)
             }
+            // The space gives way first: it shows only while everything fits at full length.
+            ViewThatFits(in: .horizontal) {
+                breadcrumb(showsProject: project != nil)
+                breadcrumb(showsProject: false)
+            }
+            Spacer(minLength: NW.Space.l)
+            HStack(spacing: NW.Space.xs) {
+                trailing()
+            }
+            .fixedSize()
+            .layoutPriority(1)
+        }
+        .padding(.leading, NWToolbarMetrics.leadingPadding + leadingInset)
+        .padding(.trailing, NWToolbarMetrics.trailingPadding)
+        .frame(height: NWToolbarMetrics.height)
+        .frame(maxWidth: .infinity)
+        .background(Color.nw.bgWindow)
+        .overlay(alignment: .bottom) { NWHairline() }
+    }
+
+    private func breadcrumb(showsProject: Bool) -> some View {
+        HStack(spacing: NW.Space.m) {
+            if showsProject, let project {
+                Text(project)
+                    .foregroundStyle(.nw.textSecondary)
+                    .lineLimit(1)
+                    .accessibilityHidden(true)
+                Text("/")
+                    .foregroundStyle(.nw.textTertiary)
+                    .accessibilityHidden(true)
+            }
             Text(title)
                 .font(.nwSans(13, .semibold))
                 .foregroundStyle(.nw.textPrimary)
@@ -80,49 +91,14 @@ public struct NWThreadToolbar<Options: View>: View {
                 // A rename or a settled name cross-fades.
                 .nwContentTransition(.crossFade)
                 .nwAnimation(.content, value: title)
-            Spacer(minLength: NW.Space.l)
-            HStack(spacing: NW.Space.xxs) {
-                if let counters {
-                    Text(counters)
-                        .font(.nw(.micro, weight: .regular))
-                        .foregroundStyle(.nw.textTertiary)
-                        .lineLimit(1)
-                        .fixedSize()
-                        .help(countersHelp ?? counters)
-                        .padding(.trailing, NW.Space.m)
-                        // Turns, context, and subagents roll as the thread reports them.
-                        .nwContentTransition(.numeric())
-                        .nwTransition(.content)
-                }
-                // Keyed by icon: a toggle that comes and goes never shifts the others' identity.
-                ForEach(toggles, id: \.toggle.systemImage) { item in
-                    Button(action: item.action) { Image(systemName: item.toggle.systemImage) }
-                        .buttonStyle(.nwIcon(isOn: item.toggle.isOn))
-                        .overlay(alignment: .topTrailing) { NWToggleBadge(visible: item.toggle.badge) }
-                        .nwAnimation(.hover, value: item.toggle.isOn)
-                        .nwHelp(item.toggle.label, shortcut: item.toggle.shortcut)
-                        .accessibilityLabel(item.toggle.label)
-                        .accessibilityValue(item.toggle.badge ? "New output" : "")
-                        .accessibilityAddTraits(item.toggle.isOn ? .isSelected : [])
-                        .nwTransition(.list, edge: .trailing)
-                }
-                options()
-            }
-            .nwAnimation(.content, value: counters)
-            .nwAnimation(.list, value: toggles.map(\.toggle.systemImage))
-            .layoutPriority(1)
+            accessory()
         }
-        .padding(.leading, NWToolbarMetrics.leadingPadding + leadingInset)
-        .padding(.trailing, NWToolbarMetrics.trailingPadding)
-        .frame(height: NWToolbarMetrics.height)
-        .frame(maxWidth: .infinity)
-        .background(Color.nw.bgWindow)
-        .overlay(alignment: .bottom) { NWHairline() }
+        .font(.nwSans(13))
     }
 }
 
-/// The dot on a pane toggle (`NWPaneToggle.badge`), ringed in the toolbar's surface so it reads
-/// over the button's edge (TerminalToggle · hidden board).
+/// The dot on a toolbar button (the side-pane button when pi opened something for the closed
+/// pane), ringed in the toolbar's surface so it reads over the button's edge.
 public struct NWToggleBadge: View {
     let visible: Bool
 
@@ -142,11 +118,11 @@ public struct NWToggleBadge: View {
     }
 }
 
-extension NWThreadToolbar where Options == EmptyView {
+extension NWThreadToolbar where Accessory == EmptyView, Trailing == EmptyView {
     /// A toolbar with only a title (no thread on screen).
     public init(_ title: String, leadingInset: CGFloat = 0, sidebar: (() -> Void)? = nil, sidebarLabel: String = "Show sidebar") {
         self.init(title, leadingInset: leadingInset, sidebar: sidebar, sidebarLabel: sidebarLabel,
-                  options: { EmptyView() })
+                  accessory: { EmptyView() }, trailing: { EmptyView() })
     }
 }
 

@@ -158,7 +158,7 @@ struct RightPaneMotionTests {
         let width: CGFloat = 1200
         let window = window(model, width: width)
         defer { window.close() }
-        let recording = await MotionProbe.record(window, region: strip(width)) { model.showing = .review(UUID()) }
+        let recording = await MotionProbe.record(window, region: strip(width)) { model.showing = .tab(.changes, UUID()) }
 
         let resting = restingEdge(width)
         let inside = resting + 40
@@ -196,7 +196,7 @@ struct RightPaneMotionTests {
         let row = CGRect(x: 0, y: 20, width: size.width, height: 1)
         _ = await MotionProbe.record(window, region: row, timeout: 1) {}
 
-        let opening = await MotionProbe.record(window, region: row) { vm.toggleReviewPane() }
+        let opening = await MotionProbe.record(window, region: row) { vm.toggleRightPane() }
         let resting = restingEdge(size.width)
         let edges = opening.inBetween.compactMap { $0.firstColumn(differingFrom: opening.before) }
         #expect(vm.isReviewPaneShowing)

@@ -53,19 +53,3 @@ private enum TerminalSamples {
     }
 }
 
-#Preview("Terminal toggle") {
-    NWPreviewBoth {
-        VStack(spacing: NW.Space.l) {
-            NWThreadToolbar("Add refund events", counters: "17 turns · 42k ctx",
-                            toggles: [(NWPaneToggle(systemImage: "terminal", label: "Show terminal", isOn: false, badge: true), {}),
-                                      (NWPaneToggle(systemImage: "plus.forwardslash.minus", label: "Review changes", isOn: false), {})]) {
-                NWOptionsMenu("Thread options") { Button("Refresh Thread") {} }
-            }
-            NWThreadToolbar("Add refund events",
-                            toggles: [(NWPaneToggle(systemImage: "terminal", label: "Hide terminal", isOn: true), {})]) {
-                EmptyView()
-            }
-        }
-        .frame(width: 640)
-    }
-}

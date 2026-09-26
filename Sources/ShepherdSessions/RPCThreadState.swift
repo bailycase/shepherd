@@ -89,6 +89,8 @@ final class RPCThreadState {
     private(set) var revision: UInt64 = 0
     /// Called on the session queue each time `revision` moves.
     var onRevision: (() -> Void)?
+    /// Called on the session queue when pi finishes a tool call, with the tool's name.
+    var onToolFinished: ((String) -> Void)?
     private var signature = 0
     /// From `agent_start` until `agent_settled`: pi's own `isStreaming`. A run's `agent_end` is not
     /// its end: pi may retry, compact, or continue before it settles, and until then a prompt
@@ -326,6 +328,7 @@ final class RPCThreadState {
             let stopped = isError && stopRequested
             if stopped { stoppedCalls.insert(id) }
             upsertTool(id: id, name: name, args: nil, content: result?.content ?? [], isError: isError, status: stopped ? "aborted" : "complete")
+            onToolFinished?(name)
         case .queueUpdate(let steering, let followUp):
             piQueueChanged(steering: steering, followUp: followUp)
         case .extensionUIRequest(let request):

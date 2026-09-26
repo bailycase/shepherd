@@ -59,27 +59,3 @@ struct TerminalMenuItems: View {
     }
 }
 
-/// Hook (docs/ios/CONTRACTS.md): the iPad thread header's terminal toggle (iPadTerminal board),
-/// filled while the panel is open.
-struct TerminalToolbarButton: View {
-    let thread: AgentRef
-    @Environment(MobileHosts.self) private var hosts
-    @Environment(MobileNavigator.self) private var navigator
-
-    var body: some View {
-        let terminals = MobileTerminals.shared
-        let shown = terminals.panel(thread).shown
-        let news = !shown && TerminalModel.resolve(thread, hosts: hosts, terminals: terminals, onScreen: false).hasNews
-        Button {
-            TerminalHooks.toggle(thread: thread, navigator: navigator)
-        } label: {
-            Image(systemName: "terminal")
-        }
-        .buttonStyle(.nwIcon(isOn: shown))
-        .overlay(alignment: .topTrailing) { NWToggleBadge(visible: news) }
-        .disabled(!shown && hosts.host(thread.host)?.connectedClient == nil)
-        .accessibilityLabel(shown ? "Hide terminal" : "Show terminal")
-        .accessibilityValue(news ? "New output" : "")
-        .accessibilityAddTraits(shown ? .isSelected : [])
-    }
-}

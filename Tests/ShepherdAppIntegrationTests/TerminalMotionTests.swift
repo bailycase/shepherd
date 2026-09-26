@@ -188,7 +188,7 @@ struct ShellTerminalMotionTests {
         }
 
         let before = log.grids.count
-        let opening = await MotionProbe.record(window, region: row) { vm.toggleReviewPane() }
+        let opening = await MotionProbe.record(window, region: row) { vm.toggleRightPane() }
         try await quiet(log)
         #expect(vm.isReviewPaneShowing)
         if TimingTests.enabled { #expect(!opening.inBetween.isEmpty, "the review slides in") }
