@@ -222,7 +222,7 @@ events come out on stdout, one record per LF.
     on the same rows. Only a message without a timestamp, which pi never sends, falls back to
     its position (`m:<index>`).
 - **Requests** (`NativeThreadRequest`): `snapshot`, `send` (follow-up or steer delivery, optional
-  images; see The queue), `abort` (see The queue), `answer`, `setModel`, `setThinking`,
+  images and design context; see The queue and Design context), `abort` (see The queue), `answer`, `setModel`, `setThinking`,
   `subagentCommand` (message, cancel, resume, pause, continue; routed to the children
   extension's control connection, never the parent model), `compact` (pi's `compact`, with what
   to keep; see Context and compaction), `subagentTranscript` (one page of a
@@ -237,7 +237,19 @@ events come out on stdout, one record per LF.
     (10 s, 30 s for a prompt: pi answers a prompt only after its preflight) is
     `outcome_unknown`, never reported as a refusal: pi may still run it.
   - `supportedActions` lists what clients may offer: `send`, `abort`, `answer`, `setModel`,
-    `setThinking`, `sendImages`, `subagents`, `queue`, `compact`.
+    `setThinking`, `sendImages`, `subagents`, `queue`, `compact`, `designContext`.
+- **Design context:** a design agent's chat sends what its design screen showed with each
+  message (`send`'s `designContext`, a `DesignViewRecord`; docs/designs.md › The view record).
+  - The host checks it against the grammar. A record that breaks it, or doesn't decode as one
+    (`NativeDesignContext.record` is nil), is dropped whole, and the message still goes.
+  - A good one reaches pi ahead of the message, fenced as data between `design-data` markers
+    carrying a nonce new to that message (`DesignViewRecord.fenced`). A command (`/…`) goes
+    without it, since pi reads a command only at the start of a message.
+  - A queued message keeps its record until it goes; a batch joined from the queue takes the
+    latest. The queue, the thread, queue origins and a turn's name show the message alone: the
+    projection takes the fence off pi's user message (`DesignViewRecord.strippingFence`).
+  - Remotely it goes only to a host that advertises `design.context.v1`; a client leaves it off
+    for an older host (`RemoteHostClient.outgoing`).
 - **Subagents:** the rows the subagent display extension publishes (`setAgentChildren`) ride the
   snapshot as `subagents`.
 

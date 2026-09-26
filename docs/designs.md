@@ -242,7 +242,11 @@ code is copied, fetched or imitated.
 - **Element ids.** Every element is numbered depth-first from 0, `DesignTemplate`'s numbering,
   and each one drawn carries `data-dc-tid`, the hoisted helmet included. What an import draws
   carries `data-dc-owner`, the tid of the `<dc-import>` that holds it, since selection stops at
-  the import.
+  the import. The runtime also keeps each element's path (view-state.md's child-index chain)
+  and answers a `shepherd-dc-describe` event (the bridge's, with a tid) with what the template
+  says of it: its path, its tag, its kind (`text` for text or a field, `image`, `line`, `shape`
+  for a container or an SVG shape, else `other`), its label (the template's own text in it,
+  holes as written, or an image's `alt`) and its `data-el` name (an import's board name).
 - **Not yet:**
   - `<x-import>` (design-system components) comes with design systems.
   - Top-level props (Tweak values) are empty until Tweak.
@@ -258,6 +262,20 @@ measures the board itself, and posts checked values: `booted` (what it drew, and
 `size` changes after that, and errors with their phase. `replaceSource` calls the runtime in the
 board's own world, where a board can only affect itself.
 
+- **Selection.** The bridge answers the canvas (in its own world only, `__shepherdBridge`):
+  - `hitTest(x, y)` takes the element under a point of the board (its own CSS pixels) and walks
+    up to the nearest one the view record's grammar can name (an element nested past it gives
+    way to its ancestor; one inside an import, to the `<dc-import>`, measured as that instance's
+    outermost drawing).
+  - `element(tid)` finds an element again where it is drawn now (its first rendering), after a
+    live reload.
+  - Each answer is `{tid, path, x, y, width, height, kind, label, name, noun}`: the geometry
+    measured by the bridge, the rest from the runtime's describe answer, and a noun for the
+    canvas's tag read from how it is drawn (`button`, `link`, `field`, `text`, `image`, `line`,
+    `component`; a container with a fill, border or shadow is a `card`, one without a `group`,
+    an empty one a `shape`).
+  - `DesignBoardView.hitTest(at:)` and `element(tid:)` return it checked as a `DesignHit`: a tid
+    or path outside the grammar, or a rect that isn't finite and on the board, is none.
 - **Live reload.** `replaceSource` keeps the document. The same logic keeps its state, and new
   logic takes over the old state. Logic that doesn't compile is refused, and the board keeps
   what it showed.
@@ -303,15 +321,56 @@ was on keep their files and agents either way.
   a visibility flip, and a design's canvas (where it looks, the tool, the selected board) lasts
   the app's run. A design's screen has no terminal panel.
 - **The canvas** (`NWDesignCanvas`) pans with two fingers, the Pan tool or space-drag, and zooms
-  with a pinch or ⌘-scroll about the pointer. Select picks a board. Comment is drawn disabled.
-  It opens fitted to the boards, never above 100%.
+  with a pinch or ⌘-scroll about the pointer. Comment is drawn disabled. It opens fitted to the
+  boards, never above 100%.
+- **Board labels** sit 24pt above their boards where the boards around them leave room
+  (`NWLabelRoom`): where the row above is closer (rows 120 apart are about 20pt at the opening
+  17%), a label moves down toward its frame, keeping at least 2pt; where not even that fits, it
+  isn't drawn; and a label running past a narrow board stops before the next board along.
+
+### Selection (Select)
+
+- **A click** names what it lands on (`DesignScreenModel.pick`): on a board, the board's own hit
+  test names the element under it (the board takes a live view to be asked); on a board's label,
+  or where nothing is named, the board is picked whole; on the empty canvas the selection
+  clears. Shift adds a pick, or takes a picked one back out. At most 20 are kept, most recent
+  last.
+- **Rings** are drawn natively over the boards from the reported rects times the zoom
+  (`NWSelectionRing`): every selected element wears the 1.5pt `running` ring over its tint and
+  the corner handles, and the latest its tag ("card · Checkout funnel": the noun, then its
+  `data-el` name or its label). A board picked whole wears its frame's ring.
+- **Hover.** The element under the pointer wears the ring alone. The board under the pointer
+  takes a live view (`DesignLivePlan.wanted`'s `hovered`, after the selected board), and one
+  hit test runs at a time with the pointer's latest place next.
+- **After a rewrite** a live board reports that it drew new source, and its selected elements
+  are found again where it draws them now (by tid, keeping the path); one it no longer draws
+  leaves the selection. The board holding the latest pick stays live.
+
+### The view record
+
+The design screen publishes what it shows (`DesignScreenModel.viewRecord`, a
+`DesignViewRecord` in ShepherdProtocol), and its chat's sends carry it (`NativeThreadStore`'s
+`designContext`, where the host lists `designContext`; docs/native-thread.md › Design context):
+
+- `mode`: `canvas` (`focused` waits for Present).
+- `visibleBoards`: up to 20 boards whose frames are on screen, in canvas order.
+- `selectedBoards`: up to 20 boards picked whole or holding a selected element.
+- `selected`: up to 20 element ids, most recent last; `selection`: the last five with their
+  `kind` and `label` (one line, cut to 60 characters).
+- `dirty`: false; nothing on the screen is unwritten yet.
+- Boards go by view name (`DesignPath.viewName`). A record breaks the grammar with more than
+  its limits, a board that isn't a view name, a selection not among `selected`, an element on a
+  board it doesn't select, a label on two lines or over 64 characters, or anything selected
+  while focused. The host drops such a record whole and fences a good one ahead of the message
+  as data; the skill tells the agent how to read it.
 
 ### Rendering
 
 `DesignHost.swift` is the only app file that imports DesignSurfaceKit.
 
-- **Live views.** A design on screen keeps at most five `DesignBoardView`s: the selected board
-  (down to 10% zoom) and the boards nearest the middle of the view (from 25%), recycled least
+- **Live views.** A design on screen keeps at most five `DesignBoardView`s: the board holding
+  the latest pick (down to 10% zoom), the board under the pointer with Select (at any zoom), and
+  the boards nearest the middle of the view (from 25%), recycled least
   recently wanted first (`DesignLivePlan`). A live view draws at the canvas's zoom with WebKit's
   page zoom, so it lays out at the board's size and stays sharp, and it shows once its first
   snapshot is taken. During a zoom gesture every board draws its snapshot; live views follow once
@@ -334,5 +393,5 @@ was on keep their files and agents either way.
 Not drawn on any board, so left out until they are: the Designs page with no designs, a design
 still loading or failing to draw, the design row's and the chat's ••• menus (so no rename or delete
 in the app yet), Present mode, the Capture a page and From a screenshot starting points, zoom
-presets and keyboard shortcuts. Comments, Tweak, Variations and the board actions bar come with
-the next phase.
+presets and keyboard shortcuts (so no Escape to clear a selection). Comments, Tweak, Variations
+and the board actions bar come with the rest of this phase.
