@@ -8172,7 +8172,9 @@ chat's field, and Split View with "Send to the thread". The boards render on the
 - **Markup's moments:** the palette shows while there is ink on the canvas, new or sent (the
   first Pencil stroke brings it; the board draws it beside the agent's answer), and Done with
   nothing new puts it away until the next stroke; Done reads at 40% while the markup is read and
-  sent; sent ink stays on the canvas, under new ink, until its proposals are applied or kept. The palette's Comment is the canvas's Comment tool (a Pencil or finger tap on an
+  sent; sent ink stays on the canvas, under new ink, until its proposals are applied or kept.
+  In a canvas too narrow for the centered palette to clear the toolbar (portrait), it rises 12pt
+  above the toolbar. The palette's Comment is the canvas's Comment tool (a Pencil or finger tap on an
   element opens the editor). Ink is 3pt (the pen) or 12pt (the marker) on screen, and zooms with
   the boards.
 - **The proposals** are comments from the moment the agent makes them, as the board counts them
