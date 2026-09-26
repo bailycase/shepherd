@@ -110,6 +110,29 @@ private struct NWStyledButton: View {
     }
 }
 
+/// A button's title with its chord after it (Controls board: "Land ⌘↩", "New agent ⌘N"), for
+/// the view's main action only: the chord in Geist Mono 10.5 regular at 60%, 6pt after the title.
+/// Bind the same chord with `.keyboardShortcut`; VoiceOver hears the title alone.
+public struct NWButtonTitle: View {
+    let title: String
+    let chord: String
+
+    public init(_ title: String, chord: String) {
+        self.title = title
+        self.chord = chord
+    }
+
+    public var body: some View {
+        HStack(spacing: NW.Space.s) {
+            Text(title)
+            Text(chord)
+                .font(.nwMono(10.5))
+                .opacity(0.6)
+                .accessibilityHidden(true)
+        }
+    }
+}
+
 /// Icon and title 6pt apart, the icon one step smaller than the title.
 private struct NWButtonLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {

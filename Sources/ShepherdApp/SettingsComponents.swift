@@ -129,6 +129,8 @@ struct SettingsTextField: View {
     var mono = false
     var secure = false
     var width: CGFloat = AppLayout.settingsFieldWidth
+    /// The field's own value refused: its line turns `failed` and this says why under it.
+    var error: String? = nil
 
     var body: some View {
         Group {
@@ -138,8 +140,9 @@ struct SettingsTextField: View {
                 TextField(label, text: $text, prompt: Text(prompt).foregroundStyle(Color.nw.textTertiary))
             }
         }
-        .textFieldStyle(.nw(mono: mono))
+        .textFieldStyle(.nw(mono: mono, error: error != nil))
         .frame(width: width)
+        .nwFieldMessage(error, alignment: .trailing)
     }
 }
 
