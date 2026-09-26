@@ -182,7 +182,7 @@ private struct NWReviewBarButton: View {
             .foregroundStyle(primary ? nw.textOnLantern : nw.textPrimary)
             .padding(.horizontal, NW.Space.l)
             .frame(maxWidth: .infinity, minHeight: NWReviewBarButtonStyle.height)
-            .background(primary ? nw.lantern.mix(with: .black, by: configuration.isPressed ? 0.1 : 0) : configuration.isPressed ? nw.bgSelected : nw.bgRaised,
+            .background(primary ? (configuration.isPressed && enabled ? nw.lanternPressed : nw.lantern) : configuration.isPressed ? nw.bgSelected : nw.bgRaised,
                         in: shape)
             .nwBorder(primary ? .clear : nw.lineStrong, radius: NW.Radius.l)
             .opacity(enabled ? 1 : NWControlMetrics.disabledOpacity)

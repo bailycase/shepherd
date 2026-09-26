@@ -104,7 +104,7 @@ struct ThreadComposer: View {
                 }
             }
         }
-        .padding(.horizontal, MobileLayout.gutter)
+        .padding(.horizontal, wide ? MobileLayout.padThreadGutter : MobileLayout.gutter)
         .padding(.top, NW.Space.m)
         .padding(.bottom, MobileLayout.composerBottom)
         .background(Color.nw.bgWindow)
@@ -184,8 +184,9 @@ struct ThreadComposer: View {
         NWComposer(isFocused: focused) {
             if !state.attachments.isEmpty { attachmentChips(state) }
         } field: {
+            // A command draft shows in mono while its list is open (iPadPortrait).
             field(store: store, placeholder: store.running ? "Queue a follow-up…"
-                  : store.commands.isEmpty ? "Follow up…" : "Follow up, or / for commands…")
+                  : store.commands.isEmpty ? "Follow up…" : "Follow up, or / for commands…", command: state.matches != nil)
         } controls: {
             if typeSize.isAccessibilitySize {
                 // At the accessibility sizes the row outgrows the card: it scrolls rather than
@@ -213,10 +214,10 @@ struct ThreadComposer: View {
 
     // MARK: Parts
 
-    private func field(store: NativeThreadStore, placeholder: String) -> some View {
+    private func field(store: NativeThreadStore, placeholder: String, command: Bool = false) -> some View {
         @Bindable var bindable = store
         return TextField(placeholder, text: $bindable.draft, axis: .vertical)
-            .font(.nw(.body))
+            .font(command ? .nw(.code) : .nw(.body))
             .foregroundStyle(Color.nw.textPrimary)
             .lineLimit(1...NWComposerMetrics.fieldMaxLines)
             .focused($focused)
@@ -308,7 +309,8 @@ struct ThreadComposer: View {
     }
 
     private static func command(_ command: NativeCommand) -> NWTouchCommand {
-        NWTouchCommand(name: command.name, description: command.description, tag: NativeSlashMatches.tag(command))
+        NWTouchCommand(name: command.name, description: command.description, arguments: command.arguments,
+                       tag: NativeSlashMatches.tag(command))
     }
 }
 

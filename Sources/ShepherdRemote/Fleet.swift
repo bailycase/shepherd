@@ -96,6 +96,13 @@ public struct FleetDigest: Equatable, Sendable {
     /// A subagent is still running: background children outlive their parent's turn, so one may
     /// ask later while the thread itself is settled.
     public var liveSubagents: Bool
+    /// Subagents still going (running, or paused on a question), and how many of them wait on the user (the overview's "3
+    /// subagents · 1 needs you").
+    public var subagentsLive: Int
+    public var subagentsAsking: Int
+    /// Its last turn ended in an error and nothing has run since (a remote client hears no turn
+    /// failure from the host, so the thread says it, as `NativeThreadStore.lastTurnFailed` does).
+    public var lastTurnFailed: Bool
     /// The call running now ("swift build", "edit ThreadView.swift"); nil when none is.
     public var activity: String?
     /// When that call started (ms since epoch).
@@ -122,7 +129,12 @@ public struct FleetDigest: Equatable, Sendable {
                              options: run.question?.options ?? [], answerable: commands)
         }
         liveSubagents = (snapshot.subagents ?? []).contains { !$0.isTerminal }
+        // One that asks counts as live though it is paused waiting on the answer.
+        subagentsLive = (snapshot.subagents ?? []).filter { !$0.isTerminal || $0.needsAttention }.count
+        subagentsAsking = (snapshot.subagents ?? []).filter(\.needsAttention).count
         let entries = snapshot.messages + snapshot.provisional
+        let last = snapshot.messages.last
+        lastTurnFailed = !snapshot.running && last?.role == "assistant" && last?.status == "error"
         if snapshot.running, let call = entries.last(where: { $0.toolName != nil && $0.status == "running" }) {
             activity = Self.activity(NativeActivityCall(call))
             activitySince = call.startedAt ?? call.timestamp
@@ -183,8 +195,88 @@ public struct FleetThreadRow: Identifiable, Equatable, Sendable {
     public var worktree: Bool
     /// Its host is not connected: the row is its last known state.
     public var offline: Bool
+    /// Its last turn failed (iPadThreadError: a `failed` dot and "failed" in the sidebar).
+    public var failed = false
+    /// Its subagents still running, and those waiting on the user.
+    public var subagents = 0
+    public var subagentsAsking = 0
 
     public var id: FleetRef { ref }
+
+    /// What a running thread does now, under its title in the overview (iPadOverview): the call
+    /// running now, else its live subagents ("3 subagents · 1 needs you"), with the host when
+    /// rows from several hosts mix ("swift build · This Mac"); "running" when nothing says more.
+    public var now: String {
+        var parts: [String] = []
+        if let activity {
+            parts.append(activity)
+        } else if subagents > 0 {
+            parts.append(nativeCount(subagents, "subagent"))
+            if subagentsAsking > 0 { parts.append("\(subagentsAsking) need\(subagentsAsking == 1 ? "s" : "") you") }
+        }
+        if let hostTag { parts.append(hostTag) }
+        return parts.isEmpty ? FleetModel.statusWord(status) : parts.joined(separator: " · ")
+    }
+
+    /// When it last moved (ms since epoch), for a finished thread's time and day.
+    public var lastMoved: Double? {
+        if case .ago(let at) = clock { return at }
+        return nil
+    }
+}
+
+/// The overview's finished threads under a day's band ("Today", "Yesterday", a weekday, a
+/// date), newest first (iPadOverview).
+public struct FleetFinishedDay: Identifiable, Equatable, Sendable {
+    public var title: String
+    public var rows: [FleetThreadRow]
+    public var id: String { title }
+
+    /// Groups rows (newest first, as `FleetModel.finished` has them) by the day each last moved;
+    /// rows with no time go last, under "Earlier".
+    public static func days(_ rows: [FleetThreadRow], now: Date, calendar: Calendar = .current) -> [FleetFinishedDay] {
+        var days: [FleetFinishedDay] = []
+        for row in rows {
+            let title = row.lastMoved.map { dayTitle(Date(timeIntervalSince1970: $0 / 1000), now: now, calendar: calendar) } ?? "Earlier"
+            if let index = days.firstIndex(where: { $0.title == title }) {
+                days[index].rows.append(row)
+            } else {
+                days.append(FleetFinishedDay(title: title, rows: [row]))
+            }
+        }
+        if let earlier = days.firstIndex(where: { $0.title == "Earlier" }), earlier != days.count - 1 {
+            days.append(days.remove(at: earlier))
+        }
+        return days
+    }
+
+    /// "Today", "Yesterday", a weekday within the week ("Monday"), else "Sep 12".
+    public static func dayTitle(_ date: Date, now: Date, calendar: Calendar = .current) -> String {
+        if calendar.isDate(date, inSameDayAs: now) { return "Today" }
+        let start = calendar.startOfDay(for: now)
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date), to: start).day ?? 0
+        if days == 1 { return "Yesterday" }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = days > 1 && days < 7 ? "EEEE" : "MMM d"
+        return formatter.string(from: date)
+    }
+
+    /// A finished row's stamp: the time of day ("11:02") today, else the weekday ("Mon") within
+    /// the week, else the date ("Sep 12").
+    public static func stamp(_ milliseconds: Double, now: Date, calendar: Calendar = .current) -> String {
+        let date = Date(timeIntervalSince1970: milliseconds / 1000)
+        if calendar.isDate(date, inSameDayAs: now) {
+            return nativeClockText(milliseconds, meridiem: false, timeZone: calendar.timeZone)
+        }
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date), to: calendar.startOfDay(for: now)).day ?? 0
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = days < 7 ? "EEE" : "MMM d"
+        return formatter.string(from: date)
+    }
 }
 
 /// Something waiting on the user: an agent's question, a subagent asking, or an agent
@@ -384,13 +476,9 @@ public struct FleetModel: Equatable, Sendable {
         automationsQuiet = automations.filter { !live($0) }
         self.recents = recents.sorted { $0.key != $1.key ? $0.key > $1.key : $0.order < $1.order }.map(\.row)
         needsYou.sort { ($0.since ?? -1) > ($1.since ?? -1) }
-        finished.sort { (Self.lastMoved($0) ?? -1) > (Self.lastMoved($1) ?? -1) }
+        finished.sort { ($0.lastMoved ?? -1) > ($1.lastMoved ?? -1) }
     }
 
-    private static func lastMoved(_ row: FleetThreadRow) -> Double? {
-        if case .ago(let at) = row.clock { return at }
-        return nil
-    }
 
     static func attention(_ agent: Agent, ref: FleetRef, digest: FleetDigest?, automation: Automation?,
                           hostName: String, hostTag: String?) -> [FleetAttention] {
@@ -453,7 +541,9 @@ public struct FleetModel: Equatable, Sendable {
         let detail = [word, activity ?? space?.name].compactMap { $0 }.joined(separator: " · ")
         return FleetThreadRow(ref: ref, title: agent.name, status: agent.status, detail: detail, activity: activity,
                               clock: clock, hostName: hostName, hostTag: hostTag, worktree: agent.worktreeBranch != nil,
-                              offline: offline)
+                              offline: offline, failed: agent.status != .working && digest?.lastTurnFailed == true,
+                              subagents: live ? digest?.subagentsLive ?? 0 : 0,
+                              subagentsAsking: live ? digest?.subagentsAsking ?? 0 : 0)
     }
 
     /// The row's status word, as the Mac's sidebar says it.

@@ -163,15 +163,16 @@ keep the version for real breaks.
   and blocked threads, answered in place when short), and Recents with host tags. `HomeFeed`
   derives it once per change from each host's state and, while Home is on screen, the threads'
   snapshots.
-- **iPad:** a split view. Landscape shows the sidebar (New thread, Needs you, Recents, and a
-  footer with the hosts and Settings) beside the selected thread; in portrait the thread takes
+- **iPad:** a split view. Landscape shows the sidebar (New thread, Automations, More expanding to
+  Hosts and Extensions, Needs you, Recents, and a footer with the hosts and Settings) beside the
+  selected thread; in portrait the thread takes
   the width and the sidebar slides over it. Portrait is the window's shape, never what the
   keyboard leaves of it (CONTRACTS.md › Navigation). With no thread selected the detail is the
   overview: Needs you, Running now and Finished.
 - **Thread (`ThreadScreen`):** the title with its status line ("Idle · ⧉ agent/swiftui-previews", or
   "Needs you · ⌂ your checkout" when the agent works in the space's own checkout; on iPad the branch chip
   with its changed files, and the host when there are several, then a status pill with the running
-  turn's clock), Stop while the agent
+  turn's clock; on iPad the side-pane button, which shows or hides the Changes pane), Stop while the agent
   runs, user bubbles with their times, thinking, prose, activity lines (one per burst of work) with
   their calls, the running call's live line and output ("Thinking…" between tools), notes, errors with Retry, the "Edited N files"
   card (the first three files, then "N more"; Review opens the review scoped to that turn, Undo

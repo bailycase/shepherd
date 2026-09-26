@@ -15,7 +15,22 @@ enum NWMessageDetails {
     }
 }
 
-/// The user's turn: right-aligned, at most 600pt, `bgBubble` with a 1px strong line, radius 8.
+/// A user bubble's measure and inset: the Mac's (and the phone's) at most 600pt with 10×14
+/// inside, or the iPad boards' 520pt with 12×16 (iPadThread).
+public struct NWUserBubbleMetrics: Equatable, Sendable {
+    public var maxWidth: CGFloat
+    public var vertical: CGFloat
+    public var horizontal: CGFloat
+
+    public static let standard = NWUserBubbleMetrics(maxWidth: NWThreadMetrics.bubbleMaxWidth, vertical: 10, horizontal: 14)
+    public static let pad = NWUserBubbleMetrics(maxWidth: 520, vertical: NW.Space.l, horizontal: NW.Space.xl)
+}
+
+extension EnvironmentValues {
+    @Entry public var nwUserBubbleMetrics = NWUserBubbleMetrics.standard
+}
+
+/// The user's turn: right-aligned, at most 600pt (`nwUserBubbleMetrics`), `bgBubble` with a 1px strong line, radius 8.
 /// No avatar and no name; the time sits beneath, shown only while the message is hovered. A
 /// message steered into a running turn wears "Steered" above it and a `running` line. Its text
 /// follows `nwProseSize`.
@@ -39,6 +54,7 @@ public struct NWUserBubble: View {
     let revealed: Bool
     let origin: Origin
     @Environment(\.nwProseSize) private var proseSize
+    @Environment(\.nwUserBubbleMetrics) private var metrics
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 
     /// `attachments` name the images sent with the message. `timestamp` shows only while
@@ -82,11 +98,11 @@ public struct NWUserBubble: View {
                     }
                 }
             }
-            .padding(.vertical, 10)
-            .padding(.horizontal, 14)
+            .padding(.vertical, metrics.vertical)
+            .padding(.horizontal, metrics.horizontal)
             .background(nw.bgBubble, in: RoundedRectangle(cornerRadius: NW.Radius.m))
             .nwBorder(steered ? nw.running : nw.lineStrong, radius: NW.Radius.m)
-            .frame(maxWidth: NWThreadMetrics.bubbleMaxWidth, alignment: .trailing)
+            .frame(maxWidth: metrics.maxWidth, alignment: .trailing)
             if timestamp != nil || note != nil {
                 caption
             }
@@ -234,7 +250,7 @@ struct NWFenceKind: Equatable {
     }
 }
 
-/// A copy button's glyph (code blocks, the turn footer): two squares that turn into a check
+/// A copy button's glyph (code blocks, the turn footer): `doc.on.doc`, turning into a check
 /// for a moment after each copy, replacing the symbol and popping.
 struct NWCopyGlyph: View {
     let copied: Bool
@@ -242,7 +258,7 @@ struct NWCopyGlyph: View {
     let copies: Int
 
     var body: some View {
-        Image(systemName: copied ? "checkmark" : "square.on.square").font(.system(size: 12))
+        Image(systemName: copied ? "checkmark" : "doc.on.doc").font(.system(size: 12))
             .nwContentTransition(.symbol)
             .nwAnimation(.content, value: copied)
             .nwPop(trigger: copies)

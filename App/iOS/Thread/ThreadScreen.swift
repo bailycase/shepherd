@@ -21,6 +21,8 @@ struct ThreadScreen: View {
     @Environment(MobileNavigator.self) private var navigator
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.threadSidePaneOpen) private var sidePaneOpen
+    @Environment(\.dismiss) private var dismiss
     @State private var visible = false
     /// The thread's height: the composer may take a share of it (`composerMaxHeight`).
     @State private var height: CGFloat = 0
@@ -48,7 +50,10 @@ struct ThreadScreen: View {
                     ThreadComposer(ref: ref)
                         .composerTextDrop(ref)
                         .environment(\.composerMaxHeight, height > 0 ? height * MobileLayout.composerShare : .infinity)
-                        .frame(maxWidth: sizeClass == .regular ? MobileLayout.threadMaxWidth + 2 * MobileLayout.gutter : .infinity)
+                        // iPad: as wide as the thread's column, and a question's card wider (iPadQuestion).
+                        .frame(maxWidth: sizeClass == .regular
+                               ? (store.dialogs.isEmpty ? MobileLayout.threadMaxWidth : MobileLayout.questionMaxWidth) + 2 * MobileLayout.padThreadGutter
+                               : .infinity)
                         .frame(maxWidth: .infinity)
                         .background(Color.nw.bgWindow)
                 }
@@ -69,6 +74,13 @@ struct ThreadScreen: View {
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     if agent != nil {
+                        // iPad: the one side-pane button (the Changes pane, or the subagent
+                        // inspector while it shows), lit while the pane is open.
+                        if sizeClass == .regular {
+                            ThreadSidePaneButton(isOn: sidePaneOpen, enabled: sidePaneOpen || key.session != nil) {
+                                if sidePaneOpen { dismiss() } else { ReviewHooks.open(thread: ref, file: nil, navigator: navigator) }
+                            }
+                        }
                         ThreadStopButton(store: store, enabled: key.session != nil)
                         ThreadOptionsMenu(ref: ref, store: store, enabled: key.session != nil)
                     }
@@ -153,8 +165,10 @@ private struct ThreadTranscript: View {
                     Color.clear.frame(height: 1).id(Self.bottomID)
                 }
                 .frame(maxWidth: sizeClass == .regular ? MobileLayout.threadMaxWidth : .infinity)
-                .padding(.horizontal, MobileLayout.gutter)
-                .padding(.vertical, MobileLayout.gutter)
+                .padding(.horizontal, sizeClass == .regular ? MobileLayout.padThreadGutter : MobileLayout.gutter)
+                .padding(.vertical, sizeClass == .regular ? MobileLayout.padThreadGutter : MobileLayout.gutter)
+                // iPad bubbles (iPadThread): at most 520pt, 12×16 inside.
+                .environment(\.nwUserBubbleMetrics, sizeClass == .regular ? .pad : .standard)
                 .frame(maxWidth: .infinity)
                 // Which compactions show what the agent kept: its own object, so a toggle
                 // redraws only the compaction lines.
@@ -372,6 +386,37 @@ struct ThreadTitle: View {
             }
             NWStatusPill(status.state, label: meta.elapsed.map { "\(status.label) · \($0)" } ?? status.label)
                 .fixedSize()
+        }
+    }
+}
+
+extension EnvironmentValues {
+    /// A side pane shows beside this thread (iPad: the docked Changes pane, or the subagent
+    /// inspector), so the header's side-pane button is lit and closes it.
+    @Entry var threadSidePaneOpen = false
+}
+
+/// The header's one side-pane button (iPad; DESIGN.md › iOS: iPad › Thread): Show side pane opens
+/// the Changes pane; while a pane shows it is lit (`runningTint`, the glyph in `running`) and
+/// hides it.
+private struct ThreadSidePaneButton: View {
+    let isOn: Bool
+    let enabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        let label = isOn ? "Hide side pane" : "Show side pane"
+        if isOn {
+            Button(action: action) {
+                Image(systemName: "sidebar.right").foregroundStyle(Color.nw.running)
+            }
+            .buttonStyle(.glassProminent)
+            .tint(Color.nw.runningTint)
+            .accessibilityLabel(label)
+            .accessibilityAddTraits(.isSelected)
+        } else {
+            Button(label, systemImage: "sidebar.right", action: action)
+                .disabled(!enabled)
         }
     }
 }

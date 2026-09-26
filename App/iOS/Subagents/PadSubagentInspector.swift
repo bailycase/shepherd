@@ -15,6 +15,7 @@ struct PadSubagentsScreen: View {
     var body: some View {
         let ref = route.thread
         ThreadScreen(ref: ref)
+            .environment(\.threadSidePaneOpen, shown)
             .inspector(isPresented: $shown) {
                 PadSubagentInspector(ref: ref) { shown = false }
                     .inspectorColumnWidth(min: MobileLayout.subagentInspectorMinWidth, ideal: MobileLayout.subagentInspectorIdealWidth,

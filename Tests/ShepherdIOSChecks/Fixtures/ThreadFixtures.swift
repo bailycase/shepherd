@@ -166,7 +166,7 @@ enum ThreadFixtures {
             NativeCommand(name: "review", description: "Open the review pane on working-tree changes", source: "extension"),
             NativeCommand(name: "resume", description: "Pick a previous session to continue"),
             NativeCommand(name: "reload", description: "Reload extensions, skills and prompt templates"),
-            NativeCommand(name: "release-notes", description: "Draft release notes from commits since the last tag", source: "prompt"),
+            NativeCommand(name: "release-notes", description: "Draft release notes from commits since the last tag", source: "prompt", arguments: "[tag]"),
             NativeCommand(name: "compact", description: "Summarize the conversation to free context"),
             NativeCommand(name: "model", description: "Switch the model"),
         ]

@@ -99,11 +99,13 @@ private struct NWStyledButton: View {
 
     private func background(_ nw: NWPalette) -> AnyShapeStyle {
         switch kind {
-        case .primary, .dangerFill:
-            let fill = kind == .primary ? nw.lantern : nw.failed
-            // Hover lifts the fill, pressed sinks it (the board's #f7b84f / #d9922a steps).
-            return AnyShapeStyle(fill.mix(with: configuration.isPressed ? .black : .white,
-                                          by: enabled ? (configuration.isPressed ? 0.1 : hovering ? 0.12 : 0) : 0))
+        case .primary:
+            // Hover lifts the fill, pressed sinks it (the board's #f7b84f and #d9922a).
+            let fill = !enabled ? nw.lantern : configuration.isPressed ? nw.lanternPressed : hovering ? nw.lanternHover : nw.lantern
+            return AnyShapeStyle(fill)
+        case .dangerFill:
+            // A confirmed destructive action stays put on hover and sinks while pressed.
+            return AnyShapeStyle(enabled && configuration.isPressed ? nw.failedPressed : nw.failed)
         case .secondary:
             // The Settings boards' buttons rest on the page's own fill.
             return AnyShapeStyle(active ? nw.bgSelected : scale == .settings ? nw.bgWindow : nw.bgRaised)
@@ -112,6 +114,29 @@ private struct NWStyledButton: View {
         case .danger:
             return AnyShapeStyle(enabled && configuration.isPressed ? nw.bgSelected : hovering && enabled ? nw.failedTint
                 : scale == .settings ? nw.bgWindow : nw.bgRaised)
+        }
+    }
+}
+
+/// A button's title with its chord after it (Controls board: "Land ⌘↩", "New agent ⌘N"), for
+/// the view's main action only: the chord in Geist Mono 10.5 regular at 60%, 6pt after the title.
+/// Bind the same chord with `.keyboardShortcut`; VoiceOver hears the title alone.
+public struct NWButtonTitle: View {
+    let title: String
+    let chord: String
+
+    public init(_ title: String, chord: String) {
+        self.title = title
+        self.chord = chord
+    }
+
+    public var body: some View {
+        HStack(spacing: NW.Space.s) {
+            Text(title)
+            Text(chord)
+                .font(.nwMono(10.5))
+                .opacity(0.6)
+                .accessibilityHidden(true)
         }
     }
 }
