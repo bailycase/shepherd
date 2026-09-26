@@ -127,8 +127,9 @@ struct FleetTests {
     }
 
     /// The sidebar's chip says why in the agent's own words when it gave them ("retention?"),
-    /// and "asked you" when it gave none or only blanks.
-    @Test(arguments: [("retention?" as String?, "retention?"), ("  approve\n plan ", "approve plan"), (nil, "asked you"), (" ", "asked you")])
+    /// cut as the Mac's when they run long, and "asked you" when it gave none or only blanks.
+    @Test(arguments: [("retention?" as String?, "retention?"), ("  approve\n plan ", "approve plan"),
+                      ("which base branch to use", "which base…"), (nil, "asked you"), (" ", "asked you")])
     func aQuestionsReasonIsTheAgentsOwnWhenItGaveOne(short: String?, reason: String) throws {
         var agent = Self.agent("dock", .blocked)
         agent.waitingOn = "Retention: 30 days or 13 months?"
@@ -140,7 +141,8 @@ struct FleetTests {
     }
 
     /// An asking subagent's chip is its own reason when it gave one, else its name.
-    @Test(arguments: [("token names?" as String?, "token names?"), (nil, "reviewer"), ("", "reviewer")])
+    @Test(arguments: [("token names?" as String?, "token names?"), ("rename or replace tokens", "rename or…"),
+                      (nil, "reviewer"), ("", "reviewer")])
     func anAskingSubagentsReasonIsItsOwnWhenItGaveOne(short: String?, reason: String) throws {
         var child = Fixture.run("run-1", needsAttention: true)
         child.label = "reviewer"

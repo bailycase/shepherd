@@ -125,9 +125,9 @@ reads `Agent.waitingOn`, the question the agent's thread asks, and `Agent.waitin
 agent's word or two for it: the `short` argument the status extension adds to asking tools, which
 `RPCThreadState` reads from the call that opened the dialog. The host sets both from its thread
 state. All three are live state: broadcast to remote clients, and `waitingOn` and `waitingReason`
-are never written to state.json. `ShellLayout` (`AppLayout+Navigation.swift`) is the pure function that decides, from
-the window's width, whether the sidebar docks or overlays and whether the side pane docks or
-overlays the agent's layout. The side pane wraps the whole
+are never written to state.json. `ShellLayout` (`AppLayout+Navigation.swift`) is the pure
+function that decides, from the window's width, whether the sidebar docks or overlays and whether
+the side pane docks or overlays the agent's layout. The side pane wraps the whole
 layout (`AgentLayoutView` in `WorkspaceView.swift`), never one of its panes, so a terminal split
 beside the thread never narrows what the dock rule measures.
 

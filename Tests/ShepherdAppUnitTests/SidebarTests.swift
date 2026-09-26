@@ -231,6 +231,11 @@ struct SidebarNeedsYouTests {
         #expect(SidebarDerivation.shortened(text).count <= NWSidebarMetrics.reasonLength)
     }
 
+    /// The iPad's chips cut at the Mac's length.
+    @Test func theIPadCutsReasonsAtTheMacsLength() {
+        #expect(NeedsYouReason.length == NWSidebarMetrics.reasonLength)
+    }
+
     /// An automation run that asks leads with its bolt in lantern; a remote one keeps its reason
     /// rather than its host's tag.
     @Test func automationRunsAndRemoteThreadsNeedYouToo() {

@@ -411,10 +411,10 @@ public struct FleetModel: Equatable, Sendable {
         return items
     }
 
-    /// An agent's own short reason as one line, or nil when it gave none.
+    /// An agent's own short reason as a chip (one line, cut as the Mac's), or nil when it gave none.
     static func shortReason(_ short: String?) -> String? {
         let line = short?.split(whereSeparator: \.isWhitespace).joined(separator: " ") ?? ""
-        return line.isEmpty ? nil : line
+        return line.isEmpty ? nil : NeedsYouReason.shortened(line)
     }
 
     /// A select answers in place when its options fit as a row of buttons.
@@ -479,5 +479,23 @@ public struct FleetModel: Equatable, Sendable {
 
     static func lastComponent(_ path: String) -> String {
         path.split(separator: "/").last.map(String.init) ?? path
+    }
+}
+
+/// The text of a Needs you row's reason chip, shared by the Mac's sidebar and the iPad's.
+public enum NeedsYouReason {
+    /// The longest chip ("approve plan"); the Mac reads it as `NWSidebarMetrics.reasonLength`.
+    public static let length = 14
+
+    /// One line, at most `limit` characters: cut at a word where one ends past the middle, with
+    /// an ellipsis.
+    public static func shortened(_ text: String, limit: Int = length) -> String {
+        let flat = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard flat.count > limit else { return flat }
+        let clipped = flat.prefix(limit - 1)
+        if let space = clipped.lastIndex(of: " "), clipped.distance(from: clipped.startIndex, to: space) >= limit / 2 {
+            return clipped[..<space].trimmingCharacters(in: .punctuationCharacters) + "…"
+        }
+        return clipped.trimmingCharacters(in: .whitespaces) + "…"
     }
 }
