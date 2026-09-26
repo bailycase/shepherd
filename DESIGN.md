@@ -5354,8 +5354,9 @@ selected thread, or the Overview when none is. Other screens push over the detai
   `NWListRow.Leading.badge`. A pushed destination's row is selected.
 - **Not built yet: Missions and Designs** sit between New thread and Automations (a map glyph and
   a diamond glyph). They wait for the Mac's Missions and Designs.
-- **More expands in place** (iPadHosts), its chevron turning down, kept per window: its sub-rows
-  sit 12pt further in (`MobileLayout.sidebarSubrowIndent`), Hosts (with "1 offline" in mono
+- **More expands in place** (iPadHosts), its chevron turning down, kept per window: its sub-rows'
+  content starts 24pt in (12pt past the others, `MobileLayout.sidebarSubrowIndent`), their
+  selection the full row, Hosts (with "1 offline" in mono
   `failed`), which opens the Hosts destination (Hosts and More), and Extensions (Settings ▸
   Extensions). A page under More opened from elsewhere unfolds it. **Not built yet:** the
   board's Design systems and Archive sub-rows (Design systems waits for the Design tool, hidden
@@ -5761,15 +5762,17 @@ With no thread selected the detail is the Overview (`PadOverview`).
   under it, in mono 11.5 `textTertiary`, what it does now: the running command ("swift test
   --filter toolPreview"), its subagents ("3 subagents · 1 needs you"), or its command and host
   ("swift build · This Mac"): `NWCaptionBand`, `NWOverviewRow` and `FleetThreadRow.now`; the
-  subagents are the ones still going, an asking one included. A running automation's row is `AutomationRow` ("Running · 4m"; the board's
+  subagents are the ones still going, an asking one included. The glyph is the running spinner
+  (`NWListRow.Leading.glyph`), the branch in `running` while its subagents work, or the state's
+  dot while it waits on you (`RunningGlyph`). A running automation's row is `AutomationRow` ("Running · 4m"; the board's
   "waiting for CI · 3 of 5 checks" needs triggers the host doesn't have). **Not built yet:**
   "MISSIONS · 2", with each mission's lanes as a 150×14 strip.
 - **Finished:** one card under a "TODAY" caption band. Rows at least 52pt (6×12 inset): the outcome
   glyph (14; `done` check, `failed` cross), the title at 14/500 over its outcome at 12
   `textTertiary` ("PR #34 merged · 2h41", "3 migrations, all reversible", "1 PR failed CI"), and the
   time of day in mono 11 `textTertiary` ("11:02"; the weekday, "Mon", for an older one). The app
-  lists finished threads newest first under a band per day ("Today", "Yesterday", a weekday, a
-  date; `FleetFinishedDay`), each with the check, or the `failed` cross and "failed · host" for a
+  lists finished threads newest first in that one card, under a band per day ("Today",
+  "Yesterday", a weekday, a date; `FleetFinishedDay`), each with the check, or the `failed` cross and "failed · host" for a
   last turn that failed, "done · <folder>" otherwise, and its time; the host sends no outcome
   ("PR #34 merged"), and finished automation runs stay under Automations. **Not built yet:** a
   design's row ("4 boards · 1 comment resolved").
