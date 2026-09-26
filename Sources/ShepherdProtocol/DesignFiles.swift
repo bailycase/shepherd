@@ -72,17 +72,21 @@ public struct DesignWriteResult: Hashable, Sendable, Codable {
     public var changed: Bool
     /// The written board's SHA-256; nil for an index update.
     public var sha256: String?
+    /// For a board write, whether it made the board's file (true) or rewrote one (false); nil
+    /// for an index update. The design agent's activity line reads it ("Drew" or "Updated").
+    public var created: Bool?
     /// What passed but is worth fixing in the written board.
     public var warnings: [DesignBoardCheck.Warning]
     /// The canvas's title and listed board count after the write.
     public var title: String?
     public var boardCount: Int
 
-    public init(revision: UInt64, changed: Bool, sha256: String? = nil, warnings: [DesignBoardCheck.Warning] = [],
-                title: String?, boardCount: Int) {
+    public init(revision: UInt64, changed: Bool, sha256: String? = nil, created: Bool? = nil,
+                warnings: [DesignBoardCheck.Warning] = [], title: String?, boardCount: Int) {
         self.revision = revision
         self.changed = changed
         self.sha256 = sha256
+        self.created = created
         self.warnings = warnings
         self.title = title
         self.boardCount = boardCount

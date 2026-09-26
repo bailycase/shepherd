@@ -19,11 +19,13 @@ struct ExtensionMessageTests {
              .helloChildren, .childCommandResult, .listPanes, .openPane, .closePane, .focusPane,
              .sendPaneInput, .readPane, .requestReview, .listAgents, .sendToAgent, .spawnAgent,
              .coordinateAgent, .agentResponse, .cancelAgentRequest, .createAutomation, .listAutomations,
-             .updateAutomation, .deleteAutomation, .startAutomation, .stopAutomation, .suggestInstruction:
+             .updateAutomation, .deleteAutomation, .startAutomation, .stopAutomation, .suggestInstruction,
+             .designRead, .designWriteBoard, .designUpdateIndex:
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 28
+    static let caseCount = 31
+    static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
         .setAgentStatus(agentID: agent, status: .blocked),
@@ -61,6 +63,14 @@ struct ExtensionMessageTests {
         .stopAutomation(id: 15, automationID: automation),
         .suggestInstruction(id: 20, agentID: agent, line: "- Run `go mod tidy` with any dependency bump.",
                             reason: "CI failed twice on a stale go.sum.", file: .appendSystem),
+        .designRead(id: 21, agentID: agent, designID: design, path: "flows/A-phone.dc.html"),
+        .designWriteBoard(id: 22, agentID: agent, designID: design, path: "A.dc.html",
+                          source: "<!doctype html>\n<x-dc><div style=\"width: 390px\">“Hi” · 👋</div></x-dc>\n", baseRevision: 7),
+        .designUpdateIndex(id: 23, agentID: agent, designID: design, changes: .object([
+            "title": .string("Checkout funnel"),
+            "boards": .object(["A.dc.html": .object(["x": .number(0), "y": .number(0), "w": .number(1280), "h": .number(800)]),
+                               "C.dc.html": .null]),
+        ]), baseRevision: nil),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -122,6 +132,19 @@ struct ExtensionMessageTests {
          .suggestInstruction(id: 2, agentID: agent, line: "- Ask for join keys first.", reason: "Two services re-ran.", file: nil)),
         (#"{"type":"suggestInstruction","id":3,"agentID":"a1","line":"- Never force-push.","file":"APPEND_SYSTEM.md"}"#,
          .suggestInstruction(id: 3, agentID: agent, line: "- Never force-push.", reason: "", file: .appendSystem)),
+        // The design extension spreads its payload first, then id, agentID and designID.
+        (#"{"type":"designRead","id":1,"agentID":"a1","designID":"d1"}"#,
+         .designRead(id: 1, agentID: agent, designID: design, path: nil)),
+        // A path outside the grammar still decodes, so the server can answer it.
+        (#"{"type":"designRead","path":"../x.dc.html","id":2,"agentID":"a1","designID":"d1"}"#,
+         .designRead(id: 2, agentID: agent, designID: design, path: "../x.dc.html")),
+        (#"{"type":"designWriteBoard","path":"A.dc.html","source":"<x-dc></x-dc>","id":3,"agentID":"a1","designID":"d1"}"#,
+         .designWriteBoard(id: 3, agentID: agent, designID: design, path: "A.dc.html", source: "<x-dc></x-dc>", baseRevision: nil)),
+        (#"{"type":"designWriteBoard","path":"A.dc.html","source":"s","baseRevision":4,"id":4,"agentID":"a1","designID":"d1"}"#,
+         .designWriteBoard(id: 4, agentID: agent, designID: design, path: "A.dc.html", source: "s", baseRevision: 4)),
+        (#"{"type":"designUpdateIndex","changes":{"boards":{"C.dc.html":null}},"baseRevision":6,"id":5,"agentID":"a1","designID":"d1"}"#,
+         .designUpdateIndex(id: 5, agentID: agent, designID: design, changes: .object(["boards": .object(["C.dc.html": .null])]),
+                            baseRevision: 6)),
     ]
 
     @Test(arguments: handWritten)
@@ -162,11 +185,19 @@ struct ExtensionReplyTests {
     static func caseName(_ reply: ExtensionReply) -> String {
         switch reply {
         case .childCommand, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .automations,
-             .agents, .message, .agentRequest, .agentResult, .suggestion:
+             .agents, .message, .agentRequest, .agentResult, .suggestion, .design, .designBoard, .designWritten:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 13
+    static let caseCount = 16
+
+    static let board = DesignPath("A.dc.html")!
+    static let snapshot = DesignSnapshot(
+        designID: DesignID(rawValue: "d1"), revision: 4,
+        index: DesignIndex(title: "Checkout funnel", boards: [board: DesignIndex.Board(x: 0, y: 0, w: 1280, h: 800, title: "A · Funnel first")],
+                           order: [board]),
+        boards: [board: "5e1f", DesignPath("B.dc.html")!: "77aa"]
+    )
 
     static let samples: [ExtensionReply] = [
         .childCommand(id: 1, runID: "native-1", action: .message, text: "Replace everywhere", mode: .steer),
@@ -189,6 +220,10 @@ struct ExtensionReplyTests {
                       request: AgentCoordinationRequest(operation: .steer, text: "[from: worker] change course")),
         .agentResult(id: 19, result: AgentCoordinationResult(text: "request cancelled", code: "cancelled")),
         .suggestion(id: 20, outcome: .dismissed),
+        .design(id: 21, snapshot: snapshot),
+        .designBoard(id: 22, board: DesignBoardSource(path: board, source: "<!doctype html>\n<x-dc>Hi</x-dc>\n", sha256: "5e1f", revision: 4)),
+        .designWritten(id: 23, result: DesignWriteResult(revision: 5, changed: true, sha256: "9c0d", created: true,
+                                                          warnings: [.innerHTML, .missingPreview], title: "Checkout funnel", boardCount: 1)),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -221,6 +256,29 @@ struct ExtensionReplyTests {
         #expect(request["request"] as? [String: String] == ["operation": "interrupt"])
         let result = try Wire.object(ExtensionReply.agentResult(id: 4, result: AgentCoordinationResult(text: "done")))
         #expect(result["result"] as? [String: String] == ["text": "done"])
+    }
+
+    /// What the design extension reads: the index as canvas.json, boards as a path → hash map, a
+    /// board's source, and a write's revision, `created` and warning codes.
+    @Test func designRepliesCarryTheShapeTheExtensionReads() throws {
+        let design = try Wire.object(ExtensionReply.design(id: 1, snapshot: Self.snapshot))
+        let snapshot = try #require(design["snapshot"] as? [String: Any])
+        #expect(snapshot["revision"] as? Int == 4)
+        #expect(snapshot["boards"] as? [String: String] == ["A.dc.html": "5e1f", "B.dc.html": "77aa"])
+        let index = try #require(snapshot["index"] as? [String: Any])
+        #expect(index["v"] as? Int == 3 && index["title"] as? String == "Checkout funnel")
+        #expect(index["order"] as? [String] == ["A.dc.html"])
+        #expect((index["boards"] as? [String: [String: Any]])?["A.dc.html"]?["title"] as? String == "A · Funnel first")
+
+        let board = try Wire.object(ExtensionReply.designBoard(id: 2, board: DesignBoardSource(path: Self.board, source: "s", sha256: "h", revision: 4)))
+        #expect(board["board"] as? [String: AnyHashable] == ["path": "A.dc.html", "source": "s", "sha256": "h", "revision": 4])
+
+        let written = try Wire.object(ExtensionReply.designWritten(id: 3, result: DesignWriteResult(
+            revision: 5, changed: true, created: false, warnings: [.globalKeyHandler], title: nil, boardCount: 2)))
+        let result = try #require(written["result"] as? [String: Any])
+        #expect(result["revision"] as? Int == 5 && result["changed"] as? Bool == true && result["created"] as? Bool == false)
+        #expect(result["warnings"] as? [String] == ["global_key_handler"])
+        #expect(result["boardCount"] as? Int == 2)
     }
 
     @Test func aPushedMessageWithoutAnIDDecodesAsIDZero() throws {
