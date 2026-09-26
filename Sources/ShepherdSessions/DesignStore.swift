@@ -563,12 +563,22 @@ public final class DesignStore: @unchecked Sendable {
     }
 
     /// A regular file's bytes, refused when it is a link or over the import's cap.
+    /// Opened with `O_NOFOLLOW` and checked on the open descriptor, so a file swapped for a link or
+    /// grown past the cap after the walk is still refused, before anything is read.
     private static func readRegular(_ url: URL) throws -> Data {
-        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
-        guard attributes?[.type] as? FileAttributeType == .typeRegular else {
-            throw DesignStoreError.importRefused("\(url.lastPathComponent) changed while it was read.")
+        let changed = DesignStoreError.importRefused("\(url.lastPathComponent) changed while it was read.")
+        let fd = open(url.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
+        guard fd >= 0 else {
+            if errno == ELOOP { throw changed }
+            throw DesignStoreError.io("could not read \(url.lastPathComponent): \(String(cString: strerror(errno)))")
         }
-        let data = try Data(contentsOf: url)
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        var info = stat()
+        guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else { throw changed }
+        guard info.st_size <= DesignImport.maxFileBytes else {
+            throw DesignStoreError.importRefused(DesignImport.Problem.tooLarge(url.lastPathComponent).description)
+        }
+        let data = try handle.read(upToCount: DesignImport.maxFileBytes + 1) ?? Data()
         guard data.count <= DesignImport.maxFileBytes else {
             throw DesignStoreError.importRefused(DesignImport.Problem.tooLarge(url.lastPathComponent).description)
         }
