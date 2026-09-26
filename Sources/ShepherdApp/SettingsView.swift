@@ -160,7 +160,7 @@ struct SettingsView: View {
         case .keyboard: KeyboardSettings(vm: vm)
         case .advanced: AdvancedSettings(vm: vm)
         case .experiments:
-            ExperimentsSettings(model: vm.suggestions, instructions: vm.instructions) { vm.settingsSection = .instructions }
+            ExperimentsSettings(model: vm.suggestions, instructions: vm.instructions, settings: vm.settings) { vm.settingsSection = .instructions }
         }
     }
 
@@ -255,7 +255,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .remote: ["Hosts", "Add host", "Listener", "Token"]
         case .keyboard: ["Shortcuts", "Reset all shortcuts"]
         case .advanced: ["Workspace state", "Extension socket", "Update channel", "Check for updates", "Reset settings"]
-        case .experiments: ["Suggested instructions", "Learn from", "Can suggest for", "Waiting for you", "Added from suggestions"]
+        case .experiments: ["Suggested instructions", "Learn from", "Can suggest for", "Waiting for you", "Added from suggestions",
+                            "Design tool"]
         }
     }
 
@@ -277,7 +278,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .remote: ["Hosts": ["vpn", "tailscale", "ssh"], "Listener": ["port", "serve"]]
         case .keyboard: ["Shortcuts": ["hotkey", "keybinding", "chord"]]
         case .advanced: ["Update channel": ["beta", "nightly", "sparkle"], "Workspace state": ["state.json"]]
-        case .experiments: ["Suggested instructions": ["lessons", "learned"], "Learn from": ["threads", "automations"]]
+        case .experiments: ["Suggested instructions": ["lessons", "learned"], "Learn from": ["threads", "automations"],
+                            "Design tool": ["designs", "boards", "mockups"]]
         }
     }
 

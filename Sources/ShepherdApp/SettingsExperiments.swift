@@ -11,6 +11,8 @@ import ShepherdRemote
 struct ExperimentsSettings: View {
     var model: SuggestionsModel
     var instructions: InstructionsModel
+    /// The Design tool's switch.
+    var settings: AppSettings
     /// Opens Settings ▸ Instructions (where the lines go).
     let openInstructions: () -> Void
 
@@ -25,6 +27,7 @@ struct ExperimentsSettings: View {
                     ScrollView(.vertical) {
                         VStack(alignment: .leading, spacing: AppLayout.experimentsBlockSpacing) {
                             SuggestedInstructionsCard(model: model, instructions: instructions, openInstructions: openInstructions)
+                            DesignToolCard(settings: settings)
                             if model.settings.enabled || !model.snapshot.waiting.isEmpty {
                                 WaitingSuggestions(model: model, instructions: instructions, now: context.date)
                                     .nwTransition(.disclosure)
@@ -52,7 +55,44 @@ struct ExperimentsSettings: View {
     }
 }
 
-// MARK: The experiment
+// MARK: The experiments
+
+/// The Design tool's card: its tile, name, description and switch. It has no options; on, the
+/// sidebar gains Designs, Recents shows designs, and New thread offers "Start a design".
+private struct DesignToolCard: View {
+    @Bindable var settings: AppSettings
+
+    var body: some View {
+        let nw = Color.nw
+        HStack(alignment: .top, spacing: NW.Space.l + NW.Space.xxs) {
+            RoundedRectangle(cornerRadius: NW.Radius.m)
+                .fill(nw.lanternTint)
+                .frame(width: AppLayout.experimentTileSize, height: AppLayout.experimentTileSize)
+                .overlay {
+                    Image(systemName: "pencil.tip")
+                        .font(.nwSans(AppLayout.experimentGlyphSize))
+                        .foregroundStyle(nw.lanternText)
+                }
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+                Text("Design tool")
+                    .font(.nwSans(AppLayout.experimentNameSize, .semibold))
+                    .foregroundStyle(nw.textPrimary)
+                Text("Describe a page or flow and a design agent draws it as HTML boards on a canvas you pan and zoom. "
+                     + "Adds Designs to the sidebar and “Start a design” to New thread.")
+                    .nwText(size: AppLayout.experimentDescriptionSize, lineHeight: AppLayout.experimentDescriptionLineHeight)
+                    .foregroundStyle(nw.textSecondary)
+                    .frame(maxWidth: AppLayout.experimentDescriptionWidth, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: NW.Space.xxl)
+            SettingsSwitch(label: "Design tool", isOn: $settings.designToolEnabled)
+        }
+        .padding(.vertical, NW.Space.l + NW.Space.xxs)
+        .padding(.horizontal, NW.Space.xl)
+        .nwCard(fill: nw.bgWindow, line: nw.lineStrong)
+    }
+}
 
 /// Suggested instructions' card: its tile, name, "on since" tag, description and switch, and
 /// while it is on, what it learns from, what it may suggest for, and where the lines go.
