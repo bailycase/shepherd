@@ -332,7 +332,7 @@ public final class RemoteDesignSource: DesignFileSource, @unchecked Sendable {
             }
             fileName = chunk.name ?? fileName
             var next = partial ?? RemoteDesignCache.Partial(sha256: chunk.sha256, total: chunk.total, data: Data())
-            guard chunk.offset == next.data.count else { throw Self.unexpected }
+            guard chunk.offset == next.data.count, Self.fits(chunk, into: next) else { throw Self.unexpected }
             next.data.append(chunk.data)
             partial = next
             cache.setPartial(next, name, in: key)
@@ -356,6 +356,10 @@ public final class RemoteDesignSource: DesignFileSource, @unchecked Sendable {
             guard case .chunk(let chunk) = try await transport.design(.file(designID: key.design, path: path, sha256: sha256, offset: offset)),
                   chunk.offset == offset else { throw Self.unexpected }
             var next = partial ?? RemoteDesignCache.Partial(sha256: sha256, total: chunk.total, data: Data())
+            guard Self.fits(chunk, into: next) else {
+                cache.setPartial(nil, name, in: key)
+                throw Self.unexpected
+            }
             next.data.append(chunk.data)
             partial = next
             cache.setPartial(next, name, in: key)
@@ -376,6 +380,12 @@ public final class RemoteDesignSource: DesignFileSource, @unchecked Sendable {
     private func requireTransport() throws -> any RemoteDesignTransport {
         guard let transport = transport() else { throw RemoteHostClientError.disconnected }
         return transport
+    }
+
+    /// A piece that keeps the download within the size it began with and the file cap: a host
+    /// never makes this device hold more than one file's worth.
+    private static func fits(_ chunk: RemoteDesignChunk, into partial: RemoteDesignCache.Partial) -> Bool {
+        chunk.total == partial.total && partial.total <= DesignImport.maxFileBytes && partial.data.count + chunk.data.count <= partial.total
     }
 
     static let unexpected = RemoteHostClientError.rejected(code: "protocol", message: "unexpected design reply")
