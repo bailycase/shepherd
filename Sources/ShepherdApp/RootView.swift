@@ -37,8 +37,9 @@ struct RootView: View {
                     minimize: { MainWindow.window?.performMiniaturize(nil) },
                     zoom: { MainWindow.window?.toggleFullScreen(nil) }
                 ), back: { vm.restoreWideSidePane() })
+                // The column takes the window at once (easing it would relay out the layout on
+                // each frame); the pane's own growth carries the motion.
                 .ignoresSafeArea()
-                .nwTransition(.pane, edge: .leading)
             }
             // The flat base runs continuously behind the window controls and the tree. ⇧⌘S
             // hides it; a window too narrow to dock it overlays it instead. It keeps its width
@@ -92,7 +93,6 @@ struct RootView: View {
         // ⇧⌘S, the toolbar's button, the palette: the docked sidebar slides from the leading
         // edge. Keyed on the preference alone: a window resize that docks or undocks it is instant.
         .nwAnimation(.pane, value: vm.sidebarHidden)
-        .nwAnimation(.pane, value: wide)
         // The rail draws the window controls; the window's own hide while it shows.
         .background { SystemWindowControls(hidden: wide && !isFullScreen) }
         .coordinateSpace(.named("root-layout"))
