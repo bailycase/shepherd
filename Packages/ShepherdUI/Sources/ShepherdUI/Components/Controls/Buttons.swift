@@ -93,11 +93,13 @@ private struct NWStyledButton: View {
 
     private func background(_ nw: NWPalette) -> AnyShapeStyle {
         switch kind {
-        case .primary, .dangerFill:
-            let fill = kind == .primary ? nw.lantern : nw.failed
-            // Hover lifts the fill, pressed sinks it (the board's #f7b84f / #d9922a steps).
-            return AnyShapeStyle(fill.mix(with: configuration.isPressed ? .black : .white,
-                                          by: enabled ? (configuration.isPressed ? 0.1 : hovering ? 0.12 : 0) : 0))
+        case .primary:
+            // Hover lifts the fill, pressed sinks it (the board's #f7b84f and #d9922a).
+            let fill = !enabled ? nw.lantern : configuration.isPressed ? nw.lanternPressed : hovering ? nw.lanternHover : nw.lantern
+            return AnyShapeStyle(fill)
+        case .dangerFill:
+            // A confirmed destructive action stays put on hover and sinks while pressed.
+            return AnyShapeStyle(enabled && configuration.isPressed ? nw.failedPressed : nw.failed)
         case .secondary:
             return AnyShapeStyle(active ? nw.bgSelected : nw.bgRaised)
         case .ghost:

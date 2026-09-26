@@ -103,6 +103,27 @@ struct ThemeContrastTests {
         #expect(ratio < Self.text)
     }
 
+    /// The primary button's hover and pressed fills (the Controls board's hexes) keep its label
+    /// at 4.5:1 in both variants.
+    @Test(arguments: [false, true])
+    func primaryHoverAndPressedFillsKeepTheLabelReadable(isDark: Bool) throws {
+        let variant = Variant(theme: .nightWatch, isDark: isDark)
+        for fill in [NWButtonFills.lanternHover, NWButtonFills.lanternPressed] {
+            let hex = try #require(HexColor(isDark ? fill.dark : fill.light))
+            #expect(variant.color(\.textOnLantern).contrast(with: hex) >= Self.text)
+        }
+    }
+
+    /// White on the dangerFill button's pressed fill: light reaches 4.5:1 (5.42); dark is darker
+    /// than `failed` but still short (4.23), as the board draws it.
+    @Test(arguments: [(false, 5.42), (true, 4.23)])
+    func whiteOnPressedDangerFill(isDark: Bool, measured: Double) throws {
+        let fill = try #require(HexColor(isDark ? NWButtonFills.failedPressed.dark : NWButtonFills.failedPressed.light))
+        let ratio = HexColor("#ffffff")!.contrast(with: fill)
+        #expect(abs(ratio - measured) < 0.01)
+        #expect((ratio >= Self.text) == !isDark)
+    }
+
     /// Surfaces stay distinct and ordered: the window is not the chrome, a card is not the
     /// window, and the strong line reads stronger than the subtle one.
     @Test(arguments: Variant.all)
