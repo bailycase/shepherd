@@ -272,7 +272,8 @@ struct ThreadTranscript: View {
                 UserTurnView(turn: row.turn).equatable()
             }
         } else if let presentation = row.presentation {
-            let proposals = designChat ? row.markupProposals : nil
+            // The card stands in for its call only where a canvas can apply it (iPadDesign).
+            let proposals = designChat && markupCanvas != nil ? row.markupProposals : nil
             AgentTurnView(thread: ref, presentation: presentation, live: row.live,
                           subagents: store.placements[row.id]?.all.count ?? 0,
                           startedAt: row.startedAt, thinking: thinking,
