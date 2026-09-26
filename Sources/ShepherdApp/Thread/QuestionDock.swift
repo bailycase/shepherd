@@ -82,10 +82,27 @@ struct QuestionDock: View {
             keys.editing = { [field = $field] in field.wrappedValue != nil }
             keys.watch(inputs.focused)
             if inputs.hidden { field = nil }
-            // An open question is its field: it takes the keyboard as the composer's field would.
-            else if inputs.focused, inputs.enabled, prompt.kind == .open { field = .text }
+        }
+        // An open question is its field: it takes the keyboard as the composer's field would,
+        // once any deferred AppKit focus release (the composer's field leaving) has finished.
+        .task(id: FieldClaim(open: focused && enabled && !hidden && prompt.kind == .open && prompt.blocked == nil)) {
+            guard focused && enabled && !hidden && prompt.kind == .open && prompt.blocked == nil else { return }
+            // A claim made before the field is in the window is dropped: ask again for a few
+            // turns until it holds.
+            for _ in 0..<Self.fieldClaimTurns {
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                if field == .text { return }
+                field = .text
+            }
         }
         .onDisappear { keys.watch(false) }
+    }
+
+    static let fieldClaimTurns = 8
+
+    private struct FieldClaim: Equatable {
+        var open: Bool
     }
 
     private struct KeyInputs: Equatable {
