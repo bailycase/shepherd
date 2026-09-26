@@ -978,7 +978,7 @@ final class TerminalSessionStore {
     }
 
     /// `pi --mode rpc` for an agent, with Shepherd's socket, status, panes, review, subagents,
-    /// and namer extensions, and the design tools for an agent that draws a design. Model and
+    /// and namer extensions; an agent that draws a design gets the design tools instead of panes. Model and
     /// thinking flags go only to a fresh session.
     private static func rpcAgentCommand(for agent: Agent, cwd: String, sessionIsFresh: Bool, isAutomation: Bool = false,
                                         suggestFiles: [InstructionFile] = []) throws -> SessionCommand {
@@ -988,7 +988,7 @@ final class TerminalSessionStore {
             piSessionID: agent.effectivePiSessionID,
             socketPath: ShepherdPaths.socketURL().path,
             extensionPath: try StatusExtension.installedPath(),
-            panesExtensionPath: settings.piPanesExtension ? try PanesExtension.installedPath() : nil,
+            panesExtensionPath: Self.wantsPanes(for: agent, enabled: settings.piPanesExtension) ? try PanesExtension.installedPath() : nil,
             reviewExtensionPath: settings.piReviewExtension ? try ReviewExtension.installedPath() : nil,
             subagentsExtensionPath: settings.piSubagentsExtension ? try SubagentsExtension.installedPath() : nil,
             childrenExtensionPath: settings.piNativeSubagents ? try ChildrenExtension.installedPath() : nil,
@@ -1009,6 +1009,12 @@ final class TerminalSessionStore {
             model: sessionIsFresh ? agent.model : nil,
             thinking: sessionIsFresh ? agent.thinkingLevel : nil
         )
+    }
+
+    /// The panes extension (pane_*, agent_*, automation_*, notify) is for threads. A design's
+    /// agent never gets it: its screen shows no panes, and it must not reach threads.
+    static func wantsPanes(for agent: Agent, enabled: Bool) -> Bool {
+        enabled && agent.designID == nil
     }
 
     /// An agent gets pi's namer only while its name is still provisional and
