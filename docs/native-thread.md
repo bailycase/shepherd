@@ -403,8 +403,10 @@ draws is cached the same way, one property each (`session`, `dialogs`, `widgets`
 `supportedActions`, `clipped`, `running`, `showsThinking`, `userTurnCount`, …), assigned only
 when it changes. The snapshot is one value that every streamed chunk replaces, so the composer
 and the toolbar never read it: a chunk redraws the thread and its live row, a poll that moves
-only the context count redraws only the toolbar's counters, and one that moves the context
-redraws only the ring beside Send, which reads `contextMeter` alone (`ListPerformanceTests`).
+only the stats' context count redraws no chrome (the header has no counters), and one that moves
+the context redraws only the ring beside Send, which reads `contextMeter` alone
+(`ListPerformanceTests`). The meter and its details are derived again only when the context, the
+model, or whether the agent is replying changes.
 `compactions` (`NativeCompactionExpansion`) holds which compactions show what the agent kept;
 `compact(instructions:)` sends Compact now. A finished tool
 call is parsed once (`NativeActivityCall`, cached by entry); a running call is re-read as its
