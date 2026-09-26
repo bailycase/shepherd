@@ -104,7 +104,7 @@ struct ThreadComposer: View {
                 }
             }
         }
-        .padding(.horizontal, MobileLayout.gutter)
+        .padding(.horizontal, wide ? MobileLayout.padThreadGutter : MobileLayout.gutter)
         .padding(.top, NW.Space.m)
         .padding(.bottom, MobileLayout.composerBottom)
         .background(Color.nw.bgWindow)

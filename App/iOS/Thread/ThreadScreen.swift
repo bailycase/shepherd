@@ -50,7 +50,7 @@ struct ThreadScreen: View {
                     ThreadComposer(ref: ref)
                         .composerTextDrop(ref)
                         .environment(\.composerMaxHeight, height > 0 ? height * MobileLayout.composerShare : .infinity)
-                        .frame(maxWidth: sizeClass == .regular ? MobileLayout.threadMaxWidth + 2 * MobileLayout.gutter : .infinity)
+                        .frame(maxWidth: sizeClass == .regular ? MobileLayout.threadMaxWidth + 2 * MobileLayout.padThreadGutter : .infinity)
                         .frame(maxWidth: .infinity)
                         .background(Color.nw.bgWindow)
                 }
@@ -162,8 +162,10 @@ private struct ThreadTranscript: View {
                     Color.clear.frame(height: 1).id(Self.bottomID)
                 }
                 .frame(maxWidth: sizeClass == .regular ? MobileLayout.threadMaxWidth : .infinity)
-                .padding(.horizontal, MobileLayout.gutter)
-                .padding(.vertical, MobileLayout.gutter)
+                .padding(.horizontal, sizeClass == .regular ? MobileLayout.padThreadGutter : MobileLayout.gutter)
+                .padding(.vertical, sizeClass == .regular ? MobileLayout.padThreadGutter : MobileLayout.gutter)
+                // iPad bubbles (iPadThread): at most 520pt, 12×16 inside.
+                .environment(\.nwUserBubbleMetrics, sizeClass == .regular ? .pad : .standard)
                 .frame(maxWidth: .infinity)
                 // Which compactions show what the agent kept: its own object, so a toggle
                 // redraws only the compaction lines.

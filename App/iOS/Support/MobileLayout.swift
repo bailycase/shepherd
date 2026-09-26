@@ -15,8 +15,10 @@ enum MobileLayout {
     static let turnItemSpacing: CGFloat = NW.Space.l
     /// Lines inside a work group.
     static let activitySpacing: CGFloat = NW.Space.xxs
-    /// A thread's readable measure on iPad; the phone uses its full width.
-    static let threadMaxWidth: CGFloat = 760
+    /// A thread's readable measure on iPad (iPadThread's 780pt column); the phone uses its full width.
+    static let threadMaxWidth: CGFloat = 780
+    /// The iPad thread's and composer's side gutters (iPadThread's 24pt; the phone keeps `gutter`).
+    static let padThreadGutter: CGFloat = NW.Space.xxl
     /// A note's indent from its rule.
     static let noteIndent: CGFloat = NW.Space.m
     /// The iPad sidebar's width beside the thread, in landscape (iPadThread).
