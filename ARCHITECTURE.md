@@ -102,7 +102,8 @@ change only when a menu's own value does.
   parking.
 
 **`WorkspaceSelection`** decides which layouts are mounted and which one is visible. Switching
-agents flips visibility (opacity, hit-testing, and Ghostty's render loop); it never remounts. A
+agents flips visibility (each layout's own hosting view, `AgentLayoutDeck`, hidden or shown, and
+Ghostty's render loop); it never remounts. A
 layout that has been hidden for 30 s and is outside the four most recently shown is
 *cold-parked*: its terminal surfaces are dropped while its processes and host-side screens keep
 running.
