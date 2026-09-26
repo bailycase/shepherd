@@ -82,7 +82,7 @@ final class RPCThreadState {
     var onServable: (() -> Void)?
     private var announcedServable = false
     /// A new agent's opening prompt, held until the thread serves (`sendOpeningPrompt`).
-    private var openingPrompt: (text: String, id: UUID)?
+    private var openingPrompt: (text: String, images: [NativeImage], id: UUID)?
     /// Requests get a snapshot rather than `native_starting`.
     var isServable: Bool { piSessionID != nil && !historyPending }
     private(set) var generation = UUID().uuidString
@@ -538,11 +538,7 @@ final class RPCThreadState {
                 completion(.failure(code: "invalid", message: "Send requires text up to 16 KiB and a valid delivery mode."))
                 return
             }
-            // Per-image cap from the contract; the aggregate keeps one prompt line
-            // under RPCSession's 8 MiB stdin queue once base64-expanded.
-            guard images.count <= NativeImage.maxPerSend,
-                  images.allSatisfy({ $0.data.count <= NativeImage.maxBytes && $0.mimeType.hasPrefix("image/") }),
-                  images.reduce(0, { $0 + $1.data.count }) <= Self.imageBytesLimit else {
+            guard NativeImage.fitOneSend(images) else {
                 completion(.failure(code: "invalid", message: "Send accepts up to \(NativeImage.maxPerSend) images of \(NativeImage.maxBytes / 1024 / 1024) MiB each."))
                 return
             }
@@ -754,7 +750,7 @@ final class RPCThreadState {
         announcedServable = true
         if let opening = openingPrompt {
             openingPrompt = nil
-            deliverOpeningPrompt(opening.text, id: opening.id)
+            deliverOpeningPrompt(opening.text, images: opening.images, id: opening.id)
         }
         onServable?()
     }
@@ -762,21 +758,25 @@ final class RPCThreadState {
     /// A new agent's opening prompt (`OpeningPrompt`), sent the moment the thread serves: in the
     /// same queue turn, before any request is answered, so the first snapshot a client gets shows
     /// it (pending until pi starts it) and none shows the thread without it.
-    func sendOpeningPrompt(_ text: String, id: UUID) {
+    func sendOpeningPrompt(_ text: String, images: [NativeImage] = [], id: UUID) {
         guard isServable else {
-            openingPrompt = (text, id)
+            openingPrompt = (text, images, id)
             return
         }
-        deliverOpeningPrompt(text, id: id)
+        deliverOpeningPrompt(text, images: images, id: id)
     }
 
-    private func deliverOpeningPrompt(_ text: String, id: UUID) {
+    private func deliverOpeningPrompt(_ text: String, images: [NativeImage], id: UUID) {
         let sessionID = session.id
         guard text.utf8.count <= Self.textLimit else {
             ShepherdLog.warning("rpc session \(sessionID) refused its opening prompt: over \(Self.textLimit) bytes")
             return
         }
-        send(id: id, text: text, delivery: .followUp, images: []) { result in
+        guard NativeImage.fitOneSend(images) else {
+            ShepherdLog.warning("rpc session \(sessionID) refused its opening prompt: its images are over the limits")
+            return
+        }
+        send(id: id, text: text, delivery: .followUp, images: images) { result in
             guard case .failure(let code, let message) = result else { return }
             ShepherdLog.warning("rpc session \(sessionID) refused its opening prompt: \(code) \(message)")
         }

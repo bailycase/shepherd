@@ -253,19 +253,22 @@ struct AgentStartupTests {
         defer { app.stop() }
         let broken = app.dir.appendingPathComponent("broken")
         try FileManager.default.createDirectory(at: broken, withIntermediateDirectories: true)
-        try JSONSerialization.data(withJSONObject: ["exit": 1]).write(to: broken.appendingPathComponent("stub-pi-startup.json"))
+        // Its pi exits only once the test has seen it on screen: an exit before that retires it
+        // and moves the selection on to a healthy agent.
+        try Self.holdPi(in: broken, exit: 1)
         let space = Fixture.space(path: app.dir.path)
         var agents = [Fixture.agent("broken", in: space, order: 0, cwd: broken.path, piSession: SessionID())]
             + (1..<4).map { Fixture.agent("worker \($0)", in: space, order: $0, piSession: SessionID()) }
         // The broken one is the most recently active, so it is the one on screen at launch.
         agents[0].agent.lastActiveAt = 10
+        let brokenID = agents[0].agent.id
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents), restoringAgents: true)
-        let onScreen = try #require(vm.selectedAgentID)
-        #expect(onScreen == agents[0].agent.id)
+        #expect(vm.selectedAgentID == brokenID)
         let server = app.server
         let others = Set(agents.dropFirst().map(\.agent.id))
 
-        try await eventuallyOnMain("the broken agent's pi to exit and retire it") { !vm.state.agents.contains { $0.id == onScreen } }
+        Self.releasePi(in: broken)
+        try await eventuallyOnMain("the broken agent's pi to exit and retire it") { !vm.state.agents.contains { $0.id == brokenID } }
         let exited = ContinuousClock.now
         try await eventuallyAsync("the others to start") {
             let alive = Set(await server.listSessions().filter(\.isAlive).map(\.id))

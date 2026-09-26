@@ -61,7 +61,12 @@ a zsh login shell, so the user's `PATH` resolves:
   it, pending until pi starts it, and none shows the thread without it. Its send's operation id
   is the agent's id (`OpeningPrompt`), so the client that created the agent (the Mac's New
   Agent, a remote Mac's or iOS's New thread) previews the same pending row while pi starts, and
-  the row keeps its identity when the host's lands and when pi starts the turn.
+  the row keeps its identity when the host's lands and when pi starts the turn. Images attached
+  on the Mac's New thread page go with it in that same prompt (`OpeningPrompt.images`, held and
+  checked with the send limits), and its pending row counts them. A remote Mac sends them in
+  `createAgent`'s `initialImages`, only to a host with `agent.create.images.v1` (an older host
+  would drop them), and only when the request fits one 1 MiB frame; the host refuses images it
+  could not send before it creates anything.
 
 Quitting the app kills every child. On relaunch each agent respawns in its pi session with its
 history intact. State files from before RPC agents decode unchanged: `Agent` ignores the

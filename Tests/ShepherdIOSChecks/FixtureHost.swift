@@ -191,7 +191,7 @@ final class FixtureHost: @unchecked Sendable {
                 return [.nativeThread(id: id, result: .failure(code: "fixture", message: refused))]
             }
         case .attach(let id, _, _, _, _), .paste(let id, _, _, _), .openPane(let id, _, _, _), .closePane(let id, _, _),
-             .resizePaneSplit(let id, _, _, _), .addSpace(let id, _), .createAgent(let id, _, _, _, _, _, _, _, _),
+             .resizePaneSplit(let id, _, _, _), .addSpace(let id, _), .createAgent(let id, _, _, _, _, _, _, _, _, _),
              .agentAction(let id, _, _), .upload(let id, _):
             mutation(Self.kind(request))
             return [.error(id: id, code: "fixture", message: refused)]
