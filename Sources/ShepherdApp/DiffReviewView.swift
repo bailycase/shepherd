@@ -163,6 +163,7 @@ private struct ReviewHeader: View, Equatable {
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.model === rhs.model && lhs.session === rhs.session }
 
     var body: some View {
+        let _ = NWRenderProbe.tick("review.header")
         NWPaneHeader("Review", closeLabel: "Close review", close: model.actions.close) {
             // Cross-faded, not rolled: rolling digits through its colored runs leaves the old
             // count's ghost for most of a second.
@@ -292,6 +293,7 @@ private struct ReviewDiffList: View, Equatable {
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.model === rhs.model && lhs.session === rhs.session }
 
     var body: some View {
+        let _ = NWRenderProbe.tick("review.diffList")
         let canRevert = model.actions.revert != nil && !session.isPRMode
         let canOpen = model.actions.open != nil
         ScrollViewReader { proxy in
@@ -369,6 +371,7 @@ private struct DiffFileSection: View, Equatable {
     }
 
     var body: some View {
+        let _ = NWRenderProbe.tick("review.section")
         Section {
             // Where the file's rows start: a fold eases only while the file sits in its place.
             Color.clear.frame(height: 0)
@@ -381,9 +384,9 @@ private struct DiffFileSection: View, Equatable {
                         .padding(.vertical, NW.Space.m)
                         .padding(.leading, NWDiffMetrics.annotationLeading)
                 } else {
-                    NWDiffView(rows, onComment: { model.startComment(fileID: file.id, lineID: $0.key) },
-                               onExpand: { model.expandFold($0, in: file.id) }, onExpandFile: { model.expandFile(file.id) }) { line in
-                        annotation(line)
+                    NWDiffView(rows, notes: notes, onComment: { model.startComment(fileID: file.id, lineID: $0.key) },
+                               onExpand: { model.expandFold($0, in: file.id) }, onExpandFile: { model.expandFile(file.id) }) { line, note in
+                        annotation(line, note)
                     }
                 }
             }
@@ -399,13 +402,21 @@ private struct DiffFileSection: View, Equatable {
         }
     }
 
-    @ViewBuilder private func annotation(_ line: NWDiffLineContent) -> some View {
-        if editingLine == line.key {
-            ReviewCommentEditor(initialText: comments[line.key]?.text ?? "", focused: commentFocused,
+    /// What shows under each line: its comment, or the editor on the line being commented.
+    private var notes: [Int: ReviewLineNote] {
+        var notes = comments.mapValues(ReviewLineNote.comment)
+        if let editingLine { notes[editingLine] = .editing(initialText: comments[editingLine]?.text ?? "") }
+        return notes
+    }
+
+    @ViewBuilder private func annotation(_ line: NWDiffLineContent, _ note: ReviewLineNote) -> some View {
+        switch note {
+        case .editing(let initialText):
+            ReviewCommentEditor(initialText: initialText, focused: commentFocused,
                                 save: { model.saveComment($0, fileID: file.id, lineID: line.key) },
                                 cancel: { model.cancelComment() })
                 .nwTransition(.disclosure)
-        } else if let comment = comments[line.key] {
+        case .comment(let comment):
             NWInlineComment(initial: ReviewAuthor.initial, author: "You",
                             meta: "line \(comment.lineNumber) · \(reviewCommentAge(comment.createdAt))", text: comment.text,
                             onEdit: { model.startComment(fileID: file.id, lineID: line.key) },
@@ -413,6 +424,13 @@ private struct DiffFileSection: View, Equatable {
                 .nwTransition(.disclosure)
         }
     }
+}
+
+/// A line's annotation in the review: its comment, or the editor writing one. Rows compare it,
+/// so a comment's change redraws only its line.
+enum ReviewLineNote: Equatable {
+    case comment(ReviewComment)
+    case editing(initialText: String)
 }
 
 /// The comment being written, with its own draft: typing re-renders only the editor.
@@ -451,6 +469,7 @@ private struct ReviewComposerBar: View, Equatable {
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.model === rhs.model && lhs.session === rhs.session }
 
     var body: some View {
+        let _ = NWRenderProbe.tick("review.composer")
         let hasReview = !session.comments.isEmpty || !session.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         NWReviewComposer(text: $session.summary, isFocused: focused, inlineCount: session.comments.count,
                          canCommit: !session.isSubmitting && !session.files.isEmpty && !session.isPRMode,
