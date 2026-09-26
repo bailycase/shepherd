@@ -1377,8 +1377,9 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   nothing is written), or pi exited with its own words. Retry starts pi again and the thread is
   Starting once more; a new agent's opening prompt, which pi never read, goes with it. A pi that
   exits after it has served is the lost connection (Composer › States › Error), and its agent
-  retires as before. Remote viewers draw the same banner from the host's snapshot
-  (`NativeThreadSnapshot.startProblem`), without Retry: starting pi belongs to the host.
+  retires as before. Remote viewers read it from the host's snapshot
+  (`NativeThreadSnapshot.startProblem`), without Retry, since starting pi belongs to the host: a
+  Mac draws the same banner, and iPhone and iPad say it in the thread's notice line.
 - **Empty thread:** a framed `NWEmptyState` (a dashed `lineStrong` border, no crook): "New
   agent in `~/path`" (the path in Geist Mono 15 medium within the 17pt title), with "Describe
   the task. Drop or paste images to attach them, or type / for commands." A new agent is known
@@ -4921,7 +4922,10 @@ follows the Mac's rules (Thread) with the phone's measures below.
   8pt above the composer.
 - **Banners** at the top of the thread, 12 `textTertiary`: "<host> is offline · showing the last
   known thread", "This agent is no longer on <host>.", "Update Shepherd on <host> to open threads
-  here.", "Some output is clipped · the full thread is on <host>".
+  here.", "Some output is clipped · the full thread is on <host>". A pi that can't start on the
+  host (Thread › Can't start) reads as its banner's title and advice on one line ("pi can't reach
+  a model. Sign in to a provider in pi, then Retry on <host>."), with no spinner, Send disabled,
+  and "Can't start" in `failed` as the title's status.
 
 ### iPhone: New thread and Where it runs (MobileNewThread, MobileWorkspace)
 
@@ -5609,7 +5613,8 @@ selected thread, or the Overview when none is. Other screens push over the detai
 - **Notices** (caption `textTertiary`, above the turns; the app's, not the boards'): "<host> is
   offline · showing the last known thread", "This agent is no longer on <host>.", "Update
   Shepherd on <host> to open threads here.", "Some output is clipped · the full thread is on
-  <host>", "This host was forgotten." "Load older messages" ("Loading history…" while it loads)
+  <host>", "This host was forgotten.", and a pi that can't start as the phone's one line (iPhone:
+  Thread › Banners) "Load older messages" ("Loading history…" while it loads)
   is a small ghost button at the head.
 
 #### Composer and commands (iPadThread, iPadPortrait)
