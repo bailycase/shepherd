@@ -21,7 +21,7 @@ final class PreviewWorkspace {
     var server: SessionServer { scratch.server }
     var dir: URL { scratch.dir }
 
-    init(modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels }) throws {
+    init(modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels }, mcp: MCPStore? = nil) throws {
         try PreviewEnvironment.install()
         scratch = try ScratchServer(modelCatalog: modelCatalog)
         settings = AppSettings(store: defaults)
@@ -34,7 +34,8 @@ final class PreviewWorkspace {
             // Only the agents a preview mounts get a pi, and those get the stub.
             restoresAgentsAtLaunch: false,
             // Fixtures set the checkout each header shows.
-            checkoutReader: nil
+            checkoutReader: nil,
+            mcp: mcp
         )
         // The boards' footer, never this machine's user and name.
         vm.sidebarFooterIdentity = ("Baily", SidebarDerivation.footerDetail(computerName: "build-01"))
