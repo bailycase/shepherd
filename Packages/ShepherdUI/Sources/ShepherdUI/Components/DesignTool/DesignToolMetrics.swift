@@ -302,4 +302,30 @@ public enum NWDesignMetrics {
     public static let exportShareSpacing: CGFloat = NW.Space.m
     public static let exportShareGlyph: CGFloat = 13
     public static let exportNoteSize: CGFloat = 11.5
+
+    // Pencil markup (NWMarkupPalette, NWMarkupProposals; iPadDesign)
+    /// The palette: 6×14 padding, 6pt between items; 44pt tools holding a 20 × 26 glyph (1.3pt
+    /// lines, the pen's 2.4pt tip); 22pt inks, the current one ringed 2pt wide 2pt out, each in a
+    /// 30pt target; 26pt dividers 6pt either side; Done in 15 semibold; 28pt over the canvas's
+    /// bottom edge.
+    public static let markupPaddingVertical: CGFloat = NW.Space.s
+    public static let markupPaddingHorizontal: CGFloat = 14
+    public static let markupSpacing: CGFloat = NW.Space.s
+    public static let markupGlyphWidth: CGFloat = 20
+    public static let markupGlyphHeight: CGFloat = 26
+    public static let markupGlyphLine: CGFloat = 1.3
+    public static let markupTipLine: CGFloat = 2.4
+    public static let markupSwatch: CGFloat = 22
+    public static let markupSwatchRing: CGFloat = 2
+    public static let markupSwatchGap: CGFloat = 2
+    public static let markupSwatchTarget: CGFloat = 30
+    public static let markupDividerHeight: CGFloat = 26
+    public static let markupDividerMargin: CGFloat = NW.Space.s
+    public static let markupDoneSize: CGFloat = 15
+    public static let markupBottom: CGFloat = 28
+    /// Ink on the canvas: the pen's width and the marker's, in screen points.
+    public static let markupPenWidth: CGFloat = 3
+    public static let markupMarkerWidth: CGFloat = 12
+    /// The proposals in the chat: cards, buttons and footnote 12pt apart.
+    public static let markupProposalsSpacing: CGFloat = NW.Space.l
 }
