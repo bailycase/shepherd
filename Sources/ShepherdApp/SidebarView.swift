@@ -177,8 +177,14 @@ private struct SidebarRowMenu: View {
                 Divider()
                 Button("Delete Automation", role: .destructive) { vm.deleteAutomation(automation) }
             } else {
+                // NWComposer's agent menu: Rename… with its keys, Fork and Copy with their glyphs.
                 Button("Rename…") { vm.agentRenameTarget = id }
+                    .keyboardShortcut(KeybindingsStore.shared.shortcut(.renameAgent))
+                Button("Fork from Here", systemImage: "arrow.branch") { vm.forkAgent(id) }
+                Button("Copy Transcript", systemImage: "doc.on.doc") { vm.copyAgentTranscript(id) }
+                Divider()
                 Button("Review Changes") { vm.selectAgent(id); vm.openUserReview() }
+                Button("Open in Finder") { vm.openAgentInFinder(id) }
                 Divider()
                 if row.worktree {
                     Button("Finalize Worktree…") { vm.beginFinalizeWorktree(id) }

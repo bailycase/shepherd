@@ -967,8 +967,17 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   Recents rows, ⌘↑/↓ walk Needs you then Recents and wrap, and keyboard selection scrolls the row
   into view. Picking a row leaves a page for that thread.
 - **Context menus** keep every action an agent had:
-  - This Mac's threads: Rename…, Review Changes, then Finalize Worktree… and Delete Worktree
-    Agent… for a worktree agent, or Delete Agent.
+  - This Mac's threads (NWComposer's agent menu, with today's items between its separators):
+    Rename… with its keys (⌘R), Fork from Here (`arrow.branch`) and Copy Transcript
+    (`doc.on.doc`); Review Changes and Open in Finder; then Finalize Worktree… and Delete
+    Worktree Agent… for a worktree agent, or Delete Agent. Fork from Here copies the agent's pi
+    session, as it stands, into a new session and starts "<name> (fork)" beside it in the same
+    space and folder (the namer retitles it on its first turn); Copy Transcript puts what was
+    said on the pasteboard, the user's and the assistant's text along pi's current branch as
+    "user: …" and "assistant: …" paragraphs (`PiSessionFile.transcript`); Open in Finder opens
+    the folder the agent works in. A fork or copy that finds no session says so
+    (`ActionErrorDialog`). Remote threads have no Fork, Copy Transcript or Open in Finder: they
+    read a file on another Mac.
   - This Mac's automation runs: Stop while the run is live (a run whose pi is still starting
     included; `AutomationRun.isLive`), else Run Now, then Delete Automation. Run Now replaces a done
     run once the new run exists; a refused Run Now shows `ActionErrorDialog`.
@@ -2052,9 +2061,11 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
   skills out (on the Mac). Its rows are lazy, a highlight moving redraws only the two
   rows it moves between, and only ↑↓ scroll the highlight into view (the pointer's is already under
   the pointer).
-- **Not built yet:** argument hints after the name in `textTertiary` ("/resume [session]",
-  "/release-notes [tag]"; NWComposer, SlashMenu). `NWSlashCommand.arguments` draws them, but pi's
-  `get_commands` does not send them, so the app has none to show.
+- **Argument hints** after the name in `textTertiary` ("/release-notes [tag]"; NWComposer,
+  SlashMenu) come from a prompt template's `argument-hint` frontmatter, which the host reads from
+  the file pi names (pi's `get_commands` sends no hints; `NativeCommand.arguments`). Extension
+  commands and skills declare none, and pi's interactive built-ins (/resume, /reload) are not in
+  its registry, so those rows have no hint.
 - **Model picker** (`ModelPicker` on `NWModelPicker`, 380pt, its list at most 360pt tall;
   ModelPicker): from the model chip or ⇧⌘M, either of which also closes it (without `setModel` it
   beeps). A 30pt search row takes focus: a 12pt `magnifyingglass` in `textTertiary`, "Search
@@ -2095,10 +2106,9 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
 - **Agent context menu** (NWComposer › Menus: "Native NSMenu in Swift; shown for spec"): a
   native menu (`.contextMenu`), never a custom popover: Rename… with its keys (⌘R), Fork from here
   and Copy transcript (each with its glyph), a separator, Open in Finder, a separator, and Delete
-  agent… as the destructive item (`role: .destructive`). The sidebar's agent menu is today's
-  (Sidebar › Context menus). **Not built yet:** Fork from here, Copy transcript, and Open in
-  Finder for an agent (the subagent inspector has Fork, Copy Transcript, and Show Session File in
-  Finder for a finished run), and ⌘R shown beside Rename….
+  agent… as the destructive item (`role: .destructive`). The sidebar's agent menu
+  (Sidebar › Context menus) is this menu, with Review Changes, Finalize Worktree… and Delete
+  Worktree Agent… where it has them, and menu-bar title case.
 
 **Context meter** (ContextIdeas: placement A, "its own circle, beside Send"; ContextDetails,
 ContextFull, ContextCompacted; `ContextMeterButton` and `ContextDetailsPopover` in
@@ -2490,7 +2500,7 @@ Steer field focused.
   Pane. Showing opens the pane on its tab (Changes starts the review); hiding also closes an
   inspected subagent, and discards the review like a cancel. ⌃1 (View › Changes) shows Changes in
   front of an inspected subagent; it is fixed, like ⌘1–9, and ⌃2–⌃4 wait for the other tabs.
-  Review Changes (a sidebar row's menu), the palette's Show changes, the chip's Show Changes, a
+  Review Changes (a sidebar row's menu), the palette's Review diff, the chip's Show Changes, a
   thread's "review ›" link and the inspector's file links show Changes too.
 - **Nothing opens by itself** (PaneStates): when pi opens something for the pane (today, an
   agent's `review_diff`), the review is readied and the Changes tab takes a 6pt `running` dot
@@ -2563,12 +2573,15 @@ Steer field focused.
   mono with a Show all link ("Loading…" while it pages) when older turns are not loaded, and
   trailing "Following live" (or "Reading earlier output") while the run is live. Scrolling up
   stops following; scrolling back to the end resumes it.
-  - **Not built yet** (SubagentsDone): a finished run's footer reads its position, "turn 4 of 11"
-    in mono, with "Scroll for the rest" trailing while there is more below.
+  - A finished run's whole transcript (SubagentsDone) reads its position instead: "turn 4 of 11"
+    in mono (the run's turns, one per reply of the model as the header counts them, up to the
+    first reply at or after the topmost turn on screen; `SubagentPresentation.position`), with
+    "Scroll for the rest" trailing while there is more below.
 - **A Steer composer** while the run is live (Subagents): the composer card's anatomy on
   `bgRaised`, radius 8, a `lineStrong` line (`textTertiary` with a 3pt `bgSelected` ring while
   focused), set in 10pt from the top and 12pt from the sides, under a hairline. The field ("Steer
-  <name> — delivered before its next turn") is `body`, one to six lines; ⏎ sends, ⇧⏎ adds a line.
+  <name> — delivered before its next turn", the placeholder in `textTertiary`) is `body`, one to
+  six lines; ⏎ sends, ⇧⏎ adds a line.
   Beneath it "to: <name> · not the parent" in Geist Mono 11 `textTertiary` and a primary `m`
   Steer, disabled while the draft is empty. A failed send keeps the draft, and the store's notice
   shows under the card in `caption` `textTertiary`.
@@ -2579,8 +2592,8 @@ Steer field focused.
   agent with this run's transcript") and Copy transcript (ghost `s`; it loads every page first,
   and says "Couldn't load the full transcript. Nothing was copied." if it can't). A failed fork
   says why under the bar. Remote agents have no Fork.
-  - **Not built yet** (SubagentsDone): "kept with the thread" in Geist Mono 11 `textTertiary`
-    trailing the bar (`NWRunActions`' trailing slot).
+  - "kept with the thread" in Geist Mono 11 `textTertiary` trails the bar (`NWRunActions`'
+    trailing slot; SubagentsDone): the run stays browsable from the thread's record.
 
 **Changes** (the Changes pane: ChangesSplit, ChangesScope, ChangesBase, ChangesUnified,
 ChangesLastTurn, ChangesWide and ChangesStates; `ReviewPane` in `DiffReviewView.swift`, state in
@@ -3125,23 +3138,23 @@ surface: every destination and command in it is also in the sidebar or the menus
   Found in conversations, with or without a query.
 - **Sections**, in this order, under `NWPaletteSectionHeader` (24pt, mono 10 medium caps, tracked,
   `textTertiary`):
-  - **Commands:** New agent ("in <space>/", ⌘N), New agent with options… (⇧⌘T), New space… (⇧⌘N),
+  - **Commands:** New thread ("in <space>/", the project the New thread page last chose, once it
+    has chosen one; ⌘N), New agent with options… (⇧⌘T), New space… (⇧⌘N),
     New space on <host>… ("remote", one per connected host), Hide or Show sidebar (⇧⌘S), Settings…
     (⌘,), and Check remote worktree operation (its host) while one is pending. **Not built yet:**
     New mission… (NWComposer; it waits for Missions).
   - **This thread** (the agent on screen): Rename ("<title>", ⌘R), Choose model… ("<model>", ⇧⌘M),
-    Review diff ("working tree"), Review PR changes, and the Pane menu's terminal commands while a
+    Review diff ("working tree · 4 files", the checkout's changed files as the branch chip counts
+    them; ⇧⌘B, the side pane's chord), Review PR changes ("PR #24" once the agent's review has
+    found its pull request), and the Pane menu's terminal commands while a
     thread with a layout is on screen: Show or Hide terminal (⌘J), New terminal (⌘D, shown while the
     thread has the keyboard), and Maximize or Restore terminal (⇧⌘↩), named for what they will do.
-    **Not built yet:** Review diff's file count ("working tree · 4 files"; NWComposer,
-    CommandPalette) and its ⇧⌘B keycaps (NWComposer), and Review PR changes' number ("PR #24";
-    CommandPalette).
   - **Subagents:** each live or recent run: its label, "<parent> · running 37m" ("needs you",
     "done", "failed"; a remote run's parent adds " · <host>"), and `arrow.turn.down.right` in its
     run's state color.
   - **Agents** (with a query, or in the Agents scope): each agent in sidebar order with "<space> ·
-    <status>" (running, needs you, idle, done, failed), and each remote agent with its host. **Not
-    built yet:** a working agent's elapsed time ("running · 8m"; NWComposer).
+    <status>" (running, needs you, idle, done, failed; a working agent adds its time, "running ·
+    8m", as its sidebar row counts it), and each remote agent with its host.
   - **Spaces:** the name and its `~/path`.
   - **Found in conversations:** conversation search needs at least 3 characters, runs off the main
     actor 250ms after the last keystroke, and reads the last 512 KB of each agent's pi session. It
@@ -5441,9 +5454,9 @@ selected thread, or the Overview when none is. Other screens push over the detai
   trailing. The highlighted row is `runningTint`. The draft shows in mono while it is a command.
   Five rows show before the list scrolls.
 - **Not built yet: argument hints.** After a command's name, its arguments in mono
-  `textTertiary` ("/resume [session]", "/release-notes [tag]"). pi's commands reach the client
-  without arguments (`NativeCommand` carries a name, a description and a source), so the host
-  must send them first.
+  `textTertiary` ("/resume [session]", "/release-notes [tag]"). The host sends a prompt
+  template's hint (`NativeCommand.arguments`; Composer › Slash menu), and the Mac draws it, but
+  the iOS list (`NWTouchCommand`) does not draw it yet.
 
 #### Up next and steering (iPadQueue, iPadSteer)
 
@@ -7933,9 +7946,9 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | --- | --- | --- |
 | Main | Thread; Composer, questions, and menus; Toolbar (breadcrumb, branch chip, side-pane button) | Built |
 | Running | Thread (A turn while pi works); Composer, questions, and menus | Built |
-| SlashMenu | Composer, questions, and menus › Slash menu | Partial |
+| SlashMenu | Composer, questions, and menus › Slash menu | Built |
 | ModelPicker | Composer, questions, and menus › Model picker | Built |
-| CommandPalette | Command palette | Partial |
+| CommandPalette | Command palette | Built |
 | ToolRows | Thread › Activity lines | Built |
 | ChangesSplit | Side pane › Changes (toolbar, compare row, strip, file headers, split, comments, send bar) | Built |
 | ChangesScope | Side pane › Changes (scope menu, Commits menu) | Built |
@@ -7943,8 +7956,8 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | ChangesUnified | Side pane › Changes (unified, word diffs, Diff options) | Partial |
 | ChangesLastTurn | Side pane › Changes (a turn's compare row, the comment editor) | Built |
 | ChangesWide | Side pane › Changes (maximized, file list) | Partial |
-| Subagents | Subagents; Side pane › Subagent inspector | Partial |
-| SubagentsDone | Subagents; Side pane › Subagent inspector | Partial |
+| Subagents | Subagents; Side pane › Subagent inspector | Built |
+| SubagentsDone | Subagents; Side pane › Subagent inspector | Built |
 | SubagentsQueue | Subagents (One card with Up next); Up next (the queue) | Partial |
 | SettingsAppearance | Settings › Appearance; Density and row settings | Built |
 | SettingsAgents | Settings › Agents | Built |
@@ -7971,8 +7984,8 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | PaneArtifactEdit | Side pane (Artifacts › Editing in place) | Not built yet |
 | PaneFiles | Side pane (Files) | Not built yet |
 | PaneStates | Side pane (tabs, dot, narrow, ⋯, button); Side pane: Browser, Artifacts, Files | Partial |
-| ContextDetails | Composer, questions, and menus › Context meter | Partial |
-| ContextFull | Composer, questions, and menus › Context meter | Partial |
+| ContextDetails | Composer, questions, and menus › Context meter | Built |
+| ContextFull | Composer, questions, and menus › Context meter | Built |
 | ContextCompacted | Composer, questions, and menus › Context meter; Thread › Compactions | Built |
 | QueueStack | Up next (the queue) | Built |
 | QueueSteer | Up next (the queue); Thread › User turn (Steered) | Built |
@@ -8122,10 +8135,10 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | NWThread, NWThreadLight | Thread | Partial |
 | TurnErrors | Thread › Errors (every kind, the retry line, touch sizes) | Partial |
 | LiveText | Thread › Live text, Activity lines (Live), Thinking (Live); Motion (`shimmer`); Up next (a steering row waits still); Subagents (a running tray row's words) | Built |
-| NWComposer, NWComposerLight | Composer, questions, and menus; Command palette | Partial |
-| ContextIdeas | Composer, questions, and menus › Context meter; Thread › Compactions | Partial |
+| NWComposer, NWComposerLight | Composer, questions, and menus; Command palette | Built |
+| ContextIdeas | Composer, questions, and menus › Context meter; Thread › Compactions | Built |
 | NWNavigation, NWNavigationLight | Window and adaptive layout; Sidebar; Toolbar | Partial |
-| NWAgents, NWAgentsLight | Subagents; Side pane › Subagent inspector; Mission components | Partial |
+| NWAgents, NWAgentsLight | Subagents; Side pane › Subagent inspector; Mission components | Built |
 | ChangesStates | Side pane › Changes; Thread › Changes card; Keyboard | Partial |
 | SubagentTray | Subagents; iPhone: Subagents; iOS: iPad › Subagents | Partial |
 | NWSwift, NWSwiftLight | Theme model › Building on ShepherdUI | Partial |
