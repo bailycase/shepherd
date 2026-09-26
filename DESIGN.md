@@ -8110,10 +8110,10 @@ Build them on what exists: the activity line, `NWValueSlider`, `NWSegmentedPicke
 
 ### On iPad (iPadDesign, iPadSplitView)
 
-**Built** (`App/iOS/DesignPad/`) for hosts that serve designs (`designs.v1`), except Pencil
-markup: the canvas and 360pt chat pane, the header, Scribble in the chat's field, and Split View
-with "Send to the thread". The boards render on the iPad (docs/designs.md › On iPad). Not drawn,
-and built as the least that is honest:
+**Built** (`App/iOS/DesignPad/`) for hosts that serve designs (`designs.v1`): the canvas and 360pt
+chat pane, the header, Pencil markup (where the host offers `design.markup.v1`), Scribble in the
+chat's field, and Split View with "Send to the thread". The boards render on the iPad
+(docs/designs.md › On iPad, › Pencil markup). Not drawn, and built as the least that is honest:
 
 - **The canvas's tools** are the Mac's toolbar (Select · Comment · Pan | zoom) in the bottom-left
   corner; iPadDesign draws only the Pencil palette, which comes with markup. With Comment, a tap
@@ -8125,6 +8125,19 @@ and built as the least that is honest:
   without "Send to the thread"; with several such windows, the button asks which thread.
 - **The Designs list** the sidebar's row opens is the Mac's cards (NWDesignCard) in a grid.
 - **Portrait** keeps the canvas beside the 360pt pane.
+- **Markup's moments:** the palette shows while there is ink since the last Done (the first
+  Pencil stroke brings it, erasing everything takes it away); Done reads at 40% while the markup
+  is read and sent; sent ink stays on the canvas, under new ink, until its proposals are applied
+  or kept. The palette's Comment is the canvas's Comment tool (a Pencil or finger tap on an
+  element opens the editor). Ink is 3pt (the pen) or 12pt (the marker) on screen, and zooms with
+  the boards.
+- **The proposals:** one reads **Apply**, three or more **Apply all**. Once applied or kept, the
+  buttons and the Scribble line give way to "On the canvas as comments 2 and 3." in 12.5
+  `textTertiary`. A markup that couldn't reach the agent, and proposals that couldn't be kept,
+  say so in the design's dialog and stay as they were.
+- **On the Mac** the design's chat shows markup from an iPad as the words the host sends with it
+  ("Pencil markup · 2 strokes · 2 notes") and the agent's call as an activity line ("Used markup ·
+  2 proposed comments"); the Mac draws no proposals card.
 
 What the board draws:
 

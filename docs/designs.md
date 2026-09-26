@@ -192,6 +192,7 @@ that folder.
 | `design_check(path?)` | `designSystemRead` | `designSystems` | In the extension: every hex color (in style attributes, style and script blocks, `data-props`, SVG paint) and every px size in spacing, radius and type that the design's installed systems don't hold (their colors and dark values, spacing, radii and type sizes), else that no CSS custom property in its working folder declares, with the board and lines it is on and the nearest token. Its first line is "Checked against <system or project> · N off-system values" |
 | `comment_list(all?)` | `designComments` | `designComments` | The viewer's open comments (all of them with `all`), oldest first: id, number, state, element id and name, and each one's words and replies, fenced as data |
 | `comment_reply(id, text)` | `designCommentReply` | `designComment` | An answer under a comment's pin (`replyToDesignComment`, author `agent`). No message resolves a comment: only the viewer does |
+| `markup_propose(proposals)` | `designProposeComments` | `designProposals` | Comments proposed from the viewer's Pencil markup, one per mark: each element checked against its board's source (`invalid_markup` otherwise), named `<call id>#<n>`, its card's name the element's `data-el` name else its words. The result lists them for the agent and ends with their JSON between `markup-proposals` markers, all inside the data fence, for the chat (Pencil markup, below). Nothing is kept |
 | `system_read()` | `designSystemRead` | `designSystems` | Every design system this host keeps and the ones the design installed (its own first), fenced as data |
 | `system_read(namespace)` | `designSystemRead` with `namespace` | `designSystem` | One system whole: its tokens with the file and line each came from, its components, files and README, fenced as data |
 | `system_write(namespace, …)` | `designSystemWrite` | `designSystemWritten` | `writeDesignSystem`: a system's tokens, files and source stylesheets; with `install`, then `installDesignSystem` into the agent's design. With only a namespace and `install`, installs an existing system |
@@ -253,7 +254,8 @@ so an exported canvas carries none.
   template gives them (`label`, from `DesignTemplate.labels`: the runtime's describe label, holes
   as written), what the card calls it (`target`: the element's `data-el` name, else its words),
   where the board drew it (`rect`, in the board's points), the viewer's words, author and time,
-  the `replies` under it, `resolvedAt`, and `detached`.
+  the `replies` under it, `resolvedAt`, and `detached`; and `proposal`, the design agent's
+  proposal from Pencil markup it was kept from (below), else nothing.
 - **Its own revision.** `comments.json` carries a revision that moves with every change to the
   comments and never with the boards', so a comment never makes the agent's next board write
   stale. A change naming an older one is refused (`stale_revision`); the canvas reads them again
@@ -940,6 +942,8 @@ a VPN or trusted network is the transport boundary, as for everything else it se
 | `comments`, `addComment`, `replyToComment`, `resolveComment` | `comments`, `comment` | The host's comment mutations: the element checked against the board's source, the comment handed to the design agent fenced as data, each change at the comments' revision |
 | `writeBoards`, `updateIndex`, `duplicateBoard`, `restoreVersions` | `boardsWritten`, `written`, `duplicated` | Tweak, a board moved, Duplicate and Undo, through `writeDesignBoards`, `updateDesignIndex`, `duplicateDesignBoard` and `restoreDesignVersions` with their checks and revisions |
 | `system(namespace)` | `system` | One design system whole |
+| `sendMarkup(id, markup)` | `markupSent` | Pencil markup (`design.markup.v1`): the record checked against the canvas and the boards' sources, then handed to the design agent fenced, as a turn of its own; why it didn't reach the agent, or nil. Nothing is kept |
+| `addProposedComments(id, drafts, deliver, base)` | `proposedCommentsAdded` | The agent's proposals kept as comments (`design.markup.v1`): all or none, at the comments' revision, once per proposal; with `deliver` each new one goes to the agent as a comment does |
 | `watch(ids)` | `ok` | The designs this client shows; replaces the last set |
 
 - **Pushed:** `designChanged(id, revision, commentsRevision)` after each change to a watched
@@ -1018,7 +1022,7 @@ through `capabilitiesChanged`.
   stage at the back of the window, where WebKit still draws them.
 - **Touch** (`NWCanvasTouchInput`): a drag pans, a pinch zooms, a tap selects or, with Comment,
   opens the editor on the element under it. Fingers and pointers only: an Apple Pencil's touches
-  pass to the markup layer over the canvas (`PadDesignMarkupLayer`, the seam P5d fills).
+  go to the markup layer over the canvas (`PadDesignMarkupLayer`, Pencil markup, below).
 - **Writes** go through the host: comments, replies and Resolve at the comments' revision, Tweak
   (`DesignTweakModel`, shared with the Mac) with its board writes and undo, Duplicate; a stale
   revision reads the design again and goes once more. A send carries the canvas's view record.
@@ -1030,3 +1034,54 @@ through `capabilitiesChanged`.
   and brings that window forward; the viewer sends it. Nothing the design's files say (its
   title, a board's name) goes into that message: the thread it goes to reads no fence.
 - **Export** shares the page's boards as PNGs through the share sheet, drawing any not drawn yet.
+
+### Pencil markup
+
+On iPad the viewer can draw on the canvas with an Apple Pencil (iPadDesign) where the host offers
+`design.markup.v1` (with `designs.v1`, while its Design tool is on).
+
+- **Ink** (`PadDesignMarkup`, `PadDesignMarkupLayer`): a PencilKit canvas over the boards that
+  draws with the Pencil alone. Hit-testing gives it a Pencil's touches and leaves every other to
+  the canvas, so a finger pans and pinches; where UIKit doesn't say which kind a touch is, the
+  layer takes touches while there is ink and pans and pinches with a finger itself. The ink is
+  kept in canvas points and drawn through the viewport, so it stays on its boards at every zoom.
+  The palette (`NWMarkupPalette`) shows while there is ink: pen, marker, eraser, Comment (the
+  canvas's Comment tool), three inks, Done.
+- **Done reads the markup on the iPad** (`PadDesignMarkupReader`, `DesignMarkupReading`):
+  - Each stroke's shape: a loop, a nearly straight line, a V (an arrowhead drawn on its own), an
+    arrow drawn in one stroke, or none. An arrowhead joins the line whose end it sits on (a line
+    longer than the writing); small shapes among writing are letters; a level line is an
+    underline, any other line a mark; strokes with no shape group into writing by proximity.
+  - Writing is read by Vision's text recognition, on the device; nothing goes over the network.
+    Writing it can't read is a mark.
+  - Notes go with marks: an arrow between a note and a loop or line ties them (and is no mark of
+    its own); an arrow from a note to nothing marked is the mark, pointing away from the note;
+    any other note goes with the nearest mark without one; a note with no mark is a mark where it
+    is written.
+  - Each mark's board is the one it overlaps most (else the nearest); its element is chosen
+    among the elements the board reports under it (a loop's middle; a little above an underline
+    at a quarter, half and three quarters along; an arrow's head) and their ancestors from the
+    board's template, located on the live board: the best-matching box for a loop or mark, the
+    element whose bottom the line runs along for an underline, the deepest under an arrow's head.
+- **The record** (`DesignMarkup`, ShepherdProtocol): `{strokes: [{kind, board, element, label,
+  note}]}`, 1 to 20 marks in the order drawn, each `kind` one of `circle`, `underline`, `arrow`,
+  `mark`, its board by view name, its element (`File.dc.html#tid:path`, on that board) or none
+  for the board as a whole, and its note on one line of at most 280 characters. The host
+  refuses a record outside the grammar, or naming a board the canvas lacks or an element the
+  board's source lacks (`invalid_markup`), reads each label from the source, and hands the agent
+  the record fenced (`DesignMarkupFence`: a line saying it is data, then the JSON between
+  `design-markup` markers carrying a nonce new to the message), then "Pencil markup · 2 strokes
+  · 2 notes", as a turn of its own through the host queue, like a comment. The message's origin
+  (`NativeMessageOrigin.designMarkup`) carries the counts. Sent ink stays on the canvas until its
+  proposals are applied or kept; ink that couldn't go stays as it was.
+- **The agent's answer.** The skill and the prompt have it read the marks, call `markup_propose`
+  once with a comment per mark, say in a sentence which mark became which comment, and change no
+  board until the viewer applies them.
+- **In the chat** (iPad): the markup message reads "Read your markup · 2 strokes · 2 notes" with
+  the nib; the reply's `markup_propose` call gives way to the proposals card
+  (`NWMarkupProposals`) under its words: comment cards numbered as their pins will be, named
+  "A · phone › Steps list", "from your markup". **Apply both** keeps them as comments and sends
+  each to the agent as a comment is sent; **Keep as comments** keeps them on the canvas unsent;
+  both through `addProposedComments`, which keeps a proposal once, so the card reads "On the
+  canvas as comments 2 and 3." afterwards, on any device. The Mac shows the markup's words and
+  an activity line for the call.
