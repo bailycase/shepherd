@@ -4,7 +4,9 @@ The bundled panes extension (`Extensions/shepherd-panes.ts`, on under Settings â
 extensions) gives every Shepherd agent tools for the other top-level agents in the app, and the
 review extension (`Extensions/shepherd-review.ts`) gives it `review_diff`. Subagents are a
 separate runtime ([native-subagents.md](native-subagents.md)); these tools address agents in the
-sidebar.
+sidebar. A design's agent is none of them: it gets no panes extension, and the server refuses
+every request from or to it with `not_a_thread` ([designs.md](designs.md) â€º Design agents and
+ordinary threads).
 
 Code: `Extensions/shepherd-panes.ts` (the tools and the recipient side), `SessionServer`
 (relaying, tokens, timeouts), `AgentPeers.swift` (list, send, spawn, and the deletion dialog's
@@ -12,7 +14,7 @@ decisions), `PeerDeleteDialog` in `AppDialogs.swift`, and `ShepherdViewModel+Rev
 
 ## The tools
 
-- **`agent_list`**: every top-level agent, with its status and directory.
+- **`agent_list`**: every top-level thread, with its status and directory.
 - **`agent_send`**: a message the target receives as a follow-up (`deliverAs: "followUp"`),
   prefixed `[from: <sender name>]`. It wakes an idle agent.
 - **`agent_spawn`**: a new agent in a directory with an opening prompt. It never takes the

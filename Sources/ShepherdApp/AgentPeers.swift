@@ -33,19 +33,15 @@ extension ShepherdViewModel {
             return
         }
 
+        // A design's agent is no thread: it has no peers, and no thread reaches it.
+        guard !state.isDesignAgent(sender) else {
+            respond(.failed(code: "not_a_thread", message: "a design's agent does not coordinate with threads"))
+            return
+        }
+
         switch request {
         case .list:
-            let infos = state.agents.map { agent in
-                let cwd = state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd ?? ""
-                return AgentPeerInfo(
-                    id: agent.id,
-                    name: agent.name,
-                    status: agent.status.rawValue,
-                    cwd: cwd,
-                    isSelf: agent.id == sender.id
-                )
-            }
-            respond(.agents(infos))
+            respond(.agents(Self.peerInfos(in: state, sender: sender.id)))
 
         case .send(_, let targetAgentID, let text):
             guard targetAgentID != sender.id else {
@@ -54,6 +50,10 @@ extension ShepherdViewModel {
             }
             guard let target = state.agents.first(where: { $0.id == targetAgentID }) else {
                 respond(.failed(code: "no_such_agent", message: "unknown agent \(targetAgentID)"))
+                return
+            }
+            guard !state.isDesignAgent(target) else {
+                respond(.failed(code: "not_a_thread", message: "\(target.name) draws a design; it is not a thread"))
                 return
             }
             // Delivered through the target's panes extension, which injects
@@ -74,6 +74,10 @@ extension ShepherdViewModel {
             }
             guard let target = state.agents.first(where: { $0.id == targetAgentID }) else {
                 respond(.failed(code: "no_such_agent", message: "target no longer exists"))
+                return
+            }
+            guard !state.isDesignAgent(target) else {
+                respond(.failed(code: "not_a_thread", message: "\(target.name) draws a design; it is not a thread"))
                 return
             }
             guard peerDeleteConfirmation == nil else {
@@ -120,6 +124,19 @@ extension ShepherdViewModel {
                     respond(.failed(code: "spawn_failed", message: String(describing: error)))
                 }
             }
+        }
+    }
+
+    /// What agent_list shows `sender`: every thread, and no design's agent.
+    static func peerInfos(in state: ShepherdState, sender: AgentID) -> [AgentPeerInfo] {
+        state.agents.filter { !state.isDesignAgent($0) }.map { agent in
+            AgentPeerInfo(
+                id: agent.id,
+                name: agent.name,
+                status: agent.status.rawValue,
+                cwd: state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd ?? "",
+                isSelf: agent.id == sender
+            )
         }
     }
 
