@@ -98,7 +98,8 @@ Undo (`undoTurn`) works on the last turn only, once it ended having changed some
 Nothing else moves: not the index, HEAD, refs, the stash, or any other file. Redo is the same
 from the start tree to the end tree, until the next turn starts, and refuses when any of the
 turn's files changed after the Undo. The card draws Undo without a dialog; Redo is what makes it
-safe, and the refusal is what keeps it from overwriting anything the user wrote.
+safe, and the refusal is what keeps it from overwriting anything the user wrote. The agent is not
+told about an Undo or a Redo. (Both the user's call, 2026-09-25.)
 
 ## What it writes
 
