@@ -239,10 +239,15 @@ struct DesignToolTests {
         var undelivered: String?
         /// Runs once a change is kept and before its answer, as the host's push can.
         var beforeAnswer: (() async -> Void)?
+        /// Whether a read answers: off, the refresh after a change can't tidy what its answer did.
+        var readable = true
 
         func actions() -> DesignCommentActions {
             DesignCommentActions(
-                list: { [self] _ in file },
+                list: { [self] _ in
+                    guard readable else { throw CancellationError() }
+                    return file
+                },
                 add: { [self] _, draft, base in
                     drafts.append((draft, base))
                     let comment = DesignComment(number: file.nextNumber, board: draft.board, tid: draft.tid, path: draft.path,
@@ -377,7 +382,10 @@ struct DesignToolTests {
     @Test func aCommentThePushBroughtFirstIsKeptOnce() async throws {
         let host = CommentHost()
         let screen = try await commentScreen(host)
-        host.beforeAnswer = { await screen.refreshComments() }
+        host.beforeAnswer = {
+            await screen.refreshComments()
+            host.readable = false
+        }
         let element = Self.element("A.dc.html", 12, [1, 0, 2])
         screen.beginComment(on: element)
         screen.draftText = "Show the absolute counts."
@@ -398,7 +406,10 @@ struct DesignToolTests {
         ])
         let screen = try await commentScreen(host)
         let id = host.file.comments[0].id
-        host.beforeAnswer = { await screen.refreshComments() }
+        host.beforeAnswer = {
+            await screen.refreshComments()
+            host.readable = false
+        }
         screen.openThread(id.uuidString)
         if resolving {
             await screen.resolve(id)?.value
