@@ -206,6 +206,14 @@ struct DesignFlowTests {
             screen.snapshot?.boards[a] == written.sha256 && screen.selectedElements.last.map { $0.rect.minY > 100 } == true
         }
 
+        // Clicks land in order: one whose board is still being asked never overtakes a later one.
+        screen.pick(NWCanvasPick(board: "B.dc.html", point: CGPoint(x: 100, y: 45)))
+        screen.pick(NWCanvasPick())
+        try await eventuallyOnMain("the clicks to settle", timeout: .seconds(30)) { !screen.isPicking }
+        #expect(screen.picks.isEmpty, "the click on the empty canvas came last")
+
+        screen.pick(NWCanvasPick(board: a.rawValue, point: CGPoint(x: 100, y: 45)))
+        try await eventuallyOnMain("the heading to be selected again", timeout: .seconds(30)) { !screen.isPicking }
         screen.pick(NWCanvasPick())
         #expect(screen.picks.isEmpty && screen.viewRecord?.selected.isEmpty == true)
     }
