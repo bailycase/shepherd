@@ -72,11 +72,12 @@ struct QuestionDock: View {
         }
         .background { QuestionKeyReader(monitor: keys) }
         // The monitor reads the dock as it is when a key comes: its picks and focus through
-        // their storage, the rest as this render has them.
-        .onChange(of: KeyInputs(focused: focused, hidden: hidden, enabled: enabled), initial: true) { _, inputs in
+        // their storage, the rest as the last render that changed them has them (a question
+        // keeps its id while an external editor opens and closes over it).
+        .onChange(of: KeyInputs(prompt: prompt, focused: focused, hidden: hidden, enabled: enabled), initial: true) { _, inputs in
             keys.perform = { key, editing in
-                perform(prompt.action(for: key, picks: Self.picks(selection), hidden: inputs.hidden, editing: editing,
-                                      enabled: inputs.enabled))
+                perform(inputs.prompt.action(for: key, picks: Self.picks(selection), hidden: inputs.hidden, editing: editing,
+                                             enabled: inputs.enabled))
             }
             keys.editing = { [field = $field] in field.wrappedValue != nil }
             keys.watch(inputs.focused)
@@ -88,6 +89,7 @@ struct QuestionDock: View {
     }
 
     private struct KeyInputs: Equatable {
+        var prompt: NativeQuestionPrompt
         var focused: Bool
         var hidden: Bool
         var enabled: Bool
