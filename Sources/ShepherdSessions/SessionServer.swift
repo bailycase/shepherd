@@ -242,6 +242,12 @@ public final class SessionServer: @unchecked Sendable {
     /// the reply comes back through the completion. Delivered on the main
     /// actor; the completion may be called from any thread.
     public var onPaneRequest: ((PaneRequest, @escaping (PaneOutcome) -> Void) -> Void)?
+    /// The MCP extension asked for a server's credentials. The app owns the Keychain and OAuth,
+    /// so the request is handed to it like a pane request; with no handler the answer is
+    /// `mcp_unavailable`. Delivered on the main actor; the completion may be called from any thread.
+    public var onMCPRequest: ((MCPRequest, @escaping (MCPOutcome) -> Void) -> Void)?
+    /// The MCP extension reported a server's state or tools. Hopped to the main queue in FIFO order.
+    public var onMCPReport: ((AgentID, MCPServerReport) -> Void)?
     /// An agent asked to open a native diff-review pane. The GUI owns the
     /// review layout and user interaction; the completion carries the result.
     public var onReviewRequest: ((ReviewRequest, @escaping (ReviewOutcome) -> Void) -> Void)?
@@ -1935,6 +1941,11 @@ public final class SessionServer: @unchecked Sendable {
             routeReviewRequest(.start(agentID: agentID, cwd: cwd, reference: reference), requestID: id, client: client)
         case .suggestInstruction(let id, let agentID, let line, let reason, let file):
             suggestInstruction(id: id, agentID: agentID, line: line, reason: reason, file: file, client: client)
+        case .mcpCredentials(let id, let agentID, let server, let reason, let challenge):
+            routeMCPRequest(MCPRequest(agentID: agentID, server: server, reason: reason, challenge: challenge),
+                            requestID: id, client: client)
+        case .mcpReport(let agentID, let report):
+            hopToMain { [weak self] in self?.onMCPReport?(agentID, report) }
         case .designRead(let id, let agentID, let designID, let path):
             designRequest(id: id, agentID: agentID, designID: designID, path: path, client: client) { server, path in
                 if let path { return .designBoard(id: id, board: try await server.designBoard(designID, path: path)) }
@@ -2163,6 +2174,21 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Hand an MCP credentials request to the app and write its answer back to the client.
+    private func routeMCPRequest(_ request: MCPRequest, requestID: Int, client: ExtensionConnection) {
+        guard let handler = onMCPRequest else {
+            reply(.error(id: requestID, code: MCPFailureCode.unavailable,
+                         message: "Shepherd can't hand out MCP credentials here."), to: client)
+            return
+        }
+        hopToMain { [weak self, weak client] in
+            handler(request) { outcome in
+                guard let self, let client else { return }
+                self.queue.async { self.reply(outcome.withID(requestID), to: client) }
+            }
+        }
+    }
+
     /// Hand a review request to the GUI and write its reply back to the client.
     private func routeReviewRequest(_ request: ReviewRequest, requestID: Int, client: ExtensionConnection) {
         guard let handler = onReviewRequest else {
@@ -2245,7 +2271,8 @@ public final class SessionServer: @unchecked Sendable {
              .designComment(let id, _),
              .designSystems(let id, _),
              .designSystem(let id, _),
-             .designSystemWritten(let id, _):
+             .designSystemWritten(let id, _),
+             .mcpCredentials(let id, _):
             return id
         }
     }
