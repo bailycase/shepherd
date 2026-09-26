@@ -100,7 +100,9 @@ elements).
   canvas `title`), `agentID`, `systemNamespace`, `createdAt` and `lastActiveAt`, and a build's
   `buildsSystem` and `sourceSpaceID`. `Agent.designID` names the design an agent draws. Both
   decode with defaults from older files; a design's `spaceID` from before designs stood alone is
-  ignored, except that an older build's is read as its `sourceSpaceID`.
+  ignored, except that an older build's is read as its `sourceSpaceID`. It is still written (a
+  build's project, else an id no space has), because older builds and remote clients can't
+  decode a design without one.
 - **Live values.** A design's `boardCount` (its listed boards) is read from its files and
   broadcast, never written to `state.json`. A write moves `lastActiveAt` the same way; it reaches
   the file with the next structural change.

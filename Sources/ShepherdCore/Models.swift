@@ -363,7 +363,8 @@ public struct Design: Codable, Hashable, Sendable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case id, name, agentID, systemNamespace, createdAt, lastActiveAt, boardCount, buildsSystem, sourceSpaceID
-        // Before designs stood alone (2026-09-26): read only for a build's project.
+        // Before designs stood alone (2026-09-26). Read only for a build's project; still written,
+        // because older builds and remote clients can't decode a design without it.
         case spaceID
     }
 
@@ -393,7 +394,11 @@ public struct Design: Codable, Hashable, Sendable, Identifiable {
         // Only a system build says so, so a design's record reads as it did before.
         if buildsSystem { try c.encode(buildsSystem, forKey: .buildsSystem) }
         try c.encodeIfPresent(sourceSpaceID, forKey: .sourceSpaceID)
+        try c.encode(sourceSpaceID ?? Self.legacyStandaloneSpace, forKey: .spaceID)
     }
+
+    /// The `spaceID` a standalone design writes for older readers: no space has it.
+    static let legacyStandaloneSpace = SpaceID(rawValue: "standalone-design")
 }
 
 /// The server's authoritative snapshot.
