@@ -34,6 +34,12 @@ struct PiStartRecordTests {
         Case(name: "pi not on PATH", stderr: ["zsh:1: command not found: pi"], exitCode: 127, kind: .engineMissing),
         Case(name: "an engine that isn't there", stderr: ["zsh:1: no such file or directory: /Apps/pi-engine"], exitCode: 127, kind: .engineMissing),
         Case(name: "an engine it may not run", stderr: ["zsh:1: permission denied: /Apps/pi-engine"], exitCode: 126, kind: .engineMissing),
+        Case(name: "the launcher finds no engine in the app",
+             stderr: ["pi: Shepherd's pi engine is missing: /Apps/Shepherd.app/Contents/Helpers/node … Reinstall Shepherd."], exitCode: 127,
+             kind: .engineMissing),
+        Case(name: "Shepherd refused to start pi in a home that overlaps your pi",
+             stderr: [PiLaunch.refusalPrefix + "Shepherd's pi home (/s/pi) and your pi (/s) overlap"], exitCode: PiLaunch.refusedExitCode,
+             kind: .homeUnsafe),
         Case(name: "anything else", stderr: ["TypeError: cannot read properties of undefined"], exitCode: 1, kind: .exited),
         Case(name: "a signal", stderr: [], exitCode: nil, kind: .exited),
     ]

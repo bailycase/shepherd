@@ -429,7 +429,7 @@ final class ShepherdViewModel {
     ) {
         self.state = ShepherdState()
         self.server = server
-        self.hostPRDescriptionGenerator = WorktreePRDescriptionGenerator(engine: server.pi.engine)
+        self.hostPRDescriptionGenerator = WorktreePRDescriptionGenerator(pi: server.pi)
         self.restoresAgentsAtLaunch = restoresAgentsAtLaunch
         self.settings = settings ?? .shared
         self.sidebarDefaults = sidebarDefaults

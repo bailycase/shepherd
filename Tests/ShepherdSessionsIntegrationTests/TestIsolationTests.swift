@@ -64,13 +64,16 @@ struct TestIsolationTests {
         return (process.terminationStatus, String(decoding: data, as: UTF8.self).split(separator: "\n").map(String.init))
     }
 
-    /// The app's pi in a test process is the stand-in engine `SHEPHERD_PI_ENGINE` names, and it
-    /// refuses to run, as a missing command would, until a test installs the stub over it.
-    @Test func theAppsPiIsTheStandInEngine() throws {
-        #expect(PiSetup.app.engine == PiEngine(pi: .executable(TestProcess.piEngine.path), node: .onPath("node")))
-        #expect(PiSetup.app.home.path == TestProcess.piAgentDirectory.standardizedFileURL.path)
-        let result = try run(PiLaunch.command(engine: PiEngine(pi: .executable(TestProcess.binDirectory.appendingPathComponent("pi").path),
-                                                               node: .onPath("node")), arguments: ["--version"]))
+    /// The app's engine in a test process is the stand-in `SHEPHERD_PI_ENGINE` names, which
+    /// refuses to run, as a missing command would, until a test installs the stub over it. Its
+    /// home is the scratch support folder's, never the process's `PI_CODING_AGENT_DIR`, and "your
+    /// pi" is the scratch one.
+    @Test func theAppsPiIsTheStandInEngineInTheScratchHome() throws {
+        #expect(PiSetup.app.engine.command == [TestProcess.piEngine.path])
+        #expect(PiSetup.app.home.path == TestProcess.piHome.standardizedFileURL.path)
+        #expect(PiSetup.app.home.path != TestProcess.piAgentDirectory.standardizedFileURL.path)
+        #expect(PiSetup.app.yourPi.resolve()?.agentDirectory.path == TestProcess.piAgentDirectory.standardizedFileURL.path)
+        let result = try run(PiLaunch.Line(script: "exec '\(TestProcess.binDirectory.appendingPathComponent("pi").path)' --version"))
         #expect(result.status == 127)
     }
 
@@ -85,26 +88,50 @@ struct TestIsolationTests {
         #expect(!decoy.hasPrefix(TestProcess.piAgentDirectory.path) && !TestProcess.piAgentDirectory.path.hasPrefix(decoy))
     }
 
+    /// A scratch home whose engine prints where it runs, its arguments, and the variables the
+    /// launcher decides.
+    private func scratchHome(_ dir: URL) throws -> PiHome {
+        let engine = dir.appendingPathComponent("pi-engine")
+        try """
+            #!/bin/sh
+            pwd -P
+            printf '%s\\n' "$@"
+            for name in PI_CODING_AGENT_DIR PI_PACKAGE_DIR PI_OFFLINE NODE_OPTIONS JITI_ALIAS PI_EXPERIMENTAL _SHEPHERD_STASH_NODE_OPTIONS; do
+              eval "printf '%s=%s\\n' $name \"\\${$name-unset}\""
+            done
+
+            """.write(to: engine, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: engine.path)
+        let home = PiHome(directory: dir.appendingPathComponent("support/pi", isDirectory: true),
+                          engine: PiEngine(command: [engine.path], packageDirectory: nil, version: nil, node: .onPath("node")))
+        try home.install()
+        return home
+    }
+
     /// An agent's line starts pi in the agent's folder although the startup files move a shell
-    /// that starts the engine to `/`; a line without its own `cd` shows the decoy is live.
-    @Test func anAgentsLineKeepsItsFolderDespiteTheStartupFiles() throws {
+    /// that starts Shepherd's pi to `/`, and the launcher's pins win over every decoy: the decoys
+    /// are set aside, never seen by pi.
+    @Test func anAgentsLineKeepsItsFolderAndHomeDespiteTheStartupFiles() throws {
         let dir = try makeScratchDirectory("engine")
         defer { try? FileManager.default.removeItem(at: dir) }
         let cwd = dir.appendingPathComponent("it's a folder", isDirectory: true)
         try FileManager.default.createDirectory(at: cwd, withIntermediateDirectories: true)
-        let engine = dir.appendingPathComponent("pi-engine")
-        try "#!/bin/sh\npwd -P\nprintf '%s\\n' \"$@\"\n".write(to: engine, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: engine.path)
-        let piEngine = PiEngine(pi: .executable(engine.path), node: .onPath("node"))
+        let home = try scratchHome(dir)
 
-        let agent = try run(PiLaunch.agent(engine: piEngine, cwd: cwd.path, sessionID: "s-1", model: nil, thinking: nil,
-                                           extensions: ["/e.ts"]), cwd: cwd)
+        let agent = try run(try PiLaunch.agent(home: home, cwd: cwd.path, sessionID: "s-1", model: nil, thinking: nil, extensions: ["/e.ts"]),
+                            cwd: cwd)
         #expect(agent.status == 0)
         let real = try #require(realpath(cwd.path, nil))
         defer { free(real) }
-        #expect(agent.lines == [String(cString: real), "--mode", "rpc", "--session-id", "s-1", "-e", "/e.ts"])
+        let decoy = TestProcess.piDecoyDirectory.path
+        #expect(agent.lines == [
+            String(cString: real), "--mode", "rpc", "--session-dir", home.sessionDirectory(forCwd: cwd.path).path, "--session-id", "s-1",
+            "-e", "/e.ts",
+            "PI_CODING_AGENT_DIR=\(home.directory.path)", "PI_PACKAGE_DIR=unset", "PI_OFFLINE=1", "NODE_OPTIONS=unset", "JITI_ALIAS=unset",
+            "PI_EXPERIMENTAL=unset", "_SHEPHERD_STASH_NODE_OPTIONS=--require=\(decoy)/node-options.cjs",
+        ])
 
-        let catalog = try run(PiLaunch.listModels(engine: piEngine), cwd: cwd)
-        #expect(catalog.lines == ["/", "--list-models"])
+        let catalog = try run(PiLaunch.listModels(home: home), cwd: cwd)
+        #expect(catalog.lines.prefix(2) == [PiHome.canonical(home.directory.path), "--list-models"])
     }
 }

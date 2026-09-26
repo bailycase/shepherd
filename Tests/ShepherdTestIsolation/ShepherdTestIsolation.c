@@ -17,12 +17,14 @@
 //             moves the system directories ahead of it, either of which would find the real tools.
 //             They also hold decoys, as a user's own startup files might: .zshenv exports
 //             PI_CODING_AGENT_DIR, PI_PACKAGE_DIR, NODE_OPTIONS, PI_OFFLINE=0, JITI_ALIAS and
-//             PI_EXPERIMENTAL pointing into pi-decoy/, and .zlogin moves a shell that starts the
-//             engine to /. A launch line has to win over them.
-//   pi-agent/ PI_CODING_AGENT_DIR, so the session headers the app seeds and the pi config it
-//             reads are scratch, never ~/.pi/agent. The engine override, the stand-ins and the
-//             decoys are all skipped for the opt-in live-model use case (SHEPHERD_LIVE_MODEL),
-//             which runs the user's real pi with their configuration.
+//             PI_EXPERIMENTAL pointing into pi-decoy/, and .zlogin moves a shell that starts
+//             Shepherd's pi (its launcher, support/pi/bin/pi) to /. The launcher has to win over
+//             them.
+//   pi-agent/ "your pi": SHEPHERD_YOUR_PI (and, as a decoy the app must ignore, the process's
+//             own PI_CODING_AGENT_DIR), so whatever the app reads of the user's pi is scratch,
+//             never ~/.pi/agent. Shepherd's own pi home is support/pi. The engine override, the
+//             stand-ins and the decoys are all skipped for the opt-in live-model use case
+//             (SHEPHERD_LIVE_MODEL).
 //   pi-decoy/ where the decoys point: never pi-agent/, so nothing that resolves the user's pi
 //             from a login shell can mistake them for it.
 //   agent-skills/  SHEPHERD_SKILLS_DIR, so Settings ▸ Skills installs, turns off and removes
@@ -160,7 +162,8 @@ static void shepherd_test_isolation_install(void) {
     char piAgent[600], piEngine[700];
     make("pi-agent", piAgent, sizeof piAgent);
     if ((size_t)snprintf(piEngine, sizeof piEngine, "%s/pi-engine", bin) >= sizeof piEngine) fail("path");
-    if (setenv("PI_CODING_AGENT_DIR", piAgent, 1) != 0 || setenv("SHEPHERD_PI_ENGINE", piEngine, 1) != 0) fail("setenv");
+    if (setenv("PI_CODING_AGENT_DIR", piAgent, 1) != 0 || setenv("SHEPHERD_YOUR_PI", piAgent, 1) != 0
+        || setenv("SHEPHERD_PI_ENGINE", piEngine, 1) != 0) fail("setenv");
     refuse(bin, "pi");
     refuse(bin, "pi-engine");
 
@@ -182,9 +185,9 @@ static void shepherd_test_isolation_install(void) {
                          "export PI_EXPERIMENTAL=1\n",
                          decoyAgent, decoyPackage, decoy, decoy) >= sizeof decoys) fail("path");
     if ((size_t)snprintf(zshenv, sizeof zshenv, "%s%s", startup, decoys) >= sizeof zshenv) fail("path");
-    // Only a shell that starts the engine moves: the git and gh helpers that run in a login shell
-    // keep the folder they were started in.
-    if ((size_t)snprintf(zlogin, sizeof zlogin, "%sif [[ $ZSH_EXECUTION_STRING == *pi-engine* ]]; then cd /; fi\n", startup)
+    // Only a shell that starts Shepherd's pi moves: the git and gh helpers that run in a login
+    // shell keep the folder they were started in.
+    if ((size_t)snprintf(zlogin, sizeof zlogin, "%sif [[ $ZSH_EXECUTION_STRING == */pi/bin/pi* ]]; then cd /; fi\n", startup)
         >= sizeof zlogin) fail("path");
     write_file(zdotdir, ".zshenv", zshenv, 0600);
     write_file(zdotdir, ".zlogin", zlogin, 0600);

@@ -1,18 +1,18 @@
-// Settings ▸ Skills' outside skills: every skill pi loads for a session outside any repository,
-// read with pi's own loader, so the page lists exactly what the agent gets (docs/skills.md).
-// Shepherd runs it with the node pi runs on, source on stdin:
+// Settings ▸ Skills' outside skills: every skill Shepherd's own pi loads for a session outside any
+// repository, read with pi's own loader, so the page lists exactly what the agent gets
+// (docs/skills.md). Shepherd runs it on the engine's node, source on stdin:
 //
-//   node --input-type=module - <pi executable>
+//   node --input-type=module -
 //
-// SHEPHERD_PI_SKILLS_AGENT_DIR names pi's agent directory (~/.pi/agent, or PI_CODING_AGENT_DIR);
-// SHEPHERD_PI_SKILLS_PACKAGE names pi's package directly, else it is found from the executable.
-// It prints one JSON object and exits 0, even when it can't read pi's skills ("problem" says
-// why). It only reads: pi's settings go through a storage that never writes, nothing missing is
+// SHEPHERD_PI_SKILLS_AGENT_DIR names the pi home (Shepherd's own), and SHEPHERD_PI_SKILLS_PACKAGE
+// the pi package to import (the engine's); the user's own pi is never imported or looked for. It
+// prints one JSON object and exits 0, even when it can't read pi's skills ("problem" says why).
+// It only reads: pi's settings go through a storage that never writes, nothing missing is
 // installed (PI_OFFLINE), and no extension runs, so skills an extension adds while it runs are
 // not here.
-import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve, sep } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const print = (value) => process.stdout.write(`${JSON.stringify(value)}\n`);
@@ -21,43 +21,19 @@ function readJSON(file) {
   try { return JSON.parse(readFileSync(file, "utf8")); } catch { return undefined; }
 }
 
-// pi's package: the folder above its executable whose package.json names the coding agent.
-function packageAbove(start) {
-  let dir = start;
-  for (let i = 0; i < 12; i++) {
-    const manifest = readJSON(join(dir, "package.json"));
-    if (manifest && typeof manifest.name === "string" && manifest.name.endsWith("/pi-coding-agent")) return dir;
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return undefined;
-}
-
-function findPackage(executable) {
+function findPackage() {
   const named = process.env.SHEPHERD_PI_SKILLS_PACKAGE;
-  if (named) return existsSync(join(named, "package.json")) ? resolve(named) : undefined;
-  if (!executable) return undefined;
-  let real;
-  try { real = realpathSync(executable); } catch { return undefined; }
-  const found = packageAbove(dirname(real));
-  if (found) return found;
-  // A wrapper script (nix, a version manager) names the real entry point in its text.
-  let text = "";
-  try { if (statSync(real).size < 64 * 1024) text = readFileSync(real, "utf8"); } catch { return undefined; }
-  for (const match of text.matchAll(/\/[^\s'"`;:]*pi-coding-agent[^\s'"`;:]*/g)) {
-    try {
-      const target = packageAbove(dirname(realpathSync(match[0])));
-      if (target) return target;
-    } catch {}
-  }
-  return undefined;
+  return named && existsSync(join(named, "package.json")) ? resolve(named) : undefined;
 }
 
+// The engine ships pi's bundle alone, so its library entry is the bundle's; a full package's is
+// what its exports name.
 function entryOf(packageDir) {
   const manifest = readJSON(join(packageDir, "package.json")) ?? {};
   const root = manifest.exports?.["."];
-  const entry = (typeof root === "string" ? root : root?.import ?? root?.default) ?? manifest.main ?? "dist/index.js";
+  const bundled = join("dist", "bundle", "index.js");
+  const entry = existsSync(join(packageDir, bundled)) ? bundled
+    : (typeof root === "string" ? root : root?.import ?? root?.default) ?? manifest.main ?? "dist/index.js";
   return { file: join(packageDir, entry), version: typeof manifest.version === "string" ? manifest.version : undefined };
 }
 
@@ -81,7 +57,7 @@ function under(path, root) {
 
 async function main() {
   const agentDir = resolve(process.env.SHEPHERD_PI_SKILLS_AGENT_DIR || join(homedir(), ".pi", "agent"));
-  const packageDir = findPackage(process.argv[2]);
+  const packageDir = findPackage();
   if (!packageDir) return print({ agentDir, skills: [], shadowed: [], problem: "pi_not_found" });
   const { file, version } = entryOf(packageDir);
   let pi;

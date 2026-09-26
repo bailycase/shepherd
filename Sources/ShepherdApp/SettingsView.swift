@@ -145,7 +145,7 @@ struct SettingsView: View {
 
     private var versions: String {
         let app = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
-        return Self.versions(app: "\(ShepherdEdition.current.displayName) \(app)", agent: nil,
+        return Self.versions(app: "\(ShepherdEdition.current.displayName) \(app)", agent: vm.server.pi.engine.version,
                              on: vm.settingsSection)
     }
 

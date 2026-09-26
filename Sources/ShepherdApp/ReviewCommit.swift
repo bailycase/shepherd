@@ -213,14 +213,16 @@ enum ReviewCommitGit {
 
     /// A message drafted from the diff of `paths` by the model that drafts PR descriptions,
     /// else the plain one written from the file list.
-    @MainActor static func draftMessage(root: String, paths: [String], engine: PiEngine,
+    @MainActor static func draftMessage(root: String, paths: [String], pi: PiSetup,
                                         runner: @escaping Runner) async -> (title: String, body: String, drafted: Bool) {
         let wanted = Set(paths)
         let files = (try? await Task.detached { try GitDiff.load(cwd: root, reference: nil) }.value) ?? []
         let chosen = files.filter { file in [file.oldPath, file.newPath, file.displayPath].contains { $0.map(wanted.contains) ?? false } }
         let fallback = reviewCommitFallbackMessage(reviewCommitFiles(chosen) { _ in "" })
-        guard !chosen.isEmpty else { return (fallback.title, fallback.body, false) }
-        let output = await runner(WorktreePRDescriptionGenerator.draftCommand(prompt: prompt(context: promptContext(chosen)), engine: engine), root)
+        guard !chosen.isEmpty, await Task.detached(priority: .userInitiated, operation: { pi.prepare() == nil }).value else {
+            return (fallback.title, fallback.body, false)
+        }
+        let output = await runner(WorktreePRDescriptionGenerator.draftCommand(prompt: prompt(context: promptContext(chosen)), home: pi.files), root)
         guard output.status == 0, let message = reviewCommitMessage(fromModel: output.stdout) else {
             return (fallback.title, fallback.body, false)
         }

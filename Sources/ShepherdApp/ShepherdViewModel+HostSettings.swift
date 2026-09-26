@@ -18,7 +18,7 @@ extension ShepherdViewModel {
                 let settings = HostSettingsMapping.settings(
                     from: self.settings,
                     shepherdVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
-                    piVersion: nil
+                    piVersion: self.server.pi.engine.version
                 )
                 let piHome = self.server.pi.home
                 Task.detached(priority: .userInitiated) {

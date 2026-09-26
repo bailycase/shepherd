@@ -2,6 +2,7 @@ import Foundation
 import ShepherdProtocol
 import Testing
 @testable import ShepherdApp
+import ShepherdSessions
 
 /// A stand-in login shell: records every script and answers from a responder. No process runs.
 final class ScriptedShell: @unchecked Sendable {
@@ -488,9 +489,15 @@ struct PRDescriptionTests {
         #expect(WorktreePRDescriptionGenerator.applying("generated", replacing: "old", current: "old") == "generated")
     }
 
-    private func generator(_ shell: ScriptedShell) -> WorktreePRDescriptionGenerator {
-        var generator = WorktreePRDescriptionGenerator(engine: .userPi)
+    /// Shepherd's pi, in a home the test never writes (`prepare` is stubbed).
+    static let pi = PiSetup(engine: PiEngine(command: ["/tmp/pi-engine"], packageDirectory: nil, version: nil, node: .onPath("node")),
+                            home: URL(fileURLWithPath: "/tmp/support/pi"))
+    static let draft = "exec '/tmp/support/pi/bin/pi' --print"
+
+    private func generator(_ shell: ScriptedShell, ready: Bool = true) -> WorktreePRDescriptionGenerator {
+        var generator = WorktreePRDescriptionGenerator(pi: Self.pi)
         generator.runner = { script, cwd, _ in shell.run(script, cwd) }
+        generator.prepare = { _ in ready }
         return generator
     }
 
@@ -505,9 +512,9 @@ struct PRDescriptionTests {
 
         #expect(result == .init(body: "## Summary\n\nAdds generated PR descriptions.", generated: true))
         let pi = shell.scripts.last ?? ""
-        #expect(pi.hasPrefix("exec pi --print --no-session --no-tools --no-extensions"))
+        #expect(pi.hasPrefix(Self.draft + " --no-session --no-tools --no-extensions"))
         #expect(pi.contains("PR title: Add descriptions"))
-        #expect(shell.cwd(ofScriptStartingWith: "exec pi") == "/tmp/wt")
+        #expect(shell.cwd(ofScriptStartingWith: Self.draft) == "/tmp/wt")
     }
 
     @Test func aFailedPiRunFallsBackToTheCommitSubjects() async {
@@ -524,7 +531,19 @@ struct PRDescriptionTests {
         let shell = ScriptedShell { $0.contains("WORKTREE STATUS") ? .fail(128) : .ok }
         let result = await generator(shell).generate(base: "main", title: "Solo change", worktree: "/tmp/wt")
         #expect(result == .init(body: "- Solo change", generated: false))
-        #expect(!shell.ran("exec pi"))
+        #expect(!shell.ran(Self.draft))
+    }
+
+    /// A pi home Shepherd won't start pi in drafts nothing: the commit subjects stand.
+    @Test func aHomeThatCannotStartPiFallsBackWithoutAskingIt() async {
+        let shell = ScriptedShell { script in
+            if script.contains("git log --format='- %s'") { return .out("- Only change\n") }
+            if script.contains("WORKTREE STATUS") { return .out("context") }
+            return .out("drafted")
+        }
+        let result = await generator(shell, ready: false).generate(base: "main", title: "T", worktree: "/tmp/wt")
+        #expect(result == .init(body: "- Only change", generated: false))
+        #expect(!shell.ran(Self.draft))
     }
 }
 
