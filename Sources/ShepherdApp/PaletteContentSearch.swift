@@ -1,5 +1,6 @@
 import Foundation
 import ShepherdCore
+import ShepherdProtocol
 
 /// Searches agents' pi session transcripts for palette queries, so a thread
 /// is findable by remembered conversation text, not just its title.
@@ -103,7 +104,9 @@ enum PaletteContentSearch {
     private static func snippet(for query: String, inSessionLine line: String) -> String? {
         guard let entry = try? decoder.decode(Entry.self, from: Data(line.utf8)), entry.type == "message",
               let message = entry.message, message.role == "user" || message.role == "assistant" else { return nil }
-        for text in message.content?.texts ?? [] {
+        for (index, raw) in (message.content?.texts ?? []).enumerated() {
+            // A design view record fenced ahead of a user's message is pi's to read, not theirs.
+            let text = index == 0 && message.role == "user" ? DesignViewRecord.strippingFence(from: raw) : raw
             if let range = text.range(of: query, options: .caseInsensitive) {
                 return snippet(around: range, in: text)
             }
