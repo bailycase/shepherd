@@ -992,7 +992,8 @@ public final class DesignStore: @unchecked Sendable {
     /// Keeps several comments as one change, when the comments are still at `baseRevision`:
     /// each checked as `addComment` checks one, all kept or none. A draft naming a proposal the
     /// design already keeps a comment for isn't kept again; that comment is answered in its
-    /// place. Answers the comments in the drafts' order, and which of them are new.
+    /// place. Answers the comments in the drafts' order, and which of them are new. The design
+    /// agent's proposals from Pencil markup are kept this way when it makes them.
     func addComments(_ id: DesignID, drafts: [DesignCommentDraft], baseRevision: UInt64?,
                      at date: Double) async throws -> (comments: [DesignComment], added: Set<UUID>) {
         try await run {
@@ -1043,6 +1044,37 @@ public final class DesignStore: @unchecked Sendable {
             }
             if !added.isEmpty { try self.saveComments(&file, id) }
             return (result, added)
+        }
+    }
+
+    /// The viewer's answer to proposals kept from Pencil markup (Apply, or Keep as comments):
+    /// each named proposal's comment marked settled, all or none, when the comments are still at
+    /// `baseRevision`. A proposal settled already stays as it was. Answers the comments in the
+    /// names' order, and which of them settled now.
+    func settleProposals(_ id: DesignID, proposals: [String], baseRevision: UInt64?,
+                         at date: Double) async throws -> (comments: [DesignComment], settled: Set<UUID>) {
+        try await run {
+            _ = try self.load(id)
+            var file = try self.loadComments(id)
+            try Self.compare(baseRevision, file.revision)
+            guard (1...DesignMarkupProposal.maxProposals).contains(proposals.count) else {
+                throw DesignStoreError.invalidMarkup("settle 1 to \(DesignMarkupProposal.maxProposals) proposals at once")
+            }
+            var result: [DesignComment] = []
+            var settled: Set<UUID> = []
+            for proposal in proposals {
+                guard DesignCommentDraft.isProposalID(proposal),
+                      let index = file.comments.firstIndex(where: { $0.proposal == proposal }) else {
+                    throw DesignStoreError.invalidMarkup("the design keeps no comment from proposal \(proposal)")
+                }
+                if file.comments[index].proposalSettledAt == nil {
+                    file.comments[index].proposalSettledAt = date
+                    settled.insert(file.comments[index].id)
+                }
+                result.append(file.comments[index])
+            }
+            if !settled.isEmpty { try self.saveComments(&file, id) }
+            return (result, settled)
         }
     }
 

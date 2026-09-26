@@ -3425,32 +3425,33 @@ public final class SessionServer: @unchecked Sendable {
         return comment
     }
 
-    /// What keeping the design agent's proposals left behind: the comments (each proposal once),
-    /// and why any that were to go didn't reach the agent.
+    /// What settling the design agent's proposals left behind: their comments, and why any that
+    /// were to go didn't reach the agent.
     public struct DesignProposalsOutcome: Sendable {
         public var comments: [DesignComment]
         public var undelivered: String?
     }
 
-    /// Keeps the design agent's proposals from the viewer's markup as comments, all at once at
-    /// the comments' `baseRevision`, each checked as a comment the viewer pins is. A proposal
-    /// the design already keeps a comment for isn't kept again. With `deliver` ("Apply both")
-    /// each new comment goes to the agent as a comment does, a turn of its own; without it
-    /// ("Keep as comments") they stay on the canvas.
-    public func addProposedDesignComments(_ designID: DesignID, drafts: [DesignCommentDraft], deliver: Bool,
-                                          baseRevision: UInt64? = nil) async throws -> DesignProposalsOutcome {
+    /// The viewer's answer to the design agent's proposals from their markup, which the host kept
+    /// as comments when the agent made them: each named proposal's comment settled, all at once at
+    /// the comments' `baseRevision`. With `deliver` ("Apply both") each one settled now and still
+    /// open goes to the agent as a comment does, a turn of its own; without it ("Keep as
+    /// comments") they stay on the canvas. A proposal settles once, so it is never sent twice.
+    public func settleDesignProposals(_ designID: DesignID, proposals: [String], deliver: Bool,
+                                      baseRevision: UInt64? = nil) async throws -> DesignProposalsOutcome {
         guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
-        let kept = try await designs.addComments(designID, drafts: drafts, baseRevision: baseRevision, at: Self.nowMilliseconds())
-        if !kept.added.isEmpty { await designCommentsChanged(designID) }
-        guard deliver else { return DesignProposalsOutcome(comments: kept.comments) }
+        let settled = try await designs.settleProposals(designID, proposals: proposals, baseRevision: baseRevision,
+                                                        at: Self.nowMilliseconds())
+        if !settled.settled.isEmpty { await designCommentsChanged(designID) }
+        guard deliver else { return DesignProposalsOutcome(comments: settled.comments) }
         var undelivered: String?
-        for comment in kept.comments where kept.added.contains(comment.id) {
+        for comment in settled.comments where settled.settled.contains(comment.id) && comment.isOpen {
             if let why = await deliverDesignComment(designID, id: comment.id, text: comment.text, fence: DesignCommentFence(comment).fenced()) {
                 undelivered = why
                 break
             }
         }
-        return DesignProposalsOutcome(comments: kept.comments, undelivered: undelivered)
+        return DesignProposalsOutcome(comments: settled.comments, undelivered: undelivered)
     }
 
     // MARK: - Pencil markup
@@ -3467,11 +3468,16 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// The design agent's proposals from the markup (`markup_propose`), checked against the
-    /// design's boards, for the chat to offer: the tool's result carries them.
+    /// design's boards and kept as comments at once, all or none (iPadDesign: "I turned the
+    /// Pencil marks into two comments"), sent nowhere until the viewer applies them. The tool's
+    /// result carries them for the chat's card.
     public func proposeDesignComments(_ designID: DesignID, call: String,
                                       proposals: [DesignMarkupProposal]) async throws -> [DesignCommentDraft] {
         guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
-        return try await designs.resolveProposals(designID, call: call, proposals)
+        let drafts = try await designs.resolveProposals(designID, call: call, proposals)
+        let kept = try await designs.addComments(designID, drafts: drafts, baseRevision: nil, at: Self.nowMilliseconds())
+        if !kept.added.isEmpty { await designCommentsChanged(designID) }
+        return drafts
     }
 
     /// Hands a comment (or a reply under one, or Pencil markup) to the design's agent as its own

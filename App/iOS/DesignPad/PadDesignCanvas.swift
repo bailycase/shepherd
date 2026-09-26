@@ -548,9 +548,15 @@ final class PadDesignCanvas {
 
     private func locatePins(on board: DesignPath) {
         let onBoard = openComments.filter { $0.board == board && !$0.detached }
-        guard !onBoard.isEmpty, host.liveBoards.contains(board) else { return }
+        guard !onBoard.isEmpty else { return }
+        let live = host.liveBoards.contains(board)
+        // A comment the host kept with no place drawn (the design agent's proposals from Pencil
+        // markup) is found on its board even while the board isn't live.
+        let unplaced = onBoard.contains { $0.rect == nil && pinRects[$0.id] == nil }
+        guard live || unplaced else { return }
         Task {
-            guard let found = await host.locate(board, tids: onBoard.map(\.tid)) else { return }
+            let tids = onBoard.map(\.tid)
+            guard let found = live ? await host.locate(board, tids: tids) : await host.measure(board, tids: tids) else { return }
             var next = pinRects
             for comment in onBoard {
                 if let pick = found[comment.tid], pick.id.path == comment.path { next[comment.id] = pick.rect }

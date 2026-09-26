@@ -420,7 +420,7 @@ test("markup_propose sends one comment per mark and hands the chat Shepherd's ch
     const result = await pi.tools.get("markup_propose").execute("call-7", { proposals });
     assert.deepEqual(frames[0], { type: "designProposeComments", call: "call-7", proposals, id: frames[0].id, agentID: "a1", designID: "d1" });
     const text = result.content[0].text;
-    assert.equal(firstLine(result), "Proposed 2 comments from the viewer's markup. They see each as a card and apply them or keep them as comments; an applied one reaches you as a comment.");
+    assert.equal(firstLine(result), "Kept 2 comments from the viewer's markup on the canvas. They see each as a card and apply them or keep them as comments; an applied one reaches you as a comment.");
     assert.match(text, /1\. on A-phone\.dc\.html#31:1\/1\/2 \(Steps list\): Thicker bars on phone\./);
     // The chat reads the block; it sits inside the data fence with everything from the files.
     const block = text.match(/<markup-proposals>\n(.*)\n<\/markup-proposals>/);

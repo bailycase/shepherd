@@ -6,8 +6,8 @@ import ShepherdProtocol
 import ShepherdTestSupport
 
 /// Pencil markup against a real server: checked against the design's boards, handed to the design
-/// agent fenced as data as a turn of its own, and the agent's proposals from it checked, kept as
-/// comments once each, and sent on only when the viewer applies them.
+/// agent fenced as data as a turn of its own, and the agent's proposals from it checked and kept
+/// as comments at once, then settled once each, and sent on only when the viewer applies them.
 @Suite("Design markup", .integrationTimeLimit)
 struct DesignMarkupIntegrationTests {
     static let board = DesignPath("A.dc.html")!
@@ -139,34 +139,50 @@ struct DesignMarkupIntegrationTests {
         try agent.send(.designProposeComments(id: 4, agentID: stranger.agent.id, designID: designID, call: "c",
                                               proposals: [DesignMarkupProposal(element: Self.cardID.description, text: "x")]))
         guard case .error(4, "not_your_design", _) = try await agent.reply() else { Issue.record("a stranger proposed"); return }
-        #expect(try await h.server.designComments(designID).comments.isEmpty, "proposing keeps nothing")
+
+        // The first call's proposals are comments 1 and 2 at once (iPadDesign: "Comments 3" beside
+        // the cards), waiting for the viewer; the refused calls kept none.
+        let kept = try await h.server.designComments(designID)
+        #expect(kept.revision == 1, "both kept as one change")
+        #expect(kept.comments.map(\.number) == [1, 2] && kept.comments.map(\.proposal) == ["call-7#0", "call-7#1"])
+        #expect(kept.comments.map(\.label) == ["Checkout funnel 48,210 people", "48,210 people"])
+        #expect(kept.comments.allSatisfy { $0.proposalSettledAt == nil && $0.author == .user && $0.isOpen })
     }
 
-    static func proposals(_ call: String) -> [DesignCommentDraft] {
-        [DesignCommentDraft(board: board, tid: 2, path: [1], target: "Checkout funnel", text: "Thicker bars on phone.", proposal: "\(call)#0"),
-         DesignCommentDraft(board: board, tid: 4, path: [1, 1], target: "48,210 people", text: "Show counts here too.", proposal: "\(call)#1")]
+    /// The design agent's `markup_propose`, as the host serves it: `texts` kept as comments on
+    /// the card and its total, named `<call>#0` and `<call>#1`.
+    private func propose(_ h: ScratchServer, _ designID: DesignID, call: String,
+                         texts: [String] = ["Thicker bars on phone.", "Show counts here too."]) async throws -> [DesignComment] {
+        let drafts = try await h.server.proposeDesignComments(designID, call: call, proposals: [
+            DesignMarkupProposal(element: Self.cardID.description, text: texts[0]),
+            DesignMarkupProposal(element: Self.totalID.description, text: texts[1]),
+        ])
+        let ids = drafts.compactMap(\.proposal)
+        return try await h.server.designComments(designID).comments.filter { $0.proposal.map(ids.contains) == true }
     }
 
-    @Test func keptProposalsStayOnTheCanvasAndAreKeptOnce() async throws {
+    @Test func keptProposalsStayOnTheCanvasAndSettleOnce() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let pi = try await PiAgent.launch(on: h)
         let designID = try await design(h, agentID: pi.agent.id)
         _ = try await pi.ready()
         let before = prompts(pi).count
+        let proposed = try await propose(h, designID, call: "c1")
+        #expect(prompts(pi).count == before, "proposing sends the agent nothing")
 
-        let kept = try await h.server.addProposedDesignComments(designID, drafts: Self.proposals("c1"), deliver: false, baseRevision: 0)
+        let kept = try await h.server.settleDesignProposals(designID, proposals: ["c1#0", "c1#1"], deliver: false, baseRevision: 1)
         #expect(kept.undelivered == nil)
-        #expect(kept.comments.map(\.number) == [1, 2] && kept.comments.map(\.proposal) == ["c1#0", "c1#1"])
-        #expect(kept.comments.map(\.label) == ["Checkout funnel 48,210 people", "48,210 people"])
-        #expect(try await h.server.designComments(designID).revision == 1, "both kept as one change")
+        #expect(kept.comments.map(\.id) == proposed.map(\.id))
+        #expect(kept.comments.allSatisfy { $0.proposalSettledAt != nil })
+        #expect(try await h.server.designComments(designID).revision == 2, "both settled as one change")
         #expect(prompts(pi).count == before, "keeping sends the agent nothing")
 
-        // Applied after all, or kept again from another device: nothing is kept twice or sent.
-        let again = try await h.server.addProposedDesignComments(designID, drafts: Self.proposals("c1"), deliver: true)
-        #expect(again.comments.map(\.id) == kept.comments.map(\.id))
+        // Applied after all, or kept again from another device: nothing changes or is sent.
+        let again = try await h.server.settleDesignProposals(designID, proposals: ["c1#0", "c1#1"], deliver: true)
+        #expect(again.comments == kept.comments)
         let all = try await h.server.designComments(designID)
-        #expect(all.comments.count == 2 && all.revision == 1)
+        #expect(all.comments.count == 2 && all.revision == 2)
         #expect(prompts(pi).count == before)
     }
 
@@ -177,9 +193,8 @@ struct DesignMarkupIntegrationTests {
         let designID = try await design(h, agentID: pi.agent.id)
         _ = try await pi.ready()
 
-        var drafts = Self.proposals("c2")
-        for index in drafts.indices { drafts[index].text = "tools:0 " + drafts[index].text }
-        let applied = try await h.server.addProposedDesignComments(designID, drafts: drafts, deliver: true)
+        _ = try await propose(h, designID, call: "c2", texts: ["tools:0 Thicker bars on phone.", "tools:0 Show counts here too."])
+        let applied = try await h.server.settleDesignProposals(designID, proposals: ["c2#0", "c2#1"], deliver: true)
         #expect(applied.undelivered == nil)
         let ids = applied.comments.map(\.id)
         _ = try await pi.snapshot("both comments' turns to settle") { s in
@@ -190,31 +205,48 @@ struct DesignMarkupIntegrationTests {
         #expect(fences.map { String($0.text) } == ["tools:0 Thicker bars on phone.", "tools:0 Show counts here too."])
     }
 
-    /// Each list after the first ends with one proposal that can't be a comment.
-    static let refusedProposals: [(String, [DesignCommentDraft], String)] = [
-        ("no proposals", [], "invalid_comment"),
-        ("an element the board doesn't have",
-         proposals("ok") + [DesignCommentDraft(board: board, tid: 40, path: [1, 9], text: "x", proposal: "c#0")], "invalid_comment"),
-        ("a proposal id on two lines",
-         proposals("ok") + [DesignCommentDraft(board: board, tid: 2, path: [1], text: "x", proposal: "c\n#0")], "invalid_comment"),
-        ("blank words", proposals("ok") + [DesignCommentDraft(board: board, tid: 2, path: [1], text: " ", proposal: "c#0")], "invalid_comment"),
-        ("a board with no frame",
-         proposals("ok") + [DesignCommentDraft(board: DesignPath("B.dc.html")!, tid: 0, path: [0], text: "x", proposal: "c#0")], "no_such_board"),
+    /// Each list after the first ends with a name no kept proposal has.
+    static let refusedSettles: [(String, [String])] = [
+        ("no proposals", []),
+        ("a proposal the design keeps no comment for", ["ok#0", "ok#1", "other#0"]),
+        ("a proposal id on two lines", ["ok#0", "ok\n#1"]),
+        ("a comment the viewer wrote", ["ok#0", ""]),
     ]
 
-    @Test(arguments: refusedProposals)
-    func aProposalThatCantBeACommentKeepsNoneOfThem(_ name: String, _ drafts: [DesignCommentDraft], _ code: String) async throws {
+    @Test(arguments: refusedSettles)
+    func settlingAProposalTheDesignLacksSettlesNoneOfThem(_ name: String, _ proposals: [String]) async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let space = Fixture.space()
+        try await h.seed(Fixture.workspace([], space: space))
+        let designID = try await design(h, agentID: nil)
+        _ = try await propose(h, designID, call: "ok")
+        do {
+            _ = try await h.server.settleDesignProposals(designID, proposals: proposals, deliver: false)
+            Issue.record("\(name) was settled")
+        } catch let error as DesignStoreError {
+            #expect(error.code == "invalid_markup", "\(name)")
+        }
+        let comments = try await h.server.designComments(designID)
+        #expect(comments.revision == 1 && comments.comments.allSatisfy { $0.proposalSettledAt == nil }, "all or none")
+    }
+
+    /// The agent's proposals are kept all or none: one the design can't hold keeps none.
+    @Test func aProposalThatCantBeACommentKeepsNoneOfThem() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let space = Fixture.space()
         try await h.seed(Fixture.workspace([], space: space))
         let designID = try await design(h, agentID: nil)
         do {
-            _ = try await h.server.addProposedDesignComments(designID, drafts: drafts, deliver: false)
-            Issue.record("\(name) was kept")
+            _ = try await h.server.proposeDesignComments(designID, call: "c", proposals: [
+                DesignMarkupProposal(element: Self.cardID.description, text: "Thicker bars."),
+                DesignMarkupProposal(element: Self.totalID.description, text: " "),
+            ])
+            Issue.record("blank words were proposed")
         } catch let error as DesignStoreError {
-            #expect(error.code == code, "\(name)")
+            #expect(error.code == "invalid_markup")
         }
-        #expect(try await h.server.designComments(designID).comments.isEmpty, "all or none")
+        #expect(try await h.server.designComments(designID).comments.isEmpty)
     }
 }

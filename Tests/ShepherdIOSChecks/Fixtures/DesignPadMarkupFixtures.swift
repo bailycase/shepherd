@@ -20,7 +20,7 @@ extension FixtureCatalog {
         let design = DesignPadFixtures.ref
         return [
             // The ink on the canvas and the palette, and Done's reading printed as a check.
-            FixtureScreen(name: "design-pad-markup", hosts: DesignPadFixtures.hosts(),
+            FixtureScreen(name: "design-pad-markup", hosts: DesignPadMarkupFixtures.hostsBeforeMarkup(),
                           routes: [.padDesign(.list), .padDesign(.design(design))],
                           prepare: { app in await DesignPadMarkupFixtures.draw(app, read: true) }),
             // The design agent's answer: "Read your markup · 2 strokes · 2 notes", its words, and
@@ -33,34 +33,54 @@ extension FixtureCatalog {
 }
 
 enum DesignPadMarkupFixtures {
-    /// The fixture hosts with the design agent's chat ending in its answer to the markup, and only
-    /// the first comment kept, so the proposals are still to apply (as 2 and 3).
+    /// The fixture hosts before the markup: DZCanvas's one comment, none of the markup's yet.
+    static func hostsBeforeMarkup() -> [FixtureHostData] {
+        var hosts = DesignPadFixtures.hosts()
+        guard let index = hosts.firstIndex(where: { $0.id == FixtureData.studio }),
+              var designs = hosts[index].designs, let item = designs.designs.firstIndex(where: { $0.design.id == DesignPadFixtures.designID })
+        else { return hosts }
+        designs.designs[item].comments.comments.removeAll { $0.number != 1 }
+        hosts[index].designs = designs
+        return hosts
+    }
+
+    /// The fixture hosts with the design agent's chat ending in its answer to the markup, whose
+    /// proposals the host kept as comments 2 and 3 (iPadDesign: "Comments 3"), still to apply.
     static func hosts() -> [FixtureHostData] {
         var hosts = DesignPadFixtures.hosts()
         guard let index = hosts.firstIndex(where: { $0.id == FixtureData.studio }),
               var designs = hosts[index].designs, let item = designs.designs.firstIndex(where: { $0.design.id == DesignPadFixtures.designID })
         else { return hosts }
         var comments = designs.designs[item].comments
-        comments.comments = Array(comments.comments.prefix(1))
+        for (offset, number) in [2, 3].enumerated() {
+            guard let at = comments.comments.firstIndex(where: { $0.number == number }) else { continue }
+            comments.comments[at].proposal = "call-m1#\(offset)"
+            comments.comments[at].rect = nil
+        }
         designs.designs[item].comments = comments
         hosts[index].designs = designs
         hosts[index].threads[DesignPadFixtures.agentID] = chat()
         return hosts
     }
 
+    /// The comments the design agent proposed from the markup, as its `markup_propose` result
+    /// carries them.
+    static var proposed: [DesignCommentDraft] {
+        let steps = DesignPadFixtures.element("Steps list", in: DesignPadBoards.phone)
+        let kpis = DesignPadFixtures.element("KPI row", in: DesignPadBoards.funnel)
+        return [
+            DesignCommentDraft(board: DesignPath("A-phone.dc.html")!, tid: steps.tid, path: steps.path, target: "Steps list",
+                               text: "Thicker bars on phone.", proposal: "call-m1#0"),
+            DesignCommentDraft(board: DesignPath("A.dc.html")!, tid: kpis.tid, path: kpis.path, target: "KPI row",
+                               text: "Show counts next to the percentages here too.", proposal: "call-m1#1"),
+        ]
+    }
+
     /// DZCanvas's chat, then the markup and the agent's answer to it.
     static func chat() -> NativeThreadSnapshot {
         let now = Date().timeIntervalSince1970 * 1000 - FixtureData.start
         var thread = DesignPadFixtures.chat()
-        let phone = DesignPath("A-phone.dc.html")!, a = DesignPath("A.dc.html")!
-        let steps = DesignPadFixtures.element("Steps list", in: DesignPadBoards.phone)
-        let kpis = DesignPadFixtures.element("KPI row", in: DesignPadBoards.funnel)
-        let proposals = DesignMarkupProposals(proposals: [
-            DesignCommentDraft(board: phone, tid: steps.tid, path: steps.path, target: "Steps list", text: "Thicker bars on phone.",
-                               proposal: "call-m1#0"),
-            DesignCommentDraft(board: a, tid: kpis.tid, path: kpis.path, target: "KPI row",
-                               text: "Show counts next to the percentages here too.", proposal: "call-m1#1"),
-        ])
+        let proposals = DesignMarkupProposals(proposals: proposed)
         var markup = NativeThreadMessage(entryID: "m1", role: "user",
                                          blocks: [NativeThreadBlock(kind: .text, text: "Pencil markup · 2 strokes · 2 notes")],
                                          timestamp: FixtureData.start + now - 60_000)
@@ -77,7 +97,8 @@ enum DesignPadMarkupFixtures {
 
     /// Puts iPadDesign's ink on the canvas, then (`read`) reads it as Done does and prints the
     /// record, or (not `read`) sends it as far as the canvas can without a host that takes it:
-    /// the ink stays as sent ink while the chat shows the answer.
+    /// the ink stays as sent ink while the chat shows the answer and the
+    /// proposals' pins, kept with no place drawn, find their elements on the boards.
     @MainActor static func draw(_ app: MobileApp, read: Bool) async {
         let canvas = await DesignPadFixtures.settle(app)
         let drawing = markupDrawing()
@@ -85,6 +106,15 @@ enum DesignPadMarkupFixtures {
         guard read else {
             canvas.markup.finishReading(sent: true)
             await FixtureWindows.wait(seconds: 15) { !canvas.comments.isEmpty }
+            // The proposals are comments 2 and 3 already, still to apply, and their pins, kept with
+            // no place drawn, find their elements.
+            let placed = { (number: Int) in canvas.pins.first { $0.number == number }.map { $0.rect != .zero } ?? false }
+            await FixtureWindows.wait(seconds: 30) { placed(2) && placed(3) && canvas.isDrawn }
+            let card = canvas.markupCard(NativeMarkupProposals(proposals: proposed))
+            let ok = card.cards.map(\.number) == [2, 3] && card.state == .open && canvas.openComments.count == 3
+                && placed(2) && placed(3)
+            print("FIXTURE CHECK \(ok ? "ok" : "FAILED:") design-pad-markup-reply: cards \(card.cards.map(\.number)) \(card.state), "
+                  + "\(canvas.openComments.count) comments, pins placed \(placed(2)) \(placed(3)))
             return
         }
         let boards = canvas.boards.compactMap { board in DesignPath(board.id).map { (path: $0, frame: board.frame) } }

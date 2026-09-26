@@ -10,8 +10,8 @@ extension RemoteProtocol {
     /// `designChanged` for the designs a client watches. A client lists it too: it reads those
     /// pushes and `capabilitiesChanged`.
     public static let designsCapability = "designs.v1"
-    /// The host takes Pencil markup (`RemoteDesignRequest.sendMarkup`) and applies the design
-    /// agent's proposals from it (`addProposedComments`). Offered with `designsCapability`.
+    /// The host takes Pencil markup (`RemoteDesignRequest.sendMarkup`) and settles the design
+    /// agent's proposals from it (`settleProposals`). Offered with `designsCapability`.
     public static let designMarkupCapability = "design.markup.v1"
     /// The most file bytes one design reply carries: files inline in `boards`, or one piece of a
     /// file or upload. Base64 keeps it well under the 1 MiB frame.
@@ -224,11 +224,12 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
     /// The viewer's Pencil markup (`designMarkupCapability`): checked against the boards'
     /// sources, then handed to the design agent fenced as data, as a turn of its own.
     case sendMarkup(designID: DesignID, markup: DesignMarkup)
-    /// The design agent's proposals from the markup, kept as comments at the comments'
-    /// revision (`designMarkupCapability`). `deliver` hands each to the agent as a comment is
-    /// ("Apply both"); without it they stay on the canvas as comments ("Keep as comments"). A
-    /// proposal the design already keeps a comment for is not kept twice.
-    case addProposedComments(designID: DesignID, drafts: [DesignCommentDraft], deliver: Bool, baseRevision: UInt64?)
+    /// The viewer's answer to the design agent's proposals from the markup, which the host kept
+    /// as comments when the agent made them (`designMarkupCapability`): each named proposal's
+    /// comment marked settled at the comments' revision, all or none. `deliver` ("Apply both")
+    /// hands each open one to the agent as a comment is; without it ("Keep as comments") they
+    /// stay on the canvas as they are. A proposal settles once: settling it again sends nothing.
+    case settleProposals(designID: DesignID, proposals: [String], deliver: Bool, baseRevision: UInt64?)
 
     /// The design it touches, if one.
     public var designID: DesignID? {
@@ -237,7 +238,7 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
         case .index(let id), .boards(let id, _, _), .file(let id, _, _, _), .asset(let id, _, _), .comments(let id),
              .addComment(let id, _, _), .replyToComment(let id, _, _, _), .resolveComment(let id, _, _, _),
              .writeBoards(let id, _, _), .updateIndex(let id, _, _), .duplicateBoard(let id, _, _), .restoreVersions(let id, _, _),
-             .sendMarkup(let id, _), .addProposedComments(let id, _, _, _):
+             .sendMarkup(let id, _), .settleProposals(let id, _, _, _):
             id
         }
     }
@@ -246,7 +247,7 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
     public var writes: Bool {
         switch self {
         case .addComment, .replyToComment, .resolveComment, .writeBoards, .updateIndex, .duplicateBoard, .restoreVersions,
-             .sendMarkup, .addProposedComments: true
+             .sendMarkup, .settleProposals: true
         default: false
         }
     }
@@ -254,7 +255,7 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
     /// The capability beside `designsCapability` the host must offer for it, if one.
     public var capability: String? {
         switch self {
-        case .sendMarkup, .addProposedComments: RemoteProtocol.designMarkupCapability
+        case .sendMarkup, .settleProposals: RemoteProtocol.designMarkupCapability
         default: nil
         }
     }
@@ -277,8 +278,8 @@ public enum RemoteDesignResult: Codable, Hashable, Sendable {
     /// The markup reached the design agent's queue, or why it couldn't (the record is not
     /// kept: send it again).
     case markupSent(undelivered: String?)
-    /// The proposals as kept (each once), and why any didn't reach the design agent.
-    case proposedCommentsAdded([DesignComment], undelivered: String?)
+    /// The proposals' comments, settled, and why any didn't reach the design agent.
+    case proposalsSettled([DesignComment], undelivered: String?)
     case ok
 }
 

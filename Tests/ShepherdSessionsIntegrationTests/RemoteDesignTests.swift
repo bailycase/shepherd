@@ -128,14 +128,16 @@ struct RemoteDesignTests {
         let nowhere = DesignMarkup(strokes: [DesignMarkupStroke(kind: .mark, board: "Gone.dc.html")])
         #expect(try await refusal(raw, 3, .sendMarkup(designID: id, markup: nowhere)) == RemoteDesignCode.invalidMarkup)
 
-        let draft = DesignCommentDraft(board: Self.board, tid: 2, path: [1], target: "Checkout funnel", text: "Bigger.", proposal: "c#0")
-        guard case .proposedCommentsAdded(let kept, nil) = try await answer(raw, 4, .addProposedComments(designID: id, drafts: [draft],
-                                                                                                          deliver: false, baseRevision: 0)) else {
-            Issue.record("expected proposedCommentsAdded"); return
-        }
-        #expect(kept.map(\.proposal) == ["c#0"] && kept.map(\.number) == [1])
-        #expect(try await refusal(raw, 5, .addProposedComments(designID: id, drafts: [draft], deliver: false, baseRevision: 0))
+        _ = try await host.server.proposeDesignComments(id, call: "c", proposals: [DesignMarkupProposal(element: card.description, text: "Bigger.")])
+        #expect(try await refusal(raw, 4, .settleProposals(designID: id, proposals: ["c#0"], deliver: false, baseRevision: 0))
             == "stale_revision")
+        guard case .proposalsSettled(let kept, nil) = try await answer(raw, 5, .settleProposals(designID: id, proposals: ["c#0"],
+                                                                                                 deliver: false, baseRevision: 1)) else {
+            Issue.record("expected proposalsSettled"); return
+        }
+        #expect(kept.map(\.proposal) == ["c#0"] && kept.map(\.number) == [1] && kept[0].proposalSettledAt != nil)
+        #expect(try await refusal(raw, 6, .settleProposals(designID: id, proposals: ["gone#0"], deliver: false, baseRevision: nil))
+            == RemoteDesignCode.invalidMarkup)
     }
 
     @Test func aHostThatDoesntOfferMarkupRefusesItAndOffersItOnlyWithDesigns() async throws {

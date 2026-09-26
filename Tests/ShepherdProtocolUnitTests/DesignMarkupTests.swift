@@ -167,8 +167,14 @@ struct DesignMarkupTests {
         let comment = DesignComment(number: 2, board: DesignPath(Self.phone)!, tid: 31, path: [1, 1, 2], text: "Thicker bars on phone.",
                                     createdAt: 1, proposal: "call-7#0")
         let data = try JSONEncoder().encode(comment)
-        #expect(try JSONDecoder().decode(DesignComment.self, from: data).proposal == "call-7#0")
+        let read = try JSONDecoder().decode(DesignComment.self, from: data)
+        #expect(read.proposal == "call-7#0" && read.proposalSettledAt == nil, "a proposal waits until the viewer settles it")
+        #expect(try Wire.object(comment)["proposalSettledAt"] == nil, "a waiting proposal writes no settled time")
+        var settled = comment
+        settled.proposalSettledAt = 2
+        #expect(try JSONDecoder().decode(DesignComment.self, from: JSONEncoder().encode(settled)).proposalSettledAt == 2)
         let older = #"{"id":"7A1C2E7B-39F5-4B0C-9A40-0E8B1F3C5D21","number":1,"board":"A.dc.html","tid":2,"path":[0,1],"text":"t","author":"user","createdAt":1,"replies":[],"detached":false}"#
-        #expect(try JSONDecoder().decode(DesignComment.self, from: Data(older.utf8)).proposal == nil)
+        let old = try JSONDecoder().decode(DesignComment.self, from: Data(older.utf8))
+        #expect(old.proposal == nil && old.proposalSettledAt == nil)
     }
 }
