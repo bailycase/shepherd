@@ -75,6 +75,7 @@ elements).
   project/canvas.json          the index
   project/<path>.dc.html       one per board
   revision                     Shepherd's revision counter for the design
+  versions/<path>/<n>.dc.html  each board's last 20 earlier versions
 ```
 
 - **The support directory**, so a design survives a worktree's deletion, stays with its edition
@@ -106,9 +107,11 @@ the only writer, through named mutations:
 | `setDesignAgent(_:agentID:)` | Records which agent draws it |
 | `writeDesignBoard(_:path:source:baseRevision:)` | Writes one board's whole source |
 | `updateDesignIndex(_:patch:baseRevision:)` | Applies a canvas update. A new `title` renames the design |
+| `writeDesignBoards(_:sources:baseRevision:)` | Writes several boards' whole sources as one change: every source is checked before any is written, and the revision moves once (Tweak's "Every <name>") |
+| `restoreDesignVersions(_:_:ifCurrent:baseRevision:)` | Puts boards back to kept versions as one write, only while each board still has the hash `ifCurrent` names |
 
 Reads are `designSnapshot(_:)` (the index, the revision, and every board file under `project/`
-with its SHA-256, listed or not) and `designBoard(_:path:)`.
+with its SHA-256, listed or not), `designBoard(_:path:)` and `designVersions(_:path:)`.
 
 - **Revisions.** Each design has a revision that moves with every change to its files. It is kept
   on disk, so a base from before a relaunch still compares. A write naming a `baseRevision` the
@@ -128,6 +131,16 @@ with its SHA-256, listed or not) and `designBoard(_:path:)`.
   - Warnings, passed back with the write: `innerHTML`, a key handler on the window or the
     document, and a missing `$preview`.
 - **Limits:** 512 files per design, and no new board whose stem another board already has.
+
+### Versions
+
+- **Every write that replaces a board keeps what it held** as the board's next version, in
+  `versions/<path>/<n>.dc.html` beside `project/` (so the board scheme never serves one and it is
+  no board). Numbers count up from 1 per board; the newest 20 are kept.
+- **A restore is a write.** `restoreDesignVersions` writes the kept content back, so what it
+  replaced becomes a version too, and a restore can be undone. With `ifCurrent` it refuses a board
+  whose hash moved since (`stale_revision`): an undo never takes back a later write.
+- **A board the index removes loses its versions** with its file.
 
 ## The design agent
 
@@ -247,9 +260,14 @@ code is copied, fetched or imitated.
   says of it: its path, its tag, its kind (`text` for text or a field, `image`, `line`, `shape`
   for a container or an SVG shape, else `other`), its label (the template's own text in it,
   holes as written, or an image's `alt`) and its `data-el` name (an import's board name).
+- **Tweak previews.** `previewStyle([{tid, style}])` sets properties on every rendering of the
+  board's own elements (a value past what a tweak writes is left out), `endPreview()` puts back
+  exactly what they had, and `setProps(json)` redraws with new props; none writes anything.
+  `DesignBoardView.previewStyle(_:)`, `previewProps(_:)` and `endPreview()` call them.
 - **Not yet:**
   - `<x-import>` (design-system components) comes with design systems.
-  - Top-level props (Tweak values) are empty until Tweak.
+  - A board's top-level props are canvas.json's `tweaks` for it, read at boot and handed to
+    `replaceSource` again (Tweak).
   - A hole in the helmet draws empty.
   - A change to a board's `<head>` lines, or to a board it imports, shows at its next `load()`,
     not on `replaceSource`.
@@ -388,10 +406,54 @@ The design screen publishes what it shows (`DesignScreenModel.viewRecord`, a
   them, and one board changing redraws one frame (`design.board`) with one snapshot. The Designs
   grid builds only the cards on screen (`ListPerformanceTests`, `design.card`).
 
+### Tweak (DZTweak)
+
+The chat pane's Tweak tab edits the selection (the latest pick) directly
+(`DesignTweakModel`, `DesignTweakPane`; the controls are `DesignTweakControls`, pure).
+
+- **Controls.** An element's inline style offers a fixed set, grouped as DZTweak groups them:
+  Layout (Direction and Gap for a flex or grid container, Padding, Radius), Color (Fill for a
+  shape or an element with a background color, Text for text), and Text (Text size, S · M · L).
+  A value the board's logic sets (`{{ … }}`) is left out, as is the whole style when it is one
+  hole. Then the board's `data-props` (`DesignProps`): a switch for `boolean`, a picker or a menu
+  for `enum`, a slider for a bounded number (a stepper or a field otherwise), token chips for
+  `color`, a field for `text`; grouped by their `section`, "Board" otherwise. A board picked whole
+  shows its data-props alone.
+- **Tokens.** The design's tokens are the CSS custom properties its board declares and its
+  project's stylesheets declare (`DesignTokens`, `DesignProjectTokens`; the same walk as
+  `design_check`). Lengths snap to the tokens named for their role (`--space-*`, `--radius-*`,
+  `--text-*`); a design with none for a role snaps to Shepherd's own scale, and the scope's note
+  says so. A color is always a token, never a free hex: without color tokens there is no Color
+  group. A value the board declares as a token is written as `var(--name)`, anything else as its
+  value (`24px`, `#4f46e5`).
+- **Writing.** While a slider drags, the change shows in the board's live view
+  (`DesignHost.previewStyle`: the runtime's `previewStyle` on every rendering of the element, or
+  `setProps`) and nothing is written. On release the change is written once:
+  - A style is spliced into the board's source at the parser's offsets (`DesignStyleEdit`): one
+    declaration's value rewritten, a declaration added after the last, or the attribute added;
+    every other byte stays as written, and the board is never serialized again.
+  - "Every <name>" (the element's `data-el`) splices every element of that name on every board as
+    one write (`writeDesignBoards`); "This board" writes the one element.
+  - A data-props value goes to canvas.json as `{"tweaks": {"<board path>": {"<prop>": value}}}`
+    (decision 13), clamped and checked by its editor; the board draws it as a prop, and agents
+    keep the key as one they don't know.
+  - Each write names the revision it read. A stale one is read again, the element found by its
+    path, and the change made once more; a second failure says so under the header.
+- **Reset** puts back what this session changed on the selection (each element's declared values
+  from before its first tweak, removed where it had none; the board's props). **Undo** (Edit ▸
+  Undo) restores the versions a tweak's write kept, only while the boards still hold what it
+  wrote; Redo writes the tweak again.
+- **"Ask the agent instead…"** opens the Chat tab with its composer taking the keyboard; the
+  message sent carries the selection as data (The view record).
+- **Budget** (`DesignPerformanceTests`): a drag redraws no board frame, and its release redraws
+  only the tweaked board's.
+
 ### Not built yet
 
 Not drawn on any board, so left out until they are: the Designs page with no designs, a design
 still loading or failing to draw, the design row's and the chat's ••• menus (so no rename or delete
 in the app yet), Present mode, the Capture a page and From a screenshot starting points, zoom
-presets and keyboard shortcuts (so no Escape to clear a selection). Comments, Tweak, Variations
+presets and keyboard shortcuts (so no Escape to clear a selection), a board's list of versions
+(Restore exists on the server, and the app offers only Undo), and a Tweak tab with nothing
+selected (it says to select an element). Comments, Variations
 and the board actions bar come with the rest of this phase.

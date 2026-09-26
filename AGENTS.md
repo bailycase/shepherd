@@ -113,6 +113,8 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
   `project/canvas.json`): it renders every board at its canvas size, with Google Fonts, reports
   what each drew, and with `SHEPHERD_PREVIEW_DIR` set writes each snapshot to
   `design-canvas/<board>.png` there, to compare by eye against the canvas's own thumbnails.
+  `DesignStyleEditTests` reads it too, to splice every element of every board of that canvas
+  (the folder, or its `project/`).
 - **`SHEPHERD_TIMING_TESTS=1`** runs the timing-sensitive tests even where `CI=true` skips them
   (see Testing).
 - **`PI_CODING_AGENT_DIR`** is pi's own: it moves pi's config and sessions away from
@@ -244,7 +246,8 @@ runs them.
   as known issues.
 - `DesignPerformanceTests` pins the design canvas the same way over a 172-board canvas: at most
   six web views open (five live, one rasterizing), panning recycles them, and one board changing
-  redraws one frame (`design.board`) with one snapshot. The Designs grid's budget is in
+  redraws one frame (`design.board`) with one snapshot; a Tweak drag redraws no frame and its
+  release only the tweaked board's. The Designs grid's budget is in
   `ListPerformanceTests` (`design.card`).
 - `SHEPHERD_PERF_REPORT=1 swift test --filter ListPerformanceReport` prints each list's timings
   against large fixtures (`Support/ListFixtures.swift`). `ListPerf` times a change's update,
@@ -306,7 +309,10 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   navigation, and the vendored React's pinned checksums. In the app: the live-view plan and its
   recycling, the Designs page's cards, design rows in the sidebar (no ⌘-digit; their agents have
   no row), New design and opening a design, the visibility flip, one pushed revision per write,
-  and only the changed board reloading.
+  and only the changed board reloading. Tweak: the style splice round-tripping on the real
+  fixture boards (only style attributes change, every tid and path kept), token snapping, the
+  data-props values in canvas.json, one write per gesture, the stale-revision retry, Reset and
+  Undo, and each board's kept versions.
 - **Server:** every `SessionServer` state mutation.
 - **Changes:** every scope on a scratch repository, the proof that reading changes leaves the
   index, HEAD, refs, the stash, `.git` and every file alone, and Undo, Redo and the refusal on a
@@ -396,7 +402,9 @@ Sources/
                        the Design tool's format (docs/designs.md): DesignIndex (canvas.json v3,
                        unknown keys kept), DesignPath (the board path grammar), DesignTemplate
                        and DesignElementID (a board's elements as `File.dc.html#tid:path`),
-                       DesignBoardCheck (what a board may hold), DesignFiles (snapshots, reads,
+                       DesignBoardCheck (what a board may hold), DesignStyle/DesignTokens/DesignProps
+                       (Tweak: inline-style splices at parser offsets, token snapping, data-props
+                       and canvas.json's tweaks), DesignFiles (snapshots, reads,
                        write results).
   ShepherdRemote/      RemoteHostClient, NativeThreadStore (@Observable), NativeThreadPresentation,
                        NativeTurnPresentation (a turn's items), NativeMarkdown (the prose
@@ -434,7 +442,8 @@ Sources/
                        Changes/ (ChangesService: the Changes pane's engine — scopes, snapshots,
                        diffs, the base picker, each agent's turns and their Undo; docs/changes.md),
                        DesignStore (each design's files in the support directory's designs/, on
-                       its own queue, with a revision per design; docs/designs.md).
+                       its own queue, with a revision per design and each board's last 20
+                       versions; docs/designs.md).
   TerminalSurfaceKit/  Ghostty adapter for terminal panes; see its NOTES.md.
   DesignSurfaceKit/    The Design tool's board renderer (macOS and iOS; docs/designs.md): DesignSurface
                        (a design's sandbox: a non-persistent data store, the shepherd-design://
@@ -464,7 +473,9 @@ Sources/
     The Design tool (Settings ▸ Experiments ▸ Design tool; docs/designs.md): NewDesignPage,
       DesignScreen (a design agent's layout: the canvas beside its chat, and the toolbar),
       DesignScreenModel (a design's canvas state and its pulls), DesignHost (the only
-      DesignSurfaceKit import: live views, the rasterizer, snapshots, thumbnails)
+      DesignSurfaceKit import: live views, the rasterizer, snapshots, thumbnails, tweak
+      previews), DesignTweak (the Tweak tab's controls, pure), DesignTweakModel (its writes,
+      one per gesture, Reset and Undo), DesignTweakPane, DesignProjectTokens
     TerminalPanels (each layout's terminal panel: shown, tab, maximized, activity),
       TerminalPanelLayout (TerminalPanelGeometry, pure), TerminalPanelViews (strip, divider)
     Thread/            ThreadView, ThreadTurns, ThreadTools (activity lines), ThreadMarkdown,
