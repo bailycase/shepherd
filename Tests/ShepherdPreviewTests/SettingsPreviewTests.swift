@@ -344,6 +344,18 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// A host's first listing still on its way: placeholder rows pulse where the folders will be
+    /// (NWStatus's loading placeholder).
+    @Test func directoryPickerLoading() async throws {
+        try await Preview.render("sheet-directory-picker-loading", size: CGSize(width: AppLayout.directoryPickerWidth, height: 480)) {
+            RemoteDirectoryPicker(hostName: "horizon", startPath: "", list: { _ in
+                // A listing that never arrives while the render looks.
+                for await _ in AsyncStream<Void> { _ in } {}
+                throw CancellationError()
+            }, choose: { _ in }, cancel: {})
+        }
+    }
+
     /// A remote worktree deletion whose host is gone: the sheet explains instead of acting.
     @Test func remoteWorktreeSheetWithoutHost() async throws {
         let workspace = try PreviewWorkspace()

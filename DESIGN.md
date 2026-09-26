@@ -3963,7 +3963,7 @@ composing chrome by hand. Debug builds have a **Component Gallery** (View menu,
 | Domain | Components | Owned in the app by |
 | --- | --- | --- |
 | Controls | `.buttonStyle(.nw(_:size:tint:))` (primary, secondary, ghost, danger, dangerFill; s 24 · m 28 · l 32), `.nwIcon` and `.nwIcon(bordered:isOn:size:tint:)` (a circle, 28pt, 44 on iOS; "on" is lantern tint), `.nwLink`, `.nwRow(selected:)`, `.nwRowBackground(selected:hovering:)`; `.toggleStyle(.nwSwitch)` (30×18) and `.nwCheckbox` (14pt); `NWSegmentedPicker` (m 24, s 20), `NWPopupMenu` and `NWPopupLabel`, `NWValueSlider`, `NWStepper`; `.textFieldStyle(.nw)` and `.nw(mono:error:)` (28pt, radius 6), `.nwField(focused:error:mono:)`, `.nwFieldMessage(_:alignment:)`, `.textFieldStyle(.nwSearch)`, `NWSearchField`; `NWButtonTitle` (a title and its chord), `NWRadioGroup`; `NWKeycap`, `NWCountBadge`, `NWTag`, `.nwHelp(_:shortcut:)` | across the app; `NWRadioGroup` has no app use |
-| Status | `NWStatusPill` (20pt, radius 4; a glyph in place of its dot), `NWStatusDot` (6pt), `NWStateGlyph` (14pt), `.progressViewStyle(.nwSpinner)` and `.nwBar` (4pt), `NWStepStrip`, `NWSparkline`, `NWBanner`, `.nwToast(item:)` with `NWToast`, `NWEmptyState`, `.nwShimmer()`, `NWWordmark`, `NWCrook` | across the app; `NWSparkline` and `.nwToast(item:)` have no app use (see departures), and `.nwShimmer()` none yet |
+| Status | `NWStatusPill` (20pt, radius 4; a glyph in place of its dot), `NWStatusDot` (6pt), `NWStateGlyph` (14pt), `.progressViewStyle(.nwSpinner)` and `.nwBar` (4pt), `NWStepStrip`, `NWSparkline`, `NWBanner`, `.nwToast(item:)` with `NWToast`, `NWEmptyState`, `.nwShimmer()` and `NWLoadingRows`, `NWWordmark`, `NWCrook` | across the app; `NWSparkline` and `.nwToast(item:)` have no app use (see departures); `NWLoadingRows` in the directory picker |
 | Containers | `NWSectionHeader`, `NWGroupCard`, `NWCardRow`, `NWHairline`, `NWChoiceRow` (`NWChoiceRowMetrics`), `NWFlowLayout`, `NWMarkupText` | `SettingsComponents.swift`; hairlines everywhere; `NWMarkupText` for Settings' descriptions (Mac and iOS); `NWChoiceRow` in the iOS client's New thread pickers; `NWFlowLayout` for wrapping chips and answers (iOS) |
 | Navigation | `NWSidebar`, `NWSidebarTopBar`, `NWSidebarDestination`, `NWSidebarSection`, `NWSidebarRow`, `NWSidebarFooter`, `NWDropIndicator`, `NWDensity`; `NWThreadToolbar`, `NWPaneToggle`, `NWOptionsMenu`, `NWPaneHeader`; `.nwCommandPalette(isPresented:)`, `NWPaletteCard`, `NWPaletteSearchRow`, `NWPaletteSectionHeader`, `NWPaletteRow` | `SidebarView.swift`, `ThreadHeader.swift`, `RootView.swift`, `CommandPaletteView.swift`; the review's header (`DiffReviewView.swift`) and the inspector's ⋯ menu (`Thread/SubagentInspector.swift`) |
 | Thread | `NWUserBubble` (its time shown while `revealed`; `origin: .steered`), `NWQueueDivider`, `NWAgentProse`, `NWCodeBlock`, `NWThinking`, `NWActivityLine`, `NWActivityCalls`, `NWChangesCard`, `NWDiffStat`, `NWInlineCode`, `NWAttachmentChip`, `NWTurnFooter` (shown while `revealed`), `NWTurnError`, `NWJumpToLatest`, `.nwShimmer(active:)` (live text) | `Thread/ThreadView.swift`, `ThreadTurns.swift` (with each turn's `MessageHover`), `ThreadTools.swift`, `ThreadMarkdown.swift` |
@@ -4208,12 +4208,14 @@ thread, Automations).
   built, Missions). `framed` draws a dashed `lineStrong` border at radius 8 (the empty
   thread, which also hides the crook with `showsMark: false`). The app's copy is under Empty
   workspace and Thread.
-- **Loading placeholder** (`.redacted(reason: .placeholder).nwShimmer()`): a remote host's list
-  while it loads. The board draws four 28pt rows, each a 6pt dot and an 8pt-tall bar (radius 4)
-  in `bgSelected`, 10pt apart, the bars at 70%, 52%, 64%, and 40% of the width. The block pulses
-  between 55% and full opacity over 1.4s (`shimmer`), static under Reduce Motion and while
-  hidden (`nwMotionPaused`). **Not built yet:** the modifier exists, but a loading host shows a
-  "connecting to <host>…" pane placeholder instead.
+- **Loading placeholder** (`NWLoadingRows`, pulsing with `.nwShimmer()`; the board's
+  `.redacted(reason: .placeholder).nwShimmer()`): a remote host's list while it loads. Four rows
+  of `NW.Height.row` (28pt), each a 6pt dot and an 8pt-tall bar (radius 4) in `bgSelected`, 10pt
+  apart, the bars at 70%, 52%, 64%, and 40% of the width. The block pulses between 55% and full
+  opacity over 1.4s (`shimmer`), static under Reduce Motion and while hidden (`nwMotionPaused`),
+  and reads "Loading" to VoiceOver. The directory picker shows it while a host's first listing is
+  on its way (the footer says "Loading…"); a remote agent's pane keeps its own placeholder and
+  banner (A host reconnecting, above).
 
 ## Keyboard
 

@@ -69,16 +69,7 @@ import SwiftUI
                 Button("New agent") {}.buttonStyle(.nw(.primary))
                 Button("New mission") {}.buttonStyle(.nw(.secondary))
             }
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach([0.7, 0.52, 0.64], id: \.self) { width in
-                    HStack(spacing: 10) {
-                        Circle().fill(Color.nw.bgSelected).frame(width: 6, height: 6)
-                        RoundedRectangle(cornerRadius: 4).fill(Color.nw.bgSelected).frame(width: 240 * width, height: 8)
-                    }
-                    .frame(height: 28)
-                }
-            }
-            .nwShimmer()
+            NWLoadingRows()
             NWWordmark(size: .large)
         }
         .frame(width: 360)
