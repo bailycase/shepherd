@@ -92,6 +92,8 @@ public struct NWTerminalTabBar<Trailing: View>: View {
     @ViewBuilder let trailing: () -> Trailing
     /// Where + and each tab sit along the strip, for the menu to hang from.
     @State private var anchors: [String: CGRect] = [:]
+    /// The part of the strip the tabs scroll in: a tab scrolled out of it takes no right-click.
+    @State private var visibleTabs: CGRect = .null
 
     /// `menu`, where given, opens the new terminal menu (NewTerminalMenu) from + (`tab` nil) and
     /// from a right-click on a tab, at `anchor` along the strip; + then opens the menu rather
@@ -135,6 +137,7 @@ public struct NWTerminalTabBar<Trailing: View>: View {
             }
             .scrollIndicators(.hidden)
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { visibleTabs = $0 }
             Spacer(minLength: NW.Space.m)
             HStack(spacing: NW.Space.xxs) { trailing() }
                 .buttonStyle(.nwIcon(size: NWTerminalMetrics.buttonSize))
@@ -152,7 +155,9 @@ public struct NWTerminalTabBar<Trailing: View>: View {
         // A right-click (or ⌃-click) on a tab opens the menu from it.
         .background {
             if let menu {
-                NWSecondaryClickRegions(regions: tabs.compactMap { tab in anchors[tab.id].map { (tab.id, $0) } }) { id in
+                NWSecondaryClickRegions(regions: tabs.compactMap { tab in
+                    anchors[tab.id].map { (tab.id, $0.intersection(visibleTabs)) }.flatMap { $0.1.isNull ? nil : $0 }
+                }) { id in
                     menu(id, anchors[id]?.minX ?? 0)
                 }
             }
