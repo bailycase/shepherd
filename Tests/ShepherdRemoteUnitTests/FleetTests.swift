@@ -126,6 +126,32 @@ struct FleetTests {
         #expect(item.session == NativeThreadSession(piSessionID: "session", generation: "gen"))
     }
 
+    /// The sidebar's chip says why in the agent's own words when it gave them ("retention?"),
+    /// and "asked you" when it gave none or only blanks.
+    @Test(arguments: [("retention?" as String?, "retention?"), ("  approve\n plan ", "approve plan"), (nil, "asked you"), (" ", "asked you")])
+    func aQuestionsReasonIsTheAgentsOwnWhenItGaveOne(short: String?, reason: String) throws {
+        var agent = Self.agent("dock", .blocked)
+        agent.waitingOn = "Retention: 30 days or 13 months?"
+        agent.waitingReason = short
+        let dialog = NativeThreadDialog(id: "d", kind: .confirm, title: "Retention: 30 days or 13 months?")
+        let model = FleetModel(hosts: [Self.host(Self.studio, "Studio", agents: [agent])],
+                               digests: [Self.ref("dock"): Self.digest(Self.snapshot(running: true, dialogs: [dialog]))])
+        #expect(try #require(model.needsYou.first).reason == reason)
+    }
+
+    /// An asking subagent's chip is its own reason when it gave one, else its name.
+    @Test(arguments: [("token names?" as String?, "token names?"), (nil, "reviewer"), ("", "reviewer")])
+    func anAskingSubagentsReasonIsItsOwnWhenItGaveOne(short: String?, reason: String) throws {
+        var child = Fixture.run("run-1", needsAttention: true)
+        child.label = "reviewer"
+        child.question = ChildQuestion(text: "Rename or replace?", short: short)
+        let model = FleetModel(hosts: [Self.host(Self.studio, "Studio", agents: [Self.agent("restyle", .working)])],
+                               digests: [Self.ref("restyle"): Self.digest(Self.snapshot(running: true, subagents: [child]))])
+        let item = try #require(model.needsYou.first)
+        #expect(item.reason == reason)
+        #expect(item.origin == .subagent("reviewer"), "the subagent is still named by its label")
+    }
+
     @Test func aThreadWhoseHostTakesNoAnswersIsAnsweredInTheThread() throws {
         let dialog = NativeThreadDialog(id: "d", kind: .confirm, title: "Q")
         let snapshot = Self.snapshot(running: true, dialogs: [dialog], actions: [])

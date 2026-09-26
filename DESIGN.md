@@ -852,9 +852,17 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   sides. Each row (`NWSidebarRow`) is 28pt (22), radius 8, padded 8pt (6), with a 14pt leading slot
   and a 9pt (7) gap. The slot holds a thread's glowing 6pt `lantern` dot, or an automation run's
   13pt (11) `bolt` in `lanternText`. The title is in the row font, truncating at the tail. The
-  reason trails in mono 10 `lanternText` ("retention?", "approve plan"): the question the agent's
-  thread asks (`Agent.waitingOn`), else the asking subagent's role or name, else "ASK", cut to 14
-  characters at a word (`SidebarDerivation.shortened`). Most recently active first.
+  reason trails in mono 10 `lanternText` ("retention?", "approve plan"): the agent's own word or
+  two for its question (`Agent.waitingReason`) when its asking tool gave one, else the question
+  its thread asks (`Agent.waitingOn`); for an asking subagent, its own reason
+  (`ChildQuestion.short`), else its role or name; else "ASK". Cut to 14 characters at a word
+  (`SidebarDerivation.shortened`). Most recently active first. The agent is asked for the reason
+  (the user's decision, 2026-09-25: "Ask the agent for a short reason"): Shepherd's status
+  extension gives every asking tool (named like `ask` or `question`, the same rule that sets
+  `blocked`) an optional `short` parameter, described to the model as 1–3 words for this sidebar,
+  and takes it out of the call before the tool runs; the host reads it from the call's arguments
+  and pairs it with the dialog that call opens. A child's `shepherd_parent_message` takes the
+  same `short`. An agent that gives none, and an older host, fall back to the question cut short.
 - **Recents** (`NWSidebarSection(.recents)`): every other agent, on this Mac and every connected
   host, automation runs included, in one list, most recently active first. The header is "Recents"
   in Geist 11.5 medium `textTertiary`, spaced like Needs you, and the rows are the same. The leading
@@ -875,9 +883,9 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   (`AgentStatus.movesRecents`; asking and being answered happen inside a turn) and when a message is
   sent to it, and the app stamps an agent it creates. A streamed token, a repeated status report or
   a question never moves a row, so the list holds still while you read it. Agents no host has
-  stamped (older hosts and state files) follow, newest created first. `lastActiveAt` and `waitingOn`
-  are live state on `Agent`, broadcast to remote clients like a status; `waitingOn` is never written
-  to state.json. At launch the most recently active agent on this Mac shows.
+  stamped (older hosts and state files) follow, newest created first. `lastActiveAt`, `waitingOn`
+  and `waitingReason` are live state on `Agent`, broadcast to remote clients like a status;
+  `waitingOn` and `waitingReason` are never written to state.json. At launch the most recently active agent on this Mac shows.
 - **Hosts:** a connected host's agents join both lists, tagged. A host that drops keeps its threads
   in Recents as it last sent them (NavHosts' `horizon` rows), dimmed (`NWListMetrics.dimmedOpacity`,
   as on the iPad), never in Needs you since nothing there can be answered, and with a menu that
@@ -891,8 +899,8 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   the trailing end.
 - **Subagents have no rows.** They live in their agent's tray above the composer, the thread's
   record lines, and the inspector (see Subagents below), and in the palette. A subagent waiting
-  on you puts its agent in Needs you, with its name as the reason; live and finished subagents
-  leave the agent's row as it is.
+  on you puts its agent in Needs you, with its own short reason, else its name, as the reason;
+  live and finished subagents leave the agent's row as it is.
 - **Width:** 232pt by default, 190–340, by dragging the trailing edge (a 9pt handle, adjustable
   with VoiceOver in 16pt steps) or in Settings ▸ Appearance. It never narrows the main column
   below 720 and keeps its width while the side pane is open.
@@ -4051,8 +4059,6 @@ below collects the rest, and the places those sentences point here.
   - The New thread composer has no attach button and no "/ commands" chip, and its placeholder
     drops ", or / for commands": no pi runs before the thread exists to list its commands, and the
     opening prompt carries no images.
-  - A Needs you reason is the question's own title cut to 14 characters ("Retention…"), where the
-    boards condense it ("retention?").
 - **A pi dialog posts no notification** (Notifications and Live Activities › The catalog):
   a confirm, select, input or editor dialog shows in the thread, but only a tool named like
   `ask` or `question` sets `blocked`, so any other question reaches no one outside the window
@@ -4879,7 +4885,8 @@ selected thread, or the Overview when none is. Other screens push over the detai
   and a 16pt `textTertiary` glyph for a design, a mission or an automation run.
 - **Needs you rows** end in the reason in mono 10 `lanternText`. The boards summarize the
   question ("retention?", "approve plan", "orders stuck") or name the subagent that asks
-  ("reviewer"); the app writes "asked you", "needs you", or the subagent's name.
+  ("reviewer"); the app writes the agent's own short reason when it gave one (as on the Mac),
+  else "asked you" or "needs you", and a subagent's own reason, else its name.
 - **Recents rows** end in the host tag (mono 10 `textTertiary` in a 1px `lineSubtle` box at
   radius 4) only when threads from several hosts mix. Running rows draw no sparkline (see
   Where Shepherd departs). **Not built yet:** a design's row (the diamond glyph, and "4 boards"

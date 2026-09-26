@@ -171,6 +171,54 @@ struct SidebarNeedsYouTests {
         #expect(SidebarDerivation.reason(question: nil, children: []) == "ASK")
     }
 
+    /// The agent's own word or two for its question when its asking tool gave one; the question
+    /// cut short when it gave none, or only blanks.
+    @Test(arguments: [
+        ("retention?" as String?, "retention?"),
+        ("approve plan", "approve plan"),
+        (nil, "Retention…"),
+        ("  \n", "Retention…"),
+        ("approve the migration plan now", "approve the…"),
+    ])
+    func anAgentsOwnReasonComesBeforeItsCutQuestion(short: String?, reason: String) {
+        #expect(SidebarDerivation.reason(question: "Retention: 30 days or 13 months?", short: short, children: []) == reason)
+    }
+
+    /// A reason without a question is stale: the row falls back as if none were given.
+    @Test func aReasonWithoutAQuestionIsIgnored() {
+        #expect(SidebarDerivation.reason(question: nil, short: "retention?", children: []) == "ASK")
+    }
+
+    /// An asking subagent's own reason, else its name.
+    @Test func anAskingSubagentsOwnReasonComesBeforeItsName() {
+        var child = Fixture.child("run", attention: true)
+        child.role = "reviewer"
+        child.question = ChildQuestion(text: "Rename the new ones, or replace the old ones everywhere?", short: "token names?")
+        #expect(SidebarDerivation.reason(question: nil, children: [child]) == "token names?")
+        child.question?.short = " "
+        #expect(SidebarDerivation.reason(question: nil, children: [child]) == "reviewer")
+        child.question = nil
+        #expect(SidebarDerivation.reason(question: nil, children: [child]) == "reviewer")
+    }
+
+    /// Local and remote rows alike wear the reason the agent gave.
+    @Test func needsYouRowsWearTheAgentsOwnReason() {
+        var local = Fixture.agent("local", in: space).agent
+        local.status = .blocked
+        local.waitingOn = "Retention: 30 days or 13 months?"
+        local.waitingReason = "retention?"
+        var remote = Fixture.agent("remote", in: space).agent
+        remote.status = .blocked
+        remote.waitingOn = "Approve the plan as written?"
+        remote.waitingReason = "approve plan"
+        let lists = SidebarDerivation.lists(SidebarSource(local: ShepherdState(spaces: [space], agents: [local]), hosts: [
+            SidebarSource.Host(id: UUID(), name: "horizon", state: ShepherdState(spaces: [space], agents: [remote]), children: [:]),
+        ]))
+        let rows = Dictionary(uniqueKeysWithValues: lists.needsYou.map { ($0.title, $0) })
+        #expect(rows["local"]?.accessory == .reason("retention?"))
+        #expect(rows["remote"]?.accessory == .reason("approve plan"))
+    }
+
     @Test(arguments: [
         ("retention?", "retention?"),
         ("approve plan", "approve plan"),
