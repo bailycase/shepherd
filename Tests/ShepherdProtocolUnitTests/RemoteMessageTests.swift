@@ -337,10 +337,16 @@ struct RemoteRequestTests {
 
     @Test(arguments: [RemoteAgentAction.rename(name: "x"), .deleteKeepingWorktree, .reorder(target: AgentID(rawValue: "b")),
                       .renameTerminal(paneID: PaneID(rawValue: "p"), title: "logs"), .renameTerminal(paneID: PaneID(rawValue: "p"), title: nil),
-                      .killTerminalProcess(paneID: PaneID(rawValue: "p")), .typeInTerminal(paneID: PaneID(rawValue: "p"), text: "go test ./...")])
+                      .killTerminalProcess(paneID: PaneID(rawValue: "p"))])
     func everyAgentActionRoundTrips(_ action: RemoteAgentAction) throws {
         #expect(try Wire.roundTrip(RemoteRequest.agentAction(id: 1, agentID: S.agent, action: action))
             == .agentAction(id: 1, agentID: S.agent, action: action))
+    }
+
+    /// Run in terminal is gone: an older client's `typeInTerminal` is no action this side knows.
+    @Test func anOlderClientsRunInTerminalIsNoLongerAnAction() {
+        let line = Data(#"{"type":"agentAction","id":4,"agentID":"a","action":{"typeInTerminal":{"paneID":"p","text":"ls"}}}"#.utf8)
+        #expect(throws: DecodingError.self) { try NDJSON.decode(RemoteRequest.self, from: line) }
     }
 
     @Test(arguments: RemoteSamples.automationRequests)

@@ -159,6 +159,7 @@ And the rules that follow from them:
 | Terminal: ⌃\` shows the panel, ⌃⇧\` opens a tab, ⌘K clears, ⇧⌘[ ] switch tabs | **⌘J** shows or hides it; ⌘D opens a tab (+ opens the new terminal menu); no clear or tab-switch chord | Every rebindable chord needs ⌘, ⌘K is the palette, and a tab is one click away |
 | Terminal: the terminal on `bgBase` (Mac and iPad panels) | On `bgWindow`, the theme's terminal background | Terminal panes keep one surface everywhere |
 | TerminalTab · states: an exited tab stays, its output kept ("exited with an error; the output stays") | On the Mac a shell that exits closes its pane, so its tab goes at once; iOS shows the exited state until the host closes it | A process that exits on its own closes its pane (AGENTS.md › Sessions and views are separate) |
+| TerminalStates: "Any command line from the agent can be opened in a new tab, typed out but not run" (Run in terminal at the trailing end of a finished command's activity line) | No Run in terminal: an activity line, and its calls' context menus, offer nothing of the terminal's, on the Mac and in the iOS client | Removed 2026-09-26 at the user's request: no use in agent threads ("they need to be removed for stuff showing up in agent threads, theres no use") |
 | iPadTerminal: the key row reads esc, tab, ctrl, ⌥, ↑ ↓ ← →, `\|`, `~`, `/` | esc, tab, ctrl, ⌥, `\|`, `~`, `/`, `-`, then the arrows | A row that wraps in two on a phone keeps the arrows together (`TerminalKey`); `-` for flags |
 | Earlier boards, no longer on the canvas: a compose button beside the window controls and a "Jump to…" field above the sidebar tree | Neither comes back. The Search (⌘K) and Hide sidebar buttons today's boards draw there are the spec (Sidebar › Top bar) | ⌘N and the New thread destination start a thread, and the palette is a button, not a field |
 | Subagents, SubagentsDone and SubagentsQueue (the macOS page boards; the side-pane boards PaneStates, PaneBrowser, PaneArtifacts, PaneArtifactEdit and PaneFiles draw the same way): radius 10 cards and panes, 52pt toolbars and 48–52pt pane headers, 40pt card headers, 36pt file headers and 26pt file chips, 26–30pt buttons at radius 6–7, 13–14pt text, a 20pt `running` comment `+` and avatar, a comment's Edit at rest | The Night Watch boards' components (NWAgents, NWReview): radius 8, 44pt headers, 32pt file headers and 24pt chips, `s` (24pt) buttons, `ui` 12.5 text, a lantern avatar and an 18pt lantern `+` to match it, Edit and Delete on hover | The NW boards are the system; the radius, height and type scales, and Details on hover |
@@ -3137,13 +3138,10 @@ splits.
     disabled against an older host.
   - **Not built:** "New terminal on This Mac" (for a remote thread): a remote agent's layout is its
     host's, so a pane of this Mac has no place in it (see Known gaps).
-- **Run in terminal** (TerminalStates: "Any command line from the agent can be opened in a new
-  tab, typed out but not run"). A finished Run (bash) activity line of one command carries Run in
-  terminal at its trailing end (secondary, small: 24pt, a 13pt `terminal` glyph and the label in
-  12pt medium `textPrimary`), and each command's call row offers Run in Terminal in its context
-  menu. It opens a new tab in the thread's worktree on its host, the tab takes the keyboard, and
-  the command's whole line is typed after the prompt once the shell reads (`typeCommand(submit:
-  false)`; on a host, `typeInTerminal`), with nothing run.
+- **No Run in terminal** (a departure from TerminalStates: "Any command line from the agent can
+  be opened in a new tab, typed out but not run"). Removed 2026-09-26 at the user's request: no
+  use in agent threads. A finished command's activity line and its call rows' context menus
+  offer nothing of the terminal's.
 - **Keys** (Keyboard: "Shown in menus and tooltips"). The board's are Show or hide the terminal ⌃\`,
   New terminal ⌃⇧\`, Split right ⌘D, Maximize or restore ⇧⌘↩, Close the tab ⌘W, Clear ⌘K, and Next
   or previous tab ⇧⌘[ and ⇧⌘]. Shepherd's (see the departures and Keyboard): ⌘J shows or hides the
@@ -8218,7 +8216,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | QuestionStates | Composer, questions, and menus › Questions; Keyboard | Partial |
 | TerminalSplit | Terminal panes; Terminal panel (no header button: departures) | Built |
 | TerminalPane | Terminal panes; Terminal panel (Split panes, Send output to the agent; no header button: departures) | Built |
-| TerminalStates | Terminal panel (tab states, maximized, divider, new terminal menu, Run in terminal; no header toggle: departures) | Partial |
+| TerminalStates | Terminal panel (tab states, maximized, divider, new terminal menu; no header toggle or Run in terminal: departures) | Partial |
 | ThreadError | Thread › Errors (the card, folded); Status language | Built |
 | ThreadErrorDetails | Thread › Errors (Details) | Built |
 

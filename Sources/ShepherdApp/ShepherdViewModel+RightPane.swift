@@ -192,9 +192,6 @@ final class ThreadCommandCenter {
     }
 
     private(set) var request: Request?
-    /// Run in terminal on a finished command's activity line: a new tab in the thread's terminal
-    /// panel with the command typed out, not run. Nil where there is no panel to open it in.
-    @ObservationIgnored var runInTerminal: ((String) -> Void)?
 
     func send(_ command: Command, to thread: String) {
         request = Request(command: command, thread: thread)

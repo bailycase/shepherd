@@ -375,9 +375,6 @@ struct ThreadPreviewTests {
         let live = nativeActivityBurst([NativeActivityCall(ActivityThreads.liveBuild)])
         let failed = try #require(bursts.first { $0.state == .failed })
         let size = CGSize(width: 760, height: 520)
-        // A finished command offers Run in terminal (TerminalStates).
-        let commands = ThreadCommandCenter()
-        commands.runInTerminal = { _ in }
         try await Preview.render("activity-line-states", size: size) {
             VStack(alignment: .leading, spacing: AppLayout.activitySpacing) {
                 Text("DONE").nwSectionLabel()
@@ -393,7 +390,6 @@ struct ThreadPreviewTests {
             .padding(32)
             .frame(width: size.width, height: size.height, alignment: .topLeading)
             .background(Color.nw.bgWindow)
-            .environment(\.threadCommands, commands)
         }
     }
 
