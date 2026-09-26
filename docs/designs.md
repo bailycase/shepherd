@@ -729,10 +729,16 @@ The design screen publishes what it shows (`DesignScreenModel.viewRecord`, a
   presented): the board holding
   the latest pick (down to 10% zoom), the board under the pointer with Select (at any zoom), and
   the boards nearest the middle of the view (from 25%), recycled least
-  recently wanted first (`DesignLivePlan`). A live view draws at the canvas's zoom with WebKit's
-  page zoom, so it lays out at the board's size and stays sharp, and it shows once its first
-  snapshot is taken. During a zoom gesture every board draws its snapshot; live views follow once
-  the canvas rests.
+  recently wanted first (`DesignLivePlan`). A live view's page always lays out at the board's
+  `w` × `h` in CSS pixels, whatever the zoom: its web view is the board's size at a page zoom of
+  1, scaled to the board's frame on screen (AppKit's bounds, UIKit's transform, so clicks and
+  touches map through the same scale). Never WebKit's page zoom: it scales font sizes, so below
+  about 56% its minimum font size swells text until labels wrap, above 100% the system font's
+  size-dependent tracking narrows text until paragraphs rewrap, and at fractional zooms the layout
+  viewport loses a pixel. Zooming changes no layout and reloads nothing; above 100% a live board
+  is its 100% drawing scaled up, like a snapshot. A live view shows once its first snapshot is
+  taken. During a zoom gesture every board draws its snapshot;
+  live views follow once the canvas rests.
 - **Snapshots.** Every other board draws its last snapshot, rendered by one off-screen view at a
   time (`DesignRasterizer`), so any canvas holds at most six web views. Snapshots are kept per
   design within a pixel budget, never evicting a board on screen. A hidden design gives up its
@@ -743,8 +749,9 @@ The design screen publishes what it shows (`DesignScreenModel.viewRecord`, a
   navigation, its state kept; source the runtime refuses leaves it as it was), and any other board
   renders one new snapshot. New boards appear and removed boards leave.
 - **Budgets** (`DesignPerformanceTests`, over 172 boards): at most six web views, panning recycles
-  them, one board changing redraws one frame (`design.board`) with one snapshot, and a board
-  dragged redraws its own frame once per step and no other. The Designs
+  them, one board changing redraws one frame (`design.board`) with one snapshot, a board
+  dragged redraws its own frame once per step and no other, and zooming never reloads a live
+  board or changes its page zoom. The Designs
   grid builds only the cards on screen (`ListPerformanceTests`, `design.card`).
 
 ### Tweak (DZTweak)
