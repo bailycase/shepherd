@@ -21,9 +21,23 @@ public enum StubPi {
 
     private static let installed = Locked(false)
 
-    /// Installs the stub as the engine every app-level launch starts (`TestProcess.piEngine`,
-    /// which `SHEPHERD_PI_ENGINE` names), answering `--list-models` with `modelListing`, for code
-    /// that launches pi the way the app does (`PiLaunch`). It only writes a file into
+    /// One launch of the stub engine, as it saw it.
+    public struct Launch: Decodable, Sendable {
+        public var argv: [String]
+        public var cwd: String
+        public var env: [String: String]
+    }
+
+    /// Every launch the stub engine recorded in this process, oldest first.
+    public static func launches() -> [Launch] {
+        guard let data = try? Data(contentsOf: TestProcess.piLaunches) else { return [] }
+        return data.split(separator: UInt8(ascii: "\n")).compactMap { try? JSONDecoder().decode(Launch.self, from: Data($0)) }
+    }
+
+    /// Installs the stub as the engine Shepherd's launcher starts (`TestProcess.piEngine`, which
+    /// `SHEPHERD_PI_ENGINE` names), answering `--list-models` with `modelListing`, for code that
+    /// launches pi the way the app does (`PiLaunch`). Each RPC launch is recorded in
+    /// `TestProcess.piLaunches` (`launches()`). It only writes a file into
     /// `TestProcess.binDirectory` and stays for the rest of the process: every later launch of
     /// the engine is the stub. A bare `pi` on PATH still refuses to run.
     public static func installAsEngine() throws {
@@ -35,7 +49,7 @@ public enum StubPi {
             let script = """
             #!/bin/sh
             if [ "$1" = "--list-models" ]; then cat '\(listing.path)'; exit 0; fi
-            exec /usr/bin/env python3 '\(path)' "$@"
+            STUB_PI_LAUNCH_LOG='\(TestProcess.piLaunches.path)' exec /usr/bin/env python3 '\(path)' "$@"
 
             """
             // Written aside and renamed, so a concurrent shell never finds a half-written or

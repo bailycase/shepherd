@@ -93,16 +93,14 @@ test("the script lists the skills pi's own loader gives a session", async () => 
   }
 });
 
-test("pi's package is found from its executable", () => {
+test("the script imports only the package it is given, never a pi it could find", () => {
   const f = fixture();
   try {
     const manifest = JSON.parse(fs.readFileSync(path.join(pkg, "package.json"), "utf8"));
     const bin = typeof manifest.bin === "string" ? manifest.bin : manifest.bin.pi;
     const link = path.join(f.dir, "pi");
     fs.symlinkSync(path.join(pkg, bin), link);
-    const answer = run(f, { executable: link, packageDir: null });
-    assert.equal(answer.problem, undefined);
-    assert.ok(answer.skills.some((s) => s.name === "epsilon"));
+    assert.equal(run(f, { executable: link, packageDir: null }).problem, "pi_not_found");
   } finally {
     fs.rmSync(f.dir, { recursive: true, force: true });
   }

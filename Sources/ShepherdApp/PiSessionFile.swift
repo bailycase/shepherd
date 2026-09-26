@@ -20,31 +20,23 @@ enum PiSessionFile {
     /// Pi's session-file schema version. Kept in step with the `{"type":"session"}`
     /// header pi itself writes; a mismatch only risks the warning coming back,
     /// never a broken session.
-    private static let version = 3
+    static let version = 3
 
-    /// The path as pi sees it: `realpath(3)`, like Node's `fs.realpathSync`. Foundation's
-    /// `resolvingSymlinksInPath` is not a substitute: it maps /private/tmp back to /tmp.
+    /// The path as pi sees it (`PiSessionFolder.realPath`).
     static func realPath(_ path: String) -> String {
-        let expanded = (path as NSString).expandingTildeInPath
-        guard let resolved = realpath(expanded, nil) else { return (expanded as NSString).standardizingPath }
-        defer { free(resolved) }
-        return String(cString: resolved)
+        PiSessionFolder.realPath(path)
     }
 
-    /// `sessionsRoot/<mangled cwd>/` — pi derives the directory name from the
-    /// absolute cwd, replacing each `/`, `\` and `:` with `-` and wrapping the
-    /// result in `--`.
+    /// `sessionsRoot/<mangled cwd>/`: pi's name for a project's session folder
+    /// (`PiSessionFolder`), which every agent launch names with `--session-dir`.
     static func projectDirectory(forCwd cwd: String, sessionsRoot: URL) -> URL {
-        sessionsRoot.appendingPathComponent("--\(mangled(cwd))--", isDirectory: true)
+        sessionsRoot.appendingPathComponent(PiSessionFolder.name(forCwd: cwd), isDirectory: true)
     }
 
-    /// Pi resolves the real path first (so /tmp and /private/tmp agree), then
-    /// mangles it as pi's session manager does: one leading `/` or `\` dropped, then every
-    /// `/`, `\` and `:` replaced with `-`.
+    /// pi's rule (`PiSessionFolder.mangled`): the real path, one leading `/` or `\` dropped, then
+    /// every `/`, `\` and `:` replaced with `-`.
     static func mangled(_ cwd: String) -> String {
-        var path = Substring(realPath(cwd))
-        if let first = path.first, first == "/" || first == "\\" { path = path.dropFirst() }
-        return String(path.map { "/\\:".contains($0) ? "-" : $0 })
+        PiSessionFolder.mangled(cwd)
     }
 
     /// True when pi can already resolve `sessionID` in `cwd` (any file whose

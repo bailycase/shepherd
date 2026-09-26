@@ -1,10 +1,11 @@
 import Foundation
 
-/// Every line that starts pi, or the node Shepherd's own scripts run on, built in one place from
-/// the engine `PiEngine` located. Nothing else in Shepherd names `pi` or `node` on a launch line,
-/// so moving to another engine changes the engine and nothing here. `PiLaunchTests` pins each line.
+/// Every line that starts Shepherd's pi, or the node Shepherd's own scripts run on, built in one
+/// place. Each pi line execs the launcher in Shepherd's pi home (`PiHome.launcher`), never a
+/// `pi` looked up on PATH; the launcher pins the home and starts the engine. `PiLaunchTests`
+/// pins each line.
 ///
-/// Each runs in a login shell, as today: it carries the user's PATH to pi's tools and their
+/// The pi lines run in a login shell: it carries the user's PATH to pi's tools and their
 /// provider keys to pi. Every value on a line is single-quoted.
 public enum PiLaunch {
     /// `/bin/zsh -l -c <script> [positional…]`: the positional words are the script's `$0`, `$1`, ….
@@ -20,63 +21,78 @@ public enum PiLaunch {
         public var argv: [String] { ["/bin/zsh", "-l", "-c", script] + positional }
     }
 
-    /// An agent's `pi --mode rpc`, reopening the pi session it was last in. The `cd` runs after
-    /// the login shell's startup files, so a `cd` in them can't move pi away from the agent's
-    /// folder. `model` and `thinking` go only to a fresh session; `extensions` load in order.
-    public static func agent(engine: PiEngine, cwd: String, sessionID: String, model: String?, thinking: String?,
-                             extensions: [String]) -> Line {
-        var script = "cd -- \(quoted(cwd)) && exec \(word(engine.pi)) --mode rpc --session-id \(quoted(sessionID))"
+    /// A session path outside Shepherd's pi home (principle 4: pi writes only Shepherd's files).
+    public struct OutsideHome: Error, CustomStringConvertible, Equatable {
+        public let path: String
+        public var description: String { "Shepherd hands pi only session paths inside its own pi home, not \(path)." }
+    }
+
+    /// An agent's `pi --mode rpc` in `cwd`, reopening the pi session it was last in, with its
+    /// sessions in `home.sessionDirectory(forCwd:)` (`--session-dir`, which wins over anything the
+    /// environment or a project's settings say). The `cd` runs after the login shell's startup
+    /// files, so a `cd` in them can't move pi. `model` and `thinking` go only to a fresh session;
+    /// `extensions` load in order. Throws when the session folder resolves outside the home.
+    public static func agent(home: PiHome, cwd: String, sessionID: String, model: String?, thinking: String?,
+                             extensions: [String]) throws -> Line {
+        let sessionDirectory = home.sessionDirectory(forCwd: cwd).path
+        guard home.contains(sessionDirectory) else { throw OutsideHome(path: sessionDirectory) }
+        var script = "cd -- \(quoted(cwd)) && exec \(quoted(home.launcher.path)) --mode rpc --session-dir \(quoted(sessionDirectory))"
+            + " --session-id \(quoted(sessionID))"
         if let model { script += " --model \(quoted(model))" }
         if let thinking { script += " --thinking \(quoted(thinking))" }
         for path in extensions { script += " -e \(quoted(path))" }
         return Line(script: script)
     }
 
-    /// pi's model catalog (`pi --list-models`).
-    public static func listModels(engine: PiEngine) -> Line {
-        Line(script: "exec \(word(engine.pi)) --list-models")
+    /// pi's model catalog (`pi --list-models`), from inside the home, so a project's `.pi` never
+    /// applies (a cwd of `~` would make `~/.pi` the project).
+    public static func listModels(home: PiHome) -> Line {
+        Line(script: "cd -- \(quoted(home.directory.path)) && exec \(quoted(home.launcher.path)) --list-models")
     }
 
     /// A one-shot draft (PR descriptions, commit messages from review): the prompt alone on
     /// `model`, with no session, tools, extensions, skills, templates, themes or context files.
-    public static func draft(engine: PiEngine, model: String, prompt: String) -> Line {
-        Line(script: "exec \(word(engine.pi)) --print --no-session --no-tools --no-extensions --no-skills "
+    public static func draft(home: PiHome, model: String, prompt: String) -> Line {
+        Line(script: "exec \(quoted(home.launcher.path)) --print --no-session --no-tools --no-extensions --no-skills "
             + "--no-prompt-templates --no-themes --no-context-files --no-approve --thinking low "
             + "--model \(quoted(model)) -- \(quoted(prompt))")
     }
 
-    /// pi with plain arguments (`--version`, `update`), its output dropped when asked.
-    public static func command(engine: PiEngine, arguments: [String], discardingOutput: Bool = false) -> Line {
-        let words = ([word(engine.pi)] + arguments.map(quoted)).joined(separator: " ")
-        return Line(script: "exec \(words)\(discardingOutput ? " >/dev/null 2>&1" : "")")
+    /// What a terminal pane types to open Shepherd's pi for signing in: pi's own TUI, with no
+    /// session, where `/login` signs in to a provider for Shepherd's pi alone.
+    public static func signIn(home: PiHome) -> String {
+        "\(quoted(home.launcher.path)) --no-session"
     }
 
-    /// Settings ▸ Skills' reader: node with the script on stdin, told where pi's executable is
-    /// so it can import pi's own loader (`shepherd-pi-skills.mjs`).
-    public static func skillsReader(engine: PiEngine) -> Line {
-        let piExecutable = switch engine.pi {
-        case .onPath(let name): "\"$(command -v \(quoted(name)) 2>/dev/null)\""
-        case .executable(let path): quoted(path)
-        }
-        return Line(script: "exec \(word(engine.node)) --input-type=module - \(piExecutable)")
+    /// A line that starts no pi and says why (`PiHomeProblem`), exiting `refusedExitCode`, so the
+    /// agent's start fails with the reason (`NativeStartProblem.Kind.homeUnsafe`).
+    public static func refused(_ problem: PiHomeProblem) -> Line {
+        Line(script: "print -r -u2 -- \(quoted(refusalPrefix + problem.message)); exit \(refusedExitCode)")
     }
 
-    /// Settings ▸ MCP servers' probe: the agents' MCP client, run by node with `probe`.
+    /// How a refused start begins its one line, and exits.
+    public static let refusalPrefix = "Shepherd won't start pi: "
+    public static let refusedExitCode: Int32 = 78
+
+    /// Settings ▸ Skills' reader: the engine's node with the script on stdin (no shell: it needs
+    /// nothing from the user's startup files).
+    public static func skillsReader(engine: PiEngine) -> [String] {
+        node(engine) + ["--input-type=module", "-"]
+    }
+
+    /// Settings ▸ MCP servers' probe: the agents' MCP client, run by the engine's node with
+    /// `probe`, in a login shell, so the servers it starts find what an agent's would.
     public static func mcpProbe(engine: PiEngine, client: String) -> Line {
         Line(script: "exec \(word(engine.node)) \"$0\" probe", positional: [client])
     }
 
-    /// What the native children extension starts a child with when pi's own runtime isn't node
-    /// or bun: handed to the agent as `SHEPHERD_PI_EXECUTABLE`, and run without a shell.
-    public static func childExecutable(engine: PiEngine) -> String {
-        switch engine.pi {
-        case .onPath(let name): name
-        case .executable(let path): path
+    /// The engine's node as argv: its path, or `env` finding the tests' node on PATH.
+    static func node(_ engine: PiEngine) -> [String] {
+        switch engine.node {
+        case .executable(let path): [path]
+        case .onPath(let name): ["/usr/bin/env", name]
         }
     }
-
-    /// The variable that carries `childExecutable` to an agent's extensions.
-    public static let childExecutableEnvKey = "SHEPHERD_PI_EXECUTABLE"
 
     /// A program as a shell word: a plain name bare, anything else quoted.
     static func word(_ program: PiEngine.Program) -> String {

@@ -50,13 +50,14 @@ enum StatusExtension {
         return url.path
     }
 
-    /// argv + env for an agent: `pi --mode rpc` in `cwd` through a login shell (so the user's
-    /// PATH resolves), reopening the pi session the agent was last in, with status reporting
-    /// wired to the app's socket (`PiLaunch.agent` builds the line). The opening prompt is not
-    /// passed positionally; RPC mode ignores positional messages, so the app sends it as the
-    /// first `prompt` command instead.
+    /// argv + env for an agent: Shepherd's pi (`pi --mode rpc` through the launcher in its pi
+    /// home) in `cwd`, from a login shell (so the user's PATH reaches pi's tools), reopening the
+    /// pi session the agent was last in, with status reporting wired to the app's socket
+    /// (`PiLaunch.agent` builds the line). The opening prompt is not passed positionally; RPC
+    /// mode ignores positional messages, so the app sends it as the first `prompt` command
+    /// instead. Throws when the agent's session folder would resolve outside the home.
     static func command(
-        engine: PiEngine,
+        home: PiHome,
         cwd: String,
         agentID: AgentID,
         piSessionID: String,
@@ -76,17 +77,15 @@ enum StatusExtension {
         mcp: MCPLaunch? = nil,
         model: String?,
         thinking: ThinkingLevel?
-    ) -> SessionCommand {
+    ) throws -> SessionCommand {
         let extensions = [extensionPath, instructions?.extensionPath, panesExtensionPath, reviewExtensionPath, subagentsExtensionPath,
                           childrenExtensionPath, namerExtensionPath, design?.extensionPath, mcp?.extensionPath].compactMap { $0 }
-        let line = PiLaunch.agent(engine: engine, cwd: cwd, sessionID: piSessionID, model: model, thinking: thinking?.rawValue,
+        let line = try PiLaunch.agent(home: home, cwd: cwd, sessionID: piSessionID, model: model, thinking: thinking?.rawValue,
                                   extensions: extensions)
         var env = [
             "SHEPHERD_AGENT_ID": agentID.rawValue,
             "SHEPHERD_SOCKET": socketPath,
             "SHEPHERD_EXT_STATUS": extensionPath,
-            // The pi a native child starts when pi's runtime isn't node (shepherd-children.ts).
-            PiLaunch.childExecutableEnvKey: PiLaunch.childExecutable(engine: engine),
         ]
         if let instructions { env["SHEPHERD_INSTRUCTIONS_DIR"] = instructions.directory }
         // Settings ▸ Experiments ▸ Suggested instructions, while on for this agent: the files its

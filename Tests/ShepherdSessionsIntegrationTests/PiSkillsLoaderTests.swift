@@ -114,10 +114,12 @@ struct PiSkillsLoaderTests {
             try write("\(folder)/SKILL.md", "---\nname: \(name)\ndescription: \(description)\n\(extra)---\n# \(name)\n")
         }
 
-        func loader(timeout: TimeInterval = PiSkillsLoader.timeout, package: URL? = nil, hang: Bool = false) throws -> PiSkillsLoader {
+        func loader(timeout: TimeInterval = PiSkillsLoader.timeout, package: URL? = nil, hang: Bool = false,
+                    yourPi: YourPi? = nil) throws -> PiSkillsLoader {
             var environment = ["HOME": home.path, "PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"]
             if hang { environment["STAND_IN_PI_HANG"] = "1" }
-            return PiSkillsLoader(agentDirectory: agent, engine: .userPi, launch: .node(try PiSkillsLoaderTests.node(), package: package ?? self.package),
+            return PiSkillsLoader(agentDirectory: agent, engine: PiSetup.app.engine, yourPi: { yourPi },
+                                  launch: .node(try PiSkillsLoaderTests.node(), package: package ?? self.package),
                                   environment: environment, timeout: timeout)
         }
 
@@ -154,6 +156,31 @@ struct PiSkillsLoaderTests {
 
     /// A read is kept until a folder it came from changes; a new skill in pi's folder shows on
     /// the next read.
+    /// "Your pi" is read as plain files, never through pi: its skills folder and its settings'
+    /// paths join what Shepherd's pi loads, a name Shepherd's pi already has is shadowed, and the
+    /// group names your pi's folder. Nothing in it is written.
+    @Test func yourPisSkillsAreReadAsPlainFiles() throws {
+        let fixture = try Fixture()
+        try fixture.skill("yours/skills/zeta", "zeta", "Your zeta.")
+        try fixture.skill("yours/skills/beta", "beta", "Your beta.")
+        try fixture.write("yours/skills/loose.md", "---\ndescription: A loose skill.\n---\n")
+        try fixture.skill("yours-extra/eta", "eta", "From your settings.", slashOnly: true)
+        try fixture.write("yours/settings.json", #"{"skills":["\#(fixture.root.path)/yours-extra","!ignored"],"packages":["npm:@x/y"]}"#)
+        let yours = YourPi(agentDirectory: fixture.root.appendingPathComponent("yours"))
+        let before = try FileManager.default.subpathsOfDirectory(atPath: yours.agentDirectory.path).sorted()
+
+        let pi = try fixture.loader(yourPi: yours).read(installedDirectory: fixture.installed)
+
+        #expect(pi.problem == nil)
+        #expect(pi.agentDirectory == PiSkillsLoader.abbreviate(yours.agentDirectory.path, home: fixture.home.path))
+        let byName = Dictionary(grouping: pi.skills, by: \.name)
+        #expect(byName["zeta"]?.first?.origin == .agentDirectory)
+        #expect(byName["loose"]?.first?.summary == "A loose skill.")
+        #expect(byName["eta"]?.first?.origin == .settingsPath && byName["eta"]?.first?.invocation == .slashOnly)
+        #expect(byName["beta"]?.contains { $0.shadowedBy != nil && $0.summary == "Your beta." } == true, "Shepherd's pi's beta comes first")
+        #expect(try FileManager.default.subpathsOfDirectory(atPath: yours.agentDirectory.path).sorted() == before)
+    }
+
     @Test func aReadIsKeptUntilAFolderItCameFromChanges() throws {
         let fixture = try Fixture()
         let loader = try fixture.loader()

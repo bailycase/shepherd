@@ -3,11 +3,16 @@ import Foundation
 import ShepherdProtocol
 
 /// The skills this host's pi loads from outside Shepherd's skills folder (Settings ▸ Skills'
-/// read-only groups; docs/skills.md › Outside skills): pi's agent directory's `skills/`, the
-/// `skills` paths in pi's settings, and pi packages. It asks pi's own loader, so the page lists
-/// exactly what an agent gets: `shepherd-pi-skills.mjs` runs on the node pi runs on (a login
-/// shell's, as agents start pi), imports the installed pi package, and prints what it resolves.
-/// It only reads; nothing under pi's directory is written.
+/// read-only groups; docs/skills.md › Outside skills), from two places:
+///
+/// - Shepherd's own pi home, asked of pi's own loader, so the page lists exactly what an agent
+///   gets: `shepherd-pi-skills.mjs` runs on the engine's node, imports the engine's pi, and prints
+///   what it resolves for the home (its `skills/`, the `skills` paths in its settings; it loads
+///   no packages).
+/// - "Your pi" (the user's own), read as plain files, never through pi's code: its `skills/`
+///   and the `skills` paths in its settings.json, for From your pi setup.
+///
+/// It only reads; nothing under either folder is written.
 ///
 /// Running node takes about half a second, so a result is kept until one of the folders it came
 /// from changes (their modification dates), and reads wait for one another rather than run twice.
@@ -15,9 +20,8 @@ import ShepherdProtocol
 public final class PiSkillsLoader: @unchecked Sendable {
     /// How node starts.
     public enum Launch: Sendable {
-        /// The engine's node through a login shell, as agents start pi, told where the engine's pi
-        /// is (`PiLaunch.skillsReader`).
-        case loginShell
+        /// The engine's node, importing the engine's pi (`PiLaunch.skillsReader`).
+        case engine
         /// This node, importing pi from this package (tests).
         case node(URL, package: URL)
     }
@@ -27,6 +31,7 @@ public final class PiSkillsLoader: @unchecked Sendable {
 
     private let agentDirectory: URL
     private let engine: PiEngine
+    private let yourPi: @Sendable () -> YourPi?
     private let launch: Launch
     private let environment: [String: String]
     private let timeout: TimeInterval
@@ -34,12 +39,13 @@ public final class PiSkillsLoader: @unchecked Sendable {
     private let lock = NSLock()
     private var cached: (installed: String, fingerprint: [String: Double], skills: PiSkills)?
 
-    /// `environment` is the child's (tests move `HOME` with it); `agentDirectory` is pi's, and
-    /// `engine` the pi a `.loginShell` launch reads.
-    public init(agentDirectory: URL, engine: PiEngine, launch: Launch = .loginShell,
+    /// `environment` is the child's (tests move `HOME` with it); `agentDirectory` is Shepherd's
+    /// pi home, `engine` the pi an `.engine` launch imports, and `yourPi` the user's own pi.
+    public init(agentDirectory: URL, engine: PiEngine, yourPi: @escaping @Sendable () -> YourPi? = { nil }, launch: Launch = .engine,
                 environment: [String: String] = ProcessInfo.processInfo.environment, timeout: TimeInterval = PiSkillsLoader.timeout) {
         self.agentDirectory = agentDirectory.standardizedFileURL
         self.engine = engine
+        self.yourPi = yourPi
         self.launch = launch
         self.environment = environment
         self.timeout = timeout
@@ -54,15 +60,19 @@ public final class PiSkillsLoader: @unchecked Sendable {
             if let cached, cached.installed == installed, Self.fingerprint(Array(cached.fingerprint.keys)) == cached.fingerprint {
                 return cached.skills
             }
+            let yours = yourPi()
             let (output, problem) = run()
             let skills: PiSkills
-            var watched = baseWatched(installed: installed)
-            if let output {
+            var watched = baseWatched(installed: installed, yourPi: yours)
+            let shown = yours?.agentDirectory.path ?? agentDirectory.path
+            if var output {
+                if let yours { output = Self.merging(Self.plainSkills(of: yours), into: output) }
+                output.agentDir = shown
                 skills = Self.report(output, installedDirectories: [installed, home + "/.agents/skills"], home: home,
-                                     agentDirectory: agentDirectory.path)
+                                     agentDirectory: shown)
                 watched += Self.watched(output)
             } else {
-                skills = PiSkills(agentDirectory: Self.abbreviate(agentDirectory.path, home: home),
+                skills = PiSkills(agentDirectory: Self.abbreviate(shown, home: home),
                                   problem: problem ?? PiSkills.Problem.failed.rawValue)
             }
             // A failure isn't kept: the next read tries again.
@@ -80,16 +90,24 @@ public final class PiSkillsLoader: @unchecked Sendable {
     private func run() -> (Output?, problem: String?) {
         let process = Process()
         var env = environment
+        // The engine's node, as the launcher starts it: none of the environment's pi, jiti or
+        // Node settings.
+        for key in env.keys where key.hasPrefix("PI_") || key.hasPrefix("JITI_") || key.hasPrefix("NODE_") || key == "OPENSSL_CONF" {
+            if key != "NODE_EXTRA_CA_CERTS" { env[key] = nil }
+        }
         env["SHEPHERD_PI_SKILLS_AGENT_DIR"] = agentDirectory.path
+        env["PI_CODING_AGENT_DIR"] = agentDirectory.path
         env["PI_OFFLINE"] = "1"
         switch launch {
-        case .loginShell:
-            let line = PiLaunch.skillsReader(engine: engine)
-            process.executableURL = URL(fileURLWithPath: line.argv[0])
-            process.arguments = Array(line.argv.dropFirst())
+        case .engine:
+            guard let package = engine.packageDirectory else { return (nil, PiSkills.Problem.piNotFound.rawValue) }
+            let argv = PiLaunch.skillsReader(engine: engine)
+            process.executableURL = URL(fileURLWithPath: argv[0])
+            process.arguments = Array(argv.dropFirst())
+            env["SHEPHERD_PI_SKILLS_PACKAGE"] = package
         case .node(let node, let package):
             process.executableURL = node
-            process.arguments = ["--input-type=module", "-", ""]
+            process.arguments = ["--input-type=module", "-"]
             env["SHEPHERD_PI_SKILLS_PACKAGE"] = package.path
         }
         process.environment = env
@@ -119,8 +137,116 @@ public final class PiSkillsLoader: @unchecked Sendable {
         }
         process.waitUntilExit()
         if let decoded = Output.decode(data.value) { return (decoded, nil) }
-        // A login shell that can't find node says so with 127.
         return (nil, process.terminationStatus == 127 ? PiSkills.Problem.nodeNotFound.rawValue : PiSkills.Problem.failed.rawValue)
+    }
+
+    // MARK: Your pi, as plain files
+
+    /// The skills in "your pi", read as files, in pi's order: its `skills/` folder, then each
+    /// `skills` path in its settings.json (absolute, `~`, or relative to the folder; a `!` or `-`
+    /// filter is skipped and a `+` dropped). A folder's skills are its `.md` files and every
+    /// `SKILL.md` below it; a file is one skill.
+    static func plainSkills(of yourPi: YourPi) -> [Output.Entry] {
+        let agent = yourPi.agentDirectory.path
+        var roots: [(path: String, source: String)] = [(agent + "/skills", "auto")]
+        if let data = try? Data(contentsOf: yourPi.agentDirectory.appendingPathComponent("settings.json")), data.count < 1 << 20,
+           let settings = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            for case var entry as String in settings["skills"] as? [Any] ?? [] {
+                entry = entry.trimmingCharacters(in: .whitespacesAndNewlines)
+                if entry.hasPrefix("!") || entry.hasPrefix("-") || entry.isEmpty { continue }
+                if entry.hasPrefix("+") { entry.removeFirst() }
+                let expanded = (entry as NSString).expandingTildeInPath
+                let absolute = expanded.hasPrefix("/") ? expanded : agent + "/" + expanded
+                roots.append(((absolute as NSString).standardizingPath, "local"))
+            }
+        }
+        var entries: [Output.Entry] = []
+        var seen: Set<String> = []
+        for root in roots {
+            for file in skillFiles(at: root.path) where seen.insert(canonical(file)).inserted {
+                guard let entry = entry(file: file, source: root.source) else { continue }
+                entries.append(entry)
+            }
+        }
+        return entries
+    }
+
+    /// The skill files under `path`: the file itself, or a folder's top-level `.md` files and each
+    /// `SKILL.md` below it (a folder holding one is that skill, and isn't searched further).
+    static func skillFiles(at path: String) -> [String] {
+        let files = FileManager.default
+        var isDirectory: ObjCBool = false
+        guard files.fileExists(atPath: path, isDirectory: &isDirectory) else { return [] }
+        guard isDirectory.boolValue else { return path.hasSuffix(".md") ? [path] : [] }
+        var found: [String] = []
+        let names = ((try? files.contentsOfDirectory(atPath: path)) ?? []).filter { !$0.hasPrefix(".") }.sorted()
+        for name in names where name.hasSuffix(".md") && name != "SKILL.md" {
+            var directory: ObjCBool = false
+            if files.fileExists(atPath: path + "/" + name, isDirectory: &directory), !directory.boolValue { found.append(path + "/" + name) }
+        }
+        func search(_ folder: String, depth: Int) {
+            if files.fileExists(atPath: folder + "/SKILL.md") { found.append(folder + "/SKILL.md"); return }
+            guard depth < 4 else { return }
+            let children = ((try? files.contentsOfDirectory(atPath: folder)) ?? []).filter { !$0.hasPrefix(".") && $0 != "node_modules" }.sorted()
+            for child in children {
+                var directory: ObjCBool = false
+                if files.fileExists(atPath: folder + "/" + child, isDirectory: &directory), directory.boolValue {
+                    search(folder + "/" + child, depth: depth + 1)
+                }
+            }
+        }
+        if files.fileExists(atPath: path + "/SKILL.md") { return [path + "/SKILL.md"] }
+        for name in names {
+            var directory: ObjCBool = false
+            if files.fileExists(atPath: path + "/" + name, isDirectory: &directory), directory.boolValue { search(path + "/" + name, depth: 1) }
+        }
+        return found
+    }
+
+    /// A skill file's name, description and invocation, from its front matter (the folder's or
+    /// file's name when it names none).
+    static func entry(file: String, source: String) -> Output.Entry? {
+        guard let handle = FileHandle(forReadingAtPath: file) else { return nil }
+        defer { try? handle.close() }
+        let text = String(decoding: (try? handle.read(upToCount: 64 * 1024)) ?? Data(), as: UTF8.self)
+        var fields: [String: String] = [:]
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
+        if lines.first == "---" {
+            for line in lines.dropFirst() {
+                if line == "---" { break }
+                guard let colon = line.firstIndex(of: ":") else { continue }
+                var value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+                if value.count >= 2, let first = value.first, first == "\"" || first == "'", value.last == first {
+                    value = String(value.dropFirst().dropLast())
+                }
+                fields[line[..<colon].trimmingCharacters(in: .whitespaces)] = value
+            }
+        }
+        let url = URL(fileURLWithPath: file)
+        let fallback = url.lastPathComponent == "SKILL.md" ? url.deletingLastPathComponent().lastPathComponent
+            : url.deletingPathExtension().lastPathComponent
+        let name = fields["name"].flatMap { $0.isEmpty ? nil : $0 } ?? fallback
+        return Output.Entry(name: name, description: fields["description"] ?? "", path: file, source: source, origin: "top-level",
+                            scope: "user", slashOnly: fields["disable-model-invocation"] == "true")
+    }
+
+    /// `output` with `yours` added after what Shepherd's pi loads: a file already listed once, and
+    /// a name already taken (which the later one loses to, as in pi), become a shadowed entry.
+    static func merging(_ yours: [Output.Entry], into output: Output) -> Output {
+        var merged = output
+        var paths = Set((output.skills + output.shadowed).map { canonical($0.path) })
+        var winners = Dictionary(output.skills.map { ($0.name, $0.path) }, uniquingKeysWith: { first, _ in first })
+        for entry in yours where paths.insert(canonical(entry.path)).inserted {
+            if let winner = winners[entry.name] {
+                var loser = entry
+                loser.winner = winner
+                merged.shadowed.append(loser)
+            } else {
+                winners[entry.name] = entry.path
+                merged.skills.append(entry)
+            }
+        }
+        return merged
     }
 
     // MARK: What pi reported
@@ -267,9 +393,10 @@ public final class PiSkillsLoader: @unchecked Sendable {
     // MARK: When to read again
 
     /// The folders every read depends on: pi's settings and skills, and the skills folders.
-    private func baseWatched(installed: String) -> [String] {
-        let agent = agentDirectory.path
-        return [agent, agent + "/settings.json", agent + "/skills", installed, home + "/.agents/skills"]
+    private func baseWatched(installed: String, yourPi: YourPi?) -> [String] {
+        var folders = [agentDirectory.path, installed, home + "/.agents/skills"]
+        if let yourPi { folders.append(yourPi.agentDirectory.path) }
+        return folders.flatMap { [$0, $0 + "/settings.json", $0 + "/skills"] }
     }
 
     /// The folders a result came from: each skill's file, its folder and the one holding that (a
@@ -312,21 +439,21 @@ extension PiSkillsLoader {
     /// Extensions/shepherd-pi-skills.mjs is canonical; keep this literal byte-identical
     /// (scripts/sync-embedded-extension.py).
     static let scriptSource = #"""
-        // Settings ▸ Skills' outside skills: every skill pi loads for a session outside any repository,
-        // read with pi's own loader, so the page lists exactly what the agent gets (docs/skills.md).
-        // Shepherd runs it with the node pi runs on, source on stdin:
+        // Settings ▸ Skills' outside skills: every skill Shepherd's own pi loads for a session outside any
+        // repository, read with pi's own loader, so the page lists exactly what the agent gets
+        // (docs/skills.md). Shepherd runs it on the engine's node, source on stdin:
         //
-        //   node --input-type=module - <pi executable>
+        //   node --input-type=module -
         //
-        // SHEPHERD_PI_SKILLS_AGENT_DIR names pi's agent directory (~/.pi/agent, or PI_CODING_AGENT_DIR);
-        // SHEPHERD_PI_SKILLS_PACKAGE names pi's package directly, else it is found from the executable.
-        // It prints one JSON object and exits 0, even when it can't read pi's skills ("problem" says
-        // why). It only reads: pi's settings go through a storage that never writes, nothing missing is
+        // SHEPHERD_PI_SKILLS_AGENT_DIR names the pi home (Shepherd's own), and SHEPHERD_PI_SKILLS_PACKAGE
+        // the pi package to import (the engine's); the user's own pi is never imported or looked for. It
+        // prints one JSON object and exits 0, even when it can't read pi's skills ("problem" says why).
+        // It only reads: pi's settings go through a storage that never writes, nothing missing is
         // installed (PI_OFFLINE), and no extension runs, so skills an extension adds while it runs are
         // not here.
-        import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+        import { existsSync, readFileSync, statSync } from "node:fs";
         import { homedir } from "node:os";
-        import { dirname, join, resolve, sep } from "node:path";
+        import { join, resolve, sep } from "node:path";
         import { pathToFileURL } from "node:url";
 
         const print = (value) => process.stdout.write(`${JSON.stringify(value)}\n`);
@@ -335,43 +462,19 @@ extension PiSkillsLoader {
           try { return JSON.parse(readFileSync(file, "utf8")); } catch { return undefined; }
         }
 
-        // pi's package: the folder above its executable whose package.json names the coding agent.
-        function packageAbove(start) {
-          let dir = start;
-          for (let i = 0; i < 12; i++) {
-            const manifest = readJSON(join(dir, "package.json"));
-            if (manifest && typeof manifest.name === "string" && manifest.name.endsWith("/pi-coding-agent")) return dir;
-            const parent = dirname(dir);
-            if (parent === dir) break;
-            dir = parent;
-          }
-          return undefined;
-        }
-
-        function findPackage(executable) {
+        function findPackage() {
           const named = process.env.SHEPHERD_PI_SKILLS_PACKAGE;
-          if (named) return existsSync(join(named, "package.json")) ? resolve(named) : undefined;
-          if (!executable) return undefined;
-          let real;
-          try { real = realpathSync(executable); } catch { return undefined; }
-          const found = packageAbove(dirname(real));
-          if (found) return found;
-          // A wrapper script (nix, a version manager) names the real entry point in its text.
-          let text = "";
-          try { if (statSync(real).size < 64 * 1024) text = readFileSync(real, "utf8"); } catch { return undefined; }
-          for (const match of text.matchAll(/\/[^\s'"`;:]*pi-coding-agent[^\s'"`;:]*/g)) {
-            try {
-              const target = packageAbove(dirname(realpathSync(match[0])));
-              if (target) return target;
-            } catch {}
-          }
-          return undefined;
+          return named && existsSync(join(named, "package.json")) ? resolve(named) : undefined;
         }
 
+        // The engine ships pi's bundle alone, so its library entry is the bundle's; a full package's is
+        // what its exports name.
         function entryOf(packageDir) {
           const manifest = readJSON(join(packageDir, "package.json")) ?? {};
           const root = manifest.exports?.["."];
-          const entry = (typeof root === "string" ? root : root?.import ?? root?.default) ?? manifest.main ?? "dist/index.js";
+          const bundled = join("dist", "bundle", "index.js");
+          const entry = existsSync(join(packageDir, bundled)) ? bundled
+            : (typeof root === "string" ? root : root?.import ?? root?.default) ?? manifest.main ?? "dist/index.js";
           return { file: join(packageDir, entry), version: typeof manifest.version === "string" ? manifest.version : undefined };
         }
 
@@ -395,7 +498,7 @@ extension PiSkillsLoader {
 
         async function main() {
           const agentDir = resolve(process.env.SHEPHERD_PI_SKILLS_AGENT_DIR || join(homedir(), ".pi", "agent"));
-          const packageDir = findPackage(process.argv[2]);
+          const packageDir = findPackage();
           if (!packageDir) return print({ agentDir, skills: [], shadowed: [], problem: "pi_not_found" });
           const { file, version } = entryOf(packageDir);
           let pi;

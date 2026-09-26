@@ -2,10 +2,10 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 
-/// The live model catalog, asked from pi itself (`pi --list-models`) — models
-/// are dynamic (catalog updates, auth state), so no config file is the truth.
-/// Runs through a login shell exactly like agent spawns (`PiLaunch.listModels`). One per
-/// `PiSetup`, kept for its lifetime: the catalog changes on `pi update`, not mid-session, and
+/// The live model catalog, asked of Shepherd's pi itself (`pi --list-models` through the
+/// launcher in its home, `PiLaunch.listModels`): models are dynamic (engine updates, sign-ins),
+/// so no config file is the truth. One per `PiSetup`: an answer is kept until the home's
+/// `auth.json`, `models.json` or `settings.json` changes (a sign-in, a re-import), or
 /// `invalidate()` forgets it.
 public final class PiModelCatalog: @unchecked Sendable {
     /// One catalog row: `provider/model`, its context window as pi prints it ("200K", "1M"),
@@ -24,17 +24,20 @@ public final class PiModelCatalog: @unchecked Sendable {
         public var provider: String { id.split(separator: "/", maxSplits: 1).first.map(String.init) ?? id }
     }
 
-    /// What starts pi.
-    public let engine: PiEngine
-    /// The pi home whose models.json answers when pi can't be asked.
-    public let home: URL
+    /// Shepherd's pi home, whose launcher answers and whose models.json answers when pi can't.
+    public let files: PiHome
+    /// Readies the home before pi is asked; false when no pi may start there.
+    private let ready: @Sendable () -> Bool
     private let lock = NSLock()
-    private var cached: [Entry]?
+    private var cached: (fingerprint: [Double], entries: [Entry])?
 
-    public init(engine: PiEngine, home: URL) {
-        self.engine = engine
-        self.home = home
+    public init(home: PiHome, ready: @escaping @Sendable () -> Bool) {
+        files = home
+        self.ready = ready
     }
+
+    /// The home's folder.
+    public var home: URL { files.directory }
 
     /// `provider/model` ids in catalog order; empty when pi is missing or
     /// errors. Blocking — call off the main thread and off the server queue.
@@ -53,10 +56,12 @@ public final class PiModelCatalog: @unchecked Sendable {
 
     /// Blocking, like `modelIDs()`.
     public func entries() -> [Entry] {
-        if let cached = lock.withLock({ cached }) { return cached }
+        let fingerprint = self.fingerprint()
+        if let cached = lock.withLock({ cached }), cached.fingerprint == fingerprint { return cached.entries }
 
+        guard ready() else { return [] }
         let process = Process()
-        let line = PiLaunch.listModels(engine: engine)
+        let line = PiLaunch.listModels(home: files)
         process.executableURL = URL(fileURLWithPath: line.argv[0])
         process.arguments = Array(line.argv.dropFirst())
         let stdout = Pipe()
@@ -72,8 +77,17 @@ public final class PiModelCatalog: @unchecked Sendable {
         guard process.terminationStatus == 0 else { return [] }
 
         let entries = Self.parseEntries(String(decoding: data, as: UTF8.self))
-        lock.withLock { cached = entries }
+        lock.withLock { cached = (fingerprint, entries) }
         return entries
+    }
+
+    /// The modification dates of what the catalog depends on in the home (-1 while missing).
+    private func fingerprint() -> [Double] {
+        ["auth.json", "models.json", "settings.json"].map { name in
+            var info = stat()
+            guard stat(files.directory.appendingPathComponent(name).path, &info) == 0 else { return -1 }
+            return Double(info.st_mtimespec.tv_sec) + Double(info.st_mtimespec.tv_nsec) / 1e9
+        }
     }
 
     static func parse(_ output: String) -> [String] { parseEntries(output).map(\.id) }

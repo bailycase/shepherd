@@ -58,7 +58,7 @@ struct FinalizeWorktreeSheet: View {
         self.space = space
         self.staged = staged
         _setup = State(initialValue: WorktreeSetupModel(repoPath: space.path))
-        _descriptionGenerator = State(initialValue: WorktreePRDescriptionGenerator(engine: vm.server.pi.engine))
+        _descriptionGenerator = State(initialValue: WorktreePRDescriptionGenerator(pi: vm.server.pi))
         if let staged {
             _phase = State(initialValue: staged.phase)
             _base = State(initialValue: staged.base)

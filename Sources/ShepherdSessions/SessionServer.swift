@@ -196,10 +196,11 @@ public final class SessionServer: @unchecked Sendable {
         case reader(SkillsStore.PiSkillsReader)
     }
 
-    /// This Mac's pi, asked for the skills it loads from outside ~/.agents/skills (one loader per
-    /// server, so one cache).
+    /// This Mac's pi, asked for the skills it loads from outside ~/.agents/skills, with the user's
+    /// own pi read as plain files (one loader per server, so one cache).
     public static func piSkillsReader(_ pi: PiSetup) -> SkillsStore.PiSkillsReader {
-        let loader = PiSkillsLoader(agentDirectory: pi.home, engine: pi.engine)
+        let locator = pi.yourPi
+        let loader = PiSkillsLoader(agentDirectory: pi.home, engine: pi.engine, yourPi: { locator.resolve() })
         return { loader.read(installedDirectory: $0) }
     }
 
@@ -3742,10 +3743,9 @@ public final class SessionServer: @unchecked Sendable {
             session.beforeOffQueueDecode = beforeOffQueueDecode
             let thread = RPCThreadState(session: session, queue: sessionQueue, originStore: originStore)
             thread.defaultQueueMode = defaultQueueMode
-            // pi's compaction settings, as this pi reads them: its agent directory (the server's
-            // pi home, or the one the session's environment names) and the project's own. Read,
-            // never written.
-            let piDirectory = PiConfig.agentDirectory(environment: params.env ?? [:], otherwise: pi.home)
+            // pi's compaction settings, as this pi reads them: Shepherd's pi home (the launcher
+            // pins it, whatever the environment says) and the project's own. Read, never written.
+            let piDirectory = pi.home
             let cwd = params.cwd
             thread.compactionSettings = { model in PiConfig.compactionSettings(model: model, cwd: cwd, in: piDirectory) }
             // The queue did not go after all (pi refused it, or it paused): pi is idle, so the

@@ -199,7 +199,7 @@ struct AgentLaunchTests {
         let piPane = try #require(agent.paneID)
         let sessionID = try #require(vm.sessions.liveSession(forPane: piPane))
         let info = try #require(await app.server.sessionInfo(sessionID: sessionID))
-        #expect(info.command.last?.contains("&& exec '\(TestProcess.piEngine.path)' --mode rpc --session-id") == true)
+        #expect(info.command.last?.contains("&& exec '\(app.server.pi.launcher.path)' --mode rpc --session-dir ") == true)
         #expect(info.command.last?.hasPrefix("cd -- '\(app.dir.path)' && ") == true)
         let server = app.server
         try await eventuallyAsync("pi to receive the opening prompt", timeout: .seconds(20)) {

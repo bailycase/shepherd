@@ -78,6 +78,9 @@ struct PiStartRecord {
         let kind: NativeStartProblem.Kind
         if resumedAsNew {
             kind = .resumedAsNew
+        } else if lines.contains(where: { $0.hasPrefix(PiLaunch.refusalPrefix) }) {
+            // Shepherd's own refusal (`PiLaunch.refused`): its pi home and "your pi" overlap.
+            kind = .homeUnsafe
         } else if lines.contains(where: { $0.contains("Failed to load extension") }) {
             // pi: main.js, a runtime diagnostic, which exits in every mode.
             kind = .extensionFailed

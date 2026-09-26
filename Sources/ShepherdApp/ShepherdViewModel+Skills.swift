@@ -88,12 +88,16 @@ extension ShepherdViewModel {
 
     // MARK: pi's own skills (read-only)
 
-    /// Shows the skills folder of This Mac's pi in Finder (its agent directory when it has none).
+    /// Shows the skills folder of the user's own pi on This Mac in Finder (its folder when it has
+    /// none, Shepherd's pi home when there is no pi of theirs).
     func showPiSkillsFolder() {
-        let agent = server.pi.home
-        let skills = agent.appendingPathComponent("skills", isDirectory: true)
-        let target = FileManager.default.fileExists(atPath: skills.path) ? skills : agent
-        NSWorkspace.shared.activateFileViewerSelecting([target])
+        let pi = server.pi
+        Task {
+            let agent = await Task.detached(priority: .userInitiated) { pi.yourPi.resolve()?.agentDirectory }.value ?? pi.home
+            let skills = agent.appendingPathComponent("skills", isDirectory: true)
+            let target = FileManager.default.fileExists(atPath: skills.path) ? skills : agent
+            NSWorkspace.shared.activateFileViewerSelecting([target])
+        }
     }
 
     /// Opens one of This Mac's pi skills' SKILL.md (`path` as the page shows it, with `~`).

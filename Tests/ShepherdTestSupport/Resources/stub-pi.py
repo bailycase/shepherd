@@ -510,6 +510,20 @@ def ui(method, **fields):
     emit({"type": "extension_ui_request", "id": f"ui-{method}", "method": method, **fields})
 
 
+def record_launch():
+    # The engine wrapper StubPi installs names the file: argv, cwd and environment, one line.
+    path = os.environ.get("STUB_PI_LAUNCH_LOG")
+    if not path:
+        return
+    env = {k: v for k, v in os.environ.items() if k != "STUB_PI_LAUNCH_LOG"}
+    line = json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd(), "env": env}) + "\n"
+    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+    try:
+        os.write(fd, line.encode("utf-8"))
+    finally:
+        os.close(fd)
+
+
 def startup():
     try:
         with open("stub-pi-startup.json") as f:
@@ -537,6 +551,7 @@ def startup():
         sys.exit(int(code))
 
 
+record_launch()
 startup()
 
 pending_ui = None
