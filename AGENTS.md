@@ -247,7 +247,7 @@ runs them.
 - `DesignPerformanceTests` pins the design canvas the same way over a 172-board canvas: at most
   six web views open (five live, one rasterizing), panning recycles them, and one board changing
   redraws one frame (`design.board`) with one snapshot; a Tweak drag redraws no frame and its
-  release only the tweaked board's. The Designs grid's and the Comments tab's budgets are in
+  release only the tweaked board's; a board dragged redraws only its own frame, once per step. The Designs grid's and the Comments tab's budgets are in
   `ListPerformanceTests` (`design.card`, `design.comment`).
 - `SHEPHERD_PERF_REPORT=1 swift test --filter ListPerformanceReport` prints each list's timings
   against large fixtures (`Support/ListFixtures.swift`). `ListPerf` times a change's update,
@@ -314,7 +314,10 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   while the agent works, and the agent's reply attaching under its pin. Tweak: the style splice
   round-tripping on the real fixture boards (only style attributes change, every tid and path
   kept), token snapping, the data-props values in canvas.json, one write per gesture, the
-  stale-revision retry, Reset and Undo, and each board's kept versions.
+  stale-revision retry, Reset and Undo, and each board's kept versions. Board actions: a drag
+  written once where the board lands, Duplicate adding one board (file and entry, one revision),
+  Variations reaching the agent with the board fenced in its record, a Play link moving between
+  the design's boards only (a real board view), and pages and notes shown a page at a time.
 - **Server:** every `SessionServer` state mutation.
 - **Changes:** every scope on a scratch repository, the proof that reading changes leaves the
   index, HEAD, refs, the stash, `.git` and every file alone, and Undo, Redo and the refusal on a
@@ -406,8 +409,8 @@ Sources/
                        and DesignElementID (a board's elements as `File.dc.html#tid:path`),
                        DesignBoardCheck (what a board may hold), DesignStyle/DesignTokens/DesignProps
                        (Tweak: inline-style splices at parser offsets, token snapping, data-props
-                       and canvas.json's tweaks), DesignFiles (snapshots, reads,
-                       write results).
+                       and canvas.json's tweaks), DesignCanvasLayout (pages, notes, where a
+                       duplicate goes), DesignFiles (snapshots, reads, write results).
   ShepherdRemote/      RemoteHostClient, NativeThreadStore (@Observable), NativeThreadPresentation,
                        NativeTurnPresentation (a turn's items), NativeMarkdown (the prose
                        parser: tables, lists, images, details, footnotes), NativeActivity
@@ -474,9 +477,9 @@ Sources/
                        thread's too)
     The Design tool (Settings ▸ Experiments ▸ Design tool; docs/designs.md): NewDesignPage,
       DesignScreen (a design agent's layout: the canvas beside its chat, and the toolbar),
-      DesignScreenModel (a design's canvas state and its pulls), DesignHost (the only
-      DesignSurfaceKit import: live views, the rasterizer, snapshots, thumbnails, tweak
-      previews), DesignTweak (the Tweak tab's controls, pure), DesignTweakModel (its writes,
+      DesignScreenModel (a design's canvas state and its pulls; the board actions, moves,
+      Present and Play, pages), DesignHost (the only DesignSurfaceKit import: live views, the
+      rasterizer, snapshots, thumbnails, tweak previews, the presented board), DesignTweak (the Tweak tab's controls, pure), DesignTweakModel (its writes,
       one per gesture, Reset and Undo), DesignTweakPane, DesignProjectTokens
     TerminalPanels (each layout's terminal panel: shown, tab, maximized, activity),
       TerminalPanelLayout (TerminalPanelGeometry, pure), TerminalPanelViews (strip, divider)
@@ -521,7 +524,9 @@ Packages/
                                      Agents, Review, Dialogs, Automations, Skills, DesignTool
                                      (NWDesignCanvas, NWBoardFrame, NWCanvasToolbar,
                                      NWDesignCard, NWDesignSystemChip, NWDesignHeader,
-                                     NWCommentPin, NWCommentThread, NWCommentCard)
+                                     NWCommentPin, NWCommentThread, NWCommentCard,
+                                     NWBoardActions, NWDirectionTile, NWCanvasNote,
+                                     NWBoardPresentation)
                        Previews/     a #Preview per component, light and dark
                        Diagnostics/  NWRenderProbe (row-body counts for tests; debug only)
                        Its unit tests live in the root package (Tests/ShepherdUIUnitTests).
