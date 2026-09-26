@@ -53,11 +53,11 @@ enum MCPFixtures {
 
     static let now = Date(timeIntervalSince1970: 1_790_000_000)
 
-    static func token(account: String? = "baily@acme.dev", scopes: [String] = ["read", "write"], expiresIn: Int64? = 3600_000,
+    static func token(resource: String = "https://mcp.linear.app/mcp", account: String? = "baily@acme.dev", scopes: [String] = ["read", "write"], expiresIn: Int64? = 3600_000,
                       refreshedAgo: Int64 = 2 * 3600_000, refresh: String? = "r1") -> MCPOAuthToken {
         let nowMs = MCPStore.ms(now)
         return MCPOAuthToken(issuer: "https://auth.x", tokenEndpoint: "https://auth.x/token", clientID: "c", redirectURI: "http://127.0.0.1:1/callback",
-                             resource: "https://mcp.x/mcp", accessToken: "access", refreshToken: refresh,
+                             resource: resource, accessToken: "access", refreshToken: refresh,
                              expiresAtMs: expiresIn.map { nowMs + $0 }, scopes: scopes, account: account, refreshedAtMs: nowMs - refreshedAgo)
     }
 
@@ -200,7 +200,7 @@ struct MCPStoreTests {
         let secrets = InMemorySecretStore([
             "oauth/linear": MCPFixtures.tokenJSON(MCPFixtures.token()),
             // Four minutes left: refreshed before it's handed out.
-            "oauth/sentry": MCPFixtures.tokenJSON(MCPFixtures.token(expiresIn: 4 * 60_000)),
+            "oauth/sentry": MCPFixtures.tokenJSON(MCPFixtures.token(resource: "https://mcp.sentry.dev/mcp", expiresIn: 4 * 60_000)),
         ])
         let http = TokenEndpointStub(body: #"{"access_token":"new","expires_in":3600,"refresh_token":"r2"}"#)
         let store = try MCPFixtures.store(secrets: secrets, http: http)
@@ -221,12 +221,25 @@ struct MCPStoreTests {
     }
 
     @Test func aRefusedRefreshMeansExpired() async throws {
-        let secrets = InMemorySecretStore(["oauth/sentry": MCPFixtures.tokenJSON(MCPFixtures.token())])
+        let secrets = InMemorySecretStore(["oauth/sentry": MCPFixtures.tokenJSON(MCPFixtures.token(resource: "https://mcp.sentry.dev/mcp"))])
         let http = TokenEndpointStub(body: #"{"error":"invalid_grant"}"#, status: 400)
         let store = try MCPFixtures.store(secrets: secrets, http: http)
         #expect(await store.credentials(for: MCPRequest(agentID: AgentID(), server: "sentry", reason: .unauthorized))
             == .failure(code: "expired", message: "sentry’s sign-in expired: sign in again in Settings ▸ MCP servers."))
         #expect(try row(store, "sentry").signIn == .expired)
+    }
+
+    /// A token belongs to the server it was issued for: an entry moved to another origin signs
+    /// in again rather than hand the old server's token to the new one.
+    @Test func aTokenIsNeverHandedToAnotherServer() async throws {
+        let secrets = InMemorySecretStore(["oauth/linear": MCPFixtures.tokenJSON(MCPFixtures.token())])
+        let store = try MCPFixtures.store(secrets: secrets)
+        var linear = try #require(store.entry("linear"))
+        linear.url = "https://evil.example/mcp"
+        try store.save(linear, replacing: "linear")
+        #expect(await store.credentials(for: MCPRequest(agentID: AgentID(), server: "linear", reason: .connect))
+            == .failure(code: "needs_sign_in", message: "linear needs you to sign in: Settings ▸ MCP servers."))
+        #expect(try row(store, "linear").signIn == .signIn)
     }
 
     // MARK: Editing

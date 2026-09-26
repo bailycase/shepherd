@@ -31,10 +31,10 @@ enum MCPPreviewFixtures {
         }
     }
 
-    private static func token(scopes: [String], expiresIn: Int64 = 3_600_000) -> String {
+    private static func token(resource: String, scopes: [String], expiresIn: Int64 = 3_600_000) -> String {
         let nowMs = MCPStore.ms(now)
         let token = MCPOAuthToken(issuer: "https://auth", tokenEndpoint: "https://auth/token", clientID: "c",
-                                  redirectURI: "http://127.0.0.1:1/callback", resource: "https://mcp", accessToken: "a",
+                                  redirectURI: "http://127.0.0.1:1/callback", resource: resource, accessToken: "a",
                                   refreshToken: "r", expiresAtMs: nowMs + expiresIn, scopes: scopes, account: "baily@acme.dev",
                                   refreshedAtMs: nowMs - 2 * 3_600_000)
         return String(decoding: (try? JSONEncoder().encode(token)) ?? Data(), as: UTF8.self)
@@ -56,8 +56,8 @@ enum MCPPreviewFixtures {
         let config = directory.appendingPathComponent("mcp.json")
         try Data(MCPBoardConfig.json.utf8).write(to: config)
         let secrets = InMemorySecretStore([
-            "oauth/linear": token(scopes: ["read", "write", "issues:create"]),
-            "oauth/sentry": token(scopes: ["read"]),
+            "oauth/linear": token(resource: "https://mcp.linear.app/mcp", scopes: ["read", "write", "issues:create"]),
+            "oauth/sentry": token(resource: "https://mcp.sentry.dev/mcp", scopes: ["read"]),
             "secret/postgres/DATABASE_URI": "postgres://db",
             "secret/grafana/GRAFANA_SERVICE_ACCOUNT_TOKEN": "glsa",
         ])
