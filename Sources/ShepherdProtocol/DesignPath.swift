@@ -80,7 +80,7 @@ public struct DesignPath: Hashable, Comparable, Sendable, CustomStringConvertibl
 
     public static func < (lhs: DesignPath, rhs: DesignPath) -> Bool { lhs.rawValue < rhs.rawValue }
 
-    private static func isSegment(_ segment: Substring) -> Bool {
+    static func isSegment(_ segment: Substring) -> Bool {
         guard let first = segment.utf8.first, isWordByte(first) else { return false }
         return segment.utf8.allSatisfy { isWordByte($0) || $0 == UInt8(ascii: ".") || $0 == UInt8(ascii: "-") }
     }
