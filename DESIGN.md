@@ -3816,8 +3816,7 @@ and the title stays still while rows disclose.
   selectable: "Checking for unsaved work…", "Creating the worktree…"), and the actions
   trailing, 8pt apart. Actions never truncate; the status wraps instead.
 - **Actions** (`DialogAction`): exactly one primary (`.prominent`: `.nw(.primary)`, the ⏎ default);
-  Cancel is `.nw(.ghost)` with ⎋, as the Controls board and the dialog boards draw it (the commit
-  sheet keeps iPadCommit's secondary Cancel beside its ghost Ask Agent to Commit); any other
+  Cancel is `.nw(.ghost)` with ⎋, as every board that draws a Cancel has it; any other
   action secondary. A destructive action is the `dangerFill` button (`.destructive`) and never the
   default: destroying things takes a click. While an action runs, its button says so ("Starting…",
   "Creating…") and is disabled.
