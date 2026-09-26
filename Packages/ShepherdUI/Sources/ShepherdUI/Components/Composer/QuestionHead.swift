@@ -112,7 +112,7 @@ public struct NWQuestionHiddenLine: View {
     public var body: some View {
         HStack(spacing: NWQuestionHeadMetrics.hiddenSpacing) {
             NWQuestionAskerGlyph(asker: asker, size: NWQuestionHeadMetrics.hiddenGlyph)
-            Text(question).font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary)
+            Text(NWProseInline.attributed(question)).font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary)
                 .lineLimit(1).truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityLabel("\(asker.title): \(question)")

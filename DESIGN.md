@@ -1802,8 +1802,9 @@ rules (QuestionStates › Rules):
     (transparent, a 14pt `chevron.down` in `textSecondary`; tooltip "Hide the question (Esc)").
     VoiceOver reads the head as one header, "Agent is asking", and the button as "Hide the
     question"
-  - the question in Geist 16 semibold at 1.35, tracked -0.5% (`Font.nwSans(16, .semibold)`),
-    inline code and emphasis as in prose (`NWProseInline`)
+  - the question in Geist 16 semibold at 1.35, tracked -0.5% (`Font.nwSans(16, .semibold)`;
+    15 for a yes or a no and an open question, as the Kinds cards draw it), inline code and
+    emphasis as in prose (`NWProseInline`)
   - the asker's longer message, when it has one (a confirm's), in mono on `bgSunken` (radius 8, a
     `lineSubtle` line, scrolling past 140pt): an app addition no board draws
   - the options, 6pt apart. An option is a card on `bgWindow` with a 1px `lineSubtle` line,
@@ -1847,7 +1848,7 @@ rules (QuestionStates › Rules):
   (`NWQuestionDockHidden`), so you can read the thread; it still holds the composer's place,
   because pi is still waiting. The line is the same lantern card (radius 12, 14pt leading and 8pt
   trailing padding, 10pt between its parts): a 14pt glyph in `lanternText`, the question in 13.5
-  semibold (truncating), a small secondary **Answer** (24pt), and a 26pt Show the question
+  semibold (truncating; inline code as in the dock), a small secondary **Answer** (24pt), and a 26pt Show the question
   (`chevron.up`; tooltip "Show the question (Esc)"). Esc, Answer or Show the question brings the
   dock back, with what was picked and typed. Only that question stays hidden: the next one pi
   asks arrives open (`QuestionHiding`).
