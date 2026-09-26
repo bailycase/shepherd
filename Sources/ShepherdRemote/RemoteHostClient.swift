@@ -51,6 +51,12 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// A connection `connect` returned died (readable EOF, write failure, or
     /// `disconnect`). Fired at most once, on the main queue.
     public var onDisconnected: ((String) -> Void)?
+    /// A design this client watches changed on the host (`RemoteDesignRequest.watch`): its files'
+    /// new revision, its comments', or both. A hint to pull. Main queue.
+    public var onDesignChanged: ((DesignID, UInt64?, UInt64?) -> Void)?
+    /// What the host offers changed while connected (its Design tool turned on or off);
+    /// `capabilities` already holds the new list. Main queue.
+    public var onCapabilitiesChanged: ((Set<String>) -> Void)?
     public private(set) var capabilities: Set<String> = []
 
     private let queue = DispatchQueue(label: "shepherd.remote.client")
@@ -79,6 +85,8 @@ public final class RemoteHostClient: @unchecked Sendable {
         case state(ShepherdState)
         case output(SessionID, Data)
         case exited(SessionID, Int32?)
+        case designChanged(DesignID, UInt64?, UInt64?)
+        case capabilities(Set<String>)
     }
     private var pendingEvents: [PushedEvent] = []
     private var deliveryInFlight = false
@@ -847,7 +855,7 @@ public final class RemoteHostClient: @unchecked Sendable {
              .state(let id, _), .attached(let id, _),
              .dirListing(let id, _, _, _), .models(let id, _, _, _, _),
              .spaceAdded(let id, _), .agentCreated(let id, _), .automationResult(let id, _), .instructions(let id, _),
-             .suggestions(let id, _), .hostSettings(let id, _), .skills(let id, _):
+             .suggestions(let id, _), .hostSettings(let id, _), .skills(let id, _), .design(let id, _):
             resumePending(id: id, with: reply)
         case .error(let id, _, _):
             resumePending(id: id, with: reply)
@@ -862,6 +870,11 @@ public final class RemoteHostClient: @unchecked Sendable {
             }
         case .sessionExited(let sessionID, let code):
             push(.exited(sessionID, code))
+        case .designChanged(let designID, let revision, let commentsRevision):
+            push(.designChanged(designID, revision, commentsRevision))
+        case .capabilitiesChanged(let list):
+            capabilities = Set(list)
+            push(.capabilities(Set(list)))
         }
     }
 
@@ -884,6 +897,8 @@ public final class RemoteHostClient: @unchecked Sendable {
                 case .state(let state): self.onStateChanged?(state)
                 case .output(let sessionID, let data): self.onOutput?(sessionID, data)
                 case .exited(let sessionID, let code): self.onSessionExited?(sessionID, code)
+                case .designChanged(let designID, let revision, let comments): self.onDesignChanged?(designID, revision, comments)
+                case .capabilities(let capabilities): self.onCapabilitiesChanged?(capabilities)
                 }
             }
             self.queue.async { [weak self] in

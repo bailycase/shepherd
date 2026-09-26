@@ -1156,6 +1156,8 @@ public final class SessionServer: @unchecked Sendable {
             remoteSuggestions(id: id, request: request, client: client)
         case .skills(let id, let request):
             remoteSkills(id: id, request: request, client: client)
+        case .design(let id, _):
+            send(.error(id: id, code: RemoteDesignCode.off, message: "This host doesn't serve designs."), to: client)
         case .hostSettings(let id, let request):
             guard let handler = onRemoteHostSettings else {
                 send(.error(id: id, code: "unavailable", message: "This host has no settings to share."), to: client)
