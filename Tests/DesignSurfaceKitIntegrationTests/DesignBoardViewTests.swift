@@ -209,6 +209,25 @@ struct DesignBoardViewTests {
         #expect(abs(pixel.red - 10) <= 3 && abs(pixel.green - 20) <= 3 && abs(pixel.blue - 30) <= 3, "\(pixel)")
     }
 
+    /// At the canvas's zoom the view is smaller, but the page lays out at the board's size and a
+    /// snapshot still covers the whole board.
+    @Test func aZoomedBoardLaysOutAtItsOwnSize() async throws {
+        let harness = try BoardHarness()
+        let view = try harness.view("Main.dc.html")
+        view.zoom = 0.5
+        #expect(view.frame.size == CGSize(width: 200, height: 150))
+        let drawn = try await view.load()
+        #expect(drawn == CGSize(width: 400, height: 300))
+        let image = try await view.snapshot()
+        let scale = image.width / 400
+        #expect(scale >= 1)
+        #expect(image.width == 400 * scale && image.height == 300 * scale)
+        let pixel = try #require(Self.pixel(of: image, x: 395 * scale, y: 295 * scale))
+        #expect(abs(pixel.red - 10) <= 3 && abs(pixel.green - 20) <= 3 && abs(pixel.blue - 30) <= 3, "\(pixel)")
+        let small = try await view.snapshot(width: 100)
+        #expect(small.width == 100 * scale && small.height == 75 * scale)
+    }
+
     // MARK: Failures
 
     @Test func aMissingBoardFailsToLoad() async throws {
