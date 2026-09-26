@@ -1,7 +1,14 @@
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 import ShepherdUI
+
+/// The design chat pane's tabs (DZCanvas). Tweak comes with its own change.
+enum DesignPaneTab: String {
+    case chat
+    case comments
+}
 
 /// An element picked on a board: its id as a view record names it, where the board draws it (in
 /// the board's own points), and what it is.
@@ -13,6 +20,41 @@ struct DesignElementPick: Equatable {
     var label: String?
     /// "card · Checkout funnel".
     var tag: String
+    /// What a comment on it is on: its `data-el` name, else its words ("Checkout funnel").
+    var words: String? = nil
+}
+
+/// What a design's canvas asks its host about comments (`SessionServer`'s comment mutations).
+/// `add` and `reply` answer the comment as kept and why it didn't reach the agent, if it didn't.
+struct DesignCommentActions {
+    var list: (DesignID) async throws -> DesignComments
+    var add: (DesignID, DesignCommentDraft, UInt64?) async throws -> (DesignComment, String?)
+    var reply: (DesignID, UUID, String, UInt64?) async throws -> (DesignComment, String?)
+    var resolve: (DesignID, UUID, UInt64?) async throws -> DesignComment
+    /// Says what went wrong (the app's error dialog).
+    var report: (String) -> Void
+}
+
+/// A comment's card as the chat and the Comments tab draw it.
+struct DesignCommentCardValue: Equatable, Identifiable {
+    let id: UUID
+    let number: Int
+    /// "A · Checkout funnel".
+    let target: String
+    /// "You · 2m".
+    let meta: String
+    let text: String
+}
+
+/// The comments' cards by comment, for the design's chat: a message whose origin names a comment
+/// draws its card (`ThreadView`). One per design, kept by its screen.
+@MainActor @Observable
+final class DesignCommentCards {
+    private(set) var cards: [UUID: DesignCommentCardValue] = [:]
+
+    func set(_ next: [UUID: DesignCommentCardValue]) {
+        if next != cards { cards = next }
+    }
 }
 
 /// One design's canvas (DZCanvas): its files as the host last served them, where the canvas
@@ -37,7 +79,7 @@ final class DesignScreenModel {
         didSet { if viewport != oldValue { viewportMoved() } }
     }
     var tool: NWCanvasTool = .select {
-        didSet { if tool != .select { pointer(nil) } }
+        didSet { if tool == .pan { pointer(nil) } }
     }
     /// What is selected, most recent last: boards picked whole, and elements.
     private(set) var picks: [Pick] = []
@@ -47,8 +89,30 @@ final class DesignScreenModel {
     /// The last pull failed (the canvas keeps what it drew).
     private(set) var loadError: String?
 
+    // Comments
+    /// Every comment, open and resolved, in the order they were made.
+    private(set) var comments: [DesignComment] = []
+    /// The chat pane's tab: `chat` or `comments`.
+    var paneTab = DesignPaneTab.chat
+    /// The comment whose thread is open beside its pin.
+    private(set) var openComment: UUID?
+    /// The element a new comment is being written on (the Comment tool's click).
+    private(set) var draftElement: DesignElementPick?
+    var draftText = ""
+    var replyText = ""
+    /// Where live boards draw commented elements now, by comment: a rewrite may have moved them
+    /// since the comment kept its rect.
+    private(set) var pinRects: [UUID: CGRect] = [:]
+    /// A comment or reply is on its way to the host.
+    private(set) var sendingComment = false
+    /// The chat's cards, by comment.
+    let commentCards = DesignCommentCards()
+
     @ObservationIgnored let host: DesignHost?
     @ObservationIgnored private let fetchSnapshot: Snapshot
+    @ObservationIgnored private let commentActions: DesignCommentActions?
+    /// The comments' revision as last read: a change names it, and a stale one is read again.
+    @ObservationIgnored private(set) var commentsRevision: UInt64 = 0
     @ObservationIgnored private var canvasSize: CGSize = .zero
     @ObservationIgnored private var fitted = false
     @ObservationIgnored private var refreshing = false
@@ -73,10 +137,12 @@ final class DesignScreenModel {
     /// How long the canvas stays still before live views follow it.
     static let restDelay: Duration = .milliseconds(120)
 
-    init(designID: DesignID, host: DesignHost?, snapshot: @escaping Snapshot, source: @escaping Source) {
+    init(designID: DesignID, host: DesignHost?, snapshot: @escaping Snapshot, source: @escaping Source,
+         comments: DesignCommentActions? = nil) {
         self.designID = designID
         self.host = host
         fetchSnapshot = snapshot
+        commentActions = comments
         host?.source = { path in try await source(designID, path) }
         host?.redrawn = { [weak self] path in self?.relocate(on: path) }
     }
@@ -147,6 +213,7 @@ final class DesignScreenModel {
             } catch {
                 loadError = String(describing: error)
             }
+            if let list = commentActions?.list, let next = try? await list(designID) { applyComments(next) }
         } while refreshAgain
     }
 
@@ -209,13 +276,16 @@ final class DesignScreenModel {
         take(Pick(board: path), extending: false)
     }
 
-    /// A click with Select (`NWDesignCanvas`): an element when the board names one under it, the
-    /// board whole on its label or where nothing is named, nothing on the empty canvas.
+    /// A click (`NWDesignCanvas`). With Select: an element when the board names one under it,
+    /// the board whole on its label or where nothing is named, nothing on the empty canvas. With
+    /// Comment: a new comment on the element under it. Either closes the thread that was open.
     func pick(_ pick: NWCanvasPick) {
         let board = pick.board.flatMap(DesignPath.init)
         let asks = board != nil && pick.point != nil && host != nil
+        let commenting = tool == .comment
+        closeComment()
         guard asks || picking != nil else {
-            resolve(pick, on: board, element: nil)
+            resolve(pick, on: board, element: nil, commenting: commenting)
             return
         }
         // Clicks land in order: one whose board is still being asked never overtakes a later one
@@ -228,12 +298,17 @@ final class DesignScreenModel {
             guard let self else { return }
             var element: DesignElementPick?
             if asks, let board, let point = pick.point, let host = self.host { element = await host.hitTest(board, at: point) }
-            self.resolve(pick, on: board, element: element)
+            self.resolve(pick, on: board, element: element, commenting: commenting)
             if self.pickSerial == serial { self.picking = nil }
         }
     }
 
-    private func resolve(_ pick: NWCanvasPick, on board: DesignPath?, element: DesignElementPick?) {
+    private func resolve(_ pick: NWCanvasPick, on board: DesignPath?, element: DesignElementPick?, commenting: Bool = false) {
+        if commenting {
+            // A comment goes on an element; a board's label or nothing named takes none.
+            if let element { beginComment(on: element) }
+            return
+        }
         guard let board else {
             if !pick.extending { clearSelection() }
             return
@@ -271,9 +346,10 @@ final class DesignScreenModel {
         planLive()
     }
 
-    /// Where the pointer is with Select: the element under it is ringed once its board names it.
+    /// Where the pointer is with Select or Comment: the element under it is ringed once its board
+    /// names it.
     func pointer(_ pick: NWCanvasPick?) {
-        guard tool == .select, let pick, let id = pick.board, let board = DesignPath(id), let point = pick.point, let host else {
+        guard tool != .pan, let pick, let id = pick.board, let board = DesignPath(id), let point = pick.point, let host else {
             hoverGeneration += 1
             pendingHover = nil
             host?.hover(nil)
@@ -296,10 +372,12 @@ final class DesignScreenModel {
     }
 
     /// A live board drew new source: its selected elements are found again where it draws them
-    /// now, and one it no longer draws leaves the selection.
+    /// now, and one it no longer draws leaves the selection. Its comments' pins move to where
+    /// their elements are drawn now.
     func relocate(on board: DesignPath) {
         let tids = picks.compactMap { $0.board == board ? $0.element?.id.tid : nil }
         if hover?.board == board { hover = nil }
+        locatePins(on: board)
         guard !tids.isEmpty, let host else { return }
         Task {
             guard let found = await host.locate(board, tids: tids) else { return }
@@ -323,6 +401,196 @@ final class DesignScreenModel {
 
     var hoverRing: NWCanvasElement? {
         hover.map { NWCanvasElement(id: $0.id.description, board: $0.board.rawValue, rect: $0.rect) }
+    }
+
+    // MARK: Comments
+
+    /// The open comments, in the order they were made.
+    var openComments: [DesignComment] { comments.filter(\.isOpen) }
+
+    /// The canvas's pins: each open comment on a board the canvas holds, where a live view last
+    /// found its element, else where it was when the comment was made; and the pin of the comment
+    /// being written.
+    var pins: [NWCanvasPin] {
+        guard let snapshot else { return [] }
+        var pins = openComments.compactMap { comment -> NWCanvasPin? in
+            guard snapshot.index.boards[comment.board] != nil else { return nil }
+            return NWCanvasPin(id: comment.id.uuidString, board: comment.board.rawValue, rect: pinRect(comment), number: comment.number)
+        }
+        if let draft = draftElement {
+            pins.append(NWCanvasPin(id: Self.draftPin, board: draft.board.rawValue, rect: draft.rect, number: nextNumber))
+        }
+        return pins
+    }
+
+    static let draftPin = "draft"
+
+    private var nextNumber: Int { (comments.map(\.number).max() ?? 0) + 1 }
+
+    private func pinRect(_ comment: DesignComment) -> CGRect {
+        if let rect = pinRects[comment.id] { return rect }
+        guard let rect = comment.rect else { return .zero }
+        return CGRect(x: rect.x, y: rect.y, width: rect.w, height: rect.h)
+    }
+
+    /// What the canvas's popover opens under: the element a comment is being written on, else the
+    /// open comment's.
+    var popoverAnchor: NWCanvasElement? {
+        if let draft = draftElement {
+            return NWCanvasElement(id: Self.draftPin, board: draft.board.rawValue, rect: draft.rect)
+        }
+        guard let id = openComment, let comment = comments.first(where: { $0.id == id }) else { return nil }
+        return NWCanvasElement(id: id.uuidString, board: comment.board.rawValue, rect: pinRect(comment))
+    }
+
+    /// The comment whose thread is open.
+    var openThread: DesignComment? { openComment.flatMap { id in comments.first { $0.id == id } } }
+
+    /// The Comment tool's click on an element: it takes the selection ring and the next pin, and
+    /// the editor opens beside it.
+    func beginComment(on element: DesignElementPick) {
+        take(Pick(board: element.board, element: element), extending: false)
+        draftElement = element
+        draftText = ""
+        openComment = nil
+    }
+
+    /// Closes the editor, or the open thread.
+    func closeComment() {
+        if draftElement != nil { draftElement = nil }
+        if openComment != nil { openComment = nil }
+    }
+
+    /// A pin (or a card in the Comments tab): its thread opens beside it.
+    func openThread(_ id: String) {
+        guard let id = UUID(uuidString: id), comments.contains(where: { $0.id == id }) else { return }
+        draftElement = nil
+        replyText = ""
+        openComment = id
+    }
+
+    /// Keeps the comment being written: the host checks its element and hands it to the design
+    /// agent as a turn of its own. An empty comment is no comment.
+    @discardableResult
+    func submitComment() -> Task<Void, Never>? {
+        guard let element = draftElement, let actions = commentActions, !sendingComment else { return nil }
+        let text = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { closeComment(); return nil }
+        let draft = DesignCommentDraft(
+            board: element.board, tid: element.id.tid, path: element.id.path, label: element.label, target: element.words,
+            rect: DesignCommentRect(x: element.rect.minX, y: element.rect.minY, w: element.rect.width, h: element.rect.height), text: text)
+        sendingComment = true
+        return Task {
+            defer { sendingComment = false }
+            do {
+                let (comment, undelivered) = try await actions.add(designID, draft, commentsRevision)
+                comments.append(comment)
+                pinRects[comment.id] = element.rect
+                if draftElement == element { draftElement = nil }
+                draftText = ""
+                openComment = comment.id
+                rebuildCards()
+                if let undelivered { actions.report("The comment is saved, but it didn't reach the design agent: \(undelivered)") }
+            } catch {
+                actions.report("Couldn't keep the comment: \(error)")
+            }
+            await refreshComments()
+        }
+    }
+
+    /// The Reply… field under the open thread: the answer joins the thread and goes to the
+    /// design agent like a comment.
+    @discardableResult
+    func sendReply() -> Task<Void, Never>? {
+        guard let id = openComment, let actions = commentActions, !sendingComment else { return nil }
+        let text = replyText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        sendingComment = true
+        return Task {
+            defer { sendingComment = false }
+            do {
+                let (comment, undelivered) = try await actions.reply(designID, id, text, commentsRevision)
+                replace(comment)
+                replyText = ""
+                if let undelivered { actions.report("The reply is saved, but it didn't reach the design agent: \(undelivered)") }
+            } catch {
+                actions.report("Couldn't keep the reply: \(error)")
+            }
+            await refreshComments()
+        }
+    }
+
+    /// Resolve: only the viewer resolves a comment. Its pin and thread leave the canvas.
+    @discardableResult
+    func resolve(_ id: UUID) -> Task<Void, Never>? {
+        guard let actions = commentActions else { return nil }
+        return Task {
+            do {
+                replace(try await actions.resolve(designID, id, commentsRevision))
+                if openComment == id { openComment = nil }
+            } catch {
+                actions.report("Couldn't resolve the comment: \(error)")
+            }
+            await refreshComments()
+        }
+    }
+
+    /// Reads the comments again (a push, or after a change of our own).
+    func refreshComments() async {
+        guard let list = commentActions?.list, let next = try? await list(designID) else { return }
+        applyComments(next)
+    }
+
+    /// Previews and tests: comments as the host would serve them.
+    func applyComments(_ next: DesignComments) {
+        // An answer older than one already applied (two reads crossing) changes nothing.
+        guard next.revision >= commentsRevision else { return }
+        commentsRevision = next.revision
+        if next.comments != comments { comments = next.comments }
+        if let id = openComment, comments.first(where: { $0.id == id })?.isOpen != true { openComment = nil }
+        let known = Set(comments.map(\.id))
+        if pinRects.keys.contains(where: { !known.contains($0) }) { pinRects = pinRects.filter { known.contains($0.key) } }
+        rebuildCards()
+        for board in Set(openComments.map(\.board)) { locatePins(on: board) }
+    }
+
+    private func replace(_ comment: DesignComment) {
+        guard let index = comments.firstIndex(where: { $0.id == comment.id }) else { return }
+        if comments[index] != comment { comments[index] = comment }
+        rebuildCards()
+    }
+
+    /// Asks a live board where its open comments' elements are drawn now.
+    private func locatePins(on board: DesignPath) {
+        let onBoard = openComments.filter { $0.board == board && !$0.detached }
+        guard !onBoard.isEmpty, let host, host.liveBoards.contains(board) else { return }
+        Task {
+            guard let found = await host.locate(board, tids: onBoard.map(\.tid)) else { return }
+            var next = pinRects
+            for comment in onBoard {
+                if let pick = found[comment.tid], pick.id.path == comment.path { next[comment.id] = pick.rect }
+            }
+            if next != pinRects { pinRects = next }
+        }
+    }
+
+    /// The chat's and the Comments tab's cards.
+    private func rebuildCards(now: Date = Date()) {
+        commentCards.set(Dictionary(uniqueKeysWithValues: comments.map { ($0.id, Self.card($0, now: now)) }))
+    }
+
+    /// "on A · Checkout funnel", "You · 2m", and a detached comment's "element changed".
+    static func card(_ comment: DesignComment, now: Date = Date()) -> DesignCommentCardValue {
+        let board = nativeBoardName(comment.board.rawValue)
+        let target = comment.target.map { "\(board) · \($0)" } ?? board
+        let meta = ["You · \(nwCommentAge(since: comment.createdAt, now: now))", comment.detached ? "element changed" : nil]
+            .compactMap { $0 }.joined(separator: " · ")
+        return DesignCommentCardValue(id: comment.id, number: comment.number, target: target, meta: meta, text: comment.text)
+    }
+
+    /// The open comments' cards, for the Comments tab.
+    var openCards: [DesignCommentCardValue] {
+        openComments.compactMap { commentCards.cards[$0.id] }
     }
 
     // MARK: The view record

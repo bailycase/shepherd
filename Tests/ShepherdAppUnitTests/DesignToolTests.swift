@@ -213,6 +213,156 @@ struct DesignToolTests {
         #expect(screen.picks.isEmpty)
     }
 
+    // MARK: Comments
+
+    /// Stands in for the server's comment mutations, keeping what the canvas asked.
+    final class CommentHost {
+        var file = DesignComments()
+        var drafts: [(draft: DesignCommentDraft, base: UInt64?)] = []
+        var reports: [String] = []
+        var undelivered: String?
+
+        func actions() -> DesignCommentActions {
+            DesignCommentActions(
+                list: { [self] _ in file },
+                add: { [self] _, draft, base in
+                    drafts.append((draft, base))
+                    let comment = DesignComment(number: file.nextNumber, board: draft.board, tid: draft.tid, path: draft.path,
+                                                label: draft.label, target: draft.target, rect: draft.rect, text: draft.text,
+                                                createdAt: Date().timeIntervalSince1970 * 1000)
+                    file.comments.append(comment)
+                    file.revision += 1
+                    return (comment, undelivered)
+                },
+                reply: { [self] _, id, text, _ in
+                    let index = try #require(file.comments.firstIndex { $0.id == id })
+                    file.comments[index].replies.append(DesignCommentReply(author: .user, text: text, createdAt: 0))
+                    file.revision += 1
+                    return (file.comments[index], nil)
+                },
+                resolve: { [self] _, id, _ in
+                    let index = try #require(file.comments.firstIndex { $0.id == id })
+                    file.comments[index].resolvedAt = 1
+                    file.revision += 1
+                    return file.comments[index]
+                },
+                report: { [self] in reports.append($0) })
+        }
+    }
+
+    private func commentScreen(_ host: CommentHost) async throws -> DesignScreenModel {
+        let index = try Self.index()
+        let snapshot = DesignSnapshot(designID: DesignID(), revision: 1, index: index,
+                                      boards: Dictionary(uniqueKeysWithValues: index.boards.keys.map { ($0, "sha") }))
+        let screen = DesignScreenModel(designID: snapshot.designID, host: nil, snapshot: { _ in snapshot }, source: { _, _ in "" },
+                                       comments: host.actions())
+        await screen.refresh()
+        return screen
+    }
+
+    /// Comment on an element: it takes the selection ring and the next pin, the editor opens
+    /// under it, and keeping the words sends the element as the board reported it; the thread
+    /// opens once the host kept it, and the chat has its card.
+    @Test func theCommentToolPinsANewCommentAndOpensItsThread() async throws {
+        let host = CommentHost()
+        host.undelivered = "The design agent is starting."
+        let screen = try await commentScreen(host)
+        var element = Self.element("A.dc.html", 12, [1, 0, 2], label: "Checkout funnel 48,210")
+        element.words = "Checkout funnel"
+        screen.tool = .comment
+        screen.beginComment(on: element)
+        #expect(screen.picks == [.init(board: Self.path("A.dc.html"), element: element)])
+        #expect(screen.pins.map(\.id) == [DesignScreenModel.draftPin] && screen.pins.first?.number == 1)
+        #expect(screen.popoverAnchor?.rect == element.rect && screen.popoverAnchor?.board == "A.dc.html")
+
+        screen.draftText = "  Show the absolute counts.  "
+        await screen.submitComment()?.value
+        let sent = try #require(host.drafts.first)
+        #expect(sent.draft.text == "Show the absolute counts." && sent.draft.tid == 12 && sent.draft.path == [1, 0, 2])
+        #expect(sent.draft.target == "Checkout funnel" && sent.draft.rect == DesignCommentRect(x: 40, y: 280, w: 640, h: 216))
+        #expect(sent.base == 0)
+        let comment = try #require(host.file.comments.first)
+        #expect(screen.draftElement == nil && screen.openComment == comment.id)
+        #expect(screen.pins.map(\.id) == [comment.id.uuidString] && screen.pins.first?.rect == element.rect)
+        #expect(screen.commentCards.cards[comment.id]?.target == "A · Checkout funnel")
+        #expect(screen.commentCards.cards[comment.id]?.meta == "You · now")
+        #expect(host.reports == ["The comment is saved, but it didn't reach the design agent: The design agent is starting."])
+    }
+
+    @Test func anEmptyCommentIsNoComment() async throws {
+        let host = CommentHost()
+        let screen = try await commentScreen(host)
+        screen.beginComment(on: Self.element("A.dc.html", 12, [1, 0, 2]))
+        screen.draftText = " \n "
+        #expect(screen.submitComment() == nil)
+        #expect(host.drafts.isEmpty && screen.draftElement == nil && screen.pins.isEmpty)
+    }
+
+    /// Select or Comment, a click elsewhere closes what is open beside a pin; a comment tool click
+    /// that names no element starts none.
+    @Test func aClickClosesTheOpenThreadAndCommentingNeedsAnElement() async throws {
+        let host = CommentHost()
+        host.file = DesignComments(revision: 3, comments: [
+            DesignComment(number: 1, board: Self.path("A.dc.html"), tid: 12, path: [1, 0, 2], text: "Hi", createdAt: 0),
+        ])
+        let screen = try await commentScreen(host)
+        let id = try #require(host.file.comments.first?.id)
+        screen.openThread(id.uuidString)
+        #expect(screen.openComment == id && screen.popoverAnchor?.id == id.uuidString)
+        screen.tool = .comment
+        screen.pick(NWCanvasPick(board: "A.dc.html", point: CGPoint(x: 10, y: 10)))
+        #expect(screen.openComment == nil && screen.draftElement == nil, "without a board to ask, nothing is named")
+        screen.openThread("draft")
+        #expect(screen.openComment == nil)
+    }
+
+    /// Resolve takes a comment's pin, thread and card off the canvas and the Comments tab; the
+    /// chat keeps its card.
+    @Test func aResolvedCommentLeavesTheCanvasAndTheCommentsTab() async throws {
+        let host = CommentHost()
+        let a = Self.path("A.dc.html")
+        host.file = DesignComments(revision: 2, comments: [
+            DesignComment(number: 1, board: a, tid: 12, path: [1, 0, 2], rect: DesignCommentRect(x: 1, y: 2, w: 3, h: 4), text: "One", createdAt: 0),
+            DesignComment(number: 2, board: Self.path("Gone.dc.html"), tid: 1, path: [0], text: "On a board the canvas lost", createdAt: 0),
+        ])
+        let screen = try await commentScreen(host)
+        let first = host.file.comments[0].id
+        #expect(screen.pins.map(\.number) == [1], "a comment on a board the canvas doesn't hold has no pin")
+        #expect(screen.pins.first?.rect == CGRect(x: 1, y: 2, width: 3, height: 4))
+        #expect(screen.openCards.map(\.number) == [1, 2])
+        screen.openThread(first.uuidString)
+        await screen.resolve(first)?.value
+        #expect(screen.openComment == nil && screen.pins.isEmpty)
+        #expect(screen.openCards.map(\.number) == [2])
+        #expect(screen.commentCards.cards[first] != nil, "the chat keeps the card")
+    }
+
+    @Test func aReplyGoesUnderTheOpenThread() async throws {
+        let host = CommentHost()
+        host.file = DesignComments(revision: 1, comments: [
+            DesignComment(number: 1, board: Self.path("A.dc.html"), tid: 12, path: [1, 0, 2], text: "Hi", createdAt: 0),
+        ])
+        let screen = try await commentScreen(host)
+        let id = host.file.comments[0].id
+        #expect(screen.sendReply() == nil, "nothing open, nothing sent")
+        screen.openThread(id.uuidString)
+        screen.replyText = "And on the phone."
+        await screen.sendReply()?.value
+        #expect(screen.openThread?.replies.map(\.text) == ["And on the phone."] && screen.replyText.isEmpty)
+    }
+
+    @Test(arguments: [
+        ("A-phone.dc.html", "Checkout funnel" as String?, false, "A · phone · Checkout funnel", "You · 2m"),
+        ("flows/Cart.dc.html", nil, true, "Cart", "You · 2m · element changed"),
+    ])
+    func aCommentsCardNamesItsBoardAndElement(board: String, target: String?, detached: Bool, on: String, meta: String) {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let comment = DesignComment(number: 3, board: Self.path(board), tid: 1, path: [0], target: target, text: "Bigger",
+                                    createdAt: (1_000 - 150) * 1000, detached: detached)
+        let card = DesignScreenModel.card(comment, now: now)
+        #expect(card.number == 3 && card.target == on && card.meta == meta && card.text == "Bigger")
+    }
+
     // MARK: The sidebar
 
     private func sidebar(designs: Bool) -> (SidebarSource, Agent, Design) {

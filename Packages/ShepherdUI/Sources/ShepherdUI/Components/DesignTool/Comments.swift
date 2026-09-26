@@ -201,9 +201,9 @@ public struct NWCommentCard: View, Equatable {
 }
 
 extension View {
-    /// The design agent's answer inside the comment card above it (DZCanvas): under a hairline,
-    /// 8pt below it, inside the card's sides and bottom. `bridge` is the room between the two
-    /// rows, which the card's sides cross.
+    /// The design agent's answer inside the comment card above it (DZCanvas): 8pt under the
+    /// comment, under a hairline, inside the card's sides and bottom. `bridge` is the room a list
+    /// puts between the two rows: the answer moves up across it to join the card.
     public func nwCommentAnswer(bridge: CGFloat) -> some View {
         padding(.top, NWDesignMetrics.entryGap)
             .overlay(alignment: .top) { NWHairline() }
@@ -211,7 +211,8 @@ extension View {
             .padding(.bottom, NWDesignMetrics.commentCardPaddingVertical)
             .padding(.horizontal, NWDesignMetrics.commentCardPaddingHorizontal)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background { NWCommentCardChrome(edge: .bottom).padding(.top, -bridge) }
+            .background { NWCommentCardChrome(edge: .bottom) }
+            .padding(.top, -bridge)
     }
 }
 

@@ -132,6 +132,9 @@ struct AgentTurn: View, Equatable {
     /// The thread is on screen and caught up: parts that stream in make their entrance. False
     /// while it loads, so what a catch-up brings is simply there. Not part of equality.
     var settled = true
+    /// The turn's footer (its time, Copy and Retry) ends it; an answer inside a design comment's
+    /// card has none (DZCanvas).
+    var footer = true
     @State private var openThinking: Set<String> = []
     @State private var shown = TurnShown()
     @State private var hover: MessageHover
@@ -140,7 +143,7 @@ struct AgentTurn: View, Equatable {
     init(presentation: NativeTurnPresentation, live: Bool, subagents: TurnSubagents = TurnSubagents(),
          subagentActions: SubagentActions? = nil, startedAt: Double? = nil, retry: (() -> Void)? = nil, review: ((String) -> Void)? = nil,
          recordedTurn: ChangesTurn? = nil, turnActions: TurnChangesActions? = nil,
-         thinking: Bool = false, arriving: Bool = false, settled: Bool = true, hover: MessageHover? = nil) {
+         thinking: Bool = false, arriving: Bool = false, settled: Bool = true, footer: Bool = true, hover: MessageHover? = nil) {
         self.presentation = presentation
         self.live = live
         self.subagents = subagents
@@ -153,6 +156,7 @@ struct AgentTurn: View, Equatable {
         self.thinking = thinking
         self.arriving = arriving
         self.settled = settled
+        self.footer = footer
         _hover = State(initialValue: hover ?? MessageHover())
     }
 
@@ -166,6 +170,7 @@ struct AgentTurn: View, Equatable {
     static func == (lhs: AgentTurn, rhs: AgentTurn) -> Bool {
         lhs.presentation == rhs.presentation && lhs.live == rhs.live && lhs.subagents == rhs.subagents
             && lhs.startedAt == rhs.startedAt && lhs.thinking == rhs.thinking && lhs.recordedTurn == rhs.recordedTurn
+            && lhs.footer == rhs.footer
             && (lhs.turnActions == nil) == (rhs.turnActions == nil)
             && (lhs.retry == nil) == (rhs.retry == nil) && (lhs.review == nil) == (rhs.review == nil)
             && (lhs.subagentActions == nil) == (rhs.subagentActions == nil)
@@ -197,7 +202,7 @@ struct AgentTurn: View, Equatable {
             if !live, !presentation.items.isEmpty {
                 Group {
                     if let changes = cardChanges { changesCard(changes) }
-                    if !presentation.endsInError { footer }
+                    if footer, !presentation.endsInError { turnFooter }
                 }
                 .nwArrival(entering, .list, edge: .bottom)
             }
@@ -276,7 +281,7 @@ struct AgentTurn: View, Equatable {
 
     /// Copy and retry, then "2:44 PM · 3m 12s · 23 tool calls" and "3 subagents" as a link to
     /// the first run.
-    private var footer: some View {
+    private var turnFooter: some View {
         let meta = [nativeTurnTimeText(startedAt: startedAt, endedAt: presentation.endedAt),
                     presentation.toolCalls > 0 ? nativeCount(presentation.toolCalls, "tool call") : nil]
             .compactMap { $0 }.joined(separator: " · ")

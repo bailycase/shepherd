@@ -68,7 +68,7 @@ extension DesignElementPick {
     /// grammar can't name it on this board.
     init?(_ hit: DesignHit, on board: DesignPath) {
         guard let id = hit.id(on: board) else { return nil }
-        self.init(board: board, id: id, rect: hit.rect, kind: hit.kind, label: hit.label, tag: hit.tag)
+        self.init(board: board, id: id, rect: hit.rect, kind: hit.kind, label: hit.label, tag: hit.tag, words: hit.name ?? hit.label)
     }
 }
 

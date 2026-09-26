@@ -3,10 +3,10 @@ import SwiftUI
 /// The design canvas (NWDesignCanvas; DZCanvas): `bgBase` with 1px `lineStrong` dots every
 /// 22pt, the boards at their canvas positions in their frames, and the canvas toolbar in the
 /// bottom-leading corner. It pans (two-finger scroll, the Pan tool, space-drag) and zooms (pinch,
-/// ⌘-scroll) about the pointer. With Select, a click reports what it landed on (`pick`: a point
-/// on a board, a board's label, or the empty canvas; shift extends), and the pointer's moves over
-/// the boards are reported too (`point`); the selected and hovered elements are ringed over their
-/// boards (`NWSelectionRing`) from the rects the boards reported.
+/// ⌘-scroll) about the pointer. With Select or Comment, a click reports what it landed on (`pick`:
+/// a point on a board, a board's label, or the empty canvas; shift extends), and the pointer's
+/// moves over the boards are reported too (`point`); the selected and hovered elements are ringed
+/// over their boards (`NWSelectionRing`) from the rects the boards reported.
 ///
 /// Comments' pins (`NWCommentPin`) sit on their elements' top-trailing corners over the boards,
 /// and one thing may open beside a pin, under its element (`popover`: a comment's thread, or the
