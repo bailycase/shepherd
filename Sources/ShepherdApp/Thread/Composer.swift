@@ -48,8 +48,7 @@ struct Composer: View {
     var steerSubagent: ((ChildRun) -> Void)? = nil
     /// The run open in the inspector: its tray row wears the selection.
     var inspectedRunID: String? = nil
-    @State private var attachments: [ImageAttachment] = []
-    @State private var attachmentError: String?
+    @State private var attachments = ComposerAttachments()
     @State private var dropTargeted = false
     @State private var commandIndex = 0
     /// Esc closes the slash menu for the draft as typed; typing more reopens it.
@@ -158,7 +157,7 @@ struct Composer: View {
 
     /// What sits above the card: a banner, the notice, extension widgets, the queue.
     private var accessories: [String] {
-        let banner = store.loadError != nil ? "lost" : attachmentError != nil ? "attachment" : store.notice != nil ? "notice" : nil
+        let banner = store.loadError != nil ? "lost" : attachments.error != nil ? "attachment" : store.notice != nil ? "notice" : nil
         return [banner].compactMap { $0 } + store.widgets.map(\.id) + (queueStack.isVisible ? ["queue"] : [])
             + (showsTray ? ["tray"] : []) + (answeringRun != nil ? ["answering"] : [])
     }
@@ -214,7 +213,7 @@ struct Composer: View {
                         .buttonStyle(.nw(.secondary, size: .s))
                 }
                 .nwTransition(.list, edge: .bottom)
-            } else if let attachmentError {
+            } else if let attachmentError = attachments.error {
                 NWBanner(.failed, title: attachmentError)
                     .nwTransition(.list, edge: .bottom)
             } else if let notice = store.notice {
@@ -262,7 +261,7 @@ struct Composer: View {
                 }
         }
         .nwAnimation(.list, value: accessories)
-        .nwAnimation(.list, value: attachments.map(\.id))
+        .nwAnimation(.list, value: attachments.ids)
         .nwAnimation(.disclosure, value: questionKey)
         .nwAnimation(.disclosure, value: questionHiding)
         // What a catch-up brings lands at once, however it changes the composer; keyed on what
@@ -344,7 +343,7 @@ struct Composer: View {
         .modifier(ThreadCommandHandler(key: commandKey, active: active, handle: handleCommand))
         .fileImporter(isPresented: $picking, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result else { return }
-            attachmentError = nil
+            attachments.clearError()
             Task {
                 let resolved = await AppImageDrop.resolve(urls.map { NSItemProvider(contentsOf: $0) ?? NSItemProvider() })
                 attach(urls: resolved)
@@ -452,9 +451,9 @@ struct Composer: View {
         // The context details float over the thread without the card taking focus's look.
         let focused = composing || dropTargeted || (menuOpen && menu != .context)
         return NWComposer(isFocused: focused) {
-            ForEach(attachments) { attachment in
+            ForEach(attachments.items) { attachment in
                 NWAttachmentChip(attachment.name, thumbnail: attachment.thumbnail) {
-                    attachments.removeAll { $0.id == attachment.id }
+                    attachments.remove(attachment.id)
                 }
                 .nwTransition(.list, edge: .leading)
             }
@@ -571,7 +570,7 @@ struct Composer: View {
         let draftEmpty = store.draft.isEmpty
         let stops = working && draftEmpty
         return ComposerControlsModel(
-            active: active, canAttach: canAttach, attachFull: attachments.count >= NativeImage.maxPerSend,
+            active: active, canAttach: canAttach, attachFull: attachments.isFull,
             hasCommands: !commands.isEmpty, commandsActive: commandQuery != nil,
             model: store.model, modelChangeable: store.supportedActions.contains("setModel"), modelEnabled: store.supports("setModel"),
             modelsOpen: menu == .models,
@@ -694,7 +693,7 @@ struct Composer: View {
     }
 
     private func sendDraft(delivery: NativeThreadDelivery) {
-        let images = attachments.map(\.image)
+        let images = attachments.images
         Task {
             let before = store.sentCount
             await store.send(images: images, delivery: delivery)
@@ -776,7 +775,7 @@ struct Composer: View {
     /// Dropped or pasted images become attachments through the same resize rules as terminal
     /// drops (longest edge 2000px, JPEG stays JPEG, everything else PNG).
     private func attach(_ providers: [NSItemProvider]) {
-        attachmentError = nil
+        attachments.clearError()
         Task {
             let urls = await AppImageDrop.resolve(providers)
             attach(urls: urls)
@@ -784,21 +783,7 @@ struct Composer: View {
     }
 
     private func attach(urls: [URL]) {
-        for url in urls {
-            guard attachments.count < NativeImage.maxPerSend else {
-                attachmentError = "At most \(NativeImage.maxPerSend) images per message."
-                return
-            }
-            guard let attachment = ImageAttachment(url: url) else {
-                attachmentError = "\(url.lastPathComponent) is not an image Shepherd can attach."
-                continue
-            }
-            guard attachment.image.data.count <= NativeImage.maxBytes else {
-                attachmentError = "\(url.lastPathComponent) is over \(NativeImage.maxBytes / 1024 / 1024) MiB after resizing."
-                continue
-            }
-            attachments.append(attachment)
-        }
+        attachments.add(urls: urls)
     }
 }
 
@@ -1429,24 +1414,6 @@ struct WidgetRow: View {
         }
         .textSelection(.enabled)
         .accessibilityElement(children: .combine)
-    }
-}
-
-/// A resized image waiting in the composer. `image.data` is the bytes pi will receive; the
-/// thumbnail is decoded once, here.
-struct ImageAttachment: Identifiable {
-    let id = UUID()
-    let name: String
-    let image: NativeImage
-    let thumbnail: Image?
-
-    /// nil when the file is not a raster image.
-    init?(url: URL) {
-        guard let type = UTType(filenameExtension: url.pathExtension.lowercased()), type.conforms(to: .image),
-              let data = try? Data(contentsOf: url), NSBitmapImageRep(data: data) != nil else { return nil }
-        name = url.lastPathComponent
-        image = NativeImage(mimeType: type == .jpeg ? "image/jpeg" : type == .gif ? "image/gif" : type == .webP ? "image/webp" : "image/png", data: data)
-        thumbnail = NSImage(data: data).map { Image(nsImage: $0) }
     }
 }
 

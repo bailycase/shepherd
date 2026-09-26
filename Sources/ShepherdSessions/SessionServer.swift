@@ -430,6 +430,9 @@ public final class SessionServer: @unchecked Sendable {
     /// Tests only: handed to every RPC session this server creates afterwards, to run on the
     /// decode queue before each record it decodes off the server queue.
     var beforeOffQueueDecode: (() -> Void)?
+    /// Tests only: what this host tells a remote client it can do, to stand in for an older host.
+    /// Set before a client connects.
+    var advertisedCapabilities = RemoteProtocol.capabilities
     /// Which agent's own pane runs each session, for the store version it was built from.
     private var sessionAgents: (version: UInt64, agents: [SessionID: AgentID])?
 
@@ -944,7 +947,7 @@ public final class SessionServer: @unchecked Sendable {
             send(.helloOk(
                 id: id,
                 protocolVersion: RemoteProtocol.version,
-                capabilities: RemoteProtocol.capabilities
+                capabilities: advertisedCapabilities
             ), to: client)
             ShepherdLog.info("remote client '\(clientName)' authenticated (fd \(client.fd))")
             return
@@ -1169,7 +1172,14 @@ public final class SessionServer: @unchecked Sendable {
             }
         case .addSpace(let id, let path):
             remoteAddSpace(id: id, path: path, client: client)
-        case .createAgent(let id, let spaceID, let cwd, let model, let thinking, let initialPrompt, let worktreeBranch, let worktreeBase, let worktreeFetchFirst):
+        case .createAgent(let id, let spaceID, let cwd, let model, let thinking, let initialPrompt, let worktreeBranch, let worktreeBase, let worktreeFetchFirst, let initialImages):
+            let images = initialImages ?? []
+            // Refused before anything is made: pi would refuse them once the agent exists.
+            guard images.isEmpty || initialPrompt?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
+                  NativeImage.fitOneSend(images) else {
+                send(.error(id: id, code: "invalid", message: "A new thread takes up to \(NativeImage.maxPerSend) images of \(NativeImage.maxBytes / 1024 / 1024) MiB each, with a prompt."), to: client)
+                return
+            }
             remoteCreateAgent(
                 id: id,
                 request: RemoteCreateAgentRequest(
@@ -1180,7 +1190,8 @@ public final class SessionServer: @unchecked Sendable {
                     initialPrompt: initialPrompt,
                     worktreeBranch: worktreeBranch,
                     worktreeBase: worktreeBase,
-                    worktreeFetchFirst: worktreeFetchFirst
+                    worktreeFetchFirst: worktreeFetchFirst,
+                    initialImages: images
                 ),
                 client: client
             )
@@ -2197,12 +2208,18 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    /// Server queue: the question an agent's thread asks first changed. Live state, like a
-    /// status: broadcast at once and never written on its own (nor ever to state.json).
-    func applyAgentQuestion(agentID: AgentID, question: String?) {
-        guard let index = store.state.agents.firstIndex(where: { $0.id == agentID }),
-              store.state.agents[index].waitingOn != question else { return }
-        store.updateLive { $0.agents[index].waitingOn = question }
+    /// Server queue: the question an agent's thread asks first changed (its title and the
+    /// agent's short reason for it). Live state, like a status: broadcast at once and never
+    /// written on its own (nor ever to state.json).
+    func applyAgentQuestion(agentID: AgentID, question: String?, reason: String? = nil) {
+        guard let index = store.state.agents.firstIndex(where: { $0.id == agentID }) else { return }
+        let reason = question == nil ? nil : reason
+        let agent = store.state.agents[index]
+        guard agent.waitingOn != question || agent.waitingReason != reason else { return }
+        store.updateLive {
+            $0.agents[index].waitingOn = question
+            $0.agents[index].waitingReason = reason
+        }
         let committedState = store.state
         broadcastRemoteState(committedState)
         hopToMain { [weak self] in self?.onStateChanged?(committedState) }
@@ -2641,7 +2658,7 @@ public final class SessionServer: @unchecked Sendable {
     /// then sent before the thread answers any request, so every client's first snapshot shows
     /// it. Its pending row is `OpeningPrompt`'s, which a client can draw while pi starts.
     public func sendOpeningPrompt(_ prompt: OpeningPrompt, sessionID: SessionID) async {
-        await enqueueValue { self.sessions[sessionID]?.thread?.sendOpeningPrompt(prompt.text, id: prompt.operationID) }
+        await enqueueValue { self.sessions[sessionID]?.thread?.sendOpeningPrompt(prompt.text, images: prompt.images, id: prompt.operationID) }
     }
 
     /// Whether an RPC session's thread serves yet, bound to an agent or not (for tests).
@@ -2690,7 +2707,7 @@ public final class SessionServer: @unchecked Sendable {
             thread.onRevision = { [weak serverWeak] in serverWeak?.threadRevised(sessionID: sid) }
             thread.onQuestionChanged = { [weak serverWeak] question in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
-                server.applyAgentQuestion(agentID: agentID, question: question)
+                server.applyAgentQuestion(agentID: agentID, question: question?.title, reason: question?.reason)
             }
             thread.onToolFinished = { [weak serverWeak] name in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
