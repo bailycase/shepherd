@@ -18,6 +18,29 @@ struct RemoteSkillsTests {
         ])
     }
 
+    /// A host's skills answer carries what its own pi loads from elsewhere, for the client's
+    /// read-only groups; a change's answer does too, so they never drop off the page.
+    @Test func aClientSeesTheSkillsTheHostsPiLoadsFromElsewhere() async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        let pi = PiSkills(agentDirectory: "~/.pi/agent", skills: [
+            PiSkill(name: "review", summary: "Reviews a diff.", path: "~/.pi/agent/skills/review/SKILL.md", origin: .agentDirectory),
+            PiSkill(name: "postgres", summary: "Query plans.", path: "~/.pi/agent/npm/node_modules/@acme/db/postgres/SKILL.md",
+                    origin: .package, package: "@acme/db"),
+        ])
+        host.server.skills.piSkills = { _ in pi }
+        let client = try await host.typed()
+        defer { client.disconnect() }
+        #expect(client.capabilities.contains(RemoteProtocol.piSkillsCapability))
+        guard case .skills(let fetched) = try await client.skills() else { Issue.record("expected the host's skills"); return }
+        #expect(fetched.pi == pi)
+        guard case .skills(let configured) = try await client.skills(.configure(autoUpdate: true)) else {
+            Issue.record("expected the host's skills")
+            return
+        }
+        #expect(configured.pi == pi)
+    }
+
     @Test func aClientInstallsTurnsOffAndRemovesTheHostsSkills() async throws {
         let host = try RemoteHost()
         defer { host.stop() }
