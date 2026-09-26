@@ -57,7 +57,14 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// What the host offers changed while connected (its Design tool turned on or off);
     /// `capabilities` already holds the new list. Main queue.
     public var onCapabilitiesChanged: ((Set<String>) -> Void)?
-    public private(set) var capabilities: Set<String> = []
+    /// What the host offers. Written on the client's queue (at hello, and when the host pushes a
+    /// change) and read from any thread, so it sits behind a lock.
+    public private(set) var capabilities: Set<String> {
+        get { capabilityLock.lock(); defer { capabilityLock.unlock() }; return storedCapabilities }
+        set { capabilityLock.lock(); storedCapabilities = newValue; capabilityLock.unlock() }
+    }
+    private let capabilityLock = NSLock()
+    private var storedCapabilities: Set<String> = []
 
     private let queue = DispatchQueue(label: "shepherd.remote.client")
     private var connectionGeneration = UUID()
