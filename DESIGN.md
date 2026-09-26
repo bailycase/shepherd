@@ -2995,8 +2995,8 @@ splits.
   centered on the edge with the row-resize pointer. It snaps within 12pt of a third, half and
   two-thirds of the layout, keeps the panel at least 120pt and the thread at least 160pt, and never
   animates while dragged. VoiceOver reads it as "Terminal height" in points and adjusts it in 40pt
-  steps. **Not built yet:** while it is dragged, the edge draws as a 3pt `lantern` line across the
-  top of the strip (Divider).
+  steps. While it is dragged, the edge draws as a 3pt `lantern` line across the top of the strip
+  (Divider).
 - **Maximized** (⇧⌘↩, or the strip's Maximize): the panel takes the layout and the thread folds away
   at its size, still mounted (its draft, scroll and stream stay). Restore (the same button, or ⇧⌘↩)
   brings it and its composer back, and so does hiding the panel. The divider doesn't drag while

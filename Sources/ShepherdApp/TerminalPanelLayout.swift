@@ -11,6 +11,8 @@ extension AppLayout {
     static let terminalThreadMinHeight: CGFloat = NWTerminalMetrics.minimumThreadHeight
     /// How near a third, a half or two-thirds of the layout the divider snaps.
     static let terminalSnapTolerance: CGFloat = NWTerminalMetrics.snapTolerance
+    /// The panel's top edge while it is dragged: a lantern line this thick (TerminalStates).
+    static let terminalDividerDragLine: CGFloat = 3
     /// How often an on-screen panel asks what its terminals run.
     static let terminalActivityInterval: Duration = .seconds(2)
 }

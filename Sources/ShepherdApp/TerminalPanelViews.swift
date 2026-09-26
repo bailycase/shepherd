@@ -52,7 +52,8 @@ struct TerminalPanelBar: View {
 }
 
 /// The panel's top edge: drag it (it snaps at a third, half and two-thirds of the layout), or
-/// double-click it to go back to 330pt. Adjustable with VoiceOver.
+/// double-click it to go back to 330pt. While it is dragged it draws as a 3pt lantern line
+/// (TerminalStates › Divider). Adjustable with VoiceOver.
 struct TerminalPanelDivider: View {
     var vm: ShepherdViewModel
     /// The layout's height, and the panel's height while it is dragged.
@@ -63,6 +64,11 @@ struct TerminalPanelDivider: View {
     var body: some View {
         Color.clear
             .frame(height: AppLayout.resizeHandleWidth)
+            .overlay {
+                if liveHeight != nil {
+                    Color.nw.lantern.frame(height: AppLayout.terminalDividerDragLine)
+                }
+            }
             .contentShape(Rectangle())
             .pointerStyle(.rowResize)
             .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .named(coordinateSpace))
