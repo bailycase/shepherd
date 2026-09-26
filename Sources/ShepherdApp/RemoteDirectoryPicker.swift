@@ -175,7 +175,7 @@ struct RemoteDirectoryPicker: View {
                 .foregroundStyle(Color.nw.textSecondary)
                 .padding(.trailing, NW.Space.s)
             Button("Cancel", action: cancel)
-                .buttonStyle(.nw(.secondary))
+                .buttonStyle(.nw(.ghost))
                 .keyboardShortcut(.cancelAction)
             Button(actionTitle) { submit() }
                 .buttonStyle(.nw(.primary))

@@ -15,7 +15,7 @@ import SwiftUI
         } status: {
             NWDialogStatus("Fetched origin 2m ago")
         } actions: {
-            Button("Cancel") {}.buttonStyle(.nw(.secondary)).keyboardShortcut(.cancelAction)
+            Button("Cancel") {}.buttonStyle(.nw(.ghost)).keyboardShortcut(.cancelAction)
             Button("Create and open") {}.buttonStyle(.nw(.primary)).keyboardShortcut(.defaultAction)
         }
         .nwCard(radius: NW.Radius.l)
