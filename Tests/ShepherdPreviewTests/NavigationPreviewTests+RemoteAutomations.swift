@@ -128,4 +128,15 @@ extension PreviewTests {
             RootView(vm: vm)
         }
     }
+
+    /// A remote agent's pane while its host is away: "horizon reconnecting", when it was last
+    /// seen, and Retry now (NWStatus › A host reconnecting).
+    @Test func remoteAgentHostReconnecting() async throws {
+        let seen = Date().addingTimeInterval(-3 * 3_600 - 60)
+        try await Preview.render("remote-host-reconnecting", size: CGSize(width: 900, height: 140)) {
+            HostAwayBanner(name: "horizon", lastSeen: seen) {}
+                .frame(width: 900, height: 140)
+                .background(Color.nw.bgWindow)
+        }
+    }
 }

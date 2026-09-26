@@ -4174,10 +4174,13 @@ trail, top-aligned, 6pt apart, as small (24pt) buttons. Default icons:
   replay and Re-run.
 - **A host reconnecting** (running, `point.topleft.down.to.point.bottomright.curvepath`):
   "<host> reconnecting", "Last seen 3h ago. Remote agents resume when it's back.", and **Retry
-  now** (secondary), in the pane of a remote agent whose host went away. **Not built yet:** the
-  app shows the host's state as a sidebar notice row ("Connecting…", "Unreachable" with Retry;
-  Sidebar) and a "connecting to <host>…" placeholder in a remote agent's pane, and records no
-  last-seen time.
+  now** (secondary), in the pane of a remote agent whose host went away (`HostAwayBanner`, at the
+  top of the pane, as wide as the thread). It shows while Shepherd retries a host that was
+  connected earlier this launch (`lastSeen`, never persisted), through every try and wait, and
+  its age moves on by itself; Retry now reconnects at once, skipping the backoff. A host that
+  never connected this launch keeps "connecting to <host>…", and a failure that won't retry (a
+  refused token, another protocol) keeps its own sentence. The sidebar's notice row says the
+  same for the host (Sidebar).
 - **A mission done** (done, `checkmark`): "Mission done", "Every “done when” check is verified.
   Draft PR #34 is ready.", and **Open review** (secondary). **Not built yet:** Missions are not
   built.
