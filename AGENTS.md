@@ -714,9 +714,9 @@ variables are blanked.
     `changesBranches`, `changesPatch`, `changesUndoTurn`, `changesRedoTurn` behind `changes.v1`,
     answered by the server itself; thread snapshots carry `turnChanges`). Older hosts review the
     working tree only (`review`). The terminal panel's own actions on an agent's terminal panes
-    ride `agentAction` behind `terminal.control.v1`: `renameTerminal` (Rename tab),
-    `killTerminalProcess` (Kill process) and `typeInTerminal` (Run in terminal), each refused on
-    the agent's thread pane.
+    ride `agentAction` behind `terminal.control.v1`: `renameTerminal` (Rename tab) and
+    `killTerminalProcess` (Kill process), each refused on the agent's thread pane. An older
+    client's `typeInTerminal` (Run in terminal, since removed) is answered `unsupported`.
   - `automation` (`automations.v1`): switch on or off, run now, stop, the runs the host kept,
     create, edit, delete. There is no schedule or trigger: an automation that is on starts a run
     when Shepherd launches on the host. The Mac shows a host's automations under its sidebar
@@ -737,7 +737,9 @@ variables are blanked.
     (docs/skills.md)
 
   Capabilities gate newer features. The client falls back (raw bracketed paste) or refuses (pane
-  control) against older hosts. Output frames chunk at 256 KiB to stay under the 1 MiB frame cap.
+  control) against older hosts. A host answers an authenticated request it cannot decode (a kind
+  or action from another version's client) with `unsupported` and keeps the connection; a frame
+  with no `id` closes it. Output frames chunk at 256 KiB to stay under the 1 MiB frame cap.
 - **Sizing:** viewports are smallest-viewer-wins. Each attached remote viewer reports its grid,
   and the PTY takes the minimum; with no remote viewers, the local viewport rules. Resize reports
   from unattached clients are ignored.
