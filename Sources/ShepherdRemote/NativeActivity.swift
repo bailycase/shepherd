@@ -506,6 +506,15 @@ extension NativeActivityCall {
             explore = .read
             detail = string("path") ?? "canvas.json"
             isPath = true
+        case "system_read":
+            kind = .explore
+            explore = .read
+            detail = string("namespace").map { "ds/\($0)" } ?? "design systems"
+            isPath = string("namespace") != nil
+        case "system_write":
+            kind = .other
+            label = "system"
+            detail = string("namespace") ?? firstLine
         case "board_write":
             kind = .drew
             label = "board"
