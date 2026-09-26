@@ -4325,8 +4325,6 @@ below collects the rest, and the places those sentences point here.
   button draws its chord after its title: the Changes pane's Send to agent names ⌘↩ only in its
   tooltip. `NWPopupMenu`
   defaults to a 180pt minimum width (`Pickers.swift`); the board's popups are 200.
-- **Status and feedback:** an empty state's sentence is capped at 320pt (`Feedback.swift`), the
-  board's at 280. A banner's icon is 13pt, the board's 15.
 - **Agents and review:**
   - A review from an older host (no `changes.v1`) keeps two scopes (Uncommitted and Pull request)
     and compares the working tree against HEAD, or the PR's merge base, the old way.
