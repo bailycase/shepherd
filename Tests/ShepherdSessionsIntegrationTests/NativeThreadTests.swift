@@ -370,6 +370,26 @@ struct NativeThreadTests {
         #expect(cancel["cancelled"] as? Bool == true && cancel["value"] == nil)
     }
 
+    /// A question has no Dismiss: stopping the turn refuses it (pi's cancelled answer) before
+    /// the abort, so a turn waiting on an answer still stops, and the question leaves the thread.
+    @Test func stoppingRefusesTheQuestionPiWaitsOnFirst() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        _ = try await pi.send("select", from: try await pi.ready())
+        let asked = try await pi.snapshot("the question") { !$0.dialogs.isEmpty }
+
+        let op = UUID()
+        #expect(try await pi.request(.abort(expectedSessionID: asked.piSessionID, generation: asked.generation, operationID: op)) == .accepted(operationID: op))
+        _ = try await pi.waitForStdin("abort")
+
+        let types = pi.stdin().compactMap { $0["type"] as? String }.filter { $0 == "extension_ui_response" || $0 == "abort" }
+        #expect(types == ["extension_ui_response", "abort"], "refused, then stopped")
+        #expect(pi.stdin("extension_ui_response").first?["cancelled"] as? Bool == true)
+        let stopped = try await pi.snapshot("the question to leave the thread") { $0.dialogs.isEmpty && !$0.running }
+        #expect(stopped.dialogs.isEmpty)
+    }
+
     @Test func answeringAQuestionThatIsNotPendingFails() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }

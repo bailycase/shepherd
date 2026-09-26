@@ -13,6 +13,8 @@
   "widgets"      emits setStatus/setWidget/notify/setTitle (with ANSI colour)
   "widgets-clear" clears the status and widget from "widgets"
   "select" emits a select extension_ui_request (no timeout) and waits
+  "ask-choice" a select of three options, the first "(Recommended)" with a line under each
+  "ask-input" / "ask-editor" an input (with a placeholder) or an editor (with a prefill)
   "ask-short" / "ask-long" an ask_user tool call (with a `short` reason, or without one) whose
            select extension_ui_request waits; the answer ends the call and the run
   "fill"   appends 120 history messages, then agent_start/agent_end
@@ -600,6 +602,24 @@ for raw in sys.stdin.buffer:
             emit({"type": "agent_start"})
             emit({"type": "extension_ui_request", "id": "uuid-3", "method": "select",
                   "title": "Pick one", "options": ["Allow", "Deny"]})
+        elif message == "ask-choice":
+            pending_ui = "uuid-7"
+            emit({"type": "agent_start"})
+            emit({"type": "extension_ui_request", "id": "uuid-7", "method": "select",
+                  "title": "How should I handle the uncommitted edits?",
+                  "options": ["Compare first (Recommended)\nDiff them against main; nothing is overwritten.",
+                              "Leave them alone\nDeploy from a clean checkout beside it.",
+                              "Discard them\nReset the checkout to main."]})
+        elif message == "ask-input":
+            pending_ui = "uuid-5"
+            emit({"type": "agent_start"})
+            emit({"type": "extension_ui_request", "id": "uuid-5", "method": "input",
+                  "title": "Which branch should I deploy?", "placeholder": "main"})
+        elif message == "ask-editor":
+            pending_ui = "uuid-6"
+            emit({"type": "agent_start"})
+            emit({"type": "extension_ui_request", "id": "uuid-6", "method": "editor",
+                  "title": "Edit the commit message", "prefill": "fix: typo"})
         elif message == "slow":
             # Real pi keeps reading stdin during a turn; the paused turn must too.
             turn_aborted = False
