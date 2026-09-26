@@ -72,50 +72,58 @@ public struct NWActivityLine: View {
         }
     }
 
-    private var finished: some View {
-        let nw = Color.nw
-        let failed = status == .failed
-        return Button {
-            action?()
-        } label: {
-            HStack(spacing: NW.Space.m) {
-                Image(systemName: symbol)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(failed ? nw.failed : nw.textTertiary)
-                    .frame(width: NWThreadMetrics.activityIcon, height: NWThreadMetrics.activityIcon)
-                Text(label)
-                    .font(.nw(.ui, weight: .regular))
-                    .foregroundStyle(failed ? nw.failed : nw.textSecondary)
-                    .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
-                    .fixedSize(horizontal: !typeSize.isAccessibilitySize, vertical: true)
-                    .layoutPriority(1)
-                    .nwContentTransition(.numeric())
-                if !meta.isEmpty {
-                    Text(meta)
-                        .font(.nwMono(11))
-                        .foregroundStyle(nw.textTertiary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .monospacedDigit()
-                        .nwContentTransition(.numeric())
-                }
-                if action != nil {
-                    NWThreadChevron(isExpanded: isExpanded).foregroundStyle(nw.textTertiary)
-                }
+    /// A real button only when something is behind it: a line with nothing to open is its words
+    /// alone (no hover, press, or focus, and VoiceOver hears no button).
+    @ViewBuilder private var finished: some View {
+        Group {
+            if let action {
+                Button(action: action) { finishedLabel }
+                    .buttonStyle(.nwRow())
+                    .accessibilityLabel(accessibilityText)
+                    .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+                    .accessibilityHint("Shows the calls")
+            } else {
+                finishedLabel
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(accessibilityText)
             }
-            // A finished call joining the line counts up ("Explored 6 files").
-            .nwAnimation(.content, value: [label, meta])
-            .padding(.leading, NW.Space.xs)
-            .padding(.trailing, NW.Space.m)
-            .frame(minHeight: NWThreadMetrics.activityHeight)
         }
-        .buttonStyle(.nwRow())
-        .disabled(action == nil)
         .padding(.leading, -NW.Space.xs)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityLabel(accessibilityText)
-        .accessibilityValue(action == nil ? "" : isExpanded ? "Expanded" : "Collapsed")
-        .accessibilityHint(action == nil ? "" : "Shows the calls")
+    }
+
+    private var finishedLabel: some View {
+        let nw = Color.nw
+        let failed = status == .failed
+        return HStack(spacing: NW.Space.m) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(failed ? nw.failed : nw.textTertiary)
+                .frame(width: NWThreadMetrics.activityIcon, height: NWThreadMetrics.activityIcon)
+            Text(label)
+                .font(.nw(.ui, weight: .regular))
+                .foregroundStyle(failed ? nw.failed : nw.textSecondary)
+                .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
+                .fixedSize(horizontal: !typeSize.isAccessibilitySize, vertical: true)
+                .layoutPriority(1)
+                .nwContentTransition(.numeric())
+            if !meta.isEmpty {
+                Text(meta)
+                    .font(.nwMono(11))
+                    .foregroundStyle(nw.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .monospacedDigit()
+                    .nwContentTransition(.numeric())
+            }
+            // Only a line with something behind it wears the chevron; its place stays.
+            NWThreadChevron(isExpanded: isExpanded, shown: action != nil).foregroundStyle(nw.textTertiary)
+        }
+        // A finished call joining the line counts up ("Explored 6 files").
+        .nwAnimation(.content, value: [label, meta])
+        .padding(.leading, NW.Space.xs)
+        .padding(.trailing, NW.Space.m)
+        .frame(minHeight: NWThreadMetrics.activityHeight)
     }
 
     /// The running call (LiveText): its own glyph, still, in `textSecondary`; the verb and the
@@ -163,14 +171,18 @@ public struct NWActivityLine: View {
 
 /// The thread's 10pt disclosure chevron (activity lines, thinking): one `chevron.right` that
 /// turns to point down as it opens, under whatever motion the expansion runs with. Under Reduce
-/// Motion nothing turns: the two positions cross-fade.
+/// Motion nothing turns: the two positions cross-fade. A row with nothing to open keeps the
+/// chevron's place but draws none (`shown: false`), so labels line up with rows that have one.
 struct NWThreadChevron: View {
     let isExpanded: Bool
+    var shown = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Group {
-            if reduceMotion {
+            if !shown {
+                Color.clear.frame(width: NWThreadMetrics.chevron, height: NWThreadMetrics.chevron)
+            } else if reduceMotion {
                 ZStack {
                     glyph.opacity(isExpanded ? 0 : 1)
                     glyph.rotationEffect(.degrees(90)).opacity(isExpanded ? 1 : 0)
