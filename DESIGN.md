@@ -159,6 +159,7 @@ And the rules that follow from them:
 | Terminal: ⌃\` shows the panel, ⌃⇧\` opens a tab, ⌘K clears, ⇧⌘[ ] switch tabs | **⌘J** shows or hides it; ⌘D opens a tab (+ opens the new terminal menu); no clear or tab-switch chord | Every rebindable chord needs ⌘, ⌘K is the palette, and a tab is one click away |
 | Terminal: the terminal on `bgBase` (Mac and iPad panels) | On `bgWindow`, the theme's terminal background | Terminal panes keep one surface everywhere |
 | TerminalTab · states: an exited tab stays, its output kept ("exited with an error; the output stays") | On the Mac a shell that exits closes its pane, so its tab goes at once; iOS shows the exited state until the host closes it | A process that exits on its own closes its pane (AGENTS.md › Sessions and views are separate) |
+| TerminalStates: "Any command line from the agent can be opened in a new tab, typed out but not run" (Run in terminal at the trailing end of a finished command's activity line) | No Run in terminal: an activity line, and its calls' context menus, offer nothing of the terminal's, on the Mac and in the iOS client | Removed 2026-09-26 at the user's request: no use in agent threads ("they need to be removed for stuff showing up in agent threads, theres no use") |
 | iPadTerminal: the key row reads esc, tab, ctrl, ⌥, ↑ ↓ ← →, `\|`, `~`, `/` | esc, tab, ctrl, ⌥, `\|`, `~`, `/`, `-`, then the arrows | A row that wraps in two on a phone keeps the arrows together (`TerminalKey`); `-` for flags |
 | Earlier boards, no longer on the canvas: a compose button beside the window controls and a "Jump to…" field above the sidebar tree | Neither comes back. The Search (⌘K) and Hide sidebar buttons today's boards draw there are the spec (Sidebar › Top bar) | ⌘N and the New thread destination start a thread, and the palette is a button, not a field |
 | Subagents, SubagentsDone and SubagentsQueue (the macOS page boards; the side-pane boards PaneStates, PaneBrowser, PaneArtifacts, PaneArtifactEdit and PaneFiles draw the same way): radius 10 cards and panes, 52pt toolbars and 48–52pt pane headers, 40pt card headers, 36pt file headers and 26pt file chips, 26–30pt buttons at radius 6–7, 13–14pt text, a 20pt `running` comment `+` and avatar, a comment's Edit at rest | The Night Watch boards' components (NWAgents, NWReview): radius 8, 44pt headers, 32pt file headers and 24pt chips, `s` (24pt) buttons, `ui` 12.5 text, a lantern avatar and an 18pt lantern `+` to match it, Edit and Delete on hover | The NW boards are the system; the radius, height and type scales, and Details on hover |
@@ -184,6 +185,7 @@ And the rules that follow from them:
 | SettingsSkillsBrowse, SkillsStates: a ranked row's 24-hour change ("+8.1K") and a description beside each result; "· updated Sep 19" in the preview | Installs only in the list, the description in the preview (from its SKILL.md), and no date | skills.sh's lists report neither a change nor a description, nor when a skill last changed |
 | SkillsStates: "Topics narrow any tab" | A topic is a search of skills.sh, most installed first, whatever tab is chosen | skills.sh's lists take no topic |
 | SettingsSkillsBrowse: "Pick from all 16…" | "Pick from the whole repo…" | A repository's size is known only once a host looks it up |
+| SettingsSkills, SkillsStates: one list of the skills in `~/.agents/skills`, global, no project skills (SkillsStates' Not yet) | The list holds every skill the agent loads, in groups: Installed (managed as drawn), then read-only From your pi setup (pi's agent directory and its settings' paths, with Show folder) and From pi packages (naming the package), a skill pi passes over for a same-named one marked "not used", and a note that a repository's own skills load in its threads. The filter, the counts and In every prompt count them all; Settings search finds the groups | The user's decision of 2026-09-26 ("Show all, read-only"): the composer's / menu listed skills the page didn't. Shepherd still never writes `~/.pi` |
 | SettingsExperiments: Learn from Missions, Threads, Automations | Threads and Automations | Missions aren't built |
 | SettingsExperiments: Hosts as a 190pt popup, "Follow Instructions"; a suggestion names "which hosts it applies to" and its chip retargets hosts | A note naming where lines go now, with Open Instructions; the chip retargets the file and reports the hosts; How it works says "for a root file, with the reason." | A line goes where Settings › Instructions sends This Mac's files, so a popup with one option would pick nothing (honest affordances) |
 | MobileInstructions, iPadSettingsInstructions: pi's root files, "Save once, written to each host's ~/.pi/agent/", the editor's path `~/.pi/agent/APPEND_SYSTEM.md`, "The agent reads these at the start of every session", a read order from "root AGENTS.md" | Shepherd's own copies: "Save once, written to every host", the host's instructions folder in the path, "The agent reads these at the start of every session Shepherd starts", the order's links named "Shepherd's AGENTS.md" and "Shepherd's APPEND_SYSTEM.md" | Shepherd never writes the user's `~/.pi/agent` (AGENTS.md › Gotchas) |
@@ -3137,13 +3139,10 @@ splits.
     disabled against an older host.
   - **Not built:** "New terminal on This Mac" (for a remote thread): a remote agent's layout is its
     host's, so a pane of this Mac has no place in it (see Known gaps).
-- **Run in terminal** (TerminalStates: "Any command line from the agent can be opened in a new
-  tab, typed out but not run"). A finished Run (bash) activity line of one command carries Run in
-  terminal at its trailing end (secondary, small: 24pt, a 13pt `terminal` glyph and the label in
-  12pt medium `textPrimary`), and each command's call row offers Run in Terminal in its context
-  menu. It opens a new tab in the thread's worktree on its host, the tab takes the keyboard, and
-  the command's whole line is typed after the prompt once the shell reads (`typeCommand(submit:
-  false)`; on a host, `typeInTerminal`), with nothing run.
+- **No Run in terminal** (a departure from TerminalStates: "Any command line from the agent can
+  be opened in a new tab, typed out but not run"). Removed 2026-09-26 at the user's request: no
+  use in agent threads. A finished command's activity line and its call rows' context menus
+  offer nothing of the terminal's.
 - **Keys** (Keyboard: "Shown in menus and tooltips"). The board's are Show or hide the terminal ⌃\`,
   New terminal ⌃⇧\`, Split right ⌘D, Maximize or restore ⇧⌘↩, Close the tab ⌘W, Clear ⌘K, and Next
   or previous tab ⇧⌘[ and ⇧⌘]. Shepherd's (see the departures and Keyboard): ⌘J shows or hides the
@@ -3690,18 +3689,22 @@ update, switch and removal goes to every host, and a host that is offline catche
 back. The page sits between Instructions and Remote in the nav, with `graduationcap`.
 
 - **Header:** "Skills", then "Instructions and scripts the agent picks up when a task calls for
-  them. Skills are global: every thread and automation on every host gets the same set." (capped at
+  them. Installed skills are global: every thread and automation on every host gets the same set.
+  Skills from your pi setup and pi packages are listed read-only." (capped at
   700pt), and trailing, bottom-aligned: Add from repo… (secondary, `plus`) and Browse skills.sh
   (primary, a glass). Both open sheets (below). The blocks are 18pt apart, the list and the 280pt
   rail 28pt apart.
-- **Toolbar:** a 240pt `NWSearchField` ("Filter installed skills", names and descriptions), then
+- **Toolbar:** a 240pt `NWSearchField` ("Filter skills", names and descriptions, and a package's name), then
   All · On · Updates with their counts ("All 8", "On 7", "Updates 2", an `NWSegmentedPicker`), a
   spacer, "Checked 2h ago" in 12 `textTertiary` (when the first host last looked for updates:
   "Checked just now", "Not checked yet"; it ages by the minute), and Update N (small secondary,
   `arrow.down.to.line`) while any skill has a newer commit.
 - **The list** (a card at radius 10, `bgWindow`, a `lineSubtle` line): a 30pt header row on
-  `bgSunken` with section labels (Skill, Source, Use, Updated) over rows at least 54pt, with 16pt
-  column gaps and sides, hairlines between (`SkillsListRow`, Equatable, lazy):
+  `bgSunken` with section labels (Skill, Source, Use, Updated), then groups, each under a 34pt
+  title row (`SkillsGroupTitle`: 12/600 `textSecondary`, its count in mono `textTertiary`, its
+  folder trailing in mono): **Installed** (the folder, "~/.agents/skills"), then the read-only
+  groups below. Rows are at least 54pt, with 16pt column gaps and sides, hairlines between
+  (`SkillsListRow`, Equatable, lazy). An Installed row:
   - the switch (a 30pt column): on or off on every host. Off moves the skill out of the folder pi
     reads, without deleting it.
   - the name in mono 13/600 (`textSecondary` while off) over its description in 12.5
@@ -3715,8 +3718,32 @@ back. The page sits between Instructions and Remote in the nav, with `graduation
     installs it; "Updating" shimmering while it goes (nothing spins).
   - a chevron: a click anywhere on the row opens its detail in place, below it, one row at a time
     (`bgHover` while open or hovered).
+  - "not used" (`NWTag`) after the name when pi uses a same-named skill from the user's pi setup
+    instead; its tooltip names where ("Not used: pi uses the one in ~/.pi/agent/skills.").
   - Empty: "No skills yet. Browse skills.sh, or add them from a repo.", "No skill matches “…”.",
-    "No skill is on.", "Every skill is up to date.", or "Reading skills…".
+    "No skill is on.", "Every skill is up to date.", or "Reading skills…". Filtered, an Installed
+    group left empty hides while another group keeps a row.
+- **The read-only groups** (the user's decision of 2026-09-26: every skill the agent can use shows
+  here, grouped by where it comes from; departures above). They are the first host's own (This Mac
+  on the Mac), read with pi's own loader (docs/skills.md › Outside skills), and Same skills on
+  every host never touches them:
+  - **From your pi setup:** pi's agent directory's `skills/` and the `skills` paths in pi's
+    settings. Its title has a lock in the switch column, "~/.pi/agent/skills" and Show folder
+    (small ghost; This Mac only).
+  - **From pi packages:** the skills the packages in pi's settings bring, each naming its package.
+  - A row (`PiSkillsListRow`, Equatable, lazy): no switch, the name in mono 13/600 over its
+    description, Source (the package, or the folder holding it: "~/.pi/agent/skills",
+    "~/code/team-skills"), Use as above, no Updated, no chevron. One pi passes over for a
+    same-named skill that comes first reads "not used", its description replaced by "Not used:
+    pi uses the one in ~/.agents/skills.". On This Mac its menu offers Open SKILL.md and Show in
+    Finder.
+  - Pi couldn't be asked: the group's title over the reason (`NWInlineProblem`: "Couldn’t find
+    pi, so the skills from your pi setup aren’t listed.", "…node…", "This pi is too old…", "pi
+    took too long…"). A remote first host too old to report them says so in the note row.
+  - Last, on `bgSunken`: "A repository’s own skills (.pi/skills, .agents/skills) load only in
+    that repository’s threads, so they aren’t listed here." (Settings is global.)
+  - Skills an extension adds while pi runs aren't known without running it, so they show only
+    in a thread's / menu.
 - **The detail** (`SkillDetail`, on `bgSunken` under a hairline, 62pt in, 14pt apart): three
   columns 28pt apart under section labels:
   - **Use it:** two radio options (`NWRadioOption`): Automatically, "The agent reads it when a
@@ -3741,9 +3768,10 @@ back. The page sits between Instructions and Remote in the nav, with `graduation
     skill. When a task matches one, it reads that skill’s files and follows them. Type /skill:name
     to use one on purpose." (12.5/1.55, the command in mono `textPrimary`), then the In every prompt
     card (radius 10, `bgWindow`): "In every prompt" with "~610 tokens" (mono), a 6pt bar
-    (`NWBudgetBar`) with a segment per skill that is on (`running` for an automatic one, a rule for a
-    /skill one), and "6 automatic skills. Full files load only when used." Its tooltip: "The context
-    meter counts this as part of the system prompt."
+    (`NWBudgetBar`) with a segment per skill the agent loads (`running` for an automatic one, a
+    rule for a /skill one), and "6 automatic skills. Full files load only when used." They count
+    every skill the agent loads, pi's own included, and not one pi passes over. Its tooltip: "The
+    context meter counts this as part of the system prompt."
   - **Options**, rows between hairlines, each a title (13/500) over a note (12/1.45) and its
     switch: Skills in the / menu ("List every skill as /skill:name in the composer’s slash menu.";
     off, the slash menu leaves skills out), Same skills on every host ("Installs, updates and
@@ -3755,8 +3783,8 @@ back. The page sits between Instructions and Remote in the nav, with `graduation
     by hand show up as Local."
 - **States:** a change shows at once; one a host refuses springs back, its reason inline over the
   list with Dismiss. Each host checks its skills for newer commits once a day.
-- **Not built yet:** project skills (`.agents/skills` inside a repository) and per-agent skill sets
-  (SkillsStates' Not yet).
+- **Not built yet:** per-agent skill sets (SkillsStates' Not yet). A repository's own skills are
+  listed nowhere in Settings (the note above); its threads' / menu shows them.
 
 #### Browse skills.sh and Add from repo (SettingsSkillsBrowse, SettingsSkillsSearch, SettingsSkillsRepo)
 
@@ -5264,6 +5292,14 @@ SettingsSkills): every host's agent skills, the same on every host, over `skills
   detail) comes back to the list with "Removed pdf from every host" and Undo in a banner. Without a
   host, or with none online, too old or unreadable, the page says so in place of the list, and
   reads every host again on pull to refresh.
+- **pi's own skills** (the user's decision of 2026-09-26, as on the Mac): under Installed, "From
+  your pi setup · 2" and "From pi packages · 1" (the lists' header) over read-only cards of the
+  first host's own pi's skills: rows at least 58pt with the name in mono 14/600, the description
+  at 12.5 `textTertiary` ("/skill only · …", or "Not used: pi uses the one in …" for one pi passes
+  over), and where it comes from in mono 11.5 `textTertiary` (the folder, or the package); no
+  switch, and a tap does nothing. Under them: "Read-only: from studio’s own pi, which Shepherd
+  never changes." and the note that a repository's own skills load only in its threads; why pi
+  couldn't be asked in `failed`; a host too old to report them says so.
 - **Search:** typing asks skills.sh (a quarter second after the last key): "9 skills for
   “postgres”" over a card of results, the name in mono 14/600 with the search's matches in
   `lanternText` and the Official seal, "supabase/agent-skills · 71K installs" under it, and a 96pt
@@ -7539,7 +7575,7 @@ the board focused over a scrim, its links playing) and Play, and pages with titl
 notes, design systems (the format, the store, installing one in a design, `system_read` and
 `system_write`, `design_check` against it, `<x-import>`, Night Watch as a built-in, the system
 page and its Re-sync, the Designs page's systems grid with "Build one from a repo", More ▸ Design
-systems, the system chip opening its page, and New design's system card read from the project;
+systems, the system chip opening its page, and New design's system card;
 docs/designs.md › Design systems), and Export (its sheet, the four formats and Attach to a thread;
 docs/designs.md › Export and import). Not built: the live link, Attach to a mission, Present
 mode's own board, Tweak snapping to an installed system's tokens, and every iPhone and iPad part;
@@ -7625,7 +7661,7 @@ tool work reads as activity lines.
 
 **Mac: built** (`DesignsPage`), except a card's "2 comments" and the Night Watch skeleton. The
 systems are the host's (docs/designs.md › Design systems › In the app); a design without one
-names its project. A system build still reading its project is a card with no swatches over
+names no system (designs stand alone, below: a card never names a project). A system build still reading its project is a card with no swatches over
 "dashboard-web · building" (not drawn). With no designs the page shows its header and the
 systems. Not drawn, and built plainly: each connected host that serves designs (`designs.v1`)
 lists its designs after This Mac's, under the host's name in the section label's style, in the
@@ -7678,11 +7714,14 @@ Remote). **iPhone: not built yet.**
 ### New design (DZStart)
 
 **Built** (`NewDesignPage`), without the Capture a page and From a screenshot cards (the design
-tool plan's decision 9; they come later). The one card is the design system, drawn chosen and
-found in the project: the system built from it ("acme-web", "design system · dashboard-web",
-"found in web/static/tokens.css"), else the project with the tokens file a read-only walk finds,
-else the project at its folder. Its menu (not drawn) picks another project or another system;
-Send installs the system in the new design. The composer card keeps `NWComposer`'s
+tool plan's decision 9; they come later). **Designs stand alone** (the user's decision,
+2026-09-26, superseding the plan's decision 10 that a design belongs to a project): New design
+picks no project, and a design's agent works in the design's own folder, in a reserved hidden
+space. The one card is the design system, drawn chosen: the one picked, else the system changed
+last among those built here, else Night Watch. It keeps naming the repo a system was read from,
+as information about the system ("acme-web", "design system · dashboard-web", "found in
+web/static/tokens.css"); choosing it picks no project. Its menu (not drawn) picks another
+system; Send installs the system in the new design. The composer card keeps `NWComposer`'s
 radius 8. New design (the destination's button, "Start a design", or Search's action)
 opens this page in the main column, with the sidebar showing and Designs selected.
 
@@ -7742,7 +7781,8 @@ are off the tokens). Opening a design fills the main column: the header, then th
   board is shown; Present again, or a click on the scrim, goes back to the canvas.
 - **The design system chip** (`NWDesignSystemChip`): 24pt, 8pt padding, radius 6, a 1px
   `lineSubtle` line, three of the system's colors as 8pt squares (radius 2, 2pt apart), then its
-  name in mono 11.5 `textSecondary`. Clicking it opens the system (Design systems, below).
+  name in mono 11.5 `textSecondary`. Clicking it opens the system (Design systems, below). A
+  design drawn in no system shows no chip: it has no project to name in its place.
 - **The canvas** fills the rest, on `bgBase` with a dot grid: 1px `lineStrong` dots every 22pt.
   It pans (the Pan tool) and zooms (the toolbar shows 42% on DZCanvas, 72% on DZTweak); the
   boards draw no zoom limits.
@@ -8237,7 +8277,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | QuestionStates | Composer, questions, and menus › Questions; Keyboard | Partial |
 | TerminalSplit | Terminal panes; Terminal panel (no header button: departures) | Built |
 | TerminalPane | Terminal panes; Terminal panel (Split panes, Send output to the agent; no header button: departures) | Built |
-| TerminalStates | Terminal panel (tab states, maximized, divider, new terminal menu, Run in terminal; no header toggle: departures) | Partial |
+| TerminalStates | Terminal panel (tab states, maximized, divider, new terminal menu; no header toggle or Run in terminal: departures) | Partial |
 | ThreadError | Thread › Errors (the card, folded); Status language | Built |
 | ThreadErrorDetails | Thread › Errors (Details) | Built |
 

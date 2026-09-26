@@ -206,10 +206,11 @@ struct DesignCommentsList: View {
 /// 11: until Present mode is drawn); Export opens its sheet (DZExport).
 struct DesignToolbar: View, Equatable {
     let name: String
-    let system: String
+    /// The design's system; nil while it is drawn in none (no chip: a design has no project).
+    let system: String?
     /// The system's colors on its chip.
     var swatches: [DesignSystemPresentation.Swatch] = []
-    /// Opens the system's page; nil while the design is drawn in its project's stylesheets.
+    /// Opens the system's page; nil while the system isn't one this host keeps.
     var openSystem: (() -> Void)?
     var leadingInset: CGFloat = 0
     var showSidebar: (() -> Void)?
@@ -240,7 +241,9 @@ struct DesignToolbar: View, Equatable {
                 }
                 .accessibilityLabel("Page")
             }
-            NWDesignSystemChip(system, colors: swatches.map { Color(light: $0.light, dark: $0.dark) }, action: openSystem)
+            if let system {
+                NWDesignSystemChip(system, colors: swatches.map { Color(light: $0.light, dark: $0.dark) }, action: openSystem)
+            }
             Button { screen?.togglePresent() } label: { Image(systemName: "play.fill") }
                 .buttonStyle(.nwIcon(isOn: screen?.presented != nil))
                 .disabled(screen?.canPresent != true)

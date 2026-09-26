@@ -42,7 +42,7 @@ Shepherd iOS (Xcode target) ── Core, Protocol, Remote, ShepherdUI, DesignSur
 | `ShepherdRemote` | `RemoteHostClient` (TCP client: handshake, reconnect, bounded writes), `NativeThreadStore` (the `@Observable` thread client used by local, remote, and iOS views; it derives the rows a thread draws once per change), the pure derivations (`NativeThreadPresentation`, `NativeTurnPresentation` for a turn's items, `NativeActivity` for activity lines and the changes card, `InstructionsText` and `InstructionsPresentation` for Settings ▸ Instructions, `SuggestionsPresentation` for its experiment), the Settings models the Mac and the iOS client share (`ClientSettings`, and `ClientSkills` with `SkillsText`, `SkillsPresentation` and `SkillsDirectory`, skills.sh's client, for Settings ▸ Skills), a host's designs (`RemoteDesignLibrary`, `RemoteDesignSource` and the per-host, per-design `RemoteDesignCache`; docs/designs.md › Remote), the Tweak tab's model the Mac and the iPad share (`DesignTweakModel` and `DesignTweakControls`), the iPad's live-board plan and design Recents (`DesignTouchPlan.swift`), and `ShepherdLog` | Core, Protocol |
 | `ShepherdUI` | Night Watch, the design system, in its own local package (`Packages/ShepherdUI`, macOS 26 and iOS 27): `ThemeDefinition` and Night Watch, `ThemeStore` (with the resolved `NWPalette` and `NWTypeRamp`), `Color.nw`, `Font.nw` and the bundled Geist faces, the `NW` scales, motion, elevation, `AgentState`, and the shared SwiftUI components by domain (Controls, Status, Containers, Navigation, Thread, Composer, Agents, Review, Dialogs, DesignTool: the design canvas, board frames, cards and header, and a design system's page parts). SwiftUI only; no app state | nothing |
 | `ShepherdPTYSpawn` | `shepherd_forkpty_exec`: the PTY child side in C (reset signal dispositions and mask, close stray descriptors, exec), so no Swift runs between fork and exec | nothing |
-| `ShepherdSessions` | `SessionServer`, the authoritative state store and every session. Agents run as `RPCSession` + `RPCThreadState`, panes as `PTYSession` + `SessionScreen`. Also `StateStore`, the extension socket, the remote listener, `PiSessionPreview` (a thread read from pi's session file while pi starts), `InstructionsStore` (Settings ▸ Instructions' files and history), `SuggestionsStore` (Suggested instructions), `SkillsStore` and `SkillsGit` (a host's skills in `~/.agents/skills`, installed from partial clones; docs/skills.md), `DesignStore` (each design's files and each board's last 20 versions, on its own queue; docs/designs.md), `DesignSystemStore` (design systems in `design-systems/`, on its own queue; built-ins registered by the app), and `PiModelCatalog`/`PiConfig` | Core, Protocol, Remote, ShepherdPTYSpawn, SwiftTerm |
+| `ShepherdSessions` | `SessionServer`, the authoritative state store and every session. Agents run as `RPCSession` + `RPCThreadState`, panes as `PTYSession` + `SessionScreen`. Also `StateStore`, the extension socket, the remote listener, `PiSessionPreview` (a thread read from pi's session file while pi starts), `InstructionsStore` (Settings ▸ Instructions' files and history), `SuggestionsStore` (Suggested instructions), `SkillsStore` and `SkillsGit` (a host's skills in `~/.agents/skills`, installed from partial clones; docs/skills.md), `PiSkillsLoader` (the skills pi loads from its own setup and packages, asked of pi's loader on node, listed read-only), `DesignStore` (each design's files and each board's last 20 versions, on its own queue; docs/designs.md), `DesignSystemStore` (design systems in `design-systems/`, on its own queue; built-ins registered by the app), and `PiModelCatalog`/`PiConfig` | Core, Protocol, Remote, ShepherdPTYSpawn, SwiftTerm |
 | `TerminalSurfaceKit` | The libghostty adapter for terminal panes (see its [NOTES.md](Sources/TerminalSurfaceKit/NOTES.md)). Knows nothing about agents or workspaces | GhosttyTerminal |
 | `DesignSurfaceKit` | The Design tool's board renderer, for macOS and iOS: `DesignSurface` (one design's sandbox, over its folder or over files in memory), `DesignBoardView` (one board's `WKWebView`: load, `replaceSource`, `snapshot`, events), the `shepherd-design://` scheme handler with its CSP and content rules, and Shepherd's clean-room board runtime on vendored React (docs/designs.md › The renderer). Reads a design's folder; writes nothing | Core, Protocol, WebKit |
 | `ShepherdApp` | Everything on screen: view model, selection, thread views, review, palette, settings, sheets, appearance, keybindings, embedded extensions, the pane-to-session bridge, and the remote host store | all of the above, Sparkle, tree-sitter |
@@ -280,7 +280,8 @@ authentication boundary ([SECURITY.md](SECURITY.md)).
   `designRead`, `designWriteBoard` and `designUpdateIndex`; the server answers them itself, only
   for the agent that draws the design, by reading and writing through `DesignStore` off its queue
   (`design`, `designBoard`, `designWritten`). `design_check` runs in the extension against the
-  project's CSS custom properties. It hands pi the design skill through `resources_discover` and
+  design's installed systems, else the CSS custom properties in its working folder (the design's
+  own folder: a design belongs to no project). It hands pi the design skill through `resources_discover` and
   adds the design's facts to each run's system prompt ([docs/designs.md](docs/designs.md)).
 
 The server owns PTYs but not layouts, so pane requests from an agent (and from remote clients,
@@ -327,7 +328,8 @@ The protocol is NDJSON (`RemoteMessage.swift`):
   loads, its versions; one change at a time)
 - Settings ▸ Skills (`skills.v1`: fetch, look up a repository, install, on or off, how it's used,
   remove and restore, check for updates, Update automatically), run on the server's skills queue
-  because they fetch with git
+  because they fetch with git; every answer carries the skills the host's pi loads from elsewhere
+  (`skills.pi.v1`)
 - the Design tool's designs (`designs.v1`, while the host's experiment is on): files by hash,
   uploads in resumable pieces, comments and writes through the host's own mutations, and pushed
   changes for the designs a client watches; the client renders the boards (docs/designs.md ›
@@ -381,6 +383,8 @@ are ignored, and new fields decode with defaults.
 - **Terminal-era agents:** the old `runtime` key is ignored, and those agents relaunch over RPC
   in the same pi session.
 - **Pre-autoname agents:** agents without `nameIsFinal` decode as final.
+- **Designs:** a design's `spaceID` from before designs stood alone is ignored (a system
+  build's reads as its `sourceSpaceID`), and a space without `holdsDesigns` decodes false.
 - **Worktree fields:** agents without `worktreeBranch`, `worktreeBase`, or `worktreePath` decode
   them as nil.
 - **Removed shell tabs:** `Tab` ignores the keys of removed shell tabs (`name`, `nameIsFinal`,
@@ -398,6 +402,9 @@ At startup the server then:
 - forgets designs whose `canvas.json` is gone, and clears an agent's `designID` or a design's
   `agentID` that names nothing (`reconcileDesigns`); which folders are gone is read on the
   design store's queue before the server's queue starts
+- keeps design agents in the reserved designs space (`settleDesignAgents`): one an older
+  state.json kept in a user space moves there with its layout and working directory, and one the
+  space holds for a design that is gone is dropped with its layout
 
 `LegacyTerminalAgents` also clears the old per-agent view preferences from UserDefaults.
 

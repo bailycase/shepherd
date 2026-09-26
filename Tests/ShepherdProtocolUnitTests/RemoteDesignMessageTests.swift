@@ -14,7 +14,7 @@ enum RemoteDesignSamples {
     ], order: [board, phone])
     static let snapshot = DesignSnapshot(designID: design, revision: 7, index: index,
                                          boards: [board: String(repeating: "a", count: 64), phone: String(repeating: "b", count: 64)])
-    static let record = Design(id: design, name: "Checkout funnel", spaceID: SpaceID(rawValue: "space"), agentID: AgentID(rawValue: "agent"),
+    static let record = Design(id: design, name: "Checkout funnel", agentID: AgentID(rawValue: "agent"),
                                systemNamespace: "acme-web", createdAt: 1_700_000_000_000, lastActiveAt: 1_700_000_100_000, boardCount: 2)
     static let system = DesignSystemSummary(info: DesignSystemInfo(namespace: "acme-web", title: "acme-web", revision: 3,
                                                                   createdAt: 1_700_000_000_000, sources: ["web/static/tokens.css"]),

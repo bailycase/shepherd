@@ -13,8 +13,8 @@ final class FakeSkillsClient: SkillsClient, @unchecked Sendable {
     var repo: RepoSkills?
     var refusesInstalls = false
 
-    init(_ skills: [InstalledSkill] = []) {
-        snapshot = SkillsSnapshot(directory: "~/.agents/skills", skills: skills)
+    init(_ skills: [InstalledSkill] = [], pi: PiSkills? = nil) {
+        snapshot = SkillsSnapshot(directory: "~/.agents/skills", skills: skills, pi: pi)
     }
 
     var requests: [String] { lock.withLock { log } }

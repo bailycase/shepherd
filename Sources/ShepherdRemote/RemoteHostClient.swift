@@ -183,7 +183,7 @@ public final class RemoteHostClient: @unchecked Sendable {
                     guard connectionGeneration == attempt else { throw RemoteHostClientError.disconnected }
                     established = true
                 }
-                return state
+                return Self.shown(state)
             } catch {
                 queue.sync {
                     if connectionGeneration == attempt { teardown(reason: "connection failed") }
@@ -871,6 +871,13 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
     }
 
+    /// A host's workspace as this client shows it. A client has no design screen, so a design's
+    /// agent would show as a thread: an older host that still sends designs loses them here
+    /// (docs/designs.md › Design agents and ordinary threads).
+    static func shown(_ state: ShepherdState) -> ShepherdState {
+        state.withoutDesigns
+    }
+
     private func handleLine(_ line: Data) {
         let reply: RemoteReply
         do {
@@ -889,7 +896,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case .error(let id, _, _):
             resumePending(id: id, with: reply)
         case .stateChanged(let state):
-            push(.state(state))
+            push(.state(Self.shown(state)))
         case .output(let sessionID, let data):
             if case .output(let last, var merged)? = pendingEvents.last, last == sessionID {
                 merged.append(data)

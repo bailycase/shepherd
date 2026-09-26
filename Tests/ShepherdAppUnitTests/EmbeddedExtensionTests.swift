@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSessions
 
 /// pi loads the copies the app writes from embedded Swift literals, and `installedPath()`
 /// rewrites the installed file whenever content differs — so a literal that drifts from its
@@ -26,6 +27,8 @@ struct EmbeddedExtensionTests {
         "shepherd-inspect.mjs": InspectExtension.extensionSource,
         "shepherd-instructions.ts": InstructionsExtension.extensionSource,
         "shepherd-design.ts": DesignExtension.extensionSource,
+        // Not an extension: Settings ▸ Skills runs it with node to ask pi for its skills.
+        "shepherd-pi-skills.mjs": PiSkillsLoader.scriptSource,
     ]
 
     /// The design skill the design extension hands pi: its canonical copy lives beside the

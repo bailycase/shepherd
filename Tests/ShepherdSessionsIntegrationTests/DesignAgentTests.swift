@@ -18,7 +18,7 @@ struct DesignAgentTests {
         drawer.agent.designID = designID
         let stranger = Fixture.agent(in: space, name: "worker")
         try await h.seed(Fixture.workspace([drawer, stranger], space: space))
-        _ = try await h.server.createDesign(Design(id: designID, name: "Checkout funnel", spaceID: space.id,
+        _ = try await h.server.createDesign(Design(id: designID, name: "Checkout funnel",
                                                    agentID: drawer.agent.id, createdAt: 1_000))
         await drainMainQueue()
         h.broadcasts.withValue { $0.removeAll() }

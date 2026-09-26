@@ -75,11 +75,10 @@ enum DesignPadFixtures {
     static func hosts(split: Bool = false) -> [FixtureHostData] {
         var hosts = FixtureData.hosts()
         guard let index = hosts.firstIndex(where: { $0.id == FixtureData.studio }) else { return hosts }
-        let space = FixtureData.shepherdSpace
-        let design = Design(id: designID, name: "Checkout funnel dashboard", spaceID: space.id, agentID: agentID,
+        let design = Design(id: designID, name: "Checkout funnel dashboard", agentID: agentID,
                             systemNamespace: "acme-web", createdAt: FixtureData.start,
                             lastActiveAt: Date().timeIntervalSince1970 * 1000 - 120_000, boardCount: 4)
-        let settings = Design(id: DesignID(rawValue: "design-settings"), name: "Settings redesign", spaceID: space.id,
+        let settings = Design(id: DesignID(rawValue: "design-settings"), name: "Settings redesign",
                               systemNamespace: "night-watch", createdAt: FixtureData.start, lastActiveAt: FixtureData.start, boardCount: 6)
         var agent = FixtureData.agent(agentID, "Checkout funnel dashboard", .done)
         agent.designID = designID

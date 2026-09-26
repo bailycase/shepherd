@@ -21,8 +21,8 @@ struct DesignPreviewTests {
     private static let windowSize = CGSize(width: 1440, height: 900)
 
     /// A workspace with the Design tool on, two projects, a plain thread, and two designs: the
-    /// checkout funnel (three directions and a phone) drawn by a live stub agent, and a phone-first
-    /// onboarding design.
+    /// checkout funnel (three directions and a phone) drawn by a live stub agent in the reserved
+    /// designs space, and a phone-first onboarding design. Designs belong to no project.
     private func designWorkspace() async throws -> (workspace: PreviewWorkspace, checkout: Design, agent: Agent) {
         let workspace = try PreviewWorkspace()
         workspace.settings.designToolEnabled = true
@@ -32,13 +32,15 @@ struct DesignPreviewTests {
         let web = Space(name: "acme-web", path: workspace.dir.path)
         let app = Space(name: "shepherd", path: workspace.dir.path)
         let (thread, threadTab) = try await workspace.agent("Fix the login redirect", in: web, order: 0, status: .working)
-        var (agent, tab) = try await workspace.agent("Checkout funnel dashboard", in: web, order: 1, live: true)
-        let checkout = Design(name: "Checkout funnel dashboard", spaceID: web.id, agentID: agent.id, createdAt: 1_000)
+        let designs = Space.designs()
+        var (agent, tab) = try await workspace.agent("Checkout funnel dashboard", in: designs, order: 0, live: true,
+                                                     cwd: workspace.dir.path)
+        let checkout = Design(name: "Checkout funnel dashboard", agentID: agent.id, createdAt: 1_000)
         agent.designID = checkout.id
-        try await workspace.seed(ShepherdState(spaces: [web, app], tabs: [threadTab, tab], agents: [thread, agent]))
+        try await workspace.seed(ShepherdState(spaces: [web, app, designs], tabs: [threadTab, tab], agents: [thread, agent]))
         _ = try await workspace.server.createDesign(checkout)
         try await DesignFixtures.draw(DesignFixtures.checkout, in: checkout.id, on: workspace.server, perRow: 3)
-        let onboarding = Design(name: "Onboarding", spaceID: app.id, createdAt: 2_000)
+        let onboarding = Design(name: "Onboarding", createdAt: 2_000)
         _ = try await workspace.server.createDesign(onboarding)
         let phone = [DesignFixtures.Board(path: "A-phone.dc.html", title: "A · phone", width: 390, height: 844, accent: "#be123c")]
         try await DesignFixtures.draw(phone, in: onboarding.id, on: workspace.server)
@@ -63,8 +65,12 @@ struct DesignPreviewTests {
         let (workspace, _, _) = try await designWorkspace()
         defer { workspace.stop() }
         let vm = workspace.vm
+        workspace.server.designSystems.register(NightWatchSystem.builtIn())
         vm.openNewDesign()
+        await vm.loadDesignSystems()
         #expect(vm.shownDestination == .newDesign)
+        #expect(vm.newDesign.blocker(vm) == "Describe the design first.", "no project to pick")
+        #expect(vm.newDesign.systemToInstall(vm) == "night-watch", "with none built here, Night Watch")
         try await Preview.render("app-window-new-design", size: Self.windowSize) {
             RootView(vm: vm)
         }
@@ -141,6 +147,83 @@ struct DesignPreviewTests {
         let record = try #require(screen.viewRecord)
         #expect(record.isValid && record.selected.map(\.description) == ["A.dc.html#7:1/1/0"])
         #expect(record.selectedBoards == ["A.dc.html", "B.dc.html"])
+    }
+
+    /// Zoom never changes what a board draws: A, selected, drawn by its own live view at the
+    /// canvas's fitted zoom (about 17%), at 100% and at 250%. A capture can't draw a live web view,
+    /// so each render shows the snapshot the live view takes of itself once it has drawn at that
+    /// zoom; the pictures of A match. The pointer on A's first step asks the live view what is
+    /// there, and the ring it draws is the same element at the same rect at every zoom.
+    @Test func designScreenZoomKeepsTheBoardsLayout() async throws {
+        var drawn: [CGImage] = []
+        var hovered: [DesignElementPick] = []
+        for percent in [17, 100, 250] {
+            let (workspace, checkout, _) = try await designWorkspace()
+            defer { workspace.stop() }
+            let vm = workspace.vm
+            #expect(vm.madeDesignRendering == nil)
+            vm.designLiveCap = 1
+            vm.selectSidebarRow(.design(checkout.id))
+            let screen = vm.designScreen(checkout.id)
+            let host = try #require(screen.host)
+            let a = try #require(DesignPath("A.dc.html"))
+            screen.select(a.rawValue)
+            let close = NWCanvasViewport(offset: CGPoint(x: NWDesignMetrics.fitLeading, y: NWDesignMetrics.fitFrameTop),
+                                         zoom: CGFloat(percent) / 100)
+            try await Preview.render("app-window-design-zoom-\(percent)", size: Self.windowSize, ready: {
+                guard screen.snapshot != nil else { return false }
+                if percent != 17, screen.viewport != close {
+                    screen.viewport = close
+                    screen.planLive()
+                }
+                let picked = screen.selectedElements.first
+                guard let view = host.liveView(a), view.zoom == screen.viewport.zoom else {
+                    return host.zooming && screen.isDrawn && picked != nil
+                }
+                // The first step's card, under the pointer: the live view names it, and it is
+                // selected so its ring stays drawn.
+                guard picked != nil else {
+                    if let hover = screen.hover {
+                        screen.setSelection([.init(board: a, element: hover)])
+                    } else {
+                        screen.pointer(NWCanvasPick(board: a.rawValue, point: CGPoint(x: 100, y: 110)))
+                    }
+                    return false
+                }
+                // Its snapshot is in; draw it rather than the view a capture can't see.
+                host.setZooming(true)
+                return false
+            }) {
+                RootView(vm: vm)
+            }
+            if percent == 17 { #expect(screen.viewport.zoom < 0.25, "the fitted canvas is at \(screen.viewport.zoom)") }
+            drawn.append(try #require(host.image(a)))
+            hovered.append(try #require(screen.selectedElements.first))
+        }
+        for (index, percent) in [100, 250].enumerated() {
+            let image = drawn[index + 1]
+            #expect(drawn[0].width == image.width && drawn[0].height == image.height)
+            let difference = try #require(Self.meanDifference(drawn[0], image))
+            #expect(difference < 2, "A drawn at 17% differs from A at \(percent)% by \(difference) per channel")
+            #expect(hovered[index + 1] == hovered[0], "the element under the pointer at \(percent)%: \(hovered[index + 1].rect) vs \(hovered[0].rect)")
+        }
+        #expect(hovered[0].id.tid == 7 && hovered[0].label == "Step 1 90%", "the first step's card: \(hovered[0])")
+    }
+
+    /// The mean per-channel difference of two images drawn at 320×200.
+    private static func meanDifference(_ a: CGImage, _ b: CGImage) -> Double? {
+        func pixels(_ image: CGImage) -> [UInt8]? {
+            var bytes = [UInt8](repeating: 0, count: 320 * 200 * 4)
+            guard let context = CGContext(data: &bytes, width: 320, height: 200, bitsPerComponent: 8, bytesPerRow: 320 * 4,
+                                          space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+            context.interpolationQuality = .high
+            context.draw(image, in: CGRect(x: 0, y: 0, width: 320, height: 200))
+            return bytes
+        }
+        guard let left = pixels(a), let right = pixels(b) else { return nil }
+        let total = zip(left, right).reduce(0) { $0 + abs(Int($1.0) - Int($1.1)) }
+        return Double(total) / Double(left.count)
     }
 
     /// Comments on the checkout funnel's A, made once its agent answers: the step card's comment

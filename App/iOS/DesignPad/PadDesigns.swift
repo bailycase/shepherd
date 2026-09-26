@@ -18,7 +18,7 @@ final class PadDesigns {
         var name: String
         /// "4 boards".
         var boards: String
-        /// The design system's namespace, or the project's name.
+        /// The design system's namespace; nil while it is drawn in none.
         var system: String?
         var hostName: String
         var lastActive: Double

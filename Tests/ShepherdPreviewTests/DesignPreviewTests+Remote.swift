@@ -32,7 +32,7 @@ extension DesignPreviewTests {
             let tab = ShepherdCore.Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
             var agent = Agent(id: id, name: "Checkout funnel dashboard", spaceID: space.id, tabID: tab.id, paneID: pane.id,
                               status: .idle, nameIsFinal: true)
-            let design = Design(name: "Checkout funnel dashboard", spaceID: space.id, agentID: agent.id, createdAt: 1_000)
+            let design = Design(name: "Checkout funnel dashboard", agentID: agent.id, createdAt: 1_000)
             agent.designID = design.id
             try await host.putState(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
             _ = try await host.createDesign(design)

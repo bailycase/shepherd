@@ -15,16 +15,9 @@ struct RemoteDesignTests {
     static let card = #"<div data-el="Checkout funnel" style="width: 390px; height: 844px"><h2>Checkout funnel</h2><p>48,210 people</p></div>"#
 
     /// A design with board A on its canvas, a stylesheet beside it, and an upload of `assetBytes`.
-    private func design(_ host: RemoteHost, agentID: AgentID? = nil, space: SpaceID? = nil,
-                        assetBytes: Int = 0) async throws -> DesignID {
-        let spaceID: SpaceID
-        if let space { spaceID = space } else {
-            let made = Space(name: "demo", path: host.host.dir.path)
-            try await host.server.addSpace(made)
-            spaceID = made.id
-        }
+    private func design(_ host: RemoteHost, agentID: AgentID? = nil, assetBytes: Int = 0) async throws -> DesignID {
         let id = DesignID()
-        _ = try await host.server.createDesign(Design(id: id, name: "Checkout funnel", spaceID: spaceID, agentID: agentID, createdAt: 1_000))
+        _ = try await host.server.createDesign(Design(id: id, name: "Checkout funnel", agentID: agentID, createdAt: 1_000))
         _ = try await host.server.writeDesignBoard(id, path: Self.board, source: DesignTests.board(root: Self.card))
         _ = try await host.server.updateDesignIndex(id, patch: .object(["boards": .object([Self.board.rawValue: .object([
             "x": .number(0), "y": .number(0), "w": .number(390), "h": .number(844), "title": .string("A · Funnel first"),
@@ -374,7 +367,7 @@ struct RemoteDesignTests {
         defer { host.stop() }
         host.server.setDesignsServed(true)
         let pi = try await PiAgent.launch(on: host.host)
-        let id = try await design(host, agentID: pi.agent.id, space: pi.agent.spaceID)
+        let id = try await design(host, agentID: pi.agent.id)
         _ = try await pi.ready()
         let raw = try await designClient(host)
         _ = try await answer(raw, 2, .watch(designIDs: [id]))
