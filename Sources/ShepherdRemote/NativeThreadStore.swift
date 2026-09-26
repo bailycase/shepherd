@@ -128,7 +128,7 @@ public final class NativeThreadStore {
     public private(set) var contextMeter: NativeContextMeter? { didSet { chromeVersion &+= 1 } }
     /// What the ring's details show, derived with it.
     public private(set) var contextDetails: NativeContextDetails?
-    @ObservationIgnored private var contextInputs: (context: NativeThreadContext?, model: String?, unset: Bool) = (nil, nil, true)
+    @ObservationIgnored private var contextInputs: (context: NativeThreadContext?, model: String?, replying: Bool, unset: Bool) = (nil, nil, false, true)
     /// Which compactions in the thread show what the agent kept (Show summary).
     public let compactions = NativeCompactionExpansion()
     public private(set) var supportedActions: Set<String> = [] { didSet { bothVersions() } }
@@ -420,15 +420,6 @@ public final class NativeThreadStore {
         let levels = NativeThinkingLevel.levels(value?.thinkingLevels)
         if levels != thinkingLevels { thinkingLevels = levels }
         if value?.stats != stats { stats = value?.stats }
-        // The meter and its details derive from the context and the model alone, so a streamed
-        // chunk (same context) formats nothing.
-        if contextInputs.context != value?.context || contextInputs.model != value?.model || contextInputs.unset {
-            contextInputs = (value?.context, value?.model, false)
-            let meter = NativeContextMeter(value?.context)
-            if meter != contextMeter { contextMeter = meter }
-            let details = value?.context.map { NativeContextDetails(context: $0, model: value?.model) }
-            if details != contextDetails { contextDetails = details }
-        }
         let actions = Set(value?.supportedActions ?? [])
         if actions != supportedActions { supportedActions = actions }
         let clipped = value?.clipped ?? false
@@ -437,6 +428,16 @@ public final class NativeThreadStore {
         if hostRunning != self.hostRunning { self.hostRunning = hostRunning }
         let running = loadError == nil && settledRunning
         if running != self.running { self.running = running }
+        // The meter and its details derive from the context, the model and whether the agent is
+        // replying alone, so a streamed chunk (same context) formats nothing.
+        if contextInputs.unset || contextInputs.context != value?.context || contextInputs.model != value?.model
+            || contextInputs.replying != running {
+            contextInputs = (value?.context, value?.model, running, false)
+            let meter = NativeContextMeter(value?.context, replying: running)
+            if meter != contextMeter { contextMeter = meter }
+            let details = value?.context.map { NativeContextDetails(context: $0, model: value?.model) }
+            if details != contextDetails { contextDetails = details }
+        }
         let thinking = showsThinking(running: running, dialogs: dialogs)
         if thinking != showsThinking { showsThinking = thinking }
         let userTurns = turns.count(where: \.isUser)

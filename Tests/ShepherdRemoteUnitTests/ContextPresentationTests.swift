@@ -43,6 +43,7 @@ struct ContextPresentationTests {
         let estimated = try #require(NativeContextMeter(compacted))
         #expect(estimated.ring == .estimated && estimated.tooltip == "about 23k of 200k" && estimated.tooltipNote == "exact after the next reply")
         #expect(estimated.helpText == "about 23k of 200k · exact after the next reply")
+        #expect(NativeContextMeter(compacted, replying: true)?.tooltipNote == "exact after this reply")
         var running = Self.context(tokens: 184_000)
         running.compacting = NativeCompactionRun(reason: .threshold, startedAt: 0, tokens: 184_000)
         let compacting = try #require(NativeContextMeter(running))
