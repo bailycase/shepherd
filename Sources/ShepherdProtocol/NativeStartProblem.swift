@@ -11,6 +11,8 @@ public struct NativeStartProblem: Codable, Hashable, Sendable {
         case extensionFailed
         /// The shell found no pi to run (exit 127 or 126).
         case engineMissing
+        /// Shepherd's pi home and the user's own pi overlap, so Shepherd starts no pi there.
+        case homeUnsafe
         /// pi didn't find the conversation it was resuming and would have started a new one under
         /// its id, so Shepherd stopped it before it wrote anything.
         case resumedAsNew

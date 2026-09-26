@@ -253,7 +253,7 @@ struct NativeThreadWireTests {
     }
 
     @Test func startProblemSpellingsAreStable() {
-        #expect(NativeStartProblem.Kind.allCases.map(\.rawValue) == ["notSignedIn", "extensionFailed", "engineMissing", "resumedAsNew", "exited"])
+        #expect(NativeStartProblem.Kind.allCases.map(\.rawValue) == ["notSignedIn", "extensionFailed", "engineMissing", "homeUnsafe", "resumedAsNew", "exited"])
     }
 
     /// Hosts and clients of different versions compare these; they must never be renamed.
