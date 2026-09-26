@@ -21,6 +21,8 @@ public enum DesignStoreError: Error, Hashable, Sendable, CustomStringConvertible
     /// A comment the store won't keep: why.
     case invalidComment(String)
     case tooManyComments
+    /// Pencil markup the store won't hand on, or a proposal it won't make: why.
+    case invalidMarkup(String)
     case noSuchVersion(DesignPath, Int)
     /// A folder that can't become a design: why (`DesignImport.Problem`, or its canvas).
     case importRefused(String)
@@ -42,6 +44,7 @@ public enum DesignStoreError: Error, Hashable, Sendable, CustomStringConvertible
         case .noSuchComment: return "no_such_comment"
         case .invalidComment: return "invalid_comment"
         case .tooManyComments: return "too_many_comments"
+        case .invalidMarkup: return "invalid_markup"
         case .noSuchVersion: return "no_such_version"
         case .importRefused: return "import_refused"
         case .io: return "io_failed"
@@ -65,6 +68,7 @@ public enum DesignStoreError: Error, Hashable, Sendable, CustomStringConvertible
         case .noSuchComment(let id): return "no comment \(id) on this design"
         case .invalidComment(let why): return why
         case .tooManyComments: return "a design keeps at most \(DesignComment.maxComments) comments"
+        case .invalidMarkup(let why): return why
         case .noSuchVersion(let path, let number): return "\(path) keeps no version \(number)"
         case .importRefused(let why): return why
         case .io(let message): return message
@@ -983,6 +987,141 @@ public final class DesignStore: @unchecked Sendable {
             try self.saveComments(&file, id)
             return comment
         }
+    }
+
+    /// Keeps several comments as one change, when the comments are still at `baseRevision`:
+    /// each checked as `addComment` checks one, all kept or none. A draft naming a proposal the
+    /// design already keeps a comment for isn't kept again; that comment is answered in its
+    /// place. Answers the comments in the drafts' order, and which of them are new.
+    func addComments(_ id: DesignID, drafts: [DesignCommentDraft], baseRevision: UInt64?,
+                     at date: Double) async throws -> (comments: [DesignComment], added: Set<UUID>) {
+        try await run {
+            var design = try self.load(id)
+            var file = try self.loadComments(id)
+            try Self.compare(baseRevision, file.revision)
+            guard !drafts.isEmpty, drafts.count <= DesignMarkupProposal.maxProposals else {
+                throw DesignStoreError.invalidComment("keep 1 to \(DesignMarkupProposal.maxProposals) comments at once")
+            }
+            let files = try self.files(of: id, &design)
+            var templates: [DesignPath: DesignTemplate] = [:]
+            var result: [DesignComment] = []
+            var added: Set<UUID> = []
+            for draft in drafts {
+                if let proposal = draft.proposal {
+                    guard DesignCommentDraft.isProposalID(proposal) else {
+                        throw DesignStoreError.invalidComment("a proposal's name is one line of at most 200 bytes")
+                    }
+                    if let kept = file.comments.first(where: { $0.proposal == proposal }) {
+                        result.append(kept)
+                        continue
+                    }
+                }
+                guard let text = DesignComment.text(draft.text) else {
+                    throw DesignStoreError.invalidComment("a comment is 1 to \(DesignComment.maxTextBytes) bytes of text")
+                }
+                guard file.comments.count < DesignComment.maxComments else { throw DesignStoreError.tooManyComments }
+                guard files[draft.board] != nil, design.index.boards[draft.board] != nil else {
+                    throw DesignStoreError.noSuchBoard(draft.board)
+                }
+                if templates[draft.board] == nil {
+                    let data: Data
+                    do { data = try Data(contentsOf: try self.fileURL(id, draft.board)) } catch { throw DesignStoreError.noSuchBoard(draft.board) }
+                    templates[draft.board] = DesignTemplate(board: String(decoding: data, as: UTF8.self))
+                }
+                guard let element = DesignElementID(board: draft.board.viewName, tid: draft.tid, path: draft.path),
+                      let template = templates[draft.board], template.element(for: element) != nil else {
+                    throw DesignStoreError.invalidComment("\(draft.board) has no element \(draft.tid):\(draft.path.map(String.init).joined(separator: "/"))")
+                }
+                let comment = DesignComment(number: file.nextNumber, board: draft.board, tid: draft.tid, path: draft.path,
+                                            label: template.labels[draft.tid],
+                                            target: draft.target.flatMap(DesignViewRecord.label),
+                                            rect: draft.rect.flatMap { $0.isValid ? $0 : nil },
+                                            text: text, author: .user, createdAt: date, proposal: draft.proposal)
+                file.comments.append(comment)
+                result.append(comment)
+                added.insert(comment.id)
+            }
+            if !added.isEmpty { try self.saveComments(&file, id) }
+            return (result, added)
+        }
+    }
+
+    // MARK: Pencil markup
+
+    /// `markup` as the design agent is handed it: checked against its grammar, each mark on a
+    /// board the canvas lists, its element one the board's source has now, and its label read
+    /// from that source rather than taken from the viewer's device.
+    func checkMarkup(_ id: DesignID, _ markup: DesignMarkup) async throws -> DesignMarkup {
+        try await run {
+            guard markup.isValid else {
+                throw DesignStoreError.invalidMarkup("markup is 1 to \(DesignMarkup.maxStrokes) marks, each on a board by its view name")
+            }
+            let design = try self.load(id)
+            let boards = Dictionary(design.index.boards.keys.map { ($0.viewName, $0) }, uniquingKeysWith: { a, _ in a })
+            var templates: [DesignPath: DesignTemplate] = [:]
+            var checked = markup
+            for index in checked.strokes.indices {
+                let stroke = checked.strokes[index]
+                guard let path = boards[stroke.board] else { throw DesignStoreError.invalidMarkup("the canvas has no board \(stroke.board)") }
+                guard let element = stroke.element else {
+                    checked.strokes[index].label = nil
+                    continue
+                }
+                let template = try self.template(id, path, &templates)
+                guard template.element(for: element) != nil else {
+                    throw DesignStoreError.invalidMarkup("\(path) has no element \(element)")
+                }
+                checked.strokes[index].label = template.labels[element.tid].flatMap(DesignViewRecord.label)
+            }
+            return checked
+        }
+    }
+
+    /// The design agent's proposals from the markup (`markup_propose`), as the chat offers them:
+    /// each element one a board of the canvas has now, its words a comment's, and its card's
+    /// name the element's `data-el` name, else its words. Named `<call>#<n>`.
+    func resolveProposals(_ id: DesignID, call: String, _ proposals: [DesignMarkupProposal]) async throws -> [DesignCommentDraft] {
+        try await run {
+            guard (1...DesignMarkupProposal.maxProposals).contains(proposals.count) else {
+                throw DesignStoreError.invalidMarkup("propose 1 to \(DesignMarkupProposal.maxProposals) comments")
+            }
+            let design = try self.load(id)
+            let boards = Dictionary(design.index.boards.keys.map { ($0.viewName, $0) }, uniquingKeysWith: { a, _ in a })
+            var templates: [DesignPath: DesignTemplate] = [:]
+            var sources: [DesignPath: String] = [:]
+            return try proposals.enumerated().map { index, proposal in
+                guard let element = DesignElementID(proposal.element), element.instance == nil else {
+                    throw DesignStoreError.invalidMarkup("\"\(proposal.element)\" is not an element id (File.dc.html#tid:path)")
+                }
+                guard let path = boards[element.board] else { throw DesignStoreError.invalidMarkup("the canvas has no board \(element.board)") }
+                let template = try self.template(id, path, &templates)
+                guard template.element(for: element) != nil else { throw DesignStoreError.invalidMarkup("\(path) has no element \(element)") }
+                guard let text = DesignComment.text(proposal.text) else {
+                    throw DesignStoreError.invalidMarkup("a proposed comment is 1 to \(DesignComment.maxTextBytes) bytes of text")
+                }
+                if sources[path] == nil { sources[path] = try self.boardText(id, path) }
+                let name = sources[path].flatMap { DesignStyleEdit.attribute("data-el", of: element.tid, in: $0) }
+                let label = template.labels[element.tid]
+                let proposalID = DesignMarkupProposals.proposalID(call: call, index: index)
+                guard DesignCommentDraft.isProposalID(proposalID) else { throw DesignStoreError.invalidMarkup("the call's id is too long") }
+                return DesignCommentDraft(board: path, tid: element.tid, path: element.path, label: label,
+                                          target: (name ?? label).flatMap(DesignViewRecord.label), text: text, proposal: proposalID)
+            }
+        }
+    }
+
+    /// A board's template, read once per call.
+    private func template(_ id: DesignID, _ path: DesignPath, _ cache: inout [DesignPath: DesignTemplate]) throws -> DesignTemplate {
+        if let template = cache[path] { return template }
+        guard let template = DesignTemplate(board: try boardText(id, path)) else {
+            throw DesignStoreError.invalidMarkup("\(path) has no template")
+        }
+        cache[path] = template
+        return template
+    }
+
+    private func boardText(_ id: DesignID, _ path: DesignPath) throws -> String {
+        do { return String(decoding: try Data(contentsOf: try fileURL(id, path)), as: UTF8.self) } catch { throw DesignStoreError.noSuchBoard(path) }
     }
 
     /// Adds a reply under a comment, when the comments are still at `baseRevision` (nil: any).

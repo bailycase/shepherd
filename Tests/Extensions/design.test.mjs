@@ -141,7 +141,8 @@ test("without its design, socket or agent the extension registers nothing", () =
 test("a design's agent gets the design and comment tools", async () => {
   await withDesign(() => null, async (pi) => {
     assert.deepEqual([...pi.tools.keys()].sort(),
-      ["board_write", "canvas_update", "comment_list", "comment_reply", "design_check", "design_read", "system_read", "system_write"]);
+      ["board_write", "canvas_update", "comment_list", "comment_reply", "design_check", "design_read", "markup_propose",
+        "system_read", "system_write"]);
   });
 });
 
@@ -395,6 +396,60 @@ test("the prompt tells the agent how a comment arrives and that only the viewer 
     await pi.handlers.before_agent_start[0]({ type: "before_agent_start", prompt: "hi", systemPromptOptions: options });
     assert.match(options.appendSystemPrompt, /design-comment markers is a comment the viewer pinned/);
     assert.match(options.appendSystemPrompt, /comment_reply\. Only the viewer resolves it\./);
+  });
+});
+
+// ---- Pencil markup -------------------------------------------------------------------
+
+const PROPOSALS = [
+  { board: "A-phone.dc.html", tid: 31, path: [1, 1, 2], label: "Steps Cart viewed 100.0%", target: "Steps list",
+    text: "Thicker bars on phone.", proposal: "call-7#0" },
+  { board: "A.dc.html", tid: 18, path: [1, 1, 1], target: "KPI row", text: "Show counts next to the percentages here too.",
+    proposal: "call-7#1" },
+];
+
+test("markup_propose sends one comment per mark and hands the chat Shepherd's checked proposals, fenced", async () => {
+  const answer = (frame) => frame.type === "designProposeComments"
+    ? { type: "designProposals", proposals: PROPOSALS }
+    : { type: "error", code: "unexpected", message: frame.type };
+  await withDesign(answer, async (pi, frames) => {
+    const proposals = [
+      { element: "A-phone.dc.html#31:1/1/2", text: "Thicker bars on phone." },
+      { element: "A.dc.html#18:1/1/1", text: "Show counts next to the percentages here too." },
+    ];
+    const result = await pi.tools.get("markup_propose").execute("call-7", { proposals });
+    assert.deepEqual(frames[0], { type: "designProposeComments", call: "call-7", proposals, id: frames[0].id, agentID: "a1", designID: "d1" });
+    const text = result.content[0].text;
+    assert.equal(firstLine(result), "Proposed 2 comments from the viewer's markup. They see each as a card and apply them or keep them as comments; an applied one reaches you as a comment.");
+    assert.match(text, /1\. on A-phone\.dc\.html#31:1\/1\/2 \(Steps list\): Thicker bars on phone\./);
+    // The chat reads the block; it sits inside the data fence with everything from the files.
+    const block = text.match(/<markup-proposals>\n(.*)\n<\/markup-proposals>/);
+    assert.deepEqual(JSON.parse(block[1]), { proposals: PROPOSALS });
+    const nonce = text.match(/<design-data nonce="([0-9a-f]{12})">/)[1];
+    assert.ok(text.indexOf("<markup-proposals>") > text.indexOf(`<design-data nonce="${nonce}">`));
+    assert.ok(text.endsWith(`</markup-proposals>\n</design-data nonce="${nonce}">`));
+    assert.deepEqual(result.details, { proposals: 2 });
+  });
+});
+
+test("markup_propose says what Shepherd refused, and proposes nothing empty", async () => {
+  const answer = () => ({ type: "error", code: "invalid_markup", message: "A.dc.html has no element A.dc.html#99:9" });
+  await withDesign(answer, async (pi, frames) => {
+    const tool = pi.tools.get("markup_propose");
+    await assert.rejects(tool.execute("c1", { proposals: [{ element: "A.dc.html#99:9", text: "x" }] }),
+      /A\.dc\.html has no element A\.dc\.html#99:9 \(invalid_markup\)/);
+    await assert.rejects(tool.execute("c2", { proposals: [] }), /propose at least one comment/);
+    assert.equal(frames.length, 1);
+  });
+});
+
+test("the prompt tells the agent how Pencil markup arrives and to change nothing before it is applied", async () => {
+  await withDesign(designAnswer({}), async (pi) => {
+    const options = {};
+    await pi.handlers.before_agent_start[0]({ type: "before_agent_start", prompt: "hi", systemPromptOptions: options });
+    assert.match(options.appendSystemPrompt, /design-markup markers is the viewer's Pencil markup/);
+    assert.match(options.appendSystemPrompt, /call markup_propose once with a comment per mark/);
+    assert.match(options.appendSystemPrompt, /Change no board until the viewer applies them\./);
   });
 });
 

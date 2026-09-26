@@ -10,6 +10,9 @@ extension RemoteProtocol {
     /// `designChanged` for the designs a client watches. A client lists it too: it reads those
     /// pushes and `capabilitiesChanged`.
     public static let designsCapability = "designs.v1"
+    /// The host takes Pencil markup (`RemoteDesignRequest.sendMarkup`) and applies the design
+    /// agent's proposals from it (`addProposedComments`). Offered with `designsCapability`.
+    public static let designMarkupCapability = "design.markup.v1"
     /// The most file bytes one design reply carries: files inline in `boards`, or one piece of a
     /// file or upload. Base64 keeps it well under the 1 MiB frame.
     public static let designChunkBytes = 256 * 1024
@@ -218,6 +221,14 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
     /// The designs this client shows: the host pushes `designChanged` for these alone. Replaces
     /// the last set.
     case watch(designIDs: [DesignID])
+    /// The viewer's Pencil markup (`designMarkupCapability`): checked against the boards'
+    /// sources, then handed to the design agent fenced as data, as a turn of its own.
+    case sendMarkup(designID: DesignID, markup: DesignMarkup)
+    /// The design agent's proposals from the markup, kept as comments at the comments'
+    /// revision (`designMarkupCapability`). `deliver` hands each to the agent as a comment is
+    /// ("Apply both"); without it they stay on the canvas as comments ("Keep as comments"). A
+    /// proposal the design already keeps a comment for is not kept twice.
+    case addProposedComments(designID: DesignID, drafts: [DesignCommentDraft], deliver: Bool, baseRevision: UInt64?)
 
     /// The design it touches, if one.
     public var designID: DesignID? {
@@ -225,7 +236,8 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
         case .list, .system, .watch: nil
         case .index(let id), .boards(let id, _, _), .file(let id, _, _, _), .asset(let id, _, _), .comments(let id),
              .addComment(let id, _, _), .replyToComment(let id, _, _, _), .resolveComment(let id, _, _, _),
-             .writeBoards(let id, _, _), .updateIndex(let id, _, _), .duplicateBoard(let id, _, _), .restoreVersions(let id, _, _):
+             .writeBoards(let id, _, _), .updateIndex(let id, _, _), .duplicateBoard(let id, _, _), .restoreVersions(let id, _, _),
+             .sendMarkup(let id, _), .addProposedComments(let id, _, _, _):
             id
         }
     }
@@ -233,8 +245,17 @@ public enum RemoteDesignRequest: Codable, Hashable, Sendable {
     /// Whether it changes the design (a write, a comment).
     public var writes: Bool {
         switch self {
-        case .addComment, .replyToComment, .resolveComment, .writeBoards, .updateIndex, .duplicateBoard, .restoreVersions: true
+        case .addComment, .replyToComment, .resolveComment, .writeBoards, .updateIndex, .duplicateBoard, .restoreVersions,
+             .sendMarkup, .addProposedComments: true
         default: false
+        }
+    }
+
+    /// The capability beside `designsCapability` the host must offer for it, if one.
+    public var capability: String? {
+        switch self {
+        case .sendMarkup, .addProposedComments: RemoteProtocol.designMarkupCapability
+        default: nil
         }
     }
 }
@@ -253,6 +274,11 @@ public enum RemoteDesignResult: Codable, Hashable, Sendable {
     case boardsWritten(RemoteDesignBoardsWrite)
     case duplicated(path: DesignPath, result: DesignWriteResult)
     case system(DesignSystemRead)
+    /// The markup reached the design agent's queue, or why it couldn't (the record is not
+    /// kept: send it again).
+    case markupSent(undelivered: String?)
+    /// The proposals as kept (each once), and why any didn't reach the design agent.
+    case proposedCommentsAdded([DesignComment], undelivered: String?)
     case ok
 }
 
@@ -263,4 +289,6 @@ public enum RemoteDesignCode {
     /// The file's hash moved since the client read it: read the index again.
     public static let staleFile = "stale_file"
     public static let noSuchFile = "no_such_file"
+    /// A markup record outside its grammar, or naming a board or element the design lacks.
+    public static let invalidMarkup = "invalid_markup"
 }

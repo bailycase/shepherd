@@ -47,7 +47,18 @@ enum RemoteDesignSamples {
         .system(namespace: "acme-web"),
         .watch(designIDs: [design]),
         .watch(designIDs: []),
+        .sendMarkup(designID: design, markup: markup),
+        .addProposedComments(designID: design, drafts: [proposed], deliver: true, baseRevision: 5),
+        .addProposedComments(designID: design, drafts: [proposed, draft], deliver: false, baseRevision: nil),
     ]
+
+    static let markup = DesignMarkup(strokes: [
+        DesignMarkupStroke(kind: .circle, board: phone.viewName, element: DesignElementID(board: phone.viewName, tid: 31, path: [1, 1, 2]),
+                           label: "Steps", note: "thicker bars on phone"),
+        DesignMarkupStroke(kind: .mark, board: board.viewName),
+    ])
+    static let proposed = DesignCommentDraft(board: phone, tid: 31, path: [1, 1, 2], label: "Steps", target: "Steps list",
+                                             text: "Thicker bars on phone.", proposal: "call-7#0")
 
     static let results: [RemoteDesignResult] = [
         .listing(RemoteDesignListing(designs: [
@@ -73,6 +84,10 @@ enum RemoteDesignSamples {
         .boardsWritten(RemoteDesignBoardsWrite(result: written, shas: ["A.dc.html": String(repeating: "c", count: 64)], versions: ["A.dc.html": 4])),
         .duplicated(path: DesignPath("A-copy.dc.html")!, result: written),
         .system(DesignSystemRead(summary: system, tokens: nil, readme: "# acme-web\n", files: ["tokens.css", "tokens.json"])),
+        .markupSent(undelivered: nil),
+        .markupSent(undelivered: "The design agent is starting."),
+        .proposedCommentsAdded([kept], undelivered: nil),
+        .proposedCommentsAdded([], undelivered: "The design has no agent."),
         .ok,
     ]
 }
@@ -99,21 +114,22 @@ struct RemoteDesignMessageTests {
     static func caseName(_ request: RemoteDesignRequest) -> String {
         switch request {
         case .list, .index, .boards, .file, .asset, .comments, .addComment, .replyToComment, .resolveComment, .writeBoards,
-             .updateIndex, .duplicateBoard, .restoreVersions, .system, .watch:
+             .updateIndex, .duplicateBoard, .restoreVersions, .system, .watch, .sendMarkup, .addProposedComments:
             Wire.caseName(request)
         }
     }
 
     static func caseName(_ result: RemoteDesignResult) -> String {
         switch result {
-        case .listing, .index, .files, .chunk, .comments, .comment, .written, .boardsWritten, .duplicated, .system, .ok:
+        case .listing, .index, .files, .chunk, .comments, .comment, .written, .boardsWritten, .duplicated, .system, .markupSent,
+             .proposedCommentsAdded, .ok:
             Wire.caseName(result)
         }
     }
 
     @Test func samplesCoverEveryCase() {
-        #expect(Set(S.requests.map(Self.caseName)).count == 15)
-        #expect(Set(S.results.map(Self.caseName)).count == 11)
+        #expect(Set(S.requests.map(Self.caseName)).count == 17)
+        #expect(Set(S.results.map(Self.caseName)).count == 13)
     }
 
     @Test(arguments: [
@@ -136,6 +152,22 @@ struct RemoteDesignMessageTests {
     @Test func bothSidesListDesigns() {
         #expect(RemoteProtocol.capabilities.contains(RemoteProtocol.designsCapability))
         #expect(RemoteProtocol.clientCapabilities.contains(RemoteProtocol.designsCapability))
+    }
+
+    /// Pencil markup and its proposals need the host to offer markup too; nothing else does.
+    @Test func onlyMarkupRequestsNeedTheMarkupCapability() {
+        #expect(RemoteProtocol.designMarkupCapability == "design.markup.v1")
+        #expect(RemoteProtocol.capabilities.contains(RemoteProtocol.designMarkupCapability))
+        for request in S.requests {
+            switch request {
+            case .sendMarkup, .addProposedComments:
+                #expect(request.capability == RemoteProtocol.designMarkupCapability)
+                #expect(request.writes)
+                #expect(request.designID == S.design)
+            default:
+                #expect(request.capability == nil)
+            }
+        }
     }
 
     /// A chunk of the largest size still fits one frame once base64-encoded.

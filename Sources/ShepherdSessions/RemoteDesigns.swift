@@ -102,6 +102,11 @@ struct RemoteDesignService: Sendable {
             return .system(try await server.designSystem(namespace))
         case .watch:
             return .ok
+        case .sendMarkup(let id, let markup):
+            return .markupSent(undelivered: try await server.sendDesignMarkup(id, markup: markup))
+        case .addProposedComments(let id, let drafts, let deliver, let base):
+            let outcome = try await server.addProposedDesignComments(id, drafts: drafts, deliver: deliver, baseRevision: base)
+            return .proposedCommentsAdded(outcome.comments, undelivered: outcome.undelivered)
         }
     }
 
