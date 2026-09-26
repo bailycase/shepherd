@@ -89,6 +89,9 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
 - **`SHEPHERD_SKILLS_DIR`** moves the skills folder Settings ▸ Skills manages (default
   `~/.agents/skills`, the folder pi reads skills from; docs/skills.md). Tests point it at a scratch
   folder; pi itself always reads `~/.agents/skills`.
+- **`SHEPHERD_MCP_CONFIG`** moves the MCP servers file (Settings ▸ MCP servers) away from
+  `~/.config/mcp/mcp.json`. Test isolation points it at a scratch file; setting it in the Dev
+  scheme keeps Dev's servers apart from the everyday app's.
 - **`SHEPHERD_THEME=night-watch-dark|night-watch-light`** forces an appearance at launch (the
   older `shepherd-dark` still means dark), which is handy for screenshots. Resetting settings
   returns to it.
@@ -179,8 +182,8 @@ Tests come in tiers, and the switch is `--filter` on target names.
 `signal`, `chdir`, or `umask`, or change any other global that a concurrent test could observe.
 
 - When a test bundle loads, before any test runs, `Tests/ShepherdTestIsolation` (linked through
-  `ShepherdTestKit`) points `SHEPHERD_SUPPORT_DIR`, `SHEPHERD_SKILLS_DIR`, `PI_CODING_AGENT_DIR`,
-  and `ZDOTDIR` at a scratch root for that process, and clears the agent-only `SHEPHERD_*` variables a run started
+  `ShepherdTestKit`) points `SHEPHERD_SUPPORT_DIR`, `SHEPHERD_SKILLS_DIR`, `SHEPHERD_MCP_CONFIG`,
+  `PI_CODING_AGENT_DIR`, and `ZDOTDIR` at a scratch root for that process, and clears the agent-only `SHEPHERD_*` variables a run started
   from a Shepherd agent inherits. It also puts a `bin/` first on `PATH`, holding stand-ins for
   `gh` and `pi` that refuse to run, and the scratch `ZDOTDIR`'s `.zshenv` and `.zlogin` keep it
   first in every zsh a test starts. Without them, a login shell from a minimal environment
