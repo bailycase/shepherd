@@ -437,10 +437,13 @@ The chat pane's Tweak tab edits the selection (the latest pick) directly
   - A data-props value goes to canvas.json as `{"tweaks": {"<board path>": {"<prop>": value}}}`
     (decision 13), clamped and checked by its editor; the board draws it as a prop, and agents
     keep the key as one they don't know.
-  - Each write names the revision it read. A stale one is read again, the element found by its
-    path, and the change made once more; a second failure says so under the header.
+  - Each write finds the element by its path in the source it splices (an agent's write can move
+    its tid) and names the revision it read. A stale one is read again and the change made once
+    more; a second failure says so under the header. A value that could load anything (`url()`,
+    `image-set()`) is never written or previewed.
 - **Reset** puts back what this session changed on the selection (each element's declared values
-  from before its first tweak, removed where it had none; the board's props). **Undo** (Edit ▸
+  from before its first tweak, removed where it had none; the board's props). An element a later
+  write moved is left alone rather than given another's values. **Undo** (Edit ▸
   Undo) restores the versions a tweak's write kept, only while the boards still hold what it
   wrote; Redo writes the tweak again.
 - **"Ask the agent instead…"** opens the Chat tab with its composer taking the keyboard; the
