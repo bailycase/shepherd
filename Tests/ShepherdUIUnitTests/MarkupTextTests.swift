@@ -31,4 +31,14 @@ struct MarkupTextTests {
             .plain("Runs "), .code("pi update --extensions"), .plain(" once a day."),
         ])
     }
+
+    /// A flag never splits after a hyphen ("--" / "model"); a space still breaks a line.
+    @Test(arguments: [
+        ("--model", "-\u{2060}-\u{2060}model"),
+        ("pi update --extensions", "pi update -\u{2060}-\u{2060}extensions"),
+        ("review_diff", "review_diff"),
+    ])
+    func codeBreaksOnlyAtItsSpaces(code: String, shown: String) {
+        #expect(NWMarkupText.unbroken(code) == shown)
+    }
 }
