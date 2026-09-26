@@ -12,13 +12,15 @@ public final class FakeMCPOAuth: @unchecked Sendable {
     public var mcpURL: URL { URL(string: base + "/mcp")! }
 
     /// `deny` makes the authorize page answer `error=access_denied`, as if the user chose Cancel.
-    public init(deny: Bool = false) throws {
+    /// `seed` is a sign-in already done: the access and refresh tokens it holds are valid.
+    public init(deny: Bool = false, seed: (access: String, refresh: String, scope: String)? = nil) throws {
         let path = Bundle.module.url(forResource: "fake-mcp-oauth", withExtension: "py")!.path
         process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = ["python3", path]
         var environment = ProcessInfo.processInfo.environment
         environment["FAKE_OAUTH_DENY"] = deny ? "1" : "0"
+        environment["FAKE_OAUTH_SEED"] = seed.map { "\($0.access) \($0.refresh) \($0.scope)" }
         process.environment = environment
         input = Pipe()
         let output = Pipe()
