@@ -50,13 +50,13 @@ final class PreviewWorkspace {
 
     /// An agent record and its one-pane layout; `live` binds a running stub pi to the pane.
     func agent(_ name: String, in space: Space, order: Int, status: AgentStatus = .idle, live: Bool = false,
-               branch: String? = nil) async throws -> (Agent, ShepherdCore.Tab) {
+               branch: String? = nil, cwd: String? = nil) async throws -> (Agent, ShepherdCore.Tab) {
         var session: SessionID?
         if live {
             session = try await server.createSession(params: CreateSessionParams(cwd: dir.path, command: StubPi.command, runtime: .rpc)).id
         }
         let id = AgentID()
-        let pane = LeafPane(sessionID: session, cwd: space.path, agentID: id)
+        let pane = LeafPane(sessionID: session, cwd: cwd ?? space.path, agentID: id)
         let tab = ShepherdCore.Tab(spaceID: space.id, order: order, layout: .leaf(pane))
         var agent = Agent(id: id, name: name, spaceID: space.id, tabID: tab.id, paneID: pane.id, status: status, nameIsFinal: true)
         agent.worktreeBranch = branch

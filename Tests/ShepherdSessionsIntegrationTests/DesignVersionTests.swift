@@ -18,7 +18,7 @@ struct DesignVersionTests {
         let h = try ScratchServer.fresh()
         let space = Fixture.space()
         try await h.seed(Fixture.workspace([Fixture.agent(in: space)], space: space))
-        let design = Design(name: "Checkout funnel", spaceID: space.id, createdAt: 1_000)
+        let design = Design(name: "Checkout funnel", createdAt: 1_000)
         _ = try await h.server.createDesign(design)
         return (h, design)
     }

@@ -40,7 +40,7 @@ struct DesignTests {
         let space = Fixture.space()
         let worker = Fixture.agent(in: space)
         try await h.seed(Fixture.workspace([worker], space: space))
-        let design = Design(name: "Checkout funnel", spaceID: space.id, createdAt: 1_000)
+        let design = Design(name: "Checkout funnel", createdAt: 1_000)
         _ = try await h.server.createDesign(design)
         await drainMainQueue()
         h.broadcasts.withValue { $0.removeAll() }
@@ -115,7 +115,7 @@ struct DesignTests {
         defer { h.stop() }
         let space = Fixture.space()
         try await h.seed(ShepherdState(spaces: [space]))
-        let design = Design(name: "  Checkout funnel ", spaceID: space.id, systemNamespace: "acme-web", createdAt: 1_000)
+        let design = Design(name: "  Checkout funnel ", systemNamespace: "acme-web", createdAt: 1_000)
 
         let snapshot = try await h.server.createDesign(design)
 
@@ -133,7 +133,7 @@ struct DesignTests {
         #expect(project.path.hasPrefix(h.dir.appendingPathComponent("designs").path), "designs live in the support directory")
     }
 
-    enum BadCreate: String, CaseIterable, Sendable { case unknownSpace, unknownAgent, sameID, noName }
+    enum BadCreate: String, CaseIterable, Sendable { case unknownSource, unknownAgent, sameID, noName }
 
     @Test(arguments: BadCreate.allCases)
     func aDesignThatCantBeMadeLeavesNothingBehind(_ bad: BadCreate) async throws {
@@ -141,19 +141,22 @@ struct DesignTests {
         defer { h.stop() }
         let space = Fixture.space()
         try await h.seed(ShepherdState(spaces: [space]))
-        let existing = Design(name: "Existing", spaceID: space.id, createdAt: 1)
+        let existing = Design(name: "Existing", createdAt: 1)
         _ = try await h.server.createDesign(existing)
         await drainMainQueue()
         h.broadcasts.withValue { $0.removeAll() }
         let before = h.server.state
         let onDisk = try? Data(contentsOf: h.stateURL)
 
-        var design = Design(name: "New", spaceID: space.id, createdAt: 1)
+        var design = Design(name: "New", createdAt: 1)
         let expected: SessionServerError
         switch bad {
-        case .unknownSpace:
-            design.spaceID = SpaceID()
-            expected = .noSuchSpace(design.spaceID)
+        case .unknownSource:
+            // A system build reads a project that must exist; a design has none.
+            let source = SpaceID()
+            design.buildsSystem = true
+            design.sourceSpaceID = source
+            expected = .noSuchSpace(source)
         case .unknownAgent:
             let agentID = AgentID()
             design.agentID = agentID
@@ -491,21 +494,6 @@ struct DesignTests {
         #expect(state.designs.first?.agentID == nil, "opening it starts a fresh agent")
     }
 
-    @Test func deletingADesignsSpaceKeepsTheDesign() async throws {
-        let (h, design, agent) = try await serverWithDesign()
-        defer { h.stop() }
-        try await h.server.setDesignAgent(design.id, agentID: agent.id)
-        await drainMainQueue()
-        h.broadcasts.withValue { $0.removeAll() }
-
-        try await h.server.deleteSpace(design.spaceID)
-
-        let state = try await committed(h)
-        #expect(state.agents.isEmpty && state.spaces.isEmpty)
-        #expect(state.designs.map(\.id) == [design.id] && state.designs.first?.agentID == nil)
-        #expect(try await h.server.designSnapshot(design.id).index.title == "Checkout funnel", "its files stay")
-    }
-
     // MARK: Revision pushes
 
     /// A watched design's write reaches the app once, on the main queue, for that design alone; a
@@ -513,7 +501,7 @@ struct DesignTests {
     @Test func aWriteToAWatchedDesignPushesItsRevisionOnce() async throws {
         let (h, design, _) = try await serverWithDesign()
         defer { h.stop() }
-        let other = Design(name: "Onboarding", spaceID: design.spaceID, createdAt: 2_000)
+        let other = Design(name: "Onboarding", createdAt: 2_000)
         _ = try await h.server.createDesign(other)
         let pushes = Locked<[DesignID]>([])
         h.server.onDesignRevision = { id in
@@ -591,8 +579,8 @@ struct DesignTests {
         let first = try ScratchServer.fresh()
         let space = Fixture.space()
         var worker = Fixture.agent(in: space)
-        let kept = Design(name: "Kept", spaceID: space.id, createdAt: 1)
-        let lost = Design(name: "Lost", spaceID: space.id, createdAt: 1)
+        let kept = Design(name: "Kept", createdAt: 1)
+        let lost = Design(name: "Lost", createdAt: 1)
         try await first.server.putState(Fixture.workspace([worker], space: space))
         _ = try await first.server.createDesign(kept)
         _ = try await first.server.createDesign(lost)
