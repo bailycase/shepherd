@@ -91,6 +91,11 @@ public final class SessionServer: @unchecked Sendable {
     static let outputLowWaterMark = 1 * 1024 * 1024
     static let maxOutputDeliveryBytes = 256 * 1024
 
+    /// Design extension requests in flight, by token: their connection waits here (server queue)
+    /// while the design store reads or writes.
+    private var designRequestClients: [Int: ExtensionConnection] = [:]
+    private var nextDesignRequest = 0
+
     private final class ExtensionConnection {
         let fd: Int32
         /// True for a remote Shepherd client on the TCP listener; false for a
@@ -1916,6 +1921,66 @@ public final class SessionServer: @unchecked Sendable {
             routeReviewRequest(.start(agentID: agentID, cwd: cwd, reference: reference), requestID: id, client: client)
         case .suggestInstruction(let id, let agentID, let line, let reason, let file):
             suggestInstruction(id: id, agentID: agentID, line: line, reason: reason, file: file, client: client)
+        case .designRead(let id, let agentID, let designID, let path):
+            designRequest(id: id, agentID: agentID, designID: designID, path: path, client: client) { server, path in
+                if let path { return .designBoard(id: id, board: try await server.designBoard(designID, path: path)) }
+                return .design(id: id, snapshot: try await server.designSnapshot(designID))
+            }
+        case .designWriteBoard(let id, let agentID, let designID, let path, let source, let baseRevision):
+            designRequest(id: id, agentID: agentID, designID: designID, path: path, client: client) { server, path in
+                guard let path else { throw DesignStoreError.invalidPath("", .empty) }
+                let result = try await server.writeDesignBoard(designID, path: path, source: source, baseRevision: baseRevision)
+                return .designWritten(id: id, result: result)
+            }
+        case .designUpdateIndex(let id, let agentID, let designID, let changes, let baseRevision):
+            designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client) { server, _ in
+                let result = try await server.updateDesignIndex(designID, patch: changes, baseRevision: baseRevision)
+                return .designWritten(id: id, result: result)
+            }
+        }
+    }
+
+    /// Server queue: one design extension request. Only the agent drawing the design may read or
+    /// write it, and a board path is checked against the grammar before anything is read. The
+    /// files are read and written on the design store's queue; the reply comes back here.
+    private func designRequest(id: Int, agentID: AgentID, designID: DesignID, path: String?, client: ExtensionConnection,
+                               _ body: @escaping @Sendable (SessionServer, DesignPath?) async throws -> ExtensionReply) {
+        guard let agent = store.state.agents.first(where: { $0.id == agentID }) else {
+            reply(.error(id: id, code: "no_such_agent", message: "no such agent"), to: client)
+            return
+        }
+        guard agent.designID == designID, store.state.designs.contains(where: { $0.id == designID }) else {
+            reply(.error(id: id, code: "not_your_design", message: "this agent does not draw design \(designID)"), to: client)
+            return
+        }
+        var boardPath: DesignPath?
+        if let path {
+            do { boardPath = try DesignPath.validate(path) } catch {
+                reply(.error(id: id, code: DesignStoreError.invalidPath(path, error).code,
+                             message: DesignStoreError.invalidPath(path, error).description), to: client)
+                return
+            }
+        }
+        // The connection stays on this queue; the task carries only a token for it.
+        nextDesignRequest += 1
+        let token = nextDesignRequest
+        designRequestClients[token] = client
+        Task { [weak self] in
+            guard let self else { return }
+            let answer: ExtensionReply
+            do {
+                answer = try await body(self, boardPath)
+            } catch let error as DesignStoreError {
+                answer = .error(id: id, code: error.code, message: error.description)
+            } catch let error as SessionServerError {
+                answer = .error(id: id, code: "design_refused", message: error.description)
+            } catch {
+                answer = .error(id: id, code: "design_failed", message: String(describing: error))
+            }
+            self.queue.async {
+                guard let client = self.designRequestClients.removeValue(forKey: token) else { return }
+                self.reply(answer, to: client)
+            }
         }
     }
 
@@ -2137,7 +2202,10 @@ public final class SessionServer: @unchecked Sendable {
              .message(let id, _),
              .agentRequest(let id, _, _, _),
              .agentResult(let id, _),
-             .suggestion(let id, _):
+             .suggestion(let id, _),
+             .design(let id, _),
+             .designBoard(let id, _),
+             .designWritten(let id, _):
             return id
         }
     }
