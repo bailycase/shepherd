@@ -33,7 +33,7 @@ struct AgentStartupTests {
     }
 
     @Test func aNewAgentsThreadShowsStartingWithoutAnErrorAndSendsOnceReady() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         try Self.holdPi(in: app.dir)
@@ -84,7 +84,7 @@ struct AgentStartupTests {
     /// What the user asked for shows the moment the agent appears, while its pi is held, and it
     /// stays one row, the same row, when the host's first snapshot carries it and when pi starts it.
     @Test func aNewAgentsOpeningPromptShowsWhilePiStartsAndStaysOneRow() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         try Self.holdPi(in: app.dir)
@@ -133,7 +133,7 @@ struct AgentStartupTests {
     /// respawns (a few at a time, `AgentStartQueue`). Each thread starts quietly, a thread switched
     /// away from and back to meanwhile starts again, and all come up with their history.
     @Test func restoredAgentsStartQuietlyAfterARelaunch() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         try Self.holdPi(in: app.dir)
@@ -175,7 +175,7 @@ struct AgentStartupTests {
     /// A launch starts every restored agent's pi without waiting for its layout to mount: the
     /// agent on screen first, alone while it boots; one selected meanwhile at once; then the rest.
     @Test func atLaunchTheAgentOnScreenStartsFirstAndEveryAgentStarts() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         try Self.holdPi(in: app.dir)
@@ -210,7 +210,7 @@ struct AgentStartupTests {
     /// A new agent's pi is its creation's to spawn: it never waits in the launch queue behind the
     /// restored agents still waiting their turn.
     @Test func aNewAgentsPiStartsAtOnceWhileRestoredAgentsWaitTheirTurn() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         try Self.holdPi(in: app.dir)
@@ -248,7 +248,7 @@ struct AgentStartupTests {
     /// The agent on screen at launch whose pi exits while it boots stops holding the queue at
     /// once: the others start then, not when its hold (`AgentStartQueue.aheadHold`) runs out.
     @Test func anAgentOnScreenWhosePiExitsAtLaunchLetsTheOthersStartAtOnce() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         let broken = app.dir.appendingPathComponent("broken")
@@ -286,7 +286,7 @@ struct AgentStartupTests {
     /// Only an agent's first start waits in the launch queue: a pane session made again once it
     /// has started (a view detached and remounted) binds at once.
     @Test func aPaneSessionMadeAgainAfterItsAgentStartedBindsAtOnce() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
@@ -306,7 +306,7 @@ struct AgentStartupTests {
     /// A thread on screen comes up the moment the server says its pi serves: this store never
     /// polls on its own, so only that signal can bring it up.
     @Test func aThreadComesUpTheMomentItsPiServesWithoutWaitingForAPoll() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         try Self.holdPi(in: app.dir)
@@ -351,7 +351,7 @@ struct AgentStartupTests {
     /// A relaunched agent's thread shows its history from pi's session file while pi boots,
     /// not live, and pi's first snapshot then lands on the same rows: the thread never empties.
     @Test func aRestoredThreadShowsItsHistoryFromDiskUntilPiServesTheSameRows() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         try Self.holdPi(in: app.dir)
@@ -395,7 +395,7 @@ struct AgentStartupTests {
     /// pi not installed, or a broken config: the launch ends in the real error (the pane's
     /// exit, then the agent retired as always), never an endless start.
     @Test func aPiThatExitsWhileStartingEndsInItsErrorNotAnEndlessStart() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         try Self.holdPi(in: app.dir, exit: 127)

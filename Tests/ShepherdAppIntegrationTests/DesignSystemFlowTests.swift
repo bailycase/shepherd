@@ -94,7 +94,7 @@ struct DesignSystemFlowTests {
     }
 
     @Test func buildingASystemFromARepoShowsItOnItsPageAndLeavesTheRepoAsItWas() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         let repo = try makeScratchRepo(files: Self.repoFiles)
@@ -183,7 +183,7 @@ struct DesignSystemFlowTests {
     /// New design picks no project: it starts in a system (Night Watch, with none built here) or
     /// the one picked, and its agent works in the design's own folder, in the designs space.
     @Test func newDesignPicksNoProjectAndInstallsTheSystemPicked() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         let repo = try makeScratchRepo(files: Self.repoFiles)
