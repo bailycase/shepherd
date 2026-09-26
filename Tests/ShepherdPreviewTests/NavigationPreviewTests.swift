@@ -352,6 +352,41 @@ extension PreviewTests {
         }
     }
 
+    /// The terminal boards' parts (TerminalPane, TerminalStates): the thread folded over a
+    /// maximized panel, a split tab's pane headers (the focused one lit), the bar beside a
+    /// selection, the new terminal menu, and the panel's edge while it is dragged.
+    @Test func terminalParts() async throws {
+        let size = CGSize(width: 760, height: 470)
+        try await Preview.render("terminal-parts", size: size) {
+            VStack(alignment: .leading, spacing: NW.Space.l) {
+                NWTerminalFoldedThread(title: "Add refund events", state: .idle, restoreShortcut: "⇧⌘↩") {}
+                HStack(spacing: 0) {
+                    NWTerminalPaneHeader(title: "go test", host: "build-01", isFocused: true)
+                    NWHairline(.vertical, color: .nw.lineStrong)
+                    NWTerminalPaneHeader(title: "docker compose logs -f ledger", host: "build-01", isFocused: false)
+                }
+                .frame(height: NWTerminalMetrics.paneHeaderHeight)
+                NWTerminalSelectionBar(add: {}, copy: {})
+                NWTerminalMenu {
+                    NWChangesMenuRow("New terminal in the worktree", subtitle: "payments on build-01", systemImage: "terminal",
+                                     trailing: .chord("⌘D"), tallHeight: NWTerminalMetrics.menuTallRowHeight) {}
+                    NWChangesMenuRow("Split right", systemImage: "rectangle.split.2x1", trailing: .chord("⌘D")) {}
+                    NWChangesMenuRow("Rename tab", systemImage: "pencil") {}
+                    NWChangesMenuRow("Kill process", systemImage: "xmark", enabled: false) {}
+                }
+                ZStack(alignment: .top) {
+                    NWTerminalTabBar([NWTerminalTab(id: "zsh", title: "zsh", host: "build-01")], selection: "zsh", select: { _ in },
+                                     close: { _ in }, newTab: {}) {}
+                    Color.nw.lantern.frame(height: AppLayout.terminalDividerDragLine).offset(y: -1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(24)
+            .frame(width: size.width, height: size.height, alignment: .topLeading)
+            .background(Color.nw.bgWindow)
+        }
+    }
+
     /// The window with the sidebar hidden: the toolbar runs under the window controls.
     @Test func sidebarHiddenHeader() async throws {
         let workspace = try PreviewWorkspace()

@@ -157,7 +157,6 @@ And the rules that follow from them:
 | NWComposer and Running: while pi runs, the placeholder "Queue a follow-up — sent when the turn ends" | The idle placeholder stays ("Follow up, or / for commands…"), as QueueSteer and QuestionAnswered draw it beside Stop | Dropped with the queue and steer redesign: ↩ queues or steers per Settings ▸ Agents, so "sent when the turn ends" would be wrong under Steer |
 | Terminal: ⌃\` shows the panel, ⌃⇧\` opens a tab, ⌘K clears, ⇧⌘[ ] switch tabs | **⌘J** shows or hides it; ⌘D opens a tab (+ opens the new terminal menu); no clear or tab-switch chord | Every rebindable chord needs ⌘, ⌘K is the palette, and a tab is one click away |
 | Terminal: the terminal on `bgBase` (Mac and iPad panels) | On `bgWindow`, the theme's terminal background | Terminal panes keep one surface everywhere |
-| Terminal: send output to pi | Not built | Out of scope for this pass |
 | TerminalTab · states: an exited tab stays, its output kept ("exited with an error; the output stays") | On the Mac a shell that exits closes its pane, so its tab goes at once; iOS shows the exited state until the host closes it | A process that exits on its own closes its pane (AGENTS.md › Sessions and views are separate) |
 | iPadTerminal: the key row reads esc, tab, ctrl, ⌥, ↑ ↓ ← →, `\|`, `~`, `/` | esc, tab, ctrl, ⌥, `\|`, `~`, `/`, `-`, then the arrows | A row that wraps in two on a phone keeps the arrows together (`TerminalKey`); `-` for flags |
 | Earlier boards, no longer on the canvas: a compose button beside the window controls and a "Jump to…" field above the sidebar tree | Neither comes back. The Search (⌘K) and Hide sidebar buttons today's boards draw there are the spec (Sidebar › Top bar) | ⌘N and the New thread destination start a thread, and the palette is a button, not a field |
@@ -3029,14 +3028,18 @@ splits.
   stays `textTertiary`); the others' header is `textTertiary`. Clicking a header focuses its pane.
   The header takes its height from the pane, so every pane of a tab keeps its grid whether its tab
   shows or not. A tab of one pane has no header (TerminalSplit): the tab names it.
-- **Send output to the agent** (TerminalPane; TerminalStates: "anything you select can go to the agent"). **Not
-  built yet.** Selecting text in a terminal shows a floating bar beside the selection: `bgRaised`
-  with a 1px `lineStrong` border, radius 9 on the board, 4pt padding and 4pt gaps, and the popover's
-  shadow. It holds **Add to message** (primary, 24pt: a `lantern` fill, a 13pt `plus` and the label
-  in 12pt semibold `textOnLantern`), which adds the selection to the thread's composer, and **Copy**
-  (ghost, 24pt: a 13pt copy glyph and the label in 12pt medium `textSecondary`). Both buttons are
-  radius 6 with 8pt side padding and 6pt between glyph and label. The selection itself reads as
-  selected lines on `running` at 13%.
+- **Send output to the agent** (TerminalPane; TerminalStates: "anything you select can go to the
+  agent"). Selecting text in a terminal of a thread's layout shows a floating bar beside the
+  selection (`NWTerminalSelectionBar`, `TerminalSelectionOverlay`): `bgRaised` with a 1px
+  `lineStrong` border, radius 9, 4pt padding and 4pt gaps, and the popover's shadow, hanging 4pt
+  under the selection's last line at the pane's trailing edge, 8pt in (over its first line where
+  there is no room below). It holds **Add to message** (primary, 24pt: a `lantern` fill, a 13pt
+  `plus` and the label in 12pt semibold `textOnLantern`), which adds the selection to the thread's
+  composer as a code block after what is typed there and gives the thread the keyboard, and
+  **Copy** (ghost, 24pt: a 13pt copy glyph and the label in 12pt medium `textSecondary`). Both
+  buttons are radius 6 with 8pt side padding and 6pt between glyph and label. The bar goes when
+  the selection does (the next click, key or drag) and after either button. The selection itself
+  reads as selected lines on `running` at 13%. A host's utility terminal (no thread) has no bar.
 - **New terminal menu** (`NWTerminalMenu`, `TerminalMenuLayer`; NewTerminalMenu: "+ or
   right-click"). + and a right-click (or ⌃-click) on a tab open a 290pt menu hanging 4pt under the
   strip from + or that tab: `bgRaised`, a 1px `lineStrong` border, radius 10, 6pt padding and the
@@ -7946,8 +7949,8 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | QuestionAnswered | Composer, questions, and menus › Questions (The record) | Built |
 | QuestionStates | Composer, questions, and menus › Questions; Keyboard | Partial |
 | TerminalSplit | Terminal panes; Terminal panel (no header button: departures) | Built |
-| TerminalPane | Terminal panes; Terminal panel (Split panes, Send output to pi; no header button: departures) | Partial |
-| TerminalStates | Terminal panel (no header toggle: departures) | Partial |
+| TerminalPane | Terminal panes; Terminal panel (Split panes, Send output to the agent; no header button: departures) | Built |
+| TerminalStates | Terminal panel (tab states, maximized, divider, new terminal menu, Run in terminal; no header toggle: departures) | Partial |
 
 **iOS**
 

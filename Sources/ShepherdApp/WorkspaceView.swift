@@ -479,7 +479,8 @@ struct PaneTreeView: View {
             agentID: thread?.agentID,
             agentName: thread?.agentName ?? "",
             piSessionID: thread?.piSessionID,
-            inspectingRunID: thread == nil ? nil : model.inspectingRunID
+            inspectingRunID: thread == nil ? nil : model.inspectingRunID,
+            threadAgentID: thread == nil ? model.thread?.agentID : nil
         )
     }
 }
@@ -554,6 +555,8 @@ struct PaneLeafModel: Equatable {
     var piSessionID: String? = nil
     /// The subagent the right pane inspects (`AgentLayoutView`): the thread yields keyboard focus.
     let inspectingRunID: String?
+    /// For a terminal pane, the agent whose thread its selection can be added to.
+    var threadAgentID: AgentID? = nil
 }
 
 struct PaneLeafView: View, Equatable {
@@ -598,7 +601,8 @@ struct PaneLeafView: View, Equatable {
                 LiveTerminalPane(
                     session: vm.sessions.session(for: pane, in: tab),
                     isFocused: model.isFocused,
-                    isRendering: model.isVisible
+                    isRendering: model.isVisible,
+                    addToMessage: model.threadAgentID.map { agentID in { [vm] in vm.addTerminalSelection($0, to: .local(agentID)) } }
                 )
             }
         }
@@ -663,6 +667,8 @@ struct LiveTerminalPane: View {
     /// False for a mounted-but-hidden pane, which keeps its surface but must
     /// stop running a render loop.
     var isRendering: Bool = true
+    /// Puts a selection in the thread's composer; nil where the layout has no thread.
+    var addToMessage: ((String) -> Void)? = nil
 
     var body: some View {
         // "starting session…" fades off the surface once it is live; a failed or exited
@@ -679,6 +685,9 @@ struct LiveTerminalPane: View {
                         PanePlaceholder(text: "starting session…")
                             .allowsHitTesting(false)
                             .nwTransition(.content)
+                    }
+                    if let addToMessage {
+                        TerminalSelectionOverlay(terminal: session.terminal, add: addToMessage)
                     }
                 }
             case .failed(let reason):
@@ -833,7 +842,7 @@ private struct RemotePaneTreeView: View {
                                                  in: geo.size, liveRatios: liveRatios)
             ZStack(alignment: .topLeading) {
                 ForEach(geometry.leaves.filter(\.shown), id: \.pane.id) { leaf in
-                    RemotePaneLeafView(vm: vm, connection: connection, ref: ref, tab: tab, leaf: leaf.pane)
+                    RemotePaneLeafView(vm: vm, connection: connection, ref: ref, tab: tab, leaf: leaf.pane, hasThread: true)
                         .frame(width: leaf.rect.width, height: leaf.rect.height)
                         .offset(x: leaf.rect.minX, y: leaf.rect.minY)
                 }
@@ -919,6 +928,9 @@ private struct RemotePaneLeafView: View {
     let ref: RemoteAgentRef
     let tab: Tab
     let leaf: LeafPane
+    /// The layout has the agent's thread (not a host's utility terminal): a terminal's
+    /// selection can go to it.
+    var hasThread = false
 
     /// What the leaf shows, for its cross-fade.
     private enum Showing: Equatable {
@@ -949,7 +961,8 @@ private struct RemotePaneLeafView: View {
                         .nwTransition(.content)
                 }
             } else if let terminal {
-                RemoteTerminalPane(pane: terminal.pane, isFocused: vm.remoteFocusedPaneID == leaf.id)
+                RemoteTerminalPane(pane: terminal.pane, isFocused: vm.remoteFocusedPaneID == leaf.id,
+                                   addToMessage: hasThread ? { [vm, ref] in vm.addTerminalSelection($0, to: .remote(ref)) } : nil)
                     .id(terminal.id)
                     .onDisappear { vm.remoteHosts.closePane(connection: connection, sessionID: terminal.id) }
                     .transition(.identity)
@@ -1012,6 +1025,8 @@ private struct RemoteAgentThreadPane: View {
 private struct RemoteTerminalPane: View {
     var pane: RemotePaneSession
     let isFocused: Bool
+    /// Puts a selection in the thread's composer; nil in a host's utility terminal.
+    var addToMessage: ((String) -> Void)? = nil
 
     var body: some View {
         // As `LiveTerminalPane`: placeholders fade, the surface never moves.
@@ -1023,6 +1038,9 @@ private struct RemoteTerminalPane: View {
                     if case .connecting = pane.phase {
                         PanePlaceholder(text: "attaching…").allowsHitTesting(false)
                             .nwTransition(.content)
+                    }
+                    if let addToMessage {
+                        TerminalSelectionOverlay(terminal: pane.terminal, add: addToMessage)
                     }
                 }
                 .background(Color.nw.bgWindow)
@@ -1047,5 +1065,45 @@ struct PanePlaceholder: View {
             .foregroundStyle(Color.nw.textTertiary)
             .padding(AppLayout.panePlaceholderPadding)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+/// The bar beside a terminal's selection (TerminalPane): Add to message puts it in the thread's
+/// composer, Copy copies it. It hangs under the selection's last line at the pane's trailing
+/// edge, or over its first line where there is no room below, and goes when the selection does.
+struct TerminalSelectionOverlay: View {
+    let terminal: AppTerminalModel
+    let add: (String) -> Void
+    @State private var selection: AppTerminalModel.Selection?
+    @State private var barHeight: CGFloat = NW.Height.controlS + 2 * NWTerminalMetrics.selectionBarPadding
+
+    var body: some View {
+        GeometryReader { geo in
+            if let selection {
+                NWTerminalSelectionBar(add: {
+                    add(selection.text)
+                    self.selection = nil
+                }, copy: {
+                    terminal.copySelection()
+                    self.selection = nil
+                })
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { barHeight = $0 }
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.trailing, NWTerminalMetrics.selectionBarInset)
+                .offset(y: Self.top(selection, barHeight: barHeight, in: geo.size.height))
+                .nwTransition(.overlay, edge: .top)
+            }
+        }
+        .nwAnimation(.overlay, value: selection == nil)
+        .onAppear { terminal.onSelectionChange = { selection = $0 } }
+        .onDisappear { terminal.onSelectionChange = nil }
+    }
+
+    /// Under the selection's last line, else over its first, never outside the pane.
+    static func top(_ selection: AppTerminalModel.Selection, barHeight: CGFloat, in height: CGFloat) -> CGFloat {
+        let gap = NWTerminalMetrics.selectionBarPadding
+        let below = selection.origin.y + CGFloat(selection.lineCount) * selection.lineHeight + gap
+        if below + barHeight <= height { return below }
+        return max(0, min(height - barHeight, selection.origin.y - barHeight - gap))
     }
 }

@@ -112,6 +112,28 @@ struct SurfaceAttachmentTracker {
 
 @MainActor
 public final class TerminalSurfaceModel: ObservableObject {
+    /// What is selected in the terminal: its text, where it starts in the surface view (points,
+    /// top-left origin) and a line's height, for a bar that hangs beside it.
+    public struct Selection: Equatable, Sendable {
+        public let text: String
+        public let origin: CGPoint
+        public let lineHeight: CGFloat
+
+        public init(text: String, origin: CGPoint, lineHeight: CGFloat) {
+            self.text = text
+            self.origin = origin
+            self.lineHeight = lineHeight
+        }
+
+        /// How many lines it covers.
+        public var lineCount: Int { max(1, text.split(separator: "\n", omittingEmptySubsequences: false).count) }
+    }
+
+    /// Called after anything that may have changed the selection (a click or drag ending, a key,
+    /// Select All) with what is selected now, nil with nothing selected.
+    public var onSelectionChange: ((Selection?) -> Void)? {
+        didSet { observeSelection() }
+    }
     public var maximumDropBytes: Int?
     public var onFileDropError: ((String) -> Void)?
     public var onFileDrop: (([URL]) -> Void)?
@@ -385,12 +407,42 @@ public final class TerminalSurfaceModel: ObservableObject {
             MainActor.assumeIsolated {
                 guard let self, self.attachment.isActive(id) else { return }
                 if self.session.readViewportText() != nil {
+                    self.observeSelection()
                     self.handleSurfaceReadiness(self.attachment.becameReady(id))
                 } else if remainingAttempts > 1 {
                     self.confirmSurfaceReady(id, remainingAttempts: remainingAttempts - 1)
                 }
             }
         }
+    }
+
+    /// The surface view of this model in any window, once it is in one.
+    private var surfaceView: AppTerminalView? {
+        for window in NSApp.windows {
+            if let view = TerminalFirstResponder.view(ownedBy: viewState, in: window) as? AppTerminalView { return view }
+        }
+        return nil
+    }
+
+    /// Hooks the current surface view's selection changes to `onSelectionChange`.
+    private func observeSelection() {
+        guard let view = surfaceView else { return }
+        guard onSelectionChange != nil else {
+            view.onSelectionChange = nil
+            return
+        }
+        view.onSelectionChange = { [weak self, weak view] in
+            guard let self, let view else { return }
+            self.onSelectionChange?(view.selectionSnapshot().map {
+                Selection(text: $0.text, origin: $0.origin, lineHeight: $0.lineHeight)
+            })
+        }
+    }
+
+    /// Copies the selection as Ghostty's own Copy does. False with nothing selected.
+    @discardableResult
+    public func copySelection() -> Bool {
+        surfaceView?.copySelectedTextToPasteboard() ?? false
     }
 
     /// Insert Finder-dropped files using Ghostty's native macOS convention:

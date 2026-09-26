@@ -201,3 +201,29 @@ struct TerminalPanelsTests {
         #expect(TerminalPanels.title(row: row, pane: pane) == title)
     }
 }
+
+/// Add to message (TerminalPane): where the bar hangs, and what the composer gets.
+@Suite("Terminal selection")
+@MainActor
+struct TerminalSelectionTests {
+    /// Under the selection's last line with room below, else over its first, inside the pane.
+    @Test(arguments: [
+        (CGFloat(40), "a\nb", CGFloat(400), CGFloat(40 + 2 * 18 + 4)),
+        (CGFloat(360), "a\nb", CGFloat(400), CGFloat(360 - 32 - 4)),
+        (CGFloat(10), "a", CGFloat(40), CGFloat(0)),
+    ] as [(CGFloat, String, CGFloat, CGFloat)])
+    func theBarHangsBesideTheSelection(originY: CGFloat, text: String, height: CGFloat, top: CGFloat) {
+        let selection = AppTerminalModel.Selection(text: text, origin: CGPoint(x: 20, y: originY), lineHeight: 18)
+        #expect(TerminalSelectionOverlay.top(selection, barHeight: 32, in: height) == top)
+    }
+
+    @Test(arguments: [
+        ("", "FAIL x\n", "```\nFAIL x\n```\n"),
+        ("Why does this fail?", "FAIL x", "Why does this fail?\n\n```\nFAIL x\n```\n"),
+        ("look:\n", "FAIL x", "look:\n\n```\nFAIL x\n```\n"),
+        ("keep", "\n", "keep"),
+    ])
+    func aSelectionJoinsTheDraftAsACodeBlock(draft: String, selection: String, result: String) {
+        #expect(ShepherdViewModel.draft(draft, adding: selection) == result)
+    }
+}

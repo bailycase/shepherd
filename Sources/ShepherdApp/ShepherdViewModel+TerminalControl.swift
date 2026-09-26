@@ -142,6 +142,31 @@ extension ShepherdViewModel {
         return "\(space ?? "The thread's folder") on This Mac"
     }
 
+    /// Add to message (TerminalPane): the selection goes into the thread's composer as a code
+    /// block after what is typed there, and the thread takes the keyboard.
+    func addTerminalSelection(_ text: String, to owner: SidePaneOwner) {
+        let store: NativeThreadStore
+        switch owner {
+        case .local(let agentID):
+            store = threadStores.store(for: agentID)
+            if let pane = state.agents.first(where: { $0.id == agentID })?.paneID { focusedPaneID = pane }
+        case .remote(let ref):
+            store = remoteThreadStores.store(for: ref)
+            if let pane = remoteHosts.connections.first(where: { $0.id == ref.hostID })?.state.agents
+                .first(where: { $0.id == ref.agentID })?.paneID { remoteFocusedPaneID = pane }
+        }
+        store.draft = Self.draft(store.draft, adding: text)
+    }
+
+    /// The draft with `selection` fenced after it, a blank line apart.
+    static func draft(_ draft: String, adding selection: String) -> String {
+        let body = selection.trimmingCharacters(in: .newlines)
+        guard !body.isEmpty else { return draft }
+        let lead = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : draft.hasSuffix("\n\n") ? draft
+            : draft.hasSuffix("\n") ? draft + "\n" : draft + "\n\n"
+        return lead + "```\n" + body + "\n```\n"
+    }
+
     private func agentID(of target: TerminalTarget) -> AgentID? {
         if let remote = target.remote { return remote.agentID }
         return state.agents.first { $0.tabID == target.key.tab }?.id
