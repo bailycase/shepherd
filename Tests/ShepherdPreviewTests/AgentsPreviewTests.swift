@@ -140,10 +140,11 @@ struct AgentsPreviewTests {
                         Self.dock(Self.tray(eight, shown: NativeSubagentTray.shownRows))
                     }
                     Sheet(title: "Answer → question dock", note: "Answer takes over the composer area, labelled with the subagent.", width: nil) {
-                        NWSubagentQuestionDock(name: "reviewer", question: "Rename the new token names, or replace the old ones everywhere?", options: [
-                            NWQuestionDockOption(number: 1, title: "Replace everywhere", detail: "Old names go; 31 call sites change.", recommended: true),
-                            NWQuestionDockOption(number: 2, title: "Rename the new ones", detail: "Keeps both; adds an alias."),
-                        ], answer: { _ in }, hide: {})
+                        QuestionDock(prompt: NativeQuestionPrompt(runID: "r", name: "reviewer",
+                                                                  question: "Rename the new token names, or replace the old ones everywhere?",
+                                                                  options: ["Replace everywhere (Recommended)\nOld names go; 31 call sites change.",
+                                                                            "Rename the new ones\nKeeps both; adds an alias."]),
+                                     enabled: true, hidden: false, focused: false, answer: { _ in }, setHidden: { _ in })
                     }
                 }
                 Text("Rows and the thread record").nwSectionLabel()

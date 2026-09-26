@@ -344,47 +344,27 @@ struct ThreadPreviewTests {
         }
     }
 
-    /// QuestionAsk, QuestionPick and QuestionStates on the Mac: the shared head over the agent's
-    /// own question in the composer card (one waiting, then two), the question hidden to its
-    /// line, and a subagent's question asking and picked.
+    /// The question dock (QuestionAsk, QuestionPick, QuestionStates) as the composer hosts it,
+    /// from each asker's presentation: pi's select asking, picked (no note: pi's select takes
+    /// none), one of two waiting with a timeout, and hidden to its line.
     @Test func questionStates() async throws {
-        func controls() -> some View {
-            Group {
-                Button {} label: { Image(systemName: "paperclip") }.buttonStyle(.nwIcon(size: NWComposerMetrics.chipHeight))
-                Button {} label: { HStack(spacing: 6) { Text("claude-opus").font(.nwMono(12)); NWChipChevron() } }.buttonStyle(.nwComposerChip())
-                Spacer(minLength: 8)
-                NWComposerActionButton(.send, enabled: false) {}
-            }
-        }
-        let select = NativeThreadDialog(id: "handle", kind: .select, title: "How should I handle Horizon’s uncommitted edits?",
-                                        options: ["Compare, keep what’s unique, then go through GitHub",
-                                                  "Leave Horizon alone and deploy from a clean checkout"])
-        let next = NativeThreadDialog(id: "hosts", kind: .select, title: "Which host should get the new Traefik config?",
-                                      options: ["build-01", "horizon"])
-        let options = [
-            NWQuestionDockOption(number: 1, title: "Replace everywhere", detail: "41 call sites move to the spec colors. One PR, bigger diff.",
-                                 recommended: true),
-            NWQuestionDockOption(number: 2, title: "Rename the new ones", detail: "New names get an nw prefix. Old screens keep the old ones."),
-        ]
-        let question = "Rename the new token names, or replace `Tokens.textSecondary` everywhere?"
-        let size = CGSize(width: 1400, height: 620)
+        let select = NativeThreadDialog(id: "handle", kind: .select, title: "How should I handle Horizon’s uncommitted edits?", options: [
+            "Compare, keep what’s unique, then go through GitHub (Recommended)\nDiff the 11 files against current master. Anything not merged yet goes on a new branch and PR. Nothing on Horizon is overwritten.",
+            "Leave Horizon alone and deploy from a clean checkout\nHorizon keeps its edits as they are. The deploy runs from a fresh clone of master beside it.",
+        ])
+        let timed = NativeThreadDialog(id: "hosts", kind: .select, title: "Which host should get the new Traefik config first?",
+                                       options: ["build-01\nTraefik 3.1", "horizon\nTraefik 3.0", "This Mac\nNo Traefik here"], timeout: 60_000)
+        let size = CGSize(width: 1400, height: 820)
         try await Preview.render("question-states", size: size) {
             HStack(alignment: .top, spacing: 32) {
                 VStack(alignment: .leading, spacing: 28) {
-                    NWComposer(isFocused: false) {
-                        QuestionPanel(dialog: select, enabled: true, answer: { _ in }, hide: {})
-                    } controls: { controls() }
-                    NWComposer(isFocused: false) {
-                        QuestionPanel(dialog: next, count: 2, enabled: true, answer: { _ in }, hide: {})
-                    } controls: { controls() }
-                    NWComposer(isFocused: false) {
-                        NWQuestionHiddenLine(.agent, question: select.title) {}
-                    } controls: { controls() }
+                    Self.dock(NativeQuestionPrompt(dialog: select))
+                    Self.dock(NativeQuestionPrompt(dialog: select), picks: NativeQuestionPicks(picked: 1))
+                    Self.dock(NativeQuestionPrompt(dialog: select), hidden: true)
                 }
                 .frame(width: 640)
                 VStack(alignment: .leading, spacing: 28) {
-                    NWSubagentQuestionDock(name: "reviewer", question: question, options: options, answer: { _ in }, hide: {})
-                    NWSubagentQuestionDock(name: "reviewer", question: question, options: options, chosen: 1, answer: { _ in }, hide: {})
+                    Self.dock(NativeQuestionPrompt(dialog: timed), count: 2, picks: NativeQuestionPicks(picked: 2))
                 }
                 .frame(width: 600)
                 Spacer(minLength: 0)
@@ -393,6 +373,76 @@ struct ThreadPreviewTests {
             .frame(width: size.width, height: size.height, alignment: .topLeading)
             .background(Color.nw.bgWindow)
         }
+    }
+
+    /// QuestionStates › Kinds of question from pi: a confirm (a yes or a no, with its message), a
+    /// short select side by side, an input and an editor (open questions), and a question that
+    /// cannot be answered here.
+    @Test func questionKinds() async throws {
+        let size = CGSize(width: 1400, height: 900)
+        try await Preview.render("question-kinds", size: size) {
+            HStack(alignment: .top, spacing: 32) {
+                VStack(alignment: .leading, spacing: 28) {
+                    Self.dock(NativeQuestionPrompt(dialog: NativeThreadDialog(id: "c", kind: .confirm, title: "Deploy to production?",
+                                                                              message: "This pushes main to the fleet.", timeout: 30_000)))
+                    Self.dock(NativeQuestionPrompt(dialog: NativeThreadDialog(id: "y", kind: .select, title: "Is this a regression from #231?",
+                                                                              options: ["Yes, fix it (Recommended)", "No"])))
+                    Self.dock(NativeQuestionPrompt(dialog: NativeThreadDialog(id: "x", kind: .select, title: "Pick the release notes to keep",
+                                                                              options: ["A", "B", "C"], unavailable: "external-editor")))
+                }
+                .frame(width: 600)
+                VStack(alignment: .leading, spacing: 28) {
+                    Self.dock(NativeQuestionPrompt(dialog: NativeThreadDialog(id: "i", kind: .input,
+                                                                              title: "How long should refund events stay in the outbox after they’re published?")),
+                              picks: NativeQuestionPicks(text: "30 days, same as finance’s replay window"))
+                    Self.dock(NativeQuestionPrompt(dialog: NativeThreadDialog(id: "i2", kind: .input, title: "Which branch should I deploy?",
+                                                                              placeholder: "main")))
+                    Self.dock(NativeQuestionPrompt(dialog: NativeThreadDialog(id: "e", kind: .editor, title: "Edit the commit message",
+                                                                              prefill: "fix(ledger): round refunds half-even\n\nMatches finance’s export.")))
+                }
+                .frame(width: 600)
+                Spacer(minLength: 0)
+            }
+            .padding(32)
+            .frame(width: size.width, height: size.height, alignment: .topLeading)
+            .background(Color.nw.bgWindow)
+        }
+    }
+
+    /// QuestionStates › from a subagent (and SubagentTray › Answer → question dock): named after
+    /// the subagent, with a note in the picked answer and Something else, since its answer is a
+    /// message to the run.
+    @Test func subagentQuestionStates() async throws {
+        let question = "Rename the new token names, or replace `Tokens.textSecondary` everywhere?"
+        let options = ["Replace everywhere (Recommended)\n41 call sites move to the spec colors. One PR, bigger diff.",
+                       "Rename the new ones\nNew names get an nw prefix. Old screens keep the old gray."]
+        let prompt = NativeQuestionPrompt(runID: "r", name: "reviewer", question: question, options: options)
+        let size = CGSize(width: 1400, height: 900)
+        try await Preview.render("question-subagent", size: size) {
+            HStack(alignment: .top, spacing: 32) {
+                VStack(alignment: .leading, spacing: 28) {
+                    Self.dock(prompt)
+                    Self.dock(prompt, picks: NativeQuestionPicks(picked: 1, note: "Keep the old names as aliases for a release."))
+                }
+                .frame(width: 600)
+                VStack(alignment: .leading, spacing: 28) {
+                    Self.dock(prompt, picks: NativeQuestionPicks(picked: 3, other: "Ask the design team which names they want first"))
+                    Self.dock(NativeQuestionPrompt(runID: "t", name: "tests", question: "Is this a regression from #231?", options: ["Yes, fix it", "No"]))
+                    Self.dock(NativeQuestionPrompt(runID: "w", name: "worker", question: "What should the new table be called?", options: nil))
+                }
+                .frame(width: 600)
+                Spacer(minLength: 0)
+            }
+            .padding(32)
+            .frame(width: size.width, height: size.height, alignment: .topLeading)
+            .background(Color.nw.bgWindow)
+        }
+    }
+
+    private static func dock(_ prompt: NativeQuestionPrompt, count: Int = 1, hidden: Bool = false,
+                             picks: NativeQuestionPicks? = nil) -> some View {
+        QuestionDock(prompt: prompt, count: count, enabled: true, hidden: hidden, focused: false, picks: picks,
+                     answer: { _ in }, setHidden: { _ in })
     }
 
     /// NWComposer board: idle, focused with text, running, with an attachment; and its menus.
