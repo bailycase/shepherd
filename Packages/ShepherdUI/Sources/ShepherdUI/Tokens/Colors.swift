@@ -64,6 +64,13 @@ public final class NWPalette: Sendable {
     public let knobOff: Color
     /// The switch and slider knob's small drop shadow.
     public let knobShadow: Color
+    /// The window controls where Shepherd draws them itself (the maximized side pane's rail,
+    /// ChangesWide): macOS's close, minimize and zoom colors in both appearances, and the glyph
+    /// that shows on them while hovered.
+    public let windowClose: Color
+    public let windowMinimize: Color
+    public let windowZoom: Color
+    public let windowControlGlyph: Color
     /// The context split's parts (ContextDetails): the system prompt and tools in
     /// `textTertiary`, instructions, messages, and tool results in the syntax keyword, function,
     /// and type colors. Swatches and bar segments only; never text.
@@ -125,6 +132,11 @@ public final class NWPalette: Sendable {
         knobOn = Color(light: "#ffffff", dark: "#ffffff")
         knobOff = Color(light: "#ffffff", dark: "#c9ccd1")
         knobShadow = Color(light: HexColor(red: 0, green: 0, blue: 0, alpha: 0.2), dark: HexColor(red: 0, green: 0, blue: 0, alpha: 0.3))
+        windowClose = Color(light: "#ff5f57", dark: "#ff5f57")
+        windowMinimize = Color(light: "#febc2e", dark: "#febc2e")
+        windowZoom = Color(light: "#28c840", dark: "#28c840")
+        let glyph = HexColor(red: 0, green: 0, blue: 0, alpha: 0.5)
+        windowControlGlyph = Color(light: glyph, dark: glyph)
         contextSystem = textTertiary
         contextInstructions = synKeyword
         contextMessages = synFunction

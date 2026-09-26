@@ -33,6 +33,15 @@ extension View {
         }
     }
 
+    /// A pinned header's fill (a Changes file header at the top of its list): while `pinned` it
+    /// casts a short shadow down onto the rows scrolling under it (ChangesSplit: 0 6 12 −8 black
+    /// at 60%). Cast by the fill, never the content, and clipped by the list at its top and sides.
+    public func nwPinnedBackground(_ fill: Color, pinned: Bool) -> some View {
+        background {
+            fill.shadow(color: pinned ? .nw.popoverShadow : .clear, radius: NWPinnedShadow.radius, y: NWPinnedShadow.offset)
+        }
+    }
+
     /// The keyboard focus ring for custom controls: running blue, 2pt wide, 2pt outside the
     /// control. Shown only while the control has keyboard focus (`isFocused`), never on click.
     /// Native controls keep the system's ring.
@@ -115,6 +124,12 @@ private struct NWCardModifier: ViewModifier {
             .clipShape(RoundedRectangle(cornerRadius: radius))
             .nwBorder(line ?? .nw.lineSubtle, radius: radius)
     }
+}
+
+/// The pinned header's shadow: short and close, so it reads as an edge rather than a lift.
+enum NWPinnedShadow {
+    static let radius: CGFloat = 6
+    static let offset: CGFloat = 6
 }
 
 private struct NWPopoverModifier: ViewModifier {

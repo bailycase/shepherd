@@ -11,6 +11,10 @@ extension AppLayout {
     static let settingsWindowStripHeight: CGFloat = 44
     /// Back to Shepherd: a 30pt row, not scaled by density.
     static let settingsBackRowHeight: CGFloat = 30
+    /// Back's chevron column: 10pt, 8 before the words.
+    static let settingsBackGlyphWidth: CGFloat = 10
+    /// Back to Shepherd to the search field: 10pt.
+    static let settingsSearchTop: CGFloat = 10
     static let settingsNavRowSpacing: CGFloat = NW.Space.xxs
     static let settingsContentWidth: CGFloat = 720
     static let settingsTop: CGFloat = 44
@@ -27,12 +31,18 @@ extension AppLayout {
     static let settingsAddressSize: CGFloat = 12
     /// Between the page header and each group.
     static let settingsGroupSpacing: CGFloat = NW.Space.xxl + NW.Space.xs
-    /// Density-scaled.
-    @MainActor static var settingsRowMinHeight: CGFloat { NW.Height.scaled(52) }
-    /// Text fields and popups in a row (the Controls board's field and popup widths).
-    static let settingsFieldWidth: CGFloat = 220
+    /// A row's content, density-scaled; the row adds 10pt above and below (`NWCardRowFrame`).
+    @MainActor static var settingsRowMinHeight: CGFloat { NW.Height.scaled(NWCardRowMetrics.minHeight) }
+    /// Settings ▸ Keyboard: a changed shortcut's Reset, in Geist 12.
+    static let shortcutResetSize: CGFloat = 12
+    /// The page's explanation: 13.5/1.5.
+    static let settingsExplanationLineHeight: CGFloat = 1.5
+    /// Text fields in a row (the Settings boards' 240pt, a port 100).
+    static let settingsFieldWidth: CGFloat = NWSettingsControlMetrics.fieldWidth
+    /// A popup's least width in a sheet (the Controls board's); on a Settings page a popup fits
+    /// its value.
     static let settingsPopupWidth: CGFloat = 200
-    static let settingsPortFieldWidth: CGFloat = 88
+    static let settingsPortFieldWidth: CGFloat = NWSettingsControlMetrics.portFieldWidth
     static let settingsFontPreviewWidth: CGFloat = 320
 
     // Wide pages (Instructions, Experiments): the page fills the detail area instead of the 720pt
@@ -198,7 +208,7 @@ extension AppLayout {
     static let experimentDescriptionSize: CGFloat = 12.5
     static let experimentDescriptionLineHeight: CGFloat = 1.5
     static let experimentDescriptionWidth: CGFloat = 620
-    /// Its options: rows at least 48pt, a 13/500 title over a 12/1.45 note, checkboxes 14pt apart.
+    /// Its options: rows whose content is at least 48pt (68 with their padding), a 13/500 title over a 12/1.45 note, checkboxes 14pt apart.
     static let experimentOptionMinHeight: CGFloat = 48
     static let experimentOptionTitleSize: CGFloat = 13
     static let experimentOptionNoteSize: CGFloat = 12

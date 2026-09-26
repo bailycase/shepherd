@@ -3,17 +3,29 @@ import SwiftUI
 /// A section label ("THIS MAC  19"): micro mono caps in tertiary, with an optional trailing
 /// count or accessory.
 public struct NWSectionHeader<Trailing: View>: View {
+    /// `settings` is the Settings boards' Geist label (`nwSettingsLabel()`).
+    public enum Style: Sendable { case standard, settings }
+
     let title: String
+    let style: Style
     @ViewBuilder let trailing: () -> Trailing
 
-    public init(_ title: String, @ViewBuilder trailing: @escaping () -> Trailing) {
+    public init(_ title: String, style: Style = .standard, @ViewBuilder trailing: @escaping () -> Trailing) {
         self.title = title
+        self.style = style
         self.trailing = trailing
     }
 
     public var body: some View {
         HStack(spacing: NW.Space.s) {
-            Text(title).nwSectionLabel().lineLimit(1)
+            Group {
+                if style == .settings {
+                    Text(title).nwSettingsLabel()
+                } else {
+                    Text(title).nwSectionLabel()
+                }
+            }
+            .lineLimit(1)
             Spacer(minLength: NW.Space.xs)
             trailing()
         }
@@ -23,8 +35,8 @@ public struct NWSectionHeader<Trailing: View>: View {
 }
 
 extension NWSectionHeader where Trailing == Text? {
-    public init(_ title: String, count: Int? = nil) {
-        self.init(title) {
+    public init(_ title: String, count: Int? = nil, style: Style = .standard) {
+        self.init(title, style: style) {
             count.map { Text("\($0)").font(.nw(.micro)).foregroundStyle(.nw.textTertiary) }
         }
     }
@@ -35,10 +47,12 @@ extension NWSectionHeader where Trailing == Text? {
 /// (Settings' cards are flat on `bgWindow`, drawn by their line alone).
 public struct NWGroupCard<Content: View>: View {
     let fill: Color?
+    let radius: CGFloat
     @ViewBuilder let content: () -> Content
 
-    public init(fill: Color? = nil, @ViewBuilder content: @escaping () -> Content) {
+    public init(fill: Color? = nil, radius: CGFloat = NW.Radius.m, @ViewBuilder content: @escaping () -> Content) {
         self.fill = fill
+        self.radius = radius
         self.content = content
     }
 
@@ -51,7 +65,7 @@ public struct NWGroupCard<Content: View>: View {
                 }
             }
         }
-        .nwCard(fill: fill)
+        .nwCard(radius: radius, fill: fill)
     }
 }
 
@@ -61,7 +75,8 @@ public enum NWCardRowStyle: Sendable {
     /// control.
     case standard
     /// The Settings boards' row: a 13.5/500 title over a 12.5/1.45 description with inline markup
-    /// (`NWMarkupText`), 2pt apart, 24pt before the control, and a problem led by an `xmark`.
+    /// (`NWMarkupText`), 2pt apart, 24pt before the control, and a problem led by an `xmark`; its
+    /// content at least 52pt, 10pt inside the row's top and bottom (so 72pt at the least).
     case settings
 }
 
@@ -124,9 +139,29 @@ public struct NWCardRow<Control: View>: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             control()
         }
-        .padding(.horizontal, NW.Space.xl)
-        .padding(.vertical, NW.Space.l)
-        .frame(minHeight: NW.Height.scaled(52))
+        .modifier(NWCardRowFrame(settings: settings))
+    }
+}
+
+/// A card row's padding and least height: the compact row is at least 52pt with 12pt above and
+/// below; a Settings row's content is at least 52pt, 10pt in from the top and the bottom.
+public struct NWCardRowFrame: ViewModifier {
+    let settings: Bool
+
+    public init(settings: Bool) { self.settings = settings }
+
+    public func body(content: Content) -> some View {
+        if settings {
+            content
+                .frame(minHeight: NW.Height.scaled(NWCardRowMetrics.minHeight))
+                .padding(.horizontal, NW.Space.xl)
+                .padding(.vertical, NWCardRowMetrics.settingsVerticalPadding)
+        } else {
+            content
+                .padding(.horizontal, NW.Space.xl)
+                .padding(.vertical, NW.Space.l)
+                .frame(minHeight: NW.Height.scaled(NWCardRowMetrics.minHeight))
+        }
     }
 }
 
@@ -161,6 +196,12 @@ public struct NWInlineProblem: View {
 
 /// The Settings style of `NWCardRow` and its problem line.
 public enum NWCardRowMetrics {
+    /// Before density.
+    public static let minHeight: CGFloat = 52
+    /// A Settings row's top and bottom padding, outside its 52pt content.
+    public static let settingsVerticalPadding: CGFloat = 10
+    /// The Settings boards' cards: radius 10.
+    public static let settingsCardRadius: CGFloat = 10
     /// A settings description (and its problem) is 12.5 on 1.45 lines.
     public static let settingsDescriptionLineHeight: CGFloat = 1.45
     public static let problemGlyphSize: CGFloat = 12
