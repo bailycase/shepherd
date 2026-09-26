@@ -24,6 +24,7 @@ public struct NWInlineComment: View {
     }
 
     public var body: some View {
+        let _ = NWRenderProbe.tick("review.comment")
         let nw = Color.nw
         VStack(alignment: .leading, spacing: NW.Space.s) {
             HStack(spacing: NW.Space.s) {
