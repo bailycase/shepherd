@@ -82,6 +82,8 @@ final class RemoteHostStore {
 
         var supportsInspection: Bool { client?.capabilities.contains(RemoteProtocol.agentInspectionCapability) == true }
         var supportsReviewCommit: Bool { client?.capabilities.contains(RemoteProtocol.reviewCommitCapability) == true }
+        /// The host answers `changes*` queries: its reviews use the Changes engine.
+        var supportsChanges: Bool { client?.capabilities.contains(RemoteProtocol.changesCapability) == true }
         /// The host serves automations over the protocol; older hosts show them read-only.
         var supportsAutomations: Bool { client?.capabilities.contains(RemoteProtocol.automationsCapability) == true }
         /// The host takes every level pi has in `createAgent` (older hosts: Off to High).

@@ -769,8 +769,33 @@ public struct NativeTurnChanges: Equatable, Sendable {
     public var files: [File]
     public var added: Int
     public var removed: Int
-    /// "4 files changed"
-    public var title: String { nativeCount(files.count, "file") + " changed" }
+    /// Every file the turn changed; `files` may list only the first of them (a recorded turn
+    /// carries twenty).
+    public var fileCount: Int
+    /// The turn the host recorded (`ChangesTurn`): its Undo and Redo, and the scope Review opens.
+    /// nil for a card drawn from the turn's edit calls alone (an older host, no repository).
+    public var turnID: UUID?
+    public var undone: Bool
+    public var canUndo: Bool
+    public var canRedo: Bool
+
+    public init(files: [File], added: Int, removed: Int, fileCount: Int? = nil, turnID: UUID? = nil, undone: Bool = false,
+                canUndo: Bool = false, canRedo: Bool = false) {
+        self.files = files
+        self.added = added
+        self.removed = removed
+        self.fileCount = max(fileCount ?? files.count, files.count)
+        self.turnID = turnID
+        self.undone = undone
+        self.canUndo = canUndo
+        self.canRedo = canRedo
+    }
+
+    /// "Edited 4 files"; "Undid the agent’s edits to 4 files" once undone (ChangesCard).
+    public var title: String {
+        let files = nativeCount(fileCount, "file")
+        return undone ? "Undid the agent’s edits to \(files)" : "Edited \(files)"
+    }
 }
 
 /// Files the calls edited or wrote, in first-touched order, with summed line counts. A write

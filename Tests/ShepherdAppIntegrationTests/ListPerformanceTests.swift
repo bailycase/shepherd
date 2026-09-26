@@ -611,7 +611,7 @@ struct ListPerformanceTests {
         defer { window.close() }
         // A chip is at least its letter, a short name, and padding: about a dozen fit 600pt.
         #expect(rows["review.fileChip", default: 0] <= 24, "\(rows)")
-        #expect(rows["diff.line", default: 0] <= 2 * Int(800 / NW.Height.rowCompact), "\(rows)")
+        #expect(rows["diff.line", default: 0] <= 2 * Int(800 / NWDiffMetrics.lineHeight), "\(rows)")
     }
 
     /// Every line can be commented on, but a line builds its `+` only while it is hovered.
@@ -695,7 +695,7 @@ struct ListPerformanceTests {
         defer { window.close() }
         try await eventuallyOnMain("the thread to load") { store.ready }
         try await eventuallyOnMain("every file to be highlighted", timeout: .seconds(120)) { model.highlights.count == files.count }
-        model.expandFile(files[5].id)
+        model.revealWholeFile(files[5].id)
         ListPerf.settle(window)
         let scroll = try #require(ListPerf.scrollView(in: window, trailing: true))
         // Past the first file's comments, then into the 3,000-line file.
@@ -704,18 +704,69 @@ struct ListPerformanceTests {
         let step: CGFloat = 88
         var moved: CGFloat = 0
         let rows = ListPerf.counting { moved = ListPerf.scroll(window, scroll, step: step, steps: 100).distance }
-        let linesIntoView = Int(moved / NW.Height.rowCompact)
+        let linesIntoView = Int(moved / NWDiffMetrics.lineHeight)
         #expect(moved > 5000, "the diff scrolled \(moved) pt")
         #expect(rows["diff.row", default: 0] <= linesIntoView + 10, "\(linesIntoView) lines came into view: \(rows)")
         #expect(rows["review.comment", default: 0] == 0, "\(rows)")
         #expect(rows.keys.filter { $0.hasPrefix("thread.") || $0.hasPrefix("composer.") }.isEmpty, "the thread beside it redrew: \(rows)")
     }
 
+    /// Side by side (the pane at 900pt and up), scrolling builds one row per pair coming into
+    /// view: a pair is one row, never two lines' worth.
+    @Test func scrollingASplitDiffBuildsOnlyThePairsComingIntoView() throws {
+        let files = ListFixtures.realisticReview()
+        let model = ListFixtures.reviewModel(files)
+        let window = OffscreenWindow(size: CGSize(width: 1040, height: 800), dark: true, ReviewPaneContent(model: model))
+        defer { window.close() }
+        ListPerf.settle(window)
+        #expect(model.layout == .split)
+        let scroll = try #require(ListPerf.scrollView(in: window, trailing: true))
+        _ = ListPerf.scroll(window, scroll, step: 400, steps: 5)
+
+        var moved: CGFloat = 0
+        let rows = ListPerf.counting { moved = ListPerf.scroll(window, scroll, step: 88, steps: 60).distance }
+        let pairsIntoView = Int(moved / NWDiffMetrics.lineHeight)
+        #expect(moved > 3000, "the diff scrolled \(moved) pt")
+        #expect(rows["diff.row", default: 0] <= pairsIntoView + 10, "\(pairsIntoView) rows came into view: \(rows)")
+        #expect(rows["review.toolbar", default: 0] == 0 && rows["review.fileChip", default: 0] == 0, "the chrome stays: \(rows)")
+    }
+
+    /// Opening and closing the pane's menus (scope, base, options) draws the menu and nothing
+    /// under it: the diff, its headers and the strip stay.
+    @Test func openingTheChangesMenusRedrawsNoDiffRows() throws {
+        let files = ListFixtures.realisticReview()
+        let model = ListFixtures.reviewModel(files)
+        let window = OffscreenWindow(size: CGSize(width: 1040, height: 800), dark: true, ReviewPaneContent(model: model))
+        defer { window.close() }
+        ListPerf.settle(window)
+
+        let rows = ListPerf.counting {
+            for menu in [ChangesMenu.scope, .commits, .options, .base] {
+                ListPerf.time(window) { model.toggleMenu(menu) }
+                ListPerf.time(window) { model.closeMenu() }
+            }
+        }
+        #expect(rows["diff.row", default: 0] == 0 && rows["diff.line", default: 0] == 0, "\(rows)")
+        #expect(rows["review.fileHeader", default: 0] == 0 && rows["review.fileChip", default: 0] == 0, "\(rows)")
+    }
+
+    /// ⌥U builds the rows on screen in the other layout, not the whole diff.
+    @Test func switchingSplitAndUnifiedBuildsOnlyTheRowsOnScreen() throws {
+        let files = ListFixtures.realisticReview()
+        let model = ListFixtures.reviewModel(files)
+        let window = OffscreenWindow(size: CGSize(width: 1040, height: 800), dark: true, ReviewPaneContent(model: model))
+        defer { window.close() }
+        ListPerf.settle(window)
+
+        let rows = ListPerf.counting { ListPerf.time(window) { _ = model.handleKey("u", option: true) } }
+        #expect(model.layout == .unified)
+        #expect(rows["diff.row", default: 0] <= 2 * Int(800 / NWDiffMetrics.lineHeight), "\(rows)")
+    }
+
     /// The right pane casts its shadow only while it floats over the thread, and from its fill
     /// alone: a shadow on the pane's content is redrawn from every layer inside it on each
     /// scroll step, and before this the docked pane still carried a clear one on three layers.
-    /// 760pt is under the dock threshold (a 400pt thread beside a 380pt pane), so there it floats.
-    @Test(arguments: [(width: CGFloat(1400), floating: false), (width: 760, floating: true)])
+    @Test(arguments: [(width: CGFloat(1400), floating: false), (width: ShellLayout.paneDockThreshold - 80, floating: true)])
     func theRightPaneCastsItsShadowFromItsFillOnlyWhileFloating(width: CGFloat, floating: Bool) throws {
         let model = ListFixtures.reviewModel([ListFixtures.diffFile("Big.swift", lines: 200)])
         let window = OffscreenWindow(size: CGSize(width: width, height: 800), dark: true,
