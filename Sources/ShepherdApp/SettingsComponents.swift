@@ -16,6 +16,8 @@ struct SettingsPage<Content: View>: View {
             SettingsHeader(title: title, explanation: explanation)
             content
         }
+        // The Settings boards draw their pages' controls larger than the Controls board's.
+        .nwControlScale(.settings)
     }
 }
 
@@ -32,15 +34,15 @@ struct SettingsHeader: View {
                 .foregroundStyle(Color.nw.textPrimary)
                 .accessibilityAddTraits(.isHeader)
             NWMarkupText(explanation, size: NWTextStyle.body.size, codeSize: NWTextStyle.code.size,
-                           lineHeight: NWTextStyle.body.lineHeight)
+                           lineHeight: AppLayout.settingsExplanationLineHeight)
                 .foregroundStyle(Color.nw.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
 
-/// A titled group: the section label, a flat group card of rows (rules inserted between them),
-/// and an optional footnote under it.
+/// A titled group: the section label (Geist 11/600 caps), a flat group card of rows at radius 10
+/// (rules inserted between them), and an optional footnote under it.
 struct SettingsGroup<Content: View>: View {
     let title: String
     var footnote: String?
@@ -48,12 +50,13 @@ struct SettingsGroup<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NW.Space.m) {
-            NWSectionHeader(title).padding(.horizontal, NW.Space.xs)
-            NWGroupCard(fill: Color.nw.bgWindow) { content }
+            NWSectionHeader(title, style: .settings).padding(.horizontal, NW.Space.xs)
+            NWGroupCard(fill: Color.nw.bgWindow, radius: NWCardRowMetrics.settingsCardRadius) { content }
             if let footnote {
                 SettingsNote(text: footnote).padding(.horizontal, NW.Space.xs)
             }
         }
+        .nwControlScale(.settings)
     }
 }
 
@@ -85,9 +88,7 @@ struct SettingsActionRow<Leading: View, Actions: View>: View {
             Spacer(minLength: 0)
             HStack(spacing: NW.Space.s) { actions }
         }
-        .padding(.horizontal, NW.Space.xl)
-        .padding(.vertical, NW.Space.l)
-        .frame(minHeight: AppLayout.settingsRowMinHeight)
+        .modifier(NWCardRowFrame(settings: true))
     }
 }
 
@@ -129,6 +130,8 @@ struct SettingsTextField: View {
     var mono = false
     var secure = false
     var width: CGFloat = AppLayout.settingsFieldWidth
+    /// The field's own value refused: its line turns `failed` and this says why under it.
+    var error: String? = nil
 
     var body: some View {
         Group {
@@ -138,8 +141,9 @@ struct SettingsTextField: View {
                 TextField(label, text: $text, prompt: Text(prompt).foregroundStyle(Color.nw.textTertiary))
             }
         }
-        .textFieldStyle(.nw(mono: mono))
+        .textFieldStyle(.nw(mono: mono, error: error != nil))
         .frame(width: width)
+        .nwFieldMessage(error, alignment: .trailing)
     }
 }
 

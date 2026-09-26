@@ -32,6 +32,15 @@ struct StateCodingTests {
         #expect(state.automations.isEmpty)
     }
 
+    /// A terminal tab's name (Rename tab) rides on its first pane; older files have none.
+    @Test func aPaneKeepsItsTabNameAndOlderPanesHaveNone() throws {
+        let old = try Fixture.decode(LeafPane.self, #"{"id":"p1","cwd":"/tmp/x"}"#)
+        #expect(old.title == nil)
+        let named = LeafPane(cwd: "/tmp/x", title: "logs")
+        #expect(try Fixture.roundTrip(named) == named)
+        #expect(try Fixture.encodeObject(LeafPane(cwd: "/tmp/x"))["title"] == nil, "an unnamed pane writes no key")
+    }
+
     @Test func removedKeysAreNotWrittenBack() throws {
         let state = try Fixture.decode(ShepherdState.self, Self.terminalEraFile)
         let object = try Fixture.encodeObject(state)

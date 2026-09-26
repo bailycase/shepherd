@@ -51,13 +51,14 @@ struct ThemeDefinitionTests {
         #expect(variant.value.terminal.palette.count == 16)
     }
 
-    /// Terminal panes sit on the thread's window surface and write in its text color.
+    /// Terminal panes sit on the thread's window surface and write in its text color, with a
+    /// block cursor in that color too (TerminalSplit).
     @Test(arguments: Variant.all)
     func terminalFollowsTheWindowSurface(_ variant: Variant) {
         let terminal = variant.value.terminal
         #expect(HexColor(terminal.background) == HexColor(variant.colors.bgWindow))
         #expect(HexColor(terminal.foreground) == HexColor(variant.colors.textPrimary))
-        #expect(HexColor(terminal.cursor) == HexColor(variant.colors.lantern))
+        #expect(HexColor(terminal.cursor) == HexColor(variant.colors.textPrimary))
     }
 
     @Test(arguments: Variant.themes)

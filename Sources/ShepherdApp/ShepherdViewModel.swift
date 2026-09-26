@@ -143,6 +143,8 @@ final class ShepherdViewModel {
     var remoteInspectingAgent: RemoteAgentRef?
     var remoteInspectionRequest = UUID()
     var remoteRenameTarget: RemoteAgentRef?
+    /// A terminal tab being renamed (the panel's Rename tab).
+    var terminalRenameTarget: TerminalRenameTarget?
     var remoteActionError: String?
 
     /// Configured remote Shepherd hosts and their live connections.
@@ -274,6 +276,11 @@ final class ShepherdViewModel {
     }
     var showNewAgentSheet = false
     /// Whether the in-window settings surface is visible.
+    /// The workspace column's size and window, kept current without redrawing anything.
+    @ObservationIgnored let workspaceColumn = LiveResizeColumn()
+    /// The column's size when the side pane last covered the window: hidden layouts keep it
+    /// while it does (`isSidePaneWide`).
+    @ObservationIgnored var wideFrozenSize: CGSize?
     var showSettings = false
     /// Last Settings category visited. View-model state survives closing the
     /// overlay but naturally resets when Shepherd restarts.
@@ -431,9 +438,8 @@ final class ShepherdViewModel {
         sessions.onThreadRevision = { [weak self] agentID in
             self?.threadStores.existing(for: agentID)?.revisionAvailable()
         }
-        notifications.onSelectAgent = { [weak self] agentID in
-            guard let self, self.state.agents.contains(where: { $0.id == agentID }) else { return }
-            self.selectAgent(agentID)
+        notifications.onResponse = { [weak self] response in
+            self?.respond(to: response)
         }
         // Banners from a previous app run point at dead sessions; drop them.
         notifications.removeAll()
@@ -447,6 +453,7 @@ final class ShepherdViewModel {
         self.remoteHosts.onDropError = { [weak self] in self?.remoteActionError = $0 }
         self.remoteHosts.onProjectionChanged = { [weak self] in
             guard let self else { return }
+            self.notifyRemote()
             self.remoteThreadStores.prune(live: Set(self.remoteHosts.connections.flatMap { connection in
                 connection.state.agents.map { RemoteAgentRef(hostID: connection.id, agentID: $0.id) }
             }))
@@ -484,6 +491,8 @@ final class ShepherdViewModel {
         }
         // Agents drive their own panes through the server's extension socket.
         installPaneControl()
+        // A finished command's activity line opens it in a new terminal tab, typed out.
+        threadCommands.runInTerminal = { [weak self] in self?.runInTerminal($0) }
         installReviewHandler()
         // Any pi session can create automations through the same socket.
         installAutomationControl()
@@ -511,6 +520,9 @@ final class ShepherdViewModel {
                     case .rename(let name): try await self.server.renameAgent(agentID, to: name)
                     case .reorder(let target): try await self.server.reorderAgent(agentID, onto: target)
                     case .deleteKeepingWorktree: try await self.deleteAgentPersisted(agentID)
+                    case .renameTerminal(let paneID, let title): try self.renameTerminalPane(paneID, of: agentID, to: title)
+                    case .killTerminalProcess(let paneID): try await self.killTerminalProcess(paneID, of: agentID)
+                    case .typeInTerminal(let paneID, let text): try await self.typeInTerminal(paneID, of: agentID, text: text)
                     }
                     completion(.success(()))
                 } catch {
@@ -708,6 +720,7 @@ final class ShepherdViewModel {
         let runs = server.openAutomationRuns
         if runs != openAutomationRuns { openAutomationRuns = runs }
         threadStores.prune(live: Set(state.agents.map(\.id)))
+        notifyLocalQuestions()
         checkouts?.sync(agents: state.agents.map(\.id))
         pruneReviewSessions()
         // First adoption of the restored workspace: stand the enabled
@@ -758,10 +771,7 @@ final class ShepherdViewModel {
             if failed != failedTurns.contains(id) {
                 if failed { failedTurns.insert(id) } else { failedTurns.remove(id) }
             }
-            // Visible means the workspace is actually showing this agent's
-            // layout — not a remote agent.
-            let visible = selectedAgentID == id && selectedRemoteAgent == nil
-            notifications.agentStatusChanged(state.agents[index], from: old, failure: failure, isAgentVisible: visible)
+            notifyStatus(state.agents[index], from: old, failure: failure)
         }
     }
 
@@ -794,8 +804,7 @@ final class ShepherdViewModel {
         if updated.rows == childRuns.rows { _childRuns = updated } else { childRuns = updated }
         syncChildSweepTimer()
         if let agent = state.agents.first(where: { $0.id == agentID }) {
-            let visible = selectedAgentID == agentID && selectedRemoteAgent == nil
-            notifications.subagentsChanged(agent, children: children, isAgentVisible: visible)
+            notifySubagents(agent, children: children)
         }
     }
 

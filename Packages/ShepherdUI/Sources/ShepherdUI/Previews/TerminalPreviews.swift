@@ -53,3 +53,25 @@ private enum TerminalSamples {
     }
 }
 
+
+#Preview("Terminal panel parts") {
+    NWPreviewBoth {
+        VStack(alignment: .leading, spacing: NW.Space.l) {
+            NWTerminalFoldedThread(title: "Add refund events", state: .idle, restoreShortcut: "⇧⌘↩") {}
+            HStack(spacing: 0) {
+                NWTerminalPaneHeader(title: "go test", host: "build-01", isFocused: true)
+                NWHairline(.vertical, color: .nw.lineStrong)
+                NWTerminalPaneHeader(title: "docker compose logs -f ledger", host: "build-01", isFocused: false)
+            }
+            NWTerminalSelectionBar(add: {}, copy: {})
+            NWTerminalMenu {
+                NWChangesMenuRow("New terminal in the worktree", subtitle: "payments on build-01", systemImage: "terminal",
+                                 trailing: .chord("⌘D"), tallHeight: NWTerminalMetrics.menuTallRowHeight) {}
+                NWChangesMenuRow("Split right", systemImage: "rectangle.split.2x1", trailing: .chord("⌘D")) {}
+                NWChangesMenuRow("Rename tab", systemImage: "pencil") {}
+                NWChangesMenuRow("Kill process", systemImage: "xmark", enabled: false) {}
+            }
+        }
+        .frame(width: 720)
+    }
+}

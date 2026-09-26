@@ -217,8 +217,8 @@ struct PaneDividerTests {
         let tree = PaneNode.split(axis: .vertical, ratio: 0.5, first: .leaf(first), second: nested)
         #expect(paneSeparatorColor(tree, focused: third.id) == Color.nw.focusDivider)
         #expect(paneSeparatorColor(nested, focused: third.id) == Color.nw.focusDivider)
-        #expect(paneSeparatorColor(nested, focused: first.id) == Color.nw.lineSubtle, "the focused pane is not beside it")
-        #expect(paneSeparatorColor(tree, focused: nil) == Color.nw.lineSubtle)
-        #expect(paneSeparatorColor(.leaf(first), focused: first.id) == Color.nw.lineSubtle, "a leaf has no divider")
+        #expect(paneSeparatorColor(nested, focused: first.id) == Color.nw.lineStrong, "the focused pane is not beside it")
+        #expect(paneSeparatorColor(tree, focused: nil) == Color.nw.lineStrong)
+        #expect(paneSeparatorColor(.leaf(first), focused: first.id) == Color.nw.lineStrong, "a leaf has no divider")
     }
 }

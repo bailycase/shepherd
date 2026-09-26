@@ -22,7 +22,7 @@ public struct NWBanner<Actions: View>: View {
         let nw = Color.nw
         HStack(alignment: .top, spacing: NW.Space.l) {
             Image(systemName: systemImage ?? Self.defaultSymbol(state))
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(state.color)
                 .padding(.top, 2)
                 .accessibilityHidden(true)
@@ -196,7 +196,7 @@ public struct NWEmptyState<Actions: View>: View {
                 .lineSpacing(3)
                 .foregroundStyle(nw.textSecondary)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 320)
+                .frame(maxWidth: 280)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: NW.Space.s) { actions() }.padding(.top, NW.Space.xs)
         }
@@ -210,6 +210,35 @@ public struct NWEmptyState<Actions: View>: View {
 extension NWEmptyState where Actions == EmptyView {
     public init(_ title: Text, message: String, showsMark: Bool = true, framed: Bool = false) {
         self.init(title, message: message, showsMark: showsMark, framed: framed) { EmptyView() }
+    }
+}
+
+/// A list still loading (NWStatus: a remote host's list): four placeholder rows, each a 6pt dot
+/// and an 8pt bar 10pt after it, the bars at 70%, 52%, 64% and 40% of the width, all in
+/// `bgSelected`, pulsing (`nwShimmer()`; static under Reduce Motion). VoiceOver hears "Loading".
+public struct NWLoadingRows: View {
+    static let widths: [CGFloat] = [0.70, 0.52, 0.64, 0.40]
+
+    public init() {}
+
+    public var body: some View {
+        let fill = Color.nw.bgSelected
+        GeometryReader { geo in
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Self.widths.indices, id: \.self) { index in
+                    HStack(spacing: 10) {
+                        Circle().fill(fill).frame(width: 6, height: 6)
+                        RoundedRectangle(cornerRadius: NW.Radius.xs).fill(fill)
+                            .frame(width: geo.size.width * Self.widths[index], height: 8)
+                    }
+                    .frame(height: NW.Height.row)
+                }
+            }
+        }
+        .frame(height: NW.Height.row * CGFloat(Self.widths.count))
+        .nwShimmer()
+        .accessibilityElement()
+        .accessibilityLabel("Loading")
     }
 }
 

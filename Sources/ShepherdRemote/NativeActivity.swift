@@ -344,6 +344,16 @@ public struct NativeActivityCall: Equatable, Sendable, Identifiable {
 
     public var failed: Bool { state == .failed }
     public var running: Bool { state == .running }
+
+    /// A shell call's whole command line, from its arguments (`detail` is its first line only);
+    /// nil for any other call, or arguments with no command.
+    public var command: String? {
+        guard kind == .run, let data = arguments?.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let command = object["command"] as? String,
+              !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return command
+    }
     public var expandable: Bool { outputLineCount > 0 }
 
     /// Seconds from start to result; nil without both stamps.

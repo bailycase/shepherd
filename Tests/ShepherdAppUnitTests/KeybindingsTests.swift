@@ -97,12 +97,18 @@ struct KeybindingsTests {
         let keys = KeybindingsStore(store: Fixture.defaults())
         #expect(AgentSettings.explanation(keys).contains("⌘N"))
         #expect(TerminalSettings.shellSubtitle(keys).contains("⌘D"))
+        #expect(AgentSettings.returnDescription(keys).hasSuffix("\(keys.display(.alternateSend)) always does the other one."))
 
         #expect(keys.assign(KeyChord(key: "j", command: true, option: true), to: .newAgent) == nil)
         #expect(keys.assign(KeyChord(key: "e", command: true, option: true), to: .splitVertical) == nil)
         let agents = AgentSettings.explanation(keys), shell = TerminalSettings.shellSubtitle(keys)
         #expect(agents.contains(keys.display(.newAgent)) && !agents.contains("⌘N"))
         #expect(shell.contains(keys.display(.splitVertical)) && !shell.contains("⌘D"))
+
+        let before = keys.display(.alternateSend)
+        #expect(keys.assign(KeyChord(key: "s", command: true, option: true), to: .alternateSend) == nil)
+        let queue = AgentSettings.returnDescription(keys)
+        #expect(queue.contains(keys.display(.alternateSend)) && !queue.contains(before))
     }
 
     // MARK: Validation

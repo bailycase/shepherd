@@ -320,3 +320,101 @@ public struct NWSidePaneTabs<Options: View>: View {
         }
     }
 }
+
+#if os(macOS)
+/// The maximized side pane's rail (ChangesWide), in place of the sidebar and the toolbar: 52pt on
+/// `bgBase` with a `lineStrong` edge, the window controls stacked at its top (while the window
+/// has them: not in full screen), then Back to the thread, a 32pt bordered circle.
+public struct NWSidePaneRail: View {
+    public enum Metrics {
+        public static let width: CGFloat = 52
+        public static let topPadding: CGFloat = 14
+        /// Between the controls, the spacer and the button.
+        public static let gap: CGFloat = 10
+        public static let spacer: CGFloat = 8
+        public static let buttonSize: CGFloat = 32
+    }
+
+    let windowControls: NWWindowControls?
+    let backShortcut: String?
+    let back: () -> Void
+
+    /// `windowControls` nil in full screen, where the window has none.
+    public init(windowControls: NWWindowControls?, backShortcut: String? = nil, back: @escaping () -> Void) {
+        self.windowControls = windowControls
+        self.backShortcut = backShortcut
+        self.back = back
+    }
+
+    public var body: some View {
+        VStack(spacing: Metrics.gap) {
+            if let windowControls {
+                windowControls
+                Color.clear.frame(height: Metrics.spacer)
+            }
+            Button(action: back) {
+                Image(systemName: "text.bubble").font(.system(size: 14, weight: .regular))
+            }
+            .buttonStyle(.nwIcon(bordered: true, size: Metrics.buttonSize))
+            .nwHelp("Back to the thread", shortcut: backShortcut)
+            .accessibilityLabel("Back to the thread")
+            Spacer(minLength: 0)
+        }
+        .padding(.top, Metrics.topPadding)
+        .frame(width: Metrics.width)
+        .frame(maxHeight: .infinity)
+        .background(Color.nw.bgBase)
+        .overlay(alignment: .trailing) { NWHairline(.vertical, color: .nw.lineStrong) }
+    }
+}
+
+/// The window's close, minimize and zoom, stacked (ChangesWide's rail): 12pt circles 6pt apart
+/// in macOS's colors, gray while the window is inactive, each showing its glyph while the group
+/// is hovered, as the system's do.
+public struct NWWindowControls: View {
+    public static let size: CGFloat = 12
+    public static let spacing: CGFloat = 6
+
+    let close: () -> Void
+    let minimize: () -> Void
+    let zoom: () -> Void
+    @State private var hovering = false
+    @Environment(\.controlActiveState) private var activeState
+
+    public init(close: @escaping () -> Void, minimize: @escaping () -> Void, zoom: @escaping () -> Void) {
+        self.close = close
+        self.minimize = minimize
+        self.zoom = zoom
+    }
+
+    public var body: some View {
+        let nw = Color.nw
+        VStack(spacing: Self.spacing) {
+            control(nw.windowClose, glyph: "xmark", label: "Close", action: close)
+            control(nw.windowMinimize, glyph: "minus", label: "Minimize", action: minimize)
+            control(nw.windowZoom, glyph: "plus", label: "Zoom", action: zoom)
+        }
+        .onHover { hovering = $0 }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func control(_ color: Color, glyph: String, label: String, action: @escaping () -> Void) -> some View {
+        let active = activeState == .key || activeState == .active || hovering
+        return Button(action: action) {
+            Circle()
+                .fill(active ? color : Color.nw.lineStrong)
+                .frame(width: Self.size, height: Self.size)
+                .overlay {
+                    if hovering {
+                        Image(systemName: glyph)
+                            .font(.system(size: 7, weight: .bold))
+                            .foregroundStyle(Color.nw.windowControlGlyph)
+                    }
+                }
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+}
+#endif

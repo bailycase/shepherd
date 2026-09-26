@@ -42,7 +42,7 @@ extension ThemeDefinition {
                 "#151618", "#c7362f", "#17804a", "#945b00", "#2a62c9", "#8a3fb5", "#0f7c8a", "#5f636b",
                 "#9a9ea5", "#d9443f", "#1f9d5b", "#e39a26", "#2f6fe0", "#a45fd0", "#1a9aa8", "#151618",
             ],
-            selectionAlpha: 0.18
+            selectionAlpha: 0.13
         ),
         dark: .nightWatch(
             colors: ThemeColors(
@@ -78,7 +78,7 @@ extension ThemeDefinition {
                 "#1f2226", "#f0625e", "#46c37b", "#f2a93b", "#7aa7ff", "#d7a6ff", "#5fcfdb", "#9aa0a9",
                 "#5f656e", "#ff8a86", "#6fdc9b", "#f7c16e", "#9ec2ff", "#e5c2ff", "#8fe6ee", "#e8e9ec",
             ],
-            selectionAlpha: 0.28
+            selectionAlpha: 0.13
         )
     )
 }
@@ -98,7 +98,7 @@ extension ThemeVariant {
             terminal: TerminalColors(
                 background: c.bgWindow,
                 foreground: c.textPrimary,
-                cursor: c.lantern,
+                cursor: c.textPrimary,
                 selectionBackground: flat(c.running, alpha: selectionAlpha),
                 selectionForeground: c.textPrimary,
                 palette: ansi

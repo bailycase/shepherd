@@ -29,7 +29,7 @@ struct NWCrookShape: Shape {
     }
 }
 
-/// The wordmark: the crook and "shepherd", lowercase Geist 600 at −3% tracking.
+/// The wordmark: the crook and "shepherd", lowercase Geist 600, tracked −3% large and −2% small.
 public struct NWWordmark: View {
     public enum Size: Sendable { case small, large }
     let size: Size
@@ -42,7 +42,7 @@ public struct NWWordmark: View {
             NWCrook().frame(width: mark, height: mark)
             Text("shepherd")
                 .font(.nwSans(text, .semibold))
-                .tracking(-0.03 * text)
+                .tracking((size == .large ? -0.03 : -0.02) * text)
                 .foregroundStyle(.nw.textPrimary)
         }
         .accessibilityElement(children: .ignore)
