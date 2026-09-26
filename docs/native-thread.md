@@ -125,7 +125,10 @@ events come out on stdout, one record per LF.
   follows it and commits both, so the levels never move the revision on their own; a pi without
   the command leaves them unsaid), `get_state` (session ID, model, thinking level, streaming), `get_messages` (history), `get_session_stats` (context, tokens, cost; a context of 0, pi's
   estimate before its first reply, is sent as unknown), and
-  `get_commands` (the slash-command registry, capped at 128 commands). Until `get_state` and
+  `get_commands` (the slash-command registry, capped at 128 commands; pi sends no argument
+  hints, so the host reads each prompt template's `argument-hint` from the frontmatter of the
+  file pi names in its `sourceInfo`, off the server queue, and commits the hints as the
+  commands' additive `arguments` once read). Until `get_state` and
   `get_messages` have answered, requests fail with `native_starting` ("The agent is starting."): pi
   answers `get_state` first, and a thread served before a long history arrives would show a
   resumed agent as a new, empty one. pi reads stdin only once it has started, so a pi slower

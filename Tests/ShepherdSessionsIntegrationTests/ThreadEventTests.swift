@@ -100,6 +100,24 @@ struct ThreadEventTests {
         #expect(s.provisional.isEmpty && s.dialogs.isEmpty && s.widgets == [] && !s.clipped && s.olderCursor == nil)
     }
 
+    /// pi lists a prompt template without its argument hint; the host reads it from the file pi
+    /// names and the next snapshot carries it (SlashMenu: "/release-notes [tag]").
+    @Test func aPromptTemplatesArgumentHintIsReadFromItsFile() async throws {
+        let dir = try makeScratchDirectory("prompts")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let template = dir.appendingPathComponent("fix-tests.md")
+        try "---\ndescription: Fix failing tests\nargument-hint: \"[suite]\"\n---\nFix $1.\n".write(to: template, atomically: true, encoding: .utf8)
+        let t = try Thread(env: ["STUB_PI_PROMPT_TEMPLATE": template.path])
+        defer { t.stop() }
+        _ = try await t.ready()
+        var commands: [NativeCommand]?
+        try await eventually("the template's hint to arrive") {
+            commands = await t.request(.snapshot()).snapshotValue?.commands
+            return commands?.contains { $0.arguments != nil } == true
+        }
+        #expect(commands?.map(\.arguments) == [nil, "[suite]"], "an extension command has no hint")
+    }
+
     @Test func requestsBeforePiReportsItsSessionAreStarting() async throws {
         let t = try Thread(bootstrap: false)
         defer { t.stop() }
