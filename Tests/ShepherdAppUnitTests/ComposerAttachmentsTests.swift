@@ -54,3 +54,25 @@ struct ComposerAttachmentsTests {
         #expect(attachments.isEmpty)
     }
 }
+
+/// Whether the New thread page's images can go where the thread would start: This Mac and a
+/// current host take them with the opening prompt; an older host would drop them.
+@Suite("New thread images")
+@MainActor
+struct NewThreadImagesTests {
+    nonisolated static let image = NativeImage(mimeType: "image/png", data: Data(count: 4))
+    nonisolated static let mib = 1024 * 1024
+
+    @Test(arguments: [
+        ([NativeImage](), "old", false, nil),
+        ([image], nil, true, nil),
+        ([image], "build-01", true, nil),
+        ([image], "build-01", false, "Update Shepherd on build-01 to start a thread with images."),
+        ([NativeImage](), "build-01", false, nil),
+        (Array(repeating: NativeImage(mimeType: "image/png", data: Data(count: 2 * mib)), count: 3), nil, true,
+         "The images come to over 5 MiB together. Remove one to send."),
+    ] as [([NativeImage], String?, Bool, String?)])
+    func imagesGoWhereTheOpeningPromptCanTakeThem(images: [NativeImage], host: String?, takesImages: Bool, refusal: String?) {
+        #expect(NewThreadPlaces.imagesRefusal(images, host: host.map { ($0, takesImages) }) == refusal)
+    }
+}

@@ -247,7 +247,8 @@ The protocol is NDJSON (`RemoteMessage.swift`):
 - native thread requests
 - terminal attach, detach, input, resize, and acknowledged paste
 - pane open, close, and split resize
-- directory listing, models, `addSpace`, and `createAgent` with creation options
+- directory listing, models, `addSpace`, and `createAgent` with creation options and the opening
+  prompt's images (`agent.create.images.v1`)
 - chunked uploads
 - agent queries and actions: rename, delete, reorder, review, subagents, search, worktrees
 
