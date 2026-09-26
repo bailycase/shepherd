@@ -115,3 +115,43 @@ private struct NWPreviewComposerControls: View {
         .frame(width: 600)
     }
 }
+
+/// A dock with its own picks and focus, as the app hosts it.
+struct NWQuestionDockSample: View {
+    let content: NWQuestionDockContent
+    @State private var selection: NWQuestionDockSelection
+    @FocusState private var focus: NWQuestionDockField?
+
+    init(_ content: NWQuestionDockContent, selection: NWQuestionDockSelection = NWQuestionDockSelection()) {
+        self.content = content
+        _selection = State(initialValue: selection)
+    }
+
+    var body: some View {
+        NWQuestionDock(content, selection: $selection, focus: $focus, answerEnabled: selection.picked != nil || !selection.text.isEmpty,
+                       answer: { _ in }, hide: {})
+    }
+}
+
+#Preview("Question dock") {
+    NWPreviewBoth {
+        VStack(alignment: .leading, spacing: NW.Space.xl) {
+            NWQuestionDockSample(NWQuestionDockContent(
+                asker: .agent, question: "How should I handle Horizon’s uncommitted edits?", kind: .choice,
+                options: [
+                    NWQuestionDockOption(number: 1, title: "Compare, keep what’s unique, then go through GitHub",
+                                         detail: "Diff the 11 files against current master. Nothing on Horizon is overwritten.", recommended: true),
+                    NWQuestionDockOption(number: 2, title: "Leave Horizon alone and deploy from a clean checkout",
+                                         detail: "Horizon keeps its edits as they are."),
+                ]), selection: NWQuestionDockSelection(picked: 1))
+            NWQuestionDockSample(NWQuestionDockContent(
+                asker: .agent, question: "Is this a regression from #231?", kind: .yesNo,
+                options: [NWQuestionDockOption(number: 1, title: "Yes", recommended: true), NWQuestionDockOption(number: 2, title: "No")],
+                showsAnswer: false))
+            NWQuestionDockSample(NWQuestionDockContent(
+                asker: .agent, question: "How long should refund events stay in the outbox?", kind: .open))
+            NWQuestionDockHidden(.agent, question: "How should I handle Horizon’s uncommitted edits?") {}
+        }
+        .frame(width: 600)
+    }
+}
