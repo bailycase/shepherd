@@ -25,6 +25,7 @@ struct PadReviewScreen: View {
                 GeometryReader { proxy in
                     HStack(spacing: 0) {
                         ThreadScreen(ref: ref)
+                            .environment(\.threadSidePaneOpen, true)
                             .frame(maxWidth: .infinity)
                         NWHairline(.vertical, color: Color.nw.lineStrong)
                         PadChangesPane(store: store, finalize: finalize, close: { dismiss() })
