@@ -2,7 +2,7 @@
 
 The Design tool (an experiment, off by default) keeps each design as a canvas of HTML boards
 that a design agent draws. This page covers the files, how they change, how a board is drawn,
-and the design agent's tools. The canvas and the remote protocol come with later changes.
+the design agent's tools, and the Mac's screens. The remote protocol comes with a later change.
 
 ## The format
 
@@ -278,3 +278,61 @@ The skill asks for three directions and a phone version of the strongest, named 
 `B.dc.html`, `C.dc.html` and `A-phone.dc.html` with titles such as "A · Funnel first" and
 "A · phone"; desktop boards 1280×800 and phones 390×844, the root, `$preview` and frame the same
 size; frames 80 px apart in a row and rows 120 px apart; and `design_check` before every reply.
+
+## The app (Mac)
+
+Settings ▸ Experiments ▸ Design tool (`AppSettings.designToolEnabled`, off by default) shows
+everything here; off, the Designs pages don't open and designs have no rows. Designs made while it
+was on keep their files and agents either way.
+
+- **The Designs destination** sits between New thread and Automations. Its page
+  (`DesignsPage`, NavDesigns) shows recent designs as cards, most recently edited first, each
+  with its first board (the first in `order`) rendered off screen, and the systems they are drawn
+  in. Until design systems exist, a design's system is its project's name.
+- **Recents** lists a design as one row (the nib and "4 boards"), placed by its last change. Its
+  agent has no row of its own and takes no ⌘-digit; the palette leaves it out too.
+- **New design** (DZStart; the page's button, New thread's "Start a design") takes a brief and
+  images and the project the design belongs to (the selected space, else the most recently used;
+  the card's menu picks another). Send makes the design, starts its agent in that project with
+  Settings' default model and the brief as its first message, and opens the design. The agent is
+  named after the design and gets no namer.
+- **A design's screen** (DZCanvas) is its agent's layout (`DesignLayoutView`): the canvas beside a
+  420pt chat pane holding the agent's thread, whose composer has attach and Send only, under a
+  toolbar with the breadcrumb, the design's system, and Present and Export (disabled until they
+  are built). Opening a design whose agent is gone starts a fresh one. Switching away and back is
+  a visibility flip, and a design's canvas (where it looks, the tool, the selected board) lasts
+  the app's run. A design's screen has no terminal panel.
+- **The canvas** (`NWDesignCanvas`) pans with two fingers, the Pan tool or space-drag, and zooms
+  with a pinch or ⌘-scroll about the pointer. Select picks a board. Comment is drawn disabled.
+  It opens fitted to the boards, never above 100%.
+
+### Rendering
+
+`DesignHost.swift` is the only app file that imports DesignSurfaceKit.
+
+- **Live views.** A design on screen keeps at most five `DesignBoardView`s: the selected board
+  (down to 10% zoom) and the boards nearest the middle of the view (from 25%), recycled least
+  recently wanted first (`DesignLivePlan`). A live view draws at the canvas's zoom with WebKit's
+  page zoom, so it lays out at the board's size and stays sharp, and it shows once its first
+  snapshot is taken. During a zoom gesture every board draws its snapshot; live views follow once
+  the canvas rests.
+- **Snapshots.** Every other board draws its last snapshot, rendered by one off-screen view at a
+  time (`DesignRasterizer`), so any canvas holds at most six web views. Snapshots are kept per
+  design within a pixel budget, never evicting a board on screen. A hidden design gives up its
+  live views and keeps its snapshots.
+- **Live reload.** A write that changes a design's files pushes `onDesignRevision` for the designs
+  on screen, at most once per frame. The canvas pulls the snapshot and hands the renderer only the
+  boards whose hash changed: a live board takes its new source in place (`replaceSource`, no
+  navigation, its state kept; source the runtime refuses leaves it as it was), and any other board
+  renders one new snapshot. New boards appear and removed boards leave.
+- **Budgets** (`DesignPerformanceTests`, over 172 boards): at most six web views, panning recycles
+  them, and one board changing redraws one frame (`design.board`) with one snapshot. The Designs
+  grid builds only the cards on screen (`ListPerformanceTests`, `design.card`).
+
+### Not built yet
+
+Not drawn on any board, so left out until they are: the Designs page with no designs, a design
+still loading or failing to draw, the design row's and the chat's ••• menus (so no rename or delete
+in the app yet), Present mode, the Capture a page and From a screenshot starting points, zoom
+presets and keyboard shortcuts. Comments, Tweak, Variations and the board actions bar come with
+the next phase.
