@@ -263,7 +263,8 @@ final class TerminalSessionStore {
         server.onSequencedOutput = { [weak self] sessionID, data, sequence in
             self?.session(forSessionID: sessionID)?.receive(data, sequence: sequence)
         }
-        server.onSessionExited = { [weak self] sessionID, exitCode in
+        server.onSessionExited = { [weak self] sessionID, exit in
+            let exitCode = exit.code
             guard let self, !self.handledExits.contains(sessionID) else { return }
             self.aliveSessions.remove(sessionID)
             guard self.paneBySession[sessionID] != nil else {

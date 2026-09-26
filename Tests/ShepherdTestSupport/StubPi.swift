@@ -35,7 +35,7 @@ public enum StubPi {
             let script = """
             #!/bin/sh
             if [ "$1" = "--list-models" ]; then cat '\(listing.path)'; exit 0; fi
-            exec /usr/bin/env python3 '\(path)'
+            exec /usr/bin/env python3 '\(path)' "$@"
 
             """
             // Written aside and renamed, so a concurrent shell never finds a half-written or

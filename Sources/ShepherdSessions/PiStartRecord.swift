@@ -33,10 +33,11 @@ struct PiStartRecord {
     /// An exit now keeps the agent: pi never served, or Shepherd asked for it.
     var keepsAgent: Bool { !ready || stop != nil }
 
-    /// pi serves its thread: what it said while starting is no longer needed.
+    /// pi serves its thread: what it said while starting is no longer needed, unless Shepherd is
+    /// stopping it for what it said.
     mutating func served() {
         ready = true
-        lines = []
+        if stop == nil { lines = [] }
     }
 
     mutating func requestStop() {
@@ -126,5 +127,23 @@ struct PiStartRecord {
             }
         }
         return String(out).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+/// A session's process ended (`SessionServer.onSessionExited`).
+public struct SessionExit: Equatable, Sendable {
+    /// nil: a signal.
+    public var code: Int32?
+    /// An agent's pi that stopped before it served its thread, or that Shepherd stopped: its agent
+    /// stays and waits (DESIGN.md › Thread › Can't start). False for every other exit, which
+    /// retires what ran in the pane.
+    public var keepsAgent: Bool
+    /// Why a kept pi stopped; nil for a stop Shepherd asked for, and for every other exit.
+    public var startProblem: NativeStartProblem?
+
+    public init(code: Int32?, keepsAgent: Bool = false, startProblem: NativeStartProblem? = nil) {
+        self.code = code
+        self.keepsAgent = keepsAgent
+        self.startProblem = startProblem
     }
 }
