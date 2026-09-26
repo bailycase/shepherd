@@ -4,6 +4,19 @@ import SwiftUI
 /// Sizes the boards give off the type ramp (13.5, 12.5, 11.5, 10.5) are set with `Font.nwSans`
 /// and `Font.nwMono`.
 public enum NWDesignMetrics {
+    // The header and the chat pane
+    /// The breadcrumb's nib and words.
+    public static let headerGlyph: CGFloat = 14
+    public static let headerTextSize: CGFloat = 13
+    /// The chat pane's tabs: a 40pt row, 18pt in, tabs 18pt apart in 12.5, counts in mono 10,
+    /// the current one over a 2pt underline.
+    public static let paneTabsHeight: CGFloat = 40
+    public static let paneTabsLeading: CGFloat = 18
+    public static let paneTabSpacing: CGFloat = 18
+    public static let paneTabTextSize: CGFloat = 12.5
+    public static let paneTabCountSize: CGFloat = 10
+    public static let paneTabUnderline: CGFloat = 2
+
     // The canvas
     /// The canvas's dots: 1px, every 22pt.
     public static let gridSpacing: CGFloat = 22
@@ -15,6 +28,8 @@ public enum NWDesignMetrics {
     public static let labelSpacing: CGFloat = NW.Space.m
     public static let labelSize: CGFloat = 12
     public static let labelSizeTextSize: CGFloat = 10.5
+    /// A label is never narrower than this, whatever its board's width on screen.
+    public static let labelMinWidth: CGFloat = 160
     /// A board frame's corners.
     public static let frameRadius: CGFloat = NW.Radius.xs
     /// The selected board's `running` ring, outside the frame.
@@ -53,6 +68,12 @@ public enum NWDesignMetrics {
     public static let cardEditedSize: CGFloat = 11
     /// The selected card's `textPrimary` ring.
     public static let cardRingWidth: CGFloat = 2
+
+    // New design's starting points
+    public static let startGlyph: CGFloat = 13
+    public static let startTitleSize: CGFloat = 12
+    public static let startLineSize: CGFloat = 12.5
+    public static let startNoteSize: CGFloat = 11
 
     // A design system card and chip
     public static let systemCardSpacing: CGFloat = NW.Space.l

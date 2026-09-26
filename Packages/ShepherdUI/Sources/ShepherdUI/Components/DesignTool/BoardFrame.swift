@@ -26,7 +26,8 @@ public struct NWBoardFrame<Slot: View>: View, Equatable {
         let size = CGSize(width: board.frame.width * zoom, height: board.frame.height * zoom)
         VStack(alignment: .leading, spacing: NWDesignMetrics.labelGap) {
             NWBoardLabel(title: board.title, size: board.size, selected: board.isSelected)
-                .frame(width: max(size.width, 1), height: NWDesignMetrics.labelHeight, alignment: .leading)
+                // A board drawn narrower than its label (a phone at a low zoom) lets it run past.
+                .frame(width: max(size.width, NWDesignMetrics.labelMinWidth), height: NWDesignMetrics.labelHeight, alignment: .leading)
             NWBoardSurface(size: size, selected: board.isSelected) { slot }
         }
         .accessibilityElement(children: .ignore)

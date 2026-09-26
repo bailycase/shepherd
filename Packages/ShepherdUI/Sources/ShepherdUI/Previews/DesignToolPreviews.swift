@@ -80,3 +80,35 @@ private let previewBoards = [
         }
     }
 }
+
+#Preview("Design header and chat tabs") {
+    NWPreviewBoth {
+        VStack(spacing: NW.Space.xl) {
+            NWDesignHeader("New design", style: .page, designs: {})
+            NWDesignHeader("Checkout funnel dashboard", style: .toolbar, sidebar: {}, designs: {}) {
+                NWDesignSystemChip("acme-web")
+                Button {} label: { Image(systemName: "play.fill") }
+                    .buttonStyle(.nwIcon)
+                    .disabled(true)
+                Button("Export", systemImage: "square.and.arrow.up") {}
+                    .buttonStyle(.nw(.secondary))
+                    .disabled(true)
+            }
+            NWDesignPaneTabs([NWDesignPaneTabs.Tab(id: "chat", title: "Chat")], selection: "chat")
+                .frame(width: 420)
+        }
+        .frame(width: 900)
+    }
+}
+
+#Preview("Starting points") {
+    NWPreviewBoth {
+        HStack(spacing: NW.Space.m) {
+            NWDesignStartCard(symbol: "pencil.tip", title: "acme-web", line: "design system · dashboard-web",
+                              note: "~/Developer/dashboard-web", chosen: true)
+            NWDesignStartCard(symbol: "pencil.tip", title: "shepherd", line: "design system · shepherd",
+                              note: "~/Developer/shepherd", chosen: false)
+        }
+        .frame(width: 520)
+    }
+}
