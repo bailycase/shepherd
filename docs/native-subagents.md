@@ -131,7 +131,8 @@ settings produce diagnostics and are not imported. This is not full pi-subagents
 | `shepherd_mission` | Manages mission records (below). |
 
 **Questions.** Children use `shepherd_parent_message` for progress or questions. For a question
-the child sets `needsReply`, finishes its turn, and waits for an explicit continuation. Completion
+the child sets `needsReply` (and optionally `short`, 1–3 words its parent's Needs you row shows,
+like "retention?"), finishes its turn, and waits for an explicit continuation. Completion
 and messages wake the parent, except a completion a `shepherd_child_wait` returns: the parent
 already has that result, so it gets no second turn on it (a wait cancelled before it answers
 hands the completion back). Delivery is not durable, and not exactly-once across a crash.
