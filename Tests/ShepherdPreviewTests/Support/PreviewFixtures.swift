@@ -93,13 +93,14 @@ final class ThreadFixture {
     /// Header over thread, the way the workspace composes a native agent.
     func thread(title: String = "Investigate SwiftUI live preview capabilities", inspected: String? = nil,
                 workingDirectory: String = "~/Developer/Shepherd",
-                listModels: (() async -> ModelCatalog)? = nil) -> some View {
+                listModels: (() async -> ModelCatalog)? = nil, contextDetailsOpen: Bool = false) -> some View {
         VStack(spacing: 0) {
             ThreadHeader(store: store, project: "Shepherd", title: title)
             ThreadView(store: store, active: true, isFocused: false, request: request, commandKey: "preview",
                        agentName: "Investigate", workingDirectory: workingDirectory, inspectSubagent: { _ in },
                        inspectedRunID: inspected, review: { _ in },
-                       turnActions: TurnChangesActions(review: { _, _ in }, undo: { _ in nil }, redo: { _ in nil }), listModels: listModels)
+                       turnActions: TurnChangesActions(review: { _, _ in }, undo: { _ in nil }, redo: { _ in nil }), listModels: listModels,
+                       contextDetailsOpen: contextDetailsOpen)
         }
         .environment(\.threadCommands, commands)
     }

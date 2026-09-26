@@ -124,6 +124,10 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
     case getAvailableThinkingLevels
     case newSession
     case extensionUIResponse(id: String, value: String? = nil, confirmed: Bool? = nil, cancelled: Bool? = nil)
+    /// Summarize the conversation now, keeping what `customInstructions` asks for. pi answers
+    /// once the summary is written, with its result. (Never `set_auto_compaction`: pi writes
+    /// that to the user's settings.json.)
+    case compact(customInstructions: String? = nil)
 
     /// The wire `type` field.
     public var type: String {
@@ -140,11 +144,12 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
         case .getAvailableThinkingLevels: return "get_available_thinking_levels"
         case .newSession: return "new_session"
         case .extensionUIResponse: return "extension_ui_response"
+        case .compact: return "compact"
         }
     }
 
     enum CodingKeys: String, CodingKey {
-        case type, message, images, streamingBehavior, provider, modelId, level, id, value, confirmed, cancelled
+        case type, message, images, streamingBehavior, provider, modelId, level, id, value, confirmed, cancelled, customInstructions
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -165,6 +170,8 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
             try c.encodeIfPresent(value, forKey: .value)
             try c.encodeIfPresent(confirmed, forKey: .confirmed)
             try c.encodeIfPresent(cancelled, forKey: .cancelled)
+        case .compact(let customInstructions):
+            try c.encodeIfPresent(customInstructions, forKey: .customInstructions)
         case .abort, .clearQueue, .getState, .getMessages, .getSessionStats, .getCommands, .getAvailableThinkingLevels, .newSession:
             break
         }
@@ -375,11 +382,21 @@ public struct RPCMessage: Codable, Hashable, Sendable {
     /// `custom` messages: extensions mark model-only payloads `display: false`.
     public var customType: String?
     public var display: Bool?
+    /// `compactionSummary` and `branchSummary` messages: what pi summarized, and (compaction)
+    /// the context it replaced.
+    public var summary: String?
+    public var tokensBefore: Double?
+    /// `system` messages (pi 0.87's structured prompt): named prompt sections, a null deleting an
+    /// earlier one, and the tools added or removed. Decoded only for that role.
+    public var sections: [String: String?]?
+    public var toolsAdded: [JSONValue]?
+    public var toolsRemoved: [JSONValue]?
 
     public init(
         role: String, content: [RPCContentBlock], toolName: String? = nil, toolCallId: String? = nil,
         isError: Bool? = nil, stopReason: String? = nil, errorMessage: String? = nil, timestamp: Double? = nil,
-        customType: String? = nil, display: Bool? = nil
+        customType: String? = nil, display: Bool? = nil, summary: String? = nil, tokensBefore: Double? = nil,
+        sections: [String: String?]? = nil, toolsAdded: [JSONValue]? = nil, toolsRemoved: [JSONValue]? = nil
     ) {
         self.role = role
         self.content = content
@@ -391,9 +408,17 @@ public struct RPCMessage: Codable, Hashable, Sendable {
         self.timestamp = timestamp
         self.customType = customType
         self.display = display
+        self.summary = summary
+        self.tokensBefore = tokensBefore
+        self.sections = sections
+        self.toolsAdded = toolsAdded
+        self.toolsRemoved = toolsRemoved
     }
 
-    enum CodingKeys: String, CodingKey { case role, content, toolName, toolCallId, isError, stopReason, errorMessage, timestamp, customType, display }
+    enum CodingKeys: String, CodingKey {
+        case role, content, toolName, toolCallId, isError, stopReason, errorMessage, timestamp, customType, display
+        case summary, tokensBefore, sections, toolsAdded, toolsRemoved
+    }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -413,6 +438,33 @@ public struct RPCMessage: Codable, Hashable, Sendable {
         timestamp = try c.decodeIfPresent(Double.self, forKey: .timestamp)
         customType = try c.decodeIfPresent(String.self, forKey: .customType)
         display = try c.decodeIfPresent(Bool.self, forKey: .display)
+        // Only the roles that carry them: a long history's decode stays as it was.
+        switch role {
+        case "compactionSummary", "branchSummary":
+            summary = try? c.decodeIfPresent(String.self, forKey: .summary)
+            tokensBefore = try? c.decodeIfPresent(Double.self, forKey: .tokensBefore)
+        case "system":
+            sections = try? c.decodeIfPresent([String: String?].self, forKey: .sections)
+            toolsAdded = try? c.decodeIfPresent([JSONValue].self, forKey: .toolsAdded)
+            toolsRemoved = try? c.decodeIfPresent([JSONValue].self, forKey: .toolsRemoved)
+        default:
+            break
+        }
+    }
+}
+
+/// `compaction_end.result`, and the `compact` command's answer.
+public struct RPCCompactionResult: Decodable, Hashable, Sendable {
+    public var summary: String?
+    public var tokensBefore: Double?
+    public var estimatedTokensAfter: Double?
+    public var firstKeptEntryId: String?
+
+    public init(summary: String? = nil, tokensBefore: Double? = nil, estimatedTokensAfter: Double? = nil, firstKeptEntryId: String? = nil) {
+        self.summary = summary
+        self.tokensBefore = tokensBefore
+        self.estimatedTokensAfter = estimatedTokensAfter
+        self.firstKeptEntryId = firstKeptEntryId
     }
 }
 
@@ -526,12 +578,17 @@ public enum RPCEvent: Decodable, Hashable, Sendable {
     case queueUpdate(steering: [String], followUp: [String])
     case extensionUIRequest(RPCExtensionUIRequest)
     case extensionError(extensionPath: String?, event: String?, error: String)
+    /// `reason`: manual, threshold, or overflow.
+    case compactionStart(reason: String?)
+    /// `result` when it succeeded; `aborted` when it was stopped; otherwise `errorMessage` says
+    /// why it failed. `willRetry`: an overflow compaction pi retries the prompt after.
+    case compactionEnd(reason: String?, result: RPCCompactionResult?, aborted: Bool, willRetry: Bool, errorMessage: String?)
     case unknown(type: String)
 
     enum CodingKeys: String, CodingKey {
         case type, messages, willRetry, message, toolResults, assistantMessageEvent
         case toolCallId, toolName, args, partialResult, result, isError, steering, followUp
-        case extensionPath, event, error
+        case extensionPath, event, error, reason, aborted, errorMessage
     }
 
     public init(from decoder: Decoder) throws {
@@ -592,6 +649,16 @@ public enum RPCEvent: Decodable, Hashable, Sendable {
                 extensionPath: try c.decodeIfPresent(String.self, forKey: .extensionPath),
                 event: try c.decodeIfPresent(String.self, forKey: .event),
                 error: try c.decodeIfPresent(String.self, forKey: .error) ?? ""
+            )
+        case "compaction_start":
+            self = .compactionStart(reason: try? c.decodeIfPresent(String.self, forKey: .reason))
+        case "compaction_end":
+            self = .compactionEnd(
+                reason: try? c.decodeIfPresent(String.self, forKey: .reason),
+                result: try? c.decodeIfPresent(RPCCompactionResult.self, forKey: .result),
+                aborted: (try? c.decodeIfPresent(Bool.self, forKey: .aborted)) ?? false,
+                willRetry: (try? c.decodeIfPresent(Bool.self, forKey: .willRetry)) ?? false,
+                errorMessage: try? c.decodeIfPresent(String.self, forKey: .errorMessage)
             )
         default:
             self = .unknown(type: type)

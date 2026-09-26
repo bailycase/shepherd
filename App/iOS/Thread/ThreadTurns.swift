@@ -140,6 +140,9 @@ struct AgentTurnView: View, Equatable {
             NWUserBubble(text, attachments: Array(repeating: "Image", count: images), timestamp: sentAt.map { nativeClockText($0) },
                          origin: .steered)
                 .frame(maxWidth: .infinity, alignment: .trailing)
+        case .compaction(let row):
+            // Where it happened; Show summary opens what the agent kept in place.
+            CompactionItem(row: row)
         }
     }
 
