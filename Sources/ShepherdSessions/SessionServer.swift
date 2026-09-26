@@ -3126,6 +3126,9 @@ public final class SessionServer: @unchecked Sendable {
             }
 
             for sessionID in layoutSessions {
+                // A stopped pi's session is already retired; its kept start (and the opening
+                // prompt it holds) goes with the agent.
+                self.keptStarts.removeValue(forKey: sessionID)
                 self.killSessionOnQueue(sessionID)
             }
         }
