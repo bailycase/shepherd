@@ -30,6 +30,14 @@ struct EngineSmokeTests {
         try await EngineSmoke.runThroughLauncher(engine: engine)
     }
 
+    /// An agent in the user's home folder, whose pi (`~/.pi/agent`) names packages and an
+    /// extension and whose `~/.pi` is then the project's own config: Shepherd's pi loads none of
+    /// their code, runs no npm, and leaves their pi byte-identical.
+    @Test func anAgentInYourHomeLoadsNothingOfYourPi() async throws {
+        let engine = try #require(EngineSmoke.engine)
+        try await EngineSmoke.runInYourHome(engine: engine)
+    }
+
     @Test(.enabled(if: EngineSmoke.rosettaRunsX86, "needs an arm64 Mac with Rosetta and an x86_64 slice"))
     func itsX86SliceRunsUnderRosetta() async throws {
         let engine = try #require(EngineSmoke.engine)
@@ -206,6 +214,73 @@ enum EngineSmoke {
         #expect(try await pi.finish() == 0, "pi exits cleanly when its input ends: \(pi.errors)")
         #expect(!files.fileExists(atPath: ran.path), "pi's own node never loaded NODE_OPTIONS")
         #expect(try files.contentsOfDirectory(atPath: userHome.path).isEmpty, "pi wrote nothing into HOME")
+    }
+
+    static func runInYourHome(engine: BundledPiEngine) async throws {
+        let scratch = try makeScratchDirectory("engine-your-home")
+        let files = FileManager.default
+        let userHome = scratch.appendingPathComponent("home", isDirectory: true)
+        let temporary = scratch.appendingPathComponent("tmp", isDirectory: true)
+        let bin = scratch.appendingPathComponent("bin", isDirectory: true)
+        let yourPi = userHome.appendingPathComponent(".pi/agent", isDirectory: true)
+        let marks = scratch.appendingPathComponent("marks", isDirectory: true)
+        for folder in [temporary, bin, marks, yourPi.appendingPathComponent("extensions"), userHome.appendingPathComponent(".pi/extensions")] {
+            try files.createDirectory(at: folder, withIntermediateDirectories: true)
+        }
+        // Code of the user's that marks it ran, wherever pi might find it.
+        func marking(_ name: String) -> String {
+            "import * as fs from \"node:fs\";\nfs.writeFileSync(\(String(reflecting: marks.appendingPathComponent(name).path)), \"ran\");\n"
+                + "export default function () {}\n"
+        }
+        try marking("your-extension").write(to: yourPi.appendingPathComponent("extensions/theirs.ts"), atomically: true, encoding: .utf8)
+        try marking("your-listed-extension").write(to: scratch.appendingPathComponent("listed.ts"), atomically: true, encoding: .utf8)
+        try marking("project-extension").write(to: userHome.appendingPathComponent(".pi/extensions/project.ts"), atomically: true, encoding: .utf8)
+        try #"{"packages":["npm:their-package"],"extensions":["\#(scratch.appendingPathComponent("listed.ts").path)"]}"#
+            .write(to: yourPi.appendingPathComponent("settings.json"), atomically: true, encoding: .utf8)
+        try #"{"packages":["npm:project-package"]}"#.write(to: userHome.appendingPathComponent(".pi/settings.json"), atomically: true, encoding: .utf8)
+        try models.write(to: yourPi.appendingPathComponent("models.json"), atomically: true, encoding: .utf8)
+        try "# Your instructions\n".write(to: yourPi.appendingPathComponent("AGENTS.md"), atomically: true, encoding: .utf8)
+        // npm, if anything ran it.
+        let npm = bin.appendingPathComponent("npm")
+        try "#!/bin/sh\necho \"$@\" >> \(String(reflecting: marks.appendingPathComponent("npm").path))\nexit 1\n"
+            .write(to: npm, atomically: true, encoding: .utf8)
+        try files.setAttributes([.posixPermissions: 0o755], ofItemAtPath: npm.path)
+
+        // Shepherd's home, with a package someone added to its settings by hand.
+        let home = PiHome(directory: scratch.appendingPathComponent("support/pi", isDirectory: true), engine: .bundled(engine))
+        try files.createDirectory(at: home.directory, withIntermediateDirectories: true)
+        try #"{"packages":["npm:hand-added"]}"#.write(to: home.settings, atomically: true, encoding: .utf8)
+        try home.install()
+        try models.write(to: home.directory.appendingPathComponent("models.json"), atomically: true, encoding: .utf8)
+        let before = try tree(yourPi)
+
+        let pi = try RPCProcess(executable: home.launcher.path, arguments: [
+            "--mode", "rpc", "--session-dir", home.sessionDirectory(forCwd: userHome.path).path, "--session-id", "smoke-home",
+        ], directory: userHome, environment: [
+            "HOME": userHome.path,
+            "TMPDIR": temporary.path + "/",
+            "PATH": "\(bin.path):/usr/bin:/bin:/usr/sbin:/sbin",
+        ])
+        defer { pi.stop() }
+
+        let state = try await pi.request(["type": "get_state"])
+        #expect(state["success"] as? Bool == true, "get_state: \(state) \(pi.errors)")
+        _ = try await pi.request(["type": "get_commands"])
+        #expect(try await pi.finish() == 0, "pi exits cleanly when its input ends: \(pi.errors)")
+
+        #expect(try files.contentsOfDirectory(atPath: marks.path).isEmpty, "none of the user's code ran, and no npm")
+        #expect(try tree(yourPi) == before, "your pi is byte-identical")
+        let settings = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: home.settings)) as? [String: Any])
+        #expect(settings["packages"] == nil, "Shepherd's settings name no packages")
+    }
+
+    /// Every path under `root`, with its bytes (a folder as empty).
+    static func tree(_ root: URL) throws -> [String: Data] {
+        var tree: [String: Data] = [:]
+        for path in try FileManager.default.subpathsOfDirectory(atPath: root.path) {
+            tree[path] = FileManager.default.contents(atPath: root.appendingPathComponent(path).path) ?? Data()
+        }
+        return tree
     }
 
     struct ToolResult { let status: Int32; let output: String }
