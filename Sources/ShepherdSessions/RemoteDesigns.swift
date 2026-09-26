@@ -102,6 +102,9 @@ struct RemoteDesignService: Sendable {
             return .system(try await server.designSystem(namespace))
         case .watch:
             return .ok
+        case .create:
+            // Made by the app, on the server queue's own path (`remoteCreateDesign`).
+            throw RemoteDesignRefusal("unsupported", "A design is made through the host's New design.")
         }
     }
 
