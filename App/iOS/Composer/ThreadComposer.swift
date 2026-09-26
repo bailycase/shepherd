@@ -42,17 +42,28 @@ struct ThreadComposer: View {
                 ComposerWidget(title: widget.title, text: widget.text)
             }
             if let dialog = store.dialogs.first, let session = store.session {
-                QuestionPanel(dialog: dialog, count: store.dialogs.count, enabled: live && store.supports("answer"), docked: !wide) { answer in
-                    Task {
-                        await store.answer(dialogID: dialog.id, sessionID: session.piSessionID, generation: session.generation,
-                                           answer: answer)
+                let key = session.key + ":" + dialog.id
+                if wide, state.questionHiding.isHidden(key) {
+                    // Folded on iPad to read the thread; it still holds the composer's place.
+                    NWQuestionCardHiddenLine(question: dialog.title) {
+                        withNWAnimation(.disclosure) { state.questionHiding.show() }
                     }
+                    .id(key + ":hidden")
+                    .nwTransition(.content)
+                } else {
+                    QuestionPanel(dialog: dialog, count: store.dialogs.count, enabled: live && store.supports("answer"), docked: !wide,
+                                  hide: wide ? { withNWAnimation(.disclosure) { state.questionHiding.hide(key) } } : nil) { answer in
+                        Task {
+                            await store.answer(dialogID: dialog.id, sessionID: session.piSessionID, generation: session.generation,
+                                               answer: answer)
+                        }
+                    }
+                    .id(key)
+                    // Docked on a phone, the panel runs to the screen's edges.
+                    .padding(.horizontal, wide ? 0 : -MobileLayout.gutter)
+                    .padding(.bottom, wide ? 0 : -MobileLayout.composerBottom)
+                    .nwTransition(.content)
                 }
-                .id(session.key + ":" + dialog.id)
-                // Docked on a phone, the panel runs to the screen's edges.
-                .padding(.horizontal, wide ? 0 : -MobileLayout.gutter)
-                .padding(.bottom, wide ? 0 : -MobileLayout.composerBottom)
-                .nwTransition(.content)
             } else if let run = answering(store, state: state), let dialog = nativeSubagentQuestionDialog(run) {
                 // A subagent's question, from its row's Answer: Hide returns to the tray.
                 QuestionPanel(dialog: dialog, enabled: live && store.takesSubagentCommands, docked: !wide,

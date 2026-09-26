@@ -34,6 +34,13 @@ extension FixtureCatalog {
             FixtureScreen(name: "question", hosts: ThreadFixtures.hosts(), routes: [.thread(dock)]),
             FixtureScreen(name: "question-confirm", hosts: ThreadFixtures.hosts(dock: ThreadFixtures.confirm()), routes: [.thread(dock)]),
             FixtureScreen(name: "question-input", hosts: ThreadFixtures.hosts(dock: ThreadFixtures.input()), routes: [.thread(dock)]),
+            // iPadQuestion: Hide the question folds the card to one line so the thread reads; the
+            // agent still waits (on a phone the panel stays open).
+            FixtureScreen(name: "question-hidden", hosts: ThreadFixtures.hosts(), routes: [.thread(dock)],
+                          prepare: { _ in
+                              let session = NativeThreadSession(piSessionID: "fixture-session", generation: "fixture-generation")
+                              ComposerStates.shared.state(for: dock).questionHiding.hide(session.key + ":d-select")
+                          }),
             // QuestionAnswered: where pi asked, "Agent asked:" and the question, the answer as the
             // user's bubble with its time, and pi's turn carrying on; one nobody answered below.
             FixtureScreen(name: "question-answered", hosts: ThreadFixtures.hosts(dock: ThreadFixtures.answered()), routes: [.thread(dock)]),

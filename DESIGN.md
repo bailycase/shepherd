@@ -203,6 +203,8 @@ Additions the boards don't have:
   to the agent process." banner; several waiting questions ("1 / N") and a question's timeout
   note; and a question's record for a confirm (Yes or No), a typed answer, and a question nobody
   answered ("· not answered").
+- **The iPad's folded question card** (iOS: iPad › Questions): iPadQuestion draws Hide the
+  question but not what it folds to.
 - **A confirmation before closing a terminal tab** on iOS, naming the tab and how many shells stop.
 
 ## Theme model
@@ -5093,8 +5095,17 @@ header's pill turns "Needs you" (attention, glowing).
 
 - **Card:** `bgRaised`, a 1px `lantern` line, radius 16, a 3pt `lanternTint` ring outside it;
   14×18 inset (16 at the bottom), parts 12pt apart.
-- **Head** (26pt): a 13pt glyph and "Agent is asking" at 13/600, both `lanternText`; **not built yet:** Hide the question (a 40pt
-  circle, trailing), which folds the card to read the thread and never answers it.
+- **Head** (26pt): a 13pt glyph and "Agent is asking" at 13/600, both `lanternText`; and,
+  trailing, **Hide the question**: a 40pt circle (`.nwIcon`, a 44pt touch target) with an 18pt
+  `chevron.down` in `textSecondary`, overhanging the head rather than growing it, which folds the
+  card to read the thread and never answers it ("Hide the question" to VoiceOver). Only on the
+  card: the phone's docked panel has none.
+- **Folded** (`NWQuestionCardHiddenLine`; no board draws it, so it follows the Mac's hidden
+  line, QuestionStates › hidden): the same lantern card around one row, 16pt leading and 4pt
+  trailing: a 14pt glyph in `lanternText`, the question in `headline` (truncating), a secondary
+  **Answer** (m), and Show the question (the same 40pt circle, `chevron.up`); either button
+  unfolds it. It still holds the composer's place, because the agent is still waiting. Only that
+  question stays folded: the next one arrives open (`NativeQuestionHiding`, the Mac's rule).
 - **The question:** 19/600/1.35.
 - **Answers,** numbered, side by side in two columns when each gets at least 220pt, 8pt apart;
   one column otherwise:

@@ -38,6 +38,8 @@ final class ComposerState {
     var trayCollapsed = false
     var trayExpanded = false
     var answeringRun: String?
+    /// pi's question folded on iPad (Hide the question): only that one stays folded.
+    var questionHiding = NativeQuestionHiding()
     /// The context ring's details are open (a sheet).
     var showingContext = false
     /// What the context details asked the thread to bring into view (Largest, Show summary).

@@ -87,7 +87,7 @@ struct Composer: View {
     /// The run whose question is open in the composer's place (from its row's Answer).
     @State private var answering: String?
     /// pi's question the user shrank to its hidden line.
-    @State private var questionHiding = QuestionHiding()
+    @State private var questionHiding = NativeQuestionHiding()
     /// The queued message with keyboard focus, if one has it.
     @FocusState private var focusedRow: String?
     /// ⌘↩ reaches the composer before any key equivalent in its window.
@@ -942,16 +942,6 @@ func nativeContextTooltip(_ stats: NativeThreadStats?) -> String {
 }
 
 // MARK: Questions
-
-/// Which of pi's questions the user hid. Only that one stays hidden: the next question pi asks
-/// arrives open.
-struct QuestionHiding: Equatable {
-    private(set) var hiddenKey: String?
-
-    func isHidden(_ key: String?) -> Bool { key != nil && key == hiddenKey }
-    mutating func hide(_ key: String) { hiddenKey = key }
-    mutating func show() { hiddenKey = nil }
-}
 
 /// A question from pi or an extension (select / confirm / input / editor), in place of the
 /// field so it can never scroll away. Shepherd has no permission model: these are questions,
