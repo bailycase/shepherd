@@ -944,9 +944,13 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   1. the ⌘-digit hint on the first nine rows while ⌘ is held ("⌘3", micro `textTertiary`)
   2. a remote agent's host as a tag: mono 10 `textTertiary`, padded 4pt at the sides, in a 1pt
      `lineSubtle` border at radius 4 ("horizon"). Threads on this Mac carry no tag.
-  3. an automation run's word in mono 10: "done", or "failed" in `failed`; its elapsed time while it
+  3. "can't start" in mono 10 `failed` for an agent on this Mac whose pi stopped before it served
+     (Thread › Can't start), with the red dot (a thread's) or the bolt (a run's); VoiceOver reads
+     "can't start". It clears the moment Retry starts pi again. A remote agent's row doesn't say
+     it: the host sends it only in the thread's snapshot.
+  4. an automation run's word in mono 10: "done", or "failed" in `failed`; its elapsed time while it
      runs
-  4. a running thread's elapsed time ("4m", counting live in mono 10 `textTertiary`). The board
+  5. a running thread's elapsed time ("4m", counting live in mono 10 `textTertiary`). The board
      draws a sparkline here (see Where Shepherd departs from the boards).
 
   The list takes the rest of the column, scrolls, and clips at the bottom. The boards' "n boards"
@@ -1363,6 +1367,18 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   flashes. Only what pi alone knows arrives with that snapshot: the "/ commands" chip (and the
   placeholder's "or / for commands"). An agent whose file
   cannot be read stays blank until pi sends its history.
+- **Can't start:** a pi that stops before it serves the thread keeps its agent. Nothing is
+  deleted, and the thread keeps what it drew while pi started: a resuming agent's history from its
+  session file, a new agent's empty state and opening prompt. The composer says why and offers
+  Retry (Composer › States › Can't start); the thread adds no row, no notice and no spinner. The
+  host names the cause from pi's exit and its last lines on stderr (`NativeStartProblem`): pi can't
+  reach a model (not signed in), an extension failed to load, Shepherd can't find pi, pi didn't
+  find the conversation it was resuming and would start a new one (Shepherd stops it first, so
+  nothing is written), or pi exited with its own words. Retry starts pi again and the thread is
+  Starting once more; a new agent's opening prompt, which pi never read, goes with it. A pi that
+  exits after it has served is the lost connection (Composer › States › Error), and its agent
+  retires as before. Remote viewers draw the same banner from the host's snapshot
+  (`NativeThreadSnapshot.startProblem`), without Retry: starting pi belongs to the host.
 - **Empty thread:** a framed `NWEmptyState` (a dashed `lineStrong` border, no crook): "New
   agent in `~/path`" (the path in Geist Mono 15 medium within the 17pt title), with "Describe
   the task. Drop or paste images to attach them, or type / for commands." A new agent is known
@@ -1854,6 +1870,24 @@ its own.
 - **Error:** Send, plus a `failed` banner above the card, "Lost connection to the agent
   process.", with the error and Reconnect: only for a pi that was serving and went away, one
   that failed, or one that never started.
+- **Can't start:** a `failed` `NWBanner` in the Error banner's place above the card, for a pi
+  that stopped before it served (Thread › Can't start). Its title names the cause and its message
+  says what to do, then pi's own last lines (at most six, colour codes removed), all selectable:
+  - not signed in: "pi can't reach a model." / "Sign in to a provider in pi, then Retry."
+  - an extension failed: "An extension stopped pi from starting." / "Fix or remove it, then
+    Retry." (pi's line names the file)
+  - pi missing: "Shepherd can't find pi." / "Install pi, or put it on your login shell's PATH,
+    then Retry."
+  - resumed as new: "pi couldn't find this conversation." / "It would have started a new, empty
+    one, so Shepherd stopped it. The conversation's file is untouched."
+  - exited: "pi exited while starting (code 1)." ("(signal)" for a signal) / "Retry to start it
+    again."
+
+  Retry trails the text (secondary, small). A resumed-as-new banner adds **Start new
+  conversation** (ghost, before Retry), which starts pi without the check, as today. Send is
+  disabled and the draft stays in the field; "Starting…" never shows beside it. A remote viewer's
+  banner has no actions and ends "Retry on <host>." Retry takes the banner away at once (`list`
+  transition) and the composer is Starting again.
 
 With more than one live subagent, Stop asks first (`StopAllDialog`): Stop only the agent, or
 Stop all. Stop (the button, ⌘., or Esc in the composer) takes back what pi was about to read
@@ -4103,6 +4137,7 @@ Components › Status and feedback.
 | Agent idle | `idle` | hollow ring | Send |
 | pi starting | `idle` | hollow ring | Send, which waits for pi; only when pi is slow (two seconds, half a second over a blank thread), "Starting…" beside it |
 | Connection lost | `failed` | — | Send, plus a `failed` banner with Reconnect |
+| pi can't start | `failed` | red dot; "can't start" in mono 10 `failed` | the Can't start banner with Retry; Send disabled |
 
 Subagent runs use the same states on their dots, glyphs, pills, and steps: running, needs you,
 done, failed, and queued (queued or paused, hollow). Tool calls use running, done, and failed.
@@ -4359,7 +4394,7 @@ trail, top-aligned, 6pt apart, as small (24pt) buttons. Default icons:
   built.
 
 The app's banners today: the composer's "Lost connection to the agent process." (failed, with
-Reconnect) and a failed attachment, a remote agent's pane while its host reconnects, dialogs' `DialogBanner`s, the commit sheet's, the review's load
+Reconnect) and its Can't start banners (failed, with Retry) and a failed attachment, a remote agent's pane while its host reconnects, dialogs' `DialogBanner`s, the commit sheet's, the review's load
 error, and the Nightly notice (idle); on iOS, a screen's own failure (commit, review, terminal, New
 thread, Automations).
 
