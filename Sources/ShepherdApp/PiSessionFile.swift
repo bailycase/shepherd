@@ -3,7 +3,8 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 
-/// Pi's on-disk session files, from Shepherd's side.
+/// Pi's on-disk session files in Shepherd's own pi home, from Shepherd's side. "Your pi" (the
+/// user's own) is only ever read, to adopt an agent's conversation once (`adopt`).
 ///
 /// Shepherd launches every agent with `--session-id <agent id>` so the agent
 /// resumes the same conversation across respawns. Pi only *writes* a session
@@ -76,8 +77,12 @@ enum PiSessionFile {
         cwd: String,
         sessionsRoot: URL
     ) -> Bool {
-        guard let url = file(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot),
-              let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        file(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot).map(hasRuntimeState(at:)) ?? false
+    }
+
+    /// `hasRuntimeState` for one file.
+    static func hasRuntimeState(at url: URL) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
         defer { try? handle.close() }
         // Any byte after the header's newline is pi's (a trailing partial line included). A
         // restored agent's session can run to many megabytes; only its first line matters, and
@@ -162,6 +167,72 @@ enum PiSessionFile {
         } catch {
             return false
         }
+    }
+
+    // MARK: Adoption
+
+    /// What adoption did for one agent.
+    enum Adoption: Equatable {
+        /// Shepherd's home already holds the conversation.
+        case alreadyHere
+        /// Copied from "your pi" (the source it read).
+        case copied(from: String)
+        /// "Your pi" holds it in a newer format than Shepherd's pi reads: it starts fresh.
+        case newerFormat(String)
+        /// Nothing to adopt: the agent starts fresh under its id.
+        case nothing
+    }
+
+    /// Before any seeding or launch, an agent whose conversation Shepherd's home doesn't hold
+    /// yet takes a copy of it from "your pi", where Shepherd's agents kept it before they ran
+    /// their own pi. Plain reads only: pi repairs and appends to any file it loads, so Shepherd
+    /// never lets pi open the user's file, and copies bytes (never a link) under the same name
+    /// into the agent's session folder in its home. A copy already there wins; a header alone on
+    /// either side is nothing to adopt; a header newer than Shepherd's pi reads is left alone.
+    static func adopt(sessionID: String, cwd: String, sessionsRoot: URL, yourPi: YourPi?) -> Adoption {
+        let ours = file(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot)
+        if let ours, hasRuntimeState(at: ours) { return .alreadyHere }
+        guard let yourPi else { return .nothing }
+        var candidates: [URL] = []
+        for folder in yourPi.sessionFolders(forCwd: cwd) {
+            guard let names = try? FileManager.default.contentsOfDirectory(atPath: folder.path) else { continue }
+            for name in names.sorted() where name.hasSuffix("_\(sessionID).jsonl") { candidates.append(folder.appendingPathComponent(name)) }
+        }
+        guard let source = candidates.first(where: { hasRuntimeState(at: $0) }) else { return .nothing }
+        let real = URL(fileURLWithPath: realPath(source.path))
+        var info = stat()
+        guard lstat(real.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG, let data = try? Data(contentsOf: real) else { return .nothing }
+        if let version = headerVersion(data), version > Self.version {
+            ShepherdLog.info("session \(sessionID) in your pi (\(source.path)) is format \(version), newer than Shepherd's pi reads; starting fresh")
+            return .newerFormat(source.path)
+        }
+        let directory = projectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot)
+        let target = directory.appendingPathComponent(source.lastPathComponent)
+        let temporary = directory.appendingPathComponent(".\(source.lastPathComponent).\(UUID().uuidString)")
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try data.write(to: temporary)
+            guard rename(temporary.path, target.path) == 0 else { throw ForkFailure(message: String(cString: strerror(errno))) }
+        } catch {
+            try? FileManager.default.removeItem(at: temporary)
+            ShepherdLog.info("couldn't adopt session \(sessionID) from \(source.path): \(error)")
+            return .nothing
+        }
+        // A single-link regular file of Shepherd's own: pi appends here, never to the user's.
+        guard lstat(target.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG, info.st_nlink == 1 else {
+            try? FileManager.default.removeItem(at: target)
+            return .nothing
+        }
+        // The header Shepherd seeded earlier, under another name, would be a second file for the id.
+        if let ours, ours.lastPathComponent != target.lastPathComponent { try? FileManager.default.removeItem(at: ours) }
+        return .copied(from: source.path)
+    }
+
+    /// The `version` a session file's header names.
+    static func headerVersion(_ data: Data) -> Int? {
+        let line = data.prefix(64 * 1024).split(separator: UInt8(ascii: "\n"), maxSplits: 1, omittingEmptySubsequences: false).first ?? Data()
+        guard let header = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any], header["type"] as? String == "session" else { return nil }
+        return (header["version"] as? NSNumber)?.intValue ?? 1
     }
 
     struct ForkFailure: Error, CustomStringConvertible {
