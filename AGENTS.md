@@ -548,8 +548,9 @@ Sources/
       NightlyMovedNotice
     Status/Namer/Panes/Review/Subagents/Children/Inspect/Instructions/Design/MCPExtension.swift
       embedded extensions (DesignExtension also carries the design skill; MCPExtension the client)
-    MCP/MCPAgentReports, ShepherdViewModel+MCP   what agents report about each MCP server, and
-      their credential requests
+    MCP/ (MCPStore, MCPConfigFile, MCPSecretStore, MCPOAuth, MCPProbe, sheets),
+      SettingsMCP, ShepherdViewModel+MCP   Settings ▸ MCP servers: the config file, Keychain,
+      OAuth, and what agents report; answers the extension's credential requests
   shepherd-cli/        `shepherd --import herdr` (writes state.json while Shepherd is not running).
 Packages/
   ShepherdUI/          Night Watch, its own local package (module ShepherdUI; macOS 26, iOS 27;

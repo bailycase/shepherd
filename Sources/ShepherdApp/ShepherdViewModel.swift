@@ -195,8 +195,6 @@ final class ShepherdViewModel {
     let instructions: InstructionsModel
     /// Settings ▸ Experiments ▸ Suggested instructions: what this Mac's agents suggested.
     let suggestions: SuggestionsModel
-    /// Settings ▸ MCP servers: what this Mac's agents report about each server.
-    let mcpReports = MCPAgentReports()
     /// Settings ▸ Skills: every host's agent skills, This Mac's through `localSkills`.
     let skills: ClientSkills
     @ObservationIgnored let localSkills: LocalSkillsClient
@@ -783,7 +781,6 @@ final class ShepherdViewModel {
         checkouts?.sync(agents: state.agents.map(\.id))
         pruneReviewSessions()
         pruneDesigns()
-        mcpReports.retain(agents: Set(state.agents.map(\.id)))
         // First adoption of the restored workspace: stand the enabled
         // automation watches back up (their agents died with the last run).
         if !didAutoStartAutomations {
