@@ -90,6 +90,15 @@ struct PadDesignMarkupLayer: View {
     @Bindable var canvas: PadDesignCanvas
     /// The host takes markup (`design.markup.v1`).
     let available: Bool
+    @State private var width: CGFloat = 0
+    @State private var paletteWidth: CGFloat = 0
+
+    /// Not drawn: where the canvas is too narrow (portrait) for the centered palette to clear the
+    /// toolbar in the bottom-leading corner, the palette rises above the toolbar.
+    private var paletteBottom: CGFloat {
+        let M = NWDesignMetrics.self
+        return (width - paletteWidth) / 2 < M.markupToolbarClearance ? M.markupLiftedBottom : M.markupBottom
+    }
 
     var body: some View {
         let markup = canvas.markup
@@ -105,10 +114,12 @@ struct PadDesignMarkupLayer: View {
                 NWMarkupPalette(tool: Bindable(markup).tool, ink: Bindable(markup).ink, reading: markup.reading) {
                     canvas.finishMarkup()
                 }
-                .padding(.bottom, NWDesignMetrics.markupBottom)
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { paletteWidth = $0 }
+                .padding(.bottom, paletteBottom)
                 .nwTransition(.overlay)
             }
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .nwAnimation(.content, value: markup.showsPalette)
         .onChange(of: markup.tool) { _, tool in
             // The palette's Comment is the canvas's: a tap on an element opens the editor.

@@ -323,6 +323,10 @@ public enum NWDesignMetrics {
     public static let markupDividerMargin: CGFloat = NW.Space.s
     public static let markupDoneSize: CGFloat = 15
     public static let markupBottom: CGFloat = 28
+    /// A canvas too narrow to keep the centered palette clear of the toolbar's corner (its inset
+    /// and its bar, about 140pt with the zoom) lifts the palette over the toolbar, 12pt above it.
+    public static let markupToolbarClearance: CGFloat = toolbarInset + 144
+    public static let markupLiftedBottom: CGFloat = toolbarInset + toolbarHeight + NW.Space.l
     /// Ink on the canvas: the pen's width and the marker's, in screen points.
     public static let markupPenWidth: CGFloat = 3
     public static let markupMarkerWidth: CGFloat = 12
