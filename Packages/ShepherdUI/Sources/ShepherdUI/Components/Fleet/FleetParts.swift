@@ -514,6 +514,49 @@ public struct NWAttentionCard<Actions: View>: View {
     }
 }
 
+/// A host in the iPad Hosts list (iPadHosts): a 16pt `textSecondary` glyph, the name in mono
+/// semibold over what it carries (12 `textTertiary`), and an 8pt status dot trailing; at least
+/// 64pt, the chosen one on `bgSelected`.
+public struct NWHostRow: View, Equatable {
+    let name: String
+    let detail: String
+    let state: AgentState
+    let selected: Bool
+
+    public init(name: String, detail: String, state: AgentState, selected: Bool = false) {
+        self.name = name
+        self.detail = detail
+        self.state = state
+        self.selected = selected
+    }
+
+    public var body: some View {
+        let nw = Color.nw
+        HStack(spacing: NW.Space.l) {
+            Image(systemName: "desktopcomputer")
+                .font(.nw(.ui, weight: .regular))
+                .foregroundStyle(nw.textSecondary)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+                Text(name).font(.nw(.code, weight: .semibold)).foregroundStyle(nw.textPrimary).lineLimit(1)
+                Text(detail).font(.nw(.caption)).foregroundStyle(nw.textTertiary).lineLimit(2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            NWStatusDot(state, size: NWListMetrics.attentionDot)
+        }
+        .padding(.horizontal, NW.Space.l)
+        .padding(.vertical, NW.Space.m)
+        .frame(maxWidth: .infinity, minHeight: NWHostRow.minHeight, alignment: .leading)
+        .background(selected ? nw.bgSelected : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    /// The board's 64pt rows.
+    public static let minHeight: CGFloat = 64
+}
+
 /// A host's card (MobileMore, iPadHosts): the name, its address, the connection, what runs there,
 /// and actions (Retry) while it is offline.
 public struct NWHostCard<Actions: View>: View {
