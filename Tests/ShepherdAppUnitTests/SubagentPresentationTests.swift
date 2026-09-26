@@ -145,4 +145,43 @@ struct SubagentPresentationTests {
     func modelTagsDropTheProvider(model: String, tag: String) {
         #expect(SubagentPresentation.modelTag(model) == tag)
     }
+
+    // MARK: A finished run's position
+
+    private static func message(_ id: String, _ role: String) -> NativeThreadMessage {
+        NativeThreadMessage(entryID: id, role: role, blocks: [NativeThreadBlock(kind: .text, text: id)])
+    }
+
+    /// The task, three replies, a steer, two replies: turns "task", "one", "steer", "two" by
+    /// their first messages.
+    private static let transcript = nativeTurns([
+        message("task", "user"),
+        message("one", "assistant"), message("one.t", "toolResult"), message("one.b", "assistant"),
+        message("one.bt", "toolResult"), message("one.c", "assistant"),
+        message("steer", "user"),
+        message("two", "assistant"), message("two.t", "toolResult"), message("two.b", "assistant"),
+    ])
+
+    private static func id(_ first: String) -> String? {
+        transcript.first { $0.messages.first?.entryID == first }?.id
+    }
+
+    @Test(arguments: [
+        ("task", nil as Int?, "turn 1 of 5"),
+        ("one", nil, "turn 1 of 5"),
+        ("steer", nil, "turn 4 of 5"),
+        ("two", 11, "turn 4 of 11"),
+    ])
+    func aFinishedRunSaysWhichTurnIsOnScreen(top: String, total: Int?, expected: String) throws {
+        #expect(Self.transcript.count == 4)
+        let top = try #require(Self.id(top))
+        #expect(SubagentPresentation.position(turns: Self.transcript, top: top, total: total) == expected)
+    }
+
+    @Test func noTurnOnScreenOrNoRepliesHasNoPosition() {
+        #expect(SubagentPresentation.position(turns: Self.transcript, top: nil, total: 5) == nil)
+        #expect(SubagentPresentation.position(turns: Self.transcript, top: "gone", total: 5) == nil)
+        let task = nativeTurns([Self.message("task", "user")])
+        #expect(SubagentPresentation.position(turns: task, top: task.first?.id, total: nil) == nil)
+    }
 }
