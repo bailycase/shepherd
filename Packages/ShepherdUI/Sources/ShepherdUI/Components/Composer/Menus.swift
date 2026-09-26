@@ -40,6 +40,8 @@ public struct NWMenuHeader: View {
 /// targets build for the release benchmarks; it stays zero there.
 @MainActor public enum NWMenuDiagnostics {
     public static var rowBodies = 0
+    /// How many times a menu's list was put back at its top (`NWMenuListStartsAtTop`).
+    public static var listReturns = 0
 }
 
 /// A 28pt menu row: `runningTint` while highlighted, hovering highlights it, and a click (or
@@ -93,7 +95,14 @@ struct NWMenuSurface: ViewModifier {
 /// A menu's list starts at its top. While a composer menu grows from its bottom corner, the scale
 /// moves its hosted scroll view's frame, and AppKit drifts the list a few points down (9pt for
 /// eight rows); so for as long as the menu is growing, and until the reader or ↑↓ scroll it,
-/// the list is held at its top.
+/// the list is put back at its top.
+///
+/// Under that scale AppKit also snaps the clip view to device pixels, so the list cannot sit at
+/// exactly 0 until the menu stops growing: putting it back lands it a fraction of a point off,
+/// which reports a new offset. Put back from inside that report, the two chased each other within
+/// one display pass, and with the pointer over the window AppKit's cursor hit-testing kept the
+/// chase going until it threw. So only a drift of a point or more counts, and the list is put
+/// back once, on the main queue's next turn, however many offsets one pass reports.
 private struct NWMenuListStartsAtTop: ViewModifier {
     /// The list's first row. (Not a zero-height marker: a lazy stack that starts with one
     /// misplaces every row a scroll aims at.)
@@ -103,22 +112,35 @@ private struct NWMenuListStartsAtTop: ViewModifier {
 
     /// Past the overlay motion's settle (about 1.7× its 180ms anchor), with room to spare.
     private static let growing = Duration.seconds(NW.Motion.overlay.duration * 3)
+    /// Less than this is the growth's pixel snapping, not a drift.
+    private static let drift: CGFloat = 1
 
     func body(content: Content) -> some View {
         content
             .onScrollPhaseChange { _, phase in if phase != .idle { list.moved = true } }
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, offset in
-                guard let top, !list.moved, offset != 0, ContinuousClock.now - list.appeared < Self.growing else { return }
-                proxy.scrollTo(top, anchor: .top)
+                guard let top, !list.moved, !list.returning, abs(offset) >= Self.drift,
+                      ContinuousClock.now - list.appeared < Self.growing else { return }
+                list.returning = true
+                Task { @MainActor in
+                    list.returning = false
+                    guard !list.moved else { return }
+                    #if DEBUG
+                    NWMenuDiagnostics.listReturns += 1
+                    #endif
+                    proxy.scrollTo(top, anchor: .top)
+                }
             }
     }
 }
 
-/// When a menu's list appeared and whether it has been scrolled since: bookkeeping, read and
-/// written as the list moves (never while drawing), so a plain reference.
+/// When a menu's list appeared, whether it has been scrolled since, and whether it is about to be
+/// put back at its top: bookkeeping, read and written as the list moves (never while drawing), so
+/// a plain reference.
 final class NWMenuListMotion {
     let appeared = ContinuousClock.now
     var moved = false
+    var returning = false
 }
 
 // MARK: Slash menu
