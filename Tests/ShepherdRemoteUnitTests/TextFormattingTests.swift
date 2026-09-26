@@ -7,7 +7,7 @@ struct TextFormattingTests {
     @Test(arguments: [
         (10.21, false, "10.2s"), (0.4, false, "0.4s"), (48, false, "48s"), (59.96, false, "60s"),
         (48.9, true, "48s"), (64, false, "1m 04s"), (3599, false, "59m 59s"), (3725, false, "1h 02m"),
-        (-3, false, "0s"), (0, true, "0s"),
+        (-3, false, "0s"), (0, true, "0s"), (1e20, false, "2562047788015215h 30m"),
     ] as [(Double, Bool, String)])
     func durationText(seconds: Double, live: Bool, expected: String) {
         #expect(nativeDurationText(seconds, live: live) == expected)
@@ -36,6 +36,8 @@ struct TextFormattingTests {
         #expect(nativeTurnTimeText(startedAt: start, endedAt: nil) == nativeClockText(start))
         #expect(nativeTurnTimeText(startedAt: start, endedAt: start + 400) == nativeClockText(start), "sub-second turns show no 0s")
         #expect(nativeTurnTimeText(startedAt: start, endedAt: start + (45 * 60 + 12) * 1000) == nativeClockText(start) + " · 45m 12s")
+        #expect(nativeTurnTimeText(startedAt: 0, endedAt: 1e25)?.hasSuffix("m") == true, "a timestamp past Int.max seconds")
+        #expect(nativeTurnTimeText(startedAt: 0, endedAt: .greatestFiniteMagnitude)?.hasSuffix("m") == true)
     }
 
     @Test func headTruncationKeepsTheFilename() {
