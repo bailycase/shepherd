@@ -201,7 +201,8 @@ Additions the boards don't have:
   note; a call's output sheet and context menu (Show Call, Review <file>, Open Output, Copy
   Output); extension widgets above the composer; the Stop all confirmation; the "Lost connection
   to the agent process." banner; several waiting questions ("1 / N") and a question's timeout
-  note.
+  note; and a question's record for a confirm (Yes or No), a typed answer, and a question nobody
+  answered ("· not answered").
 - **A confirmation before closing a terminal tab** on iOS, naming the tab and how many shells stop.
 
 ## Theme model
@@ -1826,9 +1827,24 @@ first"):
   (`chevron.up`), 10pt apart; either button brings the panel back. Only that question stays
   hidden: the next one pi asks arrives open (`QuestionHiding`). Esc does not hide it yet (see
   Keyboard)
-- once answered, the panel goes and the field returns; nothing in the thread records the
-  question (QuestionAnswered's record is not built), except the asking tool's own activity line
-  when a tool asked. A select, confirm, input or editor dialog from an extension leaves no trace
+- once answered, the panel goes and the field returns, and the thread keeps the record below
+- **The record** (QuestionAnswered; `QuestionRecord` on the board; `NWQuestionRecord`, from
+  `NativeQuestionRecordRow`): where pi asked, the thread keeps one line in Geist 12.5
+  `textTertiary` (a 12pt `questionmark.circle`, "Agent asked:", and the question in
+  `textSecondary` medium, 7pt apart; one line, truncating, the whole question in its tooltip; on
+  iPhone and iPad the question wraps to three lines, "not answered" riding its last)
+  and, 8pt below, your answer as a user bubble (`NWUserBubble` with a title): the option's
+  title in semibold (its description and "(Recommended)" left out), or Yes or No for a confirm,
+  or the text you typed for an input or editor in the bubble's regular weight; and "2:51 PM ·
+  answered" in mono 10.5 tertiary beneath, on hover like every bubble's time. pi's turn carries
+  on under it; the record is part of the agent's turn, but its time is the answer's, so it moves
+  neither the turn's duration nor its Copy. A question nobody answered (dismissed, or its timeout
+  passed) keeps its line alone, ending "· not answered" in `textTertiary`, with no bubble.
+  VoiceOver reads it as one element ("Agent asked: …, you answered: …"). The host keeps it
+  (docs/native-thread.md › Questions): a thread row every client draws, remote and iOS
+  included, placed after the call that asked and before pi's next reply, and kept per pi
+  session beside the queue's origins, so it survives a relaunch. When a tool asked, its own
+  activity line stays too
 
 **Not built yet: the question dock** (QuestionAsk, QuestionStates). It replaces the whole
 composer card, not just its field. Its rules (QuestionStates › Rules):
@@ -1893,16 +1909,25 @@ composer card, not just its field. Its rules (QuestionStates › Rules):
   leading and 8pt trailing padding, 10pt between its parts): a 14pt glyph in `lanternText`, the
   question in 13.5 semibold (truncating), a small secondary **Answer** (24pt), and a 26pt Show
   the question button. Esc or Show the question brings the dock back.
-- **The record** (QuestionAnswered; `QuestionRecord` on the board): where pi asked, the thread
-  keeps one line in Geist 12.5 `textTertiary` (a 12pt glyph, "Agent asked:", and the question in
-  `textSecondary` medium, 7pt apart) and, 8pt below, your answer as a user bubble: the option's
-  title in semibold with your note under it, 4pt apart, and "2:51 PM · answered" in mono 10.5
-  tertiary beneath (on hover, like every bubble's time). pi's turn carries on under it.
+- **The record** is built (above). Not built with it: your note under the option's title, 4pt
+  apart (QuestionAnswered), since no asker takes a note yet (What pi can take).
 - **Keys** (QuestionStates › Keyboard; shown in menus and tooltips): 1–9 pick an option, ↩
   answers, Esc hides or shows the question.
 - **What pi can take:** pi's select answer is one of the options it offered, with no note or free
   text, and pi has no multi-select. By Honest affordances, the dock shows the note field,
-  Something else, and Pick several only for an asker that can take them.
+  Something else, and Pick several only for an asker that can take them. What each asking path
+  accepts (pi 0.87.1's RPC mode):
+  - **select** (`ctx.ui.select`): one string. pi hands back whatever value comes, but the
+    extension compares it with its options, so anything else reads as no pick; no note, no
+    multi-select. **confirm:** yes or no. **input** and **editor:** free text, one string.
+    Dismiss is a cancel (select and input resolve to nothing, confirm to no); a timeout or pi's
+    abort resolves the same way on pi's side, and pi does not tell the host.
+  - **Shepherd's own extensions** ask nothing today: the status extension only reads a tool named
+    like ask or question as Blocked, and the asking tools people run (`ask_user`) come from
+    other extensions and ask through the select and input above.
+  - **A subagent's question** (Subagents › Needs you) is answered with a message to the child,
+    free text, so a note or Something else could reach it; its answer already joins the child's
+    transcript as the user's message.
 
 **Extension widgets** (an extension's `setWidget` text, ANSI stripped) appear above the card as a
 micro caps title and its text. Machine payloads, `setStatus`, and `notify` are not shown.
@@ -4575,6 +4600,9 @@ differs.
 - **Not built yet:** a last option "Something else…" (a 46pt card, its number, the text in
   `textTertiary`) that opens a field for a free answer to a select. pi's select takes only an
   offered option, so it waits for the picker block's `allowOther`.
+- **After:** the thread keeps the record where pi asked (Composer, questions, and menus ›
+  Questions › The record), on iPhone and iPad alike, its time showing at rest (touch has no
+  hover).
 
 ### iPhone: Subagents (MobileSteer, MobileSubagents, MobileSubagent)
 
@@ -7542,7 +7570,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | QueueStates | Up next (the queue); Settings › Agents, Keyboard | Partial |
 | QuestionAsk | Composer, questions, and menus › Questions | Partial |
 | QuestionPick | Composer, questions, and menus › Questions | Partial |
-| QuestionAnswered | Composer, questions, and menus › Questions | Partial |
+| QuestionAnswered | Composer, questions, and menus › Questions (The record) | Built |
 | QuestionStates | Composer, questions, and menus › Questions; Keyboard | Partial |
 | TerminalSplit | Terminal panes; Terminal panel (no header button: departures) | Built |
 | TerminalPane | Terminal panes; Terminal panel (Split panes, Send output to pi; no header button: departures) | Partial |
