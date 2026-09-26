@@ -252,6 +252,18 @@ public final class DesignBoardView: DesignPlatformView {
         }
         finishBoot(.failure(CancellationError()))
         contentSize = nil
+        #if !(canImport(AppKit) && !targetEnvironment(macCatalyst))
+        // The page parses at the zoom it is shown at: it boots (and answers hit tests) before
+        // WebKit finishes the navigation, and at another scale its viewport would hold only
+        // part of the board.
+        let controller = webView.configuration.userContentController
+        controller.removeAllUserScripts()
+        controller.addUserScript(WKUserScript(source: DesignRuntime.bridgeScript, injectionTime: .atDocumentStart,
+                                              forMainFrameOnly: true, in: Self.bridgeWorld))
+        controller.addUserScript(WKUserScript(source: Self.viewportScript(width: boardSize.width, scale: zoom),
+                                              injectionTime: .atDocumentStart, forMainFrameOnly: true, in: Self.bridgeWorld))
+        appliedViewport = Self.viewportContent(width: boardSize.width, scale: zoom)
+        #endif
         let url = surface.url(for: board)
         loadURL = url
         return try await withTaskCancellationHandler {
