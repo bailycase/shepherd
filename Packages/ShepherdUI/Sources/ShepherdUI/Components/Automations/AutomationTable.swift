@@ -72,6 +72,8 @@ public struct NWAutomationTableRow: View, Equatable {
     let selected: Bool
     let columns: [NWTableColumns.Column]
     let toggle: ((Bool) -> Void)?
+    /// Whether it has a switch, for `==` (closures are the main actor's).
+    private let togglable: Bool
     let select: () -> Void
 
     public init(_ name: String, isOn: Bool, switchEnabled: Bool = true, starts: String = "thread", host: String,
@@ -86,13 +88,14 @@ public struct NWAutomationTableRow: View, Equatable {
         self.selected = selected
         self.columns = columns
         self.toggle = toggle
+        togglable = toggle != nil
         self.select = select
     }
 
     public nonisolated static func == (a: NWAutomationTableRow, b: NWAutomationTableRow) -> Bool {
         a.name == b.name && a.isOn == b.isOn && a.switchEnabled == b.switchEnabled && a.starts == b.starts
             && a.host == b.host && a.outcome == b.outcome && a.selected == b.selected && a.columns == b.columns
-            && (a.toggle == nil) == (b.toggle == nil)
+            && a.togglable == b.togglable
     }
 
     public var body: some View {
@@ -168,6 +171,8 @@ public struct NWAutomationRunLine: View, Equatable {
     let state: AgentState?
     let duration: String?
     let open: (() -> Void)?
+    /// Whether it opens a thread, for `==` (closures are the main actor's).
+    private let opens: Bool
 
     public init(started: String, word: String, state: AgentState?, duration: String? = nil, open: (() -> Void)? = nil) {
         self.started = started
@@ -175,11 +180,12 @@ public struct NWAutomationRunLine: View, Equatable {
         self.state = state
         self.duration = duration
         self.open = open
+        opens = open != nil
     }
 
     public nonisolated static func == (a: NWAutomationRunLine, b: NWAutomationRunLine) -> Bool {
         a.started == b.started && a.word == b.word && a.state == b.state && a.duration == b.duration
-            && (a.open == nil) == (b.open == nil)
+            && a.opens == b.opens
     }
 
     public var body: some View {
