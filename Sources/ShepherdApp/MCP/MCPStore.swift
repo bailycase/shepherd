@@ -166,7 +166,7 @@ final class MCPStore {
         case .needsScopes(let scopes): return MCPServerStatus(state: .needsScopes, scopes: scopes)
         case nil: break
         }
-        if usesOAuth(entry), token(entry.name) == nil { return MCPServerStatus(state: .needsSignIn) }
+        if usesOAuth(entry), token(for: entry) == nil { return MCPServerStatus(state: .needsSignIn) }
         let seen = reports.values.compactMap { $0[entry.name] }
         if seen.contains(where: { $0.status.state == .connected }) { return MCPServerStatus(state: .connected) }
         let now = dependencies.now()
@@ -206,6 +206,15 @@ final class MCPStore {
         let token = dependencies.secrets.value(for: MCPSecretReference.oauthAccount(server: server))
             .flatMap { try? JSONDecoder().decode(MCPOAuthToken.self, from: Data($0.utf8)) }
         tokens[server] = token
+        return token
+    }
+
+    /// The saved token, only while it belongs to the entry's server: an entry whose URL moved to
+    /// another origin must sign in again rather than hand the old server's token to the new one.
+    func token(for entry: MCPServerEntry) -> MCPOAuthToken? {
+        guard let token = token(entry.name), let url = entry.url.flatMap(URL.init(string:)),
+              let resource = URL(string: token.resource),
+              MCPOAuthService.origin(of: url) == MCPOAuthService.origin(of: resource) else { return nil }
         return token
     }
 
@@ -299,7 +308,7 @@ final class MCPStore {
             case .needsScopes: return .moreAccess(status.scopes)
             case .expired: return .expired
             case .needsSignIn: return .signIn
-            default: return token(entry.name).map { .account($0.account ?? "Signed in") } ?? .signIn
+            default: return token(for: entry).map { .account($0.account ?? "Signed in") } ?? .signIn
             }
         }
         let keys = entry.env.keys.sorted()
@@ -319,7 +328,7 @@ final class MCPStore {
                 ?? MCPSecretReference.references(in: auth.value).first.map { "\($0.name) (Keychain)" } ?? "a value in mcp.json"
             signIn = .header(name: auth.key, variable: variable)
         } else if usesOAuth(entry) {
-            let token = token(entry.name)
+            let token = token(for: entry)
             switch status.state {
             case .needsScopes:
                 signIn = .needsSignIn(title: "Needs " + status.scopes.joined(separator: ", "),
@@ -540,7 +549,7 @@ final class MCPStore {
     func probe(_ name: String) {
         guard let entry = document.server(name), entry.settings.enabled, !probing.contains(name) else { return }
         guard missingSecrets(entry).isEmpty else { rebuild(); return }
-        if usesOAuth(entry), token(name) == nil { rebuild(); return }
+        if usesOAuth(entry), token(for: entry) == nil { rebuild(); return }
         probing.insert(name)
         rebuild()
         Task { [weak self] in
@@ -576,7 +585,7 @@ final class MCPStore {
         var resolved = entry
         resolved.env = entry.env.mapValues(resolveKeychain)
         resolved.headers = entry.headers.mapValues(resolveKeychain)
-        if usesOAuth(entry), let token = try? await currentToken(entry.name) {
+        if usesOAuth(entry), token(for: entry) != nil, let token = try? await currentToken(entry.name) {
             var headers = resolved.headers
             headers["Authorization"] = "Bearer \(token.accessToken)"
             resolved.headers = headers
@@ -640,7 +649,7 @@ final class MCPStore {
             return .failure(code: MCPFailureCode.needsScopes,
                             message: "\(name) needs more access\(what): sign in again in Settings ▸ MCP servers.")
         }
-        guard var token = token(name) else {
+        guard var token = token(for: entry) else {
             return needsSignIn(name)
         }
         let stale = request.reason == .unauthorized || token.needsRefresh(nowMs: nowMs)
