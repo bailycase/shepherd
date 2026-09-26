@@ -21,13 +21,17 @@ the server speaks pi's RPC protocol directly.
 
 `TerminalSessionStore` (`TerminalSessions.swift`) spawns an agent's primary pane as an RPC
 session (`SessionRuntime.rpc`). Every other pane is a PTY running the shell configured in
-Settings ▸ Terminal. `StatusExtension.command` builds the agent command. It always goes through
-a zsh login shell, so the user's `PATH` resolves:
+Settings ▸ Terminal. `StatusExtension.command` builds the agent command with `PiLaunch.agent`,
+which builds every pi launch line. It always goes through a zsh login shell, so the user's `PATH`
+resolves, and it enters the agent's folder after the shell's startup files have run:
 
 ```sh
-/bin/zsh -l -c "exec pi --mode rpc --session-id '<id>' [--model '<m>' --thinking '<t>'] \
+/bin/zsh -l -c "cd -- '<cwd>' && exec pi --mode rpc --session-id '<id>' [--model '<m>' --thinking '<t>'] \
   -e '<status>' [-e '<panes>'] [-e '<review>'] [-e '<subagents>'] [-e '<children>'] [-e '<namer>']"
 ```
+
+`pi` is the engine `PiEngine` located: the user's `pi` on that PATH, or in a Debug build the file
+`SHEPHERD_PI_ENGINE` names (the tests' stand-in), quoted and never looked up.
 
 - **`--session-id`** is `Agent.effectivePiSessionID`: the pi session the agent was last in, or
   the agent's own ID for a new agent. `PiSessionFile` writes a minimal session header before
