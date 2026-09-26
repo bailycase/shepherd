@@ -2520,12 +2520,15 @@ Steer field focused.
   mono with a Show all link ("Loading…" while it pages) when older turns are not loaded, and
   trailing "Following live" (or "Reading earlier output") while the run is live. Scrolling up
   stops following; scrolling back to the end resumes it.
-  - **Not built yet** (SubagentsDone): a finished run's footer reads its position, "turn 4 of 11"
-    in mono, with "Scroll for the rest" trailing while there is more below.
+  - A finished run's whole transcript (SubagentsDone) reads its position instead: "turn 4 of 11"
+    in mono (the run's turns, one per reply of the model as the header counts them, up to the
+    first reply at or after the topmost turn on screen; `SubagentPresentation.position`), with
+    "Scroll for the rest" trailing while there is more below.
 - **A Steer composer** while the run is live (Subagents): the composer card's anatomy on
   `bgRaised`, radius 8, a `lineStrong` line (`textTertiary` with a 3pt `bgSelected` ring while
   focused), set in 10pt from the top and 12pt from the sides, under a hairline. The field ("Steer
-  <name> — delivered before its next turn") is `body`, one to six lines; ⏎ sends, ⇧⏎ adds a line.
+  <name> — delivered before its next turn", the placeholder in `textTertiary`) is `body`, one to
+  six lines; ⏎ sends, ⇧⏎ adds a line.
   Beneath it "to: <name> · not the parent" in Geist Mono 11 `textTertiary` and a primary `m`
   Steer, disabled while the draft is empty. A failed send keeps the draft, and the store's notice
   shows under the card in `caption` `textTertiary`.
@@ -2536,8 +2539,8 @@ Steer field focused.
   agent with this run's transcript") and Copy transcript (ghost `s`; it loads every page first,
   and says "Couldn't load the full transcript. Nothing was copied." if it can't). A failed fork
   says why under the bar. Remote agents have no Fork.
-  - **Not built yet** (SubagentsDone): "kept with the thread" in Geist Mono 11 `textTertiary`
-    trailing the bar (`NWRunActions`' trailing slot).
+  - "kept with the thread" in Geist Mono 11 `textTertiary` trails the bar (`NWRunActions`'
+    trailing slot; SubagentsDone): the run stays browsable from the thread's record.
 
 **Changes** (the Changes pane: ChangesSplit, ChangesScope, ChangesBase, ChangesUnified,
 ChangesLastTurn, ChangesWide and ChangesStates; `ReviewPane` in `DiffReviewView.swift`, state in
@@ -7895,8 +7898,8 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | ChangesUnified | Side pane › Changes (unified, word diffs, Diff options) | Partial |
 | ChangesLastTurn | Side pane › Changes (a turn's compare row, the comment editor) | Built |
 | ChangesWide | Side pane › Changes (maximized, file list) | Partial |
-| Subagents | Subagents; Side pane › Subagent inspector | Partial |
-| SubagentsDone | Subagents; Side pane › Subagent inspector | Partial |
+| Subagents | Subagents; Side pane › Subagent inspector | Built |
+| SubagentsDone | Subagents; Side pane › Subagent inspector | Built |
 | SubagentsQueue | Subagents (One card with Up next); Up next (the queue) | Partial |
 | SettingsAppearance | Settings › Appearance; Density and row settings | Built |
 | SettingsAgents | Settings › Agents | Built |
@@ -8072,7 +8075,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | NWComposer, NWComposerLight | Composer, questions, and menus; Command palette | Partial |
 | ContextIdeas | Composer, questions, and menus › Context meter; Thread › Compactions | Partial |
 | NWNavigation, NWNavigationLight | Window and adaptive layout; Sidebar; Toolbar | Partial |
-| NWAgents, NWAgentsLight | Subagents; Side pane › Subagent inspector; Mission components | Partial |
+| NWAgents, NWAgentsLight | Subagents; Side pane › Subagent inspector; Mission components | Built |
 | ChangesStates | Side pane › Changes; Thread › Changes card; Keyboard | Partial |
 | SubagentTray | Subagents; iPhone: Subagents; iOS: iPad › Subagents | Partial |
 | NWSwift, NWSwiftLight | Theme model › Building on ShepherdUI | Partial |
