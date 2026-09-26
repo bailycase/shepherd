@@ -74,7 +74,7 @@ SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter PreviewTests
 swift test                                   # everything (previews skip without SHEPHERD_PREVIEW_DIR)
 CI=true swift test --no-parallel             # what CI runs (in four shards): serially, timing-sensitive tests skipped
 PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" node --test Tests/Extensions/*.test.mjs
-python3 -m unittest discover -s Tests/Release   # the release workflow's rules (scripts/release.py)
+python3 -m unittest discover -s Tests/Release   # the release workflow's rules (scripts/release.py), CI's stale-link check
 ```
 
 **Environment variables:**
@@ -318,7 +318,10 @@ timing-sensitive tests. Docs-only changes (`docs/**`, `*.md`) don't trigger it.
   or wrong field offsets that link fine. It reproduces locally with the native build system,
   cache or not. The action therefore removes the restored `swift-version-*.txt`, an input of
   every compile command, so each target's driver runs and recompiles what any module it loaded
-  changed (a few seconds when nothing did). A push to `nightly` runs no tests: its `warm` job builds from scratch and saves
+  changed (a few seconds when nothing did). A link that still fails with undefined symbols and no
+  other error (`scripts/ci_stale_link.py`, tested in `Tests/Release`) gets a `::warning::` and
+  one rebuild from scratch that keeps the dependency checkouts; a compile error fails at once.
+  A push to `nightly` runs no tests: its `warm` job builds from scratch and saves
   both caches where every PR based on `nightly` can read them. Pull requests save nothing, so
   every push to one restores that entry and compiles the PR's changes on top; a PR into
   `master` reads only `master`'s. Master pushes and manual runs save from shard C, before its
