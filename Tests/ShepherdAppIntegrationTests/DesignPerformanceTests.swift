@@ -91,8 +91,8 @@ struct DesignPerformanceTests {
     }
 
     /// Zooming a settled canvas out and in: a board that stays live keeps its page (never
-    /// loaded again, at any step), and takes a new page zoom only when the zoom crosses a render
-    /// scale, never on a step within one.
+    /// loaded again, at any step), and its web view stays the board's size at a page zoom of 1,
+    /// so no step lays the page out again.
     @Test func zoomingNeverReloadsALiveBoard() async throws {
         let app = try AppHarness()
         defer { app.stop() }
@@ -106,8 +106,6 @@ struct DesignPerformanceTests {
         }
         let view = try #require(host.liveView(target))
         let reloads = host.reloads
-        var scale = view.renderScale
-        var crossings = 0
         let steps: [CGFloat] = [0.3, 0.15, 0.5, 1, 1.25, 2, 3, 1, 0.5]
         for zoom in steps {
             let before = host.liveBoards.compactMap { host.liveView($0) }
@@ -118,16 +116,12 @@ struct DesignPerformanceTests {
                 return screen.isDrawn && host.liveView(target)?.zoom == zoom
             }
             #expect(host.liveView(target) === view, "the selected board kept its view at \(zoom)")
-            if DesignBoardView.renderScale(for: zoom) != scale {
-                scale = DesignBoardView.renderScale(for: zoom)
-                crossings += 1
-            }
+            #expect(view.webView.pageZoom == 1 && view.webView.frame.size == view.boardSize, "at \(zoom)")
             for kept in before where host.liveView(kept.board) === kept {
                 #expect(kept.navigationsStarted == 1, "\(kept.board) loaded again at \(zoom)")
             }
         }
         #expect(view.navigationsStarted == 1)
-        #expect(view.renderScaleChanges == crossings, "page zooms: \(view.renderScaleChanges), crossings: \(crossings)")
         #expect(host.reloads == reloads)
     }
 
