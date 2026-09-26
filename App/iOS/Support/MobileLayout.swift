@@ -27,7 +27,7 @@ enum MobileLayout {
     static let sidebarWidth: CGFloat = 300
     /// The iPad sidebar's width as it slides over the thread, in portrait (iPadSidebar).
     static let sidebarOverlayWidth: CGFloat = 340
-    /// More's sub-rows in the iPad sidebar sit this far in (iPadHosts).
+    /// How much further in More's sub-rows start their content in the iPad sidebar (iPadHosts: 24pt).
     static let sidebarSubrowIndent: CGFloat = NW.Space.l
     /// A list row: the boards' 48pt, never under the touch minimum.
     static let rowHeight: CGFloat = 48
