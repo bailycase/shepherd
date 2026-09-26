@@ -233,3 +233,42 @@ private let previewActions = NWBoardActions.Actions(comment: {}, tweak: {}, vari
         .background(Color.nw.bgBase)
     }
 }
+
+#Preview("Export sheet") {
+    @Previewable @State var ticked: Set<String> = ["A · Funnel first", "A · phone"]
+    @Previewable @State var format = "HTML"
+    let boards = [("A · Funnel first", "1280 × 800"), ("A · phone", "390 × 844"), ("B · Step table", "1280 × 800"),
+                  ("C · Trend first", "1280 × 800")]
+    let formats = [("HTML", "One standalone file per board. Opens anywhere."), ("ZIP", "HTML, tokens.css and assets."),
+                   ("PDF", "One page per board."), ("PNG", "@2x, one image per board.")]
+    NWPreviewBoth {
+        NWExportSheet(exportTitle: "Export \(ticked.count) boards", canExport: !ticked.isEmpty, close: {}, export: {}) {
+            NWExportSection("Boards") {
+                VStack(spacing: 0) {
+                    ForEach(boards, id: \.0) { board in
+                        NWExportBoardRow(title: board.0, size: board.1, isTicked: ticked.contains(board.0)) {
+                            if ticked.contains(board.0) { ticked.remove(board.0) } else { ticked.insert(board.0) }
+                        }
+                    }
+                }
+            }
+            NWExportSection("Format") {
+                Grid(horizontalSpacing: NWDesignMetrics.exportFormatSpacing, verticalSpacing: NWDesignMetrics.exportFormatSpacing) {
+                    ForEach(0..<2, id: \.self) { row in
+                        GridRow {
+                            ForEach(formats[(row * 2)..<(row * 2 + 2)], id: \.0) { item in
+                                NWExportFormatCard(item.0, line: item.1, isChosen: format == item.0) { format = item.0 }
+                            }
+                        }
+                    }
+                }
+            }
+            NWExportSection("Use it somewhere else", divided: false) {
+                Button("Attach to a thread", systemImage: "text.bubble") {}
+                    .buttonStyle(.nw(.secondary, size: .s))
+            }
+        }
+        .padding(NW.Space.xxl)
+        .background(Color.nw.sheetScrim)
+    }
+}

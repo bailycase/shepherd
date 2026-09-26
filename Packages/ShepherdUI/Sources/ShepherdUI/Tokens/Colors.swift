@@ -57,6 +57,8 @@ public final class NWPalette: Sendable {
     public let popoverShadow: Color
     /// Behind the command palette: black at 30% in both appearances (Composer board).
     public let scrim: Color
+    /// Behind the Export sheet: black at 55% in both appearances (DZExport).
+    public let sheetScrim: Color
     /// Labels on a `failed` fill (the dangerFill button, the failed count badge).
     public let textOnFailed: Color
     /// Labels on a `running` fill: the design canvas's selection tag (NWDesignTool, DZTweak).
@@ -137,6 +139,8 @@ public final class NWPalette: Sendable {
                               dark: HexColor(red: 0, green: 0, blue: 0, alpha: 0.55))
         let scrimBlack = HexColor(red: 0, green: 0, blue: 0, alpha: 0.3)
         scrim = Color(light: scrimBlack, dark: scrimBlack)
+        let sheetBlack = HexColor(red: 0, green: 0, blue: 0, alpha: 0.55)
+        sheetScrim = Color(light: sheetBlack, dark: sheetBlack)
         textOnFailed = Color(light: "#ffffff", dark: "#ffffff")
         textOnRunning = Color(light: "#ffffff", dark: "#ffffff")
         selectionHandle = Color(light: "#ffffff", dark: "#ffffff")
