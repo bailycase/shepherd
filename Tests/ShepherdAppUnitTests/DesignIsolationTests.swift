@@ -2,12 +2,14 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdUI
 import Testing
 @testable import ShepherdApp
 
 /// A design's agent is no thread (docs/designs.md › Design agents and ordinary threads): it
 /// launches without the peer tools, agent_list leaves it out, the palette never searches its
-/// chat, and a host's design agents make no rows here, whether the Design tool is on or off.
+/// chat, it posts no thread's banners, the Hosts page counts no thread for it, and a host's
+/// design agents make no rows here, whether the Design tool is on or off.
 @Suite("Design isolation")
 @MainActor
 struct DesignIsolationTests {
@@ -41,6 +43,23 @@ struct DesignIsolationTests {
     @Test func thePalettesTranscriptSearchNeverReadsADesignsChat() {
         let (state, thread, _) = workspace()
         #expect(ShepherdViewModel.paletteSearchTargets(in: state).map(\.id) == [thread.id])
+    }
+
+    @Test func onlyAThreadsTurnsAndQuestionsPostAsAThreads() {
+        let (state, thread, drawer) = workspace()
+        #expect(ShepherdViewModel.notifiesAsThread(thread.id, in: state))
+        #expect(!ShepherdViewModel.notifiesAsThread(drawer.id, in: state))
+    }
+
+    /// The Hosts page counts threads: a design's agent at work is none of them, here or on a
+    /// host's last pushed state.
+    @Test func theHostsPageNeverCountsADesignsAgentAsAThread() {
+        var (state, _, _) = workspace()
+        state.agents[1].status = .working
+        #expect(HostsPageModel.connectedFacts(state, address: nil).first { $0.label == "Running" }?.value == "none")
+        let offline = HostsPageModel.offlineFacts(state, lastSeen: nil, address: "horizon:7433",
+                                                  timeZone: .gmt, locale: Locale(identifier: "en_US"))
+        #expect(offline.first { $0.label == "Waiting" }?.value == "1 thread")
     }
 
     /// A host that sends its design agents (one from before `withoutDesigns`) still gives them

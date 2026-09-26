@@ -74,9 +74,9 @@ extension ShepherdViewModel {
                                                keys: keys)
         }
 
-        // Subagents, live and recent.
+        // Subagents, live and recent: a thread's, never a design's agent's.
         for (agentID, children) in childRuns.rows {
-            guard let agent = state.agents.first(where: { $0.id == agentID }) else { continue }
+            guard let agent = state.agents.first(where: { $0.id == agentID }), !state.isDesignAgent(agent) else { continue }
             for child in children {
                 items.append(PaletteItem(id: "child.\(child.id)", kind: .child(agentID: agentID, child: child),
                                          section: .subagents, title: child.label,

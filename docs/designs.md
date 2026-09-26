@@ -206,8 +206,10 @@ them, whether the experiment is on or off. The rule holds in both directions:
   `sendToAgent`, `spawnAgent` and `coordinateAgent` from it or aimed at it, with `not_a_thread`,
   so an older installed copy of the extension can't get around the rule. agent_list leaves it
   out.
-- **The Mac's chrome.** A design agent has no sidebar row, no ⌘-digit and no palette row, and
-  the palette's transcript search never reads its chat.
+- **The Mac's chrome.** A design agent has no sidebar row, no ⌘-digit and no palette row, the
+  palette lists none of its subagents, and the palette's transcript search never reads its chat.
+  It posts no banners: a thread's "Turn finished", question and subagent banners (and their
+  Review action) never speak for a design. The Hosts page counts no thread for it.
 - **Remote clients.** Another Mac, or an iPhone or iPad, gets the host's state without
   `designs`, without their agents, and without those agents' layouts
   (`ShepherdState.withoutDesigns`). There is no remote design screen yet. A Mac client also
