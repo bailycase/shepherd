@@ -132,6 +132,7 @@ And the rules that follow from them:
 | Queue & steer: 5px gaps (the Steering pill, "Steered", "From the queue", a compact chip); 1px lines outside each 40px row, the 32px header and the card | 6 in the pill, 4 elsewhere; lines drawn inside, so three rows make a 152pt stack (the board's 157) | The space scale's 4pt steps; every card and list in the app draws its lines inside (`nwBorder`, `NWHairline` overlays) |
 | Queue & steer: a custom 280pt QueueOptions popover; tooltips with keycaps | The native ••• menu (`NWOptionsMenu`); system tooltips (`.nwHelp`) | As every other ••• and tooltip in the app |
 | Queue & steer: the Send menu beside the card, highlighted in `bgSelected` | Beside the card where the thread has room for it; in a narrower thread above Send, trailing edges aligned, over the trailing end of Up next while it is open; the composer menus' `runningTint` highlight | The app's column is 820pt (the boards' 620), so the room beside it runs out; the menus' one anatomy |
+| Context: a Compact automatically switch in the details and the almost-full card | No switch; the auto-compact mark and wording follow pi's own setting | pi saves the switch to the user's global settings; the user's call, 2026-09-25 |
 | Queue & steer: a row's actions take room only while it is hovered | An 82pt slot is always laid out, empty at rest | Details on hover: hovering never re-truncates the text |
 | Queue & steer: message times at rest | On hover (Details on hover) | The thread's rule |
 | Queue & steer: the queue's keys are "shown in menus and tooltips only" | Also listed under Settings ▸ Keyboard ▸ While the agent is working, in the Keyboard card's order | Settings ▸ Keyboard lists every chord the app answers, and ⌘↩ is rebound there; nothing is written in or under the composer |
@@ -2062,11 +2063,11 @@ none, and the row has no ring.
     kept in the thread and scrolls to it.
   - Compact now is pi's `compact`, which stops a run to compact: it is offered while the agent is
     idle, and its tooltip says why not while it works.
-  - **Not built yet: Compact automatically.** The boards' switch drives pi's
+  - **No Compact automatically switch** (the user's call, 2026-09-25). pi offers it only as
     `set_auto_compaction`, which pi 0.87.1 writes to the user's own `settings.json`
-    (`SettingsManager.setCompactionEnabled`); Shepherd never writes pi's settings, so the switch
-    waits on a decision. The details read pi's `autoCompactionEnabled` for the mark and the
-    almost-full text.
+    (`SettingsManager.setCompactionEnabled`), and Shepherd never writes pi's settings. The details
+    read pi's `autoCompactionEnabled` for the mark and the almost-full text. The context boards
+    no longer draw the switch.
 - **iPad and iPhone** (ContextIdeas › A: "same spot on iPad and iPhone, tap opens the details as a
   sheet"; `App/iOS/Composer/ContextMeter.swift`): the same ring and button just before Send — in
   the iPad card's control row, and inside the phone's capsule — with a 44pt touch target around

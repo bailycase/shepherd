@@ -336,7 +336,7 @@ draw no context meter.
 - **Never `set_auto_compaction`:** pi 0.87.1 handles it with
   `SettingsManager.setCompactionEnabled`, which writes `compaction.enabled` into the user's global
   `settings.json` (`~/.pi/agent`, or `PI_CODING_AGENT_DIR`). Shepherd never writes pi's settings, so
-  the boards' Compact automatically switch is not built.
+  there is no Compact automatically switch (the user's call, 2026-09-25).
 - **Clients** derive the ring and its details once per change in ShepherdRemote
   (`NativeContextMeter`, `NativeContextDetails`, `NativeCompactionRow`), so the Mac and the iOS
   client draw the same states from the same snapshot; a host without `native.context.v1` sends no
