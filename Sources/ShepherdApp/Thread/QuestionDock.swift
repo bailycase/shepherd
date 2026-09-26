@@ -55,7 +55,9 @@ struct QuestionDock: View {
 
     var body: some View {
         let hints = KeybindingsStore.shared.questionKeys
-        Group {
+        // One container, not a Group: what follows attaches once, not to each branch, so
+        // hiding and showing keep the key monitor watching.
+        ZStack(alignment: .bottom) {
             if hidden {
                 NWQuestionDockHidden(Self.asker(prompt.asker), question: prompt.question, keys: hints) { setHidden(false) }
                     .nwTransition(.content)
@@ -214,7 +216,7 @@ struct QuestionKeyReader: NSViewRepresentable {
         weak var monitor: QuestionKeyMonitor?
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            monitor?.window = window
+            if let window { monitor?.window = window }
         }
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
@@ -227,6 +229,6 @@ struct QuestionKeyReader: NSViewRepresentable {
 
     func updateNSView(_ reader: Reader, context: Context) {
         reader.monitor = monitor
-        monitor.window = reader.window
+        if let window = reader.window { monitor.window = window }
     }
 }

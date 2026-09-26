@@ -89,9 +89,11 @@ struct QuestionDockIntegrationTests {
         #expect(abs(hidden - (NWQuestionDockMetrics.hiddenHeight + AppLayout.composerBottom)) <= 1, "one 46pt line: \(hidden)")
         #expect(keys.handle(thread.key("2", keyCode: 19)) == false)
         #expect(keys.handle(thread.key("↩", keyCode: 36)) == false)
+        #expect(thread.keyMonitor === keys && keys.watching && keys.window === thread.window.window, "hidden, it still takes Esc")
 
         #expect(keys.handle(thread.key("\u{1b}", keyCode: 53)))
         #expect(try await thread.settledInset() == open, "back as it was")
+        #expect(thread.keyMonitor === keys && keys.watching && keys.window === thread.window.window)
         #expect(keys.handle(thread.key("↩", keyCode: 36)), "the pick survived hiding")
         #expect(try await thread.response()["value"] as? String == "Compare first (Recommended)\nDiff them against main; nothing is overwritten.")
     }
