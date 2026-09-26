@@ -93,7 +93,8 @@ final class NewThreadModel {
     private func track() {
         let next = withObservationTracking {
             (hosts.hosts.map { host in
-                NewThreadHostInput(id: host.id, name: host.name, phase: host.phase, capabilities: host.capabilities, state: host.state)
+                NewThreadHostInput(id: host.id, name: host.name, phase: host.phase, capabilities: host.capabilities, state: host.state,
+                                   lastSeen: host.lastSeen)
             }, Dictionary(hosts.hosts.compactMap { host in host.session.map { (host.id, $0) } }, uniquingKeysWith: { first, _ in first }))
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in self?.track() }
