@@ -1115,7 +1115,7 @@ public final class SessionServer: @unchecked Sendable {
             let images = initialImages ?? []
             // Refused before anything is made: pi would refuse them once the agent exists.
             guard images.isEmpty || initialPrompt?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
-                  RPCThreadState.imagesFit(images) else {
+                  NativeImage.fitOneSend(images) else {
                 send(.error(id: id, code: "invalid", message: "A new thread takes up to \(NativeImage.maxPerSend) images of \(NativeImage.maxBytes / 1024 / 1024) MiB each, with a prompt."), to: client)
                 return
             }
