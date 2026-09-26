@@ -50,17 +50,23 @@ private struct NWStyledButton: View {
     let size: NWButtonStyle.Size
     let tint: Color?
     @Environment(\.isEnabled) private var enabled
+    @Environment(\.nwControlScale) private var scale
     @State private var hovering = false
 
     var body: some View {
         let nw = Color.nw
-        let (height, padding, fontSize): (CGFloat, CGFloat, CGFloat) = switch size {
+        let settings = scale == .settings
+        let M = NWSettingsControlMetrics.self
+        // A Settings page draws every size as its boards' one button: 32pt at radius 7, Geist 13.
+        let standard: (CGFloat, CGFloat, CGFloat) = switch size {
         case .s: (NW.Height.controlS, NW.Space.m, 12)
         case .m: (NW.Height.controlM, 10, 12.5)
         case .l: (NW.Height.controlL, 14, 13)
         }
+        let (height, padding, fontSize) = settings ? (M.controlHeight, M.buttonPadding, M.textSize) : standard
+        let radius = settings ? M.radius : NW.Radius.s
         let filled = kind == .primary || kind == .dangerFill
-        let shape = RoundedRectangle(cornerRadius: NW.Radius.s)
+        let shape = RoundedRectangle(cornerRadius: radius)
         configuration.label
             .font(.nwSans(fontSize, filled ? .semibold : .medium))
             .labelStyle(NWButtonLabelStyle())
@@ -69,13 +75,13 @@ private struct NWStyledButton: View {
             .padding(.horizontal, padding)
             .frame(minHeight: height)
             .background(background(nw), in: shape)
-            .nwBorder(kind == .secondary || kind == .danger ? nw.lineStrong : .clear, radius: NW.Radius.s)
+            .nwBorder(kind == .secondary || kind == .danger ? nw.lineStrong : .clear, radius: radius)
             .offset(y: configuration.isPressed ? 0.5 : 0)
             .nwEnabledOpacity(enabled)
             .contentShape(shape)
             .onHover { hovering = $0 }
             .nwAnimation(.hover, value: hovering)
-            .nwFocusRing(radius: NW.Radius.s)
+            .nwFocusRing(radius: radius)
             .nwTouchTarget(height: height)
     }
 
@@ -99,11 +105,13 @@ private struct NWStyledButton: View {
             return AnyShapeStyle(fill.mix(with: configuration.isPressed ? .black : .white,
                                           by: enabled ? (configuration.isPressed ? 0.1 : hovering ? 0.12 : 0) : 0))
         case .secondary:
-            return AnyShapeStyle(active ? nw.bgSelected : nw.bgRaised)
+            // The Settings boards' buttons rest on the page's own fill.
+            return AnyShapeStyle(active ? nw.bgSelected : scale == .settings ? nw.bgWindow : nw.bgRaised)
         case .ghost:
             return AnyShapeStyle(enabled && configuration.isPressed ? nw.bgSelected : hovering && enabled ? nw.bgHover : Color.clear)
         case .danger:
-            return AnyShapeStyle(enabled && configuration.isPressed ? nw.bgSelected : hovering && enabled ? nw.failedTint : nw.bgRaised)
+            return AnyShapeStyle(enabled && configuration.isPressed ? nw.bgSelected : hovering && enabled ? nw.failedTint
+                : scale == .settings ? nw.bgWindow : nw.bgRaised)
         }
     }
 }

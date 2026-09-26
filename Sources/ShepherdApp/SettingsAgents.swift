@@ -37,11 +37,11 @@ struct AgentSettings: View {
                 }
             }
             SettingsGroup(title: "While the agent is working") {
-                SettingsRow(title: "Return while the agent is working", subtitle: "\(keys.display(.alternateSend)) always does the other one.") {
+                SettingsRow(title: "Return while the agent is working", subtitle: Self.returnDescription(keys)) {
                     NWSegmentedPicker("Return while the agent is working", selection: $settings.returnWhileWorking,
                                       options: [(.queue, "Queue"), (.steer, "Steer")])
                 }
-                SettingsRow(title: "When a turn ends, send the queue", subtitle: "All at once arrives as one turn, in order.") {
+                SettingsRow(title: "When a turn ends, send the queue", subtitle: "All at once arrives as one turn, in the order you queued it.") {
                     NWSegmentedPicker("When a turn ends, send the queue", selection: $settings.queueDelivery,
                                       options: [(NativeQueueMode.oneAtATime, "One per turn"), (.all, "All at once")])
                 }
@@ -54,6 +54,14 @@ struct AgentSettings: View {
             modelOptions = ids
             if let fallback { piDefaultModel = fallback }
         }
+    }
+
+    /// What each choice does, and the chord that does the other (as it is bound now). Steer's
+    /// sentence says what pi does: a steer waits for the tool calls in flight, then lands before
+    /// the next step.
+    static func returnDescription(_ keys: KeybindingsStore) -> String {
+        "Queue waits for the turn to end. Steer lands once the agent’s current tool calls finish. "
+            + "\(keys.display(.alternateSend)) always does the other one."
     }
 
     /// Names New Agent's chord as it is bound now, so a rebind never leaves the copy wrong.

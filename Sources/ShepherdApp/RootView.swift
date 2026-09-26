@@ -26,8 +26,21 @@ struct RootView: View {
     var body: some View {
         let _ = NWRenderProbe.tick("shell.root")
         let sidebar = sidebar
-        let docked = sidebar.mode == .docked
+        // The side pane maximized over the window (ChangesWide): its rail takes the sidebar's
+        // place and the toolbar's, and draws the window controls.
+        let wide = vm.isSidePaneWide
+        let docked = sidebar.mode == .docked && !wide
         HStack(spacing: 0) {
+            if wide {
+                NWSidePaneRail(windowControls: isFullScreen ? nil : NWWindowControls(
+                    close: { MainWindow.window?.performClose(nil) },
+                    minimize: { MainWindow.window?.performMiniaturize(nil) },
+                    zoom: { MainWindow.window?.toggleFullScreen(nil) }
+                ), back: { vm.restoreWideSidePane() })
+                // The column takes the window at once (easing it would relay out the layout on
+                // each frame); the pane's own growth carries the motion.
+                .ignoresSafeArea()
+            }
             // The flat base runs continuously behind the window controls and the tree. ⇧⌘S
             // hides it; a window too narrow to dock it overlays it instead. It keeps its width
             // while a right pane is open.
@@ -44,13 +57,15 @@ struct RootView: View {
             }
 
             VStack(spacing: 0) {
-                WorkspaceHeaderView(
-                    vm: vm,
-                    leadingInset: docked || isFullScreen ? 0 : AppLayout.trafficLightInset,
-                    showSidebar: docked ? nil : { vm.toggleSidebar() }
-                )
-                // Over the workspace: the side-pane button's tip hangs below the toolbar.
-                .zIndex(1)
+                if !wide {
+                    WorkspaceHeaderView(
+                        vm: vm,
+                        leadingInset: docked || isFullScreen ? 0 : AppLayout.trafficLightInset,
+                        showSidebar: docked ? nil : { vm.toggleSidebar() }
+                    )
+                    // Over the workspace: the side-pane button's tip hangs below the toolbar.
+                    .zIndex(1)
+                }
                 // Once, after an update moved this copy off the retired nightly channel. It
                 // leaves at once: easing the column's height would relay out every mounted
                 // layout on each frame.
@@ -78,9 +93,11 @@ struct RootView: View {
         // ⇧⌘S, the toolbar's button, the palette: the docked sidebar slides from the leading
         // edge. Keyed on the preference alone: a window resize that docks or undocks it is instant.
         .nwAnimation(.pane, value: vm.sidebarHidden)
+        // The rail draws the window controls; the window's own hide while it shows.
+        .background { SystemWindowControls(hidden: wide && !isFullScreen) }
         .coordinateSpace(.named("root-layout"))
         .overlay(alignment: .leading) {
-            sidebarOverlay(width: sidebar.width, shown: sidebar.mode == .overlay)
+            sidebarOverlay(width: sidebar.width, shown: sidebar.mode == .overlay && !wide)
                 // A resize that crosses the fit point closes the overlay at once.
                 .animation(nil, value: vm.sidebarAutoHidden)
                 .nwAnimation(.pane, value: vm.sidebarOverlayShown)
@@ -184,6 +201,39 @@ struct RootView: View {
     /// A sidebar width within its range that leaves the main column its minimum.
     private func fittedSidebarWidth(_ width: Double) -> Double {
         AppSettings.clampSidebarWidth(min(width, Double(windowWidth - AppLayout.dividerWidth - AppLayout.mainColumnMinWidth)))
+    }
+}
+
+/// Hides the window's close, minimize and zoom while the maximized side pane's rail draws its
+/// own (ChangesWide), and shows them again after.
+private struct SystemWindowControls: NSViewRepresentable {
+    let hidden: Bool
+
+    func makeNSView(context: Context) -> Reader { Reader() }
+
+    func updateNSView(_ reader: Reader, context: Context) {
+        reader.controlsHidden = hidden
+        reader.apply()
+    }
+
+    final class Reader: NSView {
+        var controlsHidden = false
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            apply()
+        }
+
+        func apply() {
+            guard let window else { return }
+            for kind in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+                if let button = window.standardWindowButton(kind), button.isHidden != controlsHidden {
+                    button.isHidden = controlsHidden
+                }
+            }
+        }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 }
 

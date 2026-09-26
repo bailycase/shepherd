@@ -77,6 +77,17 @@ final class AppTerminalModel {
         set { surface.onResize = newValue }
     }
 
+    typealias Selection = TerminalSurfaceModel.Selection
+
+    /// What is selected in the terminal, after each change (TerminalPane: the Add to message bar).
+    var onSelectionChange: ((Selection?) -> Void)? {
+        get { surface.onSelectionChange }
+        set { surface.onSelectionChange = newValue }
+    }
+
+    @discardableResult
+    func copySelection() -> Bool { surface.copySelection() }
+
     var onSurfaceReplaced: ((_ generation: UInt64) -> Void)? {
         get { surface.onSurfaceReplaced }
         set { surface.onSurfaceReplaced = newValue }
