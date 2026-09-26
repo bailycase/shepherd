@@ -79,6 +79,10 @@ private struct SubagentRunInspector: View {
     @State private var forkError: String?
     @State private var forking = false
     @State private var copying = false
+    /// The topmost transcript turn on screen, and whether more of it lies below: a finished
+    /// run's footer says where it is read ("turn 4 of 11 · Scroll for the rest").
+    @State private var topTurn: String?
+    @State private var moreBelow = false
     @FocusState private var composing: Bool
 
     init(store: NativeThreadStore, runID: String, siblings: [ChildRun], active: Bool, close: @escaping () -> Void,
@@ -299,6 +303,7 @@ private struct SubagentRunInspector: View {
                     }
                     Color.clear.frame(height: 1).id(Self.bottomID)
                 }
+                .scrollTargetLayout()
                 .padding(AppLayout.inspectorPadding)
                 .environment(\.nwProseSize, .small)
             }
@@ -308,6 +313,11 @@ private struct SubagentRunInspector: View {
                 ThreadView.distanceFromBottom(geometry) > NativeScrollFollower.threshold
             } action: { _, below in
                 if !below { transcript.setFollowing(true) }
+                if moreBelow != below { moreBelow = below }
+            }
+            .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.01) { ids in
+                let top = ids.first { $0 != Self.bottomID }
+                if topTurn != top { topTurn = top }
             }
             .onScrollPhaseChange { _, phase in
                 if phase == .interacting { transcript.setFollowing(false) }
@@ -318,30 +328,42 @@ private struct SubagentRunInspector: View {
         }
     }
 
-    /// "n earlier turns · Show all" · "Following live" (live runs only).
+    /// "n earlier turns · Show all" · "Following live" (live runs only); a finished run's whole
+    /// transcript says where it is read instead: "turn 4 of 11" · "Scroll for the rest".
     private func footerLine(_ run: ChildRun?) -> some View {
-        HStack(spacing: NW.Space.s) {
-            if transcript.earlierCount > 0 {
+        let position = run?.isTerminal == true && transcript.earlierCount == 0
+            ? SubagentPresentation.position(turns: transcript.turns, top: topTurn, total: run?.turns) : nil
+        return HStack(spacing: NW.Space.s) {
+            if let position {
+                Text(position).font(.nwMono(11)).nwContentTransition(.numeric())
+                Spacer()
+                if moreBelow { Text("Scroll for the rest") }
+            } else if transcript.earlierCount > 0 {
                 Text("\(transcript.earlierCount) earlier turn\(transcript.earlierCount == 1 ? "" : "s")").font(.nwMono(11))
                     .nwContentTransition(.numeric())
                 Button(transcript.loadingOlder ? "Loading…" : "Show all") { Task { await transcript.loadAll(store: store, runID: runID) } }
                     .buttonStyle(.nwLink(font: .nwSans(11)))
                     .disabled(transcript.loadingOlder)
             }
-            Spacer()
-            if run?.isTerminal != true { Text(transcript.following ? "Following live" : "Reading earlier output") }
+            if position == nil {
+                Spacer()
+                if run?.isTerminal != true { Text(transcript.following ? "Following live" : "Reading earlier output") }
+            }
         }
         .font(.nwSans(11)).foregroundStyle(Color.nw.textTertiary)
         .padding(.horizontal, AppLayout.inspectorPadding)
         .frame(minHeight: AppLayout.inspectorFooterHeight)
         .nwAnimation(.content, value: FooterState(earlier: transcript.earlierCount, loading: transcript.loadingOlder,
-                                                  following: transcript.following))
+                                                  following: transcript.following, position: position,
+                                                  moreBelow: position != nil && moreBelow))
     }
 
     private struct FooterState: Equatable {
         var earlier: Int
         var loading: Bool
         var following: Bool
+        var position: String?
+        var moreBelow: Bool
     }
 
     /// "10:58", before "from parent"; nil when pi gave no time.
@@ -374,6 +396,9 @@ private struct SubagentRunInspector: View {
                 Button("Copy transcript") { copyTranscript() }
                     .buttonStyle(.nw(.ghost, size: .s))
                     .disabled(transcript.messages.isEmpty || copying)
+            } trailing: {
+                // A finished run stays browsable from the thread's record (SubagentsDone).
+                Text("kept with the thread").font(.nwMono(11)).foregroundStyle(Color.nw.textTertiary).lineLimit(1)
             }
             notice(forkError ?? store.notice)
         }
@@ -384,7 +409,9 @@ private struct SubagentRunInspector: View {
         let nw = Color.nw
         return VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
-                TextField("Steer \(role) — delivered before its next turn", text: $draft, axis: .vertical)
+                TextField("Steer \(role)", text: $draft,
+                          prompt: Text("Steer \(role) — delivered before its next turn").foregroundStyle(nw.textTertiary),
+                          axis: .vertical)
                     .lineLimit(1...AppLayout.steerMaxLines).textFieldStyle(.plain).font(.nw(.body)).autocorrectionDisabled()
                     .foregroundStyle(nw.textPrimary).tint(nw.lantern)
                     .focused($composing)

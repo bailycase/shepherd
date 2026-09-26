@@ -279,15 +279,20 @@ public struct NativeCommand: Codable, Hashable, Sendable {
     public static let maxCount = 128
     public static let maxNameBytes = 64
     public static let maxDescriptionBytes = 256
+    public static let maxArgumentsBytes = 64
     public var name: String
     public var description: String?
     /// extension / prompt / skill.
     public var source: String?
+    /// What the command takes after its name ("[tag]", "<session>"): a prompt template's
+    /// `argument-hint`. Additive; absent from older hosts and for commands without one.
+    public var arguments: String?
 
-    public init(name: String, description: String? = nil, source: String? = nil) {
+    public init(name: String, description: String? = nil, source: String? = nil, arguments: String? = nil) {
         self.name = name
         self.description = description
         self.source = source
+        self.arguments = arguments
     }
 }
 
