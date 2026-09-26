@@ -986,11 +986,15 @@ only while that host offers `designs.v1`, and follows its Design tool as it turn
   sheet into images (cached by hash) and exports, one board at a time. A board view on iOS lays out
   at its own width (a device-width viewport) and never scrolls inside its frame.
 - **Where designs show:** Home's Designs row with its count, a design's agent as its design's
-  Recents row ("design · 4 boards", opening the design), the Designs screen (MobileDesigns: tiles
+  Recents row ("design · 4 boards", opening the design; never a running, Needs you or finished
+  thread, nor counted among a host's threads, and a system build's agent has no row), the
+  Designs screen (MobileDesigns: tiles
   from each design's first board, then the design systems), search's Designs section and its "New
   design" action, and More ▸ Design systems.
-- **A design** opens on its boards (a grid; not drawn), and a board opens full screen
-  (MobileDesignBoard): pinch zooms (the board re-renders sharp at rest), a drag pans a zoomed
+- **A design** opens on its boards (a grid; not drawn), watched while on screen so new boards
+  land, and a board opens full screen
+  (MobileDesignBoard): pinch zooms (the board lays out at its own size, scaled to fit, as on the
+  Mac; above its own size it is its 100% drawing scaled up), a drag pans a zoomed
   board, a sideways swipe moves between boards, and pins sit on their elements' top-trailing
   corners, found again by tid in the live board. A tapped pin raises its card, with "Design agent
   is updating <board>" while the design agent works and hasn't answered it, else its answer.
