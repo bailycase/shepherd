@@ -125,7 +125,8 @@ final class HomeFeed {
                 guard let client = host.connectedClient, let session = host.session,
                       host.supports(RemoteProtocol.nativeThreadCapability) else { continue }
                 var quietReads = 0
-                for agent in host.state.agents {
+                // A design's agent has no thread row to read for (its design is the row).
+                for agent in host.state.agents where !host.state.isDesignAgent(agent) {
                     let ref = FleetRef(host: host.id, agent: agent.id)
                     let digest = digests[ref]
                     let current = readIn[ref] == session

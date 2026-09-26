@@ -362,8 +362,14 @@ final class AppSettings {
     /// and New thread's "Start a design". Off by default; designs made while it was on keep
     /// their files and agents while it is off.
     var designToolEnabled: Bool {
-        didSet { store.set(designToolEnabled, forKey: Key.designToolEnabled) }
+        didSet {
+            store.set(designToolEnabled, forKey: Key.designToolEnabled)
+            if designToolEnabled != oldValue { onDesignToolChange?(designToolEnabled) }
+        }
     }
+
+    /// Tells the server whether to serve designs to remote clients (set by the view model).
+    @ObservationIgnored var onDesignToolChange: ((Bool) -> Void)?
 
     private let store: UserDefaults
 

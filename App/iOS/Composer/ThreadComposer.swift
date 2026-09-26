@@ -23,6 +23,8 @@ struct ThreadComposer: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(MobileNavigator.self) private var navigator
+    /// A design's chat (iPadDesign): one field with Send, no chips (DesignPad/).
+    @Environment(\.composerDesignChat) private var designChat
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -97,15 +99,17 @@ struct ThreadComposer: View {
                     }
                     .nwTransition(.content)
                 }
-                if wide {
+                if designChat {
+                    designBox(store: store, state: state, live: live)
+                } else if wide {
                     card(store: store, state: state, host: host, live: live)
                 } else {
                     phone(store: store, state: state, host: host, live: live)
                 }
             }
         }
-        .padding(.horizontal, wide ? MobileLayout.padThreadGutter : MobileLayout.gutter)
-        .padding(.top, NW.Space.m)
+        .padding(.horizontal, designChat ? MobileLayout.padDesignComposerInset : wide ? MobileLayout.padThreadGutter : MobileLayout.gutter)
+        .padding(.top, designChat ? MobileLayout.padDesignComposerTop : NW.Space.m)
         .padding(.bottom, MobileLayout.composerBottom)
         .background(Color.nw.bgWindow)
         .nwAnimation(.content, value: store.dialogs.isEmpty)
@@ -207,6 +211,49 @@ struct ThreadComposer: View {
         }
     }
 
+    // MARK: A design's chat
+
+    /// The design chat's field (iPadDesign): one 44pt box, the field and Send inside it. Scribble
+    /// writes into it as into any text field.
+    private func designBox(store: NativeThreadStore, state: ComposerState, live: Bool) -> some View {
+        let shape = RoundedRectangle(cornerRadius: NW.Radius.l)
+        let empty = store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return HStack(alignment: .bottom, spacing: NW.Space.xs) {
+            field(store: store, placeholder: MobileLayout.padDesignComposerPlaceholder, style: .ui)
+                .padding(.vertical, NW.Space.m)
+                .frame(minHeight: NW.Height.touch, alignment: .leading)
+            // Send is the field's plain glyph, never the lantern circle (iPadDesign).
+            let enabled = live && store.acceptsSend && !empty && !store.busy
+            Button { send(.followUp, store: store, state: state) } label: {
+                Image(systemName: "arrow.up")
+                    .font(.nw(.ui, weight: .medium))
+                    .foregroundStyle(enabled ? Color.nw.textPrimary : Color.nw.textSecondary)
+                    .frame(width: NW.Height.controlL, height: NW.Height.controlL)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!enabled)
+            .keyboardShortcut(.return, modifiers: .command)
+            .contextMenu {
+                if store.running, enabled {
+                    Button("Queue", systemImage: "text.line.first.and.arrowtriangle.forward") { send(.followUp, store: store, state: state) }
+                    Button("Steer now", systemImage: "arrow.turn.down.right") { send(.steer, store: store, state: state) }
+                }
+            }
+            .accessibilityLabel(store.running ? "Queue message" : "Send")
+            .frame(minHeight: NW.Height.touch)
+        }
+        .padding(.leading, MobileLayout.padDesignComposerInset)
+        .padding(.trailing, NW.Space.s)
+        .background(Color.nw.bgRaised, in: shape)
+        .overlay {
+            Color.clear
+                .nwBorder(focused ? Color.nw.textTertiary : Color.nw.lineStrong, in: shape)
+                .nwAnimation(.hover, value: focused)
+                .allowsHitTesting(false)
+        }
+    }
+
     @ViewBuilder private func cardControls(store: NativeThreadStore, state: ComposerState, live: Bool) -> some View {
         if acceptsImages(store) { AttachButton(state: state, enabled: live, chip: true) }
         chips(store: store, state: state, live: live).buttonStyle(.nwComposerChip())
@@ -214,10 +261,10 @@ struct ThreadComposer: View {
 
     // MARK: Parts
 
-    private func field(store: NativeThreadStore, placeholder: String, command: Bool = false) -> some View {
+    private func field(store: NativeThreadStore, placeholder: String, command: Bool = false, style: NWTextStyle = .body) -> some View {
         @Bindable var bindable = store
         return TextField(placeholder, text: $bindable.draft, axis: .vertical)
-            .font(command ? .nw(.code) : .nw(.body))
+            .font(command ? .nw(.code) : .nw(style))
             .foregroundStyle(Color.nw.textPrimary)
             .lineLimit(1...NWComposerMetrics.fieldMaxLines)
             .focused($focused)
