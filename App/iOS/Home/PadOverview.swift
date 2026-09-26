@@ -139,10 +139,12 @@ private struct OverviewColumns: View {
         .contextMenu { OpenInNewWindowButton(thread: row.ref.agentRef) }
     }
 
-    /// A finished thread: a check, its title over where it ran, and when it finished.
+    /// A finished thread: a check (a cross for a failed last turn), its title over how it ended,
+    /// and when it finished.
     private func finishedButton(_ row: FleetThreadRow, now: Date) -> some View {
         Button { navigator.open(.thread(row.ref.agentRef)) } label: {
-            NWOverviewRow(row.title, detail: row.detail, detailMono: false, leading: .symbol("checkmark", .done),
+            NWOverviewRow(row.title, detail: row.failed ? "failed · \(row.hostName)" : row.detail, detailMono: false,
+                          leading: row.failed ? .symbol("xmark", .failed) : .symbol("checkmark", .done),
                           time: row.lastMoved.map { .text(FleetFinishedDay.stamp($0, now: now)) } ?? .none, dimmed: row.offline)
                 .equatable()
         }
