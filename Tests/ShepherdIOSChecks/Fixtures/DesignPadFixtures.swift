@@ -4,6 +4,8 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
+import UIKit
+import WebKit
 
 // The Design tool on iPad (iPadDesign, iPadSplitView, iPadSidebar boards): a host serving
 // designs.v1 with acme's "Checkout funnel dashboard" (four boards, three open comments, its
@@ -53,6 +55,12 @@ extension FixtureCatalog {
             // The sidebar over a thread in portrait (iPadSidebar): Designs among the
             // destinations, and designs in Recents with their boards. Render with --sidebar.
             FixtureScreen(name: "design-pad-sidebar", hosts: DesignPadFixtures.hosts(), routes: [.thread(FixtureData.ref(FixtureData.preview))]),
+            // A large canvas panned across, row by row, as a finger drags it and rests: the web
+            // views alive never pass the plan's iOS cap of two (one live board and the
+            // rasterizer), counted by the renderer and in the window. The shot is where it ends.
+            FixtureScreen(name: "design-pad-pan", hosts: DesignPadFixtures.hosts(large: true),
+                          routes: [.padDesign(.list), .padDesign(.design(DesignPadFixtures.largeRef))],
+                          prepare: { app in await DesignPadFixtures.pan(app) }),
             // The Designs list the sidebar's row opens.
             FixtureScreen(name: "designs-pad", hosts: DesignPadFixtures.hosts(), routes: [.padDesign(.list)],
                           prepare: { _ in
@@ -72,7 +80,7 @@ enum DesignPadFixtures {
     /// The fixture hosts with Studio serving the design: its Design tool on, the design and its
     /// agent in its state, the agent's chat among its threads. `split` gives the agent the reply
     /// iPadSplitView draws.
-    static func hosts(split: Bool = false) -> [FixtureHostData] {
+    static func hosts(split: Bool = false, large: Bool = false) -> [FixtureHostData] {
         var hosts = FixtureData.hosts()
         guard let index = hosts.firstIndex(where: { $0.id == FixtureData.studio }) else { return hosts }
         let design = Design(id: designID, name: "Checkout funnel dashboard", agentID: agentID,
@@ -86,7 +94,99 @@ enum DesignPadFixtures {
         hosts[index].state.designs = [design, settings]
         hosts[index].threads[agentID] = split ? splitThread() : chat()
         hosts[index].designs = FixtureDesigns(designs: [checkout(design), empty(settings)], systems: [acmeWeb])
+        if large {
+            let wall = Design(id: largeID, name: "Every checkout screen", systemNamespace: "acme-web", createdAt: FixtureData.start,
+                              lastActiveAt: FixtureData.start, boardCount: largeColumns * largeRows)
+            hosts[index].state.designs.append(wall)
+            hosts[index].designs?.designs.append(largeCanvas(wall))
+        }
         return hosts
+    }
+
+    // MARK: A large canvas
+
+    static let largeID = DesignID(rawValue: "design-wall")
+    static let largeRef = PadDesignRef(host: FixtureData.studio, design: largeID)
+    static let largeColumns = 8
+    static let largeRows = 8
+
+    /// 64 boards on an 8 × 8 grid, the four checkout boards over and over, each its own file.
+    static func largeCanvas(_ design: Design) -> FixtureDesigns.Item {
+        let sources = [DesignPadBoards.funnel, DesignPadBoards.steps, DesignPadBoards.trend, DesignPadBoards.phone]
+        var files: [String: Data] = [:]
+        var boards: [DesignPath: DesignIndex.Board] = [:]
+        var order: [DesignPath] = []
+        for row in 0..<largeRows {
+            for column in 0..<largeColumns {
+                let number = row * largeColumns + column
+                let raw = "Screen\(number).dc.html"
+                let path = DesignPath(raw)!
+                let phone = number % sources.count == 3
+                files[raw] = Data(sources[number % sources.count].utf8)
+                boards[path] = .init(x: Double(column) * 1400, y: Double(row) * 1000, w: phone ? 390 : 1280, h: phone ? 844 : 800,
+                                     title: "Screen \(number + 1)")
+                order.append(path)
+            }
+        }
+        return FixtureDesigns.Item(design: design, revision: 1, index: DesignIndex(title: design.name, boards: boards, order: order),
+                                   files: files, comments: DesignComments())
+    }
+
+    /// Drags the large canvas across every row (a finger's frames, then a rest long enough for the
+    /// live view to move), sampling the web views alive all the while.
+    @MainActor static func pan(_ app: MobileApp) async {
+        let canvas = PadDesigns.of(app.hosts).canvas(largeRef)
+        await FixtureWindows.wait(seconds: 15) { canvas.snapshot != nil }
+        let zoom: CGFloat = 0.5
+        canvas.viewport = NWCanvasViewport(offset: CGPoint(x: 28, y: 46), zoom: zoom)
+        await FixtureWindows.wait(seconds: 30) { canvas.isDrawn }
+        let most = WebViewPeak()
+        let sampler = Task { @MainActor in
+            while most.sampling {
+                most.renderer = max(most.renderer, PadDesignRendering.shared.webViews)
+                most.window = max(most.window, webViewsInWindows())
+                try? await Task.sleep(for: .milliseconds(8))
+            }
+        }
+        var legs = 0
+        for row in 0..<largeRows {
+            // Across the row, then down to the next.
+            let targetX = row.isMultiple(of: 2) ? -Double(largeColumns - 2) * 1400 * zoom : 28
+            let targetY = 46 - Double(row) * 1000 * zoom
+            let start = canvas.viewport.offset
+            for frame in 1...24 {
+                let t = Double(frame) / 24
+                canvas.viewport = NWCanvasViewport(offset: CGPoint(x: start.x + (targetX - start.x) * t, y: start.y + (targetY - start.y) * t),
+                                                   zoom: zoom)
+                try? await Task.sleep(for: .milliseconds(16))
+            }
+            legs += 1
+            try? await Task.sleep(for: .milliseconds(450))
+        }
+        await FixtureWindows.wait(seconds: 30) { canvas.isDrawn }
+        most.sampling = false
+        await sampler.value
+        let cap = DesignTouchLivePlan.liveCap + 1
+        let live = PadDesignRendering.shared.webViews
+        let ok = most.renderer <= cap && most.window <= cap && live >= 1
+        print("FIXTURE CHECK \(ok ? "ok" : "FAILED:") design-pad-pan: \(legs) legs across \(largeColumns * largeRows) boards, "
+              + "at most \(most.renderer) web views in the renderer and \(most.window) in the window (cap \(cap)), \(live) at rest")
+    }
+
+    /// The most web views seen while the canvas pans.
+    @MainActor final class WebViewPeak {
+        var sampling = true
+        var renderer = 0
+        var window = 0
+    }
+
+    /// WKWebViews in the app's windows: the stage's and the canvas's.
+    @MainActor static func webViewsInWindows() -> Int {
+        func count(_ view: UIView) -> Int {
+            (view is WKWebView ? 1 : 0) + view.subviews.reduce(0) { $0 + count($1) }
+        }
+        return UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows).reduce(0) { $0 + count($1) }
     }
 
     /// Waits for the design on screen to draw what it shows, then puts the canvas where the board

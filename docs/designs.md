@@ -1009,8 +1009,8 @@ through `capabilitiesChanged`.
   one live board in the app (`DesignTouchLivePlan`: the board a tap asks about, then the
   selected one, then the one nearest the middle; a design taking it takes it from any other on
   screen) and one off-screen view that draws every other board's snapshot in turn, two web views
-  at most. Snapshots are at most 640pt wide, 64 MB
-  per design. A page gets a viewport of its board's width at the canvas's zoom, so it lays out as
+  at most; the `design-pad-pan` fixture pans a 64-board canvas and counts them. Snapshots are at
+  most 640pt wide, 64 MB per design. A page gets a viewport of its board's width at the canvas's zoom, so it lays out as
   on the Mac and draws sharp (`DesignBoardView` on iOS). Web views not on the canvas wait on a
   stage at the back of the window, where WebKit still draws them.
 - **Touch** (`NWCanvasTouchInput`): a drag pans, a pinch zooms, a tap selects or, with Comment,
