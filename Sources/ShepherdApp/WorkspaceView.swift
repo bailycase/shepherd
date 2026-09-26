@@ -727,34 +727,44 @@ private struct RemoteAgentPaneContent: View {
     /// Connecting, unreachable, and disconnected placeholders cross-fade with the layout as the
     /// connection changes; switching to the host's inspector tab (`.id(tab.id)`) stays instant.
     var body: some View {
+        let away = HostAway.reconnecting(connection.phase, lastSeen: connection.lastSeen)
         ZStack {
-            switch connection.phase {
-            case .connected:
-                if let agent = connection.state.agents.first(where: { $0.id == agentID }),
-                   let tab = connection.state.tabs.first(where: {
-                       let ref = RemoteAgentRef(hostID: connection.id, agentID: agentID)
-                       return $0.id == (vm.remoteInspectingAgent == ref ? vm.remoteInspectorTabs[ref] ?? agent.tabID : agent.tabID)
-                   }) {
-                    RemoteAgentLayoutView(
-                        vm: vm,
-                        connection: connection,
-                        ref: RemoteAgentRef(hostID: connection.id, agentID: agentID),
-                        tab: tab
-                    )
-                    .id(tab.id)
-                } else {
-                    PanePlaceholder(text: "agent has no layout on \(connection.config.name)")
+            // One banner through every try (connecting, then waiting out the backoff), so it
+            // never flickers between them.
+            if away {
+                HostAwayBanner(name: connection.config.name, lastSeen: connection.lastSeen ?? Date()) {
+                    vm.remoteHosts.reconnect(id: connection.id)
+                }
+                .nwTransition(.content)
+            } else {
+                switch connection.phase {
+                case .connected:
+                    if let agent = connection.state.agents.first(where: { $0.id == agentID }),
+                       let tab = connection.state.tabs.first(where: {
+                           let ref = RemoteAgentRef(hostID: connection.id, agentID: agentID)
+                           return $0.id == (vm.remoteInspectingAgent == ref ? vm.remoteInspectorTabs[ref] ?? agent.tabID : agent.tabID)
+                       }) {
+                        RemoteAgentLayoutView(
+                            vm: vm,
+                            connection: connection,
+                            ref: RemoteAgentRef(hostID: connection.id, agentID: agentID),
+                            tab: tab
+                        )
+                        .id(tab.id)
+                    } else {
+                        PanePlaceholder(text: "agent has no layout on \(connection.config.name)")
+                            .nwTransition(.content)
+                    }
+                case .connecting:
+                    PanePlaceholder(text: "connecting to \(connection.config.name)…")
+                        .nwTransition(.content)
+                case .failed(let failure):
+                    PanePlaceholder(text: failure.message(host: connection.config.name))
+                        .nwTransition(.content)
+                case .disconnected:
+                    PanePlaceholder(text: "\(connection.config.name) disconnected")
                         .nwTransition(.content)
                 }
-            case .connecting:
-                PanePlaceholder(text: "connecting to \(connection.config.name)…")
-                    .nwTransition(.content)
-            case .failed(let failure):
-                PanePlaceholder(text: failure.message(host: connection.config.name))
-                    .nwTransition(.content)
-            case .disconnected:
-                PanePlaceholder(text: "\(connection.config.name) disconnected")
-                    .nwTransition(.content)
             }
         }
         .nwAnimation(.content, value: connection.phase.kind)
@@ -1053,6 +1063,47 @@ private struct RemoteTerminalPane: View {
             }
         }
         .nwAnimation(.content, value: pane.phase)
+    }
+}
+
+/// Whether a remote agent's pane says its host is reconnecting (NWStatus): the host was
+/// connected earlier this launch and Shepherd is trying it again. A host that never connected, or
+/// a failure that won't retry (a refused token, another protocol), keeps its own placeholder.
+enum HostAway {
+    static func reconnecting(_ phase: RemoteHostStore.Phase, lastSeen: Date?) -> Bool {
+        guard lastSeen != nil else { return false }
+        switch phase {
+        case .connecting: return true
+        case .failed(let failure): return failure.retries
+        case .connected, .disconnected: return false
+        }
+    }
+
+    /// "Last seen 3h ago. Remote agents resume when it's back."
+    static func message(lastSeen: Date, now: Date = Date()) -> String {
+        "Last seen \(InstructionsPresentation.age(lastSeen.timeIntervalSince1970, now: now)). Remote agents resume when it’s back."
+    }
+}
+
+/// A remote agent's pane while its host is away (NWStatus › A host reconnecting): a running banner
+/// with when the host was last seen, and Retry now, which skips the wait before the next try.
+struct HostAwayBanner: View {
+    let name: String
+    let lastSeen: Date
+    let retry: () -> Void
+
+    var body: some View {
+        // The age moves on by itself ("just now", then "1m ago").
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            NWBanner(.running, title: "\(name) reconnecting", message: HostAway.message(lastSeen: lastSeen, now: context.date),
+                     systemImage: "point.topleft.down.to.point.bottomright.curvepath") {
+                Button("Retry now", action: retry)
+                    .buttonStyle(.nw(.secondary, size: .s))
+            }
+        }
+        .frame(maxWidth: AppLayout.threadMaxWidth)
+        .padding(AppLayout.gutter)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }
 

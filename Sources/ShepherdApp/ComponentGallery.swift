@@ -67,6 +67,10 @@ struct ComponentGallery: View {
                 Button("Show all") {}.buttonStyle(.nwLink)
             }
             HStack(spacing: AppLayout.galleryItemSpacing) {
+                Button {} label: { Label("Fork", systemImage: "arrow.branch") }.buttonStyle(.nw(.secondary))
+                Button {} label: { NWButtonTitle("Land", chord: "⌘↩") }.buttonStyle(.nw(.primary))
+            }
+            HStack(spacing: AppLayout.galleryItemSpacing) {
                 Button {} label: { Image(systemName: "sidebar.left") }.buttonStyle(.nwIcon).accessibilityLabel("Sidebar")
                 Button {} label: { Image(systemName: "plus.forwardslash.minus") }.buttonStyle(.nwIcon(isOn: true)).accessibilityLabel("Review")
                 Button {} label: { Image(systemName: "ellipsis") }.buttonStyle(.nwIcon(bordered: true)).accessibilityLabel("Options")
@@ -94,6 +98,7 @@ struct ComponentGallery: View {
                 Toggle("Off", isOn: $toggleOff).toggleStyle(.nwSwitch).labelsHidden()
                 Toggle("Done when", isOn: $check).toggleStyle(.nwCheckbox)
             }
+            NWRadioGroup("Update channel", selection: $segment, options: [("local", "Stable"), ("pr", "Beta")])
             HStack(spacing: NW.Space.l) {
                 NWKeycap(keys.display(.newSpace))
                 NWCountBadge(19)
@@ -113,6 +118,8 @@ struct ComponentGallery: View {
         VStack(alignment: .leading, spacing: NW.Space.l) {
             TextField("Name this agent", text: $field).textFieldStyle(.nw)
             TextField("Focused field", text: $field).nwField(focused: true)
+            TextField("Socket", text: .constant("shepherd.sock")).textFieldStyle(.nw(mono: true, error: true))
+                .nwFieldMessage("Socket path already in use")
             NWSearchField("Search settings", text: $search, shortcut: "⌘F")
             NWPopupMenu("claude-sonnet", mono: true) { Button("claude-opus") {}; Button("claude-sonnet") {} }
             NWStepper("Concurrency", value: $stepper, in: 1...16)

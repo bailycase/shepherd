@@ -58,6 +58,24 @@ extension View {
         textFieldStyle(.plain).nwFieldChrome(focused: focused, error: error, mono: mono)
     }
 
+    /// A field's own value refused (Controls board: "Socket path already in use"): the message
+    /// 6pt under the field in `caption` `failed`, beside the field's `error` line. A problem with
+    /// a whole setting stays its row's problem line instead. Nil shows nothing. `alignment` lines
+    /// it up with a field that ends a row (Settings) rather than one that starts it.
+    public func nwFieldMessage(_ message: String?, alignment: HorizontalAlignment = .leading) -> some View {
+        VStack(alignment: alignment, spacing: NW.Space.s) {
+            self
+            if let message {
+                Text(message)
+                    .font(.nw(.caption))
+                    .foregroundStyle(.nw.failed)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .nwTransition(.disclosure)
+            }
+        }
+        .nwAnimation(.disclosure, value: message)
+    }
+
     fileprivate func nwFieldChrome(focused: Bool, error: Bool, mono: Bool, search: Bool = false) -> some View {
         modifier(NWFieldChrome(focused: focused, error: error, mono: mono, search: search))
     }
