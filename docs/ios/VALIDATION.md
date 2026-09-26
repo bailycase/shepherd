@@ -100,7 +100,7 @@ the app opens the screen's routes, waits for a thread's first snapshot, settles,
 
 **What it checks.** A screen that never becomes ready fails, and so does one that asks a host to
 change anything (a send, an abort, an agent action, a terminal attach or input): the fixture
-host refuses those and prints `FIXTURE MUTATION`. Each run also prints the requests every host
+host refuses those and prints `FIXTURE MUTATION` (Undo and Redo of a turn included). Each run also prints the requests every host
 received (`FIXTURE REQUESTS`). A screen can also measure what it draws and print
 `FIXTURE CHECK ok|FAILED: …`, which the script echoes and fails on: `thread-follow` checks that
 the reply ends above the composer, and `thread-jump` (a drag up from the tail, stepped through
@@ -128,6 +128,14 @@ expect. With it, a screen can open more windows (CONTRACTS.md › Fixture screen
 and `windows-sent` draw two windows side by side as Split View does, and `windows-new` opens a
 real second window, which the simulator's full-screen mode shows over the first. Windows the
 system restores from an earlier run are closed before a screen starts.
+
+**The Changes pane's screens.** `review`, `diff`, `review-comment`, `review-base`, `review-pr`,
+`review-empty`, `review-error` (MobileChanges, MobileDiff) and `changes-pad`, `changes-pad-full`,
+`changes-pad-commit`, `changes-pad-base`, `changes-pad-turn`, `changes-pad-collapsed` (iPadReview,
+iPadReviewSplit, iPadCommit, on an iPad in landscape) run against a host with `changes.v1`;
+`review-legacy` against one without it (today's working-tree review). The thread's card:
+`thread` (Undo), `thread-undone` (Redo), `thread-card-legacy` (an older host: no Undo), and
+`changes-card` (the iPad's "Edited 5 files").
 
 **Adding a screen:** see [CONTRACTS.md › Fixture screens](CONTRACTS.md#fixture-screens).
 

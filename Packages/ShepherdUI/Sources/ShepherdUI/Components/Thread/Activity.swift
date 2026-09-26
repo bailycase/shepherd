@@ -365,67 +365,156 @@ public struct NWChangedFile: Identifiable, Equatable, Sendable {
     }
 }
 
-/// Ends every turn that edited files (NWThread board): a 32pt `bgSunken` header "4 files
-/// changed +149 −63" with Review, then a 28pt row per file with its status letter (M lantern,
-/// A done, D failed), directory and name, and diff stat. Review and the rows open the review
-/// pane; without `onOpen` the rows are plain.
+/// Ends every turn that edited files (ChangesCard(turn.changes), NWThread, Main): a header with
+/// a 30pt tile, "Edited 5 files" over its diff stat, Undo and Review; then the first three files
+/// as plain paths (the folder dims, the name reads first, "new" on a created file) and "N more".
+/// Review and the rows open the Changes pane on this turn. After Undo the card is one dashed line,
+/// "Undid the agent’s edits to 5 files", with Redo (ChangesCard · after Undo).
 public struct NWChangesCard: View {
+    public enum Phase: Equatable, Sendable {
+        case edited
+        case undone
+    }
+
     let title: String
     let added: Int
     let removed: Int
     let files: [NWChangedFile]
+    let total: Int
+    let phase: Phase
+    let busy: Bool
+    let notice: String?
     let onReview: (() -> Void)?
     let onOpen: ((String) -> Void)?
+    let onUndo: (() -> Void)?
+    let onRedo: (() -> Void)?
 
-    public init(title: String, added: Int, removed: Int, files: [NWChangedFile],
-                onReview: (() -> Void)? = nil, onOpen: ((String) -> Void)? = nil) {
+    /// `total` counts every file the turn changed (the card lists the first three); without it,
+    /// `files` are all of them. `onUndo` and `onRedo` are left out where they can't apply (not the
+    /// last turn, an older host); `busy` holds them while one runs; `notice` says why one refused.
+    public init(title: String, added: Int, removed: Int, files: [NWChangedFile], total: Int? = nil, phase: Phase = .edited,
+                busy: Bool = false, notice: String? = nil, onReview: (() -> Void)? = nil, onOpen: ((String) -> Void)? = nil,
+                onUndo: (() -> Void)? = nil, onRedo: (() -> Void)? = nil) {
         self.title = title
         self.added = added
         self.removed = removed
         self.files = files
+        self.total = max(total ?? files.count, files.count)
+        self.phase = phase
+        self.busy = busy
+        self.notice = notice
         self.onReview = onReview
         self.onOpen = onOpen
+        self.onUndo = onUndo
+        self.onRedo = onRedo
     }
 
     public var body: some View {
+        VStack(alignment: .leading, spacing: NW.Space.s) {
+            switch phase {
+            case .edited: edited
+            case .undone: undone
+            }
+            if let notice {
+                Text(notice)
+                    .font(.nw(.caption))
+                    .foregroundStyle(Color.nw.failed)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .nwTransition(.content)
+            }
+        }
+        .nwAnimation(.content, value: phase)
+        .nwAnimation(.content, value: notice)
+    }
+
+    private var edited: some View {
         let nw = Color.nw
-        VStack(spacing: 0) {
+        let shown = Array(files.prefix(NWThreadMetrics.changesShownFiles))
+        let more = total - shown.count
+        return VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Image(systemName: "pencil").font(.system(size: 10, weight: .medium)).foregroundStyle(nw.textSecondary)
-                    .frame(width: 12, height: 12)
-                Text(title).font(.nw(.ui, weight: .semibold)).foregroundStyle(nw.textPrimary).lineLimit(1).fixedSize()
-                NWDiffStat(added: added, removed: removed, font: .nwMono(11))
-                Spacer(minLength: 0)
+                Image(systemName: "plus.forwardslash.minus")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(nw.textSecondary)
+                    .frame(width: NWThreadMetrics.changesTile, height: NWThreadMetrics.changesTile)
+                    .background(nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+                    .nwBorder(nw.lineSubtle, radius: NW.Radius.m)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.nwSans(13, .semibold)).foregroundStyle(nw.textPrimary).lineLimit(1)
+                    NWDiffStat(added: added, removed: removed, font: .nwMono(11))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
+                if let onUndo {
+                    Button(action: onUndo) {
+                        HStack(spacing: 5) {
+                            Text("Undo")
+                            Image(systemName: "arrow.uturn.backward").font(.system(size: 10, weight: .medium))
+                        }
+                    }
+                    .buttonStyle(.nw(.ghost, size: .s))
+                    .disabled(busy)
+                    .help("Put back this turn’s edits in the worktree")
+                    .accessibilityLabel("Undo the agent’s edits to \(total) file\(total == 1 ? "" : "s")")
+                }
                 if let onReview {
-                    Button(action: onReview) { Label("Review", systemImage: "plus.forwardslash.minus") }
-                        .buttonStyle(.nw(.ghost, size: .s))
+                    Button("Review", action: onReview)
+                        .buttonStyle(.nw(.secondary, size: .s))
                         .accessibilityLabel("Review \(title)")
                 }
             }
+            .padding(.vertical, 10)
             .padding(.leading, NW.Space.l)
-            .padding(.trailing, NW.Space.s)
-            .frame(height: NWThreadMetrics.changesHeaderHeight)
-            .background(nw.bgSunken)
-            .accessibilityElement(children: .combine)
-            ForEach(files) { file in
+            .padding(.trailing, 10)
+            ForEach(shown) { file in
                 NWHairline()
                 row(file)
             }
+            if more > 0 {
+                NWHairline()
+                moreRow(more)
+            }
         }
         .frame(maxWidth: .infinity)
-        .background(nw.bgWindow, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-        .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
-        .nwBorder(nw.lineSubtle, radius: NW.Radius.m)
+        .background(nw.bgWindow, in: RoundedRectangle(cornerRadius: NWThreadMetrics.changesRadius))
+        .clipShape(RoundedRectangle(cornerRadius: NWThreadMetrics.changesRadius))
+        .nwBorder(nw.lineSubtle, radius: NWThreadMetrics.changesRadius)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var undone: some View {
+        let nw = Color.nw
+        return HStack(spacing: 10) {
+            Image(systemName: "arrow.uturn.backward").font(.system(size: 11, weight: .medium)).foregroundStyle(nw.textSecondary)
+                .accessibilityHidden(true)
+            Text(title).font(.nw(.ui, weight: .regular)).foregroundStyle(nw.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let onRedo {
+                Button("Redo", action: onRedo)
+                    .buttonStyle(.nw(.ghost, size: .s))
+                    .disabled(busy)
+                    .help("Put the agent’s edits back")
+            }
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, NW.Space.l)
+        .overlay {
+            RoundedRectangle(cornerRadius: NWThreadMetrics.changesRadius)
+                .strokeBorder(nw.lineStrong, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+        }
         .accessibilityElement(children: .contain)
     }
 
     @ViewBuilder private func row(_ file: NWChangedFile) -> some View {
         let nw = Color.nw
-        let content = HStack(spacing: 10) {
-            Text(file.status.rawValue).font(.nwMono(11, .bold)).foregroundStyle(statusColor(file.status))
+        let content = HStack(spacing: NW.Space.m) {
             Text("\(Text(file.directory).foregroundStyle(nw.textTertiary))\(Text(file.name).foregroundStyle(nw.textPrimary))")
-                .font(.nwMono(12)).lineLimit(1).truncationMode(.head)
+                .font(.nw(.ui, weight: .regular)).lineLimit(1).truncationMode(.head)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            if file.status != .modified {
+                Text(file.status == .added ? "new" : "deleted").font(.nwSans(11)).foregroundStyle(nw.textTertiary)
+            }
             NWDiffStat(added: file.added, removed: file.removed, font: .nwMono(11))
         }
         .padding(.horizontal, NW.Space.l)
@@ -436,17 +525,24 @@ public struct NWChangesCard: View {
             Button { onOpen(file.path) } label: { content }
                 .buttonStyle(.nwRow(radius: 0))
                 .accessibilityLabel(label)
-                .accessibilityHint("Opens the file in the review pane")
+                .accessibilityHint("Opens the file in the Changes pane")
         } else {
             content.accessibilityElement(children: .ignore).accessibilityLabel(label)
         }
     }
 
-    private func statusColor(_ status: NWChangedFile.Status) -> Color {
-        switch status {
-        case .modified: .nw.lantern
-        case .added: .nw.done
-        case .deleted: .nw.failed
+    @ViewBuilder private func moreRow(_ count: Int) -> some View {
+        let label = Text("\(count) more").font(.nwSans(12)).foregroundStyle(Color.nw.textSecondary)
+            .padding(.horizontal, NW.Space.l)
+            .frame(maxWidth: .infinity, minHeight: NWThreadMetrics.changesRowHeight, alignment: .leading)
+            .contentShape(Rectangle())
+        if let onReview {
+            Button(action: onReview) { label }
+                .buttonStyle(.nwRow(radius: 0))
+                .accessibilityLabel("\(count) more files")
+                .accessibilityHint("Opens the Changes pane")
+        } else {
+            label
         }
     }
 

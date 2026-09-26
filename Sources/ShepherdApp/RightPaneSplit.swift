@@ -16,6 +16,8 @@ final class RightPaneState {
     var tabs: [SidePaneOwner: SidePaneTab] = [:]
     /// Tabs the agent opened something in since you last showed them.
     var news: [SidePaneOwner: Set<SidePaneTab>] = [:]
+    /// Panes over their whole layout (ChangesWide), the thread hidden under them.
+    var maximized: Set<SidePaneOwner> = []
     /// A run whose Steer field takes focus when its inspector shows it (the tray's Steer),
     /// until it does.
     var steerRun: String?
@@ -58,6 +60,7 @@ final class RightPaneState {
         if open.contains(owner) { open.remove(owner) }
         if tabs[owner] != nil { tabs.removeValue(forKey: owner) }
         if news[owner] != nil { news.removeValue(forKey: owner) }
+        if maximized.contains(owner) { maximized.remove(owner) }
     }
 }
 
@@ -74,6 +77,8 @@ final class RightPaneState {
 struct RightPaneSplit<Content: View, Pane: View>: View {
     @Bindable var state: RightPaneState
     let showPane: Bool
+    /// The pane over the whole layout (ChangesWide): the thread stays mounted under it, hidden.
+    var maximized = false
     @ViewBuilder let content: () -> Content
     @ViewBuilder let pane: () -> Pane
     @State private var liveWidth: CGFloat?
@@ -83,28 +88,35 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
             let total = geo.size.width
             let layout = ShellLayout.rightPane(containerWidth: total, preferredWidth: liveWidth ?? state.width)
             let docked = layout.mode == .docked
-            let contentWidth = showPane && docked ? layout.contentWidth : total
+            let covers = showPane && maximized
+            let paneWidth = covers ? total : layout.width
+            let contentWidth = showPane && docked && !covers ? layout.contentWidth : total
             // The thread stays the first child in both modes, so opening a pane never remounts it.
             ZStack(alignment: .topLeading) {
                 content()
                     .frame(width: contentWidth, height: geo.size.height)
+                    // Maximized, the thread is hidden, never unmounted: restoring is a flip.
+                    .opacity(covers ? 0 : 1)
+                    .allowsHitTesting(!covers)
+                    .accessibilityHidden(covers)
                     .animation(nil, value: contentWidth)
                     // Under an overlaid pane the width holds, but what the thread changes in the
                     // same update (a streamed row, the inspected card) must not ride the slide.
                     .animation(nil, value: showPane)
                 if showPane {
                     HStack(spacing: 0) {
-                        handle(total: total, width: layout.width)
+                        if !covers { handle(total: total, width: layout.width) }
                         pane()
-                            .frame(width: layout.width, height: geo.size.height)
+                            .frame(width: paneWidth, height: geo.size.height)
                             .clipped()
                     }
-                    .nwFloatBackground(Color.nw.bgWindow, floating: !docked)
-                    .offset(x: max(0, total - layout.width - AppLayout.dividerWidth))
+                    .nwFloatBackground(Color.nw.bgWindow, floating: !docked && !covers)
+                    .offset(x: covers ? 0 : max(0, total - layout.width - AppLayout.dividerWidth))
                     .nwTransition(.pane, edge: .trailing)
                 }
             }
             .nwAnimation(.pane, value: showPane)
+            .nwAnimation(.pane, value: covers)
         }
         .coordinateSpace(.named("right-pane"))
     }
