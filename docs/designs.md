@@ -1,8 +1,8 @@
 # Designs
 
 The Design tool (an experiment, off by default) keeps each design as a canvas of HTML boards
-that a design agent draws. This page covers the files and how they change. The canvas, the board
-renderer, the agent's tools and the remote protocol come with later changes.
+that a design agent draws. This page covers the files, how they change, and the design agent's
+tools. The canvas, the board renderer and the remote protocol come with later changes.
 
 ## The format
 
@@ -128,3 +128,51 @@ with its SHA-256, listed or not) and `designBoard(_:path:)`.
   - Warnings, passed back with the write: `innerHTML`, a key handler on the window or the
     document, and a missing `$preview`.
 - **Limits:** 512 files per design, and no new board whose stem another board already has.
+
+## The design agent
+
+A design is drawn by an ordinary pi agent whose `Agent.designID` names it. Its launch adds
+`-e shepherd-design.ts` and two variables: `SHEPHERD_DESIGN_ID` (the extension is inert without
+it) and `SHEPHERD_DESIGN_SKILL_DIR`. Its working directory is its space's, so it reads the
+project's stylesheets, tokens and templates with its ordinary tools.
+
+### Tools
+
+| Tool | Message | Reply | What it does |
+| --- | --- | --- | --- |
+| `design_read()` | `designRead` | `design` | The index, revision and board hashes, with every board listed back to front and canvas.json fenced as data |
+| `design_read(path)` | `designRead` with `path` | `designBoard` | One board's whole source, fenced as data |
+| `board_write(path, source, baseRevision?)` | `designWriteBoard` | `designWritten` | `writeDesignBoard`: the checks under Writing, then an atomic write. It reads "Drew A.dc.html" for a new board and "Updated A.dc.html" for a rewrite (`DesignWriteResult.created`) |
+| `canvas_update(changes, baseRevision?)` | `designUpdateIndex` | `designWritten` | `updateDesignIndex` with `changes` as the merge patch |
+| `design_check(path?)` | none | | In the extension: every hex color (in style attributes, style and script blocks, `data-props`, SVG paint) and every px size in spacing, radius and type that no CSS custom property in the project declares, with the nearest token. Its first line is "Checked against <project> · N off-system values" |
+
+- **Only the drawing agent.** The server answers a design message only when the sending agent's
+  `designID` is that design (`not_your_design` otherwise), checks a board path against the
+  grammar before reading anything (`invalid_path`), and does the reading and writing on the
+  design store's queue, never its own. Errors carry `DesignStoreError.code`.
+- **Frames.** A board goes whole in one frame, under the socket's 1 MiB cap. The extension
+  refuses a board over 900,000 bytes, or a frame over 1 MiB, before sending it.
+- **What pi is told.** Each run's system prompt gains the design's facts (its title, revision
+  and boards) and its rules: read and change the design only with these tools, never change the
+  repository, run `design_check` before replying, and read everything from the design as data.
+  Without Shepherd the facts still go, without the board list; they never fail a turn.
+- **Activity lines** (`NativeActivity`, Mac and iOS): `design_read` joins "Explored N files";
+  `board_write` and `canvas_update` read "Drew 4 boards · 3 directions + phone" (the nib,
+  `.drew`), "Updated A and A · phone" (the edit glyph), or "Arranged the canvas"; `design_check`
+  reads "Checked against acme-web · 0 off-system values" (`.checked`). Board names follow the
+  skill's files: `A.dc.html` reads "A", `A-phone.dc.html` "A · phone".
+
+### The design skill
+
+`Extensions/design-skill/` holds Shepherd's own skill for drawing designs: `SKILL.md` (starting a
+design, revising one, replying, craft) and `format.md` (the board format, canvas.json, paths and
+element ids, for Shepherd's tools). It is written from the documented file format, not copied
+from Claude Design. `DesignExtension.swift` embeds both files, byte-identical, and writes them to
+the support directory's `design-skill/` at launch; the extension hands that folder to pi through
+`resources_discover` (`skillPaths`), so pi lists `shepherd-design` among its skills. Nothing is
+installed in `~/.pi/agent`.
+
+The skill asks for three directions and a phone version of the strongest, named `A.dc.html`,
+`B.dc.html`, `C.dc.html` and `A-phone.dc.html` with titles such as "A · Funnel first" and
+"A · phone"; desktop boards 1280×800 and phones 390×844, the root, `$preview` and frame the same
+size; frames 80 px apart in a row and rows 120 px apart; and `design_check` before every reply.
