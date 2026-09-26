@@ -6,14 +6,14 @@ struct StateValidationTests {
     /// Which error a broken state must raise — the case name, so a regression that throws the
     /// wrong error for the right input still fails.
     enum Breakage: String, CaseIterable, Sendable {
-        case duplicateSpace, duplicateTab, duplicateAgent, duplicatePane, duplicateAutomation
+        case duplicateSpace, duplicateTab, duplicateAgent, duplicatePane, duplicateAutomation, duplicateDesign
         case tabInUnknownSpace, agentInUnknownSpace, agentInUnknownTab, agentAndTabInDifferentSpaces
         case agentPointsAtUnknownPane, paneOwnedByAnotherAgent, leafNamesUnknownAgent
         case leafNamesAgentOfAnotherTab, automationNamesUnknownAgent
 
         var expectedError: String {
             switch self {
-            case .duplicateSpace, .duplicateTab, .duplicateAgent, .duplicatePane, .duplicateAutomation:
+            case .duplicateSpace, .duplicateTab, .duplicateAgent, .duplicatePane, .duplicateAutomation, .duplicateDesign:
                 return "duplicateID"
             case .tabInUnknownSpace: return "missingSpaceForTab"
             case .agentInUnknownSpace: return "missingSpaceForAgent"
@@ -39,6 +39,9 @@ struct StateValidationTests {
             case .duplicateAutomation:
                 let automation = Automation(name: "a", prompt: "p", cwd: "/tmp")
                 state.automations = [automation, automation]
+            case .duplicateDesign:
+                let design = Design(name: "d", spaceID: space.id, createdAt: 1)
+                state.designs = [design, design]
             case .tabInUnknownSpace: state.tabs[0].spaceID = SpaceID()
             case .agentInUnknownSpace: state.agents[0].spaceID = SpaceID()
             case .agentInUnknownTab: state.agents[0].tabID = TabID()
@@ -89,6 +92,15 @@ struct StateValidationTests {
             Automation(name: "linked", prompt: "p", cwd: "/tmp", agentID: state.agents[0].id),
             Automation(name: "stopped", prompt: "p", cwd: "/tmp"),
         ]
+        try state.validate()
+    }
+
+    /// A design's agent and an agent's design are soft references: startup clears what dangles,
+    /// so a state that still has one is valid.
+    @Test func designsAndTheirAgentsMayPointAtWhatIsGone() throws {
+        var state = Fixture.state()
+        state.designs = [Design(name: "d", spaceID: SpaceID(), agentID: AgentID(), createdAt: 1)]
+        state.agents[0].designID = DesignID()
         try state.validate()
     }
 

@@ -1447,12 +1447,63 @@ the turn has finished, the changes card and the footer end it. A running turn ha
     The NWThread board draws only the first; the other two are app states it does not draw.
 - **Notes** ("Image attached", "Output truncated", extension messages) render as caption
   tertiary text on a 2pt rule (three lines, full text on hover).
-- **Errors** (`NWTurnError`): a failed provider request, on `failedTint` with radius 6 and 8×10
-  padding, at most the prose measure: a 14pt `exclamationmark.triangle` in `failed`, the message
-  in `ui` regular `textPrimary` ("Model overloaded — the turn stopped after 6 tool calls."; the
-  suffix only when the error ended a turn that made tool calls), "×n" in mono 11 tertiary when
-  repeated, and Retry (a secondary `s` button with `arrow.clockwise`) when it ended the turn,
-  10pt apart. It rises in like a row (`list`). Tool failures stay in their activity lines.
+- **Errors** (TurnErrors, ThreadError, ThreadErrorDetails; `NWTurnError`, `Thread/TurnErrors.swift`,
+  read by `NativeTurnError` in ShepherdRemote once per change): a request to the model that failed
+  (pi's assistant message with `stopReason` `error` and its `errorMessage`), the error itself,
+  readable. Tool failures stay in their activity lines.
+  - **The card** spans the column (not the prose measure): `bgRaised`, a 1px `lineStrong` line,
+    radius 10 (`NWTurnErrorMetrics`), 14×16 inset. A 28pt tile at radius 8 on `failedTint` holds
+    the kind's 14pt glyph in `failed` (`exclamationmark.triangle`; `hourglass` for a timeout,
+    `wifi.slash` for the network, `arrow.down.right.and.arrow.up.left` for a thread too long);
+    12pt right of it, 5pt apart: the **title** (Geist 14/600, and the time in mono 11 tertiary at
+    the trailing edge), the **message** (13 `textSecondary`), the **facts** (2pt more above: the
+    status and type as mono 10.5 chips, `NWTag`, then "gpt-5 · OpenAI" and "· Tried 3 times over
+    31m" in 12 tertiary), and the **actions** (6pt more above): Retry (secondary `s`, when it
+    ended the turn), Copy (a 26pt icon circle), and "Details ›" (12.5 `textSecondary`) at the
+    trailing edge. It rises in like a row (`list`).
+  - **Title,** from the status and type: "OpenAI rejected the API key" (401, an authentication
+    type), "OpenAI didn’t respond in time" (a timeout, 408, 504), "OpenAI is overloaded" (529,
+    `overloaded_error`), "OpenAI had a server error" (500, `server_error`), "Rate limited by
+    OpenAI" (429, `rate_limit_*`, `RESOURCE_EXHAUSTED`), "Couldn’t reach OpenAI" (a network error
+    with no status), "The thread is too long for gpt-5" (`context_length_exceeded`), else "The
+    request to OpenAI failed". Without a provider: "The provider …", "The model request failed".
+    Providers are named as people write them (pi's `openai` is OpenAI).
+  - **Message:** the provider's own words out of pi's text ("401: {…}", "429 Rate limit…",
+    "OpenAI API error (401): …", an OpenRouter wrapper's upstream message), cleaned: keys cut to
+    their first eight and last four ("sk-svcac…fvMA", in mono `textPrimary`), links clickable
+    ("platform.openai.com/account/api-keys" in `running` 12.5 with `arrow.up.right.square`), names
+    the provider quoted in backticks in mono, no JSON, no escaped quotes. A network error says
+    where from: "`api.openai.com` didn’t answer from build-01: connection reset.", with the errno
+    and the host as chips.
+  - **Details** opens in place under a `lineSubtle` hairline (14pt above, 16 below, 52 leading):
+    the facts (a 250pt column, 70pt labels in 12 tertiary, values in 12 `textSecondary`, mono but
+    the provider): Provider, Model, Host (the machine the agent runs on: this Mac's name, or a
+    remote host's), Status, Type, Code, Request, At (with seconds); 24pt right, everything the
+    provider sent back pretty-printed in the provider's key order (mono 11.5 on `bgSunken`, radius
+    8, a `lineSubtle` line, 10×12 inset): keys in `synFunction`, strings in `synString`, a cut key
+    on `bgSelected`, addresses underlined in `running`. Keys stay cut here too. What isn't JSON
+    shows as it came. Details and a folded error's opening are kept by the thread's store
+    (`NativeTurnErrorExpansion`), so a row the list rebuilds keeps them.
+  - **Copy** puts the whole error on the pasteboard as text, redacted the same way: the title,
+    the message, the facts line, each fact, and the body.
+  - **Folded** (`NWTurnError(folded:)`): when the next reply fails the same way (the same kind,
+    title and chips), the earlier card folds to one 26pt line: the 13pt glyph in `failed`, the
+    title in 12.5 `textPrimary`, "401 · 5:52 PM" in mono 11 tertiary, and a 10pt `chevron.right`.
+    A click opens the card. An error pi retried past, the turn going on, folds the same way.
+  - **While pi retries** (`NWRetryLine`; the snapshot's `retry`, from pi's `auto_retry_start`
+    until `auto_retry_end` or it settles): the live turn ends in one 26pt line, the only thing
+    moving: `arrow.clockwise` (an `hourglass` for a timeout) in `textSecondary`, "OpenAI is
+    overloaded · retrying in 8s" shimmering (counting down each second, then "· retrying"), and
+    "2 of 3" in mono 11 tertiary. The failed tries merge into one error, so the card that shows once
+    the retries are used up says "Tried 3 times over 1m 40s" (from the first try to the last).
+  - **Touch sizes** (TurnErrors › Touch sizes; iPhone and iPad alike): radius 12, a 14pt inset,
+    the title at 15/600 and the message at 14; the time joins the facts line ("gpt-5 · OpenAI ·
+    5:54 PM"); Retry is secondary `l` (32pt) and Copy a 32pt circle; the folded line is 36pt at
+    13.5. Details stacks the facts above the body, 12pt apart, in a 12×14 inset, the body in mono 11.
+  - A turn that ends in an error has no footer: the card carries its Retry and Copy.
+  - **Not built yet:** a timeout's own sentence and length ("No response after 10 minutes, so the
+    request was cancelled. Nothing in the thread was lost.", the "600s" chip): pi's text says only
+    "Request timed out.", so the card shows that and the "timeout" chip.
 - **Stopped:** a turn the user stopped is not an error. It ends in the note "Stopped", and the
   call Stop interrupted keeps its line's usual colors with "stopped" in its meta ("Ran a
   command · sleep 40 · stopped · 7.5s"), standing alone like a failure, so the word stays
@@ -1473,7 +1524,7 @@ the turn has finished, the changes card and the footer end it. A running turn ha
     working: a steering message in Up next waits still (Up next).
   - A counting timer is motion enough: the running call's clock ticks beside its shimmer in
     `textTertiary`. Under Reduce Motion the shimmer is plain `textSecondary` text.
-- **Footer** (`NWTurnFooter`), after a finished turn: copy (the turn's prose; tooltip "Copy the
+- **Footer** (`NWTurnFooter`), after a finished turn that didn't end in an error: copy (the turn's prose; tooltip "Copy the
   reply", VoiceOver "Copy response", then a check for 1.5s) and retry (resend the prompt that opened
   it, only while the agent is idle; tooltip "Send this turn's prompt again", VoiceOver "Retry turn";
   Main's labels) as 24pt icon buttons 4pt apart, then, 4pt further, "2:44 PM · 3m 12s · 23 tool
@@ -1930,7 +1981,7 @@ rules (QuestionStates › Rules):
   answered" in mono 10.5 tertiary beneath, on hover like every bubble's time. pi's turn carries
   on under it; the record is part of the agent's turn, but its time is the answer's, so it moves
   neither the turn's duration nor its Copy. A question nobody answered (refused by Stop,
-  dismissed on a touch client, or its timeout passed) keeps its line alone, ending "· not
+  cancelled by an older touch client, or its timeout passed) keeps its line alone, ending "· not
   answered" in `textTertiary`, with no bubble. VoiceOver reads it as one element ("Agent asked: …, you answered: …"). The host keeps
   it (docs/native-thread.md › Questions): a thread row every client draws, remote and iOS
   included, placed after the call that asked and before pi's next reply, and kept per pi
@@ -3948,7 +3999,8 @@ detects it yet, and the board fixes no threshold.
 
 A turn fails when pi's last reply is a provider error (not a Stop). The thread shows the error
 (`NWTurnError`), and the agent's row (an automation's too) and its palette subtitle read failed
-until its next turn starts.
+until its next turn starts. On iPhone and iPad the thread's header reads Failed from the thread
+itself (`NativeThreadStore.lastTurnFailed`): a remote client hears no turn failure from the host.
 
 Agent events that need a sentence are banners inside the pane they concern (Components › Status
 and feedback), never a modal alert; the one modal an agent can raise is `PeerDeleteDialog`
@@ -3972,7 +4024,7 @@ composing chrome by hand. Debug builds have a **Component Gallery** (View menu,
 | Status | `NWStatusPill` (20pt, radius 4; a glyph in place of its dot), `NWStatusDot` (6pt), `NWStateGlyph` (14pt), `.progressViewStyle(.nwSpinner)` and `.nwBar` (4pt), `NWStepStrip`, `NWSparkline`, `NWBanner`, `.nwToast(item:)` with `NWToast`, `NWEmptyState`, `.nwShimmer()`, `NWWordmark`, `NWCrook` | across the app; `NWSparkline` and `.nwToast(item:)` have no app use (see departures), and `.nwShimmer()` none yet |
 | Containers | `NWSectionHeader`, `NWGroupCard`, `NWCardRow`, `NWHairline`, `NWChoiceRow` (`NWChoiceRowMetrics`), `NWFlowLayout`, `NWMarkupText` | `SettingsComponents.swift`; hairlines everywhere; `NWMarkupText` for Settings' descriptions (Mac and iOS); `NWChoiceRow` in the iOS client's New thread pickers; `NWFlowLayout` for wrapping chips and answers (iOS) |
 | Navigation | `NWSidebar`, `NWSidebarTopBar`, `NWSidebarDestination`, `NWSidebarSection`, `NWSidebarRow`, `NWSidebarFooter`, `NWDropIndicator`, `NWDensity`; `NWThreadToolbar`, `NWPaneToggle`, `NWOptionsMenu`, `NWPaneHeader`; `.nwCommandPalette(isPresented:)`, `NWPaletteCard`, `NWPaletteSearchRow`, `NWPaletteSectionHeader`, `NWPaletteRow` | `SidebarView.swift`, `ThreadHeader.swift`, `RootView.swift`, `CommandPaletteView.swift`; the review's header (`DiffReviewView.swift`) and the inspector's ⋯ menu (`Thread/SubagentInspector.swift`) |
-| Thread | `NWUserBubble` (its time shown while `revealed`; `origin: .steered`), `NWQueueDivider`, `NWAgentProse`, `NWCodeBlock`, `NWThinking`, `NWActivityLine`, `NWActivityCalls`, `NWChangesCard`, `NWDiffStat`, `NWInlineCode`, `NWAttachmentChip`, `NWTurnFooter` (shown while `revealed`), `NWTurnError`, `NWJumpToLatest`, `.nwShimmer(active:)` (live text) | `Thread/ThreadView.swift`, `ThreadTurns.swift` (with each turn's `MessageHover`), `ThreadTools.swift`, `ThreadMarkdown.swift` |
+| Thread | `NWUserBubble` (its time shown while `revealed`; `origin: .steered`), `NWQueueDivider`, `NWAgentProse`, `NWCodeBlock`, `NWThinking`, `NWActivityLine`, `NWActivityCalls`, `NWChangesCard`, `NWDiffStat`, `NWInlineCode`, `NWAttachmentChip`, `NWTurnFooter` (shown while `revealed`), `NWTurnError` (card, Details, folded), `NWRetryLine`, `NWJumpToLatest`, `.nwShimmer(active:)` (live text) | `Thread/ThreadView.swift`, `ThreadTurns.swift` (with each turn's `MessageHover`), `ThreadTools.swift`, `ThreadMarkdown.swift` |
 | Composer | `NWComposer`, `.nwComposerChip(active:)`, `NWChipChevron`, `NWComposerActionButton` (outlined Stop, Send's ring), `NWMenuHeader`, `NWSlashMenu`, `NWModelPicker`, `NWThinkingMenu`, `NWSendMenu`, `NWPlaceMenu` and `NWPlaceChipLabel` (the New thread page's workplace); the question dock: `NWQuestionDock` (`NWQuestionDockContent`, `NWQuestionDockMetrics`, `.nwQuestionCard()`), `NWQuestionHead`, `NWQuestionDockHidden` (over `NWQuestionHiddenLine`); the queue: `NWQueueStack`, `NWQueueRow`, `NWQueueEditor`, `NWQueueDeletedRow`, `NWQueueMoreRow`, `NWQueueNumber`, `NWQueueGlyph`, `NWGripGlyph`, `NWQueueMetrics` | `Thread/Composer.swift`, `Thread/QuestionDock.swift`, `Thread/QueueStack.swift` |
 | Agents | `NWSubagentTray` (`NWSubagentTrayRun`, `NWSubagentTraySummary`, `NWSubagentTrayRow`, `NWSubagentTrayMoreRow`), `NWDockStack`, `NWSubagentRecordLine`, `NWInspectorHeader`, `NWRunBrief`, `NWRunActions`, `NWBranchGlyph`, `NWElapsedText`, `NWDuration`, `NWInlineMarkup`, `.nwRunArrival`; touch forms for iOS (the tray's `.pad` and `.phone` sizes, `NWRunCard`, `NWRunHeader`, `NWRunTabs`, `NWSteerField`, …) | `Thread/Subagents.swift`, `Thread/SubagentInspector.swift`, `Thread/SubagentPresentation.swift`; the iOS client |
 | Review | The Changes pane: `NWScopeButton`, `NWViewedPill`, `NWCompareRow`, `NWFileStrip`, `NWFileHeader`, `NWViewedCheckbox`, `NWDiffView` over `NWChangesRow`s (`NWDiffLine`, `NWSplitDiffLine`, `NWDiffHatch`, `NWDiffFoldRow`), `NWInlineComment`, `NWCommentEditor`, `NWReviewSendBar`, `NWChangesFileList`, the menus (`NWChangesMenu`, `NWChangesMenuRow`, `NWChangesMenuToggle`, `NWChangesMenuSearch`), `NWDiffMetrics`, `NWChangesMetrics`; the commit form (`NWCommitMessageEditor`, `NWCommitFileRow`, `NWCommitOptionRow`); touch forms for iOS (`NWTouchDiffLine`, `NWSplitDiffRow`, `NWTouchFileStrip`, `NWLineCommentBar`, `NWReviewFileRow`, `NWReviewComposer`, …) | `DiffReviewView.swift`, `ChangesMenus.swift`, `ChangesRows.swift`, `ReviewCommitSheet.swift`; the iOS client |
@@ -4170,8 +4222,8 @@ trail, top-aligned, 6pt apart, as small (24pt) buttons. Default icons:
   diagnosis that says whether retrying helps ("3 snapshot tests fail at Dynamic Type XL.
   Retrying won't help."), and **Open replay** (secondary). **Not built yet:** nothing counts
   repeated failures or diagnoses them, and the board fixes no threshold. Today a failed turn
-  shows `NWTurnError` with its repeat count and Retry, and a failed subagent card offers Open
-  replay and Re-run.
+  shows `NWTurnError` with its tries ("Tried 3 times over 2m") and Retry, and a failed subagent
+  card offers Open replay and Re-run.
 - **A host reconnecting** (running, `point.topleft.down.to.point.bottomright.curvepath`):
   "<host> reconnecting", "Last seen 3h ago. Remote agents resume when it's back.", and **Retry
   now** (secondary), in the pane of a remote agent whose host went away. **Not built yet:** the
@@ -4378,12 +4430,8 @@ below collects the rest, and the places those sentences point here.
   `ask` or `question` sets `blocked`, so any other question reaches no one outside the window
   (`Extensions/shepherd-status.ts`, `AgentNotifications.agentStatusChanged`).
 - **iOS** (the phone and iPad boards against `App/iOS` and ShepherdUI's Fleet parts):
-  - List heads (`NWListHeader`) are `.caption` semibold in `textTertiary`; the boards' are 13/600
-    in `textSecondary` on iPhone and 13/500 on iPad. Two-line rows are 56pt everywhere
-    (`NWListMetrics.twoLineRowHeight`), where Home and Search draw 52, and row dots are 7pt
-    (`NWListMetrics.dot`), the boards' 8 on iPhone.
-  - Glyphs that need you (Needs you rows and cards, the iPad sidebar) are `lantern`
-    (`AgentState.attention`, `NWAttentionCard`); the boards' are `lanternText`.
+  - List heads (`NWListHeader`) are 13/600 in `textSecondary`, as the iPhone boards draw them;
+    the iPad's are 13/500. Row dots are 7pt (`NWListMetrics.dot`), the boards' 8 on iPhone.
   - User bubbles are the Mac's (`NWUserBubble`: at most 600pt, 10×14); the iPhone boards cap them
     at 300 and the iPad's at 520 with 12×16. The iPad thread column is 760pt
     (`MobileLayout.threadMaxWidth`) against 780, with turns 24 and parts 12 against 26 and 14.
@@ -4644,7 +4692,7 @@ merges into one Home.
 - **Needs you** (head in `lanternText` with its count): 52pt rows, each a glowing 8pt `lantern` dot
   for a thread, or the origin's 15pt glyph in `lanternText` (a bolt for an automation run, a branch
   for a subagent); the thread's name, the question in `lanternText` mono 11 under it, and (the
-  app's, with several hosts) its host badge. The app draws the glyph in `lantern` (Known gaps). At
+  app's, with several hosts) its host badge. At
   most two rows (`HomeLimits.needsYou`), then a 44pt link row: "See all N" when more wait, else
   "Answer in Needs you". A row opens where the question is answered (the thread, or the asking
   subagent's run). The board shortens a plan's question to "approve plan" ("Dock review pane");
@@ -4671,7 +4719,8 @@ merges into one Home.
 follows the Mac's rules (Thread) with the phone's measures below.
 
 - **Header:** the inline title with the agent's name over its status line: the status word
-  ("Idle", "Running", "Needs you" with a glowing dot while pi asks), then where the agent works:
+  ("Idle", "Running", "Needs you" with a glowing dot while pi asks, "Failed" in `failed` while the
+  last reply ended in an error, MobileThreadError), then where the agent works:
   "· ⧉ pi/swiftui-previews" (a worktree's branch in mono `textTertiary`, truncating in the middle;
   MobileThread, MobileQueue) or "· ⌂ your checkout" in `lanternText` for the space's own checkout
   (MobileQuestion). The boards dropped the turn and context counts and the clock for it, and so
@@ -4773,7 +4822,8 @@ follows the Mac's rules (Thread) with the phone's measures below.
     branch.
   - Host: an 8pt status dot and "connected · 2 threads running" ("connected", "connecting…"); an
     unreachable host is dimmed to 50% with "unreachable · last seen 07:12" and Retry (14 `running`)
-    trailing. The app shows the failure's headline and no last-seen time.
+    trailing. The app shows the failure's headline, then when this device last had it connected
+    ("unreachable · last seen 7:12 AM"; `HostLastSeen`, kept on the device per host).
   - **Not built yet:** a daemon host ("build-01 · Linux daemon · 2 missions running"). Hosts are
     Macs running Shepherd until the Mac has daemon hosts.
   - Last, a card with "New worktree" (15/500) over "Keeps main clean. Merge it from Review." (12.5
@@ -4789,9 +4839,9 @@ MobileSteer, MobileQueue, MobileQueueMenu, MobileQuestion; `Composer/QueueSectio
 `Composer/QuestionPanel.swift`. The queue's rules are the Mac's (Up next); only its touch form
 differs.
 
-- **Header while it runs:** the status line carries the elapsed time and what the thread is working
-  in or on: "Running · 5m · payments" (its space), "Running · 37m · 3 subagents" (its live runs).
-  The app shows the elapsed time alone.
+- **Header while it runs:** as at rest (iPhone: Thread › Header), "Running · ⧉
+  agent/native-restyle" (MobileSteer, MobileQueue), with Stop trailing; the phone's header shows
+  no clock (the iPad's pill does).
 - **Up next** (`NWTouchQueueCard`) sits above the capsule, 8pt apart: `bgRaised`, a 1px `lineStrong`
   line, 14pt corners. Its 38pt head (14pt leading, 4pt trailing): the queue glyph (13pt
   `textTertiary`), "Up next" (13/600 `textSecondary`), the count (mono 11.5 `textTertiary`), and •••
@@ -4827,14 +4877,24 @@ differs.
   5pt-cornered `lineStrong` square (mono 11 `textSecondary`), then "Recommended" (a 20pt
   `lanternTint` chip, 11/600 `lanternText`) when the asker marked it, the title (15/600, 1.35) and
   its detail (14/1.45 `textSecondary`). Tapping one selects it (the number fills); Answer, a
-  full-width 48pt `lantern` button with 12pt corners at 16/600, stays at 40% until one is chosen.
-  The app adds Dismiss before Answer, Yes and No for a confirm, and a field with Send answer for
-  input and editor questions.
+  full-width 48pt `lantern` button with 12pt corners at 16/600 (`.nwReviewBar(.primary)`), stays
+  at 40% until one is chosen. The panel follows the question dock's rules (Composer, questions,
+  and menus › Questions; `QuestionPanel` on `NativeQuestionPrompt`, as the Mac's dock): Answer is
+  the only button, and picking another option moves the pick. A yes or a no (pi's confirm, or two
+  short options) is two cards side by side that answer on a tap; an open question (pi's input or
+  editor, a reply to a subagent) is a field over Answer. The grabber is Hide the question: a tap,
+  or a drag down from it, folds the panel to one line (`NWQuestionCardHiddenLine`, the iPad's),
+  which never answers it; Answer or Show the question on that line opens it again, and the next
+  question arrives open.
+- **What each asker takes** is the dock's table: pi's select takes only one of its options, so it
+  gets no note and no Something else…; a subagent's question gets both (the note field inside the
+  picked card, "Add a note…"; Something else… as the last card, 46pt, its number and a field in
+  place, which typing picks). pi's question has no Dismiss: **Stop** refuses it.
 - **While pi asks** the header shows "Needs you" with a glowing dot and no Stop or •••. The app
-  keeps both.
-- **Not built yet:** a last option "Something else…" (a 46pt card, its number, the text in
-  `textTertiary`) that opens a field for a free answer to a select. pi's select takes only an
-  offered option, so it waits for the picker block's `allowOther`.
+  keeps both: Stop is how a question is refused (the host cancels the questions pi waits on, then
+  stops the turn), as on the Mac.
+- **Not built yet:** "Something else…" for pi's own select (MobileQuestion draws it): pi's select
+  takes only an offered option, so it waits for the picker block's `allowOther`.
 - **After:** the thread keeps the record where pi asked (Composer, questions, and menus ›
   Questions › The record), on iPhone and iPad alike, its time showing at rest (touch has no
   hover).
@@ -4856,8 +4916,10 @@ record lines, a list, and a screen per run.
   composer's room. The tray's rules (when it shows, the order, what each state says) are the
   Mac's.
 - **Answer** opens the run's question in the composer's place, docked to the bottom edge as pi's
-  own questions are (`QuestionPanel` titled "reviewer is asking"): its answers as numbered cards,
-  or a reply field; Answer sends it to that run only, and Hide returns to the tray.
+  own questions are (`QuestionPanel`, "reviewer is asking" with the branch glyph): its answers as
+  numbered cards with a note on the picked one and Something else…, or a reply field; Answer
+  sends it to that run only (the option, then the note after a blank line, as on the Mac), and
+  hiding it (the grabber, or iPad's Hide the question) returns to the tray.
 - **In the thread** (MobileSteer): "Started 3 subagents · worker · reviewer · tests" where the
   turn spawned them (32pt, 14), and "3 subagents finished · 45m · 7 files · +318 −64" once they
   have; both, and the footer's "3 subagents", open the runs list.
@@ -4981,8 +5043,7 @@ connected hosts, newest first.
     automation run, a folded map for a mission; a glowing 8pt `lantern` dot for a thread) and
     "Subagent · Restyle native UI", "Thread", "Automation · Triage new Sentry issues" (12
     `textTertiary`), with the time since trailing ("now", "2m", "14m", "1h"). The app adds the
-    host's badge when there are several hosts, and draws the glyph in `lantern` (`NWAttentionCard`;
-    Known gaps).
+    host's badge when there are several hosts (`NWAttentionCard`).
   - The title (15/600): the thread's name, or who asks ("reviewer asks"). An automation's card is
     titled by its question ("Is this a regression from #231?") over the asker's context ("NilPointer
     in PlaceOrder started 40 minutes after #231 merged.").
@@ -4992,8 +5053,11 @@ connected hosts, newest first.
     carries no labels of its own). Then Open (ghost; secondary when it is the only action), which
     goes where the question can be answered. Input and editor questions show Open alone.
 - **A subagent's question** answers in place with its options ("Replace everywhere", "Rename new
-  ones"), as its card in the thread does. The app shows Open alone for it: the list's digest does
-  not carry the child's options yet.
+  ones"), as its card in the thread does: at most three short ones, the first primary, and a tap
+  sends that option to the run as its reply (`FleetDigest.SubagentQuestion.options`,
+  `HomeFeed.choose`). A reply in its own words, more options, or a host that takes no subagent
+  commands shows Open alone, which opens the run. Home's row and the iPad's detail answer the same
+  way.
 - **Not built yet:** a mission's item ("Mission", "Checkout funnel events", "orders is stuck after 3
   tries. The planner suggests a retry with a hint.", Retry with hint and Open), and a thread's plan
   approval ("Plan ready: …", Approve plan and Read plan). They wait for Missions and plan approval
@@ -5038,18 +5102,21 @@ keyboard is up while the query is empty.
   - What runs there: "2 threads running · shepherd, dashboard-web" (12.5 `textSecondary`).
   - Unreachable: "Last seen today 07:12 · 1 automation paused" (12.5), then Retry (32pt secondary
     with a retry glyph) and Wake on LAN (32pt ghost). The app shows why it cannot connect in
-    `failed`, and Retry at 24pt (`.s`).
+    `failed`, then "Last seen today 7:12 AM" (12.5 `textSecondary`: when this device's connection
+    to it last ended, kept on the device; "yesterday 6:42 PM", or the day), and Retry at 24pt
+    (`.s`). The board's "1 automation paused" is not shown.
   - A tap opens the host's form (edit, forget). Pull to refresh retries every host. Under the cards:
     "Hosts connect over your LAN or VPN. The connection has no TLS."
 - **Not built yet:** a daemon host's card ("daemon · Linux", "2 missions · 5 stations running · load
   6 of 16 cores") until the Mac has daemon hosts; Wake on LAN on an unreachable host, which sends
-  the host's magic packet and then retries; a host's kind and pi version and its last-seen time,
-  which need the host to report them.
-- **Not built yet:** under the hosts, a card of 52pt rows: Design systems ("2 · acme-web, Night
-  Watch", a palette glyph), Extensions ("6 installed", a puzzle glyph), and Archive ("41
-  threads", a box glyph), each pushing its list. Design systems and Archive wait for the Mac;
-  Extensions opens Settings ▸ Extensions (built: the bundled and installed pi extensions each host
-  loads).
+  the host's magic packet and then retries; a host's kind and pi version, which need the host to
+  report them.
+- **Under the hosts** (and under their note), a card of 52pt rows: Extensions ("6 installed", a
+  puzzle glyph: the settings host's bundled extensions that are on and its installed ones, once it
+  has answered), which opens Settings ▸ Extensions (the bundled and installed pi extensions each
+  host loads). The card shows while any host is set up.
+- **Not built yet:** the card's Design systems ("2 · acme-web, Night Watch", a palette glyph) and
+  Archive ("41 threads", a box glyph) rows, each pushing its list; they wait for the Mac.
 
 ### iPhone: Settings (MobileSettings)
 
@@ -5317,7 +5384,9 @@ selected thread, or the Overview when none is. Other screens push over the detai
   origin's 16pt glyph in `lanternText` for anything else (a mission's map, an automation's
   bolt; the app leads a subagent's item with its branch glyph); in Recents, a 6pt `running` dot
   while it runs, a hollow 6pt `textTertiary` dot at rest, a 6pt `failed` dot for a failed one,
-  and a 16pt `textTertiary` glyph for a design, a mission or an automation run.
+  and a 16pt `textTertiary` glyph for a design, a mission or an automation run. **Not built
+  yet:** the failed dot and the trailing "failed" (iPadThreadError): a remote client hears no
+  turn failure from the host (Status language), so a failed thread's row reads done.
 - **Needs you rows** end in the reason in mono 10 `lanternText`. The boards summarize the
   question ("retention?", "approve plan", "orders stuck") or name the subagent that asks
   ("reviewer"); the app writes the agent's own short reason when it gave one, cut as on the Mac
@@ -5344,7 +5413,8 @@ selected thread, or the Overview when none is. Other screens push over the detai
   when the sidebar is hidden; the name at `.title` (16/600), the branch chip (`NWBranchChip` as on
   the Mac, without its chevron: the branch, the files changed, and the host when more than one is
   set up; iPadThread: "pi/swiftui-previews ●3"), and the status pill (`NWStatusPill`, with the
-  running clock: "Running · 37m"); then, trailing, 44pt icon buttons in `textPrimary`. The
+  running clock: "Running · 37m"; "Failed" on `failedTint` after a reply that failed,
+  iPadThreadError); then, trailing, 44pt icon buttons in `textPrimary`. The
   counters ("17 turns · 42k ctx") are gone, as on the boards.
 - **Header buttons on the board:** Subagents, Review changes, and Thread options (•••). A
   button whose pane is open takes a `runningTint` fill and a `running` glyph: Subagents while
@@ -5450,8 +5520,8 @@ header's pill turns "Needs you" (attention, glowing).
 - **Head** (26pt): a 13pt glyph and "Agent is asking" at 13/600, both `lanternText`; and,
   trailing, **Hide the question**: a 40pt circle (`.nwIcon`, a 44pt touch target) with an 18pt
   `chevron.down` in `textSecondary`, overhanging the head rather than growing it, which folds the
-  card to read the thread and never answers it ("Hide the question" to VoiceOver). Only on the
-  card: the phone's docked panel has none.
+  card to read the thread and never answers it ("Hide the question" to VoiceOver). The phone's
+  docked panel hides from its grabber instead.
 - **Folded** (`NWQuestionCardHiddenLine`; no board draws it, so it follows the Mac's hidden
   line, QuestionStates › hidden): the same lantern card around one row, 16pt leading and 4pt
   trailing: a 14pt glyph in `lanternText`, the question in `headline` (truncating), a secondary
@@ -5468,15 +5538,14 @@ header's pill turns "Needs you" (attention, glowing).
   - At rest: `bgWindow`, a 1px `lineSubtle` line, the number outlined in `lineStrong` with
     `textSecondary`. Chosen: `lanternTint` with a `lantern` line, the number on `lantern` in
     `textOnLantern` semibold.
-- **Not built yet: a note in the chosen answer** ("Keep the encrypted secret out of the PR."):
-  a field inside the chosen card (`bgWindow`, a 1px `lineStrong` line, radius 6, 7×10 inset,
-  14.5/1.45, a `lantern` caret) sent with the answer. The answer protocol carries the choice
-  only.
-- **Not built yet: "Something else…"**, a last full-width row (at least 48pt, its number
-  outlined, the placeholder at 15 `textTertiary`) that takes a typed answer.
-- **Foot** (a hairline above): Answer, primary, 36pt, enabled once an answer is chosen. The app
-  adds Dismiss, which cancels the question (the board has none). A confirm shows Yes and No; an
-  input or editor question a field and "Send answer".
+- **A note in the chosen answer** ("Keep the encrypted secret out of the PR."): a field inside
+  the chosen card (`NWQuestionNoteField`: `bgWindow`, a 1px `lineStrong` line, radius 6, "Add a
+  note…", a `lantern` caret) sent with the answer, and **"Something else…"**, a last full-width
+  row (`NWQuestionOtherCard`: at least 46pt, its number outlined, a field in place): only for an
+  asker that takes them, a subagent (the dock's What each asker takes). pi's dialogs take neither.
+- **Foot:** Answer, primary, 36pt, trailing, enabled once there is an answer; there is no
+  Dismiss (Stop refuses pi's question, as on the Mac and the phone). A yes or a no is two cards
+  side by side that answer on a tap; an open question is a field over Answer.
 - **The app's additions:** "1 / N" (mono `textTertiary`) in the head when several questions
   wait; the asker's longer message in mono on `bgSunken` under the question; "The agent may stop
   waiting for this answer" under an answer with a timeout; and, for a question it cannot show,
@@ -5956,7 +6025,8 @@ or the iPad sidebar's.
   - **Running now** heads each live run as its own card: a `running` line with a 3pt `runningTint`
     ring, 12×14 padding: a 13pt `running` spinner, the name (15/600), and the host (mono 11
     `textTertiary`) trailing, then how the run is going (13 `textSecondary`: "Running · 4m"; "Asked
-    you" in `lanternText`). The app draws the live runs as rows in a list card under the head.
+    you" in `lanternText`, with a bolt in place of the spinner and a `lanternText` line with no
+    ring; `NWAutomationRunCard`). A tap opens the automation. The iPad's column keeps them as rows.
   - **All** with the count, one card of 64pt rows (`NWAutomationRow`, 10×14 padding, 3pt between
     lines): the name (15/500), "When Shepherd starts · folder" or "By hand" (12.5 `textTertiary`;
     the host's name in mono instead of the folder when there are several hosts), how the last run
@@ -7956,6 +8026,8 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | TerminalSplit | Terminal panes; Terminal panel (no header button: departures) | Built |
 | TerminalPane | Terminal panes; Terminal panel (Split panes, Send output to pi; no header button: departures) | Partial |
 | TerminalStates | Terminal panel (no header toggle: departures) | Partial |
+| ThreadError | Thread › Errors (the card, folded); Status language | Built |
+| ThreadErrorDetails | Thread › Errors (Details) | Built |
 
 **iOS**
 
@@ -7964,6 +8036,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | MobileAgents | iPhone: shell and shared anatomy; iPhone: Home | Partial |
 | MobileThread | iPhone: Thread | Built |
 | MobileApproval | iPhone: Thread | Built |
+| MobileThreadError | iPhone: Thread (Header); Thread › Errors (touch sizes) | Built |
 | MobileLock | Notifications and Live Activities › Live Activities | Not built yet |
 | MobileAnswer | Notifications and Live Activities › Actions and answering | Not built yet |
 | MobileMission | Missions › Missions: iPhone and iPad | Not built yet |
@@ -7975,7 +8048,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | MobileWorkspace | iPhone: New thread and Where it runs | Partial |
 | MobileSteer | iPhone: Up next and questions; iPhone: Subagents | Partial |
 | MobileSubagents | iPhone: Subagents | Built |
-| MobileSubagent | iPhone: Subagents | Partial |
+| MobileSubagent | iPhone: Subagents | Built |
 | MobileQueue | iPhone: Up next and questions | Partial |
 | MobileQueueMenu | iPhone: Up next and questions | Built |
 | MobileQuestion | iPhone: Up next and questions | Partial |
@@ -8000,6 +8073,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | Board | Specified in | Status |
 | --- | --- | --- |
 | iPadThread | iOS: iPad › Shell and sidebar, Thread, Composer and commands | Partial |
+| iPadThreadError | iOS: iPad › Thread (Header), Shell and sidebar (Rows: the failed row); Thread › Errors (touch sizes) | Partial |
 | iPadReview | iOS: iPad › Review | Built |
 | iPadSubagents | iOS: iPad › Subagents | Partial |
 | iPadPortrait | iOS: iPad › Shell and sidebar, Composer and commands | Partial |
@@ -8087,6 +8161,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | NWControls, NWControlsLight | Components › Controls | Partial |
 | NWStatus, NWStatusLight | Components › Status and feedback; Status language | Partial |
 | NWThread, NWThreadLight | Thread | Partial |
+| TurnErrors | Thread › Errors (every kind, the retry line, touch sizes) | Partial |
 | LiveText | Thread › Live text, Activity lines (Live), Thinking (Live); Motion (`shimmer`); Up next (a steering row waits still); Subagents (a running tray row's words) | Built |
 | NWComposer, NWComposerLight | Composer, questions, and menus; Command palette | Built |
 | ContextIdeas | Composer, questions, and menus › Context meter; Thread › Compactions | Built |

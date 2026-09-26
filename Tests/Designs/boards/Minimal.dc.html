@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Minimal</title>
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; }
+  </style>
+</helmet>
+<div style="width: 480px; height: 320px; padding: 32px; box-sizing: border-box">
+  <h1>{{heading}}</h1>
+  <sc-for list="{{rows}}" as="row" hint-placeholder-count="3">
+    <div>{{row.label}}</div>
+  </sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"heading":{"editor":"text","default":"Rows"},"$preview":{"width":480,"height":320}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { heading: this.props.heading ?? 'Rows', rows: [{ label: 'First' }, { label: 'Second' }] };
+  }
+}
+</script>
+</body>
+</html>

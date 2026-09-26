@@ -416,12 +416,17 @@ public struct RPCMessage: Codable, Hashable, Sendable {
     public var sections: [String: String?]?
     public var toolsAdded: [JSONValue]?
     public var toolsRemoved: [JSONValue]?
+    /// Assistant messages that failed (`stopReason: "error"`): the provider and model the
+    /// request went to. Decoded only for those, so a long history's decode stays as it was.
+    public var provider: String?
+    public var model: String?
 
     public init(
         role: String, content: [RPCContentBlock], toolName: String? = nil, toolCallId: String? = nil,
         isError: Bool? = nil, stopReason: String? = nil, errorMessage: String? = nil, timestamp: Double? = nil,
         customType: String? = nil, display: Bool? = nil, summary: String? = nil, tokensBefore: Double? = nil,
-        sections: [String: String?]? = nil, toolsAdded: [JSONValue]? = nil, toolsRemoved: [JSONValue]? = nil
+        sections: [String: String?]? = nil, toolsAdded: [JSONValue]? = nil, toolsRemoved: [JSONValue]? = nil,
+        provider: String? = nil, model: String? = nil
     ) {
         self.role = role
         self.content = content
@@ -438,11 +443,13 @@ public struct RPCMessage: Codable, Hashable, Sendable {
         self.sections = sections
         self.toolsAdded = toolsAdded
         self.toolsRemoved = toolsRemoved
+        self.provider = provider
+        self.model = model
     }
 
     enum CodingKeys: String, CodingKey {
         case role, content, toolName, toolCallId, isError, stopReason, errorMessage, timestamp, customType, display
-        case summary, tokensBefore, sections, toolsAdded, toolsRemoved
+        case summary, tokensBefore, sections, toolsAdded, toolsRemoved, provider, model
     }
 
     public init(from decoder: Decoder) throws {
@@ -472,6 +479,9 @@ public struct RPCMessage: Codable, Hashable, Sendable {
             sections = try? c.decodeIfPresent([String: String?].self, forKey: .sections)
             toolsAdded = try? c.decodeIfPresent([JSONValue].self, forKey: .toolsAdded)
             toolsRemoved = try? c.decodeIfPresent([JSONValue].self, forKey: .toolsRemoved)
+        case "assistant" where stopReason == "error":
+            provider = try? c.decodeIfPresent(String.self, forKey: .provider)
+            model = try? c.decodeIfPresent(String.self, forKey: .model)
         default:
             break
         }
@@ -608,12 +618,18 @@ public enum RPCEvent: Decodable, Hashable, Sendable {
     /// `result` when it succeeded; `aborted` when it was stopped; otherwise `errorMessage` says
     /// why it failed. `willRetry`: an overflow compaction pi retries the prompt after.
     case compactionEnd(reason: String?, result: RPCCompactionResult?, aborted: Bool, willRetry: Bool, errorMessage: String?)
+    /// pi retries a request that failed in a way worth retrying: `attempt` of `maxAttempts`,
+    /// after `delayMs`.
+    case autoRetryStart(attempt: Int, maxAttempts: Int, delayMs: Double, errorMessage: String?)
+    /// The retries are over: one worked, or they ran out (or were stopped).
+    case autoRetryEnd(success: Bool)
     case unknown(type: String)
 
     enum CodingKeys: String, CodingKey {
         case type, messages, willRetry, message, toolResults, assistantMessageEvent
         case toolCallId, toolName, args, partialResult, result, isError, steering, followUp
         case extensionPath, event, error, reason, aborted, errorMessage
+        case attempt, maxAttempts, delayMs, success
     }
 
     public init(from decoder: Decoder) throws {
@@ -685,6 +701,15 @@ public enum RPCEvent: Decodable, Hashable, Sendable {
                 willRetry: (try? c.decodeIfPresent(Bool.self, forKey: .willRetry)) ?? false,
                 errorMessage: try? c.decodeIfPresent(String.self, forKey: .errorMessage)
             )
+        case "auto_retry_start":
+            self = .autoRetryStart(
+                attempt: (try? c.decodeIfPresent(Int.self, forKey: .attempt)) ?? 1,
+                maxAttempts: (try? c.decodeIfPresent(Int.self, forKey: .maxAttempts)) ?? 0,
+                delayMs: (try? c.decodeIfPresent(Double.self, forKey: .delayMs)) ?? 0,
+                errorMessage: try? c.decodeIfPresent(String.self, forKey: .errorMessage)
+            )
+        case "auto_retry_end":
+            self = .autoRetryEnd(success: (try? c.decodeIfPresent(Bool.self, forKey: .success)) ?? false)
         default:
             self = .unknown(type: type)
         }

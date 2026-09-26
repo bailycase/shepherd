@@ -19,6 +19,10 @@ extension FixtureCatalog {
                           routes: [.thread(live), .subagents(.run(live, runID: SubagentFixtures.worker))]),
             FixtureScreen(name: "subagent-question", hosts: SubagentFixtures.hosts(),
                           routes: [.thread(live), .subagents(.run(live, runID: SubagentFixtures.reviewer))]),
+            // The tray's Answer: the reviewer's question in the composer's place, its answers,
+            // Something else… and Answer (MobileQuestion's layout, the question dock's rules).
+            FixtureScreen(name: "subagent-answer", hosts: SubagentFixtures.hosts(), routes: [.thread(live)],
+                          prepare: { _ in ComposerStates.shared.state(for: live).answeringRun = SubagentFixtures.reviewer }),
             // Opened from Needs you or the palette while another thread is on screen.
             FixtureScreen(name: "subagent-question-elsewhere", hosts: SubagentFixtures.hosts(),
                           routes: [.thread(done), .subagents(.run(live, runID: SubagentFixtures.reviewer))]),

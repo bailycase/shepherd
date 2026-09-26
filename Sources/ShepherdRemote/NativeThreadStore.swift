@@ -137,6 +137,8 @@ public final class NativeThreadStore {
     @ObservationIgnored private var contextInputs: (context: NativeThreadContext?, model: String?, replying: Bool, unset: Bool) = (nil, nil, false, true)
     /// Which compactions in the thread show what the agent kept (Show summary).
     public let compactions = NativeCompactionExpansion()
+    /// Which errors in the thread show their Details, and which folded ones were opened.
+    public let errors = NativeTurnErrorExpansion()
     public private(set) var supportedActions: Set<String> = [] { didSet { bothVersions() } }
     public private(set) var clipped = false { didSet { threadVersion &+= 1 } }
     /// The thread's own running state: `settledRunning` unless the connection is lost (a
@@ -144,6 +146,9 @@ public final class NativeThreadStore {
     public private(set) var running = false { didSet { bothVersions() } }
     /// What the host last reported, without the settling `running` adds.
     public private(set) var hostRunning = false
+    /// The thread's last reply ended in an error and nothing has started since: the agent
+    /// reads failed (Status language) until its next turn.
+    public private(set) var lastTurnFailed = false { didSet { chromeVersion &+= 1 } }
     /// pi works with nothing moving in the thread, so the thread ends in the live "Thinking…"
     /// line (LiveText): between tools (the live turn's `betweenTools`), or before pi's reply has
     /// a row. False while a question waits (the composer shows it). A running call is its own
@@ -238,6 +243,11 @@ public final class NativeThreadStore {
     /// Images this client queued, by queued message id: the host keeps only their names.
     @ObservationIgnored private var sentImages: [UUID: [NativeImage]] = [:]
     @ObservationIgnored private var presentationCache: [String: (key: PresentationKey, value: NativeTurnPresentation)] = [:]
+    /// The machine the agent runs on ("build-01"), named in its errors' Details. Set by the
+    /// thread's owner.
+    @ObservationIgnored public var hostName: String? {
+        didSet { if hostName != oldValue { derive() } }
+    }
     /// Calls parse their JSON and output once; a finished call never changes.
     @ObservationIgnored private var callCache: [CallKey: NativeActivityCall] = [:]
     /// Finished thinking is parsed once: a reply streaming under it rebuilds its turn, not it.
@@ -257,6 +267,7 @@ public final class NativeThreadStore {
         var messages: [NativeThreadMessage]
         var live: Bool
         var cards: NativeCardLayout
+        var errors: NativeTurnErrorContext
     }
 
     private struct CallKey: Hashable {
@@ -394,12 +405,14 @@ public final class NativeThreadStore {
             }
             let isLive = index == liveReply
             let opener = index > 0 && turns[index - 1].isUser ? turns[index - 1] : nil
-            let key = PresentationKey(messages: turn.messages, live: isLive, cards: NativeCardLayout(placements[turn.id]))
+            let errors = NativeTurnErrorContext(host: hostName, retry: isLive ? snapshot?.retry : nil)
+            let key = PresentationKey(messages: turn.messages, live: isLive, cards: NativeCardLayout(placements[turn.id]), errors: errors)
             let presentation: NativeTurnPresentation
             if let cached = presentationCache[turn.id], cached.key == key {
                 presentation = cached.value
             } else {
-                presentation = nativeTurnPresentation(turn.messages, live: isLive, cards: key.cards, call: call, thinking: thinkingBlocks)
+                presentation = nativeTurnPresentation(turn.messages, live: isLive, cards: key.cards, errors: errors, call: call,
+                                                      thinking: thinkingBlocks)
                 presentationCache[turn.id] = (key, presentation)
             }
             kept.insert(turn.id)
@@ -411,8 +424,27 @@ public final class NativeThreadStore {
                                         startedAt: startedAt, recordedTurn: recordedTurn, changes: card))
         }
         if presentationCache.count > kept.count { presentationCache = presentationCache.filter { kept.contains($0.key) } }
+        Self.foldRepeatedErrors(&rows)
         if rows != self.rows { self.rows = rows }
         deriveChrome()
+    }
+
+    /// A reply that ended in an error the next reply failed with again folds to a line
+    /// (ThreadError: "the earlier one folds to a line").
+    static func foldRepeatedErrors(_ rows: inout [NativeThreadRow]) {
+        var next: String?
+        for index in rows.indices.reversed() where !rows[index].isUser {
+            guard var presentation = rows[index].presentation,
+                  case .error(let id, let error, true, let folded)? = presentation.items.last else {
+                next = nil
+                continue
+            }
+            if !folded, next == error.signature {
+                presentation.items[presentation.items.count - 1] = .error(id: id, error: error, final: true, folded: true)
+                rows[index].presentation = presentation
+            }
+            next = error.signature
+        }
     }
 
     /// Recomputes what the chrome draws (see `session`), each assigned only when it changed.
@@ -441,6 +473,9 @@ public final class NativeThreadStore {
         if hostRunning != self.hostRunning { self.hostRunning = hostRunning }
         let running = loadError == nil && settledRunning
         if running != self.running { self.running = running }
+        var failed = false
+        if !running, case .error(_, _, true, _)? = rows.last?.presentation?.items.last { failed = true }
+        if failed != lastTurnFailed { lastTurnFailed = failed }
         // The meter and its details derive from the context, the model and whether the agent is
         // replying alone, so a streamed chunk (same context) formats nothing.
         if contextInputs.unset || contextInputs.context != value?.context || contextInputs.model != value?.model
@@ -1140,6 +1175,26 @@ private final class PollWake {
         } onCancel: {
             Task { @MainActor in self.waiters.removeValue(forKey: id)?.resume() }
         }
+    }
+}
+
+/// Which errors in a thread show their Details, and which folded ones were opened, by the
+/// failed message's entry (`NativeTurnError.id`). Kept by the store, so a row the list rebuilds
+/// keeps them; its own object, so a toggle redraws only the error.
+@MainActor
+@Observable
+public final class NativeTurnErrorExpansion {
+    public private(set) var detailsOpen: Set<String> = []
+    public private(set) var unfolded: Set<String> = []
+
+    public init() {}
+
+    public func setDetails(_ id: String, open: Bool) {
+        if open { detailsOpen.insert(id) } else { detailsOpen.remove(id) }
+    }
+
+    public func unfold(_ id: String) {
+        if !unfolded.contains(id) { unfolded.insert(id) }
     }
 }
 
