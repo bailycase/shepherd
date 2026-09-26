@@ -28,9 +28,12 @@ public struct FleetHost: Equatable, Sendable {
     public var state: ShepherdState
     /// When this device's connection to it last ended (`HostLastSeen`).
     public var lastSeen: Date?
+    /// It serves its designs (`designs.v1`, its Design tool on): a design is its Recents row, and
+    /// the agent drawing it has none of its own.
+    public var designs: Bool
 
     public init(id: UUID, name: String, address: String, port: UInt16, phase: RemoteHostPhase, state: ShepherdState,
-                lastSeen: Date? = nil) {
+                lastSeen: Date? = nil, designs: Bool = false) {
         self.id = id
         self.name = name
         self.address = address
@@ -38,6 +41,7 @@ public struct FleetHost: Equatable, Sendable {
         self.phase = phase
         self.state = state
         self.lastSeen = lastSeen
+        self.designs = designs
     }
 }
 
@@ -200,6 +204,9 @@ public struct FleetThreadRow: Identifiable, Equatable, Sendable {
     /// Its subagents still running, and those waiting on the user.
     public var subagents = 0
     public var subagentsAsking = 0
+    /// The design this agent draws, where its host serves designs: the row is the design's
+    /// (MobileAgents: the nib and "design · 4 boards"), and it opens the design.
+    public var design: FleetDesign?
 
     public var id: FleetRef { ref }
 
@@ -222,6 +229,17 @@ public struct FleetThreadRow: Identifiable, Equatable, Sendable {
     public var lastMoved: Double? {
         if case .ago(let at) = clock { return at }
         return nil
+    }
+}
+
+/// A design as its Recents row names it.
+public struct FleetDesign: Equatable, Sendable {
+    public var id: DesignID
+    public var boards: Int?
+
+    public init(id: DesignID, boards: Int?) {
+        self.id = id
+        self.boards = boards
     }
 }
 
@@ -445,8 +463,20 @@ public struct FleetModel: Equatable, Sendable {
                 // Automation runs live under Automations, not among the threads.
                 guard automation == nil, space?.hidden != true else { continue }
                 if agent.status == .working { running += 1 }
-                let row = Self.row(agent, ref: ref, digest: digest, space: space, hostName: host.name, hostTag: tag,
+                var row = Self.row(agent, ref: ref, digest: digest, space: space, hostName: host.name, hostTag: tag,
                                    offline: !connected)
+                // A design's agent is its design's row: no clock, and never among the running threads.
+                if host.designs, let design = Self.design(drawnBy: agent, in: host.state) {
+                    row.design = FleetDesign(id: design.id, boards: design.boardCount)
+                    row.detail = RemoteDesignPresentation.recentsDetail(boards: design.boardCount)
+                    row.clock = nil
+                    row.activity = nil
+                    if attention.isEmpty {
+                        recents.append((row, order, design.lastActiveAt))
+                    }
+                    order += 1
+                    continue
+                }
                 if connected, agent.status == .working { self.running.append(row) }
                 if agent.status == .done { finished.append(row) }
                 if attention.isEmpty {
@@ -515,6 +545,13 @@ public struct FleetModel: Equatable, Sendable {
                                         hostTag: hostTag, since: since))
         }
         return items
+    }
+
+    /// The design `agent` draws, when it has one on the host with a canvas (a system build's
+    /// agent stays a thread).
+    static func design(drawnBy agent: Agent, in state: ShepherdState) -> Design? {
+        guard let id = agent.designID, let design = state.designs.first(where: { $0.id == id }), !design.buildsSystem else { return nil }
+        return design
     }
 
     /// An agent's own short reason as a chip (one line, cut as the Mac's), or nil when it gave none.
