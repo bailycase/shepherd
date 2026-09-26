@@ -240,23 +240,27 @@ public struct NWValueSlider: View {
     let step: Double
     let format: (Double) -> String
     let neutral: Double?
+    let editingChanged: ((Bool) -> Void)?
     /// Bumped by each reset, the one change that animates: a drag or an arrow key tracks at once.
     @State private var resets = 0
     @Environment(\.nwControlScale) private var scale
 
+    /// `onEditingChanged` hears a drag begin (true) and end (false), as a native slider's does;
+    /// an arrow key or a reset is a change that begins and ends at once.
     public init(_ label: String = "", value: Binding<Double>, in range: ClosedRange<Double>, step: Double,
-                neutral: Double? = nil, format: @escaping (Double) -> String) {
+                neutral: Double? = nil, format: @escaping (Double) -> String, onEditingChanged: ((Bool) -> Void)? = nil) {
         _value = value
         self.label = label
         self.range = range
         self.step = step
         self.neutral = neutral
         self.format = format
+        editingChanged = onEditingChanged
     }
 
     public var body: some View {
         HStack(spacing: NW.Space.l) {
-            NWSliderTrack(value: $value, range: range, step: step)
+            NWSliderTrack(value: $value, range: range, step: step, editingChanged: editingChanged)
                 .accessibilityRepresentation {
                     Slider(value: $value, in: range, step: step) { Text(label) }
                         .accessibilityValue(format(value))
@@ -283,8 +287,10 @@ public struct NWValueSlider: View {
 
     private func reset(to neutral: Double) {
         guard value != neutral else { return }
+        editingChanged?(true)
         value = neutral
         resets += 1
+        editingChanged?(false)
     }
 }
 
@@ -300,6 +306,8 @@ private struct NWSliderTrack: View {
     @Binding var value: Double
     let range: ClosedRange<Double>
     let step: Double
+    let editingChanged: ((Bool) -> Void)?
+    @State private var dragging = false
     @Environment(\.isEnabled) private var enabled
     @Environment(\.displayScale) private var displayScale
     @Environment(\.nwControlScale) private var scale
@@ -335,8 +343,15 @@ private struct NWSliderTrack: View {
             .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
             .gesture(DragGesture(minimumDistance: 0).onChanged { drag in
+                if !dragging {
+                    dragging = true
+                    editingChanged?(true)
+                }
                 let position = Double((drag.location.x - inset / 2) / usable)
                 set(range.lowerBound + position * (range.upperBound - range.lowerBound))
+            }.onEnded { _ in
+                dragging = false
+                editingChanged?(false)
             })
         }
         .frame(width: width, height: height)
@@ -345,13 +360,20 @@ private struct NWSliderTrack: View {
         // Keyboard navigation only, like a native slider: a click must not take focus or ring it.
         .focusable(interactions: .activate)
         .focusEffectDisabled()
-        .onKeyPress(.leftArrow) { set(value - step); return .handled }
-        .onKeyPress(.rightArrow) { set(value + step); return .handled }
+        .onKeyPress(.leftArrow) { nudge(by: -step); return .handled }
+        .onKeyPress(.rightArrow) { nudge(by: step); return .handled }
     }
 
     private var fraction: Double {
         let span = range.upperBound - range.lowerBound
         return span > 0 ? min(1, max(0, (value - range.lowerBound) / span)) : 0
+    }
+
+    /// An arrow key: one change, begun and ended at once.
+    private func nudge(by delta: Double) {
+        editingChanged?(true)
+        set(value + delta)
+        editingChanged?(false)
     }
 
     private func set(_ proposed: Double) {

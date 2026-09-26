@@ -858,7 +858,8 @@ enum DesignExtension {
         "boolean" | "enum" | null, "default": …}`, with `options` for enum and `min`, `max`, `step` for
         numbers. Declare few: switches and values that cut across the whole board (a density, a
         variant, one accent). Copy stays literal markup. `$preview: {"width", "height"}` is the board's
-        size.
+        size. The viewer sets these in Tweak and the values arrive as props, so read each as
+        `this.props.x ?? <default>` in `renderVals()`.
 
         ## What a board may not hold
 
@@ -887,6 +888,10 @@ enum DesignExtension {
         - `order` lists the boards back to front. Shepherd keeps it in step with `boards`.
         - `pages` (`[{"id", "name"}]`) group boards; `notes` hold titles and stickies on the canvas.
           Leave the user's notes, and every key you don't recognize, as they are.
+        - `tweaks` holds the data-props values the viewer set in Tweak, by board path and prop
+          (`{"A.dc.html": {"density": "compact"}}`). Keep it; change it only when asked.
+        - Tweak also edits a board's inline styles in place (padding, radius, a token color), so a
+          board can change between your reads: read it again before rewriting it.
         - `canvas_update` changes it with a merge patch, so send only what changes:
           `{"boards": {"B.dc.html": {"x": 1360}}}` moves B, `{"boards": {"C.dc.html": null}}` removes C.
 
