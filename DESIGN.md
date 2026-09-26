@@ -967,8 +967,17 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   Recents rows, ⌘↑/↓ walk Needs you then Recents and wrap, and keyboard selection scrolls the row
   into view. Picking a row leaves a page for that thread.
 - **Context menus** keep every action an agent had:
-  - This Mac's threads: Rename…, Review Changes, then Finalize Worktree… and Delete Worktree
-    Agent… for a worktree agent, or Delete Agent.
+  - This Mac's threads (NWComposer's agent menu, with today's items between its separators):
+    Rename… with its keys (⌘R), Fork from Here (`arrow.branch`) and Copy Transcript
+    (`doc.on.doc`); Review Changes and Open in Finder; then Finalize Worktree… and Delete
+    Worktree Agent… for a worktree agent, or Delete Agent. Fork from Here copies the agent's pi
+    session, as it stands, into a new session and starts "<name> (fork)" beside it in the same
+    space and folder (the namer retitles it on its first turn); Copy Transcript puts what was
+    said on the pasteboard, the user's and the assistant's text along pi's current branch as
+    "user: …" and "assistant: …" paragraphs (`PiSessionFile.transcript`); Open in Finder opens
+    the folder the agent works in. A fork or copy that finds no session says so
+    (`ActionErrorDialog`). Remote threads have no Fork, Copy Transcript or Open in Finder: they
+    read a file on another Mac.
   - This Mac's automation runs: Stop while the run is live (a run whose pi is still starting
     included; `AutomationRun.isLive`), else Run Now, then Delete Automation. Run Now replaces a done
     run once the new run exists; a refused Run Now shows `ActionErrorDialog`.
@@ -2044,10 +2053,9 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
 - **Agent context menu** (NWComposer › Menus: "Native NSMenu in Swift; shown for spec"): a
   native menu (`.contextMenu`), never a custom popover: Rename… with its keys (⌘R), Fork from here
   and Copy transcript (each with its glyph), a separator, Open in Finder, a separator, and Delete
-  agent… as the destructive item (`role: .destructive`). The sidebar's agent menu is today's
-  (Sidebar › Context menus). **Not built yet:** Fork from here, Copy transcript, and Open in
-  Finder for an agent (the subagent inspector has Fork, Copy Transcript, and Show Session File in
-  Finder for a finished run), and ⌘R shown beside Rename….
+  agent… as the destructive item (`role: .destructive`). The sidebar's agent menu
+  (Sidebar › Context menus) is this menu, with Review Changes, Finalize Worktree… and Delete
+  Worktree Agent… where it has them, and menu-bar title case.
 
 **Context meter** (ContextIdeas: placement A, "its own circle, beside Send"; ContextDetails,
 ContextFull, ContextCompacted; `ContextMeterButton` and `ContextDetailsPopover` in
