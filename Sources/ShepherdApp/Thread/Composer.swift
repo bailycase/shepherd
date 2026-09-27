@@ -988,7 +988,7 @@ struct ComposerControls: View, Equatable {
                 .help("Commands")
                 .accessibilityLabel("Commands")
             }
-            modelChip
+            modelChip(compact: compact)
             thinkingChip(compact: compact)
             Spacer(minLength: NW.Space.m)
             if model.startingShown { startingIndicator(label: startingLabel).nwTransition(.content) }
@@ -996,12 +996,13 @@ struct ComposerControls: View, Equatable {
         .nwAnimation(.content, value: model.startingShown)
     }
 
-    @ViewBuilder private var modelChip: some View {
+    @ViewBuilder private func modelChip(compact: Bool) -> some View {
         if let name = model.model {
             Button(action: actions.models) {
                 HStack(spacing: NW.Space.s) {
                     // A long id keeps both ends: the provider prefix and the model's tail.
-                    Text(nativeModelShortName(name)).font(Font.nw(.code)).lineLimit(1).truncationMode(.middle)
+                    Text(compact ? nativeModelCompactName(name) : nativeModelShortName(name))
+                        .font(Font.nw(.code)).lineLimit(1).truncationMode(.middle)
                         .nwContentTransition(.crossFade)
                     if model.modelChangeable { NWChipChevron() }
                 }
@@ -1181,6 +1182,17 @@ private struct ThinkingMenu: View, Equatable {
 func nativeModelShortName(_ model: String) -> String {
     guard let slash = model.firstIndex(of: "/") else { return model }
     return String(model[model.index(after: slash)...])
+}
+
+/// The narrow composer's model name: the short name without a trailing release date, so a
+/// long id keeps the model ("claude-sonnet-4") rather than its date.
+func nativeModelCompactName(_ model: String) -> String {
+    var name = nativeModelShortName(model)
+    if let dash = name.lastIndex(of: "-"), name.distance(from: dash, to: name.endIndex) == 9,
+       name[name.index(after: dash)...].allSatisfy({ $0.isASCII && $0.isNumber }) {
+        name = String(name[..<dash])
+    }
+    return name.isEmpty ? model : name
 }
 
 /// "42k" / "1.2M" for the header's context count.
