@@ -40,10 +40,18 @@ struct EngineSmokeTests {
 
     /// Skills come only from Shepherd's home: pi's own discovery of `$HOME/.agents/skills` is off
     /// (Shepherd's settings filter it out), so a skill there never reaches an agent, while one in
-    /// the home's `skills/` does.
+    /// the home's `skills/` does, and so do the ones copied from the user's pi and that folder.
     @Test func skillsComeOnlyFromShepherdsHomeNeverFromAgentsSkills() async throws {
         let engine = try #require(EngineSmoke.engine)
         try await EngineSmoke.runSkills(engine: engine)
+    }
+
+    /// The user's extensions, copied and switched on: one that throws as it loads stops pi with
+    /// pi's own words, which switch it off with its reason; pi then starts without it, and the one
+    /// that works loads from its copy in Shepherd's home.
+    @Test func anExtensionOfYoursThatThrowsIsSwitchedOffAndTheOtherLoads() async throws {
+        let engine = try #require(EngineSmoke.engine)
+        try await EngineSmoke.runYourExtensions(engine: engine)
     }
 
     @Test(.enabled(if: EngineSmoke.rosettaRunsX86, "needs an arm64 Mac with Rosetta and an x86_64 slice"))
@@ -294,16 +302,24 @@ enum EngineSmoke {
             try "---\nname: \(name)\ndescription: The \(name) fixture skill.\n---\nDo nothing.\n"
                 .write(to: folder.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
         }
-        try skill(userHome.appendingPathComponent(".agents/skills/agents-only"), "agents-only")
-        try skill(userHome.appendingPathComponent(".agents/skills/group/nested-agents"), "nested-agents")
+        // The user's pi, and a skill in ~/.agents/skills, both copied once into Shepherd's home.
+        let yourPi = userHome.appendingPathComponent(".pi/agent", isDirectory: true)
+        try skill(yourPi.appendingPathComponent("skills/yours"), "yours")
+        try skill(userHome.appendingPathComponent(".agents/skills/agents-copied"), "agents-copied")
         let home = PiHome(directory: scratch.appendingPathComponent("support/pi", isDirectory: true), engine: .bundled(engine),
                           userHome: userHome.path)
         try home.install()
         try models.write(to: home.directory.appendingPathComponent("models.json"), atomically: true, encoding: .utf8)
         try skill(home.directory.appendingPathComponent("skills/shepherds-own"), "shepherds-own")
+        let report = YourPiImport(home: home, yourPi: YourPi(agentDirectory: yourPi), userHome: userHome.path, log: { _ in }).copyOnce()
+        #expect(report.copied(.skills).map(\.name) == ["yours", "agents-copied"], "\(report.problems)")
+        // Skills that reach ~/.agents/skills after the copy stay the user's.
+        try skill(userHome.appendingPathComponent(".agents/skills/agents-only"), "agents-only")
+        try skill(userHome.appendingPathComponent(".agents/skills/group/nested-agents"), "nested-agents")
 
         let names = try await skillNames(home: home, userHome: userHome, temporary: temporary, project: project)
-        #expect(names.contains("skill:shepherds-own"), "a skill in Shepherd's home loads: \(names)")
+        #expect(names == ["skill:agents-copied", "skill:shepherds-own", "skill:yours"],
+                "Shepherd's own skills and the copies load, from its home: \(names)")
         #expect(!names.contains("skill:agents-only") && !names.contains("skill:nested-agents"),
                 "no skill in $HOME/.agents/skills loads: \(names)")
 
@@ -311,6 +327,49 @@ enum EngineSmoke {
         try PiHome(directory: home.directory, engine: home.engine, userHome: scratch.appendingPathComponent("elsewhere").path).install()
         let unfiltered = try await skillNames(home: home, userHome: userHome, temporary: temporary, project: project)
         #expect(unfiltered.contains("skill:agents-only") && unfiltered.contains("skill:nested-agents"), "the fixture is found unfiltered: \(unfiltered)")
+    }
+
+    static func runYourExtensions(engine: BundledPiEngine) async throws {
+        let scratch = try makeScratchDirectory("engine-ext")
+        let files = FileManager.default
+        let userHome = scratch.appendingPathComponent("home", isDirectory: true)
+        let temporary = scratch.appendingPathComponent("tmp", isDirectory: true)
+        let project = scratch.appendingPathComponent("project", isDirectory: true)
+        let yourPi = userHome.appendingPathComponent(".pi/agent", isDirectory: true)
+        for folder in [temporary, project, yourPi.appendingPathComponent("extensions/works")] {
+            try files.createDirectory(at: folder, withIntermediateDirectories: true)
+        }
+        try "throw new Error(\"fixture refuses to load\");\nexport default function () {}\n"
+            .write(to: yourPi.appendingPathComponent("extensions/breaks.ts"), atomically: true, encoding: .utf8)
+        try fixtureExtension.write(to: yourPi.appendingPathComponent("extensions/works/index.ts"), atomically: true, encoding: .utf8)
+        let home = PiHome(directory: scratch.appendingPathComponent("support/pi", isDirectory: true), engine: .bundled(engine),
+                          userHome: userHome.path)
+        try home.install()
+        try models.write(to: home.directory.appendingPathComponent("models.json"), atomically: true, encoding: .utf8)
+        let imports = YourPiImport(home: home, yourPi: YourPi(agentDirectory: yourPi), userHome: userHome.path, log: { _ in })
+        let copies = imports.copyOnce().copied(.extensions)
+        #expect(copies.map(\.name) == ["breaks", "works"])
+        for copy in copies { try imports.setExtension(copy.destination, on: true) }
+        let environment = ["HOME": userHome.path, "TMPDIR": temporary.path + "/", "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"]
+
+        let failing = try RPCProcess(executable: home.launcher.path, arguments: ["--mode", "rpc", "--no-session"], directory: project,
+                                     environment: environment)
+        defer { failing.stop() }
+        try await eventually("pi to stop on the extension that throws") { !failing.isRunning }
+        let lines = failing.errors.split(separator: "\n").map { PiStartRecord.plain(String($0)) }
+        let failures = YourPiImport.extensionFailures(in: lines)
+        #expect(failures.count == 1 && failures.first?.reason.contains("fixture refuses to load") == true, "\(failing.errors)")
+        #expect(PiStartRecord.classify(lines: lines, exitCode: 1, resumedAsNew: false).kind == .extensionFailed)
+        for failure in failures { #expect(try imports.extensionFailed(path: failure.path, reason: failure.reason) == "breaks") }
+
+        let pi = try RPCProcess(executable: home.launcher.path, arguments: ["--mode", "rpc", "--no-session"], directory: project,
+                                environment: environment)
+        defer { pi.stop() }
+        let listing = try await pi.request(["type": "get_commands"])
+        let commands = ((listing["data"] as? [String: Any])?["commands"] as? [[String: Any]]) ?? []
+        #expect(commands.contains { $0["name"] as? String == "engine-smoke" }, "the working one loads from its copy: \(pi.errors)")
+        #expect(try await pi.finish() == 0, "pi starts without the one that threw: \(pi.errors)")
+        #expect(imports.state()?.extensionFailures.values.first?.reason.contains("fixture refuses to load") == true)
     }
 
     /// The skills an agent's pi, started through the launcher in `project`, offers as commands.
@@ -395,6 +454,7 @@ final class RPCProcess: @unchecked Sendable {
     }
 
     var errors: String { String(decoding: stderr.current, as: UTF8.self) }
+    var isRunning: Bool { process.isRunning }
 
     func request(_ command: [String: Any]) async throws -> [String: Any] {
         nextID += 1
