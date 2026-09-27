@@ -41,6 +41,50 @@ extension ThreadPreviewTests {
         return context.makeImage()!
     }
 
+    /// An element's own picture, as the rasterizer would cut it from board A (drawn in the
+    /// board's colors at the row's 80×52 pixels): the funnel's bars, the exit reasons' rows, a
+    /// tile's figure, the filters' chips.
+    static func elementPicture(_ detail: String) -> CGImage {
+        let size = AppLayout.referenceCropPixels
+        let context = CGContext(data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        let w = size.width, h = size.height
+        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: w, height: h))
+        let indigo = CGColor(red: 0.31, green: 0.275, blue: 0.898, alpha: 1)
+        let ink = CGColor(red: 0.11, green: 0.11, blue: 0.16, alpha: 1)
+        let muted = CGColor(red: 0.8, green: 0.8, blue: 0.85, alpha: 1)
+        // Top-down, as the thumbnail shows it (CoreGraphics counts from the bottom).
+        func box(_ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ height: CGFloat, _ color: CGColor) {
+            context.setFillColor(color)
+            context.fill(CGRect(x: x, y: h - y - height, width: width, height: height))
+        }
+        if detail.hasPrefix("funnel") {
+            box(6, 5, 26, 3, ink)
+            for (index, share) in [1.0, 0.27, 0.2, 0.14, 0.09].enumerated() {
+                box(6, 13 + CGFloat(index) * 8, 12, 3, muted)
+                box(22, 12 + CGFloat(index) * 8, (w - 30) * share, 5, indigo)
+            }
+        } else if detail.hasPrefix("list") {
+            box(6, 5, 30, 3, ink)
+            for index in 0..<5 {
+                box(6, 13 + CGFloat(index) * 8, 34, 3, muted)
+                box(w - 16, 13 + CGFloat(index) * 8, 10, 3, ink)
+            }
+        } else if detail.contains("tile") {
+            box(6, 6, 34, 3, muted)
+            box(6, 16, 30, 10, ink)
+            box(40, 19, 14, 5, CGColor(red: 0.13, green: 0.6, blue: 0.35, alpha: 1))
+            box(6, 32, 38, 3, muted)
+        } else {
+            for (index, width) in [30.0, 14, 14, 20].enumerated() {
+                let x = 4 + [0.0, 34, 50, 66][index]
+                box(x, 20, width, 11, index == 0 ? CGColor(red: 0.91, green: 0.91, blue: 0.99, alpha: 1) : muted)
+            }
+        }
+        return context.makeImage()!
+    }
+
     /// The thread's references, answering from fixtures: the sent copy as `freshness` has it, what
     /// the agent looked at, and this Mac's designs for the @ picker.
     static func referenceChips(freshness: DesignReferenceFreshness = .current) -> DesignReferenceChips {
@@ -58,7 +102,7 @@ extension ThreadPreviewTests {
             lookedAt: { _, _ in lookedAt },
             picture: { _ in picture },
             catalog: { mentionCatalog },
-            rowPicture: { _ in picture }))
+            rowPicture: { item in item.kind == .element ? elementPicture(item.detail ?? "") : picture }))
         chips.seed(sent: [referencePayload: DesignReferenceChips.Sent(
             crumbs: ["Checkout funnel dashboard", "A · Funnel first", "card “Checkout funnel”"],
             picture: NWReferenceImage(id: "sent", image: Image(decorative: picture, scale: 2)), freshness: freshness,
@@ -84,16 +128,28 @@ extension ThreadPreviewTests {
         }
         let a = board("A.dc.html", "A · Funnel first", elements: 14)
         let boards = [a, board("B.dc.html", "B · Step table", elements: 18), board("C.dc.html", "C · Trend first", elements: 12)]
-        func element(_ tid: Int, _ path: [Int], _ title: String, tag: String, inside: Int) -> DesignMentionItem {
+        func element(_ tid: Int, _ path: [Int], _ title: String, _ detail: String) -> DesignMentionItem {
             DesignMentionItem(kind: .element,
                               reference: DesignReference(designID: referenceDesign, board: referenceBoard,
                                                          element: DesignElementID(board: "A.dc.html", tid: tid, path: path)!)!,
-                              title: title, breadcrumb: ["Checkout funnel dashboard", "A · Funnel first"], tag: tag, inside: inside)
+                              title: title, breadcrumb: ["Checkout funnel dashboard", "A · Funnel first"], detail: detail)
         }
-        let elements = [element(7, [1, 1, 0], "card “Checkout funnel”", tag: "div", inside: 12),
-                        element(24, [1, 1, 1], "card “Top exit reasons”", tag: "div", inside: 10),
-                        element(3, [1, 0, 0], "tile “Sessions with cart”", tag: "div", inside: 4),
-                        element(12, [1, 0, 2], "bar “Filters”", tag: "nav", inside: 4)]
+        // Board A's fourteen elements, in the order the board lists them (as DesignElementSummary
+        // says them for a board drawn like A: DesignElementSummaryTests).
+        let elements = [element(7, [1, 1, 0], "card “Checkout funnel”", "funnel bars · 5 steps"),
+                        element(24, [1, 1, 1], "card “Top exit reasons”", "list · 5 rows"),
+                        element(3, [1, 0, 0], "tile “Sessions with cart”", "KPI tile · 1 of 4"),
+                        element(12, [1, 0, 2], "bar “Filters”", "chips · All platforms, Web, iOS, Android"),
+                        element(4, [1, 0, 1], "tile “Reached checkout”", "KPI tile · 2 of 4"),
+                        element(5, [1, 0, 3], "tile “Placed order”", "KPI tile · 3 of 4"),
+                        element(6, [1, 0, 4], "tile “Overall conversion”", "KPI tile · 4 of 4"),
+                        element(2, [1, 0], "KPI “Sessions with cart”", "grid · 4 tiles"),
+                        element(8, [1, 1, 0, 0], "text “Checkout funnel”", "heading"),
+                        element(9, [1, 1, 0, 1], "funnel bars “Cart viewed”", "list · 5 steps"),
+                        element(10, [1, 1, 0, 1, 0], "step “Cart viewed”", "funnel bars step · 1 of 5"),
+                        element(11, [1, 1, 0, 1, 1], "step “Checkout started”", "funnel bars step · 2 of 5"),
+                        element(25, [1, 1, 1, 1], "group “Shipping cost shown”", "list · 5 rows"),
+                        element(13, [1, 0, 2, 0], "button “All platforms”", "bar button · 1 of 4")]
         var boardsByDesign: [DesignID: [DesignMentionItem]] = [referenceDesign: boards]
         boardsByDesign[DesignID(rawValue: "onboarding")] = [
             DesignMentionItem(kind: .board, reference: DesignReference(designID: DesignID(rawValue: "onboarding"), board: DesignPath("Intro.dc.html")!)!,
