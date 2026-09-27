@@ -5,7 +5,8 @@ import ShepherdSessions
 struct PiSettings: View {
     /// Shepherd's pi on this Mac, whose catalog names the subagent model choices.
     let pi: PiSetup
-    @Bindable private var settings = AppSettings.shared
+    /// The view model's settings, so a preview's own settings draw the page.
+    @Bindable var settings: AppSettings
     @State private var modelOptions: [String] = []
 
     var body: some View {
@@ -40,6 +41,12 @@ struct PiSettings: View {
                 SettingsRow(title: "MCP servers",
                             subtitle: "Let agents use the servers in Settings ▸ MCP servers through one `mcp` tool.") {
                     SettingsSwitch(label: "MCP servers", isOn: $settings.piMCPExtension)
+                }
+                if settings.designToolEnabled {
+                    SettingsRow(title: "Design references",
+                                subtitle: "Let a thread read the design pieces you hand it with `design_get`. Only a thread you sent one to gets the tool.") {
+                        SettingsSwitch(label: "Design references", isOn: $settings.piDesignReferences)
+                    }
                 }
             }
 

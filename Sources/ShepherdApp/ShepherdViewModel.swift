@@ -626,6 +626,7 @@ final class ShepherdViewModel {
         // Agents drive their own panes through the server's extension socket.
         installPaneControl()
         installReviewHandler()
+        installDesignReferenceHandler()
         // Any pi session can create automations through the same socket.
         installAutomationControl()
         // Agents can see, message, and spawn peer threads.

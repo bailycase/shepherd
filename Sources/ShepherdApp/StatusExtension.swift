@@ -74,13 +74,17 @@ enum StatusExtension {
         instructions: (extensionPath: String, directory: String)? = nil,
         suggestFiles: [String] = [],
         design: (extensionPath: String, designID: DesignID, skillDirectory: String)? = nil,
+        designReferences: (extensionPath: String, granted: Bool)? = nil,
         mcp: MCPLaunch? = nil,
         userHome: String = NSHomeDirectory(),
         model: String?,
         thinking: ThinkingLevel?
     ) throws -> SessionCommand {
+        // A design's agent reads its design with its own tools: never references.
+        let designReferences = design == nil ? designReferences : nil
         let extensions = [extensionPath, instructions?.extensionPath, panesExtensionPath, reviewExtensionPath, subagentsExtensionPath,
-                          childrenExtensionPath, namerExtensionPath, design?.extensionPath, mcp?.extensionPath].compactMap { $0 }
+                          childrenExtensionPath, namerExtensionPath, design?.extensionPath, designReferences?.extensionPath,
+                          mcp?.extensionPath].compactMap { $0 }
         let line = try PiLaunch.agent(home: home, cwd: cwd, sessionID: piSessionID, model: model, thinking: thinking?.rawValue,
                                       extensions: extensions, untrustedProject: PiLaunch.isHomeFolder(cwd, userHome: userHome))
         var env = [
@@ -105,6 +109,8 @@ enum StatusExtension {
             env["SHEPHERD_DESIGN_ID"] = design.designID.rawValue
             env["SHEPHERD_DESIGN_SKILL_DIR"] = design.skillDirectory
         }
+        // A thread's design references: design_get registers itself once it holds one.
+        if let designReferences { env["SHEPHERD_DESIGN_REFS"] = designReferences.granted ? "granted" : "on" }
         // Settings ▸ MCP servers: the extension reads the config and the tools cache the app keeps.
         if let mcp {
             env["SHEPHERD_EXT_MCP"] = mcp.extensionPath
