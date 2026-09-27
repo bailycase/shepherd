@@ -79,6 +79,7 @@ private enum SidebarItem: Identifiable, Equatable {
         switch self {
         case .header(.needsYou): AnyHashable("header.needsYou")
         case .header(.recents): AnyHashable("header.recents")
+        case .header(.host(let name, _)): AnyHashable("header.host.\(name)")
         case .row(let row): AnyHashable(row.id)
         }
     }
