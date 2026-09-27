@@ -701,7 +701,9 @@ was on keep their files and agents either way.
   small pin, "on A · Checkout funnel", "You · 2m", the words), and the agent's reply to it sits
   inside the card under a hairline, without the turn's footer.
 - **The Comments tab** lists the open comments' cards, oldest first (a lazy list, one row per
-  card), and its label counts them. The chat's thread stays mounted under it.
+  card), and its label counts them with the notes threads left on the design (Notes back,
+  RefNoteBack's "Comments 2" over a comment and a note; `DesignScreenModel.commentsTabCount`). The
+  chat's thread stays mounted under it.
 - **Failures** (a comment kept but not delivered, a refused one) go to the app's error dialog.
 
 ### Board actions (DZCanvas)
@@ -1109,8 +1111,15 @@ newer reaches the agent until the user sends it.
 designs (most recently active first; a design being built as a design system is left out), each
 design's boards in canvas order, and each board's elements (at most 300: those with words or a
 `data-el` name, leaving out the runtime's scaffold and an element that only repeats its parent's
-words), each row with its breadcrumb. It is derived off the main thread and the server's queue,
-and a design unchanged since the last call is not read again (`DesignMentionCache`, by revision).
+words), each row with its breadcrumb and the design's revision. An element's row says what it is
+and holds (`DesignElementSummary`, from the source): a kind noun, then the first run of like
+children in it or up to three levels under it counted with their noun (their `data-el` name, a
+loop's `as`, else row, bar or card: "funnel bars · 5 steps", "list · 5 rows"), or its place among
+like siblings qualified by its parent's name ("KPI tile · 1 of 4"), with chips (buttons, links or
+pills of a few words) listed by their words ("chips · All platforms, Web, iOS, Android"), else
+what it is and how many elements it holds. A board's element count is the rows the picker lists
+on it. It is derived off the main thread and the server's queue, and a design unchanged since the
+last call is not read again (`DesignMentionCache`, by revision).
 `rows(in:)` gives a scope's rows (the designs; a design's own row, the whole design, then its
 boards; a board's own row, "Whole board", then its elements), and `search(_:)` matches every level
 by each word of the query, in the catalog's order. The composer keeps the results whose own name
@@ -1207,15 +1216,31 @@ The surfaces (DESIGN.md › Design references has their measures):
   scope ("Design › Board › ", resolved by titles, `MentionScope.spelled`) and the filter after it.
   The picker's rows are derived once per change of the draft or the catalog
   (`MentionPickerState`), read from `designMentionCatalog()` each time it opens, with pictures from
-  the renderer (a design's first board, a board's own, rendered on demand at thumbnail priority:
-  `DesignBoardPictures`). A pick pins the piece and attaches it (`attachDesignReference`); a paste
+  the renderer: a design's first board, a board's own (rendered on demand at thumbnail priority:
+  `DesignBoardPictures`), and an element's own, cut from its board (`DesignElementCrops`). An
+  element's picture is asked for only when its row comes on screen (the lazy list's rows); the
+  shared rasterizer draws the board once per design revision, finding every element the picker
+  lists on it in one call (`DesignBoardView.elements(tids:)`), the last two boards are kept to cut
+  from, and the cuts (the thumbnail's 40×26 at 2x, from the element's top-leading corner) are made
+  off the main thread and kept per revision. A cut landing redraws its own row alone. ⌫ with the
+  caret at the start of the words (or in an empty field) takes the last chip back: the field binds
+  its selection outside Observation (`ComposerCaret`). A pick pins the piece and attaches it (`attachDesignReference`); a paste
   that brings a whole reference word does the same (`ComposerReferencePaste`); a failure says why in
   the composer's banner. The iOS client draws no chip yet: its thread shows the words and the
   "1 design reference attached." line.
 - **Notes back** on the canvas: read with the design's pulls and on `onDesignThreadNotesChanged`;
   a note's pin sits on its element's top-trailing corner where a live board finds it (before a
   comment's pin there), else on its board's corner; its card opens beside the pin, with Open thread
-  (while the thread is here) and Resolve.
+  (while the thread is here) and Resolve. The Comments tab counts notes with the comments.
+- **A sent chip's preview** opens above the chip whenever the thread's visible part holds it
+  above (measured from the thread's top in its own space, not the scroll view's, which starts
+  under the thread's top margin), and below only when it doesn't.
+- **Awaiting the user** (departures from the Ref* boards, each either built as drawn or kept once
+  the user decides): the design's ••• menu lists Implement and Copy Reference without their
+  chords; the canvas's right-click menu has no Delete; the @ picker has no Files section; other
+  hosts' designs (the picker's host tags, the chip's "on another host" and "host offline") are
+  ShepherdUI states only; and a pinned version no longer kept is refused (`version_gone`) rather
+  than drawn.
 
 ## Deleting and importing on the Mac (DesignLifecycleStates)
 

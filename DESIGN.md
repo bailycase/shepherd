@@ -8414,8 +8414,8 @@ Comments), as below, with these choices the boards leave open:
   board draws a comment being written. The board action (Comment) waits for the board actions bar.
 - In the chat, the agent's reply inside the card has no turn footer.
 - A resolved comment leaves the canvas and the Comments tab (the chat keeps its card); nothing
-  lists resolved comments yet. The Comments tab's count is the open comments', and it shows no
-  count at zero; with none it is blank.
+  lists resolved comments yet. The Comments tab's count is the open comments' and the notes
+  threads left (RefNoteBack), and it shows no count at zero; with none it is blank.
 - A comment whose element a rewrite left nowhere keeps its pin where the element was, and its
   thread and card add "element changed". Not drawn on any board: design it.
 - A comment that couldn't reach the agent is kept, and the app's error dialog says why. Not drawn.
@@ -8460,15 +8460,16 @@ or in a design's own chat. Choices the boards leave open, and where the build de
   never reaches them until remote references come.
 - **The picker lists no files** (the boards' "Files" section): the component draws the rows, the
   composer offers none, as the composer has no file mentions yet.
-- **An element's row** says its tag and what is inside it ("div · 12 inside"), not the boards'
-  descriptions ("funnel bars · 5 steps"), and draws its board's picture (a picture of each element
-  would need every element's place on its board); a board's row draws the board.
 - **Native menus** (the right-click menu, the design's •••) use the app's title case ("Implement
   in a Thread…", "Copy Reference"). The ••• menu lists the chords' actions without their chords: a
   popup button's key equivalents would answer ⌘↩ anywhere in the window.
 - **The right-click menu** has no Delete: the canvas deletes no board yet.
-- **The note's card** opens beside its pin; the Comments tab doesn't count notes (they are not
-  comments).
+- **A pinned version no longer kept** is refused (`version_gone`) with its reason; no board draws
+  it.
+- **The note's card** opens beside its pin (a choice the boards leave open).
+
+These departures (Other hosts, no Files section, the ••• menu without chords, no Delete, and
+`version_gone`) wait on the user: each is built as drawn or kept once the user decides.
 
 - **From the canvas:** the board actions bar floats over the selection's board, an element's too,
   and ends with **Implement…** (`chevron.left.forwardslash.chevron.right`) before •••. A right-click
@@ -8517,8 +8518,9 @@ or in a design's own chat. Choices the boards leave open, and where the build de
   remove button and sits first among the attachments, which wrap; at most five. In a sent message
   it sits above the words (the "1 design reference attached." line comes off); a click opens the
   piece in the design (its board picked and centered, its element selected once the board draws).
-- **The preview** (`NWDesignReferencePreview`), 8pt above the chip after a 0.45s hover (8pt below
-  a sent chip too near the thread's top to fit it above), kept while the pointer is on either: 340pt, 12pt padding, radius 12, the popover's surface, 10pt between
+- **The preview** (`NWDesignReferencePreview`), 8pt above the chip after a 0.45s hover, whenever
+  the thread's visible part holds it there (8pt below only a sent chip too near the thread's top
+  for it), kept while the pointer is on either: 340pt, 12pt padding, radius 12, the popover's surface, 10pt between
   parts. The picture 316×107 (radius 6), the breadcrumb, "v23 pinned Sep 27, 10:42 · acme-web" in
   11.5 `textTertiary` (the version `textSecondary`, the system mono), "The agent gets" with mono
   10.5 tags on `bgSelected`, and Open in design (secondary, 24pt). Updated: a box on `lanternTint`
@@ -8534,11 +8536,14 @@ or in a design's own chat. Choices the boards leave open, and where the build de
   the mention leaves the words and the chip joins the composer. Typing searches designs, boards
   and elements by their own names, each with its path, the words underlined ("6 matches").
   "Nothing matches “pricng”" and "No designs yet. Start a design and its boards show up here." are
-  its empty stages. 48pt rows, runningTint highlight, at most eight rows (a lazy list). Esc closes
-  it for the draft as typed.
+  its empty stages. 48pt rows, runningTint highlight, at most eight rows (a lazy list). An
+  element's row draws the element itself, cut from its board (made only once the row is on screen),
+  and says what it is and holds: "funnel bars · 5 steps", "list · 5 rows", "KPI tile · 1 of 4",
+  "chips · All platforms, Web, iOS, Android". Whole board's "14 elements" and the Elements count
+  are the rows the list holds. Esc closes it for the draft as typed.
 - **A pasted reference** (a paste bringing a whole `shepherd-design-ref://…` word) becomes a chip,
-  the words around it staying; typed characters and plain text stay text. ⌫ in an empty composer
-  takes the last chip back.
+  the words around it staying; typed characters and plain text stay text. ⌫ with the caret at the
+  start of the words (or in an empty composer) takes the last chip back.
 - **"Looked at…"** (NWActivityLine(.lookedAtDesign), the nib): "Looked at Checkout funnel
   dashboard › A · Funnel first" with what it got in mono ("picture · html · 11 styles · 8 tokens");
   open, `NWLookedAtDetails` on the calls' rail: `pic` the picture and its size, `html` the page and
