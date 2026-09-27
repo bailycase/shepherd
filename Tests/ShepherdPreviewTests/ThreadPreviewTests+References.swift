@@ -289,6 +289,14 @@ extension ThreadPreviewTests {
         try await renderReferences("thread-reference-chip-hover", Self.referenceSnapshot(sent: true), chips: Self.referenceChips(), open: true)
     }
 
+    /// RefChipHover with the chip at the thread's top: no room above it, so the preview opens
+    /// under it.
+    @Test func referenceChipHoverAtTheTop() async throws {
+        var snapshot = Self.referenceSnapshot(sent: true)
+        snapshot.messages = snapshot.messages.filter { $0.entryID == "u2" }
+        try await renderReferences("thread-reference-chip-hover-top", snapshot, chips: Self.referenceChips(), open: true)
+    }
+
     /// RefChipUpdated: the design moved on; the chip is amber and its preview lists what changed,
     /// with Send v26.
     @Test func referenceChipUpdated() async throws {
