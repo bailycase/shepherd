@@ -83,8 +83,44 @@ extension ShepherdViewModel {
             prepared.append(NativeAttachedReference(reference: pinned, label: pinned.label ?? pinned.string))
         }
         let store = threadStores.store(for: agentID)
+        // A thread on screen sends through its store (its echo shows at once); one that isn't (a
+        // thread picked from the sheet, or one just started for it) through the host, once its pi
+        // serves.
+        guard store.ready else {
+            try await sendDirectly(prepared, text: text, to: agentID)
+            return
+        }
         guard await store.send(text: text, references: prepared) else {
             throw DesignReferenceFailure(store.notice ?? "The thread didn't take the message. Check it before sending again.")
+        }
+    }
+
+    /// How long a send waits for a thread's pi to serve (one just started boots in seconds).
+    static let referenceSendWait: Duration = .seconds(90)
+
+    /// Sends a message carrying `references` to a thread nothing on screen is showing: asks the
+    /// host for the thread's session (waiting while its pi starts), then sends at it. While pi
+    /// works it waits in the host's queue, as any follow-up does.
+    private func sendDirectly(_ references: [NativeAttachedReference], text: String, to agentID: AgentID) async throws {
+        let server = server
+        let deadline = ContinuousClock.now + Self.referenceSendWait
+        while true {
+            switch try await server.nativeThread(agentID: agentID, request: .snapshot()) {
+            case .snapshot(let snapshot) where !snapshot.piSessionID.isEmpty:
+                let message = NativeAttachedFile.message(text, files: [], references: references.count)
+                let reply = try await server.nativeThread(agentID: agentID, request: .send(
+                    expectedSessionID: snapshot.piSessionID, generation: snapshot.generation, operationID: UUID(), text: message,
+                    delivery: .followUp, designReferences: references.map(\.record)))
+                if case .failure(_, let why) = reply { throw DesignReferenceFailure(why) }
+                return
+            case .failure(let code, let why) where code != NativeThreadCode.starting:
+                throw DesignReferenceFailure(why)
+            default:
+                guard ContinuousClock.now < deadline else {
+                    throw DesignReferenceFailure("The thread's pi didn't start in time. Nothing was sent.")
+                }
+                try await Task.sleep(for: .milliseconds(200))
+            }
         }
     }
 
@@ -97,6 +133,10 @@ extension ShepherdViewModel {
 
     /// Draws references' copies for the server when a send keeps them (`onDesignReferenceCapture`).
     func installDesignReferenceHandler() {
+        // A thread left a note back, or one was removed: the canvas shows it.
+        server.onDesignThreadNotesChanged = { [weak self] designID in
+            MainActor.assumeIsolated { self?.designThreadNotesChanged(designID) }
+        }
         server.onDesignReferenceCapture = { [weak self] request, respond in
             MainActor.assumeIsolated {
                 guard let self else {
