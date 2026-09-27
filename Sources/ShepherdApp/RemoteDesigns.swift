@@ -315,7 +315,7 @@ struct RemoteDesignChatPane: View {
     let threadPaneID: PaneID?
 
     var body: some View {
-        let open = screen.openComments.count
+        let open = screen.commentsTabCount
         let tab = screen.paneTab == .tweak && screen.tweak == nil ? .chat : screen.paneTab
         let chat = tab == .chat
         VStack(spacing: 0) {
