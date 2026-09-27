@@ -33,8 +33,9 @@ extension EnvironmentValues {
 /// The user's turn: right-aligned, at most 600pt (`nwUserBubbleMetrics`), `bgBubble` with a 1px strong line, radius 8.
 /// No avatar and no name; the time sits beneath, shown only while the message is hovered. A
 /// message steered into a running turn wears "Steered" above it and a `running` line. Its text
-/// follows `nwProseSize`.
-public struct NWUserBubble: View {
+/// follows `nwProseSize`. `leading` sits above the words inside the bubble: the design references
+/// the message carries (DesignReferenceChip · sent).
+public struct NWUserBubble<Leading: View>: View {
     /// How the message reached pi.
     public enum Origin: Sendable {
         /// Sent, or delivered from the queue.
@@ -44,7 +45,7 @@ public struct NWUserBubble: View {
     }
 
     /// The "Steered" label's glyph.
-    static let steeredGlyph: CGFloat = 11
+    static var steeredGlyph: CGFloat { 11 }
 
     let text: String
     let title: String?
@@ -53,6 +54,7 @@ public struct NWUserBubble: View {
     let note: String?
     let revealed: Bool
     let origin: Origin
+    let leading: Leading
     @Environment(\.nwProseSize) private var proseSize
     @Environment(\.nwUserBubbleMetrics) private var metrics
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
@@ -62,7 +64,7 @@ public struct NWUserBubble: View {
     /// parent"). `title` leads the bubble in semibold, `text` 4pt under it: an answer to a
     /// question (the option chosen, then a note).
     public init(_ text: String, title: String? = nil, attachments: [String] = [], timestamp: String? = nil, note: String? = nil,
-                revealed: Bool = false, origin: Origin = .sent) {
+                revealed: Bool = false, origin: Origin = .sent, @ViewBuilder leading: () -> Leading) {
         self.text = text
         self.title = title
         self.attachments = attachments
@@ -70,6 +72,7 @@ public struct NWUserBubble: View {
         self.note = note
         self.revealed = revealed
         self.origin = origin
+        self.leading = leading()
     }
 
     public var body: some View {
@@ -84,6 +87,8 @@ public struct NWUserBubble: View {
                 .foregroundStyle(nw.running)
             }
             VStack(alignment: .leading, spacing: NW.Space.m) {
+                // Above the words: what it holds may open over them (a chip's preview).
+                leading.zIndex(1)
                 if !attachments.isEmpty {
                     HStack(spacing: NW.Space.s) {
                         ForEach(Array(attachments.enumerated()), id: \.offset) { _, name in
@@ -134,6 +139,15 @@ public struct NWUserBubble: View {
         }
         .font(.nwMono(10.5))
         .foregroundStyle(Color.nw.textTertiary)
+    }
+}
+
+extension NWUserBubble where Leading == EmptyView {
+    public init(_ text: String, title: String? = nil, attachments: [String] = [], timestamp: String? = nil, note: String? = nil,
+                revealed: Bool = false, origin: Origin = .sent) {
+        self.init(text, title: title, attachments: attachments, timestamp: timestamp, note: note, revealed: revealed, origin: origin) {
+            EmptyView()
+        }
     }
 }
 

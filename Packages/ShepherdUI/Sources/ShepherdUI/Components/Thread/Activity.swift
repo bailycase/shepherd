@@ -12,8 +12,9 @@ import SwiftUI
 public struct NWActivityLine: View {
     /// Which glyph leads the line: the tool's own, live or done.
     /// `drew` and `checked` are the design agent's verbs ("Drew 4 boards", "Checked against
-    /// acme-web"): the nib and the shield.
-    public enum Kind: Sendable { case explore, edit, run, subagents, drew, checked, other }
+    /// acme-web"): the nib and the shield. `lookedAtDesign` is a thread reading a design piece it
+    /// was sent ("Looked at Checkout funnel dashboard › A · Funnel first"): the nib too.
+    public enum Kind: Sendable { case explore, edit, run, subagents, drew, checked, lookedAtDesign, other }
 
     public enum Status: Equatable, Sendable {
         case done
@@ -70,7 +71,7 @@ public struct NWActivityLine: View {
         case .edit: "pencil"
         case .run: "terminal"
         case .subagents: "arrow.triangle.branch"
-        case .drew: "pencil.tip"
+        case .drew, .lookedAtDesign: "pencil.tip"
         case .checked: "checkmark.shield"
         case .other: "wrench.adjustable"
         }
@@ -202,6 +203,54 @@ struct NWThreadChevron: View {
         Image(systemName: "chevron.right")
             .font(.system(size: 8, weight: .semibold))
             .frame(width: NWThreadMetrics.chevron, height: NWThreadMetrics.chevron)
+    }
+}
+
+/// What a "Looked at…" line opens to (NWActivityLine(.lookedAtDesign) · expanded): on the calls'
+/// rail, one 22pt mono row per part the agent got — `pic` the picture and its size, `html` the
+/// page and its weight, `css` the styles, `tok` the tokens with the file and lines they live in.
+public struct NWLookedAtDetails: View {
+    public struct Row: Identifiable, Equatable, Sendable {
+        public var id: String { label }
+        /// "pic", "html", "css", "tok".
+        public var label: String
+        public var detail: String
+        /// "756 × 612", "6.2 KB", "web/static/tokens.css:4–16".
+        public var trailing: String?
+
+        public init(label: String, detail: String, trailing: String? = nil) {
+            self.label = label
+            self.detail = detail
+            self.trailing = trailing
+        }
+    }
+
+    let rows: [Row]
+
+    public init(_ rows: [Row]) { self.rows = rows }
+
+    public var body: some View {
+        let nw = Color.nw
+        let M = NWReferenceMetrics.self
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(rows) { row in
+                HStack(spacing: NW.Space.m + 2) {
+                    Text(row.label).foregroundStyle(nw.textTertiary).frame(width: M.detailLabelWidth, alignment: .leading)
+                    Text(row.detail).foregroundStyle(nw.textSecondary).lineLimit(1).truncationMode(.tail)
+                    Spacer(minLength: NW.Space.m)
+                    if let trailing = row.trailing { Text(trailing).foregroundStyle(nw.textTertiary).lineLimit(1).fixedSize() }
+                }
+                .font(.nwMono(11))
+                .frame(height: M.detailRowHeight)
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .padding(.vertical, NW.Space.xxs)
+        .padding(.leading, M.detailRail)
+        .overlay(alignment: .leading) { NWHairline(.vertical, color: nw.lineStrong) }
+        .padding(.leading, M.detailIndent)
+        .padding(.top, -NW.Space.xs)
+        .padding(.bottom, NW.Space.xxs)
     }
 }
 
