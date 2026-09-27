@@ -527,6 +527,14 @@ extension PaneNode {
 // MARK: Sign-in
 
 extension ShepherdViewModel {
+    /// This Mac's restored agents the first launch's copy holds (the sidebar's "waiting", the
+    /// thread's Waiting to continue).
+    var waitingForImport: Set<AgentID> {
+        let queue = sessions.startQueue
+        guard queue.held || !queue.heldAgents.isEmpty else { return [] }
+        return Set(state.agents.map(\.id).filter(queue.isHeld))
+    }
+
     /// Settings ▸ Pi ▸ Sign-in's nav dot: a sign-in expired, or a provider an agent waits on
     /// isn't signed in.
     var piSignInNeedsAttention: Bool {

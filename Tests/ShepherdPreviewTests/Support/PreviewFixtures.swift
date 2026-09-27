@@ -410,12 +410,13 @@ enum Reviews {
 
 // MARK: Your pi
 
-/// Settings ▸ Pi's and the welcome step's views of a user's own pi, as fixtures.
+/// Settings ▸ Pi's and the first launch's views of a user's own pi, as fixtures (the PiAuthStates
+/// boards' data: fake names and masks, never a real value).
 enum PreviewYourPi {
     typealias Login = YourPiSurvey.Login
 
     /// What the first copy brought over as files: instructions, skills, prompts, a theme, and
-    /// three extensions (one plain, one switched on, one that failed to load).
+    /// four extensions (off, on, failed to load, off).
     static let copies: [YourPiCopy] = [
         YourPiCopy(kind: .instructions, name: "AGENTS.md", source: "/Users/you/.pi/agent/AGENTS.md", destination: "AGENTS.md"),
         YourPiCopy(kind: .skills, name: "pdf", source: "/Users/you/.pi/agent/skills/pdf", destination: "skills/pdf"),
@@ -425,40 +426,61 @@ enum PreviewYourPi {
                    destination: "prompts/release-notes.md"),
         YourPiCopy(kind: .prompts, name: "triage", source: "/Users/you/.pi/agent/prompts/triage.md", destination: "prompts/triage.md"),
         YourPiCopy(kind: .themes, name: "harbor", source: "/Users/you/.pi/agent/themes/harbor.json", destination: "themes/harbor.json"),
-        YourPiCopy(kind: .extensions, name: "permission-gate", source: "/Users/you/.pi/agent/extensions/permission-gate.ts",
-                   destination: "your-extensions/files/permission-gate.ts", entries: [""]),
+        YourPiCopy(kind: .extensions, name: "pr-review", source: "/Users/you/.pi/agent/extensions/pr-review.ts",
+                   destination: "your-extensions/files/pr-review.ts", entries: [""]),
         YourPiCopy(kind: .extensions, name: "notify-slack", source: "/Users/you/.pi/agent/extensions/notify-slack",
                    destination: "your-extensions/files/notify-slack", entries: ["index.ts"]),
-        YourPiCopy(kind: .extensions, name: "@acme/web-search", source: "npm:@acme/web-search@1.2.0",
-                   destination: "your-extensions/npm/node_modules/@acme/web-search", entries: ["index.ts"]),
+        YourPiCopy(kind: .extensions, name: "web-search", source: "/Users/you/.pi/agent/extensions/web-search",
+                   destination: "your-extensions/files/web-search", entries: ["index.ts"]),
+        YourPiCopy(kind: .extensions, name: "git-guard", source: "/Users/you/.pi/agent/extensions/git-guard.ts",
+                   destination: "your-extensions/files/git-guard.ts", entries: [""]),
     ]
 
-    /// After the first copy: a login of every kind (one only in their pi, one only in the
-    /// environment), a custom provider, and the files in `copies`.
+    /// After the first copy, as SettingsPiSignIn and SettingsPiFromPi draw it: subscriptions signed
+    /// in and not, keys copied, by variable and by command, one from the environment, two custom
+    /// providers, and the files in `copies`.
     static let imported: YourPiSurvey = {
         var survey = YourPiSurvey(folder: "/Users/you/.pi/agent")
         survey.copied = true
+        survey.copiedAt = Calendar.current.date(bySettingHour: 9, minute: 41, second: 0, of: Date())
         survey.logins = [
             Login(provider: "anthropic", shepherd: .subscription, yours: .subscription),
-            Login(provider: "google", shepherd: .apiKey(.environment(["GEMINI_API_KEY"])), yours: .apiKey(.environment(["GEMINI_API_KEY"]))),
-            Login(provider: "groq", shepherd: .apiKey(.command), yours: .apiKey(.command)),
+            Login(provider: "deepseek", shepherd: .apiKey(.environment(["DEEPSEEK_API_KEY"]))),
+            Login(provider: "github-copilot", shepherd: .subscription),
+            Login(provider: "kimi-coding", shepherd: .subscription, yours: .subscription),
             Login(provider: "openai", shepherd: .apiKey(.literal), yours: .apiKey(.literal)),
-            Login(provider: "openai-codex", yours: .subscription),
-            Login(provider: "xai", environment: ["XAI_API_KEY"]),
+            Login(provider: "openai-codex", shepherd: .subscription, yours: .subscription),
+            Login(provider: "openrouter", environment: ["OPENROUTER_API_KEY"]),
         ]
-        survey.customProviders = ["local-llm"]
-        survey.shepherdCustomProviders = ["local-llm"]
-        survey.defaultModel = "anthropic/claude-opus-4-5"
-        survey.shepherdDefaultModel = "anthropic/claude-opus-4-5"
-        survey.trustedFolders = 3
-        survey.shepherdTrustedFolders = 3
+        survey.keys = ["openai": PiKeyDisplay(masked: "sk-proj-••••3kQz"), "deepseek": PiKeyDisplay(variables: ["DEEPSEEK_API_KEY"]),
+                       "northwind-gateway": PiKeyDisplay(command: "op read op://Dev/northwind/api-key")]
+        survey.yourKeys = ["openai": PiKeyDisplay(masked: "sk-proj-••••3kQz")]
+        survey.copiedLogins = ["anthropic", "openai", "kimi-coding"]
+        survey.customProviders = ["northwind-gateway", "ollama"]
+        survey.shepherdCustomProviders = ["northwind-gateway", "ollama"]
+        survey.customProviderDetails = [PiCustomProvider(id: "northwind-gateway", key: PiKeyDisplay(command: "op read op://Dev/northwind/api-key")),
+                                        PiCustomProvider(id: "ollama", baseURL: "http://localhost:11434")]
+        survey.defaultModel = "openai-codex/gpt-5.3-codex"
+        survey.shepherdDefaultModel = "anthropic/claude-opus"
+        survey.trustedFolders = 4
+        survey.trustedFolderPaths = ["/Users/you/code/shepherd", "/Users/you/code/billing", "/Users/you/code/site", "/Users/you/code/notes"]
+        survey.shepherdTrustedFolders = 4
+        survey.freshness = ["login:anthropic": .sameAsYourPi, "login:openai-codex": .newerInYourPi, "login:kimi-coding": .changedHere,
+                            "login:openai": .sameAsYourPi, "customProviders": .sameAsYourPi, "defaultModel": .newerInYourPi,
+                            "trust": .sameAsYourPi]
+        survey.yourSignInsChanged = Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 24))
         survey.copies = copies
         survey.instructionLines = 38
         survey.extensions = [
-            YourPiExtensionRow(copy: copies[7], summary: "Asks before any rm -rf or force-push."),
+            YourPiExtensionRow(copy: copies[7], summary: "Adds a /pr-review command that checks the diff against your repo’s rules."),
             YourPiExtensionRow(copy: copies[8], on: true, summary: "Posts to Slack when an agent finishes or needs you."),
-            YourPiExtensionRow(copy: copies[9], on: true, failure: "Cannot find module 'turndown'",
-                               summary: "A web_search tool backed by your Brave API key."),
+            {
+                var row = YourPiExtensionRow(copy: copies[9], on: true, failure: "Cannot find module 'turndown' · web-search/index.ts:4",
+                                             summary: "A web_search tool backed by your Brave API key.")
+                row.failureLines = ["Failed to load extension \"web-search/index.ts\": Cannot find module 'turndown'"]
+                return row
+            }(),
+            YourPiExtensionRow(copy: copies[10], summary: "Blocks force-pushes and git reset --hard."),
         ]
         return survey
     }()
@@ -470,44 +492,70 @@ enum PreviewYourPi {
         return survey
     }()
 
-    /// The first copy from `imported`, as the welcome step shows it.
-    static let welcome: YourPiModel.Welcome = {
+    /// The first copy from `imported`, as the sheet's summary shows it.
+    static let report: YourPiImportReport = {
         var report = YourPiImportReport()
         report.first = true
         report.from = "/Users/you/.pi/agent"
-        report.logins = [PiLogin(provider: "anthropic", kind: .subscription),
-                         PiLogin(provider: "google", kind: .apiKey(.environment(["GEMINI_API_KEY"]))),
-                         PiLogin(provider: "groq", kind: .apiKey(.command)), PiLogin(provider: "openai", kind: .apiKey(.literal))]
-        report.customProviders = ["local-llm"]
-        report.copied = copies
-        report.defaultModel = "anthropic/claude-opus-4-5"
-        report.trustedFolders = 3
-        return YourPiModel.Welcome(report: report, survey: imported)
+        report.logins = [PiLogin(provider: "anthropic", kind: .subscription), PiLogin(provider: "openai-codex", kind: .subscription),
+                         PiLogin(provider: "kimi-coding", kind: .subscription), PiLogin(provider: "openai", kind: .apiKey(.literal)),
+                         PiLogin(provider: "openrouter", kind: .apiKey(.environment(["OPENROUTER_API_KEY"])))]
+        report.customProviders = ["northwind-gateway", "ollama"]
+        report.copied = copies + (0..<10).map { YourPiCopy(kind: .skills, name: "s\($0)", source: "/s\($0)", destination: "skills/s\($0)") }
+            + ["explain", "tidy"].map { YourPiCopy(kind: .prompts, name: $0, source: "/\($0).md", destination: "prompts/\($0).md") }
+        report.defaultModel = "anthropic/claude-opus"
+        report.trustedFolders = 4
+        return report
     }()
 
-    /// Something missing: a first copy whose auth.json couldn't be read. The rest came over (a
-    /// custom provider can start agents), the step says why the logins didn't, and asks to sign
-    /// in to the default model's provider.
-    static let welcomeMissing: YourPiModel.Welcome = {
-        var report = welcome.report
-        report.logins = []
-        report.problems = ["Your pi's sign-ins couldn't be read: auth.json isn't a valid JSON object."]
-        var survey = none
-        survey.shepherdCustomProviders = ["local-llm"]
-        return YourPiModel.Welcome(report: report, survey: survey, missing: ["anthropic"])
+    static let allDone = Dictionary(uniqueKeysWithValues: YourPiImportStep.allCases.map { ($0, PiImportSheetState.StepState.done) })
+
+    /// PiImportProgress: logins, keys and providers over, the default model under way.
+    static let importProgress: PiImportSheetState = {
+        var sheet = PiImportSheetState(from: report.from)
+        sheet.report = report
+        sheet.steps = [.logins: .done, .apiKeys: .done, .customProviders: .done, .defaultModel: .running]
+        return sheet
     }()
 
-    /// A new user's first launch: no pi of theirs and no key, so only the sign-in ask.
-    static let welcomeNewUser: YourPiModel.Welcome = {
-        var report = YourPiImportReport()
-        report.first = true
-        return YourPiModel.Welcome(report: report, survey: none)
+    /// PiImportDone.
+    static let importDone: PiImportSheetState = {
+        var sheet = importProgress
+        sheet.steps = allDone
+        sheet.stage = .done
+        sheet.survey = imported
+        return sheet
     }()
 
-    /// A new user with a provider key in their shell: found, so nothing to sign in to.
-    static let welcomeNewUserWithKey: YourPiModel.Welcome = {
-        var survey = none
-        survey.logins = [Login(provider: "openai", environment: ["OPENAI_API_KEY"])]
-        return YourPiModel.Welcome(report: welcomeNewUser.report, survey: survey)
+    /// PiImportMissing: two providers the agents use that nothing covers, one signed in since.
+    static let importMissing: PiImportSheetState = {
+        var sheet = importDone
+        sheet.stage = .missing
+        sheet.report.logins = [PiLogin(provider: "anthropic", kind: .subscription), PiLogin(provider: "openai", kind: .apiKey(.literal)),
+                               PiLogin(provider: "openrouter", kind: .apiKey(.environment(["OPENROUTER_API_KEY"])))]
+        sheet.missing = [.init(id: "openai-codex", detail: "Your pi’s sign-in couldn’t be copied"),
+                         .init(id: "kimi-coding", detail: "Your pi isn’t signed in to it")]
+        var survey = imported
+        survey.logins.removeAll { $0.provider == "openai-codex" || $0.provider == "kimi-coding" }
+        sheet.survey = survey
+        return sheet
+    }()
+
+    /// PiImportNew: no pi on this Mac.
+    static let importNew: PiImportSheetState = {
+        var sheet = PiImportSheetState(from: nil)
+        sheet.stage = .newUser
+        sheet.survey = none
+        return sheet
+    }()
+
+    /// PiImportFailed: auth.json isn't valid JSON; everything else came over.
+    static let importFailed: PiImportSheetState = {
+        var sheet = importDone
+        sheet.stage = .failed
+        sheet.report.logins = []
+        sheet.report.signInsUnreadable = ("/Users/you/.pi/agent/auth.json", "Unexpected character around line 31, column 5.")
+        sheet.steps[.logins] = .failed
+        return sheet
     }()
 }

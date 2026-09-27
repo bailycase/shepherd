@@ -8,7 +8,7 @@ import Testing
 
 /// The first launch of a build with Shepherd's own pi, through the real view model and the stub
 /// engine: the user's pi (a fixture with fake logins of every kind) is copied into a scratch
-/// Shepherd home once, and the welcome step says what came over. Restored agents wait for the
+/// Shepherd home once, and the first launch's sheet says what came over. Restored agents wait for the
 /// copy (never past its deadline), then start at once when a provider can start them, or when
 /// the step closes when none can; a later launch copies nothing. The fixture "your pi" stays
 /// byte-identical.
@@ -63,7 +63,7 @@ struct YourPiFirstLaunchTests {
 
     /// The start gate with logins to copy: nothing starts while the copy runs, not even the agent
     /// on screen; once it is over, restored agents start signed in (the stub exits "No models
-    /// available" without a login in Shepherd's home) while the welcome step still shows, with no
+    /// available" without a login in Shepherd's home) while the sheet still shows, with no
     /// click. Subscription sign-ins came over, and your pi is byte-identical.
     @Test func restoredAgentsWaitForTheCopyThenStartSignedInWithoutAClick() async throws {
         try StubPi.installAsEngine()
@@ -79,10 +79,10 @@ struct YourPiFirstLaunchTests {
         let copying = Locked(false)
         let gate = DispatchSemaphore(value: 0)
         defer { gate.signal() }
-        let model = YourPiModel(pi: setup.pi, firstCopy: { pi in
+        let model = YourPiModel(pi: setup.pi, firstCopy: { pi, progress in
             copying.withValue { $0 = true }
             gate.wait()
-            return pi.copyYourPiOnce()
+            return pi.copyYourPiOnce(progress: progress)
         })
 
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]), restoringAgents: true,
@@ -95,21 +95,24 @@ struct YourPiFirstLaunchTests {
         #expect(Self.launch(of: sessionID) == nil, "held while the copy runs")
 
         gate.signal()
-        try await eventuallyOnMain("the welcome step") { vm.yourPi.welcome != nil }
+        try await eventuallyOnMain("the sheet, done") { vm.yourPi.importSheet?.stage == .done }
         let server = app.server
         try await eventuallyAsync("the restored agent to serve, signed in", timeout: .seconds(20)) { await Self.serves(id, on: server) }
-        #expect(vm.yourPi.welcome != nil, "it started with the step still showing: no click")
+        #expect(vm.yourPi.importSheet != nil, "it started with the sheet still showing: no click")
         #expect(!vm.holdsForWelcome && !vm.sessions.startQueue.held && !vm.cannotStart.contains(id))
 
-        let welcome = try #require(vm.yourPi.welcome)
-        #expect(welcome.report.first && welcome.survey.canStartAgents && !welcome.holdsAgents && !welcome.asksToSignIn)
-        let rows = PiWelcomeSheet.sections(welcome).broughtOver
-        #expect(rows.contains(.init(title: "Anthropic", detail: "Signed in")))
-        #expect(rows.contains(.init(title: "Groq", detail: "API key that runs a command")))
-        #expect(rows.contains(.init(title: "Custom providers", detail: "local-llm")))
-        #expect(rows.contains(.init(title: "Instructions, skills and prompts", detail: "AGENTS.md · 1 skill · 2 prompts")))
-        #expect(rows.contains(.init(title: "Extensions", detail: "1 found", switchedOff: true)))
-        for secret in YourPiFixture.secrets { #expect(!String(describing: welcome).contains(secret)) }
+        let sheet = try #require(vm.yourPi.importSheet)
+        #expect(sheet.report.first && sheet.survey.canStartAgents && sheet.missing.isEmpty && !sheet.stage.holdsAgents)
+        let rows = sheet.rows
+        #expect(rows.map(\.title) == ["Logins", "API keys", "Custom providers", "Default model", "Trusted folders",
+                                       "Instructions, skills and prompts", "Extensions"])
+        #expect(rows.allSatisfy { $0.state == .done })
+        #expect(rows[0] == .init(id: "logins", title: "Logins", detail: "Anthropic, OpenAI Codex", count: "2 subscriptions", state: .done))
+        #expect(rows[1] == .init(id: "apiKeys", title: "API keys", detail: "Google, Groq, OpenAI", count: "3 keys", state: .done))
+        #expect(rows[2].count == "1 provider" && rows[3].count == "claude-fixture-4")
+        #expect(rows[4].count == "1 folder", "the home folder's trust is never copied")
+        #expect(rows[5].count == "AGENTS.md · 1 · 2" && rows[6].count == "1 found")
+        for secret in YourPiFixture.secrets { #expect(!String(describing: sheet).contains(secret)) }
         // Copied into Shepherd's home, subscription sign-ins included; theirs untouched.
         let auth = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: setup.pi.home.appendingPathComponent("auth.json"))) as? [String: Any])
         #expect(Set(auth.keys) == ["anthropic", "openai-codex", "openai", "google", "groq"])
@@ -121,12 +124,12 @@ struct YourPiFirstLaunchTests {
         #expect(launch.env["PI_CODING_AGENT_DIR"] == setup.pi.home.path)
         #expect(try YourPiFixture.tree(setup.yours) == before, "your pi is byte-identical")
 
-        vm.finishWelcome()
-        #expect(vm.yourPi.welcome == nil)
+        vm.finishImport()
+        #expect(vm.yourPi.importSheet == nil)
     }
 
     /// The gate never blocks forever: a copy that overruns its deadline lets restored agents
-    /// start anyway, with no welcome step.
+    /// start anyway, with no sheet.
     @Test func aCopyPastItsDeadlineNeverHoldsAgentsForever() async throws {
         try StubPi.installAsEngine()
         let setup = try Setup()
@@ -136,7 +139,7 @@ struct YourPiFirstLaunchTests {
         let (space, agent) = try setup.agent()
         let gate = DispatchSemaphore(value: 0)
         defer { gate.signal() }
-        let model = YourPiModel(pi: setup.pi, copyDeadline: .milliseconds(200), firstCopy: { _ in
+        let model = YourPiModel(pi: setup.pi, copyDeadline: .milliseconds(200), firstCopy: { _, _ in
             gate.wait()
             return nil
         })
@@ -145,31 +148,61 @@ struct YourPiFirstLaunchTests {
                                      welcomingYourPi: true, yourPi: model)
 
         try await eventuallyAsync("the restored agent's pi to start past the deadline") { Self.launch(of: agent.agent.effectivePiSessionID) != nil }
-        #expect(!vm.holdsForWelcome && !vm.sessions.startQueue.held && vm.yourPi.welcome == nil)
+        #expect(!vm.holdsForWelcome && !vm.sessions.startQueue.held && vm.yourPi.importSheet == nil)
     }
 
-    /// Something still missing: the default model's provider has no login, key or custom
-    /// provider in Shepherd's pi. The step asks to sign in to it, but other logins came over, so
-    /// restored agents don't wait for it.
-    @Test func theDefaultModelsMissingProviderIsAskedForWithoutHoldingAgents() async throws {
+    /// Something still missing: a provider an agent (or the default model) uses has no login, key
+    /// or custom provider in Shepherd's pi. The sheet asks for it, and only the agents that use
+    /// it wait; the rest start at once.
+    @Test func aMissingProviderIsAskedForAndHoldsOnlyTheAgentsThatUseIt() async throws {
         let setup = try Setup()
         defer { setup.remove() }
         let model = YourPiModel(pi: setup.pi)
-        let holds = await model.runFirstLaunch(defaultModel: "xai/grok-fixture")
-        let welcome = try #require(model.welcome)
-        #expect(!holds && !welcome.holdsAgents && welcome.asksToSignIn)
-        #expect(welcome.missing == ["xai"])
-        #expect(PiWelcomeSheet.sections(welcome).missing == [.init(title: "xAI", detail: "Not signed in")])
+        model.doneBeat = .zero
+        let hold = await model.runFirstLaunch(models: ["xai/grok-fixture", "anthropic/claude-fixture-4"])
+        let sheet = try #require(model.importSheet)
+        #expect(sheet.stage == .missing && hold == .agents(using: ["xai"]))
+        #expect(sheet.missing == [.init(id: "xai", detail: "Your pi isn’t signed in to it")])
+        #expect(!sheet.allSignedIn)
 
         let other = try Setup()
         defer { other.remove() }
         let covered = YourPiModel(pi: other.pi)
-        _ = await covered.runFirstLaunch(defaultModel: nil)
-        #expect(covered.welcome?.missing.isEmpty == true, "pi's default model came over with its provider's login")
+        covered.doneBeat = .zero
+        #expect(await covered.runFirstLaunch() == .none, "pi's default model came over with its provider's login")
+        #expect(covered.importSheet?.stage == .done)
+    }
+
+    /// While the sheet asks for a missing provider, restored agents that use it wait (the sidebar
+    /// says "waiting") and the others start; Done or Skip for now starts the rest.
+    @Test func agentsWaitingOnAMissingProviderStartWhenTheSheetCloses() async throws {
+        try StubPi.installAsEngine()
+        let setup = try Setup()
+        defer { setup.remove() }
+        let app = try AppHarness(pi: setup.pi)
+        defer { app.stop() }
+        let (space, signedIn) = try setup.agent()
+        var waiting = Fixture.agent("needs xai", in: space, cwd: space.path, piSession: SessionID())
+        waiting.agent.model = "xai/grok-fixture"
+        let model = YourPiModel(pi: setup.pi)
+        model.doneBeat = .zero
+
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [signedIn, waiting]), restoringAgents: true,
+                                     welcomingYourPi: true, yourPi: model)
+
+        try await eventuallyOnMain("the sheet to ask for xAI") { vm.yourPi.importSheet?.stage == .missing }
+        try await eventuallyAsync("the signed-in agent to start") { Self.launch(of: signedIn.agent.effectivePiSessionID) != nil }
+        #expect(Self.launch(of: waiting.agent.effectivePiSessionID) == nil)
+        #expect(vm.sessions.startQueue.isHeld(waiting.agent.id) && !vm.sessions.startQueue.isHeld(signedIn.agent.id))
+        #expect(vm.waitingForImport == [waiting.agent.id])
+
+        vm.finishImport()
+        try await eventuallyAsync("the held agent to start once the sheet closes") { Self.launch(of: waiting.agent.effectivePiSessionID) != nil }
+        #expect(vm.waitingForImport.isEmpty)
     }
 
     /// Once the first copy has run, a launch copies nothing (a change in their pi stays there),
-    /// shows no welcome, and starts restored agents at once.
+    /// shows no sheet, and starts restored agents at once.
     @Test func aLaterLaunchCopiesNothingAndStartsAgentsAtOnce() async throws {
         try StubPi.installAsEngine()
         let setup = try Setup()
@@ -183,7 +216,7 @@ struct YourPiFirstLaunchTests {
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]), restoringAgents: true, welcomingYourPi: true)
 
         try await eventuallyAsync("the restored agent's pi to start") { Self.launch(of: agent.agent.effectivePiSessionID) != nil }
-        #expect(vm.yourPi.welcome == nil && !vm.holdsForWelcome)
+        #expect(vm.yourPi.importSheet == nil && !vm.holdsForWelcome)
         let auth = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: setup.pi.home.appendingPathComponent("auth.json"))) as? [String: Any])
         #expect(auth["xai"] == nil && auth["anthropic"] != nil)
     }
@@ -201,14 +234,14 @@ struct YourPiFirstLaunchTests {
 
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]), restoringAgents: true, welcomingYourPi: true)
 
-        try await eventuallyOnMain("the welcome step") { vm.yourPi.welcome != nil }
-        let welcome = try #require(vm.yourPi.welcome)
-        #expect(welcome.report.first && welcome.report.from == nil && PiWelcomeSheet.sections(welcome) == .init())
-        #expect(welcome.holdsAgents && welcome.asksToSignIn, "the step asks to sign in, holding restored agents")
+        try await eventuallyOnMain("the new user's sheet") { vm.yourPi.importSheet?.stage == .newUser }
+        let sheet = try #require(vm.yourPi.importSheet)
+        #expect(sheet.report.first && sheet.report.from == nil && sheet.stage.holdsAgents, "it asks to sign in, holding restored agents")
         #expect(vm.holdsForWelcome && vm.sessions.startQueue.held && vm.sessions.startQueue.started.isEmpty)
+        #expect(vm.waitingForImport == [agent.agent.id])
         #expect(Self.launch(of: agent.agent.effectivePiSessionID) == nil)
 
-        vm.finishWelcome()
+        vm.finishImport()
         let id = agent.agent.id
         let store = vm.threadStores.store(for: id)
         let server = app.server
@@ -229,25 +262,20 @@ struct YourPiFirstLaunchTests {
             .write(to: setup.pi.home.appendingPathComponent("auth.json"))
         let model = YourPiModel(pi: setup.pi)
 
-        let holds = await model.runFirstLaunch(defaultModel: "openai/gpt-fixture")
+        let hold = await model.runFirstLaunch(models: ["openai/gpt-fixture"])
 
-        #expect(!holds && model.welcome == nil)
+        #expect(hold == .none && model.importSheet == nil)
         #expect(model.survey?.canStartAgents == true && model.survey?.copied == true)
     }
 
-    /// Keys the login shell sets count: with one, the welcome step asks for no sign-in.
-    @Test func aKeyInTheEnvironmentIsShownAsFound() async throws {
+    /// Keys the login shell sets count: with one, a new user has nothing to be asked, so no
+    /// sheet shows and nothing waits.
+    @Test func aKeyInTheEnvironmentMeansNoSheet() async throws {
         let setup = try Setup(yourPi: false, environmentKeys: ["OPENAI_API_KEY"])
         defer { setup.remove() }
-        let app = try AppHarness(pi: setup.pi)
-        defer { app.stop() }
-        let vm = try await app.start(with: ShepherdState(), welcomingYourPi: true)
-        try await eventuallyOnMain("the welcome step") { vm.yourPi.welcome != nil }
-        let welcome = try #require(vm.yourPi.welcome)
-        #expect(welcome.survey.canStartAgents)
-        #expect(PiWelcomeSheet.sections(welcome) == .init(environment: [.init(title: "OPENAI_API_KEY", detail: "OpenAI")]))
-        #expect(!welcome.holdsAgents && !welcome.asksToSignIn && !vm.holdsForWelcome)
-        vm.finishWelcome()
+        let model = YourPiModel(pi: setup.pi)
+        #expect(await model.runFirstLaunch() == .none)
+        #expect(model.importSheet == nil && model.survey?.canStartAgents == true)
     }
 
     /// The fail-closed path: an extension of the user's that they switched on and that throws as

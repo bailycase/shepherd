@@ -2,27 +2,11 @@ import Foundation
 import ShepherdSessions
 
 /// Settings ▸ Pi's view of Shepherd's sign-ins and the user's own pi, and the first launch's copy
-/// from it with the welcome step that follows (DESIGN.md › Settings ▸ Pi, Dialogs and sheets ›
-/// Welcome). Every read and write runs off the main thread (`YourPiImport`: plain files, a login
-/// shell the first time); what views draw is the latest `survey`, a plain value.
+/// from it with its sheet (DESIGN.md › Pi ▸ Sign-in, Pi ▸ From your pi, Dialogs and sheets ›
+/// Bringing over your pi). Every read and write runs off the main thread (`YourPiImport`: plain
+/// files, a login shell the first time); what views draw is the latest `survey`, a plain value.
 @MainActor @Observable
 final class YourPiModel {
-    /// The welcome step's content: what the first copy brought over, and both sides as they stand.
-    struct Welcome: Identifiable, Equatable {
-        let id = UUID()
-        var report: YourPiImportReport
-        var survey: YourPiSurvey
-        /// Providers the default model names that nothing in Shepherd's pi can sign in to.
-        var missing: [String] = []
-
-        /// No provider can start an agent: restored agents wait for the step to close, so the
-        /// user can sign in first.
-        var holdsAgents: Bool { !survey.canStartAgents }
-        /// The step asks to sign in: nothing can start an agent, or the default model's provider
-        /// is missing.
-        var asksToSignIn: Bool { !survey.canStartAgents || !missing.isEmpty }
-    }
-
     /// Both sides as last read; nil until the first read.
     private(set) var survey: YourPiSurvey?
     /// A failed Re-import or switch, by row (`rowID`), shown inline.
@@ -31,18 +15,24 @@ final class YourPiModel {
     private(set) var busy: Set<String> = []
     /// Rows re-imported while Settings shows them ("Re-imported just now").
     private(set) var reimported: Set<String> = []
-    /// Shown while set (`AppDialogs`); closing it ends the first launch's hold.
-    var welcome: Welcome?
+    /// The first launch's sheet while it shows (`AppDialogs`); closing it ends the first launch's
+    /// hold.
+    var importSheet: PiImportSheetState?
 
     @ObservationIgnored let pi: PiSetup
     /// A fixed survey (previews) is never read again.
     @ObservationIgnored private let fixed: Bool
     /// The first launch's copy (`PiSetup.copyYourPiOnce`), and how long restored agents wait for it.
-    @ObservationIgnored private let firstCopy: @Sendable (PiSetup) -> YourPiImportReport?
+    typealias FirstCopy = @Sendable (PiSetup, @escaping @Sendable (YourPiImportProgress) -> Void) -> YourPiImportReport?
+    @ObservationIgnored private let firstCopy: FirstCopy
     @ObservationIgnored private let copyDeadline: Duration
+    /// How long the sheet shows its last step before it turns to what came over.
+    @ObservationIgnored var doneBeat: Duration = AppLayout.importDoneBeat
+    /// The models restored agents and the default use, whose providers the sheet asks for.
+    @ObservationIgnored private var neededModels: [String] = []
 
     init(pi: PiSetup, survey: YourPiSurvey? = nil, copyDeadline: Duration = YourPiModel.copyDeadline,
-         firstCopy: @escaping @Sendable (PiSetup) -> YourPiImportReport? = { $0.copyYourPiOnce() }) {
+         firstCopy: @escaping FirstCopy = { pi, progress in pi.copyYourPiOnce(progress: progress) }) {
         self.pi = pi
         self.survey = survey
         fixed = survey != nil
@@ -122,29 +112,134 @@ final class YourPiModel {
     /// How long the first copy may take before restored agents stop waiting for it.
     nonisolated static let copyDeadline: Duration = .seconds(30)
 
+    /// Which restored agents keep waiting once the first copy is over.
+    enum Hold: Equatable {
+        /// None: they start at once, while Done shows.
+        case none
+        /// Every one, until the sheet closes: it asks for a sign-in (New user, Failed), or no
+        /// provider can start an agent.
+        case all
+        /// Those whose model uses one of these providers, until the sheet closes (Something
+        /// missing); the rest start at once.
+        case agents(using: Set<String>)
+    }
+
     /// The first launch of a build with Shepherd's own pi: copies the user's pi once (or finds it
-    /// done), then shows the welcome step when this launch did the copy. True when restored
-    /// agents should keep waiting, for the step to close: it shows and no provider can start an
-    /// agent. False otherwise, and the caller releases them at once, while any step shows. The
-    /// copy is plain file work that finishes or fails fast; if it overruns the deadline, agents
-    /// start anyway. `defaultModel` is Shepherd's own (Settings ▸ Agents); without one, pi's.
-    func runFirstLaunch(defaultModel: String? = nil) async -> Bool {
+    /// done), showing the sheet while it runs when there is a pi of theirs to copy, then what came
+    /// over, and says which restored agents keep waiting for the sheet to close. The copy is
+    /// plain file work that finishes or fails fast; past the deadline agents start anyway.
+    /// `models` are the restored agents' and the default model (Settings ▸ Agents' own; pi's is
+    /// added here).
+    func runFirstLaunch(models: [String] = []) async -> Hold {
+        await runFirstLaunch(models: { models })
+    }
+
+    /// `models` is read once the copy is over, when the restored workspace is in.
+    func runFirstLaunch(models: @MainActor () -> [String]) async -> Hold {
         let pi = pi
         let firstCopy = firstCopy
+        let progress: @Sendable (YourPiImportProgress) -> Void = { [weak self] event in
+            Task { @MainActor in self?.apply(event) }
+        }
         let result = await Self.first(within: copyDeadline) { () -> (YourPiImportReport, YourPiSurvey)? in
-            guard let report = firstCopy(pi) else { return nil }
+            guard let report = firstCopy(pi, progress) else { return nil }
             return (report, pi.imports().survey(environmentKeys: pi.yourPi.environmentKeys()))
         }
-        guard let (report, survey) = result ?? nil else { return false }
+        guard let (report, survey) = result ?? nil else {
+            importSheet = nil
+            return .none
+        }
         if survey != self.survey { self.survey = survey }
-        guard report.first else { return false }
-        let models = [defaultModel ?? survey.shepherdDefaultModel].compactMap { $0 }
-        let step = Welcome(report: report, survey: survey, missing: survey.missingSignIns(for: models))
-        // A user with no pi sees only sign-in: already signed in, with no key found and no
-        // problem to report, there is no step at all.
-        if report.from == nil, !step.asksToSignIn, report.problems.isEmpty, PiWelcomeSheet.sections(step) == .init() { return false }
-        welcome = step
-        return step.holdsAgents
+        guard report.first else {
+            importSheet = nil
+            return .none
+        }
+        // The progress events hop to the main actor too: the last of them lands before this.
+        await Task.yield()
+        var sheet = importSheet ?? PiImportSheetState(from: report.from)
+        sheet.report = report
+        sheet.survey = survey
+        neededModels = models()
+        let needed = neededModels + [survey.shepherdDefaultModel].compactMap { $0 }
+        sheet.missing = PiImportSheetState.missing(survey: survey, models: needed)
+        let stage = PiImportSheetState.stage(report: report, survey: survey, missing: sheet.missing)
+        guard let stage else {
+            importSheet = nil
+            return .none
+        }
+        if importSheet != nil, sheet.stage == .progress {
+            // Let the last step land where it can be seen before the sheet turns.
+            for step in YourPiImportStep.allCases where sheet.steps[step] == .running { sheet.steps[step] = .done }
+            importSheet = sheet
+            try? await Task.sleep(for: doneBeat)
+        }
+        sheet.stage = stage
+        importSheet = sheet
+        return Self.hold(stage: stage, survey: survey, missing: sheet.missing)
+    }
+
+    /// Who waits once the sheet shows `stage`.
+    static func hold(stage: PiImportSheetState.Stage, survey: YourPiSurvey, missing: [PiImportSheetState.Missing]) -> Hold {
+        if !survey.canStartAgents || stage == .newUser || stage == .failed { return .all }
+        if stage == .missing { return .agents(using: Set(missing.map(\.id))) }
+        return .none
+    }
+
+    /// One step of the first copy, as it goes: the sheet shows once it's known there's a pi to copy.
+    func apply(_ event: YourPiImportProgress) {
+        switch event {
+        case .started(let from):
+            if importSheet == nil { importSheet = PiImportSheetState(from: from) }
+        case .running(let step):
+            importSheet?.steps[step] = .running
+        case .finished(let step, let report):
+            importSheet?.report = report
+            let failed = step == .logins && report.signInsUnreadable != nil
+            importSheet?.steps[step] = failed ? .failed : .done
+        }
+    }
+
+    /// Retry, from a sheet that couldn't read your pi's sign-ins: copies them again, then says
+    /// what's still missing, and who still waits.
+    func retrySignIns() async -> Hold {
+        guard var sheet = importSheet else { return .none }
+        sheet.retrying = true
+        importSheet = sheet
+        let pi = pi
+        let outcome: (Result<YourPiImportReport, YourPiFileError>, YourPiSurvey) = await Task.detached(priority: .userInitiated) {
+            let result: Result<YourPiImportReport, YourPiFileError>
+            do { result = .success(try pi.imports().reimport(.logins)) } catch {
+                result = .failure(error as? YourPiFileError ?? YourPiFileError(String(describing: error)))
+            }
+            return (result, pi.imports().survey(environmentKeys: pi.yourPi.environmentKeys()))
+        }.value
+        survey = outcome.1
+        sheet.retrying = false
+        sheet.survey = outcome.1
+        pi.catalog.invalidate()
+        switch outcome.0 {
+        case .success(let copied):
+            sheet.report.logins = copied.logins
+            sheet.report.signInsUnreadable = nil
+            sheet.steps[.logins] = .done
+            sheet.steps[.apiKeys] = .done
+            sheet.missing = PiImportSheetState.missing(survey: outcome.1, models: neededModels + [outcome.1.shepherdDefaultModel].compactMap { $0 })
+            sheet.stage = PiImportSheetState.stage(report: sheet.report, survey: outcome.1, missing: sheet.missing) ?? .done
+            onSignInsChanged?()
+        case .failure(let error):
+            // Still unreadable: the reason as it is now.
+            if let path = sheet.report.signInsUnreadable?.path { sheet.report.signInsUnreadable = (path, error.detail ?? error.description) }
+        }
+        importSheet = sheet
+        return Self.hold(stage: sheet.stage, survey: sheet.survey, missing: sheet.missing)
+    }
+
+    /// A sign-in landed while the sheet asks for some: its row turns signed in.
+    func signInLanded() async {
+        await refresh()
+        guard var sheet = importSheet, let survey else { return }
+        sheet.survey = survey
+        importSheet = sheet
     }
 
     /// `work`'s answer, or nil when `deadline` passes first (the work carries on detached).

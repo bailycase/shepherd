@@ -74,12 +74,12 @@ public struct PiSetup: Sendable {
     /// The first launch of a build with Shepherd's own home: readies the home, then copies the
     /// user's pi into it once (`YourPiImport.copyOnce`). Nil, with nothing copied, when no pi may
     /// start in the home. Blocking, like `prepare()`.
-    public func copyYourPiOnce() -> YourPiImportReport? {
+    public func copyYourPiOnce(progress: (@Sendable (YourPiImportProgress) -> Void)? = nil) -> YourPiImportReport? {
         if let problem = prepare() {
             ShepherdLog.info("Shepherd didn't copy from your pi: \(problem.message)")
             return nil
         }
-        return imports().copyOnce()
+        return imports().copyOnce(progress: progress)
     }
 
     // MARK: Before a launch
