@@ -11,24 +11,22 @@
 # ad-hoc build leaves on Autoupdate: it has no Team ID prefix and no
 # provisioning profile behind it.
 #
-# The pi engine's node (Contents/Helpers/node) is the one exception: it is signed slice by
-# slice with the engine's entitlements (scripts/sign-engine.sh), because V8 cannot run under the
-# hardened runtime without allow-jit. An app that carries node refuses to sign without them.
+# The pi engine's node (Contents/Helpers/node) is the one exception: it is signed with the
+# engine's entitlements (scripts/sign-engine.sh), because V8 cannot run under the hardened
+# runtime without allow-jit. An app that carries node refuses to sign without them.
 #
-# usage: scripts/sign-app.sh <Shepherd.app> <identity> <entitlements.plist>
-#                            [<engine.entitlements> <engine-x86_64.entitlements>]
+# usage: scripts/sign-app.sh <Shepherd.app> <identity> <entitlements.plist> [<engine.entitlements>]
 #   identity "-" signs ad-hoc, without the hardened runtime or a secure timestamp.
 set -euo pipefail
 
-if [[ $# -ne 3 && $# -ne 5 ]]; then
-  echo "usage: $0 <app> <identity|-> <entitlements.plist> [<engine.entitlements> <engine-x86_64.entitlements>]" >&2
+if [[ $# -ne 3 && $# -ne 4 ]]; then
+  echo "usage: $0 <app> <identity|-> <entitlements.plist> [<engine.entitlements>]" >&2
   exit 64
 fi
 app=$1
 identity=$2
 entitlements=$3
 engine_entitlements=${4:-}
-engine_x86_64_entitlements=${5:-}
 
 [[ -d "$app/Contents" ]] || { echo "error: not an app bundle: $app" >&2; exit 66; }
 [[ -f "$entitlements" ]] || { echo "error: no entitlements file: $entitlements" >&2; exit 66; }
@@ -101,8 +99,7 @@ while IFS= read -r item; do
   if [[ "$item" == "$engine_node" ]]; then
     runtime=()
     [[ "$identity" != "-" ]] && runtime=(--runtime)
-    "$(dirname "$0")/sign-engine.sh" ${runtime[@]+"${runtime[@]}"} "$item" "$identity" \
-      "$engine_entitlements" "$engine_x86_64_entitlements"
+    "$(dirname "$0")/sign-engine.sh" ${runtime[@]+"${runtime[@]}"} "$item" "$identity" "$engine_entitlements"
     continue
   fi
   case "$item" in
