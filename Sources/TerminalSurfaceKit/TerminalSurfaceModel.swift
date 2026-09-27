@@ -556,6 +556,8 @@ extension TerminalConfiguration {
         "cmd+up", "cmd+down", "alt+cmd+up", "alt+cmd+down",
         // ⇧⌘S sidebar · ⇧⌘B side pane · ⇧⌘M model picker · ⌘. stop · ⌘I inspect.
         "shift+cmd+s", "shift+cmd+b", "shift+cmd+m", "cmd+period", "cmd+i",
+        // ⇧⌘I Import Claude Design Project….
+        "shift+cmd+i",
         // ⌃1: the side pane's Changes tab (⌃2–4 wait for its other tabs).
         "ctrl+one", "ctrl+physical:one",
         // ⌘1–9: the first nine Recents rows.

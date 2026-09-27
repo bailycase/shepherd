@@ -471,3 +471,37 @@ public struct NWDesignTagBadge: View {
             .background(Color.nw.bgSelected, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
     }
 }
+
+/// ••• in a design's toolbar, or on a system's page (DesignToolbarMenu): a 28pt icon button in
+/// `textSecondary`, the hover fill under it, opening the design's menu.
+public struct NWDesignToolbarMore<Items: View>: View {
+    let label: String
+    let items: Items
+    @State private var hovering = false
+
+    public init(label: String = "More", @ViewBuilder items: () -> Items) {
+        self.label = label
+        self.items = items()
+    }
+
+    public var body: some View {
+        Menu {
+            items
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.nwSans(NWDesignMetrics.cardMoreGlyph, .semibold))
+                .foregroundStyle(hovering ? Color.nw.textPrimary : Color.nw.textSecondary)
+                .frame(width: NW.Height.controlM, height: NW.Height.controlM)
+                .background(hovering ? Color.nw.bgHover : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.s))
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .onHover { hovering = $0 }
+        .nwAnimation(.hover, value: hovering)
+        .help(label)
+        .accessibilityLabel(label)
+    }
+}

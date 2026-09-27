@@ -17,7 +17,7 @@ struct KeybindingsTests {
         (.focusNextPane, "⌥⌘→"), (.focusPreviousPane, "⌥⌘←"),
         (.toggleSidebar, "⇧⌘S"), (.toggleRightPane, "⇧⌘B"), (.modelPicker, "⇧⌘M"),
         (.stopAgent, "⌘."), (.previousTurn, "⌥⌘↑"), (.nextTurn, "⌥⌘↓"), (.inspectSubagent, "⌘I"),
-        (.alternateSend, "⌘↩"),
+        (.alternateSend, "⌘↩"), (.importDesign, "⇧⌘I"),
     ])
     func defaultsMatchTheDesignTable(action: ShortcutAction, display: String) {
         let keys = KeybindingsStore(store: Fixture.defaults())

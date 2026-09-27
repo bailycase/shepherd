@@ -149,7 +149,8 @@ enum SidebarDerivation {
         }
         if source.designs {
             // A system build's page opens from its system, never from Recents.
-            for (index, design) in source.local.designs.enumerated() where !design.buildsSystem {
+            // A design removed from Recents stays out until it changes (DesignRecentsMenu).
+            for (index, design) in source.local.designs.enumerated() where design.inRecents {
                 entries.append((designRow(design), false, design.lastActiveAt, 0, index))
             }
         }

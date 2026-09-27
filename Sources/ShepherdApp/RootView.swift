@@ -82,6 +82,8 @@ struct RootView: View {
                     leadingInset: docked || isFullScreen ? 0 : AppLayout.trafficLightInset,
                     showSidebar: docked ? nil : { vm.toggleSidebar() }))
             }
+            // A deletion's toast, over the bottom of the column (DesignDeleted).
+            .overlay { DesignToastLayer(vm: vm) }
             .frame(maxWidth: .infinity)
             .background(Color.nw.bgWindow)
             // Every mounted layout reflows when the column's width changes; relaid out on each
@@ -294,9 +296,12 @@ struct WorkspaceHeaderView: View {
                     PlainHeader(title: "\(agent.name) · terminal", leadingInset: leadingInset, showSidebar: showSidebar)
                 } else if let (_, design) = vm.remoteDesign(drawnBy: remote) {
                     // The host's design: its system's page and Export stay on the host for now.
+                    let ref = RemoteDesignRef(hostID: remote.hostID, designID: design.id)
                     DesignToolbar(name: design.name, system: design.systemNamespace, leadingInset: leadingInset,
                                   showSidebar: showSidebar, designs: { vm.openDestination(.designs) },
-                                  screen: vm.remoteDesignScreen(RemoteDesignRef(hostID: remote.hostID, designID: design.id)))
+                                  screen: vm.remoteDesignScreen(ref),
+                                  menu: vm.designMenu(.remote(ref), context: .toolbar),
+                                  perform: { vm.performDesignMenu($0, on: .remote(ref)) })
                         .equatable()
                         .id(remote)
                 } else {
@@ -309,8 +314,10 @@ struct WorkspaceHeaderView: View {
                 }
             } else if let agent = vm.selectedAgent, vm.activeTabID == agent.tabID, let design = vm.design(drawnBy: agent),
                       design.buildsSystem {
+                let target = vm.systemTarget(ofBuild: design.id)
                 DesignSystemHeader(model: vm.designSystemPage(.build(design.id)), toolbar: true, leadingInset: leadingInset,
-                                   showSidebar: showSidebar, designs: { vm.openDestination(.designs) })
+                                   showSidebar: showSidebar, designs: { vm.openDestination(.designs) },
+                                   menu: vm.designSystemMenu(target), perform: { vm.performDesignSystemMenu($0, on: target) })
                     .equatable()
                     .id(agent.id)
             } else if let agent = vm.selectedAgent, vm.activeTabID == agent.tabID, let design = vm.design(drawnBy: agent) {
@@ -319,7 +326,9 @@ struct WorkspaceHeaderView: View {
                               swatches: vm.designSystemSwatches(system, count: 3),
                               openSystem: system.map { namespace in { vm.openDesignSystem(namespace) } }, leadingInset: leadingInset,
                               showSidebar: showSidebar, designs: { vm.openDestination(.designs) }, screen: vm.designScreen(design.id),
-                              export: { vm.openDesignExport(design.id) })
+                              export: { vm.openDesignExport(design.id) },
+                              menu: vm.designMenu(.local(design.id), context: .toolbar),
+                              perform: { vm.performDesignMenu($0, on: .local(design.id)) })
                     .equatable()
                     .id(agent.id)
             } else if let agent = vm.selectedAgent, vm.activeTabID == agent.tabID,

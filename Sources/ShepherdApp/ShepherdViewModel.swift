@@ -80,6 +80,20 @@ final class ShepherdViewModel {
     let newDesign = NewDesignState()
     /// The Export sheet over a design (DZExport), while it is up.
     var designExport: DesignExportModel?
+    /// Delete design and Delete design system while they ask (DeleteDesignDialog,
+    /// DeleteSystemDialog).
+    var designDeleteRequest: DesignDeleteRequest?
+    var designSystemDeleteRequest: DesignSystemDeleteRequest?
+    /// The toast over the main column after a deletion (UndoToast, DeleteFailedToast).
+    var designToast: DesignToast?
+    /// Rename… of a design or a design system, while its sheet is up.
+    var designRename: DesignRenameRequest?
+    /// An import running (its card first on Designs), and what it asks (ImportFailed,
+    /// ImportAgain).
+    var designImporting: DesignImporting?
+    var designImportPrompt: DesignImportPrompt?
+    /// The staged project a prompt waits on, put away if its dialog goes without an answer.
+    @ObservationIgnored var stagedDesignImport: UUID?
     /// Where boards attached to a thread are written: the drop folder (tests use their own).
     @ObservationIgnored var designAttachDirectory: URL = AppImageDrop.directory
     /// The Designs page's filter and selected card. Ephemeral.

@@ -258,7 +258,9 @@ extension ShepherdViewModel {
                     id: design.id, name: design.name, system: system, detail: DesignsPageModel.boardsText(summary.boardCount),
                     edited: "edited \(SuggestionsPresentation.when(design.lastActiveAt / 1000, now: now))",
                     board: NWDesignCardBoard(size: summary.firstBoard.map { CGSize(width: $0.width, height: $0.height) }),
-                    thumbnail: entry?.version ?? 0, selected: false)
+                    thumbnail: entry?.version ?? 0, selected: false,
+                    menu: DesignMenu.design(.card, hasSystem: false, remote: connection.config.name,
+                                            hostDeletes: connection.supportsDesignDelete))
             }
             guard !cards.isEmpty else { return nil }
             return DesignsPageModel.HostSection(id: connection.id, name: connection.config.name, cards: cards)
