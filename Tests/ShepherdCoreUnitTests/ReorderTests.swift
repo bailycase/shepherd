@@ -24,4 +24,16 @@ struct ReorderTests {
         #expect(rows.moving("x", before: "a") == nil)
         #expect(rows.moving("a", before: "x") == nil)
     }
+
+    /// A drop line under the last row moves the row to the end; the last row stays put.
+    @Test(arguments: [("a", "bcda"), ("c", "abdc")])
+    func noTargetMovesTheRowLast(id: String, expected: String) throws {
+        let moved = try #require(rows.moving(id, before: String?.none))
+        #expect(moved.map(\.id).joined() == expected)
+    }
+
+    @Test func movingTheLastRowLastOrAMissingOneIsNoMove() {
+        #expect(rows.moving("d", before: String?.none) == nil)
+        #expect(rows.moving("x", before: String?.none) == nil)
+    }
 }
