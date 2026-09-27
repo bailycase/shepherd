@@ -395,7 +395,11 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   Export: the count following the ticks, a ZIP's contents (pages, tokens.css, uploads, the
   canvas as a project folder that imports again), a PDF's pages (fixed and flow), @2x images,
   boards attached to a thread; import's path rules, unknown keys kept, and a refused folder
-  leaving nothing behind.
+  leaving nothing behind. Delete and import: a deleted design gone from every surface with its
+  agent stopped, Undo within the window restoring it all, the files removed after it, a quit
+  within it completing the deletion; Delete design system keeping installed copies and refusing a
+  built-in; a ZIP's table of contents checked before unpacking (zip slip, links, sizes), a ZIP
+  and a folder importing, every failure leaving nothing, and importing again making a copy.
 - **Server:** every `SessionServer` state mutation.
 - **Changes:** every scope on a scratch repository, the proof that reading changes leaves the
   index, HEAD, refs, the stash, `.git` and every file alone, and Undo, Redo and the refusal on a
@@ -494,8 +498,10 @@ Sources/
                        canvas's own shape, tokens.css, the stylesheet reader, re-sync),
                        DesignSystemFiles (a system's files, record, listing, writes),
                        DesignExport (Export's boards, names, what a ZIP carries, tokens.css),
-                       DesignPrint (a board's print mode, a flow document's pages) and DesignImport
-                       (a Claude Design folder's path rules).
+                       DesignPrint (a board's print mode, a flow document's pages), DesignImport
+                       (a Claude Design folder's path rules), DesignImportProject (a project's ZIP
+                       read before it is unpacked, links out of it, the import's failures and
+                       progress) and DesignLifecycle (a deletion's undo window, the names of copies).
   ShepherdRemote/      RemoteHostClient, NativeThreadStore (@Observable), NativeThreadPresentation,
                        NativeTurnPresentation (a turn's items), NativeMarkdown (the prose
                        parser: tables, lists, images, details, footnotes), NativeActivity
@@ -573,7 +579,8 @@ Sources/
       +RemoteInspection, +RemoteWorktrees, +RemoteAutomations, +Terminal, +HostSettings,
       +Skills, +Pages, +AgentMenu, +Designs (opening, New design's NewDesignState, revisions),
       +DesignSystems (a system's page, "Build one from a repo", Re-sync, specimens),
-      +DesignExport (Export, Attach to a thread, Import Claude Design Folder…))
+      +DesignExport (Export, Attach to a thread), +DesignLifecycle (Delete with Undo, Rename…,
+      Duplicate, Remove from Recents, Delete design system, Import Claude Design Project…))
     Pages/             the sidebar destinations' pages: AutomationsPage, HostsPage and DesignsPage
                        (views over AutomationsPageModel, HostsPageModel and DesignsPageModel,
                        derived per change), their destinations (PageDestinations: runs read,
@@ -584,7 +591,8 @@ Sources/
       DesignScreenModel (a design's canvas state and its pulls; the board actions, moves,
       Present and Play, pages), DesignHost (the only DesignSurfaceKit import: live views, the
       rasterizer, snapshots, thumbnails, tweak previews, the presented board, DesignExporter),
-      DesignExportSheet (DZExport's sheet over the window, its model), DesignTweak (the Tweak tab's controls, pure), DesignTweakModel (its writes,
+      DesignExportSheet (DZExport's sheet over the window, its model), DesignLifecycle (the menus,
+      dialogs and toast of deleting and importing, as values) and DesignLifecycleViews, DesignTweak (the Tweak tab's controls, pure), DesignTweakModel (its writes,
       one per gesture, Reset and Undo), DesignTweakPane, DesignProjectTokens (the
       custom properties a design agent's folder declares), NightWatchSystem (Night Watch as a
       built-in design system, from ShepherdUI's tokens), DesignSystemCatalog (the host's systems
@@ -852,7 +860,7 @@ variables are blanked, as are pi's `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSI
   - `design` (`designs.v1`, offered only while the host's Design tool experiment is on): its
     designs and systems, a design's index with every project file's hash, changed files only
     (inline up to 256 KiB, larger ones and uploads in resumable pieces), comments and the
-    canvas's writes through the host's own mutations, and a pushed `designChanged` for the
+    canvas's writes through the host's own mutations, Delete with its Undo (`design.delete.v1`), and a pushed `designChanged` for the
     designs a client watches (`capabilitiesChanged` when the experiment turns on or off).
     Answered by the server itself; boards render on the client (docs/designs.md › Remote)
 

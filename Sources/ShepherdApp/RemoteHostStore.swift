@@ -88,6 +88,11 @@ final class RemoteHostStore {
         var supportsDesigns: Bool { designs.available }
 
         var supportsInspection: Bool { client?.capabilities.contains(RemoteProtocol.agentInspectionCapability) == true }
+        /// The host deletes a design for this Mac, with Undo (`design.delete.v1`, while it serves
+        /// designs).
+        var supportsDesignDelete: Bool {
+            supportsDesigns && client?.capabilities.contains(RemoteProtocol.designDeleteCapability) == true
+        }
         var supportsReviewCommit: Bool { client?.capabilities.contains(RemoteProtocol.reviewCommitCapability) == true }
         /// The host answers `changes*` queries: its reviews use the Changes engine.
         var supportsChanges: Bool { client?.capabilities.contains(RemoteProtocol.changesCapability) == true }

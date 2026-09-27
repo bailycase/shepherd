@@ -732,7 +732,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.terminalControlCapability,
             RemoteProtocol.designContextCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
-            RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability,
+            RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,
         ]
         #expect(Set(RemoteProtocol.capabilities) == Set(named))
         #expect(RemoteProtocol.capabilities.count == named.count)
@@ -762,6 +762,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.designContextCapability == "design.context.v1")
         #expect(RemoteProtocol.designsCapability == "designs.v1")
         #expect(RemoteProtocol.designMarkupCapability == "design.markup.v1")
+        #expect(RemoteProtocol.designDeleteCapability == "design.delete.v1")
     }
 
     /// Commit info from a host that sends only some fields still reads, with defaults.

@@ -39,6 +39,11 @@ struct RemoteDesignService: Sendable {
     let server: SessionServer
 
     func answer(_ request: RemoteDesignRequest) async throws -> RemoteDesignResult {
+        // A design being undone is out of the workspace until it is back.
+        if case .undoDelete(let id) = request {
+            try await server.undoDesignDeletion(id)
+            return .ok
+        }
         if let id = request.designID, !server.state.designs.contains(where: { $0.id == id }) {
             throw SessionServerError.noSuchDesign(id)
         }
@@ -110,6 +115,13 @@ struct RemoteDesignService: Sendable {
         case .settleProposals(let id, let proposals, let deliver, let base):
             let outcome = try await server.settleDesignProposals(id, proposals: proposals, deliver: deliver, baseRevision: base)
             return .proposalsSettled(outcome.comments, undelivered: outcome.undelivered)
+        case .delete(let id):
+            guard server.state.designs.contains(where: { $0.id == id && !$0.buildsSystem }) else {
+                throw SessionServerError.noSuchDesign(id)
+            }
+            return .deleted(try await server.deleteDesign(id))
+        case .undoDelete:
+            return .ok
         }
     }
 

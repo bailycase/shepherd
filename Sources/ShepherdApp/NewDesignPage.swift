@@ -127,8 +127,9 @@ struct NewDesignPage: View {
 
     // MARK: Starting points
 
-    /// "DESIGN SYSTEM & STARTING POINT": the design system the design is drawn in, chosen, at a
-    /// third of the row. Its menu picks another system.
+    /// "DESIGN SYSTEM & STARTING POINT": the design system the design is drawn in, chosen, and
+    /// Import a project (ImportNewDesign), each at a third of the row. The system's menu picks
+    /// another system; the import opens the picker for a Claude Design ZIP or folder.
     private var startingPoints: some View {
         VStack(alignment: .leading, spacing: AppLayout.newDesignCardsLabelGap) {
             Text("Design system & starting point").nwSectionLabel()
@@ -139,6 +140,13 @@ struct NewDesignPage: View {
                 HStack(spacing: AppLayout.newDesignCardsGap) {
                     systemCard
                         .frame(width: max(0, width))
+                    Button { vm.chooseDesignProject() } label: {
+                        NWDesignStartCard(symbol: "square.and.arrow.down", title: "Import a project", line: "from Claude Design",
+                                          note: "a ZIP or folder you exported", chosen: false)
+                    }
+                    .buttonStyle(.plain)
+                    .frame(width: max(0, width))
+                    .help("Import a Claude Design project as a new design (\(KeybindingsStore.shared.display(.importDesign)))")
                     Spacer(minLength: 0)
                 }
             }

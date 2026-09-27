@@ -12,15 +12,29 @@ import UniformTypeIdentifiers
 extension ShepherdViewModel {
     // MARK: Export
 
-    /// The design header's Export: the sheet, with the boards the canvas has selected ticked
-    /// (every board when none is).
+    /// Export (the design header's, or Export… in a design's menu): the sheet, with the boards the
+    /// canvas has selected ticked (every board when none is, or when the canvas hasn't been shown).
     func openDesignExport(_ id: DesignID) {
-        guard let design = design(id), let screen = designScreens[id], let index = screen.snapshot?.index else { return }
-        var selected = Set(screen.picks.map(\.board))
-        if let presented = screen.presented { selected.insert(presented) }
-        designExport = DesignExportModel(designID: id, designName: design.name,
-                                         selection: DesignExportSelection(index: index, selected: selected),
-                                         threads: designAttachTargets)
+        guard let design = design(id) else { return }
+        let screen = designScreens[id]
+        var selected = Set(screen?.picks.map(\.board) ?? [])
+        if let presented = screen?.presented { selected.insert(presented) }
+        if let index = screen?.snapshot?.index {
+            designExport = DesignExportModel(designID: id, designName: design.name,
+                                             selection: DesignExportSelection(index: index, selected: selected),
+                                             threads: designAttachTargets)
+            return
+        }
+        Task {
+            do {
+                let snapshot = try await server.designSnapshot(id)
+                designExport = DesignExportModel(designID: id, designName: design.name,
+                                                 selection: DesignExportSelection(index: snapshot.index, selected: []),
+                                                 threads: designAttachTargets)
+            } catch {
+                remoteActionError = "Couldn't export \(design.name): \(error)"
+            }
+        }
     }
 
     /// Cancel, the close button, Escape. An export being written finishes first.
@@ -114,36 +128,15 @@ extension ShepherdViewModel {
 
     // MARK: Import
 
-    /// File ▸ Import Claude Design Folder…: the folder picker, then the import.
+    /// File ▸ Import Claude Design Project…: the picker for a ZIP or a folder, then the import
+    /// (`importDesignProject`).
     func chooseDesignFolder() {
-        guard designToolEnabled else { return }
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Import"
-        panel.message = "A Claude Design folder: one holding canvas.json, or its project folder."
-        let done: (NSApplication.ModalResponse) -> Void = { [weak self] response in
-            guard response == .OK, let url = panel.url else { return }
-            self?.importDesignFolder(url)
-        }
-        if let window = NSApp.keyWindow { panel.beginSheetModal(for: window, completionHandler: done) } else { panel.begin(completionHandler: done) }
+        chooseDesignProject()
     }
 
-    /// Reads a Claude Design folder into a new standalone design, and opens it. The folder is
-    /// only read.
+    /// Reads a Claude Design folder or ZIP into a new standalone design, and opens it. The source
+    /// is only read.
     func importDesignFolder(_ url: URL) {
-        Task {
-            let scoped = url.startAccessingSecurityScopedResource()
-            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-            do {
-                let design = try await server.importDesign(from: url)
-                adopt(server.state)
-                openDestination(.designs)
-                openDesign(design.id)
-            } catch {
-                remoteActionError = "Couldn't import \(url.lastPathComponent): \((error as? LocalizedError)?.errorDescription ?? "\(error)")"
-            }
-        }
+        importDesignProject(url)
     }
 }

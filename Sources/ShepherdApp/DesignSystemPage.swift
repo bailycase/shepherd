@@ -22,7 +22,9 @@ struct DesignSystemDestination: View {
         let model = namespace.map { vm.designSystemPage(.system($0)) } ?? DesignSystemPageModel()
         VStack(spacing: 0) {
             DesignSystemHeader(model: model, toolbar: false, leadingInset: chrome.leadingInset, showSidebar: chrome.showSidebar,
-                               designs: { vm.openDestination(.designs) })
+                               designs: { vm.openDestination(.designs) },
+                               menu: namespace.map { vm.designSystemMenu(.system($0)) },
+                               perform: { action in if let namespace { vm.performDesignSystemMenu(action, on: .system(namespace)) } })
                 .equatable()
             DesignSystemContent(model: model, specimens: vm.designRendering.specimens,
                                 resync: { vm.resyncDesignSystem($0) }, openDesign: { vm.openDesign($0) })
@@ -113,11 +115,14 @@ struct DesignSystemHeader: View, Equatable {
     var leadingInset: CGFloat = 0
     var showSidebar: (() -> Void)?
     let designs: () -> Void
+    /// ••• on the system's own page (SystemMenu).
+    var menu: DesignMenu?
+    var perform: (DesignMenuAction) -> Void = { _ in }
 
     nonisolated static func == (a: Self, b: Self) -> Bool {
         a.model.title == b.model.title && a.model.status == b.model.status && a.model.namespace == b.model.namespace
             && a.model.chip == b.model.chip && a.toolbar == b.toolbar && a.leadingInset == b.leadingInset
-            && (a.showSidebar == nil) == (b.showSidebar == nil)
+            && (a.showSidebar == nil) == (b.showSidebar == nil) && a.menu == b.menu
     }
 
     var body: some View {
@@ -126,6 +131,9 @@ struct DesignSystemHeader: View, Equatable {
                        sidebarShortcut: KeybindingsStore.shared.display(.toggleSidebar), designs: designs) {
             if let namespace = model.namespace {
                 NWDesignSystemChip(namespace, colors: model.chip.map { Color(light: $0.light, dark: $0.dark) })
+            }
+            if let menu {
+                NWDesignToolbarMore(label: "More for \(model.title)") { DesignMenuItems(menu: menu, perform: perform) }
             }
         }
     }

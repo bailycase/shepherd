@@ -80,6 +80,20 @@ final class ShepherdViewModel {
     let newDesign = NewDesignState()
     /// The Export sheet over a design (DZExport), while it is up.
     var designExport: DesignExportModel?
+    /// Delete design and Delete design system while they ask (DeleteDesignDialog,
+    /// DeleteSystemDialog).
+    var designDeleteRequest: DesignDeleteRequest?
+    var designSystemDeleteRequest: DesignSystemDeleteRequest?
+    /// The toast over the main column after a deletion (UndoToast, DeleteFailedToast).
+    var designToast: DesignToast?
+    /// Rename… of a design or a design system, while its sheet is up.
+    var designRename: DesignRenameRequest?
+    /// An import running (its card first on Designs), and what it asks (ImportFailed,
+    /// ImportAgain).
+    var designImporting: DesignImporting?
+    var designImportPrompt: DesignImportPrompt?
+    /// The staged project a prompt waits on, put away if its dialog goes without an answer.
+    @ObservationIgnored var stagedDesignImport: UUID?
     /// Where boards attached to a thread are written: the drop folder (tests use their own).
     @ObservationIgnored var designAttachDirectory: URL = AppImageDrop.directory
     /// The Designs page's filter and selected card. Ephemeral.
@@ -862,6 +876,7 @@ final class ShepherdViewModel {
 
     /// Adopt a server snapshot wholesale, keeping selection when IDs persist.
     func adopt(_ serverState: ShepherdState) {
+        let shownBefore = shownDesign?.id
         state = serverState
         let runs = server.openAutomationRuns
         if runs != openAutomationRuns { openAutomationRuns = runs }
@@ -879,6 +894,11 @@ final class ShepherdViewModel {
             didAutoStartAutomations = true
             autoStartAutomations()
             if restoresAgentsAtLaunch { mcp.probeAlwaysOn() }
+        }
+        // A design on screen that went (deleted here, or by another device on this host): the
+        // window goes back to Designs (DesignDeleted), not to another thread.
+        if let gone = shownBefore, destination == nil, !state.designs.contains(where: { $0.id == gone }) {
+            openDestination(.designs)
         }
         let standing = WorkspaceSelection.standingSpace(selectedSpaceID, agentSelected: selectedAgent != nil, in: state)
         if standing != selectedSpaceID { selectedSpaceID = standing }

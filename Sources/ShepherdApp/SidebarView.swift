@@ -212,9 +212,9 @@ struct SidebarRowMenu: View {
                     Button("Delete Agent", role: .destructive) { vm.deleteAgent(id) }
                 }
             }
-        case .design:
-            // The design row's menu is not drawn on any board yet.
-            EmptyView()
+        case .design(let id):
+            // DesignRecentsMenu: the card's menu with Remove from Recents.
+            DesignMenuItems(menu: vm.designMenu(.local(id), context: .recents)) { vm.performDesignMenu($0, on: .local(id)) }
         case .remote(let ref):
             if row.offline {
                 // Every action goes through the host, which is not connected.

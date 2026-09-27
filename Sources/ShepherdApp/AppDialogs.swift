@@ -93,6 +93,26 @@ struct AppDialogs: ViewModifier {
                     cancel: { vm.cancelPeerDeletion(requestID: confirmation.requestID) }
                 )
             }
+            .sheet(item: $vm.designDeleteRequest) { request in
+                DeleteDesignDialog(words: request.words, delete: { vm.confirmDesignDelete(request) },
+                                   cancel: { vm.designDeleteRequest = nil })
+            }
+            .sheet(item: $vm.designSystemDeleteRequest) { request in
+                DeleteSystemDialog(words: request.words, delete: { vm.confirmDesignSystemDelete(request) },
+                                   cancel: { vm.designSystemDeleteRequest = nil })
+            }
+            .sheet(item: $vm.designImportPrompt, onDismiss: { vm.designImportPromptDismissed() }) { prompt in
+                DesignImportDialog(prompt: prompt, dismiss: { vm.cancelDesignImport(prompt) }, resolve: { vm.resolveDesignImport(prompt) },
+                                   openExisting: { vm.resolveDesignImport(prompt, openExisting: true) })
+            }
+            .sheet(item: $vm.designRename) { request in
+                let system: Bool = if case .system = request.subject { true } else { false }
+                RenameDialog(title: system ? "Rename design system" : "Rename design", name: request.name) { name in
+                    vm.commitDesignRename(request, to: name)
+                } onCancel: {
+                    vm.designRename = nil
+                }
+            }
             .sheet(item: $vm.actionErrorItem) { item in
                 ActionErrorDialog(message: item.value) { vm.remoteActionError = nil }
             }

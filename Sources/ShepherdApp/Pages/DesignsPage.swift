@@ -7,6 +7,8 @@ import ShepherdUI
 struct DesignsDestination: View {
     var vm: ShepherdViewModel
     var chrome = PageHeaderChrome()
+    /// A ZIP or folder is over the page (ImportDrop).
+    @State private var dropTargeted = false
 
     var body: some View {
         let _ = NWRenderProbe.tick("page.designs")
@@ -23,8 +25,13 @@ struct DesignsDestination: View {
             },
             build: { vm.buildDesignSystem(in: $0) },
             openRemote: { vm.openRemoteDesign($0) },
-            remoteThumbnail: { host, id in vm.remoteDesignRenderings[host]?.thumbnails.image(id) }),
+            remoteThumbnail: { host, id in vm.remoteDesignRenderings[host]?.thumbnails.image(id) },
+            designMenu: { vm.performDesignMenu($0, on: $1) },
+            systemMenu: { vm.performDesignSystemMenu($0, on: $1) }),
             thumbnail: { thumbnails.image($0) }, chrome: chrome)
+            // Over the page under its header (ImportDrop).
+            .overlay { if dropTargeted { NWDesignsDropTarget().padding(.top, NWPageMetrics.headerHeight) } }
+            .onDrop(of: DesignsDropDelegate.types, delegate: DesignsDropDelegate(targeted: $dropTargeted) { vm.importDesignProject($0) })
             .task(id: vm.designThumbnailSignature) { await vm.loadDesignThumbnails() }
             .task(id: vm.remoteDesignsSignature) { await vm.loadRemoteDesigns() }
             .task { await vm.loadDesignSystems() }
@@ -43,6 +50,9 @@ struct DesignsPageActions {
     var openRemote: (RemoteDesignRef) -> Void = { _ in }
     /// A host's design's first board, as drawn here.
     var remoteThumbnail: (UUID, DesignID) -> CGImage? = { _, _ in nil }
+    /// A design card's menu item (DesignCardMenu), and a system card's (SystemCardMenu).
+    var designMenu: (DesignMenuAction, DesignTarget) -> Void = { _, _ in }
+    var systemMenu: (DesignMenuAction, DesignSystemTarget) -> Void = { _, _ in }
 }
 
 /// The Designs page (NavDesigns): the header ("Designs", "Filter designs", New design), then the
@@ -78,15 +88,18 @@ struct DesignsPage: View {
                                     .padding(.top, first ? 0 : AppLayout.designsSectionSpacing - NWPageMetrics.columnGap)
                                     .padding(.bottom, NW.Space.l - NWPageMetrics.columnGap)
                             case .cards(let row):
-                                DesignCardRow(cards: row, open: actions.open, thumbnail: thumbnail)
+                                DesignCardRow(slots: row, open: actions.open, thumbnail: thumbnail,
+                                              menu: { actions.designMenu($0, .local($1)) })
                                     .equatable()
                             case .hostCards(let host, let row):
-                                DesignCardRow(cards: row, open: { actions.openRemote(RemoteDesignRef(hostID: host, designID: $0)) },
-                                              thumbnail: { actions.remoteThumbnail(host, $0) })
+                                DesignCardRow(slots: row.map(DesignsPageModel.Slot.design),
+                                              open: { actions.openRemote(RemoteDesignRef(hostID: host, designID: $0)) },
+                                              thumbnail: { actions.remoteThumbnail(host, $0) },
+                                              menu: { actions.designMenu($0, .remote(RemoteDesignRef(hostID: host, designID: $1))) })
                                     .equatable()
                             case .systems(let row, let tile, let first):
                                 DesignSystemCardRow(systems: row, tile: tile, projects: model.projects,
-                                                    open: actions.openSystem, build: actions.build)
+                                                    open: actions.openSystem, build: actions.build, menu: actions.systemMenu)
                                     .equatable()
                                     .padding(.top, first ? 0 : NWPageMetrics.columnGap)
                             }
@@ -105,7 +118,7 @@ struct DesignsPage: View {
     /// The page's elements, in order.
     enum Item: Identifiable {
         case label(String, first: Bool)
-        case cards([DesignsPageModel.Card])
+        case cards([DesignsPageModel.Slot])
         /// A host's name over its designs.
         case hostLabel(UUID, String, first: Bool)
         /// A row of a host's cards.
@@ -117,7 +130,7 @@ struct DesignsPage: View {
             switch self {
             case .label(let title, _): "label.\(title)"
             case .hostLabel(let host, _, _): "label.host.\(host.uuidString)"
-            case .cards(let row): "row.\(row.first?.id.rawValue ?? "")"
+            case .cards(let row): "row.\(row.first?.id ?? "")"
             case .hostCards(let host, let row): "host.\(host.uuidString).\(row.first?.id.rawValue ?? "")"
             case .systems(let row, let tile, _): "systems.\(row.first.map { "\($0.id)" } ?? (tile ? "tile" : ""))"
             }
@@ -126,7 +139,7 @@ struct DesignsPage: View {
 
     static func items(_ model: DesignsPageModel) -> [Item] {
         var items: [Item] = []
-        if !model.cards.isEmpty {
+        if !model.cards.isEmpty || model.importing != nil {
             items.append(.label("Recent designs", first: true))
             items += model.rows.map(Item.cards)
         }
@@ -149,6 +162,7 @@ struct DesignSystemCardRow: View, Equatable {
     let projects: [DesignsPageModel.Project]
     let open: (DesignSystemTarget) -> Void
     let build: (SpaceID) -> Void
+    var menu: (DesignMenuAction, DesignSystemTarget) -> Void = { _, _ in }
 
     nonisolated static func == (a: Self, b: Self) -> Bool {
         a.systems == b.systems && a.tile == b.tile && (!a.tile || a.projects == b.projects)
@@ -157,9 +171,19 @@ struct DesignSystemCardRow: View, Equatable {
     var body: some View {
         HStack(alignment: .top, spacing: NWPageMetrics.columnGap) {
             ForEach(systems) { system in
-                NWDesignSystemCard(name: system.name, source: system.source, count: system.count,
-                                   colors: system.swatches.map { Color(light: $0.light, dark: $0.dark) }) { open(system.id) }
-                    .frame(maxWidth: .infinity)
+                let colors = system.swatches.map { Color(light: $0.light, dark: $0.dark) }
+                Group {
+                    if let items = system.menu {
+                        NWDesignSystemCard(name: system.name, source: system.source, count: system.count, colors: colors, tag: system.tag,
+                                           action: { open(system.id) }) {
+                            DesignMenuItems(menu: items) { menu($0, system.id) }
+                        }
+                    } else {
+                        NWDesignSystemCard(name: system.name, source: system.source, count: system.count, colors: colors, tag: system.tag,
+                                           dashed: system.dashed)
+                    }
+                }
+                .frame(maxWidth: .infinity)
             }
             if tile {
                 buildTile
@@ -196,33 +220,43 @@ struct DesignSystemCardRow: View, Equatable {
     }
 }
 
-/// A row of up to four design cards, redrawn only when one of its cards changes.
+/// A row of up to four design cards (an import's first), redrawn only when one of its cards
+/// changes.
 struct DesignCardRow: View, Equatable {
-    let cards: [DesignsPageModel.Card]
+    let slots: [DesignsPageModel.Slot]
     let open: (DesignID) -> Void
     let thumbnail: (DesignID) -> CGImage?
+    var menu: (DesignMenuAction, DesignID) -> Void = { _, _ in }
 
-    nonisolated static func == (a: Self, b: Self) -> Bool { a.cards == b.cards }
+    nonisolated static func == (a: Self, b: Self) -> Bool { a.slots == b.slots }
 
     var body: some View {
         HStack(alignment: .top, spacing: NWPageMetrics.columnGap) {
-            ForEach(cards) { card in
-                DesignCardView(card: card, open: open, image: thumbnail(card.id))
-                    .equatable()
-                    .frame(maxWidth: .infinity)
+            ForEach(slots) { slot in
+                Group {
+                    switch slot {
+                    case .design(let card):
+                        DesignCardView(card: card, open: open, image: thumbnail(card.id), menu: menu)
+                            .equatable()
+                    case .importing(let importing):
+                        NWImportingCard(title: importing.shownTitle, done: importing.done, total: importing.total, system: importing.system)
+                    }
+                }
+                .frame(maxWidth: .infinity)
             }
-            ForEach(0..<(DesignsPageModel.columns - cards.count), id: \.self) { _ in
+            ForEach(0..<(DesignsPageModel.columns - slots.count), id: \.self) { _ in
                 Color.clear.frame(maxWidth: .infinity, maxHeight: 0)
             }
         }
     }
 }
 
-/// One design's card.
+/// One design's card, with its menu (a right-click, or ••• on hover).
 struct DesignCardView: View, Equatable {
     let card: DesignsPageModel.Card
     let open: (DesignID) -> Void
     let image: CGImage?
+    var menu: (DesignMenuAction, DesignID) -> Void = { _, _ in }
 
     nonisolated static func == (a: Self, b: Self) -> Bool { a.card == b.card }
 
@@ -230,6 +264,8 @@ struct DesignCardView: View, Equatable {
         NWDesignCard(name: card.name, system: card.system, detail: card.detail, edited: card.edited, board: card.board,
                      selected: card.selected, action: { open(card.id) }) {
             DesignThumbnailSlot(image: image)
+        } menu: {
+            DesignMenuItems(menu: card.menu) { menu($0, card.id) }
         }
     }
 }
