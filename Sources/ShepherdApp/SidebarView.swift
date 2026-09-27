@@ -85,35 +85,51 @@ private enum SidebarItem: Identifiable, Equatable {
     }
 }
 
-/// Needs you (only while something waits) then Recents, in one lazy list that takes the rest of
-/// the column.
+/// The list under the destinations, taking the rest of the column: Needs you (only while
+/// something waits) then Recents, or the project tree (Settings ▸ Appearance ▸ Organize by). One
+/// scroll view either way, so switching keeps the row on screen selected and scrolls it into view.
 private struct SidebarListsView: View {
     var vm: ShepherdViewModel
 
     var body: some View {
-        let lists = vm.presentedSidebarLists
-        let items = Self.items(lists)
         ScrollViewReader { proxy in
             ScrollView(.vertical) {
-                LazyVStack(alignment: .leading, spacing: AppLayout.sidebarRowSpacing) {
-                    ForEach(items) { item in
-                        SidebarItemView(vm: vm, item: item)
-                            .equatable()
-                            .nwTransition(.list)
+                Group {
+                    switch vm.sidebarStyle {
+                    case .activity: SidebarActivityList(vm: vm)
+                    case .projects: SidebarProjectsList(vm: vm)
                     }
                 }
                 .padding(.horizontal, AppLayout.sidebarPadding)
                 .padding(.bottom, NW.Space.m)
             }
             .scrollIndicators(.hidden)
-            // Keyboard selection (⌘1–9, ⌘↑/↓) can land on a row scrolled out of view: scroll on
-            // the next run-loop turn, once the row exists. The trigger is a counter, so selecting
-            // the same row again still scrolls back to it.
+            // Keyboard selection (⌘1–9, ⌘↑/↓) can land on a row scrolled out of view, or in a
+            // closed project: open it, and scroll on the next run-loop turn, once the row exists.
+            // The trigger is a counter, so selecting the same row again still scrolls back to it.
             .onChange(of: vm.sidebarRevealRequest) {
                 guard let target = vm.selectedSidebarRow else { return }
+                vm.openProjectHoldingSelection()
                 DispatchQueue.main.async {
                     withNWAnimation(.scroll) { proxy.scrollTo(AnyHashable(target)) }
                 }
+            }
+        }
+    }
+}
+
+/// Needs you then Recents, in one lazy stack.
+private struct SidebarActivityList: View {
+    var vm: ShepherdViewModel
+
+    var body: some View {
+        let lists = vm.presentedSidebarLists
+        let items = Self.items(lists)
+        LazyVStack(alignment: .leading, spacing: AppLayout.sidebarRowSpacing) {
+            ForEach(items) { item in
+                SidebarItemView(vm: vm, item: item)
+                    .equatable()
+                    .nwTransition(.list)
             }
         }
         // Rows arriving, leaving, and moving up animate; the key is the rows' ids, never the rows.
@@ -161,7 +177,7 @@ private struct SidebarItemView: View, Equatable {
 }
 
 /// A row's context menu: every action the agent had in the old tree.
-private struct SidebarRowMenu: View {
+struct SidebarRowMenu: View {
     var vm: ShepherdViewModel
     let row: SidebarListRow
 
