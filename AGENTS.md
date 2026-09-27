@@ -619,13 +619,19 @@ Sources/
       as last read), DesignSystemPageModel (DZSystem as values; specimen boards), DesignSystemPage
       (the Design systems page, a build's layout beside its chat, the header),
       ShepherdViewModel+DesignReferences (a design piece handed to a thread: pinned, attached,
-      "Send vN", sent; the copies it draws) and DesignReferencesExtension
+      "Send vN", sent; the copies it draws) and DesignReferencesExtension;
+      +DesignReferencesUI (the thread's chips and picker, Implement in a thread's send, Copy
+      reference, "Open in design"), ImplementSheet (the sheet's model and view, the canvas's
+      toasts), DesignScreenModel+References (the selection as a reference, the right-click menu,
+      notes back), DesignCanvasKeys (the canvas's ⌘↩ and ⇧⌘C)
     TerminalPanels (each layout's terminal panel: shown, tab, maximized, activity),
       TerminalPanelLayout (TerminalPanelGeometry, pure), TerminalPanelViews (strip, divider)
     Thread/            ThreadView, ThreadTurns, ThreadTools (activity lines), ThreadMarkdown,
                        Composer, QuestionDock (a question in the composer's place),
                        QueueStack ("Up next", the queue above the composer),
                        ContextMeter (the ring beside Send, its details, compaction lines),
+                       ComposerMentions (the @ picker's rules, a pasted reference),
+                       DesignReferenceChips (a thread's chips, their preview, "Looked at…"),
                        Subagents, SubagentPresentation, SubagentInspector
     TerminalSessions (TerminalSessionStore), AgentStartQueue (launch order of restored pi),
       TerminalHost (the only TerminalSurfaceKit import),
@@ -674,7 +680,10 @@ Packages/
                                      NWBoardActions, NWDirectionTile, NWCanvasNote,
                                      NWBoardPresentation, NWSectionRail, NWTokenSwatch,
                                      NWTypeSpecimen, NWComponentSpecimen,
-                                     NWDesignSystemBuildTile)
+                                     NWDesignSystemBuildTile, NWDesignReferenceChip,
+                                     NWDesignReferencePreview, NWThreadNotePin,
+                                     NWThreadNoteCard, NWReferenceToast, NWImplementSheet,
+                                     NWDesignReferenceSpecimens); Composer's NWMentionPicker
                        Previews/     a #Preview per component, light and dark
                        Diagnostics/  NWRenderProbe (row-body counts for tests; debug only)
                        Its unit tests live in the root package (Tests/ShepherdUIUnitTests).

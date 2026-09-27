@@ -8101,7 +8101,9 @@ systems, the system chip opening its page, and New design's system card;
 docs/designs.md › Design systems), Export (its sheet, the four formats and Attach to a thread;
 docs/designs.md › Export and import), and deleting (with Undo), renaming and duplicating designs and
 design systems and importing a Claude Design project from a ZIP or a folder (Delete and import,
-below). Not built: the live link, Attach to a mission, Present
+below), and design references (Implement in a thread…, Copy reference, the composer's @ picker,
+the reference chip, the agent's "Looked at…" line and the thread's note back on the canvas;
+Design references, below). Not built: the live link, Attach to a mission, Present
 mode's own board, Tweak snapping to an installed system's tokens, and every iPhone and iPad part;
 each subsection below says what of it is built. On iPhone, a host's designs show while that host
 serves them (docs/designs.md › On iPhone); the iPad's parts are not built yet. The canvas marks the whole page an
@@ -8444,6 +8446,103 @@ Comments), as below, with these choices the boards leave open:
   funnel"), and trailing author · age ("You · 2m"). The comment in 13/1.5. On iPad the card is
   10×12 with 6pt between parts, its header in 12 and the comment in 13.5/1.45 (iPadDesign); on
   iPhone it is a sheet over the board (On iPhone, below).
+
+### Design references (DesignRefStates, RefImplementMenu, RefImplementSheet, RefImplementBoard, RefSentStay, RefCopied, RefNoteBack, RefPasted, RefAtDesigns, RefAtElements, RefAtSearch, RefSentThread, RefChipHover, RefChipUpdated, RefAgentRead)
+
+**Built on the Mac, this Mac's designs only** (docs/designs.md › Design references; ShepherdUI's
+`References.swift`, `ImplementSheet.swift`, `MentionPicker.swift`, every state specimen in
+`NWDesignReferenceSpecimens` with its `#Preview`). A thread shows nothing of a design but the chip
+in the user's own message and one "Looked at…" line; none of it exists with the Design tool off,
+or in a design's own chat. Choices the boards leave open, and where the build departs:
+
+- **Other hosts** are ShepherdUI states only (the chip's "on another host" and "host offline",
+  the picker's host tags and dimmed offline rows): the app lists and sends this Mac's designs, and
+  never reaches them until remote references come.
+- **The picker lists no files** (the boards' "Files" section): the component draws the rows, the
+  composer offers none, as the composer has no file mentions yet.
+- **An element's row** says its tag and what is inside it ("div · 12 inside"), not the boards'
+  descriptions ("funnel bars · 5 steps"), and draws its board's picture (a picture of each element
+  would need every element's place on its board); a board's row draws the board.
+- **Native menus** (the right-click menu, the design's •••) use the app's title case ("Implement
+  in a Thread…", "Copy Reference"). The ••• menu lists the chords' actions without their chords: a
+  popup button's key equivalents would answer ⌘↩ anywhere in the window.
+- **The right-click menu** has no Delete: the canvas deletes no board yet.
+- **The note's card** opens beside its pin; the Comments tab doesn't count notes (they are not
+  comments).
+
+- **From the canvas:** the board actions bar floats over the selection's board, an element's too,
+  and ends with **Implement…** (`chevron.left.forwardslash.chevron.right`) before •••. A right-click
+  (or ⌃-click) picks what it lands on, then opens Comment, Tweak | Implement in a Thread… (⌘↩) ·
+  Copy Reference (⇧⌘C) | Duplicate; on the empty canvas, "Implement <design>…" and Copy Reference.
+  The design's ••• (its toolbar) adds "Implement <piece>…" and Copy Reference before Delete Design…,
+  naming the selection (the whole design with nothing selected). ⌘↩ and ⇧⌘C are canvas-scoped
+  (`ShortcutAction.Scope.canvas`, Settings ▸ Keyboard's Designs group): answered only while the
+  design shows and nothing that takes text has the keyboard, so the chat's composer keeps its own
+  ⌘↩.
+- **The sheet** (`NWImplementSheet`), centered over the window on the sheet scrim: 540pt, radius
+  14, `bgWindow` with the popover's line and shadow. A header (20/18/16/20): the piece's picture
+  88×56 (radius 6; an element cut from its board as the canvas drew it), "Implement <piece>" in 16
+  semibold, the design (and board) in 12.5 `textSecondary` · the version in mono 11 `textTertiary`,
+  and a 28pt bordered close. Existing thread | New thread (`NWSegmentedPicker`). Existing: Search
+  threads, then the threads (`NWImplementThreadList`: 38pt rows in a `lineSubtle` list at radius 9,
+  hairlines between; the chosen one on `runningTint` with a filled 7pt `running` dot, semibold, and
+  a check; others an open 1.5pt `textTertiary` ring; the project in mono 11 with a folder glyph, a
+  host tag, the age in 11.5 `textTertiary`), five before they scroll: this Mac's threads that draw
+  no design, most recently active first. New: Project (`NWImplementProjectLabel`, 34pt: the project
+  in mono 12.5 · "This Mac", a menu of the sidebar's projects; it defaults to the project the
+  design's system was built from, else the latest thread's) and "Starts on a new worktree,
+  agent/implement-<piece>" (a project that isn't a git checkout: "Starts in the project: it isn’t a
+  git repository, so no worktree."). Then Message ("Anything the agent should know (optional)",
+  13/1.5 on `bgRaised`, radius 8), "Open the thread after sending" (`.nwCheckbox`, remembered), and
+  the footer on `bgSunken` (12/16/14/20, a hairline above): exactly what goes
+  (`DesignReferencePresentation.sends`, the system in mono 11), Cancel, and Send (primary, ↑).
+- **Sent:** with "Open the thread after sending" on, the thread shows; off, the canvas stays and a
+  toast (`NWReferenceToast`, 520pt, 11/12/11/14 padding, radius 12, a `done` check) says "Sent
+  <piece> to **<thread>**." with Open thread; **Copy reference** puts the pinned string on the
+  pasteboard and says "Copied a reference to <piece>. Paste it into any thread’s composer." (a
+  link glyph). A toast sits 22pt above the canvas's bottom, centered, and goes after 6 seconds.
+- **The chip** (`NWDesignReferenceChip`): 6/8/6/6 padding, radius 9, 1px `lineStrong` on
+  `bgBubble`, 9pt gaps: a 40×26 picture (radius 4, a hairline ring), then design › board ›
+  **element** in 12.5 (`textSecondary`, the piece `textPrimary` semibold, `›` `textTertiary`; the
+  design's name gives way first) over the version in mono 10.5 · the state in 11 `textTertiary`
+  ("design reference"). Updated: a 5pt `lantern` dot and "updated since · now v26" in `lanternText`.
+  Deleted: 75%, the picture a dashed tile with a trash glyph, "design deleted · the copy sent here
+  is kept". Hovered or open: a 1px `running` line on `runningTint`. In the composer it has a 20pt
+  remove button and sits first among the attachments, which wrap; at most five. In a sent message
+  it sits above the words (the "1 design reference attached." line comes off); a click opens the
+  piece in the design (its board picked and centered, its element selected once the board draws).
+- **The preview** (`NWDesignReferencePreview`), 8pt above the chip after a 0.45s hover, kept while
+  the pointer is on either: 340pt, 12pt padding, radius 12, the popover's surface, 10pt between
+  parts. The picture 316×107 (radius 6), the breadcrumb, "v23 pinned Sep 27, 10:42 · acme-web" in
+  11.5 `textTertiary` (the version `textSecondary`, the system mono), "The agent gets" with mono
+  10.5 tags on `bgSelected`, and Open in design (secondary, 24pt). Updated: a box on `lanternTint`
+  (8×10, radius 8): "Changed since v23 · now v26" in 12 semibold `lanternText` over mono 11 lines,
+  "Open v26 in design" and **Send v26** (ghost), which puts v26 in the composer; old messages keep
+  theirs.
+- **The @ picker** (`NWMentionPicker`), over the thread above the card like the slash menu: "@" at
+  the start or after a space opens it on the designs (40×26 pictures, the name in 13 medium, the
+  system in mono · "4 boards · edited 2h ago" in 11.5 `textTertiary`, a chevron); → or ⏎ drills
+  into a design (Whole design, then its boards) and a board ("Whole board", then Elements), each
+  under a breadcrumb with Back (← or ⌫ with nothing typed after it), the draft spelling the way
+  in ("@Checkout funnel dashboard › A · Funnel first › "); ⏎ on an element or a whole row picks it:
+  the mention leaves the words and the chip joins the composer. Typing searches designs, boards
+  and elements by their own names, each with its path, the words underlined ("6 matches").
+  "Nothing matches “pricng”" and "No designs yet. Start a design and its boards show up here." are
+  its empty stages. 48pt rows, runningTint highlight, at most eight rows (a lazy list). Esc closes
+  it for the draft as typed.
+- **A pasted reference** (a paste bringing a whole `shepherd-design-ref://…` word) becomes a chip,
+  the words around it staying; typed characters and plain text stay text. ⌫ in an empty composer
+  takes the last chip back.
+- **"Looked at…"** (NWActivityLine(.lookedAtDesign), the nib): "Looked at Checkout funnel
+  dashboard › A · Funnel first" with what it got in mono ("picture · html · 11 styles · 8 tokens");
+  open, `NWLookedAtDetails` on the calls' rail: `pic` the picture and its size, `html` the page and
+  its weight, `css` the properties, `tok` the tokens and the file:lines they live in.
+- **A note back** (`NWThreadNotePin`, `NWThreadNoteCard`): the comment pin's 26pt teardrop in
+  `running` (a 1.5pt ring on `runningTint` over `bgRaised`, a code glyph), just before a comment's
+  pin on the same element, on the board's corner while its element isn't found; its card beside it
+  (300pt, 12×14, radius 12): a "Thread" tag on `runningTint`, the thread's name semibold, the age;
+  the note in 13/1.5 with its `code` and #142 in mono (#142 `running`); a hairline, Open thread,
+  Resolve, and "from v23".
 
 ### Tweak (DZTweak)
 
