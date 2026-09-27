@@ -85,10 +85,17 @@ elements).
   assets/<id>.<ext>            uploads, served to boards as /_blob/<id>
   versions/<path>/<n>.dc.html  each board's last 20 earlier versions
   project/ds/<namespace>/…     an installed design system's copy (Design systems, below)
+<support>/designs/.deleted-<designID>/   a design deleted within its undo window (Deleting, below)
+<support>/designs/.import-<token>/       a project being imported, staged until it is finished
+<support>/designs/.unzip-<token>/        a ZIP being unpacked for an import
 <support>/design-systems/<namespace>/
   tokens.json, tokens.css, README.md, components/…   a design system's files
   system.json                  Shepherd's record of it: revision, owner, sources, syncedAt
 ```
+
+The hidden folders beside the designs are Shepherd's own staging: nothing serves them, and launch
+and quit remove whatever is left of them (a deletion in its window completes, an import waiting on
+a choice is put away).
 
 - **The support directory**, so a design survives a worktree's deletion, stays with its edition
   (Dev, Prod, Nightly), and needs no repository write. Nothing writes a repository.
@@ -98,8 +105,10 @@ elements).
   and works in the design's own folder. Only a system build ("Build one from a repo") has a
   project: the one it reads (`sourceSpaceID`).
 - **The record.** `ShepherdState.designs` holds each design's `id`, `name` (kept equal to the
-  canvas `title`), `agentID`, `systemNamespace`, `createdAt` and `lastActiveAt`, and a build's
-  `buildsSystem` and `sourceSpaceID`. `Agent.designID` names the design an agent draws. Both
+  canvas `title`), `agentID`, `systemNamespace`, `createdAt` and `lastActiveAt`, a build's
+  `buildsSystem` and `sourceSpaceID`, when it was removed from Recents (`recentsHiddenAt`), and
+  the Claude Design project it was imported from (`importedFrom`: the file's name, the canvas's
+  title and its `createdOnFiles` stamp, and when). `Agent.designID` names the design an agent draws. Both
   decode with defaults from older files; a design's `spaceID` from before designs stood alone is
   ignored, except that an older build's is read as its `sourceSpaceID`. It is still written (a
   build's project, else an id no space has), because older builds and remote clients can't
@@ -109,7 +118,8 @@ elements).
   the file with the next structural change.
 - **Soft references.** A design's agent may name something gone. Deleting an agent keeps its
   design, which starts a fresh agent when next opened. Deleting a design takes the agents that
-  drew it (their layouts and processes too): a design's chat never becomes a thread. Deleting or
+  drew it (their layouts and processes too, held with it for its undo window): a design's chat
+  never becomes a thread. Deleting or
   reordering a space never touches a design or its agent.
 - **At startup** the server forgets a design whose folder has no `canvas.json`, with the agents
   that drew it, and clears references to what no longer exists. A canvas that is there but
@@ -130,7 +140,11 @@ the only writer, through named mutations:
 | --- | --- |
 | `createDesign(_:)` | Makes the folder with a new canvas.json (`createdOnFiles` stamped, the name as `title`), then the record. No space changes; a build's `sourceSpaceID` must exist. A refused record removes the folder again |
 | `renameDesign(_:to:)` | Renames the record and the canvas `title` |
-| `deleteDesign(_:)` | Removes the record and the agents that drew it (their layouts, and their processes stopped), then removes the folder |
+| `deleteDesign(_:undoable:)` | Takes the record and the agents that drew it out of the workspace at once (their layouts too, and their processes stopped), sets the folder aside (`.deleted-<id>`), and holds all of it for `designUndoWindow` (10 s); then the folder goes. Answers a `DesignDeletion` (the name and the undo deadline). With `undoable` false (a system build that Delete design system stops) it is gone at once |
+| `undoDesignDeletion(_:)` | Within the window: waits out the stopped processes, puts the folder back, and restores the record, the agents and their layouts where they stood in their lists, each layout on fresh pane ids with no session (so a late exit of the old process touches nothing, and the app starts a fresh pi resuming the agent's session). Refused once the window has closed |
+| `duplicateDesign(_:)` | A new design with a new id named "<name> copy" (then "copy 2", …): a copy of the original's canvas (titled so), boards, project files, installed systems and uploads, drawn in the same system, links left behind. Its versions, comments and agent stay with the original |
+| `removeDesignFromRecents(_:)` | Records `recentsHiddenAt`: the design leaves the sidebar's Recents until it next changes (`Design.inRecents`) |
+| `prepareDesignImport(from:progress:)`, `finishDesignImport(_:name:skippingUnreadable:)`, `cancelDesignImport(_:)` | Import, in two halves (Import, below) |
 | `designsSpaceID()` | The reserved designs space (`Space.designs()`: hidden, `holdsDesigns`), made on first use |
 | `setDesignAgent(_:agentID:)` | Records which agent draws it |
 | `writeDesignBoard(_:path:source:baseRevision:)` | Writes one board's whole source |
@@ -240,7 +254,7 @@ them, whether the experiment is on or off. The rule holds in both directions:
   same rule to whatever a host sends, keeping designs only from a host that offers `designs.v1`,
   so an older host's designs reach no Mac, iPhone or iPad client that has no screen for them.
 - **A forgotten design.** Deleting a design, or startup forgetting one whose folder is gone,
-  takes the agents that drew it. Clearing their `designID` instead would turn the design's chat,
+  takes the agents that drew it (Undo brings them back with it, still drawing it). Clearing their `designID` instead would turn the design's chat,
   fences and all, into an ordinary thread.
 
 ### Comments
@@ -388,6 +402,10 @@ keeps every key it doesn't name, at the top and on each token:
 | `writeDesignSystem(_:for:)` | Writes a system for a design's agent. A new namespace becomes that design's; an existing one must be (`not_your_system`), and a built-in never is (`read_only_system`). `tokens` are checked (`invalid_tokens`) and written as given, other files written or (null) removed, `tokens.css` generated when the tokens change and the stylesheet is Shepherd's. `sources` are read from a system build's project (`sourceSpaceID`), never written (any other design has no project: its sources are kept unread, and Re-sync refuses them): one that isn't there is noted, not refused. A `baseRevision` the system moved past is refused (`stale_revision`). Changed files move the revision and tell the app (`onDesignSystemsChanged`) |
 | `installDesignSystem(_:namespace:baseRevision:)` | Copies every file of a system but `system.json` into the design's `project/ds/<namespace>/` (files an earlier copy had and this one doesn't leave), and records it in canvas.json's `designSystems` (`title`, `namespace`, `version` (the system's revision), `copiedAt`, `"origin": "shepherd"`) in place of the earlier record of that folder, else last: one design revision. The design is then drawn in it (`Design.systemNamespace`, persisted). A folder whose record isn't Shepherd's (a system installed on claude.ai, with its `artifact`), or a `ds/<namespace>/` with no record, is kept as it is (`namespace_taken`); a canvas holds 4 systems |
 | `resyncDesignSystem(_:)` | Re-sync, manual: reads the system's `sources` again from its project (only inside it, at most 1 MB each) and takes back what changed (`DesignSystemTokens.resynced`): a color or step whose `source` names one of them takes its value and line there now, or leaves when it is no longer declared; a custom property no token names joins (a hex as a color, a length as a radius or spacing step by its name); type, fonts and components are the author's. The revision moves when the tokens change, `syncedAt` always ("synced 4m ago", `DesignSystemPresentation.synced`). Designs keep the copy they installed until it is installed again. A built-in, a system without sources or whose project is gone refuses (`no_sources`) |
+| `renameDesignSystem(_:to:)` | Rename…: the system's title in `system.json`; its namespace (its folder, and designs' `ds/` folders) stays. A built-in refuses (`read_only_system`) |
+| `duplicateDesignSystem(_:)` | Duplicate (a built-in's "Duplicate as a New System"): the same files under the first of `<namespace>-copy`, `-copy-2`, … no system has, titled "<title> copy", nobody's build, keeping where it was read from for Re-sync |
+| `deleteDesignSystem(_:)` | Delete Design System…: its folder goes, and the build that made it with its agent (stopped, nothing to undo). Designs keep the copy they installed (their `ds/<namespace>/` and `systemNamespace` stay), and the repository is never touched. A built-in refuses (`read_only_system`) |
+| `deleteSystemBuild(_:)` | A build still reading its project, before it wrote a system: the build goes with its agent |
 
 Reads: `designSystemSummaries()` (each system's record, whether it is built in, and its counts:
 colors, type styles, spacing and radius steps, components), `designSystem(_:)` (tokens, README
@@ -452,8 +470,10 @@ claude.ai is still checked against).
   reading their project ("dashboard-web · building"), then the built-ins, in lazy rows of three
   ending in "Build one from a repo". A card has four of the system's colors (its accent, text,
   background and a status color by name, then the rest), its source ("dashboard-web ·
-  tokens.css"; Night Watch: "shepherd · ShepherdUI Tokens") and how many designs are drawn in it,
-  and opens its page.
+  tokens.css"; Night Watch: "Built into Shepherd" beside its Built-in tag; a system an import
+  brought: "came with Checkout funnel") and how many designs are drawn in it, and opens its page.
+  A right-click, or ••• in the count's place on hover, opens its menu (Deleting and importing on
+  the Mac, below). A design card names its system by title ("Checkout DS"), else its folder.
 - **More ▸ Design systems** opens the system page shown last, else the first system built here,
   else Night Watch; it is selected while a system's page shows. **A design's system chip** opens
   its system's page, and draws three of its colors.
@@ -877,27 +897,104 @@ import, the project's other files, and the uploads they name).
 
 ### Import
 
-File ▸ Import Claude Design Folder… (with the Design tool on) reads a canvas folder from disk into
-a new standalone design (`SessionServer.importDesign`, decision 4; no project needed or chosen),
-and opens it (its agent starts then). The folder is only read.
+A Claude Design project exported as a ZIP or a folder becomes a new standalone design (decision 4;
+no project needed or chosen), from File ▸ Import Claude Design Project… (⇧⌘I, `.importDesign` in
+`KeybindingsStore`), New design's "Import a project" card, or a drop on the Designs page. Shepherd
+has no link to claude.ai: it is always a file. The source is only read. It runs in two halves on
+the server (`SessionServer.prepareDesignImport`, then `finishDesignImport`), so nothing is in
+Designs until the viewer's choice, if one is needed, is made.
 
-- **Which folder.** A canvas's `project/` itself (it holds `canvas.json`), or a folder holding
-  `project/` and, from a Shepherd export, `assets/`. Everything else in it is left behind.
+- **A ZIP is checked before anything is unpacked** (`DesignArchive`, ShepherdProtocol): its table
+  of contents is read from the file's end (ZIP64 too): an archive over 1 GB, a name that is
+  absolute, climbs out (`..`), uses a backslash or a drive (zip slip), a link or a device, a file
+  over 16 MB, or entries unpacking to over 1 GB are refused. Only then does `/usr/bin/ditto -x -k`
+  unpack it, into `.unzip-<token>/` beside the designs, off the server's queue and the design
+  store's (a queue of its own), and the unpacked folder is checked again as any folder is.
+- **Which folder.** Where the ZIP or folder holds `canvas.json` or `project/canvas.json`, else the
+  one folder it holds that does (a ZIP of a folder). A folder holding `project/` brings `assets/`
+  from a Shepherd export too. Everything else is left behind.
 - **Rules** (`DesignImport`): links anywhere in what is read are refused, as is anything that is
   neither a file nor a folder; every name passes the path grammar's segment rule; at most 16 levels,
-  512 files, 16 MB a file and 256 MB in all; uploads are `assets/<id>.<ext>`. Each file is opened
-  without following a link and checked for its size before it is read. Hidden files and any
-  `support.js` (Shepherd serves its own runtime there) are left behind.
+  512 files, 16 MB a file and 1 GB in all (`maxProjectBytes`; an export still reads at most 256 MB
+  of a project's other files); uploads are `assets/<id>.<ext>`. Each file is opened without
+  following a link and checked for its size before it is read. Hidden files and any `support.js`
+  (Shepherd serves its own runtime there) are left behind.
+- **Boards** are read in canvas order and copied into `.import-<token>/` as they are, the
+  progress counting them (`DesignImportProgress`: checking, then "7 of 12 boards", then opening).
+  A board whose markup points outside the project (`DesignImport.outsideReferences`: a `src`,
+  `href`, `poster`, `srcset` or CSS `url()` that climbs out of the project from the board's
+  folder, a `file:` URL, or a path on a disk such as `/Users/…` or `~/…`) refuses the whole
+  import. A listed board whose file is empty or isn't text is unreadable: that is the viewer's
+  choice (Cancel import, or leave those boards out, their files and canvas entries, on purpose).
+  A listed board with no file at all is kept listed, as before (an imported index's problems
+  don't block).
+- **Failures** (`DesignImportFailure`, in ImportFailed's words): not a project (no canvas.json), too
+  large (the project, checked before unpacking, or one file), links outside (listing up to three,
+  "boards/hero.html → ../shared/logo.svg"), unreadable boards, or refused with a reason (a bad name,
+  too many files, a canvas this build can't read). Every one leaves nothing behind: staging is
+  removed, and so is anything unpacked.
 - **The canvas** is kept byte for byte, every key with it; one without a title is titled after
-  the folder, still keeping every key. A canvas this build can't read refuses the import.
-- **Atomic.** The copy is staged beside the designs and moved into place whole, then the record
-  is committed; a refused or failed import leaves nothing behind.
+  the ZIP or folder (its name without `.zip`), still keeping every key. A copy imported under
+  another name, or with boards left out, is the same canvas merged with the new title and without
+  those boards' entries.
+- **Import again.** A project already in Designs (`DesignImportOrigin.isSameProject`: the same
+  `createdOnFiles` stamp, else, where either has none, the same title) is never merged: the viewer
+  imports a separate copy under the next free number ("Checkout funnel 2", `DesignNaming`), or
+  opens the one there is.
+- **Its design system comes along** as a system of its own (`DesignSystemStore.adopt`), marked
+  with the design it came with (`DesignSystemInfo.cameWith`): the files of each system the canvas
+  lists under `designSystems` whose `ds/<namespace>/` it holds and whose `tokens.json` Shepherd
+  reads, only a system's kinds of file. A system this host already has with the same files is
+  used instead of adding a second (the preview says so), else it takes the namespace or the first
+  free `<namespace>-2`, …. The design is drawn in the first (`Design.systemNamespace`).
+- **Atomic.** Only finishing moves the staged folder into place whole and then commits the
+  record; a refused or failed import, a cancel, or a quit leaves nothing behind.
+- **First open** (ImportDone): the app opens the design and starts its agent with a first message
+  saying the design came from Claude Design (the file's name) and asking it to read the boards,
+  notes and design system, run design_check, say what it found, change nothing until asked, and
+  ask what to work on first.
+
+## Deleting and importing on the Mac (DesignLifecycleStates)
+
+Built on the Mac behind the Design tool experiment (`ShepherdViewModel+DesignLifecycle.swift`,
+the words in `DesignLifecycle.swift`, the views in `DesignLifecycleViews.swift`).
+
+- **Menus** (`DesignMenu`): a design card's (a right-click anywhere on it, or ••• on hover) holds
+  Open, Rename…, Duplicate, Export… and Delete Design…; its row in Recents adds Remove from
+  Recents; ••• in its own toolbar holds Rename…, Duplicate, Export…, Show Design System and Delete
+  Design…. A host's design offers Open, Rename… (through the host's canvas update) and Delete
+  Design…, which is off with its reason where the host doesn't offer `design.delete.v1`. A system's
+  (its card, ••• on its page) holds Open, Re-sync from <repo> (a system read from a repo), Rename…
+  (its title; the namespace stays), Duplicate and Delete Design System…; a built-in holds Open,
+  Duplicate as a New System, and Delete Design System… off with the reason under it; a build still
+  reading its repo holds Open and Delete.
+- **Delete design** asks first (`DeleteDesignDialog`): "4 boards, their 23 versions and 2
+  comments", "The design agent’s chat for this design", "Stays: acme-web, the design system it
+  uses", "You can undo right after."; while the agent works, the warning (the boards it is
+  drawing in the turn under way, by its board writes) and Stop and delete. Then the window goes back
+  to Designs if it showed the design, the design and its agent leave every surface at once, and
+  the toast says "Deleted Checkout funnel dashboard." with Undo until the host lets it go (nothing
+  counts down). Undo restores it and starts its agent's pi again. A failure brings it back and the
+  toast says why, with Try again ("build-01, where it’s saved, didn’t answer, so it’s back." for a
+  host's design).
+- **Quitting** within the undo window completes the deletion: state.json no longer lists the
+  design, and quitting (or the next launch, after a crash) removes the set-aside folder. There is
+  no Trash.
+- **Delete design system** asks first (`DeleteSystemDialog`): what goes, "Used by 3 designs; they
+  keep their copy." with their names (or "No designs use it yet"), "Built from dashboard-web. The
+  repo isn’t touched.", "New designs can’t pick it."; a system still being built says the build
+  stops and nothing it read is kept (Stop and delete). Its page, if shown, goes back to Designs. A
+  failure keeps it and the toast names why, with Try again. There is no Undo.
+- **Import** fills its card first among Recent designs (`NWImportingCard`: the tiles filling, the
+  title shimmering, "7 of 12 boards · with Checkout DS", the bar), its system dashed among the
+  systems ("came with Checkout funnel", "after the boards") until the boards are in; then the design
+  opens. A failure or a question is a dialog (`DesignImportDialog`); Escape puts a staged import
+  away.
 
 ### Not built yet
 
 Not drawn on any board, so left out until they are: the Designs page with no designs, a design
-still loading or failing to draw, the design row's and the chat's ••• menus (so no rename or delete
-in the app yet), Present mode's own board (Present shows a board focused meanwhile), the board
+still loading or failing to draw, the chat pane's •••, Present mode's own board (Present shows a board focused meanwhile), the board
 actions' ••• beyond Play, an interactive board's blue mark and Play button on its frame (format.md;
 Play is in •••), closing Present with Escape, a board that asks to fill the window (`expand:
 "fill"`, shown fitted like any), drawing notes, the Capture a page and From a screenshot starting points, zoom
@@ -943,6 +1040,7 @@ a VPN or trusted network is the transport boundary, as for everything else it se
 | `comments`, `addComment`, `replyToComment`, `resolveComment` | `comments`, `comment` | The host's comment mutations: the element checked against the board's source, the comment handed to the design agent fenced as data, each change at the comments' revision |
 | `writeBoards`, `updateIndex`, `duplicateBoard`, `restoreVersions` | `boardsWritten`, `written`, `duplicated` | Tweak, a board moved, Duplicate and Undo, through `writeDesignBoards`, `updateDesignIndex`, `duplicateDesignBoard` and `restoreDesignVersions` with their checks and revisions |
 | `system(namespace)` | `system` | One design system whole |
+| `delete(id)`, `undoDelete(id)` | `deleted(DesignDeletion)`, `ok` | Delete and its Undo (`design.delete.v1`, offered with `designs.v1`): through the host's own `deleteDesign` and `undoDesignDeletion`, so the host holds the design for its undo window; an undo after it is refused (`design_refused`). A host without the capability answers `unsupported`, and a Mac client leaves Delete off with the reason |
 | `sendMarkup(id, markup)` | `markupSent` | Pencil markup (`design.markup.v1`): the record checked against the canvas and the boards' sources, then handed to the design agent fenced, as a turn of its own; why it didn't reach the agent, or nil. Nothing is kept |
 | `settleProposals(id, proposals, deliver, base)` | `proposalsSettled` | The viewer's answer to the agent's proposals, which the host kept as comments when the agent made them (`design.markup.v1`): each named proposal's comment settled (`proposalSettledAt`), all or none, at the comments' revision, once; with `deliver` each one settled now goes to the agent as a comment does |
 | `watch(ids)` | `ok` | The designs this client shows; replaces the last set |
@@ -998,6 +1096,10 @@ a VPN or trusted network is the transport boundary, as for everything else it se
   rendered from the files the host served, the chat its thread on the host. Moves, Tweak (its
   undo too), Duplicate, Variations, comments and replies go to the host; the host pushes changes
   for the designs on screen, and the canvas pulls what changed.
+- **Its menu** (a card's, and ••• in its toolbar) renames it through the host's canvas update and
+  deletes it on its host (`delete`, then `undoDelete` from the toast); where the host doesn't offer
+  `design.delete.v1`, Delete is off with the reason. Duplicate, Export… and Remove from Recents
+  are This Mac's alone for now.
 - **Not yet:** a design whose agent is gone on its host doesn't open (it says so; only the host
   starts a fresh agent), the header's system chip and Export do nothing for a host's design,
   Tweak snaps to the board's own tokens (the project's stylesheets are on the host), a host's
