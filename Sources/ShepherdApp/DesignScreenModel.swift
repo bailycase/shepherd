@@ -123,6 +123,10 @@ final class DesignScreenModel {
     /// The chat's cards, by comment.
     let commentCards = DesignCommentCards()
 
+    // Design references
+    /// A piece "Open in design" asked for, shown once the canvas has read the design.
+    @ObservationIgnored var pendingReveal: (board: DesignPath, element: DesignElementID?)?
+
     // Pages, moving, presenting
     /// The page the canvas shows (canvas.json's page id); nil on a canvas without pages.
     private(set) var page: String?
@@ -141,7 +145,7 @@ final class DesignScreenModel {
     @ObservationIgnored private let commentActions: DesignCommentActions?
     /// The comments' revision as last read: a change names it, and a stale one is read again.
     @ObservationIgnored private(set) var commentsRevision: UInt64 = 0
-    @ObservationIgnored private var canvasSize: CGSize = .zero
+    @ObservationIgnored private(set) var canvasSize: CGSize = .zero
     @ObservationIgnored private var fitted = false
     @ObservationIgnored private var refreshing = false
     @ObservationIgnored private var refreshAgain = false
@@ -319,6 +323,7 @@ final class DesignScreenModel {
         if let tweak { Task { await tweak.snapshotChanged(next) } }
         fitIfNeeded()
         planLive()
+        applyReveal()
     }
 
     // MARK: The canvas

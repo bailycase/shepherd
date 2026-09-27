@@ -640,4 +640,40 @@ struct TurnPresentationTests {
     func thoughtTextNamesItsDuration(seconds: Double?, text: String) {
         #expect(nativeThoughtText(seconds) == text)
     }
+
+    // MARK: Design references
+
+    /// A thread reading a piece it was sent (NWActivityLine(.lookedAtDesign)): consecutive reads of
+    /// one reference make one "Looked at…" line whose meta says what it got; another reference
+    /// starts its own.
+    @Test func readsOfOneDesignPieceJoinIntoOneLookedAtLine() {
+        func call(_ name: String, _ args: [String: String]) -> NativeActivityCall {
+            let json = String(data: try! JSONSerialization.data(withJSONObject: args, options: [.sortedKeys]), encoding: .utf8)!
+            let id = UUID().uuidString
+            return NativeActivityCall(Fixture.tool(name, args: json, id: "e-\(id)", callID: id))
+        }
+        func get(_ ref: String, _ what: String) -> NativeActivityCall { call("design_get", ["ref": ref, "what": what]) }
+        let a = "shepherd-design-ref://local/checkout/A.dc.html@23", b = "shepherd-design-ref://local/checkout/B.dc.html@4"
+        let bursts = nativeActivityBursts([get(a, "tokens"), get(a, "image"), get(a, "html"), get(b, "summary")])
+        #expect(bursts.map(\.kind) == [.lookedAt, .lookedAt])
+        #expect(bursts[0].calls.count == 3 && bursts[0].calls.first?.designRef == a)
+        #expect(bursts[0].label == "Looked at a design" && bursts[0].meta == "picture · html · tokens", "in the tool's order")
+        #expect(nativeDesignAspects(bursts[0].calls) == [.image, .html, .tokens])
+        #expect(bursts[1].meta == "summary")
+        let note = call("design_note", ["ref": a, "text": "Implemented in #142."])
+        #expect(note.kind == .other && note.label == "note" && note.detail == "Implemented in #142.")
+    }
+
+    /// The chips a sent message carries go with its bubble; with a delivery from the queue, with
+    /// the part that says so.
+    @Test func aMessagesReferencesGoWithTheBubbleThatSaysSo() {
+        let record = DesignReferenceRecord(ref: "shepherd-design-ref://local/checkout/A.dc.html@3", design: "Checkout")
+        let plain = NativeThreadMessage(entryID: "u", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "Build it.\n\n1 design reference attached.")],
+                                        designReferences: [record])
+        #expect(nativeUserBubbles(plain).map(\.references) == [[record]])
+        let parts = [NativeQueuePart(text: "First.", sentAt: 1), NativeQueuePart(text: "Build it.\n\n1 design reference attached.", sentAt: 2),
+                     NativeQueuePart(text: "Then test.", sentAt: 3)]
+        let queued = NativeThreadMessage(entryID: "q", role: "user", blocks: [], origin: .queue(parts: parts), designReferences: [record])
+        #expect(nativeUserBubbles(queued).map(\.references) == [[], [record], []])
+    }
 }
