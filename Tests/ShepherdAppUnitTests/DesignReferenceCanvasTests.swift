@@ -112,6 +112,8 @@ struct DesignReferenceCanvasTests {
         let note = DesignThreadNote(agentID: AgentID(rawValue: "t1"), thread: "Checkout page polish", board: Self.a, element: nil,
                                     revision: 23, text: "Implemented in #142.", createdAt: 1_000)
         let screen = try await screen(notes: [note])
+        #expect(screen.commentsTabCount == 1, "the Comments tab counts a thread's note (RefNoteBack)")
+        #expect(DesignChatPane.tabs(open: screen.commentsTabCount, tweak: false).map(\.count) == [nil, 1])
         let pin = try #require(screen.pins.first)
         #expect(pin.style == .threadNote("Checkout page polish") && pin.rect == CGRect(x: 0, y: 0, width: 1280, height: 800),
                 "a board's note sits on the board's corner")
@@ -120,7 +122,7 @@ struct DesignReferenceCanvasTests {
         screen.closeComment()
         #expect(screen.openThreadNote == nil)
         screen.applyNotes([])
-        #expect(screen.pins.isEmpty)
+        #expect(screen.pins.isEmpty && screen.commentsTabCount == 0)
     }
 
     @Test func textInputKeepsTheCanvasChordsForItself() {

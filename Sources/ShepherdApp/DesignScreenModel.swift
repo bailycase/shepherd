@@ -539,6 +539,10 @@ final class DesignScreenModel {
     /// The open comments, in the order they were made.
     var openComments: [DesignComment] { comments.filter(\.isOpen) }
 
+    /// The Comments tab's count: the open comments and the notes threads left (RefNoteBack's
+    /// "Comments 2" over one comment and one note).
+    var commentsTabCount: Int { openComments.count + threadNotes.count }
+
     /// The canvas's pins: each open comment on a board the canvas holds, where a live view last
     /// found its element, else where it was when the comment was made; and the pin of the comment
     /// being written.

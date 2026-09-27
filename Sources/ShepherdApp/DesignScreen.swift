@@ -149,7 +149,7 @@ struct DesignCommentPopover: View {
 }
 
 /// The chat pane (DZCanvas, DZTweak): its tabs, Chat (the design agent's thread, with the
-/// standard composer at its compact size), Comments (the open comments' cards, with their count) and Tweak (the
+/// standard composer at its compact size), Comments (the open comments' cards, counted with the threads' notes) and Tweak (the
 /// selection's controls). The thread stays mounted under the other tabs, hidden, so switching tabs
 /// never rebuilds it.
 struct DesignChatPane: View {
@@ -167,7 +167,7 @@ struct DesignChatPane: View {
     }
 
     var body: some View {
-        let open = screen.openComments.count
+        let open = screen.commentsTabCount
         let tab = screen.paneTab == .tweak && screen.tweak == nil ? .chat : screen.paneTab
         let chat = tab == .chat
         VStack(spacing: 0) {
