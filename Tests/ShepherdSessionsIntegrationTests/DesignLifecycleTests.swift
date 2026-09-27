@@ -265,4 +265,28 @@ struct DesignLifecycleTests {
         #expect(!exists(h.server.designSystems.folder(for: "acme-mobile")))
         #expect(try FileManager.default.contentsOfDirectory(atPath: repo.path).isEmpty, "the repository is untouched")
     }
+    /// Rename… changes a system's title, never its namespace; Duplicate makes a new system with
+    /// its files, a built-in's included, which is nobody's build and can be deleted.
+    @Test func renamingAndDuplicatingASystem() async throws {
+        let d = try await drawnDesign()
+        defer { d.h.stop() }
+        d.h.server.designSystems.register(DesignSystemStore.BuiltIn(info: DesignSystemInfo(namespace: "night-watch", title: "Night Watch",
+                                                                                           createdAt: 0),
+                                                                    files: ["tokens.json": Data(#"{"format":"shepherd-tokens/1"}"#.utf8)]))
+        _ = try await d.h.server.writeDesignSystem(DesignSystemWrite(namespace: "acme-web", tokens: Self.tokens), for: d.design.id)
+
+        let renamed = try await d.h.server.renameDesignSystem("acme-web", to: "  Acme web  ")
+        #expect(renamed.info.title == "Acme web" && renamed.info.namespace == "acme-web")
+        await #expect(throws: DesignSystemError.readOnly("night-watch")) { try await d.h.server.renameDesignSystem("night-watch", to: "x") }
+
+        let copy = try await d.h.server.duplicateDesignSystem("acme-web")
+        #expect(copy.info.namespace == "acme-web-copy" && copy.info.title == "Acme web copy" && copy.info.ownerDesignID == nil)
+        #expect(try await d.h.server.duplicateDesignSystem("acme-web").info.namespace == "acme-web-copy-2")
+        let original = try await d.h.server.designSystemContents("acme-web")
+        #expect(try await d.h.server.designSystemContents("acme-web-copy") == original)
+        let nightWatch = try await d.h.server.duplicateDesignSystem("night-watch")
+        #expect(nightWatch.info.namespace == "night-watch-copy" && !nightWatch.builtIn)
+        try await d.h.server.deleteDesignSystem("night-watch-copy")
+        #expect(await d.h.server.designSystemSummaries().map(\.info.namespace) == ["night-watch", "acme-web", "acme-web-copy", "acme-web-copy-2"])
+    }
 }
