@@ -244,7 +244,7 @@ final class ShepherdViewModel {
     @ObservationIgnored private(set) var holdsForWelcome = false
     /// This Mac's restored agents the first launch's copy holds (the sidebar's "waiting", the
     /// thread's Waiting to continue), and when they were restored.
-    private(set) var waitingForImport: Set<AgentID> = []
+    var waitingForImport: Set<AgentID> = []
     @ObservationIgnored private(set) var restoredAt = Date()
     /// The workspace has been adopted at least once.
     @ObservationIgnored private var didAdopt = false

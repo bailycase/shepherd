@@ -550,6 +550,53 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// Settings ▸ Pi ▸ Sign-in as SettingsPiSignIn draws it: OpenAI Codex expired, a sign-in under
+    /// way for Kimi, keys copied, by variable and by command, and two custom providers.
+    @Test func settingsPiSignIn() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        workspace.vm.piAuth.noteTurnError("OAuth refresh failed for openai-codex: invalid_grant")
+        workspace.vm.piAuth.needed = ["openai-codex"]
+        workspace.vm.settingsSection = .piSignIn
+        try await Preview.render("settings-pi-sign-in", size: CGSize(width: 1280, height: 1500)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
+
+    /// The sign-in sheet in each of its flows and states (SignInBrowser, SignInDevice, SignInPaste,
+    /// SignInKey, SignInPortBusy, and PiAuthStates' done and failed).
+    @Test func signInSheet() async throws {
+        let url = URL(string: "https://claude.ai/oauth/authorize?code=true")!
+        let expires = Calendar.current.date(bySettingHour: 10, minute: 2, second: 0, of: Date())
+        let cases: [(String, PiSignInSession, CGFloat)] = [
+            ("sheet-sign-in-browser", PiSignInSession(preview: "anthropic", flow: .browser, phase: .browser, authURL: url), 340),
+            ("sheet-sign-in-browser-done", PiSignInSession(preview: "anthropic", flow: .browser, phase: .done(pickedUp: 2), authURL: url), 320),
+            ("sheet-sign-in-browser-failed", PiSignInSession(preview: "anthropic", flow: .browser,
+                                                             phase: .failed("access_denied · you chose Cancel on claude.ai"), authURL: url), 340),
+            ("sheet-sign-in-port-busy", PiSignInSession(preview: "openai-codex", flow: .browser, phase: .portBusy(1455)), 420),
+            ("sheet-sign-in-device", PiSignInSession(preview: "github-copilot", flow: .device,
+                                                     phase: .device(code: "8F3K-Q2WD", uri: "https://github.com/login/device", expires: expires)), 420),
+            ("sheet-sign-in-device-done", PiSignInSession(preview: "github-copilot", flow: .device, phase: .done(pickedUp: 0)), 260),
+            ("sheet-sign-in-paste", PiSignInSession(preview: "anthropic", flow: .paste, phase: .paste(rejected: nil)), 300),
+            ("sheet-sign-in-paste-filled", PiSignInSession(preview: "anthropic", flow: .paste, phase: .paste(rejected: nil),
+                                                           code: "Qk7pX2vR9mLw4tYb#b3f2a91c"), 300),
+            ("sheet-sign-in-paste-rejected", PiSignInSession(preview: "anthropic", flow: .paste,
+                                                             phase: .paste(rejected: "That code was already used. Open claude.ai again for a new one."),
+                                                             code: "Qk7pX2#b3f"), 320),
+            ("sheet-sign-in-key-checking", PiSignInSession(preview: "deepseek", flow: .key, phase: .key, key: "sk-fake-preview-key-0000091c2",
+                                                           keyCheck: .checking), 360),
+            ("sheet-sign-in-key-variable", PiSignInSession(preview: "deepseek", flow: .key, phase: .key, keyMode: .variable,
+                                                           variable: "DEEPSEEK_API_KEY", keyCheck: .works(models: ["deepseek-chat", "deepseek-reasoner"])), 380),
+            ("sheet-sign-in-key-rejected", PiSignInSession(preview: "deepseek", flow: .key, phase: .key, key: "sk-fake-preview-key-0000091c2",
+                                                           keyCheck: .rejected("401 · invalid api key")), 360),
+        ]
+        for (name, session, height) in cases {
+            try await Preview.render(name, size: CGSize(width: NWPiSignInMetrics.sheetWidth, height: height)) {
+                PiSignInSheet(session: session, close: {})
+            }
+        }
+    }
+
     @Test func renameDialog() async throws {
         try await Preview.render("sheet-rename", size: CGSize(width: AppLayout.renameSheetWidth, height: 180)) {
             RenameDialog(title: "Rename agent", name: "Fix the login redirect", onRename: { _ in }, onCancel: {})
