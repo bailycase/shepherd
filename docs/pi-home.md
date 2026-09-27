@@ -4,9 +4,9 @@ Shepherd runs its own pi, in its own home, so that nothing it does changes the u
 nothing in the user's pi can break Shepherd. The engine (Node plus pi's bundle) ships inside the
 app ([pi-engine.md](pi-engine.md)); this page is about where it runs and how it's started.
 
-This is the "Bundled pi, isolated home" plan's phases 3 to 6: the switch, the imports from the
-user's pi, the first launch's welcome step, and the user's extensions, opt-in. The native
-sign-in sheet (7) and Open in terminal (8) come later.
+This is the "Bundled pi, isolated home" plan's phases 3 to 7: the switch, the imports from the
+user's pi, the first launch's sheet, the user's extensions, opt-in, and native sign-in. Open in
+terminal (8) comes later.
 
 ## The home
 
@@ -192,11 +192,11 @@ that too. A file there that can't be read counts as a copy that ran, so a damage
 brings back a login signed out of since. A state saved before the first copy (a copy past its
 deadline) has `copied: false`: the next launch still copies, keeping what it holds. A state of
 version 1, from when instructions, skills and prompts were read in place, gets its files copied
-once, quietly (no welcome step, no login copied again), and the `skills` and `prompts` entries
+once, quietly (no sheet, no login copied again), and the `skills` and `prompts` entries
 that pointed Shepherd's settings at the user's pi are removed. A home the startup guards refuse
 copies nothing. What couldn't be copied (a file of
 theirs unreadable, too large or not JSON, or one of Shepherd's own that isn't a JSON object, which
-is left as it is) is reported, file by file and never quoted, in the log and the welcome step.
+is left as it is) is reported, file by file and never quoted, in the log and the first launch's sheet.
 What was passed over on purpose (a second skill of one name, a package their pi never installed,
 a link that leads nowhere) goes to the log, one sentence each. A package's source loses any user
 and password in its URL wherever it is shown or logged.
@@ -225,33 +225,70 @@ code from it.
 
 The view model (`welcomesYourPi`, on in the app) holds `AgentStartQueue` and automations, then
 runs the copy off the main thread, bounded by 30 s (past it, agents start anyway, so the gate never
-blocks for good). What happens next depends on whether anything can start an agent (a login in
-Shepherd's pi, a provider key the user's login shell sets, or a custom provider):
+blocks for good). The copy reports each step as it goes (`YourPiImportProgress`: logins and keys,
+custom providers, the default model, trust, files, extensions), and the sheet, Bringing over your
+pi (`PiImportSheet`, DESIGN.md › Dialogs and sheets), shows them once it's known there's a pi of
+the user's to copy. Every held agent says "waiting" in the sidebar and ends its thread in Waiting
+to continue. When the copy is over the sheet ends one of five ways, and says who keeps waiting
+(`YourPiModel.Hold`):
 
-- **Something can:** restored agents start at once, the one on screen first, signed in with what
-  came over, while the welcome step shows. An existing user whose logins came over never clicks
-  for their agents.
-- **Nothing can:** they wait until the welcome step closes, whichever way, so the user can sign
-  in first. A skipped sign-in is safe: an agent that can't start waits on "not signed in", with
-  Retry.
+| Ending | When | Who waits until it closes |
+| --- | --- | --- |
+| Done | Everything came over and nothing is missing | Nobody: restored agents start at once, the one on screen first |
+| Something missing | A provider a restored agent's model (or the default model) uses has nothing in Shepherd's pi to sign in with: no login, no key in the login shell, no custom provider of that name | The agents using those providers (`AgentStartQueue.hold(_:)`); the rest start |
+| Failed | Their auth.json couldn't be read or isn't JSON (the rest still came over) | Everyone; Retry copies the logins again and turns it into Done or Something missing |
+| New user | No pi of theirs, and nothing can start an agent | Everyone |
+| (none) | A later launch, or a new user already signed in with nothing missing | Nobody |
 
-The welcome step shows only when this launch did the copy: one sentence ("Shepherd now runs its
-own copy of pi. The pi in your terminal is untouched."), what came over, the provider key
-variables the user's login shell sets (names only, found by the same login shell that finds "your
-pi"), and a sign-in ask only for what's missing: the provider of the default model (Settings ▸
-Agents' own, else pi's) when nothing covers it, or every provider when nothing can start an agent.
-Providers that sign in with cloud credentials pi doesn't store (Amazon Bedrock, Google Vertex AI)
-are never asked for. A new user with no pi sees only sign-in, and no step at all when Shepherd's
-pi is already signed in and nothing is missing. A later launch copies nothing and holds nothing.
+Something missing lists the providers with Sign in each (the sign-in sheet opens over it) and
+enables Done once they're all signed in; Skip for now leaves those agents to start and wait on
+"not signed in". A new user picks a subscription or an API key; a sign-in that lands closes both
+sheets. Providers that sign in with cloud credentials pi doesn't store (Amazon Bedrock, Google
+Vertex AI) are never asked for. Nothing on the sheet shows a credential's value: a failed
+auth.json names its path and the parser's position ("Unexpected character around line 31,
+column 5."), never a character of it.
 
 ## Signing in
 
-pi signs in only in its TUI (`/login`). Settings ▸ Pi ▸ Sign in (and Sign in… on a "not signed
-in" banner) opens a terminal pane beside the selected agent running Shepherd's pi with no session
-(`(cd -- '<home>' && exec '<home>/bin/pi' --no-session)`, in the home so an agent's folder of `~`
-never makes `~/.pi` the TUI's project), where the user types `/login`. The sign-in lands in the home's
-`auth.json`; the terminal's pi keeps its own. A native sign-in sheet is a later phase. The model
-catalog is kept until `auth.json`, `models.json` or `settings.json` in the home changes.
+Settings ▸ Pi ▸ Sign-in, `/login`, a Not signed in agent's card and the first launch's sheet open
+one sheet (`PiSignInSheet`, on `PiAuthStore`'s `PiSignInSession`). It never opens pi's TUI. It runs
+pi's own login through a bridge: `shepherd-sign-in.mjs`, installed in the support folder, run on
+the engine's node in a login shell (so a key's variable and the user's proxy settings are there)
+with the shell's pi, jiti and Node settings dropped and Shepherd's pi home pinned
+(`PiLaunch.signInBridge`). It imports the engine's `dist/bundle/index.js` and calls
+`ModelRuntime.create({authPath, modelsPath})` on the home's files and `login(provider, "oauth" |
+"api_key", interaction)`, and speaks JSON lines (`PiSignInCommand`, `PiSignInReply`):
+
+- pi's events (`auth_url`, `device_code`, `info`, `progress`) and prompts (`manual_code`,
+  `secret`, `text`, `select`) go to the sheet; a prompt pi no longer needs (the browser's callback
+  won) is closed. The sheet answers the ones it shows (a pasted code, a key); the bridge answers
+  the rest itself: a login method's `select` with the browser (or the device code), GitHub
+  Copilot's Enterprise domain with github.com.
+- Before a browser sign-in, the bridge checks the provider's fixed callback port (Anthropic
+  53692, OpenAI Codex 1455, Radius 1456) and says it's taken instead of opening the browser;
+  Paste a code instead then logs in without the check.
+- A key is checked before Save with the smallest request pi can make (`completeSimple`, 16 tokens,
+  on the provider's first non-reasoning model, with the key as an override); a 401 or 403 reads
+  as rejected, anything else as not reached (Save turns on anyway). A key is stored as pi reads it:
+  `$NAME` for a variable, a literal with `$` doubled and a leading `!` escaped
+  (`PiKeyInput.stored`).
+- `done` carries the credential's type, never the credential: pi writes it into the home's
+  `auth.json` under its own lock. A reason sent back loses its stack, any response body, anything
+  typed, and anything shaped like a token.
+- `logout` removes Shepherd's credential for one provider (pi's own `logout`); the user's pi keeps
+  its own.
+
+When a sign-in lands, every agent waiting on "not signed in" for that provider (or for none pi
+named) starts again at once, and the sheet counts them; a Re-import of logins does the same. A
+turn that fails with pi's "OAuth refresh failed for <provider>" marks that subscription Expired in
+Sign-in. The model catalog is kept until `auth.json`, `models.json` or `settings.json` in the home
+changes.
+
+Sign-in's rows (`PiSignInPage`) read both sides as plain files: Shepherd's `auth.json` and
+`models.json`, and the user's pi for Re-import. A key shows only masked (`PiKeyMask`: its prefix
+and last four), a variable by name, a command as its text. How a copy stands against the user's pi
+("same as your pi", "newer in your pi", "changed here") compares digests of each item taken when
+it was copied (`YourPiImportState.digests`), never values.
 
 ## Updates
 
@@ -277,6 +314,13 @@ refuses pi's own package commands, and the pins turn off pi's update check and i
   nothing to copy leaving agents on "not signed in"; an extension of yours that throws at load
   switched off, and the agent started again without it), and the copied instructions in a real
   child (`native-children.test.mjs`).
+- Sign-in: the bridge on node against a fake pi SDK (`PiSignInBridgeTests`: the browser's
+  callback, a pasted code and one refused, a device code, a taken port, a key checked, escaped and
+  never echoed, cancel, sign-out removing only Shepherd's credential, a bridge that can't run), its
+  JSON lines (`PiSignInProtocolTests`), the sheet's states (`PiSignInSessionTests`), the rows
+  (`PiAuthRowsTests`, `PiSignInCatalogTests`: masking, freshness), `/login` (`SlashLoginTests`),
+  the first launch's sheet (`PiImportSheetTests`), and through the app (`PiSignInFlowTests`: an
+  agent not signed in starts again when a sign-in lands, `/login` routing, sign-out).
 - Unit: the launch lines (`PiLaunchTests`), the launcher's and `restore-env.sh`'s content, the
   guards, "your pi" resolution and `settings.json` writes (`PiHomeTests`), adoption's table
   (`PiSessionAdoptionTests`), and no RPC command naming a session file (`RPCWireTests`).
