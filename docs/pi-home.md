@@ -180,13 +180,25 @@ code from it.
 ## The first launch
 
 The view model (`welcomesYourPi`, on in the app) holds `AgentStartQueue` and automations, then
-runs the copy off the main thread, bounded by 30 s (past it, agents start anyway). When this
-launch did the copy, the welcome step shows: one sentence ("Shepherd now runs its own copy of
-pi. The pi in your terminal is untouched."), what came over, the provider key variables the
-user's login shell sets (names only, found by the same login shell that finds "your pi"), and a
-sign-in ask only when nothing can start an agent. Closing it, whichever way, starts restored
-agents, the one on screen first. A skipped sign-in is safe: an agent that can't start waits on
-"not signed in". A later launch copies nothing and holds nothing.
+runs the copy off the main thread, bounded by 30 s (past it, agents start anyway, so the gate never
+blocks for good). What happens next depends on whether anything can start an agent (a login in
+Shepherd's pi, a provider key the user's login shell sets, or a custom provider):
+
+- **Something can:** restored agents start at once, the one on screen first, signed in with what
+  came over, while the welcome step shows. An existing user whose logins came over never clicks
+  for their agents.
+- **Nothing can:** they wait until the welcome step closes, whichever way, so the user can sign
+  in first. A skipped sign-in is safe: an agent that can't start waits on "not signed in", with
+  Retry.
+
+The welcome step shows only when this launch did the copy: one sentence ("Shepherd now runs its
+own copy of pi. The pi in your terminal is untouched."), what came over, the provider key
+variables the user's login shell sets (names only, found by the same login shell that finds "your
+pi"), and a sign-in ask only for what's missing: the provider of the default model (Settings ▸
+Agents' own, else pi's) when nothing covers it, or every provider when nothing can start an agent.
+Providers that sign in with cloud credentials pi doesn't store (Amazon Bedrock, Google Vertex AI)
+are never asked for. A new user with no pi sees only sign-in. A later launch copies nothing and
+holds nothing.
 
 ## Signing in
 
@@ -209,7 +221,10 @@ refuses pi's own package commands, and the pins turn off pi's update check and i
   (`YourPiImportTests`), hostile files (`YourPiImportEdgeTests`: links, a FIFO, folder or device
   for auth.json, a huge, invalid or deeply nested one, unknown OAuth fields, a `!command` key, a
   damaged or early state file, a "your pi" overlapping the home, a package token), the first launch through the view model and the stub engine
-  (`YourPiFirstLaunchTests`: the hold, the welcome, a later launch, skipping sign-in), and the
+  (`YourPiFirstLaunchTests`: nothing starts while the copy runs, then restored agents start
+  signed in with no click, since the stub refuses to start without a login in the home; a copy
+  past its deadline; the default model's missing provider; a later launch; skipping sign-in with
+  nothing to copy leaving agents on "not signed in"), and the
   instructions in a parent and a real child (`your-pi-instructions.test.mjs`,
   `native-children.test.mjs`).
 - Unit: the launch lines (`PiLaunchTests`), the launcher's and `restore-env.sh`'s content, the
