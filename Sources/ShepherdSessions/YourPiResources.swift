@@ -357,10 +357,19 @@ enum YourPiResources {
     /// reads a folder named in settings). Nil when it has none.
     static func extensionEntries(_ directory: URL, discovering: Bool = false) -> [String]? {
         if let manifest = piManifest(directory), let paths = manifest["extensions"] as? [Any] {
+            // An entry that leads out of the package ("../x", "a/../../x") would load a file
+            // beside the copy, or outside Shepherd's home: it is left out.
+            let root = directory.standardizedFileURL.path
             let entries = paths.compactMap { $0 as? String }.filter { !$0.isEmpty }
                 .map { (($0 as NSString).standardizingPath as String) }
-                .filter { !$0.hasPrefix("..") && FileManager.default.fileExists(atPath: directory.appendingPathComponent($0).path) }
-            if !entries.isEmpty { return entries }
+                .filter { entry in
+                    let resolved = directory.appendingPathComponent(entry).standardizedFileURL.path
+                    return PiHome.isInside(resolved, root) && resolved != root && FileManager.default.fileExists(atPath: resolved)
+                }
+                .map { String(directory.appendingPathComponent($0).standardizedFileURL.path.dropFirst(root.count + 1)) }
+            var seen: Set<String> = []
+            let unique = entries.filter { seen.insert($0).inserted }
+            if !unique.isEmpty { return unique }
         }
         for index in ["index.ts", "index.js"] where isFile(directory.appendingPathComponent(index).path) { return [index] }
         guard discovering else { return nil }
@@ -396,7 +405,7 @@ enum YourPiResources {
             for key in ["dependencies", "optionalDependencies", "peerDependencies"] {
                 names += ((manifest[key] as? [String: Any]) ?? [:]).keys.sorted()
             }
-            for name in names where !name.isEmpty && !name.contains("..") {
+            for name in names where !name.isEmpty && !name.contains("..") && !providedByPi(name) {
                 // Node looks in the package's own node_modules first, then up the tree.
                 if isDirectory(current.appendingPathComponent("node_modules/\(name)").path) { continue }
                 let hoisted = npmRoot.appendingPathComponent(name, isDirectory: true)
@@ -407,6 +416,14 @@ enum YourPiResources {
             }
         }
         return found
+    }
+
+    /// Packages pi hands every extension itself (pi: core/extensions/loader.js, its aliases), so
+    /// a copy of theirs would never load: an extension's peer dependency on pi is left behind,
+    /// with everything npm installed for it.
+    static func providedByPi(_ name: String) -> Bool {
+        ["@earendil-works/pi-", "@mariozechner/pi-"].contains { name.hasPrefix($0) }
+            || ["typebox", "@sinclair/typebox"].contains(name)
     }
 
     // MARK: Skills in a folder
@@ -429,7 +446,9 @@ enum YourPiResources {
                 found.append(((name as NSString).deletingPathExtension, root.appendingPathComponent(name), true))
             }
         }
+        var walk = Walk(root)
         func search(_ folder: URL, depth: Int) {
+            guard walk.enter(folder) else { return }
             if isFile(folder.appendingPathComponent("SKILL.md").path) { found.append((folder.lastPathComponent, folder, false)); return }
             guard depth < 8 else { return }
             for name in children(folder) where isDirectory(folder.appendingPathComponent(name).path) {
@@ -442,6 +461,26 @@ enum YourPiResources {
         return found
     }
 
+    /// Folders walked below one root: a link back up to the root or above it (a skill linked to
+    /// `/` or to the home folder) is never entered, and the walk stops after `budget` folders, so
+    /// a link to a big tree can't hold the first launch or read the whole disk. (A link that
+    /// loops below the root ends at the depth limit.)
+    struct Walk {
+        static let budget = 10_000
+        private let root: String
+        private(set) var entered = 0
+
+        init(_ root: URL) {
+            self.root = PiHome.canonical(root.path)
+        }
+
+        mutating func enter(_ folder: URL) -> Bool {
+            guard entered < Self.budget, !PiHome.isInside(root, PiHome.canonical(folder.path)) else { return false }
+            entered += 1
+            return true
+        }
+    }
+
     // MARK: Files
 
     static func topLevelFiles(_ folder: URL, suffix: String) -> [URL] {
@@ -450,14 +489,20 @@ enum YourPiResources {
 
     /// Files ending in `suffix` below `folder`, at any depth, as pi reads a folder named in its
     /// settings (hidden entries and `node_modules` left out).
-    static func filesBelow(_ folder: URL, suffix: String, depth: Int = 0) -> [URL] {
-        guard depth < 8 else { return [] }
+    static func filesBelow(_ folder: URL, suffix: String) -> [URL] {
+        var walk = Walk(folder)
         var found: [URL] = []
-        for name in children(folder) {
-            let url = folder.appendingPathComponent(name)
-            if isDirectory(url.path) { found += filesBelow(url, suffix: suffix, depth: depth + 1) }
-            else if name.hasSuffix(suffix), isFile(url.path) { found.append(url) }
+        func search(_ folder: URL, depth: Int) {
+            for name in children(folder) {
+                let url = folder.appendingPathComponent(name)
+                if isDirectory(url.path) {
+                    if depth < 8, walk.enter(url) { search(url, depth: depth + 1) }
+                } else if name.hasSuffix(suffix), isFile(url.path) {
+                    found.append(url)
+                }
+            }
         }
+        search(folder, depth: 1)
         return found
     }
 
@@ -511,6 +556,7 @@ enum YourPiTree {
 
     struct Result: Equatable {
         var files = 0
+        var folders = 0
         var bytes = 0
         /// Paths inside it that were left out (a broken link, a loop, a FIFO), relative.
         var leftOut: [String] = []
@@ -532,7 +578,8 @@ enum YourPiTree {
             try files.createDirectory(at: temporary, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o755])
             try copyFile(source.path, to: temporary.appendingPathComponent(fileName).path, limits: limits, result: &result)
         } else if (info.st_mode & S_IFMT) == S_IFDIR {
-            try copyFolder(source.path, to: temporary.path, relative: "", ancestors: [Identity(info)], limits: limits, result: &result)
+            try copyFolder(source.path, to: temporary.path, relative: "", ancestors: [Identity(info)], root: PiHome.canonical(source.path),
+                           limits: limits, result: &result)
         } else {
             try copyFile(source.path, to: temporary.path, limits: limits, result: &result)
         }
@@ -570,8 +617,11 @@ enum YourPiTree {
         }
     }
 
-    private static func copyFolder(_ source: String, to destination: String, relative: String, ancestors: Set<Identity>,
+    private static func copyFolder(_ source: String, to destination: String, relative: String, ancestors: Set<Identity>, root: String,
                                    limits: Limits, result: inout Result) throws {
+        result.folders += 1
+        // As many folders as files: a tree of empty folders is as big a copy.
+        guard result.folders <= limits.files else { throw YourPiFileError("it has more than \(limits.files) folders") }
         guard mkdir(destination, 0o755) == 0 else { throw YourPiFileError("Shepherd couldn't copy \(relative.isEmpty ? "a folder" : relative)") }
         let names: [String]
         do { names = try FileManager.default.contentsOfDirectory(atPath: source).sorted() } catch {
@@ -586,9 +636,15 @@ enum YourPiTree {
             switch info.st_mode & S_IFMT {
             case S_IFDIR:
                 let identity = Identity(info)
-                // A link back up its own folder would copy forever.
-                guard !ancestors.contains(identity) else { result.leftOut.append(inner); continue }
-                try copyFolder(path, to: destination + "/" + name, relative: inner, ancestors: ancestors.union([identity]),
+                // A link back up its own folder would copy forever, and one to a folder above the
+                // copy (`/`, the home folder) would copy the disk.
+                var link = stat()
+                guard !ancestors.contains(identity),
+                      !(lstat(path, &link) == 0 && (link.st_mode & S_IFMT) == S_IFLNK && PiHome.isInside(root, PiHome.canonical(path))) else {
+                    result.leftOut.append(inner)
+                    continue
+                }
+                try copyFolder(path, to: destination + "/" + name, relative: inner, ancestors: ancestors.union([identity]), root: root,
                                limits: limits, result: &result)
             case S_IFREG:
                 try copyFile(path, to: destination + "/" + name, limits: limits, result: &result)

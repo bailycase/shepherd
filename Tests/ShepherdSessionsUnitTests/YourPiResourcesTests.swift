@@ -87,6 +87,48 @@ struct YourPiResourcesTests {
         #expect(listing.found.allSatisfy { $0.copy.kind == kind })
     }
 
+    /// A link to `/` or to a folder above the one searched (a skill linked to the home folder) is
+    /// never walked: finding skills never reads the disk. Real skills beside them are found, a
+    /// linked one included.
+    @Test func aLinkToTheRootOrAboveIsNeverSearchedForSkills() throws {
+        let layout = try Layout(["home/.agents/skills/real/SKILL.md": Self.skill("real"), "agent/skills/mine/SKILL.md": Self.skill("mine")])
+        defer { layout.remove() }
+        let files = FileManager.default
+        try files.createSymbolicLink(atPath: layout.home.path + "/.agents/skills/disk", withDestinationPath: "/")
+        try files.createSymbolicLink(atPath: layout.home.path + "/.agents/skills/home", withDestinationPath: layout.home.path)
+        try files.createSymbolicLink(atPath: layout.agent.path + "/skills/up", withDestinationPath: layout.root.path)
+        try files.createSymbolicLink(atPath: layout.agent.path + "/skills/again", withDestinationPath: layout.agent.path + "/skills/mine")
+
+        let listing = layout.find(.skills)
+
+        #expect(listing.found.map(\.copy.destination) == ["skills/again", "skills/mine", "skills/real"])
+    }
+
+    /// A package whose manifest names a file outside it, however the path gets there, never
+    /// loads that file: only its own entries are kept.
+    @Test func anExtensionEntryLeadingOutOfItsPackageIsLeftOut() throws {
+        let layout = try Layout([
+            "agent/npm/node_modules/web/package.json": #"{"pi": {"extensions": ["./src/main.ts", "../other/x.ts", "src/../../other/x.ts", "src/../src/main.ts", "."]}}"#,
+            "agent/npm/node_modules/web/src/main.ts": "w", "agent/npm/node_modules/other/x.ts": "outside",
+        ], settings: #"{"packages": ["npm:web"]}"#)
+        defer { layout.remove() }
+        #expect(layout.find(.extensions).found.map { $0.copy.entries ?? [] } == [["src/main.ts"]])
+    }
+
+    /// An extension's peer dependency on pi (npm installs it beside the package) stays behind:
+    /// pi hands every extension its own, and a copy would drag pi's whole tree along.
+    @Test func piItselfIsNeverCopiedAsADependency() throws {
+        let layout = try Layout([
+            "agent/npm/node_modules/web/package.json": #"{"dependencies": {"left-pad": "1", "typebox": "1"}, "peerDependencies": {"@earendil-works/pi-coding-agent": "*"}, "pi": {"extensions": ["index.ts"]}}"#,
+            "agent/npm/node_modules/web/index.ts": "w", "agent/npm/node_modules/left-pad/package.json": "{}",
+            "agent/npm/node_modules/typebox/package.json": "{}",
+            "agent/npm/node_modules/@earendil-works/pi-coding-agent/package.json": #"{"dependencies": {"huge": "1"}}"#,
+            "agent/npm/node_modules/huge/package.json": "{}",
+        ], settings: #"{"packages": ["npm:web"]}"#)
+        defer { layout.remove() }
+        #expect(layout.find(.extensions).found.first?.companions.map(\.destination) == ["your-extensions/npm/node_modules/left-pad"])
+    }
+
     /// A single-file skill becomes a folder in the home, so every skill there is one Settings ▸
     /// Skills lists; an extension names the files pi loads from its copy.
     @Test func singleFileSkillsAndExtensionEntriesKeepTheirShape() throws {
@@ -144,6 +186,31 @@ struct YourPiResourcesTests {
             #expect(type != .typeSymbolicLink, "\(path) is a link")
         }
         #expect(files.isExecutableFile(atPath: destination.appendingPathComponent("helper.sh").path), "a script stays runnable")
+    }
+
+    /// A link inside a skill to `/`, or to a folder above the skill, is left out of its copy
+    /// rather than copying the disk; the skill itself is copied.
+    @Test func aLinkToTheRootInsideASkillIsLeftOut() throws {
+        let layout = try Layout(["agent/skills/odd/SKILL.md": Self.skill("odd")])
+        defer { layout.remove() }
+        let skill = layout.agent.appendingPathComponent("skills/odd")
+        try FileManager.default.createSymbolicLink(atPath: skill.path + "/disk", withDestinationPath: "/")
+        try FileManager.default.createSymbolicLink(atPath: skill.path + "/pi", withDestinationPath: layout.agent.path)
+        let result = try YourPiTree.copy(skill, to: layout.root.appendingPathComponent("out/odd"),
+                                         staging: layout.root.appendingPathComponent("out/.staging"), limits: YourPiTree.skillLimits)
+        #expect(Set(result.leftOut) == ["disk", "pi"] && result.files == 1)
+    }
+
+    /// A tree of empty folders is refused like one of too many files.
+    @Test func tooManyFoldersAreRefusedLikeTooManyFiles() throws {
+        let layout = try Layout(["agent/skills/deep/SKILL.md": Self.skill("deep")])
+        defer { layout.remove() }
+        let skill = layout.agent.appendingPathComponent("skills/deep")
+        for name in ["a", "b", "c"] { try FileManager.default.createDirectory(at: skill.appendingPathComponent(name), withIntermediateDirectories: true) }
+        #expect(throws: YourPiFileError.self) {
+            try YourPiTree.copy(skill, to: layout.root.appendingPathComponent("out/deep"),
+                                staging: layout.root.appendingPathComponent("out/.staging"), limits: .init(bytes: 1 << 20, files: 3))
+        }
     }
 
     /// A skill too large to copy (a 65 MB file, sparse so the test stays quick) fails whole: no
