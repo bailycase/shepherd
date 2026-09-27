@@ -1,6 +1,7 @@
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 
 /// Why a design reference was refused: a stable code, and words for the user or the agent.
 public struct DesignReferenceError: Error, Hashable, Sendable, CustomStringConvertible {
@@ -22,174 +23,372 @@ public struct DesignReferenceError: Error, Hashable, Sendable, CustomStringConve
         "remote_design", "A reference to a design on another Mac can't go into a thread yet: open the thread on that Mac.")
     static let notAThread = DesignReferenceError("not_a_thread", "A design's agent reads its design with its own tools, not references.")
     static let notGranted = DesignReferenceError(
-        "not_granted", "That design piece was not handed to this thread. design_get reads only the references in its messages.")
+        "not_granted", "That design piece was not sent to this thread. design_get reads only the copies sent with its messages.")
     static let tooMany = DesignReferenceError(
         "too_many_references", "A message carries at most \(DesignReferenceRecord.maxPerMessage) design references.")
+    static let noCopy = DesignReferenceError(
+        "no_copy", "The copy sent with that message is no longer kept. Ask the user to send the reference again.")
+    static let noRenderer = DesignReferenceError("render_unavailable", "Shepherd can't draw design pieces here.")
 }
 
-/// A reference the host checked against the design as it is now: the record pi reads (every word
-/// in it read from the design's files) and the grant sending it makes.
-public struct CheckedDesignReference: Hashable, Sendable {
+/// A reference pinned for a composer, the @ picker or the Implement sheet: the piece at the
+/// revision it was picked at (its source kept, so the send sends that version even if the design
+/// moves on), what the host read of it, and what it will send.
+public struct PreparedDesignReference: Hashable, Sendable {
+    /// Pinned, and labelled for chips and menus.
     public var reference: DesignReference
-    public var record: DesignReferenceRecord
-    public var grant: DesignGrant
-}
+    public var design: String
+    public var boardTitle: String?
+    public var elementLabel: String?
+    public var elementName: String?
+    public var width: Double?
+    public var height: Double?
+    /// The Implement sheet's footer counts (`DesignReferencePresentation.sends`).
+    public var outline: DesignReferenceOutline
 
-/// What the app draws for a reference (a board view off screen, `DesignHost`), into a folder of
-/// its drop folder: the board's (or the element's) PNG, the board's standalone page, the
-/// element's markup and computed styles. Never on the server's queue.
-public struct DesignReferenceRenderRequest: Hashable, Sendable {
-    public var reference: DesignReference
-    public var aspects: Set<DesignReferenceAspect>
-
-    public init(reference: DesignReference, aspects: Set<DesignReferenceAspect>) {
-        self.reference = reference
-        self.aspects = aspects
+    /// The element's name and words ("card “Checkout funnel”"), else the board's title, else the
+    /// design's name: what "Implement …" and the toasts name.
+    public var piece: String {
+        DesignReferencePresentation.piece((reference.kind, design, boardTitle ?? reference.board?.stem,
+                                           reference.element.map { _ in DesignReferenceReading.elementTitle(name: elementName, label: elementLabel) }))
     }
 }
 
-/// Reads references off the server's queue: the design store reads and pins on its own queue.
+/// A reference a send resolved and kept: its copy, the record pi reads, and the grant it makes.
+struct SentDesignReference: Sendable {
+    var payload: DesignReferencePayload
+    var record: DesignReferenceRecord
+    var grant: DesignGrant
+}
+
+/// Resolves, keeps and reads references off the server's queue: the design store and the copies'
+/// store read and write on their own queues, the app draws on the main thread.
 struct DesignReferenceService: Sendable {
     let server: SessionServer
 
-    /// Checks each reference against the design as it is now (the design is in the workspace, the
-    /// board on its canvas, the element in the board's source) and pins it at the design's
-    /// revision now, keeping a copy of the board for `changes`. The record's words are read
-    /// from the files, never taken from what was sent.
-    func check(_ references: [DesignReference], files: [[String]?], state: ShepherdState,
-               at now: Double) async throws -> [CheckedDesignReference] {
-        guard references.count <= DesignReferenceRecord.maxPerMessage else { throw DesignReferenceError.tooMany }
-        var out: [CheckedDesignReference] = []
-        for (index, reference) in references.enumerated() {
-            guard reference.host == .local else { throw DesignReferenceError.remote }
-            guard let design = state.designs.first(where: { $0.id == reference.designID }) else {
-                throw DesignReferenceError("no_such_design", "That design is no longer here.")
+    /// The piece's sources at the version a reference names.
+    struct Resolved: Sendable {
+        var design: Design
+        var snapshot: DesignSnapshot
+        var revision: UInt64
+        /// The board (a board or element reference) or the boards held (a whole design).
+        var boards: [(source: DesignBoardSource, isCurrent: Bool)]
+        var elementLabel: String?
+        var elementName: String?
+        var systems: [DesignSystemInstalled]
+    }
+
+    /// The design, the board and the element as the reference names them, at its revision when a
+    /// reference pinned the board then (else as they are now, pinned now).
+    func resolve(_ reference: DesignReference, state: ShepherdState) async throws -> Resolved {
+        guard reference.host == .local else { throw DesignReferenceError.remote }
+        guard let design = state.designs.first(where: { $0.id == reference.designID }), !design.buildsSystem else {
+            throw DesignReferenceError("no_such_design", "That design is no longer here.")
+        }
+        do {
+            let snapshot = try await server.designs.snapshot(reference.designID)
+            let systems = (try? await server.designs.installedSystems(reference.designID)) ?? []
+            var boards: [(source: DesignBoardSource, isCurrent: Bool)] = []
+            var revision = snapshot.revision
+            if let board = reference.board {
+                guard snapshot.index.boards[board] != nil, snapshot.boards[board] != nil else { throw DesignStoreError.noSuchBoard(board) }
+                if let wanted = reference.revision, wanted != snapshot.revision,
+                   let pinned = try await server.designs.pinnedBoard(reference.designID, path: board, revision: wanted) {
+                    boards = [(pinned, pinned.sha256 == snapshot.boards[board])]
+                    revision = wanted
+                } else {
+                    let now = try await server.designs.pinBoard(reference.designID, path: board)
+                    boards = [(now, true)]
+                    revision = now.revision
+                }
+            } else {
+                let order = DesignReferenceReading.canvasOrder(snapshot.index).filter { snapshot.boards[$0] != nil }
+                let held = Array(order.prefix(DesignReferencePayload.maxBoards))
+                var pinned: [DesignBoardSource] = []
+                if let wanted = reference.revision, wanted != snapshot.revision {
+                    for path in held {
+                        guard let source = try await server.designs.pinnedBoard(reference.designID, path: path, revision: wanted) else {
+                            pinned = []
+                            break
+                        }
+                        pinned.append(source)
+                    }
+                }
+                if pinned.isEmpty {
+                    pinned = try await server.designs.pinBoards(reference.designID, paths: held)
+                    revision = pinned.first?.revision ?? snapshot.revision
+                } else {
+                    revision = reference.revision ?? snapshot.revision
+                }
+                boards = pinned.map { ($0, $0.sha256 == snapshot.boards[$0.path]) }
             }
-            let board: DesignBoardSource
-            let snapshot: DesignSnapshot
-            do {
-                snapshot = try await server.designs.snapshot(reference.designID)
-                guard snapshot.index.boards[reference.board] != nil else { throw DesignStoreError.noSuchBoard(reference.board) }
-                board = try await server.designs.pinBoard(reference.designID, path: reference.board)
-            } catch let error as DesignStoreError {
-                throw DesignReferenceError(error.code, error.description)
-            }
-            let entry = snapshot.index.boards[reference.board]
             var label: String?
-            if let element = reference.element {
-                guard let template = DesignTemplate(board: board.source), template.element(for: element) != nil else {
-                    throw DesignReferenceError("no_such_element", "\(element) is not on \(reference.board) now.")
+            var name: String?
+            if let element = reference.element, let source = boards.first?.source.source {
+                guard let template = DesignTemplate(board: source), template.element(for: element) != nil else {
+                    throw DesignReferenceError("no_such_element", "\(element) is not on \(reference.board?.rawValue ?? "the board") now.")
                 }
                 label = template.labels[element.tid]
+                name = DesignReferenceReading.elementName(element, in: source) ?? template.element(for: element)?.name
             }
-            let pinned = reference.pinned(at: board.revision)
-            let names = (index < files.count ? files[index] : nil)?.filter(Self.isFileName).prefix(8).map { $0 }
-            let record = DesignReferenceRecord(
-                ref: pinned.string, design: design.name, board: reference.board.viewName,
-                boardTitle: entry?.title.flatMap(DesignViewRecord.label), element: reference.element?.description,
-                elementLabel: label, revision: board.revision, width: entry?.w, height: entry?.h,
-                files: names.flatMap { $0.isEmpty ? nil : $0 })
-            let grant = DesignGrant(designID: reference.designID, board: reference.board.rawValue,
-                                    element: reference.element?.description, label: label, revision: board.revision,
-                                    boardSHA: board.sha256, grantedAt: now)
-            out.append(CheckedDesignReference(reference: pinned, record: record, grant: grant))
+            return Resolved(design: design, snapshot: snapshot, revision: revision, boards: boards, elementLabel: label,
+                            elementName: name, systems: systems)
+        } catch let error as DesignStoreError {
+            throw DesignReferenceError(error.code, error.description)
+        }
+    }
+
+    /// What a piece's copy counts, from its sources: its declared styles, and the installed
+    /// systems' tokens and components it reads. The same rules for the sheet's footer and the copy.
+    static func reading(_ reference: DesignReference, sources: [String], systems: [DesignSystemInstalled])
+        -> (styles: [String], tokens: [DesignReferencePayload.Token], components: [DesignReferencePayload.Component], system: String?) {
+        var styles: [String] = []
+        for source in sources {
+            for style in DesignReferenceReading.declaredStyles(in: source, element: reference.element) where !styles.contains(style) {
+                styles.append(style)
+            }
+        }
+        let piece = sources.map { DesignReferenceReading.pieceSource($0, element: reference.element) }.joined(separator: "\n")
+        let tokens = DesignReferenceReading.usedTokens(in: piece, systems: systems)
+        let components = DesignReferenceReading.usedComponents(in: piece, systems: systems)
+        let system = systems.first.map { $0.title ?? $0.namespace }
+        return (styles, DesignReferenceReading.payloadTokens(tokens), DesignReferenceReading.payloadComponents(components), system)
+    }
+
+    /// Pins a reference for a composer or the sheet: resolved now (or at its pinned revision),
+    /// the board's source kept, and what a send of it would carry.
+    func prepare(_ reference: DesignReference, state: ShepherdState) async throws -> PreparedDesignReference {
+        let resolved = try await resolve(reference, state: state)
+        var pinned = reference.pinned(at: resolved.revision)
+        let board = reference.board.flatMap { resolved.snapshot.index.boards[$0] }
+        let title = board?.title.flatMap(DesignViewRecord.label)
+        let read = Self.reading(reference, sources: resolved.boards.map(\.source.source), systems: resolved.systems)
+        let outline = DesignReferenceOutline(kind: reference.kind, styles: read.styles.count, tokens: read.tokens.count, system: read.system,
+                                             boards: reference.board == nil ? resolved.boards.count : nil,
+                                             boardCount: reference.board == nil ? resolved.snapshot.index.boards.count : nil)
+        pinned.label = DesignReference.label(design: resolved.design.name, board: reference.board.map { title ?? $0.stem },
+                                             element: reference.element.map { _ in
+                                                 DesignReferenceReading.elementTitle(name: resolved.elementName, label: resolved.elementLabel) })
+        return PreparedDesignReference(reference: pinned, design: resolved.design.name, boardTitle: title,
+                                       elementLabel: resolved.elementLabel, elementName: resolved.elementName,
+                                       width: board?.w, height: board?.h, outline: outline)
+    }
+
+    /// Resolves a reference at its revision and keeps its copy for `agentID`: the board's (or
+    /// the boards') source, the tokens note, and what the app draws (the picture, the page, the
+    /// element's markup and computed styles), then the manifest. Nothing is kept if any of it
+    /// fails.
+    func capture(_ reference: DesignReference, for agentID: AgentID, state: ShepherdState, at now: Double) async throws -> SentDesignReference {
+        let resolved = try await resolve(reference, state: state)
+        let pinned = reference.pinned(at: resolved.revision)
+        let id = UUID()
+        let payloads = server.designReferencePayloads
+        let folder = try await payloads.create(agentID: agentID, payload: id)
+        do {
+            let read = Self.reading(pinned, sources: resolved.boards.map(\.source.source), systems: resolved.systems)
+            var request = DesignReferenceCaptureRequest(reference: pinned, boards: [], folder: folder)
+            var sources: [String: Data] = [:]
+            var payload = DesignReferencePayload(
+                id: id, agentID: agentID, reference: pinned, design: resolved.design.name,
+                elementLabel: resolved.elementLabel, elementName: resolved.elementName, revision: resolved.revision, capturedAt: now,
+                styles: read.styles, tokens: read.tokens, components: read.components, system: read.system)
+            if let board = pinned.board, let first = resolved.boards.first {
+                let entry = resolved.snapshot.index.boards[board]
+                payload.boardTitle = entry?.title.flatMap(DesignViewRecord.label)
+                payload.width = entry?.w
+                payload.height = entry?.h
+                payload.boardSHA = first.source.sha256
+                let name = DesignReferenceFileNames.source(pinned)
+                sources[name] = Data(first.source.source.utf8)
+                payload.source = .init(name: name, bytes: first.source.source.utf8.count)
+                request.boards = [.init(path: board, source: first.source.source, isCurrent: first.isCurrent,
+                                        picture: DesignReferenceFileNames.image(pinned), html: DesignReferenceFileNames.html(pinned))]
+                if pinned.element != nil {
+                    request.elementHTML = DesignReferenceFileNames.elementHTML(pinned)
+                    request.elementStyles = DesignReferenceFileNames.elementStyles(pinned)
+                }
+            } else {
+                var boards: [DesignReferencePayload.Board] = []
+                for (index, held) in resolved.boards.enumerated() {
+                    let path = held.source.path
+                    let entry = resolved.snapshot.index.boards[path]
+                    let name = DesignReferenceFileNames.boardSource(index, path)
+                    sources[name] = Data(held.source.source.utf8)
+                    boards.append(.init(board: path, title: entry?.title.flatMap(DesignViewRecord.label), width: entry?.w, height: entry?.h,
+                                        sha256: held.source.sha256, source: .init(name: name, bytes: held.source.source.utf8.count)))
+                    request.boards.append(.init(path: path, source: held.source.source, isCurrent: held.isCurrent,
+                                                picture: DesignReferenceFileNames.boardImage(index, path),
+                                                html: DesignReferenceFileNames.boardHTML(index, path)))
+                }
+                payload.boards = boards
+                payload.boardCount = resolved.snapshot.index.boards.count
+            }
+            let note = DesignReferenceFileNames.tokens(pinned)
+            let noteText = Data(DesignReferenceReading.tokensNote(payload).utf8)
+            sources[note] = noteText
+            payload.tokensNote = .init(name: note, bytes: noteText.count)
+            try await payloads.write(sources, agentID: agentID, payload: id)
+
+            if !request.boards.isEmpty {
+                let drawn = try await server.captureDesignReference(request)
+                if pinned.board != nil {
+                    payload.picture = drawn.boards.first?.picture
+                    payload.html = drawn.boards.first?.html
+                    payload.element = drawn.element
+                    payload.elementStyles = drawn.elementStyles
+                    payload.computedStyles = drawn.computedStyles
+                } else {
+                    for index in payload.boards?.indices ?? 0..<0 where index < drawn.boards.count {
+                        payload.boards?[index].picture = drawn.boards[index].picture
+                        payload.boards?[index].html = drawn.boards[index].html
+                    }
+                }
+            }
+            try await payloads.save(payload)
+            let grant = DesignGrant(designID: pinned.designID, board: pinned.board?.rawValue, element: pinned.element?.description,
+                                    label: resolved.elementLabel, revision: resolved.revision, boardSHA: payload.boardSHA,
+                                    grantedAt: now, payload: id)
+            return SentDesignReference(payload: payload, record: payload.record(folder: folder), grant: grant)
+        } catch {
+            await payloads.remove(agentID: agentID, payloads: [id])
+            throw error
+        }
+    }
+
+    // MARK: design_get
+
+    /// design_get's answer for `aspect`, from the copy the thread was sent: never the design as
+    /// it is now. Everything read from the design is fenced as data; files are the copy's.
+    func answer(_ reference: DesignReference, aspect: DesignReferenceAspect, agent: Agent) async throws -> DesignReferenceAnswer {
+        guard let grant = agent.designGrant(designID: reference.designID, board: reference.board?.rawValue,
+                                            element: reference.element?.description, revision: reference.revision),
+              let payloadID = grant.payload else { throw DesignReferenceError.notGranted }
+        let payloads = server.designReferencePayloads
+        guard let payload = await payloads.load(agentID: agent.id, payload: payloadID),
+              let folder = payloads.folder(for: agent.id, payload: payloadID) else { throw DesignReferenceError.noCopy }
+        let versions = agent.designGrants(forPieceOf: grant).map(\.revision)
+        let lead = "design_get \(aspect.rawValue) of \(payload.reference.string)"
+        let lookedAt = DesignReferenceLookedAt.make(payload, aspects: [aspect])
+        func path(_ file: DesignReferencePayload.File?) -> String? { file.map { folder.appendingPathComponent($0.name).path } }
+        func listed(_ note: String, _ files: [String]) -> DesignReferenceAnswer {
+            DesignReferenceAnswer(text: lead + "\n" + note + "\n" + files.map { "- \($0)" }.joined(separator: "\n"), files: files,
+                                  lookedAt: lookedAt)
+        }
+        switch aspect {
+        case .summary:
+            return DesignReferenceAnswer(text: lead + "\n" + DesignReferenceData.fenced(DesignReferenceReading.summary(payload, versions: versions)),
+                                         lookedAt: lookedAt)
+        case .tokens:
+            return DesignReferenceAnswer(text: lead + "\n" + DesignReferenceData.fenced(DesignReferenceReading.tokensReport(payload)),
+                                         lookedAt: lookedAt)
+        case .image:
+            if let picture = path(payload.picture) {
+                var answer = listed(payload.reference.element == nil ? "A PNG of the board at twice its size, as it was sent."
+                                                                     : "A PNG of the element cut from its board, at twice its size, as it was sent.",
+                                    [picture])
+                answer.image = picture
+                return answer
+            }
+            let pictures = (payload.boards ?? []).compactMap { path($0.picture) }
+            guard !pictures.isEmpty else { throw DesignReferenceError("no_picture", "The copy holds no picture.") }
+            return listed("A PNG of each board the copy holds, at twice its size, as it was sent. Read each with your read tool.", pictures)
+        case .html:
+            if let page = path(payload.html) {
+                return listed("The board as a standalone page, as it was sent: no runtime, no scripts. Read it with your read tool.", [page])
+            }
+            let pages = (payload.boards ?? []).compactMap { path($0.html) }
+            guard !pages.isEmpty else { throw DesignReferenceError("no_html", "The copy holds no page.") }
+            return listed("Each board the copy holds as a standalone page, as it was sent. Read them with your read tool.", pages)
+        case .element:
+            guard payload.reference.element != nil else {
+                throw DesignReferenceError("no_element", "This reference is a whole board or design: ask for its html or image, or its tokens.")
+            }
+            let files = [path(payload.element), path(payload.elementStyles)].compactMap { $0 }
+            guard !files.isEmpty else { throw DesignReferenceError("no_element", "The copy holds no markup for the element.") }
+            return listed("The element's markup as drawn, and its computed styles (JSON), as it was sent. Read them with your read tool.", files)
+        case .changes:
+            let sent = agent.designGrants(forPieceOf: grant)
+            guard let earlier = sent.last(where: { $0.revision < grant.revision }), let earlierID = earlier.payload,
+                  let before = await payloads.load(agentID: agent.id, payload: earlierID) else {
+                let text = sent.contains(where: { $0.revision > grant.revision })
+                    ? "This is the earliest version of this piece sent to this thread (revisions "
+                        + versions.map(String.init).joined(separator: ", ") + "). Ask with a later ref's revision to see what changed since."
+                    : "This thread was sent only revision \(grant.revision) of this piece, so there is nothing to compare. "
+                        + "A newer version reaches you only when the user sends it."
+                return DesignReferenceAnswer(text: lead + "\n" + text, lookedAt: lookedAt)
+            }
+            let text: String
+            if payload.reference.board == nil {
+                let old = await boardSources(before, agentID: agent.id)
+                let new = await boardSources(payload, agentID: agent.id)
+                text = DesignReferenceReading.designChanges(from: before.revision, to: payload.revision, before: old, after: new)
+            } else {
+                guard let oldFile = before.source, let newFile = payload.source,
+                      let oldData = await payloads.read(agentID: agent.id, payload: before.id, file: oldFile.name),
+                      let newData = await payloads.read(agentID: agent.id, payload: payload.id, file: newFile.name) else {
+                    throw DesignReferenceError.noCopy
+                }
+                text = DesignReferenceReading.changes(reference: payload.reference, label: earlier.label ?? grant.label, from: before.revision,
+                                                      to: payload.revision, before: String(decoding: oldData, as: UTF8.self),
+                                                      after: String(decoding: newData, as: UTF8.self))
+            }
+            return DesignReferenceAnswer(text: lead + "\n" + DesignReferenceData.fenced(text), lookedAt: lookedAt)
+        }
+    }
+
+    private func boardSources(_ payload: DesignReferencePayload, agentID: AgentID) async -> [(board: DesignPath, title: String?, source: String)] {
+        var out: [(board: DesignPath, title: String?, source: String)] = []
+        for board in payload.boards ?? [] {
+            guard let file = board.source,
+                  let data = await server.designReferencePayloads.read(agentID: agentID, payload: payload.id, file: file.name) else { continue }
+            out.append((board.board, board.title, String(decoding: data, as: UTF8.self)))
         }
         return out
     }
 
-    /// An attached file's name as a record lists it: one path segment of plain characters.
-    static func isFileName(_ name: String) -> Bool {
-        (1...100).contains(name.utf8.count) && !name.hasPrefix(".") && name.utf8.allSatisfy {
-            (0x30...0x39).contains($0) || (0x41...0x5A).contains($0) || (0x61...0x7A).contains($0) || "@._-".utf8.contains($0)
-        }
-    }
+    // MARK: Freshness
 
-    /// design_get's answer for `aspect` of a granted reference. Everything read from the design is
-    /// fenced as data; rendered aspects come back as files in the app's drop folder.
-    func answer(_ reference: DesignReference, aspect: DesignReferenceAspect, grant: DesignGrant,
-                design: Design) async throws -> DesignReferenceAnswer {
-        let snapshot: DesignSnapshot
-        do {
-            snapshot = try await server.designs.snapshot(reference.designID)
-        } catch let error as DesignStoreError {
-            throw DesignReferenceError(error.code, error.description)
+    /// How `reference` stands against its design now: against the copy a thread was sent
+    /// (`payload`), else against the version it pinned. Never reads another Mac's design.
+    func freshness(_ reference: DesignReference, payload: DesignReferencePayload?, state: ShepherdState) async -> DesignReferenceFreshness {
+        guard reference.host == .local else { return .current }
+        guard state.designs.contains(where: { $0.id == reference.designID }),
+              let snapshot = try? await server.designs.snapshot(reference.designID) else { return .deleted }
+        let payloads = server.designReferencePayloads
+        if let board = reference.board {
+            guard snapshot.index.boards[board] != nil, let now = snapshot.boards[board] else { return .deleted }
+            var before: String?
+            var sha: String?
+            if let payload {
+                sha = payload.boardSHA
+                if let file = payload.source, let data = await payloads.read(agentID: payload.agentID, payload: payload.id, file: file.name) {
+                    before = String(decoding: data, as: UTF8.self)
+                }
+            } else if let revision = reference.revision,
+                      let pinned = try? await server.designs.pinnedBoard(reference.designID, path: board, revision: revision) {
+                sha = pinned.sha256
+                before = pinned.source
+            }
+            guard let sha else {
+                return reference.revision.map { $0 == snapshot.revision } ?? true ? .current : .updatedSince(latest: snapshot.revision, changes: [])
+            }
+            guard sha != now else { return .current }
+            guard let before, let after = try? await server.designs.board(reference.designID, path: board) else {
+                return .updatedSince(latest: snapshot.revision, changes: [])
+            }
+            let label = payload?.elementLabel
+            return .updatedSince(latest: snapshot.revision, changes: DesignReferenceReading.changeLines(
+                reference: reference, label: label, before: before, after: after.source))
         }
-        let entry = snapshot.index.boards[reference.board]
-        let current = entry == nil ? nil : try? await server.designs.board(reference.designID, path: reference.board)
-        let element = currentElement(reference, grant: grant, source: current?.source)
-        let lead = "design_get \(aspect.rawValue) of \(reference.string)"
-        switch aspect {
-        case .summary:
-            let record = DesignReferenceRecord(
-                ref: reference.string, design: design.name, board: reference.board.viewName,
-                boardTitle: entry?.title.flatMap(DesignViewRecord.label), element: element?.description,
-                elementLabel: element.flatMap { id in current.flatMap { DesignTemplate(board: $0.source)?.labels[id.tid] } },
-                revision: snapshot.revision, width: entry?.w, height: entry?.h)
-            var shown = reference
-            shown.element = element ?? reference.element
-            let changed = current.map { $0.sha256 != grant.boardSHA }
-            let text = DesignReferenceReading.summary(reference: shown, record: record, pinned: grant.revision,
-                                                      changed: changed, onCanvas: current != nil)
-            return DesignReferenceAnswer(text: lead + "\n" + DesignReferenceData.fenced(text))
-        case .tokens:
-            guard let current else { throw Self.offCanvas }
-            let systems = (try? await server.designs.installedSystems(reference.designID)) ?? []
-            let piece = DesignReferenceReading.pieceSource(current.source, element: element)
-            var tokens = DesignReferenceReading.usedTokens(in: piece, systems: systems)
-            var scope = element == nil ? "The board" : "The element"
-            if tokens.isEmpty, element != nil {
-                tokens = DesignReferenceReading.usedTokens(in: current.source, systems: systems)
-                scope = "The element reads none itself; its board"
-            }
-            let components = DesignReferenceReading.usedComponents(in: element == nil ? current.source : piece, systems: systems)
-            var text = DesignReferenceReading.tokensReport(tokens: tokens, components: components, scope: scope)
-            if systems.isEmpty { text += "\nThe design has no design system installed." }
-            return DesignReferenceAnswer(text: lead + "\n" + DesignReferenceData.fenced(text))
-        case .changes:
-            var pinned: String?
-            if let sha = grant.boardSHA { pinned = try? await server.designs.pinnedBoard(reference.designID, sha256: sha) }
-            let text = DesignReferenceReading.changes(reference: reference, label: grant.label, pinnedRevision: grant.revision,
-                                                      revision: snapshot.revision, pinned: pinned, current: current?.source)
-            return DesignReferenceAnswer(text: lead + "\n" + DesignReferenceData.fenced(text))
-        case .image, .html, .element:
-            guard current != nil else { throw Self.offCanvas }
-            if aspect == .element, element == nil {
-                throw DesignReferenceError("no_element", reference.element == nil
-                    ? "This reference is a whole board: ask for its html or image, or its tokens."
-                    : "The referenced element is no longer on the board.")
-            }
-            var drawn = reference
-            drawn.element = aspect == .html ? nil : element
-            let rendering = try await server.renderDesignReference(
-                DesignReferenceRenderRequest(reference: drawn, aspects: [aspect]))
-            let files: [String]
-            let note: String
-            switch aspect {
-            case .image:
-                files = rendering.image.map { [$0] } ?? []
-                note = drawn.element == nil ? "A PNG of the board at twice its size." : "A PNG of the element cut from its board, at twice its size."
-            case .html:
-                files = rendering.html.map { [$0] } ?? []
-                note = "The board as a standalone page: no runtime, no scripts. Read it with your read tool."
-            default:
-                files = [rendering.elementHTML, rendering.elementStyles].compactMap { $0 }
-                note = "The element's markup as drawn, and its computed styles (JSON). Read them with your read tool."
-            }
-            guard !files.isEmpty else { throw DesignReferenceError("render_failed", "Shepherd couldn't draw \(reference.board).") }
-            let text = lead + "\n" + note + "\n" + files.map { "- \($0)" }.joined(separator: "\n")
-            return DesignReferenceAnswer(text: text, files: files, image: aspect == .image ? files.first : nil)
+        let order = DesignReferenceReading.canvasOrder(snapshot.index)
+        let current = order.compactMap { path in snapshot.boards[path].map { (board: path, title: snapshot.index.boards[path]?.title, sha256: $0) } }
+        guard let payload, let held = payload.boards else {
+            return reference.revision.map { $0 == snapshot.revision } ?? true ? .current : .updatedSince(latest: snapshot.revision, changes: [])
         }
-    }
-
-    static let offCanvas = DesignReferenceError("no_such_board", "The referenced board is no longer on the canvas.")
-
-    /// The referenced element in the board's source now: at its id when that still names an
-    /// element with its words, else found again by its path and words (`DesignCommentAnchor`).
-    func currentElement(_ reference: DesignReference, grant: DesignGrant, source: String?) -> DesignElementID? {
-        guard let element = reference.element else { return nil }
-        guard let source, let template = DesignTemplate(board: source) else { return nil }
-        if template.element(for: element) != nil, template.labels[element.tid] == grant.label { return element }
-        guard let found = DesignCommentAnchor.find(path: element.path, label: grant.label, in: template) else { return nil }
-        return DesignElementID(board: element.board, tid: found.tid, path: found.path)
+        let before = held.map { (board: $0.board, title: $0.title, sha256: $0.sha256) }
+        let heldAll = held.count == (payload.boardCount ?? held.count)
+        let compared = heldAll ? current : current.filter { board in held.contains { $0.board == board.board } }
+        let lines = DesignReferenceReading.designChangeLines(before: before, after: compared)
+        return lines.isEmpty ? .current : .updatedSince(latest: snapshot.revision, changes: lines)
     }
 }

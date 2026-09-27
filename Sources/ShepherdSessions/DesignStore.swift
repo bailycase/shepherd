@@ -312,28 +312,45 @@ public final class DesignStore: @unchecked Sendable {
 
     // MARK: Pins (design references)
 
-    /// Keeps the board's source as it is now under `pins/<sha256>.dc.html` beside `project/`, for
-    /// a design reference pinned at this revision to compare with later (`changes`). A pin is
-    /// never served, never a board, and goes with the design's folder. Answers the board's
-    /// source, its hash and the design's revision.
+    /// Keeps the board's source as it is now under `pins/<sha256>.dc.html` beside `project/`, and
+    /// records which source the board had at this revision (`pins/index.json`), so a reference
+    /// pinned now is sent as it was even if the design moves on before the send. A pin is never
+    /// served, never a board, and goes with the design's folder. Answers the board's source, its
+    /// hash and the design's revision.
     public func pinBoard(_ id: DesignID, path: DesignPath) async throws -> DesignBoardSource {
+        guard let pinned = try await pinBoards(id, paths: [path]).first else { throw DesignStoreError.noSuchBoard(path) }
+        return pinned
+    }
+
+    /// `pinBoard` for several boards at one revision, in the order given.
+    public func pinBoards(_ id: DesignID, paths: [DesignPath]) async throws -> [DesignBoardSource] {
         try await run {
             var design = try self.load(id)
             let files = try self.files(of: id, &design)
-            guard let sha = files[path], let folder = self.folder(for: id) else { throw DesignStoreError.noSuchBoard(path) }
-            let data: Data
-            do { data = try Data(contentsOf: try self.fileURL(id, path)) } catch { throw DesignStoreError.noSuchBoard(path) }
+            guard let folder = self.folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
             let pins = folder.appendingPathComponent("pins", isDirectory: true)
-            let pin = pins.appendingPathComponent(sha + DesignPath.fileExtension)
-            if !FileManager.default.fileExists(atPath: pin.path) {
-                do {
-                    try FileManager.default.createDirectory(at: pins, withIntermediateDirectories: true)
-                    try data.write(to: pin, options: .atomic)
-                } catch {
-                    throw DesignStoreError.io("could not keep a pinned copy of \(path): \(error.localizedDescription)")
+            var index = Self.pinIndex(pins)
+            var out: [DesignBoardSource] = []
+            for path in paths {
+                guard let sha = files[path] else { throw DesignStoreError.noSuchBoard(path) }
+                let data: Data
+                do { data = try Data(contentsOf: try self.fileURL(id, path)) } catch { throw DesignStoreError.noSuchBoard(path) }
+                let pin = pins.appendingPathComponent(sha + DesignPath.fileExtension)
+                if !FileManager.default.fileExists(atPath: pin.path) {
+                    do {
+                        try FileManager.default.createDirectory(at: pins, withIntermediateDirectories: true)
+                        try data.write(to: pin, options: .atomic)
+                    } catch {
+                        throw DesignStoreError.io("could not keep a pinned copy of \(path): \(error.localizedDescription)")
+                    }
                 }
+                index.record(revision: design.revision, board: path, sha256: sha)
+                out.append(DesignBoardSource(path: path, source: String(decoding: data, as: UTF8.self), sha256: sha, revision: design.revision))
             }
-            return DesignBoardSource(path: path, source: String(decoding: data, as: UTF8.self), sha256: sha, revision: design.revision)
+            if let data = try? JSONEncoder().encode(index) {
+                try? data.write(to: pins.appendingPathComponent("index.json"), options: .atomic)
+            }
+            return out
         }
     }
 
@@ -346,6 +363,42 @@ public final class DesignStore: @unchecked Sendable {
             guard let data = try? Data(contentsOf: pin), Self.sha256(data) == sha256 else { return nil }
             return String(decoding: data, as: UTF8.self)
         }
+    }
+
+    /// The board's source at `revision`, when a reference pinned it then; nil when none did.
+    public func pinnedBoard(_ id: DesignID, path: DesignPath, revision: UInt64) async throws -> DesignBoardSource? {
+        try await run {
+            guard let folder = self.folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+            let pins = folder.appendingPathComponent("pins", isDirectory: true)
+            guard let sha = Self.pinIndex(pins).sha256(revision: revision, board: path),
+                  let data = try? Data(contentsOf: pins.appendingPathComponent(sha + DesignPath.fileExtension)),
+                  Self.sha256(data) == sha else { return nil }
+            return DesignBoardSource(path: path, source: String(decoding: data, as: UTF8.self), sha256: sha, revision: revision)
+        }
+    }
+
+    /// Which source each board had at the revisions references were pinned at, newest
+    /// `PinIndex.limit` revisions kept.
+    struct PinIndex: Codable {
+        static let limit = 200
+        var revisions: [String: [String: String]] = [:]
+
+        mutating func record(revision: UInt64, board: DesignPath, sha256: String) {
+            revisions["\(revision)", default: [:]][board.rawValue] = sha256
+            if revisions.count > Self.limit {
+                let old = revisions.keys.compactMap(UInt64.init).sorted().prefix(revisions.count - Self.limit)
+                for key in old { revisions["\(key)"] = nil }
+            }
+        }
+
+        func sha256(revision: UInt64, board: DesignPath) -> String? {
+            revisions["\(revision)"]?[board.rawValue]
+        }
+    }
+
+    private static func pinIndex(_ pins: URL) -> PinIndex {
+        (try? Data(contentsOf: pins.appendingPathComponent("index.json"))).flatMap { try? JSONDecoder().decode(PinIndex.self, from: $0) }
+            ?? PinIndex()
     }
 
     /// A board's kept versions, oldest first.

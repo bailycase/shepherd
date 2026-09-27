@@ -86,6 +86,7 @@ struct ExtensionMessageTests {
                                proposals: [DesignMarkupProposal(element: "A-phone.dc.html#31:1/1/2", text: "Thicker bars on phone."),
                                            DesignMarkupProposal(element: "not an id", text: "Counts “here” too?")]),
         .designGet(id: 29, agentID: agent, reference: "shepherd-design-ref://local/d1/flows%2FCart.dc.html#12:0/1@7", what: "element"),
+        .designGet(id: 32, agentID: agent, reference: "shepherd-design-ref://local/d1@7", what: "image"),
         .mcpCredentials(id: 28, agentID: agent, server: "linear", reason: .unauthorized,
                         challenge: #"Bearer resource_metadata="https://mcp.linear.app/.well-known/oauth-protected-resource""#),
         .mcpReport(agentID: agent, report: MCPServerReport(
@@ -327,6 +328,10 @@ struct ExtensionReplyTests {
         .designReference(id: 30, answer: DesignReferenceAnswer(text: "design_get image of …\nA PNG.", files: ["/tmp/d/Hero@2x.png"],
                                                                image: "/tmp/d/Hero@2x.png")),
         .designReference(id: 31, answer: DesignReferenceAnswer(text: "unchanged")),
+        .designReference(id: 32, answer: DesignReferenceAnswer(
+            text: "design_get tokens of …", lookedAt: DesignReferenceLookedAt(
+                ref: "shepherd-design-ref://local/d1/A.dc.html@4", title: "Checkout › A", aspects: [.tokens],
+                tokens: .init(names: ["--accent"], sources: ["web/static/tokens.css:8"])))),
         .mcpCredentials(id: 29, credentials: MCPCredentials(bearer: "at-1", headers: ["X-Org": "acme"],
                                                             env: ["DATABASE_URI": "postgres://u:p@db/app"], expiresAtMs: 1_790_000_000_000)),
     ]

@@ -535,12 +535,19 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
     /// to (pi's ids, "openai" and "gpt-5"), for the error card's facts. Absent from older hosts.
     public var provider: String?
     public var model: String?
+    /// User messages the user sent in this thread with design references: each reference as the
+    /// host read it and kept its copy (without the copy's file paths). The thread draws them as
+    /// chips; the words carry `DesignReferenceFence.humanLine` for clients that don't. A message
+    /// that carries a references fence the user didn't send here (another agent's) has none, and
+    /// shows the fence as text. Absent from older hosts.
+    public var designReferences: [DesignReferenceRecord]?
 
     public init(
         entryID: String, role: String, blocks: [NativeThreadBlock], toolName: String? = nil, toolCallID: String? = nil,
         argumentsText: String? = nil, status: String? = nil, isError: Bool? = nil, truncated: Bool = false, timestamp: Double? = nil,
         startedAt: Double? = nil, thinkingSeconds: Double? = nil, origin: NativeMessageOrigin? = nil, operationID: UUID? = nil,
-        compaction: NativeCompaction? = nil, question: NativeQuestionRecord? = nil, provider: String? = nil, model: String? = nil
+        compaction: NativeCompaction? = nil, question: NativeQuestionRecord? = nil, provider: String? = nil, model: String? = nil,
+        designReferences: [DesignReferenceRecord]? = nil
     ) {
         self.entryID = entryID
         self.role = role
@@ -560,6 +567,7 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
         self.question = question
         self.provider = provider
         self.model = model
+        self.designReferences = designReferences
     }
 }
 
