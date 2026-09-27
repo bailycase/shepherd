@@ -272,6 +272,7 @@ extension ShepherdViewModel {
 
     /// The host pushed a design's new revision: its canvas pulls what changed.
     func designRevised(_ id: DesignID) {
+        referencesDesignsChanged()
         guard let screen = designScreens[id] else { return }
         Task { await screen.refresh() }
     }
@@ -286,6 +287,7 @@ extension ShepherdViewModel {
         }
         if let selection = designsPageSelection, !live.contains(selection) { designsPageSelection = nil }
         madeDesignRendering?.prune(keeping: live)
+        referencesDesignsChanged()
     }
 }
 

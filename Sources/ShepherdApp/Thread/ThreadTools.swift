@@ -58,6 +58,14 @@ struct ActivityLineView: View, Equatable {
     }
 
     var body: some View {
+        if burst.kind == .lookedAt {
+            LookedAtLineView(burst: burst) { line }
+        } else {
+            line
+        }
+    }
+
+    private var line: some View {
         VStack(alignment: .leading, spacing: 0) {
             NWActivityLine(kind: kind, label: burst.label, meta: burst.meta, status: status, isExpanded: expanded,
                            accessibilityLabel: burst.accessibilityLabel,
@@ -83,6 +91,7 @@ struct ActivityLineView: View, Equatable {
         case .subagents: .subagents
         case .drew: burst.isBoardUpdate ? .edit : .drew
         case .checked: .checked
+        case .lookedAt: .lookedAtDesign
         case .other: .other
         }
     }

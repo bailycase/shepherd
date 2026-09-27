@@ -329,6 +329,7 @@ struct ActivityLineView: View, Equatable {
         case .subagents: .subagents
         case .drew: burst.isBoardUpdate ? .edit : .drew
         case .checked: .checked
+        case .lookedAt: .lookedAtDesign
         case .other: .other
         }
     }

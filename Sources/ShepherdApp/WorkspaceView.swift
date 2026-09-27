@@ -651,6 +651,8 @@ struct PaneLeafView: View, Equatable {
                         models: { [vm] in await ModelCatalog.loadLocal(from: vm.server.pi.catalog).models.map(\.id) }),
                     slashLogin: vm.slashLoginActions
                 )
+                // Design references reach an ordinary thread only (docs/designs.md › Isolation).
+                .environment(\.designReferences, vm.designReferenceChips(for: agentID))
             } else {
                 LiveTerminalPane(
                     session: vm.sessions.session(for: pane, in: tab),

@@ -86,6 +86,11 @@ final class ShepherdViewModel {
     var designSystemDeleteRequest: DesignSystemDeleteRequest?
     /// The toast over the main column after a deletion (UndoToast, DeleteFailedToast).
     var designToast: DesignToast?
+    /// Each local thread's design references: its chips, "Looked at…" lines and @ picker.
+    @ObservationIgnored var referenceChips: [AgentID: DesignReferenceChips] = [:]
+    /// The designs as references last saw them (their activity and boards): a change reads every
+    /// chip's standing again.
+    @ObservationIgnored var referenceDesignSignature: [DesignID: [Double]] = [:]
     /// Rename… of a design or a design system, while its sheet is up.
     var designRename: DesignRenameRequest?
     /// An import running (its card first on Designs), and what it asks (ImportFailed,

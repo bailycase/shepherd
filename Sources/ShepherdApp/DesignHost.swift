@@ -107,6 +107,8 @@ final class DesignRendering {
     let thumbnails: DesignThumbnails
     /// Design systems' component specimens (DZSystem).
     let specimens: DesignSpecimens
+    /// Boards' small pictures for the @ picker's rows and the composer's chips.
+    let boardPictures: DesignBoardPictures
 
     /// Live views a design on screen may hold (previews take none: their captures can't draw a
     /// web view, so every board draws its snapshot).
@@ -134,7 +136,9 @@ final class DesignRendering {
         rasterizer = shared ?? DesignRasterizer()
         thumbnails = DesignThumbnails(rasterizer: rasterizer)
         specimens = DesignSpecimens(rasterizer: rasterizer, network: network.sandbox)
+        boardPictures = DesignBoardPictures(rasterizer: rasterizer)
         thumbnails.surface = { [weak self] id in self?.surface(for: id) }
+        boardPictures.surface = { [weak self] id in self?.surface(for: id) }
         if shared == nil { rasterizer.countWebViews = { [weak self] in self?.webViews ?? 0 } }
     }
 
@@ -160,6 +164,7 @@ final class DesignRendering {
         for id in Set(hosts.keys).subtracting(ids) { hosts.removeValue(forKey: id)?.release() }
         for id in Set(surfaces.keys).subtracting(ids) { surfaces.removeValue(forKey: id) }
         thumbnails.prune(keeping: ids)
+        boardPictures.prune(keeping: ids)
     }
 
     /// Web views alive now: every host's live views and the rasterizer's.
@@ -734,12 +739,65 @@ final class DesignThumbnails {
             guard let self, let image, self.entries[id]?.sha == sha else { return }
             self.images[id] = (sha, image.scaled(toWidth: width))
             self.entries[id]?.version += 1
+            self.landed?()
         })
     }
+
+    /// Told when an image lands (the @ picker's rows draw it).
+    @ObservationIgnored var landed: (() -> Void)?
 
     func prune(keeping ids: Set<DesignID>) {
         for id in Set(entries.keys).subtracting(ids) { entries.removeValue(forKey: id) }
         for id in Set(images.keys).subtracting(ids) { images.removeValue(forKey: id) }
+    }
+}
+
+/// Boards' small pictures (the @ picker's rows, the composer's reference chips): each board a
+/// design lists, rendered by the shared rasterizer when its hash is new, at thumbnail priority.
+@MainActor
+final class DesignBoardPictures {
+    private var images: [String: (sha: String, image: CGImage)] = [:]
+    private var wanted: [String: String] = [:]
+    private let rasterizer: DesignRasterizer
+    var surface: ((DesignID) -> DesignSurface?)?
+    /// Told when an image lands.
+    var landed: (() -> Void)?
+    /// A design's boards are asked for at most this many at once.
+    static let perDesign = 24
+
+    init(rasterizer: DesignRasterizer) {
+        self.rasterizer = rasterizer
+    }
+
+    static func key(_ id: DesignID, _ path: DesignPath) -> String { id.rawValue + "/" + path.rawValue }
+
+    func image(_ id: DesignID, _ path: DesignPath) -> CGImage? { images[Self.key(id, path)]?.image }
+
+    /// Renders a design's boards whose pictures are missing or out of date.
+    func request(_ id: DesignID, snapshot: DesignSnapshot) {
+        guard let surface = surface?(id) else { return }
+        let order = DesignReferenceReading.canvasOrder(snapshot.index).prefix(Self.perDesign)
+        for path in order {
+            guard let board = snapshot.index.boards[path], let sha = snapshot.boards[path] else { continue }
+            let key = Self.key(id, path)
+            guard images[key]?.sha != sha, wanted[key] != sha else { continue }
+            wanted[key] = sha
+            let size = CGSize(width: board.w, height: board.h)
+            rasterizer.enqueue(DesignRasterizer.Job(key: "picture/" + key, surface: surface, path: path, size: size, sha: sha,
+                                                    priority: .thumbnail, wanted: { [weak self] in self?.wanted[key] == sha }) { [weak self] image in
+                guard let self, self.wanted[key] == sha else { return }
+                self.wanted[key] = nil
+                guard let image else { return }
+                self.images[key] = (sha, image.scaled(toWidth: AppLayout.referenceRowPicturePixels))
+                self.landed?()
+            })
+        }
+    }
+
+    func prune(keeping ids: Set<DesignID>) {
+        let keep = Set(ids.map(\.rawValue))
+        images = images.filter { keep.contains(String($0.key.prefix { $0 != "/" })) }
+        wanted = wanted.filter { keep.contains(String($0.key.prefix { $0 != "/" })) }
     }
 }
 
