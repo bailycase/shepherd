@@ -4299,7 +4299,8 @@ pi, over the main window.
   tooltip "Open an agent first, then sign in from Settings ▸ Pi.").
 - **A new user with no pi** sees only sign-in: the title "Sign in to a provider" and "Agents run
   on Shepherd's own copy of pi, and need a provider to reach a model.", the keys found in the
-  environment, and the sign-in ask when nothing can start.
+  environment, and the sign-in ask when nothing can start. One already signed in to Shepherd's
+  pi, with no key found and nothing missing, sees no step at all.
 - Footer: Continue (primary, ⏎). ⎋ closes it too; either way the step is over.
 - Nothing on it shows a credential's value.
 
