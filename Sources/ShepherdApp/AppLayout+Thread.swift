@@ -54,8 +54,8 @@ extension AppLayout {
     /// A menu opens this far above the card, and keeps this far from the thread's top edge.
     static let menuGap: CGFloat = 8
     static let menuMargin: CGFloat = 8
-    /// The thinking chip's lightbulb.
-    static let chipSymbol: CGFloat = 11
+    /// A chip's symbol, as big as the thinking chip's lightbulb.
+    static let chipSymbol = NWComposerMetrics.chipSymbol
     /// Half the narrowest width a real layout ever proposes the control row (the narrowest
     /// thread column less the composer's compact gutters and the row's own side paddings, 352pt).
     /// A narrower proposal is the window's minimum-size pass, which asks at no width or the
