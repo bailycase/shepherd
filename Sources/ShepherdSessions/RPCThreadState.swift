@@ -547,6 +547,15 @@ final class RPCThreadState {
         }
     }
 
+    /// The fence a send puts ahead of its words: its references', else its design view record's.
+    /// References go only to an ordinary thread and a view record only to a design's chat, so one
+    /// send never carries both; if one did, the view record is dropped, since every display
+    /// surface takes off only the one fence a message starts with.
+    static func sendContext(_ designContext: NativeDesignContext?, references: [DesignReferenceRecord]?) -> String? {
+        if let references, let fence = DesignReferenceFence.fenced(references) { return fence }
+        return designContext?.valid?.fenced()
+    }
+
     private func perform(_ request: NativeThreadRequest, operationID: UUID, olderClient: Bool, completion: @escaping (NativeThreadResult) -> Void) {
         let accepted = NativeThreadResult.accepted(operationID: operationID)
         let settle: (Result<RPCResponse, RPCError>) -> Void = { result in
@@ -565,11 +574,10 @@ final class RPCThreadState {
             }
             // A record that breaks the grammar is dropped whole; the message still goes. Design
             // references reach here only as the server read them (`SessionServer.nativeThread`).
-            let references = (designReferences ?? []).isEmpty ? nil : DesignReferenceFence.fenced(designReferences ?? [])
-            let context = [designContext?.valid?.fenced(), references].compactMap { $0 }.joined()
+            let context = Self.sendContext(designContext, references: designReferences)
             send(id: operationID, text: text, delivery: delivery, images: images,
                  // A message with references goes to pi on its own: joined, its fence would give way.
-                 alone: olderClient || references != nil, context: context.isEmpty ? nil : context, completion: completion)
+                 alone: olderClient || !(designReferences ?? []).isEmpty, context: context, completion: completion)
         case .abort:
             // Stopping refuses what pi is waiting on: a question has no Dismiss, and a turn
             // waiting on an answer would not stop.
