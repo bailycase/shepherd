@@ -304,8 +304,12 @@ extension ShepherdViewModel {
                         _ = try await Self.remoteDesign(library, .undoDelete(designID: deletion.designID))
                     } else {
                         try await server.undoDesignDeletion(deletion.designID)
-                        sessions.stateDidChange(server.state)
-                        adopt(server.state)
+                        let restored = server.state
+                        sessions.stateDidChange(restored)
+                        adopt(restored)
+                        // Its agent comes back as it was: running, its pi resuming its session.
+                        let agents = restored.agents.filter { $0.designID == deletion.designID }.map(\.id)
+                        sessions.startRestoredAgents(agents, first: [], in: restored)
                     }
                 } catch {
                     remoteActionError = "Couldn't bring back \(toast.name): \(Self.words(error))."
