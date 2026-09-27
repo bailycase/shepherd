@@ -189,9 +189,10 @@ Tests come in tiers, and the switch is `--filter` on target names.
   keywords (`ask`, `select`, `hang`, `die`, `big`, `slow`, `widgets`, `fill`, `newsession`, …).
   `STUB_PI_LOG` records what it received, and `STUB_PI_HISTORY_BYTES` seeds a long history.
   `STUB_PI_STARTUP_DELAY`/`_GATE`/`_EXIT` hold or fail its boot, `_STDERR` is what it says
-  before that exit, and `_NEW_SESSION` prints pi's warning that it found no session for its
-  `--session-id` (`stub-pi-startup.json` in its cwd does the same for a pi launched the way the
-  app launches it).
+  before that exit, `_NEW_SESSION` prints pi's warning that it found no session for its
+  `--session-id`, and `_REQUIRE_AUTH` exits "No models available." unless its pi home's
+  `auth.json` holds a login (`stub-pi-startup.json` in its cwd does the same for a pi launched
+  the way the app launches it).
   `StubPi.installAsEngine()` installs it as the engine `SHEPHERD_PI_ENGINE` names (answering
   `--list-models`), for code that launches pi the way the app does (`PiLaunch`, through the
   launcher in the scratch `support/pi`). Each launch is recorded, argv, cwd and environment, in
