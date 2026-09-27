@@ -25,7 +25,8 @@ usage:
   release.py fix-urls <appcast> <dir>   point a feed's archives at their per-tag release assets
   release.py deltas <dir> <tag>         name a feed's deltas for upload to <tag> and point the
                                         feed at them; prints the files to upload
-  release.py publish <casts> <pages>    write every gh-pages feed, legacy aliases included
+  release.py publish <casts> <pages>    write every gh-pages feed, legacy aliases included, each
+                                        item marked Apple silicon only
   release.py thin-app <app>             thin every universal Mach-O in a built app to arm64:
                                         prebuilt frameworks (Sparkle) ship universal
   release.py verify-app <app> <app-key> [version]  check a built app is the app it claims to be,
@@ -52,6 +53,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ElementTree
 from dataclasses import dataclass
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -296,13 +298,54 @@ def untag(xml: str) -> str:
     return re.sub(r"\s*<sparkle:channel>[^<]*</sparkle:channel>", "", xml)
 
 
+SPARKLE_NS = "http://www.andymatuschak.org/xml-namespaces/sparkle"
+ARM64_REQUIREMENT = "<sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>"
+
+
+def require_arm64(xml: str) -> str:
+    """Marks every item Apple silicon only, so Sparkle (2.9.0 and later) never offers it to an
+    Intel Mac. generate_appcast adds the element itself only for an archive whose executable has
+    no x86_64 slice, so the universal builds from before Shepherd went arm64 only lack it.
+
+    A text insertion, not a parse and rewrite: every other byte (declaration, prefixes,
+    signatures, enclosures, ordering) stays as generate_appcast wrote it. The result is then
+    parsed to prove each item carries the requirement exactly once."""
+    def mark(match: re.Match) -> str:
+        block = match.group(0)
+        if "<sparkle:hardwareRequirements>" in block:
+            return block
+        indent = re.match(r"<item\b[^>]*>(\s*)", block).group(1)
+        end = re.search(r"\s*</item>$", block).start()
+        return block[:end] + indent + ARM64_REQUIREMENT + block[end:]
+
+    marked = re.sub(r"<item\b[^>]*>.*?</item>", mark, xml, flags=re.S)
+    problems = arm64_problems(marked)
+    if problems:
+        raise ValueError("; ".join(problems))
+    return marked
+
+
+def arm64_problems(xml: str) -> list[str]:
+    """Items that an Intel Mac would still be offered, or that name the requirement twice."""
+    problems = []
+    for item in ElementTree.fromstring(xml).iter("item"):
+        title = item.findtext("title") or "untitled item"
+        requirements = item.findall(f"{{{SPARKLE_NS}}}hardwareRequirements")
+        if len(requirements) != 1:
+            problems.append(f"{title} has {len(requirements)} hardware requirements, not one")
+        elif "arm64" not in re.split(r"[\s,]+", (requirements[0].text or "").lower()):
+            problems.append(f"{title} does not require arm64")
+    return problems
+
+
 def publish(casts: str, pages: str) -> list[str]:
-    """Copies each generated feed to its gh-pages name and writes the legacy aliases."""
+    """Copies each generated feed to its gh-pages name, every item marked Apple silicon only,
+    and writes the legacy aliases."""
     written = []
     generated = {}
     for feed in FEEDS:
         with open(os.path.join(casts, feed.dir, "appcast.xml"), encoding="utf-8") as f:
-            generated[feed.dir] = f.read()
+            generated[feed.dir] = require_arm64(f.read())
         _write(os.path.join(pages, feed.file), generated[feed.dir])
         written.append(feed.file)
     for file, source in LEGACY_ALIASES:
