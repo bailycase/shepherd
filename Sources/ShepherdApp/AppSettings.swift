@@ -65,7 +65,6 @@ final class AppSettings {
         static let mcpOpenSignInPages = "shepherd.mcp.openSignInPages"
         static let mcpProjectConfig = "shepherd.mcp.projectConfig"
         static let mcpSameEverywhere = "shepherd.mcp.sameEverywhere"
-        static let skillsDirectoryKey = "shepherd.skills.directoryKey"
         static let returnWhileWorking = "shepherd.agent.returnWhileWorking"
         static let queueDelivery = "shepherd.agent.queueDelivery"
         static let piPanesExtension = "shepherd.pi.extension.panes"
@@ -112,15 +111,14 @@ final class AppSettings {
             worktreeBaseMode, worktreeFetchBeforeCreate,
             worktreeAutoCommit, worktreeGeneratePRDescription,
             worktreeDeleteLocalBranch, worktreeAutoMergePR,
-            worktreeMergeMethod, skillsInSlashMenu, skillsDirectoryKey,
+            worktreeMergeMethod, skillsInSlashMenu,
             mcpOpenSignInPages, mcpProjectConfig, mcpSameEverywhere,
             designToolEnabled,
         ]
 
         /// What Reset settings clears: everything but Remote's listener, which only its own
-        /// switch turns on or off (a reset must not stop serving at the next launch), and the
-        /// skills.sh key, a credential the user pasted rather than a preference.
-        static let resettable = all.filter { ![remoteListenerEnabled, remoteListenerPort, skillsDirectoryKey].contains($0) }
+        /// switch turns on or off (a reset must not stop serving at the next launch).
+        static let resettable = all.filter { ![remoteListenerEnabled, remoteListenerPort].contains($0) }
     }
 
     enum Defaults {
@@ -190,11 +188,6 @@ final class AppSettings {
     /// only This Mac.
     var mcpSameEverywhere: Bool {
         didSet { store.set(mcpSameEverywhere, forKey: Key.mcpSameEverywhere) }
-    }
-
-    /// A skills.sh API key: Browse's ranked lists need one (search and install don't).
-    var skillsDirectoryKey: String {
-        didSet { store.set(skillsDirectoryKey, forKey: Key.skillsDirectoryKey) }
     }
 
     /// What ↩ does in the composer while pi works: queue the message (the default) or steer it in.
@@ -414,7 +407,8 @@ final class AppSettings {
             .flatMap(ThinkingLevel.init(rawValue:)) ?? Defaults.thinking
         autoNameAgents = store.object(forKey: Key.autoNameAgents) as? Bool ?? Defaults.autoNameAgents
         skillsInSlashMenu = store.object(forKey: Key.skillsInSlashMenu) as? Bool ?? Defaults.skillsInSlashMenu
-        skillsDirectoryKey = store.string(forKey: Key.skillsDirectoryKey) ?? ""
+        // The directory now uses Shepherd's public API; discard the retired credential.
+        store.removeObject(forKey: "shepherd.skills.directoryKey")
         mcpOpenSignInPages = store.object(forKey: Key.mcpOpenSignInPages) as? Bool ?? false
         mcpProjectConfig = store.object(forKey: Key.mcpProjectConfig) as? Bool ?? false
         mcpSameEverywhere = store.object(forKey: Key.mcpSameEverywhere) as? Bool ?? true
