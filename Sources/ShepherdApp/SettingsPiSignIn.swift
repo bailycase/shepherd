@@ -196,6 +196,7 @@ enum PiSignInWords {
         if let command = display.command {
             return [.init("runs a command", tone: .tertiary), .init(command, mono: true, small: true, separated: false, middle: true)]
         }
+        if display.runsCommand { return [.init("runs a command", tone: .tertiary)] }
         if let name = display.variables.first {
             return NWKeySource.variable(name).parts.enumerated().map { index, part in
                 var part = part

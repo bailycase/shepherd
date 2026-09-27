@@ -448,7 +448,7 @@ struct YourPiImportTests {
         #expect(survey.copiedLogins.isSuperset(of: ["anthropic", "openai", "groq"]))
         #expect(survey.keys["openai"] == PiKeyDisplay(masked: "sk-FAKE-••••0001"))
         #expect(survey.keys["google"] == PiKeyDisplay(variables: ["GEMINI_API_KEY"]))
-        #expect(survey.keys["groq"] == PiKeyDisplay(command: "printf fake-command-output"))
+        #expect(survey.keys["groq"] == PiKeyDisplay(runsCommand: true), "a command in auth.json is never shown")
         #expect(survey.customProviderDetails.map(\.id) == ["local-llm"] && survey.customProviderDetails[0].key?.masked == "FAKE-••••-key")
         #expect(survey.copiedAt != nil && survey.yourSignInsChanged != nil)
         for secret in YourPiFixture.secrets { #expect(!String(describing: survey).contains(secret)) }

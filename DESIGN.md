@@ -3702,8 +3702,9 @@ pi of yours). Everything here is Shepherd's pi's alone (its home's `auth.json` a
 - **`NWKeySourceLabel`** after a key: "copied from your pi" (`textTertiary`; its key is the one
   the import copied), "reads `$NAME`" (the key is a `$NAME` reference, read from the login shell
   when an agent starts), "runs a command `op read …`" (a `!command`: pi runs it when the key is
-  first needed; the command in mono 11 `textSecondary`, truncated in the middle, its whole text
-  the tooltip). A key pasted into Shepherd has no label.
+  first needed; a custom provider's command in mono 11 `textSecondary`, truncated in the middle,
+  its whole text the tooltip; one in auth.json says "runs a command" alone, since such a command
+  may carry a secret inline). A key pasted into Shepherd has no label.
 - **`NWSharedLoginNote`**: under Anthropic, OpenAI Codex, Kimi and Radius (the providers whose
   refresh tokens rotate), whatever the row's state: an `arrow.triangle.2.circlepath` 11pt and
   "Signing in here and in your terminal pi can sign one of them out." in Geist 11.5
