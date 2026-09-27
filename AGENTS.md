@@ -93,9 +93,6 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
   (`instructions/`), Settings ▸ Skills' state and git caches (`skills/`), designs (`designs/`;
   docs/designs.md), design systems (`design-systems/`), and subagent artifacts. It wins over the edition's own folder
   (`Shepherd`, or `Shepherd Nightly` in Shepherd Nightly).
-- **`SHEPHERD_SKILLS_DIR`** moves the skills folder Settings ▸ Skills manages (default
-  `~/.agents/skills`, the folder pi reads skills from; docs/skills.md). Tests point it at a scratch
-  folder; pi itself always reads `~/.agents/skills`.
 - **`SHEPHERD_MCP_CONFIG`** moves the MCP servers file (Settings ▸ MCP servers) away from
   `~/.config/mcp/mcp.json`. Test isolation points it at a scratch file; setting it in the Dev
   scheme keeps Dev's servers apart from the everyday app's.
@@ -121,10 +118,7 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
     `SHEPHERD_SUGGEST_FILES` (the files its `suggest_instruction` may draft a line for, while
     Settings ▸ Experiments ▸ Suggested instructions is on for its kind of agent), and, for an
     agent that draws a design, `SHEPHERD_DESIGN_ID` and `SHEPHERD_DESIGN_SKILL_DIR` (the design
-    skill the app writes to the support directory's `design-skill/`; docs/designs.md), and
-    `SHEPHERD_YOUR_PI_INSTRUCTIONS` (the user's own pi folder, while Settings ▸ Pi ▸ From your pi
-    reads their instructions: the status extension, and the children bridge for a child that keeps
-    project context, add the global context file there to each run; docs/pi-home.md).
+    skill the app writes to the support directory's `design-skill/`; docs/designs.md).
 - **`SHEPHERD_PR_DESCRIPTION_MODEL`** overrides the model that drafts finalize PR bodies.
 - **`SHEPHERD_NAMER_MODELS`** (`provider/id,provider/id`; an entry without a slash matches any
   provider) overrides the cheap models the namer tries before the agent's own. The namer reads it
@@ -222,7 +216,7 @@ Tests come in tiers, and the switch is `--filter` on target names.
 
 - When a test bundle loads, before any test runs, `Tests/ShepherdTestIsolation` (linked through
   `ShepherdTestKit`) points `SHEPHERD_SUPPORT_DIR` (and with it Shepherd's pi home,
-  `support/pi`), `SHEPHERD_SKILLS_DIR`, `SHEPHERD_MCP_CONFIG`, `SHEPHERD_YOUR_PI` and
+  `support/pi`, whose `skills/` Settings ▸ Skills manages), `SHEPHERD_MCP_CONFIG`, `SHEPHERD_YOUR_PI` and
   `PI_CODING_AGENT_DIR` (both "your pi", `pi-agent/`: the second a decoy the app must ignore), and
   `ZDOTDIR` at a scratch root for that process, and clears the
   agent-only `SHEPHERD_*` variables a run started from a Shepherd agent inherits. It also puts a
@@ -355,7 +349,7 @@ and the Release workflow's staging and signing steps.
   (`orderBack`).
 - Never call `makeKey` or `orderFront`, and never post synthetic mouse or keyboard events.
 - Nothing touches the user's support directory, preferences, pi configuration or sessions,
-  `~/.agents/skills`, `$TMPDIR/shepherd-drops`, or a running Shepherd.
+  `~/.agents`, `$TMPDIR/shepherd-drops`, or a running Shepherd.
 
 **Which tier a change needs:**
 
@@ -409,7 +403,7 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
 - **Core:** the status transition table, `PaneNode` operations, and state validation.
 - **Migration:** terminal-era `runtime` keys, global shells and space shells dropped at startup,
   and review leaves.
-- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all sixteen files, and
+- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all fifteen files, and
   the design skill's two files).
 - **Themes:** every theme variant complete, and the WCAG contrast rules met.
 - **App logic:** keybindings (defaults, validation, stored overrides for removed actions
@@ -543,10 +537,10 @@ Sources/
                        PiSessionPreview (a thread from pi's session file),
                        InstructionsStore (Settings ▸ Instructions' files and their history),
                        SuggestionsStore (Suggested instructions: settings, waiting, added),
-                       SkillsStore (a host's skills in ~/.agents/skills; docs/skills.md),
-                       SkillsGit (the partial clones skills install from), PiSkillsLoader
-                       (the skills pi loads from elsewhere, asked of pi's own loader on node;
-                       read-only in Settings ▸ Skills),
+                       SkillsStore (a host's skills in its pi home's skills/; docs/skills.md),
+                       SkillsGit (the partial clones skills install from),
+                       YourPiImport, YourPiFiles, YourPiResources (the first copy from the
+                       user's own pi, Re-import, and their extensions' switches; docs/pi-home.md),
                        Changes/ (ChangesService: the Changes pane's engine — scopes, snapshots,
                        diffs, the base picker, each agent's turns and their Undo; docs/changes.md),
                        DesignStore (each design's files in the support directory's designs/, on
@@ -666,9 +660,6 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
                           design_check, comment_list, comment_reply, system_read and
                           system_write; hands pi the design skill
                           (design-skill/: SKILL.md, format.md); see docs/designs.md
-  shepherd-pi-skills.mjs  not an extension: Settings ▸ Skills runs it on node to ask pi's own
-                          loader which skills pi loads from outside ~/.agents/skills
-                          (PiSkillsLoader; docs/skills.md › Outside skills)
   shepherd-mcp.ts         the mcp tool (search, describe, call) and direct <server>_<tool> tools
                           over the servers in Settings ▸ MCP servers; credentials from the app
   shepherd-mcp-client.mjs the dependency-free MCP client (stdio, Streamable HTTP, legacy SSE),
@@ -715,7 +706,7 @@ Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
   version check or telemetry), refuses `install`/`remove`/`uninstall`/`update`/`config`, and
   execs the engine the app ships (`SHEPHERD_PI_ENGINE` in a Debug build). Every other launch of
   pi (the catalog, drafts, the sign-in terminal) goes through it too, and the node beside it
-  (the Skills reader, the MCP probe) is the engine's; `PiLaunch` builds them all and nothing
+  (the MCP probe) is the engine's; `PiLaunch` builds them all and nothing
   else names either. Nothing ever runs the user's own `pi` or `npm`.
 - Before each launch, `PiSetup.prepare` checks the startup guards (the home and "your pi" never
   overlap, by `realpath`, and "your pi" holds no Shepherd marker) and writes the launcher,
@@ -902,10 +893,8 @@ the same change.
 - A new `SessionServer` mutation needs an integration test.
 - New persisted fields decode with defaults, so older `state.json` files keep loading.
 
-**Embedded extensions have one canonical copy.** The sixteen files in `Extensions/` are canonical,
-and so is the design skill in `Extensions/design-skill/`. One is not an extension:
-`shepherd-pi-skills.mjs` is embedded in `Sources/ShepherdSessions/PiSkillsLoader.swift`
-(`scriptSource`) and run on node, never loaded by pi.
+**Embedded extensions have one canonical copy.** The fifteen files in `Extensions/` are canonical,
+and so is the design skill in `Extensions/design-skill/`.
 pi loads the copies that the ten `Sources/ShepherdApp/*Extension.swift` files write to the
 support directory from embedded string literals. `installedPath()` rewrites an installed copy
 whenever its content differs, so drift ships bugs. `ChildrenExtension.swift` carries children,
@@ -915,7 +904,7 @@ children-config, children-ui, workflow, and missions, and installs `InspectExten
 `shepherd-mcp.ts` and `shepherd-mcp-client.mjs`, installed side by side.
 
 - Edit a `.ts`/`.mjs` file (or a design skill file) and its literal in the same change, with
-  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all sixteen pairs
+  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all fifteen pairs
   and the skill's two files.
 - Extensions stay dependency-free and inert without their environment variables.
 - They must never throw into pi or keep the process alive (unref'd sockets and timers).
@@ -1350,13 +1339,12 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   2000 lines of styled scrollback, the alt screen, cursor, and modes), not raw bytes. Cosmetic
   artifacts are acceptable; lost bytes are not. The watermark protocol prevents duplication and
   loss.
-- **Skills live in `~/.agents/skills`,** the folder pi reads skills from, not `~/.pi/agent`.
-  Settings ▸ Skills is the only thing that writes there; everything else it keeps (skills that
-  are off, just removed, git caches, records) is in the support directory's `skills/`. The
-  skills Shepherd's pi loads from its home are read by `PiSkillsLoader` on the engine, and the
-  user's own pi setup is read as plain files (never through pi's code or `npm root -g`), both
-  without writing anything; tests give `ScratchServer` a reader of their own and never ask this
-  machine's pi.
+- **Skills live in Shepherd's pi home, `<support>/pi/skills`,** the only folder its pi reads
+  skills from: its settings.json filters out pi's own `$HOME/.agents/skills` (`PiHome.install`),
+  and the children bridge never lists it. Settings ▸ Skills installs there, and the first copy
+  (and Re-import) copies the user's own skills there; everything else Settings ▸ Skills keeps
+  (skills that are off, just removed, git caches, records) is in the support directory's
+  `skills/`. Nothing of Shepherd's writes `~/.agents/skills` or `~/.pi`.
 - **pi's trust prompt:** interactive pi asks to trust project `.pi/` directories, but `-e` loads
   our extensions without one. Never write anything into the user's pi (`~/.pi/agent/`, or
   wherever their `PI_CODING_AGENT_DIR` points), lock folders included: everything Shepherd

@@ -9,74 +9,40 @@ Skills and the iPhone and iPad sections describe what the pages look like.
 
 ## What pi reads
 
-A skill is a folder with a `SKILL.md`. pi discovers them at startup in `~/.agents/skills`,
-recursively (it skips hidden folders and `node_modules`, and follows symlinks). The file's YAML
-frontmatter names the skill (`name`, else the folder's name) and says what it is for
+A skill is a folder with a `SKILL.md`. Shepherd's pi discovers them at startup in its own home's
+`skills/` (`<support>/pi/skills`: `~/Library/Application Support/Shepherd/pi/skills`, or the
+edition's), recursively (it skips hidden folders and `node_modules`, and follows symlinks). The
+file's YAML frontmatter names the skill (`name`, else the folder's name) and says what it is for
 (`description`). pi lists every automatic skill's name, description and location in the system
 prompt, and the agent reads the whole file when a task matches. `/skill:name` in the composer
 loads one on purpose. `disable-model-invocation: true` (a YAML boolean; a quoted `"true"` is not
 one) keeps a skill out of the prompt, so only `/skill:name` loads it.
 
-Shepherd never writes into the user's own pi (`~/.pi/agent`), and runs its own pi in its own home
-([pi-home.md](pi-home.md)). `~/.agents/skills` is the folder pi and other agents
-share for skills, and Settings ▸ Skills is the only thing in Shepherd that changes it.
+**Only its own home** (the user's decision of 2026-09-26: "everything will be ported over, so
+things like skills, will only be installed under shepherds application support folder").
+Shepherd's pi reads skills from that folder alone: pi's own discovery of `$HOME/.agents/skills` is
+turned off by a filter in its settings ([pi-home.md](pi-home.md) › Only its own home), and it loads
+no packages. So the page lists every skill an agent outside a repository gets, and the / menu
+lists nothing the page doesn't. A repository's own skills (`.pi/skills`, `.agents/skills`, once
+it's trusted) load only in its threads, and Settings is global, so the page says so rather than
+listing them. Skills an extension adds while it runs (`resources_discover`) aren't known without
+running it, so they show only in a thread's / menu.
 
-pi loads skills from more places than that folder, and the page lists them all (below, Outside
-skills): only `~/.agents/skills` is Shepherd's to change.
+**From your pi.** At the first launch Shepherd copies the user's own skills into that folder: the
+ones in their pi's `skills/`, the `skills` paths in its settings, its packages' and
+`~/.agents/skills` ([pi-home.md](pi-home.md) › Imports). A copied skill is one of Shepherd's own
+from then on (on or off, removed, how it's used), with no repository: `InstalledSkill.copiedFrom`
+names where it came from, and the page shows it as From your pi. It changes only when the user
+re-imports skills in Settings ▸ Pi ▸ Copied, which copies it again where it is, on or off.
+Shepherd never writes `~/.pi` or `~/.agents`.
 
-## Outside skills
-
-The composer's / menu lists every skill the running pi loaded (`get_commands`), so Settings ▸
-Skills lists them too (the user's decision of 2026-09-26: "Show all, read-only"). Besides
-`~/.agents/skills`, a session outside any repository loads:
-
-- **pi's agent directory's `skills/`,**
-- **the `skills` paths in pi's settings.json,**
-- **the skills of the pi packages in its `packages`** (none in Shepherd's own pi, which loads no
-  packages).
-
-The page groups them as From your pi setup (the first two) and From pi packages, read-only.
-"Your pi setup" is the user's own pi (`~/.pi/agent`, or wherever their startup files move it),
-read as plain files; what Shepherd's own pi home adds is asked of Shepherd's pi. A
-repository's own skills (`.pi/skills`, `.agents/skills`, once it's trusted) load only in its
-threads, and Settings is global, so the page says so rather than listing them. Skills an
-extension adds while it runs (`resources_discover`) aren't known without running it, so they show
-only in a thread's / menu.
-
-**Your pi, as files.** The user's own pi is never asked: `PiSkillsLoader` reads its `skills/`
-folder (its `.md` files and every `SKILL.md` below it) and the `skills` paths in its
-`settings.json` (a `!` or `-` filter skipped, a `+` dropped), each SKILL.md's front matter giving
-the name, description and `disable-model-invocation`. It never runs pi's code, npm, or
-`npm root -g` against it. A name Shepherd's pi already has is listed as passed over.
-
-**Asking Shepherd's pi.** To list exactly what an agent gets from Shepherd's home, a host asks
-pi's own loader: `PiSkillsLoader` (ShepherdSessions) runs `Extensions/shepherd-pi-skills.mjs`
-(embedded as `PiSkillsLoader.scriptSource`, byte-identical) on the engine's node, with no shell,
-the source on stdin, and the engine's package (`SHEPHERD_PI_SKILLS_PACKAGE`) and Shepherd's home
-(`SHEPHERD_PI_SKILLS_AGENT_DIR`). The script imports the engine's bundle (`dist/bundle/index.js`),
-and calls what pi's resource loader calls: `DefaultPackageManager.resolve` with pi's settings,
-then `loadSkills` in pi's order of precedence. It prints each skill's name, description, SKILL.md,
-where it comes from (`source`, `origin`, the package's name) and the ones pi passes over for a
-same-named skill that comes first (a collision's loser, with the winner). It only reads:
-
-- pi's settings go through a storage that never writes (no lock file, no migration),
-- nothing missing is installed (`PI_OFFLINE`, and a resolve that skips),
-- no extension runs, and project trust is off.
-
-The host leaves its own folder's skills to the Installed group, marks an installed skill pi
-passes over (`PiSkills.shadowedInstalled`), and names each path with `~`. The run takes about half
-a second, so a result is kept until one of the folders it came from changes (the modification
-dates of pi's directory, settings and skills folder, `~/.agents/skills`, each skill's file and
-folders, and each package), and a failure is never kept. A read that takes 20 seconds is stopped.
-Without node or pi, or with a pi too old for the calls, the answer says why
-(`PiSkills.problem`: `pi_not_found`, `node_not_found`, `pi_unsupported`, `timed_out`, `failed`) and
-the page shows it in place of the group.
-
-**Over the protocol.** Every skills answer's `SkillsSnapshot` carries the host's `pi`
-(`PiSkills`, decoded with defaults; `skills.pi.v1`), read outside the store's lock, so a change
-never drops the groups off a page. A host that predates it sends none, and the page says that
-host's Shepherd doesn't list them. The groups are the first host's own (This Mac on the Mac): Same
-skills on every host never touches them.
+**Outside skills, from an older host.** Shepherd's pi used to read the user's pi setup and pi
+packages in place, and a host from then reports those skills in every skills answer
+(`SkillsSnapshot.pi`, `PiSkills`, `skills.pi.v1`), which the page lists read-only as From your
+pi setup and From pi packages, each passed-over one marked "not used". A host from now reports an
+empty `PiSkills` (so no client takes it for one too old to report them); a host from before that
+capability sends none, and the page says that host's Shepherd doesn't list them. The groups are
+the first host's own: Same skills on every host never touches them.
 
 **What a prompt costs** (below) counts every skill the agent loads, pi's own included, and not one
 pi passes over.
@@ -85,8 +51,8 @@ pi passes over.
 
 `SkillsStore` (ShepherdSessions) owns a host's skills:
 
-- **The skills folder:** `~/.agents/skills`, or `SHEPHERD_SKILLS_DIR` when set (tests point it at
-  a scratch folder). A skill that is on is a folder here.
+- **The skills folder:** its pi home's `skills/` (the server's `pi.home`, scratch in tests, which
+  may pass their own folder). A skill that is on is a folder here.
 - **Shepherd's state:** the support directory's `skills/`:
   - `off/`: skills that are off, moved out of pi's sight. Turning one on moves it back.
   - `removed/`: skills just removed, kept a day (`SkillsStore.keepsRemoved`) so Undo can put
@@ -228,17 +194,16 @@ hold, and only when read.
   GUI hearing each change and not reads.
 - `ClientSkillsTests`, `SkillsTextTests`, `SkillsDirectoryTests` (unit): the shared model, the
   frontmatter and token rules, skills.sh's answers, and the pages' words.
-- `PiSkillsReportTests` (unit): how pi's answer becomes the groups (where each comes from, the
-  ones pi passes over, Shepherd's own folder left out, package names, `~`).
-  `ClientPiSkillsTests` (unit): the groups in the filter, the search, the counts and the prompt.
-- `PiSkillsLoaderTests` (integration): the loader on node against fixture folders and a stand-in
-  pi package (grouping, keeping a result until a folder changes, no pi, a pi that never answers),
-  and a store's answers carrying them into the page's model. `RemoteSkillsTests` carries them to
-  a client.
-- `Tests/Extensions/pi-skills.test.mjs` (node, the installed pi): the script lists exactly what
-  pi's own `DefaultResourceLoader` loads, marks the passed-over, finds pi from its executable, and
-  writes nothing into pi's directory.
-- `SettingsPreviewTests.settingsSkillsInstalled` and `.settingsSkillsFromPi`,
+- `ClientPiSkillsTests` (unit): an older host's groups in the filter, the search, the counts and
+  the prompt. `RemoteSkillsTests` carries them to a client.
+- `YourPiImportTests.settingsSkillsListsShepherdsOwnPiSkillsWithWhereEachWasCopiedFrom`
+  (integration): a server's skills are its pi home's, a copied one says where from, the host
+  reports nothing outside its home, and Re-import copies an off skill again where it is.
+  `RemoteMessageTests` round-trips `copiedFrom`, and an older host's skill decodes without it.
+- `EngineSmokeTests.skillsComeOnlyFromShepherdsHomeNeverFromAgentsSkills` (opt-in, the real
+  engine): a skill in `~/.agents/skills` never loads, the copies and Shepherd's own do.
+- `SettingsPreviewTests.settingsSkillsInstalled` (a skill copied from your pi among them) and
+  `.settingsSkillsFromPi` (an older host's groups),
   `ListPerformanceTests` (one skill changing redraws only its row, installed or pi's own), and the
   iOS fixture screens `settings-skills`, `settings-skill`, `settings-skills-repo` and
   `settings-pad-skills`.
