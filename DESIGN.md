@@ -4190,6 +4190,11 @@ whichever way.
   sets for a provider with no login gets a row too ("OPENAI_API_KEY", "In your environment").
   Under a copied subscription sign-in, one `caption`/`textSecondary` line: "Sign-ins were copied
   once. When one side refreshes a subscription, the other may be signed out: sign in again there."
+- **Not brought over**, only when part of the copy failed (a file of your pi unreadable, too large
+  or not JSON, or one of Shepherd's own that isn't a JSON object): a `failed` banner, "Some of your
+  pi wasn't brought over", its message the reasons, one sentence each, naming files and never
+  their contents. The rest of the step is as usual; Settings ▸ Pi ▸ From your pi re-imports once
+  the file is fixed.
 - **Still needed**, only when no provider can start an agent (no login in Shepherd's pi, no key in
   the environment, no custom provider): an attention banner, "Sign in so agents can start", "Until
   you do, agents wait with Retry." and a Sign in… action that opens Settings ▸ Pi's sign-in
