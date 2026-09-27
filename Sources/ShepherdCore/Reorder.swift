@@ -10,3 +10,15 @@ extension Array where Element: Identifiable {
         return result
     }
 }
+
+extension Array where Element: Identifiable {
+    /// The array with the element `id` moved to sit immediately before `target`, or last when
+    /// `target` is nil (a drop line under the last row). Nil when nothing would move.
+    public func moving(_ id: Element.ID, before target: Element.ID?) -> [Element]? {
+        if let target { return moving(id, before: target) }
+        guard let from = firstIndex(where: { $0.id == id }), from != count - 1 else { return nil }
+        var result = self
+        result.append(result.remove(at: from))
+        return result
+    }
+}

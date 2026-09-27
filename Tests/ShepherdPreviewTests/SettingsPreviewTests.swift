@@ -25,10 +25,22 @@ struct SettingsPreviewTests {
         let height: CGFloat = switch section {
         case .pi: 2600
         case .keyboard: 2200
-        case .remote, .worktrees: 1000
+        case .remote, .worktrees, .appearance: 1000
         default: 900
         }
         try await Preview.render("settings-\(section.rawValue)", size: CGSize(width: 1280, height: height)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
+
+    /// Appearance with the sidebar organized by project (SettingsAppearanceProjects): the
+    /// Projects card chosen, and Group by host and Keep idle threads under it.
+    @Test func settingsAppearanceProjects() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        workspace.vm.settingsSection = .appearance
+        workspace.settings.sidebarStyle = .projects
+        try await Preview.render("settings-appearance-projects", size: CGSize(width: 1280, height: 1100)) {
             SettingsView(vm: workspace.vm)
         }
     }
@@ -196,6 +208,13 @@ struct SettingsPreviewTests {
         let store = try await MCPPreviewFixtures.boardStore()
         try await Preview.render("mcp-choose-tools", size: CGSize(width: AppLayout.mcpToolsSheetWidth, height: 520)) {
             MCPChooseToolsSheet(store: store, name: "postgres") {}
+        }
+    }
+
+    @Test func skillsDirectoryFailure() async throws {
+        try await Preview.render("skills-directory-failure", size: CGSize(width: 560, height: 400)) {
+            SkillsDirectoryProblem(failure: .unavailable("Shepherd's skills directory answered 503."))
+                .background(Color.nw.bgWindow)
         }
     }
 

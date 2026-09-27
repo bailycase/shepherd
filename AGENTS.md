@@ -565,7 +565,8 @@ Sources/
                        (shepherd-dc-bridge.js), and React 18.3.1 UMD (MIT, pinned).
   ShepherdApp/         The Mac app:
     ShepherdApp.swift (the Window scene, AppDelegate), RootView (+ WorkspaceHeaderView),
-      SidebarView (+ SidebarModel: destinations, Needs you, Recents, footer), NewThreadPage (+
+      SidebarView (+ SidebarModel: destinations, Needs you, Recents, footer; SidebarProjectsView and
+      SidebarProjectsModel: the tree organized by project), NewThreadPage (+
       NewThreadModel), ThreadHeader, WorkspaceView, WorkspaceSelection (+ MainDestination),
       RightPaneSplit and SidePane (the side pane and its tabs), CheckoutMonitor (each agent's
       branch and changed files, read off the main thread), AppCommands (menus, MenuState),

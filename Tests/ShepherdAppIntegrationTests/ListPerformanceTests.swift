@@ -131,6 +131,100 @@ struct ListPerformanceTests {
         #expect(rows["sidebar.lists", default: 0] == 0, "a selection derives nothing: \(rows)")
     }
 
+    // MARK: Sidebar organized by project
+
+    /// The fleet in an off-screen sidebar organized by project, settled.
+    private func openProjectsSidebar(_ app: AppHarness) async throws -> (ShepherdViewModel, OffscreenWindow) {
+        let vm = try await app.start(with: ListFixtures.fleet(in: app.dir))
+        vm.settings.sidebarStyle = .projects
+        let window = OffscreenWindow(size: Self.sidebarSize, dark: true, SidebarView(vm: vm))
+        ListPerf.settle(window)
+        return (vm, window)
+    }
+
+    /// The open projects' threads on screen at the top of the tree.
+    private func treeRowsOnScreen(_ vm: ShepherdViewModel) -> [SidebarListRow] {
+        Array(vm.sidebarWalkRows.prefix(Self.sidebarRowsOnScreen / 2))
+    }
+
+    @Test func openingTheProjectTreeOverThreeHundredAgentsBuildsOnlyTheRowsOnScreen() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let vm = try await app.start(with: ListFixtures.fleet(in: app.dir))
+        vm.settings.sidebarStyle = .projects
+        var window: OffscreenWindow!
+        let rows = ListPerf.counting {
+            window = OffscreenWindow(size: Self.sidebarSize, dark: true, SidebarView(vm: vm))
+            ListPerf.settle(window)
+        }
+        defer { window.close() }
+        let built = rows["sidebar.row", default: 0] + rows["sidebar.project", default: 0]
+        #expect(built <= 2 * Self.sidebarRowsOnScreen, "\(rows)")
+        #expect(rows["sidebar.tree", default: 0] <= 1, "one derivation for the whole tree: \(rows)")
+        #expect(rows["sidebar.lists", default: 0] == 0, "Activity's lists are not derived for the tree: \(rows)")
+    }
+
+    /// Scrolling the tree builds the rows that come into view, never the whole fleet.
+    @Test func scrollingTheProjectTreeBuildsOnlyTheRowsComingIntoView() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (_, window) = try await openProjectsSidebar(app)
+        defer { window.close() }
+        let scroll = try #require(ListPerf.scrollView(in: window))
+        let step = NWDensity.standard.rowHeight * 4
+
+        var moved: CGFloat = 0
+        let rows = ListPerf.counting { moved = ListPerf.scroll(window, scroll, step: step, steps: 20).distance }
+        let arriving = Int(moved / (NWDensity.standard.rowHeight + AppLayout.sidebarRowSpacing)) + 1
+        #expect(moved > 0)
+        #expect(rows["sidebar.row", default: 0] + rows["sidebar.project", default: 0] <= 2 * (arriving + Self.sidebarRowsOnScreen),
+                "\(rows)")
+        #expect(rows["sidebar.tree", default: 0] == 0, "scrolling derives nothing: \(rows)")
+    }
+
+    /// A status report redraws its row (and its project's, whose roll-up may change), never the
+    /// other rows or the destinations, and derives the tree once.
+    @Test func aStatusReportRedrawsOnlyItsRowInTheTree() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, window) = try await openProjectsSidebar(app)
+        defer { window.close() }
+        let shown = treeRowsOnScreen(vm).prefix(6)
+
+        let rows = ListPerf.counting {
+            for row in shown {
+                var next = vm.state
+                if let index = next.agents.firstIndex(where: { $0.id == row.id.agentID }) {
+                    next.agents[index].status = next.agents[index].status == .working ? .done : .working
+                }
+                ListPerf.time(window) { vm.adopt(next) }
+            }
+        }
+        #expect(rows["sidebar.row", default: 0] <= shown.count * 2, "\(rows)")
+        #expect(rows["sidebar.project", default: 0] <= shown.count * 2, "\(rows)")
+        #expect(rows["sidebar.destination", default: 0] == 0, "\(rows)")
+        #expect(rows["sidebar.tree", default: 0] <= shown.count, "\(rows)")
+    }
+
+    /// Opening a closed project builds its threads and redraws its own row; nothing derives.
+    @Test func expandingAProjectBuildsOnlyItsRows() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, window) = try await openProjectsSidebar(app)
+        defer { window.close() }
+        vm.setAllProjects(expanded: false)
+        ListPerf.settle(window)
+        let project = try #require(vm.sidebarTree.projects.first)
+
+        let rows = ListPerf.counting {
+            ListPerf.time(window) { vm.toggleProject(project.id) }
+        }
+        #expect(vm.sidebarWalkRows.count == project.rows.count)
+        #expect(rows["sidebar.row", default: 0] <= project.rows.count * 2, "\(rows)")
+        #expect(rows["sidebar.project", default: 0] <= 2, "\(rows)")
+        #expect(rows["sidebar.tree", default: 0] == 0, "opening a project derives nothing: \(rows)")
+    }
+
     // MARK: Designs
 
     private static let designsSize = CGSize(width: 1200, height: 800)

@@ -92,7 +92,8 @@ extension ShepherdViewModel {
         defer { startingCheckoutUsers.removeValue(forKey: reservation) }
         let space = Space(name: url.lastPathComponent, path: path)
         do {
-            try await server.addSpace(space)
+            // New projects go on top of the sidebar's project tree.
+            try await server.addSpace(space, first: true)
         } catch {
             NSLog("Shepherd: add space failed: \(error)")
             NSSound.beep()

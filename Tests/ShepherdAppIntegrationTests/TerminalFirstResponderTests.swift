@@ -3,6 +3,7 @@ import ShepherdTestSupport
 import SwiftUI
 import Testing
 @testable import TerminalSurfaceKit
+@testable import ShepherdUI
 
 /// Real Ghostty surfaces side by side in one off-screen window. Pane focus is applied through
 /// AppKit's first responder (SwiftUI focus cannot reach permanently mounted panes), so these
@@ -105,6 +106,40 @@ struct TerminalFirstResponderTests {
                 input == Data(" ".utf8)
             }
         }
+    }
+
+    @Test func aCanvasCannotStealSpaceFromATerminalOrWhileHidden() async throws {
+        let panes = Panes()
+        defer { panes.window.close() }
+        panes.show(leftFocused: true, rightFocused: false)
+        try await eventuallyOnMain("the terminal to take the keyboard") {
+            panes.firstResponder != nil && panes.firstResponder === panes.surface(of: panes.left)
+        }
+        let parent = NSView(frame: CGRect(x: 0, y: 0, width: 200, height: 200))
+        let canvas = NWCanvasInput.InputView(frame: parent.bounds)
+        parent.addSubview(canvas)
+        let content = try #require(panes.window.window.contentView)
+        content.addSubview(parent)
+        defer { parent.removeFromSuperview() }
+        let pointer = canvas.convert(CGPoint(x: 50, y: 50), to: nil)
+        func space(_ type: NSEvent.EventType) throws -> NSEvent {
+            try #require(NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [], timestamp: 1,
+                windowNumber: panes.window.window.windowNumber, context: nil,
+                characters: " ", charactersIgnoringModifiers: " ", isARepeat: false, keyCode: 49))
+        }
+        #expect(!canvas.handleSpace(try space(.keyDown), pointer: pointer), "a visible canvas leaves terminal input alone")
+        panes.left.releaseKeyboardFocus()
+        panes.window.window.makeFirstResponder(nil)
+        #expect(canvas.handleSpace(try space(.keyDown), pointer: pointer), "visible canvas still pans")
+        #expect(canvas.handleSpace(try space(.keyUp), pointer: pointer))
+        parent.isHidden = true
+        #expect(!canvas.handleSpace(try space(.keyDown), pointer: pointer), "hidden layouts never take Space")
+        parent.isHidden = false
+        #expect(canvas.handleSpace(try space(.keyDown), pointer: pointer))
+        parent.isHidden = true
+        #expect(!canvas.handleSpace(try space(.keyUp), pointer: pointer), "hiding releases a held Space")
+        parent.isHidden = false
+        #expect(!canvas.handleSpace(try space(.keyDown), pointer: CGPoint(x: -1000, y: -1000)))
     }
 
     @Test func releasingFocusOnlyGivesUpThePanesOwnSurface() async throws {

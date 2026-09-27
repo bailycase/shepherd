@@ -11,7 +11,7 @@ import ShepherdRemote
 
 // MARK: Browse skills.sh
 
-/// Browse skills.sh: Trending, All time, Hot and Official (with a skills.sh key), topics, or a
+/// Browse skills.sh: Trending, All time, Hot and Official, topics, or a
 /// search as you type; the selected skill's preview, Install with how it will be used, and each
 /// host's progress while it installs.
 struct SkillsDirectorySheet: View {
@@ -31,14 +31,13 @@ struct SkillsDirectorySheet: View {
     @State private var selected: String?
     @State private var preview: SkillPreview?
     @State private var invocation: SkillInvocation = .automatic
-    @State private var keyDraft = ""
     @Environment(\.openURL) private var openURL
 
     enum Sort: String, CaseIterable { case installs, name }
 
     private var searching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
-    private var directory: SkillsDirectory { SkillsDirectory(key: AppSettings.shared.skillsDirectoryKey) }
-    private var listKey: String { "\(query)|\(ranking.rawValue)|\(topic ?? "")|\(AppSettings.shared.skillsDirectoryKey)" }
+    private let directory = SkillsDirectory()
+    private var listKey: String { "\(query)|\(ranking.rawValue)|\(topic ?? "")" }
 
     var body: some View {
         let hosts = vm.skillsHosts
@@ -144,7 +143,7 @@ struct SkillsDirectorySheet: View {
                 .overlay(alignment: .bottom) { NWHairline() }
             }
             if let failure {
-                SkillsDirectoryProblem(failure: failure, keyDraft: $keyDraft)
+                SkillsDirectoryProblem(failure: failure)
             } else if shown.isEmpty {
                 Text(loading ? "Loading skills.sh…" : searching ? "No skills match." : "Nothing here yet.")
                     .font(.nwSans(AppLayout.skillsSummarySize))
@@ -303,7 +302,7 @@ struct SkillsDirectorySheet: View {
         } catch {
             guard !Task.isCancelled else { return }
             results = []
-            failure = .unavailable("Couldn't reach skills.sh.")
+            failure = .unavailable("Couldn't reach Shepherd's skills directory.")
         }
         if !results.contains(where: { $0.id == selected }) { selected = results.first?.id }
     }
@@ -442,14 +441,9 @@ private struct SkillInstallMeter: View {
     }
 }
 
-/// Why the list is empty: skills.sh wants a key for its rankings (with a field for one), or it
-/// couldn't be reached.
-private struct SkillsDirectoryProblem: View {
+/// Why the directory couldn't be reached.
+struct SkillsDirectoryProblem: View {
     let failure: SkillsDirectoryError
-    @Binding var keyDraft: String
-    @Environment(\.openURL) private var openURL
-
-    static let keyHelp = URL(string: "https://skills.sh/docs/api")!
 
     var body: some View {
         let nw = Color.nw
@@ -458,17 +452,6 @@ private struct SkillsDirectoryProblem: View {
                 .nwText(size: AppLayout.skillsSummarySize, lineHeight: AppLayout.skillsNoteLineHeight)
                 .foregroundStyle(nw.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
-            if failure == .needsKey {
-                HStack(spacing: NW.Space.m) {
-                    SecureField("skills.sh API key", text: $keyDraft)
-                        .textFieldStyle(.nw)
-                    Button("Save") { AppSettings.shared.skillsDirectoryKey = keyDraft }
-                        .buttonStyle(.nw(.secondary))
-                        .disabled(keyDraft.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-                Button("Get a key") { openURL(Self.keyHelp) }
-                    .buttonStyle(.nwLink(font: .nwSans(AppLayout.skillsNoteSize)))
-            }
         }
         .padding(AppLayout.skillsSheetSides)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
