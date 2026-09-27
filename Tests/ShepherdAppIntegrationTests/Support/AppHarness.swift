@@ -24,8 +24,9 @@ final class AppHarness {
     var server: SessionServer { scratch.server }
     var dir: URL { scratch.dir }
 
-    init() throws {
-        scratch = try ScratchServer()
+    /// `pi` brings a test's own Shepherd pi home and "your pi"; otherwise the process's.
+    init(pi: PiSetup = .app) throws {
+        scratch = try ScratchServer(pi: pi)
         settings = AppSettings(store: defaults)
         keybindings = KeybindingsStore(store: defaults)
         themeManager = ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark)
@@ -41,15 +42,18 @@ final class AppHarness {
     /// header's checkout reads, which would otherwise change the workspace under a test that
     /// seeded a repository.
     @discardableResult
+    /// `welcomingYourPi` runs the first launch's copy from "your pi" and its welcome step, which
+    /// hold restored agents, as the app does.
     func start(with state: ShepherdState? = nil, restoringAgents: Bool = false,
-               readingCheckouts: Bool = false, mcp: MCPStore? = nil) async throws -> ShepherdViewModel {
+               readingCheckouts: Bool = false, mcp: MCPStore? = nil, welcomingYourPi: Bool = false) async throws -> ShepherdViewModel {
         if let state { try await server.putState(state) }
         let vm = ShepherdViewModel(
             server: server, settings: settings, keybindings: keybindings, themeManager: themeManager,
             remoteHosts: remoteHosts, sidebarDefaults: defaults, themeInstaller: { _ in },
             restoresAgentsAtLaunch: restoringAgents,
             checkoutReader: readingCheckouts ? CheckoutMonitor.git : nil,
-            mcp: mcp
+            mcp: mcp,
+            welcomesYourPi: welcomingYourPi
         )
         self.vm = vm
         let server = server

@@ -23,7 +23,7 @@ struct SettingsPreviewTests {
         workspace.vm.settingsSection = section
         // Tall enough for the whole page.
         let height: CGFloat = switch section {
-        case .pi: 1480
+        case .pi: 2600
         case .keyboard: 2200
         case .remote, .worktrees: 1000
         default: 900
@@ -498,7 +498,28 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// Settings ▸ Pi for a new user: no pi of theirs, nothing in the environment, not signed in.
+    @Test func settingsPiWithNoPiOfYours() async throws {
+        let workspace = try PreviewWorkspace(yourPi: PreviewYourPi.none)
+        defer { workspace.stop() }
+        workspace.vm.settingsSection = .pi
+        try await Preview.render("settings-pi-none", size: CGSize(width: 1280, height: 1900)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
+
     // MARK: Dialogs
+
+    /// The first launch's welcome step: what came over from your pi; and a new user's, which only
+    /// asks to sign in (with no agent open, so Sign in… is off).
+    @Test func welcomeSheet() async throws {
+        try await Preview.render("sheet-welcome", size: CGSize(width: AppLayout.piWelcomeSheetWidth, height: 620)) {
+            PiWelcomeSheet(welcome: PreviewYourPi.welcome, signIn: {}, onClose: {})
+        }
+        try await Preview.render("sheet-welcome-sign-in", size: CGSize(width: AppLayout.piWelcomeSheetWidth, height: 260)) {
+            PiWelcomeSheet(welcome: PreviewYourPi.welcomeSignIn, signIn: nil, onClose: {})
+        }
+    }
 
     @Test func renameDialog() async throws {
         try await Preview.render("sheet-rename", size: CGSize(width: AppLayout.renameSheetWidth, height: 180)) {

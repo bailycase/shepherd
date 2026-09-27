@@ -209,6 +209,12 @@ final class ShepherdViewModel {
     @ObservationIgnored let localSkills: LocalSkillsClient
     /// Settings ▸ MCP servers: this Mac's servers, their sign-ins, and the credentials agents ask for.
     let mcp: MCPStore
+    /// Settings ▸ Pi's sign-ins and From your pi, and the first launch's copy and welcome step.
+    let yourPi: YourPiModel
+    /// Restored agents wait for the first launch's copy from the user's pi and its welcome step.
+    @ObservationIgnored private(set) var holdsForWelcome = false
+    /// The workspace has been adopted at least once.
+    @ObservationIgnored private var didAdopt = false
     /// The server Settings ▸ MCP servers opens with its row open (a search hit named it).
     @ObservationIgnored var mcpOpenServer: String?
     /// This Mac's daily look for newer skills (`startSkillChecks`).
@@ -425,7 +431,9 @@ final class ShepherdViewModel {
         },
         restoresAgentsAtLaunch: Bool = true,
         checkoutReader: CheckoutMonitor.Reader? = CheckoutMonitor.git,
-        mcp: MCPStore? = nil
+        mcp: MCPStore? = nil,
+        welcomesYourPi: Bool = false,
+        yourPi: YourPiModel? = nil
     ) {
         self.state = ShepherdState()
         self.server = server
@@ -450,6 +458,7 @@ final class ShepherdViewModel {
                                                       copy: ShepherdViewModel.copyToPasteboard))
         self.installThemeMarker = themeInstaller
         self.sessions = TerminalSessionStore(server: server)
+        self.yourPi = yourPi ?? YourPiModel(pi: server.pi)
         self.selectedSpaceID = nil
         self.selectedAgentID = nil
         self.focusedPaneID = nil
@@ -718,6 +727,30 @@ final class ShepherdViewModel {
                 self.checkouts?.refresh(id)
             }
         }
+        // The first launch of a build with Shepherd's own pi: restored agents (and automations)
+        // wait until the copy from the user's pi and the welcome step are over.
+        if welcomesYourPi {
+            holdsForWelcome = true
+            sessions.holdStarts()
+            Task { [weak self] in
+                guard let self else { return }
+                if await !self.yourPi.runFirstLaunch() { self.finishWelcome() }
+            }
+        }
+    }
+
+    /// The welcome step is over (closed, skipped, or never shown): restored agents start, the one
+    /// on screen first, and so do enabled automations.
+    func finishWelcome() {
+        yourPi.welcome = nil
+        guard holdsForWelcome else { return }
+        holdsForWelcome = false
+        sessions.releaseStarts()
+        if didAdopt, !didAutoStartAutomations {
+            didAutoStartAutomations = true
+            autoStartAutomations()
+            if restoresAgentsAtLaunch { mcp.probeAlwaysOn() }
+        }
     }
 
     deinit {
@@ -819,9 +852,11 @@ final class ShepherdViewModel {
         checkouts?.sync(agents: state.agents.map(\.id))
         pruneReviewSessions()
         pruneDesigns()
+        didAdopt = true
         // First adoption of the restored workspace: stand the enabled
-        // automation watches back up (their agents died with the last run).
-        if !didAutoStartAutomations {
+        // automation watches back up (their agents died with the last run), once the first
+        // launch's welcome step is over.
+        if !didAutoStartAutomations, !holdsForWelcome {
             didAutoStartAutomations = true
             autoStartAutomations()
             if restoresAgentsAtLaunch { mcp.probeAlwaysOn() }

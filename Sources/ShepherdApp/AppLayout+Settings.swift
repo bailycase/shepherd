@@ -277,6 +277,8 @@ extension AppLayout {
     static let newAgentSheetWidth: CGFloat = 560
     static let newWorktreeSheetWidth: CGFloat = 520
     static let finalizeSheetWidth: CGFloat = 560
+    /// The first launch's welcome step (Dialogs and sheets › Welcome).
+    static let piWelcomeSheetWidth: CGFloat = 520
     /// The review's Commit… sheet, and the most its file list grows before it scrolls.
     static let commitSheetWidth: CGFloat = 520
     static let commitFileListMaxHeight: CGFloat = 232

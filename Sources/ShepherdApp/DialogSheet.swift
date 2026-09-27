@@ -21,16 +21,19 @@ struct DialogAction: Identifiable {
     let label: String
     let kind: Kind
     let isEnabled: Bool
+    /// Its tooltip (why a disabled action is off).
+    var help: String?
     let action: () -> Void
 
     /// The label: stable across renders (a fresh id per render would rebuild every button),
     /// and unique within one dialog.
     var id: String { label }
 
-    init(_ label: String, kind: Kind = .normal, isEnabled: Bool = true, action: @escaping () -> Void) {
+    init(_ label: String, kind: Kind = .normal, isEnabled: Bool = true, help: String? = nil, action: @escaping () -> Void) {
         self.label = label
         self.kind = kind
         self.isEnabled = isEnabled
+        self.help = help
         self.action = action
     }
 }
@@ -75,7 +78,7 @@ struct DialogSheet<Content: View>: View {
 
     @ViewBuilder
     private func button(for action: DialogAction) -> some View {
-        let button = Button(action.label, action: action.action).disabled(!action.isEnabled)
+        let button = Button(action.label, action: action.action).disabled(!action.isEnabled).help(action.help ?? "")
         switch action.kind {
         case .cancel:
             button.buttonStyle(.nw(.ghost)).keyboardShortcut(.cancelAction)

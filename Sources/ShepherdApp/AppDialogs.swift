@@ -14,6 +14,13 @@ struct AppDialogs: ViewModifier {
                 NewAgentSheet(vm: vm)
                     .dialogSheetFrame()
             }
+            // The first launch's welcome step; closing it, whichever way, starts restored agents.
+            .sheet(item: Binding(get: { vm.yourPi.welcome }, set: { vm.yourPi.welcome = $0 }), onDismiss: { vm.finishWelcome() }) { welcome in
+                PiWelcomeSheet(welcome: welcome,
+                               signIn: vm.selectedRemoteAgent == nil ? vm.selectedAgentID.map { id in { [vm] in vm.openPiSignIn(besideAgent: id) } } : nil,
+                               onClose: { vm.finishWelcome() })
+                    .dialogSheetFrame()
+            }
             .sheet(item: $vm.worktreeSheetSpace) { space in
                 NewWorktreeSheet(vm: vm, space: space)
                     .dialogSheetFrame()

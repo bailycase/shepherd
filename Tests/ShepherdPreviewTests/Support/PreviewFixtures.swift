@@ -21,7 +21,9 @@ final class PreviewWorkspace {
     var server: SessionServer { scratch.server }
     var dir: URL { scratch.dir }
 
-    init(modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels }, mcp: MCPStore? = nil) throws {
+    /// Settings ▸ Pi shows `yourPi` (a fixture: never this machine's pi, nor a read of the scratch one).
+    init(modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels }, mcp: MCPStore? = nil,
+         yourPi: YourPiSurvey = PreviewYourPi.imported) throws {
         try PreviewEnvironment.install()
         scratch = try ScratchServer(modelCatalog: modelCatalog)
         settings = AppSettings(store: defaults)
@@ -35,7 +37,8 @@ final class PreviewWorkspace {
             restoresAgentsAtLaunch: false,
             // Fixtures set the checkout each header shows.
             checkoutReader: nil,
-            mcp: mcp
+            mcp: mcp,
+            yourPi: YourPiModel(pi: scratch.server.pi, survey: yourPi)
         )
         // The boards' footer, never this machine's user and name.
         vm.sidebarFooterIdentity = ("Baily", SidebarDerivation.footerDetail(computerName: "build-01"))
@@ -403,4 +406,71 @@ enum Reviews {
     }
 
     static let actions = ReviewActions(setPullRequest: { _ in }, requestChanges: {}, commit: {}, close: {}, revert: { _, _ in }, open: { _ in })
+}
+
+// MARK: Your pi
+
+/// Settings ▸ Pi's and the welcome step's views of a user's own pi, as fixtures.
+enum PreviewYourPi {
+    typealias Login = YourPiSurvey.Login
+
+    /// After the first copy: a login of every kind (one only in their pi, one only in the
+    /// environment), a custom provider, instructions, skills, prompts and two extensions.
+    static let imported: YourPiSurvey = {
+        var survey = YourPiSurvey(folder: "/Users/you/.pi/agent")
+        survey.copied = true
+        survey.logins = [
+            Login(provider: "anthropic", shepherd: .subscription, yours: .subscription),
+            Login(provider: "google", shepherd: .apiKey(.environment(["GEMINI_API_KEY"])), yours: .apiKey(.environment(["GEMINI_API_KEY"]))),
+            Login(provider: "groq", shepherd: .apiKey(.command), yours: .apiKey(.command)),
+            Login(provider: "openai", shepherd: .apiKey(.literal), yours: .apiKey(.literal)),
+            Login(provider: "openai-codex", yours: .subscription),
+            Login(provider: "xai", environment: ["XAI_API_KEY"]),
+        ]
+        survey.customProviders = ["local-llm"]
+        survey.shepherdCustomProviders = ["local-llm"]
+        survey.defaultModel = "anthropic/claude-opus-4-5"
+        survey.shepherdDefaultModel = "anthropic/claude-opus-4-5"
+        survey.trustedFolders = 3
+        survey.shepherdTrustedFolders = 3
+        survey.instructionsFile = "/Users/you/.pi/agent/AGENTS.md"
+        survey.skills = ["/Users/you/.pi/agent/skills", "/Users/you/team-skills"]
+        survey.prompts = ["/Users/you/.pi/agent/prompts"]
+        survey.extensions = [
+            YourPiExtension(name: "permission-gate", path: "/Users/you/.pi/agent/extensions/permission-gate.ts", source: .file),
+            YourPiExtension(name: "@acme/pi-tools", path: "/Users/you/.pi/agent/npm/node_modules/@acme/pi-tools", source: .npm),
+        ]
+        return survey
+    }()
+
+    /// A new user: no pi of theirs, nothing in the environment, not signed in.
+    static let none: YourPiSurvey = {
+        var survey = YourPiSurvey()
+        survey.copied = true
+        return survey
+    }()
+
+    /// The first copy from `imported`, as the welcome step shows it.
+    static let welcome: YourPiModel.Welcome = {
+        var report = YourPiImportReport()
+        report.first = true
+        report.from = "/Users/you/.pi/agent"
+        report.logins = [PiLogin(provider: "anthropic", kind: .subscription),
+                         PiLogin(provider: "google", kind: .apiKey(.environment(["GEMINI_API_KEY"]))),
+                         PiLogin(provider: "groq", kind: .apiKey(.command)), PiLogin(provider: "openai", kind: .apiKey(.literal))]
+        report.customProviders = ["local-llm"]
+        report.instructions = "AGENTS.md"
+        report.skills = ["/Users/you/.pi/agent/skills", "/Users/you/team-skills"]
+        report.prompts = ["/Users/you/.pi/agent/prompts"]
+        report.defaultModel = "anthropic/claude-opus-4-5"
+        report.trustedFolders = 3
+        return YourPiModel.Welcome(report: report, survey: imported)
+    }()
+
+    /// A new user's first launch: only the sign-in ask.
+    static let welcomeSignIn: YourPiModel.Welcome = {
+        var report = YourPiImportReport()
+        report.first = true
+        return YourPiModel.Welcome(report: report, survey: none)
+    }()
 }

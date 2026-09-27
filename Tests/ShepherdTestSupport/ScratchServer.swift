@@ -19,13 +19,16 @@ public final class ScratchServer: @unchecked Sendable {
     /// Starts on a fresh directory, or on `dir` to restart over an existing state file. The
     /// skills pi loads from elsewhere come from `piSkills`: none unless a test passes a reader,
     /// never this machine's pi.
+    /// `pi` is the process's (`PiSetup.app`: the scratch home and "your pi" the test isolation
+    /// set) unless a test brings its own home and "your pi".
     public init(dir: URL? = nil, modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels },
-                piSkills: SkillsStore.PiSkillsReader? = nil) throws {
+                piSkills: SkillsStore.PiSkillsReader? = nil, pi: PiSetup = .app) throws {
         self.dir = try dir ?? makeScratchDirectory("srv")
         // An Undo's trashed files land in the scratch directory, never the user's Trash.
         let trash = self.dir.appendingPathComponent("Trash", isDirectory: true)
         server = SessionServer(socketPath: self.dir.appendingPathComponent("s.sock").path,
                                stateURL: self.dir.appendingPathComponent("state.json"),
+                               pi: pi,
                                modelCatalog: modelCatalog,
                                skillsDirectory: self.dir.appendingPathComponent("agent-skills", isDirectory: true),
                                piSkills: piSkills.map { .reader($0) } ?? .off,

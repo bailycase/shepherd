@@ -54,4 +54,26 @@ struct AgentStartQueueTests {
         queue.finished(a)
         #expect(queue.next().isEmpty && queue.running.isEmpty)
     }
+
+    /// Held (the first launch's copy from the user's pi and its welcome step), nothing starts, not
+    /// even the agent on screen; released, that one starts first and the rest follow in order.
+    @Test func aHeldQueueStartsNothingUntilReleasedThenTheAgentOnScreenFirst() {
+        var queue = AgentStartQueue(limit: 2)
+        queue.hold()
+        let wantedWhileHeld = queue.startAhead(c)
+        #expect(!wantedWhileHeld)
+        var begun: [AgentID] = []
+        for id in [a, b, c, d] where queue.enqueue(id) { begun.append(id) }
+        #expect(begun.isEmpty && queue.next().isEmpty && queue.started.isEmpty)
+        let selectedWhileHeld = queue.startAhead(d)
+        #expect(!selectedWhileHeld && queue.started.isEmpty)
+
+        #expect(queue.release() == [c, d], "the agents on screen, in queue order")
+        #expect(queue.next().isEmpty, "the rest wait for them")
+        queue.finished(c)
+        queue.finished(d)
+        #expect(queue.next() == [a, b])
+        #expect(queue.release().isEmpty, "a second release changes nothing")
+        #expect(queue.started == [a, b, c, d])
+    }
 }
