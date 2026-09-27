@@ -211,6 +211,8 @@ final class PiSignInSession: Identifiable {
     @ObservationIgnored private var checking: Task<Void, Never>?
     @ObservationIgnored private var pendingPrompt: PiSignInPrompt?
     @ObservationIgnored private var checkCount = 0
+    /// Continue was pressed before pi asked for the code.
+    @ObservationIgnored private var submitWhenAsked = false
     /// How long typing rests before a key is checked.
     @ObservationIgnored var checkDelay: Duration = .milliseconds(600)
 
@@ -299,6 +301,7 @@ final class PiSignInSession: Identifiable {
         case .prompt(let prompt):
             pendingPrompt = prompt
             if prompt.kind == .secret { flow = .key; phase = .key }
+            if submitWhenAsked, prompt.kind == .manualCode || prompt.kind == .text { submitCode() }
         case .promptClosed(let id):
             if pendingPrompt?.id == id { pendingPrompt = nil }
         case .done(let provider, _):
@@ -306,9 +309,16 @@ final class PiSignInSession: Identifiable {
             let count = store?.landed(provider) ?? 0
             phase = .done(pickedUp: count)
         case .failed(let failure):
+            // The login ended: its questions went with it.
+            submitWhenAsked = false
+            pendingPrompt = nil
             switch failure.code {
             case .cancelled: break
-            case .portBusy: phase = .portBusy(failure.port ?? 0)
+            case .portBusy:
+                // A pasted code's login can meet the taken port too (pi's Anthropic login always
+                // listens): the sheet says so where the browser's would.
+                if flow == .paste { flow = .browser }
+                phase = .portBusy(failure.port ?? 0)
             default:
                 if flow == .paste { phase = .paste(rejected: failure.reason) }
                 else if flow == .key { phase = .failed(failure.reason) }
@@ -347,7 +357,10 @@ final class PiSignInSession: Identifiable {
     /// "Paste a code instead": the same login, answered with a code. After a taken port, a new
     /// login that doesn't check the port.
     func pasteInstead() {
-        let restart = { if case .portBusy = self.phase { true } else { !self.phase.isLive } }()
+        let busy = { if case .portBusy = self.phase { true } else { false } }()
+        // pi can't take a pasted code without the port it can't have.
+        if busy, subscription?.pasteNeedsPort == true { return }
+        let restart = busy || !phase.isLive
         flow = .paste
         phase = .paste(rejected: nil)
         if restart { start(flow: .paste) }
@@ -361,10 +374,18 @@ final class PiSignInSession: Identifiable {
         let code = code.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !code.isEmpty else { return }
         guard let prompt = pendingPrompt, prompt.kind == .manualCode || prompt.kind == .text else {
-            // The login that asked for it ended (the code was refused): a new one, then this code.
-            start(flow: .paste)
+            if case .paste(let rejected) = phase, rejected != nil {
+                // The login that asked for it ended with the code refused. A code belongs to the
+                // page its login opened, so only a fresh page's code can work.
+                reopenForCode()
+            } else {
+                // pi hasn't asked yet (its login is still starting): the code goes when it does.
+                submitWhenAsked = true
+                phase = .saving
+            }
             return
         }
+        submitWhenAsked = false
         pendingPrompt = nil
         phase = .saving
         bridge?.send(.answer(id: prompt.id, value: code))
@@ -372,6 +393,7 @@ final class PiSignInSession: Identifiable {
 
     /// "Open claude.ai again": a fresh page for a fresh code.
     func reopenForCode() {
+        submitWhenAsked = false
         code = ""
         flow = .paste
         phase = .paste(rejected: nil)

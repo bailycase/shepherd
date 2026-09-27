@@ -30,9 +30,7 @@ struct PiSignInSheet: View {
         }
     }
 
-    private var title: String {
-        session.flow == .paste ? "Sign in to \(session.name)" : "Sign in to \(session.name)"
-    }
+    private var title: String { "Sign in to \(session.name)" }
 
     private var subtitle: String {
         switch session.flow {
@@ -64,8 +62,10 @@ struct PiSignInSheet: View {
                     NWSignInStepRow("Open \(site) in your browser", state: .pending)
                     NWSignInStepRow("Save the sign-in to Shepherd’s pi", state: .pending)
                 }
-                linkLine("Or skip the browser hand-off: sign in on \(site) and paste the code it shows.", link: "Paste a code instead") {
-                    session.pasteInstead()
+                if session.subscription?.pasteNeedsPort != true {
+                    linkLine("Or skip the browser hand-off: sign in on \(site) and paste the code it shows.", link: "Paste a code instead") {
+                        session.pasteInstead()
+                    }
                 }
             }
         default:
