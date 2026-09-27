@@ -305,7 +305,7 @@ public final class SessionServer: @unchecked Sendable {
     /// An agent suggested a line, or a remote client acted on the suggestions: the GUI's
     /// Experiments page follows. Delivered on the main actor.
     public var onSuggestionsChanged: ((SuggestionsSnapshot) -> Void)?
-    /// The agent skills on this host (Settings ▸ Skills): ~/.agents/skills, which pi reads, and
+    /// The agent skills on this host (Settings ▸ Skills): its pi home's `skills/`, which pi reads, and
     /// what Shepherd keeps beside it in the support directory's `skills/`. Remote clients change
     /// them through the server, the Mac's Settings page through this store directly.
     public let skills: SkillsStore
