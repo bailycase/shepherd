@@ -260,10 +260,10 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .terminal: ["Font family", "Font size", "Shell"]
         case .agents: ["Default model", "Default thinking level", "Return while the agent is working", "When a turn ends, send the queue"]
         case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically"]
-        case .pi: ["Shepherd's pi", "Sign-in", "Sign in", "Your pi", "Custom providers", "Default model", "Trusted folders", "Instructions",
-                   "Skills", "Prompts", "Your extensions", "Name agents automatically", "Panes and agent tools", "Diff review tool", "Native subagents", "Subagent display", "MCP servers", "Concurrency"]
+        case .pi: ["Shepherd's pi", "Sign-in", "Sign in", "Your pi", "Custom providers", "Default model", "Trusted folders", "Copied",
+                   "Instructions", "Skills", "Prompts", "Themes", "Your extensions", "Name agents automatically", "Panes and agent tools", "Diff review tool", "Native subagents", "Subagent display", "MCP servers", "Concurrency"]
         case .instructions: ["Same on every host", "AGENTS.md", "APPEND_SYSTEM.md", "History"]
-        case .skills: ["Installed skills", "From your pi setup", "From pi packages", "Browse skills.sh", "Add from repo",
+        case .skills: ["Installed skills", "Browse skills.sh", "Add from repo",
                        "Skills in the / menu", "Same skills on every host", "Update automatically"]
         case .mcp: ["Servers", "Add server", "Import…", "How the agent uses them", "Same servers on every host",
                     "Open sign-in pages by itself", "Also use a repo’s .mcp.json", "Hosts"]
@@ -291,13 +291,14 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                    "Shepherd's pi": ["version", "engine", "home", "folder"],
                    "Your pi": ["import", "re-import", "copy", "~/.pi/agent", "terminal pi"],
                    "Custom providers": ["models.json", "import", "re-import"], "Default model": ["import", "re-import", "provider"],
-                   "Trusted folders": ["trust.json", "project trust", "import"], "Instructions": ["AGENTS.md", "CLAUDE.md", "context"],
-                   "Your extensions": ["extensions", "packages", "npm"]]
+                   "Trusted folders": ["trust.json", "project trust", "import"],
+                   "Copied": ["copy", "re-import", "your pi"],
+                   "Instructions": ["AGENTS.md", "CLAUDE.md", "SYSTEM.md", "APPEND_SYSTEM.md", "context", "re-import"],
+                   "Skills": ["SKILL.md", "re-import"], "Prompts": ["prompt templates", "re-import"], "Themes": ["re-import"],
+                   "Your extensions": ["extensions", "packages", "npm", "full access", "switch on", "didn't load"]]
         case .instructions: ["Same on every host": ["sync", "hosts"], "AGENTS.md": ["system prompt", "how you work", "context"],
                              "APPEND_SYSTEM.md": ["system prompt", "override"], "History": ["restore", "undo"]]
-        case .skills: ["Installed skills": ["SKILL.md", ".agents", "agent skills"],
-                       "From your pi setup": [".pi", "pi agent", "~/.pi/agent/skills", "settings.json", "outside", "read-only", "agent skills"],
-                       "From pi packages": ["package", "npm", "pi install", "read-only", "agent skills"],
+        case .skills: ["Installed skills": ["SKILL.md", ".agents", "agent skills", "from your pi", "copied", ".pi"],
                        "Browse skills.sh": ["directory", "search", "install"],
                        "Add from repo": ["github", "git", "folder"], "Skills in the / menu": ["slash", "command", "composer"],
                        "Same skills on every host": ["sync", "hosts"], "Update automatically": ["update", "upgrade"]]
