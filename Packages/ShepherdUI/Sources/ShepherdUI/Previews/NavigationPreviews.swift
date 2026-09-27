@@ -37,6 +37,39 @@ private let started = Date().addingTimeInterval(-41 * 60)
     }
 }
 
+#Preview("Sidebar — Projects") {
+    NWPreviewBoth {
+        HStack(alignment: .top, spacing: NW.Space.xl) {
+            ForEach([NWDensity.standard, .compact]) { density in
+                VStack(alignment: .leading, spacing: NWSidebarMetrics.rowSpacing) {
+                    NWProjectsHeader { Button("Add Project…") {} }
+                    NWProjectRow("shepherd", count: 3, expanded: true, toggle: {}, newThread: {}) { Button("Hide from Sidebar") {} }
+                    NWSidebarRow("Dock review pane", state: .attention, accessory: .reason("approve plan"), nested: true)
+                    NWSidebarRow("Investigate SwiftUI live preview", state: .running, selected: true,
+                                 accessory: .elapsed(since: started), nested: true)
+                    NWSidebarRow("Fix remote subagent deletion", state: .idle, accessory: .tag("horizon"), nested: true)
+                    NWProjectRow("dashboard-web", count: 2, expanded: false, rollup: .waiting, toggle: {}, newThread: {}) { EmptyView() }
+                    NWProjectRow("shepherd-daemon", count: 3, expanded: false, rollup: .running, toggle: {}, newThread: {}) { EmptyView() }
+                    NWProjectRow("dotfiles", count: 1, expanded: false, toggle: {}, newThread: {}) { EmptyView() }
+                    NWSidebarSection(.host("horizon", unreachable: true))
+                    NWProjectRow("shepherd", count: 2, expanded: false, dimmed: true, toggle: {}, newThread: nil) { EmptyView() }
+                }
+                .padding(.horizontal, NWSidebarMetrics.listInset)
+                .frame(width: 232, alignment: .top)
+                .background(Color.nw.bgBase)
+                .nwDensity(density)
+            }
+        }
+    }
+}
+
+#Preview("Organize by") {
+    @Previewable @State var style = NWSidebarStyle.projects
+    NWPreviewBoth {
+        NWSidebarStylePicker(selection: $style).frame(width: 560)
+    }
+}
+
 #Preview("Toolbar and pane header") {
     NWPreviewBoth {
         VStack(spacing: NW.Space.l) {
