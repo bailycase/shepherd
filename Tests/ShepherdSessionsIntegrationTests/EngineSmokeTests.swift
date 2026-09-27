@@ -38,6 +38,14 @@ struct EngineSmokeTests {
         try await EngineSmoke.runInYourHome(engine: engine)
     }
 
+    /// Skills come only from Shepherd's home: pi's own discovery of `$HOME/.agents/skills` is off
+    /// (Shepherd's settings filter it out), so a skill there never reaches an agent, while one in
+    /// the home's `skills/` does.
+    @Test func skillsComeOnlyFromShepherdsHomeNeverFromAgentsSkills() async throws {
+        let engine = try #require(EngineSmoke.engine)
+        try await EngineSmoke.runSkills(engine: engine)
+    }
+
     @Test(.enabled(if: EngineSmoke.rosettaRunsX86, "needs an arm64 Mac with Rosetta and an x86_64 slice"))
     func itsX86SliceRunsUnderRosetta() async throws {
         let engine = try #require(EngineSmoke.engine)
@@ -272,6 +280,52 @@ enum EngineSmoke {
         #expect(try tree(yourPi) == before, "your pi is byte-identical")
         let settings = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: home.settings)) as? [String: Any])
         #expect(settings["packages"] == nil, "Shepherd's settings name no packages")
+    }
+
+    static func runSkills(engine: BundledPiEngine) async throws {
+        let scratch = try makeScratchDirectory("engine-skills")
+        let files = FileManager.default
+        let userHome = scratch.appendingPathComponent("home", isDirectory: true)
+        let temporary = scratch.appendingPathComponent("tmp", isDirectory: true)
+        let project = scratch.appendingPathComponent("project", isDirectory: true)
+        for folder in [userHome, temporary, project] { try files.createDirectory(at: folder, withIntermediateDirectories: true) }
+        func skill(_ folder: URL, _ name: String) throws {
+            try files.createDirectory(at: folder, withIntermediateDirectories: true)
+            try "---\nname: \(name)\ndescription: The \(name) fixture skill.\n---\nDo nothing.\n"
+                .write(to: folder.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
+        }
+        try skill(userHome.appendingPathComponent(".agents/skills/agents-only"), "agents-only")
+        try skill(userHome.appendingPathComponent(".agents/skills/group/nested-agents"), "nested-agents")
+        let home = PiHome(directory: scratch.appendingPathComponent("support/pi", isDirectory: true), engine: .bundled(engine),
+                          userHome: userHome.path)
+        try home.install()
+        try models.write(to: home.directory.appendingPathComponent("models.json"), atomically: true, encoding: .utf8)
+        try skill(home.directory.appendingPathComponent("skills/shepherds-own"), "shepherds-own")
+
+        let names = try await skillNames(home: home, userHome: userHome, temporary: temporary, project: project)
+        #expect(names.contains("skill:shepherds-own"), "a skill in Shepherd's home loads: \(names)")
+        #expect(!names.contains("skill:agents-only") && !names.contains("skill:nested-agents"),
+                "no skill in $HOME/.agents/skills loads: \(names)")
+
+        // The control: with the filter naming another home, pi's own discovery finds that folder.
+        try PiHome(directory: home.directory, engine: home.engine, userHome: scratch.appendingPathComponent("elsewhere").path).install()
+        let unfiltered = try await skillNames(home: home, userHome: userHome, temporary: temporary, project: project)
+        #expect(unfiltered.contains("skill:agents-only") && unfiltered.contains("skill:nested-agents"), "the fixture is found unfiltered: \(unfiltered)")
+    }
+
+    /// The skills an agent's pi, started through the launcher in `project`, offers as commands.
+    static func skillNames(home: PiHome, userHome: URL, temporary: URL, project: URL) async throws -> [String] {
+        let pi = try RPCProcess(executable: home.launcher.path, arguments: ["--mode", "rpc", "--no-session"], directory: project, environment: [
+            "HOME": userHome.path,
+            "TMPDIR": temporary.path + "/",
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+        ])
+        defer { pi.stop() }
+        let listing = try await pi.request(["type": "get_commands"])
+        #expect(listing["success"] as? Bool == true, "get_commands: \(listing) \(pi.errors)")
+        let commands = ((listing["data"] as? [String: Any])?["commands"] as? [[String: Any]]) ?? []
+        #expect(try await pi.finish() == 0, "pi exits cleanly when its input ends: \(pi.errors)")
+        return commands.compactMap { $0["name"] as? String }.filter { $0.hasPrefix("skill:") }.sorted()
     }
 
     /// Every path under `root`, with its bytes (a folder as empty).

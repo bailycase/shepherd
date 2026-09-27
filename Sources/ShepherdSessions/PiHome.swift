@@ -15,10 +15,19 @@ public struct PiHome: Equatable, Sendable {
     public let directory: URL
     /// What the launcher execs.
     public let engine: PiEngine
+    /// The user's home folder as pi sees it (`HOME`): pi also reads skills from its
+    /// `.agents/skills`, which Shepherd's settings exclude (`userSkillsExclusions`).
+    public let userHome: String
 
-    public init(directory: URL, engine: PiEngine) {
+    public init(directory: URL, engine: PiEngine, userHome: String = PiHome.environmentHome) {
         self.directory = directory.standardizedFileURL
         self.engine = engine
+        self.userHome = userHome
+    }
+
+    /// `HOME`, as the agents' pi inherits it, else the account's home folder.
+    public static var environmentHome: String {
+        ProcessInfo.processInfo.environment["HOME"].flatMap { $0.isEmpty ? nil : $0 } ?? NSHomeDirectory()
     }
 
     /// `<home>/bin/pi`, the launcher. pi puts `<home>/bin` first on its bash tool's PATH, so a
@@ -149,6 +158,10 @@ public struct PiHome: Equatable, Sendable {
         return try PiSettingsFile(url: settings).update { settings in
             var notes: [String] = []
             settings["shellCommandPrefix"] = shellCommandPrefix
+            // pi reads skills from `$HOME/.agents/skills` besides its own home; Shepherd's pi reads
+            // only its home, so a `!` filter in its skills list turns that folder off.
+            let skills = Self.excludingUserSkills(settings["skills"], home: userHome)
+            if skills.isEmpty { settings.removeValue(forKey: "skills") } else { settings["skills"] = skills }
             // A user-scope package missing from <home>/npm makes pi load the user's global npm
             // install, even offline; packages come to Shepherd's pi only as imported extensions.
             if settings.removeValue(forKey: "packages") != nil {
@@ -156,6 +169,42 @@ public struct PiHome: Equatable, Sendable {
             }
             return notes
         }
+    }
+
+    // MARK: ~/.agents/skills
+
+    /// The `skills` filters that turn off pi's `$HOME/.agents/skills` (pi: core/package-manager.js,
+    /// `addAutoDiscoveredResources`, which adds that folder's skills for every session and enables
+    /// each unless a `!` pattern in the global `skills` matches its absolute path). One for `home`
+    /// as pi builds the path (`HOME` as it is, never resolved), and one for its real path when that
+    /// differs. Glob characters in the path are escaped for minimatch.
+    public static func userSkillsExclusions(home: String) -> [String] {
+        var homes = [(home as NSString).standardizingPath]
+        let real = canonical(home)
+        if real != homes[0] { homes.append(real) }
+        return homes.map { "!" + globEscaped($0 == "/" ? "" : $0) + "/.agents/skills/**" }
+    }
+
+    /// `entries` (the `skills` list pi reads, as settings.json holds it) with Shepherd's exclusions
+    /// for `home`, replacing any it wrote for another home; every other entry stays, in order.
+    static func excludingUserSkills(_ entries: Any?, home: String) -> [Any] {
+        let own = userSkillsExclusions(home: home)
+        var kept = (entries as? [Any] ?? []).filter { entry in
+            guard let text = entry as? String else { return true }
+            return !(text.hasPrefix("!") && text.hasSuffix("/.agents/skills/**"))
+        }
+        kept += own as [Any]
+        return kept
+    }
+
+    /// `path` with minimatch's special characters escaped, so it matches only itself.
+    static func globEscaped(_ path: String) -> String {
+        var out = ""
+        for c in path {
+            if "\\*?[]{}()!+@#".contains(c) { out.append("\\") }
+            out.append(c)
+        }
+        return out
     }
 
     /// Writes `data` to `url` by temp file and rename, unless it already holds exactly that with
