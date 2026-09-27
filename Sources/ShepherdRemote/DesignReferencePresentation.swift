@@ -9,24 +9,30 @@ public enum DesignReferencePresentation {
     /// The Implement sheet's footer: "Sends a picture, its HTML, 11 styles and 8 tokens from
     /// acme-web." (an element), "…the board’s HTML, 42 styles…" (a board), "Sends a picture and the
     /// HTML of each of its 4 boards…" (a whole design; "of its first 12 of 40 boards" past the cap).
+    /// A piece with no styles or no tokens doesn't say "0 tokens": it names only what goes.
     public static func sends(_ outline: DesignReferenceOutline) -> String {
-        let counts = [count(outline.styles, "style"), count(outline.tokens, "token")]
+        let counts = counts(outline)
         let from = outline.system.map { " from \($0)" } ?? ""
         switch outline.kind {
         case .element:
-            return "Sends a picture, its HTML, " + list(counts) + from + "."
+            return "Sends " + list(["a picture", "its HTML"] + counts) + from + "."
         case .board:
-            return "Sends a picture, the board’s HTML, " + list(counts) + from + "."
+            return "Sends " + list(["a picture", "the board’s HTML"] + counts) + from + "."
         case .design:
             let held = outline.boards ?? 0, total = outline.boardCount ?? held
             let boards = total > held ? "its first \(held) of \(total) boards" : "its \(count(held, "board"))"
-            return "Sends a picture and the HTML of each of \(boards), " + list(counts) + from + "."
+            return "Sends " + list(["a picture and the HTML of each of \(boards)"] + counts) + from + "."
         }
     }
 
-    /// The preview's "The agent gets" row: picture, html, 11 styles, 8 tokens.
+    /// The preview's "The agent gets" row: picture, html, 11 styles, 8 tokens (none of a kind it
+    /// has none of).
     public static func gets(_ outline: DesignReferenceOutline) -> [String] {
-        ["picture", "html", count(outline.styles, "style"), count(outline.tokens, "token")]
+        ["picture", "html"] + counts(outline)
+    }
+
+    static func counts(_ outline: DesignReferenceOutline) -> [String] {
+        [(outline.styles, "style"), (outline.tokens, "token")].filter { $0.0 > 0 }.map { count($0.0, $0.1) }
     }
 
     /// The chip's version: "v23".

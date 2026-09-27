@@ -8504,7 +8504,8 @@ or in a design's own chat. Choices the boards leave open, and where the build de
   The sheet, the toasts and a new thread's name and branch name the piece as the canvas did (its
   `data-el` name, else the canvas tag's noun: "card “Checkout funnel”"); the host names it the same
   way from the source for the chip and the picker (`DesignReferenceReading.elementNoun`: a box
-  that draws a fill, border or shadow is a card, else a group; words alone are text).
+  that draws a fill, border or shadow is a card, else a group; words alone are text). The footer
+  names only what goes: never "0 tokens".
 - **The chip** (`NWDesignReferenceChip`): 6/8/6/6 padding, radius 9, 1px `lineStrong` on
   `bgBubble`, 9pt gaps: a 40×26 picture (radius 4, a hairline ring), then design › board ›
   **element** in 12.5 (`textSecondary`, the piece `textPrimary` semibold, `›` `textTertiary`; the
