@@ -119,6 +119,9 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
     Settings ▸ Experiments ▸ Suggested instructions is on for its kind of agent), and, for an
     agent that draws a design, `SHEPHERD_DESIGN_ID` and `SHEPHERD_DESIGN_SKILL_DIR` (the design
     skill the app writes to the support directory's `design-skill/`; docs/designs.md).
+    `SHEPHERD_DESIGN_REFS` (`on`, or `granted` for a thread that already holds a design
+    reference) loads design_get in a thread that draws no design, while Settings ▸ Pi ▸ Design
+    references is on (docs/designs.md › Design references).
 - **`SHEPHERD_PR_DESCRIPTION_MODEL`** overrides the model that drafts finalize PR bodies.
 - **`SHEPHERD_NAMER_MODELS`** (`provider/id,provider/id`; an entry without a slash matches any
   provider) overrides the cheap models the namer tries before the agent's own. The namer reads it
@@ -407,7 +410,7 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
 - **Core:** the status transition table, `PaneNode` operations, and state validation.
 - **Migration:** terminal-era `runtime` keys, global shells and space shells dropped at startup,
   and review leaves.
-- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all sixteen files, and
+- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all seventeen files, and
   the design skill's two files).
 - **Themes:** every theme variant complete, and the WCAG contrast rules met.
 - **App logic:** keybindings (defaults, validation, stored overrides for removed actions
@@ -490,6 +493,9 @@ Sources/
                        the Design tool's format (docs/designs.md): DesignIndex (canvas.json v3,
                        unknown keys kept), DesignPath (the board path grammar), DesignTemplate
                        and DesignElementID (a board's elements as `File.dc.html#tid:path`),
+                       DesignReference (a board or element handed to a thread: its
+                       `shepherd-design-ref://` string, the record and fence pi reads) and
+                       DesignReferenceReading (design_get's words: tokens with sources, changes),
                        DesignBoardCheck (what a board may hold), DesignStyle/DesignTokens/DesignProps
                        (Tweak: inline-style splices at parser offsets, token snapping, data-props
                        and canvas.json's tweaks), DesignCanvasLayout (pages, notes, where a
@@ -555,7 +561,9 @@ Sources/
                        DesignStore (each design's files in the support directory's designs/, on
                        its own queue, with a revision per design, each board's last 20
                        versions, its comments.json, and installed systems under ds/; what an
-                       export reads; a Claude Design folder imported; docs/designs.md),
+                       export reads; a Claude Design folder imported; a reference's pinned
+                       board copies under pins/; docs/designs.md), DesignReferences (a send's
+                       references checked against the design, design_get's answers),
                        DesignSystemStore (design systems in the support directory's
                        design-systems/, their owners and sources, built-ins).
   TerminalSurfaceKit/  Ghostty adapter for terminal panes; see its NOTES.md.
@@ -600,7 +608,9 @@ Sources/
       custom properties a design agent's folder declares), NightWatchSystem (Night Watch as a
       built-in design system, from ShepherdUI's tokens), DesignSystemCatalog (the host's systems
       as last read), DesignSystemPageModel (DZSystem as values; specimen boards), DesignSystemPage
-      (the Design systems page, a build's layout beside its chat, the header)
+      (the Design systems page, a build's layout beside its chat, the header),
+      ShepherdViewModel+DesignReferences (a board or element handed to a thread: readied, drawn
+      into the drop folder, sent; design_get's drawn aspects) and DesignReferencesExtension
     TerminalPanels (each layout's terminal panel: shown, tab, maximized, activity),
       TerminalPanelLayout (TerminalPanelGeometry, pure), TerminalPanelViews (strip, divider)
     Thread/            ThreadView, ThreadTurns, ThreadTools (activity lines), ThreadMarkdown,
@@ -674,6 +684,8 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
                           design_check, comment_list, comment_reply, system_read and
                           system_write; hands pi the design skill
                           (design-skill/: SKILL.md, format.md); see docs/designs.md
+  shepherd-design-refs.ts an ordinary thread's design_get, registered only once the thread holds a
+                          design reference; see docs/designs.md › Design references
   shepherd-mcp.ts         the mcp tool (search, describe, call) and direct <server>_<tool> tools
                           over the servers in Settings ▸ MCP servers; credentials from the app
   shepherd-mcp-client.mjs the dependency-free MCP client (stdio, Streamable HTTP, legacy SSE),
@@ -911,9 +923,9 @@ the same change.
 - A new `SessionServer` mutation needs an integration test.
 - New persisted fields decode with defaults, so older `state.json` files keep loading.
 
-**Embedded extensions have one canonical copy.** The sixteen files in `Extensions/` are canonical,
+**Embedded extensions have one canonical copy.** The seventeen files in `Extensions/` are canonical,
 and so is the design skill in `Extensions/design-skill/`.
-pi loads the copies that the ten `Sources/ShepherdApp/*Extension.swift` files write to the
+pi loads the copies that the eleven `Sources/ShepherdApp/*Extension.swift` files write to the
 support directory from embedded string literals. `installedPath()` rewrites an installed copy
 whenever its content differs, so drift ships bugs. `ChildrenExtension.swift` carries children,
 children-config, children-ui, workflow, and missions, and installs `InspectExtension`'s
@@ -924,7 +936,7 @@ children-config, children-ui, workflow, and missions, and installs `InspectExten
 carries it and installs it beside them, and the app runs it on the engine's node.
 
 - Edit a `.ts`/`.mjs` file (or a design skill file) and its literal in the same change, with
-  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all sixteen pairs
+  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all seventeen pairs
   and the skill's two files.
 - Extensions stay dependency-free and inert without their environment variables.
 - They must never throw into pi or keep the process alive (unref'd sockets and timers).

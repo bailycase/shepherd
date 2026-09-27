@@ -44,8 +44,9 @@ stand-in), never a `pi` looked up on PATH ([pi-home.md](pi-home.md)).
 - **Extensions** are installed into the support directory from embedded literals and loaded
   with `-e`. Nothing is installed into a pi home. The status extension is always loaded; the
   rest follow Settings ▸ Pi ▸ Bundled extensions: "Panes and agent tools", "Diff review tool",
-  "Subagent display", "Native subagents", and "Name agents automatically" (the namer, and only
-  for agents whose name is not final).
+  "Subagent display", "Native subagents", "Name agents automatically" (the namer, and only
+  for agents whose name is not final), and "Design references" (design_get, for agents that draw
+  no design; `SHEPHERD_DESIGN_REFS`).
 - **Environment:**
   - Always: `SHEPHERD_AGENT_ID`, `SHEPHERD_SOCKET`, `SHEPHERD_EXT_STATUS`.
   - With the panes extension: `SHEPHERD_EXT_PANES`.
@@ -245,7 +246,8 @@ events come out on stdout, one record per LF.
     (10 s, 30 s for a prompt: pi answers a prompt only after its preflight) is
     `outcome_unknown`, never reported as a refusal: pi may still run it.
   - `supportedActions` lists what clients may offer: `send`, `abort`, `answer`, `setModel`,
-    `setThinking`, `sendImages`, `subagents`, `queue`, `compact`, `designContext`.
+    `setThinking`, `sendImages`, `subagents`, `queue`, `compact`, `designContext`,
+    `designReferences`.
 - **Design context:** a design agent's chat sends what its design screen showed with each
   message (`send`'s `designContext`, a `DesignViewRecord`; docs/designs.md › The view record).
   - The host checks it against the grammar. A record that breaks it, or doesn't decode as one
@@ -264,6 +266,13 @@ events come out on stdout, one record per LF.
   reply under a pin keeps no origin), so the chat draws the comment's card; older clients read the
   origin as unknown and show the words. The fence is in pi's session, so the origin comes back
   after a relaunch without a record in `thread-origins/`; it wins over a queue delivery's parts.
+- **Design references:** an ordinary thread's send may carry design pieces the user hands it
+  (`send`'s `designReferences`: each reference's string; docs/designs.md › Design references).
+  The host checks them against the design, grants the thread's agent those pieces, and fences
+  what it read ahead of the message between `design-ref` markers (`DesignReferenceFence`), first
+  even before words starting with "/"; such a message is never joined in the queue. The
+  projection takes the fence off like the others. Only a local thread takes them: a remote
+  client's are refused (`design_references_local`).
 - **Subagents:** the rows the subagent display extension publishes (`setAgentChildren`) ride the
   snapshot as `subagents`.
 
