@@ -53,12 +53,14 @@ agents at once?"
   and *messages* (Main, Running: "Copy response", "Retry turn").
 - **The agent, not pi:** copy calls the process it supervises "the agent" or "Agent" ("Agent is
   asking", "Goes when the agent finishes this turn", "the agent's session file"), and a version
-  shown to people reads "agent 0.87.1". pi appears in exactly four places: the Settings ▸ Pi
-  page itself (with the Settings footer's "pi 0.87.1" while it is open), its "Pi" item in the
-  settings navigation, the real `~/.pi/…` paths on Settings ▸ Instructions, and the welcome sheet
-  at the first launch of a build that runs its own pi (Dialogs and sheets › Welcome), which has
-  to tell the user that the pi in their terminal is untouched. Code, logs, command lines,
-  extension prompts, and these docs still name pi, the program.
+  shown to people reads "agent 0.87.1". pi appears where the user's own pi is the subject:
+  the Settings ▸ Pi pages (with the Settings footer's "pi 0.87.1" while one is open) and their
+  items in the settings navigation, the real `~/.pi/…` paths on Settings ▸ Instructions, the
+  first launch's sheet (Dialogs and sheets › Bringing over your pi) and the sign-in sheet, which
+  have to tell the user that the pi in their terminal is untouched, and the two lines a restored
+  agent shows about it ("It picks up once your pi is brought over", "…skipped when your pi came
+  over"). Code, logs, command lines, extension prompts, and these docs still name pi, the
+  program.
 - **Not built yet, hidden until built.** The boards give the sidebar two more destinations,
   **Missions** (one map from a goal to merged pull requests, across every repository it touches)
   and **Designs** (HTML mockups on a canvas, drawn and refined with a design agent). The Missions
@@ -207,6 +209,15 @@ And the rules that follow from them:
 | MobileExperiments: Learn from Missions, and a mission's folded-map glyph | Threads and Automations | Missions aren't built |
 | MobileInstructionsEdit: a key row of 32pt keys at least 38pt wide on `bgRaised`, over `bgSunken` | The terminal's key row (`NWTerminalKeyRow`: 34pt keycaps at least 44pt wide, over `bgWindow`) | One key row across the app, at touch size |
 | iPadSettingsInstructions: a 76pt header over each column, "Settings" over the list and the page's title with History and Save beside it | The bar, with the page's title; History and Save end the page's first row | The bar keeps back and the title where every iPad screen has them, and NW buttons keep their styles outside a toolbar |
+| The sign-in boards name the account and plan ("Signed in · Claude Max · team@northwind.dev", "Signed in as team@northwind.dev", "Copilot Business") | The plan the provider sells ("Claude Pro or Max"); an account only where the provider names one | pi keeps no account or plan with a sign-in, and asking the provider would refresh it (Pi ▸ Sign-in) |
+| SettingsPiSignIn and PiImportNew list Google ("Gemini CLI or Antigravity") under Subscriptions | Left out; Google is an API key (`GEMINI_API_KEY`) | The pi Shepherd ships (0.87.1) has no Google account sign-in |
+| PiImportMissing: "Expired in your pi on Sep 12", "Kimi didn’t accept your pi’s sign-in" | "Your pi isn't signed in to it", "Your pi's sign-in couldn't be copied": a provider an agent or the default model needs with nothing to cover it | Trying a copied sign-in refreshes it, which rotates its token and can sign the terminal's pi out |
+| Sign-in's Expired state, as a state of its own | "Expired · sign in again" once pi reports that a subscription's refresh failed (an agent's turn or start says so); nothing tries sign-ins ahead of time | The same: only pi's own use of a sign-in may refresh it |
+| SignInKey: "Save stays off until a key works" | Also on when the provider can't be reached to check the key, with "Couldn’t reach DeepSeek to check it." | Offline, or behind a proxy, a key the check can't reach must still be savable |
+| SignInDevice: GitHub Copilot's sheet shows only github.com | GitHub Enterprise isn't offered (pi's domain question is answered with github.com) | No board draws the question; Enterprise users sign in with an API key for now |
+| SettingsPiSignIn: Custom providers labelled `~/.pi/agent/models.json` | The file Shepherd's pi reads (`…/Shepherd/pi/models.json`) | The copy is what agents use; the source is on From your pi |
+| SettingsPiFromPi: "pi 0.86.4 in your terminal" | "The pi in your terminal, found through your login shell." | Shepherd never runs the user's pi, so it doesn't know its version |
+| SlashLogin: /logout signs out | /logout opens Sign-in at the provider; Sign out stays a click there | A slash command never destroys a sign-in on its own |
 
 Additions the boards don't have:
 
@@ -517,7 +528,7 @@ output, counts, times), both bundled (NWFoundations). Sizes are points:
 
 | Style (`NWTextStyle`) | Mac spec | iOS | Board use (NWFoundations) | Also in the app |
 | --- | --- | --- | --- | --- |
-| `display` | Geist 28/600/1.15 | 28 | Empty states, onboarding | Nothing in the Mac app: the one onboarding step, the welcome sheet, is a dialog titled in `title`; empty-state titles follow the Status board at 17/600, and Settings page titles the Settings boards at 22/600 (`Font.nwSans`) |
+| `display` | Geist 28/600/1.15 | 28 | Empty states, onboarding | Nothing in the Mac app: the one onboarding step, Bringing over your pi, is a sheet titled at 17/600; empty-state titles follow the Status board at 17/600, and Settings page titles the Settings boards at 22/600 (`Font.nwSans`) |
 | `title` | Geist 15/600/1.3 | 16 | Thread and pane titles | Dialog and sheet titles. The toolbar title and pane headers follow the Navigation board at 13/600 (`Font.nwSans(13, .semibold)`) |
 | `headline` | Geist 13.5/600/1.35 | 17 | Card titles, section heads | Markdown headings |
 | `body` | Geist 13.5/400/1.6 | 16/1.5 | Agent prose, bubbles | The composer field |
@@ -947,6 +958,9 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   and takes it out of the call before the tool runs; the host reads it from the call's arguments
   and pairs it with the dialog that call opens. A child's `shepherd_parent_message` takes the
   same `short`. An agent that gives none, and an older host, fall back to the question cut short.
+- **Not signed in:** an agent on this Mac whose pi can't start because it isn't signed in
+  (Thread › Not signed in) is in Needs you too, with the glowing lantern dot and "sign in" as its
+  reason (`NWSidebarRow(agent) · .notSignedIn`), until it starts again.
 - **Recents** (`NWSidebarSection(.recents)`): every other agent, on this Mac and every connected
   host, automation runs included, in one list, most recently active first. The header is "Recents"
   in Geist 11.5 medium `textTertiary`, spaced like Needs you, and the rows are the same. The leading
@@ -956,13 +970,16 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   1. the ⌘-digit hint on the first nine rows while ⌘ is held ("⌘3", micro `textTertiary`)
   2. a remote agent's host as a tag: mono 10 `textTertiary`, padded 4pt at the sides, in a 1pt
      `lineSubtle` border at radius 4 ("horizon"). Threads on this Mac carry no tag.
-  3. "can't start" in mono 10 `failed` for an agent on this Mac whose pi stopped before it served
+  3. "waiting" in mono 10 `textTertiary`, with a `clock` glyph in `textSecondary` in the leading
+     slot, for a restored agent that the first launch's copy from your pi holds (PiAuthStates'
+     `NWSidebarRow(agent) · .waiting`); VoiceOver reads "waiting". It goes when the agent starts.
+  4. "can't start" in mono 10 `failed` for an agent on this Mac whose pi stopped before it served
      (Thread › Can't start), with the red dot (a thread's) or the bolt (a run's); VoiceOver reads
      "can't start". It clears the moment Retry starts pi again. A remote agent's row doesn't say
      it: the host sends it only in the thread's snapshot.
-  4. an automation run's word in mono 10: "done", or "failed" in `failed`; its elapsed time while it
+  5. an automation run's word in mono 10: "done", or "failed" in `failed`; its elapsed time while it
      runs
-  5. a running thread's elapsed time ("4m", counting live in mono 10 `textTertiary`). The board
+  6. a running thread's elapsed time ("4m", counting live in mono 10 `textTertiary`). The board
      draws a sparkline here (see Where Shepherd departs from the boards).
 
   The list takes the rest of the column, scrolls, and clips at the bottom. The boards' "n boards"
@@ -1455,6 +1472,27 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   retires as before. Remote viewers read it from the host's snapshot
   (`NativeThreadSnapshot.startProblem`), without Retry, since starting pi belongs to the host: a
   Mac draws the same banner, and iPhone and iPad say it in the thread's notice line.
+- **Waiting to continue** (`NWAgentWaitingLine`; PiImportProgress, PiAuthStates): while the first
+  launch's copy holds a restored agent, its thread ends with one static line, `NW.Space.l` under
+  the last turn in the thread's column: a card (`bgSunken`, radius 10, `lineSubtle`, 10×14) with
+  a `clock` 14pt in `textSecondary`, "Waiting to continue" in 13/500 over "It picks up once your
+  pi is brought over." in 12.5 `textSecondary` ("This agent was mid-turn when Shepherd quit." first,
+  when its last turn never ended), and "restored 9:41 AM" in mono 11 `textTertiary` trailing. It
+  goes, with no motion, when the agent picks up.
+- **Not signed in** (`NWAgentNotSignedInCard`; AgentNotSignedIn, PiAuthStates): a pi that can't
+  start because no sign-in covers its model shows a card at the end of the thread instead of the
+  composer's Can't start banner: `lantern` at 28% for its line and 5% for its fill, radius 10,
+  14×16, 12 between its parts. A 30pt `lanternTint` tile at radius 10 with `key` 18pt
+  `lanternText`; "Not signed in to Anthropic" in 14/600 over, 3pt under it, "This agent uses
+  `claude-opus`. Anthropic’s sign-in was skipped when your pi came over, so the agent is waiting
+  for you. Your message is kept." in 13/1.5 `textSecondary` (the model in mono 12.5
+  `textPrimary`; "Shepherd’s pi isn’t signed in to Anthropic, so …" when no copy skipped it; "a
+  provider" when pi names none); the time it stopped in mono 11 `textTertiary` trailing. Under
+  it, 42pt in: Sign in to Anthropic (primary, small, `key`), which opens Settings ▸ Pi ▸ Sign-in
+  scrolled to Anthropic and starts its sign-in, and Use another model (ghost, small,
+  `arrow.triangle.swap`), which opens the model menu: the model picked starts pi again on it. The
+  message (a new agent's opening prompt pi never read) is kept either way. When the sign-in
+  lands the agent starts again by itself; the card goes when pi does.
 - **Empty thread:** a framed `NWEmptyState` (a dashed `lineStrong` border, no crook): "New
   agent in `~/path`" (the path in Geist Mono 15 medium within the 17pt title), with "Describe
   the task. Drop or paste images to attach them, or type / for commands." A new agent is known
@@ -1947,7 +1985,8 @@ its own.
   process.", with the error and Reconnect: only for a pi that was serving and went away, one
   that failed, or one that never started.
 - **Can't start:** a `failed` `NWBanner` in the Error banner's place above the card, for a pi
-  that stopped before it served (Thread › Can't start). Its title names the cause and its message
+  that stopped before it served (Thread › Can't start), except one not signed in on this Mac,
+  whose card in the thread says so instead (Thread › Not signed in; the composer stays as it is). Its title names the cause and its message
   says what to do, then pi's own last lines (at most six, colour codes removed), all selectable:
   - not signed in: "pi can't reach a model." / "Sign in to a provider for Shepherd's pi (Settings
     ▸ Pi), then Retry."
@@ -2196,6 +2235,20 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
   skills out (on the Mac). Its rows are lazy, a highlight moving redraws only the two
   rows it moves between, and only ↑↓ scroll the highlight into view (the pointer's is already under
   the pointer).
+- **/login and /logout** (SlashLogin, SlashLoginArgs; this Mac's agents only): two commands of
+  Shepherd's own, listed with pi's ("2 of 24"), that never run in the thread. Their hint is
+  "[provider]", their description "Sign in to a model provider in Settings ▸ Pi ▸ Sign-in" and
+  "Sign out of a provider in Settings ▸ Pi ▸ Sign-in", and their tag "opens Settings" in place of
+  a source. With "/login " typed (a space), the menu turns to the providers, headed "Sign in to ·
+  opens Settings" with "n of m": each row "/login" in `textSecondary` and the provider's id in
+  mono 12.5 `textPrimary` (the typed part semibold), its plan in 13 `textSecondary`, and its
+  state as a word in caption trailing ("Not signed in" `textTertiary`, "Expired" `lanternText`,
+  "Signed in" `done`, "API key" `textSecondary`); providers not signed in first, then by name.
+  ⏎ (or a click) on either, or sending "/login", "/login anthropic" or "/logout …" as typed,
+  clears the composer and opens Settings ▸ Pi ▸ Sign-in; with a provider it scrolls there and
+  starts its sign-in (/logout only scrolls there: signing out stays a click). A name Shepherd
+  doesn't know opens Sign-in with the list as it is. Nothing reaches pi. A remote agent's composer
+  doesn't list them.
 - **Argument hints** after the name in `textTertiary` ("/release-notes [tag]"; NWComposer,
   SlashMenu) come from a prompt template's `argument-hint` frontmatter, which the host reads from
   the file pi names (pi's `get_commands` sends no hints; `NativeCommand.arguments`). Extension
@@ -3360,7 +3413,10 @@ Save or Apply (the one exception is Instructions, which edits files and saves wi
     filters at once
   - the pages, one `NWSettingsNavRow` each, `NW.Space.xxs` apart, in this order: Appearance
     (`circle.lefthalf.filled`) · Terminal (`terminal`) · Agents (`person.2`) · Worktrees
-    (`arrow.branch`) · Pi (`pi`) · Instructions (`doc.text`) · Skills (`graduationcap`) · MCP servers
+    (`arrow.branch`) · Pi (`pi`), with its two pages under it, Sign-in and From your pi (SettingsPi:
+    rows 28pt × density, 35pt in, Geist 12.5 `textSecondary`, the selected one `textPrimary` at 500
+    on `bgSelected`; Sign-in carries a 6pt `lantern` dot trailing while a provider an agent of
+    this Mac needs isn't signed in or a sign-in expired) · Instructions (`doc.text`) · Skills (`graduationcap`) · MCP servers
     (`server.rack`) · Remote
     (`dot.radiowaves.left.and.right`) · Keyboard (`keyboard`) · Advanced (`gearshape`) ·
     Experiments (`flask`). A row is 32pt × density (`NW.Height.scaled(32)`), radius `s`, 10pt in:
@@ -3557,67 +3613,8 @@ automated step of the worktree flows can be turned off here.
   - the engine: a `PathRow`, "pi 0.87.1" (the version the app ships; "pi" alone when a Debug
     build's override brings its own), "Included with Shepherd, and updated with it. Its home:",
     then the home's folder name in mono (its path on hover) and Reveal.
-- **Sign-in** (the plan's phase 4; footnote "Sign-ins belong to Shepherd's pi. Those copied from
-  your pi were copied once, at the first launch; from then on each pi refreshes its own."): a row
-  per provider that Shepherd's pi has a login for, that your pi has one for, or whose key
-  variable your login shell sets, sorted by name. The title is the provider's name ("Anthropic",
-  "OpenAI Codex"; a custom id as it is), the description says what Shepherd's pi uses, and the
-  state word sits trailing in `caption`/`textSecondary`, never a status color (these are not agent
-  states):
-  - **Signed in** (a subscription sign-in in Shepherd's pi). When your pi has one for the same
-    provider, the description adds the one line about both sides: "Copied from your pi. When one
-    side refreshes it, the other may be signed out: sign in again there."
-  - **API key**: "API key", "API key from `$NAME`", or "API key that runs a command" (a `!command`
-    value; the command itself is never shown). A key's value is never shown, masked or not.
-  - **From your environment**: no stored login, but your login shell sets `NAME`: "`NAME` in your
-    shell's environment."
-  - **Not signed in**: your pi has a login Shepherd's pi doesn't (a skipped or failed copy):
-    "Your pi is signed in; Shepherd's pi isn't."
-  - **Re-import** (secondary, small) on every row whose provider your pi has a login for: it copies
-    that one login again, overwriting Shepherd's copy. A failure shows inline as the row's problem.
-  - Last, Sign in, "Opens Shepherd's pi in a terminal beside the selected agent. Type `/login` there.
-    Your terminal's pi stays signed in as it is.": **Open pi** (secondary, small), which opens a
-    terminal pane beside the agent selected on this Mac, running Shepherd's pi with no session
-    (`pi --no-session` through its launcher, run in Shepherd's pi home so an agent's folder of
-    `~` never makes `~/.pi` the TUI's project). With no agent of this Mac selected it is disabled,
-    and its tooltip says "Select an agent on this Mac first." Until the native sign-in sheet (the
-    plan's phase 7) this is the only way to sign in.
-- **From your pi** (footnote "Copies. Re-import replaces Shepherd's copy with your pi's; your pi is
-  never written to."; SettingsPiFromPi):
-  - Your pi: the folder's name in mono (its path on hover) and Reveal, "The pi in your terminal.
-    Shepherd copied it at the first launch; nothing syncs after that." A file of theirs that
-    couldn't be read shows inline as this row's problem.
-  - Custom providers: "`local-llm`, `zeta`" (their models.json's providers), or "None in your
-    pi"; Re-import, disabled with none.
-  - Default model: "`anthropic/claude-…`", with "Shepherd's pi uses `…`" when the two differ, or
-    "None set in your pi"; Re-import, disabled with none.
-  - Trusted folders: "3 folders. Your home folder is never trusted as a project."; Re-import,
-    disabled with none.
-  - With no pi of yours, the group is one row, "No pi found", "Shepherd found no pi of yours to
-    copy. Sign in above."
-- **Copied** (the user's decision of 2026-09-26, "everything will be ported over"; footnote
-  "Copied into Shepherd's pi. Edits in your pi reach Shepherd only when you Re-import."), a
-  Re-import each (disabled with no pi of yours), which copies that kind again: their edits replace
-  Shepherd's copies, new files come over, one of Shepherd's own of the same name stays:
-  - Instructions: "`AGENTS.md` · 38 lines · no `SYSTEM.md` · no `APPEND_SYSTEM.md`" (the file pi
-    would pick, and pi's other two global files), or "None copied: your pi has no `AGENTS.md` or
-    `CLAUDE.md`."
-  - Skills: "12 skills, listed with the rest in Skills."
-  - Prompts: up to six names in mono ("`/review` `/triage`", then "and 3 more").
-  - Themes: their names the same way.
-  - "None copied." for a kind with none.
-- **Your extensions** (SettingsPiExtensions; footnote "Code, so each one came over switched off.
-  Shepherd's own extensions are below."): a row per extension copied from their pi, its name, and
-  as the description its source in mono (a path with `~`, or a package's source) and its
-  package.json's description. A switch each, off by default:
-  - On: the description adds "Runs with full access to your files, shell and network, like it does
-    in your terminal. New agents load it; running ones on /reload." There is no dialog.
-  - Failed (it threw as it loaded, or its files are gone): the switch stays on, the row's problem
-    says "Didn't load: Cannot find module 'turndown'" in pi's words, and Try again (secondary,
-    small) sits before the switch. Shepherd leaves it out of every launch until its files change
-    or Try again.
-  - Last, Copy again, "Copies your extensions again, keeping each one's switch."; with none, "Your
-    pi has no extensions Shepherd copied."
+- **Sign-in and From your pi** have pages of their own, under Pi in the nav (below). The Pi page
+  keeps what the SettingsPi board draws besides them.
 
 - **Bundled extensions** (footnote "Applies to agents launched on this Mac, including automations
   and remote agents. Running agents keep their extensions until restarted. Status and session
@@ -3647,6 +3644,125 @@ automated step of the worktree flows can be turned off here.
   daily and a version row with Check now and Update now): Shepherd runs its own pi, which ships
   inside the app and updates only with it, so nothing on the page runs `pi update` or checks npm
   (the "Bundled pi, isolated home" plan). Remote clients' two update switches are ignored.
+
+#### Pi ▸ Sign-in (SettingsPiSignIn, SettingsPiSignInKeys, PiAuthStates)
+
+"Subscriptions and API keys for agents on this Mac. They live in Shepherd’s own pi, so your
+terminal pi keeps its own." The header's trailing edge holds **Re-import from your pi**
+(secondary, small, `square.and.arrow.down`), which copies every login again (disabled with no
+pi of yours). Everything here is Shepherd's pi's alone (its home's `auth.json` and
+`models.json`): nothing reads or writes the user's pi but a Re-import, which only reads it.
+
+- **Groups**, each a `SettingsGroup` whose card holds `NWProviderRow`s (hairlines between):
+  - **Subscriptions**: every provider Shepherd's pi can sign in to with an account, in this
+    order: Anthropic ("Claude Pro or Max"), OpenAI Codex ("ChatGPT Plus or Pro"), GitHub Copilot
+    ("Copilot Pro or Business"), xAI ("Grok subscription"), Kimi ("Kimi For Coding"), Radius
+    ("pi’s model gateway") (`PiSignInCatalog.subscriptions`). The board's Google row is left out
+    (departures).
+  - **API keys**: each provider with a key in Shepherd's pi, then each whose variable the login
+    shell sets without one ("From your environment"), by name; last, **Add an API key**, a row
+    of its own (`plus` in `running`, "Add an API key" in Geist 13 `running`, then "Groq, Mistral,
+    Fireworks, Together and 26 more" in caption `textTertiary`, the providers not listed yet),
+    whose menu lists those providers and opens the key sheet for the one picked. Footnote
+    "Pasted keys are saved in Shepherd’s pi, readable only by you. Environment variables and
+    commands are read each time an agent starts."
+  - **Custom providers**, only when Shepherd's pi has some: its models.json's providers, the
+    file's path in mono 11 `textTertiary` trailing the group's label (`~/Library/…/pi/models.json`,
+    the file Shepherd's pi reads; the board's `~/.pi/agent/models.json` is where it came from).
+    The provider's id is its title, in mono 13/600.
+- **`NWProviderRow`** (`ProviderRow(provider, auth)`): 12pt above and below, 16 at the sides, 12
+  between parts. A 30pt monogram tile (`NWProviderBadge`: radius 8, `bgRaised` in a `lineStrong`
+  line, the provider's two letters in Geist 11/600 `textSecondary`: "An", "Cx", "Gh", "xA",
+  "Ki", "Ra"; a custom provider's first two letters). The name in Geist 13.5/500 over, 3pt under
+  it, the status line in 12.5, one line that truncates at its end: a 7pt dot, then the state
+  word, then the details, each after a "·" in `textTertiary`:
+
+  | State (`ProviderAuth`) | Dot | Word, then | Trailing |
+  | --- | --- | --- | --- |
+  | signed in | `done`, filled | "Signed in" in `textPrimary` · the plan in `textSecondary` | Sign out (ghost, small) |
+  | expired | `lantern`, filled | "Expired · sign in again" in `lanternText` · the plan | Sign in again (primary, small) |
+  | not signed in | hollow `textTertiary` ring | "Not signed in" in `textSecondary` · the plan | Sign in (secondary, small) |
+  | signing in | a `running` ring with a dot, its words shimmering | "Signing in…" in `textPrimary` · the plan | Cancel (ghost, small) |
+  | key | `done`, filled | "API key" · the masked key in mono 12 `textPrimary` · its `NWKeySourceLabel` | Change key (secondary, small) |
+  | from your environment | `done`, filled | "From your environment" · `$NAME` in mono 11.5 `textSecondary` · "in your login shell" in `textTertiary` | Change key |
+  | no key needed | hollow ring | "No key needed" · the base URL in mono 11.5, all `textTertiary` | none |
+
+  The plan is what the provider sells ("Claude Pro or Max"): pi keeps no account name or plan
+  with a sign-in, so the row never shows an address (departures). Then the ⋯ button
+  (`NWProviderMenuButton`: 26pt circle, `ellipsis` 13pt `textSecondary`, "More for Anthropic";
+  while its menu is open it takes a `lineStrong` line and `bgHover`) for every row with a
+  sign-in or a key. A row with a problem (a sign-out that failed) shows it inline
+  (`NWInlineProblem`) under its status line.
+- **Masking** (`PiKeyMask`): a key shows as its prefix (the leading letters-and-hyphens word
+  groups, at most 8 characters: "sk-proj-", "sk-") and "••••" and its last 4
+  ("sk-proj-••••3kQz"); a key shorter than 12 characters shows "••••" alone. Nothing else of a
+  key's value is ever drawn, logged or put in a tooltip.
+- **`NWKeySourceLabel`** after a key: "copied from your pi" (`textTertiary`; its key is the one
+  the import copied), "reads `$NAME`" (the key is a `$NAME` reference, read from the login shell
+  when an agent starts), "runs a command `op read …`" (a `!command`: pi runs it when the key is
+  first needed; the command in mono 11 `textSecondary`, truncated in the middle, its whole text
+  the tooltip). A key pasted into Shepherd has no label.
+- **`NWSharedLoginNote`**: under Anthropic, OpenAI Codex, Kimi and Radius (the providers whose
+  refresh tokens rotate), whatever the row's state: an `arrow.triangle.2.circlepath` 11pt and
+  "Signing in here and in your terminal pi can sign one of them out." in Geist 11.5
+  `textTertiary`, 3pt under the status line.
+- **The provider menu** (the native menu, `NWOptionsMenu`'s anatomy):
+  - a subscription: Sign in again · Re-import from your pi (with its freshness trailing in mono
+    10.5 `textTertiary`; disabled when your pi has no sign-in for it) · a divider · Sign out, in
+    `failed`. Sign out removes it from Shepherd's pi only: its entry in the home's `auth.json`,
+    through pi's own `logout`; the user's pi keeps theirs.
+  - a key: Change key… · Re-import from your pi (freshness) · a divider · Remove key, in `failed`.
+  - "same as here", "newer in your pi", "changed here" (`PiFreshness`) compare Shepherd's
+    copy with theirs by a digest taken at the copy (never the values).
+- **The page never waits on a network**: rows come from the two files, read off the main thread
+  when the page opens and again after every sign-in, sign-out or Re-import.
+
+#### Pi ▸ From your pi (SettingsPiFromPi, SettingsPiExtensions)
+
+"What Shepherd brought over from the pi in your terminal. Shepherd keeps its own copy, so
+nothing here changes your pi."
+
+- A card of two `SettingsActionRow`s, no label:
+  - **Source**: "Source" over `~/.pi/agent` in mono 12.5, "The pi in your terminal, found through
+    your login shell." in caption `textSecondary`; Show in Finder (secondary, small). A file of
+    theirs that couldn't be read shows inline as its problem.
+  - **Last brought over**: "Today at 9:41 AM, on first launch. Nothing is synced after that."
+    (relative day and time of `copiedAt`); Re-import all (secondary, small), which copies every
+    item below again, in order.
+- **Brought over**, a group of `NWReimportRow`s (footnote "Copies. Re-import replaces
+  Shepherd’s copy with your pi’s; your pi is never written to."):
+  - a sub-label in the card, "Logins" (Geist 11/600 caps `textTertiary`, 16pt in, 10 above),
+    then one row per provider your pi has a login for: its badge, name, and "Subscription ·
+    Claude Pro or Max" or "API key · sk-••••91c2";
+  - "Settings", then Custom providers ("`models.json` · northwind-gateway, ollama"), Default
+    model (`claude-opus`, and "here" in `textTertiary` when Shepherd's differs, with a second line
+    "Your pi now uses `gpt-5.3-codex`."), Trusted folders ("4 folders · `~/code/shepherd` and 3
+    more").
+  - **`NWReimportRow`**: the freshness word trailing in caption: "Same as your pi"
+    (`textTertiary`), "Newer in your pi" (`lanternText`, with the why as a second line: "Your pi's
+    sign-in changed on Sep 24."), "Changed here" (`textSecondary`), "Re-importing…" (shimmering),
+    "Re-imported just now" (`done`); then Re-import, a quiet ghost button when the two are the
+    same and a secondary one when they differ. A failure is the row's inline problem.
+- **Copied** (footnote "Copied into Shepherd’s pi. Edits in your pi reach Shepherd only when you
+  Re-import."): Instructions ("`~/.pi/agent/AGENTS.md` · 38 lines · no `APPEND_SYSTEM.md`"; Edit in
+  Instructions opens Settings ▸ Instructions), Skills ("12 in `~/.pi/agent/skills` · listed with
+  the rest in Skills"; Show in Finder, at Shepherd's copies), Prompts (their names as `NWTag`s in
+  mono, "/review", at most six and "+3"; Show in Finder), Themes the same way when there are
+  any; each with Re-import.
+- **Extensions**, labelled "Extensions" with "4 in `~/.pi/agent/extensions`" trailing (footnote
+  "Code, so each one came over switched off. Shepherd’s own extensions are on the Pi page."):
+  one **`NWExtensionRow`** each: its name in mono 13/500, its path in mono 11.5 `textTertiary`,
+  its package.json description in caption `textSecondary`, the switch trailing:
+  - off: nothing more;
+  - on: the full-access note under it ("Runs with full access to your files, shell and network,
+    like it does in your terminal. New agents load it; running ones on /reload.",
+    `exclamationmark.shield` 11pt, caption `textTertiary`), no dialog;
+  - failed: the switch stays on; "Didn’t load:" in `failed` and pi's reason in mono 11.5
+    (`Cannot find module 'turndown' · web-search/index.ts:4`), then Try again (secondary, small)
+    and Show log (ghost, small), which discloses the lines pi wrote as it failed.
+  - Last, Copy again, as before: "Copies your extensions again, keeping each one's switch."
+- With no pi of yours, the page is one card: "No pi found", "Shepherd found no pi of yours to
+  copy. Sign in on Sign-in."
 
 #### Remote (SettingsRemote)
 
@@ -4282,51 +4398,139 @@ dialog. There is no `.alert`, `confirmationDialog`, or `NSAlert` in the app:
 Git probes and directory listings run off the main thread; the Delete Worktree Agent dialog
 keeps its destructive action disabled until the unreconciled-work check is in.
 
-**Welcome** (`PiWelcomeSheet`, 520pt; no board draws it, the "Bundled pi, isolated home" plan's
-phase 5): the one onboarding step, shown once, at the first launch of a build that runs its own
-pi, over the main window.
+**Bringing over your pi** (`PiImportSheet`, 540pt, 600 for a new user; PiImportProgress,
+PiImportDone, PiImportMissing, PiImportNew, PiImportFailed, PiAuthStates): the one onboarding
+step, at the first launch of a build that runs its own pi, over the main window. It runs once;
+after that the two pis are independent.
 
-- **The start gate.** Restored agents (and automations) wait to start (`AgentStartQueue`) until
-  the copy from the user's pi is over: it is plain file work that finishes or fails fast, and past
-  30 s they start anyway. Then:
-  - when some provider can start an agent (a login in Shepherd's pi, a key in the environment, or
-    a custom provider), they start at once, the one on screen first, while the step shows: an
-    existing user whose logins came over never has to click for their agents;
-  - when none can, they wait until the step closes, whichever way, so the user can sign in
-    first. A skipped sign-in is safe: an agent that can't start says "not signed in" and waits
-    with Retry.
-- Title "Shepherd runs its own pi", and the one sentence under it: "Shepherd now runs its own copy
-  of pi. The pi in your terminal is untouched."
-- **Brought over from your pi**: a `NWChecklistRow` per thing copied or read, each `done` (a
-  check, "brought over"), its detail trailing: one per login ("Anthropic", "Signed in";
-  "OpenAI", "API key"; "Google", "API key from $GEMINI_API_KEY"; "Groq", "API key that runs a
-  command"), then Custom providers (their names), Instructions, skills and prompts ("AGENTS.md ·
-  12 skills · 5 prompts · 1 theme", copied into Shepherd's pi), Default model, Trusted folders (a
-  count), and Extensions ("3 found"), an `idle` row whose state reads "copied, switched off". Under a
-  copied subscription sign-in, one `caption`/`textSecondary` line: "Sign-ins were copied once.
-  When one side refreshes a subscription, the other may be signed out: sign in again there."
-- **Found in your environment**: a `done` row ("found") per key variable the login shell sets for
-  a provider with no login in Shepherd's pi ("OPENAI_API_KEY", "OpenAI"): the name and the
-  provider, never the value.
-- **Not brought over**, only when part of the copy failed (a file of your pi unreadable, too large
-  or not JSON, or one of Shepherd's own that isn't a JSON object): a `failed` banner, "Some of your
-  pi wasn't brought over", its message the reasons, one sentence each, naming files and never
-  their contents. Settings ▸ Pi ▸ From your pi re-imports once the file is fixed.
-- **Still needed**, only for what is missing: an `attention` row ("not signed in") per provider
-  the default model names (Settings ▸ Agents' own, else pi's) that nothing in Shepherd's pi can
-  sign in to (no login, no key in the environment, no custom provider of that name); providers
-  that sign in with cloud credentials pi doesn't store (Amazon Bedrock, Google Vertex AI) and
-  ones Shepherd doesn't know are never listed. When no provider at all can start an agent, the
-  attention banner "Sign in so agents can start", "Until you do, agents wait with Retry." takes
-  the place of the rows. Either way the footer gains Sign in…, which closes the step and opens
-  Settings ▸ Pi's sign-in terminal beside the selected agent (disabled with none selected, its
-  tooltip "Open an agent first, then sign in from Settings ▸ Pi.").
-- **A new user with no pi** sees only sign-in: the title "Sign in to a provider" and "Agents run
-  on Shepherd's own copy of pi, and need a provider to reach a model.", the keys found in the
-  environment, and the sign-in ask when nothing can start. One already signed in to Shepherd's
-  pi, with no key found and nothing missing, sees no step at all.
-- Footer: Continue (primary, ⏎). ⎋ closes it too; either way the step is over.
+- **Anatomy** (every state): a header 22pt in from the top and leading edge (20 trailing): a 38pt
+  tile at radius 10 holding the state's glyph (`square.and.arrow.down` on `bgRaised` in a
+  `lineStrong` line while it runs and for a new user; `checkmark` on `doneTint`; `key` on
+  `lanternTint`; `exclamationmark.triangle` on `failedTint`), then, 14pt after it, the title in
+  Geist 17/600 over the subtitle in 13/1.5 `textSecondary`. The body 18pt under it, 22 in. A
+  footer on `bgSunken` over a hairline, 14pt above and 16 below its 28pt buttons.
+- **The start gate.** Restored agents (and automations) hold their next request until the copy
+  is over (`AgentStartQueue`; 30 s at most). Then they start, the one on screen first, except
+  while the sheet asks for a sign-in (Something missing, New user) or no provider can start
+  them: then they wait until the sheet closes, whichever way. An existing user whose logins came
+  over never clicks for their agents.
+- **In progress**: "Bringing over your pi…", "Once, from `~/.pi/agent`. The pi in your terminal
+  isn’t changed." A card (`bgSunken`, radius 10, `lineSubtle`) of `NWImportStepRow`s, one per
+  item, 40pt at the least, 6×14 padding, 12 between parts, hairlines between: an 18pt mark, the
+  title in Geist 13 over its detail in 12 `textTertiary`, and, once done, a count in mono 11.5
+  `textSecondary` trailing. The items: Logins (the subscriptions' names; "3 subscriptions"),
+  API keys ("OpenAI, OpenRouter"; "2 keys"), Custom providers ("models.json"; "2 providers"),
+  Default model (its id), Trusted folders ("4 folders"), Instructions, skills and prompts
+  ("Copied into Shepherd"; "AGENTS.md · 12 · 5"), Extensions ("Listed, switched off"; "3
+  found"). Marks: done, a `checkmark` on `doneTint`; now, a `running` ring with a dot and the
+  title shimmering (nothing spins); pending, a `lineStrong` ring with the title in
+  `textTertiary`; failed, an `xmark` on `failedTint` with the detail in `failed`. An item your pi
+  has none of is left out once the copy knows. No footer while it runs, and ⎋ does nothing.
+- **Done**: "Your pi is in Shepherd", and the `NWImportSummary` in place of the subtitle: what
+  came over in one line, counts in 600 `textPrimary`, the rest `textSecondary`, "·" in
+  `textTertiary` between ("**3** logins · **2** API keys · custom providers · default model
+  `claude-opus` · **4** trusted folders · instructions, **12** skills, **5** prompts"). The body,
+  74pt in (under the title): "Shepherd now runs its own copy of pi. The pi in your terminal is
+  untouched." in 13.5 `textPrimary`; then, with extensions, a note card (`bgSunken`, radius 9):
+  `puzzlepiece.extension` 13pt, "**3 extensions** came over switched off. They’re code that runs
+  with full access, so you turn each one on yourself." and Review extensions (a `running` link
+  that closes the sheet and opens Settings ▸ Pi ▸ From your pi). Footer: Done (primary, ⏎; ⎋ too).
+- **Something missing**: "Two sign-ins need you" ("A sign-in needs you" for one), "Everything
+  else came over. These two didn’t work in Shepherd’s copy of pi, so sign in to them here." A
+  card of `NWImportSignInRow`s (10×14, a 28pt badge, the name in 13.5/500 over why in 12
+  `textTertiary`, a small button trailing): only providers that still need a sign-in, each with
+  Sign in (primary, small), which opens the sign-in sheet over this one; once signed in, the row
+  says "Signed in" with a `done` check and its button goes. Under the card the summary in 12
+  `textTertiary` with an `info.circle`. Footer: Skip for now (secondary), which closes it and
+  leaves those agents Not signed in, and Done (primary, ⏎), enabled once every row is signed in.
+  A provider needs a sign-in when an agent restored at this launch or the default model uses it
+  and nothing in Shepherd's pi covers it (no login, no key in the environment, no custom
+  provider of that name): "Your pi isn't signed in to it" or "Your pi's sign-in couldn't be
+  copied".
+- **New user** (no pi of theirs): "Sign in to a model provider", "There’s no pi on this Mac, so
+  there’s nothing to bring over. Use a subscription you already pay for, or an API key." A
+  two-column grid, 8pt apart, of tiles (`NWSignInChoiceTile`: 11×12 padding, radius 10,
+  `bgSunken` in `lineSubtle`, a 30pt badge, the name over the plan, a `chevron.right`): the
+  subscriptions in Sign-in's order, then Use an API key (a dashed `lineStrong` line, a `key`
+  tile, "OpenAI, OpenRouter and 30 more"), whose menu lists the key providers. A tile opens the
+  sign-in sheet over this one; a sign-in that lands closes both. Footer: "Change these any time in
+  Settings ▸ Pi ▸ Sign-in." in 12 `textTertiary` leading, Skip (ghost) trailing. One already
+  signed in, with nothing missing, sees no sheet at all.
+- **Failed**: when your pi's `auth.json` can't be read or isn't JSON (the rest still comes over):
+  "Couldn’t read your pi’s sign-ins", "Everything else came over. Your file wasn’t changed." A
+  `failed` box (radius 9, `failedTint` at half, a `failed` line at a quarter): the file's path in
+  mono 12 `textPrimary`, and the parser's reason in mono 11.5 `failed` (never the file's
+  contents). "Fix the file and try again, or skip and sign in here instead. Agents that need a
+  sign-in wait either way." Then the steps card, Logins and API keys failed ("auth.json isn’t
+  valid JSON"). Footer: Show in Finder (ghost, `folder`) leading; Skip (secondary) and Retry
+  (primary, ⏎, `arrow.clockwise`), which copies the logins again and, when they come over, turns
+  to Done or Something missing.
 - Nothing on it shows a credential's value.
+
+**Sign in to <provider>** (`PiSignInSheet`, 500pt; SignInBrowser, SignInDevice, SignInPaste,
+SignInKey, SignInPortBusy, PiAuthStates): one sheet, four flows, over Settings or the first
+launch's sheet. Shepherd's own pi signs in: a small Node script on the bundled runtime
+(`shepherd-sign-in.mjs`) runs pi's own SDK login (`ModelRuntime.login`) against Shepherd's pi
+home and passes pi's prompts to the sheet as JSON lines; the credential goes from pi straight
+into the home's `auth.json`, and nothing of it crosses to the app. pi's TUI never opens.
+
+- **Header** (every flow): 22pt in, a 38pt badge, then the title "Sign in to Anthropic" in 17/600
+  over what it takes ("With your Claude Pro or Max subscription", "With an API key", "Paste a
+  code instead of the browser hand-off") in 13 `textSecondary`; a 28pt circular close button
+  (`xmark`, `lineStrong` line) trailing, which cancels. Body 18×22, footer as the import
+  sheet's.
+- **Steps** (`NWSignInStepRow`, in a `bgSunken` card at radius 10, 14×16, 14 apart): a done step
+  (`checkmark` on `doneTint`), the live one (a `running` ring and dot, its title shimmering, its
+  note under it in 12 `textTertiary`), pending ones (a `lineStrong` ring, `textTertiary`), a
+  failed one (`xmark` on `failedTint`, its note the provider's reason).
+- **Browser** (Anthropic, OpenAI Codex, Radius): the browser opens at once. "Opened claude.ai in
+  your browser" (done) · "Waiting for you in the browser" (live), "Approve Shepherd on claude.ai.
+  This closes by itself when you’re done." · "Save the sign-in to Shepherd’s pi" (pending). Under
+  the card, "Browser on another computer? Paste a code instead" (a `running` link). Footer: Copy
+  link (ghost, `doc.on.doc`) leading; Cancel (ghost, ⎋) and Open browser again (secondary,
+  `arrow.up.forward.square`).
+  - **Done**: the second step reads "Signed in" ("Signed in as …" only when the provider names
+    the account), the third "Saved to Shepherd’s pi" with, when agents were waiting on it, "2
+    waiting agents picked up where they left off." Footer: Done (primary, ⏎). A sign-in that
+    lands closes a sheet opened from `/login` or an agent's card by itself after a beat.
+  - **Failed**: the live step turns failed with the provider's reason, cleaned up (the first
+    line, no stack): "claude.ai didn’t allow access", "access_denied · you chose Cancel on
+    claude.ai"; the third step reads "Nothing was saved." Footer: Copy details (ghost) leading;
+    Close (ghost, ⎋) and Try again (primary, ⏎).
+  - **Callback port in use** (the provider's fixed port is taken, checked before the browser
+    opens): the card becomes a `failed` box, "Another sign-in is using localhost:1455",
+    "Probably Codex CLI or your terminal pi’s /login, mid-way. Finish or cancel it there, then
+    try again.", above the two steps, pending; then "Or skip the browser hand-off: sign in on
+    chatgpt.com and paste the code it shows." with Paste a code instead. Footer: Cancel and Try
+    again (primary).
+- **Paste a code** (from the link above, or a port in use): "Paste a code instead of the browser
+  hand-off", "After you approve Shepherd, claude.ai shows a code. Paste it here to finish." A
+  labelled field ("Code from claude.ai", 11.5/500 `textSecondary`, 6 above a 34pt mono 12.5
+  field at radius 8, "Paste the code" as its prompt), focused. A rejected code says so under the
+  field in 12 `failed`, in the provider's words ("That code was already used. Open claude.ai
+  again for a new one."). Footer: Open claude.ai again (ghost) leading; Cancel and Continue
+  (primary, ⏎, enabled with a code).
+- **Device code** (GitHub Copilot, xAI, Kimi): "Enter this code at `github.com/login/device`.
+  It’s already on your clipboard." Then the code, large (`NWDeviceCode`: mono 26/600 tracked
+  12%, centered in a `bgSunken` box at radius 10, 16 high padding), with Copy (ghost, small) and
+  Open GitHub (secondary, small) under it; then the live step "Waiting for you to enter the
+  code", "The code works until 10:02 AM." Footer: Cancel. Done: the code dims, "Signed in",
+  "Copilot · saved to Shepherd’s pi", and Done. GitHub Enterprise isn't offered (departures).
+- **API key**: "With an API key". A segmented control (Paste a key · Environment variable), then
+  one labelled field: "API key" (a secure mono field; once checked it shows masked) or
+  "Variable name" (mono, `$` prefixed, with "Read from your login shell each time an agent
+  starts." under it). Typing waits 600 ms, then "Checking the key with DeepSeek" (live, a
+  spinner-free shimmer) checks it against the provider with the smallest request pi can make;
+  then "Works." with "deepseek-chat and deepseek-reasoner are ready." (`done`), or "DeepSeek
+  rejected this key (401 · invalid api key)." in `failed`. Save stays off until a key works; one
+  the provider can't be reached to check says "Couldn’t reach DeepSeek to check it." and Save
+  turns on (departures). "No key yet? Get one on platform.deepseek.com" (a link, where the
+  provider has a page). Footer: Cancel and Save (primary, ⏎). Environment variable saves the
+  name (`$DEEPSEEK_API_KEY` in auth.json), never the value.
+- **Signing in** shows on the provider's row in Sign-in while the sheet is up (the row's Cancel
+  cancels the sheet), and on a Missing row in the first launch's sheet.
+- **When a sign-in lands**, every agent of this Mac waiting on "not signed in" for that provider
+  (or for none named) starts again at once, and the sheet counts them.
 
 ## Status language
 
@@ -4348,6 +4552,8 @@ Components › Status and feedback.
 | pi starting | `idle` | hollow ring | Send, which waits for pi; only when pi is slow (two seconds, half a second over a blank thread), "Starting…" beside it |
 | Connection lost | `failed` | — | Send, plus a `failed` banner with Reconnect |
 | pi can't start | `failed` | red dot; "can't start" in mono 10 `failed` | the Can't start banner with Retry; Send disabled |
+| Restored, waiting for your pi to come over | `idle` | `clock` glyph; "waiting" in mono 10 `textTertiary` | Send, which waits; the thread ends in "Waiting to continue" |
+| pi not signed in (this Mac) | `attention` | in Needs you: lantern dot, glowing; "sign in" | Send; the thread ends in the Not signed in card |
 
 Subagent runs use the same states on their dots, glyphs, pills, and steps: running, needs you,
 done, failed, and queued (queued or paused, hollow). Tool calls use running, done, and failed.
@@ -4389,6 +4595,7 @@ composing chrome by hand. Debug builds have a **Component Gallery** (View menu,
 | Agents | `NWSubagentTray` (`NWSubagentTrayRun`, `NWSubagentTraySummary`, `NWSubagentTrayRow`, `NWSubagentTrayMoreRow`), `NWDockStack`, `NWSubagentRecordLine`, `NWInspectorHeader`, `NWRunBrief`, `NWRunActions`, `NWBranchGlyph`, `NWElapsedText`, `NWDuration`, `NWInlineMarkup`, `.nwRunArrival`; touch forms for iOS (the tray's `.pad` and `.phone` sizes, `NWRunCard`, `NWRunHeader`, `NWRunTabs`, `NWSteerField`, …) | `Thread/Subagents.swift`, `Thread/SubagentInspector.swift`, `Thread/SubagentPresentation.swift`; the iOS client |
 | Review | The Changes pane: `NWScopeButton`, `NWViewedPill`, `NWCompareRow`, `NWFileStrip`, `NWFileHeader`, `NWViewedCheckbox`, `NWDiffView` over `NWChangesRow`s (`NWDiffLine`, `NWSplitDiffLine`, `NWDiffHatch`, `NWDiffFoldRow`), `NWInlineComment`, `NWCommentEditor`, `NWReviewSendBar`, `NWChangesFileList`, the menus (`NWChangesMenu`, `NWChangesMenuRow`, `NWChangesMenuToggle`, `NWChangesMenuSearch`), `NWDiffMetrics`, `NWChangesMetrics`; the commit form (`NWCommitMessageEditor`, `NWCommitFileRow`, `NWCommitOptionRow`); touch forms for iOS (`NWTouchDiffLine`, `NWSplitDiffRow`, `NWTouchFileStrip`, `NWLineCommentBar`, `NWReviewFileRow`, `NWReviewComposer`, …) | `DiffReviewView.swift`, `ChangesMenus.swift`, `ChangesRows.swift`, `ReviewCommitSheet.swift`; the iOS client |
 | Dialogs | `NWDialog` (`NWDialogMetrics`), `NWDialogStatus`, `NWSheetRow`, `NWChecklistRow`, `NWSettingsNavRow` | `DialogSheet.swift`, `AppDialogs.swift`, the sheets, `QuitConfirmation.swift`, `SettingsView.swift` |
+| Pi sign-in (`Components/PiSignIn/`) | `NWProviderBadge`, `NWProviderRow` (`NWProviderStatus`), `NWProviderMenuButton`, `NWKeySourceLabel`, `NWSharedLoginNote`, `NWReimportRow` (`NWFreshness`), `NWExtensionRow`, `NWSheetHeader` and `NWSheetFooter`, `NWImportStepRow`, `NWImportSummary`, `NWImportSignInRow`, `NWSignInChoiceTile`, `NWSignInStepRow`, `NWDeviceCode`, `NWAgentWaitingLine`, `NWAgentNotSignedInCard`, `NWPiSignInMetrics` | `SettingsPiSignIn.swift`, `SettingsPiFromYourPi.swift`, `PiImportSheet.swift`, `PiSignInSheet.swift`, `Thread/ThreadView.swift` |
 | Automations | `NWAutomationRow` (a row with its switch), `NWAutomationSwitch`, `NWFactRow` and `NWFactText`, `NWAutomationPrompt`, `NWRunBars`, `NWRunRow`, `NWAutomationMetrics`; the Mac's table: `NWAutomationTableRow`, `NWRunOutcome` and `NWRunOutcomeLabel`, `NWAutomationRunLine` | `Pages/AutomationsPage.swift`; the iOS client's `Automations/` |
 | Pages | `NWPageHeader`, `NWPageFilterField`, `NWTableColumns` and `NWTableHead`, `.nwPageCard()`, `NWPageFact`, `NWPageSectionLabel`, `NWPageQuote`, `NWPageMetrics`; `NWHostPageCard` and `NWHostFact` (`NWHostPageMetrics`, in `Fleet/`) | `Pages/` (the sidebar destinations' pages) |
 | Design tool (partly built; `Components/DesignTool/`) | `NWDesignCanvas`, `NWBoardFrame`, `NWSelectionRing`, `NWCommentPin`, `NWBoardActions`, `NWCanvasToolbar`, `NWCommentCard`, `NWCommentThread`, `NWTweakRow`, `NWTokenChip`, `NWTweakScope`, `NWDesignSystemChip`, `NWTokenSwatch`, `NWExportFormatCard`, `NWLiveLinkField` (see Design tool). Built: the canvas, frames, selection ring, toolbar, system chip, the comment pin, thread and card, the export format card (with `NWExportSheet`), and `NWActivityLine`'s `.drew` and `.checked` kinds | `Thread/ThreadTools.swift` (the activity lines), `DesignScreen.swift`, `DesignExportSheet.swift`, `Thread/ThreadView.swift` (a comment's card in the chat) |
@@ -8660,6 +8867,24 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | SettingsAgents | Settings › Agents | Built |
 | SettingsWorktrees | Settings › Worktrees | Built |
 | SettingsPi | Settings › Pi | Built |
+| SettingsPiSignIn | Settings › Pi ▸ Sign-in | Built (departures) |
+| SettingsPiSignInKeys | Settings › Pi ▸ Sign-in (API keys, custom providers, the provider menu) | Built |
+| SettingsPiFromPi | Settings › Pi ▸ From your pi | Built (departures) |
+| SettingsPiExtensions | Settings › Pi ▸ From your pi (Extensions) | Built |
+| SignInBrowser | Dialogs and sheets › Sign in to <provider> (Browser) | Built |
+| SignInDevice | Dialogs and sheets › Sign in to <provider> (Device code) | Built (departures) |
+| SignInPaste | Dialogs and sheets › Sign in to <provider> (Paste a code) | Built |
+| SignInKey | Dialogs and sheets › Sign in to <provider> (API key) | Built (departures) |
+| SignInPortBusy | Dialogs and sheets › Sign in to <provider> (Callback port in use) | Built |
+| PiImportProgress | Dialogs and sheets › Bringing over your pi (In progress); Sidebar (waiting); Thread › Waiting to continue | Built |
+| PiImportDone | Dialogs and sheets › Bringing over your pi (Done) | Built |
+| PiImportMissing | Dialogs and sheets › Bringing over your pi (Something missing) | Built (departures) |
+| PiImportNew | Dialogs and sheets › Bringing over your pi (New user) | Built (departures) |
+| PiImportFailed | Dialogs and sheets › Bringing over your pi (Failed) | Built |
+| AgentNotSignedIn | Thread › Not signed in; Sidebar (Not signed in) | Built |
+| SlashLogin | Composer, questions, and menus › /login and /logout | Built |
+| SlashLoginArgs | Composer, questions, and menus › /login and /logout | Built |
+| PiAuthStates | The states of all of the above | Built (departures) |
 | SettingsRemote | Settings › Remote | Built |
 | SettingsKeyboard | Settings › Keyboard; Keyboard | Built |
 | SettingsAdvanced | Settings › Advanced | Built |
