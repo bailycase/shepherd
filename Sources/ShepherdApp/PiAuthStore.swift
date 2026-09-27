@@ -277,6 +277,8 @@ final class PiSignInSession: Identifiable {
             let piFlow = override ?? (flow == .device ? .device : flow == .paste ? .paste : .browser)
             bridge.send(.login(provider: provider, method: method, flow: piFlow))
             if flow != .paste { phase = flow == .key ? .key : .starting }
+            // A key typed while the bridge started is checked now.
+            if flow == .key, keyInput != nil { scheduleCheck() }
         } catch {
             phase = .failed(String(describing: error))
         }

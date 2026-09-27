@@ -961,6 +961,12 @@ final class ShepherdViewModel {
         checkouts?.sync(agents: state.agents.map(\.id))
         pruneReviewSessions()
         pruneDesigns()
+        // A deleted agent waits on no sign-in.
+        if notSignedIn.keys.contains(where: { id in !state.agents.contains { $0.id == id } }) {
+            notSignedIn = notSignedIn.filter { entry in state.agents.contains { $0.id == entry.key } }
+            let needed = Set(notSignedIn.values.compactMap(\.provider))
+            if piAuth.needed != needed { piAuth.needed = needed }
+        }
         // The first launch's copy holds every restored agent until it is over.
         if holdsForWelcome, restoresAgentsAtLaunch, sessions.startQueue.held {
             let all = Set(state.agents.map(\.id))
