@@ -43,6 +43,9 @@ extension RPCThreadState {
         /// The sender's design view record, fenced (`DesignViewRecord.fenced`): pi reads it
         /// ahead of the message, and the thread and the queue show the message alone.
         var context: String?
+        /// The design references' copies it carries (`DesignReferencePayload.id`): deleting it
+        /// before pi reads it withdraws them, and it can't be restored.
+        var designPayloads: [UUID] = []
 
         /// What pi is handed for it: the fenced record, then the message.
         var promptText: String { RPCThreadState.prompt(entry.text, context: context) }
@@ -93,7 +96,7 @@ extension RPCThreadState {
     /// keeps a queued message from being joined with others (`QueueItem.goesAlone`). `context`
     /// is a fenced design view record that goes to pi ahead of the message (`QueueItem.context`).
     func send(id: UUID, text: String, delivery: NativeThreadDelivery, images: [NativeImage], alone: Bool = false,
-              context: String? = nil, completion: @escaping (NativeThreadResult) -> Void) {
+              context: String? = nil, designPayloads: [UUID] = [], completion: @escaping (NativeThreadResult) -> Void) {
         guard piBusy else {
             // A new message resumes a paused queue: it drains after this turn.
             paused = false
@@ -109,7 +112,7 @@ extension RPCThreadState {
         let item = QueueItem(
             entry: NativeQueuedMessage(id: id, text: text, images: images.map { NativeQueuedImage(mimeType: $0.mimeType, name: $0.name) },
                                        sentAt: Date().timeIntervalSince1970 * 1000),
-            images: images, goesAlone: alone, context: context)
+            images: images, goesAlone: alone, context: context, designPayloads: designPayloads)
         items.append(item)
         // Only a running pi can take a steer: one of our prompts still on its way has not
         // started a run, so the message goes first after it instead.
@@ -209,7 +212,12 @@ extension RPCThreadState {
         }
     }
 
+    /// Keeps deleted items for Undo, except one carrying design references: its grants and copies
+    /// are withdrawn at once, so it can't come back.
     private func remember(_ removed: [(item: QueueItem, index: Int)]) {
+        let withdrawn = removed.flatMap(\.item.designPayloads)
+        if !withdrawn.isEmpty { onDesignPayloadsWithdrawn?(withdrawn) }
+        let removed = removed.filter { $0.item.designPayloads.isEmpty }
         deleted.append(contentsOf: removed)
         if deleted.count > Self.deletedLimit { deleted.removeFirst(deleted.count - Self.deletedLimit) }
     }
@@ -538,12 +546,19 @@ extension RPCThreadState {
             operationID = dispatch.id
         }
         let id = liveEntryID(for: message)
-        var value = Self.project(entryID: id, message: message)
+        // Design references the user sent here: the message is one of ours (a send or a queued
+        // message), and its fence names the copies the host kept.
+        var sentReferences: [String]?
+        if operationID != nil, let parsed = DesignReferenceFence.parse(text), let ids = DesignReferenceFence.payloadIDs(parsed.records) {
+            sentReferences = ids
+        }
+        var value = Self.project(entryID: id, message: message, sentReferences: sentReferences)
         // A design comment or markup keeps the origin its fence gives it (`project`).
         if value.origin?.designComment != nil || value.origin?.designMarkup != nil { origin = nil }
         value.origin = value.origin ?? origin.map(Self.clipped)
         value.operationID = operationID
         live.append(LiveItem(kind: .user, value: value, raw: message, ended: false))
+        if let sentReferences { recordReferences(sentReferences, entryID: id) }
         if let origin { recordOrigin(origin, entryID: id) }
         if let operationID { operationsByEntry[id] = operationID }
     }

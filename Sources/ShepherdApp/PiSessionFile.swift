@@ -124,7 +124,8 @@ enum PiSessionFile {
         sessionsRoot: URL
     ) -> NativeThreadSnapshot? {
         guard let url = file(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot) else { return nil }
-        return PiSessionPreview.snapshot(file: url, sessionID: sessionID)
+        return PiSessionPreview.snapshot(file: url, sessionID: sessionID,
+                                         origins: ShepherdPaths.supportDirectory().appendingPathComponent("thread-origins", isDirectory: true))
     }
 
     /// `preview(sessionID:cwd:)` for a thread's store, read off the main actor, from the cwd pi

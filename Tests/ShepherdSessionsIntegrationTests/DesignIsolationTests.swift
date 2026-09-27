@@ -97,7 +97,7 @@ struct DesignIsolationTests {
         try client.send(.designGet(id: 2, agentID: drawer.id, reference: reference.string, what: "summary"))
         guard case .error(2, "not_a_thread", _) = try await client.reply() else { Issue.record("a design's agent was answered"); return }
         await #expect(throws: DesignReferenceError.self) {
-            _ = try await h.server.checkDesignReferences([reference], for: drawer.id)
+            _ = try await h.server.captureDesignReferences([reference], for: drawer.id)
         }
         #expect(h.server.state.agents.allSatisfy { $0.designGrants.isEmpty })
     }

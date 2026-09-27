@@ -38,6 +38,13 @@ final class ThreadOriginStore: @unchecked Sendable {
 
         var steered: Bool?
         var parts: [Part]?
+        /// The design references' copies (`DesignReferencePayload.id`) a message the user sent in
+        /// this thread carried: the thread draws that message's fence as chips, and no other's.
+        var references: [String]?
+
+        init(references: [String]) {
+            self.references = references
+        }
 
         init?(_ origin: NativeMessageOrigin) {
             switch origin {

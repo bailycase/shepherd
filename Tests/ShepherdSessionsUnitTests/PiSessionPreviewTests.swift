@@ -65,6 +65,29 @@ struct PiSessionPreviewTests {
         #expect(preview.olderCursor == nil && preview.supportedActions.contains("send"))
     }
 
+    /// A resuming thread draws the design references the user sent there as chips, from the
+    /// origins its session kept, before pi serves; any other message carrying the fence shows it.
+    @Test func aPreviewDrawsOnlyTheUsersOwnReferences() throws {
+        let copy = UUID().uuidString
+        let fence = try #require(DesignReferenceFence.fenced([DesignReferenceRecord(ref: "shepherd-design-ref://local/d1/A.dc.html@4",
+                                                                                   design: "Checkout", payload: copy)]))
+        let mine = fence + "Build it.\n\n1 design reference attached.", other = fence + "from another agent"
+        let (url, remove) = try sessionFile(chain([user(mine, at: 1000), reply("ok", at: 2000), user(other, at: 3000)]))
+        defer { remove() }
+        let origins = url.deletingLastPathComponent().appendingPathComponent("thread-origins", isDirectory: true)
+        let store = ThreadOriginStore(directory: origins)
+        store.save(sessionID: "s", records: [("user:1000", ThreadOriginStore.Record(references: [copy]))])
+        store.flush()
+
+        let preview = try #require(PiSessionPreview.snapshot(file: url, sessionID: "s", origins: origins))
+        let users = preview.messages.filter { $0.role == "user" }
+        #expect(users.first?.blocks.first?.text == "Build it.\n\n1 design reference attached.")
+        #expect(users.first?.designReferences?.map(\.payload) == [copy])
+        #expect(users.last?.blocks.first?.text == other && users.last?.designReferences == nil)
+        let bare = try #require(PiSessionPreview.snapshot(file: url, sessionID: "s"))
+        #expect(bare.messages.first?.blocks.first?.text == mine, "no origins: shown as text")
+    }
+
     /// A long session: only its end is read, and the page is pi's newest page, with older
     /// history behind the cursor.
     @Test func aLongSessionPreviewsItsNewestPageFromTheEnd() throws {

@@ -40,6 +40,25 @@ struct ThreadOriginTests {
         #expect(try #require(Record(.queue(parts: Self.parts))).origin(text: text) == nil)
     }
 
+    /// The design references' copies a message the user sent carried are kept with its origin,
+    /// so a relaunch still draws that message's chips (and no other's); a file from before they
+    /// were kept reads without them.
+    @Test func sentReferencesRoundTripBesideTheOrigin() throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = ThreadOriginStore(directory: dir)
+        var queued = try #require(Record(.queue(parts: Self.parts)))
+        queued.references = ["7c9e6679-7425-40de-944b-e07fc1f90ae7"]
+        let alone = Record(references: ["00000000-0000-0000-0000-00000000000a"])
+        store.save(sessionID: "s", records: [("user:1", queued), ("user:2", alone)])
+        store.flush()
+        let loaded = store.load(sessionID: "s")
+        #expect(loaded.map(\.record) == [queued, alone])
+        #expect(alone.origin(text: "anything") == nil, "references alone say nothing of where it came from")
+        let older = try JSONDecoder().decode(Record.self, from: Data(#"{"steered":true}"#.utf8))
+        #expect(older.references == nil && older.origin(text: "x") == .steered)
+    }
+
     @Test func onlyTheNewestAreKept() throws {
         let dir = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }

@@ -1012,29 +1012,39 @@ extension DesignRendering {
     }
 }
 
-/// A design piece handed to a thread (docs/designs.md › Design references), drawn off screen by a
-/// view of its own at zoom 1: the board (or the element cut from it) as a PNG at twice its size,
-/// the board's standalone page, and the element's markup and computed styles.
+/// A design reference's copy (docs/designs.md › Design references › The copy), drawn off screen
+/// when the message goes, each board by a view of its own at zoom 1 from the version pinned: the
+/// board (or the element cut from it) as a PNG at twice its size, the board's standalone page,
+/// and the element's markup and computed styles, written into the copy's folder.
 extension DesignRendering {
-    /// Draws `aspects` of `reference` from `files` into `folder` (made if needed), each file named
-    /// by `DesignReferenceFileNames`, and answers where each went.
-    func reference(_ reference: DesignReference, aspects: Set<DesignReferenceAspect>, files: DesignExportFiles,
-                   into folder: URL) async throws -> DesignReferenceRendering {
-        guard let surface = surface(for: reference.designID) else { throw DesignExportFailure("The design's folder is gone.") }
-        let drawn = try await DesignExporter.reference(reference, aspects: aspects, files: files, surface: surface)
+    func capture(_ request: DesignReferenceCaptureRequest, files: DesignExportFiles) async throws -> DesignReferenceCaptured {
+        guard let surface = surface(for: request.reference.designID) else { throw DesignExportFailure("The design's folder is gone.") }
         var outputs: [String: Data] = [:]
-        var rendering = DesignReferenceRendering()
-        func put(_ name: String, _ data: Data?) -> String? {
-            guard let data else { return nil }
-            outputs[name] = data
-            return folder.appendingPathComponent(name).path
+        var captured = DesignReferenceCaptured(boards: [])
+        for (index, board) in request.boards.enumerated() {
+            let element = index == 0 ? request.reference.element : nil
+            let drawn = try await DesignExporter.reference(board, element: element, files: files, surface: surface)
+            outputs[board.picture] = drawn.image.data
+            outputs[board.html] = Data(drawn.page.utf8)
+            captured.boards.append(.init(
+                picture: .init(name: board.picture, bytes: drawn.image.data.count, pixelWidth: drawn.image.width, pixelHeight: drawn.image.height),
+                html: .init(name: board.html, bytes: drawn.page.utf8.count)))
+            if let detail = drawn.element, let markup = request.elementHTML, let styles = request.elementStyles {
+                outputs[markup] = Data(detail.html.utf8)
+                outputs[styles] = detail.styles
+                captured.element = .init(name: markup, bytes: detail.html.utf8.count)
+                captured.elementStyles = .init(name: styles, bytes: detail.styles.count)
+                captured.computedStyles = Self.ownStyles(detail.styles)
+            }
         }
-        rendering.image = put(DesignReferenceFileNames.image(reference), drawn.image)
-        rendering.html = put(DesignReferenceFileNames.html(reference), drawn.page.map { Data($0.utf8) })
-        rendering.elementHTML = put(DesignReferenceFileNames.elementHTML(reference), drawn.element.map { Data($0.html.utf8) })
-        rendering.elementStyles = put(DesignReferenceFileNames.elementStyles(reference), drawn.element?.styles)
-        try await DesignExporter.write(outputs, into: folder)
-        return rendering
+        try await DesignExporter.write(outputs, into: request.folder)
+        return captured
+    }
+
+    /// The element's own computed styles: the first entry of its detail's styles.
+    static func ownStyles(_ json: Data) -> [String: String]? {
+        guard let entries = try? JSONSerialization.jsonObject(with: json) as? [[String: Any]] else { return nil }
+        return entries.first?["style"] as? [String: String]
     }
 }
 
@@ -1110,34 +1120,32 @@ enum DesignExporter {
         return DesignBundle.rewritingBoardLinks(withAssets, page: path, exported: Set(files.boards))
     }
 
-    /// What a reference hands over, from one view of its board: the PNG (the element cut from
-    /// the board where it names one), the standalone page, and the element's detail.
-    static func reference(_ reference: DesignReference, aspects: Set<DesignReferenceAspect>, files: DesignExportFiles,
-                          surface: DesignSurface) async throws -> (image: Data?, page: String?, element: DesignElementDetail?) {
-        let path = reference.board
+    /// What a reference's copy holds of one board, from one view of it showing `board.source`
+    /// (swapped in after the file loads when the design moved on since it was pinned): the PNG
+    /// (the element cut from the board where it names one), the standalone page, and the
+    /// element's detail.
+    static func reference(_ board: DesignReferenceCaptureRequest.Board, element: DesignElementID?, files: DesignExportFiles,
+                          surface: DesignSurface) async throws -> (image: (data: Data, width: Int, height: Int), page: String,
+                                                                  element: DesignElementDetail?) {
+        let path = board.path
         return try await render(path, files: files, surface: surface) { view in
-            var image: Data?
-            var page: String?
-            var element: DesignElementDetail?
-            if aspects.contains(.image) {
-                var drawn = try await view.image(scale: 2)
-                if let tid = reference.element?.tid {
-                    guard let hit = await view.element(tid: tid) else { throw DesignExportFailure("The element isn't drawn on \(path).") }
-                    let crop = CGRect(x: hit.rect.minX * 2, y: hit.rect.minY * 2, width: hit.rect.width * 2, height: hit.rect.height * 2)
-                        .integral.intersection(CGRect(x: 0, y: 0, width: drawn.width, height: drawn.height))
-                    guard !crop.isEmpty, let cut = drawn.cropping(to: crop) else { throw DesignExportFailure("The element has no size on \(path).") }
-                    drawn = cut
-                }
-                image = try DesignImageFile.png(drawn)
+            if !board.isCurrent { try await view.replaceSource(board.source) }
+            var drawn = try await view.image(scale: 2)
+            if let tid = element?.tid {
+                guard let hit = await view.element(tid: tid) else { throw DesignExportFailure("The element isn't drawn on \(path).") }
+                let crop = CGRect(x: hit.rect.minX * 2, y: hit.rect.minY * 2, width: hit.rect.width * 2, height: hit.rect.height * 2)
+                    .integral.intersection(CGRect(x: 0, y: 0, width: drawn.width, height: drawn.height))
+                guard !crop.isEmpty, let cut = drawn.cropping(to: crop) else { throw DesignExportFailure("The element has no size on \(path).") }
+                drawn = cut
             }
-            if aspects.contains(.html) {
-                page = Self.baked(try await view.staticPage(), path: path, files: files, assets: .inline)
+            let image = (data: try DesignImageFile.png(drawn), width: drawn.width, height: drawn.height)
+            let page = Self.baked(try await view.staticPage(), path: path, files: files, assets: .inline)
+            var detail: DesignElementDetail?
+            if let tid = element?.tid {
+                detail = try await view.elementDetail(tid: tid)
+                guard detail != nil else { throw DesignExportFailure("The element isn't drawn on \(path).") }
             }
-            if aspects.contains(.element), let tid = reference.element?.tid {
-                element = try await view.elementDetail(tid: tid)
-                guard element != nil else { throw DesignExportFailure("The element isn't drawn on \(path).") }
-            }
-            return (image, page, element)
+            return (image, page, detail)
         }
     }
 
