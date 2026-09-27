@@ -37,7 +37,7 @@ public final class QueueFixture {
         switch request {
         case .snapshot:
             return .snapshot(value: snapshot)
-        case .send(_, _, let operation, let text, let delivery, let images, _):
+        case .send(_, _, let operation, let text, let delivery, let images, _, _):
             sends.append((text, delivery))
             if snapshot.running {
                 var items = queue

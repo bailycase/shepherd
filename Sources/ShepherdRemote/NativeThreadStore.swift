@@ -113,6 +113,9 @@ public final class NativeThreadStore {
     /// Files waiting beside the draft (a design's boards attached to this thread); they go with
     /// the next message the draft sends.
     public private(set) var attachedFiles: [NativeAttachedFile] = []
+    /// Design references waiting beside the draft; they go with the next message the draft sends,
+    /// on a host that takes them (`designReferences`).
+    public private(set) var attachedReferences: [NativeAttachedReference] = []
 
     /// History, then the optimistic user echo, then the live (provisional) reply to it. The echo
     /// must precede provisional rows: the reply to a sent message streams below it, and the
@@ -969,20 +972,37 @@ public final class NativeThreadStore {
         guard hasDraft, await readyToAct() else { return }
         let typed = draft
         let files = attachedFiles
+        let references = attachedReferences
         guard hasDraft, supports("send"), let current = snapshot else { return }
-        let text = NativeAttachedFile.message(typed, files: files)
+        guard references.isEmpty || supports("designReferences") else {
+            notice = "This thread's host doesn't take design references."
+            return
+        }
+        let text = NativeAttachedFile.message(typed, files: files + references.flatMap(\.files), references: references.count)
         let operation = UUID()
         let attached: [NativeImage]? = images.isEmpty || !supports("sendImages") ? nil : images
         let context = supports("designContext") ? designContext?().map(NativeDesignContext.init) : nil
         await perform(.send(expectedSessionID: current.piSessionID, generation: current.generation,
-                            operationID: operation, text: text, delivery: delivery, images: attached, designContext: context),
-                      operation: operation, current: current, sentText: text, typed: typed, files: files,
+                            operationID: operation, text: text, delivery: delivery, images: attached, designContext: context,
+                            designReferences: references.isEmpty ? nil : references.map(\.record)),
+                      operation: operation, current: current, sentText: text, typed: typed, files: files, references: references,
                       delivery: delivery, images: attached ?? [])
     }
 
-    /// Whether the draft has something to send: words, or attached files.
+    /// Whether the draft has something to send: words, attached files, or design references.
     public var hasDraft: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachedFiles.isEmpty
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachedFiles.isEmpty || !attachedReferences.isEmpty
+    }
+
+    /// Adds a design reference beside the draft, once per piece (a later one replaces it).
+    public func attach(reference: NativeAttachedReference) {
+        attachedReferences.removeAll { $0.reference.designID == reference.reference.designID
+            && $0.reference.board == reference.reference.board && $0.reference.element == reference.reference.element }
+        attachedReferences.append(reference)
+    }
+
+    public func detachReference(_ id: UUID) {
+        attachedReferences.removeAll { $0.id == id }
     }
 
     /// Adds files beside the draft, each once by path.
@@ -1017,6 +1037,28 @@ public final class NativeThreadStore {
         await perform(.send(expectedSessionID: current.piSessionID, generation: current.generation,
                             operationID: operation, text: text, delivery: delivery, designContext: context),
                       operation: operation, current: current, sentText: text, delivery: delivery)
+    }
+
+    /// Send `text` with design references (and the files drawn for them) as a new user message,
+    /// without touching the draft: a design's "Implement in a thread…". While pi works it waits in
+    /// the queue. A host that doesn't take references says so in `notice`, and nothing goes.
+    /// True once the host accepted it.
+    @discardableResult
+    public func send(text: String, references: [NativeAttachedReference], delivery: NativeThreadDelivery = .followUp) async -> Bool {
+        guard !references.isEmpty || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, await readyToAct(),
+              supports("send"), let current = snapshot else { return false }
+        guard references.isEmpty || supports("designReferences") else {
+            notice = "This thread's host doesn't take design references."
+            return false
+        }
+        let sent = sentCount
+        let message = NativeAttachedFile.message(text, files: references.flatMap(\.files), references: references.count)
+        let operation = UUID()
+        await perform(.send(expectedSessionID: current.piSessionID, generation: current.generation, operationID: operation,
+                            text: message, delivery: delivery,
+                            designReferences: references.isEmpty ? nil : references.map(\.record)),
+                      operation: operation, current: current, sentText: message, delivery: delivery)
+        return sentCount > sent
     }
 
     // MARK: Queue
@@ -1202,7 +1244,7 @@ public final class NativeThreadStore {
     }
 
     private func perform(_ action: NativeThreadRequest, operation: UUID, current: NativeThreadSnapshot, sentText: String? = nil,
-                         typed: String? = nil, files: [NativeAttachedFile] = [],
+                         typed: String? = nil, files: [NativeAttachedFile] = [], references: [NativeAttachedReference] = [],
                          delivery: NativeThreadDelivery = .followUp, images: [NativeImage] = []) async {
         guard let request else { return }
         let run = epoch
@@ -1224,6 +1266,7 @@ public final class NativeThreadStore {
                 if let sentText {
                     if draft == (typed ?? sentText) { draft = "" }
                     if !files.isEmpty { attachedFiles.removeAll { file in files.contains { $0.id == file.id } } }
+                    if !references.isEmpty { attachedReferences.removeAll { sent in references.contains { $0.id == sent.id } } }
                     lastSendQueued = queued
                     sentCount += 1
                     if hostQueues && current.running {

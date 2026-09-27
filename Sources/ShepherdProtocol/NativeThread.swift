@@ -5,8 +5,11 @@ public enum NativeThreadRequest: Codable, Hashable, Sendable {
     /// `images` is v2 (RPC agents, `sendImages` in `supportedActions`); absent on the wire when nil.
     /// `designContext` is what the sender's design screen showed (`DesignViewRecord`), gated by
     /// `designContext` in `supportedActions` and, remotely, `design.context.v1`; absent when nil.
+    /// `designReferences` are design pieces the user hands an ordinary thread (a client sends each
+    /// reference's string alone; the host reads the rest from the design and fences it), gated by
+    /// `designReferences` in `supportedActions`, local threads only; absent when nil.
     case send(expectedSessionID: String, generation: String, operationID: UUID, text: String, delivery: NativeThreadDelivery, images: [NativeImage]? = nil,
-              designContext: NativeDesignContext? = nil)
+              designContext: NativeDesignContext? = nil, designReferences: [DesignReferenceRecord]? = nil)
     case abort(expectedSessionID: String, generation: String, operationID: UUID)
     case answer(expectedSessionID: String, generation: String, operationID: UUID, dialogID: String, answer: NativeDialogAnswer)
     /// v2: `model` is "provider/id". Gated by `setModel` in `supportedActions`.
@@ -27,19 +30,36 @@ public enum NativeThreadRequest: Codable, Hashable, Sendable {
     case compact(expectedSessionID: String, generation: String, operationID: UUID, instructions: String? = nil)
 
     public var images: [NativeImage] {
-        if case .send(_, _, _, _, _, let images, _) = self { return images ?? [] }
+        if case .send(_, _, _, _, _, let images, _, _) = self { return images ?? [] }
         return []
     }
 
     public var designContext: NativeDesignContext? {
-        if case .send(_, _, _, _, _, _, let context) = self { return context }
+        if case .send(_, _, _, _, _, _, let context, _) = self { return context }
+        return nil
+    }
+
+    public var designReferences: [DesignReferenceRecord]? {
+        if case .send(_, _, _, _, _, _, _, let references) = self { return references }
         return nil
     }
 
     /// The same request without a design context (for a host that doesn't take one).
     public var droppingDesignContext: NativeThreadRequest {
-        guard case .send(let session, let generation, let operation, let text, let delivery, let images, .some) = self else { return self }
-        return .send(expectedSessionID: session, generation: generation, operationID: operation, text: text, delivery: delivery, images: images)
+        guard case .send(let session, let generation, let operation, let text, let delivery, let images, .some, let references) = self else {
+            return self
+        }
+        return .send(expectedSessionID: session, generation: generation, operationID: operation, text: text, delivery: delivery, images: images,
+                     designReferences: references)
+    }
+
+    /// The same send carrying `references` in place of what it carried.
+    public func withDesignReferences(_ references: [DesignReferenceRecord]?) -> NativeThreadRequest {
+        guard case .send(let session, let generation, let operation, let text, let delivery, let images, let context, _) = self else {
+            return self
+        }
+        return .send(expectedSessionID: session, generation: generation, operationID: operation, text: text, delivery: delivery, images: images,
+                     designContext: context, designReferences: references)
     }
 }
 

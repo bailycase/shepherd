@@ -66,6 +66,21 @@ struct ThreadProjectionTests {
         #expect(quoted.origin == nil && quoted.blocks.first?.text.hasPrefix("The text between") == true)
     }
 
+    /// A message handing the thread design references reaches pi fenced; the thread shows the
+    /// user's words, and an agent quoting the fence is shown as it wrote it.
+    @Test func aMessageWithDesignReferencesShowsItsWords() throws {
+        let fence = try #require(DesignReferenceFence.fenced([DesignReferenceRecord(ref: "shepherd-design-ref://local/d1/A.dc.html@4",
+                                                                                   design: "Checkout")]))
+        let sent = RPCMessage(role: "user", content: [.text(fence + "Build it.\n\n1 design reference attached.")], timestamp: 1)
+        let row = RPCThreadState.project(entryID: "user:1", message: sent)
+        #expect(row.blocks.map(\.text) == ["Build it.\n\n1 design reference attached."])
+        #expect(row.origin == nil)
+        let quoted = RPCThreadState.project(entryID: "a:1", message: RPCMessage(role: "assistant", content: [.text(fence + "x")]))
+        #expect(quoted.blocks.first?.text.hasPrefix("The text between the design-ref markers") == true)
+        // Words starting with "/" behind references stay words: the fence goes first.
+        #expect(RPCThreadState.prompt("/compact please", context: fence) == fence + "/compact please")
+    }
+
     /// A view record stays off a command, which pi reads only at the start of a message; a
     /// comment's fence always goes first, so a comment starting with "/" never runs as one.
     @Test(arguments: [

@@ -83,6 +83,25 @@ struct DesignIsolationTests {
         #expect(h.server.state.agents.count == 2)
     }
 
+    /// A design reaches a thread only as a reference the user sends: a thread that was handed none
+    /// reads nothing of it (design_get refuses), and a design's agent is never a reference's thread
+    /// nor answered one.
+    @Test func noDesignReachesAThreadWithoutAReferenceAndNoReferenceReachesADesignsAgent() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let (thread, drawer, design) = try await workspace(h)
+        let reference = try #require(DesignReference(designID: design, board: DesignPath("A.dc.html")!))
+        let client = try ExtensionClient(path: h.socketPath)
+        try client.send(.designGet(id: 1, agentID: thread.id, reference: reference.string, what: "summary"))
+        guard case .error(1, "not_granted", _) = try await client.reply() else { Issue.record("a thread read a design it was not handed"); return }
+        try client.send(.designGet(id: 2, agentID: drawer.id, reference: reference.string, what: "summary"))
+        guard case .error(2, "not_a_thread", _) = try await client.reply() else { Issue.record("a design's agent was answered"); return }
+        await #expect(throws: DesignReferenceError.self) {
+            _ = try await h.server.checkDesignReferences([reference], for: drawer.id)
+        }
+        #expect(h.server.state.agents.allSatisfy { $0.designGrants.isEmpty })
+    }
+
     /// A remote client (another Mac, an iPhone) has no design screen: it is sent the threads only.
     @Test func aRemoteClientIsSentNoDesignOrDesignAgent() async throws {
         let r = try RemoteHost()

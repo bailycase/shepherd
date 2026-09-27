@@ -263,6 +263,12 @@ public final class SessionServer: @unchecked Sendable {
     /// An agent asked to open a native diff-review pane. The GUI owns the
     /// review layout and user interaction; the completion carries the result.
     public var onReviewRequest: ((ReviewRequest, @escaping (ReviewOutcome) -> Void) -> Void)?
+    /// A thread's design_get asked for a drawn aspect of a design piece it holds a grant for (its
+    /// image, page or element): the app renders it off screen (`DesignHost`) into its drop folder.
+    /// Delivered on the main actor; the completion may be called from any thread. With no handler
+    /// those aspects are refused.
+    public var onDesignReferenceRender: ((DesignReferenceRenderRequest,
+                                          @escaping (Result<DesignReferenceRendering, DesignReferenceError>) -> Void) -> Void)?
     /// An agent's MCP extension asked for a server's credentials. The app owns the Keychain and
     /// OAuth, so the request is handed to it like a pane request. Delivered on the main actor;
     /// the completion may be called from any thread. With no handler the answer is
@@ -337,6 +343,8 @@ public final class SessionServer: @unchecked Sendable {
         let design: Kept<Design>
         let agents: [Kept<Agent>]
         let tabs: [Kept<Tab>]
+        /// The design references threads held on it, by agent: an undo gives them back.
+        var grants: [AgentID: [DesignGrant]] = [:]
         /// The processes its deletion stopped.
         let sessions: Set<SessionID>
         /// Which deletion this is: a design deleted, restored and deleted again closes its
@@ -685,6 +693,7 @@ public final class SessionServer: @unchecked Sendable {
         return !missing.isEmpty
             || state.agents.contains { $0.designID.map { !designs.contains($0) } == true }
             || state.designs.contains { $0.agentID.map { !agents.contains($0) } == true }
+            || state.hasStaleDesignGrants
     }
 
     /// Forgets designs whose folders are gone, with the agents that drew them (a design's chat
@@ -703,6 +712,8 @@ public final class SessionServer: @unchecked Sendable {
         for i in state.designs.indices where state.designs[i].agentID.map({ !agents.contains($0) }) == true {
             state.designs[i].agentID = nil
         }
+        // A thread's references to a design that is gone go with it.
+        state.dropStaleDesignGrants()
     }
 
     /// Whether startup must move design agents into the reserved designs space, or drop agents
@@ -916,6 +927,35 @@ public final class SessionServer: @unchecked Sendable {
     /// Pi-level failures remain NativeThreadResult.failure. Cancellation does not undo
     /// dispatch; as with TCP, callers must ignore stale responses and never auto-retry.
     public func nativeThread(agentID: AgentID, request: NativeThreadRequest) async throws -> NativeThreadResult {
+        guard let sent = request.designReferences, !sent.isEmpty else { return try await dispatchNativeThread(agentID: agentID, request: request) }
+        // Design references: checked against the design now and fenced from what the host read,
+        // never from what was sent; the agent may read them once they go.
+        let references = try sent.map { record -> DesignReference in
+            guard let reference = record.reference else {
+                throw RemoteHostClientError.rejected(code: "invalid_reference", message: DesignReferenceError.invalid(record.ref).message)
+            }
+            return reference
+        }
+        let checked: [CheckedDesignReference]
+        do {
+            checked = try await checkDesignReferences(references, for: agentID, files: sent.map(\.files))
+        } catch let error as DesignReferenceError {
+            throw RemoteHostClientError.rejected(code: error.code, message: error.message)
+        }
+        let before = state.agents.first { $0.id == agentID }?.designGrants ?? []
+        let grants = checked.map(\.grant)
+        try await grantDesignReferences(grants, to: agentID)
+        do {
+            let result = try await dispatchNativeThread(agentID: agentID, request: request.withDesignReferences(checked.map(\.record)))
+            if case .failure = result { await revokeDesignGrants(grants, from: agentID, keeping: before) }
+            return result
+        } catch {
+            await revokeDesignGrants(grants, from: agentID, keeping: before)
+            throw error
+        }
+    }
+
+    private func dispatchNativeThread(agentID: AgentID, request: NativeThreadRequest) async throws -> NativeThreadResult {
         try await withCheckedThrowingContinuation { continuation in
             queue.async {
                 // Include the same envelope budget as TCP, excluding NDJSON's newline. A snapshot
@@ -1229,6 +1269,13 @@ public final class SessionServer: @unchecked Sendable {
         switch request {
         case .nativeThread(let id, let agentID, let request):
             guard !line.contains(13) else { disconnect(client); return }
+            // Design references are handed over on the Mac that runs the thread (docs/designs.md ›
+            // Design references): a remote client's are refused rather than dropped.
+            if let references = request.designReferences, !references.isEmpty {
+                send(.error(id: id, code: "design_references_local",
+                            message: "Design references go only into a thread on the Mac that runs it, for now."), to: client)
+                return
+            }
             let olderClient = !client.clientCapabilities.contains(RemoteProtocol.nativeQueueCapability)
             dispatchNativeThread(agentID: agentID, request: request, requestBytes: line.count, olderClient: olderClient) { [weak self, weak client] outcome in
                 guard let self, let client else { return }
@@ -2329,6 +2376,110 @@ public final class SessionServer: @unchecked Sendable {
             designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client) { server, _ in
                 .designProposals(id: id, proposals: try await server.proposeDesignComments(designID, call: call, proposals: proposals))
             }
+        case .designGet(let id, let agentID, let reference, let what):
+            designGetRequest(id: id, agentID: agentID, reference: reference, what: what, client: client)
+        }
+    }
+
+    /// Server queue: an ordinary thread's design_get. Only an agent that is no design's, holding a
+    /// grant for the piece (a reference the user sent into its thread), is answered; the files are
+    /// read on the design store's queue and drawn by the app, and the reply comes back here.
+    private func designGetRequest(id: Int, agentID: AgentID, reference raw: String, what: String, client: ExtensionConnection) {
+        let refuse = { (error: DesignReferenceError) in self.reply(.error(id: id, code: error.code, message: error.message), to: client) }
+        let state = store.state
+        guard let agent = state.agents.first(where: { $0.id == agentID }) else {
+            reply(.error(id: id, code: "no_such_agent", message: "no such agent"), to: client)
+            return
+        }
+        guard !state.isDesignAgent(agent), agent.designID == nil else { return refuse(.notAThread) }
+        guard let reference = DesignReference(string: raw) else { return refuse(.invalid(raw)) }
+        guard let aspect = DesignReferenceAspect(rawValue: what) else {
+            return refuse(DesignReferenceError("invalid_what", "what must be one of "
+                + DesignReferenceAspect.allCases.map(\.rawValue).joined(separator: ", ") + "."))
+        }
+        guard reference.host == .local else { return refuse(.remote) }
+        guard let grant = agent.designGrant(designID: reference.designID, board: reference.board.rawValue,
+                                            element: reference.element?.description, revision: reference.revision) else {
+            return refuse(.notGranted)
+        }
+        guard let design = state.designs.first(where: { $0.id == reference.designID }) else {
+            return refuse(DesignReferenceError("no_such_design", "That design is no longer here."))
+        }
+        nextDesignRequest += 1
+        let token = nextDesignRequest
+        designRequestClients[token] = client
+        Task { [weak self] in
+            guard let self else { return }
+            let answer: ExtensionReply
+            do {
+                let result = try await DesignReferenceService(server: self).answer(reference, aspect: aspect, grant: grant, design: design)
+                answer = .designReference(id: id, answer: result)
+            } catch let error as DesignReferenceError {
+                answer = .error(id: id, code: error.code, message: error.message)
+            } catch {
+                answer = .error(id: id, code: "design_failed", message: String(describing: error))
+            }
+            self.queue.async {
+                guard let client = self.designRequestClients.removeValue(forKey: token) else { return }
+                self.reply(answer, to: client)
+            }
+        }
+    }
+
+    /// Asks the app to draw a reference's image, page or element off screen.
+    func renderDesignReference(_ request: DesignReferenceRenderRequest) async throws -> DesignReferenceRendering {
+        let result: Result<DesignReferenceRendering, DesignReferenceError> = await withCheckedContinuation { continuation in
+            hopToMain { [weak self] in
+                guard let handler = self?.onDesignReferenceRender else {
+                    continuation.resume(returning: .failure(DesignReferenceError("unsupported", "Shepherd can't draw design pieces here.")))
+                    return
+                }
+                handler(request) { continuation.resume(returning: $0) }
+            }
+        }
+        return try result.get()
+    }
+
+    // MARK: - Design references
+
+    /// Checks references an ordinary thread is about to be sent (docs/designs.md › Design
+    /// references) and pins each at the design's revision now: the record pi will read, and the
+    /// grant sending it makes. Reads the files on the design store's queue; changes nothing in
+    /// the workspace. `files` names each reference's attached files, as its record lists them.
+    public func checkDesignReferences(_ references: [DesignReference], for agentID: AgentID,
+                                      files: [[String]?] = []) async throws -> [CheckedDesignReference] {
+        let state = self.state
+        guard let agent = state.agents.first(where: { $0.id == agentID }) else { throw SessionServerError.noSuchAgent(agentID) }
+        guard !state.isDesignAgent(agent), agent.designID == nil else { throw DesignReferenceError.notAThread }
+        return try await DesignReferenceService(server: self).check(references, files: files, state: state, at: Self.nowMilliseconds())
+    }
+
+    /// Lets `agentID` read the pieces `grants` name (design_get), from their pinned revisions on.
+    /// Persisted with the agent; refused for a design's agent or a design no longer here.
+    public func grantDesignReferences(_ grants: [DesignGrant], to agentID: AgentID) async throws {
+        guard !grants.isEmpty else { return }
+        try await enqueue {
+            let state = self.store.state
+            guard let index = state.agents.firstIndex(where: { $0.id == agentID }) else { throw SessionServerError.noSuchAgent(agentID) }
+            guard !state.isDesignAgent(state.agents[index]), state.agents[index].designID == nil else { throw DesignReferenceError.notAThread }
+            for grant in grants where !state.designs.contains(where: { $0.id == grant.designID }) {
+                throw SessionServerError.noSuchDesign(grant.designID)
+            }
+            var agent = state.agents[index]
+            agent.addDesignGrants(grants)
+            guard agent != state.agents[index] else { return }
+            try self.mutateState { $0.agents[index] = agent }
+        }
+    }
+
+    /// Takes back grants a send made that never reached the thread.
+    private func revokeDesignGrants(_ grants: [DesignGrant], from agentID: AgentID, keeping before: [DesignGrant]) async {
+        try? await enqueue {
+            guard let index = self.store.state.agents.firstIndex(where: { $0.id == agentID }) else { return }
+            let current = self.store.state.agents[index].designGrants
+            let kept = current.filter { grant in before.contains(grant) || !grants.contains(grant) }
+            guard kept != current else { return }
+            try self.mutateState { $0.agents[index].designGrants = kept }
         }
     }
 
@@ -2643,6 +2794,7 @@ public final class SessionServer: @unchecked Sendable {
              .designSystem(let id, _),
              .designSystemWritten(let id, _),
              .designProposals(let id, _),
+             .designReference(let id, _),
              .mcpCredentials(let id, _):
             return id
         }
@@ -3370,8 +3522,13 @@ public final class SessionServer: @unchecked Sendable {
         }
         let until = Date().addingTimeInterval(designUndoWindow)
         let token = UUID()
+        var grants: [AgentID: [DesignGrant]] = [:]
+        for agent in state.agents where !drawers.contains(agent.id) {
+            let held = agent.designGrants.filter { $0.designID == designID }
+            if !held.isEmpty { grants[agent.id] = held }
+        }
         pendingDesignDeletions[designID] = PendingDesignDeletion(design: .init(index: designIndex, value: design), agents: keptAgents,
-                                                                 tabs: keptTabs, sessions: sessions, token: token)
+                                                                 tabs: keptTabs, grants: grants, sessions: sessions, token: token)
         do {
             try mutateState {
                 $0.designs.removeAll { $0.id == designID }
@@ -3382,6 +3539,10 @@ public final class SessionServer: @unchecked Sendable {
                 }
                 for i in $0.designs.indices where $0.designs[i].agentID.map(drawers.contains) == true {
                     $0.designs[i].agentID = nil
+                }
+                // A thread's references to it go with it.
+                for i in $0.agents.indices where !$0.agents[i].designGrants.isEmpty {
+                    $0.agents[i].designGrants.removeAll { $0.designID == designID }
                 }
             }
         } catch {
@@ -3431,6 +3592,10 @@ public final class SessionServer: @unchecked Sendable {
                         state.agents.insert(kept.value, at: min(kept.index, state.agents.count))
                     }
                     state.designs.insert(pending.design.value, at: min(pending.design.index, state.designs.count))
+                    for (agentID, grants) in pending.grants {
+                        guard let index = state.agents.firstIndex(where: { $0.id == agentID }) else { continue }
+                        state.agents[index].addDesignGrants(grants)
+                    }
                 }
             }
         } catch {
