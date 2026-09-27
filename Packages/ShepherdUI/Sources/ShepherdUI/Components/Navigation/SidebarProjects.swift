@@ -317,7 +317,8 @@ public struct NWSidebarStylePicker: View {
 }
 
 /// A card's drawing: a small sidebar beside a page's lines. Activity draws Needs you's two amber
-/// rows over Recents; Projects draws a folder open on three threads, then two more folders.
+/// rows over Recents; Projects draws a folder open on three threads, then two more folders. The
+/// sidebar's rows shrink together to fit the drawing's height, as the board's column does.
 struct NWSidebarStyleThumbnail: View {
     let style: NWSidebarStyle
 
@@ -331,6 +332,22 @@ struct NWSidebarStyleThumbnail: View {
         static let glyph: CGFloat = 5
         static let bar: CGFloat = 4
         static let header: CGFloat = 3
+        /// A header's box, the bar at its foot, and the gap under the destinations, before fitting.
+        static let headerBox: CGFloat = 10
+        static let destinationsGap: CGFloat = 3
+        static let destinations = 3
+    }
+
+    /// How much the sidebar's rows, headers and gap shrink so every one of them fits.
+    var fit: CGFloat {
+        let (headers, rows) = switch style {
+        case .activity: (2, 6)
+        case .projects: (1, 6)
+        }
+        let items = M.destinations + 1 + headers + rows
+        let content = CGFloat(M.destinations + rows) * M.row + M.destinationsGap + CGFloat(headers) * M.headerBox
+        let room = M.height - 2 * NW.Space.m - CGFloat(items - 1) * M.rowGap
+        return min(1, room / content)
     }
 
     var body: some View {
@@ -340,7 +357,7 @@ struct NWSidebarStyleThumbnail: View {
                 ForEach([34, 28, 40] as [CGFloat], id: \.self) { width in
                     row { RoundedRectangle(cornerRadius: 1.5).strokeBorder(nw.textTertiary, lineWidth: 1) } bar: { bar(width, nw.lineStrong) }
                 }
-                Color.clear.frame(height: 3)
+                Color.clear.frame(height: M.destinationsGap * fit)
                 switch style {
                 case .activity: activity
                 case .projects: projects
@@ -404,14 +421,13 @@ struct NWSidebarStyleThumbnail: View {
             bar(width, nw.textTertiary)
         }
         .padding(.horizontal, M.rowInset)
-        .frame(height: M.row)
+        .frame(height: M.row * fit)
     }
 
     private func header(_ width: CGFloat, _ color: Color) -> some View {
         Capsule().fill(color).frame(width: width, height: M.header)
-            .padding(.horizontal, M.rowInset)
-            .frame(height: 10, alignment: .bottom)
-            .padding(.bottom, 2)
+            .padding(EdgeInsets(top: 0, leading: M.rowInset, bottom: NW.Space.xxs, trailing: M.rowInset))
+            .frame(height: M.headerBox * fit, alignment: .bottom)
     }
 
     private func bar(_ width: CGFloat, _ color: Color) -> some View {
@@ -426,7 +442,7 @@ struct NWSidebarStyleThumbnail: View {
         }
         .padding(.leading, inset)
         .padding(.trailing, M.rowInset)
-        .frame(maxWidth: .infinity, minHeight: M.row, maxHeight: M.row, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: M.row * fit, maxHeight: M.row * fit, alignment: .leading)
         .background(selected ? Color.nw.bgSelected : .clear, in: RoundedRectangle(cornerRadius: 3))
     }
 }
