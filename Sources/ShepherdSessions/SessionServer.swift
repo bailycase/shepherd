@@ -317,6 +317,27 @@ public final class SessionServer: @unchecked Sendable {
     /// A design system was written or re-synced. Delivered on the main actor; a hint to list the
     /// systems again, not state.
     public var onDesignSystemsChanged: (() -> Void)?
+    /// How long a deleted design can be restored (`DesignDeletion.undoWindow`). Tests shorten it
+    /// before they delete.
+    public var designUndoWindow: TimeInterval = DesignDeletion.undoWindow
+    /// A design deleted within its undo window, as the workspace held it. Server queue.
+    private struct PendingDesignDeletion {
+        /// A value and where it stood in its list.
+        struct Kept<Value> {
+            let index: Int
+            let value: Value
+        }
+
+        let design: Kept<Design>
+        let agents: [Kept<Agent>]
+        let tabs: [Kept<Tab>]
+        /// The processes its deletion stopped.
+        let sessions: Set<SessionID>
+        /// Which deletion this is: a design deleted, restored and deleted again closes its
+        /// window only once.
+        let token: UUID
+    }
+    private var pendingDesignDeletions: [DesignID: PendingDesignDeletion] = [:]
     /// Skills requests fetch from git, so they run here, one at a time, never on the server's
     /// queue.
     private let skillsQueue = DispatchQueue(label: "shepherd.skills", qos: .userInitiated)
@@ -581,14 +602,18 @@ public final class SessionServer: @unchecked Sendable {
     public func start() throws {
         // Which designs lost their folders is read on the store's queue, not the server's.
         let missingDesigns = designs.missingDesigns(among: store.committed.designs.map(\.id))
+        // A design deleted in its undo window before a crash: state.json no longer lists it.
+        designs.finishAllDeletions()
         try queue.sync { try startOnQueue(missingDesigns: missingDesigns) }
         countDesignBoards()
     }
 
     /// Kill every session and close the extension socket. Called when the app
-    /// terminates: sessions must not outlive the app.
+    /// terminates: sessions must not outlive the app. A design deleted within its undo window is
+    /// deleted for good.
     public func stop() {
         queue.sync { stopOnQueue() }
+        designs.finishAllDeletions()
     }
 
     // MARK: - Lifecycle (server queue)
@@ -814,6 +839,7 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private func stopOnQueue() {
+        pendingDesignDeletions.removeAll()
         for session in sessions.values {
             session.shutdown()
         }
@@ -3168,22 +3194,113 @@ public final class SessionServer: @unchecked Sendable {
         try await enqueue { try self.commitDesignWrite(designID, result) }
     }
 
-    /// Forgets a design and removes its folder. The agents that drew it go with it, their
-    /// processes stopped, the way Delete Agent does: a design's chat never becomes a thread.
-    public func deleteDesign(_ designID: DesignID) async throws {
+    /// Duplicate (DesignMenu): a new design with a new id and "<name> copy" (then "copy 2", …)
+    /// for a name, holding a copy of the original's boards, project files, installed systems and
+    /// uploads, drawn in the same system. Its versions, comments and agent stay with the
+    /// original; the copy's agent starts when it is opened. It goes first in Recents.
+    public func duplicateDesign(_ designID: DesignID) async throws -> Design {
+        guard let original = state.designs.first(where: { $0.id == designID }), !original.buildsSystem else {
+            throw SessionServerError.noSuchDesign(designID)
+        }
+        let name = DesignNaming.duplicateName(original.name, taken: state.designs.map(\.name))
+        let now = Self.nowMilliseconds()
+        var copy = Design(name: name, systemNamespace: original.systemNamespace, createdAt: now)
+        let snapshot = try await designs.duplicateDesign(designID, as: copy.id, title: name)
+        copy.boardCount = snapshot.index.boards.count
+        do {
+            try await enqueue {
+                try self.checkNewDesign(copy)
+                try self.mutateState { $0.designs.append(copy) }
+            }
+        } catch {
+            try? await designs.delete(copy.id)
+            throw error
+        }
+        return copy
+    }
+
+    /// Remove from Recents (DesignMenu in Recents): the design leaves the sidebar's Recents until
+    /// it next changes. It stays on the Designs page.
+    public func removeDesignFromRecents(_ designID: DesignID) async throws {
         try await enqueue {
-            let state = self.store.state
-            guard state.designs.contains(where: { $0.id == designID }) else {
+            guard let index = self.store.state.designs.firstIndex(where: { $0.id == designID }) else {
                 throw SessionServerError.noSuchDesign(designID)
             }
-            let drawers = Set(self.store.state.agents.filter { $0.designID == designID }.map(\.id))
-            let doomedTabs = self.store.state.tabs.filter { tab in
-                self.store.state.agents.contains { drawers.contains($0.id) && $0.tabID == tab.id }
-                    || tab.inspectorFor.map(drawers.contains) == true
+            let design = self.store.state.designs[index]
+            guard design.inRecents else { return }
+            let hidden = max(Self.nowMilliseconds(), design.lastActiveAt)
+            try self.mutateState { $0.designs[index].recentsHiddenAt = hidden }
+        }
+    }
+
+    /// Deletes a design, with Undo (DesignDeleted). At once, it leaves the workspace with the
+    /// agents that drew it (their layouts too, and their processes stopped, the way Delete Agent
+    /// does: a design's chat never becomes a thread), and its folder is set aside. For
+    /// `designUndoWindow` the host holds all of it, and `undoDesignDeletion` puts it back where it
+    /// was; then the folder is removed for good. Quitting within the window completes the
+    /// deletion (state.json no longer lists it), and so does the next launch after a crash.
+    /// With `undoable` false (a system build that Delete design system stops) it is gone at once.
+    @discardableResult
+    public func deleteDesign(_ designID: DesignID, undoable: Bool = true) async throws -> DesignDeletion {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        let staged = try await designs.stageDeletion(designID)
+        let deletion: DesignDeletion
+        do {
+            deletion = try await enqueue { try self.holdDeletedDesign(designID) }
+        } catch {
+            if staged { try? await designs.unstageDeletion(designID) }
+            throw error
+        }
+        if !undoable {
+            await enqueueValue { self.pendingDesignDeletions[designID] = nil }
+            try? await designs.finishDeletion(designID)
+        }
+        return deletion
+    }
+
+    /// Server queue: takes a design and its agents out of the workspace, keeping them in
+    /// `pendingDesignDeletions` until the undo window closes. The agents' layouts are kept with
+    /// new pane ids and no sessions, so a stopped process's late exit never touches the restored
+    /// layout, and a restored agent starts a fresh pi on its own session.
+    private func holdDeletedDesign(_ designID: DesignID) throws -> DesignDeletion {
+        let state = store.state
+        guard let designIndex = state.designs.firstIndex(where: { $0.id == designID }) else {
+            throw SessionServerError.noSuchDesign(designID)
+        }
+        let design = state.designs[designIndex]
+        let drawers = Set(state.agents.filter { $0.designID == designID }.map(\.id))
+        let drawerTabs = Set(state.agents.filter { drawers.contains($0.id) }.map(\.tabID))
+        let doomedTabs = state.tabs.filter { drawerTabs.contains($0.id) || $0.inspectorFor.map(drawers.contains) == true }
+        let doomedTabIDs = Set(doomedTabs.map(\.id))
+        let sessions = Set(doomedTabs.flatMap { $0.layout.leaves.compactMap(\.sessionID) })
+
+        var panes: [PaneID: PaneID] = [:]
+        var keptTabs: [PendingDesignDeletion.Kept<Tab>] = []
+        for (index, tab) in state.tabs.enumerated() where drawerTabs.contains(tab.id) {
+            var kept = tab
+            for leaf in tab.layout.leaves {
+                let fresh = PaneID()
+                panes[leaf.id] = fresh
+                kept.layout = kept.layout.updatingLeaf(leaf.id) {
+                    $0.id = fresh
+                    $0.sessionID = nil
+                }
             }
-            let doomedTabIDs = Set(doomedTabs.map(\.id))
-            let sessions = Set(doomedTabs.flatMap { $0.layout.leaves.compactMap(\.sessionID) })
-            try self.mutateState {
+            keptTabs.append(.init(index: index, value: kept))
+        }
+        let keptAgents: [PendingDesignDeletion.Kept<Agent>] = state.agents.enumerated().compactMap { index, agent in
+            guard drawers.contains(agent.id) else { return nil }
+            var kept = agent
+            kept.paneID = agent.paneID.map { panes[$0] ?? $0 }
+            kept.status = .idle
+            return .init(index: index, value: kept)
+        }
+        let until = Date().addingTimeInterval(designUndoWindow)
+        let token = UUID()
+        pendingDesignDeletions[designID] = PendingDesignDeletion(design: .init(index: designIndex, value: design), agents: keptAgents,
+                                                                 tabs: keptTabs, sessions: sessions, token: token)
+        do {
+            try mutateState {
                 $0.designs.removeAll { $0.id == designID }
                 $0.agents.removeAll { drawers.contains($0.id) }
                 $0.tabs.removeAll { doomedTabIDs.contains($0.id) }
@@ -3194,11 +3311,83 @@ public final class SessionServer: @unchecked Sendable {
                     $0.designs[i].agentID = nil
                 }
             }
-            for sessionID in sessions {
-                self.killSessionOnQueue(sessionID)
-            }
+        } catch {
+            pendingDesignDeletions[designID] = nil
+            throw error
         }
-        try await designs.delete(designID)
+        for sessionID in sessions {
+            killSessionOnQueue(sessionID)
+        }
+        queue.asyncAfter(deadline: .now() + designUndoWindow) { [weak self] in
+            self?.finishDesignDeletion(designID, token: token)
+        }
+        return DesignDeletion(designID: designID, name: design.name, undoUntil: until.timeIntervalSince1970 * 1000)
+    }
+
+    /// Server queue: the undo window closed on a deletion still held: its folder goes.
+    private func finishDesignDeletion(_ designID: DesignID, token: UUID) {
+        guard pendingDesignDeletions[designID]?.token == token else { return }
+        pendingDesignDeletions[designID] = nil
+        let designs = self.designs
+        Task { try? await designs.finishDeletion(designID) }
+    }
+
+    /// Undo (DesignDeleted): a design deleted within the undo window comes back as it was, where
+    /// it was: its record, the agents that drew it and their layouts, and its folder. Its agents'
+    /// stopped processes are waited out first, so a restored agent's pi (started fresh by the
+    /// app, resuming its session) never meets the old one. Refused once the window has closed.
+    public func undoDesignDeletion(_ designID: DesignID) async throws {
+        let pending = try await enqueue { () throws -> PendingDesignDeletion in
+            guard let pending = self.pendingDesignDeletions.removeValue(forKey: designID) else {
+                throw SessionServerError.conflict("That design was deleted for good; it can't be restored.")
+            }
+            return pending
+        }
+        await waitForSessionsToEnd(pending.sessions)
+        do {
+            try await designs.unstageDeletion(designID)
+            try await enqueue {
+                guard !self.store.state.designs.contains(where: { $0.id == designID }) else {
+                    throw SessionServerError.conflict("design \(designID) already exists")
+                }
+                try self.mutateState { state in
+                    for kept in pending.tabs.sorted(by: { $0.index < $1.index }) {
+                        state.tabs.insert(kept.value, at: min(kept.index, state.tabs.count))
+                    }
+                    for kept in pending.agents.sorted(by: { $0.index < $1.index }) {
+                        state.agents.insert(kept.value, at: min(kept.index, state.agents.count))
+                    }
+                    state.designs.insert(pending.design.value, at: min(pending.design.index, state.designs.count))
+                }
+            }
+        } catch {
+            // Held again, as it was, so its window still closes on time.
+            _ = try? await designs.stageDeletion(designID)
+            await enqueueValue {
+                self.pendingDesignDeletions[designID] = pending
+                self.queue.asyncAfter(deadline: .now() + self.designUndoWindow) { [weak self] in
+                    self?.finishDesignDeletion(designID, token: pending.token)
+                }
+            }
+            throw error
+        }
+    }
+
+    /// The designs deleted within their undo window, by id.
+    public func pendingDesignDeletionIDs() async -> Set<DesignID> {
+        await enqueueValue { Set(self.pendingDesignDeletions.keys) }
+    }
+
+    /// Waits (off the queue) until none of `sessions` runs, or for as long as a stopped process
+    /// can take to go (SIGKILL follows SIGTERM after 3 s).
+    private func waitForSessionsToEnd(_ sessions: Set<SessionID>) async {
+        guard !sessions.isEmpty else { return }
+        let deadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < deadline {
+            let running = await enqueueValue { sessions.contains { self.sessions[$0]?.isAlive == true } }
+            if !running { return }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
     }
 
     /// The reserved hidden space design agents live in (`Space.designs()`), made on first use.
@@ -3327,6 +3516,30 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     // MARK: - Design systems
+
+    /// Delete design system (SystemDeleteConfirm): its files go from Shepherd, and so does the
+    /// build that made it, if one (its agent stopped; SystemDeleteBuilding: "Deleting stops the
+    /// build and keeps nothing from it"). Designs drawn in it keep the copy they installed, and
+    /// the repository it was read from is never touched. A built-in is refused.
+    public func deleteDesignSystem(_ namespace: String) async throws {
+        guard DesignPath.isSystemNamespace(namespace) else { throw DesignSystemError.invalidNamespace(namespace) }
+        let summary = try await designSystems.read(namespace).summary
+        guard !summary.builtIn else { throw DesignSystemError.readOnly(namespace) }
+        if let owner = summary.info.ownerDesignID, state.designs.contains(where: { $0.id == owner && $0.buildsSystem }) {
+            try await deleteDesign(owner, undoable: false)
+        }
+        try await designSystems.delete(namespace)
+        hopToMain { [weak self] in self?.onDesignSystemsChanged?() }
+    }
+
+    /// A system build still reading its project, before it wrote its system (a "building"
+    /// card): the build goes, its agent stopped. Nothing to undo.
+    public func deleteSystemBuild(_ designID: DesignID) async throws {
+        guard state.designs.contains(where: { $0.id == designID && $0.buildsSystem }) else {
+            throw SessionServerError.noSuchDesign(designID)
+        }
+        try await deleteDesign(designID, undoable: false)
+    }
 
     /// Every design system: the built-ins, then those this host built, by namespace.
     public func designSystemSummaries() async -> [DesignSystemSummary] {

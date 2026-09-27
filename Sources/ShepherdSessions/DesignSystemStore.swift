@@ -208,6 +208,71 @@ public final class DesignSystemStore: @unchecked Sendable {
         }
     }
 
+    /// Delete design system (SystemDeleteConfirm): the system's folder goes. Designs keep the
+    /// copies they installed; a built-in is never deleted.
+    func delete(_ namespace: String) async throws {
+        try await run {
+            guard self.builtIns[namespace] == nil else { throw DesignSystemError.readOnly(namespace) }
+            let folder = try self.ownFolder(namespace)
+            guard FileManager.default.fileExists(atPath: folder.path) else { throw DesignSystemError.noSuchSystem(namespace) }
+            do { try FileManager.default.removeItem(at: folder) } catch {
+                throw DesignSystemError.io("could not delete \(namespace): \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Import: a Claude Design project's own design system (its design's `ds/<namespace>/`), kept
+    /// as a system of its own, marked with the design it came with. Only a system's kinds of
+    /// file come (tokens.json first; without a readable one nothing does, and nil answers). A
+    /// system this host already has with the same files is used instead of a second one
+    /// (`added` false); otherwise it takes `namespace`, else the first of `namespace-2`, … no
+    /// system has.
+    func adopt(namespace: String, title: String, files: [String: Data], cameWith: DesignID,
+               at now: Double) async throws -> (namespace: String, added: Bool)? {
+        try await run {
+            guard DesignPath.isSystemNamespace(namespace) else { return nil }
+            var kept: [String: Data] = [:]
+            var total = 0
+            for (path, data) in files.sorted(by: { $0.key < $1.key })
+            where DesignSystemFile.isPath(path) && data.count <= DesignSystemFile.maxFileBytes {
+                guard kept.count < DesignSystemFile.maxFiles, total + data.count <= DesignSystemFile.maxTotalBytes else { break }
+                kept[path] = data
+                total += data.count
+            }
+            guard let tokens = kept[DesignSystemFile.tokens], (try? DesignSystemTokens.decode(tokens)) != nil else { return nil }
+            let manager = FileManager.default
+            let names = ((try? manager.contentsOfDirectory(atPath: self.directory.path)) ?? [])
+                .filter { DesignPath.isSystemNamespace($0) && self.folder(for: $0) != nil }
+            for name in [namespace] + names.sorted() where self.builtIns[name] == nil {
+                guard let folder = self.folder(for: name), manager.fileExists(atPath: folder.path) else { continue }
+                if self.filesOnQueue(folder) == kept { return (name, false) }
+            }
+            guard names.count < Self.maxSystems else { throw DesignSystemError.tooManySystems }
+            var free = namespace
+            var number = 2
+            while self.builtIns[free] != nil || manager.fileExists(atPath: self.directory.appendingPathComponent(free).path) {
+                let suffix = "-\(number)"
+                free = String(namespace.prefix(64 - suffix.count)) + suffix
+                number += 1
+            }
+            guard let folder = self.folder(for: free) else { return nil }
+            do {
+                for (path, data) in kept {
+                    let url = folder.appendingPathComponent(path)
+                    try manager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try data.write(to: url, options: .atomic)
+                }
+                let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+                try self.saveInfo(DesignSystemInfo(namespace: free, title: String((trimmed.isEmpty ? free : trimmed).prefix(120)),
+                                                   revision: 1, createdAt: now, cameWith: cameWith))
+            } catch {
+                try? manager.removeItem(at: folder)
+                throw DesignSystemError.io("could not keep \(free): \(error.localizedDescription)")
+            }
+            return (free, true)
+        }
+    }
+
     // MARK: Queue
 
     private func writeOnQueue(_ write: DesignSystemWrite, owner: DesignID, spaceID: SpaceID?, sourceRoot: URL?,

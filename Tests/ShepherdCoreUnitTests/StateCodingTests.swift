@@ -227,6 +227,48 @@ struct DesignModelTests {
         #expect(try Fixture.roundTrip(design) == design)
     }
 
+    /// Remove from Recents and an import's origin decode as absent from older files, write
+    /// nothing while unset, and round-trip when set.
+    @Test func recentsAndImportOriginDecodeAsAbsentFromOlderFiles() throws {
+        let older = try Fixture.decode(Design.self, #"{"id":"d1","name":"Checkout","createdAt":1,"lastActiveAt":2}"#)
+        #expect(older.recentsHiddenAt == nil && older.importedFrom == nil && older.inRecents)
+        let written = try Fixture.encodeObject(older)
+        #expect(written["recentsHiddenAt"] == nil && written["importedFrom"] == nil)
+        let imported = Design(name: "Checkout funnel", createdAt: 1, recentsHiddenAt: 5,
+                              importedFrom: DesignImportOrigin(file: "checkout-funnel.zip", title: "Checkout funnel",
+                                                               stamp: #"{"at":"2026-09-20T10:00:00Z"}"#, importedAt: 3))
+        #expect(try Fixture.roundTrip(imported) == imported)
+    }
+
+    /// A design removed from Recents stays out until it changes after that; a build never shows.
+    @Test(arguments: [
+        (nil as Double?, 10.0, false, true),
+        (10, 10, false, false),
+        (10, 11, false, true),
+        (12, 11, false, false),
+        (nil, 10, true, false),
+    ])
+    func aDesignIsInRecentsUntilRemovedAndBackOnceItChanges(_ hidden: Double?, _ active: Double, _ build: Bool, _ shown: Bool) {
+        let design = Design(name: "d", createdAt: 1, lastActiveAt: active, buildsSystem: build, recentsHiddenAt: hidden)
+        #expect(design.inRecents == shown)
+    }
+
+    /// The same project imported again: its canvas's creation stamp when both have one, else its
+    /// title, regardless of case.
+    @Test(arguments: [
+        ("a", "Checkout", "a", "Other", true),
+        ("a", "Checkout", "b", "Checkout", false),
+        (nil as String?, "Checkout funnel", nil as String?, " checkout FUNNEL", true),
+        (nil, "Checkout", "a", "Checkout", true),
+        (nil, "Checkout", nil, "Onboarding", false),
+    ])
+    func anImportIsTheSameProjectByItsStampElseItsTitle(_ stamp: String?, _ title: String, _ other: String?, _ otherTitle: String,
+                                                        _ same: Bool) {
+        let first = DesignImportOrigin(file: "a.zip", title: title, stamp: stamp, importedAt: 1)
+        let second = DesignImportOrigin(file: "b.zip", title: otherTitle, stamp: other, importedAt: 2)
+        #expect(first.isSameProject(as: second) == same)
+    }
+
     @Test func anOlderSystemBuildKeepsItsSpaceAsItsProject() throws {
         let build = try Fixture.decode(Design.self,
                                        #"{"id":"d1","name":"web","spaceID":"s1","createdAt":1,"lastActiveAt":1,"buildsSystem":true}"#)
