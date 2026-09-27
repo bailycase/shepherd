@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import os
 import ShepherdCore
 import ShepherdProtocol
 
@@ -150,6 +151,23 @@ public final class DesignStore: @unchecked Sendable {
         }
     }
 
+    /// How many earlier versions of boards the design keeps, in all (DeleteDesignDialog: "their
+    /// 23 versions").
+    public func versionCount(_ id: DesignID) async throws -> Int {
+        try await run {
+            guard let folder = self.folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+            let versions = folder.appendingPathComponent("versions", isDirectory: true)
+            let walker = FileManager.default.enumerator(at: versions, includingPropertiesForKeys: [.isRegularFileKey],
+                                                        options: [.skipsHiddenFiles])
+            var count = 0
+            while let url = walker?.nextObject() as? URL {
+                if url.lastPathComponent.hasSuffix(DesignPath.fileExtension),
+                   (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true { count += 1 }
+            }
+            return count
+        }
+    }
+
     /// The designs among `ids` whose folder has no canvas.json: startup forgets them. A canvas
     /// that is there but unreadable keeps its design, so nothing is forgotten over a bad edit.
     /// Blocks the caller on the store's queue; call it off the server's.
@@ -200,15 +218,75 @@ public final class DesignStore: @unchecked Sendable {
     func delete(_ id: DesignID) async throws {
         try await run {
             guard let folder = self.folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
-            self.loaded[id] = nil
-            self.commentFiles[id] = nil
-            self.servedHashes[id] = nil
-            self.pieceHashes[id] = nil
+            self.forget(id)
             guard FileManager.default.fileExists(atPath: folder.path) else { return }
             do { try FileManager.default.removeItem(at: folder) } catch {
                 throw DesignStoreError.io("could not delete design \(id): \(error.localizedDescription)")
             }
         }
+    }
+
+    // MARK: Deleting, with Undo
+
+    /// Where a deleted design's folder waits while it can still be restored: beside the designs,
+    /// hidden, never the Trash. Nothing serves it, and startup and quitting remove what is left.
+    func stagedFolder(for id: DesignID) -> URL? {
+        folder(for: id).map { directory.appendingPathComponent(Self.stagedPrefix + $0.lastPathComponent, isDirectory: true) }
+    }
+
+    static let stagedPrefix = ".deleted-"
+
+    /// Sets a deleted design's folder aside (one rename), so Undo can put it back whole. True
+    /// when there was a folder to move; a design already set aside is refused.
+    func stageDeletion(_ id: DesignID) async throws -> Bool {
+        try await run {
+            guard let folder = self.folder(for: id), let staged = self.stagedFolder(for: id) else {
+                throw DesignStoreError.invalidDesignID(id.rawValue)
+            }
+            self.forget(id)
+            guard !FileManager.default.fileExists(atPath: staged.path) else { throw DesignStoreError.designExists(id) }
+            guard FileManager.default.fileExists(atPath: folder.path) else { return false }
+            do { try FileManager.default.moveItem(at: folder, to: staged) } catch {
+                throw DesignStoreError.io("could not delete design \(id): \(error.localizedDescription)")
+            }
+            return true
+        }
+    }
+
+    /// Undo: the set-aside folder back in its place. A design whose folder was never set aside
+    /// (it had none) comes back without one.
+    func unstageDeletion(_ id: DesignID) async throws {
+        try await run {
+            guard let folder = self.folder(for: id), let staged = self.stagedFolder(for: id) else {
+                throw DesignStoreError.invalidDesignID(id.rawValue)
+            }
+            self.forget(id)
+            guard FileManager.default.fileExists(atPath: staged.path) else { return }
+            guard !FileManager.default.fileExists(atPath: folder.path) else { throw DesignStoreError.designExists(id) }
+            do { try FileManager.default.moveItem(at: staged, to: folder) } catch {
+                throw DesignStoreError.io("could not restore design \(id): \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// The undo window closed: the set-aside folder goes for good.
+    func finishDeletion(_ id: DesignID) async throws {
+        try await run {
+            guard let staged = self.stagedFolder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+            self.forget(id)
+            guard FileManager.default.fileExists(atPath: staged.path) else { return }
+            do { try FileManager.default.removeItem(at: staged) } catch {
+                throw DesignStoreError.io("could not delete design \(id): \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Queue: what the store remembers of a design, dropped when its folder moves or goes.
+    private func forget(_ id: DesignID) {
+        loaded[id] = nil
+        commentFiles[id] = nil
+        servedHashes[id] = nil
+        pieceHashes[id] = nil
     }
 
     /// Writes one board's whole source, when the design is still at `baseRevision` (nil: any).
@@ -492,56 +570,391 @@ public final class DesignStore: @unchecked Sendable {
         }
     }
 
-    // MARK: Import
+    // MARK: Duplicate
 
-    /// Makes design `id`'s folder from a Claude Design folder on disk (`DesignImport`'s rules):
-    /// its canvas and every file under its `project/` (and a Shepherd export's `assets/`) copied
-    /// in, nothing else. The source is only read. The copy is made beside the designs and moved
-    /// into place whole, so a refused or failed import leaves nothing behind.
-    func importFolder(_ id: DesignID, from source: URL) async throws -> DesignSnapshot {
+    /// Makes design `copy`'s folder from `source`'s: its canvas (titled `title`, every other key
+    /// kept), every board and project file, and its uploads, as one move into place. Its versions
+    /// and comments stay with the original, and a link in the original is not copied.
+    func duplicateDesign(_ source: DesignID, as copy: DesignID, title: String) async throws -> DesignSnapshot {
         try await run {
-            guard let folder = self.folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
-            guard !FileManager.default.fileExists(atPath: folder.path) else { throw DesignStoreError.designExists(id) }
-            let root = source.standardizedFileURL
-            let plan: DesignImport.Plan
-            do {
-                plan = try DesignImport.plan(try Self.walk(root))
-            } catch let problem as DesignImport.Problem {
-                throw DesignStoreError.importRefused(problem.description)
-            } catch {
-                throw DesignStoreError.io("could not read the folder: \(error.localizedDescription)")
+            guard let from = self.folder(for: source), let folder = self.folder(for: copy) else {
+                throw DesignStoreError.invalidDesignID(copy.rawValue)
             }
-            let named = root.lastPathComponent == "project" ? root.deletingLastPathComponent().lastPathComponent : root.lastPathComponent
-            let index: (data: Data, index: DesignIndex)
-            do {
-                index = try DesignImport.index(try Self.readRegular(root.appendingPathComponent(plan.index)), fallbackTitle: named)
-            } catch let error as DesignStoreError {
-                throw error
-            } catch {
-                throw DesignStoreError.importRefused("canvas.json isn't a canvas Shepherd reads: \(error)")
-            }
-            let staging = self.directory.appendingPathComponent(".import-\(id.rawValue)", isDirectory: true)
+            guard !FileManager.default.fileExists(atPath: folder.path) else { throw DesignStoreError.designExists(copy) }
+            let design = try self.load(source)
+            let index = try design.index.merging(.object(["title": .string(title)]))
+            let staging = self.directory.appendingPathComponent(".import-\(copy.rawValue)", isDirectory: true)
             try? FileManager.default.removeItem(at: staging)
             do {
+                for part in ["project", "assets"] {
+                    try Self.copyFiles(from.appendingPathComponent(part, isDirectory: true),
+                                       to: staging.appendingPathComponent(part, isDirectory: true))
+                }
                 try FileManager.default.createDirectory(at: staging.appendingPathComponent("project", isDirectory: true),
                                                         withIntermediateDirectories: true)
-                for (from, to) in plan.files.sorted(by: { $0.key < $1.key }) where from != plan.index {
-                    let target = staging.appendingPathComponent(to)
-                    try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-                    try Self.readRegular(root.appendingPathComponent(from)).write(to: target)
-                }
-                try index.data.write(to: staging.appendingPathComponent("project/canvas.json"))
+                try index.encoded().write(to: staging.appendingPathComponent("project/canvas.json"), options: .atomic)
                 try Data("0\n".utf8).write(to: staging.appendingPathComponent("revision"))
                 try FileManager.default.moveItem(at: staging, to: folder)
             } catch {
                 try? FileManager.default.removeItem(at: staging)
-                if let error = error as? DesignStoreError { throw error }
-                throw DesignStoreError.io("could not import the folder: \(error.localizedDescription)")
+                throw DesignStoreError.io("could not duplicate the design: \(error.localizedDescription)")
             }
-            self.loaded[id] = nil
-            self.commentFiles[id] = nil
-            return try self.snapshotOnQueue(id)
+            self.forget(copy)
+            return try self.snapshotOnQueue(copy)
         }
+    }
+
+    /// Copies the regular files and folders under `source` to `target`, as `lstat` sees them: a
+    /// link is left behind, never followed. Nothing when `source` isn't a folder.
+    private static func copyFiles(_ source: URL, to target: URL) throws {
+        let manager = FileManager.default
+        var isFolder: ObjCBool = false
+        guard manager.fileExists(atPath: source.path, isDirectory: &isFolder), isFolder.boolValue,
+              (try? manager.destinationOfSymbolicLink(atPath: source.path)) == nil else { return }
+        try manager.createDirectory(at: target, withIntermediateDirectories: true)
+        for name in try manager.contentsOfDirectory(atPath: source.path) {
+            let from = source.appendingPathComponent(name)
+            switch (try? manager.attributesOfItem(atPath: from.path))?[.type] as? FileAttributeType {
+            case .typeDirectory?: try copyFiles(from, to: target.appendingPathComponent(name, isDirectory: true))
+            case .typeRegular?: try manager.copyItem(at: from, to: target.appendingPathComponent(name))
+            default: continue
+            }
+        }
+    }
+
+    // MARK: Import
+
+    /// A project read into staging, waiting for the viewer's choice. Queue-confined.
+    private struct StagedImport {
+        let preview: DesignImportPreview
+        let staging: URL
+        let canvas: (data: Data, index: DesignIndex)
+    }
+    private var stagedImports: [UUID: StagedImport] = [:]
+    /// Reading, unpacking and copying a project runs here, never on the store's queue: a large
+    /// one must not hold up the designs' own reads and writes.
+    private let importQueue = DispatchQueue(label: "shepherd.designs.import", qos: .userInitiated)
+    static let importPrefix = ".import-"
+    static let unzipPrefix = ".unzip-"
+
+    /// Reads a Claude Design project (a ZIP or a folder) into staging beside the designs, by
+    /// `DesignImport`'s rules, and answers what it holds; nothing is in Designs until
+    /// `finishImport`. A ZIP is checked from its table of contents first (names inside the
+    /// project, no links, sizes), then unpacked with `/usr/bin/ditto` into its own staging
+    /// folder and checked again as a folder. A board pointing outside the project refuses the
+    /// whole import; a board that can't be read is the viewer's choice. The source is only read;
+    /// a refusal or failure leaves nothing behind. `existingSystem` answers the namespace of a
+    /// system this host already has with the same files.
+    func prepareImport(from source: URL, at now: Double,
+                       existingSystem: @escaping @Sendable ([String: Data]) async -> String? = { _ in nil },
+                       progress: @escaping @Sendable (DesignImportProgress) -> Void = { _ in }) async throws -> DesignImportPreview {
+        let token = UUID()
+        let file = source.lastPathComponent
+        progress(.checking(file: file))
+        let staged: StagedImport = try await withCheckedThrowingContinuation { continuation in
+            importQueue.async {
+                continuation.resume(with: Result { try self.stage(source, token: token, now: now, progress: progress) })
+            }
+        }
+        var preview = staged.preview
+        for index in preview.systems.indices {
+            let folder = staged.staging.appendingPathComponent("project/ds/\(preview.systems[index].namespace)", isDirectory: true)
+            preview.systems[index].existing = await existingSystem(Self.regularFiles(folder))
+        }
+        let ready = StagedImport(preview: preview, staging: staged.staging, canvas: staged.canvas)
+        try await run { self.stagedImports[token] = ready }
+        return preview
+    }
+
+    /// Import queue: the project checked and copied into `.import-<token>/`.
+    private func stage(_ source: URL, token: UUID, now: Double, progress: (DesignImportProgress) -> Void) throws -> StagedImport {
+        let manager = FileManager.default
+        let original = source.standardizedFileURL
+        let file = original.lastPathComponent
+        var root = original
+        let unzipped = directory.appendingPathComponent(Self.unzipPrefix + token.uuidString, isDirectory: true)
+        defer { try? manager.removeItem(at: unzipped) }
+        let type = (try? manager.attributesOfItem(atPath: original.path))?[.type] as? FileAttributeType
+        switch type {
+        case .typeDirectory?: break
+        case .typeRegular?:
+            try Self.unzip(original, into: unzipped)
+            root = unzipped
+        case .typeSymbolicLink?: throw DesignImportFailure.linksOutside([DesignImportLink(board: file, target: "a link")])
+        default: throw DesignImportFailure.notAProject
+        }
+        root = Self.projectRoot(root)
+        let plan: DesignImport.Plan
+        do {
+            plan = try DesignImport.plan(try Self.walk(root))
+        } catch let problem as DesignImport.Problem {
+            throw problem.failure
+        } catch let failure as DesignImportFailure {
+            throw failure
+        } catch {
+            throw DesignImportFailure.refused("Couldn’t read the folder: \(error.localizedDescription)")
+        }
+        let named = file.lowercased().hasSuffix(".zip") ? String(file.dropLast(4))
+            : root.lastPathComponent == "project" ? root.deletingLastPathComponent().lastPathComponent : file
+        let canvas: (data: Data, index: DesignIndex)
+        do {
+            canvas = try DesignImport.index(try Self.readRegular(root.appendingPathComponent(plan.index)), fallbackTitle: named)
+        } catch let failure as DesignImportFailure {
+            throw failure
+        } catch {
+            throw DesignImportFailure.refused("canvas.json isn’t a canvas Shepherd reads: \(error)")
+        }
+        let index = canvas.index
+        let projectSource = plan.index == "canvas.json" ? "" : "project/"
+        var unreadable: [DesignImportUnreadable] = []
+        var outside: [DesignImportLink] = []
+        let boardFiles = Set(index.boards.keys.map { projectSource + $0.rawValue })
+        let listed = index.order + index.boards.keys.filter { !index.order.contains($0) }.sorted { $0.rawValue < $1.rawValue }
+        let staging = directory.appendingPathComponent(Self.importPrefix + token.uuidString, isDirectory: true)
+        try? manager.removeItem(at: staging)
+        do {
+            try manager.createDirectory(at: staging.appendingPathComponent("project", isDirectory: true), withIntermediateDirectories: true)
+            // Boards first, in canvas order, so the count moves as they land; then the rest.
+            let boards = listed.filter { plan.files[projectSource + $0.rawValue] != nil }
+            var done = 0
+            let system = index.designSystems?.first.flatMap { $0.title ?? $0.namespace }
+            let title = index.title ?? named
+            progress(.boards(done: 0, of: boards.count, title: title, system: system))
+            for board in boards {
+                let from = projectSource + board.rawValue
+                let data = try Self.readRegular(root.appendingPathComponent(from))
+                let entry = index.boards[board]
+                let name = entry?.title?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? board.rawValue
+                if data.allSatisfy({ $0 == 0x20 || $0 == 0x0A || $0 == 0x0D || $0 == 0x09 }) {
+                    unreadable.append(DesignImportUnreadable(path: board.rawValue, title: name, reason: "is empty"))
+                } else if let text = String(data: data, encoding: .utf8) {
+                    for target in DesignImport.outsideReferences(in: text, board: board.rawValue) {
+                        outside.append(DesignImportLink(board: board.rawValue, target: target))
+                    }
+                } else {
+                    unreadable.append(DesignImportUnreadable(path: board.rawValue, title: name, reason: "isn’t text"))
+                }
+                if outside.isEmpty {
+                    let target = staging.appendingPathComponent(plan.files[from] ?? ("project/" + board.rawValue))
+                    try manager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try data.write(to: target)
+                }
+                done += 1
+                progress(.boards(done: done, of: boards.count, title: title, system: system))
+            }
+            if !outside.isEmpty { throw DesignImportFailure.linksOutside(outside) }
+            for (from, to) in plan.files.sorted(by: { $0.key < $1.key }) where from != plan.index && !boardFiles.contains(from) {
+                let target = staging.appendingPathComponent(to)
+                try manager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try Self.readRegular(root.appendingPathComponent(from)).write(to: target)
+            }
+            try Data("0\n".utf8).write(to: staging.appendingPathComponent("revision"))
+        } catch {
+            try? manager.removeItem(at: staging)
+            if let failure = error as? DesignImportFailure { throw failure }
+            throw DesignImportFailure.refused("Couldn’t read the project: \(error.localizedDescription)")
+        }
+        let present = listed.filter { plan.files[projectSource + $0.rawValue] != nil }
+        let stamp = index.extra["createdOnFiles"].flatMap { value -> String? in
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+            return (try? encoder.encode(value)).map { String(decoding: $0, as: UTF8.self) }
+        }
+        let systems = (index.designSystems ?? []).compactMap { record -> DesignImportPreview.System? in
+            guard let namespace = record.namespace, DesignPath.isSystemNamespace(namespace),
+                  manager.fileExists(atPath: staging.appendingPathComponent("project/ds/\(namespace)").path) else { return nil }
+            return DesignImportPreview.System(namespace: namespace, title: record.title ?? namespace)
+        }
+        let title = index.title ?? named
+        let preview = DesignImportPreview(id: token, file: file, title: title, boards: present.count - unreadable.count,
+                                          pages: max(index.pages?.count ?? 0, 1), systems: systems, unreadable: unreadable,
+                                          origin: DesignImportOrigin(file: file, title: title, stamp: stamp, importedAt: now))
+        return StagedImport(preview: preview, staging: staging, canvas: canvas)
+    }
+
+    /// Moves a staged project into design `id`'s folder, named `title`: the design exists from
+    /// here. Boards that couldn't be read are refused unless `skippingUnreadable`, which leaves
+    /// them (their files and their canvas entries) out. Answers the design's snapshot and its own
+    /// design systems' files, by namespace.
+    func finishImport(_ token: UUID, as id: DesignID, title: String, skippingUnreadable: Bool) async throws
+        -> (snapshot: DesignSnapshot, systems: [String: [String: Data]]) {
+        try await run {
+            guard let staged = self.stagedImports[token] else { throw DesignImportFailure.refused("That import was put away.") }
+            guard let folder = self.folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+            guard !FileManager.default.fileExists(atPath: folder.path) else { throw DesignStoreError.designExists(id) }
+            if let failure = staged.preview.unreadableFailure, !skippingUnreadable { throw failure }
+            var patch: [String: JSONValue] = [:]
+            if staged.canvas.index.title != title { patch["title"] = .string(title) }
+            if !staged.preview.unreadable.isEmpty {
+                patch["boards"] = .object(Dictionary(uniqueKeysWithValues: staged.preview.unreadable.map { ($0.path, JSONValue.null) }))
+                for board in staged.preview.unreadable {
+                    try? FileManager.default.removeItem(at: staged.staging.appendingPathComponent("project/" + board.path))
+                }
+            }
+            let data = patch.isEmpty ? staged.canvas.data : try staged.canvas.index.merging(.object(patch)).encoded()
+            do {
+                try data.write(to: staged.staging.appendingPathComponent("project/canvas.json"))
+                try FileManager.default.moveItem(at: staged.staging, to: folder)
+            } catch {
+                throw DesignImportFailure.refused("Couldn’t move the project into Designs: \(error.localizedDescription)")
+            }
+            self.stagedImports[token] = nil
+            self.forget(id)
+            var systems: [String: [String: Data]] = [:]
+            for system in staged.preview.systems {
+                systems[system.namespace] = Self.regularFiles(folder.appendingPathComponent("project/ds/\(system.namespace)", isDirectory: true))
+            }
+            return (try self.snapshotOnQueue(id), systems)
+        }
+    }
+
+    /// Cancel: the staged project goes, and nothing was imported.
+    func cancelImport(_ token: UUID) async {
+        _ = try? await run {
+            guard let staged = self.stagedImports.removeValue(forKey: token) else { return }
+            try? FileManager.default.removeItem(at: staged.staging)
+        }
+    }
+
+    /// Makes design `id` from a Claude Design folder or ZIP at once (no choice to make: a board
+    /// that can't be read refuses it).
+    func importFolder(_ id: DesignID, from source: URL, at now: Double = Date().timeIntervalSince1970 * 1000) async throws -> DesignSnapshot {
+        let preview = try await prepareImport(from: source, at: now)
+        do {
+            return try await finishImport(preview.id, as: id, title: preview.title, skippingUnreadable: false).snapshot
+        } catch {
+            await cancelImport(preview.id)
+            throw error
+        }
+    }
+
+    /// Removes what imports and deletions left beside the designs: at launch after a crash, and
+    /// at quit (a deletion within its window completes, an import waiting on a choice is put
+    /// away). Blocks the caller on the store's queue; call it off the server's.
+    @discardableResult
+    func removeLeftovers() -> [String] {
+        queue.sync {
+            stagedImports.removeAll()
+            let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+            var removed: [String] = []
+            for name in names.sorted() where [Self.stagedPrefix, Self.importPrefix, Self.unzipPrefix].contains(where: name.hasPrefix) {
+                if (try? FileManager.default.removeItem(at: directory.appendingPathComponent(name, isDirectory: true))) != nil {
+                    removed.append(name)
+                }
+            }
+            return removed
+        }
+    }
+
+    /// The project inside what was chosen or unpacked: the folder holding canvas.json (or
+    /// project/canvas.json), else the one folder it holds that does (a ZIP of a folder).
+    private static func projectRoot(_ root: URL) -> URL {
+        let manager = FileManager.default
+        func holdsCanvas(_ folder: URL) -> Bool {
+            ["canvas.json", "project/canvas.json"].contains { name in
+                (try? manager.attributesOfItem(atPath: folder.appendingPathComponent(name).path))?[.type] as? FileAttributeType
+                    == .typeRegular
+            }
+        }
+        guard !holdsCanvas(root) else { return root }
+        let folders = ((try? manager.contentsOfDirectory(atPath: root.path)) ?? [])
+            .filter { !$0.hasPrefix(".") && $0 != "__MACOSX" }
+            .map { root.appendingPathComponent($0, isDirectory: true) }
+            .filter { (try? manager.attributesOfItem(atPath: $0.path))?[.type] as? FileAttributeType == .typeDirectory }
+        if folders.count == 1, let only = folders.first, holdsCanvas(only) { return only }
+        return root
+    }
+
+    /// Unpacks a ZIP into `folder` once its table of contents passes the import's rules
+    /// (`DesignArchive.check`): nothing is unpacked from an archive that breaks them. ditto
+    /// unpacks what the data holds, not the sizes the table claims, so what lands is measured as
+    /// it lands and ditto is stopped once it passes `limit`: a ZIP that lies about its sizes
+    /// can't fill the disk.
+    static func unzip(_ archive: URL, into folder: URL, limit: Int64 = DesignImport.maxProjectBytes) throws {
+        let handle: FileHandle
+        do { handle = try FileHandle(forReadingFrom: archive) } catch { throw DesignImportFailure.notAProject }
+        defer { try? handle.close() }
+        let size = Int64((try? handle.seekToEnd()) ?? 0)
+        guard size <= DesignImport.maxProjectBytes else { throw DesignImportFailure.tooLarge(bytes: size, limit: DesignImport.maxProjectBytes) }
+        let tailLength = min(Int64(DesignArchive.tailBytes), size)
+        try handle.seek(toOffset: UInt64(size - tailLength))
+        let tail = try handle.read(upToCount: Int(tailLength)) ?? Data()
+        let entries: [DesignArchive.Entry]
+        do {
+            let directory = try DesignArchive.directory(tail: tail, fileSize: size)
+            try handle.seek(toOffset: UInt64(directory.offset))
+            entries = try DesignArchive.entries(try handle.read(upToCount: Int(directory.size)) ?? Data(), count: directory.count)
+        } catch DesignArchive.ReadError.notAZip {
+            throw DesignImportFailure.notAProject
+        } catch DesignArchive.ReadError.unsupported(let what) {
+            throw DesignImportFailure.refused("Shepherd can’t read \(what). Export the project from Claude Design again.")
+        }
+        try DesignArchive.check(entries)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let ditto = Process()
+        ditto.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        ditto.arguments = ["-x", "-k", "--noqtn", "--noacl", archive.path, folder.path]
+        ditto.standardOutput = FileHandle.nullDevice
+        let errors = Pipe()
+        ditto.standardError = errors
+        let exited = DispatchSemaphore(value: 0)
+        ditto.terminationHandler = { _ in exited.signal() }
+        try ditto.run()
+        let message = OSAllocatedUnfairLock(initialState: Data())
+        let drained = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .utility).async {
+            let read = errors.fileHandleForReading.readDataToEndOfFile()
+            message.withLock { $0 = read }
+            drained.signal()
+        }
+        var unpacked: Int64 = 0
+        while exited.wait(timeout: .now() + .milliseconds(100)) == .timedOut {
+            unpacked = bytes(under: folder)
+            if unpacked > limit {
+                ditto.terminate()
+                exited.wait()
+                drained.wait()
+                throw DesignImportFailure.tooLarge(bytes: unpacked, limit: limit)
+            }
+        }
+        drained.wait()
+        unpacked = bytes(under: folder)
+        guard unpacked <= limit else { throw DesignImportFailure.tooLarge(bytes: unpacked, limit: limit) }
+        guard ditto.terminationStatus == 0 else {
+            throw DesignImportFailure.refused("The ZIP couldn’t be unpacked: \(String(decoding: message.withLock { $0 }, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))")
+        }
+    }
+
+    /// The bytes of every file under `folder`, as `lstat` sees them.
+    private static func bytes(under folder: URL) -> Int64 {
+        let walker = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey])
+        var total: Int64 = 0
+        while let url = walker?.nextObject() as? URL {
+            guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]), values.isRegularFile == true else { continue }
+            total += Int64(values.fileSize ?? 0)
+        }
+        return total
+    }
+
+    /// Every regular file under `folder` by relative path, as `lstat` sees it (links are left
+    /// out): a system's files for `DesignSystemStore.adopt`.
+    private static func regularFiles(_ folder: URL) -> [String: Data] {
+        var files: [String: Data] = [:]
+        let manager = FileManager.default
+        func visit(_ url: URL, _ relative: String, depth: Int) {
+            guard depth < 8, let names = try? manager.contentsOfDirectory(atPath: url.path) else { return }
+            for name in names where !name.hasPrefix(".") {
+                let child = url.appendingPathComponent(name)
+                let path = relative.isEmpty ? name : relative + "/" + name
+                switch (try? manager.attributesOfItem(atPath: child.path))?[.type] as? FileAttributeType {
+                case .typeDirectory?: visit(child, path, depth: depth + 1)
+                case .typeRegular?: if let data = try? Data(contentsOf: child) { files[path] = data }
+                default: continue
+                }
+            }
+        }
+        visit(folder, "", depth: 0)
+        return files
     }
 
     /// Everything under `root`, as `lstat` sees it: links are reported, never followed. A folder
@@ -582,22 +995,20 @@ public final class DesignStore: @unchecked Sendable {
     /// Opened with `O_NOFOLLOW` and checked on the open descriptor, so a file swapped for a link or
     /// grown past the cap after the walk is still refused, before anything is read.
     private static func readRegular(_ url: URL) throws -> Data {
-        let changed = DesignStoreError.importRefused("\(url.lastPathComponent) changed while it was read.")
+        let changed = DesignImportFailure.refused("\(url.lastPathComponent) changed while it was read.")
         let fd = open(url.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
         guard fd >= 0 else {
             if errno == ELOOP { throw changed }
-            throw DesignStoreError.io("could not read \(url.lastPathComponent): \(String(cString: strerror(errno)))")
+            throw DesignImportFailure.refused("Couldn’t read \(url.lastPathComponent): \(String(cString: strerror(errno)))")
         }
         let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
         var info = stat()
         guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else { throw changed }
-        guard info.st_size <= DesignImport.maxFileBytes else {
-            throw DesignStoreError.importRefused(DesignImport.Problem.tooLarge(url.lastPathComponent).description)
-        }
+        let tooLarge = DesignImportFailure.fileTooLarge(path: url.lastPathComponent, bytes: Int64(info.st_size),
+                                                        limit: Int64(DesignImport.maxFileBytes))
+        guard info.st_size <= DesignImport.maxFileBytes else { throw tooLarge }
         let data = try handle.read(upToCount: DesignImport.maxFileBytes + 1) ?? Data()
-        guard data.count <= DesignImport.maxFileBytes else {
-            throw DesignStoreError.importRefused(DesignImport.Problem.tooLarge(url.lastPathComponent).description)
-        }
+        guard data.count <= DesignImport.maxFileBytes else { throw tooLarge }
         return data
     }
 
@@ -1351,4 +1762,8 @@ public final class DesignStore: @unchecked Sendable {
     static func sha256(_ data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }

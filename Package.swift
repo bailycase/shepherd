@@ -107,7 +107,7 @@ let package = Package(
         //   *IntegrationTests and ShepherdPreviewTests — real servers, stub pi, git, AppKit
         //   windows, rendered previews. `swift test --filter "IntegrationTests|PreviewTests"`.
         .testTarget(name: "ShepherdCoreUnitTests", dependencies: ["ShepherdCore"]),
-        .testTarget(name: "ShepherdProtocolUnitTests", dependencies: ["ShepherdProtocol"]),
+        .testTarget(name: "ShepherdProtocolUnitTests", dependencies: ["ShepherdProtocol", "ShepherdTestKit"]),
         .testTarget(name: "ShepherdUIUnitTests", dependencies: [.product(name: "ShepherdUI", package: "ShepherdUI")]),
         .testTarget(name: "ShepherdRemoteUnitTests", dependencies: ["ShepherdCore", "ShepherdProtocol", "ShepherdRemote", "ShepherdTestKit"]),
         .testTarget(name: "ShepherdSessionsUnitTests", dependencies: ["ShepherdSessions", "ShepherdTestKit"]),

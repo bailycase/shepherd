@@ -142,6 +142,8 @@ And the rules that follow from them:
 | Sidebar — Projects (SidebarTree, SidebarProjects, SidebarProjectsHosts): designs ("Settings redesign · 6 boards", "Checkout funnel dashboard · 4 boards") in their project's folder, and "Every kind … all live in the project they work on" | Designs are not in the project tree: they stay under the Designs destination and in ⌘K | The user's decision (2026-09-26): designs stand alone outside spaces since #118, so they have no project to sit in |
 | Sidebar — Projects: mission rows ("Ship native UI v2") and New mission in <project> in the project menu | No mission rows and no New Mission | Missions are deferred and hidden (the user's decision, 2026-09-26) |
 | SettingsAppearanceProjects: Keep idle threads, "Then they move to Archive."; SidebarTree: idle threads "wait in Archive and ⌘K" | "Then they leave the sidebar; ⌘K still finds them." Nothing else is drawn for them | There is no Archive destination yet (honest affordances); ⌘K lists every thread |
+| DesignCardMenu, DesignRecentsMenu, DesignToolbarMenu, SystemCardMenu, SystemBuiltIn: drawn popovers in sentence case ("Delete design…", "Show design system"), a built-in's Delete off with its reason under it | Native menus in title case ("Delete Design…", "Show Design System", "Duplicate as a New System"), the reason as the item's subtitle; the Recents row keeps no blue outline while its menu is open | Every menu in the app is native and title-cased; SwiftUI's context menu reports no open state to draw the outline by |
+| ImportFileMenu: File ▸ New Design ⇧⌘D, New Mission ⇧⌘M, Import Claude Design Project… ⇧⌘I, Export… ⌘E | Only Import Claude Design Project… (⇧⌘I, rebindable) | ⇧⌘D splits a pane and ⇧⌘M opens the model picker; Missions are deferred; a design's Export is its header's |
 | NWProjectMenu: a drawn popover with glyphs, in sentence case ("Copy path", "Collapse all", "Hide from sidebar") | A native menu (the project's context menu, and ··· on hover) in title case: New Thread in <project>, Reveal in Finder, Open in Terminal, Copy Path, Collapse All, Hide from Sidebar | Every menu in the app is native and title-cased (the thread rows' menus) |
 | SidebarProjectsHosts: nothing on the host sections' headers | Hidden projects come back from the + beside Projects, which only the ungrouped tree has (and File ▸ New Space… adds one either way) | The board draws no + on a host section |
 | NWAgents, NWSwift: `NWInboxItem`, mission control's inbox item with a leading rule in the state's color | Not built. The Mac has no inbox: its Needs you is the sidebar's list (Sidebar); iPhone and iPad list Needs you as `NWAttentionCard`s (MobileInbox, iPadInbox), with no leading rule and no missions | Out of scope for this pass |
@@ -7869,8 +7871,10 @@ notes, design systems (the format, the store, installing one in a design, `syste
 `system_write`, `design_check` against it, `<x-import>`, Night Watch as a built-in, the system
 page and its Re-sync, the Designs page's systems grid with "Build one from a repo", More ▸ Design
 systems, the system chip opening its page, and New design's system card;
-docs/designs.md › Design systems), and Export (its sheet, the four formats and Attach to a thread;
-docs/designs.md › Export and import). Not built: the live link, Attach to a mission, Present
+docs/designs.md › Design systems), Export (its sheet, the four formats and Attach to a thread;
+docs/designs.md › Export and import), and deleting (with Undo), renaming and duplicating designs and
+design systems and importing a Claude Design project from a ZIP or a folder (Delete and import,
+below). Not built: the live link, Attach to a mission, Present
 mode's own board, Tweak snapping to an installed system's tokens, and every iPhone and iPad part;
 each subsection below says what of it is built. On iPhone, a host's designs show while that host
 serves them (docs/designs.md › On iPhone); the iPad's parts are not built yet. The canvas marks the whole page an
@@ -7909,8 +7913,8 @@ tool work reads as activity lines.
   "18 tokens · 9 components".
 - **Not drawn on any board**, so design them before building: the Designs page with no designs,
   a design still loading, a failed drawing or sync, an offline host, Present mode (until it is,
-  Present shows the board focused: A design, below), the contents of the ••• menus, and keyboard
-  shortcuts. Any shortcut added goes through
+  Present shows the board focused: A design, below), the chat pane's •••, and keyboard shortcuts
+  (Import's ⇧⌘I is ImportFileMenu's). Any shortcut added goes through
   `KeybindingsStore`.
 
 ### Where designs appear
@@ -7987,8 +7991,8 @@ and a system's screen (its counts, colors, type and steps as rows).
 - **Design systems**: a three-column grid, 16pt gaps, of system cards (radius 10, 1px `lineSubtle`,
   12×14 padding, the hover fill, 12pt between their parts): four of the system's colors as 14pt
   swatches (radius 4, 3pt apart, a 1px white 10% inner line), the name in mono 12.5 semibold over
-  its source in 11.5 `textTertiary` ("dashboard-web · tokens.css"; the board gives Night Watch
-  "shepherd · DesignTokens.swift", a file Shepherd doesn't have: name ShepherdUI's `Tokens/`), and
+  its source in 11.5 `textTertiary` ("dashboard-web · tokens.css"; Night Watch reads "Built into
+  Shepherd" after its Built-in tag, as DesignLifecycleStates draws it), and
   the count trailing in 11 `textTertiary` ("3 designs", "1 design"). The last tile is dashed (1px
   `lineStrong`, radius 10, 12×14 padding): a 12pt `plus` and "Build one from a repo" in 12.5
   `textSecondary`, 8pt apart, centered.
@@ -8339,6 +8343,97 @@ selected on the canvas already ticked.
   - A footer (12×18 padding, a hairline above), trailing and 8pt apart: Cancel (ghost, 28pt)
     and the primary **Export 2 boards** (`square.and.arrow.up`, 28pt), whose count follows the
     ticked boards.
+
+### Delete and import (DesignLifecycleStates)
+
+**Built on the Mac** (docs/designs.md › Deleting and importing on the Mac; `DesignLifecycle.swift`,
+`DesignLifecycleViews.swift`, ShepherdUI's `Components/DesignTool/Lifecycle.swift`), from the system
+board and its screens: DesignCardMenu, DesignRecentsMenu, DesignToolbarMenu, DesignDeleteConfirm,
+DesignDeleteWorking, DesignDeleted, DesignDeleteFailed, SystemCardMenu, SystemDeleteConfirm,
+SystemDeleteBuilding, SystemDeleteFailed, SystemBuiltIn, ImportFileMenu, ImportNewDesign, ImportDrop,
+ImportProgress, ImportDone, ImportFailed and ImportAgain. Not built: the Recents row's blue
+outline while its menu is open (a native context menu reports no open state to SwiftUI), and on
+iPhone and iPad none of it.
+
+- **A design's menu** (`DesignMenu`), native and title-cased as every menu in the app, each item
+  with its glyph and Delete in `failed`: on a card, a right-click anywhere on it or **•••**, a 26pt
+  `bgRaised` circle on the popover's line and shadow 10pt in from the thumbnail's top-trailing
+  corner, shown on hover (`NWDesignMoreButton`): Open, Rename…, Duplicate, Export…, then Delete
+  Design…. On its Recents row (a right-click): the same with Remove from Recents before Delete. In its
+  own toolbar, **•••** (`NWDesignToolbarMore`, a 28pt icon button) after Export: Rename…, Duplicate,
+  Export…, Show Design System, then Delete Design…. A host's design: Open, Rename…, Delete Design…
+  (off, with the reason under it, where the host can't delete for this Mac).
+- **A system's menu**: on its card a right-click, or ••• in the count's place on hover; on its page
+  ••• in the header. Open, Re-sync from <repo> (a system read from one), Rename…, Duplicate, then
+  Delete Design System…. A built-in: Open, Duplicate as a New System, and Delete Design System… off
+  at 45% with "Night Watch is built into Shepherd. Duplicate it to make one you can change or
+  delete." under it (a native menu item's subtitle), so nobody hunts for it. A system card for a
+  built-in carries the **Built-in** tag after its name (`NWDesignTagBadge`: 16pt, 5pt padding,
+  radius 4, 10 `textSecondary` on `bgSelected`) over "Built into Shepherd"; one an import brought
+  reads "came with Checkout funnel"; one coming with an import is dashed (`lineStrong`) with "after
+  the boards" in the count's place until the design's boards are in, after every system there is.
+- **The alert dialogs** (`NWDesignAlert`), each a sheet: 470pt (480 for a system's and an import's,
+  500 for ImportAgain), 22pt in (18 at the bottom), on `bgWindow`. A 36pt tile at radius 10 in
+  `failedTint` (ImportAgain: `lanternTint`) holding the 17pt glyph in `failed` (`lanternText`),
+  14pt before the column: the title in 15.5 semibold, then 8pt apart the message in 13
+  `textSecondary` (names semibold `textPrimary`, paths and systems in mono `textPrimary`), the list
+  box (`NWDesignAlertList`: 10×12 padding, 6pt between lines, a hairline at radius 8 on `bgSunken`;
+  the board's radius 9 is off the scale) whose lines carry a 12pt glyph, `failed` for what goes,
+  `done` for what stays, `textTertiary` for a note; the buttons trailing, 8pt apart, 16pt under it.
+  - **DeleteDesignDialog**: "Delete “Checkout funnel dashboard”?", "**4 boards**, their 23 versions
+    and 2 comments" (a `trash`), "The design agent’s chat for this design" (a `text.bubble`), "Stays:
+    `acme-web`, the design system it uses" (a `checkmark`), then "You can undo right after." in 13 `textTertiary`; Cancel (secondary) and Delete
+    (`dangerFill`, the only red thing). While the agent works, a warning under the list
+    (`NWDesignAlertWarning`: a 13pt triangle and 12.5 `lanternText` on `lanternTint` at radius 8;
+    the board's 7% fill and 25% line are off the tokens) says "The design agent is drawing 2 boards
+    right now. Deleting stops it, and what it’s drawing is lost." (the boards its writes named in the
+    turn under way; with none yet, "is drawing right now"), and the button says **Stop and delete**.
+  - **DeleteSystemDialog**: "Delete the design system “acme-web”?", "Its colors, type, spacing and 9
+    components go from Shepherd.", then "**Used by 3 designs; they keep their copy.** Checkout funnel
+    dashboard, Events explorer, Onboarding flow", "Built from `dashboard-web`. The repo isn’t
+    touched.", and the note "New designs can’t pick it. Build it again from the repo any time.". A
+    system still being built: "Delete “acme-mobile”?", "It’s still being built from `mobile-app`.
+    Deleting stops the build and keeps nothing from it.", "No designs use it yet", "The repo
+    `mobile-app` isn’t touched", and **Stop and delete**.
+  - **ImportErrorDialog** ("Couldn’t import “checkout-funnel.zip”"): the reason (no `canvas.json`
+    inside; "It’s 2.3 GB. Shepherd imports projects up to 1 GB. …"; "3 boards point to files outside
+    the project folder. …" with up to three "boards/hero.html → ../shared/logo.svg" lines, in mono
+    11.5, the target in `failed` (the board's lighter red is off the tokens); "The board **Pricing — v3**
+    couldn’t be read: `boards/pricing-v3.html` is empty. The other 11 boards are fine."), then a
+    `done` check and "Nothing was imported." (or "Nothing’s imported until you choose.") in 12.5
+    `textTertiary`. Buttons: Choose another… and OK (primary) when it wasn't a project; OK alone for
+    too large or links outside; Cancel import and **Import the other 11** for unreadable boards, the
+    one case with a choice. Not drawn, built plainly in the same anatomy: one file over 16 MB ("hero.mp4
+    is 40 MB. Shepherd imports files up to 16 MB. …"), a name a design can't hold, too many files.
+  - **ImportAgainDialog** (the tray, `square.and.arrow.down`): "“Checkout funnel” is already in
+    Designs", "You imported **Checkout funnel** on Sep 20. Import it again as a separate copy, or open
+    the one you have. The two don’t affect each other.", "New copy: **Checkout funnel 2** · 12 boards
+    · 3 pages" (the design glyph, `pencil.tip`), "Design system: uses the `Checkout DS` you already
+    have" (`paintpalette`); Cancel (ghost), Open the one I have (secondary), Import
+    as a copy (primary).
+- **The toast** (`NWUndoToast`) over the bottom of the main column, centered, 40pt up, at most 460pt:
+  11×12 padding (14 leading), radius 12, the popover's fill, line and shadow, 12pt between its
+  parts; a 15pt glyph (the trash in `textSecondary`; the triangle in `failed` after a failure), the
+  words in 13 ("Deleted **Checkout funnel dashboard**."), a 24pt secondary button with a 13pt glyph
+  (**Undo**; **Try again**), and a 24pt close. Undo lasts as long as the host holds the design (10
+  s); nothing counts down. A failure stays until it is dismissed or tried again: "Couldn’t delete
+  **Checkout funnel dashboard**. build-01, where it’s saved, didn’t answer, so it’s back." (This
+  Mac's own failure names its error, then "It’s back where it was.").
+- **Import** (ImportFileMenu, ImportNewDesign, ImportDrop, ImportProgress, ImportDone): File ▸
+  Import Claude Design Project… (⇧⌘I) after a divider in the File menu; New design's **Import a
+  project** card beside the system card (`NWDesignStartCard`: `square.and.arrow.down`, "Import a
+  project", "from Claude Design", "a ZIP or folder you exported"; the board's fourth, since Capture a
+  page and From a screenshot aren't built); and a drop on Designs (`NWDesignsDropTarget`, under the
+  page's header, 12pt in: a 2pt dashed `lantern` line at radius 14 over `lanternTint`, the board's 6%
+  fill being off the tokens, and a centered card on `bgWindow` with a `lineStrong` line: a 44pt
+  `lanternTint` tile holding a 22pt `lanternText` tray, "Drop to import as a new design" in 16
+  semibold, "A Claude Design project, as a ZIP or a folder" in 12.5 `textSecondary`). Only a ZIP or a
+  folder shows the target. While it runs, its card leads Recent designs (`NWImportingCard`, a card's
+  anatomy with a `lineStrong` line): the thumbnail's dot grid holding up to 12 board tiles, 38×24 at
+  radius 3, 8pt apart in rows of four, drawn ones filled `lineStrong` (the board draws them white,
+  the boards' own paper) and the rest dashed; "Importing Checkout funnel…" shimmering; "`7 of 12`
+  boards · with `Checkout DS`"; a 3pt `running` bar filling on `lineSubtle`. Then the design opens on
+  its first page and its agent reads it (ImportDone's chat; docs/designs.md › Import).
 
 ### Design components (NWDesignTool, NWDesignToolLight)
 
@@ -8726,6 +8821,11 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | DZTweak | Design tool › Tweak | Not built yet |
 | DZSystem | Design tool › Design systems | Not built yet |
 | DZExport | Design tool › Export and share | Partly built: the sheet, its formats and Attach to a thread; not the live link or Attach to a mission |
+| DesignLifecycleStates | Design tool › Delete and import | Built, but for the Recents row's outline while its menu is open |
+| DesignCardMenu, DesignRecentsMenu, DesignToolbarMenu | Design tool › Delete and import (a design's menu) | Built, as native menus |
+| DesignDeleteConfirm, DesignDeleteWorking, DesignDeleted, DesignDeleteFailed | Design tool › Delete and import (DeleteDesignDialog, the toast) | Built |
+| SystemCardMenu, SystemBuiltIn, SystemDeleteConfirm, SystemDeleteBuilding, SystemDeleteFailed | Design tool › Delete and import (a system's menu, DeleteSystemDialog) | Built |
+| ImportFileMenu, ImportNewDesign, ImportDrop, ImportProgress, ImportDone, ImportFailed, ImportAgain | Design tool › Delete and import (Import) | Built, without New Design, New Mission and Export… in the File menu |
 
 **Design system · Night Watch**
 

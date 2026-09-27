@@ -509,3 +509,42 @@ struct RemoteDesignTests {
         #expect(try await refusal(raw, 3, .system(namespace: "nothing-here")) != nil)
     }
 }
+
+// MARK: Delete
+
+extension RemoteDesignTests {
+    /// Another device deletes a host's design through the host's own Delete: gone from the
+    /// host's workspace at once, back with Undo within the window. A host that doesn't offer
+    /// Delete refuses both.
+    @Test func aRemoteDeleteGoesThroughTheHostsDeleteWithUndo() async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        host.server.designUndoWindow = 60
+        host.server.setDesignsServed(true)
+        let id = try await design(host)
+        let raw = try await designClient(host)
+
+        guard case .deleted(let deletion) = try await answer(raw, 2, .delete(designID: id)) else {
+            Issue.record("expected deleted"); return
+        }
+        #expect(deletion.designID == id && deletion.name == "Checkout funnel")
+        #expect(!host.server.state.designs.contains { $0.id == id })
+        #expect(try await refusal(raw, 3, .index(designID: id)) == DesignStoreError.noSuchDesign(id).code)
+
+        #expect(try await answer(raw, 4, .undoDelete(designID: id)) == .ok)
+        #expect(host.server.state.designs.map(\.id) == [id])
+        #expect(try await refusal(raw, 5, .undoDelete(designID: id)) == "design_refused", "nothing left to undo")
+        #expect(try await refusal(raw, 6, .delete(designID: DesignID())) == DesignStoreError.noSuchDesign(DesignID()).code)
+    }
+
+    @Test func aHostWithoutDeleteRefusesIt() async throws {
+        let host = try RemoteHost()
+        defer { host.stop() }
+        host.server.advertisedCapabilities = RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.designDeleteCapability }
+        host.server.setDesignsServed(true)
+        let id = try await design(host)
+        let raw = try await designClient(host)
+        #expect(try await refusal(raw, 2, .delete(designID: id)) == "unsupported")
+        #expect(host.server.state.designs.map(\.id) == [id])
+    }
+}

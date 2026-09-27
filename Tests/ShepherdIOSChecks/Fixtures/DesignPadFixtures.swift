@@ -356,7 +356,7 @@ struct FixtureDesigns: Sendable {
         case .watch:
             return .success(.ok)
         case .addComment, .replyToComment, .resolveComment, .writeBoards, .updateIndex, .duplicateBoard, .restoreVersions,
-             .create, .sendMarkup, .settleProposals:
+             .create, .sendMarkup, .settleProposals, .delete, .undoDelete:
             return .failure(Refusal(code: "fixture", message: "The fixture host changes nothing."))
         }
     }
