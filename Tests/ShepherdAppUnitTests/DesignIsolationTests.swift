@@ -32,11 +32,15 @@ struct DesignIsolationTests {
         #expect(TerminalSessionStore.wantsPanes(for: agent, enabled: enabled) == wants)
     }
 
-    /// design_get is a thread's (and only with the setting on); a design's agent never gets it.
-    @Test(arguments: [(false, true, true), (true, true, false), (false, false, false), (true, false, false)])
-    func onlyAThreadLaunchesWithDesignReferences(drawsDesign: Bool, enabled: Bool, wants: Bool) {
+    /// design_get and design_note are a thread's, and only while the Design tool and the setting
+    /// are both on; a design's agent never gets them.
+    @Test(arguments: [
+        (false, true, true, true), (true, true, true, false), (false, false, true, false), (false, true, false, false),
+        (true, false, false, false), (true, true, false, false), (false, false, false, false),
+    ])
+    func onlyAThreadLaunchesWithDesignReferences(drawsDesign: Bool, enabled: Bool, designTool: Bool, wants: Bool) {
         let agent = Agent(name: "a", spaceID: SpaceID(), tabID: TabID(), designID: drawsDesign ? DesignID() : nil)
-        #expect(TerminalSessionStore.wantsDesignReferences(for: agent, enabled: enabled) == wants)
+        #expect(TerminalSessionStore.wantsDesignReferences(for: agent, enabled: enabled, designTool: designTool) == wants)
     }
 
     @Test func agentListShowsThreadsAndNoDesignsAgent() {
