@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import ShepherdRemote
 
-/// skills.sh's answers as Browse reads them: search (no key), the ranked lists (`/api/v1`), and a
+/// The directory's answers as Browse reads them: search, the ranked lists (`/api/v1`), and a
 /// skill's files; and install counts as the directory writes them.
 @Suite("Skills directory")
 struct SkillsDirectoryTests {
@@ -38,9 +38,32 @@ struct SkillsDirectoryTests {
         #expect(files == [DirectoryFile(path: "SKILL.md", contents: "---\nname: pdf\n---\n"), DirectoryFile(path: "scripts/fill.py", contents: "")])
     }
 
-    @Test func theRankingsNeedAKey() async {
-        await #expect(throws: SkillsDirectoryError.needsKey) {
-            try await SkillsDirectory(key: "  ").ranked(.trending)
+    @Test func directoryRequestsUseShepherdWithoutCredentials() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DirectoryProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let directory = SkillsDirectory(session: session)
+        #expect(directory.base.absoluteString == "https://api.useshepherd.app")
+        #expect(try await directory.search("react & ui", limit: 7).isEmpty)
+        for ranking in DirectoryRanking.allCases {
+            let skills = try await directory.ranked(ranking, page: 2, perPage: 7)
+            #expect(skills.count == 1)
+            #expect(skills.first?.official == (ranking == .official))
+        }
+        let skill = DirectorySkill(slug: "pdf", name: "pdf", source: "anthropics/skills", installs: 1)
+        #expect(try await directory.files(of: skill).isEmpty)
+    }
+
+    @Test(arguments: [401, 403, 429, 500])
+    func serviceErrorsDoNotAskForUserCredentials(status: Int) async {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DirectoryProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let directory = SkillsDirectory(base: URL(string: "https://status-\(status).test")!, session: session)
+        await #expect(throws: SkillsDirectoryError.unavailable("Shepherd's skills directory answered \(status).")) {
+            try await directory.ranked(.trending, page: 2, perPage: 7)
         }
     }
 
@@ -82,4 +105,42 @@ struct SkillsDirectoryTests {
         let skill = DirectorySkill(slug: "pdf", name: "pdf", source: "anthropics/skills", installs: 1)
         #expect(SkillsDirectory.page(of: skill).absoluteString == "https://skills.sh/anthropics/skills/pdf")
     }
+}
+
+private final class DirectoryProtocol: URLProtocol, @unchecked Sendable {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let url = request.url!
+        #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
+        #expect(request.value(forHTTPHeaderField: "Accept") == "application/json")
+        let query = URLComponents(url: url, resolvingAgainstBaseURL: false)!.queryItems ?? []
+        var body = #"{"files":[]}"#
+        switch url.path {
+        case "/api/search":
+            #expect(query == [URLQueryItem(name: "q", value: "react & ui"), URLQueryItem(name: "limit", value: "7")])
+            body = #"{"skills":[]}"#
+        case "/api/v1/skills", "/api/v1/skills/curated":
+            #expect(query.first == URLQueryItem(name: "per_page", value: "7"))
+            #expect(query.dropFirst().first == URLQueryItem(name: "page", value: "2"))
+            if url.path.hasSuffix("curated") {
+                #expect(query.count == 2)
+            } else {
+                #expect(query.count == 3)
+                #expect(query.last?.name == "view")
+                #expect(["trending", "all-time", "hot"].contains(query.last?.value ?? ""))
+            }
+            body = #"{"data":[{"slug":"pdf","source":"anthropics/skills"}]}"#
+        default:
+            #expect(url.path == "/api/download/anthropics/skills/pdf")
+            #expect(query.isEmpty)
+        }
+        let status = url.host.flatMap { Int($0.replacingOccurrences(of: "status-", with: "").replacingOccurrences(of: ".test", with: "")) } ?? 200
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }
