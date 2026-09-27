@@ -80,7 +80,9 @@ public enum YourPiFixture {
             switch attributes[.type] as? FileAttributeType {
             case .typeSymbolicLink?: tree[path] = "link:" + (try files.destinationOfSymbolicLink(atPath: url.path))
             case .typeDirectory?: tree[path] = "dir:\(mode)"
-            default: tree[path] = "file:\(mode):" + (files.contents(atPath: url.path) ?? Data()).base64EncodedString()
+            case .typeRegular?: tree[path] = "file:\(mode):" + (files.contents(atPath: url.path) ?? Data()).base64EncodedString()
+            // A FIFO or device is never opened: reading one would block or never end.
+            case let type: tree[path] = "\(type?.rawValue ?? "unknown"):\(mode)"
             }
         }
         return tree

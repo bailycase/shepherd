@@ -74,16 +74,35 @@ public enum YourPiFiles {
     /// pi's global context files in one folder, in the order it takes the first that exists.
     public static let contextFileNames = ["AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"]
 
-    /// A file's bytes, when it is a file of at most `maxBytes`; nil when it is missing.
+    /// A file's bytes, when it is a file of at most `maxBytes`; nil when it is missing. A link is
+    /// followed, as pi follows it. The file is opened without blocking and checked on the open
+    /// descriptor, so a FIFO or device (or a file swapped for one) fails at once instead of
+    /// hanging the first launch, and no more than `maxBytes` is ever read.
     public static func read(_ url: URL) throws -> Data? {
-        var info = stat()
-        guard stat(url.path, &info) == 0 else {
+        let name = url.lastPathComponent
+        let fd = open(url.path, O_RDONLY | O_NONBLOCK | O_CLOEXEC)
+        guard fd >= 0 else {
             if errno == ENOENT || errno == ENOTDIR { return nil }
-            throw YourPiFileError("\(url.lastPathComponent) couldn't be read")
+            throw YourPiFileError("\(name) couldn't be read")
         }
-        guard (info.st_mode & S_IFMT) == S_IFREG else { throw YourPiFileError("\(url.lastPathComponent) isn't a file") }
-        guard info.st_size <= Int64(maxBytes) else { throw YourPiFileError("\(url.lastPathComponent) is too large to import") }
-        guard let data = FileManager.default.contents(atPath: url.path) else { throw YourPiFileError("\(url.lastPathComponent) couldn't be read") }
+        defer { close(fd) }
+        var info = stat()
+        guard fstat(fd, &info) == 0 else { throw YourPiFileError("\(name) couldn't be read") }
+        guard (info.st_mode & S_IFMT) == S_IFREG else { throw YourPiFileError("\(name) isn't a file") }
+        guard info.st_size <= Int64(maxBytes) else { throw YourPiFileError("\(name) is too large to import") }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 64 << 10)
+        while true {
+            let count = buffer.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress, $0.count) }
+            if count < 0 {
+                if errno == EINTR { continue }
+                throw YourPiFileError("\(name) couldn't be read")
+            }
+            if count == 0 { break }
+            data.append(contentsOf: buffer[0..<count])
+            // It grew after the check.
+            guard data.count <= maxBytes else { throw YourPiFileError("\(name) is too large to import") }
+        }
         return data
     }
 
@@ -327,16 +346,22 @@ public enum YourPiFiles {
         for case let raw as String in settings?["extensions"] as? [Any] ?? [] {
             let entry = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !entry.isEmpty, !"!+-".contains(entry.first!) else { continue }
-            let path = absolute(entry, agentDirectory: agentDirectory, home: home)
+            let path = absolute(withoutCredentials(entry), agentDirectory: agentDirectory, home: home)
             add((path as NSString).lastPathComponent, path, .settings)
         }
         for entry in settings?["packages"] as? [Any] ?? [] {
             let source = (entry as? String) ?? ((entry as? [String: Any])?["source"] as? String) ?? ""
-            let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmed = withoutCredentials(source.trimmingCharacters(in: .whitespacesAndNewlines))
             guard !trimmed.isEmpty, !found.contains(where: { trimmed.contains($0.name) && $0.source != .file }) else { continue }
             add(trimmed, trimmed, .settings)
         }
         return found
+    }
+
+    /// `source` with a URL's user and password removed (`https://user:token@host/…` becomes
+    /// `https://host/…`): a private package's source may carry a token, and Settings shows it.
+    public static func withoutCredentials(_ source: String) -> String {
+        source.replacingOccurrences(of: #"://[^/@\s]*@"#, with: "://", options: .regularExpression)
     }
 }
 
