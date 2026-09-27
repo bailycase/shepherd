@@ -1,6 +1,8 @@
 import Foundation
 import AppKit
 import ShepherdCore
+import ShepherdProtocol
+import ShepherdRemote
 import ShepherdSessions
 
 extension ShepherdViewModel {
@@ -313,6 +315,32 @@ extension ShepherdViewModel {
 
     // MARK: Session lifecycle
 
+    /// Retry in an agent's Can't start banner: starts its pi again (`newConversation`: without
+    /// looking for the conversation it was resuming).
+    func retryAgentStart(_ agentID: AgentID, newConversation: Bool = false) {
+        threadStores.store(for: agentID).restarting()
+        sessions.retryStart(agentID, newConversation: newConversation)
+    }
+
+    /// An agent's pi stopped because an extension failed to load. When it is one of the user's
+    /// own that they switched on (Settings ▸ Pi ▸ Your extensions), it is switched off for
+    /// launches with pi's reason, and the agent starts again without it; any other extension's
+    /// failure (Shepherd's own, a project's) leaves the agent waiting with Retry, as before.
+    func switchOffFailedExtensions(_ agentID: AgentID, problem: NativeStartProblem) {
+        let failures = YourPiImport.extensionFailures(in: problem.lines)
+        guard !failures.isEmpty else { return }
+        let imports = server.pi.importedState()
+        Task { [weak self] in
+            let names = await Task.detached(priority: .userInitiated) { () -> [String] in
+                failures.compactMap { failure in (try? imports.extensionFailed(path: failure.path, reason: failure.reason, lines: problem.lines)) ?? nil }
+            }.value
+            guard let self, !names.isEmpty else { return }
+            ShepherdLog.info("switched off your extension(s) \(names.joined(separator: ", ")) after they failed to load; starting the agent without them")
+            await yourPi.refresh()
+            retryAgentStart(agentID)
+        }
+    }
+
     /// A process ended: its pane closes. An agent whose process ended is
     /// retired with its whole layout (auxiliary shells die too; the pi
     /// transcript stays on disk). A space's last shell respawns fresh so the
@@ -475,5 +503,93 @@ extension PaneNode {
                 second: second.replacingSplit(target, withRatio: ratio)
             )
         }
+    }
+}
+
+// MARK: Sign-in
+
+extension ShepherdViewModel {
+    /// Settings ▸ Pi ▸ Sign-in's nav dot: a sign-in expired, or a provider an agent waits on
+    /// isn't signed in.
+    var piSignInNeedsAttention: Bool {
+        PiSignInPage.make(survey: yourPi.survey ?? YourPiSurvey(), expired: piAuth.expired, needed: piAuth.needed).needsAttention
+    }
+
+    /// Opens Settings ▸ Pi ▸ Sign-in, scrolled to `provider` when there is one, and starts its
+    /// sign-in (`/login anthropic`, an agent's Sign in to Anthropic). A provider Shepherd doesn't
+    /// know opens the page as it is.
+    func openSignIn(_ provider: String? = nil, start: Bool = true, origin: PiSignInSession.Origin = .settings) {
+        settingsSection = .piSignIn
+        showSettings = true
+        guard let provider else { return }
+        piAuth.focus = provider
+        guard start else { return }
+        let known = PiSignInCatalog.subscription(provider) != nil || PiProviders.names[provider] != nil
+        if known { piAuth.signIn(provider, origin: origin) }
+    }
+}
+
+// MARK: Agents not signed in
+
+/// An agent whose pi can't start because nothing signs in for its model (AgentNotSignedIn).
+struct NotSignedIn: Equatable {
+    /// The provider it needs; nil when pi names none and its model says nothing.
+    var provider: String?
+    /// When its pi stopped.
+    var at: Date
+}
+
+extension ShepherdViewModel {
+    /// An agent's pi stopped (or started again): it waits on a sign-in when pi said it can't reach
+    /// a model, and Sign-in hears which providers agents wait on.
+    func noteSignIn(_ agentID: AgentID, problem: NativeStartProblem?) {
+        if let problem, problem.kind == .notSignedIn {
+            let agent = state.agents.first { $0.id == agentID }
+            let fallback = settings.agentDefaults.model ?? yourPi.survey?.shepherdDefaultModel
+            let provider = PiAuthText.missingProvider(lines: problem.lines, model: agent?.model, defaultModel: fallback)
+            notSignedIn[agentID] = NotSignedIn(provider: provider, at: Date())
+        } else if notSignedIn[agentID] != nil {
+            notSignedIn[agentID] = nil
+        }
+        let needed = Set(notSignedIn.values.compactMap(\.provider))
+        if piAuth.needed != needed { piAuth.needed = needed }
+    }
+
+    /// A sign-in landed for `provider`: every agent waiting on it (or on no provider pi named)
+    /// starts again. Returns how many.
+    func retrySignedOutAgents(_ provider: String?) -> Int {
+        let ids = notSignedIn.filter { provider == nil || $0.value.provider == nil || $0.value.provider == provider }.map(\.key)
+        for id in ids { retryAgentStart(id) }
+        return ids.count
+    }
+
+    /// "Use another model": an agent not signed in starts again on `model`.
+    func useAnotherModel(_ agentID: AgentID, model: String) {
+        sessions.modelOverrides[agentID] = model
+        retryAgentStart(agentID)
+    }
+}
+
+// MARK: /login
+
+extension ShepherdViewModel {
+    /// What a local agent's composer does with `/login` and `/logout`.
+    var slashLoginActions: SlashLoginActions {
+        SlashLoginActions(open: { [weak self] command in self?.openSlashLogin(command) },
+                          choices: { [weak self] in self?.slashLoginChoices() ?? [] })
+    }
+
+    /// `/login` opens Sign-in, and with a provider scrolls there and starts it; `/logout` only
+    /// scrolls there: signing out stays a click.
+    func openSlashLogin(_ command: SlashLogin.Command) {
+        switch command.verb {
+        case .login: openSignIn(command.provider, origin: .slash)
+        case .logout: openSignIn(command.provider, start: false, origin: .slash)
+        }
+    }
+
+    /// The providers /login lists, with their states in Shepherd's pi now.
+    func slashLoginChoices() -> [SlashLogin.Choice] {
+        SlashLogin.choices(PiSignInPage.make(survey: yourPi.survey ?? YourPiSurvey(), expired: piAuth.expired))
     }
 }

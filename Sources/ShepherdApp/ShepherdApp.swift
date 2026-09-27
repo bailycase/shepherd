@@ -49,7 +49,7 @@ public struct ShepherdMacApp: App {
     public init() {
         // Geist and Geist Mono ship in the ShepherdUI bundle; register them before any view draws.
         NWFonts.register()
-        _vm = State(initialValue: ShepherdViewModel(server: .shared))
+        _vm = State(initialValue: ShepherdViewModel(server: .shared, welcomesYourPi: true))
     }
 
     public var body: some Scene {
@@ -63,7 +63,6 @@ public struct ShepherdMacApp: App {
                 // ordering against server.start() does not matter.
                 .task {
                     vm.applyRemoteListenerSetting()
-                    PiUpdateManager.shared.start()
                     vm.startSkillChecks()
                 }
         }

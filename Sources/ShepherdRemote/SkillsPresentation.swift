@@ -20,9 +20,24 @@ public enum SkillsPresentation {
         }
     }
 
-    /// The Source column: the repository, or Local for a folder copied in by hand.
+    /// The Source column: the repository, From your pi for a skill copied from the user's own pi,
+    /// or Local for a folder copied in by hand.
     public static func source(_ skill: InstalledSkill) -> String {
-        skill.source?.repo ?? "Local"
+        skill.source?.repo ?? (skill.copiedFrom != nil ? "From your pi" : "Local")
+    }
+
+    /// A skill with no repository, in its Source tooltip and its detail: where it came from, and
+    /// that it never updates on its own.
+    public static func unmanagedNote(_ skill: InstalledSkill) -> String {
+        guard let from = skill.copiedFrom else { return "Copied into the skills folder by hand. It never updates." }
+        return "Copied from your pi (\(tilde(from))). It changes only when you re-import skills in Settings ▸ Pi."
+    }
+
+    /// `path` with the user's home as `~`.
+    static func tilde(_ path: String) -> String {
+        let home = NSHomeDirectory()
+        if path == home { return "~" }
+        return path.hasPrefix(home + "/") ? "~" + path.dropFirst(home.count) : path
     }
 
     /// The Use column: "Auto" or "/skill only".

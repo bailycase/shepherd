@@ -1,5 +1,6 @@
 import Foundation
 import ShepherdCore
+import ShepherdSessions
 import Testing
 import ShepherdTestKit
 @testable import ShepherdApp
@@ -184,6 +185,11 @@ struct AgentCreationTests {
 /// between Shepherd's settings and the extensions pi loads.
 @Suite("Agent launch command")
 struct AgentLaunchCommandTests {
+    /// Shepherd's pi home, with a stand-in engine (the line never names the engine: the launcher
+    /// does).
+    static let home = PiHome(directory: URL(fileURLWithPath: "/tmp/support/pi"),
+                             engine: PiEngine(command: ["/tmp/pi-engine"], packageDirectory: nil, version: nil, node: .onPath("node")))
+
     private let paths = ["/tmp/panes.ts", "/tmp/review.ts", "/tmp/subagents.ts", "/tmp/namer.ts", "/tmp/children.ts"]
 
     private func command(
@@ -194,7 +200,8 @@ struct AgentLaunchCommandTests {
         thinking: ThinkingLevel? = nil
     ) -> SessionCommand {
         func path(_ index: Int) -> String? { enabled.contains(index) ? paths[index] : nil }
-        return StatusExtension.command(
+        return try! StatusExtension.command(
+            home: Self.home, cwd: "/tmp/project",
             agentID: AgentID(rawValue: "agent-id"), piSessionID: "current-session",
             socketPath: "/tmp/shepherd.sock", extensionPath: "/tmp/status.ts",
             panesExtensionPath: path(0), reviewExtensionPath: path(1), subagentsExtensionPath: path(2),
@@ -204,12 +211,33 @@ struct AgentLaunchCommandTests {
         )
     }
 
-    @Test func aBareAgentIsJustPiOverRPCWithTheStatusExtension() {
+    /// The line itself is `PiLaunch.agent`'s (pinned in `PiLaunchTests`).
+    @Test func aBareAgentIsJustPiOverRPCWithTheStatusExtension() throws {
         let bare = command()
-        #expect(bare.argv == ["/bin/zsh", "-l", "-c", "exec pi --mode rpc --session-id 'current-session' -e '/tmp/status.ts'"])
+        #expect(bare.argv == (try PiLaunch.agent(home: Self.home, cwd: "/tmp/project", sessionID: "current-session", model: nil, thinking: nil,
+                                                 extensions: ["/tmp/status.ts"])).argv)
         #expect(bare.env == [
             "SHEPHERD_AGENT_ID": "agent-id", "SHEPHERD_SOCKET": "/tmp/shepherd.sock", "SHEPHERD_EXT_STATUS": "/tmp/status.ts",
         ])
+    }
+
+    /// An agent in the user's home folder never trusts it as a project (`~/.pi` is their own pi);
+    /// anywhere else, trust is pi's to decide.
+    @Test(arguments: [("/tmp/home", true), ("/tmp/home/", true), ("/tmp/home/project", false), ("/tmp", false)])
+    func anAgentInTheHomeFolderTrustsNoProjectCode(cwd: String, untrusted: Bool) throws {
+        let launch = try StatusExtension.command(
+            home: Self.home, cwd: cwd, agentID: AgentID(rawValue: "agent-id"), piSessionID: "s",
+            socketPath: "/tmp/shepherd.sock", extensionPath: "/tmp/status.ts", panesExtensionPath: nil, reviewExtensionPath: nil,
+            subagentsExtensionPath: nil, userHome: "/tmp/home", model: nil, thinking: nil)
+        #expect(launch.argv[3].contains(" --no-approve") == untrusted)
+    }
+
+    /// Every agent starts Shepherd's launcher, with its sessions in Shepherd's home, and hands its
+    /// children no pi to fall back to.
+    @Test func theAgentStartsShepherdsLauncherInItsHome() {
+        let launch = command()
+        #expect(launch.argv[3].contains("&& exec '/tmp/support/pi/bin/pi' --mode rpc --session-dir '/tmp/support/pi/sessions/--"))
+        #expect(launch.env["SHEPHERD_PI_EXECUTABLE"] == nil)
     }
 
     /// Each optional extension adds exactly its own `-e` flag (all 32 combinations).
@@ -242,14 +270,15 @@ struct AgentLaunchCommandTests {
     /// Settings ▸ Instructions reach pi through their extension, loaded right after status, and
     /// the directory it reads them from.
     @Test func instructionsAddTheirExtensionAndDirectory() {
-        let launch = StatusExtension.command(
+        let launch = try! StatusExtension.command(
+            home: Self.home, cwd: "/tmp/project",
             agentID: AgentID(rawValue: "agent-id"), piSessionID: "current-session",
             socketPath: "/tmp/shepherd.sock", extensionPath: "/tmp/status.ts",
             panesExtensionPath: "/tmp/panes.ts", reviewExtensionPath: nil, subagentsExtensionPath: nil,
             instructions: ("/tmp/instructions.ts", "/tmp/support/instructions"),
             model: nil, thinking: nil
         )
-        #expect(launch.argv[3] == "exec pi --mode rpc --session-id 'current-session' -e '/tmp/status.ts' -e '/tmp/instructions.ts' -e '/tmp/panes.ts'")
+        #expect(launch.argv[3].hasSuffix(" -e '/tmp/status.ts' -e '/tmp/instructions.ts' -e '/tmp/panes.ts'"))
         #expect(launch.env["SHEPHERD_INSTRUCTIONS_DIR"] == "/tmp/support/instructions")
         #expect(launch.env["SHEPHERD_SUGGEST_FILES"] == nil)
         #expect(command().env["SHEPHERD_INSTRUCTIONS_DIR"] == nil)
@@ -258,7 +287,8 @@ struct AgentLaunchCommandTests {
     /// Settings ▸ Experiments ▸ Suggested instructions: an agent it is on for learns which files
     /// it may suggest for, through the instructions extension.
     @Test func suggestionsNameTheFilesAnAgentMaySuggestFor() {
-        let launch = StatusExtension.command(
+        let launch = try! StatusExtension.command(
+            home: Self.home, cwd: "/tmp/project",
             agentID: AgentID(rawValue: "agent-id"), piSessionID: "current-session",
             socketPath: "/tmp/shepherd.sock", extensionPath: "/tmp/status.ts",
             panesExtensionPath: nil, reviewExtensionPath: nil, subagentsExtensionPath: nil,
@@ -272,7 +302,8 @@ struct AgentLaunchCommandTests {
     /// A design's agent loads the design tools last, and learns its design and the skill's folder;
     /// every other agent gets neither.
     @Test func aDesignsAgentLoadsTheDesignTools() {
-        let launch = StatusExtension.command(
+        let launch = try! StatusExtension.command(
+            home: Self.home, cwd: "/tmp/project",
             agentID: AgentID(rawValue: "agent-id"), piSessionID: "current-session",
             socketPath: "/tmp/shepherd.sock", extensionPath: "/tmp/status.ts",
             panesExtensionPath: "/tmp/panes.ts", reviewExtensionPath: nil, subagentsExtensionPath: nil,
@@ -292,7 +323,8 @@ struct AgentLaunchCommandTests {
     /// and a repo's .mcp.json only when Settings ▸ MCP servers allows it; off, none of it.
     @Test(arguments: [false, true])
     func mcpServersBringTheirExtensionAndPaths(useRepoConfig: Bool) {
-        let launch = StatusExtension.command(
+        let launch = try! StatusExtension.command(
+            home: Self.home, cwd: "/tmp/project",
             agentID: AgentID(rawValue: "agent-id"), piSessionID: "current-session",
             socketPath: "/tmp/shepherd.sock", extensionPath: "/tmp/status.ts",
             panesExtensionPath: "/tmp/panes.ts", reviewExtensionPath: nil, subagentsExtensionPath: nil,
@@ -341,17 +373,21 @@ struct AgentLaunchCommandTests {
     }
 
     @Test func singleQuotesInValuesCannotEscapeTheShellCommand() {
-        let launch = StatusExtension.command(
+        let launch = try! StatusExtension.command(
+            home: Self.home, cwd: "/tmp/project",
             agentID: AgentID(), piSessionID: "it's", socketPath: "/s", extensionPath: "/tmp/a b.ts",
             panesExtensionPath: nil, reviewExtensionPath: nil, subagentsExtensionPath: nil, model: nil, thinking: nil
         )
-        #expect(launch.argv[3] == #"exec pi --mode rpc --session-id 'it'"'"'s' -e '/tmp/a b.ts'"#)
+        let sessions = Self.home.sessionDirectory(forCwd: "/tmp/project").path
+        #expect(launch.argv[3] == #"cd -- '/tmp/project' && exec '/tmp/support/pi/bin/pi' --mode rpc --session-dir '"# + sessions
+            + #"' --session-id 'it'"'"'s' -e '/tmp/a b.ts'"#)
     }
 
     /// `/new` and `/resume` move pi to another session; relaunch follows the agent there.
     @Test func theCommandOpensTheAgentsCurrentSessionNotItsID() {
         let agent = Agent(name: "worker", spaceID: SpaceID(), tabID: TabID(), piSessionID: "moved-session")
-        let launch = StatusExtension.command(
+        let launch = try! StatusExtension.command(
+            home: Self.home, cwd: "/tmp/project",
             agentID: agent.id, piSessionID: agent.effectivePiSessionID, socketPath: "/s", extensionPath: "/e",
             panesExtensionPath: nil, reviewExtensionPath: nil, subagentsExtensionPath: nil, model: nil, thinking: nil
         )

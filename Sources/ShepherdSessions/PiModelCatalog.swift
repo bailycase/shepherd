@@ -2,12 +2,12 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 
-/// The live model catalog, asked from pi itself (`pi --list-models`) — models
-/// are dynamic (catalog updates, auth state), so no config file is the truth.
-/// Runs through a login shell exactly like agent spawns, so `pi` resolves
-/// from the user's PATH. Cached per process: the catalog changes on `pi
-/// update`, not mid-session.
-public enum PiModelCatalog {
+/// The live model catalog, asked of Shepherd's pi itself (`pi --list-models` through the
+/// launcher in its home, `PiLaunch.listModels`): models are dynamic (engine updates, sign-ins),
+/// so no config file is the truth. One per `PiSetup`: an answer is kept until the home's
+/// `auth.json`, `models.json` or `settings.json` changes (a sign-in, a re-import), or
+/// `invalidate()` forgets it.
+public final class PiModelCatalog: @unchecked Sendable {
     /// One catalog row: `provider/model`, its context window as pi prints it ("200K", "1M"),
     /// and whether it takes a thinking level.
     public struct Entry: Equatable, Sendable {
@@ -24,31 +24,46 @@ public enum PiModelCatalog {
         public var provider: String { id.split(separator: "/", maxSplits: 1).first.map(String.init) ?? id }
     }
 
-    private static let lock = NSLock()
-    nonisolated(unsafe) private static var cached: [Entry]?
+    /// Shepherd's pi home, whose launcher answers and whose models.json answers when pi can't.
+    public let files: PiHome
+    /// Readies the home before pi is asked; false when no pi may start there.
+    private let ready: @Sendable () -> Bool
+    private let lock = NSLock()
+    private var cached: (fingerprint: [Double], entries: [Entry])?
+
+    public init(home: PiHome, ready: @escaping @Sendable () -> Bool) {
+        files = home
+        self.ready = ready
+    }
+
+    /// The home's folder.
+    public var home: URL { files.directory }
 
     /// `provider/model` ids in catalog order; empty when pi is missing or
     /// errors. Blocking — call off the main thread and off the server queue.
-    public static func modelIDs() -> [String] { entries().map(\.id) }
+    public func modelIDs() -> [String] { entries().map(\.id) }
 
     /// pi's catalog, or models.json's models when pi cannot be asked. Blocking, like `entries()`.
-    public static func entriesOrConfigured() -> [Entry] {
+    public func entriesOrConfigured() -> [Entry] {
         let asked = entries()
-        return asked.isEmpty ? PiConfig.modelEntries() : asked
+        return asked.isEmpty ? PiConfig.modelEntries(in: home) : asked
+    }
+
+    /// Forgets the kept catalog, so the next ask runs pi again.
+    public func invalidate() {
+        lock.withLock { cached = nil }
     }
 
     /// Blocking, like `modelIDs()`.
-    public static func entries() -> [Entry] {
-        lock.lock()
-        if let cached {
-            lock.unlock()
-            return cached
-        }
-        lock.unlock()
+    public func entries() -> [Entry] {
+        let fingerprint = self.fingerprint()
+        if let cached = lock.withLock({ cached }), cached.fingerprint == fingerprint { return cached.entries }
 
+        guard ready() else { return [] }
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        process.arguments = ["-l", "-c", "exec pi --list-models"]
+        let line = PiLaunch.listModels(home: files)
+        process.executableURL = URL(fileURLWithPath: line.argv[0])
+        process.arguments = Array(line.argv.dropFirst())
         let stdout = Pipe()
         process.standardOutput = stdout
         process.standardError = Pipe()
@@ -61,11 +76,18 @@ public enum PiModelCatalog {
         process.waitUntilExit()
         guard process.terminationStatus == 0 else { return [] }
 
-        let entries = parseEntries(String(decoding: data, as: UTF8.self))
-        lock.lock()
-        cached = entries
-        lock.unlock()
+        let entries = Self.parseEntries(String(decoding: data, as: UTF8.self))
+        lock.withLock { cached = (fingerprint, entries) }
         return entries
+    }
+
+    /// The modification dates of what the catalog depends on in the home (-1 while missing).
+    private func fingerprint() -> [Double] {
+        ["auth.json", "models.json", "settings.json"].map { name in
+            var info = stat()
+            guard stat(files.directory.appendingPathComponent(name).path, &info) == 0 else { return -1 }
+            return Double(info.st_mtimespec.tv_sec) + Double(info.st_mtimespec.tv_nsec) / 1e9
+        }
     }
 
     static func parse(_ output: String) -> [String] { parseEntries(output).map(\.id) }

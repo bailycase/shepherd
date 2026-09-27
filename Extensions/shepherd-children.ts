@@ -462,10 +462,13 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     for (const extension of new Set([...inherited, ...(run.extensions ?? [])])) {
       if (fs.realpathSync(extension) !== fs.realpathSync(bridge)) args.push("-e", extension);
     }
-    const script = path.join(getPackageDir(), "dist", "cli.js");
-    const executable = /^(node|bun)(\.exe)?$/i.test(path.basename(process.execPath)) ? process.execPath : "pi";
-    run.proc = spawn(executable, executable === process.execPath ? [script, ...args] : args,
-      { cwd: run.cwd, env, detached: false, stdio: ["pipe", "pipe", "pipe"] });
+    // The parent's own engine: the node it runs on and its pi's bundle, never a `pi` from PATH
+    // (Shepherd's pi ships both; its launcher pins the rest, which the child inherits).
+    const script = path.join(getPackageDir(), "dist", "bundle", "cli.js");
+    if (!/^node(\.exe)?$/i.test(path.basename(process.execPath)) || !fs.existsSync(script)) {
+      throw new Error(`Native subagents run on pi's own node and bundle, and this pi has none (${process.execPath}, ${script})`);
+    }
+    run.proc = spawn(process.execPath, [script, ...args], { cwd: run.cwd, env, detached: false, stdio: ["pipe", "pipe", "pipe"] });
     if (run.proc.pid) atomic(path.join(leaseDir, "owner.json"), { pid: run.proc.pid, token: run.token });
     const proc = run.proc;
     proc.stdin.on("error", () => {});

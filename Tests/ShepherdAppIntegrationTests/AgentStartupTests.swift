@@ -33,7 +33,7 @@ struct AgentStartupTests {
     }
 
     @Test func aNewAgentsThreadShowsStartingWithoutAnErrorAndSendsOnceReady() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         try Self.holdPi(in: app.dir)
@@ -84,7 +84,7 @@ struct AgentStartupTests {
     /// What the user asked for shows the moment the agent appears, while its pi is held, and it
     /// stays one row, the same row, when the host's first snapshot carries it and when pi starts it.
     @Test func aNewAgentsOpeningPromptShowsWhilePiStartsAndStaysOneRow() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         try Self.holdPi(in: app.dir)
@@ -133,7 +133,7 @@ struct AgentStartupTests {
     /// respawns (a few at a time, `AgentStartQueue`). Each thread starts quietly, a thread switched
     /// away from and back to meanwhile starts again, and all come up with their history.
     @Test func restoredAgentsStartQuietlyAfterARelaunch() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         try Self.holdPi(in: app.dir)
@@ -175,7 +175,7 @@ struct AgentStartupTests {
     /// A launch starts every restored agent's pi without waiting for its layout to mount: the
     /// agent on screen first, alone while it boots; one selected meanwhile at once; then the rest.
     @Test func atLaunchTheAgentOnScreenStartsFirstAndEveryAgentStarts() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         try Self.holdPi(in: app.dir)
@@ -210,7 +210,7 @@ struct AgentStartupTests {
     /// A new agent's pi is its creation's to spawn: it never waits in the launch queue behind the
     /// restored agents still waiting their turn.
     @Test func aNewAgentsPiStartsAtOnceWhileRestoredAgentsWaitTheirTurn() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         try Self.holdPi(in: app.dir)
@@ -248,13 +248,12 @@ struct AgentStartupTests {
     /// The agent on screen at launch whose pi exits while it boots stops holding the queue at
     /// once: the others start then, not when its hold (`AgentStartQueue.aheadHold`) runs out.
     @Test func anAgentOnScreenWhosePiExitsAtLaunchLetsTheOthersStartAtOnce() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         let broken = app.dir.appendingPathComponent("broken")
         try FileManager.default.createDirectory(at: broken, withIntermediateDirectories: true)
-        // Its pi exits only once the test has seen it on screen: an exit before that retires it
-        // and moves the selection on to a healthy agent.
+        // Its pi exits only once the test has seen it on screen.
         try Self.holdPi(in: broken, exit: 1)
         let space = Fixture.space(path: app.dir.path)
         var agents = [Fixture.agent("broken", in: space, order: 0, cwd: broken.path, piSession: SessionID())]
@@ -268,7 +267,8 @@ struct AgentStartupTests {
         let others = Set(agents.dropFirst().map(\.agent.id))
 
         Self.releasePi(in: broken)
-        try await eventuallyOnMain("the broken agent's pi to exit and retire it") { !vm.state.agents.contains { $0.id == brokenID } }
+        try await eventuallyOnMain("the broken agent's pi to exit, keeping the agent") { vm.cannotStart.contains(brokenID) }
+        #expect(vm.state.agents.contains { $0.id == brokenID })
         let exited = ContinuousClock.now
         try await eventuallyAsync("the others to start") {
             let alive = Set(await server.listSessions().filter(\.isAlive).map(\.id))
@@ -286,7 +286,7 @@ struct AgentStartupTests {
     /// Only an agent's first start waits in the launch queue: a pane session made again once it
     /// has started (a view detached and remounted) binds at once.
     @Test func aPaneSessionMadeAgainAfterItsAgentStartedBindsAtOnce() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
@@ -306,7 +306,7 @@ struct AgentStartupTests {
     /// A thread on screen comes up the moment the server says its pi serves: this store never
     /// polls on its own, so only that signal can bring it up.
     @Test func aThreadComesUpTheMomentItsPiServesWithoutWaitingForAPoll() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         try Self.holdPi(in: app.dir)
@@ -336,8 +336,8 @@ struct AgentStartupTests {
     }
 
     /// The stub pi's history, as pi would have written it into the agent's session file.
-    private static func writeStubHistory(sessionID: String, cwd: String) throws {
-        let directory = PiSessionFile.projectDirectory(forCwd: cwd)
+    private static func writeStubHistory(sessionID: String, cwd: String, sessionsRoot: URL) throws {
+        let directory = PiSessionFile.projectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let lines = [
             #"{"type":"session","version":3,"id":"\#(sessionID)","timestamp":"2026-09-24T00:00:00.000Z","cwd":"\#(PiSessionFile.realPath(cwd))"}"#,
@@ -351,17 +351,18 @@ struct AgentStartupTests {
     /// A relaunched agent's thread shows its history from pi's session file while pi boots,
     /// not live, and pi's first snapshot then lands on the same rows: the thread never empties.
     @Test func aRestoredThreadShowsItsHistoryFromDiskUntilPiServesTheSameRows() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         try Self.holdPi(in: app.dir)
         let space = Fixture.space(path: app.dir.path)
         let agent = Fixture.agent("worker", in: space, piSession: SessionID())
-        try Self.writeStubHistory(sessionID: agent.agent.effectivePiSessionID, cwd: space.path)
+        try Self.writeStubHistory(sessionID: agent.agent.effectivePiSessionID, cwd: space.path, sessionsRoot: app.server.pi.sessionsRoot)
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
         let store = vm.threadStores.store(for: agent.agent.id)
         let server = app.server, id = agent.agent.id
-        let preview = PiSessionFile.previewLoader(sessionID: agent.agent.effectivePiSessionID, cwd: space.path)
+        let preview = PiSessionFile.previewLoader(sessionID: agent.agent.effectivePiSessionID, cwd: space.path,
+                                                  sessionsRoot: app.server.pi.sessionsRoot)
         let polling = Task { await store.run(request: { try await server.nativeThread(agentID: id, request: $0) }, preview: preview) }
         defer { polling.cancel(); store.stop() }
 
@@ -391,10 +392,10 @@ struct AgentStartupTests {
         #expect(shown.rows.allSatisfy { $0 == fromDisk }, "the rows never changed on the way: \(shown.rows)")
     }
 
-    /// pi not installed, or a broken config: the launch ends in the real error (the pane's
-    /// exit, then the agent retired as always), never an endless start.
-    @Test func aPiThatExitsWhileStartingEndsInItsErrorNotAnEndlessStart() async throws {
-        try StubPi.installOnPath()
+    /// pi not installed, or a broken config: the launch ends in the reason, with the agent kept
+    /// (AgentStartProblemTests has every cause), never an endless start.
+    @Test func aPiThatExitsWhileStartingEndsInItsReasonNotAnEndlessStart() async throws {
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         try Self.holdPi(in: app.dir, exit: 127)
@@ -416,13 +417,11 @@ struct AgentStartupTests {
 
         Self.releasePi(in: app.dir)
 
-        try await eventuallyOnMain("the pane to show pi's exit", timeout: .seconds(20)) { pane.phase == .exited(127) }
-        try await eventuallyOnMain("the agent to be retired") { server.state.agents.isEmpty && vm.state.agents.isEmpty }
-        // The retirement reaches the thread with the server's broadcast (its store is pruned) or
-        // the next poll, whichever lands first.
-        try await eventuallyOnMain("the retired agent's thread to stop starting") { !store.starting }
-        let error = await #expect(throws: RemoteHostClientError.self) { _ = try await server.nativeThread(agentID: id, request: .snapshot()) }
-        guard case .rejected(NativeThreadCode.unavailable, _)? = error else { Issue.record("got \(String(describing: error))"); return }
+        try await eventuallyOnMain("the pane to show pi stopped", timeout: .seconds(20)) { pane.phase == .stopped }
+        try await eventuallyOnMain("the thread to say why") { store.startProblem?.kind == .engineMissing }
+        #expect(!store.starting && store.loadError == nil)
+        #expect(store.startProblem?.exitCode == 127)
+        #expect(server.state.agents.map(\.id) == [id] && vm.state.agents.map(\.id) == [id])
     }
 
     /// Only a pi that was serving and went away is a lost connection.

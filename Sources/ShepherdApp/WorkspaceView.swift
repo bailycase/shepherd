@@ -121,6 +121,8 @@ struct AgentLayoutModel: Equatable {
         let agentName: String
         /// The pi session its history is previewed from while pi starts.
         let piSessionID: String
+        /// Waiting for the first launch's copy, or not signed in: the line or card at its end.
+        var authNotice: ThreadAuthNotice? = nil
     }
 
     let tab: Tab
@@ -169,6 +171,11 @@ struct AgentLayoutModel: Equatable {
         private let terminals: TerminalPanels
         /// Each design, and whether it builds a system.
         private let designs: [DesignID: Bool]
+        private let waiting: Set<AgentID>
+        private let restoredAt: Date
+        private let notSignedIn: [AgentID: NotSignedIn]
+        private let yourLogins: Set<String>
+        private let defaultModel: String?
 
         init(vm: ShepherdViewModel, visibleTabID: TabID?) {
             terminals = vm.terminalPanels
@@ -179,13 +186,28 @@ struct AgentLayoutModel: Equatable {
             runs = vm.subagentInspector.runByAgent
             panes = vm.subagentInspector
             reviews = Dictionary(vm.reviewSessions.values.map { ($0.agentID, $0) }, uniquingKeysWith: { first, _ in first })
+            waiting = vm.waitingForImport
+            restoredAt = vm.restoredAt
+            notSignedIn = vm.notSignedIn
+            yourLogins = Set(vm.yourPi.survey?.logins.filter { $0.yours != nil }.map(\.provider) ?? [])
+            defaultModel = vm.settings.agentDefaults.model ?? vm.yourPi.survey?.shepherdDefaultModel
+        }
+
+        /// The line or card at the end of an agent's thread.
+        private func notice(_ agent: Agent) -> ThreadAuthNotice? {
+            if let stopped = notSignedIn[agent.id] {
+                return .notSignedIn(provider: stopped.provider, model: (agent.model ?? defaultModel).map(NativeModelChoices.shortName),
+                                    at: stopped.at, skipped: stopped.provider.map(yourLogins.contains) ?? false)
+            }
+            return waiting.contains(agent.id) ? .waiting(restoredAt: restoredAt) : nil
         }
 
         func model(for tab: Tab) -> AgentLayoutModel {
             let visible = tab.id == visibleTabID
             let thread = agentsByTab[tab.id].flatMap { agent in
                 tab.layout.leaves.first { primaryAgent(in: tab, pane: $0, agents: [agent]) != nil }
-                    .map { Thread(agentID: agent.id, paneID: $0.id, agentName: agent.name, piSessionID: agent.effectivePiSessionID) }
+                    .map { Thread(agentID: agent.id, paneID: $0.id, agentName: agent.name, piSessionID: agent.effectivePiSessionID,
+                                  authNotice: notice(agent)) }
             }
             let owner = thread.map { SidePaneOwner.local($0.agentID) }
             let terminal = terminals.panel(TerminalPanelKey(host: nil, tab: tab.id))
@@ -501,6 +523,7 @@ struct PaneTreeView: View {
             agentID: thread?.agentID,
             agentName: thread?.agentName ?? "",
             piSessionID: thread?.piSessionID,
+            authNotice: thread?.authNotice,
             inspectingRunID: thread == nil ? nil : model.inspectingRunID,
             threadAgentID: thread == nil ? model.thread?.agentID : nil
         )
@@ -575,6 +598,8 @@ struct PaneLeafModel: Equatable {
     let agentName: String
     /// The agent's pi session, whose file the thread shows while pi starts.
     var piSessionID: String? = nil
+    /// The line or card at the end of the thread (`ThreadAuthNotice`).
+    var authNotice: ThreadAuthNotice? = nil
     /// The subagent the right pane inspects (`AgentLayoutView`): the thread yields keyboard focus.
     let inspectingRunID: String?
     /// For a terminal pane, the agent whose thread its selection can be added to.
@@ -606,7 +631,7 @@ struct PaneLeafView: View, Equatable {
                     active: model.isVisible,
                     isFocused: model.isFocused && inspecting == nil,
                     request: { [vm] in try await vm.server.nativeThread(agentID: agentID, request: $0) },
-                    preview: model.piSessionID.map { PiSessionFile.previewLoader(sessionID: $0, cwd: pane.cwd) },
+                    preview: model.piSessionID.map { PiSessionFile.previewLoader(sessionID: $0, cwd: pane.cwd, sessionsRoot: vm.server.pi.sessionsRoot) },
                     commandKey: ThreadCommandCenter.key(local: agentID),
                     agentName: model.agentName,
                     workingDirectory: pane.cwd,
@@ -617,7 +642,14 @@ struct PaneLeafView: View, Equatable {
                     turnActions: TurnChangesActions(
                         review: { [vm] turnID, path in vm.selectAgent(agentID); vm.openTurnReview(.local(agentID), turnID: turnID, path: path) },
                         undo: { [vm] in await vm.undoTurn(.local(agentID), turnID: $0) },
-                        redo: { [vm] in await vm.redoTurn(.local(agentID), turnID: $0) })
+                        redo: { [vm] in await vm.redoTurn(.local(agentID), turnID: $0) }),
+                    restartPi: { [vm] in vm.retryAgentStart(agentID, newConversation: $0) },
+                    authNotice: model.authNotice,
+                    authActions: ThreadAuthActions(
+                        signIn: { [vm] provider in vm.openSignIn(provider, origin: .agentCard) },
+                        useModel: { [vm] model in vm.useAnotherModel(agentID, model: model) },
+                        models: { [vm] in await ModelCatalog.loadLocal(from: vm.server.pi.catalog).models.map(\.id) }),
+                    slashLogin: vm.slashLoginActions
                 )
             } else {
                 LiveTerminalPane(
@@ -652,17 +684,25 @@ struct AgentThreadPane: View {
     var inspectedRunID: String? = nil
     var review: ((String) -> Void)? = nil
     var turnActions: TurnChangesActions? = nil
+    /// Retry for a pi that stopped before it served (true: start a new conversation).
+    var restartPi: ((Bool) -> Void)? = nil
+    /// The line or card at the end of the thread, and what its buttons do.
+    var authNotice: ThreadAuthNotice? = nil
+    var authActions: ThreadAuthActions? = nil
+    var slashLogin: SlashLoginActions? = nil
     /// A design's chat (`ThreadView.designChat`).
     var designChat = false
 
     var body: some View {
-        // The placeholder cross-fades in when pi dies; connecting → live changes nothing here.
+        // The placeholder cross-fades in when pi dies; connecting → live changes nothing here, nor
+        // does a pi that stopped before it served: its thread says why.
         ZStack {
             switch session.phase {
-            case .connecting, .live:
+            case .connecting, .live, .stopped:
                 ThreadView(store: store, active: active, isFocused: isFocused, request: request, preview: preview, commandKey: commandKey,
                            agentName: agentName, workingDirectory: workingDirectory, inspectSubagent: inspectSubagent,
                            steerSubagent: steerSubagent, inspectedRunID: inspectedRunID, review: review, turnActions: turnActions,
+                           restartPi: restartPi, authNotice: authNotice, authActions: authActions, slashLogin: designChat ? nil : slashLogin,
                            designChat: designChat)
             case .failed(let reason):
                 PanePlaceholder(text: "session unavailable · \(reason)")
@@ -677,10 +717,11 @@ struct AgentThreadPane: View {
 }
 
 extension TerminalSessionStore.PaneSession.Phase {
-    /// Connecting or live: the session's view is up (a thread, a terminal surface).
+    /// Connecting or live: the session's view is up (a thread, a terminal surface). A stopped
+    /// agent's thread stays up too.
     var isRunning: Bool {
         switch self {
-        case .connecting, .live: true
+        case .connecting, .live, .stopped: true
         case .failed, .exited: false
         }
     }
@@ -720,6 +761,10 @@ struct LiveTerminalPane: View {
                     .nwTransition(.content)
             case .exited(let code):
                 PanePlaceholder(text: code.map { "session exited (\($0))" } ?? "session exited")
+                    .nwTransition(.content)
+            case .stopped:
+                // Only an agent's own pane stops; a shell never does.
+                PanePlaceholder(text: "session stopped")
                     .nwTransition(.content)
             }
         }

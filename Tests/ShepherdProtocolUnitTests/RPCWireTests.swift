@@ -62,6 +62,16 @@ struct RPCWireTests {
         }
     }
 
+    /// Shepherd hands pi no session path over RPC (`switch_session`, `fork`, `export_html`): a
+    /// path is where pi writes, and Shepherd's pi writes only inside its own home.
+    @Test func noCommandNamesASessionFile() throws {
+        for (command, _, _) in Self.commands {
+            let object = try #require(try JSONSerialization.jsonObject(with: NDJSON.encode(RPCCommandFrame(id: nil, command: command))) as? [String: Any])
+            #expect(!["switch_session", "fork", "export_html"].contains(object["type"] as? String))
+            #expect(object["sessionPath"] == nil && object["path"] == nil && object["outputPath"] == nil)
+        }
+    }
+
     // MARK: Responses
 
     @Test func aBareSuccessResponseDecodes() throws {

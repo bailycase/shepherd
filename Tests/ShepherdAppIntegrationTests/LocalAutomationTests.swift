@@ -61,7 +61,7 @@ struct LocalAutomationTests {
     /// Run Now on the settled run on screen: the workspace goes straight to the new run's
     /// thread, never through the agent selected before it (or an empty space) on the way.
     @Test func runNowOnTheRunOnScreenShowsTheNewRun() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         let fixture = try await Self.settledRun(app)
@@ -82,7 +82,7 @@ struct LocalAutomationTests {
 
     /// Run Now on a settled run you are not looking at leaves the selection where it is.
     @Test func runNowOnARunOffScreenLeavesTheSelectionAlone() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         let fixture = try await Self.settledRun(app)
@@ -100,7 +100,7 @@ struct LocalAutomationTests {
     /// A second Run Now while the first is still starting its run refuses, rather than starting
     /// a run no automation points at.
     @Test func runNowWhileARunIsStartingRefuses() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         let fixture = try await Self.settledRun(app)

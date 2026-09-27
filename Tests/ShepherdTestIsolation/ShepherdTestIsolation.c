@@ -7,17 +7,26 @@
 //             never into the user's ~/Library/Application Support/Shepherd(-dev), even when the
 //             run inherited SHEPHERD_SUPPORT_DIR from a Shepherd agent.
 //   bin/      first on PATH, holding stand-ins that refuse to run for `gh` and `pi`, so no test
-//             reaches the user's GitHub credentials or pi through a login shell. Tests that launch
-//             pi the way the app does replace the `pi` one with the stub (StubPi.installOnPath).
+//             reaches the user's GitHub credentials or pi through a login shell, and a refusing
+//             `pi-engine`, which SHEPHERD_PI_ENGINE names: the pi every app-level launch starts
+//             (PiEngine). Tests that launch pi the way the app does replace that one with the stub
+//             (StubPi.installAsEngine).
 //   zdotdir/  ZDOTDIR, so login shells spawned by tests never run the user's dotfiles. Its
 //             .zshenv and .zlogin put bin/ back first: from a minimal environment (Xcode, launchd)
 //             nix-darwin's /etc/zshenv replaces PATH, and macOS's path_helper in /etc/zprofile
 //             moves the system directories ahead of it, either of which would find the real tools.
-//   pi-agent/ PI_CODING_AGENT_DIR, so the session headers the app seeds and the pi config it
-//             reads are scratch, never ~/.pi/agent. Skipped for the opt-in live-model use case
-//             (SHEPHERD_LIVE_MODEL), which runs the user's real pi with their configuration.
-//   agent-skills/  SHEPHERD_SKILLS_DIR, so Settings ▸ Skills installs, turns off and removes
-//             skills there, never in the user's ~/.agents/skills.
+//             They also hold decoys, as a user's own startup files might: .zshenv exports
+//             PI_CODING_AGENT_DIR, PI_PACKAGE_DIR, NODE_OPTIONS, PI_OFFLINE=0, JITI_ALIAS and
+//             PI_EXPERIMENTAL pointing into pi-decoy/, and .zlogin moves a shell that starts
+//             Shepherd's pi (its launcher, support/pi/bin/pi) to /. The launcher has to win over
+//             them.
+//   pi-agent/ "your pi": SHEPHERD_YOUR_PI (and, as a decoy the app must ignore, the process's
+//             own PI_CODING_AGENT_DIR), so whatever the app reads of the user's pi is scratch,
+//             never ~/.pi/agent. Shepherd's own pi home is support/pi, and Settings ▸ Skills
+//             installs into its skills/. The engine override, the stand-ins and the decoys are
+//             all skipped for the opt-in live-model use case (SHEPHERD_LIVE_MODEL).
+//   pi-decoy/ where the decoys point: never pi-agent/, so nothing that resolves the user's pi
+//             from a login shell can mistake them for it.
 //   mcp/      SHEPHERD_MCP_CONFIG points at mcp/mcp.json, so Settings ▸ MCP servers and the
 //             agents' MCP extension never read or write the user's ~/.config/mcp/mcp.json.
 // The root is removed when the process exits. Variables a Shepherd sets for its agents (a run
@@ -77,7 +86,7 @@ static void refuse(const char *bin, const char *command) {
 static const char *const agentVariables[] = {
     "SHEPHERD_AGENT_ID=", "SHEPHERD_SOCKET=", "SHEPHERD_EXT_", "SHEPHERD_NATIVE_CHILDREN=", "SHEPHERD_CHILD_",
     "SHEPHERD_NEEDS_NAME=", "SHEPHERD_AUTOMATION=", "SHEPHERD_MODEL=", "SHEPHERD_PI_THEME_",
-    "SHEPHERD_INSTRUCTIONS_DIR=", "SHEPHERD_SUGGEST_FILES=",
+    "SHEPHERD_INSTRUCTIONS_DIR=", "SHEPHERD_SUGGEST_FILES=", "SHEPHERD_PI_EXECUTABLE=",
 };
 
 /// The name of the first agent-only variable in the environment, or an empty string.
@@ -114,11 +123,10 @@ static void shepherd_test_isolation_install(void) {
     }
     atexit(remove_root);
 
-    char support[600], bin[600], zdotdir[600], skills[600], mcp[600], mcpConfig[700];
+    char support[600], bin[600], zdotdir[600], mcp[600], mcpConfig[700];
     make("support", support, sizeof support);
     make("bin", bin, sizeof bin);
     make("zdotdir", zdotdir, sizeof zdotdir);
-    make("agent-skills", skills, sizeof skills);
     make("mcp", mcp, sizeof mcp);
     if ((size_t)snprintf(mcpConfig, sizeof mcpConfig, "%s/mcp.json", mcp) >= sizeof mcpConfig) fail("path");
 
@@ -130,24 +138,54 @@ static void shepherd_test_isolation_install(void) {
     snprintf(newPath, pathSize, "%s:%s", bin, path);
 
     if (setenv("SHEPHERD_SUPPORT_DIR", support, 1) != 0 || setenv("ZDOTDIR", zdotdir, 1) != 0
-        || setenv("SHEPHERD_SKILLS_DIR", skills, 1) != 0 || setenv("SHEPHERD_MCP_CONFIG", mcpConfig, 1) != 0
+        || setenv("SHEPHERD_MCP_CONFIG", mcpConfig, 1) != 0
         || setenv("PATH", newPath, 1) != 0) fail("setenv");
     free(newPath);
 
     // zsh reads .zshenv for every shell and .zlogin last for a login shell, after the system files.
-    if (strchr(bin, '\'') != NULL) fail("path");
+    if (strchr(bin, '\'') != NULL || strchr(root, '\'') != NULL) fail("path");
     char startup[1400];
     if ((size_t)snprintf(startup, sizeof startup, "path=('%s' ${path:#'%s'})\n", bin, bin) >= sizeof startup) fail("path");
-    write_file(zdotdir, ".zshenv", startup, 0600);
-    write_file(zdotdir, ".zlogin", startup, 0600);
     refuse(bin, "gh");
 
     // The opt-in live-model run drives the user's real pi with their configuration.
     const char *liveModel = getenv("SHEPHERD_LIVE_MODEL");
-    if (liveModel == NULL || liveModel[0] == '\0') {
-        char piAgent[600];
-        make("pi-agent", piAgent, sizeof piAgent);
-        if (setenv("PI_CODING_AGENT_DIR", piAgent, 1) != 0) fail("setenv");
-        refuse(bin, "pi");
+    if (liveModel != NULL && liveModel[0] != '\0') {
+        write_file(zdotdir, ".zshenv", startup, 0600);
+        write_file(zdotdir, ".zlogin", startup, 0600);
+        return;
     }
+
+    char piAgent[600], piEngine[700];
+    make("pi-agent", piAgent, sizeof piAgent);
+    if ((size_t)snprintf(piEngine, sizeof piEngine, "%s/pi-engine", bin) >= sizeof piEngine) fail("path");
+    if (setenv("PI_CODING_AGENT_DIR", piAgent, 1) != 0 || setenv("SHEPHERD_YOUR_PI", piAgent, 1) != 0
+        || setenv("SHEPHERD_PI_ENGINE", piEngine, 1) != 0) fail("setenv");
+    refuse(bin, "pi");
+    refuse(bin, "pi-engine");
+
+    // Decoys, as a user's startup files might set them after Shepherd's environment is applied.
+    // They are harmless where they land (the NODE_OPTIONS file is empty), so they change nothing
+    // but what a launch line fails to override.
+    char decoy[600], decoyAgent[700], decoyPackage[700], decoys[3000], zshenv[4500], zlogin[1800];
+    make("pi-decoy", decoy, sizeof decoy);
+    if ((size_t)snprintf(decoyAgent, sizeof decoyAgent, "%s/agent", decoy) >= sizeof decoyAgent
+        || (size_t)snprintf(decoyPackage, sizeof decoyPackage, "%s/package", decoy) >= sizeof decoyPackage) fail("path");
+    if (mkdir(decoyAgent, 0700) != 0 || mkdir(decoyPackage, 0700) != 0) fail("mkdir");
+    write_file(decoy, "node-options.cjs", "// ShepherdTestIsolation's NODE_OPTIONS decoy: loads, does nothing.\n", 0600);
+    if ((size_t)snprintf(decoys, sizeof decoys,
+                         "export PI_CODING_AGENT_DIR='%s'\n"
+                         "export PI_PACKAGE_DIR='%s'\n"
+                         "export NODE_OPTIONS='--require=%s/node-options.cjs'\n"
+                         "export PI_OFFLINE=0\n"
+                         "export JITI_ALIAS='{\"shepherd-decoy\":\"%s\"}'\n"
+                         "export PI_EXPERIMENTAL=1\n",
+                         decoyAgent, decoyPackage, decoy, decoy) >= sizeof decoys) fail("path");
+    if ((size_t)snprintf(zshenv, sizeof zshenv, "%s%s", startup, decoys) >= sizeof zshenv) fail("path");
+    // Only a shell that starts Shepherd's pi moves: the git and gh helpers that run in a login
+    // shell keep the folder they were started in.
+    if ((size_t)snprintf(zlogin, sizeof zlogin, "%sif [[ $ZSH_EXECUTION_STRING == */pi/bin/pi* ]]; then cd /; fi\n", startup)
+        >= sizeof zlogin) fail("path");
+    write_file(zdotdir, ".zshenv", zshenv, 0600);
+    write_file(zdotdir, ".zlogin", zlogin, 0600);
 }

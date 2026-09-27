@@ -14,6 +14,30 @@ struct AppDialogs: ViewModifier {
                 NewAgentSheet(vm: vm)
                     .dialogSheetFrame()
             }
+            // The first launch's sheet; closing it, whichever way, starts restored agents. A sign-in
+            // it opens shows over it.
+            .sheet(item: Binding(get: { vm.yourPi.importSheet }, set: { if $0 == nil { vm.finishImport() } }),
+                   onDismiss: { vm.finishImport() }) { sheet in
+                PiImportSheet(state: vm.yourPi.importSheet ?? sheet,
+                              signIn: { provider, key in vm.piAuth.signIn(provider, key: key, origin: .firstLaunch) },
+                              retry: { vm.retryImportSignIns() },
+                              reviewExtensions: {
+                                  vm.finishImport()
+                                  vm.settingsSection = .piFromYourPi
+                                  vm.showSettings = true
+                              },
+                              close: { vm.finishImport() })
+                    .dialogSheetFrame()
+                    .sheet(item: Binding(get: { vm.piAuth.session }, set: { if $0 == nil { vm.piAuth.closeSheet() } })) { session in
+                        PiSignInSheet(session: session) { vm.piAuth.closeSheet() }
+                            .dialogSheetFrame()
+                    }
+            }
+            // Sign in to <provider>: over Settings or the thread.
+            .sheet(item: Binding(get: { vm.yourPi.importSheet == nil ? vm.piAuth.session : nil }, set: { if $0 == nil { vm.piAuth.closeSheet() } })) { session in
+                PiSignInSheet(session: session) { vm.piAuth.closeSheet() }
+                    .dialogSheetFrame()
+            }
             .sheet(item: $vm.worktreeSheetSpace) { space in
                 NewWorktreeSheet(vm: vm, space: space)
                     .dialogSheetFrame()

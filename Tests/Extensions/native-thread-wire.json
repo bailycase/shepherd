@@ -745,5 +745,34 @@
         }
       }
     }
+  },
+  {
+    "type": "nativeThread",
+    "id": 25,
+    "result": {
+      "snapshot": {
+        "value": {
+          "piSessionID": "session",
+          "generation": "start-problem",
+          "revision": 0,
+          "running": false,
+          "supportedActions": [],
+          "dialogsSupported": false,
+          "dialogs": [],
+          "messages": [],
+          "provisional": [],
+          "clipped": false,
+          "runtime": "rpc",
+          "startProblem": {
+            "kind": "extensionFailed",
+            "exitCode": 1,
+            "lines": [
+              "Error: Failed to load extension \"/Users/me/.pi/agent/extensions/broken.ts\": SyntaxError: Unexpected token",
+              "Hint: Start without extensions using \"pi -ne\"."
+            ]
+          }
+        }
+      }
+    }
   }
 ]

@@ -89,7 +89,22 @@ Settings ▸ Remote ▸ Serve this Mac ▸ Listener.
   (create, finalize, delete; [worktrees.md](docs/worktrees.md)) and the review pane's
   confirmed per-file Revert. Finalize never deletes a remote branch, and Shepherd never prunes
   worktrees.
-- **pi configuration:** Shepherd installs nothing into `~/.pi/agent/` and does not edit your
-  shell startup files. Extensions load through per-session `-e` flags. Terminal panes get their
-  startup files from Shepherd's support directory. `PiSessionFile` writes session files under
-  pi's sessions directory, which pi treats as data.
+- **pi configuration:** Shepherd runs its own pi, shipped inside the app, in its own home
+  (`<support directory>/pi`: its settings, sign-ins, models and conversations;
+  [pi-home.md](docs/pi-home.md)). It never runs your `pi` or `npm`, and never writes your pi's
+  folder (`~/.pi/agent`, or wherever your `PI_CODING_AGENT_DIR` points), lock folders included.
+  It reads it only as plain files: to copy an agent's earlier conversation into its own home once;
+  at its first launch, to copy your logins (API keys and subscription sign-ins, as stored),
+  custom providers, default model, trusted folders, instructions, skills, prompts, themes and
+  extensions (these switched off) into its own home once (again only when you choose Re-import in
+  Settings ▸ Pi); after that its pi reads only its own home. A copied subscription sign-in is a
+  second holder of the same grant: when either pi refreshes it, the other may be signed out.
+  Signing in (Settings ▸ Pi ▸ Sign-in, `/login`) runs pi's own login in Shepherd's home through a
+  small script on the bundled node: the credential goes from pi straight into Shepherd's
+  `auth.json`, and what you type (a key, a pasted code) goes to that script and nowhere else.
+  Sign out removes only Shepherd's credential. Shepherd never logs a credential's value and shows
+  a key only masked (its prefix and last four). Its launcher sets aside your shell's `PI_*`, `JITI_*` and `NODE_*`
+  variables for pi itself and gives them back to an agent's shell commands. Extensions load
+  through per-session `-e` flags, and Shepherd's pi loads no pi packages. It does not edit your
+  shell startup files; terminal panes get theirs from Shepherd's support directory, and `pi` in a
+  pane is your own.

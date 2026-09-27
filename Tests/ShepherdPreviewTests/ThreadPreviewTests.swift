@@ -253,6 +253,95 @@ struct ThreadPreviewTests {
         }
     }
 
+    // MARK: Can't start
+
+    /// What the host answers for a pi that stopped before it served.
+    private static func cannotStart(_ problem: NativeStartProblem) -> NativeThreadSnapshot {
+        NativeThreadSnapshot(piSessionID: "fixture", generation: "start-problem", revision: 0, running: false, supportedActions: [],
+                             dialogsSupported: false, dialogs: [], messages: [], provisional: [], clipped: false, runtime: "rpc",
+                             startProblem: problem)
+    }
+
+    /// A relaunched agent whose pi can't reach a model (AgentNotSignedIn): its history from disk
+    /// stays, the composer is as it was, and the thread ends in the Not signed in card, with Sign
+    /// in to Anthropic and Use another model (Thread › Not signed in).
+    @Test func threadNotSignedIn() async throws {
+        let fixture = ThreadFixture(Self.cannotStart(NativeStartProblem(kind: .notSignedIn, exitCode: 1, lines: [
+            "No API key found for anthropic.",
+            "Use /login to log into a provider via OAuth or API key. See:",
+        ])))
+        defer { fixture.store.stop() }
+        var fromDisk = ActivityThreads.idle
+        fromDisk.generation = PiSessionPreview.generation
+        fromDisk.stats = nil
+        fromDisk.commands = nil
+        fixture.store.preview(fromDisk)
+        fixture.store.draft = "Now add the tests"
+        let at = Calendar.current.date(bySettingHour: 9, minute: 43, second: 0, of: Date())!
+        try await Preview.render("thread-not-signed-in", size: CGSize(width: 1180, height: 900), ready: {
+            fixture.store.startProblem != nil && !fixture.store.rows.isEmpty
+        }) {
+            fixture.thread(authNotice: .notSignedIn(provider: "anthropic", model: "claude-opus", at: at, skipped: true))
+        }
+    }
+
+    /// A restored agent the first launch's copy holds (PiImportProgress): its history from disk,
+    /// and Waiting to continue at the end.
+    @Test func threadWaitingForYourPi() async throws {
+        let fixture = ThreadFixture(ActivityThreads.idle)
+        defer { fixture.store.stop() }
+        let restored = Calendar.current.date(bySettingHour: 9, minute: 41, second: 0, of: Date())!
+        try await Preview.render("thread-waiting-for-your-pi", size: CGSize(width: 1180, height: 900), ready: { !fixture.store.rows.isEmpty }) {
+            fixture.thread(authNotice: .waiting(restoredAt: restored))
+        }
+    }
+
+    /// A new agent whose extension failed to load: the empty state and its opening prompt stay.
+    @Test func threadCannotStartExtension() async throws {
+        let fixture = ThreadFixture(Self.cannotStart(NativeStartProblem(kind: .extensionFailed, exitCode: 1, lines: [
+            "Error: Failed to load extension \"/Users/me/.pi/agent/extensions/linear.ts\": SyntaxError: Unexpected token '}'",
+            "Hint: Start without extensions using \"pi -ne\".",
+        ])))
+        defer { fixture.store.stop() }
+        let prompt = try #require(OpeningPrompt("Triage the new Linear issues and label them.", agentID: AgentID()))
+        fixture.store.preview(prompt.preview(PiSessionPreview.empty(sessionID: "fixture", model: "anthropic/claude-opus-4-5", thinking: "high")))
+        try await Preview.render("thread-cannot-start-extension", size: CGSize(width: 1180, height: 700), ready: {
+            fixture.store.startProblem != nil && !fixture.store.rows.isEmpty
+        }) {
+            fixture.thread(title: "Triage the new Linear issues…")
+        }
+    }
+
+    /// pi didn't find the conversation it was resuming: Start new conversation beside Retry.
+    @Test func threadCannotStartResumedAsNew() async throws {
+        let fixture = ThreadFixture(Self.cannotStart(NativeStartProblem(kind: .resumedAsNew, lines: [
+            "Warning: No project session found with id '0b6f6c2e-6a41-4f7e-9d0c-2f8e8f1d6c11'; creating a new session with that id.",
+        ])))
+        defer { fixture.store.stop() }
+        var fromDisk = ActivityThreads.idle
+        fromDisk.generation = PiSessionPreview.generation
+        fixture.store.preview(fromDisk)
+        try await Preview.render("thread-cannot-start-resumed", size: CGSize(width: 1180, height: 900), ready: {
+            fixture.store.startProblem != nil && !fixture.store.rows.isEmpty
+        }) {
+            fixture.thread()
+        }
+    }
+
+    /// A remote viewer's banner: no actions, and it says to retry on the host.
+    @Test func threadCannotStartRemote() async throws {
+        let fixture = ThreadFixture(Self.cannotStart(NativeStartProblem(kind: .exited, exitCode: 1, lines: [
+            "TypeError: Cannot read properties of undefined (reading 'provider')",
+        ])))
+        defer { fixture.store.stop() }
+        fixture.store.hostName = "horizon"
+        try await Preview.render("thread-cannot-start-remote", size: CGSize(width: 1180, height: 600), ready: {
+            fixture.store.startProblem != nil
+        }) {
+            fixture.thread(restartPi: nil)
+        }
+    }
+
     /// Failed test runs stay red; a turn that failed as a whole ends in NWTurnError with Retry.
     @Test func threadActivityFailed() async throws {
         try await render("thread-activity-failed", ActivityThreads.failed)

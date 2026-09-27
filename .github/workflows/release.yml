@@ -139,8 +139,22 @@ jobs:
           # new ShepherdApp sources — nightly 0217 shipped a build break that
           # `swift test` had already passed). Release builds are rare enough
           # that a clean rebuild beats a wrong binary. Keyed per configuration:
-          # the two apps build different ones.
-          key: xcode-${{ runner.os }}-${{ env.CONFIGURATION }}-${{ steps.xcode.outputs.version }}-${{ hashFiles('Package.resolved', 'Sources/**/*.swift', 'App/**/*.swift') }}
+          # the two apps build different ones. Keyed on the engine's pin too: a
+          # restored app holding another pin's engine fails the "Embed pi engine"
+          # phase, whose sandbox can't remove files the new pin doesn't declare.
+          key: xcode-${{ runner.os }}-${{ env.CONFIGURATION }}-${{ steps.xcode.outputs.version }}-${{ hashFiles('Package.resolved', 'Sources/**/*.swift', 'App/**/*.swift', 'scripts/pi-engine-pin.json') }}
+
+      # The pi engine (Node and pi's bundle) the Mac target's "Embed pi engine" phase copies
+      # into Contents/Helpers and Contents/Resources/pi-engine. Staging downloads Node from
+      # nodejs.org and pi from the npm registry, checked against scripts/pi-engine-pin.json;
+      # the cache keeps those downloads, and staging reuses one only while it matches the pin.
+      - name: Cache the pi engine's downloads
+        uses: actions/cache@v4
+        with:
+          path: .build/pi-engine-cache
+          key: pi-engine-${{ hashFiles('scripts/pi-engine-pin.json') }}
+      - name: Stage the pi engine
+        run: python3 scripts/pi_engine.py stage
 
       - name: Import Developer ID certificate
         id: cert
@@ -180,7 +194,8 @@ jobs:
             build
 
       # The one guard against shipping one app under the other's identity:
-      # bundle id, name, executable and feed must be this app's.
+      # bundle id, name, executable and feed must be this app's. It also checks
+      # the pi engine is the pinned one, with nothing but what pi's bundle loads.
       - name: Verify the app's identity
         run: python3 scripts/release.py verify-app "$PRODUCTS/$PRODUCT" "$APP_KEY" "$VERSION"
 
@@ -204,13 +219,18 @@ jobs:
       # map of runner object-file paths. -S -x drops debug and local symbols
       # and keeps global ones, so crash logs stay partly readable; the dSYMs
       # above predate the strip and share its UUIDs, so they still symbolicate.
+      # The engine's node (Contents/Helpers) is Node's release binary and stays
+      # as Node ships it.
       - name: Strip debug symbols
         run: xcrun strip -S -x "$PRODUCTS/$PRODUCT/Contents/MacOS/"*
 
+      # node is signed slice by slice with the engine's entitlements (V8 needs
+      # allow-jit under the hardened runtime); scripts/sign-engine.sh says why.
       - name: Sign
         run: |
           scripts/sign-app.sh "$PRODUCTS/$PRODUCT" \
-            '${{ steps.cert.outputs.identity }}' App/Shepherd.entitlements
+            '${{ steps.cert.outputs.identity }}' App/Shepherd.entitlements \
+            App/Engine.entitlements App/Engine-x86_64.entitlements
 
       - name: Notarize
         if: steps.cert.outputs.identity != '-'

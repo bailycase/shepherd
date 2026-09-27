@@ -110,7 +110,7 @@ let package = Package(
         .testTarget(name: "ShepherdProtocolUnitTests", dependencies: ["ShepherdProtocol", "ShepherdTestKit"]),
         .testTarget(name: "ShepherdUIUnitTests", dependencies: [.product(name: "ShepherdUI", package: "ShepherdUI")]),
         .testTarget(name: "ShepherdRemoteUnitTests", dependencies: ["ShepherdCore", "ShepherdProtocol", "ShepherdRemote", "ShepherdTestKit"]),
-        .testTarget(name: "ShepherdSessionsUnitTests", dependencies: ["ShepherdSessions"]),
+        .testTarget(name: "ShepherdSessionsUnitTests", dependencies: ["ShepherdSessions", "ShepherdTestKit"]),
         .testTarget(name: "ShepherdAppUnitTests", dependencies: ["ShepherdApp", "ShepherdTestKit"]),
         .testTarget(name: "ShepherdCLIUnitTests", dependencies: ["shepherd-cli"]),
         .testTarget(name: "TerminalSurfaceKitUnitTests", dependencies: ["TerminalSurfaceKit", "ShepherdTestKit"]),
@@ -124,7 +124,8 @@ let package = Package(
             name: "ShepherdTestSupport",
             dependencies: ["ShepherdCore", "ShepherdProtocol", "ShepherdRemote", "ShepherdSessions", "ShepherdTestKit"],
             path: "Tests/ShepherdTestSupport",
-            resources: [.copy("Resources/stub-pi.py"), .copy("Resources/fake-mcp-oauth.py"), .copy("Resources/mcp-agent.mjs")]
+            resources: [.copy("Resources/stub-pi.py"), .copy("Resources/fake-mcp-oauth.py"), .copy("Resources/mcp-agent.mjs"),
+                        .copy("Resources/fake-pi-sdk.mjs")]
         ),
         .testTarget(name: "ShepherdSessionsIntegrationTests", dependencies: ["ShepherdSessions", "ShepherdTestSupport"]),
         .testTarget(

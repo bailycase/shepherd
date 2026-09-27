@@ -61,7 +61,8 @@ profile `extensions` entries.
 
 `shepherd_child_agents` lists effective profiles, where each came from, and any diagnostics.
 Agent Markdown files stay the source of truth, and Shepherd never edits them. Pi's agent
-directory comes from `getAgentDir()`, which honors `PI_CODING_AGENT_DIR`.
+directory comes from `getAgentDir()`, which honors `PI_CODING_AGENT_DIR`: Shepherd's own pi home,
+which its launcher pins ([pi-home.md](pi-home.md)).
 
 Discovery order, from lowest to highest precedence:
 
@@ -141,7 +142,10 @@ hands the completion back). Delivery is not durable, and not exactly-once across
 the selected branch up to the last complete tool batch, using a separate `SessionManager`. It
 leaves out in-flight tool calls and never branches the parent's live session.
 
-**Child processes.** Children run with `PI_OFFLINE=1` and with `SHEPHERD_*`, `PI_SUBAGENT*`, and
+**Child processes.** A child runs the parent's own engine: `process.execPath` (the engine's node)
+with the package's `dist/bundle/cli.js`, never a `pi` from PATH; a parent not running on node, or
+with no bundle, can't start one and the run fails saying so. Children inherit the launcher's
+pins from the parent's pi, and run with `PI_OFFLINE=1` and with `SHEPHERD_*`, `PI_SUBAGENT*`, and
 session and model variables stripped. They get `--no-skills --no-prompt-templates --no-themes
 --no-approve`, plus `--no-context-files` when the profile doesn't inherit project context.
 

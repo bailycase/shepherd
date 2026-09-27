@@ -307,7 +307,7 @@ element ids, for Shepherd's tools). It is written from the documented file forma
 from Claude Design. `DesignExtension.swift` embeds both files, byte-identical, and writes them to
 the support directory's `design-skill/` at launch; the extension hands that folder to pi through
 `resources_discover` (`skillPaths`), so pi lists `shepherd-design` among its skills. Nothing is
-installed in `~/.pi/agent`.
+installed in a pi home.
 
 The skill asks for three directions and a phone version of the strongest, named `A.dc.html`,
 `B.dc.html`, `C.dc.html` and `A-phone.dc.html` with titles such as "A · Funnel first" and

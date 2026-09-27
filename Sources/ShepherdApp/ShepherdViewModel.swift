@@ -149,6 +149,12 @@ final class ShepherdViewModel {
     /// Agents whose last turn ended in an error: done, but their sidebar row reads failed.
     /// Ephemeral, like the status it qualifies.
     var failedTurns: Set<AgentID> = []
+    /// Agents whose pi stopped before it served, waiting for Retry: their sidebar row reads "can't
+    /// start" (DESIGN.md › Thread › Can't start). Ephemeral: a relaunch starts every pi again.
+    var cannotStart: Set<AgentID> = []
+    /// This Mac's agents whose pi can't start because nothing signs in for their model: the
+    /// provider it needs (nil when pi names none), and when it stopped.
+    var notSignedIn: [AgentID: NotSignedIn] = [:]
     /// Each automation's run whose agent still exists, as the server's run log keeps it: an
     /// idle run agent is starting until its run has settled (`AutomationRun.isLive`). Read with
     /// every adopted state.
@@ -180,7 +186,7 @@ final class ShepherdViewModel {
     var remoteWorktreeFinalize = false
     var remoteWorktreeOperationEndpoints: [RemoteAgentRef: UUID] = [:]
     var remoteWorktreeOperationIDs: [RemoteAgentRef: UUID] = [:]
-    var hostPRDescriptionGenerator = WorktreePRDescriptionGenerator()
+    var hostPRDescriptionGenerator: WorktreePRDescriptionGenerator
     var hostWorktreeOperations: [UUID: RemoteWorktreeOperation] = [:]
     var hostWorktreeOperationAgents: [UUID: AgentID] = [:]
     var hostBusyWorktrees: Set<String> = []
@@ -229,6 +235,19 @@ final class ShepherdViewModel {
     @ObservationIgnored let localSkills: LocalSkillsClient
     /// Settings ▸ MCP servers: this Mac's servers, their sign-ins, and the credentials agents ask for.
     let mcp: MCPStore
+    /// Settings ▸ Pi's sign-ins and From your pi, and the first launch's copy and welcome step.
+    let yourPi: YourPiModel
+    /// Shepherd's pi's sign-ins: the sign-in sheet, sign-outs, what expired, what agents wait on.
+    let piAuth: PiAuthStore
+    /// Restored agents wait for the first launch's copy from the user's pi, and for its welcome
+    /// step when no provider can start them.
+    @ObservationIgnored private(set) var holdsForWelcome = false
+    /// This Mac's restored agents the first launch's copy holds (the sidebar's "waiting", the
+    /// thread's Waiting to continue), and when they were restored.
+    var waitingForImport: Set<AgentID> = []
+    @ObservationIgnored private(set) var restoredAt = Date()
+    /// The workspace has been adopted at least once.
+    @ObservationIgnored private var didAdopt = false
     /// The server Settings ▸ MCP servers opens with its row open (a search hit named it).
     @ObservationIgnored var mcpOpenServer: String?
     /// This Mac's daily look for newer skills (`startSkillChecks`).
@@ -445,10 +464,14 @@ final class ShepherdViewModel {
         },
         restoresAgentsAtLaunch: Bool = true,
         checkoutReader: CheckoutMonitor.Reader? = CheckoutMonitor.git,
-        mcp: MCPStore? = nil
+        mcp: MCPStore? = nil,
+        welcomesYourPi: Bool = false,
+        yourPi: YourPiModel? = nil,
+        piAuth: PiAuthStore? = nil
     ) {
         self.state = ShepherdState()
         self.server = server
+        self.hostPRDescriptionGenerator = WorktreePRDescriptionGenerator(pi: server.pi)
         self.restoresAgentsAtLaunch = restoresAgentsAtLaunch
         self.settings = settings ?? .shared
         self.sidebarDefaults = sidebarDefaults
@@ -464,11 +487,13 @@ final class ShepherdViewModel {
         self.suggestions = SuggestionsModel(store: server.suggestions, instructionsStore: server.instructions, instructions: instructions)
         self.skills = ClientSkills(defaults: sidebarDefaults)
         self.localSkills = LocalSkillsClient(store: server.skills)
-        self.mcp = mcp ?? MCPStore(dependencies: .app(clientPath: ShepherdViewModel.mcpClientPath,
+        self.mcp = mcp ?? MCPStore(dependencies: .app(engine: server.pi.engine, clientPath: ShepherdViewModel.mcpClientPath,
                                                       openURL: { NSWorkspace.shared.open($0) },
                                                       copy: ShepherdViewModel.copyToPasteboard))
         self.installThemeMarker = themeInstaller
         self.sessions = TerminalSessionStore(server: server)
+        self.yourPi = yourPi ?? YourPiModel(pi: server.pi)
+        self.piAuth = piAuth ?? PiAuthStore(pi: server.pi)
         self.selectedSpaceID = nil
         self.selectedAgentID = nil
         self.focusedPaneID = nil
@@ -481,6 +506,13 @@ final class ShepherdViewModel {
         sessions.onStateChanged = { [weak self] serverState in
             self?.adopt(serverState)
         }
+        // A sign-in or sign-out: Settings reads both sides again.
+        self.piAuth.onChanged = { [weak yourPi = self.yourPi] in
+            Task { await yourPi?.refresh() }
+        }
+        self.piAuth.onSignedIn = { [weak self] provider in self?.signInLanded(provider) ?? 0 }
+        // Logins re-imported from your pi: agents waiting on a sign-in try again.
+        self.yourPi.onSignInsChanged = { [weak self] in _ = self?.retrySignedOutAgents(nil) }
         // Settings ▸ Instructions follows a remote client's save here, and sends a host that
         // comes back what it is owed.
         server.onInstructionsChanged = { [weak instructions = self.instructions] snapshot in
@@ -569,6 +601,15 @@ final class ShepherdViewModel {
         sessions.onPaneSessionExited = { [weak self] paneID in
             self?.handleSessionExited(paneID: paneID)
         }
+        sessions.onAgentStopped = { [weak self] agentID, problem, stopped in
+            guard let self else { return }
+            let waiting = stopped && problem != nil
+            if waiting != cannotStart.contains(agentID) {
+                if waiting { cannotStart.insert(agentID) } else { cannotStart.remove(agentID) }
+            }
+            noteSignIn(agentID, problem: stopped ? problem : nil)
+            if stopped, let problem, problem.kind == .extensionFailed { switchOffFailedExtensions(agentID, problem: problem) }
+        }
         sessions.onNotify = { [weak self] agentID, title, body in
             guard let self, let agent = self.state.agents.first(where: { $0.id == agentID }) else { return }
             self.notifications.agentNotify(agent, title: title, body: body)
@@ -636,7 +677,7 @@ final class ShepherdViewModel {
                         : GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetch)
                 }.value
                 completion(.success(.init(base: resolution.display, note: resolution.note, fetchFirst: fetch,
-                                          model: self.settings.agentDefaults.model ?? PiConfig.defaultModel(), thinking: self.settings.defaultThinking)))
+                                          model: self.settings.agentDefaults.model ?? PiConfig.defaultModel(in: self.server.pi.home), thinking: self.settings.defaultThinking)))
             }
         }
         // Remote clients create agents through this host's normal spawn flow.
@@ -730,6 +771,93 @@ final class ShepherdViewModel {
                 guard let self, self.selectedRemoteAgent == nil, let id = self.selectedAgentID else { return }
                 self.checkouts?.refresh(id)
             }
+        }
+        // The first launch of a build with Shepherd's own pi: restored agents (and automations)
+        // wait until the copy from the user's pi is over, and, when no provider can start them,
+        // until the welcome step closes (DESIGN.md › Welcome).
+        if welcomesYourPi {
+            holdsForWelcome = true
+            sessions.holdStarts()
+            Task { [weak self] in
+                guard let self else { return }
+                self.applyFirstLaunchHold(await self.yourPi.runFirstLaunch(models: { [weak self] in self?.firstLaunchModels ?? [] }))
+            }
+        }
+    }
+
+    /// The first launch's sheet is over (closed, skipped, or never shown): it goes, and restored
+    /// agents start if they still wait.
+    func finishImport() {
+        yourPi.importSheet = nil
+        piAuth.closeSheet()
+        releaseStarts()
+        sessions.releaseHeldAgents()
+        if !waitingForImport.isEmpty { waitingForImport = [] }
+    }
+
+    /// Who waits for the first launch's sheet: nobody, everyone, or the agents whose model's
+    /// provider it asks for (the rest start at once).
+    func applyFirstLaunchHold(_ hold: YourPiModel.Hold) {
+        switch hold {
+        case .none:
+            releaseStarts()
+            if !waitingForImport.isEmpty { waitingForImport = [] }
+        case .all:
+            let all = Set(state.agents.map(\.id))
+            if waitingForImport != all { waitingForImport = all }
+        case .agents(let providers):
+            let held = agentIDs(using: providers)
+            sessions.holdStarts(of: held)
+            releaseStarts()
+            if waitingForImport != held { waitingForImport = held }
+        }
+    }
+
+    /// This Mac's agents whose model (or, with none, the default model) is one of `providers`'.
+    func agentIDs(using providers: Set<String>) -> Set<AgentID> {
+        let fallback = settings.agentDefaults.model ?? yourPi.survey?.shepherdDefaultModel
+        return Set(state.agents.filter { agent in
+            guard let model = agent.model ?? fallback, let slash = model.firstIndex(of: "/") else { return false }
+            return providers.contains(String(model[..<slash]))
+        }.map(\.id))
+    }
+
+    /// Retry, on a first launch's sheet that couldn't read your pi's sign-ins: once they come over
+    /// and nothing more is asked, restored agents start.
+    func retryImportSignIns() {
+        Task { applyFirstLaunchHold(await yourPi.retrySignIns()) }
+    }
+
+    /// A sign-in landed in Shepherd's pi. The first launch's sheet shows it signed in, or, for a
+    /// new user, closes. Returns how many waiting agents started again.
+    func signInLanded(_ provider: String) -> Int {
+        if let sheet = yourPi.importSheet {
+            if sheet.stage == .newUser {
+                finishImport()
+            } else {
+                Task { await yourPi.signInLanded() }
+            }
+        }
+        return retrySignedOutAgents(provider)
+    }
+
+    /// The models restored agents use, and Shepherd's default: their providers are what the first
+    /// launch's sheet asks for when nothing covers them.
+    var firstLaunchModels: [String] {
+        // The server's copy: the workspace may not be adopted yet when the copy ends.
+        server.state.agents.compactMap(\.model) + [settings.agentDefaults.model].compactMap { $0 }
+    }
+
+    /// The first launch's hold is over: restored agents start, the one on screen first, and so do
+    /// enabled automations.
+    private func releaseStarts() {
+        guard holdsForWelcome else { return }
+        holdsForWelcome = false
+        sessions.releaseStarts()
+        if didAdopt, !didAutoStartAutomations {
+            didAutoStartAutomations = true
+            autoStartAutomations()
+            if restoresAgentsAtLaunch { mcp.probeAlwaysOn() }
         }
     }
 
@@ -833,9 +961,22 @@ final class ShepherdViewModel {
         checkouts?.sync(agents: state.agents.map(\.id))
         pruneReviewSessions()
         pruneDesigns()
+        // A deleted agent waits on no sign-in.
+        if notSignedIn.keys.contains(where: { id in !state.agents.contains { $0.id == id } }) {
+            notSignedIn = notSignedIn.filter { entry in state.agents.contains { $0.id == entry.key } }
+            let needed = Set(notSignedIn.values.compactMap(\.provider))
+            if piAuth.needed != needed { piAuth.needed = needed }
+        }
+        // The first launch's copy holds every restored agent until it is over.
+        if holdsForWelcome, restoresAgentsAtLaunch, sessions.startQueue.held {
+            let all = Set(state.agents.map(\.id))
+            if waitingForImport != all { waitingForImport = all }
+        }
+        didAdopt = true
         // First adoption of the restored workspace: stand the enabled
-        // automation watches back up (their agents died with the last run).
-        if !didAutoStartAutomations {
+        // automation watches back up (their agents died with the last run), once the first
+        // launch's welcome step is over.
+        if !didAutoStartAutomations, !holdsForWelcome {
             didAutoStartAutomations = true
             autoStartAutomations()
             if restoresAgentsAtLaunch { mcp.probeAlwaysOn() }
@@ -884,6 +1025,8 @@ final class ShepherdViewModel {
             // A turn starting or ending may have changed files.
             if old != status { checkouts?.refresh(id, after: .milliseconds(300)) }
             let failed = status == .done && failure != nil
+            // pi said a subscription's refresh failed: Sign-in says it expired.
+            if let message = failure?.message { piAuth.noteTurnError(message) }
             if failed != failedTurns.contains(id) {
                 if failed { failedTurns.insert(id) } else { failedTurns.remove(id) }
             }

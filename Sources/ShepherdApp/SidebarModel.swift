@@ -117,6 +117,12 @@ struct SidebarSource: Equatable {
     var localChildren: [AgentID: [ChildRun]] = [:]
     /// This Mac's agents whose last turn ended in an error.
     var failedTurns: Set<AgentID> = []
+    /// This Mac's agents whose pi stopped before it served, waiting for Retry.
+    var cannotStart: Set<AgentID> = []
+    /// Of those, the ones that stopped because nothing signs in for their model: Needs you.
+    var notSignedIn: Set<AgentID> = []
+    /// This Mac's restored agents the first launch's copy from your pi holds.
+    var waiting: Set<AgentID> = []
     /// When each of This Mac's agents entered its status: a running row's elapsed time.
     var statusSince: [AgentID: Date] = [:]
     /// Each automation's open run (`AutomationRun.isLive`).
@@ -141,10 +147,12 @@ enum SidebarDerivation {
             if let design = agent.designID, designs.contains(design) { continue }
             let automation = localRuns[agent.id]
             let children = source.localChildren[agent.id] ?? []
-            let needsYou = agent.status == .blocked || children.contains(where: \.needsAttention)
+            let notSignedIn = source.notSignedIn.contains(agent.id)
+            let needsYou = agent.status == .blocked || children.contains(where: \.needsAttention) || notSignedIn
             let run = automation.flatMap { source.openRuns[$0.id] }.flatMap { $0.agentID == agent.id ? $0 : nil }
             let row = localRow(agent, automation: automation, run: run, children: children, needsYou: needsYou,
-                               failed: source.failedTurns.contains(agent.id), since: source.statusSince[agent.id])
+                               failed: source.failedTurns.contains(agent.id), cannotStart: source.cannotStart.contains(agent.id),
+                               notSignedIn: notSignedIn, waiting: source.waiting.contains(agent.id), since: source.statusSince[agent.id])
             entries.append((row, needsYou, agent.lastActiveAt ?? -1, 0, index))
         }
         if source.designs {
@@ -202,16 +210,31 @@ enum SidebarDerivation {
     }
 
     static func localRow(_ agent: Agent, automation: Automation?, run: AutomationRun?, children: [ChildRun],
-                                 needsYou: Bool, failed: Bool, since: Date?) -> SidebarListRow {
+                         needsYou: Bool, failed: Bool, cannotStart: Bool = false, notSignedIn: Bool = false, waiting: Bool = false,
+                         since: Date?) -> SidebarListRow {
         let failed = failed && agent.status == .done
         let live = automation != nil && AutomationRow.isLive(agent, run: run)
         let leading: NWSidebarRow.Leading
         let accessory: NWSidebarRow.Accessory
         let word: String
-        if needsYou {
+        if notSignedIn {
+            // PiAuthStates' `.notSignedIn`: it waits for a sign-in, in Needs you.
+            leading = automation == nil ? .dot(.attention) : .glyph("bolt", attention: true)
+            accessory = .reason("sign in")
+            word = "not signed in"
+        } else if waiting {
+            // PiAuthStates' `.waiting`: held while the first launch's copy runs.
+            leading = .waiting
+            accessory = .text("waiting")
+            word = "waiting"
+        } else if needsYou {
             leading = automation == nil ? .dot(.attention) : .glyph("bolt", attention: true)
             accessory = .reason(reason(question: agent.waitingOn, short: agent.waitingReason, children: children))
             word = "needs you"
+        } else if cannotStart {
+            leading = automation == nil ? .dot(.failed) : .glyph("bolt", attention: false)
+            accessory = .text("can't start", tone: .failed)
+            word = "can't start"
         } else if automation != nil {
             leading = .glyph("bolt", attention: false)
             if live {

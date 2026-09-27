@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import ShepherdApp
+import ShepherdSessions
 
 /// Shepherd seeds pi's session file so `--session-id` finds a session instead of printing
 /// "No project session found" into every never-prompted agent. Pi owns the format; these pin
@@ -40,6 +41,9 @@ struct PiSessionFileTests {
     @Test(arguments: [
         ("/Users/dev/Developer/Shepherd", "Users-dev-Developer-Shepherd"),
         ("/Users/dev/", "Users-dev"),
+        // pi replaces `:` and `\` too, and strips only the leading separator.
+        ("/Users/dev/proj:v2", "Users-dev-proj-v2"),
+        ("/Users/dev/back\\slash", "Users-dev-back-slash"),
     ])
     func projectDirectoriesMangleTheAbsoluteCwd(cwd: String, mangled: String) {
         #expect(PiSessionFile.mangled(cwd) == mangled)
@@ -328,5 +332,182 @@ struct PiSessionFileTests {
 
     @Test func aSessionWithNothingSaidHasNoTranscript() throws {
         #expect(try transcript([#"{"type":"session","version":3,"id":"s","cwd":"/x"}"#]) == nil)
+    }
+}
+
+/// Adoption: an agent's conversation from before Shepherd ran its own pi is copied, once, from
+/// "your pi" into Shepherd's home, decided by what each side holds, and the user's file is only
+/// ever read.
+@Suite("Adopting a conversation from your pi")
+struct PiSessionAdoptionTests {
+    enum Side: String, CaseIterable, CustomTestStringConvertible {
+        case nothing, header, conversation, newer, linked
+        var testDescription: String { rawValue }
+    }
+
+    struct Scratch {
+        let cwd: URL, ours: URL, theirs: URL, outside: URL
+        let id = "0b8e2c3a-adopt"
+
+        init() throws {
+            cwd = try Fixture.scratchDirectory("adopt-cwd")
+            ours = try Fixture.scratchDirectory("adopt-ours")
+            theirs = try Fixture.scratchDirectory("adopt-theirs")
+            outside = try Fixture.scratchDirectory("adopt-outside")
+        }
+
+        func remove() { for dir in [cwd, ours, theirs, outside] { try? FileManager.default.removeItem(at: dir) } }
+
+        var yourPi: YourPi { YourPi(agentDirectory: theirs) }
+        var theirFolder: URL { theirs.appendingPathComponent("sessions/\(PiSessionFolder.name(forCwd: cwd.path))", isDirectory: true) }
+        var ourFolder: URL { PiSessionFile.projectDirectory(forCwd: cwd.path, sessionsRoot: ours) }
+
+        func header(version: Int = 3) -> String { #"{"type":"session","version":\#(version),"id":"\#(id)","cwd":"\#(cwd.path)"}"# + "\n" }
+        var conversation: String { header() + #"{"type":"message","message":{"role":"user","content":"hello"}}"# + "\n" }
+
+        /// Writes what `side` holds into "your pi", and returns its bytes.
+        @discardableResult
+        func put(_ side: Side) throws -> Data? {
+            let file = theirFolder.appendingPathComponent("2026-01-01T00-00-00-000Z_\(id).jsonl")
+            try FileManager.default.createDirectory(at: theirFolder, withIntermediateDirectories: true)
+            switch side {
+            case .nothing: return nil
+            case .header: try Data(header().utf8).write(to: file)
+            case .conversation: try Data(conversation.utf8).write(to: file)
+            case .newer: try Data((header(version: 4) + "{}\n").utf8).write(to: file)
+            case .linked:
+                let real = outside.appendingPathComponent("real.jsonl")
+                try Data(conversation.utf8).write(to: real)
+                try FileManager.default.createSymbolicLink(at: file, withDestinationURL: real)
+            }
+            return try Data(contentsOf: file)
+        }
+
+        /// Every path under "your pi", with its bytes: what must never change.
+        func theirTree() throws -> [String: Data] {
+            var tree: [String: Data] = [:]
+            for path in try FileManager.default.subpathsOfDirectory(atPath: theirs.path) {
+                tree[path] = FileManager.default.contents(atPath: theirs.appendingPathComponent(path).path) ?? Data()
+            }
+            return tree
+        }
+    }
+
+    @Test(arguments: Side.allCases)
+    func shepherdsHomeWithNothingAdoptsOnlyAConversationItCanRead(_ theirs: Side) throws {
+        let scratch = try Scratch()
+        defer { scratch.remove() }
+        let bytes = try scratch.put(theirs)
+        let before = try scratch.theirTree()
+
+        let outcome = PiSessionFile.adopt(sessionID: scratch.id, cwd: scratch.cwd.path, sessionsRoot: scratch.ours, yourPi: scratch.yourPi)
+
+        let copied = PiSessionFile.file(sessionID: scratch.id, cwd: scratch.cwd.path, sessionsRoot: scratch.ours)
+        switch theirs {
+        case .conversation, .linked:
+            guard case .copied = outcome else { Issue.record("expected a copy, got \(outcome)"); return }
+            let copy = try #require(copied)
+            #expect(try Data(contentsOf: copy) == Data(scratch.conversation.utf8))
+            var info = stat()
+            #expect(lstat(copy.path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFREG && info.st_nlink == 1, "bytes, never a link")
+            _ = bytes
+        case .newer:
+            #expect(outcome == .newerFormat(scratch.theirFolder.appendingPathComponent("2026-01-01T00-00-00-000Z_\(scratch.id).jsonl").path))
+            #expect(copied == nil)
+        case .nothing, .header:
+            #expect(outcome == .nothing && copied == nil)
+        }
+        #expect(try scratch.theirTree() == before, "your pi is byte-identical")
+        #expect(!(try scratch.theirTree().keys.contains { $0.hasSuffix(".lock") }))
+    }
+
+    /// A conversation already in Shepherd's home wins, whatever "your pi" holds.
+    @Test func aConversationAlreadyHereIsKept() throws {
+        let scratch = try Scratch()
+        defer { scratch.remove() }
+        try scratch.put(.conversation)
+        try FileManager.default.createDirectory(at: scratch.ourFolder, withIntermediateDirectories: true)
+        let ours = scratch.ourFolder.appendingPathComponent("2026-02-02T00-00-00-000Z_\(scratch.id).jsonl")
+        let mine = scratch.header() + #"{"type":"message","message":{"role":"user","content":"mine"}}"# + "\n"
+        try Data(mine.utf8).write(to: ours)
+
+        #expect(PiSessionFile.adopt(sessionID: scratch.id, cwd: scratch.cwd.path, sessionsRoot: scratch.ours, yourPi: scratch.yourPi) == .alreadyHere)
+        #expect(try String(contentsOf: ours, encoding: .utf8) == mine)
+    }
+
+    /// A header Shepherd seeded before is replaced by the conversation: one file for the id.
+    @Test func aSeededHeaderGivesWayToTheConversation() throws {
+        let scratch = try Scratch()
+        defer { scratch.remove() }
+        try scratch.put(.conversation)
+        PiSessionFile.seedIfMissing(sessionID: scratch.id, cwd: scratch.cwd.path, sessionsRoot: scratch.ours)
+
+        guard case .copied = PiSessionFile.adopt(sessionID: scratch.id, cwd: scratch.cwd.path, sessionsRoot: scratch.ours, yourPi: scratch.yourPi) else {
+            Issue.record("expected a copy"); return
+        }
+        let names = try FileManager.default.contentsOfDirectory(atPath: scratch.ourFolder.path).filter { $0.hasSuffix("_\(scratch.id).jsonl") }
+        #expect(names == ["2026-01-01T00-00-00-000Z_\(scratch.id).jsonl"])
+        #expect(PiSessionFile.hasRuntimeState(sessionID: scratch.id, cwd: scratch.cwd.path, sessionsRoot: scratch.ours))
+    }
+
+    /// With no "your pi" there is nothing to read.
+    @Test func withoutYourPiNothingIsAdopted() throws {
+        let scratch = try Scratch()
+        defer { scratch.remove() }
+        try scratch.put(.conversation)
+        #expect(PiSessionFile.adopt(sessionID: scratch.id, cwd: scratch.cwd.path, sessionsRoot: scratch.ours, yourPi: nil) == .nothing)
+    }
+
+    /// A session file in Shepherd's home that links to the user's (a symlink or a hard link) is
+    /// replaced with a copy of its bytes before pi opens it, so pi never appends to theirs.
+    @Test(arguments: [false, true])
+    func aSessionFileLinkedIntoYourPiBecomesACopy(_ hardLink: Bool) throws {
+        let scratch = try Scratch()
+        defer { scratch.remove() }
+        let theirs = try #require(try scratch.put(.conversation))
+        let theirFile = scratch.theirFolder.appendingPathComponent("2026-01-01T00-00-00-000Z_\(scratch.id).jsonl")
+        try FileManager.default.createDirectory(at: scratch.ourFolder, withIntermediateDirectories: true)
+        let ours = scratch.ourFolder.appendingPathComponent(theirFile.lastPathComponent)
+        if hardLink {
+            try FileManager.default.linkItem(at: theirFile, to: ours)
+        } else {
+            try FileManager.default.createSymbolicLink(at: ours, withDestinationURL: theirFile)
+        }
+        let before = try scratch.theirTree()
+
+        #expect(PiSessionFile.adopt(sessionID: scratch.id, cwd: scratch.cwd.path, sessionsRoot: scratch.ours, yourPi: nil) == .alreadyHere)
+        #expect(PiSessionFile.isOwnFile(ours), "a file of Shepherd's own")
+        #expect(try Data(contentsOf: ours) == theirs)
+        try Data("appended by pi\n".utf8).append(to: ours)
+        #expect(try scratch.theirTree() == before, "your pi is byte-identical")
+    }
+
+    /// A project folder in Shepherd's home that links into the user's pi gets no adopted copy, no
+    /// seeded header and no fork.
+    @Test func aProjectFolderLinkedIntoYourPiGetsNothingWritten() throws {
+        let scratch = try Scratch()
+        defer { scratch.remove() }
+        let bytes = try #require(try scratch.put(.conversation))
+        try FileManager.default.createDirectory(at: scratch.ours, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: scratch.ourFolder, withDestinationURL: scratch.theirFolder)
+        let source = scratch.theirFolder.appendingPathComponent("2026-01-01T00-00-00-000Z_\(scratch.id).jsonl")
+        let before = try scratch.theirTree()
+
+        #expect(PiSessionFile.adopt(sessionID: "other-id", cwd: scratch.cwd.path, sessionsRoot: scratch.ours, yourPi: scratch.yourPi) == .nothing)
+        #expect(!PiSessionFile.seedIfMissing(sessionID: "other-id", cwd: scratch.cwd.path, sessionsRoot: scratch.ours))
+        #expect(throws: PiSessionFile.ForkFailure.self) {
+            try PiSessionFile.fork(sessionFile: source.path, cwd: scratch.cwd.path, sessionsRoot: scratch.ours)
+        }
+        #expect(try scratch.theirTree() == before, "your pi is byte-identical")
+        #expect(try Data(contentsOf: source) == bytes)
+    }
+}
+
+private extension Data {
+    func append(to url: URL) throws {
+        let handle = try FileHandle(forWritingTo: url)
+        defer { try? handle.close() }
+        try handle.seekToEnd()
+        try handle.write(contentsOf: self)
     }
 }

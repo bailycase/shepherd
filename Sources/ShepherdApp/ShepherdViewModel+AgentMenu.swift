@@ -19,12 +19,12 @@ extension ShepherdViewModel {
         guard let source = sessionSource(id) else { return }
         Task {
             do {
-                let (sessionID, cwd) = (source.sessionID, source.cwd)
+                let (sessionID, cwd, root) = (source.sessionID, source.cwd, server.pi.sessionsRoot)
                 let forked = try await Task.detached(priority: .userInitiated) {
-                    guard let file = PiSessionFile.file(sessionID: sessionID, cwd: cwd) else {
+                    guard let file = PiSessionFile.file(sessionID: sessionID, cwd: cwd, sessionsRoot: root) else {
                         throw PiSessionFile.ForkFailure(message: "This agent has nothing to fork yet.")
                     }
-                    return try PiSessionFile.fork(sessionFile: file.path, cwd: cwd)
+                    return try PiSessionFile.fork(sessionFile: file.path, cwd: cwd, sessionsRoot: root)
                 }.value
                 var config = NewAgentConfig(spaceID: source.agent.spaceID, workingDirectory: cwd, model: source.agent.model,
                                             thinking: source.agent.thinkingLevel ?? .medium, initialPrompt: nil)
@@ -44,9 +44,9 @@ extension ShepherdViewModel {
     func copyAgentTranscript(_ id: AgentID) {
         guard let source = sessionSource(id) else { return }
         Task {
-            let (sessionID, cwd) = (source.sessionID, source.cwd)
+            let (sessionID, cwd, root) = (source.sessionID, source.cwd, server.pi.sessionsRoot)
             let text = await Task.detached(priority: .userInitiated) {
-                PiSessionFile.file(sessionID: sessionID, cwd: cwd).flatMap(PiSessionFile.transcript(file:))
+                PiSessionFile.file(sessionID: sessionID, cwd: cwd, sessionsRoot: root).flatMap(PiSessionFile.transcript(file:))
             }.value
             guard let text else {
                 remoteActionError = "“\(source.agent.name)” has no transcript yet. Nothing was copied."

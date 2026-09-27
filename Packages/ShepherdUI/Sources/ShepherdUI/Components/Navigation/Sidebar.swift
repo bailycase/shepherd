@@ -302,7 +302,9 @@ public struct NWSidebarRow: View, Equatable {
         case dot(AgentState)
         /// A kind's glyph (an automation's bolt): `lanternText` while it needs you, else
         /// `textTertiary`.
-        case glyph(String, attention: Bool)
+        case glyph(String, attention: Bool)        /// A clock in `textSecondary`: a restored agent the first launch's copy from your pi holds
+        /// (PiAuthStates' `.waiting`).
+        case waiting
     }
 
     public enum Accessory: Equatable, Sendable {
@@ -388,6 +390,11 @@ public struct NWSidebarRow: View, Equatable {
             Image(systemName: name)
                 .font(.system(size: density.rowGlyph - 1, weight: .regular))
                 .foregroundStyle(attention ? Color.nw.lanternText : Color.nw.textTertiary)
+                .accessibilityHidden(true)
+        case .waiting:
+            Image(systemName: "clock")
+                .font(.system(size: density.rowGlyph - 2, weight: .regular))
+                .foregroundStyle(Color.nw.textSecondary)
                 .accessibilityHidden(true)
         }
     }

@@ -54,4 +54,50 @@ struct AgentStartQueueTests {
         queue.finished(a)
         #expect(queue.next().isEmpty && queue.running.isEmpty)
     }
+
+    /// Held (the first launch's copy from the user's pi and its welcome step), nothing starts, not
+    /// even the agent on screen; released, that one starts first and the rest follow in order.
+    @Test func aHeldQueueStartsNothingUntilReleasedThenTheAgentOnScreenFirst() {
+        var queue = AgentStartQueue(limit: 2)
+        queue.hold()
+        let wantedWhileHeld = queue.startAhead(c)
+        #expect(!wantedWhileHeld)
+        var begun: [AgentID] = []
+        for id in [a, b, c, d] where queue.enqueue(id) { begun.append(id) }
+        #expect(begun.isEmpty && queue.next().isEmpty && queue.started.isEmpty)
+        let selectedWhileHeld = queue.startAhead(d)
+        #expect(!selectedWhileHeld && queue.started.isEmpty)
+
+        #expect(queue.release() == [c, d], "the agents on screen, in queue order")
+        #expect(queue.next().isEmpty, "the rest wait for them")
+        queue.finished(c)
+        queue.finished(d)
+        #expect(queue.next() == [a, b])
+        #expect(queue.release().isEmpty, "a second release changes nothing")
+        #expect(queue.started == [a, b, c, d])
+    }
+
+    /// Something missing: once the hold on everything ends, agents that use a provider the sheet
+    /// asks for keep waiting, on screen or not, while the rest start; released, the one on screen
+    /// goes first.
+    @Test func agentsHeldOneByOneWaitPastTheReleaseUntilTheirOwn() {
+        var queue = AgentStartQueue(limit: 2)
+        queue.hold()
+        for id in [a, b, c, d] { _ = queue.enqueue(id) }
+        _ = queue.startAhead(b)
+        queue.hold([b, d])
+        #expect(queue.isHeld(a) && queue.isHeld(b), "everything waits while held")
+
+        #expect(queue.release().isEmpty, "the agent on screen is held on its own")
+        #expect(queue.next() == [a, c])
+        #expect(!queue.isHeld(a) && queue.isHeld(b) && queue.isHeld(d))
+        let selected = queue.startAhead(d)
+        #expect(!selected && !queue.started.contains(d), "selecting a held agent doesn't start it")
+        queue.finished(a)
+        queue.finished(c)
+        #expect(queue.next().isEmpty)
+
+        #expect(queue.releaseAgents() == [b, d], "the ones wanted on screen, ahead")
+        #expect(queue.heldAgents.isEmpty && !queue.isHeld(d) && queue.started == [a, b, c, d])
+    }
 }

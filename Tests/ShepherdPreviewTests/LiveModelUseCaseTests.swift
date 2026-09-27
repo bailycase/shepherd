@@ -43,7 +43,7 @@ struct LiveModelUseCaseTests {
         // The support directory is the test process's scratch one (ShepherdTestKit).
         let server = SessionServer(socketPath: ShepherdPaths.socketURL().path, stateURL: ShepherdPaths.stateURL())
         try server.start()
-        let sessionsDir = PiSessionFile.projectDirectory(forCwd: cwd.path)
+        let sessionsDir = PiSessionFile.projectDirectory(forCwd: cwd.path, sessionsRoot: server.pi.sessionsRoot)
         let defaults = ScratchDefaults()
         defer {
             server.stop()

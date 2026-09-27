@@ -43,6 +43,15 @@ struct ThreadView: View {
     var turnActions: TurnChangesActions? = nil
     /// The models the host offers, for the composer's model picker.
     var listModels: (() async -> ModelCatalog)? = nil
+    /// Retry in the composer's Can't start banner (true: start a new conversation); nil for a
+    /// remote agent, whose pi only its host starts.
+    var restartPi: ((Bool) -> Void)? = nil
+    /// Waiting for the first launch's copy, or not signed in (local agents): the line or card at
+    /// the thread's end, and what its buttons do.
+    var authNotice: ThreadAuthNotice? = nil
+    var authActions: ThreadAuthActions? = nil
+    /// `/login` and `/logout` in the composer (this Mac's agents).
+    var slashLogin: SlashLoginActions? = nil
     /// The composer's "Up next" state, when a test or preview drives it.
     var queueState: QueueStackState? = nil
     /// Previews: the composer opens with the context ring's details showing.
@@ -112,6 +121,10 @@ struct ThreadView: View {
                             .id(row.id)
                         }
                         if thinking, liveRow == nil { NWThinking.live().nwArrival(settled) }
+                        if let authNotice {
+                            ThreadAuthNoticeView(notice: authNotice, actions: authActions)
+                                .id(ThreadAuthNotice.rowID)
+                        }
                         Color.clear.frame(height: 1).id(Self.bottomID)
                     }
                     .frame(maxWidth: AppLayout.threadMaxWidth)
@@ -183,7 +196,9 @@ struct ThreadView: View {
                              proxy.scrollTo(Self.bottomID, anchor: .bottom)
                          } : nil, finder: finder, queueState: queueState, contextDetailsOpen: contextDetailsOpen,
                          inspectSubagent: inspectSubagent, steerSubagent: steerSubagent, inspectedRunID: inspectedRunID,
-                         designChat: designChat)
+                         designChat: designChat, restartPi: restartPi,
+                         hidesNotSignedIn: { if case .notSignedIn? = authNotice { true } else { false } }(),
+                         slashLogin: slashLogin)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { [composerInset] in
                         if composerInset.height != $0 { composerInset.height = $0 }
                     }
@@ -329,7 +344,7 @@ struct ThreadView: View {
 
     @ViewBuilder private var notices: some View {
         if store.session != nil {
-            if !store.ready, store.loadError == nil, !store.starting, !store.previewing {
+            if !store.ready, store.loadError == nil, store.startProblem == nil, !store.starting, !store.previewing {
                 quiet("Last known thread · refreshing before enabling actions")
             }
             if !store.dialogsSupported { quiet("This host's agent cannot answer questions here · update Shepherd on the host") }

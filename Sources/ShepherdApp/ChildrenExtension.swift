@@ -489,10 +489,13 @@ enum ChildrenExtension {
             for (const extension of new Set([...inherited, ...(run.extensions ?? [])])) {
               if (fs.realpathSync(extension) !== fs.realpathSync(bridge)) args.push("-e", extension);
             }
-            const script = path.join(getPackageDir(), "dist", "cli.js");
-            const executable = /^(node|bun)(\.exe)?$/i.test(path.basename(process.execPath)) ? process.execPath : "pi";
-            run.proc = spawn(executable, executable === process.execPath ? [script, ...args] : args,
-              { cwd: run.cwd, env, detached: false, stdio: ["pipe", "pipe", "pipe"] });
+            // The parent's own engine: the node it runs on and its pi's bundle, never a `pi` from PATH
+            // (Shepherd's pi ships both; its launcher pins the rest, which the child inherits).
+            const script = path.join(getPackageDir(), "dist", "bundle", "cli.js");
+            if (!/^node(\.exe)?$/i.test(path.basename(process.execPath)) || !fs.existsSync(script)) {
+              throw new Error(`Native subagents run on pi's own node and bundle, and this pi has none (${process.execPath}, ${script})`);
+            }
+            run.proc = spawn(process.execPath, [script, ...args], { cwd: run.cwd, env, detached: false, stdio: ["pipe", "pipe", "pipe"] });
             if (run.proc.pid) atomic(path.join(leaseDir, "owner.json"), { pid: run.proc.pid, token: run.token });
             const proc = run.proc;
             proc.stdin.on("error", () => {});
@@ -1134,8 +1137,10 @@ enum ChildrenExtension {
           const errors = settings.drainErrors();
           if (errors.length) throw Error(`Cannot read Pi skill settings: ${errors[0].error.message}`);
           const global = settings.getGlobalSettings(), project = settings.getProjectSettings();
-          const paths = [path.join(getAgentDir(), "skills"), path.join(os.homedir(), ".agents", "skills"),
-            ...(global.skills ?? []).map((p) => path.resolve(getAgentDir(), p.replace(/^~\//, `${os.homedir()}/`)))];
+          // Shepherd's pi reads skills only from its own home, never ~/.agents/skills: its settings turn
+          // that folder off for the parent, and a filter entry ("!…") names no folder.
+          const paths = [path.join(getAgentDir(), "skills"),
+            ...(global.skills ?? []).filter((p) => !/^[!+-]/.test(p)).map((p) => path.resolve(getAgentDir(), p.replace(/^~\//, `${os.homedir()}/`)))];
           if (ctx.isProjectTrusted?.() === true) paths.unshift(path.join(ctx.cwd, CONFIG_DIR_NAME, "skills"), path.join(ctx.cwd, ".agents", "skills"),
             ...(project.skills ?? []).map((p) => path.resolve(ctx.cwd, CONFIG_DIR_NAME, p.replace(/^~\//, `${os.homedir()}/`))));
           const loaded = loadSkills({ cwd: ctx.cwd, agentDir: getAgentDir(), skillPaths: [...(profile.skillPaths ?? []), ...paths.filter((p) => fs.existsSync(p))], includeDefaults: false });

@@ -124,6 +124,9 @@ public struct RPCImage: Codable, Hashable, Sendable {
 
 public enum RPCStreamingBehavior: String, Codable, Hashable, Sendable { case steer, followUp }
 
+/// What Shepherd sends pi. None of it names a session file (`switch_session`, `fork`,
+/// `export_html`): a path is where pi writes, and Shepherd's pi writes only inside its own pi home
+/// (`PiHome`). A command that ever needs one checks it with `PiHome.contains` first.
 public enum RPCCommand: Encodable, Hashable, Sendable {
     case prompt(message: String, images: [RPCImage] = [], streamingBehavior: RPCStreamingBehavior? = nil)
     case abort
