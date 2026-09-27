@@ -203,6 +203,25 @@ struct DesignProjectImportTests {
         #expect(await h.server.designSystemSummaries().map(\.info.namespace) == ["checkout-ds"], "one system, not two")
     }
 
+    /// A project whose system shares its namespace with a different system here keeps its own
+    /// under the next free name, and the design is drawn in that one, not the other.
+    @Test func aSystemNamedLikeAnotherIsKeptApartAndTheDesignUsesIt() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let other = try write(Self.projectZip(canvas: Self.canvas.replacingOccurrences(of: "Checkout funnel", with: "Other")
+                                                  .replacingOccurrences(of: "2026-09-20", with: "2026-09-01"))
+                                + [.file("checkout-funnel/project/ds/checkout-ds/README.md", "different")], name: "other.zip")
+        let first = try await h.server.importDesign(from: other)
+        #expect(first.systemNamespace == "checkout-ds")
+
+        let design = try await h.server.importDesign(from: try write(Self.projectZip()))
+
+        #expect(design.systemNamespace == "checkout-ds-2")
+        #expect(h.server.state.designs.first { $0.id == design.id }?.systemNamespace == "checkout-ds-2")
+        let summaries = await h.server.designSystemSummaries()
+        #expect(summaries.first { $0.info.namespace == "checkout-ds-2" }?.info.cameWith == design.id)
+    }
+
     /// Quitting with an import waiting on a choice puts it away.
     @Test func quittingPutsAWaitingImportAway() async throws {
         let h = try ScratchServer.fresh()

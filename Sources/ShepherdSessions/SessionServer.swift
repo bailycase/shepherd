@@ -3537,14 +3537,26 @@ public final class SessionServer: @unchecked Sendable {
             throw error
         }
         var added = false
-        for system in preview.systems {
+        var drawnIn: String?
+        for (index, system) in preview.systems.enumerated() {
             guard let files = finished.systems[system.namespace],
                   let adopted = try? await designSystems.adopt(namespace: system.namespace, title: system.title, files: files,
                                                                cameWith: id, at: now) else { continue }
             added = added || adopted.added
+            if index == 0 { drawnIn = adopted.namespace }
         }
         if added { hopToMain { [weak self] in self?.onDesignSystemsChanged?() } }
-        return design
+        // The system it is drawn in is the one it came with, wherever that was kept: under
+        // another name when this host has a different system by its own, or the one this host
+        // already had with the same files.
+        guard let drawnIn, drawnIn != design.systemNamespace else { return design }
+        var named = design
+        named.systemNamespace = drawnIn
+        try? await enqueue {
+            guard let at = self.store.state.designs.firstIndex(where: { $0.id == id }) else { return }
+            try self.mutateState { $0.designs[at].systemNamespace = drawnIn }
+        }
+        return state.designs.first { $0.id == id } ?? named
     }
 
     /// Import put away (Cancel import, a dialog closed): the staged project goes.

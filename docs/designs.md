@@ -950,7 +950,8 @@ Designs until the viewer's choice, if one is needed, is made.
   lists under `designSystems` whose `ds/<namespace>/` it holds and whose `tokens.json` Shepherd
   reads, only a system's kinds of file. A system this host already has with the same files is
   used instead of adding a second (the preview says so), else it takes the namespace or the first
-  free `<namespace>-2`, …. The design is drawn in the first (`Design.systemNamespace`).
+  free `<namespace>-2`, …. The design is drawn in the first, under the name it was kept as
+  (`Design.systemNamespace`), never in a different system that happens to share its namespace.
 - **Atomic.** Only finishing moves the staged folder into place whole and then commits the
   record; a refused or failed import, a cancel, or a quit leaves nothing behind.
 - **First open** (ImportDone): the app opens the design and starts its agent with a first message
