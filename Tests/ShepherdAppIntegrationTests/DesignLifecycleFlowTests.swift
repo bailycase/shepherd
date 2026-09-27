@@ -36,7 +36,7 @@ struct DesignLifecycleFlowTests {
     }
 
     @Test func deletingAnOpenDesignGoesBackToDesignsAndUndoBringsItAllBack() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         let vm = try await start(app)
@@ -79,7 +79,7 @@ struct DesignLifecycleFlowTests {
     /// Deleted elsewhere (another device, through this host): the window showing it goes back to
     /// Designs rather than to another thread.
     @Test func aDesignDeletedElsewhereTakesItsWindowBackToDesigns() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         let vm = try await start(app)
@@ -92,7 +92,7 @@ struct DesignLifecycleFlowTests {
     }
 
     @Test func importingAZipFillsItsCardThenOpensTheDesignWithItsSystem() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         let vm = try await start(app)
