@@ -217,6 +217,7 @@ And the rules that follow from them:
 | SignInDevice: GitHub Copilot's sheet shows only github.com | GitHub Enterprise isn't offered (pi's domain question is answered with github.com) | No board draws the question; Enterprise users sign in with an API key for now |
 | SettingsPiSignIn: Custom providers labelled `~/.pi/agent/models.json` | The file Shepherd's pi reads (`…/Shepherd/pi/models.json`) | The copy is what agents use; the source is on From your pi |
 | SettingsPiFromPi: "pi 0.86.4 in your terminal" | "The pi in your terminal, found through your login shell." | Shepherd never runs the user's pi, so it doesn't know its version |
+| PiAuthStates, PiImportProgress: "This agent was mid-turn when Shepherd quit." on the waiting line | "It picks up once your pi is brought over." alone | Statuses reset at launch (sessions die with the app), so Shepherd doesn't know a turn was cut short |
 | SlashLogin: /logout signs out | /logout opens Sign-in at the provider; Sign out stays a click there | A slash command never destroys a sign-in on its own |
 
 Additions the boards don't have:
@@ -1476,9 +1477,8 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   launch's copy holds a restored agent, its thread ends with one static line, `NW.Space.l` under
   the last turn in the thread's column: a card (`bgSunken`, radius 10, `lineSubtle`, 10×14) with
   a `clock` 14pt in `textSecondary`, "Waiting to continue" in 13/500 over "It picks up once your
-  pi is brought over." in 12.5 `textSecondary` ("This agent was mid-turn when Shepherd quit." first,
-  when its last turn never ended), and "restored 9:41 AM" in mono 11 `textTertiary` trailing. It
-  goes, with no motion, when the agent picks up.
+  pi is brought over." in 12.5 `textSecondary`, and "restored 9:41 AM" in mono 11 `textTertiary`
+  trailing. It goes, with no motion, when the agent picks up.
 - **Not signed in** (`NWAgentNotSignedInCard`; AgentNotSignedIn, PiAuthStates): a pi that can't
   start because no sign-in covers its model shows a card at the end of the thread instead of the
   composer's Can't start banner: `lantern` at 28% for its line and 5% for its fill, radius 10,
@@ -3710,8 +3710,8 @@ pi of yours). Everything here is Shepherd's pi's alone (its home's `auth.json` a
   "Signing in here and in your terminal pi can sign one of them out." in Geist 11.5
   `textTertiary`, 3pt under the status line.
 - **The provider menu** (the native menu, `NWOptionsMenu`'s anatomy):
-  - a subscription: Sign in again · Re-import from your pi (with its freshness trailing in mono
-    10.5 `textTertiary`; disabled when your pi has no sign-in for it) · a divider · Sign out, in
+  - a subscription: Sign in again · Re-import from your pi (with its freshness as the item's
+    second line; disabled when your pi has no sign-in for it) · a divider · Sign out, in
     `failed`. Sign out removes it from Shepherd's pi only: its entry in the home's `auth.json`,
     through pi's own `logout`; the user's pi keeps theirs.
   - a key: Change key… · Re-import from your pi (freshness) · a divider · Remove key, in `failed`.
@@ -3748,8 +3748,8 @@ nothing here changes your pi."
     same and a secondary one when they differ. A failure is the row's inline problem.
 - **Copied** (footnote "Copied into Shepherd’s pi. Edits in your pi reach Shepherd only when you
   Re-import."): Instructions ("`~/.pi/agent/AGENTS.md` · 38 lines · no `APPEND_SYSTEM.md`"; Edit in
-  Instructions opens Settings ▸ Instructions), Skills ("12 in `~/.pi/agent/skills` · listed with
-  the rest in Skills"; Show in Finder, at Shepherd's copies), Prompts (their names as `NWTag`s in
+  Instructions opens Settings ▸ Instructions), Skills ("12 skills, listed with the rest in
+  Skills."; Show in Finder, at Shepherd's copies), Prompts (their names as `NWTag`s in
   mono, "/review", at most six and "+3"; Show in Finder), Themes the same way when there are
   any; each with Re-import.
 - **Extensions**, labelled "Extensions" with "4 in `~/.pi/agent/extensions`" trailing (footnote
