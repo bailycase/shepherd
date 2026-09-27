@@ -41,6 +41,7 @@ extension ShepherdViewModel {
             picture: { [weak self] in self?.referencePicture($0) },
             catalog: { await server.designMentionCatalog() },
             rowPicture: { [weak self] in self?.mentionPicture($0) },
+            wantCrop: { [weak self] in self?.wantMentionCrop($0, board: $1, tids: $2) },
             wantPictures: { [weak self] in self?.wantMentionPictures($0) },
             open: { [weak self] in self?.openDesignReference($0) },
             attach: { [weak self] reference in
@@ -88,16 +89,31 @@ extension ShepherdViewModel {
         return designRendering.thumbnails.image(reference.designID)
     }
 
-    /// A picker row's picture: a design's first board, a board's (or an element's board's) own.
+    /// A picker row's picture: a design's first board, a board's own, an element cut from its
+    /// board at the catalog's revision (none until it is cut: never its board's picture).
     func mentionPicture(_ item: DesignMentionItem) -> CGImage? {
         switch item.kind {
         case .design:
             return designRendering.thumbnails.image(item.reference.designID)
-        case .board, .element:
+        case .board:
             guard let board = item.reference.board else { return nil }
             return designRendering.boardPictures.image(item.reference.designID, board)
                 ?? designRendering.host(for: item.reference.designID)?.image(board)
+        case .element:
+            guard let board = item.reference.board, let tid = item.reference.element?.tid, let revision = item.revision else { return nil }
+            return designRendering.elementCrops.crop(item.reference.designID, board, revision: revision, tid: tid)
         }
+    }
+
+    /// An element's row came on screen in the @ picker: its picture is cut from its board, drawn
+    /// by the shared rasterizer at the catalog's revision.
+    func wantMentionCrop(_ item: DesignMentionItem, board: DesignMentionItem, tids: [Int]) {
+        guard item.reference.host == .local, let path = item.reference.board, let tid = item.reference.element?.tid,
+              let revision = item.revision, let width = board.width, let height = board.height else { return }
+        let crops = designRendering.elementCrops
+        crops.landed = { [weak self] in self?.referencePicturesLanded() }
+        crops.want(tid, on: DesignElementCrops.Board(design: item.reference.designID, path: path, size: CGSize(width: width, height: height),
+                                                     revision: revision, tids: tids))
     }
 
     /// The picker opened on `scope`: its designs' first boards, or a design's boards, are drawn

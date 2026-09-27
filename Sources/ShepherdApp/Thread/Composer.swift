@@ -499,7 +499,11 @@ struct Composer: View {
                 let content = mentions.content
                 NWMentionPicker(sections: content.sections, crumbs: content.crumbs, empty: content.empty, highlighted: mentions.highlighted,
                                 maxHeight: room, choose: { chooseMention($0) }, drill: { chooseMention($0) },
-                                back: { mentionBack() }, hover: { mentions.highlighted = $0 }, startDesign: references?.io.startDesign)
+                                back: { mentionBack() }, hover: { mentions.highlighted = $0 }, startDesign: references?.io.startDesign,
+                                appear: { id in
+                                    // An element's row on screen: its picture is cut now, not before.
+                                    if let item = mentions.content.items[id] { references?.rowAppeared(item) }
+                                })
                     .nwTransition(.overlay, anchor: .bottomLeading)
             }
             // The picker and the thinking menu compare what they draw, so a composer redraw for

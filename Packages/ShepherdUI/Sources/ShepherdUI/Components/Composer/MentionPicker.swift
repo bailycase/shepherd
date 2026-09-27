@@ -112,12 +112,15 @@ public struct NWMentionPicker: View {
     let back: () -> Void
     let hover: (String) -> Void
     let startDesign: (() -> Void)?
+    /// A row came on screen (the list builds only those): its picture can be made now.
+    let appear: (String) -> Void
     /// The row the pointer just highlighted, until the highlight's change is seen.
     @State private var pointed: String?
 
     public init(sections: [NWMentionSection], crumbs: [String]? = nil, empty: NWMentionEmpty? = nil, highlighted: String?,
                 maxHeight: CGFloat? = nil, choose: @escaping (NWMentionRow) -> Void, drill: @escaping (NWMentionRow) -> Void,
-                back: @escaping () -> Void = {}, hover: @escaping (String) -> Void = { _ in }, startDesign: (() -> Void)? = nil) {
+                back: @escaping () -> Void = {}, hover: @escaping (String) -> Void = { _ in }, startDesign: (() -> Void)? = nil,
+                appear: @escaping (String) -> Void = { _ in }) {
         self.sections = sections
         self.crumbs = crumbs
         self.empty = empty
@@ -128,6 +131,7 @@ public struct NWMentionPicker: View {
         self.back = back
         self.hover = hover
         self.startDesign = startDesign
+        self.appear = appear
     }
 
     /// The list's height for `sections`: every header and row, at most `maxRows` rows' worth, and
@@ -229,6 +233,7 @@ public struct NWMentionPicker: View {
                                     hover(row.id)
                                 }
                                 .equatable()
+                                .onAppear { appear(row.id) }
                             }
                         }
                         .id(entry.id)

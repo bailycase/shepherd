@@ -175,6 +175,22 @@ struct DesignReferenceThreadTests {
         #expect(DesignReferenceChips.changes(.current, version: 23) == nil)
     }
 
+    /// RefAtElements: an element's row on screen asks for its own picture, with its board and the
+    /// elements listed on it; a design's or a board's row asks for none.
+    @Test func anElementRowOnScreenAsksForItsOwnPicture() throws {
+        var asked: [(String, String, [Int])] = []
+        let chips = DesignReferenceChips(agentID: AgentID(rawValue: "t"), io: DesignReferenceChips.IO(
+            wantCrop: { element, board, tids in asked.append((element.id, board.id, tids)) }))
+        chips.seed(catalog: Self.catalog)
+        let board = try #require(Self.catalog.boards[Self.checkout]?.first)
+        let card = try #require(Self.catalog.elements[board.id]?.first)
+        chips.rowAppeared(try #require(Self.catalog.designs.first))
+        chips.rowAppeared(board)
+        #expect(asked.isEmpty)
+        chips.rowAppeared(card)
+        #expect(asked.map(\.0) == [card.id] && asked.map(\.1) == [board.id] && asked.map(\.2) == [[7]])
+    }
+
     /// RefPasted: ⌫ takes the last chip back with the caret at the start of the words, and
     /// deletes a character anywhere else.
     @Test(arguments: [

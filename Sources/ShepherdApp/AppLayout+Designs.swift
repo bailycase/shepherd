@@ -16,6 +16,10 @@ extension AppLayout {
     static let referencePicturePixels: CGFloat = 640
     /// A picker row's board picture is kept this many pixels wide (drawn 40pt).
     static let referenceRowPicturePixels: CGFloat = 160
+    /// An element's picture in a picker row: its thumbnail's size, in pixels at 2x.
+    static let referenceCropPixels = CGSize(width: NWReferenceMetrics.thumbnail.width * 2, height: NWReferenceMetrics.thumbnail.height * 2)
+    /// A board an element's picture is cut from is kept at most this many pixels wide.
+    static let referenceCropSourcePixels: CGFloat = 1280
 
     // New design
     /// Between the page's parts, and under the headline.
