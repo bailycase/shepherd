@@ -149,20 +149,20 @@ struct PiSignInGroup: View {
     }
 }
 
-/// Settings ▸ Pi ▸ From your pi and Your extensions: what Shepherd copied from the user's own pi
-/// (with Re-import) and what it reads from there live (with a switch each), and their extensions,
-/// listed and off.
+/// Settings ▸ Pi ▸ From your pi, Copied and Your extensions: what Shepherd copied from the
+/// user's own pi, each with Re-import, and their extensions, copied and switched off until they
+/// switch one on (DESIGN.md › Settings ▸ Pi).
 struct YourPiGroups: View {
     let model: YourPiModel
 
     var body: some View {
         let survey = model.survey ?? YourPiSurvey()
         SettingsGroup(title: "From your pi",
-                      footnote: "Shepherd only reads your pi. What it copied stays as it was copied until you re-import it; instructions, skills and prompts are read from your pi as they are now.") {
+                      footnote: "Copies. Re-import replaces Shepherd's copy with your pi's; your pi is never written to.") {
             if let folder = survey.folder {
                 let url = URL(fileURLWithPath: folder, isDirectory: true)
                 SettingsRow(title: "Your pi",
-                            subtitle: "The pi in your terminal. Logins, custom providers, the default model and trusted folders were copied from it at the first launch.",
+                            subtitle: "The pi in your terminal. Shepherd copied it at the first launch; nothing syncs after that.",
                             problem: survey.problems.first) {
                     HStack(spacing: NW.Space.m) {
                         Text((folder as NSString).abbreviatingWithTildeInPath)
@@ -184,29 +184,49 @@ struct YourPiGroups: View {
                 reimportRow("Trusted folders", item: .trust, enabled: survey.trustedFolders > 0,
                             subtitle: survey.trustedFolders == 0 ? "None in your pi. Your home folder is never trusted as a project."
                                 : "\(YourPiText.count(survey.trustedFolders, "folder")). Your home folder is never trusted as a project.")
-                SettingsRow(title: "Instructions",
-                            subtitle: survey.instructionsFile.map { "Reads `\(($0 as NSString).lastPathComponent)` from your pi before every turn." }
-                                ?? "Your pi has no `AGENTS.md` or `CLAUDE.md`.",
-                            problem: model.problems["instructions"]) {
-                    SettingsSwitch(label: "Instructions", isOn: Binding(get: { survey.instructionsOn },
-                                                                        set: { on in Task { await model.setInstructions(on) } }))
-                }
-                resourceRow("Skills", key: "skills", entries: survey.skills, on: survey.skillsOn)
-                resourceRow("Prompts", key: "prompts", entries: survey.prompts, on: survey.promptsOn)
             } else {
-                SettingsRow(title: "No pi found", subtitle: "Shepherd found no pi of yours to read. Sign in above.") { EmptyView() }
+                SettingsRow(title: "No pi found", subtitle: "Shepherd found no pi of yours to copy. Sign in above.") { EmptyView() }
             }
         }
-        if !survey.extensions.isEmpty {
+        if survey.folder != nil || !survey.copies.isEmpty {
+            SettingsGroup(title: "Copied",
+                          footnote: "Copied into Shepherd's pi. Edits in your pi reach Shepherd only when you Re-import.") {
+                reimportRow("Instructions", item: .files(.instructions), enabled: survey.folder != nil,
+                            subtitle: YourPiText.instructions(survey))
+                reimportRow("Skills", item: .files(.skills), enabled: survey.folder != nil,
+                            subtitle: YourPiText.skills(survey.copies(.skills)))
+                reimportRow("Prompts", item: .files(.prompts), enabled: survey.folder != nil,
+                            subtitle: YourPiText.names(survey.copies(.prompts), prefix: "/", none: "None copied."))
+                reimportRow("Themes", item: .files(.themes), enabled: survey.folder != nil,
+                            subtitle: YourPiText.names(survey.copies(.themes), prefix: "", none: "None copied."))
+            }
+        }
+        if !survey.extensions.isEmpty || survey.folder != nil {
             SettingsGroup(title: "Your extensions",
-                          footnote: "Off in Shepherd. Switching one on (coming in a later version) runs your code with full access, as your own pi does.") {
+                          footnote: "Code, so each one came over switched off. Shepherd's own extensions are below.") {
                 ForEach(survey.extensions) { item in
-                    SettingsRow(title: item.name, subtitle: "`\((item.path as NSString).abbreviatingWithTildeInPath)`") {
-                        Text("Off")
-                            .font(.nw(.caption))
-                            .foregroundStyle(Color.nw.textTertiary)
-                    }
+                    extensionRow(item)
                 }
+                reimportRow("Copy again", item: .files(.extensions), enabled: survey.folder != nil,
+                            subtitle: survey.extensions.isEmpty ? "Your pi has no extensions Shepherd copied."
+                                : "Copies your extensions again, keeping each one's switch.")
+            }
+        }
+    }
+
+    private func extensionRow(_ item: YourPiExtensionRow) -> some View {
+        let row = YourPiModel.extensionRowID(item.copy.destination)
+        let problem = model.problems[row] ?? item.failure.map { "Didn't load: \($0)" }
+        return SettingsRow(title: item.copy.name, subtitle: YourPiText.extensionDescription(item), problem: problem) {
+            HStack(spacing: NW.Space.m) {
+                if item.failure != nil {
+                    Button("Try again") { Task { await model.setExtension(item.copy.destination, on: true) } }
+                        .buttonStyle(.nw(.secondary, size: .s))
+                        .disabled(model.busy.contains(row))
+                        .accessibilityLabel("Try \(item.copy.name) again")
+                }
+                SettingsSwitch(label: item.copy.name,
+                               isOn: Binding(get: { item.on }, set: { on in Task { await model.setExtension(item.copy.destination, on: on) } }))
             }
         }
     }
@@ -218,15 +238,6 @@ struct YourPiGroups: View {
                 .buttonStyle(.nw(.secondary, size: .s))
                 .disabled(!enabled || model.busy.contains(row))
                 .accessibilityLabel("Re-import \(title.lowercased()) from your pi")
-        }
-    }
-
-    private func resourceRow(_ title: String, key: String, entries: [String], on: Bool) -> some View {
-        let folders = entries.filter { !$0.hasPrefix("!") }.count
-        return SettingsRow(title: title,
-                           subtitle: folders == 0 ? "Your pi has none." : "Reads \(YourPiText.count(folders, "folder")) in place.",
-                           problem: model.problems[key]) {
-            SettingsSwitch(label: title, isOn: Binding(get: { on }, set: { value in Task { await model.setResources(key, on: value) } }))
         }
     }
 

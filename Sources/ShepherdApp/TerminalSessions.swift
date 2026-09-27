@@ -626,11 +626,11 @@ final class TerminalSessionStore {
             let cwd = Self.resolvedCwd(pane.cwd)
             guard rpc else { throw TerminalSessionStoreError.paneUnavailable(pane.id) }
             // Ready Shepherd's pi home, and give pi a session to find, so --session-id does not warn.
-            let (fresh, problem, instructions) = await Self.prepareLaunch(for: agent, cwd: cwd, pi: server.pi)
+            let (fresh, problem) = await Self.prepareLaunch(for: agent, cwd: cwd, pi: server.pi)
             // RPC mode ignores a positional prompt; the opening prompt goes to the server below.
             let command = try problem.map(Self.refusedCommand)
                 ?? Self.rpcAgentCommand(for: agent, cwd: cwd, pi: server.pi, sessionIsFresh: fresh, isAutomation: isAutomation,
-                                        suggestFiles: suggestionFiles(isAutomation: isAutomation), yourPiInstructions: instructions)
+                                        suggestFiles: suggestionFiles(isAutomation: isAutomation))
             // A forked transcript resumes: pi not finding it is a start problem, never a new session.
             let resuming = fresh ? nil : agent.effectivePiSessionID
             guard ownsPane(session, pane: pane, tabID: tab.id, expectedAgentID: agent.id),
@@ -876,10 +876,10 @@ final class TerminalSessionStore {
                 }
                 // Respawn after relaunch: an agent that was never prompted has
                 // no session file yet, so seed one before pi looks for it.
-                let (fresh, problem, instructions) = await Self.prepareLaunch(for: agent, cwd: cwd, pi: server.pi)
+                let (fresh, problem) = await Self.prepareLaunch(for: agent, cwd: cwd, pi: server.pi)
                 command = try problem.map(Self.refusedCommand)
                     ?? Self.rpcAgentCommand(for: agent, cwd: cwd, pi: server.pi, sessionIsFresh: fresh,
-                                            suggestFiles: suggestionFiles(isAutomation: false), yourPiInstructions: instructions)
+                                            suggestFiles: suggestionFiles(isAutomation: false))
                 if checksResume, !fresh { resuming = agent.effectivePiSessionID }
             } else {
                 command = ShellIntegration.command(shell: AppSettings.shared.shellCommand)
@@ -1016,19 +1016,15 @@ final class TerminalSessionStore {
     /// Before an agent's pi starts: readies Shepherd's pi home (`PiSetup.prepare`, which refuses
     /// a home that overlaps the user's own pi), adopts its conversation from the user's pi
     /// (`PiSessionFile.adopt`), then says whether the agent's pi session is still fresh, after
-    /// seeding its header (`PiSessionFile.prepareForLaunch`), and names the folder of the user's
-    /// own pi whose global instructions it reads live, while Settings ▸ Pi ▸ From your pi reads
-    /// them. Off the main actor: at launch every restored agent does this at once, and a project
-    /// directory holds hundreds of session files.
-    private static func prepareLaunch(for agent: Agent, cwd: String, pi: PiSetup) async
-        -> (fresh: Bool, problem: PiHomeProblem?, instructions: String?) {
+    /// seeding its header (`PiSessionFile.prepareForLaunch`). Off the main actor: at launch every
+    /// restored agent does this at once, and a project directory holds hundreds of session files.
+    private static func prepareLaunch(for agent: Agent, cwd: String, pi: PiSetup) async -> (fresh: Bool, problem: PiHomeProblem?) {
         let sessionID = agent.effectivePiSessionID
         return await Task.detached(priority: .userInitiated) {
-            if let problem = pi.prepare() { return (true, problem, nil) }
+            if let problem = pi.prepare() { return (true, problem) }
             // Its conversation from before Shepherd ran its own pi, copied in before any seeding.
             _ = PiSessionFile.adopt(sessionID: sessionID, cwd: cwd, sessionsRoot: pi.sessionsRoot, yourPi: pi.yourPi.resolve())
-            return (PiSessionFile.prepareForLaunch(sessionID: sessionID, cwd: cwd, sessionsRoot: pi.sessionsRoot), nil,
-                    pi.imports().instructionsDirectory()?.path)
+            return (PiSessionFile.prepareForLaunch(sessionID: sessionID, cwd: cwd, sessionsRoot: pi.sessionsRoot), nil)
         }.value
     }
 
@@ -1048,7 +1044,7 @@ final class TerminalSessionStore {
     /// and namer extensions; an agent that draws a design gets the design tools instead of panes. Model and
     /// thinking flags go only to a fresh session.
     private static func rpcAgentCommand(for agent: Agent, cwd: String, pi: PiSetup, sessionIsFresh: Bool, isAutomation: Bool = false,
-                                        suggestFiles: [InstructionFile] = [], yourPiInstructions: String? = nil) throws -> SessionCommand {
+                                        suggestFiles: [InstructionFile] = []) throws -> SessionCommand {
         let settings = AppSettings.shared
         return try StatusExtension.command(
             home: pi.files,
@@ -1069,7 +1065,6 @@ final class TerminalSessionStore {
             suggestFiles: suggestFiles.map(\.fileName),
             design: try agent.designID.map { (try DesignExtension.installedPath(), $0, try DesignExtension.installedSkillDirectory()) },
             mcp: try MCPLaunch.forAgents(settings: settings),
-            yourPiInstructions: yourPiInstructions,
             userHome: pi.userHome,
             model: sessionIsFresh ? agent.model : nil,
             thinking: sessionIsFresh ? agent.thinkingLevel : nil

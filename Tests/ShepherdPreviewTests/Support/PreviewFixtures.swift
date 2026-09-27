@@ -414,8 +414,27 @@ enum Reviews {
 enum PreviewYourPi {
     typealias Login = YourPiSurvey.Login
 
+    /// What the first copy brought over as files: instructions, skills, prompts, a theme, and
+    /// three extensions (one plain, one switched on, one that failed to load).
+    static let copies: [YourPiCopy] = [
+        YourPiCopy(kind: .instructions, name: "AGENTS.md", source: "/Users/you/.pi/agent/AGENTS.md", destination: "AGENTS.md"),
+        YourPiCopy(kind: .skills, name: "pdf", source: "/Users/you/.pi/agent/skills/pdf", destination: "skills/pdf"),
+        YourPiCopy(kind: .skills, name: "release", source: "/Users/you/team-skills/release", destination: "skills/release"),
+        YourPiCopy(kind: .prompts, name: "review", source: "/Users/you/.pi/agent/prompts/review.md", destination: "prompts/review.md"),
+        YourPiCopy(kind: .prompts, name: "release-notes", source: "/Users/you/.pi/agent/prompts/release-notes.md",
+                   destination: "prompts/release-notes.md"),
+        YourPiCopy(kind: .prompts, name: "triage", source: "/Users/you/.pi/agent/prompts/triage.md", destination: "prompts/triage.md"),
+        YourPiCopy(kind: .themes, name: "harbor", source: "/Users/you/.pi/agent/themes/harbor.json", destination: "themes/harbor.json"),
+        YourPiCopy(kind: .extensions, name: "permission-gate", source: "/Users/you/.pi/agent/extensions/permission-gate.ts",
+                   destination: "your-extensions/files/permission-gate.ts", entries: [""]),
+        YourPiCopy(kind: .extensions, name: "notify-slack", source: "/Users/you/.pi/agent/extensions/notify-slack",
+                   destination: "your-extensions/files/notify-slack", entries: ["index.ts"]),
+        YourPiCopy(kind: .extensions, name: "@acme/web-search", source: "npm:@acme/web-search@1.2.0",
+                   destination: "your-extensions/npm/node_modules/@acme/web-search", entries: ["index.ts"]),
+    ]
+
     /// After the first copy: a login of every kind (one only in their pi, one only in the
-    /// environment), a custom provider, instructions, skills, prompts and two extensions.
+    /// environment), a custom provider, and the files in `copies`.
     static let imported: YourPiSurvey = {
         var survey = YourPiSurvey(folder: "/Users/you/.pi/agent")
         survey.copied = true
@@ -433,12 +452,13 @@ enum PreviewYourPi {
         survey.shepherdDefaultModel = "anthropic/claude-opus-4-5"
         survey.trustedFolders = 3
         survey.shepherdTrustedFolders = 3
-        survey.instructionsFile = "/Users/you/.pi/agent/AGENTS.md"
-        survey.skills = ["/Users/you/.pi/agent/skills", "/Users/you/team-skills"]
-        survey.prompts = ["/Users/you/.pi/agent/prompts"]
+        survey.copies = copies
+        survey.instructionLines = 38
         survey.extensions = [
-            YourPiExtension(name: "permission-gate", path: "/Users/you/.pi/agent/extensions/permission-gate.ts", source: .file),
-            YourPiExtension(name: "@acme/pi-tools", path: "/Users/you/.pi/agent/npm/node_modules/@acme/pi-tools", source: .npm),
+            YourPiExtensionRow(copy: copies[7], summary: "Asks before any rm -rf or force-push."),
+            YourPiExtensionRow(copy: copies[8], on: true, summary: "Posts to Slack when an agent finishes or needs you."),
+            YourPiExtensionRow(copy: copies[9], on: true, failure: "Cannot find module 'turndown'",
+                               summary: "A web_search tool backed by your Brave API key."),
         ]
         return survey
     }()
@@ -459,9 +479,7 @@ enum PreviewYourPi {
                          PiLogin(provider: "google", kind: .apiKey(.environment(["GEMINI_API_KEY"]))),
                          PiLogin(provider: "groq", kind: .apiKey(.command)), PiLogin(provider: "openai", kind: .apiKey(.literal))]
         report.customProviders = ["local-llm"]
-        report.instructions = "AGENTS.md"
-        report.skills = ["/Users/you/.pi/agent/skills", "/Users/you/team-skills"]
-        report.prompts = ["/Users/you/.pi/agent/prompts"]
+        report.copied = copies
         report.defaultModel = "anthropic/claude-opus-4-5"
         report.trustedFolders = 3
         return YourPiModel.Welcome(report: report, survey: imported)

@@ -16,6 +16,8 @@ struct PiWelcomeSheet: View {
     struct Row: Equatable, Identifiable {
         let title: String
         let detail: String
+        /// Brought over, or (the user's extensions) copied and switched off.
+        var switchedOff = false
         var id: String { title }
     }
 
@@ -37,11 +39,11 @@ struct PiWelcomeSheet: View {
         if !report.customProviders.isEmpty {
             rows.append(Row(title: "Custom providers", detail: report.customProviders.joined(separator: ", ")))
         }
-        if let file = report.instructions { rows.append(Row(title: "Instructions", detail: "\(file), read live")) }
-        let folders = (report.skills + report.prompts).filter { !$0.hasPrefix("!") }.count
-        if folders > 0 { rows.append(Row(title: "Skills and prompts", detail: "\(YourPiText.count(folders, "folder")), read in place")) }
+        if let files = YourPiText.copiedFiles(report.copied) { rows.append(Row(title: "Instructions, skills and prompts", detail: files)) }
         if let model = report.defaultModel { rows.append(Row(title: "Default model", detail: model)) }
         if report.trustedFolders > 0 { rows.append(Row(title: "Trusted folders", detail: "\(report.trustedFolders)")) }
+        let extensions = report.copied(.extensions).count
+        if extensions > 0 { rows.append(Row(title: "Extensions", detail: "\(extensions) found", switchedOff: true)) }
         sections.broughtOver = rows
         for login in welcome.survey.logins where login.shepherd == nil {
             for name in login.environment where !sections.environment.contains(where: { $0.title == name }) {
@@ -68,7 +70,8 @@ struct PiWelcomeSheet: View {
                 if !sections.broughtOver.isEmpty {
                     header("Brought over from your pi")
                     ForEach(sections.broughtOver) { row in
-                        NWChecklistRow(row.title, state: .done, stateLabel: "brought over", detail: row.detail)
+                        NWChecklistRow(row.title, state: row.switchedOff ? .idle : .done,
+                                       stateLabel: row.switchedOff ? "copied, switched off" : "brought over", detail: row.detail)
                     }
                     if welcome.report.logins.contains(where: { $0.kind == .subscription }) {
                         Text("Sign-ins were copied once. When one side refreshes a subscription, the other may be signed out: sign in again there.")

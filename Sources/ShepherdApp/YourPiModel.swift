@@ -63,6 +63,7 @@ final class YourPiModel {
         case .customProviders: "customProviders"
         case .defaultModel: "defaultModel"
         case .trust: "trust"
+        case .files(let kind): "files:\(kind.rawValue)"
         }
     }
 
@@ -73,13 +74,13 @@ final class YourPiModel {
         pi.catalog.invalidate()
     }
 
-    func setInstructions(_ on: Bool) async {
-        await run("instructions") { pi in try pi.imports().setInstructions(on) }
-    }
+    /// The row of one of the user's extensions, by its copy's destination.
+    static func extensionRowID(_ destination: String) -> String { "extension:\(destination)" }
 
-    /// `key` is `skills` or `prompts`.
-    func setResources(_ key: String, on: Bool) async {
-        await run(key) { pi in try pi.imports().setResources(key, on: on) }
+    /// Switches one of the user's extensions on or off (on also tries a failed one again): new
+    /// agents load it, running ones on `/reload`.
+    func setExtension(_ destination: String, on: Bool) async {
+        await run(Self.extensionRowID(destination)) { pi in try pi.importedState().setExtension(destination, on: on) }
     }
 
     private func run(_ row: String, _ body: @escaping @Sendable (PiSetup) throws -> Void) async {
