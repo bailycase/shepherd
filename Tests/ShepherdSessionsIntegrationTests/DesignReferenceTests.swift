@@ -235,6 +235,56 @@ struct DesignReferenceIntegrationTests {
         }
     }
 
+    /// A whole design pinned at one version sends the boards it held then, as they were, even
+    /// when a board added since comes first on the canvas: only "Send vN" sends a newer version.
+    @Test func aWholeDesignPinnedBeforeTheCanvasChangedSendsWhatItHeldThen() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let asked = drawing(h)
+        let pi = try await PiAgent.launch(on: h)
+        let designID = try await design(h, system: false)
+        let picked = try await h.server.pinDesignReference(DesignReference(designID: designID, board: nil)!)
+        let pinned = try #require(picked.reference.revision)
+        #expect(picked.outline.boards == 1 && picked.outline.boardCount == 1)
+
+        let first = try #require(DesignPath("0.dc.html"))
+        _ = try await h.server.writeDesignBoard(designID, path: first, source: DesignTests.board(root: "<p>new</p>"))
+        _ = try await h.server.updateDesignIndex(designID, patch: .object(["boards": .object([first.rawValue: .object([
+            "x": .number(-500), "y": .number(0), "w": .number(390), "h": .number(844)])])]))
+        let edited = Self.card.replacingOccurrences(of: "border-radius: 8px", with: "border-radius: 12px")
+        _ = try await h.server.writeDesignBoard(designID, path: Self.board, source: DesignTests.board(root: edited))
+        #expect(try await h.server.designSnapshot(designID).revision > pinned)
+
+        _ = try await send(pi, "tools:0 go", references: [picked.reference], from: try await pi.ready())
+        let record = try #require(lastRecord(pi))
+        #expect(record.revision == pinned && record.boards == 1 && record.boardCount == 1)
+        let drawn = try #require(asked.current.first)
+        #expect(drawn.boards.map(\.path) == [Self.board])
+        #expect(drawn.boards.first?.source == DesignTests.board(root: Self.card) && drawn.boards.first?.isCurrent == false)
+        #expect(grants(h, pi.agent.id).first?.revision == pinned)
+    }
+
+    /// A send never swaps in the design as it is now for a version that is no longer kept.
+    @Test func aSendOfAVersionNoLongerKeptIsRefused() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        drawing(h)
+        let pi = try await PiAgent.launch(on: h)
+        let designID = try await design(h)
+        let now = try await h.server.designSnapshot(designID).revision
+        let ready = try await pi.ready()
+        for gone in [reference(designID, revision: now - 1), DesignReference(designID: designID, board: nil, revision: now - 1)!] {
+            do {
+                _ = try await send(pi, "tools:0 go", references: [gone], from: ready)
+                Issue.record("an unkept version was sent as the design is now")
+            } catch RemoteHostClientError.rejected(let code, _) {
+                #expect(code == "version_gone")
+            }
+        }
+        #expect(grants(h, pi.agent.id).isEmpty && copies(h, pi.agent.id).isEmpty)
+        #expect(!prompts(pi).contains { $0.contains("design-ref") })
+    }
+
     @Test(arguments: ["missingBoard", "missingElement", "otherMac", "unknownDesign", "tooMany"])
     func aReferenceTheDesignDoesNotHaveIsRefusedAndKeepsNothing(_ kind: String) async throws {
         let h = try ScratchServer.fresh()

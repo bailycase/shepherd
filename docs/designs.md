@@ -1000,8 +1000,8 @@ shepherd-design-ref://<host>/<designID>[/<board view name>[#<tid>:<path>]][@<rev
   Implement sheet, a pasted chip) checks the design is here, the board on its canvas and the
   element in its source, and pins the reference at the design's revision then. The board's source
   is kept as a pin (`DesignStore.pinBoards`: `pins/<sha256>.dc.html`, and `pins/index.json`
-  saying which source each board had at each pinned revision), so a send later sends that
-  version even if the design moved on. It answers `PreparedDesignReference`: the pinned, labelled
+  saying which source each board had at each pinned revision, and for a whole design which boards
+  it held then and of how many), so a send later sends that version even if the design moved on. It answers `PreparedDesignReference`: the pinned, labelled
   reference, what the host read (the design's name, the board's title and size, the element's
   words and `data-el` name or tag), and `outline` (`DesignReferenceOutline`), what a send of it
   carries, which the sheet's footer says (`DesignReferencePresentation.sends`: "Sends a picture,
@@ -1023,9 +1023,11 @@ send carries each reference's string alone (`NativeThreadRequest.send`'s `design
 - **The host keeps a copy** (`SessionServer.nativeThread` → `captureDesignReferences`, off its
   queue): the design is here, the board on its canvas, the element in the board's source; a
   design's agent, another Mac's design, more than five references, or a piece that is gone is
-  refused and nothing goes. Each reference is resolved at the revision it pins when a pin kept
-  that version (else as it is now, and the record says the revision it really sent), and its copy
-  is kept with the message (below). Nothing is kept if any of it fails, and with no app to draw the
+  refused and nothing goes. Each reference is resolved at the revision it pins (a whole design:
+  the boards it held then, even when the canvas has others first now), and its copy is kept with
+  the message (below). A pinned version no longer kept is refused (`version_gone`), never swapped
+  for the design as it is now: only "Send vN" sends a newer one. A reference with no revision is
+  pinned as it is now. Nothing is kept if any of it fails, and with no app to draw the
   copy the send is refused (`render_unavailable`).
 - **pi reads it fenced** (`DesignReferenceFence`): a line saying it is data, then one JSON
   record per reference between `design-ref` markers carrying a nonce new to the message: its

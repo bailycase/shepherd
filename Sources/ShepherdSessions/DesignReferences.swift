@@ -29,6 +29,9 @@ public struct DesignReferenceError: Error, Hashable, Sendable, CustomStringConve
     static let noCopy = DesignReferenceError(
         "no_copy", "The copy sent with that message is no longer kept. Ask the user to send the reference again.")
     static let noRenderer = DesignReferenceError("render_unavailable", "Shepherd can't draw design pieces here.")
+    static func versionGone(_ revision: UInt64) -> DesignReferenceError {
+        DesignReferenceError("version_gone", "Version \(revision) of that design is no longer kept. Pick the piece again to send it as it is now.")
+    }
 }
 
 /// A reference pinned for a composer, the @ picker or the Implement sheet: the piece at the
@@ -73,14 +76,18 @@ struct DesignReferenceService: Sendable {
         var revision: UInt64
         /// The board (a board or element reference) or the boards held (a whole design).
         var boards: [(source: DesignBoardSource, isCurrent: Bool)]
+        /// How many boards the design had at `revision`.
+        var boardCount: Int
         var elementLabel: String?
         var elementName: String?
         var systems: [DesignSystemInstalled]
     }
 
     /// The design, the board and the element as the reference names them, at its revision when a
-    /// reference pinned the board then (else as they are now, pinned now).
-    func resolve(_ reference: DesignReference, state: ShepherdState) async throws -> Resolved {
+    /// reference pinned the board then (else as they are now, pinned now). `exact` (a send) refuses
+    /// a revision that is not kept instead of taking the design as it is now: only "Send vN"
+    /// sends a newer version.
+    func resolve(_ reference: DesignReference, state: ShepherdState, exact: Bool = false) async throws -> Resolved {
         guard reference.host == .local else { throw DesignReferenceError.remote }
         guard let design = state.designs.first(where: { $0.id == reference.designID }), !design.buildsSystem else {
             throw DesignReferenceError("no_such_design", "That design is no longer here.")
@@ -90,36 +97,32 @@ struct DesignReferenceService: Sendable {
             let systems = (try? await server.designs.installedSystems(reference.designID)) ?? []
             var boards: [(source: DesignBoardSource, isCurrent: Bool)] = []
             var revision = snapshot.revision
+            var boardCount = snapshot.index.boards.count
+            let older = reference.revision.flatMap { $0 != snapshot.revision ? $0 : nil }
             if let board = reference.board {
                 guard snapshot.index.boards[board] != nil, snapshot.boards[board] != nil else { throw DesignStoreError.noSuchBoard(board) }
-                if let wanted = reference.revision, wanted != snapshot.revision,
-                   let pinned = try await server.designs.pinnedBoard(reference.designID, path: board, revision: wanted) {
+                if let wanted = older, let pinned = try await server.designs.pinnedBoard(reference.designID, path: board, revision: wanted) {
                     boards = [(pinned, pinned.sha256 == snapshot.boards[board])]
                     revision = wanted
+                } else if let wanted = older, exact {
+                    throw DesignReferenceError.versionGone(wanted)
                 } else {
                     let now = try await server.designs.pinBoard(reference.designID, path: board)
                     boards = [(now, true)]
                     revision = now.revision
                 }
+            } else if let wanted = older, let kept = try await server.designs.pinnedDesign(reference.designID, revision: wanted) {
+                // The boards it held then, as they were, even if the canvas has others first now.
+                boards = kept.boards.map { ($0, $0.sha256 == snapshot.boards[$0.path]) }
+                boardCount = kept.boardCount
+                revision = wanted
+            } else if let wanted = older, exact {
+                throw DesignReferenceError.versionGone(wanted)
             } else {
                 let order = DesignReferenceReading.canvasOrder(snapshot.index).filter { snapshot.boards[$0] != nil }
                 let held = Array(order.prefix(DesignReferencePayload.maxBoards))
-                var pinned: [DesignBoardSource] = []
-                if let wanted = reference.revision, wanted != snapshot.revision {
-                    for path in held {
-                        guard let source = try await server.designs.pinnedBoard(reference.designID, path: path, revision: wanted) else {
-                            pinned = []
-                            break
-                        }
-                        pinned.append(source)
-                    }
-                }
-                if pinned.isEmpty {
-                    pinned = try await server.designs.pinBoards(reference.designID, paths: held)
-                    revision = pinned.first?.revision ?? snapshot.revision
-                } else {
-                    revision = reference.revision ?? snapshot.revision
-                }
+                let pinned = try await server.designs.pinBoards(reference.designID, paths: held, wholeDesign: boardCount)
+                revision = pinned.first?.revision ?? snapshot.revision
                 boards = pinned.map { ($0, $0.sha256 == snapshot.boards[$0.path]) }
             }
             var label: String?
@@ -131,7 +134,7 @@ struct DesignReferenceService: Sendable {
                 label = template.labels[element.tid]
                 name = DesignReferenceReading.elementNoun(element, in: source) ?? template.element(for: element)?.name
             }
-            return Resolved(design: design, snapshot: snapshot, revision: revision, boards: boards, elementLabel: label,
+            return Resolved(design: design, snapshot: snapshot, revision: revision, boards: boards, boardCount: boardCount, elementLabel: label,
                             elementName: name, systems: systems)
         } catch let error as DesignStoreError {
             throw DesignReferenceError(error.code, error.description)
@@ -165,7 +168,7 @@ struct DesignReferenceService: Sendable {
         let read = Self.reading(reference, sources: resolved.boards.map(\.source.source), systems: resolved.systems)
         let outline = DesignReferenceOutline(kind: reference.kind, styles: read.styles.count, tokens: read.tokens.count, system: read.system,
                                              boards: reference.board == nil ? resolved.boards.count : nil,
-                                             boardCount: reference.board == nil ? resolved.snapshot.index.boards.count : nil)
+                                             boardCount: reference.board == nil ? resolved.boardCount : nil)
         pinned.label = DesignReference.label(design: resolved.design.name, board: reference.board.map { title ?? $0.stem },
                                              element: reference.element.map { _ in
                                                  DesignReferenceReading.elementTitle(name: resolved.elementName, label: resolved.elementLabel) })
@@ -179,7 +182,7 @@ struct DesignReferenceService: Sendable {
     /// element's markup and computed styles), then the manifest. Nothing is kept if any of it
     /// fails.
     func capture(_ reference: DesignReference, for agentID: AgentID, state: ShepherdState, at now: Double) async throws -> SentDesignReference {
-        let resolved = try await resolve(reference, state: state)
+        let resolved = try await resolve(reference, state: state, exact: true)
         let pinned = reference.pinned(at: resolved.revision)
         let id = UUID()
         let payloads = server.designReferencePayloads
@@ -221,7 +224,7 @@ struct DesignReferenceService: Sendable {
                                                 html: DesignReferenceFileNames.boardHTML(index, path)))
                 }
                 payload.boards = boards
-                payload.boardCount = resolved.snapshot.index.boards.count
+                payload.boardCount = resolved.boardCount
             }
             let note = DesignReferenceFileNames.tokens(pinned)
             let noteText = Data(DesignReferenceReading.tokensNote(payload).utf8)
