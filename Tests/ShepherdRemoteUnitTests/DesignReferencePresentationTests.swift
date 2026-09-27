@@ -14,7 +14,11 @@ struct DesignReferencePresentationTests {
         (DesignReferenceOutline(kind: .board, styles: 42, tokens: 14, system: "acme-web"),
          "Sends a picture, the board’s HTML, 42 styles and 14 tokens from acme-web."),
         (DesignReferenceOutline(kind: .board, styles: 1, tokens: 0),
-         "Sends a picture, the board’s HTML, 1 style and 0 tokens."),
+         "Sends a picture, the board’s HTML and 1 style."),
+        (DesignReferenceOutline(kind: .element, styles: 0, tokens: 0),
+         "Sends a picture and its HTML."),
+        (DesignReferenceOutline(kind: .design, styles: 0, tokens: 2, boards: 1, boardCount: 1),
+         "Sends a picture and the HTML of each of its 1 board and 2 tokens."),
         (DesignReferenceOutline(kind: .design, styles: 3, tokens: 1, system: "acme-web", boards: 4, boardCount: 4),
          "Sends a picture and the HTML of each of its 4 boards, 3 styles and 1 token from acme-web."),
         (DesignReferenceOutline(kind: .design, styles: 3, tokens: 1, boards: 12, boardCount: 40),
@@ -27,6 +31,7 @@ struct DesignReferencePresentationTests {
     @Test func thePreviewSaysWhatTheAgentGets() {
         #expect(DesignReferencePresentation.gets(DesignReferenceOutline(kind: .element, styles: 11, tokens: 8))
             == ["picture", "html", "11 styles", "8 tokens"])
+        #expect(DesignReferencePresentation.gets(DesignReferenceOutline(kind: .board, styles: 3, tokens: 0)) == ["picture", "html", "3 styles"])
         #expect(DesignReferencePresentation.version(23) == "v23" && DesignReferencePresentation.version(nil) == nil)
     }
 
