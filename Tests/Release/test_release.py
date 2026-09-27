@@ -430,6 +430,85 @@ class VerifyAppTests(unittest.TestCase):
             os.makedirs(os.path.join(path, "Contents", "Resources", "pi-engine", "node_modules", "esbuild"))
             self.assertTrue(any("esbuild" in p for p in release.verify_app(path, "main")))
 
+    def test_code_for_anything_but_apple_silicon_is_refused(self):
+        cases = {
+            "a universal app executable": ("MacOS/Shepherd", fat(macho(ARM64), macho(X86_64))),
+            "an Intel framework": ("Frameworks/Sparkle.framework/Versions/B/Sparkle", macho(X86_64)),
+            "a universal XPC service": ("Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc/"
+                                        "Contents/MacOS/Installer", fat(macho(X86_64), macho(ARM64))),
+            "a universal helper": ("MacOS/shepherd-cli", fat(macho(ARM64), macho(X86_64))),
+        }
+        for name, (relative, data) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as root:
+                path = self.make_app(root, "Shepherd.app", **self.info("main"))
+                target = os.path.join(path, "Contents", relative)
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                with open(target, "wb") as f:
+                    f.write(data)
+                problems = release.verify_app(path, "main")
+                self.assertEqual(len(problems), 1, problems)
+                self.assertIn(f"{relative} is ", problems[0])
+                self.assertIn("arm64 only", problems[0])
+        with tempfile.TemporaryDirectory() as root:
+            path = self.make_app(root, "Shepherd.app", **self.info("main"))
+            with open(os.path.join(path, "Contents", "MacOS", "Shepherd"), "wb") as f:
+                f.write(fat(macho(ARM64)))
+            os.symlink("Shepherd", os.path.join(path, "Contents", "MacOS", "Link"))
+            self.assertEqual(release.verify_app(path, "main"), [], "arm64 code, thin or in a fat file, is fine")
+            node = os.path.join(path, "Contents", release.pi_engine.NODE)
+            with open(node, "rb") as f:
+                arm64 = f.read()
+            with open(node, "wb") as f:
+                f.write(fat(arm64, macho(X86_64)))
+            self.assertEqual(release.verify_app(path, "main"),
+                             ["pi engine: Helpers/node has an x86_64 slice; Shepherd ships for Apple silicon only"])
+
+    def test_thinning_keeps_the_arm64_slice_of_universal_files_and_leaves_the_rest(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = self.make_app(root, "Shepherd.app", **self.info("main"))
+            contents = os.path.join(path, "Contents")
+            files = {
+                "Frameworks/Sparkle.framework/Versions/B/Sparkle": fat(macho(X86_64), macho(ARM64)),
+                "MacOS/Shepherd": macho(ARM64),
+                "Resources/intel-only": macho(X86_64),
+            }
+            for relative, data in files.items():
+                os.makedirs(os.path.dirname(os.path.join(contents, relative)), exist_ok=True)
+                with open(os.path.join(contents, relative), "wb") as f:
+                    f.write(data)
+            os.chmod(os.path.join(contents, "Frameworks/Sparkle.framework/Versions/B/Sparkle"), 0o755)
+            calls = []
+
+            def lipo(command, check):
+                calls.append(command)
+                with open(command[-1], "wb") as f:
+                    f.write(macho(ARM64))
+            thinned = release.thin_app(path, run=lipo)
+            self.assertEqual(thinned, ["Frameworks/Sparkle.framework/Versions/B/Sparkle"])
+            sparkle = os.path.join(contents, thinned[0])
+            self.assertEqual(calls, [["lipo", sparkle, "-thin", "arm64", "-output", sparkle + ".thin"]])
+            self.assertEqual(os.stat(sparkle).st_mode & 0o777, 0o755)
+            self.assertFalse(os.path.exists(sparkle + ".thin"))
+            self.assertEqual(release.verify_app(path, "main"),
+                             ["Resources/intel-only is x86_64; Shepherd ships arm64 only"],
+                             "a file with no arm64 slice is left for verify-app to refuse")
+
+    @unittest.skipUnless(sys.platform == "darwin" and shutil.which("clang") and shutil.which("lipo"),
+                         "needs macOS's clang and lipo")
+    def test_thinning_a_real_universal_binary_leaves_its_arm64_slice(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = self.make_app(root, "Shepherd.app", **self.info("main"))
+            source = os.path.join(root, "main.c")
+            with open(source, "w") as f:
+                f.write("int main(void) { return 0; }\n")
+            helper = os.path.join(path, "Contents", "MacOS", "helper")
+            subprocess.run(["clang", "-arch", "arm64", "-arch", "x86_64", "-o", helper, source],
+                           check=True, capture_output=True)
+            self.assertEqual(release.thin_app(path), ["MacOS/helper"])
+            archs = subprocess.run(["lipo", "-archs", helper], capture_output=True, text=True, check=True)
+            self.assertEqual(archs.stdout.split(), ["arm64"])
+            self.assertEqual(release.verify_app(path, "main"), [])
+
     def test_a_nightly_build_with_the_main_feed_or_id_is_refused(self):
         for override in ({"SUFeedURL": release.REPOSITORY_PAGES + "appcast.xml"},
                          {"CFBundleIdentifier": "com.bailycase.shepherd"},
@@ -531,6 +610,21 @@ class ContractTests(unittest.TestCase):
                 self.assertEqual(self.setting(block, "PRODUCT_BUNDLE_IDENTIFIER"), app.bundle_id)
                 self.assertEqual(self.setting(block, "PRODUCT_NAME"), app.name)
                 self.assertEqual(self.setting(block, "SHEPHERD_APPCAST"), app.appcast)
+
+    def test_every_mac_configuration_builds_arm64_only(self):
+        for name in ("Debug", "Release", "Nightly"):
+            with self.subTest(configuration=name):
+                self.assertEqual(self.setting(self.target_configuration(name), "ARCHS"), "arm64")
+
+    def test_the_release_builds_arm64_only_and_thins_what_came_prebuilt_before_verifying(self):
+        workflow = self.read(".github", "workflows", "release.yml")
+        build = workflow.split("      - name: Build ${{ env.APP_NAME }}\n", 1)[1].split("\n      - ", 1)[0]
+        # SwiftPM package targets take no target settings: only the command line reaches them.
+        self.assertIn("ARCHS=arm64 \\\n", build)
+        self.assertNotIn("x86_64", workflow)
+        thin = workflow.index('python3 scripts/release.py thin-app "$PRODUCTS/$PRODUCT"')
+        self.assertLess(workflow.index("      - name: Build ${{ env.APP_NAME }}"), thin)
+        self.assertLess(thin, workflow.index("scripts/release.py verify-app"))
 
     def test_the_dev_build_shares_no_shipped_apps_identity(self):
         # Preferences, notifications and Sparkle's installer are keyed by bundle id, so a Dev

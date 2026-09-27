@@ -1237,6 +1237,13 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
 | Shepherd Nightly | nightly | push to `nightly` | `appcast-shepherd-nightly.xml` | Shepherd Nightly builds | `Shepherd-Nightly.dmg` |
 | Shepherd iOS | TestFlight internal | manual run (`gh workflow run release.yml --ref nightly -f testflight=true`) | none (App Store Connect) | Shepherd iOS builds | none |
 
+- **Apple silicon only.** Both Mac apps ship arm64 only. The Mac target's configurations set
+  `ARCHS = arm64`, and the release build also passes `ARCHS=arm64`, because SwiftPM package
+  targets take no target settings and would otherwise compile x86_64 too (a local Release or
+  Nightly build from Xcode still does, so its package frameworks and `shepherd-cli` come out
+  universal). `release.py thin-app` then thins what comes prebuilt universal (Sparkle's framework
+  and its helpers) to arm64, and `verify-app` refuses any Mach-O in the app with another slice.
+  The pi engine pins only Node's `darwin-arm64` archive.
 - **Release candidates are retired.** A `vX.Y.Z-rc.N` tag builds nothing (the plan job says
   why), and old rc releases land in no feed.
 - **Only `nightly` ships Shepherd Nightly.** A manual run (`workflow_dispatch`) plans like a
