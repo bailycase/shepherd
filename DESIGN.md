@@ -53,11 +53,12 @@ agents at once?"
   and *messages* (Main, Running: "Copy response", "Retry turn").
 - **The agent, not pi:** copy calls the process it supervises "the agent" or "Agent" ("Agent is
   asking", "Goes when the agent finishes this turn", "the agent's session file"), and a version
-  shown to people reads "agent 0.87.1". pi appears in exactly three places, all under Settings:
-  the Settings ▸ Pi page itself (with the Settings footer's "pi 0.87.1" while it is open), its
-  "Pi" item in the settings navigation, and the real `~/.pi/…` paths on Settings ▸
-  Instructions. Code, logs, command lines, extension prompts, and these docs still name pi, the
-  program.
+  shown to people reads "agent 0.87.1". pi appears in exactly four places: the Settings ▸ Pi
+  page itself (with the Settings footer's "pi 0.87.1" while it is open), its "Pi" item in the
+  settings navigation, the real `~/.pi/…` paths on Settings ▸ Instructions, and the welcome sheet
+  at the first launch of a build that runs its own pi (Dialogs and sheets › Welcome), which has
+  to tell the user that the pi in their terminal is untouched. Code, logs, command lines,
+  extension prompts, and these docs still name pi, the program.
 - **Not built yet, hidden until built.** The boards give the sidebar two more destinations,
   **Missions** (one map from a goal to merged pull requests, across every repository it touches)
   and **Designs** (HTML mockups on a canvas, drawn and refined with a design agent). The Missions
@@ -507,7 +508,7 @@ output, counts, times), both bundled (NWFoundations). Sizes are points:
 
 | Style (`NWTextStyle`) | Mac spec | iOS | Board use (NWFoundations) | Also in the app |
 | --- | --- | --- | --- | --- |
-| `display` | Geist 28/600/1.15 | 28 | Empty states, onboarding | Nothing in the Mac app: there is no onboarding, empty-state titles follow the Status board at 17/600, and Settings page titles the Settings boards at 22/600 (`Font.nwSans`) |
+| `display` | Geist 28/600/1.15 | 28 | Empty states, onboarding | Nothing in the Mac app: the one onboarding step, the welcome sheet, is a dialog titled in `title`; empty-state titles follow the Status board at 17/600, and Settings page titles the Settings boards at 22/600 (`Font.nwSans`) |
 | `title` | Geist 15/600/1.3 | 16 | Thread and pane titles | Dialog and sheet titles. The toolbar title and pane headers follow the Navigation board at 13/600 (`Font.nwSans(13, .semibold)`) |
 | `headline` | Geist 13.5/600/1.35 | 17 | Card titles, section heads | Markdown headings |
 | `body` | Geist 13.5/400/1.6 | 16/1.5 | Agent prose, bubbles | The composer field |
@@ -3467,13 +3468,54 @@ automated step of the worktree flows can be turned off here.
   - the engine: a `PathRow`, "pi 0.87.1" (the version the app ships; "pi" alone when a Debug
     build's override brings its own), "Included with Shepherd, and updated with it. Its home:",
     then the home's folder name in mono (its path on hover) and Reveal.
-  - Sign in, "Opens Shepherd's pi in a terminal beside the selected agent. Type `/login` there.
+- **Sign-in** (the plan's phase 4; footnote "Sign-ins belong to Shepherd's pi. Those copied from
+  your pi were copied once, at the first launch; from then on each pi refreshes its own."): a row
+  per provider that Shepherd's pi has a login for, that your pi has one for, or whose key
+  variable your login shell sets, sorted by name. The title is the provider's name ("Anthropic",
+  "OpenAI Codex"; a custom id as it is), the description says what Shepherd's pi uses, and the
+  state word sits trailing in `caption`/`textSecondary`, never a status color (these are not agent
+  states):
+  - **Signed in** (a subscription sign-in in Shepherd's pi). When your pi has one for the same
+    provider, the description adds the one line about both sides: "Copied from your pi. When one
+    side refreshes it, the other may be signed out: sign in again there."
+  - **API key**: "API key", "API key from `$NAME`", or "API key that runs a command" (a `!command`
+    value; the command itself is never shown). A key's value is never shown, masked or not.
+  - **From your environment**: no stored login, but your login shell sets `NAME`: "`NAME` in your
+    shell's environment."
+  - **Not signed in**: your pi has a login Shepherd's pi doesn't (a skipped or failed copy):
+    "Your pi is signed in; Shepherd's pi isn't."
+  - **Re-import** (secondary, small) on every row whose provider your pi has a login for: it copies
+    that one login again, overwriting Shepherd's copy. A failure shows inline as the row's problem.
+  - Last, Sign in, "Opens Shepherd's pi in a terminal beside the selected agent. Type `/login` there.
     Your terminal's pi stays signed in as it is.": **Open pi** (secondary, small), which opens a
     terminal pane beside the agent selected on this Mac, running Shepherd's pi with no session
     (`pi --no-session` through its launcher, run in Shepherd's pi home so an agent's folder of
     `~` never makes `~/.pi` the TUI's project). With no agent of this Mac selected it is disabled,
     and its tooltip says "Select an agent on this Mac first." Until the native sign-in sheet (the
     plan's phase 7) this is the only way to sign in.
+- **From your pi** (footnote "Shepherd only reads your pi. What it copied stays as it was copied
+  until you re-import it; instructions, skills and prompts are read from your pi as they are
+  now."):
+  - Your pi: the folder's name in mono (its path on hover) and Reveal, "The pi in your terminal.
+    Logins, custom providers, the default model and trusted folders were copied from it at the
+    first launch." A file of theirs that couldn't be read shows inline as this row's problem.
+  - Custom providers: "`local-llm`, `zeta`" (their models.json's providers), or "None in your
+    pi"; Re-import, disabled with none.
+  - Default model: "`anthropic/claude-…`", with "Shepherd's pi uses `…`" when the two differ, or
+    "None set in your pi"; Re-import, disabled with none.
+  - Trusted folders: "3 folders. Your home folder is never trusted as a project."; Re-import,
+    disabled with none.
+  - Instructions: "Reads `AGENTS.md` from your pi before every turn." naming the file pi would
+    pick (`AGENTS.override.md`, `AGENTS.md`, … `CLAUDE.md`), or "Your pi has no `AGENTS.md` or
+    `CLAUDE.md`."; a switch, on by default.
+  - Skills and Prompts: "Reads 2 folders in place." (their `skills/` or `prompts/` folder and the
+    paths in their settings); a switch each, on by default.
+  - With no pi of yours, the group is one row, "No pi found", "Shepherd found no pi of yours to
+    read. Sign in above."
+- **Your extensions** (only when your pi has any; footnote "Off in Shepherd. Switching one on
+  (coming in a later version) runs your code with full access, as your own pi does."): one row per
+  extension, its name, and its path in mono as the description; the trailing word "Off" in
+  `caption`/`textTertiary`. Nothing on the page loads them.
 
 - **Bundled extensions** (footnote "Applies to agents launched on this Mac, including automations
   and remote agents. Running agents keep their extensions until restarted. Status and session
@@ -4132,6 +4174,31 @@ dialog. There is no `.alert`, `confirmationDialog`, or `NSAlert` in the app:
 
 Git probes and directory listings run off the main thread; the Delete Worktree Agent dialog
 keeps its destructive action disabled until the unreconciled-work check is in.
+
+**Welcome** (`PiWelcomeSheet`, 520pt; no board draws it, the "Bundled pi, isolated home" plan's
+phase 5): the one onboarding step, shown once, at the first launch of a build that runs its own
+pi, over the main window. Restored agents wait to start (`AgentStartQueue`) until it closes,
+whichever way.
+
+- Title "Shepherd runs its own pi", and the one sentence under it: "Shepherd now runs its own copy
+  of pi. The pi in your terminal is untouched."
+- **Brought over from your pi**: a `NWChecklistRow` per thing copied or read, each `done` (a
+  check), its detail trailing: one per login ("Anthropic", "Signed in"; "OpenAI", "API key";
+  "Google", "API key from $GEMINI_API_KEY"; "Groq", "API key that runs a command"), then Custom
+  providers (their names), Instructions ("AGENTS.md, read live"), Skills and prompts ("3 folders,
+  read in place"), Default model, and Trusted folders (a count). A key variable the login shell
+  sets for a provider with no login gets a row too ("OPENAI_API_KEY", "In your environment").
+  Under a copied subscription sign-in, one `caption`/`textSecondary` line: "Sign-ins were copied
+  once. When one side refreshes a subscription, the other may be signed out: sign in again there."
+- **Still needed**, only when no provider can start an agent (no login in Shepherd's pi, no key in
+  the environment, no custom provider): an attention banner, "Sign in so agents can start", "Until
+  you do, agents wait with Retry." and a Sign in… action that opens Settings ▸ Pi's sign-in
+  terminal beside the selected agent (disabled with none selected, its tooltip "Open an agent
+  first, then sign in from Settings ▸ Pi.").
+- A new user with no pi sees only the sentence and the sign-in banner.
+- Footer: Continue (primary, ⏎). ⎋ closes it too; either way the step is over, and a skipped
+  sign-in is safe: an agent that can't start says "not signed in" and waits.
+- Nothing on it shows a credential's value.
 
 ## Status language
 
