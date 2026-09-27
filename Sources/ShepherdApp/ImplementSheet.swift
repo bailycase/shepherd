@@ -63,8 +63,12 @@ final class ImplementSheetModel {
         self.prepared = prepared
     }
 
+    /// The piece as the canvas and the menu that opened the sheet named it: "card “Checkout
+    /// funnel”". The sheet, the new thread, its branch and the toasts all say it.
+    var piece: String { selection.piece }
+
     /// "Implement card “Checkout funnel”".
-    var title: String { "Implement " + (prepared?.piece ?? selection.piece) }
+    var title: String { "Implement " + piece }
 
     /// The line under the title: the design, and the board for an element (the piece is the title).
     var crumbs: [String] { Array(selection.crumbs.dropLast()) }
@@ -84,7 +88,7 @@ final class ImplementSheetModel {
     var chosenProject: Project? { projects.first { $0.id == project } }
 
     /// The new thread's branch: "agent/implement-card-checkout-funnel".
-    var branch: String { ImplementBranch.name(for: prepared?.piece ?? selection.piece) }
+    var branch: String { ImplementBranch.name(for: piece) }
 
     var canSend: Bool {
         guard prepared != nil, !sending else { return false }

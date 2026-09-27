@@ -113,9 +113,9 @@ struct DesignMentionTests {
         let inside = catalog.rows(in: .board(board.reference.pinned(at: 3)))
         #expect(inside.first == board, "Whole board first")
         #expect(inside.dropFirst().map(\.title) == [
-            "card “Checkout funnel Cart viewed Order placed”", "h2 “Checkout funnel”", "ol “Cart viewed Order placed”",
-            "li “Cart viewed”", "li “Order placed”", "section “Top exit reasons”",
-        ], "the helmet, its style and the loop's scaffold left out; a <p> that repeats its section's words too")
+            "card “Checkout funnel Cart viewed Order placed”", "text “Checkout funnel”", "group “Cart viewed Order placed”",
+            "text “Cart viewed”", "text “Order placed”", "group “Top exit reasons”",
+        ], "the helmet, its style and the loop's scaffold left out; a <p> that repeats its section's words too; each named as the canvas names it")
         #expect(inside.last?.breadcrumb == ["Checkout funnel dashboard", "A · Funnel first"])
         #expect(inside[1].inside == 4 && inside[1].tag == "div")
         #expect(catalog.rows(in: .board(rows[2].reference)).count == 1, "a board with no source lists no elements")
@@ -125,7 +125,7 @@ struct DesignMentionTests {
     @Test func searchMatchesEveryLevelInCatalogOrder() throws {
         let catalog = try Self.catalog()
         #expect(catalog.search("funnel").map(\.kind) == [.design, .board, .element, .element, .element, .element, .element, .element, .board])
-        #expect(catalog.search("order placed").map(\.title) == ["card “Checkout funnel Cart viewed Order placed”", "ol “Cart viewed Order placed”", "li “Order placed”"])
+        #expect(catalog.search("order placed").map(\.title) == ["card “Checkout funnel Cart viewed Order placed”", "group “Cart viewed Order placed”", "text “Order placed”"])
         #expect(catalog.search("step table").map(\.title) == ["B · Step table"])
         #expect(catalog.search("pricng").isEmpty)
         #expect(catalog.search("  ").map(\.kind) == [.design], "no words: the designs")

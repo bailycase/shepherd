@@ -40,6 +40,28 @@ struct DesignReferencePayloadTests {
         #expect(DesignReferenceReading.elementTitle(name: name, label: label, tag: tag) == expected)
     }
 
+    /// Where the board names an element nothing, the host calls it what the canvas's tag does, so
+    /// a chip and the picker agree with the canvas ("card “Checkout funnel”", not "div …").
+    @Test(arguments: [
+        (#"<div style="padding: 12px; background: #fff"><p>Checkout funnel</p></div>"#, "card"),
+        (#"<div style="border: 1px solid #e4e4ea"><p>Steps</p></div>"#, "card"),
+        (#"<div style="box-shadow: 0 1px 2px #0003"><p>Steps</p></div>"#, "card"),
+        (#"<div style="padding: 12px; background: transparent; border: 0"><p>Steps</p></div>"#, "group"),
+        (#"<div><p>Steps</p></div>"#, "group"),
+        (#"<p>Steps</p>"#, "text"),
+        (#"<div style="height: 4px; background: #4f46e5"></div>"#, "shape"),
+        (#"<button>Pay now</button>"#, "button"),
+        (#"<div role="button"><span>Pay</span></div>"#, "button"),
+        (#"<a href="/docs">Docs</a>"#, "link"),
+        (#"<input value="x">"#, "field"),
+        (#"<img alt="Logo" src="a.png">"#, "image"),
+        (#"<hr>"#, "line"),
+        (#"<div data-el="funnel card"><p>Steps</p></div>"#, "funnel card"),
+    ])
+    func anUnnamedElementIsCalledWhatTheCanvasCallsIt(_ template: String, _ expected: String) {
+        #expect(DesignReferenceReading.elementNoun(DesignElementID("A.dc.html#0:0")!, in: Self.board(template)) == expected)
+    }
+
     @Test func anElementsNameIsItsDataElUnlessTheLogicBindsIt() {
         #expect(DesignReferenceReading.elementName(DesignElementID("A.dc.html#0:0")!, in: Self.card) == "card")
         let bound = Self.board(#"<div data-el="{{ name }}">x</div>"#)

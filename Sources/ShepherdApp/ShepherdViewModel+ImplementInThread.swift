@@ -79,7 +79,7 @@ extension ShepherdViewModel {
                     agentID = id
                     try await sendDesignReferences([prepared.reference], text: text, to: agentID)
                 case .new:
-                    agentID = try await startImplementThread(model, piece: prepared.piece, select: opens)
+                    agentID = try await startImplementThread(model, piece: model.piece, select: opens)
                     try await sendDesignReferences([prepared.reference], text: text, to: agentID)
                 }
                 implementSheet = nil
@@ -87,7 +87,7 @@ extension ShepherdViewModel {
                     selectAgent(agentID)
                 } else {
                     let name = state.agents.first { $0.id == agentID }?.name ?? "the thread"
-                    referenceToast = DesignReferenceToast(designID: designID, kind: .sent(thread: agentID, name: name), piece: prepared.piece)
+                    referenceToast = DesignReferenceToast(designID: designID, kind: .sent(thread: agentID, name: name), piece: model.piece)
                 }
             } catch {
                 model.error = (error as? LocalizedError)?.errorDescription ?? "\(error)"
@@ -137,7 +137,7 @@ extension ShepherdViewModel {
             do {
                 let prepared = try await prepareDesignReference(reference)
                 copyToPasteboard(prepared.reference.string)
-                referenceToast = DesignReferenceToast(designID: selection.designID, kind: .copied, piece: prepared.piece)
+                referenceToast = DesignReferenceToast(designID: selection.designID, kind: .copied, piece: selection.piece)
             } catch {
                 remoteActionError = (error as? LocalizedError)?.errorDescription ?? "\(error)"
             }
