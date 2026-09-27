@@ -90,7 +90,8 @@ struct PiLaunchTests {
 
     /// Signing in types the launcher into a terminal pane: pi's TUI with no session.
     @Test func signingInOpensShepherdsPiWithNoSession() {
-        #expect(PiLaunch.signIn(home: Self.home) == "\(Self.launcher) --no-session")
+        #expect(PiLaunch.signIn(home: Self.home)
+            == "(cd -- '/Users/me/Library/Application Support/Shepherd/pi' && exec \(Self.launcher) --no-session)")
     }
 
     /// The skills reader runs the engine's node itself, with no shell; the tests' node is found by

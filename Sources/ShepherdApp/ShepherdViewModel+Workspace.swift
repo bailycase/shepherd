@@ -199,8 +199,6 @@ extension ShepherdViewModel {
         focusedPaneID = newPane.id
     }
 
-    /// Split a terminal pane off the agent's thread and type `command` into its fresh shell
-    /// (visible and cancelable, not a hidden exec).
     /// Settings ▸ Pi ▸ Sign in, and the Can't start banner's Sign in…: Shepherd's own pi, with
     /// no session, in a terminal pane beside `agentID`, where `/login` signs in to a provider for
     /// Shepherd's pi alone (the user's terminal pi keeps its own sign-ins). The home is readied
@@ -219,6 +217,8 @@ extension ShepherdViewModel {
         }
     }
 
+    /// Split a terminal pane off the agent's thread and type `command` into its fresh shell
+    /// (visible and cancelable, not a hidden exec).
     func openTerminalPane(besideAgent agent: Agent, running command: String) {
         guard let tab = state.tabs.first(where: { $0.id == agent.tabID }) else { return }
         let anchor = agent.paneID.flatMap { tab.layout.contains($0) ? $0 : nil } ?? tab.layout.firstLeaf.id

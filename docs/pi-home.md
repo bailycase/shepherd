@@ -128,7 +128,8 @@ their `settings.json` as files; the skills Shepherd's own pi loads are asked of 
 
 pi signs in only in its TUI (`/login`). Settings ▸ Pi ▸ Sign in (and Sign in… on a "not signed
 in" banner) opens a terminal pane beside the selected agent running Shepherd's pi with no session
-(`'<home>/bin/pi' --no-session`), where the user types `/login`. The sign-in lands in the home's
+(`(cd -- '<home>' && exec '<home>/bin/pi' --no-session)`, in the home so an agent's folder of `~`
+never makes `~/.pi` the TUI's project), where the user types `/login`. The sign-in lands in the home's
 `auth.json`; the terminal's pi keeps its own. A native sign-in sheet is a later phase. The model
 catalog is kept until `auth.json`, `models.json` or `settings.json` in the home changes.
 
