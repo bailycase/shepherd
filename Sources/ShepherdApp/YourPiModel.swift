@@ -12,6 +12,15 @@ final class YourPiModel {
         let id = UUID()
         var report: YourPiImportReport
         var survey: YourPiSurvey
+        /// Providers the default model names that nothing in Shepherd's pi can sign in to.
+        var missing: [String] = []
+
+        /// No provider can start an agent: restored agents wait for the step to close, so the
+        /// user can sign in first.
+        var holdsAgents: Bool { !survey.canStartAgents }
+        /// The step asks to sign in: nothing can start an agent, or the default model's provider
+        /// is missing.
+        var asksToSignIn: Bool { !survey.canStartAgents || !missing.isEmpty }
     }
 
     /// Both sides as last read; nil until the first read.
@@ -26,11 +35,17 @@ final class YourPiModel {
     @ObservationIgnored let pi: PiSetup
     /// A fixed survey (previews) is never read again.
     @ObservationIgnored private let fixed: Bool
+    /// The first launch's copy (`PiSetup.copyYourPiOnce`), and how long restored agents wait for it.
+    @ObservationIgnored private let firstCopy: @Sendable (PiSetup) -> YourPiImportReport?
+    @ObservationIgnored private let copyDeadline: Duration
 
-    init(pi: PiSetup, survey: YourPiSurvey? = nil) {
+    init(pi: PiSetup, survey: YourPiSurvey? = nil, copyDeadline: Duration = YourPiModel.copyDeadline,
+         firstCopy: @escaping @Sendable (PiSetup) -> YourPiImportReport? = { $0.copyYourPiOnce() }) {
         self.pi = pi
         self.survey = survey
         fixed = survey != nil
+        self.copyDeadline = copyDeadline
+        self.firstCopy = firstCopy
     }
 
     /// Re-reads both sides.
@@ -87,21 +102,25 @@ final class YourPiModel {
     nonisolated static let copyDeadline: Duration = .seconds(30)
 
     /// The first launch of a build with Shepherd's own pi: copies the user's pi once (or finds it
-    /// done), then shows the welcome step when this launch did the copy. True while the step
-    /// shows; false when there is none, and the caller releases the restored agents at once. The
-    /// copy is plain file work that finishes or fails fast; if it overruns `deadline`, agents
-    /// start anyway.
-    func runFirstLaunch(deadline: Duration = YourPiModel.copyDeadline) async -> Bool {
+    /// done), then shows the welcome step when this launch did the copy. True when restored
+    /// agents should keep waiting, for the step to close: it shows and no provider can start an
+    /// agent. False otherwise, and the caller releases them at once, while any step shows. The
+    /// copy is plain file work that finishes or fails fast; if it overruns the deadline, agents
+    /// start anyway. `defaultModel` is Shepherd's own (Settings ▸ Agents); without one, pi's.
+    func runFirstLaunch(defaultModel: String? = nil) async -> Bool {
         let pi = pi
-        let result = await Self.first(within: deadline) { () -> (YourPiImportReport, YourPiSurvey)? in
-            guard let report = pi.copyYourPiOnce() else { return nil }
+        let firstCopy = firstCopy
+        let result = await Self.first(within: copyDeadline) { () -> (YourPiImportReport, YourPiSurvey)? in
+            guard let report = firstCopy(pi) else { return nil }
             return (report, pi.imports().survey(environmentKeys: pi.yourPi.environmentKeys()))
         }
         guard let (report, survey) = result ?? nil else { return false }
         if survey != self.survey { self.survey = survey }
         guard report.first else { return false }
-        welcome = Welcome(report: report, survey: survey)
-        return true
+        let models = [defaultModel ?? survey.shepherdDefaultModel].compactMap { $0 }
+        let step = Welcome(report: report, survey: survey, missing: survey.missingSignIns(for: models))
+        welcome = step
+        return step.holdsAgents
     }
 
     /// `work`'s answer, or nil when `deadline` passes first (the work carries on detached).
