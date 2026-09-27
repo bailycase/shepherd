@@ -412,6 +412,8 @@ final class PiSignInSession: Identifiable {
 
     private func scheduleCheck() {
         checking?.cancel()
+        // A preview's sheet has no pi to ask.
+        guard store != nil else { return }
         guard flow == .key, let input = keyInput else {
             keyCheck = .idle
             return
