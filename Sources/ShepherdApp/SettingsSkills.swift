@@ -4,10 +4,11 @@ import ShepherdProtocol
 import ShepherdRemote
 
 /// Settings ▸ Skills (SettingsSkills, SkillsStates): the agent skills every thread and
-/// automation on every host can use, kept in each host's ~/.agents/skills. A wide page: the
-/// installed skills (a filter, All / On / Updates, when This Mac last checked, Update N; a row
-/// opens in place, one at a time), then read-only the skills pi loads from the user's own pi setup
-/// and from pi packages (the user's decision of 2026-09-26), beside a 280pt rail (how the agent
+/// automation on every host can use, kept in each host's own pi home (`<support>/pi/skills`, the
+/// only folder its pi reads skills from). A wide page: the installed skills (a filter, All / On /
+/// Updates, when This Mac last checked, Update N; a row opens in place, one at a time), then, from
+/// a remote host running an older Shepherd, the skills its pi loads from elsewhere, read-only,
+/// beside a 280pt rail (how the agent
 /// uses skills, what they cost in every prompt, the options, and each host). Browse skills.sh and
 /// Add from repo open sheets.
 struct SkillsSettings: View {
@@ -79,8 +80,7 @@ struct SkillsSettings: View {
         HStack(alignment: .bottom, spacing: NW.Space.xl) {
             SettingsHeader(title: "Skills",
                            explanation: "Instructions and scripts the agent picks up when a task calls for them. Installed skills are "
-                               + "global: every thread and automation on every host gets the same set. Skills from your pi setup "
-                               + "and pi packages are listed read-only.")
+                               + "global: every thread and automation on every host gets the same set.")
                 .frame(maxWidth: AppLayout.skillsExplanationWidth, alignment: .leading)
             Spacer(minLength: NW.Space.l)
             HStack(spacing: NW.Space.m) {
@@ -540,11 +540,11 @@ private struct SkillsListRow: View, Equatable {
                 .lineLimit(1)
                 .truncationMode(.middle)
         } else {
-            Label("Local", systemImage: "folder")
+            Label(SkillsPresentation.source(skill), systemImage: skill.copiedFrom != nil ? "square.and.arrow.down" : "folder")
                 .font(.nwSans(AppLayout.skillsNoteSize))
                 .foregroundStyle(nw.textTertiary)
                 .labelStyle(.titleAndIcon)
-                .help("Copied into ~/.agents/skills by hand. It never updates.")
+                .help(SkillsPresentation.unmanagedNote(skill))
         }
     }
 
@@ -674,10 +674,10 @@ private struct SkillDetail: View {
                     }
                 }
             } else {
-                Label("Local", systemImage: "folder")
+                Label(SkillsPresentation.source(skill), systemImage: skill.copiedFrom != nil ? "square.and.arrow.down" : "folder")
                     .font(.nwSans(AppLayout.skillsDetailTextSize))
                     .foregroundStyle(nw.textSecondary)
-                Text("Copied into the skills folder by hand. It never updates.")
+                Text(SkillsPresentation.unmanagedNote(skill))
                     .nwText(size: AppLayout.skillsNoteSize, lineHeight: AppLayout.skillsNoteLineHeight)
                     .foregroundStyle(nw.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)

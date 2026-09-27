@@ -22,13 +22,11 @@
 //             them.
 //   pi-agent/ "your pi": SHEPHERD_YOUR_PI (and, as a decoy the app must ignore, the process's
 //             own PI_CODING_AGENT_DIR), so whatever the app reads of the user's pi is scratch,
-//             never ~/.pi/agent. Shepherd's own pi home is support/pi. The engine override, the
-//             stand-ins and the decoys are all skipped for the opt-in live-model use case
-//             (SHEPHERD_LIVE_MODEL).
+//             never ~/.pi/agent. Shepherd's own pi home is support/pi, and Settings ▸ Skills
+//             installs into its skills/. The engine override, the stand-ins and the decoys are
+//             all skipped for the opt-in live-model use case (SHEPHERD_LIVE_MODEL).
 //   pi-decoy/ where the decoys point: never pi-agent/, so nothing that resolves the user's pi
 //             from a login shell can mistake them for it.
-//   agent-skills/  SHEPHERD_SKILLS_DIR, so Settings ▸ Skills installs, turns off and removes
-//             skills there, never in the user's ~/.agents/skills.
 //   mcp/      SHEPHERD_MCP_CONFIG points at mcp/mcp.json, so Settings ▸ MCP servers and the
 //             agents' MCP extension never read or write the user's ~/.config/mcp/mcp.json.
 // The root is removed when the process exits. Variables a Shepherd sets for its agents (a run
@@ -125,11 +123,10 @@ static void shepherd_test_isolation_install(void) {
     }
     atexit(remove_root);
 
-    char support[600], bin[600], zdotdir[600], skills[600], mcp[600], mcpConfig[700];
+    char support[600], bin[600], zdotdir[600], mcp[600], mcpConfig[700];
     make("support", support, sizeof support);
     make("bin", bin, sizeof bin);
     make("zdotdir", zdotdir, sizeof zdotdir);
-    make("agent-skills", skills, sizeof skills);
     make("mcp", mcp, sizeof mcp);
     if ((size_t)snprintf(mcpConfig, sizeof mcpConfig, "%s/mcp.json", mcp) >= sizeof mcpConfig) fail("path");
 
@@ -141,7 +138,7 @@ static void shepherd_test_isolation_install(void) {
     snprintf(newPath, pathSize, "%s:%s", bin, path);
 
     if (setenv("SHEPHERD_SUPPORT_DIR", support, 1) != 0 || setenv("ZDOTDIR", zdotdir, 1) != 0
-        || setenv("SHEPHERD_SKILLS_DIR", skills, 1) != 0 || setenv("SHEPHERD_MCP_CONFIG", mcpConfig, 1) != 0
+        || setenv("SHEPHERD_MCP_CONFIG", mcpConfig, 1) != 0
         || setenv("PATH", newPath, 1) != 0) fail("setenv");
     free(newPath);
 

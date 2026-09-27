@@ -1,16 +1,17 @@
 import Foundation
 
 // Settings ▸ Skills: the agent skills (Agent Skills: a folder with a SKILL.md) every pi session on a
-// host can use. Skills are global: they live in the host's ~/.agents/skills, which pi reads at
-// startup, and Shepherd keeps every host's set the same. A skill that is off waits in Shepherd's
+// host can use. Skills are global: they live in the host's own pi home (`<support>/pi/skills`),
+// the only folder its pi reads skills from, and Shepherd keeps every host's set the same. A skill that is off waits in Shepherd's
 // support directory instead, out of pi's sight; a skill used only through /skill:name carries
 // `disable-model-invocation: true` in its installed SKILL.md. A host installs a skill from its
 // git repository itself (`RemoteSkillsRequest.install`), so a skill's files never cross the
 // remote protocol, except a folder copied from another Mac (`installFiles`). Remote clients read
 // and change a host's skills over `RemoteRequest.skills` (`RemoteProtocol.skillsCapability`).
-// Beside them, a host reports the skills its pi loads from elsewhere (pi's own agent directory,
-// its settings, its packages), which Settings lists read-only (`PiSkills`). docs/skills.md has
-// the whole design.
+// Beside them, a host reports the skills its pi loads from elsewhere (`PiSkills`), which
+// Settings lists read-only: none from a host whose pi reads only its home; an older host's pi
+// read the user's own pi setup and packages too. A skill copied from the user's own pi says where
+// from (`InstalledSkill.copiedFrom`). docs/skills.md has the whole design.
 
 /// How the agent may use a skill.
 public enum SkillInvocation: String, Codable, Hashable, Sendable, CaseIterable {
@@ -86,9 +87,14 @@ public struct InstalledSkill: Codable, Hashable, Sendable, Identifiable {
     public var files: [SkillFileEntry]
     /// A newer commit of its folder, once an update check found one.
     public var update: SkillUpdate?
+    /// A skill with no repository that Shepherd copied from the user's own pi: where it came from
+    /// there ("/Users/me/.pi/agent/skills/pdf"). It changes only when they re-import. Nil for one
+    /// installed from a repository or copied into the folder by hand, and from an older host.
+    public var copiedFrom: String?
 
     public init(name: String, summary: String, isOn: Bool = true, invocation: SkillInvocation = .automatic,
-                source: SkillSource? = nil, updatedAt: Double, files: [SkillFileEntry] = [], update: SkillUpdate? = nil) {
+                source: SkillSource? = nil, updatedAt: Double, files: [SkillFileEntry] = [], update: SkillUpdate? = nil,
+                copiedFrom: String? = nil) {
         self.name = name
         self.summary = summary
         self.isOn = isOn
@@ -97,6 +103,7 @@ public struct InstalledSkill: Codable, Hashable, Sendable, Identifiable {
         self.updatedAt = updatedAt
         self.files = files
         self.update = update
+        self.copiedFrom = copiedFrom
     }
 
     public var id: String { name }
@@ -194,7 +201,8 @@ public struct PiSkills: Codable, Hashable, Sendable {
 
 /// A host's skills (`RemoteSkillsResult.skills`).
 public struct SkillsSnapshot: Codable, Hashable, Sendable {
-    /// Where the host's skills live, with its home as `~` ("~/.agents/skills").
+    /// Where the host's skills live, with its home as `~` ("~/Library/Application
+    /// Support/Shepherd/pi/skills"; "~/.agents/skills" from an older host).
     public var directory: String
     /// By name.
     public var skills: [InstalledSkill]

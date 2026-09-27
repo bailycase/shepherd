@@ -64,26 +64,6 @@ public enum ShepherdPaths {
         supportDirectory(environment: environment).appendingPathComponent("instructions", isDirectory: true)
     }
 
-    /// Overrides where this host's agent skills live (Settings ▸ Skills). Tests point it at a
-    /// scratch folder, so they never touch the user's skills; pi itself always reads
-    /// `~/.agents/skills`.
-    public static let skillsDirectoryEnvKey = "SHEPHERD_SKILLS_DIR"
-
-    /// The agent skills every pi session on this host can use: the Agent Skills folder pi reads
-    /// at startup, `~/.agents/skills` (a folder per skill, each with a SKILL.md).
-    public static func agentSkillsDirectory(
-        environment: [String: String] = ProcessInfo.processInfo.environment
-    ) -> URL {
-        if let override = environment[skillsDirectoryEnvKey],
-           !override.trimmingCharacters(in: .whitespaces).isEmpty {
-            return URL(fileURLWithPath: (override as NSString).expandingTildeInPath, isDirectory: true)
-                .standardizedFileURL
-        }
-        return homeDirectory
-            .appendingPathComponent(".agents", isDirectory: true)
-            .appendingPathComponent("skills", isDirectory: true)
-    }
-
     /// Overrides where Settings ▸ MCP servers keeps its servers. Tests point it at a scratch file,
     /// so they never touch the user's `~/.config/mcp/mcp.json`.
     public static let mcpConfigEnvKey = "SHEPHERD_MCP_CONFIG"

@@ -98,14 +98,6 @@ struct PiLaunchTests {
             == "(cd -- '/Users/me/Library/Application Support/Shepherd/pi' && exec \(Self.launcher) --no-session)")
     }
 
-    /// The skills reader runs the engine's node itself, with no shell; the tests' node is found by
-    /// `env`.
-    @Test func theSkillsReaderRunsTheEnginesNode() {
-        #expect(PiLaunch.skillsReader(engine: Self.engine) == ["\(Self.app)/Helpers/node", "--input-type=module", "-"])
-        let tests = PiEngine(command: ["/s/pi-engine"], packageDirectory: nil, version: nil, node: .onPath("node"))
-        #expect(PiLaunch.skillsReader(engine: tests) == ["/usr/bin/env", "node", "--input-type=module", "-"])
-    }
-
     /// A program name that isn't a plain word is quoted like any other value.
     @Test(arguments: [("node", "node"), ("node-2.0_rc", "node-2.0_rc"), ("my node", "'my node'"), ("", "''"), ("$(x)", "'$(x)'")])
     func namesOnPathAreBareOnlyWhenPlain(_ name: String, word: String) {

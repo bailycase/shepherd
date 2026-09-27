@@ -71,6 +71,7 @@ struct SettingsPreviewTests {
             try store.installFiles(name: name, files: [SkillFile(path: "SKILL.md", contents: Data(text.utf8))], invocation: .slashOnly)
         }
         try store.setOn("changelog", on: false)
+        store.copiedFrom = { ["go-table-tests": "/Users/you/.pi/agent/skills/go-table-tests"] }
         let vm = workspace.vm
         vm.settingsSection = .skills
         try await Preview.render("settings-skills-installed", size: CGSize(width: 1440, height: 900),

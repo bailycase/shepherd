@@ -301,6 +301,39 @@ struct YourPiImportTests {
         #expect(failures.map(\.reason) == ["Cannot find module 'x'", "Extension does not export a valid factory function: /h/b/index.ts"])
     }
 
+    /// Settings ▸ Skills manages the skills of Shepherd's pi's home, the only folder its pi reads
+    /// them from: a skill copied from your pi is one of them and says where it came from; one
+    /// installed later lands beside it; and nothing is reported from outside the home.
+    @Test func settingsSkillsListsShepherdsOwnPiSkillsWithWhereEachWasCopiedFrom() throws {
+        let setup = try Setup()
+        defer { setup.remove() }
+        let pi = PiSetup(engine: setup.home.engine, home: setup.home.directory, yourPi: YourPiLocator(.fixed(setup.yours)),
+                         userHome: setup.userHome)
+        let support = setup.home.directory.deletingLastPathComponent()
+        let server = SessionServer(socketPath: support.appendingPathComponent("s.sock").path,
+                                   stateURL: support.appendingPathComponent("state.json"), pi: pi, modelCatalog: { ScratchServer.standInModels })
+        #expect(server.skills.directory.standardizedFileURL.path == setup.home.directory.appendingPathComponent("skills").standardizedFileURL.path)
+        _ = pi.imports().copyOnce()
+        let own = server.skills.directory.appendingPathComponent("hand-made")
+        try FileManager.default.createDirectory(at: own, withIntermediateDirectories: true)
+        try Self.write("---\nname: hand-made\ndescription: Mine.\n---\n", to: own.appendingPathComponent("SKILL.md"))
+
+        guard case .skills(let snapshot) = try server.skills.perform(.fetch) else { Issue.record("no skills"); return }
+
+        #expect(snapshot.skills.map(\.name) == ["fixture-skill", "hand-made"])
+        #expect(snapshot.skill("fixture-skill")?.copiedFrom == setup.yours.appendingPathComponent("skills/fixture-skill").path)
+        #expect(snapshot.skill("hand-made")?.copiedFrom == nil)
+        #expect(snapshot.pi?.skills.isEmpty == true, "nothing outside the home, and said so")
+
+        // Off moves it out of pi's sight; Re-import copies it again where it is, still off.
+        try server.skills.setOn("fixture-skill", on: false)
+        try Self.write("---\nname: fixture-skill\ndescription: Edited.\n---\n", to: setup.yours.appendingPathComponent("skills/fixture-skill/SKILL.md"))
+        try pi.imports().reimport(.files(.skills))
+        let after = server.skills.snapshot()
+        #expect(after.skill("fixture-skill")?.isOn == false && after.skill("fixture-skill")?.summary == "Edited.")
+        #expect(!FileManager.default.fileExists(atPath: server.skills.directory.appendingPathComponent("fixture-skill").path))
+    }
+
     @Test func withNoPiOfTheirsTheFirstCopyOnlyRecordsItself() throws {
         let setup = try Setup(yourPi: false)
         defer { setup.remove() }

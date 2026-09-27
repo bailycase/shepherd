@@ -517,6 +517,12 @@ public struct YourPiImport: Sendable {
         return lstat(url.path, &info) == 0
     }
 
+    /// The skills copied from the user's pi, by folder name, with where each came from (for
+    /// Settings ▸ Skills' Source). Reads the state only.
+    public func copiedSkills() -> [String: String] {
+        Dictionary((state()?.copies(.skills) ?? []).map { ($0.name, $0.source) }, uniquingKeysWith: { first, _ in first })
+    }
+
     // MARK: Extensions
 
     /// Switches one of the user's extensions (by its copy's `destination`) on or off. On clears a

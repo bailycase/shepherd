@@ -30,7 +30,6 @@ struct EmbeddedExtensionTests {
         "shepherd-mcp.ts": MCPExtension.extensionSource,
         "shepherd-mcp-client.mjs": MCPExtension.clientSource,
         // Not an extension: Settings ▸ Skills runs it with node to ask pi for its skills.
-        "shepherd-pi-skills.mjs": PiSkillsLoader.scriptSource,
     ]
 
     /// The design skill the design extension hands pi: its canonical copy lives beside the

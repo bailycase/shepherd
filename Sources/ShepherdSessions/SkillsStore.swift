@@ -76,12 +76,23 @@ public final class SkillsStore: @unchecked Sendable {
     private let gitLock = NSLock()
     private let piLock = NSLock()
     private var reader: PiSkillsReader?
+    private var copied: @Sendable () -> [String: String]
 
-    public init(directory: URL, stateDirectory: URL, now: @escaping () -> Date = Date.init, piSkills: PiSkillsReader? = nil) {
+    /// `copiedFrom` names the skills Shepherd copied from the user's own pi, with where each came
+    /// from (`YourPiImport.copiedSkills`).
+    public init(directory: URL, stateDirectory: URL, now: @escaping () -> Date = Date.init, piSkills: PiSkillsReader? = nil,
+                copiedFrom: @escaping @Sendable () -> [String: String] = { [:] }) {
         self.directory = directory
         self.stateDirectory = stateDirectory
         self.now = now
         reader = piSkills
+        copied = copiedFrom
+    }
+
+    /// The skills Shepherd copied from the user's own pi, with where each came from.
+    public var copiedFrom: @Sendable () -> [String: String] {
+        get { piLock.withLock { copied } }
+        set { piLock.withLock { copied = newValue } }
     }
 
     /// Reads the skills pi loads from elsewhere into every answer (`SkillsSnapshot.pi`); nil
@@ -470,6 +481,7 @@ public final class SkillsStore: @unchecked Sendable {
 
     private func unlockedSnapshot() -> SkillsSnapshot {
         let records = loadRecords()
+        let copiedSkills = copiedFrom()
         var skills: [String: InstalledSkill] = [:]
         for (base, isOn) in [(offDirectory, false), (directory, true)] {
             for name in skillNames(in: base) {
@@ -482,7 +494,8 @@ public final class SkillsStore: @unchecked Sendable {
                 skills[name] = InstalledSkill(
                     name: name, summary: frontmatter.description ?? "", isOn: isOn, invocation: frontmatter.invocation,
                     source: record?.source, updatedAt: record.map { max($0.installedAt, modified) } ?? modified,
-                    files: Self.entries(of: folder), update: record?.update)
+                    files: Self.entries(of: folder), update: record?.update,
+                    copiedFrom: record?.source == nil ? copiedSkills[name] : nil)
             }
         }
         return SkillsSnapshot(directory: (directory.path as NSString).abbreviatingWithTildeInPath,
