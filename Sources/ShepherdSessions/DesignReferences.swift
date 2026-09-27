@@ -129,7 +129,7 @@ struct DesignReferenceService: Sendable {
                     throw DesignReferenceError("no_such_element", "\(element) is not on \(reference.board?.rawValue ?? "the board") now.")
                 }
                 label = template.labels[element.tid]
-                name = DesignReferenceReading.elementName(element, in: source) ?? template.element(for: element)?.name
+                name = DesignReferenceReading.elementNoun(element, in: source) ?? template.element(for: element)?.name
             }
             return Resolved(design: design, snapshot: snapshot, revision: revision, boards: boards, elementLabel: label,
                             elementName: name, systems: systems)

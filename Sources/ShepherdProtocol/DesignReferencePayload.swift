@@ -537,6 +537,56 @@ extension DesignReferenceReading {
         DesignStyleEdit.attribute("data-el", of: element.tid, in: source).flatMap { $0.contains("{{") || $0.isEmpty ? nil : $0 }
     }
 
+    /// What an element is called where the board names it nothing: its `data-el` name, else what
+    /// the canvas's tag calls it ("card · Checkout funnel"), so a chip, the picker, the Implement
+    /// sheet and its toasts say what the canvas said.
+    public static func elementNoun(_ element: DesignElementID, in source: String) -> String? {
+        if let name = elementName(element, in: source) { return name }
+        guard let template = DesignTemplate(board: source), let found = template.element(for: element) else { return nil }
+        let children = template.elements.contains { $0.parent == found.tid }
+        return elementNoun(found, children: children, words: template.labels[found.tid] != nil,
+                           style: DesignStyleEdit.styles(in: source)[found.tid],
+                           role: DesignStyleEdit.attribute("role", of: found.tid, in: source))
+    }
+
+    /// The canvas's noun for an element (the board bridge's `nounOf`), read from the source alone:
+    /// a component, an image, a line, a button, a link or a field by its tag; words with no
+    /// elements inside are text, an empty leaf a shape; a box is a card when its inline style
+    /// draws a fill, a border or a shadow, else a group.
+    public static func elementNoun(_ element: DesignTemplateElement, children: Bool, words: Bool, style: DesignInlineStyle?,
+                                   role: String?) -> String {
+        switch element.name {
+        case "dc-import", "x-import": return "component"
+        case "img", "svg", "picture", "video", "canvas": return "image"
+        case "hr": return "line"
+        case "button": return "button"
+        case "a": return "link"
+        case "input", "textarea", "select": return "field"
+        default: break
+        }
+        if role?.lowercased() == "button" { return "button" }
+        if !children { return words ? "text" : "shape" }
+        return draws(style) ? "card" : "group"
+    }
+
+    /// Whether an inline style paints a box: a fill, a border or a shadow.
+    static func draws(_ style: DesignInlineStyle?) -> Bool {
+        let nothing: Set<String> = ["", "none", "transparent", "inherit", "initial", "unset", "0", "0px", "hidden"]
+        for declaration in style?.declarations ?? [] {
+            let value = declaration.value.lowercased().trimmingCharacters(in: .whitespaces)
+            guard !nothing.contains(value), !value.hasPrefix("rgba(0, 0, 0, 0)"), !value.hasPrefix("rgba(0,0,0,0)") else { continue }
+            switch declaration.property {
+            case "background", "background-color", "background-image", "box-shadow":
+                return true
+            case "border", "border-top", "border-left", "border-width", "border-top-width", "border-left-width":
+                if !value.hasPrefix("0 "), !value.hasPrefix("0px "), !value.hasPrefix("none ") { return true }
+            default:
+                continue
+            }
+        }
+        return false
+    }
+
     /// What changed between two versions of a board, for a chip's "updated since" preview: short
     /// lines ("padding 24px → 20px", "+ <p> “Secure payment”"), at most `limit`, the last saying
     /// how many more. Only the referenced board is described; for an element, only it and what's

@@ -664,7 +664,7 @@ struct DesignReferenceIntegrationTests {
         let board = try #require(boards.last)
         let elements = catalog.rows(in: .board(board.reference))
         #expect(elements.first?.kind == .board)
-        #expect(elements.dropFirst().map(\.title) == ["Checkout funnel “Checkout funnel Pay now”", "h2 “Checkout funnel”", "button “Pay now”"],
+        #expect(elements.dropFirst().map(\.title) == ["Checkout funnel “Checkout funnel Pay now”", "text “Checkout funnel”", "button “Pay now”"],
                 "a named element by its data-el and words; the helmet and its style left out")
         #expect(elements.last?.breadcrumb == ["Checkout ☕️ funnel", "A · Funnel first"])
         #expect(catalog.search("pay now button").map(\.title) == ["button “Pay now”"])

@@ -159,6 +159,10 @@ public struct DesignMentionCatalog: Hashable, Sendable {
     public static func elements(of board: DesignReference, source: String, breadcrumb: [String]) -> [DesignMentionItem] {
         guard let path = board.board, let template = DesignTemplate(board: source) else { return [] }
         let names = DesignStyleEdit.attributes("data-el", in: source)
+        let roles = DesignStyleEdit.attributes("role", in: source)
+        let styles = DesignStyleEdit.styles(in: source)
+        var parents = Set<Int>()
+        for element in template.elements { if let parent = element.parent { parents.insert(parent) } }
         let scaffold: Set<String> = ["helmet", "style", "script", "title", "template", "sc-for", "sc-if", "dc-import", "x-dc", "br", "wbr"]
         var inside = [Int](repeating: 0, count: template.elements.count)
         for element in template.elements.reversed() {
@@ -173,7 +177,11 @@ public struct DesignMentionCatalog: Hashable, Sendable {
             guard let id = DesignElementID(board: path.viewName, tid: element.tid, path: element.path),
                   let reference = DesignReference(designID: board.designID, board: path, element: id) else { continue }
             out.append(DesignMentionItem(kind: .element, reference: reference,
-                                         title: DesignReferenceReading.elementTitle(name: name, label: label, tag: element.name),
+                                         title: DesignReferenceReading.elementTitle(
+                                             name: name ?? DesignReferenceReading.elementNoun(element, children: parents.contains(element.tid),
+                                                                                              words: label != nil, style: styles[element.tid],
+                                                                                              role: roles[element.tid]),
+                                             label: label, tag: element.name),
                                          breadcrumb: breadcrumb, tag: element.name, inside: inside[element.tid]))
             if out.count >= maxElementsPerBoard { break }
         }
