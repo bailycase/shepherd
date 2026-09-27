@@ -6,6 +6,7 @@ import ShepherdRemote
 @testable import ShepherdSessions
 import ShepherdTestKit
 import ShepherdUI
+import SwiftUI
 import Testing
 @testable import ShepherdApp
 
@@ -171,6 +172,34 @@ struct DesignReferenceThreadTests {
         #expect(DesignReferenceChips.changes(.updatedSince(latest: 26, changes: ["padding 24px → 20px"]), version: 23)
             == NWReferenceChanges(title: "Changed since v23 · now v26", lines: ["padding 24px → 20px"]))
         #expect(DesignReferenceChips.changes(.current, version: 23) == nil)
+    }
+
+    /// RefPasted: ⌫ takes the last chip back with the caret at the start of the words, and
+    /// deletes a character anywhere else.
+    @Test(arguments: [
+        ("", nil, nil, true),
+        ("", 0, 0, true),
+        ("Build this", 0, 0, true),
+        ("Build this", 3, 3, false),
+        ("Build this", 10, 10, false),
+        ("Build this", 0, 5, false),
+        ("Build this", nil, nil, false),
+    ] as [(String, Int?, Int?, Bool)])
+    func backspaceAtTheStartOfTheWordsTakesTheLastChipBack(draft: String, from: Int?, to: Int?, takesBack: Bool) {
+        let selection = from.flatMap { from in
+            to.map { to in
+                TextSelection(range: draft.index(draft.startIndex, offsetBy: from)..<draft.index(draft.startIndex, offsetBy: to))
+            }
+        }
+        #expect(ComposerCaret.takesBackChip(draft: draft, selection: selection) == takesBack)
+    }
+
+    @Test func aCaretTheDraftOutgrewReadsAsNone() {
+        let caret = ComposerCaret()
+        let long = "Build this in the checkout page"
+        caret.selection = TextSelection(insertionPoint: long.endIndex)
+        #expect(caret.selection(in: long) != nil)
+        #expect(caret.selection(in: "Build") == nil, "a draft replaced from outside the field leaves no caret to read")
     }
 
     /// RefChipHover and RefChipUpdated open the preview 8pt above the chip; it opens below only
