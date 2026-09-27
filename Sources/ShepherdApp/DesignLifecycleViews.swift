@@ -51,8 +51,7 @@ struct DeleteDesignDialog: View {
         NWDesignAlert(symbol: "trash", title: words.title) {
             NWDesignAlertList {
                 ForEach(Array(words.lines.enumerated()), id: \.offset) { _, line in
-                    NWDesignAlertLine(symbol: line.role == .goes ? "xmark" : "checkmark", role: line.role == .goes ? .goes : .stays,
-                                      Self.text(line))
+                    NWDesignAlertLine(symbol: line.symbol, role: line.role == .goes ? .goes : .stays, Self.text(line))
                 }
             }
             Text(words.note)
@@ -184,10 +183,10 @@ struct DesignImportDialog: View {
     }
 
     private func again(_ words: ImportAgainWords) -> some View {
-        NWDesignAlert(symbol: "square.on.square", tone: .attention, title: words.title, width: NWDesignMetrics.alertWidestWidth) {
+        NWDesignAlert(symbol: "square.and.arrow.down", tone: .attention, title: words.title, width: NWDesignMetrics.alertWidestWidth) {
             NWDesignAlertMessage(Text("You imported \(NWDesignAlertMessage.strong(words.name))\(words.messageAfter)"))
             NWDesignAlertList {
-                NWDesignAlertLine(symbol: "plus.square.on.square", role: .neutral,
+                NWDesignAlertLine(symbol: "pencil.tip", role: .neutral,
                                   Text("New copy: \(NWDesignAlertMessage.strong(words.copyName))\(words.copyRest)"))
                 if let before = words.systemBefore, let system = words.system {
                     NWDesignAlertLine(symbol: "paintpalette", role: .neutral,

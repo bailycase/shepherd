@@ -62,6 +62,7 @@ struct DesignLifecycleWordsTests {
                                       agentWorking: false, drawing: 0)
         #expect(words.title == "Delete “Checkout funnel dashboard”?")
         #expect(words.lines.map(\.role) == [.goes, .goes, .stays])
+        #expect(words.lines.map(\.symbol) == ["trash", "text.bubble", "checkmark"], "the boards, the chat, what stays")
         #expect(words.lines[0].lead == "4 boards" && words.lines[0].text == ", their 23 versions and 2 comments")
         #expect(words.lines[1].text == "The design agent’s chat for this design")
         #expect(words.lines[2].mono == "acme-web" && words.lines[2].tail == ", the design system it uses")
@@ -174,13 +175,17 @@ struct DesignLifecycleWordsTests {
         #expect(importing.shownTitle == "Checkout funnel")
     }
 
-    /// The importing card goes first among Recent designs, and its system comes dashed.
+    /// The importing card goes first among Recent designs, and its system comes dashed after
+    /// every system there is.
     @Test func anImportRunningGoesFirstWithItsSystemComing() {
         let design = Design(name: "Onboarding", createdAt: 1)
         let importing = DesignImporting(file: "checkout-funnel.zip", title: "Checkout funnel", done: 7, total: 12, system: "Checkout DS")
+        let systems = [DesignSystemSummary(info: DesignSystemInfo(namespace: "acme-web", title: "acme-web", createdAt: 1)),
+                       DesignSystemSummary(info: DesignSystemInfo(namespace: "night-watch", title: "Night Watch", createdAt: 0), builtIn: true)]
         let model = DesignsPageModel.make(designs: [design], spaces: [], firstBoards: [:], filter: "", selection: nil, now: Date(),
-                                          importing: importing)
+                                          systems: systems, importing: importing)
         #expect(model.rows.first?.map(\.id) == ["importing", design.id.rawValue])
+        #expect(model.systems.map(\.name) == ["acme-web", "Night Watch", "Checkout DS"])
         let coming = model.systems.first { $0.dashed }
         #expect(coming?.name == "Checkout DS" && coming?.source == "came with Checkout funnel" && coming?.count == "after the boards")
         #expect(coming?.menu == nil)

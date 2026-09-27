@@ -167,10 +167,11 @@ struct DesignsPageModel: Equatable {
                    count: "", swatches: [], menu: DesignMenu.system(name: build.name, builtIn: false, repo: nil, building: true))
         }
         cards.insert(contentsOf: pending, at: own.count)
-        // A system coming with an import, dashed until its design's boards are in (ImportProgress).
+        // A system coming with an import, dashed until its design's boards are in, after every
+        // system there is (ImportProgress).
         if let importing, let system = importing.system, !own.contains(where: { $0.info.title == system }) {
-            cards.insert(System(id: .system(".importing"), name: system, source: "came with \(importing.shownTitle)",
-                                count: "after the boards", swatches: [], dashed: true), at: own.count + pending.count)
+            cards.append(System(id: .system(".importing"), name: system, source: "came with \(importing.shownTitle)",
+                                count: "after the boards", swatches: [], dashed: true))
         }
         if !query.isEmpty {
             cards = cards.filter { card in

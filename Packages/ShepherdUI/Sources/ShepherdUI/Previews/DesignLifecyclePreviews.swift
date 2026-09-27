@@ -6,9 +6,9 @@ import SwiftUI
     NWPreviewBoth {
         NWDesignAlert(symbol: "trash", title: "Delete “Checkout funnel dashboard”?") {
             NWDesignAlertList {
-                NWDesignAlertLine(symbol: "xmark", role: .goes,
+                NWDesignAlertLine(symbol: "trash", role: .goes,
                                   Text("\(NWDesignAlertMessage.strong("4 boards")), their 23 versions and 2 comments"))
-                NWDesignAlertLine(symbol: "xmark", role: .goes, Text("The design agent’s chat for this design"))
+                NWDesignAlertLine(symbol: "text.bubble", role: .goes, Text("The design agent’s chat for this design"))
                 NWDesignAlertLine(symbol: "checkmark", role: .stays,
                                   Text("Stays: \(NWDesignAlertMessage.mono("acme-web")), the design system it uses"))
             }

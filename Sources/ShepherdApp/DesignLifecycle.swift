@@ -100,6 +100,9 @@ struct DeleteDesignWords: Hashable {
     struct Line: Hashable {
         enum Role: Hashable { case goes, stays }
         let role: Role
+        /// Its glyph (DeleteDesignDialog): the boards a trash can, the chat a bubble, what stays a
+        /// check.
+        let symbol: String
         /// A bold lead ("4 boards"), then the rest.
         let lead: String?
         let text: String
@@ -116,10 +119,11 @@ struct DeleteDesignWords: Hashable {
 
     init(name: String, boards: Int, versions: Int?, comments: Int?, system: String?, agentWorking: Bool, drawing: Int) {
         title = "Delete “\(name)”?"
-        var lines = [Line(role: .goes, lead: Self.count(boards, "board"), text: Self.after(boards: boards, versions: versions, comments: comments))]
-        lines.append(Line(role: .goes, lead: nil, text: "The design agent’s chat for this design"))
+        var lines = [Line(role: .goes, symbol: "trash", lead: Self.count(boards, "board"),
+                          text: Self.after(boards: boards, versions: versions, comments: comments))]
+        lines.append(Line(role: .goes, symbol: "text.bubble", lead: nil, text: "The design agent’s chat for this design"))
         if let system {
-            lines.append(Line(role: .stays, lead: nil, text: "Stays: ", mono: system, tail: ", the design system it uses"))
+            lines.append(Line(role: .stays, symbol: "checkmark", lead: nil, text: "Stays: ", mono: system, tail: ", the design system it uses"))
         }
         self.lines = lines
         note = "You can undo right after."
