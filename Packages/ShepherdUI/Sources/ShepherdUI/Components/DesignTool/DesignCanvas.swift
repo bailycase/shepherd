@@ -510,28 +510,39 @@ struct NWCanvasInput: NSViewRepresentable {
         private func startMonitoring() {
             guard keyMonitor == nil else { return }
             keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
-                guard let self, event.window === self.window, event.charactersIgnoringModifiers == " ",
-                      event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting(.capsLock).isEmpty else { return event }
-                if event.window?.firstResponder is NSText { return event }
-                // A presented board's page has the keyboard (a field in a prototype): its space.
-                if let web = NSClassFromString("WKWebView"), event.window?.firstResponder?.isKind(of: web) == true { return event }
-                let inside = self.bounds.contains(self.convert(event.window?.mouseLocationOutsideOfEventStream ?? .zero, from: nil))
-                if event.type == .keyDown {
-                    guard inside || self.spaceHeld else { return event }
-                    if !self.spaceHeld {
-                        self.spaceHeld = true
-                        self.window?.invalidateCursorRects(for: self)
-                    }
-                    return nil
-                }
-                guard self.spaceHeld else { return event }
-                self.spaceHeld = false
-                self.window?.invalidateCursorRects(for: self)
-                return nil
+                guard let self else { return event }
+                return self.handleSpace(event, pointer: event.window?.mouseLocationOutsideOfEventStream ?? .zero) ? nil : event
             }
         }
 
+        /// A hidden layout remains mounted, including its window-wide monitor.
+        /// Text input clients include terminal surfaces as well as ordinary fields.
+        func handleSpace(_ event: NSEvent, pointer: CGPoint) -> Bool {
+            guard !isHiddenOrHasHiddenAncestor else {
+                spaceHeld = false
+                return false
+            }
+            guard event.window === window, event.charactersIgnoringModifiers == " ",
+                  event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting(.capsLock).isEmpty else { return false }
+            if event.window?.firstResponder is NSTextInputClient || event.window?.firstResponder is NSText { return false }
+            if let web = NSClassFromString("WKWebView"), event.window?.firstResponder?.isKind(of: web) == true { return false }
+            let inside = bounds.contains(convert(pointer, from: nil))
+            if event.type == .keyDown {
+                guard inside || spaceHeld else { return false }
+                if !spaceHeld {
+                    spaceHeld = true
+                    window?.invalidateCursorRects(for: self)
+                }
+                return true
+            }
+            guard event.type == .keyUp, spaceHeld else { return false }
+            spaceHeld = false
+            window?.invalidateCursorRects(for: self)
+            return true
+        }
+
         func stopMonitoring() {
+            spaceHeld = false
             if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
             keyMonitor = nil
             zoomRest?.cancel()

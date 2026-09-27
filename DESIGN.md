@@ -3159,6 +3159,8 @@ splits.
   panes on screen. Plain Space belongs to the terminal while its surface is first responder,
   before AppKit or SwiftUI can use it to activate a control. It follows the terminal's normal
   text-input path, including input-method composition; unfocused terminals leave it alone.
+  A canvas's window-wide Space-to-pan handler ignores hidden layouts and text-input clients,
+  including terminals, even when the pointer is over the canvas's remembered bounds.
 
 ### Command palette
 
