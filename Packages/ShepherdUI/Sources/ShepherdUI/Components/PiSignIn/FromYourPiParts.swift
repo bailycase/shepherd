@@ -137,7 +137,7 @@ public struct NWCardLabel: View {
 /// One of the user's extensions (`ExtensionRow(extension)`): off by default; on adds the
 /// full-access note; failed keeps the switch on and says why it didn't load.
 public struct NWExtensionRow: View {
-    public enum State: Equatable, Sendable {
+    public enum Status: Equatable, Sendable {
         case off
         case on
         /// pi's reason, and the lines it wrote.
@@ -147,12 +147,12 @@ public struct NWExtensionRow: View {
     let name: String
     let path: String
     let summary: String?
-    let state: State
+    let state: Status
     let isOn: Binding<Bool>
     let tryAgain: () -> Void
     @State private var showsLog = false
 
-    public init(_ name: String, path: String, summary: String?, state: State, isOn: Binding<Bool>, tryAgain: @escaping () -> Void) {
+    public init(_ name: String, path: String, summary: String?, state: Status, isOn: Binding<Bool>, tryAgain: @escaping () -> Void) {
         self.name = name
         self.path = path
         self.summary = summary
