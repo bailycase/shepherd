@@ -190,7 +190,10 @@ And the rules that follow from them:
 | SettingsSkillsBrowse, SkillsStates: a ranked row's 24-hour change ("+8.1K") and a description beside each result; "· updated Sep 19" in the preview | Installs only in the list, the description in the preview (from its SKILL.md), and no date | skills.sh's lists report neither a change nor a description, nor when a skill last changed |
 | SkillsStates: "Topics narrow any tab" | A topic is a search of skills.sh, most installed first, whatever tab is chosen | skills.sh's lists take no topic |
 | SettingsSkillsBrowse: "Pick from all 16…" | "Pick from the whole repo…" | A repository's size is known only once a host looks it up |
-| SettingsSkills, SkillsStates: one list of the skills in `~/.agents/skills`, global, no project skills (SkillsStates' Not yet) | The list holds every skill the agent loads, in groups: Installed (managed as drawn), then read-only From your pi setup (pi's agent directory and its settings' paths, with Show folder) and From pi packages (naming the package), a skill pi passes over for a same-named one marked "not used", and a note that a repository's own skills load in its threads. The filter, the counts and In every prompt count them all; Settings search finds the groups | The user's decision of 2026-09-26 ("Show all, read-only"): the composer's / menu listed skills the page didn't. Shepherd still never writes `~/.pi` |
+| SettingsSkills, SkillsStates: one list of the skills in `~/.agents/skills`, global, no project skills (SkillsStates' Not yet) | The list holds Shepherd's own pi's skills (`<support>/pi/skills`), where installs go; a skill copied from the user's pi reads "From your pi" as its source, naming where it came from. A remote host running an older Shepherd still reports read-only groups (From your pi setup, From pi packages), shown as before; This Mac has none | The user's decisions of 2026-09-26: first "Show all, read-only" (the / menu listed skills the page didn't), then "everything will be ported over, so things like skills, will only be installed under shepherds application support folder". Shepherd's pi reads skills only from its home, so the page and the / menu agree again. Shepherd still never writes `~/.pi` or `~/.agents` |
+| SettingsPiFromPi, SettingsPiExtensions: Source with "pi 0.86.4 in your terminal", Last brought over, Re-import all, and each row's freshness (Same as your pi, Newer in your pi, Changed here) | Your pi's folder with Reveal, and Re-import per item; no version, date or freshness | Knowing their pi's version means running it; freshness needs a comparison per item that isn't built yet (a follow-up) |
+| SettingsPiFromPi: Instructions' Edit in Instructions | Re-import only | The copy is pi's own global file in Shepherd's pi home, not Settings ▸ Instructions' files |
+| SettingsPiExtensions: Show log beside Try again | Try again only | The reason is pi's own line, shown in full on the row |
 | SettingsMCP: "every thread, mission and automation on every host gets the same servers" | "every thread and automation gets the same servers" | Missions aren't built, and stage 1 serves This Mac only |
 | SettingsMCP: Hosts lists build-01 and horizon, a row's detail reports each host, "Couldn't start on horizon", "shared with every host" | This Mac alone, in Hosts and in each detail | Stage 1 keeps servers on this Mac; other hosts come with stage 2 |
 | SettingsMCP: "Same servers on every host … Offline hosts catch up." | "Adds, edits and removals go to all hosts. For now, only this Mac." | Nothing syncs yet, so the board's words would be false |
@@ -3577,29 +3580,42 @@ automated step of the worktree flows can be turned off here.
     `~` never makes `~/.pi` the TUI's project). With no agent of this Mac selected it is disabled,
     and its tooltip says "Select an agent on this Mac first." Until the native sign-in sheet (the
     plan's phase 7) this is the only way to sign in.
-- **From your pi** (footnote "Shepherd only reads your pi. What it copied stays as it was copied
-  until you re-import it; instructions, skills and prompts are read from your pi as they are
-  now."):
+- **From your pi** (footnote "Copies. Re-import replaces Shepherd's copy with your pi's; your pi is
+  never written to."; SettingsPiFromPi):
   - Your pi: the folder's name in mono (its path on hover) and Reveal, "The pi in your terminal.
-    Logins, custom providers, the default model and trusted folders were copied from it at the
-    first launch." A file of theirs that couldn't be read shows inline as this row's problem.
+    Shepherd copied it at the first launch; nothing syncs after that." A file of theirs that
+    couldn't be read shows inline as this row's problem.
   - Custom providers: "`local-llm`, `zeta`" (their models.json's providers), or "None in your
     pi"; Re-import, disabled with none.
   - Default model: "`anthropic/claude-…`", with "Shepherd's pi uses `…`" when the two differ, or
     "None set in your pi"; Re-import, disabled with none.
   - Trusted folders: "3 folders. Your home folder is never trusted as a project."; Re-import,
     disabled with none.
-  - Instructions: "Reads `AGENTS.md` from your pi before every turn." naming the file pi would
-    pick (`AGENTS.override.md`, `AGENTS.md`, … `CLAUDE.md`), or "Your pi has no `AGENTS.md` or
-    `CLAUDE.md`."; a switch, on by default.
-  - Skills and Prompts: "Reads 2 folders in place." (their `skills/` or `prompts/` folder and the
-    paths in their settings); a switch each, on by default.
   - With no pi of yours, the group is one row, "No pi found", "Shepherd found no pi of yours to
-    read. Sign in above."
-- **Your extensions** (only when your pi has any; footnote "Off in Shepherd. Switching one on
-  (coming in a later version) runs your code with full access, as your own pi does."): one row per
-  extension, its name, and its path in mono as the description; the trailing word "Off" in
-  `caption`/`textTertiary`. Nothing on the page loads them.
+    copy. Sign in above."
+- **Copied** (the user's decision of 2026-09-26, "everything will be ported over"; footnote
+  "Copied into Shepherd's pi. Edits in your pi reach Shepherd only when you Re-import."), a
+  Re-import each (disabled with no pi of yours), which copies that kind again: their edits replace
+  Shepherd's copies, new files come over, one of Shepherd's own of the same name stays:
+  - Instructions: "`AGENTS.md` · 38 lines · no `SYSTEM.md` · no `APPEND_SYSTEM.md`" (the file pi
+    would pick, and pi's other two global files), or "None copied: your pi has no `AGENTS.md` or
+    `CLAUDE.md`."
+  - Skills: "12 skills, listed with the rest in Skills."
+  - Prompts: up to six names in mono ("`/review` `/triage`", then "and 3 more").
+  - Themes: their names the same way.
+  - "None copied." for a kind with none.
+- **Your extensions** (SettingsPiExtensions; footnote "Code, so each one came over switched off.
+  Shepherd's own extensions are below."): a row per extension copied from their pi, its name, and
+  as the description its source in mono (a path with `~`, or a package's source) and its
+  package.json's description. A switch each, off by default:
+  - On: the description adds "Runs with full access to your files, shell and network, like it does
+    in your terminal. New agents load it; running ones on /reload." There is no dialog.
+  - Failed (it threw as it loaded, or its files are gone): the switch stays on, the row's problem
+    says "Didn't load: Cannot find module 'turndown'" in pi's words, and Try again (secondary,
+    small) sits before the switch. Shepherd leaves it out of every launch until its files change
+    or Try again.
+  - Last, Copy again, "Copies your extensions again, keeping each one's switch."; with none, "Your
+    pi has no extensions Shepherd copied."
 
 - **Bundled extensions** (footnote "Applies to agents launched on this Mac, including automations
   and remote agents. Running agents keep their extensions until restarted. Status and session
@@ -3863,15 +3879,15 @@ switch's row "Off: each host keeps its own files. Pick a host to edit it."
 
 #### Skills (SettingsSkills, SkillsStates)
 
-The page (`SettingsSkills.swift`, `ClientSkills`) manages the agent skills pi reads from each
-host's `~/.agents/skills` (docs/skills.md): folders of instructions and scripts the agent picks up
+The page (`SettingsSkills.swift`, `ClientSkills`) manages the agent skills each host's own pi
+reads from its home, `<support>/pi/skills` (docs/skills.md): folders of instructions and scripts the agent picks up
 when a task calls for them. Skills are global: with Same skills on every host on, every install,
 update, switch and removal goes to every host, and a host that is offline catches up when it's
 back. The page sits between Instructions and Remote in the nav, with `graduationcap`.
 
 - **Header:** "Skills", then "Instructions and scripts the agent picks up when a task calls for
-  them. Installed skills are global: every thread and automation on every host gets the same set.
-  Skills from your pi setup and pi packages are listed read-only." (capped at
+  them. Installed skills are global: every thread and automation on every host gets the same set."
+  (capped at
   700pt), and trailing, bottom-aligned: Add from repo… (secondary, `plus`) and Browse skills.sh
   (primary, a glass). Both open sheets (below). The blocks are 18pt apart, the list and the 280pt
   rail 28pt apart.
@@ -3883,15 +3899,18 @@ back. The page sits between Instructions and Remote in the nav, with `graduation
 - **The list** (a card at radius 10, `bgWindow`, a `lineSubtle` line): a 30pt header row on
   `bgSunken` with section labels (Skill, Source, Use, Updated), then groups, each under a 34pt
   title row (`SkillsGroupTitle`: 12/600 `textSecondary`, its count in mono `textTertiary`, its
-  folder trailing in mono): **Installed** (the folder, "~/.agents/skills"), then the read-only
+  folder trailing in mono): **Installed** (the folder, "~/Library/Application
+  Support/Shepherd/pi/skills"), then, from a remote host running an older Shepherd, the read-only
   groups below. Rows are at least 54pt, with 16pt column gaps and sides, hairlines between
   (`SkillsListRow`, Equatable, lazy). An Installed row:
   - the switch (a 30pt column): on or off on every host. Off moves the skill out of the folder pi
     reads, without deleting it.
   - the name in mono 13/600 (`textSecondary` while off) over its description in 12.5
     `textSecondary`, one line each; both come from SKILL.md's frontmatter.
-  - Source (176pt): the repository in mono 11.5 `textSecondary`, truncating in the middle, or
-    Local with a folder glyph (`textTertiary`) for a folder copied in by hand ("It never
+  - Source (176pt): the repository in mono 11.5 `textSecondary`, truncating in the middle; From
+    your pi with an arrow-in glyph (`textTertiary`) for a skill copied from the user's pi, its
+    tooltip naming where from ("Copied from ~/.pi/agent/skills/pdf. Re-import in Settings ▸ Pi.");
+    or Local with a folder glyph (`textTertiary`) for a folder copied in by hand ("It never
     updates.").
   - Use (84pt): "Auto" in a bordered 20pt tag, or "/skill only" in mono on `bgSelected`.
   - Updated (60pt): the day it last changed ("Sep 18", mono 11.5 `textTertiary`); the Update pill
@@ -3904,10 +3923,10 @@ back. The page sits between Instructions and Remote in the nav, with `graduation
   - Empty: "No skills yet. Browse skills.sh, or add them from a repo.", "No skill matches “…”.",
     "No skill is on.", "Every skill is up to date.", or "Reading skills…". Filtered, an Installed
     group left empty hides while another group keeps a row.
-- **The read-only groups** (the user's decision of 2026-09-26: every skill the agent can use shows
-  here, grouped by where it comes from; departures above). They are the first host's own (This Mac
-  on the Mac), read from the user's own pi as plain files and from Shepherd's pi (docs/skills.md ›
-  Outside skills), and Same skills on every host never touches them:
+- **The read-only groups** (the user's decision of 2026-09-26, "Show all, read-only"; departures
+  above), only from a remote first host running a Shepherd from before its pi read skills only
+  from its home. This Mac reports none: every skill its pi loads is Installed. Same skills on
+  every host never touches them:
   - **From your pi setup:** the user's own pi's `skills/` and the `skills` paths in its
     settings, read as plain files (and what Shepherd's own pi home adds, asked of Shepherd's pi). Its title has a lock in the switch column, "~/.pi/agent/skills" and Show folder
     (small ghost; This Mac only).
@@ -3935,7 +3954,9 @@ back. The page sits between Instructions and Remote in the nav, with `graduation
   - **Version:** the repository and folder ("anthropics/skills › skills/pdf", mono 12),
     "Installed 3f2a91c · Aug 30", and while a newer commit waits "New 8c04e1d · Sep 22 · 3 files
     changed" in `lanternText` with Update (small primary) and What changed (small ghost, GitHub's
-    comparison). A Local skill says "Copied into the skills folder by hand. It never updates."
+    comparison). A Local skill says "Copied into the skills folder by hand. It never updates."; one
+    copied from the user's pi says "Copied from your pi (~/.pi/agent/skills/pdf). It changes only
+    when you re-import skills in Settings ▸ Pi."
   - **Hosts:** a row per host (`NWHostStateRow`: a check, a filled dot while it changes there, a
     hollow one while it's away; the name in a 70pt mono column; the state): "installed",
     "updating", "not installed", "offline · updates later", "needs a newer Shepherd".
@@ -4277,8 +4298,9 @@ pi, over the main window.
 - **Brought over from your pi**: a `NWChecklistRow` per thing copied or read, each `done` (a
   check, "brought over"), its detail trailing: one per login ("Anthropic", "Signed in";
   "OpenAI", "API key"; "Google", "API key from $GEMINI_API_KEY"; "Groq", "API key that runs a
-  command"), then Custom providers (their names), Instructions ("AGENTS.md, read live"), Skills
-  and prompts ("3 folders, read in place"), Default model, and Trusted folders (a count). Under a
+  command"), then Custom providers (their names), Instructions, skills and prompts ("AGENTS.md ·
+  12 skills · 5 prompts · 1 theme", copied into Shepherd's pi), Default model, Trusted folders (a
+  count), and Extensions ("3 found"), an `idle` row whose state reads "copied, switched off". Under a
   copied subscription sign-in, one `caption`/`textSecondary` line: "Sign-ins were copied once.
   When one side refreshes a subscription, the other may be signed out: sign in again there."
 - **Found in your environment**: a `done` row ("found") per key variable the login shell sets for
