@@ -2,11 +2,14 @@ import Foundation
 import ShepherdRemote
 
 /// What Shepherd brought over from the user's own pi, and what it keeps reading from there: saved
-/// in Shepherd's pi home (`.shepherd-imports.json`). Its presence means the first copy happened,
-/// so it never runs again on its own; Settings ▸ Pi ▸ From your pi copies again on request.
+/// in Shepherd's pi home (`.shepherd-imports.json`). Once it says `copied` (or can't be read), the
+/// first copy never runs again on its own; Settings ▸ Pi ▸ From your pi copies again on request.
 public struct YourPiImportState: Codable, Equatable, Sendable {
     public var version = 1
-    /// When the first copy ran.
+    /// The first copy ran. False only when a switch in Settings ▸ Pi was saved before it did (a
+    /// first launch whose copy overran its deadline): the next launch still copies.
+    public var copied = true
+    /// When the first copy ran (or the state was first saved).
     public var copiedAt: Date
     /// The folder it read, or nil when the user had no pi.
     public var from: String?
@@ -20,15 +23,17 @@ public struct YourPiImportState: Codable, Equatable, Sendable {
     public var skills: [String] = []
     public var prompts: [String] = []
 
-    public init(copiedAt: Date, from: String?) {
+    public init(copiedAt: Date, from: String?, copied: Bool = true) {
         self.copiedAt = copiedAt
         self.from = from
+        self.copied = copied
     }
 
     // New fields decode with defaults, so an older file keeps loading.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        copied = try c.decodeIfPresent(Bool.self, forKey: .copied) ?? true
         copiedAt = try c.decodeIfPresent(Date.self, forKey: .copiedAt) ?? Date(timeIntervalSince1970: 0)
         from = try c.decodeIfPresent(String.self, forKey: .from)
         instructions = try c.decodeIfPresent(Bool.self, forKey: .instructions) ?? true
@@ -184,7 +189,7 @@ public struct YourPiImport: Sendable {
     var models: URL { home.directory.appendingPathComponent("models.json") }
     var trust: URL { home.directory.appendingPathComponent("trust.json") }
 
-    /// What the first copy left, or nil before it.
+    /// What the first copy (or a switch) left, or nil before either, or when it can't be read.
     public func state() -> YourPiImportState? {
         guard let data = try? Data(contentsOf: stateURL) else { return nil }
         let decoder = JSONDecoder()
@@ -203,12 +208,20 @@ public struct YourPiImport: Sendable {
 
     /// Copies everything once: nothing when it already ran. Shepherd's own logins, custom
     /// providers and default model win over theirs (a sign-in made in Shepherd's pi before this
-    /// build is kept). The home must be ready (`PiSetup.prepare` passed).
+    /// build is kept). The home must be ready (`PiSetup.prepare` passed). A state file that is
+    /// there but can't be read counts as a copy that ran: a damaged file never copies again.
     public func copyOnce(now: Date = Date()) -> YourPiImportReport {
-        guard state() == nil else { return YourPiImportReport() }
+        var info = stat()
+        let exists = lstat(stateURL.path, &info) == 0
+        let saved = exists ? state() : nil
+        if exists, saved?.copied != false { return YourPiImportReport() }
         var report = YourPiImportReport()
         report.first = true
-        var state = YourPiImportState(copiedAt: now, from: yourPi?.agentDirectory.path)
+        // Switches saved before the copy are kept.
+        var state = saved ?? YourPiImportState(copiedAt: now, from: nil)
+        state.copied = true
+        state.copiedAt = now
+        state.from = yourPi?.agentDirectory.path
         if let yourPi {
             report.from = yourPi.agentDirectory.path
             copyLogins(from: yourPi, overwriting: nil, into: &report)
@@ -259,7 +272,7 @@ public struct YourPiImport: Sendable {
 
     /// Turns reading their instructions live on or off.
     public func setInstructions(_ on: Bool) throws {
-        var state = self.state() ?? YourPiImportState(copiedAt: Date(), from: yourPi?.agentDirectory.path)
+        var state = self.state() ?? YourPiImportState(copiedAt: Date(), from: nil, copied: false)
         state.instructions = on
         try save(state)
     }
@@ -267,7 +280,7 @@ public struct YourPiImport: Sendable {
     /// Turns reading their skills (or prompts) in place on or off, and on again reads their
     /// settings afresh.
     public func setResources(_ key: String, on: Bool) throws {
-        var state = self.state() ?? YourPiImportState(copiedAt: Date(), from: yourPi?.agentDirectory.path)
+        var state = self.state() ?? YourPiImportState(copiedAt: Date(), from: nil, copied: false)
         if key == "skills" { state.skillsOn = on } else { state.promptsOn = on }
         var report = YourPiImportReport()
         applyResources(from: yourPi, state: &state, into: &report)
@@ -302,7 +315,7 @@ public struct YourPiImport: Sendable {
         var copied: [PiLogin] = []
         var kept: [String] = []
         do {
-            _ = try PiSettingsFile(url: auth, mode: 0o600).update { ours in
+            let notes = try PiSettingsFile(url: auth, mode: 0o600).update { ours in
                 for (name, credential) in theirs.sorted(by: { $0.key < $1.key }) {
                     if let provider, name != provider { continue }
                     if provider == nil, ours[name] != nil { kept.append(name); continue }
@@ -311,6 +324,8 @@ public struct YourPiImport: Sendable {
                 }
                 return []
             }
+            // Shepherd's own auth.json isn't a JSON object: it was left as it is, and nothing copied.
+            report.problems += notes
         } catch {
             report.problems.append("Shepherd couldn't write its sign-ins: \(error).")
             return
@@ -353,7 +368,7 @@ public struct YourPiImport: Sendable {
         }
         var kept: String?
         do {
-            _ = try PiSettingsFile(url: home.settings).update { settings in
+            let notes = try PiSettingsFile(url: home.settings).update { settings in
                 if !overwrite, let mine = YourPiFiles.defaultModel(settings) {
                     kept = mine
                     return []
@@ -362,6 +377,7 @@ public struct YourPiImport: Sendable {
                 settings["defaultModel"] = String(theirs[theirs.index(after: slash)...])
                 return []
             }
+            guard notes.isEmpty else { report.problems += notes; return }
         } catch {
             report.problems.append("Shepherd couldn't write its default model: \(error).")
             return
@@ -375,10 +391,11 @@ public struct YourPiImport: Sendable {
             let (decisions, dropped) = try YourPiFiles.trust(data, home: userHome)
             report.droppedTrust = dropped
             guard !decisions.isEmpty else { return }
-            _ = try PiSettingsFile(url: trust, mode: 0o600).update { ours in
+            let notes = try PiSettingsFile(url: trust, mode: 0o600).update { ours in
                 for (path, trusted) in decisions { ours[path] = trusted }
                 return []
             }
+            guard notes.isEmpty else { report.problems += notes; return }
             report.trustedFolders = decisions.count
         } catch {
             report.problems.append("Your pi's trusted folders weren't copied: \(error).")
@@ -406,7 +423,7 @@ public struct YourPiImport: Sendable {
         let prompts = entries("prompts", on: state.promptsOn)
         let previous = (skills: state.skills, prompts: state.prompts)
         do {
-            _ = try PiSettingsFile(url: home.settings).update { ours in
+            let notes = try PiSettingsFile(url: home.settings).update { ours in
                 for (key, old, new) in [("skills", previous.skills, skills), ("prompts", previous.prompts, prompts)] {
                     let others = (ours[key] as? [Any] ?? []).compactMap { $0 as? String }.filter { !old.contains($0) && !new.contains($0) }
                     let merged = new + others
@@ -414,6 +431,7 @@ public struct YourPiImport: Sendable {
                 }
                 return []
             }
+            guard notes.isEmpty else { report.problems += notes; return }
             state.skills = skills
             state.prompts = prompts
             report.skills = skills
@@ -430,7 +448,7 @@ public struct YourPiImport: Sendable {
     public func survey(environmentKeys: Set<String> = []) -> YourPiSurvey {
         var survey = YourPiSurvey(folder: yourPi?.agentDirectory.path)
         let state = self.state()
-        survey.copied = state != nil
+        survey.copied = state?.copied == true
         survey.instructionsOn = state?.instructions ?? true
         survey.skillsOn = state?.skillsOn ?? true
         survey.promptsOn = state?.promptsOn ?? true
