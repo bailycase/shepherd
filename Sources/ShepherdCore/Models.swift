@@ -347,6 +347,12 @@ public struct Design: Codable, Hashable, Sendable, Identifiable {
     /// Older state files kept it as the design's `spaceID`; a canvas's stored `spaceID` is
     /// ignored.
     public var sourceSpaceID: SpaceID?
+    /// Remove from Recents: when the design left the sidebar's Recents (ms since 1970). It comes
+    /// back once it changes after that (`lastActiveAt`). Nil in older files.
+    public var recentsHiddenAt: Double?
+    /// The Claude Design project it was imported from, if one: what Import names when the same
+    /// project comes in again. Nil in older files.
+    public var importedFrom: DesignImportOrigin?
 
     public init(
         id: DesignID = DesignID(),
@@ -357,7 +363,9 @@ public struct Design: Codable, Hashable, Sendable, Identifiable {
         lastActiveAt: Double? = nil,
         boardCount: Int? = nil,
         buildsSystem: Bool = false,
-        sourceSpaceID: SpaceID? = nil
+        sourceSpaceID: SpaceID? = nil,
+        recentsHiddenAt: Double? = nil,
+        importedFrom: DesignImportOrigin? = nil
     ) {
         self.id = id
         self.name = name
@@ -368,10 +376,21 @@ public struct Design: Codable, Hashable, Sendable, Identifiable {
         self.boardCount = boardCount
         self.buildsSystem = buildsSystem
         self.sourceSpaceID = sourceSpaceID
+        self.recentsHiddenAt = recentsHiddenAt
+        self.importedFrom = importedFrom
+    }
+
+    /// Whether the sidebar's Recents lists it: not a system build, and not removed from Recents
+    /// since it last changed.
+    public var inRecents: Bool {
+        guard !buildsSystem else { return false }
+        guard let hidden = recentsHiddenAt else { return true }
+        return lastActiveAt > hidden
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, name, agentID, systemNamespace, createdAt, lastActiveAt, boardCount, buildsSystem, sourceSpaceID
+        case recentsHiddenAt, importedFrom
         // Before designs stood alone (2026-09-26). Read only for a build's project; still written,
         // because older builds and remote clients can't decode a design without it.
         case spaceID
@@ -389,6 +408,9 @@ public struct Design: Codable, Hashable, Sendable, Identifiable {
         buildsSystem = try c.decodeIfPresent(Bool.self, forKey: .buildsSystem) ?? false
         let legacySpace = buildsSystem ? try? c.decodeIfPresent(SpaceID.self, forKey: .spaceID) : nil
         sourceSpaceID = try c.decodeIfPresent(SpaceID.self, forKey: .sourceSpaceID) ?? legacySpace
+        // Absent before Remove from Recents and Import.
+        recentsHiddenAt = try c.decodeIfPresent(Double.self, forKey: .recentsHiddenAt)
+        importedFrom = try? c.decodeIfPresent(DesignImportOrigin.self, forKey: .importedFrom)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -404,10 +426,41 @@ public struct Design: Codable, Hashable, Sendable, Identifiable {
         if buildsSystem { try c.encode(buildsSystem, forKey: .buildsSystem) }
         try c.encodeIfPresent(sourceSpaceID, forKey: .sourceSpaceID)
         try c.encode(sourceSpaceID ?? Self.legacyStandaloneSpace, forKey: .spaceID)
+        try c.encodeIfPresent(recentsHiddenAt, forKey: .recentsHiddenAt)
+        try c.encodeIfPresent(importedFrom, forKey: .importedFrom)
     }
 
     /// The `spaceID` a standalone design writes for older readers: no space has it.
     static let legacyStandaloneSpace = SpaceID(rawValue: "standalone-design")
+}
+
+/// Where an imported design came from (File ▸ Import Claude Design Project…): the file or folder
+/// it was read from, the project's own title, and its canvas's creation stamp (canvas.json's
+/// `createdOnFiles`), which stays the same across exports of one project.
+public struct DesignImportOrigin: Codable, Hashable, Sendable {
+    /// The ZIP's or folder's name ("checkout-funnel.zip").
+    public var file: String
+    /// The canvas's title as it came.
+    public var title: String
+    /// canvas.json's `createdOnFiles`, as compact JSON; nil when it has none.
+    public var stamp: String?
+    /// When it was imported (ms since 1970).
+    public var importedAt: Double
+
+    public init(file: String, title: String, stamp: String?, importedAt: Double) {
+        self.file = file
+        self.title = title
+        self.stamp = stamp
+        self.importedAt = importedAt
+    }
+
+    /// Whether `other` is the same project imported again: the same creation stamp, or, where
+    /// either has none, the same title.
+    public func isSameProject(as other: DesignImportOrigin) -> Bool {
+        if let stamp, let theirs = other.stamp { return stamp == theirs }
+        return title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            == other.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
 }
 
 /// The server's authoritative snapshot.

@@ -61,9 +61,13 @@ public struct DesignSystemInfo: Hashable, Sendable, Codable {
     /// The project it was read from, and its stylesheets there, relative to the project.
     public var spaceID: SpaceID?
     public var sources: [String]
+    /// The imported design it came with (ImportDone: "came with Checkout funnel"): a Claude
+    /// Design project's own system, kept as a system of its own. Nil otherwise.
+    public var cameWith: DesignID?
 
     public init(namespace: String, title: String, revision: UInt64 = 0, createdAt: Double, updatedAt: Double? = nil,
-                syncedAt: Double? = nil, ownerDesignID: DesignID? = nil, spaceID: SpaceID? = nil, sources: [String] = []) {
+                syncedAt: Double? = nil, ownerDesignID: DesignID? = nil, spaceID: SpaceID? = nil, sources: [String] = [],
+                cameWith: DesignID? = nil) {
         self.namespace = namespace
         self.title = title
         self.revision = revision
@@ -73,10 +77,11 @@ public struct DesignSystemInfo: Hashable, Sendable, Codable {
         self.ownerDesignID = ownerDesignID
         self.spaceID = spaceID
         self.sources = sources
+        self.cameWith = cameWith
     }
 
     private enum CodingKeys: String, CodingKey {
-        case namespace, title, revision, createdAt, updatedAt, syncedAt, ownerDesignID, spaceID, sources
+        case namespace, title, revision, createdAt, updatedAt, syncedAt, ownerDesignID, spaceID, sources, cameWith
     }
 
     public init(from decoder: Decoder) throws {
@@ -90,6 +95,7 @@ public struct DesignSystemInfo: Hashable, Sendable, Codable {
         ownerDesignID = try c.decodeIfPresent(DesignID.self, forKey: .ownerDesignID)
         spaceID = try c.decodeIfPresent(SpaceID.self, forKey: .spaceID)
         sources = try c.decodeIfPresent([String].self, forKey: .sources) ?? []
+        cameWith = try c.decodeIfPresent(DesignID.self, forKey: .cameWith)
     }
 }
 

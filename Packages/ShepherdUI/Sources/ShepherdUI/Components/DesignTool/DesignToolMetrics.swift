@@ -303,6 +303,75 @@ public enum NWDesignMetrics {
     public static let exportShareGlyph: CGFloat = 13
     public static let exportNoteSize: CGFloat = 11.5
 
+    // Delete and import (DesignLifecycleStates)
+    /// A card's ••• (DesignCardMenu): a 26pt circle 10pt in from the thumbnail's top-trailing
+    /// corner, its glyph 13pt, on hover.
+    public static let cardMoreSize: CGFloat = 26
+    public static let cardMoreInset: CGFloat = 10
+    public static let cardMoreGlyph: CGFloat = 13
+    /// The alert dialogs (DeleteDesignDialog, DeleteSystemDialog, ImportErrorDialog,
+    /// ImportAgainDialog): 470 to 500 wide, 22pt in (18 at the bottom), 16pt between the body and
+    /// the buttons; a 36pt tile at radius 10 holding a 17pt glyph, 14pt before the words; the
+    /// title in 15.5 semibold, the message in 13, 8pt apart; a list box at 10×12, its rows 6pt
+    /// apart in 12.5 with 12pt glyphs 8pt before them.
+    public static let alertWidth: CGFloat = 470
+    public static let alertWideWidth: CGFloat = 480
+    public static let alertWidestWidth: CGFloat = 500
+    public static let alertPadding: CGFloat = 22
+    public static let alertBottomPadding: CGFloat = 18
+    public static let alertSpacing: CGFloat = NW.Space.xl
+    public static let alertTile: CGFloat = 36
+    public static let alertTileRadius: CGFloat = 10
+    public static let alertTileGlyph: CGFloat = 17
+    public static let alertTileGap: CGFloat = 14
+    public static let alertTitleSize: CGFloat = 15.5
+    public static let alertMessageSize: CGFloat = 13
+    public static let alertLineSize: CGFloat = 12.5
+    public static let alertMonoSize: CGFloat = 12
+    public static let alertItemGlyph: CGFloat = 12
+    public static let alertListPaddingVertical: CGFloat = 10
+    public static let alertListPaddingHorizontal: CGFloat = NW.Space.l
+    public static let alertListSpacing: CGFloat = NW.Space.s
+    public static let alertLinkSize: CGFloat = 11.5
+    /// The toast (UndoToast, DeleteFailedToast): 460 wide at most, 11×12 padding (14 leading),
+    /// radius 12, 12pt between its parts; a 15pt glyph, the words in 13; a 24pt button (a 13pt
+    /// glyph, 12 medium) and a 24pt close. 40pt over the bottom of the main column.
+    public static let toastWidth: CGFloat = 460
+    public static let toastPaddingVertical: CGFloat = 11
+    public static let toastPaddingLeading: CGFloat = 14
+    public static let toastPaddingTrailing: CGFloat = NW.Space.l
+    public static let toastSpacing: CGFloat = NW.Space.l
+    public static let toastGlyph: CGFloat = 15
+    public static let toastTextSize: CGFloat = 13
+    public static let toastBottom: CGFloat = NW.Space.xxxl + NW.Space.m
+    /// The drop target over Designs (ImportDrop): a 2pt dashed lantern line at radius 14, and in
+    /// its middle a card (22×28 padding, radius 14) holding a 44pt tile (radius 12, a 22pt glyph),
+    /// the title in 16 semibold and the line in 12.5, 10pt apart.
+    public static let dropLine: CGFloat = 2
+    public static let dropRadius: CGFloat = 14
+    public static let dropInset: CGFloat = NW.Space.l
+    public static let dropCardPaddingVertical: CGFloat = 22
+    public static let dropCardPaddingHorizontal: CGFloat = 28
+    public static let dropTile: CGFloat = 44
+    public static let dropTileGlyph: CGFloat = 22
+    public static let dropTitleSize: CGFloat = 16
+    public static let dropLineSize: CGFloat = 12.5
+    public static let dropSpacing: CGFloat = 10
+    /// The importing card (ImportProgress): the thumbnail holds the boards as 38×24 tiles, 8pt
+    /// apart in rows of 4, drawn (a light tile) or waiting (dashed); under it, 6pt apart, the
+    /// title shimmering, the count, and a 3pt bar.
+    public static let importTile = CGSize(width: 38, height: 24)
+    public static let importTileSpacing: CGFloat = NW.Space.m
+    public static let importTileColumns = 4
+    public static let importTileRadius: CGFloat = 3
+    public static let importTilesShown = 12
+    public static let importBarHeight: CGFloat = 3
+    public static let importLineSpacing: CGFloat = NW.Space.s
+    /// A system card's Built-in tag: 16pt, 5pt padding, radius 4, 10.
+    public static let tagBadgeHeight: CGFloat = 16
+    public static let tagBadgePadding: CGFloat = 5
+    public static let tagBadgeTextSize: CGFloat = 10
+
     // Pencil markup (NWMarkupPalette, NWMarkupProposals; iPadDesign)
     /// The palette: 6×14 padding, 6pt between items; 44pt tools holding a 20 × 26 glyph (1.3pt
     /// lines, the pen's 2.4pt tip); 22pt inks, the current one ringed 2pt wide 2pt out, each in a

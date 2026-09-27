@@ -219,11 +219,15 @@ struct DesignToolbar: View, Equatable {
     var screen: DesignScreenModel?
     /// Opens the Export sheet; nil while the canvas hasn't read the design yet.
     var export: (() -> Void)?
+    /// ••• (DesignToolbarMenu): Rename…, Duplicate, Export…, Show design system, Delete design….
+    var menu: DesignMenu?
+    var perform: (DesignMenuAction) -> Void = { _ in }
 
     nonisolated static func == (a: Self, b: Self) -> Bool {
         a.name == b.name && a.system == b.system && a.swatches == b.swatches && (a.openSystem == nil) == (b.openSystem == nil)
             && a.leadingInset == b.leadingInset && (a.showSidebar == nil) == (b.showSidebar == nil)
             && a.screen.map(ObjectIdentifier.init) == b.screen.map(ObjectIdentifier.init) && (a.export == nil) == (b.export == nil)
+            && a.menu == b.menu
     }
 
     var body: some View {
@@ -252,6 +256,9 @@ struct DesignToolbar: View, Equatable {
             Button("Export", systemImage: "square.and.arrow.up") { export?() }
                 .buttonStyle(.nw(.secondary))
                 .disabled(export == nil)
+            if let menu {
+                NWDesignToolbarMore(label: "More for \(name)") { DesignMenuItems(menu: menu, perform: perform) }
+            }
         }
     }
 }
