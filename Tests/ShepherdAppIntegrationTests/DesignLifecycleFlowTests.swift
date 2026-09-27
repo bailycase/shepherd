@@ -129,6 +129,37 @@ struct DesignLifecycleFlowTests {
         #expect(await app.server.designSystemSummaries().filter { $0.info.namespace.hasPrefix("checkout-ds") }.count == 1)
     }
 
+    /// The same project again with a board that can't be read: leaving that board out still
+    /// brings it in as a copy under the next number, never a second design of the same name.
+    @Test func theSameProjectWithAnUnreadableBoardStillComesInAsACopy() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let vm = try await start(app)
+        let folder = try makeScratchDirectory("zip")
+        let first = folder.appendingPathComponent("checkout-funnel.zip")
+        try TestZip.make(Self.project()).write(to: first)
+        _ = try await app.server.importDesign(from: first)
+        try await eventuallyOnMain("the first import") { vm.state.designs.count == 1 }
+        let again = folder.appendingPathComponent("checkout-funnel-2.zip")
+        let canvas = #"""
+         {"v":3,"title":"Checkout funnel","createdOnFiles":{"at":"2026-09-20T10:00:00Z"},
+          "boards":{"Funnel.dc.html":{"x":0,"y":0,"w":390,"h":844,"title":"Funnel"},
+                    "Empty.dc.html":{"x":470,"y":0,"w":390,"h":844,"title":"Empty"}},
+          "order":["Funnel.dc.html","Empty.dc.html"]}
+         """#
+        try TestZip.make([.file("checkout-funnel/project/canvas.json", canvas),
+                          .file("checkout-funnel/project/Funnel.dc.html", DesignFixtures.source(DesignFixtures.checkout[3])),
+                          .file("checkout-funnel/project/Empty.dc.html", "")]).write(to: again)
+
+        vm.importDesignProject(again)
+        try await eventuallyOnMain("the question") { vm.designImportPrompt != nil }
+        guard case .unreadable? = vm.designImportPrompt else { Issue.record("expected the unreadable board's choice"); return }
+        vm.resolveDesignImport(try #require(vm.designImportPrompt))
+
+        try await eventuallyOnMain("the copy") { vm.state.designs.count == 2 }
+        #expect(vm.state.designs.map(\.name).sorted() == ["Checkout funnel", "Checkout funnel 2"])
+    }
+
     @Test func aFailedImportSaysWhyAndLeavesNothing() async throws {
         let app = try AppHarness()
         defer { app.stop() }
