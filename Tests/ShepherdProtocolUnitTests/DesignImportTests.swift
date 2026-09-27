@@ -60,7 +60,10 @@ struct DesignImportTests {
     @Test func sizeAndCountAreCapped() {
         let many = [Entry("canvas.json")] + (0..<DesignImport.maxFiles).map { Entry("B\($0).dc.html") }
         #expect(throws: DesignImport.Problem.tooManyFiles) { try DesignImport.plan(many) }
-        let big = [Entry("canvas.json")] + (0..<17).map { Entry("B\($0).dc.html", size: DesignImport.maxFileBytes) }
+        // A project up to 1 GB (ImportFailed), past it refused.
+        let fits = [Entry("canvas.json")] + (0..<59).map { Entry("B\($0).dc.html", size: DesignImport.maxFileBytes) }
+        #expect(throws: Never.self) { try DesignImport.plan(fits) }
+        let big = [Entry("canvas.json")] + (0..<60).map { Entry("B\($0).dc.html", size: DesignImport.maxFileBytes) }
         #expect(throws: DesignImport.Problem.tooMuch) { try DesignImport.plan(big) }
     }
 

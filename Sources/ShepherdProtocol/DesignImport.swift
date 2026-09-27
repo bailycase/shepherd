@@ -55,13 +55,15 @@ public enum DesignImport {
             case .tooLarge(let path): return "\(path) is over \(DesignImport.maxFileBytes / 1024 / 1024) MB."
             case .tooDeep(let path): return "\(path) is nested too deep."
             case .tooManyFiles: return "A design holds at most \(DesignImport.maxFiles) files."
-            case .tooMuch: return "The folder is over \(DesignImport.maxTotalBytes / 1024 / 1024) MB."
+            case .tooMuch: return "The project is over \(DesignImportFailure.size(DesignImport.maxProjectBytes))."
             }
         }
     }
 
     public static let maxFiles = 512
     public static let maxFileBytes = 16 * 1024 * 1024
+    /// What an export reads of a project's other files, in all. An import takes up to
+    /// `maxProjectBytes`.
     public static let maxTotalBytes = 256 * 1024 * 1024
     public static let maxDepth = 16
 
@@ -127,7 +129,7 @@ public enum DesignImport {
         guard entry.size <= maxFileBytes else { throw .tooLarge(entry.path) }
         guard files.count < maxFiles else { throw .tooManyFiles }
         total += entry.size
-        guard total <= maxTotalBytes else { throw .tooMuch }
+        guard Int64(total) <= maxProjectBytes else { throw .tooMuch }
         files[entry.path] = destination
     }
 

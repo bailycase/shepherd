@@ -18,8 +18,10 @@ public enum NWDesignCardBoard: Equatable, Sendable {
 /// and a hairline under it, the design's first board centered in it in its board frame (256×160
 /// for a desktop board, 74×160 for a phone). Under it, 5pt apart: the name in 13.5 semibold; the
 /// system in mono `textSecondary` then "· 4 boards" in 11.5 `textTertiary`; "edited 2h ago" in 11
-/// `textTertiary`. The selected card wears a 2pt `textPrimary` ring.
-public struct NWDesignCard<Thumbnail: View>: View {
+/// `textTertiary`. The selected card wears a 2pt `textPrimary` ring. With a menu
+/// (DesignCardMenu), a right-click anywhere on the card opens it, and ••• shows over the
+/// thumbnail's top-trailing corner on hover.
+public struct NWDesignCard<Thumbnail: View, MenuItems: View>: View {
     public typealias Board = NWDesignCardBoard
 
     let name: String
@@ -30,10 +32,11 @@ public struct NWDesignCard<Thumbnail: View>: View {
     let selected: Bool
     let action: () -> Void
     let thumbnail: Thumbnail
+    let menu: MenuItems?
     @State private var hovering = false
 
     public init(name: String, system: String?, detail: String, edited: String, board: Board, selected: Bool = false,
-                action: @escaping () -> Void, @ViewBuilder thumbnail: () -> Thumbnail) {
+                action: @escaping () -> Void, @ViewBuilder thumbnail: () -> Thumbnail, @ViewBuilder menu: () -> MenuItems) {
         self.name = name
         self.system = system
         self.detail = detail
@@ -42,12 +45,34 @@ public struct NWDesignCard<Thumbnail: View>: View {
         self.selected = selected
         self.action = action
         self.thumbnail = thumbnail()
+        self.menu = menu()
     }
 
     public var body: some View {
+        // Hover is the whole card's, the ••• over it included, so reaching for ••• keeps it.
+        Group {
+            if let menu {
+                card
+                    .overlay(alignment: .topTrailing) {
+                        if hovering {
+                            NWDesignMoreButton(label: "More for \(name)") { menu }
+                                .padding(NWDesignMetrics.cardMoreInset)
+                                .nwTransition(.content)
+                        }
+                    }
+                    .contextMenu { menu }
+            } else {
+                card
+            }
+        }
+        .onHover { hovering = $0 }
+        .nwAnimation(.hover, value: hovering)
+    }
+
+    private var card: some View {
         let _ = NWRenderProbe.tick("design.card")
         let shape = RoundedRectangle(cornerRadius: NWDesignMetrics.cardRadius)
-        Button(action: action) {
+        return Button(action: action) {
             VStack(alignment: .leading, spacing: 0) {
                 ZStack {
                     NWDotGrid(spacing: NWDesignMetrics.cardGridSpacing)
@@ -87,8 +112,6 @@ public struct NWDesignCard<Thumbnail: View>: View {
             .contentShape(shape)
         }
         .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .nwAnimation(.hover, value: hovering)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel([name, system, detail, edited].compactMap { $0 }.joined(separator: ", "))
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
@@ -115,30 +138,63 @@ public struct NWDesignCard<Thumbnail: View>: View {
     }
 }
 
+extension NWDesignCard where MenuItems == EmptyView {
+    /// A card without a menu (a host's design, the iPad's grid).
+    public init(name: String, system: String?, detail: String, edited: String, board: Board, selected: Bool = false,
+                action: @escaping () -> Void, @ViewBuilder thumbnail: () -> Thumbnail) {
+        self.name = name
+        self.system = system
+        self.detail = detail
+        self.edited = edited
+        self.board = board
+        self.selected = selected
+        self.action = action
+        self.thumbnail = thumbnail()
+        self.menu = nil
+    }
+}
+
 /// A design system on the Designs page (NavDesigns): a radius-10 card with a hairline and the
 /// hover fill, 12×14 padding, 12pt between its parts: up to four of the system's colors as 14pt
-/// swatches, its name in mono 12.5 semibold over its source in 11.5 `textTertiary`, and how many
-/// designs use it trailing in 11 `textTertiary` ("3 designs").
-public struct NWDesignSystemCard: View {
+/// swatches, its name in mono 12.5 semibold (a built-in's "Built-in" tag after it) over its source
+/// in 11.5 `textTertiary`, and how many designs use it trailing in 11 `textTertiary` ("3
+/// designs"). With a menu (SystemCardMenu), a right-click opens it and ••• takes the count's place
+/// on hover. A system coming with an import is dashed until its design's boards are in.
+public struct NWDesignSystemCard<MenuItems: View>: View {
     let name: String
     let source: String?
     let count: String
     let colors: [Color]
+    let tag: String?
+    let dashed: Bool
     let action: (() -> Void)?
+    let menu: MenuItems?
     @State private var hovering = false
 
-    public init(name: String, source: String? = nil, count: String, colors: [Color] = [], action: (() -> Void)? = nil) {
+    public init(name: String, source: String? = nil, count: String, colors: [Color] = [], tag: String? = nil, dashed: Bool = false,
+                action: (() -> Void)? = nil, @ViewBuilder menu: () -> MenuItems) {
         self.name = name
         self.source = source
         self.count = count
         self.colors = colors
+        self.tag = tag
+        self.dashed = dashed
         self.action = action
+        self.menu = menu()
     }
 
     public var body: some View {
+        if let menu {
+            card.contextMenu { menu }
+        } else {
+            card
+        }
+    }
+
+    private var card: some View {
         let _ = NWRenderProbe.tick("design.systemCard")
         let shape = RoundedRectangle(cornerRadius: NWDesignMetrics.cardRadius)
-        HStack(spacing: NWDesignMetrics.systemCardSpacing) {
+        return HStack(spacing: NWDesignMetrics.systemCardSpacing) {
             if !colors.isEmpty {
                 HStack(spacing: NWDesignMetrics.swatchSpacing) {
                     ForEach(Array(colors.prefix(4).enumerated()), id: \.offset) { _, color in
@@ -151,10 +207,13 @@ public struct NWDesignSystemCard: View {
                 .accessibilityHidden(true)
             }
             VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                Text(name)
-                    .font(.nwMono(NWDesignMetrics.systemNameSize, .semibold))
-                    .foregroundStyle(Color.nw.textPrimary)
-                    .lineLimit(1)
+                HStack(spacing: NW.Space.s) {
+                    Text(name)
+                        .font(.nwMono(NWDesignMetrics.systemNameSize, .semibold))
+                        .foregroundStyle(Color.nw.textPrimary)
+                        .lineLimit(1)
+                    if let tag { NWDesignTagBadge(tag) }
+                }
                 if let source {
                     Text(source)
                         .font(.nwSans(NWDesignMetrics.systemSourceSize))
@@ -164,23 +223,47 @@ public struct NWDesignSystemCard: View {
                 }
             }
             Spacer(minLength: NW.Space.m)
-            Text(count)
-                .font(.nwSans(NWDesignMetrics.systemCountSize))
-                .foregroundStyle(Color.nw.textTertiary)
-                .lineLimit(1)
-                .fixedSize()
+            ZStack(alignment: .trailing) {
+                Text(count)
+                    .font(.nwSans(NWDesignMetrics.systemCountSize))
+                    .foregroundStyle(Color.nw.textTertiary)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .opacity(hovering && menu != nil ? 0 : 1)
+                if hovering, let menu {
+                    NWDesignMoreButton(label: "More for \(name)") { menu }
+                        .nwTransition(.content)
+                }
+            }
+            .frame(minHeight: NWDesignMetrics.cardMoreSize)
         }
         .padding(.vertical, NWDesignMetrics.cardPaddingVertical)
         .padding(.horizontal, NWDesignMetrics.cardPaddingHorizontal)
         .background(hovering && action != nil ? Color.nw.bgHover : .clear, in: shape)
-        .nwBorder(Color.nw.lineSubtle, radius: NWDesignMetrics.cardRadius)
+        .nwBorder(dashed ? .clear : Color.nw.lineSubtle, radius: NWDesignMetrics.cardRadius)
+        .overlay { if dashed { shape.strokeBorder(Color.nw.lineStrong, style: StrokeStyle(lineWidth: 1, dash: [4, 3])) } }
         .contentShape(shape)
         .onTapGesture { action?() }
         .onHover { hovering = $0 }
         .nwAnimation(.hover, value: hovering)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel([name, source, count].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityLabel([name, tag, source, count].compactMap { $0 }.joined(separator: ", "))
         .accessibilityAddTraits(action == nil ? [] : .isButton)
+    }
+}
+
+extension NWDesignSystemCard where MenuItems == EmptyView {
+    /// A card without a menu.
+    public init(name: String, source: String? = nil, count: String, colors: [Color] = [], tag: String? = nil, dashed: Bool = false,
+                action: (() -> Void)? = nil) {
+        self.name = name
+        self.source = source
+        self.count = count
+        self.colors = colors
+        self.tag = tag
+        self.dashed = dashed
+        self.action = action
+        self.menu = nil
     }
 }
 

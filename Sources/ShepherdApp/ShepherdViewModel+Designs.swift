@@ -63,13 +63,16 @@ extension ShepherdViewModel {
         let systems = designSystems.summaries
         let swatches = Dictionary(systems.map { ($0.namespace, designSystemSwatches($0.namespace, count: 4)) },
                                   uniquingKeysWith: { first, _ in first })
+        let building = Set(systems.map(\.namespace).filter(systemIsBuilding))
         let inputs = DesignsPageInputs(designs: state.designs, spaces: state.spaces, firstBoards: firstBoards,
                                        filter: designsPageFilter, selection: designsPageSelection, systems: systems,
-                                       swatches: swatches, hosts: remoteDesignSections, minute: Int(now.timeIntervalSince1970 / 60))
+                                       swatches: swatches, hosts: remoteDesignSections, importing: designImporting, building: building,
+                                       minute: Int(now.timeIntervalSince1970 / 60))
         if let cached = designsPageCache, cached.inputs == inputs { return cached.model }
         var model = DesignsPageModel.make(designs: inputs.designs, spaces: inputs.spaces, firstBoards: inputs.firstBoards,
                                           filter: inputs.filter, selection: inputs.selection, now: now,
-                                          systems: inputs.systems, swatches: inputs.swatches)
+                                          systems: inputs.systems, swatches: inputs.swatches, importing: inputs.importing,
+                                          building: inputs.building)
         model.hosts = inputs.hosts
         designsPageCache = (inputs, model)
         return model
