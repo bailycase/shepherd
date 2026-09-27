@@ -257,6 +257,68 @@
     return '<!doctype html>\n' + page.outerHTML + '\n';
   }
 
+  // MARK: References
+
+  /** The computed properties an element's detail lists: what implementing it needs. */
+  var DETAIL_PROPS = ['display', 'position', 'top', 'right', 'bottom', 'left', 'z-index', 'box-sizing', 'width', 'height',
+    'min-width', 'min-height', 'max-width', 'max-height', 'margin', 'padding', 'flex-direction', 'flex-wrap', 'flex-grow',
+    'flex-shrink', 'flex-basis', 'justify-content', 'align-items', 'align-self', 'gap', 'grid-template-columns',
+    'grid-template-rows', 'grid-column', 'grid-row', 'overflow', 'background-color', 'background-image', 'color', 'opacity',
+    'border-top', 'border-right', 'border-bottom', 'border-left', 'border-radius', 'box-shadow', 'outline', 'font-family',
+    'font-size', 'font-weight', 'font-style', 'line-height', 'letter-spacing', 'text-align', 'text-transform',
+    'text-decoration-line', 'white-space', 'transform', 'fill', 'stroke', 'stroke-width', 'object-fit'];
+  var DETAIL_SKIP = { '': true, 'none': true, 'normal': true, 'auto': true, '0px': true, 'static': true, 'visible': true,
+    'rgba(0, 0, 0, 0)': true, '0px none rgb(0, 0, 0)': true };
+
+  /** A copy of `node` with nothing that runs and none of Shepherd's stamps: staticPage's rules. */
+  function cleaned(node) {
+    var copy = node.cloneNode(true);
+    var gone = copy.querySelectorAll('script, iframe, frame, frameset, object, embed, portal, base, meta[http-equiv]');
+    for (var i = 0; i < gone.length; i++) if (gone[i].parentNode) gone[i].parentNode.removeChild(gone[i]);
+    var all = [copy].concat(Array.prototype.slice.call(copy.querySelectorAll('*')));
+    for (var k = 0; k < all.length; k++) {
+      for (var a = all[k].attributes.length - 1; a >= 0; a--) {
+        var name = all[k].attributes[a].name;
+        var value = all[k].attributes[a].value;
+        if (/^data-dc-/i.test(name) || /^on/i.test(name) || name.toLowerCase() === 'srcdoc' ||
+            /^[\s\u0000-\u001f]*(javascript|vbscript):/i.test(value.replace(/[\t\n\r]/g, ''))) {
+          all[k].removeAttribute(name);
+        }
+      }
+    }
+    return copy;
+  }
+
+  /**
+   * Element `tid` as a design reference hands it over: its markup as drawn now (cleaned as
+   * staticPage cleans a page, cut at 512 KB) and the computed styles of it and up to 300 elements
+   * under it, each by its child path under the element, leaving out values that say nothing.
+   */
+  function elementDetail(tid) {
+    if (!booted || !Number.isInteger(tid) || tid < 0) return null;
+    var found = document.body && document.body.querySelector('[data-dc-tid="' + tid + '"], [data-dc-owner="' + tid + '"]');
+    if (!found) return null;
+    var node = outermost(found);
+    var html = cleaned(node).outerHTML;
+    var clipped = html.length > 524288;
+    var styles = [];
+    var walk = [{ node: node, path: [] }];
+    while (walk.length && styles.length < 300) {
+      var item = walk.shift();
+      var style = getComputedStyle(item.node);
+      var values = {};
+      for (var p = 0; p < DETAIL_PROPS.length; p++) {
+        var value = style.getPropertyValue(DETAIL_PROPS[p]);
+        if (!DETAIL_SKIP[value]) values[DETAIL_PROPS[p]] = clip(value, 300);
+      }
+      var rect = item.node.getBoundingClientRect();
+      styles.push({ path: item.path.join('/'), tag: item.node.tagName.toLowerCase(),
+        rect: [rect.left, rect.top, rect.width, rect.height], style: values });
+      for (var c = 0; c < item.node.children.length; c++) walk.push({ node: item.node.children[c], path: item.path.concat([c]) });
+    }
+    return { html: clipped ? html.slice(0, 524288) : html, clipped: clipped, styles: styles };
+  }
+
   function color(value) {
     return value && value !== 'transparent' && !/^rgba\([^)]*,\s*0\)$/.test(value) ? value : null;
   }
@@ -294,7 +356,8 @@
   }
 
   Object.defineProperty(window, '__shepherdBridge', {
-    value: Object.freeze({ hitTest: hitTest, element: element, staticPage: staticPage, printLayout: printLayout }),
+    value: Object.freeze({ hitTest: hitTest, element: element, elementDetail: elementDetail, staticPage: staticPage,
+      printLayout: printLayout }),
     writable: false, configurable: false, enumerable: false
   });
 
