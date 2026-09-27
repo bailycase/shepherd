@@ -31,7 +31,10 @@ for plist in "$arm64_entitlements" "$x86_64_entitlements"; do
   plutil -lint "$plist" >/dev/null
 done
 
-sign=(codesign --force --sign "$identity")
+# One identifier for every slice. Signed apart, each thin file would take its temporary name
+# (node-arm64, node-x86_64) as its identifier, and a Developer ID seal on the app pins one
+# identifier for nested code, so the other slice fails the app's verification as modified.
+sign=(codesign --force --sign "$identity" --identifier node)
 if (( runtime )); then
   sign+=(--options runtime)
   [[ "$identity" != "-" ]] && sign+=(--timestamp)
