@@ -54,6 +54,13 @@ struct SettingsSearchTests {
         ("read-only", .skills, ["From your pi setup", "From pi packages"]),
         ("agent skills", .skills, ["Installed skills", "From your pi setup", "From pi packages"]),
         ("oauth", .mcp, ["Open sign-in pages by itself"]),
+        // Settings ▸ Pi's sign-ins and what comes from your pi.
+        ("auth.json", .pi, ["Sign-in"]),
+        ("subscription", .pi, ["Sign-in"]),
+        ("models.json", .pi, ["Custom providers"]),
+        ("trust.json", .pi, ["Trusted folders"]),
+        ("re-import", .pi, ["Your pi", "Custom providers", "Default model"]),
+        ("CLAUDE.md", .pi, ["Instructions"]),
         ("claude desktop", .mcp, ["Import…"]),
         (".mcp.json", .mcp, ["Also use a repo’s .mcp.json"]),
     ] as [(String, SettingsSection, [String])])

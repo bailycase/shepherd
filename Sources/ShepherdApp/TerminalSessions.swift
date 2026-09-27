@@ -567,6 +567,18 @@ final class TerminalSessionStore {
         if startQueue.startAhead(agentID) { beginStart(agentID, ahead: true) }
     }
 
+    /// Holds every queued agent start (`AgentStartQueue.hold`): the first launch's copy from the
+    /// user's pi and its welcome step come first.
+    func holdStarts() {
+        startQueue.hold()
+    }
+
+    /// Ends the hold: the agents on screen start first, then the rest in order.
+    func releaseStarts() {
+        for agentID in startQueue.release() { beginStart(agentID, ahead: true) }
+        pumpStarts()
+    }
+
     private func beginStart(_ agentID: AgentID, ahead: Bool) {
         guard let body = queuedStarts.removeValue(forKey: agentID) else {
             startFinished(agentID)
