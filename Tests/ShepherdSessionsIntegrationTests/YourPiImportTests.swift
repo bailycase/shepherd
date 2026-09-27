@@ -229,6 +229,53 @@ struct YourPiImportTests {
         #expect(throws: YourPiFileError.self) { try setup.importer().reimport(.files(.themes)) }
     }
 
+    /// `AGENTS.override.md` beside `AGENTS.md`: pi reads the override alone, so only it is
+    /// copied. Once they remove it, Re-import copies `AGENTS.md` and the override's copy goes;
+    /// an `AGENTS.md` that then can't be read leaves Shepherd's copy as it was.
+    @Test func anOverrideBesideAgentsWinsAndAnUnreadableFileKeepsShepherdsCopy() throws {
+        let setup = try Setup()
+        defer { setup.remove() }
+        let files = FileManager.default
+        let home = setup.home.directory
+        try Self.write("# Override\n", to: setup.yours.appendingPathComponent("AGENTS.override.md"))
+        #expect(setup.importer().copyOnce().copied(.instructions).map(\.name) == ["AGENTS.override.md"])
+        #expect(!files.fileExists(atPath: home.appendingPathComponent("AGENTS.md").path))
+
+        try files.removeItem(at: setup.yours.appendingPathComponent("AGENTS.override.md"))
+        #expect(try setup.importer().reimport(.files(.instructions)).copied(.instructions).map(\.name) == ["AGENTS.md"])
+        #expect(!files.fileExists(atPath: home.appendingPathComponent("AGENTS.override.md").path))
+        let copy = try Data(contentsOf: home.appendingPathComponent("AGENTS.md"))
+
+        // Larger than Shepherd reads (sparse, so the test stays quick).
+        #expect(truncate(setup.yours.appendingPathComponent("AGENTS.md").path, off_t(YourPiFiles.maxBytes + 1)) == 0)
+        #expect(throws: YourPiFileError.self) { try setup.importer().reimport(.files(.instructions)) }
+        #expect(try Data(contentsOf: home.appendingPathComponent("AGENTS.md")) == copy)
+        #expect(setup.importer().state()?.copies(.instructions).map(\.name) == ["AGENTS.md"])
+    }
+
+    /// Re-imports at once (two rows pressed together, or one while a first copy runs past its
+    /// deadline) wait for one another: none clears or replaces another's copy under way.
+    @Test func reimportsAtOnceNeverClearEachOthersCopies() throws {
+        let setup = try Setup()
+        defer { setup.remove() }
+        _ = setup.importer().copyOnce()
+        for index in 0..<40 {
+            try Self.write("---\nname: s\(index)\ndescription: S.\n---\n", to: setup.yours.appendingPathComponent("skills/s\(index)/SKILL.md"))
+            try Self.write("Prompt \(index)\n", to: setup.yours.appendingPathComponent("prompts/p\(index).md"))
+        }
+        let failures = Locked<[String]>([])
+        let importer = setup.importer()
+        DispatchQueue.concurrentPerform(iterations: 8) { index in
+            do { try importer.reimport(.files(index.isMultiple(of: 2) ? .skills : .prompts)) } catch {
+                failures.withValue { $0.append(String(describing: error)) }
+            }
+        }
+        let failed = failures.withValue { $0 }
+        #expect(failed.isEmpty, "\(failed)")
+        #expect(importer.state()?.copies(.skills).count == 41 && importer.state()?.copies(.prompts).count == 42)
+        #expect(!FileManager.default.fileExists(atPath: setup.home.directory.appendingPathComponent(".shepherd-staging").path))
+    }
+
     /// A home whose first copy read skills and prompts in place (version 1) gets them copied once,
     /// quietly, and Shepherd's settings stop naming the user's folders; an entry of Shepherd's own stays.
     @Test func anEarlierCopyThatReadFilesInPlaceHasThemCopiedOnce() throws {
