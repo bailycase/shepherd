@@ -48,8 +48,8 @@ struct Composer: View {
     var steerSubagent: ((ChildRun) -> Void)? = nil
     /// The run open in the inspector: its tray row wears the selection.
     var inspectedRunID: String? = nil
-    /// A design's chat (DZCanvas): attach and Send only, with no commands, model, thinking or
-    /// context ring.
+    /// A design's chat (DZCanvas): the standard composer with the design's placeholder. Its pane
+    /// draws it compact (`nwComposerSize(.compact)`).
     var designChat = false
     /// Retry in the Can't start banner (true: start a new conversation); nil for a remote agent,
     /// whose banner says to retry on its host.
@@ -149,13 +149,12 @@ struct Composer: View {
     /// pi answers `/name` prompts itself; the list comes from its command registry. Its skills'
     /// commands stay out unless Settings ▸ Skills lists them.
     private var commands: [NativeCommand] {
-        if designChat { return [] }
         let pi = AppSettings.shared.skillsInSlashMenu ? store.commands : store.commands.filter { $0.source != "skill" }
         return slashLogin == nil ? pi : pi + SlashLogin.commands
     }
     /// "/login " (or "/logout ") being typed: its verb and argument so far, for the provider list.
     private var loginQuery: (verb: SlashLogin.Verb, partial: String)? {
-        guard slashLogin != nil, !designChat, store.draft != dismissedQuery else { return nil }
+        guard slashLogin != nil, store.draft != dismissedQuery else { return nil }
         return SlashLogin.argumentQuery(store.draft)
     }
     /// The provider rows for `loginQuery`, as the menu last drew them.
@@ -648,12 +647,12 @@ struct Composer: View {
         return ComposerControlsModel(
             active: active, canAttach: canAttach, attachFull: attachments.isFull,
             hasCommands: !commands.isEmpty, commandsActive: commandQuery != nil,
-            model: designChat ? nil : store.model, modelChangeable: store.supportedActions.contains("setModel"),
+            model: store.model, modelChangeable: store.supportedActions.contains("setModel"),
             modelEnabled: store.supports("setModel"), modelsOpen: menu == .models,
-            thinking: store.thinking, thinkingShown: !designChat && thinkingAvailable, thinkingEnabled: store.supports("setThinking"),
+            thinking: store.thinking, thinkingShown: thinkingAvailable, thinkingEnabled: store.supports("setThinking"),
             thinkingOpen: menu == .thinking,
             startingShown: startingShown, busy: store.busy, stops: stops, beside: working && !draftEmpty && !store.busy,
-            sendRinged: menu == .send, contextOpen: menu == .context, showsContext: !designChat,
+            sendRinged: menu == .send, contextOpen: menu == .context,
             stopEnabled: active && store.supports("abort"),
             actionEnabled: stops ? active && store.supports("abort") : canSend,
             stopHelp: stopHelp, actionHelp: stops ? stopHelp : sendHelp(working: working))
@@ -908,8 +907,6 @@ struct ComposerControlsModel: Equatable {
     var sendRinged: Bool
     /// The context ring's details are open.
     var contextOpen: Bool
-    /// The ring shows (a design's chat has none).
-    var showsContext = true
     var stopEnabled: Bool
     var actionEnabled: Bool
     var stopHelp: String
@@ -934,7 +931,7 @@ struct ComposerControlsActions {
 /// The composer's control row: attach · / commands · model · thinking, then the context ring and
 /// Send or Stop, with full chip labels when they fit; in a narrow thread (a docked right pane) the chips drop their words
 /// ("/", the thinking level alone) instead of truncating mid-word, after "Starting…" drops
-/// its own. `ViewThatFits` builds and measures every alternative, each with its tooltips and
+/// its own. At the compact size (`NWComposerSize`: a design's chat) they never show their words. `ViewThatFits` builds and measures every alternative, each with its tooltips and
 /// accessibility, whenever the row is rebuilt, so the row compares what it draws first: a
 /// keystroke past the first character and the field losing focus to a menu rebuild the field,
 /// never the chips.
@@ -944,30 +941,31 @@ struct ComposerControls: View, Equatable {
     /// Handed to the ring, which reads its meter; the row itself reads nothing from it.
     let store: NativeThreadStore
 
+    @Environment(\.nwComposerSize) private var size
+
     static func == (a: Self, b: Self) -> Bool { a.model == b.model && a.store === b.store }
 
     var body: some View {
         ComposerControlsMinimum {
             HStack(spacing: NW.Space.xxs) {
                 ViewThatFits(in: .horizontal) {
-                    chips(compact: false, startingLabel: true)
+                    // At the compact size the chips never show their words: only "Starting…" can drop its own.
+                    chips(compact: size == .compact, startingLabel: true)
                     // "Starting…" gives up its words before the chips do.
-                    chips(compact: false, startingLabel: false)
-                    chips(compact: true, startingLabel: false)
+                    chips(compact: size == .compact, startingLabel: false)
+                    if size == .regular { chips(compact: true, startingLabel: false) }
                 }
                 // A new model or level cross-fades. Only these: typing and width changes stay instant.
                 .nwAnimation(.content, value: [model.model, model.thinking])
                 // The ring and the action, 6pt apart, keep their place whatever the chips drop; out
                 // of the fitting candidates, each is built once (a streamed chunk redraws neither).
                 HStack(spacing: NW.Space.s) {
-                    if model.showsContext {
-                        ContextMeterButton(store: store, expanded: model.contextOpen, toggle: actions.context)
-                            .equatable()
-                            .onGeometryChange(for: CGFloat.self) { proxy in
-                                (proxy.bounds(of: .named(Composer.cardSpace))?.width ?? 0)
-                                    - proxy.frame(in: .named(Composer.cardSpace)).maxX
-                            } action: { actions.meterInset($0) }
-                    }
+                    ContextMeterButton(store: store, expanded: model.contextOpen, toggle: actions.context)
+                        .equatable()
+                        .onGeometryChange(for: CGFloat.self) { proxy in
+                            (proxy.bounds(of: .named(Composer.cardSpace))?.width ?? 0)
+                                - proxy.frame(in: .named(Composer.cardSpace)).maxX
+                        } action: { actions.meterInset($0) }
                     primary
                 }
             }
@@ -985,12 +983,7 @@ struct ComposerControls: View, Equatable {
                     .accessibilityLabel("Attach file")
             }
             if model.hasCommands {
-                Button(action: actions.commands) {
-                    HStack(spacing: NW.Space.s) {
-                        Text("/").font(Font.nw(.code))
-                        if !compact { Text("commands") }
-                    }
-                }
+                Button(action: actions.commands) { NWComposerCommandsLabel(short: compact) }
                 .buttonStyle(.nwComposerChip(active: model.commandsActive))
                 .help("Commands")
                 .accessibilityLabel("Commands")
@@ -1024,15 +1017,7 @@ struct ComposerControls: View, Equatable {
     /// no thinking level.
     @ViewBuilder private func thinkingChip(compact: Bool) -> some View {
         if model.thinkingShown, let thinking = model.thinking {
-            Button(action: actions.thinking) {
-                HStack(spacing: NW.Space.s) {
-                    Image(systemName: "lightbulb").font(.system(size: AppLayout.chipSymbol, weight: .medium)).foregroundStyle(Color.nw.textSecondary)
-                    if !compact { Text("Thinking") }
-                    Text(NativeThinkingLevel.title(thinking)).foregroundStyle(Color.nw.textPrimary).fontWeight(.medium)
-                        .nwContentTransition(.crossFade)
-                    NWChipChevron()
-                }
-            }
+            Button(action: actions.thinking) { NWComposerThinkingLabel(level: NativeThinkingLevel.title(thinking), short: compact) }
             .buttonStyle(.nwComposerChip(active: model.thinkingOpen))
             .disabled(!model.thinkingEnabled)
             .accessibilityLabel("Thinking level: \(NativeThinkingLevel.title(thinking))")

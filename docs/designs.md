@@ -645,7 +645,7 @@ was on keep their files and agents either way.
   and the brief as its first message, and opens the design. The agent is named after the design
   and gets no namer.
 - **A design's screen** (DZCanvas) is its agent's layout (`DesignLayoutView`): the canvas beside a
-  420pt chat pane holding the agent's thread, whose composer has attach and Send only, under a
+  420pt chat pane holding the agent's thread, with the thread's composer at its compact size, under a
   toolbar with the breadcrumb, the pages menu (with more than one page), the design's system,
   Present (below) and Export (below). Opening a design whose agent is gone starts a fresh one. Switching away and back is
   a visibility flip, and a design's canvas (where it looks, the tool, the selected board) lasts
