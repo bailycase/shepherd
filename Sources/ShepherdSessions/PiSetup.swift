@@ -21,9 +21,9 @@ public struct PiSetup: Sendable {
     /// The user's home folder, which no agent's pi trusts as a project.
     public let userHome: String
 
-    public init(engine: PiEngine, home: URL, yourPi: YourPiLocator = YourPiLocator(.fixed(nil)), userHome: String = NSHomeDirectory()) {
+    public init(engine: PiEngine, home: URL, yourPi: YourPiLocator = YourPiLocator(.fixed(nil)), userHome: String = PiHome.environmentHome) {
         self.engine = engine
-        let files = PiHome(directory: home, engine: engine)
+        let files = PiHome(directory: home, engine: engine, userHome: userHome)
         self.files = files
         self.yourPi = yourPi
         self.userHome = userHome

@@ -72,6 +72,29 @@ struct PiHomeTests {
         #expect(Self.home.shellCommandPrefix == ". '/Users/me/Library/Application Support/Shepherd/pi/restore-env.sh'")
     }
 
+    // MARK: ~/.agents/skills
+
+    /// pi enables `$HOME/.agents/skills` unless a `!` pattern in the global `skills` matches its
+    /// absolute path, so Shepherd's settings carry one for the home pi sees, escaped for minimatch.
+    @Test(arguments: [
+        ("/Users/me", "!/Users/me/.agents/skills/**"),
+        ("/Users/me/", "!/Users/me/.agents/skills/**"),
+        ("/Users/a[b]*c", #"!/Users/a\[b\]\*c/.agents/skills/**"#),
+        ("/Users/x (y)+z@q!", #"!/Users/x \(y\)\+z\@q\!/.agents/skills/**"#),
+    ])
+    func theUsersAgentsSkillsFolderIsFilteredOut(_ home: String, _ exclusion: String) {
+        #expect(PiHome.userSkillsExclusions(home: home).first == exclusion)
+    }
+
+    /// Other entries stay, in order; an exclusion written for another home is replaced.
+    @Test func theExclusionReplacesAnOldOneAndKeepsOtherSkillsEntries() {
+        let entries: [Any] = ["/x/skills", "!/Users/old/.agents/skills/**", "!**/draft-*", 3]
+        let kept = PiHome.excludingUserSkills(entries, home: "/Users/me")
+        #expect(kept.count == 4)
+        #expect(kept.compactMap { $0 as? String } == ["/x/skills", "!**/draft-*", "!/Users/me/.agents/skills/**"])
+        #expect(PiHome.excludingUserSkills(nil, home: "/Users/me").compactMap { $0 as? String } == ["!/Users/me/.agents/skills/**"])
+    }
+
     /// The stash's prefix survives the children extension's filter, which drops `SHEPHERD_*`.
     @Test func theStashSurvivesTheChildrensEnvironmentFilter() {
         #expect(!PiHome.stashPrefix.hasPrefix("SHEPHERD_") && !PiHome.stashNamesKey.hasPrefix("SHEPHERD_"))

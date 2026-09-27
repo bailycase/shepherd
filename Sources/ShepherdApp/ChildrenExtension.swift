@@ -1166,8 +1166,10 @@ enum ChildrenExtension {
           const errors = settings.drainErrors();
           if (errors.length) throw Error(`Cannot read Pi skill settings: ${errors[0].error.message}`);
           const global = settings.getGlobalSettings(), project = settings.getProjectSettings();
-          const paths = [path.join(getAgentDir(), "skills"), path.join(os.homedir(), ".agents", "skills"),
-            ...(global.skills ?? []).map((p) => path.resolve(getAgentDir(), p.replace(/^~\//, `${os.homedir()}/`)))];
+          // Shepherd's pi reads skills only from its own home, never ~/.agents/skills: its settings turn
+          // that folder off for the parent, and a filter entry ("!…") names no folder.
+          const paths = [path.join(getAgentDir(), "skills"),
+            ...(global.skills ?? []).filter((p) => !/^[!+-]/.test(p)).map((p) => path.resolve(getAgentDir(), p.replace(/^~\//, `${os.homedir()}/`)))];
           if (ctx.isProjectTrusted?.() === true) paths.unshift(path.join(ctx.cwd, CONFIG_DIR_NAME, "skills"), path.join(ctx.cwd, ".agents", "skills"),
             ...(project.skills ?? []).map((p) => path.resolve(ctx.cwd, CONFIG_DIR_NAME, p.replace(/^~\//, `${os.homedir()}/`))));
           const loaded = loadSkills({ cwd: ctx.cwd, agentDir: getAgentDir(), skillPaths: [...(profile.skillPaths ?? []), ...paths.filter((p) => fs.existsSync(p))], includeDefaults: false });
