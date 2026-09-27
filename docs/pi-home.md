@@ -38,9 +38,14 @@ every session (pi: `core/package-manager.js`, `addAutoDiscoveredResources`: `joi
 ".agents", "skills")`, each skill enabled unless `isEnabledByOverrides` finds a `!` pattern in the
 global `skills` list matching its absolute path). Shepherd's `settings.json` carries
 `!<HOME>/.agents/skills/**` (HOME as pi sees it, and its real path when that differs, escaped for
-minimatch), so none of them load; the engine smoke tier proves it, with a control. The children
-bridge lists only the home's `skills/`. A trusted project's own `.agents/skills` still loads in
-its threads, as a project's files do. Everything else Shepherd's pi reads of the user's (their
+minimatch), so none of them load; the engine smoke tier proves it, with a control. A trusted
+project inside the home folder but outside any repository makes pi look for `.agents/skills` in
+every folder above it too; it passes over the home folder's only when that path equals `HOME` as
+written (the folder's path is its real one), which holds on a Mac, whose HOME is a real path. The
+smoke tier proves that case as well. A HOME that isn't its real path would let that one folder in
+for such a project: Shepherd leaves HOME as it is. The children bridge lists only the home's
+`skills/`. A trusted project's own `.agents/skills` still loads in its threads, as a project's
+files do. Everything else Shepherd's pi reads of the user's (their
 instructions, skills, prompts, themes, extensions) is a copy in the home (Imports).
 
 ## The launcher
@@ -155,11 +160,19 @@ skills, will only be installed under shepherds application support folder". So t
 instructions, skills, prompts, themes and extensions are copied too, and Shepherd's pi reads
 only its own home: nothing reads their pi live, and an edit there reaches Shepherd only through
 Re-import. `YourPiResources` finds each kind as pi finds it and copies it as plain files
-(`YourPiTree`): a link is followed and its target's bytes copied (one that leads nowhere or back
-up its own folder is left out), FIFOs, sockets and devices are never opened, `.git` stays
-behind, the execute bit is kept and nothing else of the mode, and a copy is written beside the
-home and renamed into place, whole or not at all, within a limit per kind (a skill 64 MB and
-5000 files; an extension, with its `node_modules`, 512 MB and 100000; one file 4 MiB).
+(`YourPiTree`): a link is followed and its target's bytes copied (one that leads nowhere, back
+up its own folder, or to a folder above what is copied, `/` or the home folder, is left out),
+FIFOs, sockets and devices are never opened, `.git` stays behind, the execute bit is kept and
+nothing else of the mode, and a copy is written beside the home and renamed into place, whole or
+not at all, within a limit per kind (a skill 64 MB and 5000 files, and as many folders; an
+extension, with its `node_modules`, 512 MB and 100000; one file 4 MiB). Finding skills, prompts
+and themes never enters a link to the folder searched or above it, and stops after 10000 folders
+per folder searched, so a skill linked to `/` can't read the disk or hold the first launch.
+Copies wait for one another (the first copy past its deadline and a Re-import, or two rows
+pressed at once), each in its own staging folder. An extension's `pi.extensions` entry that
+leads out of its package (`../x`, `a/../../x`) is left out, and so are the packages pi hands
+every extension itself (`@earendil-works/pi-*`, `typebox`): a peer dependency on pi would drag
+pi's whole tree along and never load.
 
 | From your pi | At the first launch | Afterwards |
 | --- | --- | --- |
@@ -167,7 +180,7 @@ home and renamed into place, whole or not at all, within a limit per kind (a ski
 | Custom providers (models.json) | Copied as bytes, unless Shepherd's pi already has some | Re-import replaces them; invalid JSON keeps Shepherd's copy and says why |
 | Default model | `defaultProvider`/`defaultModel` copied, unless a sign-in already set one | Re-import |
 | Trusted folders (trust.json) | Every decision copied except a `true` for the home folder or a folder above it | Re-import (theirs over Shepherd's) |
-| Instructions | The global context file pi would pick (`AGENTS.override.md`, `AGENTS.md`, `AGENTS.MD`, `CLAUDE.md`, `CLAUDE.MD`), `SYSTEM.md` and `APPEND_SYSTEM.md`, copied into the home under their names, where pi and its children read them | Re-import; an earlier copy pi would now pick over theirs is removed |
+| Instructions | The global context file pi would pick (`AGENTS.override.md`, `AGENTS.md`, `AGENTS.MD`, `CLAUDE.md`, `CLAUDE.MD`), `SYSTEM.md` and `APPEND_SYSTEM.md`, copied into the home under their names, where pi and its children read them | Re-import; an earlier copy pi would now pick over theirs is removed, but only when every file copied: one of theirs that can't be read (or none at all) leaves Shepherd's copies as they were |
 | Skills | From their `skills/` (folders at any depth, and single `.md` files, which become folders), the `skills` paths in their settings (`!`, `-` and `+` filters applied as near as plain matching gets; globs and URLs left out), the skills of the packages they list, then `~/.agents/skills` (folders only), into the home's `skills/`. The second of one name is passed over, as pi passes it over, and one of Shepherd's own of that name stays | Re-import replaces the copies it made (where they are, on or off in Settings ▸ Skills), adds new ones, removes nothing |
 | Prompts and themes | Their `prompts/` (`.md`) or `themes/` (`.json`) folder's top level, the paths in their settings (a folder at any depth), and their packages', into `prompts/` or `themes/`; the second of one file name is passed over | Re-import, the same way |
 | Extensions | Their `extensions/` files and folders (with an `index` or a `pi.extensions` manifest), their settings' `extensions` paths, and the packages their settings list (an npm package from `npm/node_modules` with the dependencies npm hoisted beside it, a git one from `git/<host>/<path>`, a local folder), copied into `your-extensions/`, which pi never discovers: all switched off | A switch each (Your extensions); Copy again keeps each switch |
@@ -248,8 +261,10 @@ refuses pi's own package commands, and the pins turn off pi's update check and i
 ## Testing
 
 - Imports: the parsers' tables (`YourPiFilesTests`), each kind of file found as pi finds it and
-  copied whole (`YourPiResourcesTests`: a skill folder with links, a huge skill, a FIFO, a
-  package with `node_modules` and hoisted dependencies, a prompt of one name twice), the copy,
+  copied whole (`YourPiResourcesTests`: a skill folder with links, a skill or skills folder
+  linked to `/` or above, a huge skill, too many folders, a FIFO, a package with `node_modules`
+  and hoisted dependencies, a package entry leading out of it, pi as a peer dependency, a prompt
+  of one name twice), the copy, an override beside `AGENTS.md`, Re-imports at once,
   the marker, Re-import per item, an earlier copy that read files in place, and the extensions'
   switches and failures, against a fixture "your pi" of fake credentials that stays
   byte-identical (`YourPiImportTests`), hostile files (`YourPiImportEdgeTests`: links, a FIFO,
@@ -275,6 +290,7 @@ refuses pi's own package commands, and the pins turn off pi's update check and i
   command finds `pi` at the launcher and gets back a `NODE_OPTIONS` pi never saw; an agent in
   the user's home folder, whose pi names packages and extensions, loads none of their code, runs
   no npm, and leaves their pi byte-identical; skills load only from the home (a skill in
-  `~/.agents/skills` never does, with a control that finds it unfiltered, while the copies do);
+  `~/.agents/skills` never does, not even for a trusted project inside the home folder, with a
+  control that finds it unfiltered, while the copies do);
   and an extension of yours that throws at load is switched off with pi's reason while the one
   that works loads from its copy.

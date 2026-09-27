@@ -4024,7 +4024,7 @@ then a list (560pt) beside the selected item's preview, a hairline between.
   - Loading says "Loading skills.sh…"; no match, "No skills match."; service failures show their
     reason. There is no API key field or credential prompt.
 - **Add skills from a repo:** "A GitHub owner/repo or URL, or a folder on this Mac. Shepherd copies
-  the skills you pick into ~/.agents/skills on every host."
+  the skills you pick into its own pi's skills on every host."
   - A 38pt field on `bgRaised` (a branch glyph, or a folder's for a path; mono 13.5) with Look up
     (large secondary, Return), and once found "16 skills · main @ 8c04e1d" in it.
   - The picker: a 34pt bar on `bgSunken` with a checkbox for all the new ones, "3 of 13 new skills"
@@ -5615,7 +5615,7 @@ SettingsSkills): every host's agent skills, the same on every host, over `skills
   "updating" in `running`, "offline · updates later" in `textTertiary`); Files as chips; and
   "Remove from every host" (large danger).
 - **Add from repo** (no board draws it): "A GitHub owner/repo or URL. Shepherd copies the skills
-  you pick into ~/.agents/skills on every host.", a 44pt mono field on `bgRaised` with Look up,
+  you pick into its own pi's skills on every host.", a 44pt mono field on `bgRaised` with Look up,
   then "3 of 13 new skills" with Select all new over a card of the repository's skills (a tick
   circle, the name in mono 14/600, "Installed" or "Installed · update" for one already here,
   dimmed and fixed, and the description), "16 skills · main @ 8c04e1d", Use them (a menu row),
