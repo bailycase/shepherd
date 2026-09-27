@@ -138,6 +138,11 @@ And the rules that follow from them:
 | Queue & steer: the queue's keys are "shown in menus and tooltips only" | Also listed under Settings ▸ Keyboard ▸ While the agent is working, in the Keyboard card's order | Settings ▸ Keyboard lists every chord the app answers, and ⌘↩ is rebound there; nothing is written in or under the composer |
 | Background events as in-app toasts (`.nwToast`) | A system notification when a thread finishes a turn, fails one, or asks a question, or one of its subagents asks, or a connected host goes away, while you aren't watching it (`AgentNotifications`; see Notifications and Live Activities) | Reaches you outside the app |
 | Missions: the Missions page, the mission map, evidence review | Not built; specified in full under Missions, each part marked Not built yet | Out of scope for this pass |
+| Sidebar — Projects (SidebarTree, SidebarProjects, SidebarProjectsHosts): designs ("Settings redesign · 6 boards", "Checkout funnel dashboard · 4 boards") in their project's folder, and "Every kind … all live in the project they work on" | Designs are not in the project tree: they stay under the Designs destination and in ⌘K | The user's decision (2026-09-26): designs stand alone outside spaces since #118, so they have no project to sit in |
+| Sidebar — Projects: mission rows ("Ship native UI v2") and New mission in <project> in the project menu | No mission rows and no New Mission | Missions are deferred and hidden (the user's decision, 2026-09-26) |
+| SettingsAppearanceProjects: Keep idle threads, "Then they move to Archive."; SidebarTree: idle threads "wait in Archive and ⌘K" | "Then they leave the sidebar; ⌘K still finds them." Nothing else is drawn for them | There is no Archive destination yet (honest affordances); ⌘K lists every thread |
+| NWProjectMenu: a drawn popover with glyphs, in sentence case ("Copy path", "Collapse all", "Hide from sidebar") | A native menu (the project's context menu, and ··· on hover) in title case: New Thread in <project>, Reveal in Finder, Open in Terminal, Copy Path, Collapse All, Hide from Sidebar | Every menu in the app is native and title-cased (the thread rows' menus) |
+| SidebarProjectsHosts: nothing on the host sections' headers | Hidden projects come back from the + beside Projects, which only the ungrouped tree has (and File ▸ New Space… adds one either way) | The board draws no + on a host section |
 | NWAgents, NWSwift: `NWInboxItem`, mission control's inbox item with a leading rule in the state's color | Not built. The Mac has no inbox: its Needs you is the sidebar's list (Sidebar); iPhone and iPad list Needs you as `NWAttentionCard`s (MobileInbox, iPadInbox), with no leading rule and no missions | Out of scope for this pass |
 | Controls: `.nwHelp` draws a 24pt popover-styled tip after 600ms of hover, the chord as keycaps | The system tooltip, with the chord appended as text ("Review changes  ⇧⌘B") | As every other tooltip in the app (see the Queue & steer row) |
 | Controls: `.pickerStyle(.nwSegmented)`, `.pickerStyle(.nwPopup)`, `Stepper(…).nwStyle()`, `Slider(…).tint(.nw.lantern)` | Views: `NWSegmentedPicker`, `NWPopupMenu` (a native `Menu` with an `NWPopupLabel`), `NWStepper`, `NWValueSlider` (its value in mono beside it) | SwiftUI has no public custom picker, stepper, or slider style; each represents itself to accessibility as the native control |
@@ -887,7 +892,9 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
 `Components/Navigation/Sidebar.swift`): the sidebar every Mac board draws (NWNavigation, and the
 sidebars of Main, Running, NavNewThread, NavAutomations and NavHosts). 232pt on `bgBase` by
 default, and it keeps its width when the side pane opens. Top to bottom: the top bar, the
-destinations, Needs you, Recents, and the footer. Each part follows Settings ▸ Appearance ▸ Sidebar
+destinations, Needs you, Recents, and the footer. Settings ▸ Appearance ▸ Organize by (or View ▸
+Organize Sidebar By) swaps Needs you and Recents for a project tree (Organized by project, below);
+Activity is the default. Each part follows Settings ▸ Appearance ▸ Sidebar
 rows: Standard values are given first and Compact in parentheses; the boards draw no Comfortable
 sample, so it takes Standard's spacing at its 36pt rows.
 
@@ -1002,11 +1009,74 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   the rows), and More's rows disclose (`.disclosure`). Selecting a row changes no row's place, so
   it lands at once. A status report or a settled name changes only its row, in place (`.content`),
   and counts roll (`.numeric()`).
-- **Gone with the tree:** drag reordering, collapsing spaces and hosts, space rows with their
-  counts and hover `+`, host sections and their notices, the Automations footer and a host's
-  Automations disclosure, and the ⌃⇧1–9 machine jumps. Their preference keys
-  (`shepherd.collapsedSpaces`, `collapsedHosts`, `localMachineCollapsed`, `automationsExpanded`,
-  `expandedRemoteAutomations`, `collapsedRemoteSpaces`) stay in older preferences, unread.
+- **Gone with the old tree:** the Automations footer and a host's Automations disclosure, space
+  nesting by path, and the ⌃⇧1–9 machine jumps. Its preference keys (`shepherd.collapsedSpaces`,
+  `collapsedHosts`, `localMachineCollapsed`, `automationsExpanded`, `expandedRemoteAutomations`,
+  `collapsedRemoteSpaces`) stay in older preferences, unread. Projects, their counts and hover +,
+  drag order, collapsing and host sections came back as the Projects style (2026-09-26).
+
+#### Organized by project (Sidebar — Projects)
+
+`SidebarProjectsList` (`SidebarProjectsView.swift`, its values in `SidebarProjectsModel.swift`
+and `ShepherdViewModel+SidebarProjects.swift`) on `NWProjectRow`, `NWProjectsHeader` and
+`NWSidebarSection(.host)` (ShepherdUI, `Components/Navigation/SidebarProjects.swift`): the boards
+SidebarTree, SidebarProjects and SidebarProjectsHosts. Mac only: the iPad and iPhone keep Activity.
+
+- **Destinations stay** on top in both styles; only the list under them changes. It is one scroll
+  view either way, so switching (Settings or the View menu) keeps the thread on screen selected,
+  opens its project and scrolls its row into view.
+- **A project is a space** of This Mac's (`Space`). The reserved spaces never are: an
+  automation's run sits in the project its folder is in (the deepest project holding its `cwd`),
+  with its bolt, or nowhere in the tree when no project holds it (the Automations page and ⌘K
+  still list it). Designs and their agents are not in the tree (see Where Shepherd departs from
+  the boards); missions are not built.
+- **Header:** "Projects" in Geist 11.5 medium `textTertiary`, spaced like Recents, with an 18pt +
+  circle (`NWProjectsHeader`) opening a menu: Add Project…, and under Hidden from Sidebar a Show
+  <project> for each hidden one.
+- **Project row** (`NWProjectRow`): the density's height, radius 8, padded 2pt outside a thread
+  row (6pt, 4 in Compact) and 8pt (6) trailing; a 14pt chevron slot (a 9pt semibold
+  `textTertiary` chevron, right while closed and turned down while open, `.disclosure`), a
+  `folder` in `textSecondary`, the name in the row font at medium, 6pt apart, and the count
+  trailing in mono 10.5 `textTertiary`. Closed, the count rolls up what is inside: a glowing
+  lantern dot and the count in `lanternText` while something waits on you, a running dot while
+  something runs, else the count alone. Hovered (`bgHover`), the count gives way to + (New thread
+  in this project) and ··· (the project menu), 20pt circles 2pt apart with 11pt glyphs, built only
+  while hovered. A project on a host that is not connected dims and takes no +.
+- **Threads** are the Recents rows (`NWSidebarRow`, `nested`), led 20pt further in so their dot
+  sits under the folder, with the same dots, words, reasons and tags. **Needs you rows stay in
+  their project** with the amber dot and the reason; there is no Needs you section.
+- **Order:** projects keep the spaces' order, which a drag changes (`SessionServer.moveSpace`),
+  and a project added on this Mac or by a remote client goes on top. Inside a project the newest
+  activity comes first (`Agent.lastActiveAt`, as Recents). Every project shows, an empty one too.
+- **Drag** a project by its row (no drop targets): the offset picks the project it lands before,
+  a 2pt `running` line (`NWDropIndicator`, 4pt in from the sides) marks where between the rows,
+  and the dragged row dims to 55%. Only This Mac's projects move, among themselves.
+- **Keep idle threads** (Settings, 7 days by default): an idle or finished thread quiet for
+  longer leaves the tree; running threads, anything waiting on you, and threads no host has
+  timed stay. The palette still finds them. The cutoff is kept to the hour, so the tree derives
+  again at most hourly for it.
+- **Hide from Sidebar** (the project menu) sets `Space.sidebarHidden`, written to state.json:
+  the project and its threads leave the tree, and the + beside Projects brings it back.
+- **Hosts:** not grouped, a connected host's threads sit in This Mac's project of the same name,
+  tagged with the host as in Recents; a project only hosts have follows This Mac's, by name.
+  **Group by host** (Settings) gives a section per host, This Mac first, each headed by its name
+  (`NWSidebarSection(.host)`: Geist 11.5 medium `textTertiary`, and "unreachable" in mono 10
+  `failed` while the host is not connected), its projects inside, and its rows without the tag.
+  A host's projects follow its own order.
+- **Project menu** (right-click a project, or ···; native): New Thread in <project> (on the host
+  its newest thread runs on, else This Mac, else a connected host that has it), Reveal in Finder
+  and Open in Terminal (This Mac's projects: the Mac's Terminal in the folder), Copy Path,
+  Collapse All, and Hide from Sidebar (This Mac's).
+- **Keys:** a click on a project opens or closes it and gives the tree the keyboard: ← closes
+  that project and → opens it (plain arrows, only while the tree has focus, so never a chord for
+  `KeybindingsStore` or Ghostty's list). ⌥-click opens or closes every project. ⌘1–9 and ⌘↑/↓
+  follow the open projects' threads in order. Closed projects are remembered
+  (`shepherd.sidebar.collapsedProjects`, view state, not reset by Reset settings).
+- **Density:** the tree's rows follow Sidebar rows like the rest of the sidebar.
+- **Performance:** one lazy stack; the tree derives once per change (`SidebarDerivation.tree`,
+  cached on `SidebarSource` and `SidebarTreeOptions`), a closed project builds no thread rows,
+  and a status report redraws its row and its project's. `ListPerformanceTests` pins opening,
+  scrolling, a status change and opening a project.
 
 ### Toolbar
 
@@ -3345,6 +3415,18 @@ The pages, in nav order. Each names its board; the strings in quotes are the boa
   System (`ThemeManager`; the Appearance menu sets the same thing). Above it the app adds a Theme
   row, "Night Watch ships with Shepherd, in light and dark.", naming the theme in
   `ui`/`textSecondary`: a name, not a popup, while one theme ships.
+- **Sidebar** (SettingsAppearance, SettingsAppearanceProjects):
+  - Organize by, "What the sidebar lists under New thread and the destinations. Also in View ▸
+    Organize Sidebar By.", its control under the words (12pt above, 16 around): two cards
+    (`NWSidebarStylePicker`), Activity ("Needs you, then Recents: every kind, newest first.") and
+    Projects ("A folder for each project with its threads inside."), each a 104pt drawing of the
+    sidebar it makes over a radio, its name in Geist 13 semibold and the line in 12
+    `textSecondary`, on `bgSunken` at radius 10 with a 1pt `lineSubtle` ring, 1.5pt `lantern` when
+    chosen, 12pt apart. `AppSettings.sidebarStyle`, default Activity.
+  - For Projects only: Group by host, "A section for each Mac or server, its projects inside. Off
+    shows the host as a tag on the row." (a switch, off), and Keep idle threads, "Then they leave
+    the sidebar; ⌘K still finds them. Running threads and anything waiting on you stay." (a popup:
+    1, 3, 7, 14 or 30 days, or Forever; 7 days). Reset settings returns all three.
 - **Layout** (see Density and row settings):
   - Sidebar rows, "Compact 22 · Standard 28 · Comfortable 36 pt, for the sidebar and menus.":
     Compact · Standard · Comfortable.
@@ -4421,7 +4503,7 @@ in UserDefaults under `shepherd.keybindings`).
 | ⌘N · ⇧⌘T · ⇧⌘N | New thread (the page) · new agent with options… · new space… |
 | ⌘R · ⇧⌘W | Rename agent · delete agent |
 | ⌘K | Command palette |
-| ⌘↓ · ⌘↑ | Next · previous agent in the sidebar (Needs you, then Recents) |
+| ⌘↓ · ⌘↑ | Next · previous agent in the sidebar (Needs you, then Recents; organized by project, the open projects' threads) |
 | ⌘D · ⇧⌘D · ⌘W | Split vertically · horizontally · close pane |
 | ⌥⌘→ · ⌥⌘← | Focus next · previous pane |
 | ⌘J · ⇧⌘↩ | Show or hide the terminal panel · maximize or restore it |
@@ -4434,7 +4516,9 @@ in UserDefaults under `shepherd.keybindings`).
 
 Fixed chords:
 
-- ⌘1–9 select the first nine Recents rows (hold ⌘ to see them). ⌃⇧1–9 jumped between the tree's
+- ⌘1–9 select the first nine Recents rows (organized by project, the first nine threads of the
+  open projects; hold ⌘ to see them). With the project tree focused, ← closes a project and →
+  opens it; ⌥-click opens or closes every project. ⌃⇧1–9 jumped between the tree's
   machine sections and went with them: a focused terminal keeps them now.
 - ⌃1 shows the side pane's Changes tab (View › Changes); ⌃2–⌃4 wait for its other tabs. Settings ▸
   Keyboard lists it under Fixed, and Ghostty leaves it to the app (`appOwnedChords`).
