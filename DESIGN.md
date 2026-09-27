@@ -8209,7 +8209,7 @@ iPhone and iPad none of it.
   built-in carries the **Built-in** tag after its name (`NWDesignTagBadge`: 16pt, 5pt padding,
   radius 4, 10 `textSecondary` on `bgSelected`) over "Built into Shepherd"; one an import brought
   reads "came with Checkout funnel"; one coming with an import is dashed (`lineStrong`) with "after
-  the boards" in the count's place until the design's boards are in.
+  the boards" in the count's place until the design's boards are in, after every system there is.
 - **The alert dialogs** (`NWDesignAlert`), each a sheet: 470pt (480 for a system's and an import's,
   500 for ImportAgain), 22pt in (18 at the bottom), on `bgWindow`. A 36pt tile at radius 10 in
   `failedTint` (ImportAgain: `lanternTint`) holding the 17pt glyph in `failed` (`lanternText`),
@@ -8219,8 +8219,8 @@ iPhone and iPad none of it.
   the board's radius 9 is off the scale) whose lines carry a 12pt glyph, `failed` for what goes,
   `done` for what stays, `textTertiary` for a note; the buttons trailing, 8pt apart, 16pt under it.
   - **DeleteDesignDialog**: "Delete “Checkout funnel dashboard”?", "**4 boards**, their 23 versions
-    and 2 comments", "The design agent’s chat for this design", "Stays: `acme-web`, the design system
-    it uses", then "You can undo right after." in 13 `textTertiary`; Cancel (secondary) and Delete
+    and 2 comments" (a `trash`), "The design agent’s chat for this design" (a `text.bubble`), "Stays:
+    `acme-web`, the design system it uses" (a `checkmark`), then "You can undo right after." in 13 `textTertiary`; Cancel (secondary) and Delete
     (`dangerFill`, the only red thing). While the agent works, a warning under the list
     (`NWDesignAlertWarning`: a 13pt triangle and 12.5 `lanternText` on `lanternTint` at radius 8;
     the board's 7% fill and 25% line are off the tokens) says "The design agent is drawing 2 boards
@@ -8243,10 +8243,11 @@ iPhone and iPad none of it.
     too large or links outside; Cancel import and **Import the other 11** for unreadable boards, the
     one case with a choice. Not drawn, built plainly in the same anatomy: one file over 16 MB ("hero.mp4
     is 40 MB. Shepherd imports files up to 16 MB. …"), a name a design can't hold, too many files.
-  - **ImportAgainDialog**: "“Checkout funnel” is already in Designs", "You imported **Checkout
-    funnel** on Sep 20. Import it again as a separate copy, or open the one you have. The two don’t
-    affect each other.", "New copy: **Checkout funnel 2** · 12 boards · 3 pages", "Design system:
-    uses the `Checkout DS` you already have"; Cancel (ghost), Open the one I have (secondary), Import
+  - **ImportAgainDialog** (the tray, `square.and.arrow.down`): "“Checkout funnel” is already in
+    Designs", "You imported **Checkout funnel** on Sep 20. Import it again as a separate copy, or open
+    the one you have. The two don’t affect each other.", "New copy: **Checkout funnel 2** · 12 boards
+    · 3 pages" (the design glyph, `pencil.tip`), "Design system: uses the `Checkout DS` you already
+    have" (`paintpalette`); Cancel (ghost), Open the one I have (secondary), Import
     as a copy (primary).
 - **The toast** (`NWUndoToast`) over the bottom of the main column, centered, 40pt up, at most 460pt:
   11×12 padding (14 leading), radius 12, the popover's fill, line and shadow, 12pt between its
