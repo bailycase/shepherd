@@ -161,8 +161,10 @@ enum InstructionsExtension {
               if (!options) return;
               const files = options.contextFiles;
               if (agents && Array.isArray(files) && !files.some((file) => file?.path === agentsPath)) {
-                const root = piAgentDirectory();
-                const piRoot = files.findIndex((file) => typeof file?.path === "string" && path.dirname(file.path) === root);
+                // After pi's own root file and the user's own pi's (the status extension adds that one).
+                const yours = process.env.SHEPHERD_YOUR_PI_INSTRUCTIONS ? path.resolve(process.env.SHEPHERD_YOUR_PI_INSTRUCTIONS) : "";
+                const roots = [piAgentDirectory(), yours].filter(Boolean);
+                const piRoot = files.findLastIndex((file) => typeof file?.path === "string" && roots.includes(path.dirname(file.path)));
                 files.splice(piRoot + 1, 0, { path: agentsPath, content: agents });
               }
               if (append) {
