@@ -270,6 +270,9 @@ public final class SessionServer: @unchecked Sendable {
     /// (`render_unavailable`).
     public var onDesignReferenceCapture: ((DesignReferenceCaptureRequest,
                                            @escaping (Result<DesignReferenceCaptured, DesignReferenceError>) -> Void) -> Void)?
+    /// A thread left or the user removed a note on a design (`DesignThreadNote`): the canvas reads
+    /// the design's notes again. Delivered on the main actor; a hint, not state.
+    public var onDesignThreadNotesChanged: ((DesignID) -> Void)?
     /// An agent's MCP extension asked for a server's credentials. The app owns the Keychain and
     /// OAuth, so the request is handed to it like a pane request. Delivered on the main actor;
     /// the completion may be called from any thread. With no handler the answer is
@@ -328,6 +331,9 @@ public final class SessionServer: @unchecked Sendable {
     public let designReferencePayloads: DesignReferencePayloadStore
     /// Each design's @ picker rows as last derived.
     let designMentions = DesignMentionCache()
+    /// When each thread left its recent notes back (ms), for `DesignThreadNote.rateLimit`.
+    /// Queue-confined.
+    private var noteTimes: [AgentID: [Double]] = [:]
     /// Every design system this host keeps (the support directory's `design-systems/`, plus the
     /// built-ins the app registers). Reads go to it directly; writes, installs and re-syncs go
     /// through the server.
@@ -2395,6 +2401,8 @@ public final class SessionServer: @unchecked Sendable {
             }
         case .designGet(let id, let agentID, let reference, let what):
             designGetRequest(id: id, agentID: agentID, reference: reference, what: what, client: client)
+        case .designNote(let id, let agentID, let reference, let text):
+            designNoteRequest(id: id, agentID: agentID, reference: reference, text: text, client: client)
         }
     }
 
@@ -2421,6 +2429,50 @@ public final class SessionServer: @unchecked Sendable {
         }
         answerOffQueue(id: id, client: client) { server in
             .designReference(id: id, answer: try await DesignReferenceService(server: server).answer(reference, aspect: aspect, agent: agent))
+        }
+    }
+
+    /// Server queue: an ordinary thread's design_note. A short note on a board or element the
+    /// thread was sent, kept beside the design's project; a new note from the thread on the same
+    /// piece replaces its last.
+    private func designNoteRequest(id: Int, agentID: AgentID, reference raw: String, text: String, client: ExtensionConnection) {
+        let refuse = { (error: DesignReferenceError) in self.reply(.error(id: id, code: error.code, message: error.message), to: client) }
+        let state = store.state
+        guard let agent = state.agents.first(where: { $0.id == agentID }) else {
+            reply(.error(id: id, code: "no_such_agent", message: "no such agent"), to: client)
+            return
+        }
+        guard !state.isDesignAgent(agent), agent.designID == nil else { return refuse(.notAThread) }
+        guard let reference = DesignReference(string: raw) else { return refuse(.invalid(raw)) }
+        guard reference.host == .local else { return refuse(.remote) }
+        guard let board = reference.board else {
+            return refuse(DesignReferenceError("no_piece", "A note goes on a board or an element, not a whole design."))
+        }
+        guard let grant = agent.designGrant(designID: reference.designID, board: board.rawValue,
+                                            element: reference.element?.description, revision: reference.revision) else {
+            return refuse(.notGranted)
+        }
+        guard state.designs.contains(where: { $0.id == reference.designID }) else {
+            return refuse(DesignReferenceError("no_such_design", "That design is no longer here."))
+        }
+        guard let words = DesignThreadNote.cleaned(text) else {
+            return refuse(DesignReferenceError("invalid_note", "A note is plain text, 1 to \(DesignThreadNote.maxLength) characters."))
+        }
+        let now = Self.nowMilliseconds()
+        let recent = (noteTimes[agentID] ?? []).filter { now - $0 < DesignThreadNote.rateWindow * 1000 }
+        guard recent.count < DesignThreadNote.rateLimit else {
+            noteTimes[agentID] = recent
+            return refuse(DesignReferenceError("rate_limited", "This thread left \(DesignThreadNote.rateLimit) notes in the last "
+                + "\(Int(DesignThreadNote.rateWindow / 60)) minutes. Leave one note when the work is done."))
+        }
+        noteTimes[agentID] = recent + [now]
+        let note = DesignThreadNote(agentID: agentID, thread: agent.name, board: board, element: reference.element, label: grant.label,
+                                    revision: grant.revision, text: words, createdAt: now)
+        let designID = reference.designID
+        answerOffQueue(id: id, client: client) { server in
+            let kept = try await server.designs.addThreadNote(designID, note)
+            server.hopToMain { [weak server] in server?.onDesignThreadNotesChanged?(designID) }
+            return .designNote(id: id, note: kept)
         }
     }
 
@@ -2575,6 +2627,19 @@ public final class SessionServer: @unchecked Sendable {
         return await Task.detached(priority: .userInitiated) {
             await DesignReferenceService(server: self).mentionCatalog(state: state)
         }.value
+    }
+
+    /// The notes threads left on a design (the canvas's thread pins), oldest first.
+    public func designThreadNotes(_ designID: DesignID) async throws -> [DesignThreadNote] {
+        try await designs.threadNotes(designID)
+    }
+
+    /// Removes a thread's note from the canvas (the user's Resolve).
+    public func removeDesignThreadNote(_ designID: DesignID, noteID: UUID) async throws {
+        guard try await designs.removeThreadNote(designID, noteID: noteID) else {
+            throw DesignReferenceError("no_such_note", "That note is no longer on the design.")
+        }
+        hopToMain { [weak self] in self?.onDesignThreadNotesChanged?(designID) }
     }
 
     /// Server queue: one design extension request. Only the agent drawing the design may read or
@@ -2889,6 +2954,7 @@ public final class SessionServer: @unchecked Sendable {
              .designSystemWritten(let id, _),
              .designProposals(let id, _),
              .designReference(let id, _),
+             .designNote(let id, _),
              .mcpCredentials(let id, _):
             return id
         }

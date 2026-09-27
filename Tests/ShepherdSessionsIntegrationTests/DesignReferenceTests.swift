@@ -418,6 +418,8 @@ struct DesignReferenceIntegrationTests {
         guard case .error(5, "not_a_thread", _) = try await answer(client, 5, agent: drawer.agent.id, reference(designID).string, "summary") else {
             Issue.record("a design's agent was answered"); return
         }
+        try client.send(.designNote(id: 6, agentID: drawer.agent.id, reference: reference(designID).string, text: "Done"))
+        guard case .error(6, "not_a_thread", _) = try await client.reply() else { Issue.record("a design's agent left a note"); return }
         await #expect(throws: DesignReferenceError.self) {
             _ = try await h.server.captureDesignReferences([reference(designID)], for: drawer.agent.id)
         }
@@ -579,6 +581,73 @@ struct DesignReferenceIntegrationTests {
         let resumed = try await pi.snapshot("the resumed history") { s in s.messages.contains { $0.entryID == mine.entryID } }
         #expect(resumed.messages.first { $0.entryID == mine.entryID }?.designReferences == mine.designReferences)
         #expect(resumed.messages.first { $0.entryID == other.entryID }?.designReferences == nil)
+    }
+
+    // MARK: Notes back
+
+    @Test func aThreadLeavesANoteOnAPieceItWasSent() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let changed = Locked<[DesignID]>([])
+        h.server.onDesignThreadNotesChanged = { id in changed.withValue { $0.append(id) } }
+        let g = try await granted(h)
+        try g.client.send(.designNote(id: 20, agentID: g.pi.agent.id, reference: g.ref,
+                                      text: "Implemented in #142 on agent/checkout-funnel.\n\nBars use --accent."))
+        guard case .designNote(20, let note) = try await g.client.reply() else { Issue.record("the note was refused"); return }
+        #expect(note.text == "Implemented in #142 on agent/checkout-funnel. Bars use --accent.")
+        #expect(note.agentID == g.pi.agent.id && note.thread == "rpc" && note.element == Self.buttonID && note.label == "Pay now")
+        #expect(try await h.server.designThreadNotes(g.design) == [note])
+        try await eventually("the canvas to hear of it") { changed.current == [g.design] }
+
+        // A second note on the same piece replaces the first; it is kept beside the project.
+        try g.client.send(.designNote(id: 21, agentID: g.pi.agent.id, reference: g.ref, text: "Merged."))
+        guard case .designNote(21, let second) = try await g.client.reply() else { Issue.record("the second note was refused"); return }
+        #expect(try await h.server.designThreadNotes(g.design).map(\.text) == ["Merged."])
+        let folder = h.dir.appendingPathComponent("designs/\(g.design.rawValue)")
+        #expect(FileManager.default.fileExists(atPath: folder.appendingPathComponent("thread-notes.json").path))
+        #expect(!FileManager.default.fileExists(atPath: folder.appendingPathComponent("project/thread-notes.json").path))
+        let comments = try await h.server.designs.comments(g.design)
+        #expect(comments.comments.isEmpty, "a note is never a comment")
+
+        try await h.server.removeDesignThreadNote(g.design, noteID: second.id)
+        #expect(try await h.server.designThreadNotes(g.design).isEmpty)
+        await #expect(throws: DesignReferenceError.self) { try await h.server.removeDesignThreadNote(g.design, noteID: second.id) }
+    }
+
+    @Test(arguments: [
+        ("notSent", "not_granted"), ("wholeDesign", "no_piece"), ("empty", "invalid_note"), ("long", "invalid_note"),
+        ("badRef", "invalid_reference"), ("otherMac", "remote_design"),
+    ])
+    func aNoteIsRefusedOffThePiecesTheThreadWasSent(_ kind: String, _ code: String) async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let g = try await granted(h)
+        var ref = g.ref
+        var text = "Done."
+        switch kind {
+        case "notSent": ref = reference(g.design).string
+        case "wholeDesign": ref = DesignReference(designID: g.design, board: nil)!.string
+        case "empty": text = " \n "
+        case "long": text = String(repeating: "x", count: DesignThreadNote.maxLength + 1)
+        case "badRef": ref = "nope"
+        default: ref = DesignReference(host: .remote(UUID()), designID: g.design, board: Self.board)!.string
+        }
+        try g.client.send(.designNote(id: 22, agentID: g.pi.agent.id, reference: ref, text: text))
+        guard case .error(22, let got, _) = try await g.client.reply() else { Issue.record("\(kind) was noted"); return }
+        #expect(got == code)
+        #expect(try await h.server.designThreadNotes(g.design).isEmpty)
+    }
+
+    @Test func aThreadLeavesOnlySoManyNotes() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let g = try await granted(h)
+        for index in 0..<DesignThreadNote.rateLimit {
+            try g.client.send(.designNote(id: 30 + index, agentID: g.pi.agent.id, reference: g.ref, text: "note \(index)"))
+            guard case .designNote = try await g.client.reply() else { Issue.record("note \(index) was refused"); return }
+        }
+        try g.client.send(.designNote(id: 99, agentID: g.pi.agent.id, reference: g.ref, text: "one too many"))
+        guard case .error(99, "rate_limited", _) = try await g.client.reply() else { Issue.record("the limit let it through"); return }
     }
 
     // MARK: The @ picker
