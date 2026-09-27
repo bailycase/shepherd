@@ -21,11 +21,11 @@ struct ExtensionMessageTests {
              .coordinateAgent, .agentResponse, .cancelAgentRequest, .createAutomation, .listAutomations,
              .updateAutomation, .deleteAutomation, .startAutomation, .stopAutomation, .suggestInstruction,
              .designRead, .designWriteBoard, .designUpdateIndex, .designComments, .designCommentReply,
-             .designSystemRead, .designSystemWrite, .designProposeComments, .designGet, .mcpCredentials, .mcpReport:
+             .designSystemRead, .designSystemWrite, .designProposeComments, .designGet, .designNote, .mcpCredentials, .mcpReport:
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 39
+    static let caseCount = 40
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
@@ -87,6 +87,8 @@ struct ExtensionMessageTests {
                                            DesignMarkupProposal(element: "not an id", text: "Counts “here” too?")]),
         .designGet(id: 29, agentID: agent, reference: "shepherd-design-ref://local/d1/flows%2FCart.dc.html#12:0/1@7", what: "element"),
         .designGet(id: 32, agentID: agent, reference: "shepherd-design-ref://local/d1@7", what: "image"),
+        .designNote(id: 33, agentID: agent, reference: "shepherd-design-ref://local/d1/A.dc.html#2:0/1@7",
+                    text: "Implemented in #142 on agent/checkout-funnel. Bars use --accent; “counts” use the table cell."),
         .mcpCredentials(id: 28, agentID: agent, server: "linear", reason: .unauthorized,
                         challenge: #"Bearer resource_metadata="https://mcp.linear.app/.well-known/oauth-protected-resource""#),
         .mcpReport(agentID: agent, report: MCPServerReport(
@@ -251,11 +253,11 @@ struct ExtensionReplyTests {
         case .childCommand, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .automations,
              .agents, .message, .agentRequest, .agentResult, .suggestion, .design, .designBoard, .designWritten,
              .designComments, .designComment, .designSystems, .designSystem, .designSystemWritten, .designProposals,
-             .designReference, .mcpCredentials:
+             .designReference, .designNote, .mcpCredentials:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 24
+    static let caseCount = 25
     static let system = DesignSystemSummary(
         info: DesignSystemInfo(namespace: "acme-web", title: "acme-web", revision: 3, createdAt: 1_000, updatedAt: 2_000,
                                syncedAt: 2_000, ownerDesignID: DesignID(rawValue: "d1"), spaceID: SpaceID(rawValue: "s1"),
@@ -332,6 +334,10 @@ struct ExtensionReplyTests {
             text: "design_get tokens of …", lookedAt: DesignReferenceLookedAt(
                 ref: "shepherd-design-ref://local/d1/A.dc.html@4", title: "Checkout › A", aspects: [.tokens],
                 tokens: .init(names: ["--accent"], sources: ["web/static/tokens.css:8"])))),
+        .designNote(id: 33, note: DesignThreadNote(
+            id: UUID(uuidString: "7C9E6679-7425-40DE-944B-E07FC1F90AE7")!, agentID: AgentID(rawValue: "a1"), thread: "Checkout page polish",
+            board: DesignPath("A.dc.html")!, element: DesignElementID("A.dc.html#2:0/1"), label: "Pay now", revision: 23,
+            text: "Implemented in #142.", createdAt: 1_000)),
         .mcpCredentials(id: 29, credentials: MCPCredentials(bearer: "at-1", headers: ["X-Org": "acme"],
                                                             env: ["DATABASE_URI": "postgres://u:p@db/app"], expiresAtMs: 1_790_000_000_000)),
     ]

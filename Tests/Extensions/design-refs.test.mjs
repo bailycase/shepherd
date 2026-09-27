@@ -1,6 +1,7 @@
 // An ordinary thread's design references extension: inert without its environment or in a
-// design's agent, design_get registered only once the thread holds a reference, and its frames
-// and answers over a stand-in Shepherd socket. No model provider, only temporary files.
+// design's agent, design_get and design_note registered only once the thread holds a reference,
+// and their frames and answers over a stand-in Shepherd socket. No model provider, only
+// temporary files.
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
@@ -111,19 +112,22 @@ test("a thread with no reference carries no tool until a message hands it one", 
     for (const handler of pi.handlers.input) handler({ type: "input", text: `see <design-ref nonce="0123456789ab">` });
     assert.equal(pi.tools.size, 0);
     for (const handler of pi.handlers.input) handler({ type: "input", text: FENCED });
-    assert.deepEqual([...pi.tools.keys()], ["design_get"]);
+    assert.deepEqual([...pi.tools.keys()], ["design_get", "design_note"]);
     for (const handler of pi.handlers.input) handler({ type: "input", text: FENCED });
-    assert.equal(pi.tools.size, 1, "registered once");
+    assert.equal(pi.tools.size, 2, "registered once");
   });
 });
 
 test("a thread that held a reference when pi started has the tool at once", async () => {
   await withRefs("granted", () => null, async (pi) => {
-    assert.deepEqual([...pi.tools.keys()], ["design_get"]);
+    assert.deepEqual([...pi.tools.keys()], ["design_get", "design_note"]);
     const tool = pi.tools.get("design_get");
     assert.deepEqual(tool.parameters.required.sort(), ["ref", "what"]);
     assert.match(tool.description, /never the design as it is now/);
     assert.match(tool.description, /a newer version reaches you only when the user sends it/);
+    const note = pi.tools.get("design_note");
+    assert.deepEqual(note.parameters.required.sort(), ["ref", "text"]);
+    assert.equal(note.parameters.properties.text.maxLength, 500);
   });
 });
 
@@ -178,4 +182,22 @@ test("with no Shepherd to answer, design_get fails the call instead of throwing 
       await assert.rejects(pi.tools.get("design_get").execute("call-1", { ref: REF, what: "summary" }));
       for (const handler of pi.handlers.input) assert.doesNotThrow(() => handler(null));
     });
+});
+
+test("design_note sends the note and says what was left, or fails the call with Shepherd's refusal", async () => {
+  await withRefs("granted", (frame) => {
+    if (frame.type !== "designNote") return { type: "error", code: "protocol", message: "unexpected" };
+    if (frame.text.length === 0) return { type: "error", code: "invalid_note", message: "A note is plain text, 1 to 500 characters." };
+    if (frame.reference.includes("/d2/")) return { type: "error", code: "not_granted", message: "That design piece was not sent to this thread." };
+    return { type: "designNote", note: { id: "n1", board: "A.dc.html", element: "A.dc.html#2:0/1", revision: 4, text: frame.text } };
+  }, async (pi, frames) => {
+    const tool = pi.tools.get("design_note");
+    const result = await tool.execute("call-1", { ref: REF, text: "Implemented in #142 on agent/checkout-funnel." });
+    assert.deepEqual(frames[0], { type: "designNote", reference: REF, text: "Implemented in #142 on agent/checkout-funnel.",
+      id: frames[0].id, agentID: "a1" });
+    assert.deepEqual(result.content, [{ type: "text", text: `Left a note on ${REF}: Implemented in #142 on agent/checkout-funnel.` }]);
+    assert.deepEqual(result.details, { note: "n1" });
+    await assert.rejects(tool.execute("call-2", { ref: REF, text: "" }), /\(invalid_note\)/);
+    await assert.rejects(tool.execute("call-3", { ref: "shepherd-design-ref://local/d2/B.dc.html", text: "Done" }), /\(not_granted\)/);
+  });
 });

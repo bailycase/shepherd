@@ -163,3 +163,37 @@ struct DesignReferencePayloadTests {
         }
     }
 }
+
+/// Notes a thread leaves on a piece it was sent (docs/designs.md › Notes back).
+@Suite("Design thread notes")
+struct DesignThreadNoteTests {
+    @Test(arguments: [
+        ("Implemented in #142 on agent/checkout-funnel.", "Implemented in #142 on agent/checkout-funnel." as String?),
+        ("  Done.\n\nBars use --accent;\tcounts use the table cell.  ", "Done. Bars use --accent; counts use the table cell."),
+        ("a\u{0}b\u{1B}[31mc\u{202E}d", "a b [31mc d"),
+        ("   \n\t ", nil),
+        (String(repeating: "x", count: DesignThreadNote.maxLength + 1), nil),
+        ("👩‍💻 shipped", "👩‍💻 shipped"),
+    ])
+    func aNoteIsOneShortParagraphOfPlainText(_ text: String, _ expected: String?) {
+        #expect(DesignThreadNote.cleaned(text) == expected)
+    }
+
+    @Test func aThreadsNewNoteOnAPieceReplacesItsLastAndTheOldestGo() {
+        let thread = AgentID(rawValue: "a1"), other = AgentID(rawValue: "a2")
+        let board = DesignPath("A.dc.html")!, element = DesignElementID("A.dc.html#2:0/1")!
+        func note(_ agent: AgentID, _ element: DesignElementID?, _ text: String) -> DesignThreadNote {
+            DesignThreadNote(agentID: agent, thread: "t", board: board, element: element, revision: 4, text: text, createdAt: 1)
+        }
+        var file = DesignThreadNotes()
+        file.add(note(thread, element, "first"))
+        file.add(note(other, element, "theirs"))
+        file.add(note(thread, nil, "on the board"))
+        file.add(note(thread, element, "second"))
+        #expect(file.notes.map(\.text) == ["theirs", "on the board", "second"])
+        for index in 0..<DesignThreadNote.maxPerDesign { file.add(note(AgentID(rawValue: "x\(index)"), nil, "\(index)")) }
+        #expect(file.notes.count == DesignThreadNote.maxPerDesign && file.notes.first?.text == "0")
+        let decoded = try? JSONDecoder().decode(DesignThreadNotes.self, from: JSONEncoder().encode(file))
+        #expect(decoded == file)
+    }
+}

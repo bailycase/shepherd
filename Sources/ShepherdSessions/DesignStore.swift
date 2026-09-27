@@ -401,6 +401,57 @@ public final class DesignStore: @unchecked Sendable {
             ?? PinIndex()
     }
 
+    // MARK: Notes back (docs/designs.md › Notes back)
+
+    /// The notes threads left on the design's pieces, oldest first: `thread-notes.json` beside
+    /// `project/`, never inside it. Empty when there are none or the file is unreadable.
+    public func threadNotes(_ id: DesignID) async throws -> [DesignThreadNote] {
+        try await run {
+            _ = try self.load(id)
+            return self.loadThreadNotes(id).notes
+        }
+    }
+
+    /// Adds `note` in place of the same thread's note on the same piece.
+    func addThreadNote(_ id: DesignID, _ note: DesignThreadNote) async throws -> DesignThreadNote {
+        try await run {
+            _ = try self.load(id)
+            var file = self.loadThreadNotes(id)
+            file.add(note)
+            try self.saveThreadNotes(file, id)
+            return note
+        }
+    }
+
+    /// Removes a note; false when the design has none by that id.
+    func removeThreadNote(_ id: DesignID, noteID: UUID) async throws -> Bool {
+        try await run {
+            _ = try self.load(id)
+            var file = self.loadThreadNotes(id)
+            guard file.notes.contains(where: { $0.id == noteID }) else { return false }
+            file.notes.removeAll { $0.id == noteID }
+            try self.saveThreadNotes(file, id)
+            return true
+        }
+    }
+
+    private func loadThreadNotes(_ id: DesignID) -> DesignThreadNotes {
+        guard let folder = folder(for: id),
+              let data = try? Data(contentsOf: folder.appendingPathComponent("thread-notes.json")) else { return DesignThreadNotes() }
+        return (try? JSONDecoder().decode(DesignThreadNotes.self, from: data)) ?? DesignThreadNotes()
+    }
+
+    private func saveThreadNotes(_ file: DesignThreadNotes, _ id: DesignID) throws {
+        guard let folder = folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        do {
+            try encoder.encode(file).write(to: folder.appendingPathComponent("thread-notes.json"), options: .atomic)
+        } catch {
+            throw DesignStoreError.io("could not keep the note: \(error.localizedDescription)")
+        }
+    }
+
     /// A board's kept versions, oldest first.
     func versions(_ id: DesignID, path: DesignPath) async throws -> [DesignBoardVersion] {
         try await run {
