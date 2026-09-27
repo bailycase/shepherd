@@ -64,7 +64,8 @@ and the workspace comes back, with each agent resumed in its pi session.
 - macOS 26 or later on Apple Silicon.
 - Nothing else: Shepherd ships its own [pi](https://github.com/earendil-works/pi-coding-agent) and
   runs it in its own folder, with its own sign-ins ([docs/pi-home.md](docs/pi-home.md)). A pi you
-  installed yourself stays yours: Shepherd never runs it or changes its files. Sign in once in
+  installed yourself stays yours: Shepherd never runs it or changes its files. At its first launch
+  Shepherd copies that pi's logins and settings into its own once; otherwise, sign in once in
   Settings ▸ Pi.
 
 - To build from source: Xcode with the macOS 26 SDK.
