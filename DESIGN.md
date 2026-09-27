@@ -3470,7 +3470,8 @@ automated step of the worktree flows can be turned off here.
   - Sign in, "Opens Shepherd's pi in a terminal beside the selected agent. Type `/login` there.
     Your terminal's pi stays signed in as it is.": **Open pi** (secondary, small), which opens a
     terminal pane beside the agent selected on this Mac, running Shepherd's pi with no session
-    (`pi --no-session` through its launcher). With no agent of this Mac selected it is disabled,
+    (`pi --no-session` through its launcher, run in Shepherd's pi home so an agent's folder of
+    `~` never makes `~/.pi` the TUI's project). With no agent of this Mac selected it is disabled,
     and its tooltip says "Select an agent on this Mac first." Until the native sign-in sheet (the
     plan's phase 7) this is the only way to sign in.
 
