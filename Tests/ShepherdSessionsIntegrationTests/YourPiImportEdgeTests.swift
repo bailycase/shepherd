@@ -220,6 +220,68 @@ struct YourPiImportEdgeTests {
         #expect(try YourPiFixture.tree(yours) == before)
     }
 
+    /// A "your pi" the user can't write (every folder 0555, every file 0444) copies, re-imports
+    /// each item and each provider, and surveys without a problem: nothing, not even a lock
+    /// folder, is ever created or written in it.
+    @Test func aYourPiNobodyCanWriteCopiesAndReimportsEverything() throws {
+        let setup = try Setup()
+        defer { setup.remove() }
+        let files = FileManager.default
+        let paths = try files.subpathsOfDirectory(atPath: setup.yours.path).map { setup.yours.appendingPathComponent($0).path }
+        func isFolder(_ path: String) -> Bool {
+            var folder: ObjCBool = false
+            return files.fileExists(atPath: path, isDirectory: &folder) && folder.boolValue
+        }
+        let folders = [setup.yours.path] + paths.filter(isFolder)
+        for path in paths where !isFolder(path) { chmod(path, 0o444) }
+        for path in folders { chmod(path, 0o555) }
+        defer { for path in folders { chmod(path, 0o755) } }
+        let before = try YourPiFixture.tree(setup.yours)
+
+        let first = setup.importer().copyOnce()
+        var reports = [first]
+        for provider in ["anthropic", "openai-codex", "openai", "google", "groq"] {
+            reports.append(try setup.importer().reimport(.login(provider)))
+        }
+        for item in [YourPiImport.Item.customProviders, .defaultModel, .trust] {
+            reports.append(try setup.importer().reimport(item))
+        }
+        let survey = setup.importer().survey()
+
+        #expect(first.first && first.problems.isEmpty && first.logins.count == 5)
+        #expect(survey.problems.isEmpty)
+        #expect(try YourPiFixture.tree(setup.yours) == before)
+        YourPiImportTests.expectNoSecret(in: Self.texts(setup, reports, [String(describing: survey)]))
+    }
+
+    /// A first copy that couldn't read their sign-ins still counts: the next launch copies
+    /// nothing, even once the file is fixed, and Re-import brings over exactly the provider asked
+    /// for.
+    @Test func aFirstCopyThatCouldNotReadSignInsIsNeverRepeatedButOneProviderReimports() throws {
+        let setup = try Setup()
+        defer { setup.remove() }
+        let theirAuth = setup.yours.appendingPathComponent("auth.json")
+        try Self.write(#"{"anthropic": {"type": "oauth", "refresh": "FAKE-REFRESH-anthropic""#, to: theirAuth)
+
+        let first = setup.importer().copyOnce()
+        #expect(first.first && first.logins.isEmpty && first.problems.count == 1)
+        #expect(first.customProviders == ["local-llm"], "the rest still came over")
+
+        try Self.write(YourPiFixture.auth, to: theirAuth)
+        let second = setup.importer().copyOnce()
+        #expect(!second.first && second.logins.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: setup.home.directory.appendingPathComponent("auth.json").path))
+
+        let again = try setup.importer().reimport(.login("openai-codex"))
+        #expect(again.logins == [PiLogin(provider: "openai-codex", kind: .subscription)])
+        let auth = try setup.json("auth.json")
+        #expect(Array(auth.keys) == ["openai-codex"])
+        #expect(NSDictionary(dictionary: auth["openai-codex"] as? [String: Any] ?? [:])
+            .isEqual(to: try setup.theirs("auth.json")["openai-codex"] as? [String: Any] ?? [:]), "the sign-in comes over whole")
+        #expect(try YourPiImportTests.mode(setup.home.directory.appendingPathComponent("auth.json")) == 0o600)
+        YourPiImportTests.expectNoSecret(in: Self.texts(setup, [first, second, again]))
+    }
+
     /// A private package's source may carry a token in its URL: the extension listing drops it.
     @Test func aPackageSourcesTokenNeverReachesTheListing() throws {
         let setup = try Setup()
