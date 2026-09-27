@@ -60,6 +60,7 @@ final class YourPiModel {
     static func rowID(_ item: YourPiImport.Item) -> String {
         switch item {
         case .login(let provider): "login:\(provider)"
+        case .logins: "logins"
         case .customProviders: "customProviders"
         case .defaultModel: "defaultModel"
         case .trust: "trust"

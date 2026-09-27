@@ -431,4 +431,42 @@ struct YourPiImportTests {
             }
         }
     }
+
+    /// Settings ▸ Pi reads both sides by digest: right after the copy each item is the same as
+    /// your pi's; a login changed in your pi is newer there, one changed in Shepherd's changed
+    /// here; keys show masked, by variable or by command, and no value reaches the survey.
+    @Test func theSurveyComparesEachCopyWithYourPiAndShowsKeysOnlyMasked() throws {
+        let setup = try Setup()
+        defer { setup.remove() }
+        let importer = setup.importer()
+        _ = importer.copyOnce()
+
+        var survey = importer.survey()
+        #expect(survey.freshness["login:anthropic"] == .sameAsYourPi && survey.freshness["login:openai"] == .sameAsYourPi)
+        #expect(survey.freshness["customProviders"] == .sameAsYourPi)
+        #expect(survey.freshness["defaultModel"] == .sameAsYourPi && survey.freshness["trust"] == .sameAsYourPi)
+        #expect(survey.copiedLogins.isSuperset(of: ["anthropic", "openai", "groq"]))
+        #expect(survey.keys["openai"] == PiKeyDisplay(masked: "sk-FAKE-••••0001"))
+        #expect(survey.keys["google"] == PiKeyDisplay(variables: ["GEMINI_API_KEY"]))
+        #expect(survey.keys["groq"] == PiKeyDisplay(command: "printf fake-command-output"))
+        #expect(survey.customProviderDetails.map(\.id) == ["local-llm"] && survey.customProviderDetails[0].key?.masked == "FAKE-••••-key")
+        #expect(survey.copiedAt != nil && survey.yourSignInsChanged != nil)
+        for secret in YourPiFixture.secrets { #expect(!String(describing: survey).contains(secret)) }
+
+        // Their pi signs in to Anthropic again; Shepherd's changes its OpenAI key.
+        var theirs = try setup.theirs("auth.json")
+        theirs["anthropic"] = ["type": "oauth", "refresh": "FAKE-REFRESH-anthropic-2", "access": "FAKE-ACCESS-anthropic-2", "expires": 1_800_000_000_000]
+        try JSONSerialization.data(withJSONObject: theirs).write(to: setup.yours.appendingPathComponent("auth.json"))
+        var ours = try setup.json("auth.json")
+        ours["openai"] = ["type": "api_key", "key": "sk-pasted-in-shepherd-9999"]
+        try JSONSerialization.data(withJSONObject: ours).write(to: setup.home.directory.appendingPathComponent("auth.json"))
+
+        survey = importer.survey()
+        #expect(survey.freshness["login:anthropic"] == .newerInYourPi)
+        #expect(survey.freshness["login:openai"] == .changedHere && !survey.copiedLogins.contains("openai"))
+
+        // Re-import brings theirs back: the same again.
+        try importer.reimport(.login("anthropic"))
+        #expect(importer.survey().freshness["login:anthropic"] == .sameAsYourPi)
+    }
 }
