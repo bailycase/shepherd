@@ -303,6 +303,23 @@ struct DesignReferenceReadingTests {
         #expect(fenced.hasPrefix(DesignReferenceData.preamble))
     }
 
+    /// An answer stays well under the socket's 1 MiB frame however much the design says.
+    @Test func designTextIsCutToFitOneFrame() {
+        let fenced = DesignReferenceData.fenced(String(repeating: "é", count: DesignReferenceData.maxBytes), nonce: "0123456789ab")
+        #expect(fenced.utf8.count < DesignReferenceData.maxBytes + 1024)
+        #expect(fenced.contains("… (cut at 128 KB)\n</design-data nonce=\"0123456789ab\">"))
+    }
+
+    /// An element whose start tag carries an inline image is quoted short, on one line.
+    @Test func aChangedStartTagIsQuotedShort() {
+        let image = "data:image/png;base64," + String(repeating: "A", count: 200_000)
+        let before = Self.board(#"<div><img alt="Logo" src="\#(image)"></div>"#)
+        let after = Self.board(#"<div><img alt="Logo" src="\#(image)B"></div>"#)
+        let text = changes(Self.reference, pinned: before, current: after)
+        #expect(text.contains("1 element changed"))
+        #expect(text.utf8.count < 2 * DesignReferenceReading.maxTagLength + 500)
+    }
+
     @Test func fileNamesAreOnePlainSegment() {
         let folder = DesignReference(string: "shepherd-design-ref://local/d1/flows%2FCart.dc.html#12:0/1")!
         #expect(DesignReferenceFileNames.image(folder) == "Cart-12@2x.png")
