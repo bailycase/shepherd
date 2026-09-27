@@ -93,16 +93,9 @@ struct EngineSmokeTests {
         #expect(after?["deepseek"] == nil)
     }
 
-    @Test(.enabled(if: EngineSmoke.rosettaRunsX86, "needs an arm64 Mac with Rosetta and an x86_64 slice"))
-    func itsX86SliceRunsUnderRosetta() async throws {
-        let engine = try #require(EngineSmoke.engine)
-        try await EngineSmoke.run(node: engine.node, engine: engine, arch: "x86_64")
-    }
-
     /// Ad-hoc builds (the Dev scheme, CI's unsigned releases) run node without the hardened
     /// runtime. A Developer ID build turns it on, and V8 then needs the engine's entitlements:
-    /// this signs a scratch copy the way `scripts/sign-app.sh` does, with the runtime, and runs
-    /// every slice this Mac can.
+    /// this signs a scratch copy the way `scripts/sign-app.sh` does, with the runtime, and runs it.
     @Test func theEngineEntitlementsAreEnoughUnderTheHardenedRuntime() async throws {
         let engine = try #require(EngineSmoke.engine)
         let scratch = try makeScratchDirectory("engine-sign")
@@ -113,16 +106,12 @@ struct EngineSmokeTests {
         let signing = try EngineSmoke.runTool(scripts.appendingPathComponent("sign-engine.sh").path, [
             "--runtime", node.path, "-",
             app.appendingPathComponent("Engine.entitlements").path,
-            app.appendingPathComponent("Engine-x86_64.entitlements").path,
         ], environment: ["TMPDIR": scratch.path, "PATH": "/usr/bin:/bin"])
         #expect(signing.status == 0, "sign-engine.sh: \(signing.output)")
         let display = try EngineSmoke.runTool("/usr/bin/codesign", ["-dv", node.path], environment: [:])
         #expect(display.output.contains("runtime"), "the copy is signed with the hardened runtime: \(display.output)")
 
         try await EngineSmoke.run(node: node, engine: engine)
-        if EngineSmoke.rosettaRunsX86 {
-            try await EngineSmoke.run(node: node, engine: engine, arch: "x86_64")
-        }
     }
 }
 
@@ -135,20 +124,6 @@ enum EngineSmoke {
 
     static let repository = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-
-    /// An arm64 Mac that can run x86_64 code, and a node with an x86_64 slice.
-    static let rosettaRunsX86: Bool = {
-        guard let engine else { return false }
-        #if arch(arm64)
-        guard let archs = try? runTool("/usr/bin/lipo", ["-archs", engine.node.path], environment: [:]),
-              archs.output.split(separator: " ").contains(where: { $0.trimmingCharacters(in: .whitespacesAndNewlines) == "x86_64" }),
-              let rosetta = try? runTool("/usr/bin/arch", ["-x86_64", "/usr/bin/true"], environment: [:])
-        else { return false }
-        return rosetta.status == 0
-        #else
-        return false
-        #endif
-    }()
 
     /// A TypeScript extension (so jiti must compile it) that imports a value from pi's own
     /// package (so pi's virtual modules must resolve it) and registers a command whose
@@ -171,7 +146,7 @@ enum EngineSmoke {
         "apiKey":"fixture-key","models":[{"id":"fixture-model"}]}}}
         """
 
-    static func run(node: URL, engine: BundledPiEngine, arch: String? = nil) async throws {
+    static func run(node: URL, engine: BundledPiEngine) async throws {
         let scratch = try makeScratchDirectory("engine-smoke")
         let files = FileManager.default
         let home = scratch.appendingPathComponent("home", isDirectory: true)
@@ -185,15 +160,8 @@ enum EngineSmoke {
         let fixture = scratch.appendingPathComponent("fixture.ts")
         try fixtureExtension.write(to: fixture, atomically: true, encoding: .utf8)
 
-        var arguments = [engine.entry.path, "--mode", "rpc", "--no-session", "-e", fixture.path]
-        let executable: String
-        if let arch {
-            executable = "/usr/bin/arch"
-            arguments = ["-\(arch)", node.path] + arguments
-        } else {
-            executable = node.path
-        }
-        let pi = try RPCProcess(executable: executable, arguments: arguments, directory: project, environment: [
+        let arguments = [engine.entry.path, "--mode", "rpc", "--no-session", "-e", fixture.path]
+        let pi = try RPCProcess(executable: node.path, arguments: arguments, directory: project, environment: [
             "HOME": home.path,
             "TMPDIR": temporary.path + "/",
             "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
