@@ -1014,7 +1014,9 @@ says), then its files' paths. The send carries each reference's string alone
   pinned string, and what the host read from the files (the design's name, the board's view name,
   title and size, the element's id and words, the revision, the attached files' names). What a
   client sent beyond the string is never kept. The fence always goes first, so words starting
-  with "/" stay words, and such a message goes to pi on its own, never joined in the queue.
+  with "/" stay words, and such a message goes to pi on its own, never joined in the queue. It is
+  the only fence such a message carries: a design view record sent beside it is dropped
+  (`RPCThreadState.sendContext`), since a surface takes off only the fence a message starts with.
 - **Every surface shows the words** (`DesignViewRecord.strippingFence`): the thread, queue
   origins, a turn's name, notifications, the palette's transcript search and remote clients.
 - **Grants.** Sending grants the thread's agent read access to that piece
@@ -1062,7 +1064,9 @@ description on every turn.
   another Mac's design (`remote_design`). A later revision of the board is read; an element a
   rewrite renumbered is found again by its path and words (`DesignCommentAnchor`).
 - **Data, never instructions:** everything read from the design comes back between
-  `design-data` markers with a nonce new to the answer (`DesignReferenceData`).
+  `design-data` markers with a nonce new to the answer (`DesignReferenceData`), cut at 128 KB so a
+  reply fits the socket's 1 MiB frame; `changes` quotes a start tag on one line, cut at 300
+  characters (an inline image's data URL would fill it).
 - **Drawn aspects** (`image`, `html`, `element`) go to the app (`onDesignReferenceRender`), which
   draws them off screen into the drop folder; the server's queue never renders or reads files,
   and nothing but paths crosses the socket.
