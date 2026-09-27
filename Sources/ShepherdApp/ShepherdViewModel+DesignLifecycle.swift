@@ -282,8 +282,10 @@ extension ShepherdViewModel {
     /// Shows a toast; one that offers Undo goes when its host lets the design's files go.
     func showDesignToast(_ toast: DesignToast) {
         designToast = toast
-        guard case .deleted(let deletion, _) = toast.kind else { return }
-        let seconds = max(0, deletion.undoUntil / 1000 - Date().timeIntervalSince1970)
+        guard case .deleted(let deletion, let host) = toast.kind else { return }
+        // A host's clock isn't this Mac's: its deletion was answered just now, so its window runs
+        // from here.
+        let seconds = host == nil ? max(0, deletion.undoUntil / 1000 - Date().timeIntervalSince1970) : DesignDeletion.undoWindow
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(seconds))
             if self?.designToast?.id == toast.id { self?.designToast = nil }
