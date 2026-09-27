@@ -281,8 +281,6 @@ extension AppLayout {
     static let newAgentSheetWidth: CGFloat = 560
     static let newWorktreeSheetWidth: CGFloat = 520
     static let finalizeSheetWidth: CGFloat = 560
-    /// The first launch's welcome step (Dialogs and sheets › Welcome).
-    static let piWelcomeSheetWidth: CGFloat = 520
     /// Sign-in's Add an API key row.
     static let addKeyRowHeight: CGFloat = 44
     /// How long a sign-in sheet opened from /login or an agent's card stays once it lands.

@@ -37,6 +37,9 @@ struct AgentStartQueue {
     private(set) var started: Set<AgentID> = []
     /// Nothing starts while held.
     private(set) var held = false
+    /// Held one by one, after the hold on everything ends: agents waiting for a sign-in the first
+    /// launch's sheet asks for (Something missing), until `releaseAgents()`.
+    private(set) var heldAgents: Set<AgentID> = []
 
     init(limit: Int = AgentStartQueue.limit) {
         self.limit = limit
@@ -45,7 +48,7 @@ struct AgentStartQueue {
     /// Queues `id`'s start. True when it is wanted on screen: the caller starts it now, ahead.
     mutating func enqueue(_ id: AgentID) -> Bool {
         guard !started.contains(id), !waiting.contains(id) else { return false }
-        if !held, wanted.remove(id) != nil {
+        if !held, !heldAgents.contains(id), wanted.remove(id) != nil {
             begin(id, ahead: true)
             return true
         }
@@ -57,7 +60,7 @@ struct AgentStartQueue {
     /// An agent not queued yet starts ahead once it is; one already started is left alone.
     mutating func startAhead(_ id: AgentID) -> Bool {
         guard !started.contains(id) else { return false }
-        guard !held, let index = waiting.firstIndex(of: id) else {
+        guard !held, !heldAgents.contains(id), let index = waiting.firstIndex(of: id) else {
             wanted.insert(id)
             return false
         }
@@ -77,8 +80,8 @@ struct AgentStartQueue {
     mutating func next() -> [AgentID] {
         guard !held, ahead.isEmpty else { return [] }
         var begun: [AgentID] = []
-        while running.count < limit, !waiting.isEmpty {
-            let id = waiting.removeFirst()
+        while running.count < limit, let index = waiting.firstIndex(where: { !heldAgents.contains($0) }) {
+            let id = waiting.remove(at: index)
             begin(id, ahead: false)
             begun.append(id)
         }
@@ -95,13 +98,37 @@ struct AgentStartQueue {
     mutating func release() -> [AgentID] {
         guard held else { return [] }
         held = false
-        let first = waiting.filter(wanted.contains)
+        let first = waiting.filter { wanted.contains($0) && !heldAgents.contains($0) }
         for id in first {
             waiting.removeAll { $0 == id }
             wanted.remove(id)
             begin(id, ahead: true)
         }
         return first
+    }
+
+    /// Keeps `ids` waiting once the hold on everything ends.
+    mutating func hold(_ ids: Set<AgentID>) {
+        heldAgents.formUnion(ids)
+    }
+
+    /// Ends the hold on the agents held one by one. Returns those wanted on screen meanwhile: the
+    /// caller starts them now, ahead, then the rest through `next()`.
+    mutating func releaseAgents() -> [AgentID] {
+        guard !heldAgents.isEmpty else { return [] }
+        let first = held ? [] : waiting.filter { heldAgents.contains($0) && wanted.contains($0) }
+        heldAgents = []
+        for id in first {
+            waiting.removeAll { $0 == id }
+            wanted.remove(id)
+            begin(id, ahead: true)
+        }
+        return first
+    }
+
+    /// Whether `id` waits on a hold: not started while everything is held, or held on its own.
+    func isHeld(_ id: AgentID) -> Bool {
+        !started.contains(id) && (held || heldAgents.contains(id))
     }
 
     private mutating func begin(_ id: AgentID, ahead isAhead: Bool) {

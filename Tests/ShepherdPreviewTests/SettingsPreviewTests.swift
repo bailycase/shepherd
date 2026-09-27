@@ -532,23 +532,21 @@ struct SettingsPreviewTests {
 
     // MARK: Dialogs
 
-    /// The first launch's welcome step: an existing user's, with everything brought over; one
-    /// with something missing (auth.json unreadable, so the default model's provider is still
-    /// needed); a new user's, which only asks to sign in (with no agent open, so Sign in… is off);
-    /// and a new user's with a key found in the environment.
-    @Test func welcomeSheet() async throws {
-        let width = AppLayout.piWelcomeSheetWidth
-        try await Preview.render("sheet-welcome", size: CGSize(width: width, height: 680)) {
-            PiWelcomeSheet(welcome: PreviewYourPi.welcome, signIn: {}, onClose: {})
-        }
-        try await Preview.render("sheet-welcome-missing", size: CGSize(width: width, height: 560)) {
-            PiWelcomeSheet(welcome: PreviewYourPi.welcomeMissing, signIn: {}, onClose: {})
-        }
-        try await Preview.render("sheet-welcome-new-user", size: CGSize(width: width, height: 260)) {
-            PiWelcomeSheet(welcome: PreviewYourPi.welcomeNewUser, signIn: nil, onClose: {})
-        }
-        try await Preview.render("sheet-welcome-new-user-key", size: CGSize(width: width, height: 260)) {
-            PiWelcomeSheet(welcome: PreviewYourPi.welcomeNewUserWithKey, signIn: nil, onClose: {})
+    /// The first launch's sheet, each way it ends (PiImportProgress, PiImportDone, PiImportMissing,
+    /// PiImportNew, PiImportFailed).
+    @Test func importSheet() async throws {
+        let cases: [(String, PiImportSheetState, CGFloat)] = [
+            ("sheet-pi-import-progress", PreviewYourPi.importProgress, 520),
+            ("sheet-pi-import-done", PreviewYourPi.importDone, 380),
+            ("sheet-pi-import-missing", PreviewYourPi.importMissing, 400),
+            ("sheet-pi-import-new", PreviewYourPi.importNew, 480),
+            ("sheet-pi-import-failed", PreviewYourPi.importFailed, 700),
+        ]
+        for (name, state, height) in cases {
+            let width = state.stage == .newUser ? NWPiSignInMetrics.importWideWidth : NWPiSignInMetrics.importWidth
+            try await Preview.render(name, size: CGSize(width: width, height: height)) {
+                PiImportSheet(state: state, signIn: { _, _ in }, retry: {}, reviewExtensions: {}, close: {})
+            }
         }
     }
 

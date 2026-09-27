@@ -137,6 +137,14 @@ public struct YourPiImportReport: Equatable, Sendable {
     public var droppedTrust: [String] = []
     /// What each copied item was, as digests (`YourPiImportState.digests`).
     public var digests: [String: String] = [:]
+    /// Their auth.json couldn't be read or isn't JSON: its path and the parser's reason (never its
+    /// contents). The rest still came over.
+    public var signInsUnreadable: (path: String, reason: String)? {
+        get { unreadable.map { ($0.path, $0.reason) } }
+        set { unreadable = newValue.map { Unreadable(path: $0.path, reason: $0.reason) } }
+    }
+    private var unreadable: Unreadable?
+    private struct Unreadable: Equatable, Sendable { var path: String; var reason: String }
     /// Instructions, skills, prompts, themes and extensions copied into the home as files.
     public var copied: [YourPiCopy] = []
     /// What was passed over on purpose (a second skill of one name, a package their pi never
@@ -171,6 +179,21 @@ public struct YourPiImportReport: Equatable, Sendable {
             .joined(separator: ", "))
         return parts.joined(separator: "; ")
     }
+}
+
+/// One line of the first launch's sheet (`PiImportStepRow(item, step)`), in the order the copy
+/// takes them.
+public enum YourPiImportStep: String, CaseIterable, Sendable {
+    case logins, apiKeys, customProviders, defaultModel, trustedFolders, files, extensions
+}
+
+/// How the first copy is going, as it goes: where it copies from, then each step as it starts and
+/// ends, with the report so far (names and counts, never a value).
+public enum YourPiImportProgress: Equatable, Sendable {
+    case started(from: String)
+    case running(YourPiImportStep)
+    /// A step ended; `report` is everything copied so far.
+    case finished(YourPiImportStep, report: YourPiImportReport)
 }
 
 /// Everything Settings ▸ Pi shows about sign-ins and the user's pi, as plain values.
@@ -373,7 +396,7 @@ public struct YourPiImport: Sendable {
     /// this build is kept). The home must be ready (`PiSetup.prepare` passed). A state file that
     /// is there but can't be read counts as a copy that ran: a damaged file never copies again.
     /// A state from before files were copied (version 1) gets its files copied once, quietly.
-    public func copyOnce(now: Date = Date()) -> YourPiImportReport {
+    public func copyOnce(now: Date = Date(), progress: (@Sendable (YourPiImportProgress) -> Void)? = nil) -> YourPiImportReport {
         var info = stat()
         let exists = lstat(stateURL.path, &info) == 0
         let saved = exists ? state() : nil
@@ -383,13 +406,22 @@ public struct YourPiImport: Sendable {
         report.first = !filesOnly
         if let yourPi {
             report.from = yourPi.agentDirectory.path
-            if !filesOnly {
-                copyLogins(from: yourPi, overwriting: nil, into: &report)
-                copyModels(from: yourPi, overwrite: false, into: &report)
-                copyDefaultModel(from: yourPi, overwrite: false, into: &report)
-                copyTrust(from: yourPi, into: &report)
+            if !filesOnly { progress?(.started(from: yourPi.agentDirectory.path)) }
+            func step(_ step: YourPiImportStep, _ body: (inout YourPiImportReport) -> Void) {
+                progress?(.running(step))
+                body(&report)
+                progress?(.finished(step, report: report))
             }
-            copyFiles(of: YourPiResourceKind.allCases, from: yourPi, replacing: false, into: &report)
+            if !filesOnly {
+                step(.logins) { copyLogins(from: yourPi, overwriting: nil, into: &$0) }
+                // Logins and keys come from one file, together.
+                progress?(.finished(.apiKeys, report: report))
+                step(.customProviders) { copyModels(from: yourPi, overwrite: false, into: &$0) }
+                step(.defaultModel) { copyDefaultModel(from: yourPi, overwrite: false, into: &$0) }
+                step(.trustedFolders) { copyTrust(from: yourPi, into: &$0) }
+            }
+            step(.files) { copyFiles(of: [.instructions, .skills, .prompts, .themes], from: yourPi, replacing: false, into: &$0) }
+            step(.extensions) { copyFiles(of: [.extensions], from: yourPi, replacing: false, into: &$0) }
         }
         do {
             try updateState { state in
@@ -462,7 +494,7 @@ public struct YourPiImport: Sendable {
         if !report.digests.isEmpty {
             try updateState { $0.digests.merge(report.digests) { $1 } }
         }
-        if let problem = report.problems.first { throw YourPiFileError(problem) }
+        if let problem = report.problems.first { throw YourPiFileError(problem, detail: report.signInsUnreadable?.reason) }
         log("copied again from your pi: \(report.summary)")
         return report
     }
@@ -686,6 +718,12 @@ public struct YourPiImport: Sendable {
     }
 
     /// pi's reason, on one line and short enough for a row.
+    /// Why a file of theirs couldn't be read, in the parser's words where it gave some ("Unexpected
+    /// character '}' around line 31, column 5."), never the file's contents.
+    static func parserReason(_ error: Error) -> String {
+        (error as? YourPiFileError).map { $0.detail ?? $0.description } ?? String(describing: error)
+    }
+
     static func shortened(_ reason: String) -> String {
         let line = reason.split(whereSeparator: \.isNewline).first.map(String.init) ?? reason
         let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -705,6 +743,7 @@ public struct YourPiImport: Sendable {
             theirs = try YourPiFiles.credentials(data)
         } catch {
             report.problems.append("Your pi's sign-ins couldn't be read: \(error).")
+            report.signInsUnreadable = (yourPi.agentDirectory.appendingPathComponent("auth.json").path, Self.parserReason(error))
             return
         }
         if let provider, theirs[provider] == nil {

@@ -503,6 +503,7 @@ final class ShepherdViewModel {
         self.piAuth.onChanged = { [weak yourPi = self.yourPi] in
             Task { await yourPi?.refresh() }
         }
+        self.piAuth.onSignedIn = { [weak self] provider in self?.signInLanded(provider) ?? 0 }
         // Settings ▸ Instructions follows a remote client's save here, and sends a host that
         // comes back what it is owed.
         server.onInstructionsChanged = { [weak instructions = self.instructions] snapshot in
@@ -769,16 +770,67 @@ final class ShepherdViewModel {
             sessions.holdStarts()
             Task { [weak self] in
                 guard let self else { return }
-                if await !self.yourPi.runFirstLaunch(defaultModel: self.settings.agentDefaults.model) { self.releaseStarts() }
+                self.applyFirstLaunchHold(await self.yourPi.runFirstLaunch(models: { [weak self] in self?.firstLaunchModels ?? [] }))
             }
         }
     }
 
-    /// The welcome step is over (closed, skipped, or never shown): it goes, and restored agents
-    /// start if they still wait.
-    func finishWelcome() {
-        yourPi.welcome = nil
+    /// The first launch's sheet is over (closed, skipped, or never shown): it goes, and restored
+    /// agents start if they still wait.
+    func finishImport() {
+        yourPi.importSheet = nil
+        piAuth.closeSheet()
         releaseStarts()
+        sessions.releaseHeldAgents()
+    }
+
+    /// Who waits for the first launch's sheet: nobody, everyone, or the agents whose model's
+    /// provider it asks for (the rest start at once).
+    func applyFirstLaunchHold(_ hold: YourPiModel.Hold) {
+        switch hold {
+        case .none:
+            releaseStarts()
+        case .all:
+            break
+        case .agents(let providers):
+            sessions.holdStarts(of: agentIDs(using: providers))
+            releaseStarts()
+        }
+    }
+
+    /// This Mac's agents whose model (or, with none, the default model) is one of `providers`'.
+    func agentIDs(using providers: Set<String>) -> Set<AgentID> {
+        let fallback = settings.agentDefaults.model ?? yourPi.survey?.shepherdDefaultModel
+        return Set(state.agents.filter { agent in
+            guard let model = agent.model ?? fallback, let slash = model.firstIndex(of: "/") else { return false }
+            return providers.contains(String(model[..<slash]))
+        }.map(\.id))
+    }
+
+    /// Retry, on a first launch's sheet that couldn't read your pi's sign-ins: once they come over
+    /// and nothing more is asked, restored agents start.
+    func retryImportSignIns() {
+        Task { applyFirstLaunchHold(await yourPi.retrySignIns()) }
+    }
+
+    /// A sign-in landed in Shepherd's pi. The first launch's sheet shows it signed in, or, for a
+    /// new user, closes. Returns how many waiting agents started again.
+    func signInLanded(_ provider: String) -> Int {
+        if let sheet = yourPi.importSheet {
+            if sheet.stage == .newUser {
+                finishImport()
+            } else {
+                Task { await yourPi.signInLanded() }
+            }
+        }
+        return 0
+    }
+
+    /// The models restored agents use, and Shepherd's default: their providers are what the first
+    /// launch's sheet asks for when nothing covers them.
+    var firstLaunchModels: [String] {
+        // The server's copy: the workspace may not be adopted yet when the copy ends.
+        server.state.agents.compactMap(\.model) + [settings.agentDefaults.model].compactMap { $0 }
     }
 
     /// The first launch's hold is over: restored agents start, the one on screen first, and so do

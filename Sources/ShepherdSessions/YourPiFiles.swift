@@ -36,7 +36,13 @@ public struct PiLogin: Equatable, Sendable, Identifiable {
 /// Why a file of the user's pi couldn't be imported. It never quotes the file.
 public struct YourPiFileError: Error, Equatable, CustomStringConvertible {
     public let description: String
-    public init(_ description: String) { self.description = description }
+    /// Where the parser stopped ("Unexpected character around line 31, column 5."), without the
+    /// character itself: never the file's contents.
+    public let detail: String?
+    public init(_ description: String, detail: String? = nil) {
+        self.description = description
+        self.detail = detail
+    }
 }
 
 /// The user's own pi's files, read as plain JSON and plain folders: never through pi's
@@ -86,10 +92,21 @@ public enum YourPiFiles {
         guard let text = String(data: data, encoding: .utf8) else { throw YourPiFileError("\(file) isn't UTF-8 text") }
         let cleaned = strippingComments(text.hasPrefix("\u{FEFF}") ? String(text.dropFirst()) : text)
         if cleaned.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return [:] }
-        guard let object = try? JSONSerialization.jsonObject(with: Data(cleaned.utf8)) as? [String: Any] else {
-            throw YourPiFileError("\(file) isn't a valid JSON object")
+        let parsed: Any
+        do {
+            parsed = try JSONSerialization.jsonObject(with: Data(cleaned.utf8))
+        } catch {
+            throw YourPiFileError("\(file) isn't a valid JSON object", detail: parserDetail(error))
         }
+        guard let object = parsed as? [String: Any] else { throw YourPiFileError("\(file) isn't a valid JSON object") }
         return object
+    }
+
+    /// Where Foundation's parser stopped, with any quoted character taken out.
+    static func parserDetail(_ error: Error) -> String? {
+        guard let text = (error as NSError).userInfo[NSDebugDescriptionErrorKey] as? String else { return nil }
+        let unquoted = text.replacingOccurrences(of: #"\s*'.{1,4}'"#, with: "", options: .regularExpression)
+        return unquoted.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// `//` and `/* */` comments removed outside strings, as pi's `stripJsonComments` does.

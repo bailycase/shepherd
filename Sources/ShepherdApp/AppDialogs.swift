@@ -14,16 +14,27 @@ struct AppDialogs: ViewModifier {
                 NewAgentSheet(vm: vm)
                     .dialogSheetFrame()
             }
-            // The first launch's welcome step; closing it, whichever way, starts restored agents.
-            .sheet(item: Binding(get: { vm.yourPi.welcome }, set: { vm.yourPi.welcome = $0 }), onDismiss: { vm.finishWelcome() }) { welcome in
-                PiWelcomeSheet(welcome: welcome,
-                               signIn: vm.selectedRemoteAgent == nil ? vm.selectedAgentID.map { id in { [vm] in vm.openPiSignIn(besideAgent: id) } } : nil,
-                               onClose: { vm.finishWelcome() })
+            // The first launch's sheet; closing it, whichever way, starts restored agents. A sign-in
+            // it opens shows over it.
+            .sheet(item: Binding(get: { vm.yourPi.importSheet }, set: { if $0 == nil { vm.finishImport() } }),
+                   onDismiss: { vm.finishImport() }) { sheet in
+                PiImportSheet(state: vm.yourPi.importSheet ?? sheet,
+                              signIn: { provider, key in vm.piAuth.signIn(provider, key: key, origin: .firstLaunch) },
+                              retry: { vm.retryImportSignIns() },
+                              reviewExtensions: {
+                                  vm.finishImport()
+                                  vm.settingsSection = .piFromYourPi
+                                  vm.showSettings = true
+                              },
+                              close: { vm.finishImport() })
                     .dialogSheetFrame()
+                    .sheet(item: Binding(get: { vm.piAuth.session }, set: { if $0 == nil { vm.piAuth.closeSheet() } })) { session in
+                        PiSignInSheet(session: session) { vm.piAuth.closeSheet() }
+                            .dialogSheetFrame()
+                    }
             }
-            // Sign in to <provider>: over Settings or the thread (the first launch's sheet hosts its
-            // own while it shows).
-            .sheet(item: Binding(get: { vm.yourPi.welcome == nil ? vm.piAuth.session : nil }, set: { if $0 == nil { vm.piAuth.closeSheet() } })) { session in
+            // Sign in to <provider>: over Settings or the thread.
+            .sheet(item: Binding(get: { vm.yourPi.importSheet == nil ? vm.piAuth.session : nil }, set: { if $0 == nil { vm.piAuth.closeSheet() } })) { session in
                 PiSignInSheet(session: session) { vm.piAuth.closeSheet() }
                     .dialogSheetFrame()
             }

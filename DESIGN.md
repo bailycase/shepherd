@@ -4410,10 +4410,12 @@ after that the two pis are independent.
   Geist 17/600 over the subtitle in 13/1.5 `textSecondary`. The body 18pt under it, 22 in. A
   footer on `bgSunken` over a hairline, 14pt above and 16 below its 28pt buttons.
 - **The start gate.** Restored agents (and automations) hold their next request until the copy
-  is over (`AgentStartQueue`; 30 s at most). Then they start, the one on screen first, except
-  while the sheet asks for a sign-in (Something missing, New user) or no provider can start
-  them: then they wait until the sheet closes, whichever way. An existing user whose logins came
-  over never clicks for their agents.
+  is over (`AgentStartQueue`; 30 s at most), each showing "waiting" in the sidebar and Waiting
+  to continue at the end of its thread. Then they start, the one on screen first, except: with
+  Something missing, the agents whose model uses a provider it asks for keep waiting (the rest
+  start); with New user or Failed, or when no provider can start an agent, every one waits. They
+  wait until the sheet closes, whichever way. An existing user whose logins came over never
+  clicks for the agents those logins cover.
 - **In progress**: "Bringing over your pi…", "Once, from `~/.pi/agent`. The pi in your terminal
   isn’t changed." A card (`bgSunken`, radius 10, `lineSubtle`) of `NWImportStepRow`s, one per
   item, 40pt at the least, 6×14 padding, 12 between parts, hairlines between: an 18pt mark, the

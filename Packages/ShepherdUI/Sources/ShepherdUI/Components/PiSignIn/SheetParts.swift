@@ -268,11 +268,14 @@ public struct NWImportSummary: View {
         public var words: String
         /// A mono value after the words ("default model `claude-opus`").
         public var value: String?
+        /// Joined to the part before with a comma, not "·" ("instructions, 12 skills, 5 prompts").
+        public var comma: Bool
 
-        public init(_ words: String, count: Int? = nil, value: String? = nil) {
+        public init(_ words: String, count: Int? = nil, value: String? = nil, comma: Bool = false) {
             self.count = count
             self.words = words
             self.value = value
+            self.comma = comma
         }
     }
 
@@ -299,7 +302,7 @@ public struct NWImportSummary: View {
         let rest = quiet ? nw.textTertiary : nw.textSecondary
         var result = Text("")
         for (index, part) in parts.enumerated() {
-            if index > 0 { result = result + Text(" · ").foregroundColor(nw.textTertiary) }
+            if index > 0 { result = result + (part.comma ? Text(", ").foregroundColor(rest) : Text(" · ").foregroundColor(nw.textTertiary)) }
             if let count = part.count {
                 result = result + Text("\(count)").fontWeight(.semibold).foregroundColor(nw.textPrimary) + Text(" ")
             }

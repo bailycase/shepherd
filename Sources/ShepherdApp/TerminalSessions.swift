@@ -579,6 +579,17 @@ final class TerminalSessionStore {
         pumpStarts()
     }
 
+    /// Keeps `ids` waiting past the end of the hold on everything (Something missing).
+    func holdStarts(of ids: Set<AgentID>) {
+        startQueue.hold(ids)
+    }
+
+    /// Ends the hold on the agents held one by one: the ones on screen first.
+    func releaseHeldAgents() {
+        for agentID in startQueue.releaseAgents() { beginStart(agentID, ahead: true) }
+        pumpStarts()
+    }
+
     private func beginStart(_ agentID: AgentID, ahead: Bool) {
         guard let body = queuedStarts.removeValue(forKey: agentID) else {
             startFinished(agentID)
