@@ -291,8 +291,8 @@ too: `get_state`, a TypeScript fixture extension loaded through jiti, and an RPC
 It also starts the engine through the real launcher in a scratch Shepherd home, with a
 `NODE_OPTIONS` pi must not see: an RPC `bash` command there finds `pi` at the launcher and gets
 that `NODE_OPTIONS` back (`restore-env.sh`).
-It runs the x86_64 slice under Rosetta where it can, and a scratch copy signed with the hardened
-runtime (`scripts/sign-engine.sh`), so the engine's entitlements are checked too. It never reaches
+It also runs a scratch copy signed with the hardened runtime (`scripts/sign-engine.sh`), so the
+engine's entitlements are checked too. It never reaches
 a model: the home's one provider points at a closed port and no prompt is sent.
 
 **Long lists** (DESIGN.md › Performance) are measured, not guessed:
@@ -340,8 +340,8 @@ Xcode project, `App/Info.plist`, `App/iOS/ExportOptions.plist`, `ShepherdEdition
 feed name or signing setting that drifts from the script fails before a release builds.
 `Tests/Release/test_pi_engine.py` tests `scripts/pi_engine.py` against archives built in memory
 (what staging keeps and refuses, and `verify-app`'s engine checks), the pin, the engine's
-entitlements, `sign-app.sh`'s per-slice signing of node (on macOS), the "Embed pi engine" phase,
-and the Release workflow's staging and signing steps.
+entitlements, `sign-app.sh`'s and `sign-engine.sh`'s signing of node (on macOS), the "Embed pi
+engine" phase, and the Release workflow's staging and signing steps.
 
 **Tests never take the user's focus or drive their mouse or keyboard.**
 
@@ -467,7 +467,7 @@ timing-sensitive tests. Docs-only changes (`docs/**`, `*.md`) don't trigger it.
 ```text
 App/
   ShepherdLauncher.swift   Mac @main shim.   Shepherd.entitlements   iOS/  the iPhone and iPad client
-  Engine.entitlements, Engine-x86_64.entitlements   the pi engine's node, per slice
+  Engine.entitlements      the pi engine's node (allow-jit)
   Info.plist               names, executable, and feed from build settings
   AppIcon.icon, AppIconNightly.icon   Shepherd's and Shepherd Nightly's icons
 Sources/
@@ -694,7 +694,7 @@ Tests/
 scripts/               release.py (the release workflow's rules), sign-app.sh (release
                        signing), sync-embedded-extension.py, ci_mtimes.py (CI's incremental builds),
                        pi_engine.py + pi-engine-pin.json (stage and verify the pi engine),
-                       sign-engine.sh (node, slice by slice)
+                       sign-engine.sh (node, with the engine's entitlements)
 Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
 ```
 
@@ -1324,9 +1324,8 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   - `scripts/sign-app.sh` signs inside-out, never with `--deep`: every nested item first, then
     the app with `App/Shepherd.entitlements` (both apps). Only nested apps and XPC services keep
     their own entitlements, and the pi engine's node gets the engine's: `scripts/sign-engine.sh`
-    signs each slice with its own (`App/Engine.entitlements`, allow-jit, for arm64;
-    `App/Engine-x86_64.entitlements` adds allow-unsigned-executable-memory, without which V8
-    aborts at startup under the hardened runtime). `node` is never stripped.
+    signs it with `App/Engine.entitlements` (allow-jit, which V8 needs under the hardened
+    runtime) as `node`, and refuses a node with any slice but arm64. `node` is never stripped.
   - The iOS client is archived unsigned and signed only at export, with the team's
     cloud-managed Apple Distribution certificate through the `APP_STORE_CONNECT_*` API key
     (`-allowProvisioningUpdates`). There is no `.p12` and no keychain.

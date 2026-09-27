@@ -55,10 +55,6 @@ def fat_macho(slices):
     return (header + entries).ljust(offset, b"\0") + body
 
 
-def fake_lipo(slices):
-    return fat_macho(slices)
-
-
 def targz(files, prefix="package/", extra=()):
     """An npm-style tarball of {path: bytes} under `prefix`; `extra` adds raw TarInfo members."""
     out = io.BytesIO()
@@ -129,16 +125,14 @@ class Fixture:
                 "package.json": json.dumps({"name": "@silvia-odwyer/photon-node", "version": "0.3.4"}).encode(),
                 "LICENSE.md": b"Apache License", "photon_rs_bg.wasm": b"\0asm"}),
         }
-        self.node = {}
-        for arch, node_arch in (("arm64", "arm64"), ("x86_64", "x64")):
-            folder = f"node-v{node_version}-darwin-{node_arch}/"
-            self.node[arch] = tarxz({folder + "bin/node": thin_macho(arch, node_version),
-                                     folder + "LICENSE": b"Node.js is licensed for use as follows:",
-                                     folder + "include/node/node.h": b"header"})
+        folder = f"node-v{node_version}-darwin-arm64/"
+        self.node = tarxz({folder + "bin/node": thin_macho("arm64", node_version),
+                           folder + "LICENSE": b"Node.js is licensed for use as follows:",
+                           folder + "include/node/node.h": b"header"})
         self.pin = {
             "node": {"version": node_version, "dist": f"https://nodejs.org/dist/v{node_version}/", "archives": {
-                arch: {"file": f"node-v{node_version}-darwin-{'x64' if arch == 'x86_64' else arch}.tar.xz",
-                       "sha256": hashlib.sha256(data).hexdigest()} for arch, data in self.node.items()}},
+                "arm64": {"file": f"node-v{node_version}-darwin-arm64.tar.xz",
+                          "sha256": hashlib.sha256(self.node).hexdigest()}}},
             "pi": {"name": "@earendil-works/pi-coding-agent", "version": PI_VERSION,
                    "tarball": f"https://registry.npmjs.org/@earendil-works/pi-coding-agent/-/pi-coding-agent-{PI_VERSION}.tgz",
                    "integrity": sri(self.archives["pi"])},
@@ -156,8 +150,7 @@ class Fixture:
         node = self.pin["node"]
         shasums = "".join(f"{a['sha256']}  {a['file']}\n" for a in node["archives"].values())
         urls = {node["dist"] + "SHASUMS256.txt": shasums.encode()}
-        for arch, archive in node["archives"].items():
-            urls[node["dist"] + archive["file"]] = self.node[arch]
+        urls[node["dist"] + node["archives"]["arm64"]["file"]] = self.node
         urls[self.pin["pi"]["tarball"]] = self.archives["pi"]
         for name, module in self.pin["modules"].items():
             urls[module["tarball"]] = self.archives[name]
@@ -176,8 +169,7 @@ class Fixture:
         with open(pin_path, "w") as f:
             json.dump(self.pin, f)
         out = os.path.join(scratch, "staged")
-        pi_engine.stage(os.path.join(scratch, "cache"), out, pin_path=pin_path, opener=self.opener(overrides),
-                        lipo=fake_lipo)
+        pi_engine.stage(os.path.join(scratch, "cache"), out, pin_path=pin_path, opener=self.opener(overrides))
         return out
 
 
@@ -186,16 +178,16 @@ def listing(root):
 
 
 class PinTests(unittest.TestCase):
-    """scripts/pi-engine-pin.json: Node 24 LTS, universal, and pi with the three modules its
+    """scripts/pi-engine-pin.json: Node 24 LTS for Apple silicon, and pi with the three modules its
     bundle loads, each by version and hash."""
 
     def test_the_checked_in_pin_is_usable(self):
         self.assertEqual(pi_engine.pin_problems(pi_engine.load_pin()), [])
 
-    def test_it_pins_node_24_lts_for_both_architectures_and_pi_0_87_1(self):
+    def test_it_pins_node_24_lts_for_arm64_only_and_pi_0_87_1(self):
         pin = pi_engine.load_pin()
         self.assertEqual(pin["node"]["version"].split(".")[0], "24")
-        self.assertEqual(list(pin["node"]["archives"]), ["arm64", "x86_64"])
+        self.assertEqual(list(pin["node"]["archives"]), ["arm64"])
         self.assertEqual((pin["pi"]["name"], pin["pi"]["version"]), ("@earendil-works/pi-coding-agent", "0.87.1"))
         self.assertEqual(sorted(pin["modules"]), ["@earendil-works/chord", "@silvia-odwyer/photon-node", "jiti"])
 
@@ -207,7 +199,9 @@ class PinTests(unittest.TestCase):
             "a node too old for pi": lambda p: p["node"].update(version="22.18.0",
                                                                  dist="https://nodejs.org/dist/v22.18.0/"),
             "another download site": lambda p: p["node"].update(dist="https://example.com/dist/"),
-            "arm64 only": lambda p: p["node"]["archives"].pop("x86_64"),
+            "an x86_64 archive too": lambda p: p["node"]["archives"].update(x86_64={
+                "file": "node-v24.21.0-darwin-x64.tar.xz", "sha256": "0" * 64}),
+            "no arm64 archive": lambda p: p["node"]["archives"].pop("arm64"),
             "a short sha256": lambda p: p["node"]["archives"]["arm64"].update(sha256="abc"),
             "an archive for another version": lambda p: p["node"]["archives"]["arm64"].update(
                 file="node-v24.0.0-darwin-arm64.tar.xz"),
@@ -226,7 +220,7 @@ class PinTests(unittest.TestCase):
         pin = pi_engine.load_pin()
         listed = "".join(f"{a['sha256']}  {a['file']}\n" for a in pin["node"]["archives"].values())
         self.assertEqual(pi_engine.node_shasums_problems(pin, listed + "0" * 64 + "  other.tar.gz\n"), [])
-        self.assertEqual(len(pi_engine.node_shasums_problems(pin, listed.splitlines()[0] + "\n")), 1)
+        self.assertEqual(len(pi_engine.node_shasums_problems(pin, "0" * 64 + "  other.tar.gz\n")), 1)
         self.assertEqual(len(pi_engine.node_shasums_problems(pin, listed.replace(listed[:4], "ffff", 1))), 1)
 
 
@@ -257,7 +251,7 @@ class FetchTests(unittest.TestCase):
 class StageTests(unittest.TestCase):
     """What staging keeps of each archive, and what it refuses."""
 
-    def test_it_stages_node_universal_and_only_the_files_pi_needs(self):
+    def test_it_stages_node_for_arm64_and_only_the_files_pi_needs(self):
         fixture = Fixture()
         with tempfile.TemporaryDirectory() as scratch:
             out = fixture.stage(scratch)
@@ -278,7 +272,7 @@ class StageTests(unittest.TestCase):
                     "node_modules/@silvia-odwyer/photon-node/photon_rs_bg.wasm",
                     "LICENSE", "NODE-LICENSE", "THIRD-PARTY-NOTICES")),
             ]))
-            self.assertEqual(set(pi_engine.slices(os.path.join(out, "Helpers/node"))), {"arm64", "x86_64"})
+            self.assertEqual(set(pi_engine.slices(os.path.join(out, "Helpers/node"))), {"arm64"})
             self.assertEqual(pi_engine.verify(out, fixture.pin), [])
 
     def test_files_are_plain_and_only_node_is_executable(self):
@@ -415,15 +409,19 @@ class VerifyTests(unittest.TestCase):
         self.write("node_modules/undici/package.json", json.dumps({"name": "undici", "version": "8.10.2"}).encode())
         self.assertOneProblem("node_modules/undici")
 
-    def test_node_needs_both_slices_at_the_pinned_version(self):
+    def test_node_is_arm64_only_at_the_pinned_version(self):
         node = os.path.join(self.out, "Helpers", "node")
-        for slices, mentioning in (({"arm64": thin_macho("arm64")}, "no x86_64 slice"),
-                                   ({"arm64": thin_macho("arm64"), "x86_64": thin_macho("x86_64", "24.20.0")},
-                                    "x86_64 slice is not node")):
+        for data, mentioning in ((fat_macho({"arm64": thin_macho("arm64"), "x86_64": thin_macho("x86_64")}),
+                                  "has an x86_64 slice"),
+                                 (thin_macho("x86_64"), "has no arm64 slice"),
+                                 (thin_macho("arm64", "24.20.0"), "arm64 slice is not node")):
             with self.subTest(mentioning):
                 with open(node, "wb") as f:
-                    f.write(fat_macho(slices))
-                self.assertOneProblem(mentioning)
+                    f.write(data)
+                self.assertTrue(any(mentioning in p for p in pi_engine.verify(self.out, self.fixture.pin)), mentioning)
+        with open(node, "wb") as f:
+            f.write(fat_macho({"arm64": thin_macho("arm64")}))
+        self.assertEqual(pi_engine.verify(self.out, self.fixture.pin), [], "a fat file of one arm64 slice is fine")
 
     def test_the_pinned_pi_and_its_entry_and_licences_must_be_there(self):
         for relative, mentioning in (("dist/bundle/cli.js", "cli.js is missing"),
@@ -480,9 +478,9 @@ class LayoutContractTests(unittest.TestCase):
         phase = self.phase()
         self.assertIn('"$(SRCROOT)/.build/pi-engine/inputs.xcfilelist"', phase)
         self.assertIn('"$(SRCROOT)/.build/pi-engine/outputs.xcfilelist"', phase)
-        for path in ("scripts/pi-engine-pin.json", "scripts/sign-engine.sh", "App/Engine.entitlements",
-                     "App/Engine-x86_64.entitlements"):
+        for path in ("scripts/pi-engine-pin.json", "scripts/sign-engine.sh", "App/Engine.entitlements"):
             self.assertIn(f'"$(SRCROOT)/{path}"', phase)
+        self.assertNotIn("x86_64", phase)
         self.assertEqual(pi_engine.STAGED_IN_XCODE, "$(SRCROOT)/.build/pi-engine")
         self.assertEqual(pi_engine.DEFAULT_STAGED, os.path.join(pi_engine.ROOT, ".build", "pi-engine"))
 
@@ -504,32 +502,27 @@ class LayoutContractTests(unittest.TestCase):
 
 
 class EntitlementsTests(unittest.TestCase):
-    """What node may do under the hardened runtime: JIT everywhere, and unsigned executable
-    memory on x86_64 only, which V8 there needs to start. Nothing else."""
+    """What node may do under the hardened runtime: JIT, and nothing else."""
 
-    def entitlements(self, name):
-        return plistlib.loads(read("App", name).encode())
+    def test_node_gets_only_jit(self):
+        self.assertEqual(plistlib.loads(read("App", "Engine.entitlements").encode()),
+                         {"com.apple.security.cs.allow-jit": True})
 
-    def test_arm64_gets_only_jit(self):
-        self.assertEqual(self.entitlements("Engine.entitlements"), {"com.apple.security.cs.allow-jit": True})
-
-    def test_x86_64_also_gets_unsigned_executable_memory(self):
-        self.assertEqual(self.entitlements("Engine-x86_64.entitlements"), {
-            "com.apple.security.cs.allow-jit": True,
-            "com.apple.security.cs.allow-unsigned-executable-memory": True,
-        })
+    def test_there_is_one_engine_entitlements_file(self):
+        self.assertEqual(sorted(n for n in os.listdir(os.path.join(ROOT, "App")) if n.startswith("Engine")),
+                         ["Engine.entitlements"])
 
 
 class SignAppTests(unittest.TestCase):
     def test_sign_app_takes_the_engine_entitlements_and_finds_node_addons(self):
         script = read("scripts", "sign-app.sh")
-        self.assertIn("[<engine.entitlements> <engine-x86_64.entitlements>]", script)
+        self.assertIn("<entitlements.plist> [<engine.entitlements>]", script)
         self.assertIn("-name '*.node'", script)
         self.assertIn('sign-engine.sh"', script)
 
     @unittest.skipUnless(sys.platform == "darwin" and all(shutil.which(t) for t in ("codesign", "lipo", "cc")),
                          "needs macOS with codesign, lipo and a compiler")
-    def test_node_is_signed_slice_by_slice_with_the_engine_entitlements(self):
+    def test_node_is_signed_with_the_engine_entitlements(self):
         with tempfile.TemporaryDirectory() as scratch:
             app = os.path.join(scratch, "Shepherd.app")
             for folder in ("MacOS", "Helpers", "Resources/pi-engine"):
@@ -540,23 +533,18 @@ class SignAppTests(unittest.TestCase):
             with open(source, "w") as f:
                 f.write("int main(void) { return 0; }\n")
             env = {**os.environ, "TMPDIR": scratch}
-            for name, archs in (("MacOS/Shepherd", ["-arch", "arm64"]),
-                                ("Helpers/node", ["-arch", "arm64", "-arch", "x86_64"])):
-                subprocess.run(["cc", *archs, "-o", os.path.join(app, "Contents", name), source], check=True, env=env)
+            for name in ("MacOS/Shepherd", "Helpers/node"):
+                subprocess.run(["cc", "-arch", "arm64", "-o", os.path.join(app, "Contents", name), source], check=True, env=env)
             sign = [os.path.join(ROOT, "scripts", "sign-app.sh"), app, "-", os.path.join(ROOT, "App", "Shepherd.entitlements")]
 
             refused = subprocess.run(sign, capture_output=True, text=True, env=env)
             self.assertEqual(refused.returncode, 64, "an app carrying node needs the engine entitlements")
 
-            engine = [os.path.join(ROOT, "App", "Engine.entitlements"), os.path.join(ROOT, "App", "Engine-x86_64.entitlements")]
-            subprocess.run(sign + engine, check=True, capture_output=True, env=env)
+            subprocess.run(sign + [os.path.join(ROOT, "App", "Engine.entitlements")], check=True, capture_output=True, env=env)
             node = os.path.join(app, "Contents", "Helpers", "node")
-            for arch, expected in (("arm64", {"com.apple.security.cs.allow-jit"}),
-                                   ("x86_64", {"com.apple.security.cs.allow-jit",
-                                               "com.apple.security.cs.allow-unsigned-executable-memory"})):
-                shown = subprocess.run(["codesign", "-d", "--entitlements", "-", "--xml", "-a", arch, node],
-                                       capture_output=True, check=True).stdout
-                self.assertEqual(set(plistlib.loads(shown)), expected, arch)
+            shown = subprocess.run(["codesign", "-d", "--entitlements", "-", "--xml", node],
+                                   capture_output=True, check=True).stdout
+            self.assertEqual(set(plistlib.loads(shown)), {"com.apple.security.cs.allow-jit"})
             main = subprocess.run(["codesign", "-d", "--entitlements", "-", "--xml",
                                    os.path.join(app, "Contents", "MacOS", "Shepherd")], capture_output=True).stdout
             self.assertNotIn(b"allow-jit", main, "the app never gets the engine's entitlements")
@@ -596,8 +584,9 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertNotIn("Helpers", strip.split("run:", 1)[1])
 
     def test_signing_passes_the_engine_entitlements(self):
-        self.assertIn("App/Shepherd.entitlements \\\n            App/Engine.entitlements App/Engine-x86_64.entitlements",
-                      self.step("Sign"))
+        sign = self.step("Sign")
+        self.assertIn("App/Shepherd.entitlements \\\n            App/Engine.entitlements\n", sign)
+        self.assertNotIn("x86_64", sign)
 
 
 if __name__ == "__main__":
@@ -607,27 +596,41 @@ if __name__ == "__main__":
 @unittest.skipUnless(sys.platform == "darwin" and shutil.which("codesign") and shutil.which("clang")
                      and shutil.which("lipo"), "needs macOS's codesign, clang and lipo")
 class SignEngineTests(unittest.TestCase):
-    """sign-engine.sh signs node's slices apart, each with its own entitlements."""
+    """sign-engine.sh signs an arm64 node as node, and refuses any other slice."""
 
-    def test_every_slice_of_node_is_signed_with_one_identifier(self):
-        # A Developer ID seal on the app pins one identifier for nested code, so slices named
-        # after their temporary files (node-arm64, node-x86_64) failed the app's verification.
+    def compile(self, work, *archs):
+        source = os.path.join(work, "main.c")
+        with open(source, "w") as f:
+            f.write("int main(void) { return 0; }\n")
+        node = os.path.join(work, "node")
+        arch_flags = [flag for arch in archs for flag in ("-arch", arch)]
+        subprocess.run(["clang", *arch_flags, "-o", node, source], check=True, capture_output=True)
+        return node
+
+    def sign(self, node, work):
+        return subprocess.run([os.path.join(ROOT, "scripts", "sign-engine.sh"), node, "-",
+                               os.path.join(ROOT, "App", "Engine.entitlements")],
+                              capture_output=True, text=True, env={**os.environ, "TMPDIR": work})
+
+    def test_node_is_signed_with_the_identifier_node(self):
+        # A Developer ID seal on the app pins the identifier of nested code, so node signed under
+        # a temporary file's name failed the app's verification.
         with tempfile.TemporaryDirectory() as work:
-            source = os.path.join(work, "main.c")
-            with open(source, "w") as f:
-                f.write("int main(void) { return 0; }\n")
-            node = os.path.join(work, "node")
-            subprocess.run(["clang", "-arch", "arm64", "-arch", "x86_64", "-o", node, source],
-                           check=True, capture_output=True)
-            subprocess.run([os.path.join(ROOT, "scripts", "sign-engine.sh"), node, "-",
-                            os.path.join(ROOT, "App", "Engine.entitlements"),
-                            os.path.join(ROOT, "App", "Engine-x86_64.entitlements")],
-                           check=True, capture_output=True)
-            identifiers = []
-            for arch in ("arm64", "x86_64"):
-                shown = subprocess.run(["codesign", "-dv", "--arch", arch, node],
-                                       capture_output=True, text=True, check=True).stderr
-                identifiers += re.findall(r"^Identifier=(.+)$", shown, re.M)
-            self.assertEqual(identifiers, ["node", "node"])
-            subprocess.run(["codesign", "--verify", "--strict", "--all-architectures", node],
-                           check=True, capture_output=True)
+            node = self.compile(work, "arm64")
+            signed = self.sign(node, work)
+            self.assertEqual(signed.returncode, 0, signed.stderr)
+            shown = subprocess.run(["codesign", "-dv", node], capture_output=True, text=True, check=True).stderr
+            self.assertEqual(re.findall(r"^Identifier=(.+)$", shown, re.M), ["node"])
+            subprocess.run(["codesign", "--verify", "--strict", node], check=True, capture_output=True)
+
+    def test_a_node_with_an_x86_64_slice_is_refused_untouched(self):
+        for archs in (("arm64", "x86_64"), ("x86_64",)):
+            with self.subTest(archs=archs), tempfile.TemporaryDirectory() as work:
+                node = self.compile(work, *archs)
+                with open(node, "rb") as f:
+                    built = f.read()
+                refused = self.sign(node, work)
+                self.assertEqual(refused.returncode, 65, refused.stderr)
+                self.assertIn("arm64 only", refused.stderr)
+                with open(node, "rb") as f:
+                    self.assertEqual(f.read(), built)
