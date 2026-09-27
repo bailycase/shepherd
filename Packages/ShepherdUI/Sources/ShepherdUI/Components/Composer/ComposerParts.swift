@@ -121,7 +121,9 @@ public struct NWComposer<Top: View, Field: View, Controls: View>: View {
         VStack(alignment: .leading, spacing: 0) {
             Group(subviews: top) { subviews in
                 if !subviews.isEmpty {
-                    HStack(spacing: NW.Space.s) { subviews }
+                    // Chips wrap to more rows (design references are wide).
+                    NWFlowLayout(spacing: NW.Space.s, lineSpacing: NW.Space.s) { subviews }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.top, 10)
                         .padding(.horizontal, NW.Space.l)
                 }
