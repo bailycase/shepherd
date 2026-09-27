@@ -103,8 +103,9 @@ extension ThreadPreviewTests {
     }
 
     /// A thread that asked for the checkout page, and the reply; `sent` adds the message that
-    /// carried the reference and what the agent did with it.
-    static func referenceSnapshot(sent: Bool, read: Bool = false, running: Bool = false) -> NativeThreadSnapshot {
+    /// carried the reference and what the agent did with it. `brief` ends the turn as
+    /// RefChipUpdated does: the look, one edit and the reply, without the read.
+    static func referenceSnapshot(sent: Bool, read: Bool = false, running: Bool = false, brief: Bool = false) -> NativeThreadSnapshot {
         var snapshot = Threads.empty
         snapshot.supportedActions += ["designReferences"]
         snapshot.running = running
@@ -139,7 +140,17 @@ extension ThreadPreviewTests {
             let t = start + 1_830_000
             messages += [get("g1", "image", at: t), get("g2", "html", at: t + 1_000), get("g3", "element", at: t + 2_000),
                          get("g4", "tokens", at: t + 3_000)]
-            if !running {
+            if brief {
+                messages += [
+                    NativeThreadMessage(entryID: "e1", role: "toolResult", blocks: [.init(kind: .text, text: "ok")], toolName: "edit",
+                                        toolCallID: "e1",
+                                        argumentsText: #"{"path":"templates/checkout/funnel.html","oldText":"<table>","newText":"<section class=\"funnel\">\n<div>"}"#,
+                                        status: "complete", timestamp: t + 9_000),
+                    NativeThreadMessage(entryID: "a2", role: "assistant", blocks: [.init(kind: .text,
+                        text: "The funnel card is in `templates/checkout/funnel.html`, using `--accent` for the bars and the existing table cell for counts.")],
+                        timestamp: t + 12_000),
+                ]
+            } else if !running {
                 messages += [
                     NativeThreadMessage(entryID: "r1", role: "toolResult", blocks: [.init(kind: .text, text: "<main>…</main>")], toolName: "read",
                                         toolCallID: "r1", argumentsText: #"{"path":"templates/checkout/funnel.html"}"#, status: "complete",
@@ -226,7 +237,7 @@ extension ThreadPreviewTests {
     /// with Send v26.
     @Test func referenceChipUpdated() async throws {
         let changes = ["padding 24 → 20", "bar color --accent → --slate", "+ counts under each bar"]
-        try await renderReferences("thread-reference-chip-updated", Self.referenceSnapshot(sent: true, read: true),
+        try await renderReferences("thread-reference-chip-updated", Self.referenceSnapshot(sent: true, read: true, brief: true),
                                    chips: Self.referenceChips(freshness: .updatedSince(latest: 26, changes: changes)), open: true)
     }
 
