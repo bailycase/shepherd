@@ -974,8 +974,8 @@ one element of it (docs/native-thread.md › Design references). It is the only 
 design reaches an ordinary thread (Design agents and ordinary threads, above), and it never
 reaches a design's agent. The whole feature waits behind Settings ▸ Experiments ▸ Design tool.
 "Implement in a thread…", "Copy reference", the composer's @ picker, the reference chip and the
-canvas's thread pins are drawn from DesignRefStates and the Ref* boards; the model below is what
-they call.
+canvas's thread pins are built on the Mac from DesignRefStates and the Ref* boards (On the Mac,
+below; DESIGN.md › Design references); the model below is what they call.
 
 ### The reference
 
@@ -1105,7 +1105,9 @@ words), each row with its breadcrumb. It is derived off the main thread and the 
 and a design unchanged since the last call is not read again (`DesignMentionCache`, by revision).
 `rows(in:)` gives a scope's rows (the designs; a design's own row, the whole design, then its
 boards; a board's own row, "Whole board", then its elements), and `search(_:)` matches every level
-by each word of the query, in the catalog's order.
+by each word of the query, in the catalog's order. The composer keeps the results whose own name
+holds a word of the query (the path places each; RefAtSearch), so a design named for the query
+doesn't list every board and element in it.
 
 ### design_get
 
@@ -1160,6 +1162,50 @@ thread's pin (blue, a code glyph: never a comment, never the design agent), nami
 (`thread`, its name then; `agentID` opens it) and the version it was sent ("from v23"); Resolve
 removes it (`removeDesignThreadNote`). A note is never shown to a design agent; one that ever is
 goes fenced as data.
+
+### On the Mac
+
+The surfaces (DESIGN.md › Design references has their measures):
+
+- **The canvas** (`DesignScreenModel+References.swift`): the selection is the reference (the last
+  pick: an element, or a board picked whole; nothing selected, the whole design,
+  `DesignReferenceSelection`). Implement… in the board actions (which float over an element's
+  board too), the right-click menu (`NWDesignCanvas`'s `contextMenu`: it picks what the click landed
+  on first, then answers the items as a native menu), the design's ••• (`DesignMenuAction.implement`,
+  `.copyReference`), and the canvas-scoped ⌘↩ and ⇧⌘C (`DesignCanvasKeys`: a local monitor, only
+  while the design shows and no text field, terminal or board page has the keyboard).
+- **Implement in a thread…** (`ImplementSheetModel`, `ShepherdViewModel+DesignReferencesUI.swift`):
+  the piece is pinned as the sheet opens (`prepareDesignReference`), so the footer's words are what
+  goes. An existing thread is one of this Mac's that draws no design (`designAttachTargets`); a new
+  one starts through the New thread page's creation (`startAgent`) in the chosen project, on a new
+  worktree (`GitWorktree.add`, based per Settings ▸ Worktrees) named `agent/implement-<piece>` (a
+  direction's letter dropped; "-2", "-3"… when taken), named "Implement <piece>" until the namer
+  names it, and gets the piece as its first message. A thread on screen sends through its store; one
+  that isn't (the sheet's usual case) through the host, once its pi serves
+  (`sendDesignReferences`, at most 90 seconds' wait), into the host's queue while pi works. "Open
+  the thread after sending" is remembered (`AppSettings.implementOpensThread`,
+  `shepherd.designs.implementOpensThread`); off, the canvas keeps the screen and a toast offers the
+  thread. Copy reference pins the piece and copies its string (`copyToPasteboard`).
+- **The thread** (`Thread/DesignReferenceChips.swift`): `DesignReferenceChips`, one per local
+  thread that draws no design while the Design tool is on (the `designReferences` environment
+  value, nil otherwise), reads each sent chip's copy (its picture, scaled off the main thread, and
+  what it holds) and how it stands, once per chip and again when a design changes, and the
+  "Looked at…" lines' `DesignReferenceLookedAt`. A thread without it (another host's) draws each
+  chip from its record, with no picture or state.
+- **The composer** (`Thread/ComposerMentions.swift`): the mention is the draft's last "@" at its
+  start or after whitespace with no line break after it (`ComposerMention`); its words spell the
+  scope ("Design › Board › ", resolved by titles, `MentionScope.spelled`) and the filter after it.
+  The picker's rows are derived once per change of the draft or the catalog
+  (`MentionPickerState`), read from `designMentionCatalog()` each time it opens, with pictures from
+  the renderer (a design's first board, a board's own, rendered on demand at thumbnail priority:
+  `DesignBoardPictures`). A pick pins the piece and attaches it (`attachDesignReference`); a paste
+  that brings a whole reference word does the same (`ComposerReferencePaste`); a failure says why in
+  the composer's banner. The iOS client draws no chip yet: its thread shows the words and the
+  "1 design reference attached." line.
+- **Notes back** on the canvas: read with the design's pulls and on `onDesignThreadNotesChanged`;
+  a note's pin sits on its element's top-trailing corner where a live board finds it (before a
+  comment's pin there), else on its board's corner; its card opens beside the pin, with Open thread
+  (while the thread is here) and Resolve.
 
 ## Deleting and importing on the Mac (DesignLifecycleStates)
 
@@ -1225,6 +1271,15 @@ written its system, the Spacing & radii and Boards using it sections (rows in th
 anatomy), a type style without a sample (its name), and a failed build or re-sync (the error
 dialog). The chat's "Read dashboard-web · tokens.css · 9 partials · 3 pages" activity line isn't
 built: the agent's reads join "Explored N files".
+
+For design references: remote references (a design on another host, the chip's "on another host"
+and "host offline" states, the picker's host tags and dimmed offline rows) are drawn as ShepherdUI
+states only; the picker lists no files; an element's picker row draws its board's picture and says
+its tag and what is inside it; the right-click menu has no Delete (the canvas deletes no board);
+the iOS client shows a sent reference as its words and the "1 design reference attached." line.
+Not drawn and built plainly: a sheet whose piece couldn't be pinned (the footer says why and Send
+stays off), a send that failed (the sheet stays, the reason under its fields), no thread yet (the
+sheet opens on New thread), and a reference that couldn't join the composer (its banner).
 
 ## Remote
 
