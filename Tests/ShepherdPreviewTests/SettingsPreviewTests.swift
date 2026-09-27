@@ -199,6 +199,13 @@ struct SettingsPreviewTests {
         }
     }
 
+    @Test func skillsDirectoryFailure() async throws {
+        try await Preview.render("skills-directory-failure", size: CGSize(width: 560, height: 400)) {
+            SkillsDirectoryProblem(failure: .unavailable("Shepherd's skills directory answered 503."))
+                .background(Color.nw.bgWindow)
+        }
+    }
+
     /// Remote with a configured host that cannot be reached.
     @Test func settingsRemoteWithHosts() async throws {
         let workspace = try PreviewWorkspace()

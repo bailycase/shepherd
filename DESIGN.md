@@ -181,7 +181,6 @@ And the rules that follow from them:
 | SettingsInstructionsHosts: every History row offers Restore | The newest row reads "current" | Restoring the file as it is would change nothing (honest affordances) |
 | SettingsSkills, SettingsSkillsBrowse, SettingsSkillsSearch: "every thread, mission and automation on every host gets the same set" | "every thread and automation on every host gets the same set" | Missions aren't built |
 | SkillsStates: "Hosts report their copies through the daemon" | Each host's Shepherd serves its skills over `skills.v1`, and the page asks every host | There is no daemon (AGENTS.md) |
-| SettingsSkillsBrowse: Trending, All time, Hot and Official with no key | Each needs a skills.sh API key: without one the list says so, with a field for the key; search and install need none | skills.sh's ranked lists (`/api/v1`) refuse a request without a key |
 | SettingsSkillsBrowse, SkillsStates: a ranked row's 24-hour change ("+8.1K") and a description beside each result; "· updated Sep 19" in the preview | Installs only in the list, the description in the preview (from its SKILL.md), and no date | skills.sh's lists report neither a change nor a description, nor when a skill last changed |
 | SkillsStates: "Topics narrow any tab" | A topic is a search of skills.sh, most installed first, whatever tab is chosen | skills.sh's lists take no topic |
 | SettingsSkillsBrowse: "Pick from all 16…" | "Pick from the whole repo…" | A repository's size is known only once a host looks it up |
@@ -3801,7 +3800,8 @@ a 12.5 `textSecondary` line, the header's trailing action and a 28pt round close
 then a list (560pt) beside the selected item's preview, a hairline between.
 
 - **Browse skills.sh:** "The open directory of agent skills. Anything you install goes to all your
-  hosts.", with Open skills.sh (small ghost).
+  hosts.", with Open skills.sh (small ghost). Search, ranked lists and preview files use
+  `https://api.useshepherd.app` without a user API key. Browser links stay on skills.sh.
   - A 38pt search field ("Search skills, repos and owners", a glass, 14pt text, a clear button; a
     `lantern` line while focused), focused when the sheet opens.
   - Without a search: Trending · All time · Hot · Official (`NWSegmentedPicker`), a rule, then
@@ -3826,9 +3826,8 @@ then a list (560pt) beside the selected item's preview, a hairline between.
     can run: init_skill.py, package_skill.py, quick_validate.py", "No scripts. Instructions and
     references only."), and More in anthropics/skills: the list's other skills from it as capsules
     (✓ when installed) and Pick from the whole repo…, which opens Add from repo on it.
-  - Loading says "Loading skills.sh…"; no match, "No skills match."; a ranked list without a key
-    says "skills.sh’s rankings need an API key. Search and install work without one." with a field
-    for the key (Save), and Get a key.
+  - Loading says "Loading skills.sh…"; no match, "No skills match."; service failures show their
+    reason. There is no API key field or credential prompt.
 - **Add skills from a repo:** "A GitHub owner/repo or URL, or a folder on this Mac. Shepherd copies
   the skills you pick into ~/.agents/skills on every host."
   - A 38pt field on `bgRaised` (a branch glyph, or a folder's for a path; mono 13.5) with Look up
@@ -5378,8 +5377,7 @@ SettingsSkills): every host's agent skills, the same on every host, over `skills
 - **On iPad** the page shows beside the Settings list (Skills after Instructions), and a skill, a
   result or Add from repo opens over the detail.
 - **Not built yet:** Same skills on every host as a switch on the phone and the iPad, which follow
-  it on (the Mac's option is kept per Mac); skills.sh's ranked lists, which need a key the Mac
-  keeps.
+  it on (the Mac's option is kept per Mac); skills.sh's ranked lists.
 
 ### iPhone: Experiments (MobileExperiments)
 
