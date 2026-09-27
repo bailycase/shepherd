@@ -84,8 +84,14 @@ struct AgentStartProblemTests {
         #expect(store.previewing && store.messages.map(\.entryID) == ["user:1733234567890", "assistant:1733234567891"],
                 "the thread keeps its history from disk")
         #expect(vm.state.agents.contains { $0.id == id } && server.state.agents.contains { $0.id == id })
-        let row = try #require(vm.sidebarLists.recents.first { $0.id == .local(id) })
-        #expect(row.leading == .dot(.failed) && row.accessory == .text("can't start", tone: .failed))
+        if c.kind == .notSignedIn {
+            // AgentNotSignedIn: it waits for a sign-in, in Needs you.
+            let row = try #require(vm.sidebarLists.needsYou.first { $0.id == .local(id) })
+            #expect(row.leading == .dot(.attention) && row.accessory == .reason("sign in"))
+        } else {
+            let row = try #require(vm.sidebarLists.recents.first { $0.id == .local(id) })
+            #expect(row.leading == .dot(.failed) && row.accessory == .text("can't start", tone: .failed))
+        }
         // A stopped agent's pane never starts pi again on its own.
         #expect(vm.sessions.session(for: agent.piPane, in: agent.tab) === pane)
 
