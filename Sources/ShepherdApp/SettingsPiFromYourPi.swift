@@ -8,7 +8,6 @@ import ShepherdRemote
 /// files copied, and the user's extensions with their switches.
 struct FromYourPiSettings: View {
     let model: YourPiModel
-    var openInstructions: () -> Void = {}
     var openSkills: () -> Void = {}
 
     var body: some View {
@@ -38,7 +37,7 @@ struct FromYourPiSettings: View {
                 VStack(alignment: .leading, spacing: NW.Space.xxs) {
                     HStack(spacing: NW.Space.m) {
                         Text("Source").font(.nw(.body, weight: .medium)).foregroundStyle(Color.nw.textPrimary)
-                        Text((folder as NSString).abbreviatingWithTildeInPath).font(.nwMono(12.5)).foregroundStyle(Color.nw.textPrimary)
+                        Text((folder as NSString).abbreviatingWithTildeInPath).font(.nwMono(NWPiSignInMetrics.proseMonoSize)).foregroundStyle(Color.nw.textPrimary)
                             .help(folder)
                     }
                     Text("The pi in your terminal, found through your login shell.").font(.nw(.ui)).foregroundStyle(Color.nw.textSecondary)
@@ -107,7 +106,9 @@ struct FromYourPiSettings: View {
     private func copied(_ survey: YourPiSurvey) -> some View {
         SettingsGroup(title: "Copied", footnote: "Copied into Shepherd’s pi. Edits in your pi reach Shepherd only when you Re-import.") {
             copiedRow("Instructions", detail: YourPiText.instructions(survey), kind: .instructions) {
-                Button("Edit in Instructions", action: openInstructions).buttonStyle(.nw(.secondary, size: .s))
+                // Settings ▸ Instructions edits Shepherd's own files, not this copy (departures).
+                Button("Show in Finder") { reveal(survey.copies(.instructions).first, fallback: "AGENTS.md") }
+                    .buttonStyle(.nw(.secondary, size: .s))
             }
             copiedRow("Skills", detail: YourPiText.skills(survey.copies(.skills)), kind: .skills) {
                 Button("Show in Finder") { reveal(survey.copies(.skills).first, fallback: "skills") }.buttonStyle(.nw(.secondary, size: .s))
