@@ -21,9 +21,10 @@ struct PiAuthRowsTests {
             Login(provider: "northwind-gateway", shepherd: .apiKey(.command)),
         ]
         survey.keys = ["openai": PiKeyDisplay(masked: "sk-proj-••••3kQz"), "deepseek": PiKeyDisplay(variables: ["DEEPSEEK_API_KEY"]),
-                       "northwind-gateway": PiKeyDisplay(command: "op read op://Dev/northwind/api-key")]
+                       "northwind-gateway": PiKeyDisplay(runsCommand: true)]
         survey.copiedLogins = ["openai", "anthropic"]
-        survey.customProviderDetails = [PiCustomProvider(id: "northwind-gateway"), PiCustomProvider(id: "ollama", baseURL: "http://localhost:11434")]
+        survey.customProviderDetails = [PiCustomProvider(id: "northwind-gateway", key: PiKeyDisplay(command: "op read op://Dev/northwind/api-key")),
+                                        PiCustomProvider(id: "ollama", baseURL: "http://localhost:11434")]
         survey.freshness = ["login:anthropic": .sameAsYourPi, "login:openai-codex": .newerInYourPi, "login:openai": .sameAsYourPi]
         return survey
     }()
@@ -46,7 +47,7 @@ struct PiAuthRowsTests {
         State(provider: "openai", auth: .key(PiKeyDisplay(masked: "sk-proj-••••3kQz"), copied: true)),
         State(provider: "deepseek", auth: .key(PiKeyDisplay(variables: ["DEEPSEEK_API_KEY"]), copied: false)),
         State(provider: "openrouter", auth: .environment(variable: "OPENROUTER_API_KEY")),
-        State(provider: "northwind-gateway", auth: .key(PiKeyDisplay(command: "op read op://Dev/northwind/api-key"), copied: false)),
+        State(provider: "northwind-gateway", auth: .key(PiKeyDisplay(runsCommand: true), copied: false)),
         State(provider: "ollama", auth: .noKey(baseURL: "http://localhost:11434")),
     ])
     func eachProviderRowTakesItsState(row: State) throws {

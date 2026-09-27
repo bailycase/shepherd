@@ -40,11 +40,18 @@ struct PiSignInCatalogTests {
     @Test(arguments: [
         ("sk-abcdefghijkl91c2", PiKeyDisplay(masked: "sk-••••91c2")),
         ("$DEEPSEEK_API_KEY", PiKeyDisplay(variables: ["DEEPSEEK_API_KEY"])),
-        ("!op read op://Dev/northwind/api-key", PiKeyDisplay(command: "op read op://Dev/northwind/api-key")),
+        ("!op read op://Dev/northwind/api-key", PiKeyDisplay(runsCommand: true)),
         ("sk-abc$$defghijk91c2", PiKeyDisplay(masked: "sk-••••91c2")),
     ])
     func aStoredKeyShowsAsAMaskAVariableOrACommand(key: String, display: PiKeyDisplay) {
         #expect(PiKeyDisplay.of(key) == display)
+    }
+
+    /// A command in auth.json may carry a secret inline, so only a custom provider's (models.json,
+    /// configuration) shows its text.
+    @Test func onlyACustomProvidersCommandIsShown() {
+        #expect(PiKeyDisplay.of("!echo sk-secret-inline").command == nil)
+        #expect(PiKeyDisplay.of("!op read op://Dev/x", showingCommand: true) == PiKeyDisplay(command: "op read op://Dev/x"))
     }
 
     @Test func customProvidersReadTheirKeyAndAddress() throws {

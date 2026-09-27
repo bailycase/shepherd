@@ -457,7 +457,7 @@ enum PreviewYourPi {
             Login(provider: "openrouter", environment: ["OPENROUTER_API_KEY"]),
         ]
         survey.keys = ["openai": PiKeyDisplay(masked: "sk-proj-••••3kQz"), "deepseek": PiKeyDisplay(variables: ["DEEPSEEK_API_KEY"]),
-                       "northwind-gateway": PiKeyDisplay(command: "op read op://Dev/northwind/api-key")]
+                       "northwind-gateway": PiKeyDisplay(runsCommand: true)]
         survey.yourKeys = ["openai": PiKeyDisplay(masked: "sk-proj-••••3kQz")]
         survey.copiedLogins = ["anthropic", "openai", "kimi-coding"]
         survey.customProviders = ["northwind-gateway", "ollama"]
