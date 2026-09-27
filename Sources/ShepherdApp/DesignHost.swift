@@ -1012,6 +1012,32 @@ extension DesignRendering {
     }
 }
 
+/// A design piece handed to a thread (docs/designs.md › Design references), drawn off screen by a
+/// view of its own at zoom 1: the board (or the element cut from it) as a PNG at twice its size,
+/// the board's standalone page, and the element's markup and computed styles.
+extension DesignRendering {
+    /// Draws `aspects` of `reference` from `files` into `folder` (made if needed), each file named
+    /// by `DesignReferenceFileNames`, and answers where each went.
+    func reference(_ reference: DesignReference, aspects: Set<DesignReferenceAspect>, files: DesignExportFiles,
+                   into folder: URL) async throws -> DesignReferenceRendering {
+        guard let surface = surface(for: reference.designID) else { throw DesignExportFailure("The design's folder is gone.") }
+        let drawn = try await DesignExporter.reference(reference, aspects: aspects, files: files, surface: surface)
+        var outputs: [String: Data] = [:]
+        var rendering = DesignReferenceRendering()
+        func put(_ name: String, _ data: Data?) -> String? {
+            guard let data else { return nil }
+            outputs[name] = data
+            return folder.appendingPathComponent(name).path
+        }
+        rendering.image = put(DesignReferenceFileNames.image(reference), drawn.image)
+        rendering.html = put(DesignReferenceFileNames.html(reference), drawn.page.map { Data($0.utf8) })
+        rendering.elementHTML = put(DesignReferenceFileNames.elementHTML(reference), drawn.element.map { Data($0.html.utf8) })
+        rendering.elementStyles = put(DesignReferenceFileNames.elementStyles(reference), drawn.element?.styles)
+        try await DesignExporter.write(outputs, into: folder)
+        return rendering
+    }
+}
+
 struct DesignExportFailure: LocalizedError {
     let message: String
     init(_ message: String) { self.message = message }
@@ -1067,6 +1093,12 @@ enum DesignExporter {
     /// to other exported boards pointed at their pages.
     static func page(_ path: DesignPath, files: DesignExportFiles, surface: DesignSurface, assets: Assets) async throws -> String {
         let raw = try await render(path, files: files, surface: surface) { try await $0.staticPage() }
+        return baked(raw, path: path, files: files, assets: assets)
+    }
+
+    /// A board's static page with its uploads inlined or pointed at `assets/`, and its links to
+    /// other exported boards pointed at their pages.
+    static func baked(_ raw: String, path: DesignPath, files: DesignExportFiles, assets: Assets) -> String {
         let page = DesignExportNames.html(path)
         let withAssets = DesignBundle.rewritingBlobs(raw) { id in
             guard let asset = files.assets[id] else { return nil }
@@ -1076,6 +1108,37 @@ enum DesignExporter {
             }
         }
         return DesignBundle.rewritingBoardLinks(withAssets, page: path, exported: Set(files.boards))
+    }
+
+    /// What a reference hands over, from one view of its board: the PNG (the element cut from
+    /// the board where it names one), the standalone page, and the element's detail.
+    static func reference(_ reference: DesignReference, aspects: Set<DesignReferenceAspect>, files: DesignExportFiles,
+                          surface: DesignSurface) async throws -> (image: Data?, page: String?, element: DesignElementDetail?) {
+        let path = reference.board
+        return try await render(path, files: files, surface: surface) { view in
+            var image: Data?
+            var page: String?
+            var element: DesignElementDetail?
+            if aspects.contains(.image) {
+                var drawn = try await view.image(scale: 2)
+                if let tid = reference.element?.tid {
+                    guard let hit = await view.element(tid: tid) else { throw DesignExportFailure("The element isn't drawn on \(path).") }
+                    let crop = CGRect(x: hit.rect.minX * 2, y: hit.rect.minY * 2, width: hit.rect.width * 2, height: hit.rect.height * 2)
+                        .integral.intersection(CGRect(x: 0, y: 0, width: drawn.width, height: drawn.height))
+                    guard !crop.isEmpty, let cut = drawn.cropping(to: crop) else { throw DesignExportFailure("The element has no size on \(path).") }
+                    drawn = cut
+                }
+                image = try DesignImageFile.png(drawn)
+            }
+            if aspects.contains(.html) {
+                page = Self.baked(try await view.staticPage(), path: path, files: files, assets: .inline)
+            }
+            if aspects.contains(.element), let tid = reference.element?.tid {
+                element = try await view.elementDetail(tid: tid)
+                guard element != nil else { throw DesignExportFailure("The element isn't drawn on \(path).") }
+            }
+            return (image, page, element)
+        }
     }
 
     /// Loads `path` in a view of its own at its canvas size and reads it with `body`.

@@ -22,7 +22,8 @@ final class RPCThreadState {
     static let widgetTitleBytes = 256
     static let widgetAggregateBytes = 32 * 1024
     static let operationTableSize = 256
-    static let supportedActions = ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents", "queue", "compact", "designContext"]
+    static let supportedActions = ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents", "queue", "compact", "designContext",
+                                   "designReferences"]
     /// pi answers `compact` only once the summary is written, which takes as long as a reply.
     static let compactTimeout: TimeInterval = 600
     /// Bytes of a child session file the transcript reader will scan (tail); older is unreachable.
@@ -486,7 +487,7 @@ final class RPCThreadState {
                 return
             }
             completion(Self.transcript(runID: runID, file: file, beforeEntryID: beforeEntryID))
-        case .send(let expectedSessionID, let generation, let operationID, _, _, _, _),
+        case .send(let expectedSessionID, let generation, let operationID, _, _, _, _, _),
              .abort(let expectedSessionID, let generation, let operationID),
              .answer(let expectedSessionID, let generation, let operationID, _, _),
              .setModel(let expectedSessionID, let generation, let operationID, _),
@@ -546,13 +547,22 @@ final class RPCThreadState {
         }
     }
 
+    /// The fence a send puts ahead of its words: its references', else its design view record's.
+    /// References go only to an ordinary thread and a view record only to a design's chat, so one
+    /// send never carries both; if one did, the view record is dropped, since every display
+    /// surface takes off only the one fence a message starts with.
+    static func sendContext(_ designContext: NativeDesignContext?, references: [DesignReferenceRecord]?) -> String? {
+        if let references, let fence = DesignReferenceFence.fenced(references) { return fence }
+        return designContext?.valid?.fenced()
+    }
+
     private func perform(_ request: NativeThreadRequest, operationID: UUID, olderClient: Bool, completion: @escaping (NativeThreadResult) -> Void) {
         let accepted = NativeThreadResult.accepted(operationID: operationID)
         let settle: (Result<RPCResponse, RPCError>) -> Void = { result in
             completion(Self.dispatchFailure(result) ?? accepted)
         }
         switch request {
-        case .send(_, _, _, let text, let delivery, let images, let designContext):
+        case .send(_, _, _, let text, let delivery, let images, let designContext, let designReferences):
             let images = images ?? []
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.utf8.count <= Self.textLimit else {
                 completion(.failure(code: "invalid", message: "Send requires text up to 16 KiB and a valid delivery mode."))
@@ -562,9 +572,12 @@ final class RPCThreadState {
                 completion(.failure(code: "invalid", message: "Send accepts up to \(NativeImage.maxPerSend) images of \(NativeImage.maxBytes / 1024 / 1024) MiB each."))
                 return
             }
-            // A record that breaks the grammar is dropped whole; the message still goes.
-            let context = designContext?.valid?.fenced()
-            send(id: operationID, text: text, delivery: delivery, images: images, alone: olderClient, context: context, completion: completion)
+            // A record that breaks the grammar is dropped whole; the message still goes. Design
+            // references reach here only as the server read them (`SessionServer.nativeThread`).
+            let context = Self.sendContext(designContext, references: designReferences)
+            send(id: operationID, text: text, delivery: delivery, images: images,
+                 // A message with references goes to pi on its own: joined, its fence would give way.
+                 alone: olderClient || !(designReferences ?? []).isEmpty, context: context, completion: completion)
         case .abort:
             // Stopping refuses what pi is waiting on: a question has no Dismiss, and a turn
             // waiting on an answer would not stop.

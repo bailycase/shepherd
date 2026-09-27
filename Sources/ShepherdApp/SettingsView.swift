@@ -167,7 +167,7 @@ struct SettingsView: View {
         case .appearance: AppearanceSettings(vm: vm)
         case .terminal: TerminalSettings(vm: vm)
         case .agents: AgentSettings(pi: vm.server.pi)
-        case .pi: PiSettings(pi: vm.server.pi)
+        case .pi: PiSettings(pi: vm.server.pi, settings: vm.settings)
         case .piSignIn: PiSignInSettings(yourPi: vm.yourPi, auth: vm.piAuth)
         case .piFromYourPi: FromYourPiSettings(model: vm.yourPi, openSkills: { vm.settingsSection = .skills })
         case .worktrees: WorktreeSettings()

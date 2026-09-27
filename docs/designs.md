@@ -84,6 +84,7 @@ elements).
   comments.json                the viewer's comments (Comments, below), beside project/
   assets/<id>.<ext>            uploads, served to boards as /_blob/<id>
   versions/<path>/<n>.dc.html  each board's last 20 earlier versions
+  pins/<sha256>.dc.html        a board as a design reference pinned it (Design references, below)
   project/ds/<namespace>/…     an installed design system's copy (Design systems, below)
 <support>/designs/.deleted-<designID>/   a design deleted within its undo window (Deleting, below)
 <support>/designs/.import-<token>/       a project being imported, staged until it is finished
@@ -256,6 +257,9 @@ them, whether the experiment is on or off. The rule holds in both directions:
 - **A forgotten design.** Deleting a design, or startup forgetting one whose folder is gone,
   takes the agents that drew it (Undo brings them back with it, still drawing it). Clearing their `designID` instead would turn the design's chat,
   fences and all, into an ordinary thread.
+- **The one way in.** A thread gets a piece of a design only when the user hands it one: a
+  design reference (Design references, below). Nothing else of a design reaches a thread, and a
+  reference never reaches a design's agent.
 
 ### Comments
 
@@ -610,6 +614,10 @@ board's own world, where a board can only affect itself.
   its own world); `printLayout()` its height, its lines of text and its images and drawings, and
   its paper's color, for a flow document's page breaks; `image(scale:)` and `pdf(_:)` draw it as
   an image and as PDF pages (Export).
+- **An element's detail.** `elementDetail(tid:)` (the bridge's `elementDetail`) answers an
+  element as a design reference hands it over: its markup as drawn, cleaned as a standalone page
+  is (no script, no handler, none of Shepherd's stamps, cut at 512 KB), and the computed styles
+  of it and up to 300 elements under it by child path, leaving out values that say nothing.
 
 ### React
 
@@ -958,6 +966,110 @@ Designs until the viewer's choice, if one is needed, is made.
   saying the design came from Claude Design (the file's name) and asking it to read the boards,
   notes and design system, run design_check, say what it found, change nothing until asked, and
   ask what to work on first.
+
+## Design references
+
+A design reference hands a thread one piece of a design on purpose: a board, or one element of
+it (docs/native-thread.md › Design references). It is the only way anything of a design reaches
+an ordinary thread (Design agents and ordinary threads, above), and it never reaches a design's
+agent. PR 1 builds the plumbing; "Implement in a thread…", "Copy reference", the composer's @
+picker and the reference chip come from their boards.
+
+### The reference
+
+`DesignReference` (ShepherdProtocol) names the host (`local`, or a remote host's id), the design,
+the board, optionally an element (`tid:path`), and a pinned revision; its label ("Checkout › A ·
+Funnel first › Pay now", each part one line cut short) is for chips and menus and never travels.
+Its string is what Copy reference copies:
+
+```text
+shepherd-design-ref://<host>/<designID>/<board view name>[#<tid>:<path>][@<revision>]
+```
+
+- **By id only:** a design folder's id, the board's view name (`flows%2FCart.dc.html`) and the
+  element's halves. Never a path on disk, a token, or anything the design's files say.
+- **Not `shepherd-design://`,** the board sandbox's scheme, which WebKit serves boards from.
+- **Read forgivingly:** whitespace and line breaks around it, wrapping `<…>`, quotes or
+  backticks, the scheme and host in any case, lower-case escapes, a trailing slash, and a board
+  written as its path. Anything outside the grammars (a board with `..`, under `ds/`, or with
+  characters a board path can't hold; an element's rendering index; a revision that isn't a
+  number) is no reference.
+
+### Sending one
+
+`NativeThreadStore` keeps references beside the draft (`attach(reference:)`,
+`NativeAttachedReference`: the reference, its label and its files) and sends them with the next
+message; `send(text:references:)` sends at once without touching the draft. A message with
+references reads its words, then "1 design reference attached." (the count, nothing the design
+says), then its files' paths. The send carries each reference's string alone
+(`NativeThreadRequest.send`'s `designReferences`, `designReferences` in `supportedActions`).
+
+- **The host reads it** (`SessionServer.checkDesignReferences`, off its queue): the design is in
+  the workspace, the board on its canvas, the element in the board's source now; a design's
+  agent, another Mac's design, or more than 8 references is refused, and nothing goes. Each is
+  pinned at the design's revision then, and the board's source kept as a pin
+  (`DesignStore.pinBoard`, `pins/<sha256>.dc.html`) for `changes`.
+- **pi reads it fenced** (`DesignReferenceFence`): a line saying it is data, then one JSON
+  record per reference between `design-ref` markers carrying a nonce new to the message: its
+  pinned string, and what the host read from the files (the design's name, the board's view name,
+  title and size, the element's id and words, the revision, the attached files' names). What a
+  client sent beyond the string is never kept. The fence always goes first, so words starting
+  with "/" stay words, and such a message goes to pi on its own, never joined in the queue. It is
+  the only fence such a message carries: a design view record sent beside it is dropped
+  (`RPCThreadState.sendContext`), since a surface takes off only the fence a message starts with.
+- **Every surface shows the words** (`DesignViewRecord.strippingFence`): the thread, queue
+  origins, a turn's name, notifications, the palette's transcript search and remote clients.
+- **Grants.** Sending grants the thread's agent read access to that piece
+  (`SessionServer.grantDesignReferences`, `Agent.designGrants`, persisted, empty in older
+  files): the board, or the element and its board whole, from the pinned revision on. A send pi
+  refused takes its grants back. Deleting the agent takes its grants; deleting the design takes
+  every grant on it (Undo gives them back); startup drops grants on designs that are gone and any
+  a design's agent holds. An agent keeps at most 100, the oldest going first. A grant never
+  covers another design, another board, another element of an element's board, the design
+  agent's chat, comments, or any write.
+- **Its files** (`ShepherdViewModel.prepareDesignReference`, drawn by `DesignHost` off screen at
+  zoom 1, into a folder of the drop folder): `<stem>[-<tid>]@2x.png` (the board, or the element
+  cut from it, at twice its size), `<stem>.html` (the board's standalone page, Export's: no
+  runtime, no scripts), for an element `<stem>-<tid>.element.html` and `.styles.json` (its markup
+  and computed styles, `elementDetail`), and `-tokens.md` (the installed systems' tokens the piece
+  reads, each with the file and line it came from when the system was built from a repository,
+  and each `<x-import>` component with the system's source component for its export).
+- **Remote:** a reference goes only into a thread on the Mac that runs it. A remote client's
+  send with references is refused (`design_references_local`), and `RemoteHostClient` refuses
+  one before it goes; a reference to another Mac's design is refused (`remote_design`).
+
+### design_get
+
+`shepherd-design-refs.ts` gives an ordinary thread `design_get(ref, what)`, read only. It loads
+for every agent that draws no design while Settings ▸ Pi ▸ Design references is on (the row shows
+while the Design tool is on), inert without `SHEPHERD_DESIGN_REFS`, and registers the tool only
+once the thread holds a reference: at load when the variable is `granted` (the agent held a grant
+when pi started), else the first time a message arrives with the fence (pi's `input` event). A
+thread that was never handed a piece carries nothing of it in its prompt, which is why the tool
+isn't registered always with a "no references" answer: that would cost every thread its
+description on every turn.
+
+| `what` | Answer |
+| --- | --- |
+| `summary` | The ref, design, board (title), element (words), size, the pinned and current revisions, and whether the board changed since |
+| `image` | A PNG of the board, or of the element cut from it, at twice its size: a file in the drop folder, which the extension hands pi as an image (up to 4.5 MB) |
+| `html` | The board's standalone page, a file |
+| `element` | The element's markup and computed styles, two files |
+| `tokens` | The installed systems' tokens the piece reads, with their sources, and its components (the board's when the element reads none itself) |
+| `changes` | What changed since the pinned revision: for a board, its elements added, removed and changed (matched by content, then by place), and how many moved; for an element, whether it moved, its tag, words or attributes, and what changed inside it. Only the referenced board is ever described |
+
+- **The server answers** (`designGet`, answered with `designReference`) only for a piece the
+  agent holds a grant for (`not_granted`), never to a design's agent (`not_a_thread`), and
+  refuses a ref outside the grammar (`invalid_reference`), an unknown aspect (`invalid_what`) and
+  another Mac's design (`remote_design`). A later revision of the board is read; an element a
+  rewrite renumbered is found again by its path and words (`DesignCommentAnchor`).
+- **Data, never instructions:** everything read from the design comes back between
+  `design-data` markers with a nonce new to the answer (`DesignReferenceData`), cut at 128 KB so a
+  reply fits the socket's 1 MiB frame; `changes` quotes a start tag on one line, cut at 300
+  characters (an inline image's data URL would fill it).
+- **Drawn aspects** (`image`, `html`, `element`) go to the app (`onDesignReferenceRender`), which
+  draws them off screen into the drop folder; the server's queue never renders or reads files,
+  and nothing but paths crosses the socket.
 
 ## Deleting and importing on the Mac (DesignLifecycleStates)
 

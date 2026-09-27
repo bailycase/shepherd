@@ -72,6 +72,7 @@ final class AppSettings {
         static let piSubagentsExtension = "shepherd.pi.extension.subagents"
         static let piNativeSubagents = "shepherd.pi.extension.nativeSubagents"
         static let piMCPExtension = "shepherd.pi.extension.mcp"
+        static let piDesignReferences = "shepherd.pi.extension.designReferences"
         static let childConcurrency = "shepherd.pi.children.concurrency"
         static let childModel = "shepherd.pi.children.model"
         static let childThinking = "shepherd.pi.children.thinking"
@@ -100,7 +101,7 @@ final class AppSettings {
             terminalFontFamily, terminalFontSize, defaultModel,
             defaultThinking, autoNameAgents, returnWhileWorking, queueDelivery, shellPath,
             piPanesExtension, piReviewExtension, piSubagentsExtension, piNativeSubagents,
-            piMCPExtension,
+            piMCPExtension, piDesignReferences,
             childConcurrency, childModel, childThinking, childContext, childScope,
             uiDensity, uiTextScale, sidebarWidth, sidebarRowDensity,
             sidebarStyle, sidebarGroupByHost, sidebarKeepIdleDays,
@@ -209,6 +210,12 @@ final class AppSettings {
 
     var piReviewExtension: Bool {
         didSet { store.set(piReviewExtension, forKey: Key.piReviewExtension) }
+    }
+
+    /// design_get for design pieces handed to a thread (the Design tool's references). Its row
+    /// shows only while the Design tool is on; the tool registers only in a thread that holds one.
+    var piDesignReferences: Bool {
+        didSet { store.set(piDesignReferences, forKey: Key.piDesignReferences) }
     }
 
     var piSubagentsExtension: Bool {
@@ -408,6 +415,7 @@ final class AppSettings {
         piSubagentsExtension = store.object(forKey: Key.piSubagentsExtension) as? Bool ?? true
         piNativeSubagents = store.object(forKey: Key.piNativeSubagents) as? Bool ?? true
         piMCPExtension = store.object(forKey: Key.piMCPExtension) as? Bool ?? true
+        piDesignReferences = store.object(forKey: Key.piDesignReferences) as? Bool ?? true
         childConcurrency = min(16, max(1, store.object(forKey: Key.childConcurrency) as? Int ?? 4))
         childModel = store.string(forKey: Key.childModel) ?? ""
         let childReasoning = store.string(forKey: Key.childThinking) ?? ""
@@ -503,6 +511,7 @@ final class AppSettings {
         piSubagentsExtension = true
         piNativeSubagents = true
         piMCPExtension = true
+        piDesignReferences = true
         childConcurrency = 4
         childModel = ""
         childThinking = ""
