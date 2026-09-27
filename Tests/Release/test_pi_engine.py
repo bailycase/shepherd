@@ -602,3 +602,32 @@ class ReleaseWorkflowTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(sys.platform == "darwin" and shutil.which("codesign") and shutil.which("clang")
+                     and shutil.which("lipo"), "needs macOS's codesign, clang and lipo")
+class SignEngineTests(unittest.TestCase):
+    """sign-engine.sh signs node's slices apart, each with its own entitlements."""
+
+    def test_every_slice_of_node_is_signed_with_one_identifier(self):
+        # A Developer ID seal on the app pins one identifier for nested code, so slices named
+        # after their temporary files (node-arm64, node-x86_64) failed the app's verification.
+        with tempfile.TemporaryDirectory() as work:
+            source = os.path.join(work, "main.c")
+            with open(source, "w") as f:
+                f.write("int main(void) { return 0; }\n")
+            node = os.path.join(work, "node")
+            subprocess.run(["clang", "-arch", "arm64", "-arch", "x86_64", "-o", node, source],
+                           check=True, capture_output=True)
+            subprocess.run([os.path.join(ROOT, "scripts", "sign-engine.sh"), node, "-",
+                            os.path.join(ROOT, "App", "Engine.entitlements"),
+                            os.path.join(ROOT, "App", "Engine-x86_64.entitlements")],
+                           check=True, capture_output=True)
+            identifiers = []
+            for arch in ("arm64", "x86_64"):
+                shown = subprocess.run(["codesign", "-dv", "--arch", arch, node],
+                                       capture_output=True, text=True, check=True).stderr
+                identifiers += re.findall(r"^Identifier=(.+)$", shown, re.M)
+            self.assertEqual(identifiers, ["node", "node"])
+            subprocess.run(["codesign", "--verify", "--strict", "--all-architectures", node],
+                           check=True, capture_output=True)
