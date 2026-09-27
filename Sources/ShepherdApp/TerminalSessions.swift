@@ -1080,6 +1080,8 @@ final class TerminalSessionStore {
             instructions: (try InstructionsExtension.installedPath(), ShepherdPaths.instructionsDirectory().path),
             suggestFiles: suggestFiles.map(\.fileName),
             design: try agent.designID.map { (try DesignExtension.installedPath(), $0, try DesignExtension.installedSkillDirectory()) },
+            designReferences: Self.wantsDesignReferences(for: agent, enabled: settings.piDesignReferences)
+                ? (try DesignReferencesExtension.installedPath(), !agent.designGrants.isEmpty) : nil,
             mcp: try MCPLaunch.forAgents(settings: settings),
             userHome: pi.userHome,
             // Use another model (an agent not signed in): its next start takes the model picked.
@@ -1091,6 +1093,12 @@ final class TerminalSessionStore {
     /// The panes extension (pane_*, agent_*, automation_*, notify) is for threads. A design's
     /// agent never gets it: its screen shows no panes, and it must not reach threads.
     static func wantsPanes(for agent: Agent, enabled: Bool) -> Bool {
+        enabled && agent.designID == nil
+    }
+
+    /// design_get is for threads: a design's agent never gets it (it reads its design with its own
+    /// tools), and a thread gets it only while the setting is on.
+    static func wantsDesignReferences(for agent: Agent, enabled: Bool) -> Bool {
         enabled && agent.designID == nil
     }
 

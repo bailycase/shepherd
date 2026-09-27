@@ -319,6 +319,25 @@ struct AgentLaunchCommandTests {
         #expect(plain.env["SHEPHERD_DESIGN_ID"] == nil && plain.env["SHEPHERD_DESIGN_SKILL_DIR"] == nil)
     }
 
+    /// design_get's extension loads for a thread with the setting on, saying whether the thread
+    /// already holds a reference (it registers the tool at once) or not (only once one arrives);
+    /// a design's agent never gets it, even when asked to.
+    @Test(arguments: [(false, false, "on"), (true, false, "granted"), (false, true, nil), (true, true, nil)] as [(Bool, Bool, String?)])
+    func aThreadLoadsDesignReferencesAndADesignsAgentNever(granted: Bool, drawsDesign: Bool, mode: String?) {
+        let launch = try! StatusExtension.command(
+            home: Self.home, cwd: "/tmp/project",
+            agentID: AgentID(rawValue: "agent-id"), piSessionID: "current-session",
+            socketPath: "/tmp/shepherd.sock", extensionPath: "/tmp/status.ts",
+            panesExtensionPath: nil, reviewExtensionPath: nil, subagentsExtensionPath: nil,
+            design: drawsDesign ? ("/tmp/design.ts", DesignID(rawValue: "d1"), "/tmp/support/design-skill") : nil,
+            designReferences: ("/tmp/design-refs.ts", granted),
+            model: nil, thinking: nil
+        )
+        #expect(launch.env["SHEPHERD_DESIGN_REFS"] == mode)
+        #expect(launch.argv[3].contains("-e '/tmp/design-refs.ts'") == (mode != nil))
+        #expect(command(enabled: [0, 1, 2, 3, 4]).env["SHEPHERD_DESIGN_REFS"] == nil)
+    }
+
     /// Settings ▸ Pi ▸ MCP servers: the extension loads with the config, cache and client it reads,
     /// and a repo's .mcp.json only when Settings ▸ MCP servers allows it; off, none of it.
     @Test(arguments: [false, true])
