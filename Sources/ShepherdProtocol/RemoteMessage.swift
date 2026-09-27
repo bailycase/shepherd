@@ -75,13 +75,13 @@ public enum RemoteProtocol {
     /// The host serves `RemoteRequest.hostSettings`: what its Settings ▸ Agents, Worktrees and Pi
     /// set, its Shepherd and pi versions, and one change at a time. Older hosts show none.
     public static let hostSettingsCapability = "hostSettings.v1"
-    /// The host serves `RemoteRequest.skills`: the agent skills in its ~/.agents/skills (on, off,
+    /// The host serves `RemoteRequest.skills`: the agent skills its pi reads (on, off,
     /// how each is used, updates), installs from a repository or a copied folder, and removal
     /// with undo (Settings ▸ Skills). Older hosts have none to show.
     public static let skillsCapability = "skills.v1"
-    /// A host's skills answer carries the skills its pi loads from outside ~/.agents/skills
-    /// (`SkillsSnapshot.pi`: pi's agent directory, settings paths and packages), which Settings
-    /// lists read-only. Older hosts send none.
+    /// A host's skills answer carries the skills its pi loads from outside its skills folder
+    /// (`SkillsSnapshot.pi`), which Settings lists read-only: none from a host whose pi reads only
+    /// its own home. Older hosts send none.
     public static let piSkillsCapability = "skills.pi.v1"
     /// The host takes the terminal panel's actions on an agent's terminal panes
     /// (`RemoteAgentAction.renameTerminal`, `.killTerminalProcess`): Rename tab and Kill

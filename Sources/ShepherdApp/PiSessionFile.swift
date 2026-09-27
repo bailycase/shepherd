@@ -3,7 +3,8 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 
-/// Pi's on-disk session files, from Shepherd's side.
+/// Pi's on-disk session files in Shepherd's own pi home, from Shepherd's side. "Your pi" (the
+/// user's own) is only ever read, to adopt an agent's conversation once (`adopt`).
 ///
 /// Shepherd launches every agent with `--session-id <agent id>` so the agent
 /// resumes the same conversation across respawns. Pi only *writes* a session
@@ -20,34 +21,40 @@ enum PiSessionFile {
     /// Pi's session-file schema version. Kept in step with the `{"type":"session"}`
     /// header pi itself writes; a mismatch only risks the warning coming back,
     /// never a broken session.
-    private static let version = 3
+    static let version = 3
 
-    /// Pi's sessions root: `~/.pi/agent/sessions`, or under `PI_CODING_AGENT_DIR`
-    /// when that moves pi's agent directory.
-    static var defaultSessionsRoot: URL { PiConfig.sessionsDirectory() }
-
-    /// The path as pi sees it: `realpath(3)`, like Node's `fs.realpathSync`. Foundation's
-    /// `resolvingSymlinksInPath` is not a substitute: it maps /private/tmp back to /tmp.
+    /// The path as pi sees it (`PiSessionFolder.realPath`).
     static func realPath(_ path: String) -> String {
-        let expanded = (path as NSString).expandingTildeInPath
-        guard let resolved = realpath(expanded, nil) else { return (expanded as NSString).standardizingPath }
-        defer { free(resolved) }
-        return String(cString: resolved)
+        PiSessionFolder.realPath(path)
     }
 
-    /// `sessionsRoot/<mangled cwd>/` — pi derives the directory name from the
-    /// absolute cwd, replacing each path separator with `-` and wrapping the
-    /// result in `--`.
-    static func projectDirectory(forCwd cwd: String, sessionsRoot: URL = defaultSessionsRoot) -> URL {
-        sessionsRoot.appendingPathComponent("--\(mangled(cwd))--", isDirectory: true)
+    /// `sessionsRoot/<mangled cwd>/`: pi's name for a project's session folder
+    /// (`PiSessionFolder`), which every agent launch names with `--session-dir`.
+    static func projectDirectory(forCwd cwd: String, sessionsRoot: URL) -> URL {
+        sessionsRoot.appendingPathComponent(PiSessionFolder.name(forCwd: cwd), isDirectory: true)
     }
 
-    /// Pi resolves the real path first (so /tmp and /private/tmp agree), then
-    /// mangles it.
+    /// `projectDirectory`, when it resolves inside `sessionsRoot`: nil when a link in Shepherd's
+    /// home would carry a write somewhere else, such as the user's own pi (principle 4).
+    static func writableProjectDirectory(forCwd cwd: String, sessionsRoot: URL) -> URL? {
+        let directory = projectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot)
+        guard PiHome.isInside(PiHome.canonical(directory.path), PiHome.canonical(sessionsRoot.path)) else {
+            ShepherdLog.info("\(directory.path) resolves outside \(sessionsRoot.path): Shepherd writes no session there")
+            return nil
+        }
+        return directory
+    }
+
+    /// Whether `url` is a regular file with one link: one that is Shepherd's alone.
+    static func isOwnFile(_ url: URL) -> Bool {
+        var info = stat()
+        return lstat(url.path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFREG && info.st_nlink == 1
+    }
+
+    /// pi's rule (`PiSessionFolder.mangled`): the real path, one leading `/` or `\` dropped, then
+    /// every `/`, `\` and `:` replaced with `-`.
     static func mangled(_ cwd: String) -> String {
-        realPath(cwd)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            .replacingOccurrences(of: "/", with: "-")
+        PiSessionFolder.mangled(cwd)
     }
 
     /// True when pi can already resolve `sessionID` in `cwd` (any file whose
@@ -55,7 +62,7 @@ enum PiSessionFile {
     static func exists(
         sessionID: String,
         cwd: String,
-        sessionsRoot: URL = defaultSessionsRoot
+        sessionsRoot: URL
     ) -> Bool {
         file(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot) != nil
     }
@@ -64,7 +71,7 @@ enum PiSessionFile {
     static func file(
         sessionID: String,
         cwd: String,
-        sessionsRoot: URL = defaultSessionsRoot
+        sessionsRoot: URL
     ) -> URL? {
         let directory = projectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot)
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path),
@@ -85,10 +92,14 @@ enum PiSessionFile {
     static func hasRuntimeState(
         sessionID: String,
         cwd: String,
-        sessionsRoot: URL = defaultSessionsRoot
+        sessionsRoot: URL
     ) -> Bool {
-        guard let url = file(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot),
-              let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        file(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot).map(hasRuntimeState(at:)) ?? false
+    }
+
+    /// `hasRuntimeState` for one file.
+    static func hasRuntimeState(at url: URL) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
         defer { try? handle.close() }
         // Any byte after the header's newline is pi's (a trailing partial line included). A
         // restored agent's session can run to many megabytes; only its first line matters, and
@@ -110,7 +121,7 @@ enum PiSessionFile {
     static func preview(
         sessionID: String,
         cwd: String,
-        sessionsRoot: URL = defaultSessionsRoot
+        sessionsRoot: URL
     ) -> NativeThreadSnapshot? {
         guard let url = file(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot) else { return nil }
         return PiSessionPreview.snapshot(file: url, sessionID: sessionID)
@@ -118,10 +129,10 @@ enum PiSessionFile {
 
     /// `preview(sessionID:cwd:)` for a thread's store, read off the main actor, from the cwd pi
     /// is launched in.
-    static func previewLoader(sessionID: String, cwd: String) -> NativeThreadStore.Preview {
+    static func previewLoader(sessionID: String, cwd: String, sessionsRoot: URL) -> NativeThreadStore.Preview {
         {
             await Task.detached(priority: .userInitiated) {
-                preview(sessionID: sessionID, cwd: TerminalSessionStore.resolvedCwd(cwd))
+                preview(sessionID: sessionID, cwd: TerminalSessionStore.resolvedCwd(cwd), sessionsRoot: sessionsRoot)
             }.value
         }
     }
@@ -132,7 +143,7 @@ enum PiSessionFile {
     static func prepareForLaunch(
         sessionID: String,
         cwd: String,
-        sessionsRoot: URL = defaultSessionsRoot
+        sessionsRoot: URL
     ) -> Bool {
         let fresh = !hasRuntimeState(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot)
         seedIfMissing(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot)
@@ -146,12 +157,12 @@ enum PiSessionFile {
     static func seedIfMissing(
         sessionID: String,
         cwd: String,
-        sessionsRoot: URL = defaultSessionsRoot
+        sessionsRoot: URL
     ) -> Bool {
         guard !exists(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot) else { return true }
 
         let resolvedCwd = realPath(cwd)
-        let directory = projectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot)
+        guard let directory = writableProjectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot) else { return false }
         let now = Date()
 
         let header: [String: Any] = [
@@ -175,6 +186,97 @@ enum PiSessionFile {
         }
     }
 
+    // MARK: Adoption
+
+    /// What adoption did for one agent.
+    enum Adoption: Equatable {
+        /// Shepherd's home already holds the conversation.
+        case alreadyHere
+        /// Copied from "your pi" (the source it read).
+        case copied(from: String)
+        /// "Your pi" holds it in a newer format than Shepherd's pi reads: it starts fresh.
+        case newerFormat(String)
+        /// Nothing to adopt: the agent starts fresh under its id.
+        case nothing
+    }
+
+    /// Before any seeding or launch, an agent whose conversation Shepherd's home doesn't hold
+    /// yet takes a copy of it from "your pi", where Shepherd's agents kept it before they ran
+    /// their own pi. Plain reads only: pi repairs and appends to any file it loads, so Shepherd
+    /// never lets pi open the user's file, and copies bytes (never a link) under the same name
+    /// into the agent's session folder in its home. A copy already there wins; a header alone on
+    /// either side is nothing to adopt; a header newer than Shepherd's pi reads is left alone.
+    ///
+    /// A session file in Shepherd's home that is a link (a symlink, or a hard link the user's pi
+    /// shares) is first replaced with a copy of its bytes, so pi never appends through it; a
+    /// project folder that resolves outside the home gets nothing.
+    static func adopt(sessionID: String, cwd: String, sessionsRoot: URL, yourPi: YourPi?) -> Adoption {
+        guard let directory = writableProjectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot) else { return .nothing }
+        var ours = file(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot)
+        if let linked = ours, !isOwnFile(linked) {
+            ours = detach(linked) ? linked : nil
+        }
+        if let ours, hasRuntimeState(at: ours) { return .alreadyHere }
+        guard let yourPi else { return .nothing }
+        var candidates: [URL] = []
+        for folder in yourPi.sessionFolders(forCwd: cwd) {
+            guard let names = try? FileManager.default.contentsOfDirectory(atPath: folder.path) else { continue }
+            for name in names.sorted() where name.hasSuffix("_\(sessionID).jsonl") { candidates.append(folder.appendingPathComponent(name)) }
+        }
+        guard let source = candidates.first(where: { hasRuntimeState(at: $0) }) else { return .nothing }
+        let real = URL(fileURLWithPath: realPath(source.path))
+        var info = stat()
+        guard lstat(real.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG, let data = try? Data(contentsOf: real) else { return .nothing }
+        if let version = headerVersion(data), version > Self.version {
+            ShepherdLog.info("session \(sessionID) in your pi (\(source.path)) is format \(version), newer than Shepherd's pi reads; starting fresh")
+            return .newerFormat(source.path)
+        }
+        let target = directory.appendingPathComponent(source.lastPathComponent)
+        let temporary = directory.appendingPathComponent(".\(source.lastPathComponent).\(UUID().uuidString)")
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try data.write(to: temporary)
+            guard rename(temporary.path, target.path) == 0 else { throw ForkFailure(message: String(cString: strerror(errno))) }
+        } catch {
+            try? FileManager.default.removeItem(at: temporary)
+            ShepherdLog.info("couldn't adopt session \(sessionID) from \(source.path): \(error)")
+            return .nothing
+        }
+        // A single-link regular file of Shepherd's own: pi appends here, never to the user's.
+        guard lstat(target.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG, info.st_nlink == 1 else {
+            try? FileManager.default.removeItem(at: target)
+            return .nothing
+        }
+        // The header Shepherd seeded earlier, under another name, would be a second file for the id.
+        if let ours, ours.lastPathComponent != target.lastPathComponent { try? FileManager.default.removeItem(at: ours) }
+        return .copied(from: source.path)
+    }
+
+    /// Replaces the link at `url` with a regular file holding the bytes it reached, by temp file
+    /// and rename, which leaves the file it pointed to as it was. False, with the link removed,
+    /// when those bytes can't be read or written.
+    static func detach(_ url: URL) -> Bool {
+        let real = realPath(url.path)
+        var info = stat()
+        let temporary = url.deletingLastPathComponent().appendingPathComponent(".\(url.lastPathComponent).\(UUID().uuidString)")
+        if lstat(real, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG, let data = FileManager.default.contents(atPath: real),
+           (try? data.write(to: temporary)) != nil, rename(temporary.path, url.path) == 0, isOwnFile(url) {
+            ShepherdLog.info("\(url.path) was a link; Shepherd's pi now keeps its own copy")
+            return true
+        }
+        try? FileManager.default.removeItem(at: temporary)
+        unlink(url.path)
+        ShepherdLog.info("\(url.path) was a link Shepherd couldn't copy; removed it, so pi never writes through it")
+        return false
+    }
+
+    /// The `version` a session file's header names.
+    static func headerVersion(_ data: Data) -> Int? {
+        let line = data.prefix(64 * 1024).split(separator: UInt8(ascii: "\n"), maxSplits: 1, omittingEmptySubsequences: false).first ?? Data()
+        guard let header = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any], header["type"] as? String == "session" else { return nil }
+        return (header["version"] as? NSNumber)?.intValue ?? 1
+    }
+
     struct ForkFailure: Error, CustomStringConvertible {
         let message: String
         var description: String { message }
@@ -187,7 +289,7 @@ enum PiSessionFile {
     static func fork(
         sessionFile: String,
         cwd: String,
-        sessionsRoot: URL = defaultSessionsRoot
+        sessionsRoot: URL
     ) throws -> String {
         guard var data = FileManager.default.contents(atPath: sessionFile), !data.isEmpty else {
             throw ForkFailure(message: "The session file is missing or unreadable.")
@@ -204,7 +306,9 @@ enum PiSessionFile {
         header["cwd"] = realPath(cwd)
         header["timestamp"] = isoTimestamp.string(from: now)
         header.removeValue(forKey: "parentSession")
-        let directory = projectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot)
+        guard let directory = writableProjectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot) else {
+            throw ForkFailure(message: "Shepherd's session folder for \(cwd) leads outside its pi home.")
+        }
         let url = directory.appendingPathComponent("\(fileTimestamp.string(from: now))_\(sessionID).jsonl")
         do {
             let headerData = try JSONSerialization.data(withJSONObject: header, options: [.sortedKeys])

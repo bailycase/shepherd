@@ -260,6 +260,46 @@ public struct NWSettingsNavRow: View {
     }
 }
 
+/// A page under another in Settings' navigation (Pi's Sign-in and From your pi; SettingsPi): 28pt,
+/// scaled by density, 35pt in, the name in Geist 12.5 `textSecondary` (`textPrimary` at 500 on
+/// `bgSelected` when selected), and a 6pt `lantern` dot trailing while it wants attention.
+public struct NWSettingsNavSubRow: View {
+    let title: String
+    let selected: Bool
+    let attention: Bool
+    let action: () -> Void
+
+    public init(_ title: String, selected: Bool, attention: Bool = false, action: @escaping () -> Void) {
+        self.title = title
+        self.selected = selected
+        self.attention = attention
+        self.action = action
+    }
+
+    public var body: some View {
+        let nw = Color.nw
+        Button(action: action) {
+            HStack(spacing: NW.Space.m) {
+                Text(title)
+                    .font(.nwSans(NWSettingsNavMetrics.subTextSize, selected ? .medium : .regular))
+                    .foregroundStyle(selected ? nw.textPrimary : nw.textSecondary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                if attention {
+                    Circle().fill(nw.lantern).frame(width: 6, height: 6).accessibilityHidden(true)
+                }
+            }
+            .padding(.leading, NWSettingsNavMetrics.subRowLeading)
+            .padding(.trailing, NWSettingsNavMetrics.rowPadding)
+            .frame(minHeight: NW.Height.scaled(NWSettingsNavMetrics.subRowHeight))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.nwRow(selected: selected))
+        .accessibilityLabel(attention ? "\(title), needs you" : title)
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
+    }
+}
+
 /// Settings' navigation rows (every Settings board).
 public enum NWSettingsNavMetrics {
     /// Before density.
@@ -274,4 +314,8 @@ public enum NWSettingsNavMetrics {
     public static let sidePadding: CGFloat = 10
     /// The page names, and the Back row's words.
     public static let textSize: CGFloat = 13
+    /// A page under another: 28pt, 35pt in (past the icon), Geist 12.5.
+    public static let subRowHeight: CGFloat = 28
+    public static let subRowLeading: CGFloat = 35
+    public static let subTextSize: CGFloat = 12.5
 }

@@ -7,6 +7,8 @@ import ShepherdProtocol
 // MARK: Agents
 
 struct AgentSettings: View {
+    /// This Mac's pi: its catalog and settings.json give the model choices and pi's default.
+    let pi: PiSetup
     @Bindable private var settings = AppSettings.shared
     private var keys: KeybindingsStore { .shared }
     @State private var modelOptions: [String] = []
@@ -48,8 +50,9 @@ struct AgentSettings: View {
             }
         }
         .task {
+            let pi = pi
             let (ids, fallback) = await Task.detached(priority: .userInitiated) {
-                (PiModelCatalog.entriesOrConfigured().map(\.id), PiConfig.defaultModel())
+                (pi.catalog.entriesOrConfigured().map(\.id), PiConfig.defaultModel(in: pi.home))
             }.value
             modelOptions = ids
             if let fallback { piDefaultModel = fallback }

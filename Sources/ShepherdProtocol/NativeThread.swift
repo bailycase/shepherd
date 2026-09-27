@@ -439,6 +439,10 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
     /// pi is retrying a failed request on its own (TurnErrors › While it retries). nil when it
     /// isn't, and from older hosts.
     public var retry: NativeThreadRetry?
+    /// The agent's pi stopped before it served this thread, and why (DESIGN.md › Thread › Can't
+    /// start). The host keeps the agent and answers with only this until pi starts again: no
+    /// history, no actions. nil otherwise, and from older hosts.
+    public var startProblem: NativeStartProblem?
 
     public var isRPC: Bool { runtime == "rpc" }
 
@@ -448,7 +452,8 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         widgets: [NativeThreadWidget]? = nil, messages: [NativeThreadMessage], olderCursor: String? = nil,
         provisional: [NativeThreadMessage], clipped: Bool, runtime: String? = nil, stats: NativeThreadStats? = nil,
         commands: [NativeCommand]? = nil, subagents: [NativeSubagent]? = nil, queue: NativeQueue? = nil,
-        context: NativeThreadContext? = nil, turnChanges: [ChangesTurn]? = nil, retry: NativeThreadRetry? = nil
+        context: NativeThreadContext? = nil, turnChanges: [ChangesTurn]? = nil, retry: NativeThreadRetry? = nil,
+        startProblem: NativeStartProblem? = nil
     ) {
         self.piSessionID = piSessionID
         self.generation = generation
@@ -473,6 +478,7 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         self.context = context
         self.turnChanges = turnChanges
         self.retry = retry
+        self.startProblem = startProblem
     }
 }
 

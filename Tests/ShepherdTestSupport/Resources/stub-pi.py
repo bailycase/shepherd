@@ -77,9 +77,22 @@ $STUB_PI_HISTORY_BYTES seeds that many bytes of prior history (see below).
 Startup, like a pi that takes a while to boot (or fails to), before stdin is read:
   $STUB_PI_STARTUP_DELAY  seconds to wait
   $STUB_PI_STARTUP_GATE   a file in the cwd to wait for (up to 60 s)
+  $STUB_PI_STARTUP_NEW_SESSION  write pi's warning (in chalk's yellow) that it found no session
+                          with the `--session-id` it was given and creates one, then go on
   $STUB_PI_STARTUP_EXIT   exit with this code instead of serving
+  $STUB_PI_STARTUP_STDERR what it writes to stderr before that exit (default
+                          "stub-pi: failed to start"), as pi's own error would be
+  $STUB_PI_STARTUP_REQUIRE_AUTH  like pi with nothing to sign in with: exit 1 with "No models
+                          available." unless $PI_CODING_AGENT_DIR/auth.json holds a login (it
+                          reads only the keys, never a value)
+Like pi, it loads the extensions its home's settings.json names ($PI_CODING_AGENT_DIR,
+`extensions`, by path; a folder's index.ts or index.js): one whose file has `throw new Error(`
+in it fails as pi's loader reports it (a missing file is passed over), `Failed to load extension "<path>": Failed to load
+extension: <the error's message>`, and pi exits 1, as it does in every mode. The launch record
+lists the extensions settings.json names.
 A pi launched the way the app launches it gets no test env, so `stub-pi-startup.json` in the
-cwd ({"delay": 1.5, "gate": "release-pi", "exit": 127}) sets the same.
+cwd ({"delay": 1.5, "gate": "release-pi", "newSession": true, "exit": 1, "stderr": "...",
+"requireAuth": true}) sets the same.
 
 Every stdin line is appended to $STUB_PI_LOG when set, so tests can assert
 on what the client actually wrote.
@@ -505,6 +518,50 @@ def ui(method, **fields):
     emit({"type": "extension_ui_request", "id": f"ui-{method}", "method": method, **fields})
 
 
+def record_launch():
+    # The engine wrapper StubPi installs names the file: argv, cwd and environment, one line.
+    path = os.environ.get("STUB_PI_LAUNCH_LOG")
+    if not path:
+        return
+    env = {k: v for k, v in os.environ.items() if k != "STUB_PI_LAUNCH_LOG"}
+    line = json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd(), "env": env, "extensions": configured_extensions()}) + "\n"
+    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+    try:
+        os.write(fd, line.encode("utf-8"))
+    finally:
+        os.close(fd)
+
+
+def configured_extensions():
+    home = os.environ.get("PI_CODING_AGENT_DIR")
+    try:
+        with open(os.path.join(home, "settings.json")) as f:
+            settings = json.load(f)
+    except (TypeError, OSError, ValueError):
+        return []
+    entries = settings.get("extensions") if isinstance(settings, dict) else None
+    return [e for e in entries or [] if isinstance(e, str) and e[:1] not in "!+-"]
+
+
+def load_extensions():
+    for path in configured_extensions():
+        file = path
+        if os.path.isdir(path):
+            file = next((os.path.join(path, n) for n in ("index.ts", "index.js") if os.path.isfile(os.path.join(path, n))), path)
+        try:
+            with open(file) as f:
+                text = f.read()
+        except OSError:
+            continue
+        found = re.search(r"throw new Error\((['\"])(.*?)\1\)", text)
+        if found:
+            failure = found.group(2)
+            sys.stderr.write(f'\x1b[31mError: Failed to load extension "{path}": Failed to load extension: {failure}\x1b[39m\n')
+            sys.stderr.write("\x1b[33mRun with --no-extensions to start without extensions.\x1b[39m\n")
+            sys.stderr.flush()
+            sys.exit(1)
+
+
 def startup():
     try:
         with open("stub-pi-startup.json") as f:
@@ -514,16 +571,38 @@ def startup():
     delay = os.environ.get("STUB_PI_STARTUP_DELAY") or config.get("delay")
     gate = os.environ.get("STUB_PI_STARTUP_GATE") or config.get("gate")
     code = os.environ.get("STUB_PI_STARTUP_EXIT") or config.get("exit")
+    new_session = os.environ.get("STUB_PI_STARTUP_NEW_SESSION") or config.get("newSession")
+    message = os.environ.get("STUB_PI_STARTUP_STDERR") or config.get("stderr") or "stub-pi: failed to start"
     if delay:
         time.sleep(float(delay))
     if gate:
         wait_for_file(gate, timeout=60.0)
+    if new_session:
+        args = sys.argv[1:]
+        session_id = args[args.index("--session-id") + 1] if "--session-id" in args[:-1] else "stub-session"
+        sys.stderr.write(f"\x1b[33mWarning: No project session found with id '{session_id}'; "
+                         "creating a new session with that id.\x1b[39m\n")
+        sys.stderr.flush()
+    load_extensions()
+    if (os.environ.get("STUB_PI_STARTUP_REQUIRE_AUTH") or config.get("requireAuth")) and not signed_in():
+        code, message = 1, "No models available."
     if code is not None:
-        sys.stderr.write("stub-pi: failed to start\n")
+        sys.stderr.write(message.rstrip("\n") + "\n")
         sys.stderr.flush()
         sys.exit(int(code))
 
 
+def signed_in():
+    home = os.environ.get("PI_CODING_AGENT_DIR")
+    try:
+        with open(os.path.join(home, "auth.json")) as f:
+            auth = json.load(f)
+    except (TypeError, OSError, ValueError):
+        return False
+    return isinstance(auth, dict) and len(auth) > 0
+
+
+record_launch()
 startup()
 
 pending_ui = None

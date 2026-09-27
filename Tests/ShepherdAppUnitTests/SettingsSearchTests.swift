@@ -7,9 +7,10 @@ import Testing
 struct SettingsSearchTests {
     @Test func theNavListsEveryPageInDesignOrder() {
         #expect(SettingsSection.allCases.map(\.title) == [
-            "Appearance", "Terminal", "Agents", "Worktrees", "Pi", "Instructions", "Skills", "MCP servers", "Remote", "Keyboard",
-            "Advanced", "Experiments",
+            "Appearance", "Terminal", "Agents", "Worktrees", "Pi", "Sign-in", "From your pi", "Instructions", "Skills", "MCP servers",
+            "Remote", "Keyboard", "Advanced", "Experiments",
         ])
+        #expect(SettingsSection.allCases.filter(\.isSubpage) == [.piSignIn, .piFromYourPi], "Pi's two pages sit under it")
     }
 
     /// Instructions, Skills, MCP servers and Experiments fill the detail area; every other page
@@ -48,12 +49,25 @@ struct SettingsSearchTests {
         ("automations", .experiments, ["Learn from"]),
         ("slash", .skills, ["Skills in the / menu"]),
         ("github", .skills, ["Add from repo"]),
-        // The skills pi loads from elsewhere, listed read-only on the page.
-        ("npm", .skills, ["From pi packages"]),
-        (".pi", .skills, ["From your pi setup"]),
-        ("read-only", .skills, ["From your pi setup", "From pi packages"]),
-        ("agent skills", .skills, ["Installed skills", "From your pi setup", "From pi packages"]),
+        // Every skill Shepherd's pi loads is installed, copies from your pi among them.
+        (".pi", .skills, ["Installed skills"]),
+        ("copied", .skills, ["Installed skills"]),
+        ("agent skills", .skills, ["Installed skills"]),
         ("oauth", .mcp, ["Open sign-in pages by itself"]),
+        // Settings ▸ Pi ▸ Sign-in, and what comes from your pi.
+        ("auth.json", .piSignIn, ["Subscriptions", "API keys"]),
+        ("subscription", .piSignIn, ["Subscriptions"]),
+        ("login", .piSignIn, ["Subscriptions"]),
+        ("anthropic", .piSignIn, ["Anthropic"]),
+        ("groq", .piSignIn, ["Add an API key"]),
+        ("models.json", .piSignIn, ["Custom providers"]),
+        ("models.json", .piFromYourPi, ["Custom providers"]),
+        ("trust.json", .piFromYourPi, ["Trusted folders"]),
+        ("re-import", .piFromYourPi, ["Re-import all", "Logins", "Custom providers", "Default model", "Trusted folders", "Instructions",
+                                      "Skills", "Prompts", "Themes"]),
+        ("CLAUDE.md", .piFromYourPi, ["Instructions"]),
+        ("full access", .piFromYourPi, ["Extensions"]),
+        ("engine", .pi, ["Shepherd's pi"]),
         ("claude desktop", .mcp, ["Import…"]),
         (".mcp.json", .mcp, ["Also use a repo’s .mcp.json"]),
     ] as [(String, SettingsSection, [String])])
@@ -79,7 +93,9 @@ struct SettingsSearchTests {
         #expect(hits == [.appearance])
     }
 
+    /// "theme" finds only the themes copied from your pi, never a theme-sync switch.
     @Test func piThemeSyncIsNotASetting() {
+        #expect(SettingsSection.piFromYourPi.matches(for: "theme") == ["Themes"])
         #expect(SettingsSection.pi.matches(for: "theme").isEmpty)
         #expect(!SettingsSection.pi.items.contains("Sync pi theme"))
     }

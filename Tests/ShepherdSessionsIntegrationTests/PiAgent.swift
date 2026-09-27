@@ -16,11 +16,13 @@ struct PiAgent {
 
     /// `env` adds to the stub's environment (its `STUB_PI_STARTUP_*` options, for one).
     /// `cwd` is where the stub runs (the server's scratch directory unless a test needs a repository).
-    static func launch(on host: ScratchServer, env: [String: String] = [:], cwd: URL? = nil) async throws -> PiAgent {
+    /// `resuming`: the pi session the stub is launched to resume (`--session-id`).
+    static func launch(on host: ScratchServer, env: [String: String] = [:], cwd: URL? = nil, resuming: String? = nil) async throws -> PiAgent {
         let log = host.dir.appendingPathComponent("stdin-\(UUID().uuidString.prefix(6)).log")
         let directory = (cwd ?? host.dir).path
         let session = try await host.server.createSession(params: CreateSessionParams(
-            cwd: directory, command: StubPi.command, env: env.merging(["STUB_PI_LOG": log.path]) { $1 }, runtime: .rpc))
+            cwd: directory, command: StubPi.command + (resuming.map { ["--session-id", $0] } ?? []),
+            env: env.merging(["STUB_PI_LOG": log.path]) { $1 }, runtime: .rpc), resuming: resuming)
         let existing = host.server.state.spaces.first { $0.path == directory }
         let space = existing ?? Space(name: "rpc", path: directory)
         if existing == nil { try await host.server.addSpace(space) }

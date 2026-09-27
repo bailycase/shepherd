@@ -347,8 +347,36 @@ class FeedTests(unittest.TestCase):
         self.assertEqual(release.untag(xml), "<item>\n    <title>62</title>\n    <sparkle:version>62</sparkle:version>\n</item>")
 
 
+def make_engine(contents):
+    """The pinned engine's layout under `contents`, as small stand-ins: a fat node whose slices
+    name the pinned version, and each package.json at its pinned version."""
+    pin = release.pi_engine.load_pin()
+    version = f"node v{pin['node']['version']}\0".encode()
+    slices = [b"\xcf\xfa\xed\xfe" + cputype.to_bytes(4, "little") + version for cputype in (0x0100000C, 0x01000007)]
+    header = (0xCAFEBABE).to_bytes(4, "big") + len(slices).to_bytes(4, "big")
+    offset, entries, body = 4096, b"", b""
+    for data in slices:
+        entries += b"".join(n.to_bytes(4, "big") for n in (int.from_bytes(data[4:8], "little"), 0,
+                                                              offset + len(body), len(data), 12))
+        body += data
+    files = {release.pi_engine.NODE: (header + entries).ljust(offset, b"\0") + body}
+    engine = release.pi_engine.ENGINE
+    packages = {"": (pin["pi"]["name"], pin["pi"]["version"])}
+    packages.update({f"node_modules/{name}/": (name, module["version"]) for name, module in pin["modules"].items()})
+    for folder, (name, version) in packages.items():
+        files[f"{engine}/{folder}package.json"] = json.dumps({"name": name, "version": version}).encode()
+    for name in (release.pi_engine.ENTRY,) + release.pi_engine.LICENSES:
+        files[f"{engine}/{name}"] = b"x"
+    for relative, data in files.items():
+        path = os.path.join(contents, relative)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(data)
+    os.chmod(os.path.join(contents, release.pi_engine.NODE), 0o755)
+
+
 class VerifyAppTests(unittest.TestCase):
-    def make_app(self, root, product, **info):
+    def make_app(self, root, product, engine=True, **info):
         path = os.path.join(root, product)
         os.makedirs(os.path.join(path, "Contents", "MacOS"))
         executable = info.get("CFBundleExecutable")
@@ -356,6 +384,8 @@ class VerifyAppTests(unittest.TestCase):
             open(os.path.join(path, "Contents", "MacOS", executable), "w").close()
         with open(os.path.join(path, "Contents", "Info.plist"), "wb") as f:
             plistlib.dump(info, f)
+        if engine:
+            make_engine(os.path.join(path, "Contents"))
         return path
 
     def info(self, key, **overrides):
@@ -377,6 +407,17 @@ class VerifyAppTests(unittest.TestCase):
             with self.subTest(app=key), tempfile.TemporaryDirectory() as root:
                 path = self.make_app(root, release.APPS[key].product, **self.info(key))
                 self.assertEqual(release.verify_app(path, key, "1.0.0"), [])
+
+    def test_an_app_without_the_pinned_engine_is_refused(self):
+        for key in release.APPS:
+            with self.subTest(app=key), tempfile.TemporaryDirectory() as root:
+                path = self.make_app(root, release.APPS[key].product, engine=False, **self.info(key))
+                problems = release.verify_app(path, key, "1.0.0")
+                self.assertIn("pi engine: Helpers/node is missing", problems)
+        with tempfile.TemporaryDirectory() as root:
+            path = self.make_app(root, "Shepherd.app", **self.info("main"))
+            os.makedirs(os.path.join(path, "Contents", "Resources", "pi-engine", "node_modules", "esbuild"))
+            self.assertTrue(any("esbuild" in p for p in release.verify_app(path, "main")))
 
     def test_a_nightly_build_with_the_main_feed_or_id_is_refused(self):
         for override in ({"SUFeedURL": release.REPOSITORY_PAGES + "appcast.xml"},

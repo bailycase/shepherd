@@ -92,7 +92,7 @@ struct AutomationsPageActionTests {
     /// Run Now from the page starts a run on this Mac, its detail lists the run, and opening the
     /// run's thread leaves the page for that thread.
     @Test func runNowStartsARunWhoseThreadOpensFromThePage() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let app = try AppHarness()
         defer { app.stop() }
         let automation = Automation(name: "watch CI", prompt: "watch the build", cwd: app.dir.path, enabled: false)

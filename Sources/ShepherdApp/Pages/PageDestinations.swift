@@ -42,7 +42,7 @@ struct HostsDestination: View {
 
     var body: some View {
         let _ = NWRenderProbe.tick("page.hosts")
-        HostsPage(model: vm.hostsPage(agentVersion: PiUpdateManager.shared.currentVersion), actions: HostsPageActions(
+        HostsPage(model: vm.hostsPage(agentVersion: vm.server.pi.engine.version), actions: HostsPageActions(
             retry: { vm.remoteHosts.reconnect(id: $0) },
             remove: { removing = $0 },
             addHost: { vm.showAddHost() }), chrome: chrome)

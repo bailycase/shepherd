@@ -4,7 +4,7 @@ import ShepherdProtocol
 import ShepherdRemote
 
 // Settings ▸ Skills on iPhone and iPad (MobileSkills; home track): the agent skills every host
-// keeps in ~/.agents/skills, the same on every host, read and changed over `skills.v1`. The list
+// keeps in its own pi's skills (an older host: ~/.agents/skills), the same on every host, read and changed over `skills.v1`. The list
 // turns a skill on or off, updates the ones with a newer commit, and searches skills.sh in place.
 // A skill opens its detail (how the agent uses it, its version, which hosts have it, its files),
 // a search result its preview with Install, and + adds skills from a repository. A host that is
@@ -809,7 +809,7 @@ struct AddSkillsScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
                 VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
-                    Text("A GitHub owner/repo or URL. Shepherd copies the skills you pick into ~/.agents/skills on every host.")
+                    Text("A GitHub owner/repo or URL. Shepherd copies the skills you pick into its own pi's skills on every host.")
                         .nwText(.caption)
                         .foregroundStyle(Color.nw.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)

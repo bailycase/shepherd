@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import ShepherdProtocol
+import ShepherdSessions
 
 /// Async login-shell runner for worktree setup probes and the finalize
 /// pipeline. `zsh -l` resolves the user's PATH (gh, brew-installed git)
@@ -407,8 +408,16 @@ struct WorktreePRDescriptionGenerator {
         "google/gemini-2.5-flash",
     ]
 
+    /// Shepherd's pi, which drafts.
+    var pi: PiSetup
     var runner: (String, String?, TimeInterval?) async -> LoginShell.Output = {
         await LoginShell.run($0, cwd: $1, timeout: $2)
+    }
+    /// Readies the pi home before a draft; false when no pi may start there.
+    var prepare: (PiSetup) async -> Bool = { pi in await Task.detached(priority: .userInitiated) { pi.prepare() == nil }.value }
+
+    init(pi: PiSetup) {
+        self.pi = pi
     }
 
     static func shouldGenerate(enabled: Bool, prepared: Bool, force: Bool) -> Bool {
@@ -457,7 +466,8 @@ struct WorktreePRDescriptionGenerator {
 
             \(context.stdout.prefix(32_000))
             """
-        let output = await runner(Self.draftCommand(prompt: prompt), worktree, 30)
+        guard await prepare(pi) else { return Result(body: fallbackBody, generated: false) }
+        let output = await runner(Self.draftCommand(prompt: prompt, home: pi.files), worktree, 30)
         let body = output.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         guard output.status == 0, !body.isEmpty else {
             return Result(body: fallbackBody, generated: false)
@@ -468,13 +478,11 @@ struct WorktreePRDescriptionGenerator {
     /// `pi --print` with the prompt alone, on the drafting model (`SHEPHERD_PR_DESCRIPTION_MODEL`,
     /// else the first default): no session, tools, extensions or context files. PR descriptions
     /// and commit messages from review are drafted this way.
-    static func draftCommand(prompt: String) -> String {
+    static func draftCommand(prompt: String, home: PiHome) -> String {
         let model = ProcessInfo.processInfo.environment["SHEPHERD_PR_DESCRIPTION_MODEL"]
             .flatMap { $0.split(separator: ",").first.map(String.init) }
             ?? defaultModels[0]
-        return "exec pi --print --no-session --no-tools --no-extensions --no-skills "
-            + "--no-prompt-templates --no-themes --no-context-files --no-approve --thinking low "
-            + "--model \(shellQuoted(model)) -- \(shellQuoted(prompt))"
+        return PiLaunch.draft(home: home, model: model, prompt: prompt).script
     }
 
     static func applying(_ generated: String, replacing original: String, current: String) -> String {

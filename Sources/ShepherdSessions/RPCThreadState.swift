@@ -84,7 +84,10 @@ final class RPCThreadState {
     var onServable: (() -> Void)?
     private var announcedServable = false
     /// A new agent's opening prompt, held until the thread serves (`sendOpeningPrompt`).
-    private var openingPrompt: (text: String, images: [NativeImage], id: UUID)?
+    typealias OpeningPrompt = (text: String, images: [NativeImage], id: UUID)
+    private var openingPrompt: OpeningPrompt?
+    /// The opening prompt pi never read (it stopped before the thread served).
+    var unreadOpeningPrompt: OpeningPrompt? { openingPrompt }
     /// Requests get a snapshot rather than `native_starting`.
     var isServable: Bool { piSessionID != nil && !historyPending }
     private(set) var generation = UUID().uuidString

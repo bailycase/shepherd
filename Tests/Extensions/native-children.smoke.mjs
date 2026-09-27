@@ -3,17 +3,14 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { spawn, execFileSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 if (!process.env.PI_SMOKE_MODEL) throw Error("Set PI_SMOKE_MODEL to opt in to three small model requests");
 const source = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../Extensions/shepherd-children.ts");
-const pkg = process.env.PI_PACKAGE_DIR || (() => {
-  let dir = path.dirname(fs.realpathSync(execFileSync("which", ["pi"], { encoding: "utf8" }).trim()));
-  while (!fs.existsSync(path.join(dir, "package.json")) && path.dirname(dir) !== dir) dir = path.dirname(dir);
-  return dir;
-})();
+const pkg = process.env.PI_PACKAGE_DIR;
+if (!pkg) throw Error("Set PI_PACKAGE_DIR to pi's package");
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-smoke-"));
 const driver = path.join(dir, "driver.ts");
 const require = createRequire(path.join(pkg, "package.json"));
@@ -25,7 +22,7 @@ fs.writeFileSync(driver, `import children from ${JSON.stringify(source)};
 export default function(pi) { const tools = new Map(); children(new Proxy(pi, { get(target,key) { if(key==='registerTool') return (tool)=>{tools.set(tool.name,tool);target.registerTool(tool);}; if(key==='sendMessage') return (message)=>target.sendMessage(message,{deliverAs:'nextTurn'}); return target[key]; } }));
 pi.registerCommand('smoke', {description:'bounded smoke', handler:async (args,ctx)=>{const input=JSON.parse(args);const value=await tools.get('shepherd_child_'+input.action).execute('smoke',input.params,undefined,undefined,ctx);ctx.ui.notify(JSON.stringify({shepherdSmokeReceipt:value.details}));}}); }
 `);
-const parent = spawn(process.execPath, [path.join(pkg, "dist/cli.js"), "--mode", "rpc", "--no-extensions", "--no-skills", "--no-context-files", "--no-prompt-templates", "--no-themes", "--no-approve", "--session", path.join(dir, "parent.jsonl"), "--model", process.env.PI_SMOKE_MODEL, "-e", driver, ...userExtensions.flatMap((file) => ["-e", file])], {
+const parent = spawn(process.execPath, [path.join(pkg, "dist/bundle/cli.js"), "--mode", "rpc", "--no-extensions", "--no-skills", "--no-context-files", "--no-prompt-templates", "--no-themes", "--no-approve", "--session", path.join(dir, "parent.jsonl"), "--model", process.env.PI_SMOKE_MODEL, "-e", driver, ...userExtensions.flatMap((file) => ["-e", file])], {
   cwd: dir, env: { ...process.env, PI_OFFLINE: "1", SHEPHERD_CHILD_SCOPE: "bundled", SHEPHERD_NATIVE_CHILDREN: "1", SHEPHERD_AGENT_ID: "smoke", SHEPHERD_SOCKET: path.join(dir, "shepherd.sock"), SHEPHERD_EXT_CHILDREN: source }, stdio: ["pipe", "pipe", "pipe"],
 });
 let buffer = "", sequence = 0; const events = []; let stderr = "";

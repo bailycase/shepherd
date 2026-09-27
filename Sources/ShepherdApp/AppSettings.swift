@@ -87,8 +87,6 @@ final class AppSettings {
         static let sidebarKeepIdleDays = "shepherd.sidebar.keepIdleDays"
         static let remoteListenerEnabled = "shepherd.remote.listener"
         static let remoteListenerPort = "shepherd.remote.listenerPort"
-        static let autoUpdatePi = "shepherd.pi.autoUpdate"
-        static let autoUpdateExtensions = "shepherd.pi.autoUpdateExtensions"
         static let worktreeBaseMode = "shepherd.worktree.baseMode"
         static let worktreeFetchBeforeCreate = "shepherd.worktree.fetchBeforeCreate"
         static let worktreeAutoCommit = "shepherd.worktree.autoCommit"
@@ -107,7 +105,6 @@ final class AppSettings {
             uiDensity, uiTextScale, sidebarWidth, sidebarRowDensity,
             sidebarStyle, sidebarGroupByHost, sidebarKeepIdleDays,
             remoteListenerEnabled, remoteListenerPort,
-            autoUpdatePi, autoUpdateExtensions,
             worktreeBaseMode, worktreeFetchBeforeCreate,
             worktreeAutoCommit, worktreeGeneratePRDescription,
             worktreeDeleteLocalBranch, worktreeAutoMergePR,
@@ -129,8 +126,6 @@ final class AppSettings {
         static let skillsInSlashMenu = true
         static let returnWhileWorking: ReturnWhileWorking = .queue
         static let queueDelivery: NativeQueueMode = .all
-        static let autoUpdatePi = false
-        static let autoUpdateExtensions = false
         static let sidebarStyle: NWSidebarStyle = .activity
         /// Keep idle threads in the project tree for a week.
         static let sidebarKeepIdleDays = 7
@@ -255,14 +250,6 @@ final class AppSettings {
          "SHEPHERD_CHILD_THINKING": childThinking,
          "SHEPHERD_CHILD_CONTEXT": childContext,
          "SHEPHERD_CHILD_SCOPE": childScope]
-    }
-
-    var autoUpdatePi: Bool {
-        didSet { store.set(autoUpdatePi, forKey: Key.autoUpdatePi) }
-    }
-
-    var autoUpdateExtensions: Bool {
-        didSet { store.set(autoUpdateExtensions, forKey: Key.autoUpdateExtensions) }
     }
 
     /// Shell for panes that are not an agent's pi process (⌘D splits, space
@@ -429,11 +416,6 @@ final class AppSettings {
         childContext = ["fresh", "fork"].contains(context) ? context : "fresh"
         let scope = store.string(forKey: Key.childScope) ?? "both"
         childScope = ["user", "project", "both", "bundled"].contains(scope) ? scope : "both"
-        autoUpdatePi = store.object(forKey: Key.autoUpdatePi) as? Bool ?? Defaults.autoUpdatePi
-        // The former combined toggle ran both commands. Preserve that intent
-        // when the new extension-specific preference has not been written.
-        autoUpdateExtensions = store.object(forKey: Key.autoUpdateExtensions) as? Bool
-            ?? (store.object(forKey: Key.autoUpdatePi) as? Bool ?? Defaults.autoUpdateExtensions)
         shellPath = store.string(forKey: Key.shellPath) ?? Defaults.shellPath
         let density = store.double(forKey: Key.uiDensity)
         uiDensity = min(max(density == 0 ? 1 : density, Self.uiDensityRange.lowerBound), Self.uiDensityRange.upperBound)
@@ -526,8 +508,6 @@ final class AppSettings {
         childThinking = ""
         childContext = "fresh"
         childScope = "both"
-        autoUpdatePi = Defaults.autoUpdatePi
-        autoUpdateExtensions = Defaults.autoUpdateExtensions
         shellPath = Defaults.shellPath
         worktreeBaseMode = .fresh
         worktreeFetchBeforeCreate = true

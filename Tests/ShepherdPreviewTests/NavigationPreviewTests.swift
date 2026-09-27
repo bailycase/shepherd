@@ -106,6 +106,57 @@ extension PreviewTests {
         }
     }
 
+    /// An agent whose pi stopped before it served, among healthy ones: "can't start" in red,
+    /// with the red dot (Sidebar, Thread › Can't start).
+    @Test func sidebarCannotStart() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let space = Space(name: "Shepherd", path: workspace.dir.path)
+        let rows: [(String, AgentStatus)] = [
+            ("Restyle native UI", .working), ("Triage Linear issues", .idle), ("Fix pay button jump", .done),
+        ]
+        var agents: [Agent] = [], tabs: [ShepherdCore.Tab] = []
+        let now = Date().timeIntervalSince1970 * 1000
+        for (index, row) in rows.enumerated() {
+            var (agent, tab) = try await workspace.agent(row.0, in: space, order: index, status: row.1)
+            agent.lastActiveAt = now - Double(index) * 60_000
+            agents.append(agent); tabs.append(tab)
+        }
+        try await workspace.seed(ShepherdState(spaces: [space], tabs: tabs, agents: agents))
+        let vm = workspace.vm
+        vm.cannotStart = [agents[1].id]
+        try await Preview.render("sidebar-cannot-start", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 320)) {
+            SidebarView(vm: vm)
+        }
+    }
+
+    /// PiAuthStates' agents: one the first launch's copy holds ("waiting", a clock), one not signed
+    /// in (in Needs you, "sign in"), among healthy ones (PiImportProgress, AgentNotSignedIn).
+    @Test func sidebarWaitingAndNotSignedIn() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let space = Space(name: "Shepherd", path: workspace.dir.path)
+        let rows: [(String, AgentStatus)] = [
+            ("Investigate SwiftUI live preview", .idle), ("Plan shepherd extensions", .idle), ("Fix terminal output buffer", .idle),
+            ("Merge PR #24 after CI", .done),
+        ]
+        var agents: [Agent] = [], tabs: [ShepherdCore.Tab] = []
+        let now = Date().timeIntervalSince1970 * 1000
+        for (index, row) in rows.enumerated() {
+            var (agent, tab) = try await workspace.agent(row.0, in: space, order: index, status: row.1)
+            agent.lastActiveAt = now - Double(index) * 60_000
+            agents.append(agent); tabs.append(tab)
+        }
+        try await workspace.seed(ShepherdState(spaces: [space], tabs: tabs, agents: agents))
+        let vm = workspace.vm
+        vm.notSignedIn = [agents[0].id: NotSignedIn(provider: "anthropic", at: Date())]
+        vm.cannotStart = [agents[0].id]
+        vm.waitingForImport = [agents[1].id]
+        try await Preview.render("sidebar-waiting-and-sign-in", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 360)) {
+            SidebarView(vm: vm)
+        }
+    }
+
     /// More open with Hosts selected (NavHosts): Hosts says how many hosts are offline, and
     /// Extensions follows.
     @Test func sidebarMoreHosts() async throws {

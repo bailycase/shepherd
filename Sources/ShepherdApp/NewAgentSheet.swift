@@ -488,7 +488,7 @@ struct NewAgentSheet: View {
     private func loadModels() {
         let hostID = targetHostID
         let requestID = defaults.begin(hostID: hostID,
-                                       model: hostID == nil ? vm.settings.agentDefaults.model ?? PiConfig.defaultModel() ?? "" : "",
+                                       model: hostID == nil ? vm.settings.agentDefaults.model ?? PiConfig.defaultModel(in: vm.server.pi.home) ?? "" : "",
                                        thinking: hostID == nil ? vm.settings.defaultThinking : .medium)
         models = nil
         errorText = nil

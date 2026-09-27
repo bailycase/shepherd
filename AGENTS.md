@@ -66,7 +66,14 @@ update channel. It starts with an empty support directory; nothing is copied fro
 Info.plist takes the executable, the names, and the feed file (`SHEPHERD_APPCAST`) from build
 settings, and each configuration compiles only its own icon.
 
+**The pi engine** (Node plus pi's bundle, pinned in `scripts/pi-engine-pin.json`) ships inside the
+Mac app, and every agent runs it, in Shepherd's own pi home ([docs/pi-engine.md](docs/pi-engine.md),
+[docs/pi-home.md](docs/pi-home.md)). Stage it
+once, and again whenever the pin changes, before any Mac build: every configuration's "Embed pi
+engine" phase copies it from `.build/pi-engine` and fails, saying so, when it is missing or stale.
+
 ```bash
+python3 scripts/pi_engine.py stage           # downloads to .build/pi-engine-cache, checks the pin
 xcodebuild -project Shepherd.xcodeproj -scheme 'Shepherd (Dev)' -destination 'platform=macOS' \
   -onlyUsePackageVersionsFromResolvedFile build
 swift build                                  # every package target
@@ -86,9 +93,6 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
   (`instructions/`), Settings ▸ Skills' state and git caches (`skills/`), designs (`designs/`;
   docs/designs.md), design systems (`design-systems/`), and subagent artifacts. It wins over the edition's own folder
   (`Shepherd`, or `Shepherd Nightly` in Shepherd Nightly).
-- **`SHEPHERD_SKILLS_DIR`** moves the skills folder Settings ▸ Skills manages (default
-  `~/.agents/skills`, the folder pi reads skills from; docs/skills.md). Tests point it at a scratch
-  folder; pi itself always reads `~/.agents/skills`.
 - **`SHEPHERD_MCP_CONFIG`** moves the MCP servers file (Settings ▸ MCP servers) away from
   `~/.config/mcp/mcp.json`. Test isolation points it at a scratch file; setting it in the Dev
   scheme keeps Dev's servers apart from the everyday app's.
@@ -99,6 +103,11 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
   - Always: `SHEPHERD_AGENT_ID`, `SHEPHERD_SOCKET`, `SHEPHERD_EXT_STATUS`,
     `SHEPHERD_INSTRUCTIONS_DIR` (where the instructions extension reads Settings ▸ Instructions'
     `AGENTS.md` and `APPEND_SYSTEM.md`).
+  - By the launcher (`<support>/pi/bin/pi`), after setting aside every `PI_*`, `JITI_*`, `NODE_*`
+    and `OPENSSL_CONF` it was started with under `_SHEPHERD_STASH_<name>` (listed in
+    `_SHEPHERD_STASH_NAMES`, and put back for pi's shell commands by `restore-env.sh`):
+    `PI_CODING_AGENT_DIR` (Shepherd's home), `PI_PACKAGE_DIR` (the engine's package),
+    `PI_OFFLINE=1`, `PI_SKIP_VERSION_CHECK=1`, `PI_TELEMETRY=0`, `PI_SUBAGENTS_TEMP_ROOT`.
   - With the matching extension on: `SHEPHERD_EXT_PANES`, `SHEPHERD_NATIVE_CHILDREN`,
     `SHEPHERD_EXT_CHILDREN`, and `SHEPHERD_CHILD_*`; for Settings ▸ Pi ▸ MCP servers,
     `SHEPHERD_EXT_MCP` (the installed `shepherd-mcp.ts`), `SHEPHERD_EXT_MCP_CLIENT` (the installed
@@ -111,8 +120,19 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
     agent that draws a design, `SHEPHERD_DESIGN_ID` and `SHEPHERD_DESIGN_SKILL_DIR` (the design
     skill the app writes to the support directory's `design-skill/`; docs/designs.md).
 - **`SHEPHERD_PR_DESCRIPTION_MODEL`** overrides the model that drafts finalize PR bodies.
+- **`SHEPHERD_NAMER_MODELS`** (`provider/id,provider/id`; an entry without a slash matches any
+  provider) overrides the cheap models the namer tries before the agent's own. The namer reads it
+  from the environment pi was started with, so it comes from the user's shell, not from Shepherd.
+- **`SHEPHERD_PI_ENGINE`** (Debug builds only: `swift test` and the Dev scheme) names one
+  executable that takes pi's arguments, which the launcher then starts instead of the engine the
+  app ships (`PiEngine`). The tests point it at a stand-in. Release builds ignore it, and a set
+  value is never looked up on PATH.
+- **`SHEPHERD_YOUR_PI`** (Debug builds only) names "your pi", the user's own pi folder Shepherd
+  reads (adoption, Settings ▸ Skills), instead of the one a login shell finds. The test isolation
+  sets it; under `SHEPHERD_PI_ENGINE` without it there is no "your pi" at all.
 - **`SHEPHERD_PREVIEW_DIR`**, **`SHEPHERD_LIVE_MODEL`**, and **`SHEPHERD_PERF_REPORT`** switch on
   the preview renders, the live-model run, and the long-list timing report (see Testing).
+  **`SHEPHERD_ENGINE_SMOKE`** names a built app (or `.build/pi-engine`) for the engine smoke.
   **`SHEPHERD_BENCHMARK`** switches on the benchmarks that print timings: `ComposerMenuBenchmarkTests`
   (the composer's menus over a full model catalog), `DataPathBenchmarks` (the server's data path),
   and `PiSessionFileTests`' runtime-state check.
@@ -125,8 +145,12 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
 - **`SHEPHERD_TIMING_TESTS=1`** runs the timing-sensitive tests even where `CI=true` skips them
   (see Testing).
 - **`PI_CODING_AGENT_DIR`** is pi's own: it moves pi's config and sessions away from
-  `~/.pi/agent`. Shepherd follows it (`PiConfig.agentDirectory`) when it seeds session headers
-  and reads pi's models and settings.
+  `~/.pi/agent`. Shepherd never takes its own home from it (a Shepherd started from an agent's
+  shell inherits one): its home is always `<support>/pi`. It is how "your pi" is found: a login
+  shell with the app's own value removed prints the one the user's startup files set
+  (`YourPiLocator`), else `~/.pi/agent`. Terminal panes blank it, with
+  `PI_CODING_AGENT_SESSION_DIR`, `PI_PACKAGE_DIR`, `PI_OFFLINE` and `PI_SUBAGENTS_TEMP_ROOT`, so a
+  pane's pi takes them from the user's startup files only.
 
 ## Testing
 
@@ -158,10 +182,15 @@ Tests come in tiers, and the switch is `--filter` on target names.
 - `StubPi.command`: runs `Resources/stub-pi.py`, a scripted `pi --mode rpc` driven by prompt
   keywords (`ask`, `select`, `hang`, `die`, `big`, `slow`, `widgets`, `fill`, `newsession`, …).
   `STUB_PI_LOG` records what it received, and `STUB_PI_HISTORY_BYTES` seeds a long history.
-  `STUB_PI_STARTUP_DELAY`/`_GATE`/`_EXIT` hold or fail its boot (`stub-pi-startup.json` in its
-  cwd does the same for a pi launched the way the app launches it).
-  `StubPi.installOnPath()` puts it first on `PATH` as `pi` (answering `--list-models`) for code
-  that launches pi the way the app does.
+  `STUB_PI_STARTUP_DELAY`/`_GATE`/`_EXIT` hold or fail its boot, `_STDERR` is what it says
+  before that exit, `_NEW_SESSION` prints pi's warning that it found no session for its
+  `--session-id`, and `_REQUIRE_AUTH` exits "No models available." unless its pi home's
+  `auth.json` holds a login (`stub-pi-startup.json` in its cwd does the same for a pi launched
+  the way the app launches it).
+  `StubPi.installAsEngine()` installs it as the engine `SHEPHERD_PI_ENGINE` names (answering
+  `--list-models`), for code that launches pi the way the app does (`PiLaunch`, through the
+  launcher in the scratch `support/pi`). Each launch is recorded, argv, cwd and environment, in
+  `TestProcess.piLaunches` (`StubPi.launches()`).
 - `makeScratchRepo()` and `git(_:in:)`: a git repository with one commit. A failing git call
   throws `CommandFailure` with git's stderr.
 - `makeScratchDirectory()`: a `mkdtemp` directory inside the process's scratch root, short
@@ -186,18 +215,32 @@ Tests come in tiers, and the switch is `--filter` on target names.
 `signal`, `chdir`, or `umask`, or change any other global that a concurrent test could observe.
 
 - When a test bundle loads, before any test runs, `Tests/ShepherdTestIsolation` (linked through
-  `ShepherdTestKit`) points `SHEPHERD_SUPPORT_DIR`, `SHEPHERD_SKILLS_DIR`, `SHEPHERD_MCP_CONFIG`,
-  `PI_CODING_AGENT_DIR`, and `ZDOTDIR` at a scratch root for that process, and clears the agent-only `SHEPHERD_*` variables a run started
-  from a Shepherd agent inherits. It also puts a `bin/` first on `PATH`, holding stand-ins for
-  `gh` and `pi` that refuse to run, and the scratch `ZDOTDIR`'s `.zshenv` and `.zlogin` keep it
-  first in every zsh a test starts. Without them, a login shell from a minimal environment
-  (Xcode, launchd) reaches the user's own `gh` and `pi`, because the system startup files
-  rebuild PATH. The root is removed at exit.
+  `ShepherdTestKit`) points `SHEPHERD_SUPPORT_DIR` (and with it Shepherd's pi home,
+  `support/pi`, whose `skills/` Settings ▸ Skills manages), `SHEPHERD_MCP_CONFIG`, `SHEPHERD_YOUR_PI` and
+  `PI_CODING_AGENT_DIR` (both "your pi", `pi-agent/`: the second a decoy the app must ignore), and
+  `ZDOTDIR` at a scratch root for that process, and clears the
+  agent-only `SHEPHERD_*` variables a run started from a Shepherd agent inherits. It also puts a
+  `bin/` first on `PATH`, holding stand-ins for `gh` and `pi` that refuse to run, and the scratch
+  `ZDOTDIR`'s `.zshenv` and `.zlogin` keep it first in every zsh a test starts. Without them, a
+  login shell from a minimal environment (Xcode, launchd) reaches the user's own `gh` and `pi`,
+  because the system startup files rebuild PATH. The root is removed at exit.
+- The app's engine in a test is `SHEPHERD_PI_ENGINE`, set to `bin/pi-engine`, which refuses to
+  run until a test installs the stub over it. No app-level test reaches pi through PATH, and
+  nothing a test does may write into `pi-agent/` ("your pi"; `PiHomeLaunchTests` checks it stays
+  byte-identical).
+- The scratch startup files also carry decoys, as a user's might: `.zshenv` exports
+  `PI_CODING_AGENT_DIR`, `PI_PACKAGE_DIR`, `NODE_OPTIONS`, `PI_OFFLINE=0`, `JITI_ALIAS` and
+  `PI_EXPERIMENTAL` pointing into `pi-decoy/` (never the scratch `pi-agent/`), and `.zlogin` moves
+  a shell that starts Shepherd's pi (`*/pi/bin/pi*`) to `/`. They are harmless where they land;
+  the launcher must win over them (`TestIsolationTests`, `PiHomeLaunchTests`). The live-model run
+  gets neither the engine nor the decoys.
 - A target depends on `ShepherdTestKit` when the code it tests can reach the support directory,
   pi's directory, `UserDefaults`, the drop directory, or a shell. With the swiftbuild build
   system each target is its own test bundle, so a target without it gets no isolation.
 - Otherwise pass state in: `ShepherdPaths.supportDirectory(environment:)`,
-  `PiConfig.agentDirectory(environment:)`, `TerminalImageDrop.resolve(_:directory:)`.
+  `PiConfig.agentDirectory(environment:)`, `TerminalImageDrop.resolve(_:directory:)`. Shepherd's
+  pi home, the engine, "your pi" and the catalog come in as a `PiSetup` (`SessionServer(pi:)`,
+  `PiSetup.app` in the app).
 - A test that needs process-wide state anyway (a signal disposition) or blocks the main queue runs
   as an exit test, in its own process: `await #expect(processExitsWith: .success) { … }`.
   Expectations inside the body are reported as usual. Wrap the body in `recordingErrors { … }`:
@@ -241,6 +284,17 @@ runs them.
 **Live model:** the opt-in use-case run against a real model is gated on `SHEPHERD_LIVE_MODEL`
 (e.g. `cpa/~anthropic/claude-haiku-latest`). It never runs by default.
 
+**Engine smoke:** `EngineSmokeTests` runs the shipped engine for real, opt-in, gated on
+`SHEPHERD_ENGINE_SMOKE` (a built `Shepherd.app`, or the staged `.build/pi-engine`). Its node and
+pi run against a scratch pi home, with the child's `HOME`, `TMPDIR` and working directory scratch
+too: `get_state`, a TypeScript fixture extension loaded through jiti, and an RPC `bash` command.
+It also starts the engine through the real launcher in a scratch Shepherd home, with a
+`NODE_OPTIONS` pi must not see: an RPC `bash` command there finds `pi` at the launcher and gets
+that `NODE_OPTIONS` back (`restore-env.sh`).
+It runs the x86_64 slice under Rosetta where it can, and a scratch copy signed with the hardened
+runtime (`scripts/sign-engine.sh`), so the engine's entitlements are checked too. It never reaches
+a model: the home's one provider points at a closed port and no prompt is sent.
+
 **Long lists** (DESIGN.md › Performance) are measured, not guessed:
 
 - `NWRenderProbe` (ShepherdUI, debug builds only) counts row bodies while a test records:
@@ -271,7 +325,9 @@ beside many tool results, snapshot round trips, a status report's CPU, the serve
 latency while a long history reloads, and a relaunch of agents with long histories.
 
 **Extension tests** (`Tests/Extensions/*.test.mjs`, Node's test runner) need `PI_PACKAGE_DIR`
-pointing at the installed pi package. They isolate `HOME` and use a local fake provider.
+pointing at an installed pi package (the harnesses import pi's modular `dist/index.js` and its
+dependencies, which the engine doesn't ship); nothing looks pi up on PATH. They isolate `HOME`
+and use a local fake provider.
 `native-children.smoke.mjs` is an opt-in real-model smoke (`PI_SMOKE_MODEL`).
 `Tests/ShepherdIOSChecks` holds the iOS client's scripts ([docs/ios/VALIDATION.md](docs/ios/VALIDATION.md)).
 
@@ -282,6 +338,10 @@ each release lands in, the legacy aliases, `verify-app`, `verify-ios`, and which
 Xcode project, `App/Info.plist`, `App/iOS/ExportOptions.plist`, `ShepherdEdition.swift`,
 `AppUpdater.swift`, and the Release workflow (its `testflight` input included), so a bundle id,
 feed name or signing setting that drifts from the script fails before a release builds.
+`Tests/Release/test_pi_engine.py` tests `scripts/pi_engine.py` against archives built in memory
+(what staging keeps and refuses, and `verify-app`'s engine checks), the pin, the engine's
+entitlements, `sign-app.sh`'s per-slice signing of node (on macOS), the "Embed pi engine" phase,
+and the Release workflow's staging and signing steps.
 
 **Tests never take the user's focus or drive their mouse or keyboard.**
 
@@ -289,7 +349,7 @@ feed name or signing setting that drifts from the script fails before a release 
   (`orderBack`).
 - Never call `makeKey` or `orderFront`, and never post synthetic mouse or keyboard events.
 - Nothing touches the user's support directory, preferences, pi configuration or sessions,
-  `~/.agents/skills`, `$TMPDIR/shepherd-drops`, or a running Shepherd.
+  `~/.agents`, `$TMPDIR/shepherd-drops`, or a running Shepherd.
 
 **Which tier a change needs:**
 
@@ -407,6 +467,7 @@ timing-sensitive tests. Docs-only changes (`docs/**`, `*.md`) don't trigger it.
 ```text
 App/
   ShepherdLauncher.swift   Mac @main shim.   Shepherd.entitlements   iOS/  the iPhone and iPad client
+  Engine.entitlements, Engine-x86_64.entitlements   the pi engine's node, per slice
   Info.plist               names, executable, and feed from build settings
   AppIcon.icon, AppIconNightly.icon   Shepherd's and Shepherd Nightly's icons
 Sources/
@@ -470,13 +531,25 @@ Sources/
                        session), AutomationRunLog (each automation's runs), PTYSession,
                        SessionScreen (SwiftTerm), StateStore,
                        PaneRequest (pane/review/automation requests + outcomes), RemoteFileUpload,
-                       PiModelCatalog, PiConfig, PiSessionPreview (a thread from pi's session file),
+                       PiEngine (which pi runs; BundledPiEngine, the one the app ships),
+                       PiHome (Shepherd's pi home: the launcher, restore-env.sh, its settings),
+                       YourPi (the user's own pi, read only; YourPiLocator, PiSessionFolder),
+                       YourPiFiles (its auth.json, models.json, settings, trust and extensions,
+                       parsed as plain files; PiProviders), YourPiImport (the first launch's
+                       copy into Shepherd's home, step by step, Re-import, and both sides'
+                       survey), PiSignIn (the sign-in bridge: pi's own login over JSON lines;
+                       PiSignInScript), PiSignInCatalog (the providers Sign-in offers, a key's
+                       mask, how a copy stands against your pi),
+                       PiLaunch (every line that starts it), PiSetup
+                       (the engine, the home and "your pi", passed in; the startup guards),
+                       PiModelCatalog, PiConfig,
+                       PiSessionPreview (a thread from pi's session file),
                        InstructionsStore (Settings ▸ Instructions' files and their history),
                        SuggestionsStore (Suggested instructions: settings, waiting, added),
-                       SkillsStore (a host's skills in ~/.agents/skills; docs/skills.md),
-                       SkillsGit (the partial clones skills install from), PiSkillsLoader
-                       (the skills pi loads from elsewhere, asked of pi's own loader on node;
-                       read-only in Settings ▸ Skills),
+                       SkillsStore (a host's skills in its pi home's skills/; docs/skills.md),
+                       SkillsGit (the partial clones skills install from),
+                       YourPiImport, YourPiFiles, YourPiResources (the first copy from the
+                       user's own pi, Re-import, and their extensions' switches; docs/pi-home.md),
                        Changes/ (ChangesService: the Changes pane's engine — scopes, snapshots,
                        diffs, the base picker, each agent's turns and their Undo; docs/changes.md),
                        DesignStore (each design's files in the support directory's designs/, on
@@ -550,10 +623,14 @@ Sources/
       Worktrees, Pi, Instructions, Skills, Remote, Keyboard, Advanced, Experiments}, AppSettings,
       InstructionsModel (the Instructions page's files, drafts and sync), InstructionsEditor (its
       NSTextView), SuggestionsModel (the Experiments page's suggestions), SkillsSheets (Browse
-      skills.sh, Add from repo)
+      skills.sh, Add from repo), YourPiModel (Settings ▸ Pi ▸ From your pi, and the first launch's
+      copy and who waits for it), YourPiText, PiImportSheet (the first launch's Bringing over your
+      pi), PiAuthStore (sign-ins: the sign-in sheet's session on the bridge, sign-out, what
+      expired), PiSignInSheet, PiAuthRows (Sign-in's rows), SettingsPiSignIn, SettingsPiFromYourPi,
+      Thread/SlashLogin (/login and /logout), Thread/ThreadAuthNotice (waiting, not signed in)
     Themes (ThemeManager, ShepherdTheme), ShepherdThemeMarker, ShellIntegration, ComponentGallery
-    RemoteHostStore, AgentPeers, AgentNotifications, ChildRuns, PiSessionFile, PiUpdateManager,
-      AppUpdater (Sparkle: UpdateChannel, UpdateChannelStore, ChannelDelegate),
+    RemoteHostStore, AgentPeers, AgentNotifications, ChildRuns, PiSessionFile (+ adoption from
+      your pi), AppUpdater (Sparkle: UpdateChannel, UpdateChannelStore, ChannelDelegate),
       NightlyMovedNotice
     Status/Namer/Panes/Review/Subagents/Children/Inspect/Instructions/Design/MCPExtension.swift
       embedded extensions (DesignExtension also carries the design skill; MCPExtension the client)
@@ -597,9 +674,6 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
                           design_check, comment_list, comment_reply, system_read and
                           system_write; hands pi the design skill
                           (design-skill/: SKILL.md, format.md); see docs/designs.md
-  shepherd-pi-skills.mjs  not an extension: Settings ▸ Skills runs it on node to ask pi's own
-                          loader which skills pi loads from outside ~/.agents/skills
-                          (PiSkillsLoader; docs/skills.md › Outside skills)
   shepherd-mcp.ts         the mcp tool (search, describe, call) and direct <server>_<tool> tools
                           over the servers in Settings ▸ MCP servers; credentials from the app
   shepherd-mcp-client.mjs the dependency-free MCP client (stdio, Streamable HTTP, legacy SSE),
@@ -618,7 +692,9 @@ Tests/
   Release/                Python tests for scripts/release.py
   ShepherdIOSChecks/      the iOS client's scripts
 scripts/               release.py (the release workflow's rules), sign-app.sh (release
-                       signing), sync-embedded-extension.py, ci_mtimes.py (CI's incremental builds)
+                       signing), sync-embedded-extension.py, ci_mtimes.py (CI's incremental builds),
+                       pi_engine.py + pi-engine-pin.json (stage and verify the pi engine),
+                       sign-engine.sh (node, slice by slice)
 Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
 ```
 
@@ -634,11 +710,28 @@ Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
   host opens for a remote client (a remote `gh auth login`). There is no tab UI: the sidebar is
   navigation.
 
-**Agent launch** (`StatusExtension.command`, from `TerminalSessionStore`):
-`/bin/zsh -l -c "exec pi --mode rpc --session-id <id> [--model … --thinking …] -e <extensions>"`.
+**Agent launch** (`StatusExtension.command`, from `TerminalSessionStore`, built by
+`PiLaunch.agent`):
+`/bin/zsh -l -c "cd -- <cwd> && exec '<support>/pi/bin/pi' --mode rpc --session-dir '<support>/pi/sessions/--<cwd>--' --session-id <id> [--model … --thinking …] -e <extensions>"`.
 
-- The session ID is the agent's current pi session. `PiSessionFile` seeds a session header if
-  pi has none yet.
+- `<support>/pi/bin/pi` is Shepherd's launcher, in Shepherd's own pi home
+  ([docs/pi-home.md](docs/pi-home.md)). It runs under `zsh -f`, sets aside the environment's
+  `PI_*`, `JITI_*`, `NODE_*` and `OPENSSL_CONF`, pins Shepherd's (home, package, offline, no
+  version check or telemetry), refuses `install`/`remove`/`uninstall`/`update`/`config`, and
+  execs the engine the app ships (`SHEPHERD_PI_ENGINE` in a Debug build). Every other launch of
+  pi (the catalog, drafts) goes through it too, and the node beside it (the MCP probe, the
+  sign-in bridge) is the engine's; `PiLaunch` builds them all and nothing
+  else names either. Nothing ever runs the user's own `pi` or `npm`.
+- Before each launch, `PiSetup.prepare` checks the startup guards (the home and "your pi" never
+  overlap, by `realpath`, and "your pi" holds no Shepherd marker) and writes the launcher,
+  `restore-env.sh` and Shepherd's keys in the home's `settings.json` (`shellCommandPrefix`, and
+  `packages` removed), under pi's own lock. A refused home starts no pi: the agent waits with
+  the reason (`homeUnsafe`).
+- The `cd` runs after the login shell's startup files, so a `cd` in them can't move pi, and
+  `--session-dir` (always passed) wins over the environment and any project's `sessionDir`.
+- The session ID is the agent's current pi session. Before any seeding, `PiSessionFile.adopt`
+  copies the agent's conversation in from "your pi" if Shepherd's home has none (plain reads,
+  bytes not links); then `PiSessionFile` seeds a session header if pi has none yet.
 - `--model`/`--thinking` go only to a fresh session.
 - Extensions follow Settings ▸ Pi ▸ Bundled extensions.
 - The opening prompt is the first native `send`, not a positional argument. The host holds it
@@ -650,6 +743,15 @@ Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
   order: the agent on screen first (and any agent selected while it waits), then the rest a
   few at a time. Every agent still starts. Test harnesses that seed agents only to draw them
   opt out (`restoresAgentsAtLaunch: false`); their pi starts when a pane's session is asked for.
+- At the first launch of a build with Shepherd's own pi, the queue (and automations) wait for
+  the one-time copy from the user's pi (`welcomesYourPi`, on in the app only;
+  `YourPiFirstLaunchTests` turns it on in a harness), bounded by a deadline; then the agents a
+  missing sign-in blocks keep waiting (`AgentStartQueue.hold(_:)`) until its sheet closes, or all
+  of them when it asks a new user to sign in or couldn't read the user's sign-ins.
+- An agent whose pi can't start because nothing signs in for its model waits in Needs you, and
+  starts again by itself when a sign-in lands for its provider (`PiAuthStore.onSignedIn`).
+- An agent whose folder is the user's home runs with `--no-approve`: its project folder, `~/.pi`,
+  is the user's own pi.
 - Starting is quiet: a thread draws what it knows at once (a new agent's empty state, a
   resuming agent's history read from pi's session file), accepts a send that waits for pi, and
   says "Starting…" only when pi is slow (DESIGN.md › Thread, Composer).
@@ -681,7 +783,8 @@ anything that must survive a relaunch out of that path.
 
 **Terminal panes** run the shell from Settings ▸ Terminal as a login shell, without wrapping
 `pi` or injecting a theme. The user's rc files and pi settings are never edited, and agent-only
-variables are blanked.
+variables are blanked, as are pi's `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR`,
+`PI_PACKAGE_DIR`, `PI_OFFLINE` and `PI_SUBAGENTS_TEMP_ROOT`: `pi` in a pane is the user's own.
 
 **Automations** are saved prompts (`ShepherdState.automations`).
 
@@ -809,16 +912,16 @@ the same change.
 - New persisted fields decode with defaults, so older `state.json` files keep loading.
 
 **Embedded extensions have one canonical copy.** The sixteen files in `Extensions/` are canonical,
-and so is the design skill in `Extensions/design-skill/`. One is not an extension:
-`shepherd-pi-skills.mjs` is embedded in `Sources/ShepherdSessions/PiSkillsLoader.swift`
-(`scriptSource`) and run on node, never loaded by pi.
+and so is the design skill in `Extensions/design-skill/`.
 pi loads the copies that the ten `Sources/ShepherdApp/*Extension.swift` files write to the
 support directory from embedded string literals. `installedPath()` rewrites an installed copy
 whenever its content differs, so drift ships bugs. `ChildrenExtension.swift` carries children,
 children-config, children-ui, workflow, and missions, and installs `InspectExtension`'s
 `shepherd-inspect.mjs`. `DesignExtension.swift` also writes the design skill's `SKILL.md` and
 `format.md` to the support directory's `design-skill/`. `MCPExtension.swift` carries
-`shepherd-mcp.ts` and `shepherd-mcp-client.mjs`, installed side by side.
+`shepherd-mcp.ts` and `shepherd-mcp-client.mjs`, installed side by side. The sign-in bridge,
+`shepherd-sign-in.mjs`, isn't an extension: `PiSignInScript` (ShepherdSessions' `PiSignIn.swift`)
+carries it and installs it beside them, and the app runs it on the engine's node.
 
 - Edit a `.ts`/`.mjs` file (or a design skill file) and its literal in the same change, with
   `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all sixteen pairs
@@ -859,7 +962,7 @@ aliases for them.
 
 **State is Observation.** The view model, `NativeThreadStore`, `AppSettings`,
 `KeybindingsStore`, `ThemeManager`, `ThemeStore`, `RemoteHostStore` and its connections,
-`PiUpdateManager`, `AppUpdater`, the worktree models, terminal pane sessions, and `MenuState`
+`AppUpdater`, the worktree models, terminal pane sessions, and `MenuState`
 are `@MainActor @Observable` classes, owned with `@State` and bound with `@Bindable`.
 
 - Don't add `ObservableObject`, `@Published`, `@StateObject`, or `@ObservedObject` to the Mac app
@@ -1030,7 +1133,10 @@ history, so returning to it is always a flip. Measurements are in
 [docs/benchmarks](docs/benchmarks/2026-09-03-terminal-baseline.md).
 
 **Sessions and views are separate.** Closing a pane detaches views only. A process that exits on
-its own closes its pane and retires its agent. Delete Agent is the explicit way to terminate an
+its own closes its pane and retires its agent, with one exception: an agent's pi that exits before
+its thread serves (or that Shepherd stops) keeps its agent, which waits with the reason and Retry
+(`SessionExit.keepsAgent`, DESIGN.md › Thread › Can't start). Its pane session stays `.stopped`, so
+the pane never respawns pi on its own. Delete Agent is the explicit way to terminate an
 agent and its auxiliary processes while the app runs, and quitting the app terminates everything.
 
 **Only these paths mutate repositories** ([docs/worktrees.md](docs/worktrees.md)):
@@ -1217,7 +1323,10 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   appcast.
   - `scripts/sign-app.sh` signs inside-out, never with `--deep`: every nested item first, then
     the app with `App/Shepherd.entitlements` (both apps). Only nested apps and XPC services keep
-    their own entitlements.
+    their own entitlements, and the pi engine's node gets the engine's: `scripts/sign-engine.sh`
+    signs each slice with its own (`App/Engine.entitlements`, allow-jit, for arm64;
+    `App/Engine-x86_64.entitlements` adds allow-unsigned-executable-memory, without which V8
+    aborts at startup under the hardened runtime). `node` is never stripped.
   - The iOS client is archived unsigned and signed only at export, with the team's
     cloud-managed Apple Distribution certificate through the `APP_STORE_CONNECT_*` API key
     (`-allowProvisioningUpdates`). There is no `.p12` and no keychain.
@@ -1250,15 +1359,17 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   2000 lines of styled scrollback, the alt screen, cursor, and modes), not raw bytes. Cosmetic
   artifacts are acceptable; lost bytes are not. The watermark protocol prevents duplication and
   loss.
-- **Skills live in `~/.agents/skills`,** the folder pi reads skills from, not `~/.pi/agent`.
-  Settings ▸ Skills is the only thing that writes there; everything else it keeps (skills that
-  are off, just removed, git caches, records) is in the support directory's `skills/`. The
-  skills pi loads from its own setup and packages are listed read-only, read by
-  `PiSkillsLoader` without writing anything (no settings lock, no install); tests give
-  `ScratchServer` a reader of their own and never ask this machine's pi.
+- **Skills live in Shepherd's pi home, `<support>/pi/skills`,** the only folder its pi reads
+  skills from: its settings.json filters out pi's own `$HOME/.agents/skills` (`PiHome.install`),
+  and the children bridge never lists it. Settings ▸ Skills installs there, and the first copy
+  (and Re-import) copies the user's own skills there; everything else Settings ▸ Skills keeps
+  (skills that are off, just removed, git caches, records) is in the support directory's
+  `skills/`. Nothing of Shepherd's writes `~/.agents/skills` or `~/.pi`.
 - **pi's trust prompt:** interactive pi asks to trust project `.pi/` directories, but `-e` loads
-  our extensions without one. Never install anything into `~/.pi/agent/`. `PiSessionFile` writes
-  only session files, which pi treats as data. Settings ▸ Instructions keeps its root files in
+  our extensions without one. Never write anything into the user's pi (`~/.pi/agent/`, or
+  wherever their `PI_CODING_AGENT_DIR` points), lock folders included: everything Shepherd
+  writes for pi is in its own home, `<support>/pi`. `PiSessionFile` writes only session files
+  there, which pi treats as data. Settings ▸ Instructions keeps its root files in
   Shepherd's support directory and hands them to the sessions Shepherd starts through
   `shepherd-instructions.ts`; pi run by hand doesn't read them.
 - **pi's formats:** `PiConfig` (models.json, settings.json) and `PiModelCatalog`

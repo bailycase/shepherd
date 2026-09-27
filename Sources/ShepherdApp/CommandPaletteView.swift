@@ -22,8 +22,9 @@ struct CommandPaletteView: View {
             close: { vm.showCommandPalette = false },
             contentSearch: { query, existing in
                 let targets = vm.paletteSearchTargets
+                let root = vm.server.pi.sessionsRoot
                 let matches = await Task.detached(priority: .userInitiated) {
-                    PaletteContentSearch.search(query: query, agents: targets)
+                    PaletteContentSearch.search(query: query, agents: targets, sessionsRoot: root)
                 }.value
                 guard !Task.isCancelled else { return [] }
                 let local = vm.paletteContentRows(matches: matches, excluding: existing)

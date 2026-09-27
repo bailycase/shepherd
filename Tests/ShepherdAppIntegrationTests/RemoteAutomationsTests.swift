@@ -14,7 +14,7 @@ import Testing
 @MainActor
 struct RemoteAutomationsTests {
     @Test func aClientSwitchesRunsStopsAndDeletesAHostsAutomation() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: remote.host.dir.path)
@@ -82,7 +82,7 @@ struct RemoteAutomationsTests {
     /// replaces the finished run's agent with a new run, keeping the finished one in its runs. A
     /// live run is never cut short by running again.
     @Test func runningASettledAutomationAgainReplacesItsRun() async throws {
-        try StubPi.installOnPath()
+        try StubPi.installAsEngine()
         let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let automation = Automation(name: "watch CI", prompt: "watch the build", cwd: remote.host.dir.path, enabled: false)

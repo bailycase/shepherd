@@ -32,8 +32,8 @@ enum PaletteContentSearch {
 
     /// The session file pi is writing for `piSessionID` in `cwd`, resolved
     /// the same way PiSessionFile names them (any timestamp prefix).
-    static func sessionFile(piSessionID: String, cwd: String) -> URL? {
-        let directory = PiSessionFile.projectDirectory(forCwd: cwd)
+    static func sessionFile(piSessionID: String, cwd: String, sessionsRoot: URL) -> URL? {
+        let directory = PiSessionFile.projectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot)
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else {
             return nil
         }
@@ -41,14 +41,16 @@ enum PaletteContentSearch {
             .map { directory.appendingPathComponent($0) }
     }
 
-    /// Case-insensitive substring search across the given agents' sessions.
+    /// Case-insensitive substring search across the given agents' sessions, under pi's
+    /// `sessionsRoot`.
     static func search(
         query: String,
-        agents: [(id: AgentID, piSessionID: String, cwd: String)]
+        agents: [(id: AgentID, piSessionID: String, cwd: String)],
+        sessionsRoot: URL
     ) -> [Match] {
         guard query.count >= minQueryLength else { return [] }
         return agents.compactMap { agent in
-            guard let url = sessionFile(piSessionID: agent.piSessionID, cwd: agent.cwd),
+            guard let url = sessionFile(piSessionID: agent.piSessionID, cwd: agent.cwd, sessionsRoot: sessionsRoot),
                   let snippet = snippet(for: query, inSessionAt: url) else { return nil }
             return Match(agentID: agent.id, snippet: snippet)
         }

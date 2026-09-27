@@ -107,6 +107,7 @@ struct ThreadScreen: View {
         if !host.phase.isConnected { return "\(host.name) is offline · showing the last known thread" }
         if !supported { return "Update Shepherd on \(host.name) to open threads here." }
         if let error = store.loadError { return error }
+        if let problem = store.startProblem { return "\(problem.title) \(problem.advice(host: host.name))" }
         if store.clipped { return "Some output is clipped · the full thread is on \(host.name)" }
         return nil
     }
@@ -149,7 +150,7 @@ struct ThreadTranscript: View {
                         .buttonStyle(.nw(.ghost, size: .s))
                         .disabled(!store.isLive || !store.ready || store.loadingOlder)
                         .frame(maxWidth: .infinity)
-                    } else if store.snapshot == nil && store.loadError == nil && store.isLive {
+                    } else if store.snapshot == nil && store.loadError == nil && store.startProblem == nil && store.isLive {
                         ProgressView().progressViewStyle(NWSpinnerStyle()).frame(maxWidth: .infinity)
                     }
                     ForEach(rows) { row in
@@ -328,6 +329,7 @@ struct ThreadTitle: View {
 
         @MainActor init(store: NativeThreadStore, agent: Agent?) {
             if store.loadError != nil { state = .failed; label = "Error" }
+            else if store.startProblem != nil { state = .failed; label = "Can't start" }
             else if !store.dialogs.isEmpty { state = .attention; label = AgentState.attention.label }
             else if store.running { state = .running; label = AgentState.running.label }
             else if store.lastTurnFailed { state = .failed; label = AgentState.failed.label }
