@@ -250,6 +250,19 @@ struct DesignModelTests {
         #expect(ShepherdState(spaces: [older]).designsSpace == nil)
     }
 
+    /// Hide from Sidebar is its own flag, not the reserved spaces' `hidden`: older files decode
+    /// it false, and a shown space writes nothing new.
+    @Test func aSpaceHiddenFromTheSidebarSaysSoAndOthersWriteAsBefore() throws {
+        let older = try Fixture.decode(Space.self, #"{"id":"s","name":"web","path":"/tmp/web","hidden":false}"#)
+        #expect(!older.sidebarHidden && !older.hidden)
+        #expect(try Fixture.encodeObject(older)["sidebarHidden"] == nil)
+        var tucked = older
+        tucked.sidebarHidden = true
+        #expect(try Fixture.encodeObject(tucked)["sidebarHidden"] as? Bool == true)
+        #expect(try Fixture.encodeObject(tucked)["hidden"] as? Bool == false)
+        #expect(try Fixture.roundTrip(tucked) == tucked)
+    }
+
     /// The board count is what the host reads from the design's files: never written to state.json.
     @Test func thePersistedStateDropsBoardCounts() {
         let design = Design(name: "Checkout", createdAt: 1, boardCount: 4)

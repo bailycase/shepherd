@@ -178,20 +178,17 @@ struct AppSettingsTests {
         #expect(settings.remoteListenerEnabled)
         #expect(AppSettings(store: store).remoteListenerEnabled)
         #expect(Set(AppSettings.Key.all).subtracting(AppSettings.Key.resettable)
-                == [AppSettings.Key.remoteListenerEnabled, AppSettings.Key.remoteListenerPort, AppSettings.Key.skillsDirectoryKey])
+                == [AppSettings.Key.remoteListenerEnabled, AppSettings.Key.remoteListenerPort])
     }
 
-    /// The skills.sh key is a credential the user pasted: a reset of preferences keeps it.
-    @Test func resetKeepsTheSkillsDirectoryKey() {
+    @Test func loadingSettingsDiscardsTheRetiredSkillsDirectoryKey() {
         let store = Fixture.defaults()
+        store.set("sk-test", forKey: "shepherd.skills.directoryKey")
         let settings = AppSettings(store: store)
-        settings.skillsDirectoryKey = "sk-test"
+        #expect(store.object(forKey: "shepherd.skills.directoryKey") == nil)
         settings.skillsInSlashMenu = false
-
         settings.resetToDefaults()
-
-        #expect(settings.skillsDirectoryKey == "sk-test" && settings.skillsInSlashMenu)
-        #expect(AppSettings(store: store).skillsDirectoryKey == "sk-test")
+        #expect(settings.skillsInSlashMenu)
     }
 
     /// An empty model launches pi without `--model` rather than with an empty argument.

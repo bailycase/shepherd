@@ -25,6 +25,28 @@ struct AppearanceSettings: View {
                     ), options: AppearanceMode.allCases.map { ($0, $0.title) })
                 }
             }
+            // The sidebar reads the view model's settings (the app's own, a scratch set in tests).
+            @Bindable var sidebar = vm.settings
+            SettingsGroup(title: "Sidebar") {
+                OrganizeByRow(style: Binding(get: { sidebar.sidebarStyle }, set: { vm.setSidebarStyle($0) }))
+                if sidebar.sidebarStyle == .projects {
+                    SettingsRow(title: "Group by host",
+                                subtitle: "A section for each Mac or server, its projects inside. Off shows the host as a tag on the row.") {
+                        SettingsSwitch(label: "Group by host", isOn: $sidebar.sidebarGroupByHost)
+                    }
+                    SettingsRow(title: "Keep idle threads",
+                                subtitle: "Then they leave the sidebar; ⌘K still finds them. Running threads and anything waiting on you stay.") {
+                        NWPopupMenu(Self.keepIdleTitle(sidebar.sidebarKeepIdleDays)) {
+                            Picker("Keep idle threads", selection: $sidebar.sidebarKeepIdleDays) {
+                                ForEach(AppSettings.sidebarKeepIdleChoices, id: \.self) { Text(Self.keepIdleTitle($0)).tag($0) }
+                            }
+                            .pickerStyle(.inline)
+                            .labelsHidden()
+                        }
+                    }
+                }
+            }
+            .nwAnimation(.disclosure, value: sidebar.sidebarStyle)
             SettingsGroup(title: "Layout") {
                 SettingsRow(title: "Sidebar rows", subtitle: "Compact 22 · Standard 28 · Comfortable 36 pt, for the sidebar and menus.") {
                     NWSegmentedPicker("Sidebar rows", selection: $settings.sidebarRowDensity,
@@ -46,5 +68,37 @@ struct AppearanceSettings: View {
                 }
             }
         }
+    }
+
+    /// "7 days", "1 day", "Forever".
+    static func keepIdleTitle(_ days: Int) -> String {
+        switch days {
+        case 0: "Forever"
+        case 1: "1 day"
+        default: "\(days) days"
+        }
+    }
+}
+
+/// Organize by: its title and what it does over the two cards (`NWSidebarStylePicker`).
+private struct OrganizeByRow: View {
+    @Binding var style: NWSidebarStyle
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppLayout.settingsStackedRowSpacing) {
+            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+                Text("Organize by")
+                    .font(.nw(.body, weight: .medium))
+                    .foregroundStyle(Color.nw.textPrimary)
+                NWMarkupText("What the sidebar lists under New thread and the destinations. Also in View ▸ Organize Sidebar By.",
+                             size: NWTextStyle.ui.size, lineHeight: NWCardRowMetrics.settingsDescriptionLineHeight)
+                    .foregroundStyle(Color.nw.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            NWSidebarStylePicker(selection: $style)
+        }
+        .padding(AppLayout.settingsStackedRowInsets)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain)
     }
 }

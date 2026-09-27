@@ -11,19 +11,26 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
     /// project, so its agent lives here, and startup keeps its agents (unlike automation runs).
     /// Decodes false from older files, and is written only when true.
     public var holdsDesigns: Bool
+    /// The user hid this project from the sidebar's project tree (its menu's Hide from Sidebar;
+    /// the + beside Projects brings it back). Its threads stay in the palette and Activity. Not
+    /// `hidden`, which marks the reserved spaces. Decodes false from older files, and is written
+    /// only when true.
+    public var sidebarHidden: Bool
 
     public init(
         id: SpaceID = SpaceID(),
         name: String,
         path: String,
         hidden: Bool = false,
-        holdsDesigns: Bool = false
+        holdsDesigns: Bool = false,
+        sidebarHidden: Bool = false
     ) {
         self.id = id
         self.name = name
         self.path = path
         self.hidden = hidden
         self.holdsDesigns = holdsDesigns
+        self.sidebarHidden = sidebarHidden
     }
 
     /// The reserved space for design agents: hidden, never a project.
@@ -35,7 +42,7 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
     public var holdsAutomations: Bool { hidden && !holdsDesigns }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, path, hidden, holdsDesigns
+        case id, name, path, hidden, holdsDesigns, sidebarHidden
     }
 
     public init(from decoder: Decoder) throws {
@@ -45,6 +52,7 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
         path = try c.decode(String.self, forKey: .path)
         hidden = try c.decodeIfPresent(Bool.self, forKey: .hidden) ?? false
         holdsDesigns = try c.decodeIfPresent(Bool.self, forKey: .holdsDesigns) ?? false
+        sidebarHidden = try c.decodeIfPresent(Bool.self, forKey: .sidebarHidden) ?? false
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -54,6 +62,7 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
         try c.encode(path, forKey: .path)
         try c.encode(hidden, forKey: .hidden)
         if holdsDesigns { try c.encode(holdsDesigns, forKey: .holdsDesigns) }
+        if sidebarHidden { try c.encode(sidebarHidden, forKey: .sidebarHidden) }
     }
 }
 

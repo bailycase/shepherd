@@ -285,16 +285,18 @@ extension ShepherdViewModel {
         selectRemoteAgent(hostID: hostID, agentID: agentID)
     }
 
-    /// ⌘1–9: the first nine thread rows of Recents (a design takes no digit).
+    /// ⌘1–9: the first nine thread rows of Recents (a design takes no digit), or of the
+    /// project tree's open projects.
     func selectAgentDigit(_ digit: Int) {
-        let recents = sidebarLists.shortcutRows
+        let recents = sidebarShortcutRows
         guard recents.indices.contains(digit - 1) else { return }
         selectSidebarRow(recents[digit - 1].id)
     }
 
-    /// ⌘↑/↓: move through the sidebar's rows (Needs you, then Recents), wrapping at the ends.
+    /// ⌘↑/↓: move through the sidebar's rows (Needs you, then Recents; or the open projects'
+    /// threads), wrapping at the ends.
     func selectAdjacentAgent(_ delta: Int) {
-        let rows = sidebarLists.all
+        let rows = sidebarWalkRows
         guard !rows.isEmpty else { return }
         let selected = selectedSidebarRow
         let current = rows.firstIndex { $0.id == selected } ?? (delta > 0 ? rows.count - 1 : 0)

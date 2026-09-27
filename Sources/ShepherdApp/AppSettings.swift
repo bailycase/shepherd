@@ -65,7 +65,6 @@ final class AppSettings {
         static let mcpOpenSignInPages = "shepherd.mcp.openSignInPages"
         static let mcpProjectConfig = "shepherd.mcp.projectConfig"
         static let mcpSameEverywhere = "shepherd.mcp.sameEverywhere"
-        static let skillsDirectoryKey = "shepherd.skills.directoryKey"
         static let returnWhileWorking = "shepherd.agent.returnWhileWorking"
         static let queueDelivery = "shepherd.agent.queueDelivery"
         static let piPanesExtension = "shepherd.pi.extension.panes"
@@ -83,6 +82,9 @@ final class AppSettings {
         static let uiTextScale = "shepherd.ui.textScale"
         static let sidebarWidth = "shepherd.ui.sidebarWidth"
         static let sidebarRowDensity = "shepherd.sidebarRowDensity"
+        static let sidebarStyle = "shepherd.sidebar.style"
+        static let sidebarGroupByHost = "shepherd.sidebar.groupByHost"
+        static let sidebarKeepIdleDays = "shepherd.sidebar.keepIdleDays"
         static let remoteListenerEnabled = "shepherd.remote.listener"
         static let remoteListenerPort = "shepherd.remote.listenerPort"
         static let worktreeBaseMode = "shepherd.worktree.baseMode"
@@ -101,19 +103,19 @@ final class AppSettings {
             piMCPExtension,
             childConcurrency, childModel, childThinking, childContext, childScope,
             uiDensity, uiTextScale, sidebarWidth, sidebarRowDensity,
+            sidebarStyle, sidebarGroupByHost, sidebarKeepIdleDays,
             remoteListenerEnabled, remoteListenerPort,
             worktreeBaseMode, worktreeFetchBeforeCreate,
             worktreeAutoCommit, worktreeGeneratePRDescription,
             worktreeDeleteLocalBranch, worktreeAutoMergePR,
-            worktreeMergeMethod, skillsInSlashMenu, skillsDirectoryKey,
+            worktreeMergeMethod, skillsInSlashMenu,
             mcpOpenSignInPages, mcpProjectConfig, mcpSameEverywhere,
             designToolEnabled,
         ]
 
         /// What Reset settings clears: everything but Remote's listener, which only its own
-        /// switch turns on or off (a reset must not stop serving at the next launch), and the
-        /// skills.sh key, a credential the user pasted rather than a preference.
-        static let resettable = all.filter { ![remoteListenerEnabled, remoteListenerPort, skillsDirectoryKey].contains($0) }
+        /// switch turns on or off (a reset must not stop serving at the next launch).
+        static let resettable = all.filter { ![remoteListenerEnabled, remoteListenerPort].contains($0) }
     }
 
     enum Defaults {
@@ -124,6 +126,9 @@ final class AppSettings {
         static let skillsInSlashMenu = true
         static let returnWhileWorking: ReturnWhileWorking = .queue
         static let queueDelivery: NativeQueueMode = .all
+        static let sidebarStyle: NWSidebarStyle = .activity
+        /// Keep idle threads in the project tree for a week.
+        static let sidebarKeepIdleDays = 7
         /// The user's login shell when it is a real executable, else zsh.
         static var shellPath: String {
             let env = ProcessInfo.processInfo.environment["SHELL"] ?? ""
@@ -178,11 +183,6 @@ final class AppSettings {
     /// only This Mac.
     var mcpSameEverywhere: Bool {
         didSet { store.set(mcpSameEverywhere, forKey: Key.mcpSameEverywhere) }
-    }
-
-    /// A skills.sh API key: Browse's ranked lists need one (search and install don't).
-    var skillsDirectoryKey: String {
-        didSet { store.set(skillsDirectoryKey, forKey: Key.skillsDirectoryKey) }
     }
 
     /// What ↩ does in the composer while pi works: queue the message (the default) or steer it in.
@@ -286,6 +286,28 @@ final class AppSettings {
         didSet { store.set(sidebarRowDensity.rawValue, forKey: Key.sidebarRowDensity) }
     }
 
+    /// Settings ▸ Appearance ▸ Sidebar ▸ Organize by (also View ▸ Organize Sidebar By): Needs you
+    /// and Recents, or a folder for each project with its threads inside.
+    var sidebarStyle: NWSidebarStyle {
+        didSet { store.set(sidebarStyle.rawValue, forKey: Key.sidebarStyle) }
+    }
+
+    /// Group by host, for the project tree: a section per host with its projects inside. Off,
+    /// every host's threads sit in their project with the host as a tag on the row.
+    var sidebarGroupByHost: Bool {
+        didSet { store.set(sidebarGroupByHost, forKey: Key.sidebarGroupByHost) }
+    }
+
+    /// Keep idle threads, for the project tree: an idle or finished thread leaves its project
+    /// after this many days without activity (it stays in the palette). Running threads and
+    /// anything waiting on you stay. 0 keeps them all.
+    var sidebarKeepIdleDays: Int {
+        didSet { store.set(sidebarKeepIdleDays, forKey: Key.sidebarKeepIdleDays) }
+    }
+
+    /// Keep idle threads' choices, in days; 0 is Forever.
+    static let sidebarKeepIdleChoices = [1, 3, 7, 14, 30, 0]
+
     /// Serve this Mac's sessions to remote Shepherd clients (the mini role).
     /// Applied at launch and on toggle; persists so a host stays a host
     /// across reboots.
@@ -372,7 +394,8 @@ final class AppSettings {
             .flatMap(ThinkingLevel.init(rawValue:)) ?? Defaults.thinking
         autoNameAgents = store.object(forKey: Key.autoNameAgents) as? Bool ?? Defaults.autoNameAgents
         skillsInSlashMenu = store.object(forKey: Key.skillsInSlashMenu) as? Bool ?? Defaults.skillsInSlashMenu
-        skillsDirectoryKey = store.string(forKey: Key.skillsDirectoryKey) ?? ""
+        // The directory now uses Shepherd's public API; discard the retired credential.
+        store.removeObject(forKey: "shepherd.skills.directoryKey")
         mcpOpenSignInPages = store.object(forKey: Key.mcpOpenSignInPages) as? Bool ?? false
         mcpProjectConfig = store.object(forKey: Key.mcpProjectConfig) as? Bool ?? false
         mcpSameEverywhere = store.object(forKey: Key.mcpSameEverywhere) as? Bool ?? true
@@ -401,6 +424,10 @@ final class AppSettings {
         let width = store.double(forKey: Key.sidebarWidth)
         sidebarWidth = Self.clampSidebarWidth(width == 0 ? Self.defaultSidebarWidth : width)
         sidebarRowDensity = store.string(forKey: Key.sidebarRowDensity).flatMap(NWDensity.init(rawValue:)) ?? .standard
+        sidebarStyle = store.string(forKey: Key.sidebarStyle).flatMap(NWSidebarStyle.init(rawValue:)) ?? Defaults.sidebarStyle
+        sidebarGroupByHost = store.bool(forKey: Key.sidebarGroupByHost)
+        let keep = store.object(forKey: Key.sidebarKeepIdleDays) as? Int
+        sidebarKeepIdleDays = keep.flatMap { Self.sidebarKeepIdleChoices.contains($0) ? $0 : nil } ?? Defaults.sidebarKeepIdleDays
         remoteListenerEnabled = store.bool(forKey: Key.remoteListenerEnabled)
         let port = store.integer(forKey: Key.remoteListenerPort)
         remoteListenerPort = (port > 0 && port <= 65535) ? port : Int(edition.defaultRemoteListenerPort)
@@ -468,6 +495,9 @@ final class AppSettings {
         uiTextScale = 1
         sidebarWidth = Self.defaultSidebarWidth
         sidebarRowDensity = .standard
+        sidebarStyle = Defaults.sidebarStyle
+        sidebarGroupByHost = false
+        sidebarKeepIdleDays = Defaults.sidebarKeepIdleDays
         piPanesExtension = true
         piReviewExtension = true
         piSubagentsExtension = true

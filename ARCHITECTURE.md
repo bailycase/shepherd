@@ -135,7 +135,10 @@ reads `Agent.waitingOn`, the question the agent's thread asks, and `Agent.waitin
 agent's word or two for it: the `short` argument the status extension adds to asking tools, which
 `RPCThreadState` reads from the call that opened the dialog. The host sets both from its thread
 state. All three are live state: broadcast to remote clients, and `waitingOn` and `waitingReason`
-are never written to state.json. `ShellLayout` (`AppLayout+Navigation.swift`) is the pure
+are never written to state.json. Organized by project, `SidebarDerivation.tree`
+(`SidebarProjectsModel.swift`) groups the same source into This Mac's spaces (in their order,
+`SessionServer.moveSpace`; `Space.sidebarHidden` leaves one out), by host with Group by host, once
+per change of it and of `SidebarTreeOptions` (`sidebarTree`). `ShellLayout` (`AppLayout+Navigation.swift`) is the pure
 function that decides, from the window's width, whether the sidebar docks or overlays and whether
 the side pane docks or overlays the agent's layout. The side pane wraps the whole
 layout (`AgentLayoutView` in `WorkspaceView.swift`), never one of its panes, so a terminal split

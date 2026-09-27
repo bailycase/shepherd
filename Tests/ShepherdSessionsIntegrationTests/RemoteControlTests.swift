@@ -71,6 +71,21 @@ struct RemoteControlTests {
         #expect(r.host.broadcasts.current.count == 1)
     }
 
+    /// A project added from another Mac goes on top, as one added on this Mac does.
+    @Test func aRemotelyAddedSpaceGoesFirst() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let existing = Fixture.space("existing")
+        try await r.server.addSpace(existing)
+        let folder = try makeScratchDirectory("project")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let client = try await r.typed()
+        defer { client.disconnect() }
+
+        let spaceID = try await client.addSpace(path: folder.path)
+        #expect(r.server.state.spaces.map(\.id) == [spaceID, existing.id])
+    }
+
     @Test func addSpaceRejectsDuplicatesAndMissingDirectories() async throws {
         let r = try RemoteHost()
         defer { r.stop() }

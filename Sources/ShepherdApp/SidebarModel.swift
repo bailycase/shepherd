@@ -203,8 +203,8 @@ enum SidebarDerivation {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    private static func localRow(_ agent: Agent, automation: Automation?, run: AutomationRun?, children: [ChildRun],
-                                 needsYou: Bool, failed: Bool, cannotStart: Bool = false, since: Date?) -> SidebarListRow {
+    static func localRow(_ agent: Agent, automation: Automation?, run: AutomationRun?, children: [ChildRun],
+                         needsYou: Bool, failed: Bool, cannotStart: Bool = false, since: Date?) -> SidebarListRow {
         let failed = failed && agent.status == .done
         let live = automation != nil && AutomationRow.isLive(agent, run: run)
         let leading: NWSidebarRow.Leading
@@ -248,7 +248,7 @@ enum SidebarDerivation {
             worktree: false, automation: nil, automationLive: false)
     }
 
-    private static func remoteRow(_ agent: Agent, host: SidebarSource.Host, automation: Bool, children: [ChildRun],
+    static func remoteRow(_ agent: Agent, host: SidebarSource.Host, automation: Bool, children: [ChildRun],
                                   needsYou: Bool) -> SidebarListRow {
         let leading: NWSidebarRow.Leading
         let accessory: NWSidebarRow.Accessory
