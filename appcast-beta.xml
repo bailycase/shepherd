@@ -4,7 +4,7 @@
         <title>Shepherd</title>
         <item>
             <title>0.1.0-beta.6</title>
-            <pubDate>Sun, 27 Sep 2026 18:07:37 +0000</pubDate>
+            <pubDate>Sun, 27 Sep 2026 18:39:17 +0000</pubDate>
             <link>https://github.com/bailycase/shepherd</link>
             <sparkle:channel>beta</sparkle:channel>
             <sparkle:version>35</sparkle:version>
@@ -18,26 +18,29 @@
                 <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0-beta.6/Shepherd35-27.delta" sparkle:deltaFrom="27" length="1609946" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="SUdnWxheDx9vs1ozjNsTcXTTvTlWECLY1FPHuroHp6TGDMN45ITbGGKO1lYKFQM01IPQ1owDJ4rTiMTHlAIaCQ=="/>
                 <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0-beta.6/Shepherd35-25.delta" sparkle:deltaFrom="25" length="1883622" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="W58Tk4Cnuj5FHWvSmiiqr1EbgBlpPahkBFP2YUETTucqqgrI9+OK7VhEbXRUyk71EA+9WhritdjbI0q5K6euDA=="/>
             </sparkle:deltas>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
         </item>
         <item>
             <title>0.1.0-beta.5</title>
-            <pubDate>Sun, 27 Sep 2026 18:07:38 +0000</pubDate>
+            <pubDate>Sun, 27 Sep 2026 18:39:18 +0000</pubDate>
             <link>https://github.com/bailycase/shepherd</link>
             <sparkle:channel>beta</sparkle:channel>
             <sparkle:version>33</sparkle:version>
             <sparkle:shortVersionString>0.1.0-beta.5</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
             <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0-beta.5/Shepherd.dmg" length="18723494" type="application/octet-stream" sparkle:edSignature="C69hq2iZh7RDenFtyXXkdaioywL+jNBIfnMMeFSTSR3T8/LajC2Q7bdEPg5//Zaul2pFO+fa2UF395L86khUBA=="/>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
         </item>
         <item>
             <title>0.1.0-beta.4</title>
-            <pubDate>Sun, 27 Sep 2026 18:07:39 +0000</pubDate>
+            <pubDate>Sun, 27 Sep 2026 18:39:19 +0000</pubDate>
             <link>https://github.com/bailycase/shepherd</link>
             <sparkle:channel>beta</sparkle:channel>
             <sparkle:version>31</sparkle:version>
             <sparkle:shortVersionString>0.1.0-beta.4</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
             <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0-beta.4/Shepherd.dmg" length="18706171" type="application/octet-stream" sparkle:edSignature="D3XAAgLPTb4hBCkNntKET2HoqhjC18hFClT1uWcjGEZjr76uT76LR+zxEvUtfqZ74xKE22e6EICvRayrvHH9AQ=="/>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
         </item>
     </channel>
 </rss>

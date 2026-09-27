@@ -4,12 +4,13 @@
         <title>Shepherd</title>
         <item>
             <title>0.1.0</title>
-            <pubDate>Sun, 27 Sep 2026 18:07:42 +0000</pubDate>
+            <pubDate>Sun, 27 Sep 2026 18:39:22 +0000</pubDate>
             <link>https://github.com/bailycase/shepherd</link>
             <sparkle:version>25</sparkle:version>
             <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
             <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0/Shepherd.dmg" length="18577023" type="application/octet-stream" sparkle:edSignature="S03DmiA36Ftw2k/mRynR8tYjRmMkcgYn1MnenOrPE1aDTAs4C/23c35jHEv5jR5AuCqYPiulcg/Q+f6/QczeDQ=="/>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
         </item>
     </channel>
 </rss>
