@@ -2005,9 +2005,9 @@ its own.
 
   Retry trails the text (secondary, small). A resumed-as-new banner adds **Start new
   conversation** (ghost, before Retry), which starts pi without the check, as today. A
-  not-signed-in banner on a thread adds **Sign in…** (ghost, before Retry), which opens the
-  Settings ▸ Pi sign-in terminal beside that agent; a design's banner and a remote viewer's have
-  none. Send is
+  not-signed-in agent on this Mac shows no banner: its thread ends in the Not signed in card
+  (Thread › Not signed in); a design's banner keeps Retry alone, and a remote viewer's has no
+  actions. Send is
   disabled and the draft stays in the field; "Starting…" never shows beside it. A remote viewer's
   banner has no actions and ends "Retry on <host>." Retry takes the banner away at once (`list`
   transition) and the composer is Starting again.

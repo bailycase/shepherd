@@ -407,7 +407,7 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
 - **Core:** the status transition table, `PaneNode` operations, and state validation.
 - **Migration:** terminal-era `runtime` keys, global shells and space shells dropped at startup,
   and review leaves.
-- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all fifteen files, and
+- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all sixteen files, and
   the design skill's two files).
 - **Themes:** every theme variant complete, and the WCAG contrast rules met.
 - **App logic:** keybindings (defaults, validation, stored overrides for removed actions
@@ -536,7 +536,10 @@ Sources/
                        YourPi (the user's own pi, read only; YourPiLocator, PiSessionFolder),
                        YourPiFiles (its auth.json, models.json, settings, trust and extensions,
                        parsed as plain files; PiProviders), YourPiImport (the first launch's
-                       copy into Shepherd's home, Re-import, and both sides' survey),
+                       copy into Shepherd's home, step by step, Re-import, and both sides'
+                       survey), PiSignIn (the sign-in bridge: pi's own login over JSON lines;
+                       PiSignInScript), PiSignInCatalog (the providers Sign-in offers, a key's
+                       mask, how a copy stands against your pi),
                        PiLaunch (every line that starts it), PiSetup
                        (the engine, the home and "your pi", passed in; the startup guards),
                        PiModelCatalog, PiConfig,
@@ -620,8 +623,11 @@ Sources/
       Worktrees, Pi, Instructions, Skills, Remote, Keyboard, Advanced, Experiments}, AppSettings,
       InstructionsModel (the Instructions page's files, drafts and sync), InstructionsEditor (its
       NSTextView), SuggestionsModel (the Experiments page's suggestions), SkillsSheets (Browse
-      skills.sh, Add from repo), YourPiModel (Settings ▸ Pi's sign-ins and From your pi, and the
-      first launch's copy), YourPiText, PiWelcomeSheet (the first launch's welcome step)
+      skills.sh, Add from repo), YourPiModel (Settings ▸ Pi ▸ From your pi, and the first launch's
+      copy and who waits for it), YourPiText, PiImportSheet (the first launch's Bringing over your
+      pi), PiAuthStore (sign-ins: the sign-in sheet's session on the bridge, sign-out, what
+      expired), PiSignInSheet, PiAuthRows (Sign-in's rows), SettingsPiSignIn, SettingsPiFromYourPi,
+      Thread/SlashLogin (/login and /logout), Thread/ThreadAuthNotice (waiting, not signed in)
     Themes (ThemeManager, ShepherdTheme), ShepherdThemeMarker, ShellIntegration, ComponentGallery
     RemoteHostStore, AgentPeers, AgentNotifications, ChildRuns, PiSessionFile (+ adoption from
       your pi), AppUpdater (Sparkle: UpdateChannel, UpdateChannelStore, ChannelDelegate),
@@ -713,8 +719,8 @@ Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
   `PI_*`, `JITI_*`, `NODE_*` and `OPENSSL_CONF`, pins Shepherd's (home, package, offline, no
   version check or telemetry), refuses `install`/`remove`/`uninstall`/`update`/`config`, and
   execs the engine the app ships (`SHEPHERD_PI_ENGINE` in a Debug build). Every other launch of
-  pi (the catalog, drafts, the sign-in terminal) goes through it too, and the node beside it
-  (the MCP probe) is the engine's; `PiLaunch` builds them all and nothing
+  pi (the catalog, drafts) goes through it too, and the node beside it (the MCP probe, the
+  sign-in bridge) is the engine's; `PiLaunch` builds them all and nothing
   else names either. Nothing ever runs the user's own `pi` or `npm`.
 - Before each launch, `PiSetup.prepare` checks the startup guards (the home and "your pi" never
   overlap, by `realpath`, and "your pi" holds no Shepherd marker) and writes the launcher,
@@ -738,8 +744,12 @@ Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
   few at a time. Every agent still starts. Test harnesses that seed agents only to draw them
   opt out (`restoresAgentsAtLaunch: false`); their pi starts when a pane's session is asked for.
 - At the first launch of a build with Shepherd's own pi, the queue (and automations) wait for
-  the one-time copy from the user's pi and the welcome step (`welcomesYourPi`, on in the app
-  only; `YourPiFirstLaunchTests` turns it on in a harness). The copy is bounded by a deadline.
+  the one-time copy from the user's pi (`welcomesYourPi`, on in the app only;
+  `YourPiFirstLaunchTests` turns it on in a harness), bounded by a deadline; then the agents a
+  missing sign-in blocks keep waiting (`AgentStartQueue.hold(_:)`) until its sheet closes, or all
+  of them when it asks a new user to sign in or couldn't read the user's sign-ins.
+- An agent whose pi can't start because nothing signs in for its model waits in Needs you, and
+  starts again by itself when a sign-in lands for its provider (`PiAuthStore.onSignedIn`).
 - An agent whose folder is the user's home runs with `--no-approve`: its project folder, `~/.pi`,
   is the user's own pi.
 - Starting is quiet: a thread draws what it knows at once (a new agent's empty state, a
@@ -901,7 +911,7 @@ the same change.
 - A new `SessionServer` mutation needs an integration test.
 - New persisted fields decode with defaults, so older `state.json` files keep loading.
 
-**Embedded extensions have one canonical copy.** The fifteen files in `Extensions/` are canonical,
+**Embedded extensions have one canonical copy.** The sixteen files in `Extensions/` are canonical,
 and so is the design skill in `Extensions/design-skill/`.
 pi loads the copies that the ten `Sources/ShepherdApp/*Extension.swift` files write to the
 support directory from embedded string literals. `installedPath()` rewrites an installed copy
@@ -909,10 +919,12 @@ whenever its content differs, so drift ships bugs. `ChildrenExtension.swift` car
 children-config, children-ui, workflow, and missions, and installs `InspectExtension`'s
 `shepherd-inspect.mjs`. `DesignExtension.swift` also writes the design skill's `SKILL.md` and
 `format.md` to the support directory's `design-skill/`. `MCPExtension.swift` carries
-`shepherd-mcp.ts` and `shepherd-mcp-client.mjs`, installed side by side.
+`shepherd-mcp.ts` and `shepherd-mcp-client.mjs`, installed side by side. The sign-in bridge,
+`shepherd-sign-in.mjs`, isn't an extension: `PiSignInScript` (ShepherdSessions' `PiSignIn.swift`)
+carries it and installs it beside them, and the app runs it on the engine's node.
 
 - Edit a `.ts`/`.mjs` file (or a design skill file) and its literal in the same change, with
-  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all fifteen pairs
+  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all sixteen pairs
   and the skill's two files.
 - Extensions stay dependency-free and inert without their environment variables.
 - They must never throw into pi or keep the process alive (unref'd sockets and timers).

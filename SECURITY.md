@@ -95,10 +95,15 @@ Settings ▸ Remote ▸ Serve this Mac ▸ Listener.
   folder (`~/.pi/agent`, or wherever your `PI_CODING_AGENT_DIR` points), lock folders included.
   It reads it only as plain files: to copy an agent's earlier conversation into its own home once;
   at its first launch, to copy your logins (API keys and subscription sign-ins, as stored),
-  custom providers, default model and trusted folders into its own home once (again only when you
-  choose Re-import in Settings ▸ Pi); and to read your global instructions, skills and prompts in
-  place. A copied subscription sign-in is a second holder of the same grant: when either pi
-  refreshes it, the other may be signed out. Shepherd never logs or shows a credential's value. Its launcher sets aside your shell's `PI_*`, `JITI_*` and `NODE_*`
+  custom providers, default model, trusted folders, instructions, skills, prompts, themes and
+  extensions (these switched off) into its own home once (again only when you choose Re-import in
+  Settings ▸ Pi); after that its pi reads only its own home. A copied subscription sign-in is a
+  second holder of the same grant: when either pi refreshes it, the other may be signed out.
+  Signing in (Settings ▸ Pi ▸ Sign-in, `/login`) runs pi's own login in Shepherd's home through a
+  small script on the bundled node: the credential goes from pi straight into Shepherd's
+  `auth.json`, and what you type (a key, a pasted code) goes to that script and nowhere else.
+  Sign out removes only Shepherd's credential. Shepherd never logs a credential's value and shows
+  a key only masked (its prefix and last four). Its launcher sets aside your shell's `PI_*`, `JITI_*` and `NODE_*`
   variables for pi itself and gives them back to an agent's shell commands. Extensions load
   through per-session `-e` flags, and Shepherd's pi loads no pi packages. It does not edit your
   shell startup files; terminal panes get theirs from Shepherd's support directory, and `pi` in a
