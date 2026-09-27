@@ -48,19 +48,19 @@ struct SettingsSearchTests {
         ("automations", .experiments, ["Learn from"]),
         ("slash", .skills, ["Skills in the / menu"]),
         ("github", .skills, ["Add from repo"]),
-        // The skills pi loads from elsewhere, listed read-only on the page.
-        ("npm", .skills, ["From pi packages"]),
-        (".pi", .skills, ["From your pi setup"]),
-        ("read-only", .skills, ["From your pi setup", "From pi packages"]),
-        ("agent skills", .skills, ["Installed skills", "From your pi setup", "From pi packages"]),
+        // Every skill Shepherd's pi loads is installed, copies from your pi among them.
+        (".pi", .skills, ["Installed skills"]),
+        ("copied", .skills, ["Installed skills"]),
+        ("agent skills", .skills, ["Installed skills"]),
         ("oauth", .mcp, ["Open sign-in pages by itself"]),
         // Settings ▸ Pi's sign-ins and what comes from your pi.
         ("auth.json", .pi, ["Sign-in"]),
         ("subscription", .pi, ["Sign-in"]),
         ("models.json", .pi, ["Custom providers"]),
         ("trust.json", .pi, ["Trusted folders"]),
-        ("re-import", .pi, ["Your pi", "Custom providers", "Default model"]),
+        ("re-import", .pi, ["Your pi", "Custom providers", "Default model", "Copied", "Instructions", "Skills", "Prompts", "Themes"]),
         ("CLAUDE.md", .pi, ["Instructions"]),
+        ("full access", .pi, ["Your extensions"]),
         ("claude desktop", .mcp, ["Import…"]),
         (".mcp.json", .mcp, ["Also use a repo’s .mcp.json"]),
     ] as [(String, SettingsSection, [String])])
@@ -86,8 +86,9 @@ struct SettingsSearchTests {
         #expect(hits == [.appearance])
     }
 
+    /// "theme" finds only the themes copied from your pi, never a theme-sync switch.
     @Test func piThemeSyncIsNotASetting() {
-        #expect(SettingsSection.pi.matches(for: "theme").isEmpty)
+        #expect(SettingsSection.pi.matches(for: "theme") == ["Themes"])
         #expect(!SettingsSection.pi.items.contains("Sync pi theme"))
     }
 
