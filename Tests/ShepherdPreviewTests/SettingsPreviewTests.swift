@@ -529,18 +529,23 @@ struct SettingsPreviewTests {
 
     // MARK: Dialogs
 
-    /// The first launch's welcome step: what came over from your pi; a new user's, which only
-    /// asks to sign in (with no agent open, so Sign in… is off); and one whose auth.json couldn't
-    /// be read.
+    /// The first launch's welcome step: an existing user's, with everything brought over; one
+    /// with something missing (auth.json unreadable, so the default model's provider is still
+    /// needed); a new user's, which only asks to sign in (with no agent open, so Sign in… is off);
+    /// and a new user's with a key found in the environment.
     @Test func welcomeSheet() async throws {
-        try await Preview.render("sheet-welcome", size: CGSize(width: AppLayout.piWelcomeSheetWidth, height: 620)) {
+        let width = AppLayout.piWelcomeSheetWidth
+        try await Preview.render("sheet-welcome", size: CGSize(width: width, height: 680)) {
             PiWelcomeSheet(welcome: PreviewYourPi.welcome, signIn: {}, onClose: {})
         }
-        try await Preview.render("sheet-welcome-sign-in", size: CGSize(width: AppLayout.piWelcomeSheetWidth, height: 260)) {
-            PiWelcomeSheet(welcome: PreviewYourPi.welcomeSignIn, signIn: nil, onClose: {})
+        try await Preview.render("sheet-welcome-missing", size: CGSize(width: width, height: 560)) {
+            PiWelcomeSheet(welcome: PreviewYourPi.welcomeMissing, signIn: {}, onClose: {})
         }
-        try await Preview.render("sheet-welcome-problem", size: CGSize(width: AppLayout.piWelcomeSheetWidth, height: 520)) {
-            PiWelcomeSheet(welcome: PreviewYourPi.welcomeProblem, signIn: {}, onClose: {})
+        try await Preview.render("sheet-welcome-new-user", size: CGSize(width: width, height: 260)) {
+            PiWelcomeSheet(welcome: PreviewYourPi.welcomeNewUser, signIn: nil, onClose: {})
+        }
+        try await Preview.render("sheet-welcome-new-user-key", size: CGSize(width: width, height: 260)) {
+            PiWelcomeSheet(welcome: PreviewYourPi.welcomeNewUserWithKey, signIn: nil, onClose: {})
         }
     }
 

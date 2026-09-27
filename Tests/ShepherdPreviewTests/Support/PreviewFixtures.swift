@@ -467,21 +467,29 @@ enum PreviewYourPi {
         return YourPiModel.Welcome(report: report, survey: imported)
     }()
 
-    /// A first copy whose auth.json couldn't be read: the rest came over, and the step says why
-    /// the logins didn't.
-    static let welcomeProblem: YourPiModel.Welcome = {
+    /// Something missing: a first copy whose auth.json couldn't be read. The rest came over (a
+    /// custom provider can start agents), the step says why the logins didn't, and asks to sign
+    /// in to the default model's provider.
+    static let welcomeMissing: YourPiModel.Welcome = {
         var report = welcome.report
         report.logins = []
         report.problems = ["Your pi's sign-ins couldn't be read: auth.json isn't a valid JSON object."]
         var survey = none
         survey.shepherdCustomProviders = ["local-llm"]
-        return YourPiModel.Welcome(report: report, survey: survey)
+        return YourPiModel.Welcome(report: report, survey: survey, missing: ["anthropic"])
     }()
 
-    /// A new user's first launch: only the sign-in ask.
-    static let welcomeSignIn: YourPiModel.Welcome = {
+    /// A new user's first launch: no pi of theirs and no key, so only the sign-in ask.
+    static let welcomeNewUser: YourPiModel.Welcome = {
         var report = YourPiImportReport()
         report.first = true
         return YourPiModel.Welcome(report: report, survey: none)
+    }()
+
+    /// A new user with a provider key in their shell: found, so nothing to sign in to.
+    static let welcomeNewUserWithKey: YourPiModel.Welcome = {
+        var survey = none
+        survey.logins = [Login(provider: "openai", environment: ["OPENAI_API_KEY"])]
+        return YourPiModel.Welcome(report: welcomeNewUser.report, survey: survey)
     }()
 }

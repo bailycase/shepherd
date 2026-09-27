@@ -220,7 +220,8 @@ final class ShepherdViewModel {
     let mcp: MCPStore
     /// Settings ▸ Pi's sign-ins and From your pi, and the first launch's copy and welcome step.
     let yourPi: YourPiModel
-    /// Restored agents wait for the first launch's copy from the user's pi and its welcome step.
+    /// Restored agents wait for the first launch's copy from the user's pi, and for its welcome
+    /// step when no provider can start them.
     @ObservationIgnored private(set) var holdsForWelcome = false
     /// The workspace has been adopted at least once.
     @ObservationIgnored private var didAdopt = false
@@ -738,21 +739,28 @@ final class ShepherdViewModel {
             }
         }
         // The first launch of a build with Shepherd's own pi: restored agents (and automations)
-        // wait until the copy from the user's pi and the welcome step are over.
+        // wait until the copy from the user's pi is over, and, when no provider can start them,
+        // until the welcome step closes (DESIGN.md › Welcome).
         if welcomesYourPi {
             holdsForWelcome = true
             sessions.holdStarts()
             Task { [weak self] in
                 guard let self else { return }
-                if await !self.yourPi.runFirstLaunch() { self.finishWelcome() }
+                if await !self.yourPi.runFirstLaunch(defaultModel: self.settings.agentDefaults.model) { self.releaseStarts() }
             }
         }
     }
 
-    /// The welcome step is over (closed, skipped, or never shown): restored agents start, the one
-    /// on screen first, and so do enabled automations.
+    /// The welcome step is over (closed, skipped, or never shown): it goes, and restored agents
+    /// start if they still wait.
     func finishWelcome() {
         yourPi.welcome = nil
+        releaseStarts()
+    }
+
+    /// The first launch's hold is over: restored agents start, the one on screen first, and so do
+    /// enabled automations.
+    private func releaseStarts() {
         guard holdsForWelcome else { return }
         holdsForWelcome = false
         sessions.releaseStarts()

@@ -36,8 +36,8 @@ struct YourPiTextTests {
         report.trustedFolders = 3
         var survey = YourPiSurvey(folder: "/u/.pi/agent")
         survey.logins = [Login(provider: "anthropic", shepherd: .subscription), Login(provider: "openai", environment: ["OPENAI_API_KEY"])]
-        let rows = PiWelcomeSheet.rows(.init(report: report, survey: survey))
-        #expect(rows == [
+        let sections = PiWelcomeSheet.sections(.init(report: report, survey: survey))
+        #expect(sections.broughtOver == [
             .init(title: "Anthropic", detail: "Signed in"),
             .init(title: "Google", detail: "API key from $GEMINI_API_KEY"),
             .init(title: "Custom providers", detail: "local-llm"),
@@ -45,7 +45,33 @@ struct YourPiTextTests {
             .init(title: "Skills and prompts", detail: "2 folders, read in place"),
             .init(title: "Default model", detail: "anthropic/claude-fixture-4"),
             .init(title: "Trusted folders", detail: "3"),
-            .init(title: "OPENAI_API_KEY", detail: "In your environment"),
         ])
+        #expect(sections.environment == [.init(title: "OPENAI_API_KEY", detail: "OpenAI")])
+        #expect(sections.missing.isEmpty)
+    }
+
+    /// The start gate and the sign-in ask: restored agents wait for the step only when no
+    /// provider can start them; the step asks to sign in then, or for the default model's
+    /// provider when nothing covers it, listing it only while something else can start agents.
+    @Test(arguments: [
+        // (a login in Shepherd's pi, a key in the environment, missing providers) → holds, asks, missing rows
+        (false, false, [String](), true, true, [String]()),
+        (false, false, ["anthropic"], true, true, []),
+        (true, false, [], false, false, []),
+        (false, true, [], false, false, []),
+        (true, false, ["google"], false, true, ["Google"]),
+    ])
+    func theStepHoldsAgentsOnlyWhenNothingCanStartThem(login: Bool, environment: Bool, missing: [String],
+                                                       holds: Bool, asks: Bool, missingRows: [String]) {
+        var report = YourPiImportReport()
+        report.first = true
+        var survey = YourPiSurvey()
+        if login { survey.logins.append(Login(provider: "anthropic", shepherd: .subscription)) }
+        if environment { survey.logins.append(Login(provider: "openai", environment: ["OPENAI_API_KEY"])) }
+        let welcome = YourPiModel.Welcome(report: report, survey: survey, missing: missing)
+        #expect(welcome.holdsAgents == holds)
+        #expect(welcome.asksToSignIn == asks)
+        #expect(PiWelcomeSheet.sections(welcome).missing.map(\.title) == missingRows)
+        #expect(PiWelcomeSheet.sections(welcome).missing.allSatisfy { $0.detail == "Not signed in" })
     }
 }
