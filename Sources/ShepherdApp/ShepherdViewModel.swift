@@ -823,6 +823,7 @@ final class ShepherdViewModel {
 
     /// Adopt a server snapshot wholesale, keeping selection when IDs persist.
     func adopt(_ serverState: ShepherdState) {
+        let shownBefore = shownDesign?.id
         state = serverState
         let runs = server.openAutomationRuns
         if runs != openAutomationRuns { openAutomationRuns = runs }
@@ -838,6 +839,11 @@ final class ShepherdViewModel {
             didAutoStartAutomations = true
             autoStartAutomations()
             if restoresAgentsAtLaunch { mcp.probeAlwaysOn() }
+        }
+        // A design on screen that went (deleted here, or by another device on this host): the
+        // window goes back to Designs (DesignDeleted), not to another thread.
+        if let gone = shownBefore, destination == nil, !state.designs.contains(where: { $0.id == gone }) {
+            openDestination(.designs)
         }
         let standing = WorkspaceSelection.standingSpace(selectedSpaceID, agentSelected: selectedAgent != nil, in: state)
         if standing != selectedSpaceID { selectedSpaceID = standing }

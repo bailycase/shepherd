@@ -76,6 +76,21 @@ struct DesignLifecycleFlowTests {
         try await eventuallyOnMain("a fresh pi for it") { vm.sessions.liveSession(forPane: restored.paneID!) != nil }
     }
 
+    /// Deleted elsewhere (another device, through this host): the window showing it goes back to
+    /// Designs rather than to another thread.
+    @Test func aDesignDeletedElsewhereTakesItsWindowBackToDesigns() async throws {
+        try StubPi.installOnPath()
+        let app = try AppHarness()
+        defer { app.stop() }
+        let vm = try await start(app)
+        let design = try await openDesign(app, vm)
+
+        _ = try await app.server.deleteDesign(design.id)
+
+        try await eventuallyOnMain("the window back on Designs") { vm.shownDestination == .designs }
+        #expect(vm.shownDesign == nil)
+    }
+
     @Test func importingAZipFillsItsCardThenOpensTheDesignWithItsSystem() async throws {
         try StubPi.installOnPath()
         let app = try AppHarness()
