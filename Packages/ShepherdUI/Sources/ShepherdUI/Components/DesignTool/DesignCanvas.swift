@@ -190,18 +190,19 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
     }
 
     /// Where a pin's center is on screen: its element's top-trailing corner, a thread's note just
-    /// before a comment's pin on the same element. Nil when its board isn't on the canvas.
+    /// after a comment's pin on the same element (RefNoteBack), so the note's card, opening beside
+    /// it, leaves the comment's pin in sight. Nil when its board isn't on the canvas.
     private func pinCorner(_ pin: NWCanvasPin, frames: [String: CGRect]) -> CGPoint? {
         guard let rect = screenRect(of: pin.rect, on: pin.board, frames: frames) else { return nil }
         var corner = CGPoint(x: rect.maxX, y: rect.minY)
         if pin.style != .comment, pins.contains(where: { $0.style == .comment && $0.board == pin.board && $0.rect == pin.rect }) {
-            corner.x -= NWDesignMetrics.pinSize + NW.Space.xs
+            corner.x += NWDesignMetrics.pinSize + NW.Space.xs
         }
         return corner
     }
 
     /// Each pin centered on its element's top-trailing corner, over boards on screen; a thread's
-    /// note stands just before a comment's pin on the same element.
+    /// note stands just after a comment's pin on the same element.
     private var pinLayer: some View {
         let frames = Dictionary(boards.map { ($0.id, $0.frame) }, uniquingKeysWith: { a, _ in a })
         let half = NWDesignMetrics.pinSize / 2

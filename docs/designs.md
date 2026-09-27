@@ -1229,7 +1229,7 @@ The surfaces (DESIGN.md › Design references has their measures):
   the composer's banner. The iOS client draws no chip yet: its thread shows the words and the
   "1 design reference attached." line.
 - **Notes back** on the canvas: read with the design's pulls and on `onDesignThreadNotesChanged`;
-  a note's pin sits on its element's top-trailing corner where a live board finds it (before a
+  a note's pin sits on its element's top-trailing corner where a live board finds it (after a
   comment's pin there), else on its board's corner; its card opens beside the pin, with Open thread
   (while the thread is here) and Resolve. The Comments tab counts notes with the comments.
 - **A sent chip's preview** opens above the chip whenever the thread's visible part holds it

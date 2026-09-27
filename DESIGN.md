@@ -8549,7 +8549,7 @@ These departures (Other hosts, no Files section, the ••• menu without chor
   open, `NWLookedAtDetails` on the calls' rail: `pic` the picture and its size, `html` the page and
   its weight, `css` the properties, `tok` the tokens and the file:lines they live in.
 - **A note back** (`NWThreadNotePin`, `NWThreadNoteCard`): the comment pin's 26pt teardrop in
-  `running` (a 1.5pt ring on `runningTint` over `bgRaised`, a code glyph), just before a comment's
+  `running` (a 1.5pt ring on `runningTint` over `bgRaised`, a code glyph), just after a comment's
   pin on the same element, on the board's corner while its element isn't found; its card beside it
   (300pt, 12×14, radius 12): a "Thread" tag on `runningTint`, the thread's name semibold, the age;
   the note in 13/1.5 with its `code` and #142 in mono (#142 `running`); a hairline, Open thread,
