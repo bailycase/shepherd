@@ -333,7 +333,8 @@ and use a local fake provider.
 
 **Release rules** (`Tests/Release/test_release.py`, Python's `unittest`, stdlib only) test
 `scripts/release.py`: what each trigger builds (the manual TestFlight run included), which feeds
-each release lands in, the legacy aliases, `verify-app`, `verify-ios`, and which TestFlight builds
+each release lands in, the legacy aliases, the Apple silicon requirement on every feed item,
+`verify-app`, `verify-ios`, and which TestFlight builds
 `retire-testflight` expires (against a local fake App Store Connect). They also read the
 Xcode project, `App/Info.plist`, `App/iOS/ExportOptions.plist`, `ShepherdEdition.swift`,
 `AppUpdater.swift`, and the Release workflow (its `testflight` input included), so a bundle id,
@@ -416,7 +417,7 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
 - **Updates and editions:** each channel's feed and Sparkle tag, the channels each app offers,
   the launch migration of every stored channel (`UpdateChannelStore`: rc and nightly to Beta,
   the nightly notice armed once), the support directory and listener port per edition, and the
-  release rules (every trigger, feed routing, the legacy aliases).
+  release rules (every trigger, feed routing, the legacy aliases, every feed item arm64 only).
 
 CI (`.github/workflows/ci.yml`) runs on pull requests and pushes to `master`, skipping the
 timing-sensitive tests. Docs-only changes (`docs/**`, `*.md`) don't trigger it.
@@ -1244,6 +1245,22 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   universal). `release.py thin-app` then thins what comes prebuilt universal (Sparkle's framework
   and its helpers) to arm64, and `verify-app` refuses any Mach-O in the app with another slice.
   The pi engine pins only Node's `darwin-arm64` archive.
+- **No updates for Intel Macs.** `release.py publish` gives every item it writes to gh-pages
+  (all three feeds and both legacy aliases, old releases included)
+  `<sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>`. Sparkle 2.9.0 and later
+  skip such an item on an Intel Mac, so an Intel install is offered nothing: its background
+  checks stay quiet, and Check for Updates says "Your Mac is too old" (the update "requires a
+  new Apple silicon Mac").
+  - generate_appcast adds the element itself only for an archive whose executable has no x86_64
+    slice, so the universal builds from before the switch need it added. `publish` inserts it
+    as text, leaving every other byte as generated, keeps one generate_appcast already wrote,
+    and refuses a feed where an item lacks it, names it twice, or names another requirement.
+  - The feeds are unsigned (no `SURequireSignedFeed`), so editing them, like `fix-urls`,
+    invalidates nothing: the EdDSA signatures cover the archives and deltas, not the XML.
+  - Every Shepherd and Shepherd Nightly release shipped Sparkle 2.9.6, so no installed build
+    ignores the element (`Tests/Release` holds the pin at 2.9.0 or later). A build with an older
+    Sparkle would ignore it: it would still be offered the update, and the arm64-only app would
+    not open on an Intel Mac. No Intel users are expected.
 - **Release candidates are retired.** A `vX.Y.Z-rc.N` tag builds nothing (the plan job says
   why), and old rc releases land in no feed.
 - **Only `nightly` ships Shepherd Nightly.** A manual run (`workflow_dispatch`) plans like a

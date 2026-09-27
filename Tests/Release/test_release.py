@@ -328,16 +328,22 @@ class FeedTests(unittest.TestCase):
             def read(name):
                 with open(os.path.join(pages, name), encoding="utf-8") as f:
                     return f.read()
-            self.assertEqual(read("appcast.xml"), sources["stable"])
-            self.assertEqual(read("appcast-beta.xml"), sources["beta"])
-            self.assertEqual(read("appcast-shepherd-nightly.xml"), sources["shepherd-nightly"])
+            self.assertEqual(read("appcast.xml"), release.require_arm64(sources["stable"]))
+            self.assertEqual(read("appcast-beta.xml"), release.require_arm64(sources["beta"]))
+            self.assertEqual(read("appcast-shepherd-nightly.xml"), release.require_arm64(sources["shepherd-nightly"]))
+            for name in written:
+                with self.subTest(requirement=name):
+                    xml = read(name)
+                    self.assertEqual(release.arm64_problems(xml), [])
+                    self.assertEqual(xml.count(release.ARM64_REQUIREMENT), xml.count("<item>"))
             # Old rc and nightly installs of Shepherd read the beta feed's items on the default
             # channel, which Sparkle shows whatever channels a build allows (the first nightly
             # builds allowed none).
             for alias in ("appcast-rc.xml", "appcast-nightly.xml"):
                 with self.subTest(alias=alias):
                     xml = read(alias)
-                    self.assertEqual(xml, sources["beta"].replace("<sparkle:channel>beta</sparkle:channel>", ""))
+                    self.assertEqual(xml, release.require_arm64(sources["beta"])
+                                     .replace("<sparkle:channel>beta</sparkle:channel>", ""))
                     self.assertNotIn("sparkle:channel", xml)
                     self.assertEqual(xml.count("<item>"), 2)
                     self.assertNotIn("Shepherd-Nightly", xml)
@@ -345,6 +351,111 @@ class FeedTests(unittest.TestCase):
     def test_untag_drops_every_channel_element_and_its_indentation(self):
         xml = "<item>\n    <title>62</title>\n    <sparkle:channel>beta</sparkle:channel>\n    <sparkle:version>62</sparkle:version>\n</item>"
         self.assertEqual(release.untag(xml), "<item>\n    <title>62</title>\n    <sparkle:version>62</sparkle:version>\n</item>")
+
+
+SIG = "sparkle:edSignature"
+HEADER = '<?xml version="1.0" standalone="yes"?>\n<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">\n    <channel>\n        <title>Shepherd</title>\n'
+FOOTER = "    </channel>\n</rss>\n"
+
+
+def generated_item(version, url, channel="", deltas=(), requirement=""):
+    """An item as generate_appcast writes it, indented, with its signatures."""
+    lines = [f"<title>{version}</title>", "<pubDate>Sun, 27 Sep 2026 17:38:08 +0000</pubDate>",
+             "<link>https://github.com/bailycase/shepherd</link>"]
+    if channel:
+        lines.append(f"<sparkle:channel>{channel}</sparkle:channel>")
+    lines += [f"<sparkle:version>{version}</sparkle:version>",
+              "<sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>"]
+    if requirement:
+        lines.append(f"<sparkle:hardwareRequirements>{requirement}</sparkle:hardwareRequirements>")
+    lines.append(f'<enclosure url="{url}" length="18749293" type="application/octet-stream" {SIG}="NQEVwSKB+x/{version}=="/>')
+    if deltas:
+        lines.append("<sparkle:deltas>")
+        lines += [f'    <enclosure url="{d}" sparkle:deltaFrom="{d[-8:-6]}" length="1146822" type="application/octet-stream" '
+                  f'sparkle:deltaFromSparkleExecutableSize="977808" {SIG}="2sThLfsr/{version}=="/>' for d in deltas]
+        lines.append("</sparkle:deltas>")
+    return "        <item>\n" + "".join(f"            {line}\n" for line in lines) + "        </item>\n"
+
+
+DOWNLOAD = "https://github.com/bailycase/shepherd/releases/download"
+# One fixture per feed shape the workflow publishes. The newest beta and nightly items carry the
+# requirement already, as generate_appcast writes it for an archive with no x86_64 slice.
+FEED_SHAPES = {
+    "stable": HEADER + generated_item("25", f"{DOWNLOAD}/v0.1.0/Shepherd.dmg") + FOOTER,
+    "beta": HEADER
+    + generated_item("35", f"{DOWNLOAD}/v0.1.0-beta.6/Shepherd.dmg", "beta",
+                     [f"{DOWNLOAD}/v0.1.0-beta.6/Shepherd35-33.delta", f"{DOWNLOAD}/v0.1.0-beta.6/Shepherd35-31.delta"],
+                     requirement="arm64")
+    + generated_item("33", f"{DOWNLOAD}/v0.1.0-beta.5/Shepherd.dmg", "beta")
+    + generated_item("25", f"{DOWNLOAD}/v0.1.0/Shepherd.dmg", "beta") + FOOTER,
+    "shepherd-nightly": HEADER
+    + generated_item("63", f"{DOWNLOAD}/nightly-{STAMP}/Shepherd-Nightly.dmg",
+                     deltas=[f"{DOWNLOAD}/nightly-{STAMP}/Shepherd-Nightly63-61.delta"])
+    + generated_item("61", f"{DOWNLOAD}/nightly-202609221900/Shepherd-Nightly.dmg") + FOOTER,
+    # The compact shape the other feed tests build, and the workflow's empty_feed.
+    "compact": feed(item("60", "beta", deltas=["Shepherd60-59.delta"]), item("59", "beta")),
+    "empty": '<?xml version="1.0" encoding="utf-8"?>\n<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel><title>Shepherd</title></channel></rss>\n',
+}
+
+
+def without_requirement(xml):
+    return re.sub(r"\s*<sparkle:hardwareRequirements>[^<]*</sparkle:hardwareRequirements>", "", xml)
+
+
+class ArchitectureRequirementTests(unittest.TestCase):
+    """Shepherd is Apple silicon only: no feed item may be offered to an Intel Mac."""
+
+    def requirements(self, xml):
+        root = release.ElementTree.fromstring(xml)
+        return [[r.text for r in i.findall(f"{{{release.SPARKLE_NS}}}hardwareRequirements")]
+                for i in root.iter("item")]
+
+    def test_every_item_of_every_feed_shape_requires_arm64_exactly_once(self):
+        for shape, xml in FEED_SHAPES.items():
+            with self.subTest(shape=shape):
+                marked = release.require_arm64(xml)
+                self.assertEqual(self.requirements(marked), [["arm64"]] * xml.count("<item>"))
+                self.assertEqual(release.arm64_problems(marked), [])
+
+    def test_nothing_else_in_a_feed_changes(self):
+        # Signatures, enclosures, channels, deltas, the declaration and the ordering stay
+        # byte for byte: removing the requirement gives back exactly what was generated.
+        for shape, xml in FEED_SHAPES.items():
+            with self.subTest(shape=shape):
+                self.assertEqual(without_requirement(release.require_arm64(xml)), without_requirement(xml))
+                self.assertTrue(release.require_arm64(xml).startswith(xml.split("<item>")[0]))
+
+    def test_marking_twice_changes_nothing(self):
+        for shape, xml in FEED_SHAPES.items():
+            with self.subTest(shape=shape):
+                once = release.require_arm64(xml)
+                self.assertEqual(release.require_arm64(once), once)
+
+    def test_the_requirement_sits_among_the_items_children_at_their_indentation(self):
+        marked = release.require_arm64(FEED_SHAPES["stable"])
+        self.assertIn(f"{SIG}=\"NQEVwSKB+x/25==\"/>\n            {release.ARM64_REQUIREMENT}\n        </item>", marked)
+        self.assertIn(f"</sparkle:deltas>{release.ARM64_REQUIREMENT}</item>", release.require_arm64(FEED_SHAPES["compact"]))
+
+    def test_an_item_generate_appcast_already_marked_keeps_its_own(self):
+        beta = FEED_SHAPES["beta"]
+        self.assertEqual(release.require_arm64(beta).count(release.ARM64_REQUIREMENT), 3)
+        newest = beta.split("</item>")[0]
+        self.assertEqual(release.require_arm64(beta).split("</item>")[0], newest)
+
+    def test_a_feed_an_intel_mac_could_still_read_is_refused(self):
+        cases = {
+            "another requirement": HEADER + generated_item("35", f"{DOWNLOAD}/v1/Shepherd.dmg", requirement="x86_64") + FOOTER,
+            "two requirements": feed(item("35").replace("</item>", release.ARM64_REQUIREMENT * 2 + "</item>")),
+        }
+        for why, xml in cases.items():
+            with self.subTest(why=why):
+                with self.assertRaises(ValueError):
+                    release.require_arm64(xml)
+
+    def test_a_requirement_list_naming_arm64_is_enough(self):
+        # Sparkle splits the value on whitespace and commas, and ignores case.
+        xml = HEADER + generated_item("35", f"{DOWNLOAD}/v1/Shepherd.dmg", requirement="ARM64, metal") + FOOTER
+        self.assertEqual(release.require_arm64(xml), xml)
 
 
 ARM64, X86_64 = 0x0100000C, 0x01000007
@@ -625,6 +736,24 @@ class ContractTests(unittest.TestCase):
         thin = workflow.index('python3 scripts/release.py thin-app "$PRODUCTS/$PRODUCT"')
         self.assertLess(workflow.index("      - name: Build ${{ env.APP_NAME }}"), thin)
         self.assertLess(thin, workflow.index("scripts/release.py verify-app"))
+
+    def test_every_feed_reaches_gh_pages_through_publish(self):
+        # publish is what marks each item Apple silicon only; nothing else may write a feed.
+        step = self.read(".github", "workflows", "release.yml").split("      - name: Update appcasts\n", 1)[1]
+        step = step.split("\n  # ", 1)[0]
+        self.assertIn("< <(python3 scripts/release.py publish casts pages)", step)
+        self.assertIn('git add "${written[@]}"', step)
+        self.assertNotIn("cp casts", step)
+
+    def test_the_shipped_sparkle_honours_the_hardware_requirement(self):
+        # sparkle:hardwareRequirements arrived in Sparkle 2.9.0; an older client would ignore it
+        # and offer an Intel Mac an update it cannot run.
+        for parts in (("Package.resolved",),
+                      ("Shepherd.xcodeproj", "project.xcworkspace", "xcshareddata", "swiftpm", "Package.resolved")):
+            with self.subTest(file="/".join(parts)):
+                pins = {p["identity"]: p["state"] for p in json.loads(self.read(*parts))["pins"]}
+                version = tuple(int(n) for n in pins["sparkle"]["version"].split("."))
+                self.assertGreaterEqual(version, (2, 9, 0))
 
     def test_the_dev_build_shares_no_shipped_apps_identity(self):
         # Preferences, notifications and Sparkle's installer are keyed by bundle id, so a Dev
