@@ -505,12 +505,12 @@ public final class SessionServer: @unchecked Sendable {
     /// The host's Design tool experiment is on: it serves `designs.v1`. Server queue.
     private var designsServed = false
 
-    /// What this host tells a remote client it can do now: `designs.v1` (and Pencil markup with
-    /// it) only while it serves designs. Server queue.
+    /// What this host tells a remote client it can do now: `designs.v1` (and Pencil markup and
+    /// Delete with it) only while it serves designs. Server queue.
     private var offeredCapabilities: [String] {
         let designs = advertisedCapabilities.contains(RemoteProtocol.designsCapability)
         return designsServed && designs ? advertisedCapabilities : advertisedCapabilities.filter {
-            $0 != RemoteProtocol.designsCapability && $0 != RemoteProtocol.designMarkupCapability
+            !RemoteProtocol.designCapabilities.contains($0)
         }
     }
     /// Which agent's own pane runs each session, for the store version it was built from.

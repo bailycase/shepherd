@@ -55,7 +55,7 @@ struct FixtureHostData {
     /// Everything this build knows, `designs.v1` only while the host has designs to serve.
     var defaultCapabilities: [String] {
         designs == nil
-            ? RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.designsCapability && $0 != RemoteProtocol.designMarkupCapability }
+            ? RemoteProtocol.capabilities.filter { !RemoteProtocol.designCapabilities.contains($0) }
             : RemoteProtocol.capabilities
     }
 }
