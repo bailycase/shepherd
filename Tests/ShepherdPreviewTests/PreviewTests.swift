@@ -57,6 +57,34 @@ struct PreviewTests {
         }
     }
 
+    /// SlashLogin: "/lo" lists Shepherd's /login and /logout, tagged "opens Settings".
+    @Test func composerSlashLogin() async throws {
+        let fixture = ThreadFixture(Threads.idle)
+        defer { fixture.store.stop() }
+        fixture.store.draft = "/lo"
+        try await Preview.render("composer-slash-login", size: CGSize(width: 1000, height: 760), ready: { fixture.store.ready }) {
+            fixture.thread(slashLogin: Self.slashLogin)
+        }
+    }
+
+    /// SlashLoginArgs: "/login " lists providers with their states, not signed in first.
+    @Test func composerSlashLoginArguments() async throws {
+        let fixture = ThreadFixture(Threads.idle)
+        defer { fixture.store.stop() }
+        fixture.store.draft = "/login "
+        try await Preview.render("composer-slash-login-args", size: CGSize(width: 1000, height: 760), ready: { fixture.store.ready }) {
+            fixture.thread(slashLogin: Self.slashLogin)
+        }
+    }
+
+    static let slashLogin = SlashLoginActions(open: { _ in }, choices: {
+        var survey = YourPiSurvey()
+        survey.logins = [YourPiSurvey.Login(provider: "github-copilot", shepherd: .subscription),
+                         YourPiSurvey.Login(provider: "kimi-coding", shepherd: .subscription),
+                         YourPiSurvey.Login(provider: "openai", shepherd: .apiKey(.literal))]
+        return SlashLogin.choices(PiSignInPage.make(survey: survey, expired: []))
+    })
+
     @Test func composerModelPicker() async throws {
         let fixture = ThreadFixture(Threads.idle)
         defer { fixture.store.stop() }
