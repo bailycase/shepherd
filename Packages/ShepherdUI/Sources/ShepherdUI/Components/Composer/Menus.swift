@@ -154,12 +154,30 @@ public struct NWSlashCommand: Identifiable, Equatable, Sendable {
     public var arguments: String?
     /// "prompt" for a prompt template, shown as a tag.
     public var tag: String?
+    /// An argument row's command before it, in `textSecondary` ("/login" before "anthropic"): the
+    /// name then shows without its slash.
+    public var lead: String?
+    /// A word trailing the row in caption, in its tone ("Not signed in", "Signed in").
+    public var status: Status?
 
-    public init(name: String, description: String? = nil, arguments: String? = nil, tag: String? = nil) {
+    public struct Status: Equatable, Sendable {
+        public enum Tone: Sendable { case tertiary, secondary, attention, done }
+        public var text: String
+        public var tone: Tone
+        public init(_ text: String, tone: Tone) {
+            self.text = text
+            self.tone = tone
+        }
+    }
+
+    public init(name: String, description: String? = nil, arguments: String? = nil, tag: String? = nil, lead: String? = nil,
+                status: Status? = nil) {
         self.name = name
         self.description = description
         self.arguments = arguments
         self.tag = tag
+        self.lead = lead
+        self.status = status
     }
 }
 
@@ -177,6 +195,7 @@ public struct NWSlashMenu: View {
     let commands: [NWSlashCommand]
     let total: Int
     let query: String
+    let title: String
     @Binding var selection: Int
     let maxHeight: CGFloat?
     let onChoose: (NWSlashCommand) -> Void
@@ -184,11 +203,13 @@ public struct NWSlashMenu: View {
     @State private var pointed: Int?
     @State private var listMotion = NWMenuListMotion()
 
-    public init(commands: [NWSlashCommand], total: Int, query: String, selection: Binding<Int>, maxHeight: CGFloat? = nil,
-                onChoose: @escaping (NWSlashCommand) -> Void) {
+    /// `title` heads it: "Commands", or an argument list's ("Sign in to · opens Settings").
+    public init(commands: [NWSlashCommand], total: Int, query: String, title: String = "Commands", selection: Binding<Int>,
+                maxHeight: CGFloat? = nil, onChoose: @escaping (NWSlashCommand) -> Void) {
         self.commands = commands
         self.total = total
         self.query = query
+        self.title = title
         _selection = selection
         self.maxHeight = maxHeight
         self.onChoose = onChoose
@@ -197,7 +218,7 @@ public struct NWSlashMenu: View {
     public var body: some View {
         let rows = CGFloat(min(max(commands.count, 1), Self.visibleRows(in: maxHeight)))
         VStack(alignment: .leading, spacing: 0) {
-            NWMenuHeader("Commands", trailing: "\(commands.count) of \(total)")
+            NWMenuHeader(title, trailing: "\(commands.count) of \(total)")
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
@@ -230,7 +251,7 @@ public struct NWSlashMenu: View {
         }
         .modifier(NWMenuSurface(width: nil))
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Commands")
+        .accessibilityLabel(title)
     }
 
     /// How many rows fit a menu at most `height` tall (at least one, at most the board's eight).
@@ -274,16 +295,36 @@ struct NWSlashRow: View, Equatable {
                 .lineLimit(1).truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let tag = command.tag { NWTag(tag) }
+            if let status = command.status {
+                Text(status.text).font(.nw(.caption)).foregroundStyle(Self.color(status.tone)).lineLimit(1).fixedSize()
+            }
             if highlighted {
                 Text("⏎").font(.nwMono(11)).foregroundStyle(nw.running).accessibilityHidden(true)
             }
         }
-        .help("/" + command.name + (command.arguments.map { " " + $0 } ?? ""))
-        .accessibilityLabel("/\(command.name)" + (command.description.map { ", \($0)" } ?? ""))
+        .help(command.lead.map { $0 + " " + command.name } ?? "/" + command.name + (command.arguments.map { " " + $0 } ?? ""))
+        .accessibilityLabel((command.lead.map { $0 + " " + command.name } ?? "/\(command.name)") + (command.description.map { ", \($0)" } ?? "")
+                            + (command.status.map { ", \($0.text)" } ?? ""))
+    }
+
+    static func color(_ tone: NWSlashCommand.Status.Tone) -> Color {
+        switch tone {
+        case .tertiary: .nw.textTertiary
+        case .secondary: .nw.textSecondary
+        case .attention: .nw.lanternText
+        case .done: .nw.done
+        }
     }
 
     private var name: Text {
         let nw = Color.nw
+        if let lead = command.lead {
+            // An argument row: "/login" quiet, then the argument with what's typed in semibold.
+            let head = Text(lead + " ").foregroundStyle(nw.textSecondary)
+            let typedPart = Text(String(command.name.prefix(typed))).fontWeight(.semibold).foregroundStyle(nw.textPrimary)
+            let rest = Text(String(command.name.dropFirst(typed))).foregroundStyle(nw.textPrimary)
+            return Text("\(head)\(typedPart)\(rest)").font(.nwMono(12.5))
+        }
         let head = Text("/" + command.name.prefix(typed)).fontWeight(.semibold).foregroundStyle(nw.textPrimary)
         let tail = Text(String(command.name.dropFirst(typed))).foregroundStyle(nw.textSecondary)
         let arguments = Text(command.arguments.map { " " + $0 } ?? "").foregroundStyle(nw.textTertiary)

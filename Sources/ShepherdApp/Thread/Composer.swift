@@ -56,6 +56,8 @@ struct Composer: View {
     var restartPi: ((Bool) -> Void)? = nil
     /// The thread's Not signed in card says it instead of the Can't start banner (a local agent).
     var hidesNotSignedIn = false
+    /// `/login` and `/logout`: Shepherd's own commands, for this Mac's agents (nil elsewhere).
+    var slashLogin: SlashLoginActions? = nil
     @State private var attachments = ComposerAttachments()
     @State private var dropTargeted = false
     @State private var commandIndex = 0
@@ -148,7 +150,18 @@ struct Composer: View {
     /// commands stay out unless Settings ▸ Skills lists them.
     private var commands: [NativeCommand] {
         if designChat { return [] }
-        return AppSettings.shared.skillsInSlashMenu ? store.commands : store.commands.filter { $0.source != "skill" }
+        let pi = AppSettings.shared.skillsInSlashMenu ? store.commands : store.commands.filter { $0.source != "skill" }
+        return slashLogin == nil ? pi : pi + SlashLogin.commands
+    }
+    /// "/login " (or "/logout ") being typed: its verb and argument so far, for the provider list.
+    private var loginQuery: (verb: SlashLogin.Verb, partial: String)? {
+        guard slashLogin != nil, !designChat, store.draft != dismissedQuery else { return nil }
+        return SlashLogin.argumentQuery(store.draft)
+    }
+    /// The provider rows for `loginQuery`, as the menu last drew them.
+    private var loginMatches: [SlashLogin.Choice] {
+        guard let loginQuery, let slashLogin else { return [] }
+        return SlashLogin.matches(loginQuery.partial, in: slashLogin.choices())
     }
     private var commandQuery: String? {
         guard !commands.isEmpty, store.draft.hasPrefix("/"), !store.draft.contains(where: \.isWhitespace),
@@ -158,10 +171,10 @@ struct Composer: View {
     /// The commands the slash menu lists for the draft, as `body` last derived them: every key
     /// press comes after the render that saw the draft change.
     private var commandMatches: [NativeCommand] { commandQuery == nil ? [] : slash.matches }
-    private var menuOpen: Bool { commandQuery != nil || menu != nil }
+    private var menuOpen: Bool { commandQuery != nil || loginQuery != nil || menu != nil }
 
     private var openMenu: OpenMenu {
-        if commandQuery != nil { return .slash }
+        if commandQuery != nil || loginQuery != nil { return .slash }
         return switch menu {
         case .models: .models
         case .thinking: .thinking
@@ -387,6 +400,10 @@ struct Composer: View {
             // One menu at a time: typing a command takes over from a chip's menu.
             if query != nil { menu = nil }
         }
+        .onChange(of: loginQuery?.partial) { _, partial in
+            commandIndex = 0
+            if partial != nil { menu = nil }
+        }
         .task { if contextDetailsOpen { menu = .context } }
         // The catalog decides whether the thinking chip applies; this Mac's is asked once per process.
         .task { if catalog?.isEmpty != false { await loadModels() } }
@@ -436,6 +453,15 @@ struct Composer: View {
                 let slash = slash
                 NWSlashMenu(commands: slash.rows, total: commands.count, query: query, selection: $commandIndex, maxHeight: room) { command in
                     if let match = slash.matches.first(where: { $0.name == command.name }) { choose(match) }
+                }
+                .nwTransition(.overlay, anchor: .bottomLeading)
+            } else if let login = loginQuery, let slashLogin {
+                // SlashLoginArgs: the providers, with their states, before anything reaches pi.
+                let all = slashLogin.choices()
+                let rows = SlashLogin.matches(login.partial, in: all)
+                NWSlashMenu(commands: rows.map { SlashLogin.row($0, verb: login.verb) }, total: all.count, query: login.partial,
+                            title: SlashLogin.title(login.verb), selection: $commandIndex, maxHeight: room) { row in
+                    openLogin(SlashLogin.Command(verb: login.verb, provider: row.name))
                 }
                 .nwTransition(.overlay, anchor: .bottomLeading)
             }
@@ -545,6 +571,12 @@ struct Composer: View {
             .focused($composing)
             .onKeyPress(.return, phases: .down) { press in
                 if press.modifiers.contains(.shift) { store.draft += "\n"; return .handled }
+                if let login = loginQuery {
+                    let matches = loginMatches
+                    openLogin(SlashLogin.Command(verb: login.verb,
+                                                 provider: matches.indices.contains(commandIndex) ? matches[commandIndex].id : nil))
+                    return .handled
+                }
                 if commandQuery != nil {
                     let matches = commandMatches
                     if matches.indices.contains(commandIndex) { choose(matches[commandIndex]) }
@@ -557,13 +589,19 @@ struct Composer: View {
                 return .handled
             }
             .onKeyPress(.tab) {
+                if let login = loginQuery {
+                    let matches = loginMatches
+                    guard matches.indices.contains(commandIndex) else { return .handled }
+                    store.draft = "/\(login.verb.rawValue) \(matches[commandIndex].id)"
+                    return .handled
+                }
                 let matches = commandMatches
                 guard commandQuery != nil, matches.indices.contains(commandIndex) else { return .ignored }
                 complete(matches[commandIndex])
                 return .handled
             }
             .onKeyPress(.upArrow) {
-                guard commandQuery == nil else {
+                guard commandQuery == nil, loginQuery == nil else {
                     commandIndex = max(0, commandIndex - 1)
                     return .handled
                 }
@@ -572,12 +610,16 @@ struct Composer: View {
                 return .handled
             }
             .onKeyPress(.downArrow) {
+                if loginQuery != nil {
+                    commandIndex = min(max(0, loginMatches.count - 1), commandIndex + 1)
+                    return .handled
+                }
                 guard commandQuery != nil else { return .ignored }
                 commandIndex = min(max(0, commandMatches.count - 1), commandIndex + 1)
                 return .handled
             }
             .onKeyPress(.escape) {
-                switch ComposerEscape(menuOpen: menu != nil, commandsOpen: commandQuery != nil,
+                switch ComposerEscape(menuOpen: menu != nil, commandsOpen: commandQuery != nil || loginQuery != nil,
                                       canStop: running && dialogs.isEmpty && active && store.supports("abort")) {
                 case .closeMenu: menu = nil
                 case .dismissCommands: dismissedQuery = store.draft
@@ -699,7 +741,7 @@ struct Composer: View {
     /// A chip's menu takes over from the slash menu, which stays closed for the draft as typed
     /// (as Esc leaves it).
     private func dismissCommands() {
-        if commandQuery != nil { dismissedQuery = store.draft }
+        if commandQuery != nil || loginQuery != nil { dismissedQuery = store.draft }
     }
 
     private func loadModels() async {
@@ -710,11 +752,22 @@ struct Composer: View {
     }
 
     private func choose(_ command: NativeCommand) {
+        if command.source == SlashLogin.source, let verb = SlashLogin.Verb(rawValue: command.name) {
+            openLogin(SlashLogin.Command(verb: verb, provider: nil))
+            return
+        }
         store.draft = "/\(command.name)"
         dismissedQuery = nil
         composing = true
         guard canSend else { return }
         sendDraft(.primary)
+    }
+
+    /// `/login` or `/logout`: never sent. The composer clears, and Sign-in opens.
+    private func openLogin(_ command: SlashLogin.Command) {
+        store.draft = ""
+        dismissedQuery = nil
+        slashLogin?.open(command)
     }
 
     private func complete(_ command: NativeCommand) {
@@ -729,6 +782,11 @@ struct Composer: View {
     }
 
     private func sendDraft(delivery: NativeThreadDelivery) {
+        // `/login …` typed out and sent: Sign-in opens; nothing reaches pi.
+        if slashLogin != nil, let command = SlashLogin.parse(store.draft) {
+            openLogin(command)
+            return
+        }
         let images = attachments.images
         Task {
             let before = store.sentCount
@@ -1115,7 +1173,7 @@ final class SlashMatchCache {
 
     static func row(_ command: NativeCommand) -> NWSlashCommand {
         NWSlashCommand(name: command.name, description: command.description, arguments: command.arguments,
-                       tag: command.source.flatMap { $0 == "extension" ? nil : $0 })
+                       tag: command.source.flatMap { $0 == "extension" ? nil : $0 == SlashLogin.source ? SlashLogin.tag : $0 })
     }
 }
 

@@ -648,7 +648,8 @@ struct PaneLeafView: View, Equatable {
                     authActions: ThreadAuthActions(
                         signIn: { [vm] provider in vm.openSignIn(provider, origin: .agentCard) },
                         useModel: { [vm] model in vm.useAnotherModel(agentID, model: model) },
-                        models: { [vm] in await ModelCatalog.loadLocal(from: vm.server.pi.catalog).models.map(\.id) })
+                        models: { [vm] in await ModelCatalog.loadLocal(from: vm.server.pi.catalog).models.map(\.id) }),
+                    slashLogin: vm.slashLoginActions
                 )
             } else {
                 LiveTerminalPane(
@@ -688,6 +689,7 @@ struct AgentThreadPane: View {
     /// The line or card at the end of the thread, and what its buttons do.
     var authNotice: ThreadAuthNotice? = nil
     var authActions: ThreadAuthActions? = nil
+    var slashLogin: SlashLoginActions? = nil
     /// A design's chat (`ThreadView.designChat`).
     var designChat = false
 
@@ -700,7 +702,8 @@ struct AgentThreadPane: View {
                 ThreadView(store: store, active: active, isFocused: isFocused, request: request, preview: preview, commandKey: commandKey,
                            agentName: agentName, workingDirectory: workingDirectory, inspectSubagent: inspectSubagent,
                            steerSubagent: steerSubagent, inspectedRunID: inspectedRunID, review: review, turnActions: turnActions,
-                           restartPi: restartPi, authNotice: authNotice, authActions: authActions, designChat: designChat)
+                           restartPi: restartPi, authNotice: authNotice, authActions: authActions, slashLogin: designChat ? nil : slashLogin,
+                           designChat: designChat)
             case .failed(let reason):
                 PanePlaceholder(text: "session unavailable · \(reason)")
                     .nwTransition(.content)

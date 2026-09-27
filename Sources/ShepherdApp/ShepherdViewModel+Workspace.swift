@@ -569,3 +569,27 @@ extension ShepherdViewModel {
         retryAgentStart(agentID)
     }
 }
+
+// MARK: /login
+
+extension ShepherdViewModel {
+    /// What a local agent's composer does with `/login` and `/logout`.
+    var slashLoginActions: SlashLoginActions {
+        SlashLoginActions(open: { [weak self] command in self?.openSlashLogin(command) },
+                          choices: { [weak self] in self?.slashLoginChoices() ?? [] })
+    }
+
+    /// `/login` opens Sign-in, and with a provider scrolls there and starts it; `/logout` only
+    /// scrolls there: signing out stays a click.
+    func openSlashLogin(_ command: SlashLogin.Command) {
+        switch command.verb {
+        case .login: openSignIn(command.provider, origin: .slash)
+        case .logout: openSignIn(command.provider, start: false, origin: .slash)
+        }
+    }
+
+    /// The providers /login lists, with their states in Shepherd's pi now.
+    func slashLoginChoices() -> [SlashLogin.Choice] {
+        SlashLogin.choices(PiSignInPage.make(survey: yourPi.survey ?? YourPiSurvey(), expired: piAuth.expired))
+    }
+}
