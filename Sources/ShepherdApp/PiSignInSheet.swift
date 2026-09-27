@@ -14,9 +14,9 @@ struct PiSignInSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             NWSheetHeader(title, subtitle: subtitle, leading: .badge(PiSignInCatalog.badge(session.provider)), close: close)
             content
-                .padding(.top, 18)
+                .padding(.top, NWPiSignInMetrics.bodyTop)
                 .padding(.horizontal, NWPiSignInMetrics.sheetInset)
-                .padding(.bottom, 20)
+                .padding(.bottom, NWPiSignInMetrics.bodyBottom)
             footer
         }
         .frame(width: NWPiSignInMetrics.sheetWidth)
@@ -55,7 +55,7 @@ struct PiSignInSheet: View {
         let site = session.site
         switch session.phase {
         case .portBusy(let port):
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: NWPiSignInMetrics.bodyGap) {
                 NWFailureBox("Another sign-in is using localhost:\(port)",
                              detail: "Probably Codex CLI or your terminal pi’s /login, mid-way. Finish or cancel it there, then try again.")
                 NWSignInSteps {
@@ -69,7 +69,7 @@ struct PiSignInSheet: View {
                 }
             }
         default:
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: NWPiSignInMetrics.bodyGap) {
                 NWSignInSteps { browserSteps(site: site) }
                 if session.phase.isLive, session.phase != .saving {
                     linkLine("Browser on another computer?", link: "Paste a code instead") { session.pasteInstead() }
@@ -116,9 +116,9 @@ struct PiSignInSheet: View {
             NWFailureBox("The sign-in didn’t finish", detail: reason)
         default:
             let rejected: String? = if case .paste(let reason) = session.phase { reason } else { nil }
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: NWPiSignInMetrics.bodyGap) {
                 Text("After you approve Shepherd, \(site) shows a code. Paste it here to finish.")
-                    .nwText(size: 13, lineHeight: 1.5)
+                    .nwText(size: NWPiSignInMetrics.proseSize, lineHeight: NWPiSignInMetrics.proseLeading)
                     .foregroundStyle(Color.nw.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 VStack(alignment: .leading, spacing: NW.Space.s) {
@@ -144,10 +144,10 @@ struct PiSignInSheet: View {
         let site = session.site
         switch session.phase {
         case .device(let code, let uri, let expires):
-            VStack(alignment: .leading, spacing: 14) {
-                (Text("Enter this code at ") + Text(Self.shortURI(uri)).font(.nwMono(12.5)).foregroundColor(Color.nw.textPrimary)
+            VStack(alignment: .leading, spacing: NWPiSignInMetrics.bodyGap) {
+                (Text("Enter this code at ") + Text(Self.shortURI(uri)).font(.nwMono(NWPiSignInMetrics.proseMonoSize)).foregroundColor(Color.nw.textPrimary)
                     + Text(". It’s already on your clipboard."))
-                    .nwText(size: 13, lineHeight: 1.5)
+                    .nwText(size: NWPiSignInMetrics.proseSize, lineHeight: NWPiSignInMetrics.proseLeading)
                     .foregroundStyle(Color.nw.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 VStack(spacing: NW.Space.m) {
@@ -192,7 +192,7 @@ struct PiSignInSheet: View {
         case .failed(let reason):
             NWFailureBox("The key wasn’t saved", detail: reason)
         default:
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: NWPiSignInMetrics.bodyGap) {
                 NWSegmentedPicker("How the key is given", selection: Binding(get: { session.keyMode }, set: { session.setKeyMode($0) }),
                                   options: [(.paste, "Paste a key"), (.variable, "Environment variable")])
                     .fixedSize()

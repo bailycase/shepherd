@@ -239,13 +239,13 @@ struct PiImportSheet: View {
 
     @ViewBuilder private var progress: some View {
         NWSheetHeader("Bringing over your pi…", leading: .glyph("square.and.arrow.down", .neutral)) {
-            (Text("Once, from ") + Text(from).font(.nwMono(12)).foregroundColor(Color.nw.textPrimary)
+            (Text("Once, from ") + Text(from).font(.nwMono(NWPiSignInMetrics.subtitleMonoSize)).foregroundColor(Color.nw.textPrimary)
                 + Text(". The pi in your terminal isn’t changed."))
-                .nwText(size: NWPiSignInMetrics.sheetSubtitleSize, lineHeight: 1.5)
+                .nwText(size: NWPiSignInMetrics.sheetSubtitleSize, lineHeight: NWPiSignInMetrics.proseLeading)
                 .foregroundStyle(Color.nw.textSecondary)
         }
         stepsCard
-            .padding(.top, 18)
+            .padding(.top, NWPiSignInMetrics.bodyTop)
             .padding(.horizontal, NWPiSignInMetrics.sheetInset)
             .padding(.bottom, NWPiSignInMetrics.sheetInset)
     }
@@ -254,9 +254,9 @@ struct PiImportSheet: View {
         NWSheetHeader("Your pi is in Shepherd", leading: .glyph("checkmark", .done)) {
             NWImportSummary(state.summary)
         }
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: NWPiSignInMetrics.bodyGap) {
             Text("Shepherd now runs its own copy of pi. The pi in your terminal is untouched.")
-                .nwText(size: 13.5, lineHeight: 1.55)
+                .nwText(size: NWPiSignInMetrics.leadSize, lineHeight: NWPiSignInMetrics.leadLeading)
                 .foregroundStyle(Color.nw.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
             let extensions = state.report.copied(.extensions).count
@@ -264,16 +264,16 @@ struct PiImportSheet: View {
                 NWNoteCard(glyph: "puzzlepiece.extension", link: "Review extensions", action: reviewExtensions) {
                     (Text(YourPiText.count(extensions, "extension")).fontWeight(.semibold).foregroundColor(Color.nw.textPrimary)
                         + Text(" came over switched off. They’re code that runs with full access, so you turn each one on yourself."))
-                        .nwText(size: 12.5, lineHeight: 1.5)
+                        .nwText(size: NWPiSignInMetrics.noteProseSize, lineHeight: NWPiSignInMetrics.proseLeading)
                         .foregroundStyle(Color.nw.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
         .padding(.top, NW.Space.xl)
-        .padding(.leading, NWPiSignInMetrics.sheetInset + NWPiSignInMetrics.sheetTile + 14)
+        .padding(.leading, NWPiSignInMetrics.sheetInset + NWPiSignInMetrics.sheetTile + NWPiSignInMetrics.bodyGap)
         .padding(.trailing, NWPiSignInMetrics.sheetInset)
-        .padding(.bottom, 20)
+        .padding(.bottom, NWPiSignInMetrics.bodyBottom)
         NWSheetFooter {
             Button("Done", action: close).buttonStyle(.nw(.primary)).keyboardShortcut(.defaultAction)
         }
@@ -290,14 +290,14 @@ struct PiImportSheet: View {
                 }
             }
             HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
-                Image(systemName: "info.circle").font(.nwSans(12)).foregroundStyle(Color.nw.textTertiary).accessibilityHidden(true)
-                NWImportSummary(state.summary, size: 12, quiet: true)
+                Image(systemName: "info.circle").font(.nwSans(NWPiSignInMetrics.smallPrintSize)).foregroundStyle(Color.nw.textTertiary).accessibilityHidden(true)
+                NWImportSummary(state.summary, size: NWPiSignInMetrics.smallPrintSize, quiet: true)
             }
             .padding(.horizontal, NW.Space.xxs)
         }
         .padding(.top, NW.Space.xl)
         .padding(.horizontal, NWPiSignInMetrics.sheetInset)
-        .padding(.bottom, 20)
+        .padding(.bottom, NWPiSignInMetrics.bodyBottom)
         NWSheetFooter {
             Button("Skip for now", action: close).buttonStyle(.nw(.secondary)).keyboardShortcut(.cancelAction)
             Button("Done", action: close).buttonStyle(.nw(.primary)).keyboardShortcut(.defaultAction)
@@ -329,11 +329,11 @@ struct PiImportSheet: View {
             .menuIndicator(.hidden)
             .accessibilityLabel("Use an API key")
         }
-        .padding(.top, 18)
+        .padding(.top, NWPiSignInMetrics.bodyTop)
         .padding(.horizontal, NWPiSignInMetrics.sheetInset)
         .padding(.bottom, NWPiSignInMetrics.sheetInset)
         NWSheetFooter {
-            Text("Change these any time in Settings ▸ Pi ▸ Sign-in.").font(.nwSans(12)).foregroundStyle(Color.nw.textTertiary)
+            Text("Change these any time in Settings ▸ Pi ▸ Sign-in.").font(.nwSans(NWPiSignInMetrics.smallPrintSize)).foregroundStyle(Color.nw.textTertiary)
         } actions: {
             Button("Skip", action: close).buttonStyle(.nw(.ghost)).keyboardShortcut(.cancelAction)
         }
@@ -347,14 +347,14 @@ struct PiImportSheet: View {
             NWFailureBox(((unreadable?.path ?? "auth.json") as NSString).abbreviatingWithTildeInPath, detail: unreadable?.reason,
                          monoTitle: true, monoDetail: true)
             Text("Fix the file and try again, or skip and sign in here instead. Agents that need a sign-in wait either way.")
-                .nwText(size: 13, lineHeight: 1.55)
+                .nwText(size: NWPiSignInMetrics.proseSize, lineHeight: NWPiSignInMetrics.leadLeading)
                 .foregroundStyle(Color.nw.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             stepsCard
         }
         .padding(.top, NW.Space.xl)
         .padding(.horizontal, NWPiSignInMetrics.sheetInset)
-        .padding(.bottom, 20)
+        .padding(.bottom, NWPiSignInMetrics.bodyBottom)
         NWSheetFooter {
             Button {
                 if let path = unreadable?.path { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
