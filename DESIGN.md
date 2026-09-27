@@ -3419,7 +3419,8 @@ The pages, in nav order. Each names its board; the strings in quotes are the boa
     Organize Sidebar By.", its control under the words (12pt above, 16 around): two cards
     (`NWSidebarStylePicker`), Activity ("Needs you, then Recents: every kind, newest first.") and
     Projects ("A folder for each project with its threads inside."), each a 104pt drawing of the
-    sidebar it makes over a radio, its name in Geist 13 semibold and the line in 12
+    sidebar it makes (its rows shrink together to fit the height, as the board's column does) over
+    a radio, its name in Geist 13 semibold and the line in 12
     `textSecondary`, on `bgSunken` at radius 10 with a 1pt `lineSubtle` ring, 1.5pt `lantern` when
     chosen, 12pt apart. `AppSettings.sidebarStyle`, default Activity.
   - For Projects only: Group by host, "A section for each Mac or server, its projects inside. Off
