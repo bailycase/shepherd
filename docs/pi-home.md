@@ -4,8 +4,8 @@ Shepherd runs its own pi, in its own home, so that nothing it does changes the u
 nothing in the user's pi can break Shepherd. The engine (Node plus pi's bundle) ships inside the
 app ([pi-engine.md](pi-engine.md)); this page is about where it runs and how it's started.
 
-This is the "Bundled pi, isolated home" plan's phases 3 to 5: the switch, the imports from the
-user's pi, and the first launch's welcome step. The user's extensions (phase 6), the native
+This is the "Bundled pi, isolated home" plan's phases 3 to 6: the switch, the imports from the
+user's pi, the first launch's welcome step, and the user's extensions, opt-in. The native
 sign-in sheet (7) and Open in terminal (8) come later.
 
 ## The home
@@ -24,7 +24,7 @@ rest. Shepherd writes, whenever they differ (`PiHome.install`):
 | `bin/pi` | The launcher: every pi Shepherd starts, and every `pi` an agent types, runs through it |
 | `restore-env.sh` | Gives an agent's shell commands back what the launcher set aside |
 | `.shepherd-pi-home` | The marker that names the folder as Shepherd's |
-| `settings.json` | Shepherd's keys only: `shellCommandPrefix` (sourcing `restore-env.sh`), and `packages` removed |
+| `settings.json` | Shepherd's keys only: `shellCommandPrefix` (sourcing `restore-env.sh`), the `skills` filter that turns off `~/.agents/skills` (below), the user's switched-on extensions under `extensions`, and `packages` removed |
 
 pi writes `settings.json` too (the TUI's `/settings`, the first `/login`), so Shepherd changes it
 read-modify-write under pi's own lock (proper-lockfile's `settings.json.lock` folder, taken over
@@ -32,6 +32,16 @@ after 10 s as pi's is), by temp file and rename, and only when its keys differ. 
 removed at every launch, with a note in the log: a user-scope package missing from `<home>/npm`
 makes pi load the user's global npm install, even offline. A `bin/` that links out of the home is
 refused rather than written through, and the agent waits on the reason.
+
+**Only its own home.** pi reads skills from `$HOME/.agents/skills` besides its agent folder, for
+every session (pi: `core/package-manager.js`, `addAutoDiscoveredResources`: `join(getHomeDir(),
+".agents", "skills")`, each skill enabled unless `isEnabledByOverrides` finds a `!` pattern in the
+global `skills` list matching its absolute path). Shepherd's `settings.json` carries
+`!<HOME>/.agents/skills/**` (HOME as pi sees it, and its real path when that differs, escaped for
+minimatch), so none of them load; the engine smoke tier proves it, with a control. The children
+bridge lists only the home's `skills/`. A trusted project's own `.agents/skills` still loads in
+its threads, as a project's files do. Everything else Shepherd's pi reads of the user's (their
+instructions, skills, prompts, themes, extensions) is a copy in the home (Imports).
 
 ## The launcher
 
@@ -76,11 +86,9 @@ Shepherd sends over RPC names a session file (`RPCCommand`).
 
 Native children run the parent's own engine: `process.execPath` (the engine's node) with the
 package's `dist/bundle/cli.js`, never a `pi` from PATH, and inherit the pins from their parent.
-The MCP probe and the Skills reader run on the engine's node too. The probe runs in a login shell
-(so the servers it starts find what an agent's would) and drops the shell's `PI_*`, `JITI_*`,
-`NODE_*` and `OPENSSL_CONF` first, as the launcher does: a `NODE_OPTIONS` hook of the user's never
-loads into Shepherd's node. The Skills reader readies the home first (`PiSetup.prepare`), so it
-never resolves a `packages` key.
+The MCP probe runs on the engine's node too, in a login shell (so the servers it starts find what
+an agent's would), and drops the shell's `PI_*`, `JITI_*`, `NODE_*` and `OPENSSL_CONF` first, as
+the launcher does: a `NODE_OPTIONS` hook of the user's never loads into Shepherd's node.
 
 ## Your pi
 
@@ -120,9 +128,6 @@ is first replaced with a copy of its bytes, and a project folder that resolves o
 gets no copy, no seeded header and no fork. From then on the two copies diverge: the user's `pi --resume` shows the conversation as it
 stood.
 
-**Settings ▸ Skills' From your pi setup** reads the user's `skills/` and the `skills` paths in
-their `settings.json` as files; the skills Shepherd's own pi loads are asked of the engine.
-
 ## Imports: what comes from your pi
 
 **The user's decision (2026-09-26), which changes the plan's principle 6 ("never copy a grant"):**
@@ -145,33 +150,59 @@ file and rename, under pi's own lock for the file (`auth.json.lock`, …), and a
 in the 0700 home. No credential's value reaches a log, a report, the UI or pi's context: they
 name a provider and a kind (API key, `$NAME`, "runs a command", subscription), never a value.
 
+**The user's second decision (2026-09-26):** "everything will be ported over, so things like
+skills, will only be installed under shepherds application support folder". So their
+instructions, skills, prompts, themes and extensions are copied too, and Shepherd's pi reads
+only its own home: nothing reads their pi live, and an edit there reaches Shepherd only through
+Re-import. `YourPiResources` finds each kind as pi finds it and copies it as plain files
+(`YourPiTree`): a link is followed and its target's bytes copied (one that leads nowhere or back
+up its own folder is left out), FIFOs, sockets and devices are never opened, `.git` stays
+behind, the execute bit is kept and nothing else of the mode, and a copy is written beside the
+home and renamed into place, whole or not at all, within a limit per kind (a skill 64 MB and
+5000 files; an extension, with its `node_modules`, 512 MB and 100000; one file 4 MiB).
+
 | From your pi | At the first launch | Afterwards |
 | --- | --- | --- |
 | Logins (auth.json) | Every entry copied as it is: API keys keep their literal, `$ENV` or `!command` value; OAuth entries are copied whole. A provider Shepherd's pi already has keeps Shepherd's | Re-import, per provider, overwrites Shepherd's |
 | Custom providers (models.json) | Copied as bytes, unless Shepherd's pi already has some | Re-import replaces them; invalid JSON keeps Shepherd's copy and says why |
 | Default model | `defaultProvider`/`defaultModel` copied, unless a sign-in already set one | Re-import |
 | Trusted folders (trust.json) | Every decision copied except a `true` for the home folder or a folder above it | Re-import (theirs over Shepherd's) |
-| Global instructions | Read live, before every run (below) | A switch |
-| Skills and prompts | Read in place: their `skills/` and `prompts/` folders and the paths in their settings, as absolute paths (`+`, `-` and `!` filters kept) in Shepherd's `settings.json` | A switch each; the entries Shepherd added are tracked, so one the user added stays |
-| Extensions | Listed, off | Phase 6 |
+| Instructions | The global context file pi would pick (`AGENTS.override.md`, `AGENTS.md`, `AGENTS.MD`, `CLAUDE.md`, `CLAUDE.MD`), `SYSTEM.md` and `APPEND_SYSTEM.md`, copied into the home under their names, where pi and its children read them | Re-import; an earlier copy pi would now pick over theirs is removed |
+| Skills | From their `skills/` (folders at any depth, and single `.md` files, which become folders), the `skills` paths in their settings (`!`, `-` and `+` filters applied as near as plain matching gets; globs and URLs left out), the skills of the packages they list, then `~/.agents/skills` (folders only), into the home's `skills/`. The second of one name is passed over, as pi passes it over, and one of Shepherd's own of that name stays | Re-import replaces the copies it made (where they are, on or off in Settings ▸ Skills), adds new ones, removes nothing |
+| Prompts and themes | Their `prompts/` (`.md`) or `themes/` (`.json`) folder's top level, the paths in their settings (a folder at any depth), and their packages', into `prompts/` or `themes/`; the second of one file name is passed over | Re-import, the same way |
+| Extensions | Their `extensions/` files and folders (with an `index` or a `pi.extensions` manifest), their settings' `extensions` paths, and the packages their settings list (an npm package from `npm/node_modules` with the dependencies npm hoisted beside it, a git one from `git/<host>/<path>`, a local folder), copied into `your-extensions/`, which pi never discovers: all switched off | A switch each (Your extensions); Copy again keeps each switch |
 
-`.shepherd-imports.json` in the home records that the first copy ran (and the switches, and the
-settings entries Shepherd added), so it never runs again on its own; with no pi of theirs it
-records that too. A file there that can't be read counts as a copy that ran, so a damaged one
-never brings back a login signed out of since. A switch saved before the first copy (a copy past
-its deadline) writes the file with `copied: false`: the next launch still copies, keeping the
-switch. A home the startup guards refuse copies nothing. What couldn't be copied (a file of
+`.shepherd-imports.json` in the home records that the first copy ran, every file it copied (what,
+from where, to where), which extensions are on, why one didn't load, and the `extensions` entries
+Shepherd wrote, so the first copy never runs again on its own; with no pi of theirs it records
+that too. A file there that can't be read counts as a copy that ran, so a damaged one never
+brings back a login signed out of since. A state saved before the first copy (a copy past its
+deadline) has `copied: false`: the next launch still copies, keeping what it holds. A state of
+version 1, from when instructions, skills and prompts were read in place, gets its files copied
+once, quietly (no welcome step, no login copied again), and the `skills` and `prompts` entries
+that pointed Shepherd's settings at the user's pi are removed. A home the startup guards refuse
+copies nothing. What couldn't be copied (a file of
 theirs unreadable, too large or not JSON, or one of Shepherd's own that isn't a JSON object, which
 is left as it is) is reported, file by file and never quoted, in the log and the welcome step.
-A package source listed under Your extensions loses any user and password in its URL.
+What was passed over on purpose (a second skill of one name, a package their pi never installed,
+a link that leads nowhere) goes to the log, one sentence each. A package's source loses any user
+and password in its URL wherever it is shown or logged.
 
-**Instructions.** pi reads a global context file only from its own agent folder, which is now
-Shepherd's. Each agent gets `SHEPHERD_YOUR_PI_INSTRUCTIONS`, the user's pi folder, while the
-switch is on; before every run the status extension reads the file pi would pick there
-(`AGENTS.override.md`, `AGENTS.md`, `AGENTS.MD`, `CLAUDE.md`, `CLAUDE.MD`; 256 KiB at most) and
-adds it after pi's own root file, with its real path. The children bridge does the same for a
-child that keeps project context (never one run with `--no-context-files`), and Shepherd's own
-root instructions (Settings ▸ Instructions) follow the user's.
+**Instructions.** pi reads a global context file only from its own agent folder, which is
+Shepherd's: the copy there is read by every agent and every child that keeps project context
+(never one run with `--no-context-files`), as pi reads its own. Shepherd's own root instructions
+(Settings ▸ Instructions) follow it.
+
+**Your extensions, opt-in and fail-closed** (the plan's phase 6). Switching one on runs the
+user's code with full access, which Settings ▸ Pi says on the row. Before every launch
+`PiSetup.prepare` writes the switched-on ones' entry files, by absolute path inside the home, into
+`settings.json`'s `extensions` (never `packages`, never npm), replacing only the entries it wrote
+before; children get them through `childUserExtensions`. One whose files are gone is left out with
+that reason. When an agent's pi stops before it serves with pi's `Failed to load extension
+"<path>": …` and the path is one of these, the view model records pi's reason and the files' time
+(`YourPiImport.extensionFailed`), which leaves it out of every launch until its files change or
+the user tries again, and starts the agent again with no click; the row keeps its switch on and
+shows the reason. Any other extension's failure leaves the agent waiting with Retry.
 
 **Trust and the home folder.** An agent whose folder is the user's home runs with
 `--no-approve`: its project folder, `~/.pi`, is the user's own pi, so no trust decision loads
@@ -216,17 +247,21 @@ refuses pi's own package commands, and the pins turn off pi's update check and i
 
 ## Testing
 
-- Imports: the parsers' tables (`YourPiFilesTests`), the copy, the marker, Re-import and the
-  switches against a fixture "your pi" of fake credentials that stays byte-identical
-  (`YourPiImportTests`), hostile files (`YourPiImportEdgeTests`: links, a FIFO, folder or device
-  for auth.json, a huge, invalid or deeply nested one, unknown OAuth fields, a `!command` key, a
-  damaged or early state file, a "your pi" overlapping the home, a package token), the first launch through the view model and the stub engine
+- Imports: the parsers' tables (`YourPiFilesTests`), each kind of file found as pi finds it and
+  copied whole (`YourPiResourcesTests`: a skill folder with links, a huge skill, a FIFO, a
+  package with `node_modules` and hoisted dependencies, a prompt of one name twice), the copy,
+  the marker, Re-import per item, an earlier copy that read files in place, and the extensions'
+  switches and failures, against a fixture "your pi" of fake credentials that stays
+  byte-identical (`YourPiImportTests`), hostile files (`YourPiImportEdgeTests`: links, a FIFO,
+  folder or device for auth.json, a huge, invalid or deeply nested one, unknown OAuth fields, a
+  `!command` key, a damaged or early state file, a "your pi" overlapping the home, a package
+  token), the first launch through the view model and the stub engine
   (`YourPiFirstLaunchTests`: nothing starts while the copy runs, then restored agents start
   signed in with no click, since the stub refuses to start without a login in the home; a copy
   past its deadline; the default model's missing provider; a later launch; skipping sign-in with
-  nothing to copy leaving agents on "not signed in"), and the
-  instructions in a parent and a real child (`your-pi-instructions.test.mjs`,
-  `native-children.test.mjs`).
+  nothing to copy leaving agents on "not signed in"; an extension of yours that throws at load
+  switched off, and the agent started again without it), and the copied instructions in a real
+  child (`native-children.test.mjs`).
 - Unit: the launch lines (`PiLaunchTests`), the launcher's and `restore-env.sh`'s content, the
   guards, "your pi" resolution and `settings.json` writes (`PiHomeTests`), adoption's table
   (`PiSessionAdoptionTests`), and no RPC command naming a session file (`RPCWireTests`).
@@ -239,4 +274,7 @@ refuses pi's own package commands, and the pins turn off pi's update check and i
 - Engine smoke (opt-in, `SHEPHERD_ENGINE_SMOKE`): through the real launcher, an RPC `bash`
   command finds `pi` at the launcher and gets back a `NODE_OPTIONS` pi never saw; an agent in
   the user's home folder, whose pi names packages and extensions, loads none of their code, runs
-  no npm, and leaves their pi byte-identical.
+  no npm, and leaves their pi byte-identical; skills load only from the home (a skill in
+  `~/.agents/skills` never does, with a control that finds it unfiltered, while the copies do);
+  and an extension of yours that throws at load is switched off with pi's reason while the one
+  that works loads from its copy.

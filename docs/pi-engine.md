@@ -3,7 +3,7 @@
 Shepherd ships its own pi: the official Node binary plus pi's bundle, inside the Mac app. Every
 pi Shepherd starts runs it (agents, the model catalog, PR descriptions, children, the sign-in
 terminal), through the launcher in Shepherd's own pi home ([pi-home.md](pi-home.md)); the MCP
-probe and the Skills reader run on its node. Nothing runs the `pi` on the user's PATH.
+probe runs on its node. Nothing runs the `pi` on the user's PATH.
 
 ## What ships
 
