@@ -16,7 +16,7 @@ struct AppSettingsTests {
         #expect(settings.defaultModel.isEmpty)
         #expect(settings.defaultThinking == .medium)
         #expect(settings.autoNameAgents)
-        #expect(settings.piPanesExtension && settings.piReviewExtension)
+        #expect(settings.piPanesExtension && settings.piReviewExtension && settings.piDesignReferences)
         #expect(settings.piSubagentsExtension && settings.piNativeSubagents)
         #expect(settings.uiDensity == 1 && settings.uiTextScale == 1)
         #expect(settings.sidebarWidth == AppSettings.defaultSidebarWidth)
@@ -74,6 +74,7 @@ struct AppSettingsTests {
         settings.autoNameAgents = false
         settings.piPanesExtension = false
         settings.piReviewExtension = false
+        settings.piDesignReferences = false
         settings.piSubagentsExtension = false
         settings.piNativeSubagents = false
         settings.shellPath = "/bin/bash"
@@ -94,7 +95,7 @@ struct AppSettingsTests {
         #expect(reloaded.terminalFontFamily == "Menlo" && reloaded.terminalFontSize == 15)
         #expect(reloaded.defaultModel == "anthropic/claude-sonnet-4" && reloaded.defaultThinking == .high)
         #expect(!reloaded.autoNameAgents)
-        #expect(!reloaded.piPanesExtension && !reloaded.piReviewExtension)
+        #expect(!reloaded.piPanesExtension && !reloaded.piReviewExtension && !reloaded.piDesignReferences)
         #expect(!reloaded.piSubagentsExtension && !reloaded.piNativeSubagents)
         #expect(reloaded.shellPath == "/bin/bash")
         #expect(reloaded.uiDensity == 1.2 && reloaded.uiTextScale == 1.1 && reloaded.sidebarWidth == 275)

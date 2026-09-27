@@ -41,6 +41,12 @@ struct PiSettings: View {
                             subtitle: "Let agents use the servers in Settings ▸ MCP servers through one `mcp` tool.") {
                     SettingsSwitch(label: "MCP servers", isOn: $settings.piMCPExtension)
                 }
+                if settings.designToolEnabled {
+                    SettingsRow(title: "Design references",
+                                subtitle: "Let a thread read the design pieces you hand it with `design_get`. Only a thread you sent one to gets the tool.") {
+                        SettingsSwitch(label: "Design references", isOn: $settings.piDesignReferences)
+                    }
+                }
             }
 
             if settings.piNativeSubagents {
