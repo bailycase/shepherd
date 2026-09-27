@@ -195,9 +195,7 @@ And the rules that follow from them:
 | SkillsStates: "Topics narrow any tab" | A topic is a search of skills.sh, most installed first, whatever tab is chosen | skills.sh's lists take no topic |
 | SettingsSkillsBrowse: "Pick from all 16…" | "Pick from the whole repo…" | A repository's size is known only once a host looks it up |
 | SettingsSkills, SkillsStates: one list of the skills in `~/.agents/skills`, global, no project skills (SkillsStates' Not yet) | The list holds Shepherd's own pi's skills (`<support>/pi/skills`), where installs go; a skill copied from the user's pi reads "From your pi" as its source, naming where it came from. A remote host running an older Shepherd still reports read-only groups (From your pi setup, From pi packages), shown as before; This Mac has none | The user's decisions of 2026-09-26: first "Show all, read-only" (the / menu listed skills the page didn't), then "everything will be ported over, so things like skills, will only be installed under shepherds application support folder". Shepherd's pi reads skills only from its home, so the page and the / menu agree again. Shepherd still never writes `~/.pi` or `~/.agents` |
-| SettingsPiFromPi, SettingsPiExtensions: Source with "pi 0.86.4 in your terminal", Last brought over, Re-import all, and each row's freshness (Same as your pi, Newer in your pi, Changed here) | Your pi's folder with Reveal, and Re-import per item; no version, date or freshness | Knowing their pi's version means running it; freshness needs a comparison per item that isn't built yet (a follow-up) |
-| SettingsPiFromPi: Instructions' Edit in Instructions | Re-import only | The copy is pi's own global file in Shepherd's pi home, not Settings ▸ Instructions' files |
-| SettingsPiExtensions: Show log beside Try again | Try again only | The reason is pi's own line, shown in full on the row |
+| SettingsPiFromPi: Instructions' Edit in Instructions | Show in Finder, at Shepherd's copy | The copy is pi's own global file in Shepherd's pi home; Settings ▸ Instructions edits Shepherd's own instruction files, so the button would open other files than the row names |
 | SettingsMCP: "every thread, mission and automation on every host gets the same servers" | "every thread and automation gets the same servers" | Missions aren't built, and stage 1 serves This Mac only |
 | SettingsMCP: Hosts lists build-01 and horizon, a row's detail reports each host, "Couldn't start on horizon", "shared with every host" | This Mac alone, in Hosts and in each detail | Stage 1 keeps servers on this Mac; other hosts come with stage 2 |
 | SettingsMCP: "Same servers on every host … Offline hosts catch up." | "Adds, edits and removals go to all hosts. For now, only this Mac." | Nothing syncs yet, so the board's words would be false |
@@ -3749,9 +3747,9 @@ nothing here changes your pi."
     "Re-imported just now" (`done`); then Re-import, a quiet ghost button when the two are the
     same and a secondary one when they differ. A failure is the row's inline problem.
 - **Copied** (footnote "Copied into Shepherd’s pi. Edits in your pi reach Shepherd only when you
-  Re-import."): Instructions ("`~/.pi/agent/AGENTS.md` · 38 lines · no `APPEND_SYSTEM.md`"; Edit in
-  Instructions opens Settings ▸ Instructions), Skills ("12 skills, listed with the rest in
-  Skills."; Show in Finder, at Shepherd's copies), Prompts (their names as `NWTag`s in
+  Re-import."): Instructions ("`~/.pi/agent/AGENTS.md` · 38 lines · no `APPEND_SYSTEM.md`"; Show
+  in Finder, at Shepherd's copy: Settings ▸ Instructions edits other files, departures), Skills
+  ("12 skills, listed with the rest in Skills."; Show in Finder, at Shepherd's copies), Prompts (their names as `NWTag`s in
   mono, "/review", at most six and "+3"; Show in Finder), Themes the same way when there are
   any; each with Re-import.
 - **Extensions**, labelled "Extensions" with "4 in `~/.pi/agent/extensions`" trailing (footnote
