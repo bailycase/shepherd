@@ -510,14 +510,18 @@ struct SettingsPreviewTests {
 
     // MARK: Dialogs
 
-    /// The first launch's welcome step: what came over from your pi; and a new user's, which only
-    /// asks to sign in (with no agent open, so Sign in… is off).
+    /// The first launch's welcome step: what came over from your pi; a new user's, which only
+    /// asks to sign in (with no agent open, so Sign in… is off); and one whose auth.json couldn't
+    /// be read.
     @Test func welcomeSheet() async throws {
         try await Preview.render("sheet-welcome", size: CGSize(width: AppLayout.piWelcomeSheetWidth, height: 620)) {
             PiWelcomeSheet(welcome: PreviewYourPi.welcome, signIn: {}, onClose: {})
         }
         try await Preview.render("sheet-welcome-sign-in", size: CGSize(width: AppLayout.piWelcomeSheetWidth, height: 260)) {
             PiWelcomeSheet(welcome: PreviewYourPi.welcomeSignIn, signIn: nil, onClose: {})
+        }
+        try await Preview.render("sheet-welcome-problem", size: CGSize(width: AppLayout.piWelcomeSheetWidth, height: 520)) {
+            PiWelcomeSheet(welcome: PreviewYourPi.welcomeProblem, signIn: {}, onClose: {})
         }
     }
 
