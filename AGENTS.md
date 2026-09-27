@@ -121,7 +121,10 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
     `SHEPHERD_SUGGEST_FILES` (the files its `suggest_instruction` may draft a line for, while
     Settings ▸ Experiments ▸ Suggested instructions is on for its kind of agent), and, for an
     agent that draws a design, `SHEPHERD_DESIGN_ID` and `SHEPHERD_DESIGN_SKILL_DIR` (the design
-    skill the app writes to the support directory's `design-skill/`; docs/designs.md).
+    skill the app writes to the support directory's `design-skill/`; docs/designs.md), and
+    `SHEPHERD_YOUR_PI_INSTRUCTIONS` (the user's own pi folder, while Settings ▸ Pi ▸ From your pi
+    reads their instructions: the status extension, and the children bridge for a child that keeps
+    project context, add the global context file there to each run; docs/pi-home.md).
 - **`SHEPHERD_PR_DESCRIPTION_MODEL`** overrides the model that drafts finalize PR bodies.
 - **`SHEPHERD_NAMER_MODELS`** (`provider/id,provider/id`; an entry without a slash matches any
   provider) overrides the cheap models the namer tries before the agent's own. The namer reads it
@@ -530,6 +533,9 @@ Sources/
                        PiEngine (which pi runs; BundledPiEngine, the one the app ships),
                        PiHome (Shepherd's pi home: the launcher, restore-env.sh, its settings),
                        YourPi (the user's own pi, read only; YourPiLocator, PiSessionFolder),
+                       YourPiFiles (its auth.json, models.json, settings, trust and extensions,
+                       parsed as plain files; PiProviders), YourPiImport (the first launch's
+                       copy into Shepherd's home, Re-import, and both sides' survey),
                        PiLaunch (every line that starts it), PiSetup
                        (the engine, the home and "your pi", passed in; the startup guards),
                        PiModelCatalog, PiConfig,
@@ -610,7 +616,8 @@ Sources/
       Worktrees, Pi, Instructions, Skills, Remote, Keyboard, Advanced, Experiments}, AppSettings,
       InstructionsModel (the Instructions page's files, drafts and sync), InstructionsEditor (its
       NSTextView), SuggestionsModel (the Experiments page's suggestions), SkillsSheets (Browse
-      skills.sh, Add from repo)
+      skills.sh, Add from repo), YourPiModel (Settings ▸ Pi's sign-ins and From your pi, and the
+      first launch's copy), YourPiText, PiWelcomeSheet (the first launch's welcome step)
     Themes (ThemeManager, ShepherdTheme), ShepherdThemeMarker, ShellIntegration, ComponentGallery
     RemoteHostStore, AgentPeers, AgentNotifications, ChildRuns, PiSessionFile (+ adoption from
       your pi), AppUpdater (Sparkle: UpdateChannel, UpdateChannelStore, ChannelDelegate),
@@ -729,6 +736,11 @@ Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
   order: the agent on screen first (and any agent selected while it waits), then the rest a
   few at a time. Every agent still starts. Test harnesses that seed agents only to draw them
   opt out (`restoresAgentsAtLaunch: false`); their pi starts when a pane's session is asked for.
+- At the first launch of a build with Shepherd's own pi, the queue (and automations) wait for
+  the one-time copy from the user's pi and the welcome step (`welcomesYourPi`, on in the app
+  only; `YourPiFirstLaunchTests` turns it on in a harness). The copy is bounded by a deadline.
+- An agent whose folder is the user's home runs with `--no-approve`: its project folder, `~/.pi`,
+  is the user's own pi.
 - Starting is quiet: a thread draws what it knows at once (a new agent's empty state, a
   resuming agent's history read from pi's session file), accepts a send that waits for pi, and
   says "Starting…" only when pi is slow (DESIGN.md › Thread, Composer).

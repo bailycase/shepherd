@@ -4,10 +4,9 @@ Shepherd runs its own pi, in its own home, so that nothing it does changes the u
 nothing in the user's pi can break Shepherd. The engine (Node plus pi's bundle) ships inside the
 app ([pi-engine.md](pi-engine.md)); this page is about where it runs and how it's started.
 
-This is the "Bundled pi, isolated home" plan's phase 3 (the switch). Imports from the user's pi
-(API keys, custom providers, instructions, skills, trust) and onboarding come in later phases,
-so on this branch every agent starts signed out, and waits on "not signed in" until the user
-signs in from Settings ▸ Pi.
+This is the "Bundled pi, isolated home" plan's phases 3 to 5: the switch, the imports from the
+user's pi, and the first launch's welcome step. The user's extensions (phase 6), the native
+sign-in sheet (7) and Open in terminal (8) come later.
 
 ## The home
 
@@ -124,6 +123,64 @@ stood.
 **Settings ▸ Skills' From your pi setup** reads the user's `skills/` and the `skills` paths in
 their `settings.json` as files; the skills Shepherd's own pi loads are asked of the engine.
 
+## Imports: what comes from your pi
+
+**The user's decision (2026-09-26), which changes the plan's principle 6 ("never copy a grant"):**
+"we need to be able to migrate the users pi logins and stuff into shepherd if they already exist."
+Asked how, they chose **copy them once**: at the first launch of a build with Shepherd's own
+home, every login in their pi is copied into Shepherd's, subscription (OAuth) sign-ins included;
+afterwards the two are independent. The consequence, accepted: providers that rotate refresh
+tokens (Anthropic, OpenAI Codex, Kimi, Radius, and xAI when its server rotates) store a new
+refresh token on every refresh, so the first refresh on one side can sign the other out, and a
+provider may revoke both on reuse. Settings ▸ Pi says so beside each copied subscription, and
+Re-import copies that login again.
+
+`YourPiImport` does the copying and `YourPiFiles` the reading. Everything of the user's is read
+as plain JSON and plain folders (a BOM and comments allowed, as pi allows them, files over 4 MiB
+refused): never through pi's `AuthStorage`, `SettingsManager` or `ProjectTrustStore`, which
+take lock folders even to read, and never by running pi (`pi auth check` refreshes OAuth). Their
+pi stays byte-identical: no write, no lock folder. Every write lands in Shepherd's home by temp
+file and rename, under pi's own lock for the file (`auth.json.lock`, …), and auth.json is 0600
+in the 0700 home. No credential's value reaches a log, a report, the UI or pi's context: they
+name a provider and a kind (API key, `$NAME`, "runs a command", subscription), never a value.
+
+| From your pi | At the first launch | Afterwards |
+| --- | --- | --- |
+| Logins (auth.json) | Every entry copied as it is: API keys keep their literal, `$ENV` or `!command` value; OAuth entries are copied whole. A provider Shepherd's pi already has keeps Shepherd's | Re-import, per provider, overwrites Shepherd's |
+| Custom providers (models.json) | Copied as bytes, unless Shepherd's pi already has some | Re-import replaces them; invalid JSON keeps Shepherd's copy and says why |
+| Default model | `defaultProvider`/`defaultModel` copied, unless a sign-in already set one | Re-import |
+| Trusted folders (trust.json) | Every decision copied except a `true` for the home folder or a folder above it | Re-import (theirs over Shepherd's) |
+| Global instructions | Read live, before every run (below) | A switch |
+| Skills and prompts | Read in place: their `skills/` and `prompts/` folders and the paths in their settings, as absolute paths (`+`, `-` and `!` filters kept) in Shepherd's `settings.json` | A switch each; the entries Shepherd added are tracked, so one the user added stays |
+| Extensions | Listed, off | Phase 6 |
+
+`.shepherd-imports.json` in the home records that the first copy ran (and the switches, and the
+settings entries Shepherd added), so it never runs again on its own; with no pi of theirs it
+records that too. A home the startup guards refuse copies nothing.
+
+**Instructions.** pi reads a global context file only from its own agent folder, which is now
+Shepherd's. Each agent gets `SHEPHERD_YOUR_PI_INSTRUCTIONS`, the user's pi folder, while the
+switch is on; before every run the status extension reads the file pi would pick there
+(`AGENTS.override.md`, `AGENTS.md`, `AGENTS.MD`, `CLAUDE.md`, `CLAUDE.MD`; 256 KiB at most) and
+adds it after pi's own root file, with its real path. The children bridge does the same for a
+child that keeps project context (never one run with `--no-context-files`), and Shepherd's own
+root instructions (Settings ▸ Instructions) follow the user's.
+
+**Trust and the home folder.** An agent whose folder is the user's home runs with
+`--no-approve`: its project folder, `~/.pi`, is the user's own pi, so no trust decision loads
+code from it.
+
+## The first launch
+
+The view model (`welcomesYourPi`, on in the app) holds `AgentStartQueue` and automations, then
+runs the copy off the main thread, bounded by 30 s (past it, agents start anyway). When this
+launch did the copy, the welcome step shows: one sentence ("Shepherd now runs its own copy of
+pi. The pi in your terminal is untouched."), what came over, the provider key variables the
+user's login shell sets (names only, found by the same login shell that finds "your pi"), and a
+sign-in ask only when nothing can start an agent. Closing it, whichever way, starts restored
+agents, the one on screen first. A skipped sign-in is safe: an agent that can't start waits on
+"not signed in". A later launch copies nothing and holds nothing.
+
 ## Signing in
 
 pi signs in only in its TUI (`/login`). Settings ▸ Pi ▸ Sign in (and Sign in… on a "not signed
@@ -140,6 +197,12 @@ refuses pi's own package commands, and the pins turn off pi's update check and i
 
 ## Testing
 
+- Imports: the parsers' tables (`YourPiFilesTests`), the copy, the marker, Re-import and the
+  switches against a fixture "your pi" of fake credentials that stays byte-identical
+  (`YourPiImportTests`), the first launch through the view model and the stub engine
+  (`YourPiFirstLaunchTests`: the hold, the welcome, a later launch, skipping sign-in), and the
+  instructions in a parent and a real child (`your-pi-instructions.test.mjs`,
+  `native-children.test.mjs`).
 - Unit: the launch lines (`PiLaunchTests`), the launcher's and `restore-env.sh`'s content, the
   guards, "your pi" resolution and `settings.json` writes (`PiHomeTests`), adoption's table
   (`PiSessionAdoptionTests`), and no RPC command naming a session file (`RPCWireTests`).
