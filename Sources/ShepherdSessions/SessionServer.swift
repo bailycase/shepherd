@@ -1728,7 +1728,8 @@ public final class SessionServer: @unchecked Sendable {
         }
         let space = Space(name: (expanded as NSString).lastPathComponent, path: expanded)
         do {
-            try mutateState { $0.spaces.append(space) }
+            // A new project goes on top, as one added on this Mac does.
+            try mutateState { $0.spaces.insert(space, at: 0) }
         } catch {
             send(.error(id: id, code: "persist_failed", message: String(describing: error)), to: client)
             return
@@ -2815,12 +2816,28 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    public func addSpace(_ space: Space) async throws {
+    /// `first` puts it at the top of the projects (a project the user adds: the sidebar's project
+    /// tree lists new ones on top); otherwise it goes last.
+    public func addSpace(_ space: Space, first: Bool = false) async throws {
         try await enqueue {
             guard !self.store.state.spaces.contains(where: { $0.id == space.id }) else {
                 throw SessionServerError.conflict("space \(space.id) already exists")
             }
-            try self.mutateState { $0.spaces.append(space) }
+            try self.mutateState {
+                if first { $0.spaces.insert(space, at: 0) } else { $0.spaces.append(space) }
+            }
+        }
+    }
+
+    /// Moves a space to sit just before `target`, or last when `target` is nil: the order the
+    /// sidebar's project tree draws its projects in.
+    public func moveSpace(_ spaceID: SpaceID, before target: SpaceID?) async throws {
+        try await enqueue {
+            let spaces = self.store.state.spaces
+            guard spaces.contains(where: { $0.id == spaceID }) else { throw SessionServerError.noSuchSpace(spaceID) }
+            if let target, !spaces.contains(where: { $0.id == target }) { throw SessionServerError.noSuchSpace(target) }
+            guard let moved = spaces.moving(spaceID, before: target), moved != spaces else { return }
+            try self.mutateState { $0.spaces = moved }
         }
     }
 

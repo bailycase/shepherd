@@ -571,6 +571,49 @@ struct StateMutationTests {
         try await expectNoChange(on: h) { try await h.server.reorderAgent(a.agent.id, onto: a.agent.id) }
     }
 
+    /// The project tree's order is the spaces' order: a project the user adds goes on top, and a
+    /// drag moves one before another or last, every other space keeping its place.
+    @Test func spacesMoveBeforeAnotherOrLastAndNewProjectsGoOnTop() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let (one, two, three) = (Fixture.space("one"), Fixture.space("two"), Fixture.space("three"))
+        try await h.seed(ShepherdState(spaces: [one, two, three]))
+
+        try await h.server.moveSpace(three.id, before: one.id)
+        #expect(try await committed(h).spaces.map(\.name) == ["three", "one", "two"])
+        try await h.server.moveSpace(three.id, before: nil)
+        #expect(try await committed(h).spaces.map(\.name) == ["one", "two", "three"])
+        let added = Fixture.space("added")
+        try await h.server.addSpace(added, first: true)
+        #expect(try await committed(h).spaces.map(\.name) == ["added", "one", "two", "three"])
+
+        try await expectNoChange(on: h) { try await h.server.moveSpace(one.id, before: two.id) }
+        try await expectNoChange(on: h) { try await h.server.moveSpace(three.id, before: nil) }
+        let unknown = SpaceID()
+        try await expectRejection(.noSuchSpace(unknown), on: h) { try await h.server.moveSpace(unknown, before: nil) }
+        try await expectRejection(.noSuchSpace(unknown), on: h) { try await h.server.moveSpace(one.id, before: unknown) }
+    }
+
+    /// Hide from Sidebar is written to state.json with the space and survives a relaunch; the
+    /// reserved spaces' `hidden` is untouched.
+    @Test func aSpaceHiddenFromTheSidebarPersistsAcrossARelaunch() async throws {
+        let h = try ScratchServer.fresh()
+        var space = Fixture.space("dotfiles")
+        try await h.seed(ShepherdState(spaces: [space]))
+
+        space.sidebarHidden = true
+        try await h.server.updateSpace(space)
+        let state = try await committed(h)
+        #expect(state.spaces.first?.sidebarHidden == true)
+        #expect(state.spaces.first?.hidden == false)
+        h.stop(keepFiles: true)
+
+        let relaunched = try ScratchServer(dir: h.dir)
+        defer { relaunched.stop() }
+        #expect(relaunched.server.state.spaces.first?.sidebarHidden == true)
+        #expect(relaunched.server.state.spaces.first?.hidden == false)
+    }
+
     /// removeAgent forgets the record only (the layout is the caller's); an automation it was
     /// running stops pointing at it.
     @Test func removeAgentForgetsItAndItsAutomationRunButKeepsTheLayout() async throws {

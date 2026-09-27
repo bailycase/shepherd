@@ -1,5 +1,6 @@
 import SwiftUI
 import ShepherdCore
+import ShepherdUI
 
 /// What the menu bar shows, as narrow cached values. Each menu reads only its own fields, and a
 /// field changes only when its value does, so an agent's status report (or any other workspace
@@ -16,6 +17,7 @@ final class MenuState {
         var hasSelection = false
         var canActOnSelection = false
         var sidebarVisible = true
+        var sidebarStyle = NWSidebarStyle.activity
         var rightPaneOpen = false
         var hasMachineAgents = false
         /// The first nine Recents rows, for ⌘1–9.
@@ -27,6 +29,7 @@ final class MenuState {
     private(set) var hasSelection = false
     private(set) var canActOnSelection = false
     private(set) var sidebarVisible = true
+    private(set) var sidebarStyle = NWSidebarStyle.activity
     private(set) var rightPaneOpen = false
     private(set) var hasMachineAgents = false
     private(set) var agents: [Item] = []
@@ -38,6 +41,7 @@ final class MenuState {
         if hasSelection != snapshot.hasSelection { hasSelection = snapshot.hasSelection }
         if canActOnSelection != snapshot.canActOnSelection { canActOnSelection = snapshot.canActOnSelection }
         if sidebarVisible != snapshot.sidebarVisible { sidebarVisible = snapshot.sidebarVisible }
+        if sidebarStyle != snapshot.sidebarStyle { sidebarStyle = snapshot.sidebarStyle }
         if rightPaneOpen != snapshot.rightPaneOpen { rightPaneOpen = snapshot.rightPaneOpen }
         if hasMachineAgents != snapshot.hasMachineAgents { hasMachineAgents = snapshot.hasMachineAgents }
         if agents != snapshot.agents { agents = snapshot.agents }
@@ -48,15 +52,15 @@ final class MenuState {
 extension MenuState.Snapshot {
     @MainActor init(_ vm: ShepherdViewModel) {
         let selected = vm.selectedRemoteAgent?.agentID ?? vm.selectedAgentID
-        let lists = vm.sidebarLists
         self.init(
             hasVisibleThread: vm.visibleThread != nil,
             hasSelection: selected != nil || vm.selectedRemoteAgent != nil,
             canActOnSelection: selected != nil,
             sidebarVisible: vm.isSidebarVisible,
+            sidebarStyle: vm.sidebarStyle,
             rightPaneOpen: vm.isRightPaneOpen,
-            hasMachineAgents: !lists.all.isEmpty,
-            agents: lists.shortcutRows.prefix(9).map { MenuState.Item(id: "\($0.id)", title: $0.title) },
+            hasMachineAgents: !vm.sidebarWalkRows.isEmpty,
+            agents: vm.sidebarShortcutRows.prefix(9).map { MenuState.Item(id: "\($0.id)", title: $0.title) },
             spaces: vm.visibleSpaces.map { MenuState.Item(id: $0.id.rawValue, title: $0.name) }
         )
     }
@@ -136,6 +140,20 @@ struct ViewCommands: Commands {
                 .keyboardShortcut(keys.shortcut(.commandPalette))
             Button(menu.sidebarVisible ? "Hide Sidebar" : "Show Sidebar") { later { vm.toggleSidebar() } }
                 .keyboardShortcut(keys.shortcut(.toggleSidebar))
+            // Settings ▸ Appearance ▸ Sidebar ▸ Organize by, here too (Sidebar — Projects).
+            Menu("Organize Sidebar By") {
+                ForEach(NWSidebarStyle.allCases) { style in
+                    Button {
+                        later { vm.setSidebarStyle(style) }
+                    } label: {
+                        if menu.sidebarStyle == style {
+                            Label(style.title, systemImage: "checkmark")
+                        } else {
+                            Text(style.title)
+                        }
+                    }
+                }
+            }
             Button(menu.rightPaneOpen ? "Hide Side Pane" : "Show Side Pane") { later { vm.toggleRightPane() } }
                 .keyboardShortcut(keys.shortcut(.toggleRightPane))
                 .disabled(!menu.hasVisibleThread)
