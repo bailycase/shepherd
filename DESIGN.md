@@ -8477,8 +8477,9 @@ or in a design's own chat. Choices the boards leave open, and where the build de
   The design's ••• (its toolbar) adds "Implement <piece>…" and Copy Reference before Delete Design…,
   naming the selection (the whole design with nothing selected). ⌘↩ and ⇧⌘C are canvas-scoped
   (`ShortcutAction.Scope.canvas`, Settings ▸ Keyboard's Designs group): answered only while the
-  design shows and nothing that takes text has the keyboard, so the chat's composer keeps its own
-  ⌘↩.
+  design shows and nothing that takes text has the keyboard with something in it, so the chat's
+  composer keeps its own ⌘↩ for a draft. Clicking the canvas leaves the keyboard where it was
+  (usually the chat's empty composer), and that lets them through.
 - **The sheet** (`NWImplementSheet`), centered over the window on the sheet scrim: 540pt, radius
   14, `bgWindow` with the popover's line and shadow. A header (20/18/16/20): the piece's picture
   88×56 (radius 6; an element cut from its board as the canvas drew it), "Implement <piece>" in 16

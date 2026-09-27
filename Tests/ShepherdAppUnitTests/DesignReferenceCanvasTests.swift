@@ -128,4 +128,18 @@ struct DesignReferenceCanvasTests {
         #expect(!DesignCanvasKeys.Watcher.textHasKeyboard(NSView()))
         #expect(!DesignCanvasKeys.Watcher.textHasKeyboard(nil))
     }
+
+    /// Clicking the canvas leaves the chat's composer the keyboard, so an empty one lets ⌘↩ and
+    /// ⇧⌘C through; words in it, or a draft the chat holds, keep them.
+    @Test(arguments: [
+        ("", false, false),
+        ("Make the bars thinner", false, true),
+        ("", true, true),
+    ])
+    func anEmptyFieldLetsTheCanvasChordsThrough(_ text: String, _ draft: Bool, _ keeps: Bool) {
+        let field = NSTextView()
+        field.string = text
+        #expect(DesignCanvasKeys.Watcher.textHoldsKeyboard(field, chatHasDraft: { draft }) == keeps)
+        #expect(!DesignCanvasKeys.Watcher.textHoldsKeyboard(NSView(), chatHasDraft: { true }))
+    }
 }
