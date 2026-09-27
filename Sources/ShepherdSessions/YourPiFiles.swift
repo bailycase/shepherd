@@ -397,6 +397,10 @@ public enum PiProviders {
         "xiaomi": ["XIAOMI_API_KEY"],
     ]
 
+    /// Providers that can sign in with cloud credentials pi doesn't store (an AWS profile, Google
+    /// application default credentials), so Shepherd can't tell they're missing.
+    public static let ambient: Set<String> = ["amazon-bedrock", "google-vertex"]
+
     /// Every variable name above, sorted.
     public static var allEnvironmentKeys: [String] { Array(Set(environmentKeys.values.joined())).sorted() }
 
