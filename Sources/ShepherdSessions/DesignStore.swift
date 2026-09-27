@@ -322,8 +322,10 @@ public final class DesignStore: @unchecked Sendable {
         return pinned
     }
 
-    /// `pinBoard` for several boards at one revision, in the order given.
-    public func pinBoards(_ id: DesignID, paths: [DesignPath]) async throws -> [DesignBoardSource] {
+    /// `pinBoard` for several boards at one revision, in the order given. `wholeDesign` records
+    /// them as what a whole-design reference holds at that revision (`pinnedDesign`), with the
+    /// number of boards the design had then.
+    public func pinBoards(_ id: DesignID, paths: [DesignPath], wholeDesign boardCount: Int? = nil) async throws -> [DesignBoardSource] {
         try await run {
             var design = try self.load(id)
             let files = try self.files(of: id, &design)
@@ -346,6 +348,9 @@ public final class DesignStore: @unchecked Sendable {
                 }
                 index.record(revision: design.revision, board: path, sha256: sha)
                 out.append(DesignBoardSource(path: path, source: String(decoding: data, as: UTF8.self), sha256: sha, revision: design.revision))
+            }
+            if let boardCount {
+                index.record(revision: design.revision, design: PinIndex.Held(boards: paths.map(\.rawValue), boardCount: boardCount))
             }
             if let data = try? JSONEncoder().encode(index) {
                 try? data.write(to: pins.appendingPathComponent("index.json"), options: .atomic)
@@ -377,17 +382,58 @@ public final class DesignStore: @unchecked Sendable {
         }
     }
 
+    /// What a whole-design reference pinned at `revision` holds (`pinBoards(wholeDesign:)`): each
+    /// board's source then, in the order it was held, and how many boards the design had. Nil
+    /// when no whole-design reference was pinned then, or a pin is gone.
+    public func pinnedDesign(_ id: DesignID, revision: UInt64) async throws -> (boards: [DesignBoardSource], boardCount: Int)? {
+        try await run {
+            guard let folder = self.folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+            let pins = folder.appendingPathComponent("pins", isDirectory: true)
+            let index = Self.pinIndex(pins)
+            guard let held = index.designs?["\(revision)"] else { return nil }
+            var boards: [DesignBoardSource] = []
+            for raw in held.boards {
+                guard let path = DesignPath(raw), let sha = index.sha256(revision: revision, board: path),
+                      let data = try? Data(contentsOf: pins.appendingPathComponent(sha + DesignPath.fileExtension)),
+                      Self.sha256(data) == sha else { return nil }
+                boards.append(DesignBoardSource(path: path, source: String(decoding: data, as: UTF8.self), sha256: sha, revision: revision))
+            }
+            return (boards, held.boardCount)
+        }
+    }
+
     /// Which source each board had at the revisions references were pinned at, newest
-    /// `PinIndex.limit` revisions kept.
+    /// `PinIndex.limit` revisions kept, and what whole-design references held then.
     struct PinIndex: Codable {
         static let limit = 200
         var revisions: [String: [String: String]] = [:]
+        /// Absent from an index written before whole-design pins were recorded.
+        var designs: [String: Held]?
+
+        struct Held: Codable, Equatable {
+            var boards: [String]
+            var boardCount: Int
+        }
 
         mutating func record(revision: UInt64, board: DesignPath, sha256: String) {
             revisions["\(revision)", default: [:]][board.rawValue] = sha256
+            trim()
+        }
+
+        mutating func record(revision: UInt64, design held: Held) {
+            designs = designs ?? [:]
+            designs?["\(revision)"] = held
+            trim()
+        }
+
+        private mutating func trim() {
             if revisions.count > Self.limit {
                 let old = revisions.keys.compactMap(UInt64.init).sorted().prefix(revisions.count - Self.limit)
                 for key in old { revisions["\(key)"] = nil }
+            }
+            if let designs, designs.count > Self.limit {
+                let old = designs.keys.compactMap(UInt64.init).sorted().prefix(designs.count - Self.limit)
+                for key in old { self.designs?["\(key)"] = nil }
             }
         }
 
