@@ -52,6 +52,8 @@ enum RemoteDesignSamples {
         .sendMarkup(designID: design, markup: markup),
         .settleProposals(designID: design, proposals: ["call-7#0"], deliver: true, baseRevision: 5),
         .settleProposals(designID: design, proposals: ["call-7#0", "call-7#1"], deliver: false, baseRevision: nil),
+        .delete(designID: design),
+        .undoDelete(designID: design),
     ]
 
     static let markup = DesignMarkup(strokes: [
@@ -93,6 +95,7 @@ enum RemoteDesignSamples {
         .markupSent(undelivered: "The design agent is starting."),
         .proposalsSettled([kept, settled], undelivered: nil),
         .proposalsSettled([], undelivered: "The design has no agent."),
+        .deleted(DesignDeletion(designID: design, name: "Checkout funnel", undoUntil: 1_700_000_010_000)),
         .ok,
     ]
 }
@@ -119,7 +122,8 @@ struct RemoteDesignMessageTests {
     static func caseName(_ request: RemoteDesignRequest) -> String {
         switch request {
         case .list, .index, .boards, .file, .asset, .comments, .addComment, .replyToComment, .resolveComment, .writeBoards,
-             .updateIndex, .duplicateBoard, .restoreVersions, .system, .watch, .create, .sendMarkup, .settleProposals:
+             .updateIndex, .duplicateBoard, .restoreVersions, .system, .watch, .create, .sendMarkup, .settleProposals,
+             .delete, .undoDelete:
             Wire.caseName(request)
         }
     }
@@ -127,14 +131,14 @@ struct RemoteDesignMessageTests {
     static func caseName(_ result: RemoteDesignResult) -> String {
         switch result {
         case .listing, .index, .files, .chunk, .comments, .comment, .written, .boardsWritten, .duplicated, .system, .created,
-             .markupSent, .proposalsSettled, .ok:
+             .markupSent, .proposalsSettled, .deleted, .ok:
             Wire.caseName(result)
         }
     }
 
     @Test func samplesCoverEveryCase() {
-        #expect(Set(S.requests.map(Self.caseName)).count == 18)
-        #expect(Set(S.results.map(Self.caseName)).count == 14)
+        #expect(Set(S.requests.map(Self.caseName)).count == 20)
+        #expect(Set(S.results.map(Self.caseName)).count == 15)
     }
 
     @Test(arguments: [
@@ -159,7 +163,8 @@ struct RemoteDesignMessageTests {
         #expect(RemoteProtocol.clientCapabilities.contains(RemoteProtocol.designsCapability))
     }
 
-    /// Pencil markup and its proposals need the host to offer markup too; nothing else does.
+    /// Pencil markup and its proposals need the host to offer markup too, and Delete and its
+    /// Undo need it to offer Delete; nothing else needs more than designs.
     @Test func onlyMarkupRequestsNeedTheMarkupCapability() {
         #expect(RemoteProtocol.designMarkupCapability == "design.markup.v1")
         #expect(RemoteProtocol.capabilities.contains(RemoteProtocol.designMarkupCapability))
@@ -167,6 +172,10 @@ struct RemoteDesignMessageTests {
             switch request {
             case .sendMarkup, .settleProposals:
                 #expect(request.capability == RemoteProtocol.designMarkupCapability)
+                #expect(request.writes)
+                #expect(request.designID == S.design)
+            case .delete, .undoDelete:
+                #expect(request.capability == RemoteProtocol.designDeleteCapability)
                 #expect(request.writes)
                 #expect(request.designID == S.design)
             default:
