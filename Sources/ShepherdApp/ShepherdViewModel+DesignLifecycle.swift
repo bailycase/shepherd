@@ -488,7 +488,10 @@ extension ShepherdViewModel {
         designImportPrompt = nil
         switch prompt {
         case .unreadable(let preview):
-            Task { await finishDesignImport(preview, skippingUnreadable: true) }
+            // The same project already in Designs still comes in as a copy under the next number.
+            let again = state.designs.contains { $0.importedFrom.map(preview.origin.isSameProject) == true }
+            let name = again ? DesignNaming.importName(preview.title, taken: state.designs.map(\.name)) : nil
+            Task { await finishDesignImport(preview, name: name, skippingUnreadable: true) }
         case .again(let preview, let existing, let copyName):
             if openExisting {
                 designImporting = nil
