@@ -31,13 +31,17 @@ public enum PiLaunch {
     /// sessions in `home.sessionDirectory(forCwd:)` (`--session-dir`, which wins over anything the
     /// environment or a project's settings say). The `cd` runs after the login shell's startup
     /// files, so a `cd` in them can't move pi. `model` and `thinking` go only to a fresh session;
-    /// `extensions` load in order. Throws when the session folder resolves outside the home.
+    /// `extensions` load in order. `untrustedProject` (an agent in the user's home folder, whose
+    /// project folder `~/.pi` holds their own pi) passes `--no-approve`, so pi loads no project
+    /// code or settings there whatever a trust decision says. Throws when the session folder
+    /// resolves outside the home.
     public static func agent(home: PiHome, cwd: String, sessionID: String, model: String?, thinking: String?,
-                             extensions: [String]) throws -> Line {
+                             extensions: [String], untrustedProject: Bool = false) throws -> Line {
         let sessionDirectory = home.sessionDirectory(forCwd: cwd).path
         guard home.contains(sessionDirectory) else { throw OutsideHome(path: sessionDirectory) }
         var script = "cd -- \(quoted(cwd)) && exec \(quoted(home.launcher.path)) --mode rpc --session-dir \(quoted(sessionDirectory))"
             + " --session-id \(quoted(sessionID))"
+        if untrustedProject { script += " --no-approve" }
         if let model { script += " --model \(quoted(model))" }
         if let thinking { script += " --thinking \(quoted(thinking))" }
         for path in extensions { script += " -e \(quoted(path))" }
@@ -48,6 +52,11 @@ public enum PiLaunch {
     /// applies (a cwd of `~` would make `~/.pi` the project).
     public static func listModels(home: PiHome) -> Line {
         Line(script: "cd -- \(quoted(home.directory.path)) && exec \(quoted(home.launcher.path)) --list-models")
+    }
+
+    /// Whether `cwd` is the user's home folder, which no agent's pi trusts as a project.
+    public static func isHomeFolder(_ cwd: String, userHome: String) -> Bool {
+        PiHome.canonical(cwd) == PiHome.canonical(userHome)
     }
 
     /// A one-shot draft (PR descriptions, commit messages from review): the prompt alone on

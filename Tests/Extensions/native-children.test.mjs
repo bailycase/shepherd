@@ -704,3 +704,52 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("your pi's global instructions reach a child that keeps project context, and never one that doesn't", { timeout: 90000 }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-your-pi-child-"));
+  const { server, requests } = fixtureServer();
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const sockets = new Set();
+  const control = net.createServer((socket) => { sockets.add(socket); socket.on("error", () => {}); });
+  const saved = { ...process.env };
+  let h;
+  try {
+    process.env.HOME = dir; delete process.env.PI_SUBAGENT_EXTRA_AGENT_DIRS;
+    process.env.PI_CODING_AGENT_DIR = path.join(dir, "config");
+    process.env.PI_OFFLINE = "1";
+    process.env.SHEPHERD_NATIVE_CHILDREN = "1"; process.env.SHEPHERD_AGENT_ID = "fixture";
+    process.env.SHEPHERD_SOCKET = path.join(dir, "shepherd.sock"); process.env.SHEPHERD_EXT_CHILDREN = source;
+    const yours = path.join(dir, "your-pi");
+    fs.mkdirSync(yours);
+    fs.writeFileSync(path.join(yours, "AGENTS.md"), "- Say FIXTURE-GLOBAL-INSTRUCTIONS when asked.\n");
+    process.env.SHEPHERD_YOUR_PI_INSTRUCTIONS = yours;
+    fs.mkdirSync(path.join(process.env.PI_CODING_AGENT_DIR, "agents"), { recursive: true });
+    fs.writeFileSync(path.join(process.env.PI_CODING_AGENT_DIR, "models.json"), JSON.stringify({ providers: { fixture: {
+      baseUrl: `http://127.0.0.1:${server.address().port}/v1`, api: "openai-completions", apiKey: "local-fixture-not-secret",
+      models: [{ id: "fixture", name: "fixture", reasoning: false, input: ["text"], contextWindow: 64000, maxTokens: 1024, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }],
+    } } }));
+    fs.writeFileSync(path.join(process.env.PI_CODING_AGENT_DIR, "agents", "isolated.md"),
+      "---\nname: isolated\ndescription: Works without project context.\ninheritProjectContext: false\ntools: read\n---\nDo the task.\n");
+    await new Promise((r) => control.listen(process.env.SHEPHERD_SOCKET, r));
+    h = await harness(dir, []);
+    const requestFor = (task) => requests.find((r) => JSON.stringify(r.messages).includes(task));
+
+    const kept = await h.call("start", { task: "KEEPS-CONTEXT task", role: "scout" });
+    assert.equal((await h.call("wait", { ids: [kept.id], all: true, timeoutSeconds: 30 }))[0].state, "complete");
+    const withContext = JSON.stringify(requestFor("KEEPS-CONTEXT task"));
+    assert.match(withContext, /FIXTURE-GLOBAL-INSTRUCTIONS/, "the child's system prompt has your instructions");
+    assert(withContext.includes(path.join(yours, "AGENTS.md")), "with their real path");
+
+    const isolated = await h.call("start", { task: "NO-CONTEXT task", role: "isolated" });
+    assert.equal((await h.call("wait", { ids: [isolated.id], all: true, timeoutSeconds: 30 }))[0].state, "complete");
+    assert.doesNotMatch(JSON.stringify(requestFor("NO-CONTEXT task")), /FIXTURE-GLOBAL-INSTRUCTIONS/);
+  } finally {
+    await h?.shutdown();
+    for (const socket of sockets) socket.destroy();
+    await new Promise((r) => control.close(r));
+    server.closeAllConnections();
+    await new Promise((r) => server.close(r));
+    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key]; Object.assign(process.env, saved);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -45,6 +45,10 @@ struct PiLaunchTests {
             line: try! PiLaunch.agent(home: home, cwd: "/repo", sessionID: "it's", model: nil, thinking: nil, extensions: [status]),
             script: #"cd -- '/repo' && exec "# + launcher + #" --mode rpc --session-dir '\#(sessions)/--repo--' --session-id 'it'"'"'s'"#
                 + #" -e '/Users/me/Library/Application Support/Shepherd/shepherd-status.ts'"#),
+        Row(name: "an agent in the home folder, whose project folder is the user's own pi, trusts no project code",
+            line: try! PiLaunch.agent(home: home, cwd: "/Users/me", sessionID: "s", model: nil, thinking: nil, extensions: [],
+                                      untrustedProject: true),
+            script: #"cd -- '/Users/me' && exec "# + launcher + #" --mode rpc --session-dir '\#(sessions)/--Users-me--' --session-id 's' --no-approve"#),
         Row(name: "a cwd with a colon and a backslash, named as pi names its folder",
             line: try! PiLaunch.agent(home: home, cwd: #"/w/a:b\c"#, sessionID: "s", model: nil, thinking: "low", extensions: []),
             script: #"cd -- '/w/a:b\c' && exec "# + launcher + #" --mode rpc --session-dir '\#(sessions)/--w-a-b-c--' --session-id 's' --thinking 'low'"#),

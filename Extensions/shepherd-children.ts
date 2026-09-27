@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
 import { SessionManager, createBashTool, getPackageDir, resolveCliModel } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { bundledAgents as ROLES, childDefaults, discoverChildAgents, childSkills, childTargetContext, defaultChildTools, childUserExtensions, thinkingLevels } from "./shepherd-children-config.ts";
+import { addYourPiInstructions, bundledAgents as ROLES, childDefaults, discoverChildAgents, childSkills, childTargetContext, defaultChildTools, childUserExtensions, thinkingLevels } from "./shepherd-children-config.ts";
 import { executeWorkflow } from "./shepherd-workflow.ts";
 import { missionStore } from "./shepherd-missions.ts";
 import { registerNativeCommands } from "./shepherd-children-ui.ts";
@@ -170,6 +170,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       });
     });
     pi.on("session_shutdown", continueRun);
+    pi.on("before_agent_start", (event) => addYourPiInstructions(event?.systemPromptOptions));
     pi.registerTool(createBashTool(process.cwd(), { operations: childBashOperations() }));
     if (process.env.SHEPHERD_CHILD_TOOLS) {
       const allowed = new Set(JSON.parse(process.env.SHEPHERD_CHILD_TOOLS));
@@ -450,6 +451,8 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     const env = { ...process.env };
     for (const key of Object.keys(env)) if (key.startsWith("SHEPHERD_") || key.startsWith("PI_SUBAGENT") || ["PI_SESSION_ID", "PI_SESSION_FILE", "PI_PROVIDER", "PI_MODEL", "PI_REASONING_LEVEL"].includes(key)) delete env[key];
     env.SHEPHERD_CHILD = "1"; env.PI_OFFLINE = "1";
+    // The user's global instructions reach a child that keeps project context, as they reach its parent.
+    if (run.inheritProjectContext !== false && process.env.SHEPHERD_YOUR_PI_INSTRUCTIONS) env.SHEPHERD_YOUR_PI_INSTRUCTIONS = process.env.SHEPHERD_YOUR_PI_INSTRUCTIONS;
     env.SHEPHERD_CHILD_TOOLS = JSON.stringify([...run.tools, "shepherd_parent_message"]);
     const args = ["--mode", "rpc", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve",
       "-e", bridge, "--session", run.sessionFile, "--model", run.model, "--thinking", run.thinking,

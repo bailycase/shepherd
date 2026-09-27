@@ -221,6 +221,28 @@ struct AgentLaunchCommandTests {
         ])
     }
 
+    /// The user's own pi's folder reaches the status extension, which reads their global
+    /// instructions from it live; without it the variable is absent.
+    @Test func yourPisInstructionsFolderIsPassedOnlyWhenRead() throws {
+        #expect(command().env[StatusExtension.yourPiInstructionsEnvKey] == nil)
+        let launch = try StatusExtension.command(
+            home: Self.home, cwd: "/tmp/project", agentID: AgentID(rawValue: "agent-id"), piSessionID: "s",
+            socketPath: "/tmp/shepherd.sock", extensionPath: "/tmp/status.ts", panesExtensionPath: nil, reviewExtensionPath: nil,
+            subagentsExtensionPath: nil, yourPiInstructions: "/Users/me/.pi/agent", model: nil, thinking: nil)
+        #expect(launch.env["SHEPHERD_YOUR_PI_INSTRUCTIONS"] == "/Users/me/.pi/agent")
+    }
+
+    /// An agent in the user's home folder never trusts it as a project (`~/.pi` is their own pi);
+    /// anywhere else, trust is pi's to decide.
+    @Test(arguments: [("/tmp/home", true), ("/tmp/home/", true), ("/tmp/home/project", false), ("/tmp", false)])
+    func anAgentInTheHomeFolderTrustsNoProjectCode(cwd: String, untrusted: Bool) throws {
+        let launch = try StatusExtension.command(
+            home: Self.home, cwd: cwd, agentID: AgentID(rawValue: "agent-id"), piSessionID: "s",
+            socketPath: "/tmp/shepherd.sock", extensionPath: "/tmp/status.ts", panesExtensionPath: nil, reviewExtensionPath: nil,
+            subagentsExtensionPath: nil, userHome: "/tmp/home", model: nil, thinking: nil)
+        #expect(launch.argv[3].contains(" --no-approve") == untrusted)
+    }
+
     /// Every agent starts Shepherd's launcher, with its sessions in Shepherd's home, and hands its
     /// children no pi to fall back to.
     @Test func theAgentStartsShepherdsLauncherInItsHome() {
