@@ -467,6 +467,17 @@ enum PreviewYourPi {
         return YourPiModel.Welcome(report: report, survey: imported)
     }()
 
+    /// A first copy whose auth.json couldn't be read: the rest came over, and the step says why
+    /// the logins didn't.
+    static let welcomeProblem: YourPiModel.Welcome = {
+        var report = welcome.report
+        report.logins = []
+        report.problems = ["Your pi's sign-ins couldn't be read: auth.json isn't a valid JSON object."]
+        var survey = none
+        survey.shepherdCustomProviders = ["local-llm"]
+        return YourPiModel.Welcome(report: report, survey: survey)
+    }()
+
     /// A new user's first launch: only the sign-in ask.
     static let welcomeSignIn: YourPiModel.Welcome = {
         var report = YourPiImportReport()

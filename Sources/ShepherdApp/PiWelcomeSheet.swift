@@ -63,6 +63,10 @@ struct PiWelcomeSheet: View {
                             .padding(.top, NW.Space.m)
                     }
                 }
+                if !welcome.report.problems.isEmpty {
+                    DialogBanner(state: .failed, title: "Some of your pi wasn't brought over",
+                                 message: welcome.report.problems.joined(separator: " "))
+                }
                 if !welcome.survey.canStartAgents {
                     DialogBanner(title: "Sign in so agents can start", message: "Until you do, agents wait with Retry.")
                 }

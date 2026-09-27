@@ -41,9 +41,9 @@ final class AppHarness {
     /// seed agents only to look at them, with no pi on PATH). `readingCheckouts` turns on the
     /// header's checkout reads, which would otherwise change the workspace under a test that
     /// seeded a repository.
-    @discardableResult
     /// `welcomingYourPi` runs the first launch's copy from "your pi" and its welcome step, which
     /// hold restored agents, as the app does.
+    @discardableResult
     func start(with state: ShepherdState? = nil, restoringAgents: Bool = false,
                readingCheckouts: Bool = false, mcp: MCPStore? = nil, welcomingYourPi: Bool = false) async throws -> ShepherdViewModel {
         if let state { try await server.putState(state) }
