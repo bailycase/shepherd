@@ -25,6 +25,76 @@ public enum NWComposerMetrics {
     public static let thinkingMenuWidth: CGFloat = 220
     /// The `bgSelected` ring around a focused composer card (the thread's and the Steer card).
     public static let focusRing: CGFloat = 3
+    /// The thinking chip's lightbulb.
+    public static let chipSymbol: CGFloat = 11
+}
+
+/// The composer's size (NWDesignTool › Chat composer). `.regular` is the thread's and New
+/// design's; `.compact` is for a pane under 520pt (a design's 420pt chat), where the chips drop
+/// their words: "/ commands" shows as "/" and the thinking chip shows just its level. The
+/// controls, the ring and Send are the same at both sizes.
+public enum NWComposerSize: Sendable, Hashable {
+    case regular
+    case compact
+
+    /// The chips' words ("commands", "Thinking") show: at the regular size, unless the row has
+    /// no room for them (`short`).
+    public func showsChipWords(short: Bool = false) -> Bool {
+        self == .regular && !short
+    }
+}
+
+extension EnvironmentValues {
+    @Entry public var nwComposerSize: NWComposerSize = .regular
+}
+
+extension View {
+    /// Draws the composers inside at `size` (`NWComposerSize`).
+    public func nwComposerSize(_ size: NWComposerSize) -> some View {
+        environment(\.nwComposerSize, size)
+    }
+}
+
+/// The commands chip's label: "/ commands", or "/" alone at the compact size or when the row
+/// is short of room.
+public struct NWComposerCommandsLabel: View {
+    let short: Bool
+    @Environment(\.nwComposerSize) private var size
+
+    public init(short: Bool = false) { self.short = short }
+
+    public var body: some View {
+        HStack(spacing: NW.Space.s) {
+            Text("/").font(.nw(.code))
+            if size.showsChipWords(short: short) { Text("commands") }
+        }
+    }
+}
+
+/// The thinking chip's label: the lightbulb, "Thinking", the level in `textPrimary` medium and
+/// the chevron; the level alone (no "Thinking") at the compact size or when the row is short of
+/// room.
+public struct NWComposerThinkingLabel: View {
+    let level: String
+    let short: Bool
+    @Environment(\.nwComposerSize) private var size
+
+    /// `level` is the level's title ("Medium").
+    public init(level: String, short: Bool = false) {
+        self.level = level
+        self.short = short
+    }
+
+    public var body: some View {
+        HStack(spacing: NW.Space.s) {
+            Image(systemName: "lightbulb").font(.system(size: NWComposerMetrics.chipSymbol, weight: .medium))
+                .foregroundStyle(.nw.textSecondary)
+            if size.showsChipWords(short: short) { Text("Thinking") }
+            Text(level).foregroundStyle(.nw.textPrimary).fontWeight(.medium)
+                .nwContentTransition(.crossFade)
+            NWChipChevron()
+        }
+    }
 }
 
 /// The composer card (NWComposer board): `bgRaised`, a 1px strong line, radius 8. While the
