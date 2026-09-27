@@ -147,9 +147,9 @@ private struct AddKeyRow: View {
                 Button(PiSignInCatalog.name(provider)) { add(provider) }
             }
         } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "plus").font(.nwSans(12, .medium)).foregroundStyle(nw.running).frame(width: NWPiSignInMetrics.badge)
-                Text("Add an API key").font(.nwSans(13)).foregroundStyle(nw.running)
+            HStack(spacing: NWPiSignInMetrics.addGap) {
+                Image(systemName: "plus").font(.nwSans(NWPiSignInMetrics.addGlyphSize, .medium)).foregroundStyle(nw.running).frame(width: NWPiSignInMetrics.badge)
+                Text("Add an API key").font(.nwSans(NWPiSignInMetrics.proseSize)).foregroundStyle(nw.running)
                 Text(PiSignInPage.addableSummary(providers)).font(.nw(.caption)).foregroundStyle(nw.textTertiary).lineLimit(1)
                 Spacer(minLength: 0)
             }

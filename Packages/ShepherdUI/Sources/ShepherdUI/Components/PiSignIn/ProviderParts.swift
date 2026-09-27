@@ -36,6 +36,24 @@ public enum NWPiSignInMetrics {
     public static let footerTop: CGFloat = 14
     public static let footerBottom: CGFloat = 16
     public static let footerTrailing: CGFloat = 18
+    /// A sheet's body: 18 under the header, 20 over the footer, its blocks 14 apart.
+    public static let bodyTop: CGFloat = 18
+    public static let bodyBottom: CGFloat = 20
+    public static let bodyGap: CGFloat = 14
+    /// A sheet's prose (13), the import's lead line (13.5) and note (12.5), and their leading.
+    public static let proseSize: CGFloat = 13
+    public static let leadSize: CGFloat = 13.5
+    public static let noteProseSize: CGFloat = 12.5
+    public static let proseLeading: CGFloat = 1.5
+    public static let leadLeading: CGFloat = 1.55
+    /// Mono inside sheet prose ("~/.pi/agent", "github.com/login/device").
+    public static let proseMonoSize: CGFloat = 12.5
+    public static let subtitleMonoSize: CGFloat = 12
+    /// Add an API key's row: its glyph, its words, the gap between.
+    public static let addGlyphSize: CGFloat = 12
+    public static let addGap: CGFloat = 10
+    /// The sheet's small print (a footer's note, the summary's info glyph).
+    public static let smallPrintSize: CGFloat = 12
     /// A step: its mark, its least height, its words.
     public static let stepMark: CGFloat = 18
     public static let stepMinHeight: CGFloat = 40
