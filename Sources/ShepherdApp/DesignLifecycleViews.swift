@@ -244,10 +244,23 @@ struct DesignsDropDelegate: DropDelegate {
     static let types: [UTType] = [.fileURL]
 
     func validateDrop(info: DropInfo) -> Bool {
-        info.hasItemsConforming(to: [.zip, .folder, .directory])
+        info.hasItemsConforming(to: Self.types)
     }
 
-    func dropEntered(info: DropInfo) { targeted = validateDrop(info: info) }
+    /// The drag says what it carries, or its file URL does once read.
+    func dropEntered(info: DropInfo) {
+        if info.hasItemsConforming(to: [.zip, .folder]) {
+            targeted = true
+            return
+        }
+        guard let provider = info.itemProviders(for: Self.types).first else { return }
+        let target = $targeted
+        _ = provider.loadObject(ofClass: URL.self) { url, _ in
+            let accepted = url.map(DesignImportSource.accepts) ?? false
+            Task { @MainActor in target.wrappedValue = accepted }
+        }
+    }
+
     func dropExited(info: DropInfo) { targeted = false }
 
     func performDrop(info: DropInfo) -> Bool {
