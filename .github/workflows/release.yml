@@ -390,7 +390,8 @@ jobs:
             git worktree add --orphan -b gh-pages pages
           fi
           # Every feed, plus appcast-rc.xml and appcast-nightly.xml for the
-          # Shepherd builds already installed that still read them.
+          # Shepherd builds already installed that still read them. publish
+          # marks every item arm64 only, so no Intel Mac is offered an update.
           written=()
           while IFS= read -r file; do written+=("$file"); done \
             < <(python3 scripts/release.py publish casts pages)
