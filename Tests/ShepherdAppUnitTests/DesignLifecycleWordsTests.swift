@@ -22,7 +22,7 @@ struct DesignLifecycleWordsTests {
         #expect(menu.sections.count == 2)
         #expect(menu.sections[0].map(\.action) == main)
         #expect(menu.sections[1].map(\.action) == [.delete])
-        #expect(menu.sections[1][0].destructive && menu.sections[1][0].title == "Delete design…")
+        #expect(menu.sections[1][0].destructive && menu.sections[1][0].title == "Delete Design…")
         #expect(menu.items.filter(\.destructive).count == 1, "Delete is the only red thing")
     }
 
@@ -43,13 +43,13 @@ struct DesignLifecycleWordsTests {
 
     @Test func aSystemsMenuFollowsWhatItIs() {
         #expect(DesignMenu.system(name: "acme-web", builtIn: false, repo: "dashboard-web", building: false).sections.map { $0.map(\.title) }
-            == [["Open", "Re-sync from dashboard-web", "Rename…", "Duplicate"], ["Delete design system…"]])
+            == [["Open", "Re-sync from dashboard-web", "Rename…", "Duplicate"], ["Delete Design System…"]])
         #expect(DesignMenu.system(name: "Checkout DS", builtIn: false, repo: nil, building: false).items.map(\.action)
             == [.open, .rename, .duplicateSystem, .deleteSystem])
         #expect(DesignMenu.system(name: "acme-mobile", builtIn: false, repo: "mobile-app", building: true).items.map(\.action)
             == [.open, .deleteSystem])
         let builtIn = DesignMenu.system(name: "Night Watch", builtIn: true, repo: nil, building: false)
-        #expect(builtIn.items.map(\.title) == ["Open", "Duplicate as a new system", "Delete design system…"])
+        #expect(builtIn.items.map(\.title) == ["Open", "Duplicate as a New System", "Delete Design System…"])
         let delete = builtIn.items.last
         #expect(delete?.enabled == false, "Delete stays in the menu, off")
         #expect(delete?.disabledReason == "Night Watch is built into Shepherd. Duplicate it to make one you can change or delete.")

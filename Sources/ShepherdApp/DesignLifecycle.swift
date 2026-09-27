@@ -22,8 +22,8 @@ enum DesignMenuAction: Hashable {
     case resync, duplicateSystem, deleteSystem
 }
 
-/// One item of a design's or a system's menu: its words, glyph, and whether it is off (with
-/// why, under it).
+/// One item of a design's or a system's menu: its words (title-cased, as every native menu in
+/// the app), glyph, and whether it is off (with why, under it).
 struct DesignMenuItem: Hashable, Identifiable {
     let action: DesignMenuAction
     let title: String
@@ -56,12 +56,12 @@ struct DesignMenu: Hashable {
             main.append(DesignMenuItem(action: .export, title: "Export…", symbol: "square.and.arrow.up"))
         }
         if context == .toolbar, hasSystem, remote == nil {
-            main.append(DesignMenuItem(action: .showSystem, title: "Show design system", symbol: "paintpalette"))
+            main.append(DesignMenuItem(action: .showSystem, title: "Show Design System", symbol: "paintpalette"))
         }
         if context == .recents, remote == nil {
             main.append(DesignMenuItem(action: .removeFromRecents, title: "Remove from Recents", symbol: "clock.badge.xmark"))
         }
-        var delete = DesignMenuItem(action: .delete, title: "Delete design…", symbol: "trash", destructive: true)
+        var delete = DesignMenuItem(action: .delete, title: "Delete Design…", symbol: "trash", destructive: true)
         if let remote, !hostDeletes {
             delete.destructive = false
             delete.disabledReason = "\(remote) doesn’t delete designs for other devices yet. Update Shepherd there, or delete it on \(remote)."
@@ -75,12 +75,12 @@ struct DesignMenu: Hashable {
     /// under it. A build still reading its repo offers Open and Delete.
     static func system(name: String, builtIn: Bool, repo: String?, building: Bool) -> DesignMenu {
         let open = DesignMenuItem(action: .open, title: "Open", symbol: "arrow.up.forward.app")
-        let delete = DesignMenuItem(action: .deleteSystem, title: "Delete design system…", symbol: "trash", destructive: true)
+        let delete = DesignMenuItem(action: .deleteSystem, title: "Delete Design System…", symbol: "trash", destructive: true)
         if builtIn {
             var off = delete
             off.destructive = false
             off.disabledReason = "\(name) is built into Shepherd. Duplicate it to make one you can change or delete."
-            return DesignMenu(sections: [[open, DesignMenuItem(action: .duplicateSystem, title: "Duplicate as a new system",
+            return DesignMenu(sections: [[open, DesignMenuItem(action: .duplicateSystem, title: "Duplicate as a New System",
                                                                symbol: "plus.square.on.square")], [off]])
         }
         if building { return DesignMenu(sections: [[open], [delete]]) }
