@@ -575,6 +575,7 @@ final class ShepherdViewModel {
             if waiting != cannotStart.contains(agentID) {
                 if waiting { cannotStart.insert(agentID) } else { cannotStart.remove(agentID) }
             }
+            if stopped, let problem, problem.kind == .extensionFailed { switchOffFailedExtensions(agentID, problem: problem) }
         }
         sessions.onNotify = { [weak self] agentID, title, body in
             guard let self, let agent = self.state.agents.first(where: { $0.id == agentID }) else { return }

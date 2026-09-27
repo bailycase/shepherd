@@ -1,6 +1,8 @@
 import Foundation
 import AppKit
 import ShepherdCore
+import ShepherdProtocol
+import ShepherdRemote
 import ShepherdSessions
 
 extension ShepherdViewModel {
@@ -336,6 +338,25 @@ extension ShepherdViewModel {
     func retryAgentStart(_ agentID: AgentID, newConversation: Bool = false) {
         threadStores.store(for: agentID).restarting()
         sessions.retryStart(agentID, newConversation: newConversation)
+    }
+
+    /// An agent's pi stopped because an extension failed to load. When it is one of the user's
+    /// own that they switched on (Settings ▸ Pi ▸ Your extensions), it is switched off for
+    /// launches with pi's reason, and the agent starts again without it; any other extension's
+    /// failure (Shepherd's own, a project's) leaves the agent waiting with Retry, as before.
+    func switchOffFailedExtensions(_ agentID: AgentID, problem: NativeStartProblem) {
+        let failures = YourPiImport.extensionFailures(in: problem.lines)
+        guard !failures.isEmpty else { return }
+        let imports = server.pi.importedState()
+        Task { [weak self] in
+            let names = await Task.detached(priority: .userInitiated) { () -> [String] in
+                failures.compactMap { failure in (try? imports.extensionFailed(path: failure.path, reason: failure.reason)) ?? nil }
+            }.value
+            guard let self, !names.isEmpty else { return }
+            ShepherdLog.info("switched off your extension(s) \(names.joined(separator: ", ")) after they failed to load; starting the agent without them")
+            await yourPi.refresh()
+            retryAgentStart(agentID)
+        }
     }
 
     /// A process ended: its pane closes. An agent whose process ended is
