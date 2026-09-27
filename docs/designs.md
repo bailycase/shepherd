@@ -1051,7 +1051,10 @@ send carries each reference's string alone (`NativeThreadRequest.send`'s `design
   for now) show the words and the "1 design reference attached." line.
 - **Grants.** A send grants the thread's agent the copies it kept (`Agent.designGrants`,
   persisted, empty in older files; each grant names its copy, `payload`): design_get reads those
-  copies and nothing else. A send pi refused, or a queued message deleted before pi read it, takes
+  copies and nothing else, and only once pi has the message: while it is on its way or waits in
+  the host's queue (steering included) its copies are withheld
+  (`RPCThreadState.withheldDesignPayloads`), so design_get and design_note answer `not_granted`
+  for them. A send pi refused, or a queued message deleted before pi read it, takes
   its grants and copies back; such a message can't be restored (Undo leaves it out). The same
   piece sent twice keeps both copies (each message's chip reads its own). An agent keeps at most
   100 grants, the oldest (and their copies) going first. Deleting the agent takes its grants and

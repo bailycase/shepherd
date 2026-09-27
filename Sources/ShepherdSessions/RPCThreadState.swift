@@ -263,6 +263,17 @@ final class RPCThreadState {
     var piFollowUp: [String] = []
     /// What a delete or a clear removed, for an undo.
     var deleted: [(item: QueueItem, index: Int)] = []
+    /// Copies a send is granting that have not reached this thread yet: the server marks them in
+    /// the queue turn that grants them, and `send` clears them once the message is pi's or waits
+    /// in the queue (`withheldDesignPayloads`).
+    var sendingDesignPayloads: Set<UUID> = []
+
+    /// Copies the thread was granted but pi has not read: a send still on its way here, or a
+    /// message waiting in the queue (steering ones included) that the user may still take back.
+    /// design_get and design_note answer from none of them.
+    var withheldDesignPayloads: Set<UUID> {
+        sendingDesignPayloads.union(items.flatMap(\.designPayloads))
+    }
 
     /// Installed by SessionServer: the queue was expected to go when pi settled, and did not.
     var onIdleAfterQueue: (() -> Void)?
