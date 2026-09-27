@@ -291,9 +291,10 @@ public enum DesignArchive {
             }
             let mode = (external >> 16) & 0o170000
             let kind: DesignImport.Kind
-            if madeBy == 3, mode == 0o120000 {
+            // ditto makes a link of any entry whose mode says so, whatever system made the ZIP.
+            if mode == 0o120000 {
                 kind = .symlink
-            } else if name.hasSuffix("/") || (madeBy == 3 && mode == 0o040000) {
+            } else if name.hasSuffix("/") || mode == 0o040000 {
                 kind = .directory
             } else if madeBy == 3, mode != 0, mode != 0o100000 {
                 kind = .other

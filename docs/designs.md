@@ -906,10 +906,14 @@ Designs until the viewer's choice, if one is needed, is made.
 
 - **A ZIP is checked before anything is unpacked** (`DesignArchive`, ShepherdProtocol): its table
   of contents is read from the file's end (ZIP64 too): an archive over 1 GB, a name that is
-  absolute, climbs out (`..`), uses a backslash or a drive (zip slip), a link or a device, a file
-  over 16 MB, or entries unpacking to over 1 GB are refused. Only then does `/usr/bin/ditto -x -k`
-  unpack it, into `.unzip-<token>/` beside the designs, off the server's queue and the design
-  store's (a queue of its own), and the unpacked folder is checked again as any folder is.
+  absolute, climbs out (`..`), uses a backslash or a drive (zip slip), a link or a device (by its
+  mode, whichever system the ZIP says made it, as ditto reads it), a file over 16 MB, or entries
+  unpacking to over 1 GB are refused. Only then does `/usr/bin/ditto -x -k` unpack it, into
+  `.unzip-<token>/` beside the designs, off the server's queue and the design store's (a queue of
+  its own), and the unpacked folder is checked again as any folder is. ditto unpacks what the
+  data holds, not the sizes the table claims, so what lands is measured every 100 ms and ditto is
+  stopped once it passes 1 GB: a ZIP that understates its sizes is refused as too large rather
+  than filling the disk.
 - **Which folder.** Where the ZIP or folder holds `canvas.json` or `project/canvas.json`, else the
   one folder it holds that does (a ZIP of a folder). A folder holding `project/` brings `assets/`
   from a Shepherd export too. Everything else is left behind.
