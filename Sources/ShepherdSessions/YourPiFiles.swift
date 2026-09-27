@@ -33,31 +33,6 @@ public struct PiLogin: Equatable, Sendable, Identifiable {
     }
 }
 
-/// An extension of the user's own pi, listed from its folder and settings, never loaded here.
-public struct YourPiExtension: Equatable, Sendable, Identifiable {
-    public enum Source: String, Equatable, Sendable {
-        /// `extensions/<name>.ts` or `extensions/<name>/index.ts`.
-        case file
-        /// A pi package installed under `npm/node_modules`.
-        case npm
-        /// A pi package cloned under `git/<host>/<path>`.
-        case git
-        /// An `extensions` or `packages` entry in their settings.json.
-        case settings
-    }
-
-    public var name: String
-    public var path: String
-    public var source: Source
-    public var id: String { path }
-
-    public init(name: String, path: String, source: Source) {
-        self.name = name
-        self.path = path
-        self.source = source
-    }
-}
-
 /// Why a file of the user's pi couldn't be imported. It never quotes the file.
 public struct YourPiFileError: Error, Equatable, CustomStringConvertible {
     public let description: String
@@ -227,31 +202,6 @@ public enum YourPiFiles {
         return "\(provider)/\(model)"
     }
 
-    /// What Shepherd's settings.json lists under `key` (`skills` or `prompts`) to read the user's
-    /// in place: their `<agent dir>/<key>` folder when it exists, then each entry of their own
-    /// `key` list made absolute (pi resolves a user entry from its agent folder; `~` is their home).
-    /// `+path` and `-path` keep their mark with the path made absolute; a `!pattern` exclusion is
-    /// kept as it is.
-    public static func resourceEntries(_ key: String, settings: [String: Any]?, agentDirectory: URL, home: String,
-                                       exists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }) -> [String] {
-        var entries: [String] = []
-        func add(_ entry: String) { if !entries.contains(entry) { entries.append(entry) } }
-        let own = agentDirectory.appendingPathComponent(key, isDirectory: true).standardizedFileURL.path
-        if exists(own) { add(own) }
-        for case let raw as String in settings?[key] as? [Any] ?? [] {
-            let entry = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !entry.isEmpty else { continue }
-            if entry.hasPrefix("!") { add(entry); continue }
-            if let mark = entry.first, mark == "+" || mark == "-" {
-                let rest = entry.dropFirst().trimmingCharacters(in: .whitespaces)
-                if !rest.isEmpty { add(String(mark) + absolute(rest, agentDirectory: agentDirectory, home: home)) }
-                continue
-            }
-            add(absolute(entry, agentDirectory: agentDirectory, home: home))
-        }
-        return entries
-    }
-
     static func absolute(_ path: String, agentDirectory: URL, home: String) -> String {
         let expanded = path == "~" ? home : path.hasPrefix("~/") ? home + path.dropFirst() : path
         let full = expanded.hasPrefix("/") ? expanded : agentDirectory.path + "/" + expanded
@@ -295,68 +245,7 @@ public enum YourPiFiles {
         return (decisions, dropped.sorted())
     }
 
-    // MARK: Extensions
-
-    /// The user's extensions, listed from their folder and settings (never loaded): single files
-    /// and folders under `extensions/`, packages under `npm/node_modules` and `git/<host>/…`, then
-    /// their settings' `extensions` paths and `packages` sources not already listed.
-    public static func extensions(in agentDirectory: URL, settings: [String: Any]?, home: String) -> [YourPiExtension] {
-        let files = FileManager.default
-        var found: [YourPiExtension] = []
-        var seen: Set<String> = []
-        func add(_ name: String, _ path: String, _ source: YourPiExtension.Source) {
-            if seen.insert(path).inserted { found.append(YourPiExtension(name: name, path: path, source: source)) }
-        }
-        func children(_ url: URL) -> [String] {
-            ((try? files.contentsOfDirectory(atPath: url.path)) ?? []).filter { !$0.hasPrefix(".") }.sorted()
-        }
-        func isDirectory(_ path: String) -> Bool {
-            var directory: ObjCBool = false
-            return files.fileExists(atPath: path, isDirectory: &directory) && directory.boolValue
-        }
-        let extensionsFolder = agentDirectory.appendingPathComponent("extensions", isDirectory: true)
-        for name in children(extensionsFolder) {
-            let path = extensionsFolder.appendingPathComponent(name).path
-            if isDirectory(path) {
-                if ["index.ts", "index.js"].contains(where: { files.fileExists(atPath: path + "/" + $0) }) { add(name, path, .file) }
-            } else if name.hasSuffix(".ts") || name.hasSuffix(".js") {
-                add((name as NSString).deletingPathExtension, path, .file)
-            }
-        }
-        let modules = agentDirectory.appendingPathComponent("npm/node_modules", isDirectory: true)
-        for name in children(modules) {
-            let path = modules.appendingPathComponent(name).path
-            guard isDirectory(path) else { continue }
-            if name.hasPrefix("@") {
-                for inner in children(URL(fileURLWithPath: path, isDirectory: true)) where isDirectory(path + "/" + inner) {
-                    add("\(name)/\(inner)", path + "/" + inner, .npm)
-                }
-            } else {
-                add(name, path, .npm)
-            }
-        }
-        let git = agentDirectory.appendingPathComponent("git", isDirectory: true)
-        for host in children(git) where isDirectory(git.path + "/" + host) {
-            for owner in children(git.appendingPathComponent(host)) where isDirectory(git.path + "/\(host)/\(owner)") {
-                for repo in children(git.appendingPathComponent("\(host)/\(owner)")) where isDirectory(git.path + "/\(host)/\(owner)/\(repo)") {
-                    add("\(owner)/\(repo)", git.path + "/\(host)/\(owner)/\(repo)", .git)
-                }
-            }
-        }
-        for case let raw as String in settings?["extensions"] as? [Any] ?? [] {
-            let entry = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !entry.isEmpty, !"!+-".contains(entry.first!) else { continue }
-            let path = absolute(withoutCredentials(entry), agentDirectory: agentDirectory, home: home)
-            add((path as NSString).lastPathComponent, path, .settings)
-        }
-        for entry in settings?["packages"] as? [Any] ?? [] {
-            let source = (entry as? String) ?? ((entry as? [String: Any])?["source"] as? String) ?? ""
-            let trimmed = withoutCredentials(source.trimmingCharacters(in: .whitespacesAndNewlines))
-            guard !trimmed.isEmpty, !found.contains(where: { trimmed.contains($0.name) && $0.source != .file }) else { continue }
-            add(trimmed, trimmed, .settings)
-        }
-        return found
-    }
+    // MARK: Sources
 
     /// `source` with a URL's user and password removed (`https://user:token@host/…` becomes
     /// `https://host/…`): a private package's source may carry a token, and Settings shows it.

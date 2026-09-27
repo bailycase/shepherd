@@ -168,21 +168,22 @@ struct YourPiImportEdgeTests {
         #expect(try setup.json("auth.json")["openai"] == nil)
     }
 
-    /// A switch saved in Settings ▸ Pi before the first copy (a copy that overran its deadline)
-    /// neither stops the next launch's copy nor is lost by it.
-    @Test func aSwitchSavedBeforeTheFirstCopyKeepsTheCopyComing() throws {
+    /// A state saved before the first copy (a copy that overran its deadline) neither stops the
+    /// next launch's copy nor is lost by it, and checking extensions before a launch saves none.
+    @Test func aStateSavedBeforeTheFirstCopyKeepsTheCopyComing() throws {
         let setup = try Setup()
         defer { setup.remove() }
-        try setup.importer().setResources("skills", on: false)
-        #expect(setup.importer().state()?.copied == false)
+        try setup.importer().applyExtensions()
+        #expect(setup.importer().state() == nil, "a launch's check saves nothing")
+        try Self.write(#"{"version": 2, "copied": false, "copiedAt": "2026-09-26T09:41:00Z", "extensionsOn": ["your-extensions/files/yours.ts"]}"#,
+                       to: setup.importer().stateURL)
         #expect(!setup.importer().survey().copied)
 
         let report = setup.importer().copyOnce()
 
         #expect(report.first && report.logins.count == 5)
         let state = try #require(setup.importer().state())
-        #expect(state.copied && !state.skillsOn && state.skills.isEmpty)
-        #expect(try setup.json("settings.json")["skills"] == nil)
+        #expect(state.copied && state.extensionsOn == ["your-extensions/files/yours.ts"])
         #expect(!setup.importer().copyOnce().first)
     }
 
@@ -282,8 +283,9 @@ struct YourPiImportEdgeTests {
         YourPiImportTests.expectNoSecret(in: Self.texts(setup, [first, second, again]))
     }
 
-    /// A private package's source may carry a token in its URL: the extension listing drops it.
-    @Test func aPackageSourcesTokenNeverReachesTheListing() throws {
+    /// A private package's source may carry a token in its URL: nothing the copy says, logs or
+    /// shows carries it.
+    @Test func aPackageSourcesTokenNeverReachesTheCopyOrTheSurvey() throws {
         let setup = try Setup()
         defer { setup.remove() }
         let settings = #"""
@@ -292,9 +294,11 @@ struct YourPiImportEdgeTests {
             """#
         try Self.write(settings, to: setup.yours.appendingPathComponent("settings.json"))
 
+        let report = setup.importer().copyOnce()
         let survey = setup.importer().survey()
 
-        #expect(survey.extensions.contains { $0.path == "git:https://github.com/fixture/private-tools" })
-        #expect(!String(describing: survey).contains("FAKE-PACKAGE-TOKEN"))
+        #expect(report.skipped.contains { $0.contains("git:https://github.com/fixture/private-tools") })
+        let texts = [String(describing: report), report.summary, String(describing: survey)] + setup.logged.current
+        #expect(!texts.contains { $0.contains("FAKE-PACKAGE-TOKEN") })
     }
 }

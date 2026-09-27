@@ -65,6 +65,12 @@ public struct PiSetup: Sendable {
         YourPiImport(home: files, yourPi: yourPi.resolve(), userHome: userHome)
     }
 
+    /// Shepherd's side of the imports alone, without looking for "your pi": its state, and the
+    /// user's extensions as copied. Never blocks on a login shell.
+    public func importedState() -> YourPiImport {
+        YourPiImport(home: files, yourPi: nil, userHome: userHome)
+    }
+
     /// The first launch of a build with Shepherd's own home: readies the home, then copies the
     /// user's pi into it once (`YourPiImport.copyOnce`). Nil, with nothing copied, when no pi may
     /// start in the home. Blocking, like `prepare()`.
@@ -91,6 +97,13 @@ public struct PiSetup: Sendable {
             for note in try files.install() { ShepherdLog.info(note) }
         } catch {
             return PiHomeProblem("Shepherd couldn't set up its pi home at \(files.directory.path): \(error)")
+        }
+        // The user's switched-on extensions, each checked: one whose files are gone, or that
+        // failed to load and hasn't changed since, stays out of this launch.
+        do {
+            try YourPiImport(home: files, yourPi: nil, userHome: files.userHome).applyExtensions()
+        } catch {
+            ShepherdLog.info("Shepherd couldn't check your extensions in its pi: \(error)")
         }
         return nil
     }

@@ -26,6 +26,18 @@ public enum StubPi {
         public var argv: [String]
         public var cwd: String
         public var env: [String: String]
+        /// The extensions its pi home's settings.json named, which it loads.
+        public var extensions: [String]
+
+        private enum CodingKeys: String, CodingKey { case argv, cwd, env, extensions }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            argv = try c.decode([String].self, forKey: .argv)
+            cwd = try c.decode(String.self, forKey: .cwd)
+            env = try c.decode([String: String].self, forKey: .env)
+            extensions = try c.decodeIfPresent([String].self, forKey: .extensions) ?? []
+        }
     }
 
     /// Every launch the stub engine recorded in this process, oldest first.

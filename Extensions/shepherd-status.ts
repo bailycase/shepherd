@@ -2,54 +2,8 @@
 // Shepherd extension socket as newline-delimited JSON setAgentStatus messages.
 // Inert unless SHEPHERD_AGENT_ID and SHEPHERD_SOCKET are set; every failure is
 // swallowed so this extension can never break or slow the pi session.
-//
-// It also hands pi the user's own global instructions (Settings ▸ Pi ▸ From your
-// pi): pi reads a global context file only from its own agent folder, which is
-// Shepherd's, so before each run the winning file in SHEPHERD_YOUR_PI_INSTRUCTIONS
-// (AGENTS.override.md, AGENTS.md, …, as pi picks it) is read afresh and joins the
-// context files right after pi's own root file, with its real path. Inert without
-// that variable.
-import * as fs from "node:fs";
 import * as net from "node:net";
-import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-
-const CONTEXT_FILES = ["AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"];
-const MAX_CONTEXT_BYTES = 256 * 1024;
-
-// The user's winning global context file, read now; undefined when there is none, it is too
-// large, or it can't be read.
-function yourPiInstructions(): { path: string; content: string } | undefined {
-  const folder = process.env.SHEPHERD_YOUR_PI_INSTRUCTIONS ?? "";
-  if (!folder) return undefined;
-  for (const name of CONTEXT_FILES) {
-    const file = path.join(folder, name);
-    try {
-      const info = fs.statSync(file);
-      if (!info.isFile()) continue;
-      if (info.size > MAX_CONTEXT_BYTES) return undefined;
-      return { path: file, content: fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "") };
-    } catch {
-      continue;
-    }
-  }
-  return undefined;
-}
-
-// Adds the user's global instructions to one run's context files, after pi's own root file.
-export function addYourPiInstructions(options: { contextFiles?: unknown } | undefined) {
-  try {
-    const files = options?.contextFiles;
-    if (!Array.isArray(files)) return;
-    const found = yourPiInstructions();
-    if (!found || files.some((file) => file?.path === found.path)) return;
-    const own = process.env.PI_CODING_AGENT_DIR ? path.resolve(process.env.PI_CODING_AGENT_DIR) : "";
-    const root = files.findIndex((file) => typeof file?.path === "string" && path.dirname(file.path) === own);
-    files.splice(root + 1, 0, found);
-  } catch {
-    // Instructions are never worth a failed turn.
-  }
-}
 
 type Status = "working" | "blocked" | "idle" | "done";
 
@@ -68,9 +22,6 @@ const SHORT_REASON = {
 };
 
 export default function shepherdStatus(pi: ExtensionAPI) {
-  if (process.env.SHEPHERD_YOUR_PI_INSTRUCTIONS) {
-    pi.on("before_agent_start", (event) => addYourPiInstructions(event?.systemPromptOptions));
-  }
   const agentID = process.env.SHEPHERD_AGENT_ID ?? "";
   const socketPath = process.env.SHEPHERD_SOCKET ?? "";
   if (!agentID || !socketPath) return;

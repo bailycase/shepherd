@@ -107,13 +107,17 @@ struct YourPiFirstLaunchTests {
         #expect(rows.contains(.init(title: "Anthropic", detail: "Signed in")))
         #expect(rows.contains(.init(title: "Groq", detail: "API key that runs a command")))
         #expect(rows.contains(.init(title: "Custom providers", detail: "local-llm")))
-        #expect(rows.contains(.init(title: "Instructions", detail: "AGENTS.md, read live")))
+        #expect(rows.contains(.init(title: "Instructions, skills and prompts", detail: "AGENTS.md · 1 skill · 2 prompts")))
+        #expect(rows.contains(.init(title: "Extensions", detail: "1 found", switchedOff: true)))
         for secret in YourPiFixture.secrets { #expect(!String(describing: welcome).contains(secret)) }
         // Copied into Shepherd's home, subscription sign-ins included; theirs untouched.
         let auth = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: setup.pi.home.appendingPathComponent("auth.json"))) as? [String: Any])
         #expect(Set(auth.keys) == ["anthropic", "openai-codex", "openai", "google", "groq"])
         let launch = try #require(Self.launch(of: sessionID))
-        #expect(launch.env["SHEPHERD_YOUR_PI_INSTRUCTIONS"] == setup.yours.standardizedFileURL.path, "it reads your instructions live")
+        #expect(launch.env["SHEPHERD_YOUR_PI_INSTRUCTIONS"] == nil, "nothing points the agent at your pi")
+        #expect(try String(contentsOf: setup.pi.home.appendingPathComponent("AGENTS.md"), encoding: .utf8).contains("FIXTURE-GLOBAL-INSTRUCTIONS"),
+                "your instructions are copied into Shepherd's home, where pi reads them")
+        #expect(launch.extensions.isEmpty, "your extension came over switched off")
         #expect(launch.env["PI_CODING_AGENT_DIR"] == setup.pi.home.path)
         #expect(try YourPiFixture.tree(setup.yours) == before, "your pi is byte-identical")
 

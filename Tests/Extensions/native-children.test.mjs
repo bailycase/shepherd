@@ -705,7 +705,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
   }
 });
 
-test("your pi's global instructions reach a child that keeps project context, and never one that doesn't", { timeout: 90000 }, async () => {
+test("the global instructions copied into Shepherd's pi home reach a child that keeps project context, and never one that doesn't", { timeout: 90000 }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-your-pi-child-"));
   const { server, requests } = fixtureServer();
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
@@ -719,10 +719,10 @@ test("your pi's global instructions reach a child that keeps project context, an
     process.env.PI_OFFLINE = "1";
     process.env.SHEPHERD_NATIVE_CHILDREN = "1"; process.env.SHEPHERD_AGENT_ID = "fixture";
     process.env.SHEPHERD_SOCKET = path.join(dir, "shepherd.sock"); process.env.SHEPHERD_EXT_CHILDREN = source;
-    const yours = path.join(dir, "your-pi");
-    fs.mkdirSync(yours);
+    // Copied from your pi at the first launch: pi reads it from its own home, as a child does.
+    const yours = process.env.PI_CODING_AGENT_DIR;
+    fs.mkdirSync(yours, { recursive: true });
     fs.writeFileSync(path.join(yours, "AGENTS.md"), "- Say FIXTURE-GLOBAL-INSTRUCTIONS when asked.\n");
-    process.env.SHEPHERD_YOUR_PI_INSTRUCTIONS = yours;
     fs.mkdirSync(path.join(process.env.PI_CODING_AGENT_DIR, "agents"), { recursive: true });
     fs.writeFileSync(path.join(process.env.PI_CODING_AGENT_DIR, "models.json"), JSON.stringify({ providers: { fixture: {
       baseUrl: `http://127.0.0.1:${server.address().port}/v1`, api: "openai-completions", apiKey: "local-fixture-not-secret",
@@ -737,7 +737,7 @@ test("your pi's global instructions reach a child that keeps project context, an
     const kept = await h.call("start", { task: "KEEPS-CONTEXT task", role: "scout" });
     assert.equal((await h.call("wait", { ids: [kept.id], all: true, timeoutSeconds: 30 }))[0].state, "complete");
     const withContext = JSON.stringify(requestFor("KEEPS-CONTEXT task"));
-    assert.match(withContext, /FIXTURE-GLOBAL-INSTRUCTIONS/, "the child's system prompt has your instructions");
+    assert.match(withContext, /FIXTURE-GLOBAL-INSTRUCTIONS/, "the child's system prompt has the copied instructions");
     assert(withContext.includes(path.join(yours, "AGENTS.md")), "with their real path");
 
     const isolated = await h.call("start", { task: "NO-CONTEXT task", role: "isolated" });

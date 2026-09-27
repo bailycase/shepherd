@@ -35,7 +35,7 @@ enum ChildrenExtension {
         import { StringDecoder } from "node:string_decoder";
         import { SessionManager, createBashTool, getPackageDir, resolveCliModel } from "@earendil-works/pi-coding-agent";
         import { Type } from "typebox";
-        import { addYourPiInstructions, bundledAgents as ROLES, childDefaults, discoverChildAgents, childSkills, childTargetContext, defaultChildTools, childUserExtensions, thinkingLevels } from "./shepherd-children-config.ts";
+        import { bundledAgents as ROLES, childDefaults, discoverChildAgents, childSkills, childTargetContext, defaultChildTools, childUserExtensions, thinkingLevels } from "./shepherd-children-config.ts";
         import { executeWorkflow } from "./shepherd-workflow.ts";
         import { missionStore } from "./shepherd-missions.ts";
         import { registerNativeCommands } from "./shepherd-children-ui.ts";
@@ -197,7 +197,6 @@ enum ChildrenExtension {
               });
             });
             pi.on("session_shutdown", continueRun);
-            pi.on("before_agent_start", (event) => addYourPiInstructions(event?.systemPromptOptions));
             pi.registerTool(createBashTool(process.cwd(), { operations: childBashOperations() }));
             if (process.env.SHEPHERD_CHILD_TOOLS) {
               const allowed = new Set(JSON.parse(process.env.SHEPHERD_CHILD_TOOLS));
@@ -478,8 +477,6 @@ enum ChildrenExtension {
             const env = { ...process.env };
             for (const key of Object.keys(env)) if (key.startsWith("SHEPHERD_") || key.startsWith("PI_SUBAGENT") || ["PI_SESSION_ID", "PI_SESSION_FILE", "PI_PROVIDER", "PI_MODEL", "PI_REASONING_LEVEL"].includes(key)) delete env[key];
             env.SHEPHERD_CHILD = "1"; env.PI_OFFLINE = "1";
-            // The user's global instructions reach a child that keeps project context, as they reach its parent.
-            if (run.inheritProjectContext !== false && process.env.SHEPHERD_YOUR_PI_INSTRUCTIONS) env.SHEPHERD_YOUR_PI_INSTRUCTIONS = process.env.SHEPHERD_YOUR_PI_INSTRUCTIONS;
             env.SHEPHERD_CHILD_TOOLS = JSON.stringify([...run.tools, "shepherd_parent_message"]);
             const args = ["--mode", "rpc", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve",
               "-e", bridge, "--session", run.sessionFile, "--model", run.model, "--thinking", run.thinking,
@@ -983,32 +980,6 @@ enum ChildrenExtension {
         import * as path from "node:path";
         import * as os from "node:os";
         import { CONFIG_DIR_NAME, getAgentDir, parseFrontmatter, SettingsManager, DefaultPackageManager, ProjectTrustStore, loadSkills } from "@earendil-works/pi-coding-agent";
-
-        // The user's own global instructions (Settings ▸ Pi ▸ From your pi), for a child that keeps
-        // project context: its parent passes SHEPHERD_YOUR_PI_INSTRUCTIONS on, and before each run the
-        // winning file there (as pi picks one) joins the context files after pi's own root file. The
-        // status extension does the same for the parent; children never load it.
-        const YOUR_PI_CONTEXT_FILES = ["AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"];
-        export function addYourPiInstructions(options) {
-          try {
-            const folder = process.env.SHEPHERD_YOUR_PI_INSTRUCTIONS ?? "";
-            const files = options?.contextFiles;
-            if (!folder || !Array.isArray(files)) return;
-            for (const name of YOUR_PI_CONTEXT_FILES) {
-              const file = path.join(folder, name);
-              let info;
-              try { info = fs.statSync(file); } catch { continue; }
-              if (!info.isFile()) continue;
-              if (info.size > 256 * 1024 || files.some((entry) => entry?.path === file)) return;
-              const own = path.resolve(getAgentDir());
-              const root = files.findIndex((entry) => typeof entry?.path === "string" && path.dirname(entry.path) === own);
-              files.splice(root + 1, 0, { path: file, content: fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "") });
-              return;
-            }
-          } catch {
-            // Instructions are never worth a failed child turn.
-          }
-        }
 
         export const bundledAgents = {
           scout: { tools: ["read", "grep", "find", "ls"], prompt: "Find relevant code and facts. Return concise findings with file paths. Do not edit files." },

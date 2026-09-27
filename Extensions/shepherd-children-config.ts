@@ -4,32 +4,6 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { CONFIG_DIR_NAME, getAgentDir, parseFrontmatter, SettingsManager, DefaultPackageManager, ProjectTrustStore, loadSkills } from "@earendil-works/pi-coding-agent";
 
-// The user's own global instructions (Settings ▸ Pi ▸ From your pi), for a child that keeps
-// project context: its parent passes SHEPHERD_YOUR_PI_INSTRUCTIONS on, and before each run the
-// winning file there (as pi picks one) joins the context files after pi's own root file. The
-// status extension does the same for the parent; children never load it.
-const YOUR_PI_CONTEXT_FILES = ["AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"];
-export function addYourPiInstructions(options) {
-  try {
-    const folder = process.env.SHEPHERD_YOUR_PI_INSTRUCTIONS ?? "";
-    const files = options?.contextFiles;
-    if (!folder || !Array.isArray(files)) return;
-    for (const name of YOUR_PI_CONTEXT_FILES) {
-      const file = path.join(folder, name);
-      let info;
-      try { info = fs.statSync(file); } catch { continue; }
-      if (!info.isFile()) continue;
-      if (info.size > 256 * 1024 || files.some((entry) => entry?.path === file)) return;
-      const own = path.resolve(getAgentDir());
-      const root = files.findIndex((entry) => typeof entry?.path === "string" && path.dirname(entry.path) === own);
-      files.splice(root + 1, 0, { path: file, content: fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "") });
-      return;
-    }
-  } catch {
-    // Instructions are never worth a failed child turn.
-  }
-}
-
 export const bundledAgents = {
   scout: { tools: ["read", "grep", "find", "ls"], prompt: "Find relevant code and facts. Return concise findings with file paths. Do not edit files." },
   reviewer: { tools: ["read", "grep", "find", "ls"], prompt: "Review for correctness and security. Report actionable findings with paths and evidence. Do not edit files." },

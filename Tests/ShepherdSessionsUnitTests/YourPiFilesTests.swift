@@ -106,20 +106,6 @@ struct YourPiFilesTests {
     /// Skills and prompts are read in place: their own folder when it exists, then their settings'
     /// entries made absolute, filters kept.
     @Test(arguments: [
-        ("skills", ["/u/.pi/agent/skills"], ["~/extra", "vendor/skills", "/abs/x", "+more/y", "-/abs/skip", "!**/draft*", " ", "~"],
-         ["/u/.pi/agent/skills", "/u/extra", "/u/.pi/agent/vendor/skills", "/abs/x", "+/u/.pi/agent/more/y", "-/abs/skip", "!**/draft*", "/u"]),
-        ("prompts", [], ["../shared/prompts", "/abs/x", "/abs/x"], ["/u/.pi/shared/prompts", "/abs/x"]),
-        ("skills", [], [], []),
-    ])
-    func resourcesAreListedAsAbsolutePaths(key: String, existing: [String], entries: [String], expected: [String]) {
-        let listed = YourPiFiles.resourceEntries(key, settings: [key: entries], agentDirectory: URL(fileURLWithPath: "/u/.pi/agent"),
-                                                 home: "/u", exists: { existing.contains($0) })
-        #expect(listed == expected)
-    }
-
-    // MARK: Instructions
-
-    @Test(arguments: [
         (["AGENTS.md", "CLAUDE.md"], "AGENTS.md"),
         (["AGENTS.override.md", "AGENTS.md"], "AGENTS.override.md"),
         (["CLAUDE.md"], "CLAUDE.md"),
@@ -157,26 +143,6 @@ struct YourPiFilesTests {
     }
 
     // MARK: Extensions
-
-    @Test func theirExtensionsAreListedFromTheFolderAndSettingsNeverLoaded() throws {
-        let dir = try makeScratchDirectory()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let files = FileManager.default
-        for folder in ["extensions/tooling", "extensions/empty", "npm/node_modules/@acme/pi-tools", "npm/node_modules/solo",
-                       "git/github.com/me/pi-ext"] {
-            try files.createDirectory(at: dir.appendingPathComponent(folder), withIntermediateDirectories: true)
-        }
-        for file in ["extensions/single.ts", "extensions/tooling/index.ts", "extensions/notes.md", "extensions/.hidden.ts"] {
-            try Data("throw new Error('never loaded')\n".utf8).write(to: dir.appendingPathComponent(file))
-        }
-        let settings: [String: Any] = ["extensions": ["~/own/ext.ts", "!skip"], "packages": ["npm:@acme/pi-tools@1.0.0", ["source": "git:github.com/x/y"]]]
-        let listed = YourPiFiles.extensions(in: dir, settings: settings, home: "/u")
-        #expect(listed.map(\.name) == ["single", "tooling", "@acme/pi-tools", "solo", "me/pi-ext", "ext.ts", "git:github.com/x/y"])
-        #expect(listed.map(\.source) == [.file, .file, .npm, .npm, .git, .settings, .settings])
-        #expect(listed[5].path == "/u/own/ext.ts")
-    }
-
-    // MARK: Providers
 
     @Test func environmentKeysNameTheirProvidersByNameOnly() {
         #expect(PiProviders.providers(withKeys: ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "UNRELATED"])
