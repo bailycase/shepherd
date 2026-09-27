@@ -28,14 +28,18 @@ enum SlashLogin {
     ]
 
     /// The draft as one of these, or nil: "/login", "/login anthropic", "/LOGIN  Anthropic " (a
-    /// provider by id or by name, case aside), "/logout kimi". Anything after a second word, or on
-    /// a second line, is a prompt for pi.
+    /// provider by id or by name, case aside), "/logout kimi". Whatever follows the provider, on
+    /// any line, is dropped, never sent: a key pasted after "/login deepseek" must not reach pi.
     static func parse(_ draft: String) -> Command? {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard text.hasPrefix("/"), !text.contains("\n") else { return nil }
+        guard text.hasPrefix("/") else { return nil }
         let words = text.dropFirst().split(whereSeparator: \.isWhitespace).map(String.init)
-        guard let first = words.first, let verb = Verb(rawValue: first.lowercased()), words.count <= 2 else { return nil }
-        return Command(verb: verb, provider: words.count == 2 ? provider(named: words[1]) : nil)
+        guard let first = words.first, let verb = Verb(rawValue: first.lowercased()) else { return nil }
+        guard words.count >= 2 else { return Command(verb: verb, provider: nil) }
+        // A name of several words on the command's line ("OpenAI Codex"), else the first word.
+        let line = text.dropFirst().split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+        let named = line.split(whereSeparator: \.isWhitespace).dropFirst().joined(separator: " ")
+        return Command(verb: verb, provider: provider(named: named) ?? provider(named: words[1]))
     }
 
     /// A provider by id or name, as Sign-in lists them.
