@@ -49,19 +49,24 @@ public struct NWDesignCard<Thumbnail: View, MenuItems: View>: View {
     }
 
     public var body: some View {
-        if let menu {
-            card
-                .overlay(alignment: .topTrailing) {
-                    if hovering {
-                        NWDesignMoreButton(label: "More for \(name)") { menu }
-                            .padding(NWDesignMetrics.cardMoreInset)
-                            .nwTransition(.content)
+        // Hover is the whole card's, the ••• over it included, so reaching for ••• keeps it.
+        Group {
+            if let menu {
+                card
+                    .overlay(alignment: .topTrailing) {
+                        if hovering {
+                            NWDesignMoreButton(label: "More for \(name)") { menu }
+                                .padding(NWDesignMetrics.cardMoreInset)
+                                .nwTransition(.content)
+                        }
                     }
-                }
-                .contextMenu { menu }
-        } else {
-            card
+                    .contextMenu { menu }
+            } else {
+                card
+            }
         }
+        .onHover { hovering = $0 }
+        .nwAnimation(.hover, value: hovering)
     }
 
     private var card: some View {
@@ -107,8 +112,6 @@ public struct NWDesignCard<Thumbnail: View, MenuItems: View>: View {
             .contentShape(shape)
         }
         .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .nwAnimation(.hover, value: hovering)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel([name, system, detail, edited].compactMap { $0 }.joined(separator: ", "))
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
