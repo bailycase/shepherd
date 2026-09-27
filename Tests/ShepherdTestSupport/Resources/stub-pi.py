@@ -82,9 +82,12 @@ Startup, like a pi that takes a while to boot (or fails to), before stdin is rea
   $STUB_PI_STARTUP_EXIT   exit with this code instead of serving
   $STUB_PI_STARTUP_STDERR what it writes to stderr before that exit (default
                           "stub-pi: failed to start"), as pi's own error would be
+  $STUB_PI_STARTUP_REQUIRE_AUTH  like pi with nothing to sign in with: exit 1 with "No models
+                          available." unless $PI_CODING_AGENT_DIR/auth.json holds a login (it
+                          reads only the keys, never a value)
 A pi launched the way the app launches it gets no test env, so `stub-pi-startup.json` in the
-cwd ({"delay": 1.5, "gate": "release-pi", "newSession": true, "exit": 1, "stderr": "..."}) sets
-the same.
+cwd ({"delay": 1.5, "gate": "release-pi", "newSession": true, "exit": 1, "stderr": "...",
+"requireAuth": true}) sets the same.
 
 Every stdin line is appended to $STUB_PI_LOG when set, so tests can assert
 on what the client actually wrote.
@@ -545,10 +548,22 @@ def startup():
         sys.stderr.write(f"\x1b[33mWarning: No project session found with id '{session_id}'; "
                          "creating a new session with that id.\x1b[39m\n")
         sys.stderr.flush()
+    if (os.environ.get("STUB_PI_STARTUP_REQUIRE_AUTH") or config.get("requireAuth")) and not signed_in():
+        code, message = 1, "No models available."
     if code is not None:
         sys.stderr.write(message.rstrip("\n") + "\n")
         sys.stderr.flush()
         sys.exit(int(code))
+
+
+def signed_in():
+    home = os.environ.get("PI_CODING_AGENT_DIR")
+    try:
+        with open(os.path.join(home, "auth.json")) as f:
+            auth = json.load(f)
+    except (TypeError, OSError, ValueError):
+        return False
+    return isinstance(auth, dict) and len(auth) > 0
 
 
 record_launch()
