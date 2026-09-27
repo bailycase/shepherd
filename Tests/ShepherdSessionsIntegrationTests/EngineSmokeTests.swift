@@ -323,6 +323,21 @@ enum EngineSmoke {
         #expect(!names.contains("skill:agents-only") && !names.contains("skill:nested-agents"),
                 "no skill in $HOME/.agents/skills loads: \(names)")
 
+        // A trusted project inside the home folder, outside any repository: pi also looks for
+        // `.agents/skills` in every folder above it, and passes over the home folder's only when
+        // that is `HOME` as written. A folder's path is its real one (getcwd), so HOME is too, as a
+        // Mac's is (the scratch folder's isn't: /var is a link).
+        let realHome = URL(fileURLWithPath: PiHome.canonical(userHome.path), isDirectory: true)
+        let inside = realHome.appendingPathComponent("work/app", isDirectory: true)
+        try skill(inside.appendingPathComponent(".agents/skills/project-own"), "project-own")
+        let trust = try JSONSerialization.data(withJSONObject: [inside.path: true])
+        try trust.write(to: home.directory.appendingPathComponent("trust.json"))
+        let fromInside = try await skillNames(home: home, userHome: realHome, temporary: temporary, project: inside)
+        #expect(fromInside.contains("skill:project-own"), "the trusted project's own skill loads: \(fromInside)")
+        #expect(!fromInside.contains("skill:agents-only") && !fromInside.contains("skill:nested-agents"),
+                "the home folder's never does, from a project inside it: \(fromInside)")
+        try files.removeItem(at: home.directory.appendingPathComponent("trust.json"))
+
         // The control: with the filter naming another home, pi's own discovery finds that folder.
         try PiHome(directory: home.directory, engine: home.engine, userHome: scratch.appendingPathComponent("elsewhere").path).install()
         let unfiltered = try await skillNames(home: home, userHome: userHome, temporary: temporary, project: project)
