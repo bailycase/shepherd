@@ -16,7 +16,7 @@ struct SlashLoginTests {
         ("  /login  ", Command(verb: .login, provider: nil)),
         ("/login anthropic", Command(verb: .login, provider: "anthropic")),
         ("/LOGIN Anthropic", Command(verb: .login, provider: "anthropic")),
-        ("/login OpenAI Codex", nil),
+        ("/login OpenAI Codex", Command(verb: .login, provider: "openai-codex")),
         ("/login openai-codex", Command(verb: .login, provider: "openai-codex")),
         ("/login kimi", Command(verb: .login, provider: "kimi-coding")),
         ("/login deepseek", Command(verb: .login, provider: "deepseek")),
@@ -24,12 +24,14 @@ struct SlashLoginTests {
         ("/logout", Command(verb: .logout, provider: nil)),
         ("/logout github-copilot", Command(verb: .logout, provider: "github-copilot")),
         ("/logins", nil),
-        ("/login anthropic please", nil),
-        ("/login\nanthropic", nil),
+        ("/login anthropic please", Command(verb: .login, provider: "anthropic")),
+        ("/login deepseek sk-fake-pasted-key-0001", Command(verb: .login, provider: "deepseek")),
+        ("/login\nanthropic", Command(verb: .login, provider: "anthropic")),
+        ("/logout\nsk-fake-pasted-key-0001", Command(verb: .logout, provider: nil)),
         ("login anthropic", nil),
         ("/review", nil),
     ] as [(String, Command?)])
-    func aDraftIsOneOnlyWhenItIsTheCommandAndAtMostAProvider(draft: String, command: Command?) {
+    func aDraftStartingWithTheCommandIsOneAndNothingAfterItIsSent(draft: String, command: Command?) {
         #expect(SlashLogin.parse(draft) == command)
     }
 

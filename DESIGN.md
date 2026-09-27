@@ -2247,8 +2247,10 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
   state as a word in caption trailing ("Not signed in" `textTertiary`, "Expired" `lanternText`,
   "Signed in" `done`, "API key" `textSecondary`); providers not signed in first, then by name.
   ⏎ (or a click) on either, or sending "/login", "/login anthropic" or "/logout …" as typed,
-  clears the composer and opens Settings ▸ Pi ▸ Sign-in; with a provider it scrolls there and
-  starts its sign-in (/logout only scrolls there: signing out stays a click). A name Shepherd
+  clears the composer and opens Settings ▸ Pi ▸ Sign-in (anything typed after the provider, on
+  any line, is dropped: a key pasted after "/login deepseek" never reaches pi); with a provider
+  it scrolls there and starts its sign-in (/logout only scrolls there: signing out stays a
+  click). A name Shepherd
   doesn't know opens Sign-in with the list as it is. Nothing reaches pi. A remote agent's composer
   doesn't list them.
 - **Argument hints** after the name in `textTertiary` ("/release-notes [tag]"; NWComposer,
