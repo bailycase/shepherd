@@ -3,7 +3,7 @@ import ShepherdUI
 import ShepherdSessions
 
 struct PiSettings: View {
-    /// Shepherd's pi on this Mac, whose models.json names the subagent model choices.
+    /// Shepherd's pi on this Mac, whose catalog names the subagent model choices.
     let pi: PiSetup
     /// Opens Shepherd's pi to sign in, beside the agent selected on this Mac; nil with none.
     var signIn: (() -> Void)? = nil
@@ -94,8 +94,11 @@ struct PiSettings: View {
                     }
                 }
                 .task {
-                    let home = pi.home
-                    modelOptions = await Task.detached(priority: .userInitiated) { Array(Set(PiConfig.modelIDs(in: home))).sorted() }.value
+                    // Shepherd's pi's catalog: its home's models.json names only custom providers.
+                    let catalog = pi.catalog
+                    modelOptions = await Task.detached(priority: .userInitiated) {
+                        Array(Set(catalog.entriesOrConfigured().map(\.id))).sorted()
+                    }.value
                 }
                 .nwTransition(.disclosure)
             }
