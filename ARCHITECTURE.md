@@ -157,8 +157,8 @@ agent's board_write / canvas_update → SessionServer → DesignStore (its own q
 ```
 
 - **A design's screen is its agent's layout.** `AgentLayoutView` draws `DesignLayoutView` for an
-  agent whose `designID` names a design: the canvas beside the agent's own `ThreadView` (composer
-  with attach and Send only). It mounts and hides like any layout, so switching is a flip; hidden,
+  agent whose `designID` names a design: the canvas beside the agent's own `ThreadView` (its
+  composer at the compact size, `.nwComposerSize(.compact)`). It mounts and hides like any layout, so switching is a flip; hidden,
   its `DesignHost` gives up its live views and keeps its snapshots.
 - **Web views are pooled.** `DesignLivePlan` picks at most five live boards (the selected one, then
   the nearest the middle, above a zoom threshold) and recycles the least recently wanted;
