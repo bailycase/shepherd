@@ -5,7 +5,8 @@ import ShepherdSessions
 struct PiSettings: View {
     /// Shepherd's pi on this Mac, whose catalog names the subagent model choices.
     let pi: PiSetup
-    @Bindable private var settings = AppSettings.shared
+    /// The view model's settings, so a preview's own settings draw the page.
+    @Bindable var settings: AppSettings
     @State private var modelOptions: [String] = []
 
     var body: some View {
