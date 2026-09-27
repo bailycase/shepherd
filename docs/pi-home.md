@@ -137,7 +137,8 @@ Re-import copies that login again.
 
 `YourPiImport` does the copying and `YourPiFiles` the reading. Everything of the user's is read
 as plain JSON and plain folders (a BOM and comments allowed, as pi allows them, files over 4 MiB
-refused): never through pi's `AuthStorage`, `SettingsManager` or `ProjectTrustStore`, which
+refused; a link is followed, as pi follows it, and a file is opened without blocking and checked
+on its descriptor, so a FIFO or device where a file should be fails at once): never through pi's `AuthStorage`, `SettingsManager` or `ProjectTrustStore`, which
 take lock folders even to read, and never by running pi (`pi auth check` refreshes OAuth). Their
 pi stays byte-identical: no write, no lock folder. Every write lands in Shepherd's home by temp
 file and rename, under pi's own lock for the file (`auth.json.lock`, …), and auth.json is 0600
@@ -156,7 +157,13 @@ name a provider and a kind (API key, `$NAME`, "runs a command", subscription), n
 
 `.shepherd-imports.json` in the home records that the first copy ran (and the switches, and the
 settings entries Shepherd added), so it never runs again on its own; with no pi of theirs it
-records that too. A home the startup guards refuse copies nothing.
+records that too. A file there that can't be read counts as a copy that ran, so a damaged one
+never brings back a login signed out of since. A switch saved before the first copy (a copy past
+its deadline) writes the file with `copied: false`: the next launch still copies, keeping the
+switch. A home the startup guards refuse copies nothing. What couldn't be copied (a file of
+theirs unreadable, too large or not JSON, or one of Shepherd's own that isn't a JSON object, which
+is left as it is) is reported, file by file and never quoted, in the log and the welcome step.
+A package source listed under Your extensions loses any user and password in its URL.
 
 **Instructions.** pi reads a global context file only from its own agent folder, which is now
 Shepherd's. Each agent gets `SHEPHERD_YOUR_PI_INSTRUCTIONS`, the user's pi folder, while the
@@ -199,7 +206,9 @@ refuses pi's own package commands, and the pins turn off pi's update check and i
 
 - Imports: the parsers' tables (`YourPiFilesTests`), the copy, the marker, Re-import and the
   switches against a fixture "your pi" of fake credentials that stays byte-identical
-  (`YourPiImportTests`), the first launch through the view model and the stub engine
+  (`YourPiImportTests`), hostile files (`YourPiImportEdgeTests`: links, a FIFO, folder or device
+  for auth.json, a huge, invalid or deeply nested one, unknown OAuth fields, a `!command` key, a
+  damaged or early state file, a "your pi" overlapping the home, a package token), the first launch through the view model and the stub engine
   (`YourPiFirstLaunchTests`: the hold, the welcome, a later launch, skipping sign-in), and the
   instructions in a parent and a real child (`your-pi-instructions.test.mjs`,
   `native-children.test.mjs`).
