@@ -326,6 +326,9 @@ final class PiSignInSession: Identifiable {
         if restart { start(flow: .paste) }
     }
 
+    /// pi is waiting for a pasted code (its prompt is open).
+    var submitReady: Bool { pendingPrompt.map { $0.kind == .manualCode || $0.kind == .text } ?? false }
+
     /// Continue with the pasted code.
     func submitCode() {
         let code = code.trimmingCharacters(in: .whitespacesAndNewlines)

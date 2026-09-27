@@ -92,12 +92,6 @@ struct PiLaunchTests {
         }
     }
 
-    /// Signing in types the launcher into a terminal pane: pi's TUI with no session.
-    @Test func signingInOpensShepherdsPiWithNoSession() {
-        #expect(PiLaunch.signIn(home: Self.home)
-            == "(cd -- '/Users/me/Library/Application Support/Shepherd/pi' && exec \(Self.launcher) --no-session)")
-    }
-
     /// A program name that isn't a plain word is quoted like any other value.
     @Test(arguments: [("node", "node"), ("node-2.0_rc", "node-2.0_rc"), ("my node", "'my node'"), ("", "''"), ("$(x)", "'$(x)'")])
     func namesOnPathAreBareOnlyWhenPlain(_ name: String, word: String) {

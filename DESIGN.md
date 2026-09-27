@@ -1490,7 +1490,9 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   provider" when pi names none); the time it stopped in mono 11 `textTertiary` trailing. Under
   it, 42pt in: Sign in to Anthropic (primary, small, `key`), which opens Settings ▸ Pi ▸ Sign-in
   scrolled to Anthropic and starts its sign-in, and Use another model (ghost, small,
-  `arrow.triangle.swap`), which opens the model menu: the model picked starts pi again on it. The
+  `arrow.triangle.swap`), a menu of the models Shepherd's pi can use now (its catalog, without
+  the missing provider's): the model picked starts pi again on it (`--model`, even for a
+  conversation that resumes). The
   message (a new agent's opening prompt pi never read) is kept either way. When the sign-in
   lands the agent starts again by itself; the card goes when pi does.
 - **Empty thread:** a framed `NWEmptyState` (a dashed `lineStrong` border, no crook): "New

@@ -54,9 +54,8 @@ struct Composer: View {
     /// Retry in the Can't start banner (true: start a new conversation); nil for a remote agent,
     /// whose banner says to retry on its host.
     var restartPi: ((Bool) -> Void)? = nil
-    /// Sign in… in that banner when pi found no model: Shepherd's pi in a terminal beside the
-    /// agent (Settings ▸ Pi ▸ Sign in); nil where it can't be offered (a design, a remote agent).
-    var signInToPi: (() -> Void)? = nil
+    /// The thread's Not signed in card says it instead of the Can't start banner (a local agent).
+    var hidesNotSignedIn = false
     @State private var attachments = ComposerAttachments()
     @State private var dropTargeted = false
     @State private var commandIndex = 0
@@ -174,7 +173,7 @@ struct Composer: View {
 
     /// What sits above the card: a banner, the notice, extension widgets, the queue.
     private var accessories: [String] {
-        let banner = store.startProblem != nil ? "cannotStart" : store.loadError != nil ? "lost" : attachments.error != nil ? "attachment" : store.notice != nil ? "notice" : nil
+        let banner = store.startProblem.map { !(hidesNotSignedIn && $0.kind == .notSignedIn) } == true ? "cannotStart" : store.loadError != nil ? "lost" : attachments.error != nil ? "attachment" : store.notice != nil ? "notice" : nil
         return [banner].compactMap { $0 } + store.widgets.map(\.id) + (queueStack.isVisible ? ["queue"] : [])
             + (showsTray ? ["tray"] : []) + (answeringRun != nil ? ["answering"] : [])
     }
@@ -224,7 +223,7 @@ struct Composer: View {
                 .padding(.horizontal, NW.Space.xs)
                 .nwTransition(.list, edge: .bottom)
             }
-            if let problem = store.startProblem {
+            if let problem = store.startProblem, !(hidesNotSignedIn && problem.kind == .notSignedIn) {
                 NWBanner(.failed, title: problem.title, message: problem.message(host: restartPi == nil ? store.hostName ?? "the host" : nil)) {
                     if let restartPi {
                         if problem.kind == .resumedAsNew {
@@ -233,10 +232,6 @@ struct Composer: View {
                                 restartPi(true)
                             }
                             .buttonStyle(.nw(.ghost, size: .s))
-                        }
-                        if problem.kind == .notSignedIn, let signInToPi {
-                            Button("Sign in…") { signInToPi() }
-                                .buttonStyle(.nw(.ghost, size: .s))
                         }
                         Button("Retry") {
                             store.restarting()

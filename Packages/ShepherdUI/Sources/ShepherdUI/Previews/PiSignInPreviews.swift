@@ -104,7 +104,10 @@ private let rowStates: [(String, String, NWProviderStatus, Bool, String)] = [
                                trailing: "restored 9:41 AM")
             NWAgentNotSignedInCard(provider: "Anthropic", model: "claude-opus",
                                    reason: "Anthropic’s sign-in was skipped when your pi came over, so the agent is waiting for you. Your message is kept.",
-                                   time: "9:43 AM", signIn: {}, useAnotherModel: {})
+                                   time: "9:43 AM", signIn: {}) {
+                Button("gpt-5.3-codex") {}
+                Button("deepseek-chat") {}
+            }
             NWSidebarRow("Plan shepherd extensions", leading: .waiting, accessory: .text("waiting"))
                 .frame(width: 232)
         }

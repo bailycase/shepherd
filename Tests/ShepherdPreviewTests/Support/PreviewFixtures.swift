@@ -100,14 +100,16 @@ final class ThreadFixture {
     func thread(title: String = "Investigate SwiftUI live preview capabilities", inspected: String? = nil,
                 workingDirectory: String = "~/Developer/Shepherd",
                 listModels: (() async -> ModelCatalog)? = nil, contextDetailsOpen: Bool = false,
-                restartPi: ((Bool) -> Void)? = { _ in }, signInToPi: (() -> Void)? = nil) -> some View {
+                restartPi: ((Bool) -> Void)? = { _ in }, authNotice: ThreadAuthNotice? = nil) -> some View {
         VStack(spacing: 0) {
             ThreadHeader(store: store, project: "Shepherd", title: title)
             ThreadView(store: store, active: true, isFocused: false, request: request, commandKey: "preview",
                        agentName: "Investigate", workingDirectory: workingDirectory, inspectSubagent: { _ in },
                        inspectedRunID: inspected, review: { _ in },
                        turnActions: TurnChangesActions(review: { _, _ in }, undo: { _ in nil }, redo: { _ in nil }), listModels: listModels,
-                       restartPi: restartPi, signInToPi: signInToPi, contextDetailsOpen: contextDetailsOpen)
+                       restartPi: restartPi, authNotice: authNotice,
+                       authActions: ThreadAuthActions(signIn: { _ in }, useModel: { _ in }, models: { ["openai/gpt-5.3-codex"] }),
+                       contextDetailsOpen: contextDetailsOpen)
         }
         .environment(\.threadCommands, commands)
     }

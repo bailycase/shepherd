@@ -462,6 +462,9 @@ final class TerminalSessionStore {
         }
     }
 
+    /// The model an agent's next start takes, whatever its session says (Use another model).
+    var modelOverrides: [AgentID: String] = [:]
+
     /// Retry for an agent whose pi stopped before it served: starts its pi again in the same pane.
     /// `newConversation` (a pi that didn't find the conversation it was resuming) starts it
     /// without that check, as pi would on its own.
@@ -641,7 +644,8 @@ final class TerminalSessionStore {
             // RPC mode ignores a positional prompt; the opening prompt goes to the server below.
             let command = try problem.map(Self.refusedCommand)
                 ?? Self.rpcAgentCommand(for: agent, cwd: cwd, pi: server.pi, sessionIsFresh: fresh, isAutomation: isAutomation,
-                                        suggestFiles: suggestionFiles(isAutomation: isAutomation))
+                                        suggestFiles: suggestionFiles(isAutomation: isAutomation),
+                                        modelOverride: modelOverrides.removeValue(forKey: agent.id))
             // A forked transcript resumes: pi not finding it is a start problem, never a new session.
             let resuming = fresh ? nil : agent.effectivePiSessionID
             guard ownsPane(session, pane: pane, tabID: tab.id, expectedAgentID: agent.id),
@@ -890,7 +894,8 @@ final class TerminalSessionStore {
                 let (fresh, problem) = await Self.prepareLaunch(for: agent, cwd: cwd, pi: server.pi)
                 command = try problem.map(Self.refusedCommand)
                     ?? Self.rpcAgentCommand(for: agent, cwd: cwd, pi: server.pi, sessionIsFresh: fresh,
-                                            suggestFiles: suggestionFiles(isAutomation: false))
+                                            suggestFiles: suggestionFiles(isAutomation: false),
+                                            modelOverride: modelOverrides.removeValue(forKey: agent.id))
                 if checksResume, !fresh { resuming = agent.effectivePiSessionID }
             } else {
                 command = ShellIntegration.command(shell: AppSettings.shared.shellCommand)
@@ -1055,7 +1060,7 @@ final class TerminalSessionStore {
     /// and namer extensions; an agent that draws a design gets the design tools instead of panes. Model and
     /// thinking flags go only to a fresh session.
     private static func rpcAgentCommand(for agent: Agent, cwd: String, pi: PiSetup, sessionIsFresh: Bool, isAutomation: Bool = false,
-                                        suggestFiles: [InstructionFile] = []) throws -> SessionCommand {
+                                        suggestFiles: [InstructionFile] = [], modelOverride: String? = nil) throws -> SessionCommand {
         let settings = AppSettings.shared
         return try StatusExtension.command(
             home: pi.files,
@@ -1077,7 +1082,8 @@ final class TerminalSessionStore {
             design: try agent.designID.map { (try DesignExtension.installedPath(), $0, try DesignExtension.installedSkillDirectory()) },
             mcp: try MCPLaunch.forAgents(settings: settings),
             userHome: pi.userHome,
-            model: sessionIsFresh ? agent.model : nil,
+            // Use another model (an agent not signed in): its next start takes the model picked.
+            model: modelOverride ?? (sessionIsFresh ? agent.model : nil),
             thinking: sessionIsFresh ? agent.thinkingLevel : nil
         )
     }

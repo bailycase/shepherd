@@ -262,12 +262,13 @@ struct ThreadPreviewTests {
                              startProblem: problem)
     }
 
-    /// A relaunched agent whose pi can't reach a model: its history from disk stays, and the
-    /// composer's banner says why, with pi's own lines, Sign in… and Retry (Thread › Can't start).
-    @Test func threadCannotStartNotSignedIn() async throws {
+    /// A relaunched agent whose pi can't reach a model (AgentNotSignedIn): its history from disk
+    /// stays, the composer is as it was, and the thread ends in the Not signed in card, with Sign
+    /// in to Anthropic and Use another model (Thread › Not signed in).
+    @Test func threadNotSignedIn() async throws {
         let fixture = ThreadFixture(Self.cannotStart(NativeStartProblem(kind: .notSignedIn, exitCode: 1, lines: [
-            "No models available. Use /login to log into a provider via OAuth or API key. See:",
-            "  /usr/local/lib/node_modules/@earendil-works/pi-coding-agent/docs/providers.md",
+            "No API key found for anthropic.",
+            "Use /login to log into a provider via OAuth or API key. See:",
         ])))
         defer { fixture.store.stop() }
         var fromDisk = ActivityThreads.idle
@@ -276,10 +277,22 @@ struct ThreadPreviewTests {
         fromDisk.commands = nil
         fixture.store.preview(fromDisk)
         fixture.store.draft = "Now add the tests"
-        try await Preview.render("thread-cannot-start", size: CGSize(width: 1180, height: 900), ready: {
+        let at = Calendar.current.date(bySettingHour: 9, minute: 43, second: 0, of: Date())!
+        try await Preview.render("thread-not-signed-in", size: CGSize(width: 1180, height: 900), ready: {
             fixture.store.startProblem != nil && !fixture.store.rows.isEmpty
         }) {
-            fixture.thread(signInToPi: {})
+            fixture.thread(authNotice: .notSignedIn(provider: "anthropic", model: "claude-opus", at: at, skipped: true))
+        }
+    }
+
+    /// A restored agent the first launch's copy holds (PiImportProgress): its history from disk,
+    /// and Waiting to continue at the end.
+    @Test func threadWaitingForYourPi() async throws {
+        let fixture = ThreadFixture(ActivityThreads.idle)
+        defer { fixture.store.stop() }
+        let restored = Calendar.current.date(bySettingHour: 9, minute: 41, second: 0, of: Date())!
+        try await Preview.render("thread-waiting-for-your-pi", size: CGSize(width: 1180, height: 900), ready: { !fixture.store.rows.isEmpty }) {
+            fixture.thread(authNotice: .waiting(restoredAt: restored))
         }
     }
 

@@ -106,6 +106,23 @@ struct SidebarRecentsTests {
         #expect(rows["Nightly"]?.accessory == .text("can't start", tone: .failed))
     }
 
+    /// PiAuthStates' `NWSidebarRow(agent) · .waiting, .notSignedIn`: a restored agent the first
+    /// launch's copy holds says "waiting" with a clock; one that isn't signed in moves to Needs you
+    /// with "sign in", ahead of its "can't start".
+    @Test func anAgentWaitingForYourPiOrNotSignedInSaysSo() {
+        let waiting = agent("waiting", at: 2)
+        let signIn = agent("sign in", at: 1)
+        let state = ShepherdState(spaces: [space], agents: [waiting, signIn])
+        let lists = SidebarDerivation.lists(SidebarSource(local: state, cannotStart: [signIn.id], notSignedIn: [signIn.id],
+                                                          waiting: [waiting.id]))
+        #expect(lists.needsYou.map(\.title) == ["sign in"])
+        #expect(lists.needsYou.first?.leading == .dot(.attention) && lists.needsYou.first?.accessory == .reason("sign in"))
+        #expect(lists.needsYou.first?.accessibilityLabel == "sign in, not signed in")
+        #expect(lists.recents.map(\.title) == ["waiting"])
+        #expect(lists.recents.first?.leading == .waiting && lists.recents.first?.accessory == .text("waiting"))
+        #expect(lists.recents.first?.accessibilityLabel == "waiting, waiting")
+    }
+
     /// A host that dropped keeps its threads in Recents as it last sent them, dimmed and tagged
     /// (NavHosts' horizon rows); nothing there can be answered, so none of it needs you.
     @Test func anOfflineHostsThreadsStayInRecentsDimmed() {

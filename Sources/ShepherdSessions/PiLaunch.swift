@@ -67,14 +67,6 @@ public enum PiLaunch {
             + "--model \(quoted(model)) -- \(quoted(prompt))")
     }
 
-    /// What a terminal pane types to open Shepherd's pi for signing in: pi's own TUI, with no
-    /// session, where `/login` signs in to a provider for Shepherd's pi alone. It runs in the
-    /// home, in a subshell so the pane's own shell stays where it was: an agent's folder of `~`
-    /// would make `~/.pi` the TUI's project, which it may offer to trust.
-    public static func signIn(home: PiHome) -> String {
-        "(cd -- \(quoted(home.directory.path)) && exec \(quoted(home.launcher.path)) --no-session)"
-    }
-
     /// A line that starts no pi and says why (`PiHomeProblem`), exiting `refusedExitCode`, so the
     /// agent's start fails with the reason (`NativeStartProblem.Kind.homeUnsafe`).
     public static func refused(_ problem: PiHomeProblem) -> Line {
