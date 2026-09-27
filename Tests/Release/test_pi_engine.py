@@ -589,9 +589,6 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertNotIn("x86_64", sign)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 @unittest.skipUnless(sys.platform == "darwin" and shutil.which("codesign") and shutil.which("clang")
                      and shutil.which("lipo"), "needs macOS's codesign, clang and lipo")
@@ -634,3 +631,7 @@ class SignEngineTests(unittest.TestCase):
                 self.assertIn("arm64 only", refused.stderr)
                 with open(node, "rb") as f:
                     self.assertEqual(f.read(), built)
+
+
+if __name__ == "__main__":
+    unittest.main()
