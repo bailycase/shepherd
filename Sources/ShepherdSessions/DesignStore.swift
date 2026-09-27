@@ -200,15 +200,91 @@ public final class DesignStore: @unchecked Sendable {
     func delete(_ id: DesignID) async throws {
         try await run {
             guard let folder = self.folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
-            self.loaded[id] = nil
-            self.commentFiles[id] = nil
-            self.servedHashes[id] = nil
-            self.pieceHashes[id] = nil
+            self.forget(id)
             guard FileManager.default.fileExists(atPath: folder.path) else { return }
             do { try FileManager.default.removeItem(at: folder) } catch {
                 throw DesignStoreError.io("could not delete design \(id): \(error.localizedDescription)")
             }
         }
+    }
+
+    // MARK: Deleting, with Undo
+
+    /// Where a deleted design's folder waits while it can still be restored: beside the designs,
+    /// hidden, never the Trash. Nothing serves it, and startup and quitting remove what is left.
+    func stagedFolder(for id: DesignID) -> URL? {
+        folder(for: id).map { directory.appendingPathComponent(Self.stagedPrefix + $0.lastPathComponent, isDirectory: true) }
+    }
+
+    static let stagedPrefix = ".deleted-"
+
+    /// Sets a deleted design's folder aside (one rename), so Undo can put it back whole. True
+    /// when there was a folder to move; a design already set aside is refused.
+    func stageDeletion(_ id: DesignID) async throws -> Bool {
+        try await run {
+            guard let folder = self.folder(for: id), let staged = self.stagedFolder(for: id) else {
+                throw DesignStoreError.invalidDesignID(id.rawValue)
+            }
+            self.forget(id)
+            guard !FileManager.default.fileExists(atPath: staged.path) else { throw DesignStoreError.designExists(id) }
+            guard FileManager.default.fileExists(atPath: folder.path) else { return false }
+            do { try FileManager.default.moveItem(at: folder, to: staged) } catch {
+                throw DesignStoreError.io("could not delete design \(id): \(error.localizedDescription)")
+            }
+            return true
+        }
+    }
+
+    /// Undo: the set-aside folder back in its place. A design whose folder was never set aside
+    /// (it had none) comes back without one.
+    func unstageDeletion(_ id: DesignID) async throws {
+        try await run {
+            guard let folder = self.folder(for: id), let staged = self.stagedFolder(for: id) else {
+                throw DesignStoreError.invalidDesignID(id.rawValue)
+            }
+            self.forget(id)
+            guard FileManager.default.fileExists(atPath: staged.path) else { return }
+            guard !FileManager.default.fileExists(atPath: folder.path) else { throw DesignStoreError.designExists(id) }
+            do { try FileManager.default.moveItem(at: staged, to: folder) } catch {
+                throw DesignStoreError.io("could not restore design \(id): \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// The undo window closed: the set-aside folder goes for good.
+    func finishDeletion(_ id: DesignID) async throws {
+        try await run {
+            guard let staged = self.stagedFolder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+            self.forget(id)
+            guard FileManager.default.fileExists(atPath: staged.path) else { return }
+            do { try FileManager.default.removeItem(at: staged) } catch {
+                throw DesignStoreError.io("could not delete design \(id): \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Every folder a deletion set aside, removed: at quit (a deletion in its undo window
+    /// completes) and at launch (after a crash). Blocks the caller on the store's queue; call it
+    /// off the server's. Returns the ids it removed.
+    @discardableResult
+    func finishAllDeletions() -> [String] {
+        queue.sync {
+            let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+            var removed: [String] = []
+            for name in names.sorted() where name.hasPrefix(Self.stagedPrefix) {
+                let url = directory.appendingPathComponent(name, isDirectory: true)
+                if (try? FileManager.default.removeItem(at: url)) != nil { removed.append(String(name.dropFirst(Self.stagedPrefix.count))) }
+            }
+            return removed
+        }
+    }
+
+    /// Queue: what the store remembers of a design, dropped when its folder moves or goes.
+    private func forget(_ id: DesignID) {
+        loaded[id] = nil
+        commentFiles[id] = nil
+        servedHashes[id] = nil
+        pieceHashes[id] = nil
     }
 
     /// Writes one board's whole source, when the design is still at `baseRevision` (nil: any).
@@ -489,6 +565,58 @@ public final class DesignStore: @unchecked Sendable {
             let result = DesignWriteResult(revision: design.revision, changed: true, sha256: files[copy], created: true,
                                            title: next.title, boardCount: next.boards.count)
             return DesignDuplicate(path: copy, result: result)
+        }
+    }
+
+    // MARK: Duplicate
+
+    /// Makes design `copy`'s folder from `source`'s: its canvas (titled `title`, every other key
+    /// kept), every board and project file, and its uploads, as one move into place. Its versions
+    /// and comments stay with the original, and a link in the original is not copied.
+    func duplicateDesign(_ source: DesignID, as copy: DesignID, title: String) async throws -> DesignSnapshot {
+        try await run {
+            guard let from = self.folder(for: source), let folder = self.folder(for: copy) else {
+                throw DesignStoreError.invalidDesignID(copy.rawValue)
+            }
+            guard !FileManager.default.fileExists(atPath: folder.path) else { throw DesignStoreError.designExists(copy) }
+            let design = try self.load(source)
+            let index = try design.index.merging(.object(["title": .string(title)]))
+            let staging = self.directory.appendingPathComponent(".import-\(copy.rawValue)", isDirectory: true)
+            try? FileManager.default.removeItem(at: staging)
+            do {
+                for part in ["project", "assets"] {
+                    try Self.copyFiles(from.appendingPathComponent(part, isDirectory: true),
+                                       to: staging.appendingPathComponent(part, isDirectory: true))
+                }
+                try FileManager.default.createDirectory(at: staging.appendingPathComponent("project", isDirectory: true),
+                                                        withIntermediateDirectories: true)
+                try index.encoded().write(to: staging.appendingPathComponent("project/canvas.json"), options: .atomic)
+                try Data("0\n".utf8).write(to: staging.appendingPathComponent("revision"))
+                try FileManager.default.moveItem(at: staging, to: folder)
+            } catch {
+                try? FileManager.default.removeItem(at: staging)
+                throw DesignStoreError.io("could not duplicate the design: \(error.localizedDescription)")
+            }
+            self.forget(copy)
+            return try self.snapshotOnQueue(copy)
+        }
+    }
+
+    /// Copies the regular files and folders under `source` to `target`, as `lstat` sees them: a
+    /// link is left behind, never followed. Nothing when `source` isn't a folder.
+    private static func copyFiles(_ source: URL, to target: URL) throws {
+        let manager = FileManager.default
+        var isFolder: ObjCBool = false
+        guard manager.fileExists(atPath: source.path, isDirectory: &isFolder), isFolder.boolValue,
+              (try? manager.destinationOfSymbolicLink(atPath: source.path)) == nil else { return }
+        try manager.createDirectory(at: target, withIntermediateDirectories: true)
+        for name in try manager.contentsOfDirectory(atPath: source.path) {
+            let from = source.appendingPathComponent(name)
+            switch (try? manager.attributesOfItem(atPath: from.path))?[.type] as? FileAttributeType {
+            case .typeDirectory?: try copyFiles(from, to: target.appendingPathComponent(name, isDirectory: true))
+            case .typeRegular?: try manager.copyItem(at: from, to: target.appendingPathComponent(name))
+            default: continue
+            }
         }
     }
 
