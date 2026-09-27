@@ -208,4 +208,109 @@ struct DesignReferenceFlowTests {
         }
         #expect(w.app.server.state.agents.allSatisfy { $0.designGrants.isEmpty })
     }
+
+    // MARK: From the canvas (RefImplementSheet, RefImplementBoard, RefSentStay, RefCopied)
+
+    /// The pay button as the canvas picks it.
+    private func buttonPick() throws -> DesignElementPick {
+        DesignElementPick(board: try DesignPath.validate("Hero.dc.html"), id: Self.button, rect: CGRect(x: 0, y: 44, width: 120, height: 40),
+                          kind: .shape, label: "Pay now", tag: "button · Pay now")
+    }
+
+    /// Implement in a thread… into the thread picked: the piece pinned as the sheet opens, the
+    /// thread gets it with the message, and "Open the thread after sending" lands there (and is
+    /// remembered).
+    @Test func implementingIntoAThreadSendsThePieceAndOpensTheThread() async throws {
+        let w = try await workspace()
+        defer { w.app.stop() }
+        let store = w.vm.threadStores.store(for: w.thread.agent.id)
+        let server = w.app.server, id = w.thread.agent.id
+        let polling = Task { await store.run { try await server.nativeThread(agentID: id, request: $0) } }
+        defer { polling.cancel(); store.stop() }
+        try await eventuallyOnMain("the thread to connect") { store.ready }
+        let screen = w.vm.designScreen(w.design.id)
+        await screen.refresh()
+        screen.setSelection([.init(board: try DesignPath.validate("Hero.dc.html"), element: try buttonPick())])
+        screen.implementSelection(designName: w.design.name)
+        let model = try #require(w.vm.implementSheet)
+        try await eventuallyOnMain("the piece to be pinned") { model.prepared != nil }
+        #expect(model.title == "Implement button “Pay now”")
+        #expect(model.threads.map(\.id) == [id], "a design's own agent is never offered")
+        model.message = "Build the pay button"
+        model.opensThread = true
+        let before = AppHarness.prompts(in: w.log).count
+        w.vm.sendImplementSheet(model)
+        try await eventuallyOnMain("the send", timeout: .seconds(60)) { w.vm.implementSheet == nil }
+        try await eventuallyAsync("pi to get the message") { AppHarness.prompts(in: w.log).count > before }
+        let prompt = try #require(AppHarness.prompts(in: w.log).last)
+        #expect(DesignReferenceFence.parse(prompt)?.records.first?.elementLabel == "Pay now")
+        #expect(DesignReferenceFence.parse(prompt)?.text == "Build the pay button\n\n1 design reference attached.")
+        #expect(w.vm.selectedAgentID == id && w.vm.referenceToast == nil, "landed in the thread")
+        #expect(w.vm.settings.implementOpensThread)
+    }
+
+    /// Implement in a new thread: it starts in the project on a new worktree named for the piece,
+    /// gets the piece as its first message, and the canvas stays with a toast offering it.
+    @Test func implementingInANewThreadStartsItOnAWorktreeAndStaysOnTheCanvas() async throws {
+        try StubPi.installAsEngine()
+        let w = try await workspace()
+        defer { w.app.stop() }
+        let repo = try makeScratchRepo()
+        defer { try? FileManager.default.removeItem(at: repo) }
+        let spaceID = try #require(await w.vm.addSpace(at: repo))
+        w.vm.selectAgent(w.drawer.id)
+        let screen = w.vm.designScreen(w.design.id)
+        await screen.refresh()
+        screen.select("Hero.dc.html")
+        screen.implementSelection(designName: w.design.name)
+        let model = try #require(w.vm.implementSheet)
+        try await eventuallyOnMain("the piece to be pinned") { model.prepared != nil }
+        model.mode = .new
+        model.project = spaceID
+        model.opensThread = false
+        #expect(model.chosenProject?.isRepo == true && model.branch == "agent/implement-hero")
+        w.vm.sendImplementSheet(model)
+        try await eventuallyOnMain("the send", timeout: .seconds(60)) { w.vm.implementSheet == nil }
+        let agent = try #require(w.app.server.state.agents.first { $0.worktreeBranch == "agent/implement-hero" })
+        #expect(agent.spaceID == spaceID && agent.name == "Implement Hero" && !agent.nameIsFinal)
+        let worktree = try #require(agent.worktreePath)
+        defer { try? FileManager.default.removeItem(atPath: worktree) }
+        #expect(FileManager.default.fileExists(atPath: worktree))
+        guard case .sent(let thread, _)? = w.vm.referenceToast?.kind else { Issue.record("no toast"); return }
+        #expect(thread == agent.id && w.vm.selectedAgentID == w.drawer.id, "the canvas stays")
+        #expect(!w.vm.settings.implementOpensThread, "the choice is remembered")
+        let server = w.app.server
+        try await eventuallyAsync("the new thread to get the piece", timeout: .seconds(30)) {
+            guard case .snapshot(let snapshot)? = try? await server.nativeThread(agentID: agent.id, request: .snapshot()) else { return false }
+            return snapshot.messages.contains { $0.role == "user" && ($0.designReferences != nil || $0.blocks.contains { DesignReferenceFence.opens($0.text) }) }
+        }
+        #expect(server.state.agents.first { $0.id == agent.id }?.designGrants.count == 1)
+    }
+
+    /// Copy reference: the piece pinned, its string on the pasteboard (the test's own), a toast.
+    @Test func copyingAReferencePutsItsStringOnThePasteboard() async throws {
+        let w = try await workspace()
+        defer { w.app.stop() }
+        var copied: [String] = []
+        w.vm.copyToPasteboard = { copied.append($0) }
+        let screen = w.vm.designScreen(w.design.id)
+        await screen.refresh()
+        screen.setSelection([.init(board: try DesignPath.validate("Hero.dc.html"), element: try buttonPick())])
+        screen.copySelectionReference(designName: w.design.name)
+        try await eventuallyOnMain("the toast") { w.vm.referenceToast != nil }
+        let reference = try #require(copied.first.flatMap { DesignReference(string: $0) })
+        #expect(reference.element == Self.button && reference.revision != nil, "pinned when copied")
+        #expect(w.vm.referenceToast?.kind == .copied && w.vm.referenceToast?.piece == "button “Pay now”")
+    }
+
+    /// Isolation (docs/designs.md): a thread's chips, "Looked at…" lines and @ picker exist only
+    /// while the Design tool is on, and never in a design's own chat.
+    @Test func onlyAnOrdinaryThreadWithTheDesignToolOnGetsReferences() async throws {
+        let w = try await workspace()
+        defer { w.app.stop() }
+        #expect(w.vm.designReferenceChips(for: w.thread.agent.id) != nil)
+        #expect(w.vm.designReferenceChips(for: w.drawer.id) == nil, "a design's agent")
+        w.app.settings.designToolEnabled = false
+        #expect(w.vm.designReferenceChips(for: w.thread.agent.id) == nil, "the Design tool off")
+    }
 }

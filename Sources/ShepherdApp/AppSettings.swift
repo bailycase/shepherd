@@ -96,6 +96,7 @@ final class AppSettings {
         static let worktreeAutoMergePR = "shepherd.worktree.autoMergePR"
         static let worktreeMergeMethod = "shepherd.worktree.mergeMethod"
         static let designToolEnabled = "shepherd.experiments.designTool"
+        static let implementOpensThread = "shepherd.designs.implementOpensThread"
 
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
@@ -111,7 +112,7 @@ final class AppSettings {
             worktreeDeleteLocalBranch, worktreeAutoMergePR,
             worktreeMergeMethod, skillsInSlashMenu,
             mcpOpenSignInPages, mcpProjectConfig, mcpSameEverywhere,
-            designToolEnabled,
+            designToolEnabled, implementOpensThread,
         ]
 
         /// What Reset settings clears: everything but Remote's listener, which only its own
@@ -384,6 +385,12 @@ final class AppSettings {
         }
     }
 
+    /// Implement in a thread's "Open the thread after sending" (RefSentStay): off stays on the
+    /// canvas with a toast; the sheet remembers the last choice.
+    var implementOpensThread: Bool {
+        didSet { store.set(implementOpensThread, forKey: Key.implementOpensThread) }
+    }
+
     /// Tells the server whether to serve designs to remote clients (set by the view model).
     @ObservationIgnored var onDesignToolChange: ((Bool) -> Void)?
 
@@ -449,6 +456,7 @@ final class AppSettings {
         worktreeMergeMethod = store.string(forKey: Key.worktreeMergeMethod)
             .flatMap(WorktreeMergeMethod.init(rawValue:)) ?? .squash
         designToolEnabled = store.bool(forKey: Key.designToolEnabled)
+        implementOpensThread = store.object(forKey: Key.implementOpensThread) as? Bool ?? true
     }
 
     static let uiDensityRange: ClosedRange<Double> = 0.8...1.5
@@ -526,6 +534,7 @@ final class AppSettings {
         worktreeAutoMergePR = false
         worktreeMergeMethod = .squash
         designToolEnabled = false
+        implementOpensThread = true
         // Then clear the store, so an unset preference reads as "never
         // configured" and follows a future change of default.
         for key in Key.resettable {

@@ -52,7 +52,10 @@ extension ShepherdViewModel {
     func designMenu(_ target: DesignTarget, context: DesignMenuContext) -> DesignMenu {
         switch target {
         case .local(let id):
-            return DesignMenu.design(context, hasSystem: design(id)?.systemNamespace != nil)
+            // Its own toolbar names what the canvas has selected, for Implement and Copy reference.
+            let reference = context == .toolbar && settings.designToolEnabled
+                ? designScreens[id].map { $0.referenceSelection(designName: design(id)?.name ?? "").piece } : nil
+            return DesignMenu.design(context, hasSystem: design(id)?.systemNamespace != nil, reference: reference)
         case .remote(let ref):
             let connection = remoteHosts.connections.first { $0.id == ref.hostID }
             return DesignMenu.design(context, hasSystem: false, remote: connection?.config.name ?? "The host",
@@ -71,6 +74,10 @@ extension ShepherdViewModel {
         case (.showSystem, .local(let id)): if let system = design(id)?.systemNamespace { openDesignSystem(system) }
         case (.removeFromRecents, .local(let id)): removeDesignFromRecents(id)
         case (.delete, _): requestDesignDelete(target)
+        case (.implement, .local(let id)):
+            if let design = design(id) { designScreen(id).implementSelection(designName: design.name) }
+        case (.copyReference, .local(let id)):
+            if let design = design(id) { designScreen(id).copySelectionReference(designName: design.name) }
         default: break
         }
     }

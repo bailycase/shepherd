@@ -213,6 +213,7 @@ extension ShepherdViewModel {
                                        source: { try await server.designBoard($0, path: $1).source },
                                        comments: designCommentActions(), tweak: tweak, actions: designCanvasActions())
         if let design = design(id), let system = designSystemName(design) { screen.tweak?.systemName = system }
+        screen.referenceActions = designReferenceCanvasActions()
         designScreens[id] = screen
         return screen
     }

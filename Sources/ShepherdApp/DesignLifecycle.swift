@@ -18,6 +18,8 @@ enum DesignMenuContext: Equatable {
 /// What a menu item does.
 enum DesignMenuAction: Hashable {
     case open, showSystem, rename, duplicate, export, removeFromRecents, delete
+    // Design references (RefImplementMenu): the selection, else the whole design.
+    case implement, copyReference
     // A design system's (SystemMenu).
     case resync, duplicateSystem, deleteSystem
 }
@@ -46,8 +48,11 @@ struct DesignMenu: Hashable {
     /// toolbar, Show design system in its place, after Export), Rename…, Duplicate, Export…,
     /// Remove from Recents in Recents, then Delete design…. A host's design (`remote`) offers what
     /// its host does: Duplicate, Export and Remove from Recents stay here only, and Delete needs
-    /// a host that deletes for other devices (`hostDeletes`).
-    static func design(_ context: DesignMenuContext, hasSystem: Bool, remote: String? = nil, hostDeletes: Bool = true) -> DesignMenu {
+    /// a host that deletes for other devices (`hostDeletes`). In its own toolbar, a local design
+    /// also offers "Implement <piece>…" and Copy reference for what is selected (`reference`, the
+    /// piece's name; the design's own with nothing selected).
+    static func design(_ context: DesignMenuContext, hasSystem: Bool, remote: String? = nil, hostDeletes: Bool = true,
+                       reference: String? = nil) -> DesignMenu {
         var main: [DesignMenuItem] = []
         if context != .toolbar { main.append(DesignMenuItem(action: .open, title: "Open", symbol: "arrow.up.forward.app")) }
         main.append(DesignMenuItem(action: .rename, title: "Rename…", symbol: "pencil"))
@@ -65,6 +70,11 @@ struct DesignMenu: Hashable {
         if let remote, !hostDeletes {
             delete.destructive = false
             delete.disabledReason = "\(remote) doesn’t delete designs for other devices yet. Update Shepherd there, or delete it on \(remote)."
+        }
+        if context == .toolbar, remote == nil, let reference {
+            let references = [DesignMenuItem(action: .implement, title: "Implement \(reference)…", symbol: "chevron.left.forwardslash.chevron.right"),
+                              DesignMenuItem(action: .copyReference, title: "Copy Reference", symbol: "link")]
+            return DesignMenu(sections: [main, references, [delete]])
         }
         return DesignMenu(sections: [main, [delete]])
     }

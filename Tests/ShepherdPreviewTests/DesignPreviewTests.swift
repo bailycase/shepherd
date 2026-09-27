@@ -23,7 +23,7 @@ struct DesignPreviewTests {
     /// A workspace with the Design tool on, two projects, a plain thread, and two designs: the
     /// checkout funnel (three directions and a phone) drawn by a live stub agent in the reserved
     /// designs space, and a phone-first onboarding design. Designs belong to no project.
-    private func designWorkspace() async throws -> (workspace: PreviewWorkspace, checkout: Design, agent: Agent) {
+    func designWorkspace() async throws -> (workspace: PreviewWorkspace, checkout: Design, agent: Agent) {
         let workspace = try PreviewWorkspace()
         workspace.settings.designToolEnabled = true
         let vm = workspace.vm
@@ -274,7 +274,7 @@ struct DesignPreviewTests {
     }
 
     /// Close enough on A to read a pin's thread (the canvas opens fitted, at about 17%).
-    private static let closeOnA = NWCanvasViewport(offset: CGPoint(x: NWDesignMetrics.fitLeading, y: NWDesignMetrics.fitFrameTop), zoom: 0.55)
+    static let closeOnA = NWCanvasViewport(offset: CGPoint(x: NWDesignMetrics.fitLeading, y: NWDesignMetrics.fitFrameTop), zoom: 0.55)
 
     /// Comments (DZCanvas, DZTweak; NWCommentPin, NWCommentThread, NWCommentCard): two pins on A,
     /// the first's thread open with the design agent's answer, and in the chat the comment's card
