@@ -4261,32 +4261,46 @@ keeps its destructive action disabled until the unreconciled-work check is in.
 
 **Welcome** (`PiWelcomeSheet`, 520pt; no board draws it, the "Bundled pi, isolated home" plan's
 phase 5): the one onboarding step, shown once, at the first launch of a build that runs its own
-pi, over the main window. Restored agents wait to start (`AgentStartQueue`) until it closes,
-whichever way.
+pi, over the main window.
 
+- **The start gate.** Restored agents (and automations) wait to start (`AgentStartQueue`) until
+  the copy from the user's pi is over: it is plain file work that finishes or fails fast, and past
+  30 s they start anyway. Then:
+  - when some provider can start an agent (a login in Shepherd's pi, a key in the environment, or
+    a custom provider), they start at once, the one on screen first, while the step shows: an
+    existing user whose logins came over never has to click for their agents;
+  - when none can, they wait until the step closes, whichever way, so the user can sign in
+    first. A skipped sign-in is safe: an agent that can't start says "not signed in" and waits
+    with Retry.
 - Title "Shepherd runs its own pi", and the one sentence under it: "Shepherd now runs its own copy
   of pi. The pi in your terminal is untouched."
 - **Brought over from your pi**: a `NWChecklistRow` per thing copied or read, each `done` (a
-  check), its detail trailing: one per login ("Anthropic", "Signed in"; "OpenAI", "API key";
-  "Google", "API key from $GEMINI_API_KEY"; "Groq", "API key that runs a command"), then Custom
-  providers (their names), Instructions ("AGENTS.md, read live"), Skills and prompts ("3 folders,
-  read in place"), Default model, and Trusted folders (a count). A key variable the login shell
-  sets for a provider with no login gets a row too ("OPENAI_API_KEY", "In your environment").
-  Under a copied subscription sign-in, one `caption`/`textSecondary` line: "Sign-ins were copied
-  once. When one side refreshes a subscription, the other may be signed out: sign in again there."
+  check, "brought over"), its detail trailing: one per login ("Anthropic", "Signed in";
+  "OpenAI", "API key"; "Google", "API key from $GEMINI_API_KEY"; "Groq", "API key that runs a
+  command"), then Custom providers (their names), Instructions ("AGENTS.md, read live"), Skills
+  and prompts ("3 folders, read in place"), Default model, and Trusted folders (a count). Under a
+  copied subscription sign-in, one `caption`/`textSecondary` line: "Sign-ins were copied once.
+  When one side refreshes a subscription, the other may be signed out: sign in again there."
+- **Found in your environment**: a `done` row ("found") per key variable the login shell sets for
+  a provider with no login in Shepherd's pi ("OPENAI_API_KEY", "OpenAI"): the name and the
+  provider, never the value.
 - **Not brought over**, only when part of the copy failed (a file of your pi unreadable, too large
   or not JSON, or one of Shepherd's own that isn't a JSON object): a `failed` banner, "Some of your
   pi wasn't brought over", its message the reasons, one sentence each, naming files and never
-  their contents. The rest of the step is as usual; Settings ▸ Pi ▸ From your pi re-imports once
-  the file is fixed.
-- **Still needed**, only when no provider can start an agent (no login in Shepherd's pi, no key in
-  the environment, no custom provider): an attention banner, "Sign in so agents can start", "Until
-  you do, agents wait with Retry." and a Sign in… action that opens Settings ▸ Pi's sign-in
-  terminal beside the selected agent (disabled with none selected, its tooltip "Open an agent
-  first, then sign in from Settings ▸ Pi.").
-- A new user with no pi sees only the sentence and the sign-in banner.
-- Footer: Continue (primary, ⏎). ⎋ closes it too; either way the step is over, and a skipped
-  sign-in is safe: an agent that can't start says "not signed in" and waits.
+  their contents. Settings ▸ Pi ▸ From your pi re-imports once the file is fixed.
+- **Still needed**, only for what is missing: an `attention` row ("not signed in") per provider
+  the default model names (Settings ▸ Agents' own, else pi's) that nothing in Shepherd's pi can
+  sign in to (no login, no key in the environment, no custom provider of that name); providers
+  that sign in with cloud credentials pi doesn't store (Amazon Bedrock, Google Vertex AI) and
+  ones Shepherd doesn't know are never listed. When no provider at all can start an agent, the
+  attention banner "Sign in so agents can start", "Until you do, agents wait with Retry." takes
+  the place of the rows. Either way the footer gains Sign in…, which closes the step and opens
+  Settings ▸ Pi's sign-in terminal beside the selected agent (disabled with none selected, its
+  tooltip "Open an agent first, then sign in from Settings ▸ Pi.").
+- **A new user with no pi** sees only sign-in: the title "Sign in to a provider" and "Agents run
+  on Shepherd's own copy of pi, and need a provider to reach a model.", the keys found in the
+  environment, and the sign-in ask when nothing can start.
+- Footer: Continue (primary, ⏎). ⎋ closes it too; either way the step is over.
 - Nothing on it shows a credential's value.
 
 ## Status language
