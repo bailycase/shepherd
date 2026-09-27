@@ -294,11 +294,13 @@ private struct TreeBuilder {
             }
             guard let project else { continue }
             let children = source.localChildren[agent.id] ?? []
-            let waiting = agent.status == .blocked || children.contains(where: \.needsAttention)
+            let notSignedIn = source.notSignedIn.contains(agent.id)
+            let waiting = agent.status == .blocked || children.contains(where: \.needsAttention) || notSignedIn
             let run = automation.flatMap { source.openRuns[$0.id] }.flatMap { $0.agentID == agent.id ? $0 : nil }
             let live = automation != nil && AutomationRow.isLive(agent, run: run)
             let row = SidebarDerivation.localRow(agent, automation: automation, run: run, children: children, needsYou: waiting,
                                                  failed: source.failedTurns.contains(agent.id), cannotStart: source.cannotStart.contains(agent.id),
+                                                 notSignedIn: notSignedIn, waiting: source.waiting.contains(agent.id),
                                                  since: source.statusSince[agent.id])
             add(Entry(row: row, waiting: waiting, running: agent.status == .working || live, key: agent.lastActiveAt ?? -1,
                       host: 0, index: index), to: .local(project))

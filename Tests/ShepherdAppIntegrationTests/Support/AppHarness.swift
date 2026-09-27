@@ -46,7 +46,7 @@ final class AppHarness {
     @discardableResult
     func start(with state: ShepherdState? = nil, restoringAgents: Bool = false,
                readingCheckouts: Bool = false, mcp: MCPStore? = nil, welcomingYourPi: Bool = false,
-               yourPi: YourPiModel? = nil) async throws -> ShepherdViewModel {
+               yourPi: YourPiModel? = nil, piAuth: PiAuthStore? = nil) async throws -> ShepherdViewModel {
         if let state { try await server.putState(state) }
         let vm = ShepherdViewModel(
             server: server, settings: settings, keybindings: keybindings, themeManager: themeManager,
@@ -55,7 +55,8 @@ final class AppHarness {
             checkoutReader: readingCheckouts ? CheckoutMonitor.git : nil,
             mcp: mcp,
             welcomesYourPi: welcomingYourPi,
-            yourPi: yourPi
+            yourPi: yourPi,
+            piAuth: piAuth
         )
         self.vm = vm
         let server = server

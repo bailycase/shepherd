@@ -46,8 +46,10 @@ struct ThreadView: View {
     /// Retry in the composer's Can't start banner (true: start a new conversation); nil for a
     /// remote agent, whose pi only its host starts.
     var restartPi: ((Bool) -> Void)? = nil
-    /// Sign in… in that banner, when pi found no model; nil where it can't be offered.
-    var signInToPi: (() -> Void)? = nil
+    /// Waiting for the first launch's copy, or not signed in (local agents): the line or card at
+    /// the thread's end, and what its buttons do.
+    var authNotice: ThreadAuthNotice? = nil
+    var authActions: ThreadAuthActions? = nil
     /// The composer's "Up next" state, when a test or preview drives it.
     var queueState: QueueStackState? = nil
     /// Previews: the composer opens with the context ring's details showing.
@@ -117,6 +119,10 @@ struct ThreadView: View {
                             .id(row.id)
                         }
                         if thinking, liveRow == nil { NWThinking.live().nwArrival(settled) }
+                        if let authNotice {
+                            ThreadAuthNoticeView(notice: authNotice, actions: authActions)
+                                .id(ThreadAuthNotice.rowID)
+                        }
                         Color.clear.frame(height: 1).id(Self.bottomID)
                     }
                     .frame(maxWidth: AppLayout.threadMaxWidth)
@@ -188,7 +194,8 @@ struct ThreadView: View {
                              proxy.scrollTo(Self.bottomID, anchor: .bottom)
                          } : nil, finder: finder, queueState: queueState, contextDetailsOpen: contextDetailsOpen,
                          inspectSubagent: inspectSubagent, steerSubagent: steerSubagent, inspectedRunID: inspectedRunID,
-                         designChat: designChat, restartPi: restartPi, signInToPi: signInToPi)
+                         designChat: designChat, restartPi: restartPi,
+                         hidesNotSignedIn: { if case .notSignedIn? = authNotice { true } else { false } }())
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { [composerInset] in
                         if composerInset.height != $0 { composerInset.height = $0 }
                     }

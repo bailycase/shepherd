@@ -201,24 +201,6 @@ extension ShepherdViewModel {
         focusedPaneID = newPane.id
     }
 
-    /// Settings ▸ Pi ▸ Sign in, and the Can't start banner's Sign in…: Shepherd's own pi, with
-    /// no session, in a terminal pane beside `agentID`, where `/login` signs in to a provider for
-    /// Shepherd's pi alone (the user's terminal pi keeps its own sign-ins). The home is readied
-    /// first, so the launcher is there to type.
-    func openPiSignIn(besideAgent agentID: AgentID) {
-        guard state.agents.contains(where: { $0.id == agentID }) else { return }
-        let pi = server.pi
-        Task {
-            if let problem = await Task.detached(priority: .userInitiated, operation: { pi.prepare() }).value {
-                remoteActionError = problem.message
-                return
-            }
-            guard let agent = state.agents.first(where: { $0.id == agentID }) else { return }
-            selectAgent(agentID)
-            openTerminalPane(besideAgent: agent, running: PiLaunch.signIn(home: pi.files))
-        }
-    }
-
     /// Split a terminal pane off the agent's thread and type `command` into its fresh shell
     /// (visible and cancelable, not a hidden exec).
     func openTerminalPane(besideAgent agent: Agent, running command: String) {
@@ -527,19 +509,10 @@ extension PaneNode {
 // MARK: Sign-in
 
 extension ShepherdViewModel {
-    /// This Mac's restored agents the first launch's copy holds (the sidebar's "waiting", the
-    /// thread's Waiting to continue).
-    var waitingForImport: Set<AgentID> {
-        let queue = sessions.startQueue
-        guard queue.held || !queue.heldAgents.isEmpty else { return [] }
-        return Set(state.agents.map(\.id).filter(queue.isHeld))
-    }
-
     /// Settings ▸ Pi ▸ Sign-in's nav dot: a sign-in expired, or a provider an agent waits on
     /// isn't signed in.
     var piSignInNeedsAttention: Bool {
-        guard let survey = yourPi.survey else { return !piAuth.expired.isEmpty }
-        return PiSignInPage.make(survey: survey, expired: piAuth.expired, needed: piAuth.needed).needsAttention
+        PiSignInPage.make(survey: yourPi.survey ?? YourPiSurvey(), expired: piAuth.expired, needed: piAuth.needed).needsAttention
     }
 
     /// Opens Settings ▸ Pi ▸ Sign-in, scrolled to `provider` when there is one, and starts its
@@ -553,5 +526,46 @@ extension ShepherdViewModel {
         guard start else { return }
         let known = PiSignInCatalog.subscription(provider) != nil || PiProviders.names[provider] != nil
         if known { piAuth.signIn(provider, origin: origin) }
+    }
+}
+
+// MARK: Agents not signed in
+
+/// An agent whose pi can't start because nothing signs in for its model (AgentNotSignedIn).
+struct NotSignedIn: Equatable {
+    /// The provider it needs; nil when pi names none and its model says nothing.
+    var provider: String?
+    /// When its pi stopped.
+    var at: Date
+}
+
+extension ShepherdViewModel {
+    /// An agent's pi stopped (or started again): it waits on a sign-in when pi said it can't reach
+    /// a model, and Sign-in hears which providers agents wait on.
+    func noteSignIn(_ agentID: AgentID, problem: NativeStartProblem?) {
+        if let problem, problem.kind == .notSignedIn {
+            let agent = state.agents.first { $0.id == agentID }
+            let fallback = settings.agentDefaults.model ?? yourPi.survey?.shepherdDefaultModel
+            let provider = PiAuthText.missingProvider(lines: problem.lines, model: agent?.model, defaultModel: fallback)
+            notSignedIn[agentID] = NotSignedIn(provider: provider, at: Date())
+        } else if notSignedIn[agentID] != nil {
+            notSignedIn[agentID] = nil
+        }
+        let needed = Set(notSignedIn.values.compactMap(\.provider))
+        if piAuth.needed != needed { piAuth.needed = needed }
+    }
+
+    /// A sign-in landed for `provider`: every agent waiting on it (or on no provider pi named)
+    /// starts again. Returns how many.
+    func retrySignedOutAgents(_ provider: String?) -> Int {
+        let ids = notSignedIn.filter { provider == nil || $0.value.provider == nil || $0.value.provider == provider }.map(\.key)
+        for id in ids { retryAgentStart(id) }
+        return ids.count
+    }
+
+    /// "Use another model": an agent not signed in starts again on `model`.
+    func useAnotherModel(_ agentID: AgentID, model: String) {
+        sessions.modelOverrides[agentID] = model
+        retryAgentStart(agentID)
     }
 }

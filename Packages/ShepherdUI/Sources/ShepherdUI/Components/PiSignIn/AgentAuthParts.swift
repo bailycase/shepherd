@@ -43,24 +43,25 @@ public struct NWAgentWaitingLine: View, Equatable {
 
 /// "Not signed in to Anthropic" (`AgentNotSignedInCard(provider:)`): a lantern card at the end of
 /// the thread with Sign in to <provider> and Use another model.
-public struct NWAgentNotSignedInCard: View {
+public struct NWAgentNotSignedInCard<Models: View>: View {
     let provider: String
     let model: String?
     let reason: String
     let time: String?
     let signIn: () -> Void
-    let useAnotherModel: (() -> Void)?
+    let models: Models?
 
     /// `reason` follows "This agent uses `model`." ("Anthropic’s sign-in was skipped when your pi
-    /// came over, so the agent is waiting for you. Your message is kept.").
+    /// came over, so the agent is waiting for you. Your message is kept."). `models` is Use another
+    /// model's menu; nil leaves the button out.
     public init(provider: String, model: String?, reason: String, time: String? = nil, signIn: @escaping () -> Void,
-                useAnotherModel: (() -> Void)? = nil) {
+                @ViewBuilder models: () -> Models) {
         self.provider = provider
         self.model = model
         self.reason = reason
         self.time = time
         self.signIn = signIn
-        self.useAnotherModel = useAnotherModel
+        self.models = models()
     }
 
     public var body: some View {
@@ -93,9 +94,19 @@ public struct NWAgentNotSignedInCard: View {
             HStack(spacing: NW.Space.m) {
                 Button(action: signIn) { Label("Sign in to \(provider)", systemImage: "key") }
                     .buttonStyle(.nw(.primary, size: .s))
-                if let useAnotherModel {
-                    Button(action: useAnotherModel) { Label("Use another model", systemImage: "arrow.triangle.swap") }
-                        .buttonStyle(.nw(.ghost, size: .s))
+                if let models {
+                    Menu { models } label: {
+                        Label("Use another model", systemImage: "arrow.triangle.swap")
+                            .font(.nwSans(12, .medium))
+                            .foregroundStyle(nw.textSecondary)
+                            .padding(.horizontal, NW.Space.m)
+                            .frame(height: NW.Height.controlS)
+                            .contentShape(Rectangle())
+                    }
+                    .menuStyle(.button)
+                    .buttonStyle(.plain)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
                 }
             }
             .padding(.leading, M.cardTile + NW.Space.l)
@@ -109,5 +120,17 @@ public struct NWAgentNotSignedInCard: View {
     private var message: Text {
         guard let model else { return Text(reason) }
         return Text("This agent uses ") + Text(model).font(.nwMono(12.5)).foregroundColor(Color.nw.textPrimary) + Text(". ") + Text(reason)
+    }
+}
+
+extension NWAgentNotSignedInCard where Models == EmptyView {
+    /// With no other model to offer.
+    public init(provider: String, model: String?, reason: String, time: String? = nil, signIn: @escaping () -> Void) {
+        self.provider = provider
+        self.model = model
+        self.reason = reason
+        self.time = time
+        self.signIn = signIn
+        self.models = nil
     }
 }
