@@ -6,18 +6,37 @@ import ShepherdUI
 
 /// A settings page: the title in Geist 22/600, a one-line explanation in `body` (it may carry
 /// inline markup, `NWMarkupText`), then its groups 28pt apart.
-struct SettingsPage<Content: View>: View {
+struct SettingsPage<Content: View, Accessory: View>: View {
     let title: String
     let explanation: String
-    @ViewBuilder var content: Content
+    /// Trailing the header, bottom-aligned (Sign-in's Re-import from your pi).
+    let accessory: Accessory
+    let content: Content
+
+    init(title: String, explanation: String, @ViewBuilder accessory: () -> Accessory, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.explanation = explanation
+        self.accessory = accessory()
+        self.content = content()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
-            SettingsHeader(title: title, explanation: explanation)
+            HStack(alignment: .bottom, spacing: NW.Space.xl) {
+                SettingsHeader(title: title, explanation: explanation)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                accessory.fixedSize()
+            }
             content
         }
         // The Settings boards draw their pages' controls larger than the Controls board's.
         .nwControlScale(.settings)
+    }
+}
+
+extension SettingsPage where Accessory == EmptyView {
+    init(title: String, explanation: String, @ViewBuilder content: () -> Content) {
+        self.init(title: title, explanation: explanation, accessory: { EmptyView() }, content: content)
     }
 }
 
@@ -46,11 +65,21 @@ struct SettingsHeader: View {
 struct SettingsGroup<Content: View>: View {
     let title: String
     var footnote: String?
+    /// Trailing the label in mono 11 `textTertiary` (Custom providers' file).
+    var trailing: String?
     @ViewBuilder var content: Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: NW.Space.m) {
-            NWSectionHeader(title, style: .settings).padding(.horizontal, NW.Space.xs)
+            HStack(alignment: .firstTextBaseline) {
+                NWSectionHeader(title, style: .settings)
+                if let trailing {
+                    Spacer(minLength: NW.Space.l)
+                    Text(trailing).font(.nwMono(11)).foregroundStyle(Color.nw.textTertiary).lineLimit(1).truncationMode(.middle)
+                        .help(trailing)
+                }
+            }
+            .padding(.horizontal, NW.Space.xs)
             NWGroupCard(fill: Color.nw.bgWindow, radius: NWCardRowMetrics.settingsCardRadius) { content }
             if let footnote {
                 SettingsNote(text: footnote).padding(.horizontal, NW.Space.xs)

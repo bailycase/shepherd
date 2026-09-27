@@ -29,6 +29,8 @@ final class YourPiModel {
     private(set) var problems: [String: String] = [:]
     /// Rows with a copy under way.
     private(set) var busy: Set<String> = []
+    /// Rows re-imported while Settings shows them ("Re-imported just now").
+    private(set) var reimported: Set<String> = []
     /// Shown while set (`AppDialogs`); closing it ends the first launch's hold.
     var welcome: Welcome?
 
@@ -70,10 +72,27 @@ final class YourPiModel {
 
     /// Copies `item` from the user's pi again, overwriting Shepherd's copy.
     func reimport(_ item: YourPiImport.Item) async {
-        await run(Self.rowID(item)) { pi in _ = try pi.imports().reimport(item) }
+        let row = Self.rowID(item)
+        await run(row) { pi in _ = try pi.imports().reimport(item) }
+        if problems[row] == nil { reimported.insert(row) }
         // A login or providers changed: the model catalog reads the home's files afresh.
         pi.catalog.invalidate()
+        if case .login = item { onSignInsChanged?() } else if item == .logins { onSignInsChanged?() }
     }
+
+    /// Re-import all: every item, in the order the first copy took them.
+    func reimportAll() async {
+        let survey = survey ?? YourPiSurvey()
+        var items: [YourPiImport.Item] = [.logins]
+        if !survey.customProviders.isEmpty { items.append(.customProviders) }
+        if survey.defaultModel != nil { items.append(.defaultModel) }
+        if survey.trustedFolders > 0 { items.append(.trust) }
+        items += YourPiResourceKind.allCases.map { .files($0) }
+        for item in items { await reimport(item) }
+    }
+
+    /// Logins changed by a Re-import: agents waiting on a sign-in may start.
+    @ObservationIgnored var onSignInsChanged: (() -> Void)?
 
     /// The row of one of the user's extensions, by its copy's destination.
     static func extensionRowID(_ destination: String) -> String { "extension:\(destination)" }

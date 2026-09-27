@@ -350,7 +350,7 @@ extension ShepherdViewModel {
         let imports = server.pi.importedState()
         Task { [weak self] in
             let names = await Task.detached(priority: .userInitiated) { () -> [String] in
-                failures.compactMap { failure in (try? imports.extensionFailed(path: failure.path, reason: failure.reason)) ?? nil }
+                failures.compactMap { failure in (try? imports.extensionFailed(path: failure.path, reason: failure.reason, lines: problem.lines)) ?? nil }
             }.value
             guard let self, !names.isEmpty else { return }
             ShepherdLog.info("switched off your extension(s) \(names.joined(separator: ", ")) after they failed to load; starting the agent without them")
@@ -521,5 +521,29 @@ extension PaneNode {
                 second: second.replacingSplit(target, withRatio: ratio)
             )
         }
+    }
+}
+
+// MARK: Sign-in
+
+extension ShepherdViewModel {
+    /// Settings ▸ Pi ▸ Sign-in's nav dot: a sign-in expired, or a provider an agent waits on
+    /// isn't signed in.
+    var piSignInNeedsAttention: Bool {
+        guard let survey = yourPi.survey else { return !piAuth.expired.isEmpty }
+        return PiSignInPage.make(survey: survey, expired: piAuth.expired, needed: piAuth.needed).needsAttention
+    }
+
+    /// Opens Settings ▸ Pi ▸ Sign-in, scrolled to `provider` when there is one, and starts its
+    /// sign-in (`/login anthropic`, an agent's Sign in to Anthropic). A provider Shepherd doesn't
+    /// know opens the page as it is.
+    func openSignIn(_ provider: String? = nil, start: Bool = true, origin: PiSignInSession.Origin = .settings) {
+        settingsSection = .piSignIn
+        showSettings = true
+        guard let provider else { return }
+        piAuth.focus = provider
+        guard start else { return }
+        let known = PiSignInCatalog.subscription(provider) != nil || PiProviders.names[provider] != nil
+        if known { piAuth.signIn(provider, origin: origin) }
     }
 }

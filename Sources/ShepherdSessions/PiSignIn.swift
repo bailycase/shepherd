@@ -18,6 +18,9 @@ public enum PiSignInMethod: String, Codable, Sendable {
 public enum PiSignInFlow: String, Codable, Sendable {
     case browser
     case device
+    /// The browser's page, but the code is pasted: no check of the callback port, which another
+    /// sign-in holds.
+    case paste
 }
 
 /// A key to check: its value, or the variable the login shell sets.
@@ -367,7 +370,8 @@ public enum PiSignInScript {
         // into the home's auth.json: nothing of it is written to stdout or stderr. One process per sheet.
         //
         // stdin, one JSON object a line:
-        //   {"type":"login","provider":"anthropic","method":"oauth"|"api_key","flow":"browser"|"device"}
+        //   {"type":"login","provider":"anthropic","method":"oauth"|"api_key","flow":"browser"|"device"|"paste"}
+        //   ("paste" is the browser flow without the callback port's check: a code pasted from the page)
         //   {"type":"answer","id":"p1","value":"…"}      a prompt's answer (a key, a pasted code)
         //   {"type":"cancel"}                            ends the login under way
         //   {"type":"logout","provider":"anthropic"}     removes Shepherd's credential for it
