@@ -1038,7 +1038,10 @@ send carries each reference's string alone (`NativeThreadRequest.send`'s `design
 - **Only the user's own message draws its references.** The thread takes the fence off, and
   carries its records (without the copy's paths) as the message's `designReferences` for the chip,
   only for a message the user sent in that thread: one the host dispatched or delivered from its
-  queue, whose origin record (`ThreadOriginStore.Record.references`, kept per pi session, so it
+  queue carrying copies it kept for that send (`Dispatch.designPayloads`,
+  `QueueItem.designPayloads`), whose fence names those copies and no other (never ids read from
+  the text alone: a peer agent's prompt or a client typing a fence reaches pi as a send too), and
+  whose origin record (`ThreadOriginStore.Record.references`, kept per pi session, so it
   outlives a relaunch and a session preview reads it too) names every copy the fence carries. A
   message that arrived any other way (another agent's `agent_send`, an extension) shows the fence
   as text, and so does a fence whose records name no copy. The palette's transcript search and

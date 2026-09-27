@@ -64,6 +64,9 @@ extension RPCThreadState {
         var responded = false
         /// An extension command runs at once and starts no user message of its own.
         let expectsMessage: Bool
+        /// The design references' copies the host kept for it: its user message draws a
+        /// references fence as chips only when the fence names these (never ids from its text).
+        var designPayloads: [UUID] = []
     }
 
     var effectiveMode: NativeQueueMode { modeOverride ?? defaultQueueMode }
@@ -101,7 +104,8 @@ extension RPCThreadState {
             // A new message resumes a paused queue: it drains after this turn.
             paused = false
             queueNotice = nil
-            dispatch(id: id, text: text, context: context, images: images, parts: nil, items: [], completion: completion)
+            dispatch(id: id, text: text, context: context, images: images, parts: nil, items: [], designPayloads: designPayloads,
+                     completion: completion)
             return
         }
         guard items.count < Self.queueItemLimit,
@@ -294,10 +298,11 @@ extension RPCThreadState {
     /// own (an extension, a child's report) queues it instead of refusing it; while idle pi
     /// treats it as a plain prompt. A fenced design record (`context`) goes ahead of the text.
     func dispatch(id: UUID, text: String, context: String? = nil, images: [NativeImage], parts: [NativeQueuePart]?, items batch: [QueueItem],
-                  completion: @escaping (NativeThreadResult) -> Void) {
+                  designPayloads: [UUID] = [], completion: @escaping (NativeThreadResult) -> Void) {
         let prompt = Self.prompt(text, context: context)
         let expectsMessage = !isExtensionCommand(prompt)
-        dispatches.append(Dispatch(id: id, text: prompt, parts: parts, items: batch, expectsMessage: expectsMessage))
+        dispatches.append(Dispatch(id: id, text: prompt, parts: parts, items: batch, expectsMessage: expectsMessage,
+                                   designPayloads: designPayloads + batch.flatMap(\.designPayloads)))
         if expectsMessage {
             var row = NativeThreadMessage.pendingSend(operationID: id, text: text, images: images.count,
                                                       timestamp: Date().timeIntervalSince1970 * 1000)
@@ -534,24 +539,22 @@ extension RPCThreadState {
         }.joined()
         var origin: NativeMessageOrigin?
         var operationID: UUID?
+        var kept: [UUID] = []
         if let index = items.firstIndex(where: { $0.entry.state == .steering && ($0.piText ?? $0.promptText) == text }) {
             let item = items.remove(at: index)
             unboundSteers.removeAll { $0 == item.entry.id }
             origin = .steered
             operationID = item.entry.id
+            kept = item.designPayloads
         } else if let index = boundDispatch(for: text) {
             let dispatch = dispatches[index]
             dropDispatch(dispatch.id)
             origin = dispatch.parts.map { .queue(parts: $0) }
             operationID = dispatch.id
+            kept = dispatch.designPayloads
         }
         let id = liveEntryID(for: message)
-        // Design references the user sent here: the message is one of ours (a send or a queued
-        // message), and its fence names the copies the host kept.
-        var sentReferences: [String]?
-        if operationID != nil, let parsed = DesignReferenceFence.parse(text), let ids = DesignReferenceFence.payloadIDs(parsed.records) {
-            sentReferences = ids
-        }
+        let sentReferences = Self.sentReferences(in: text, kept: kept)
         var value = Self.project(entryID: id, message: message, sentReferences: sentReferences)
         // A design comment or markup keeps the origin its fence gives it (`project`).
         if value.origin?.designComment != nil || value.origin?.designMarkup != nil { origin = nil }
@@ -561,6 +564,18 @@ extension RPCThreadState {
         if let sentReferences { recordReferences(sentReferences, entryID: id) }
         if let origin { recordOrigin(origin, entryID: id) }
         if let operationID { operationsByEntry[id] = operationID }
+    }
+
+    /// The copies a user message's references fence names, when the host kept every one of them
+    /// for the send or queued message it is (the user's own, through the composer or the
+    /// Implement sheet); nil otherwise, so a fence anything else wrote (a peer agent's prompt, a
+    /// client typing one) stays text.
+    static func sentReferences(in text: String, kept: [UUID]) -> [String]? {
+        guard !kept.isEmpty, let parsed = DesignReferenceFence.parse(text),
+              let ids = DesignReferenceFence.payloadIDs(parsed.records) else { return nil }
+        let keptSet = Set(kept)
+        guard ids.allSatisfy({ UUID(uuidString: $0).map(keptSet.contains) == true }) else { return nil }
+        return ids
     }
 
     /// The prompt this user message is: the same text (pi may append image notes after it),
