@@ -180,6 +180,12 @@ final class DesignReferenceChips {
         return formatter.string(from: Date(timeIntervalSince1970: milliseconds / 1000))
     }
 
+    /// Whether a sent chip's preview opens above it (RefChipHover): whenever the `room` between
+    /// the thread's top and the chip holds the preview and its 8pt gap; else it opens below.
+    nonisolated static func previewFitsAbove(room: CGFloat, previewHeight: CGFloat) -> Bool {
+        room >= previewHeight + NW.Space.m
+    }
+
     /// How a chip draws `freshness`.
     static func state(_ freshness: DesignReferenceFreshness?) -> NWReferenceState {
         guard let freshness, let words = DesignReferencePresentation.state(freshness) else { return .current }
@@ -282,9 +288,9 @@ private struct SentReferenceChip: View {
     let record: DesignReferenceRecord
     let references: DesignReferenceChips?
     @State private var hover = ReferenceChipHover()
-    /// Where the chip's top is in the thread's visible part, kept without redrawing the chip on
-    /// every scroll step: read when the preview opens, which opens below the chip when the thread's
-    /// top is too near to fit it above.
+    /// How far the chip's top is below the thread's top (the top of its visible part), kept
+    /// without redrawing the chip on every scroll step: read when the preview opens, which opens
+    /// below the chip only when it can't fit above it.
     @State private var chipTop = ChipTop()
     /// Whether the open preview sits above the chip (else below).
     @State private var above = true
@@ -295,7 +301,7 @@ private struct SentReferenceChip: View {
     final class ChipTop {
         var value = CGFloat.infinity
         var previewHeight = NWReferenceMetrics.previewPicture.height + NWReferenceMetrics.previewPadding * 12
-        var fitsAbove: Bool { value >= previewHeight + NW.Space.m }
+        var fitsAbove: Bool { DesignReferenceChips.previewFitsAbove(room: value, previewHeight: previewHeight) }
     }
 
     /// Places the open preview again from where the chip is now and how tall the preview is.
@@ -317,7 +323,9 @@ private struct SentReferenceChip: View {
             .onHover { hover.pointer($0) }
             .accessibilityAddTraits(.isButton)
             .accessibilityAction { open() }
-            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .scrollView).minY } action: {
+            // Measured in the thread's own space, whose top is the top of what the thread shows:
+            // the scroll view's own space starts under its content margin, 28pt lower.
+            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Composer.threadSpace)).minY } action: {
                 chipTop.value = $0
                 place()
             }

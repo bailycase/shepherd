@@ -173,6 +173,19 @@ struct DesignReferenceThreadTests {
         #expect(DesignReferenceChips.changes(.current, version: 23) == nil)
     }
 
+    /// RefChipHover and RefChipUpdated open the preview 8pt above the chip; it opens below only
+    /// when the thread's top is nearer the chip than the preview and its gap.
+    @Test(arguments: [
+        (CGFloat(455), CGFloat(343), true),
+        (CGFloat(351), CGFloat(343), true),
+        (CGFloat(350), CGFloat(343), false),
+        (CGFloat(120), CGFloat(343), false),
+        (CGFloat.infinity, CGFloat(251), true),
+    ])
+    func aSentChipsPreviewOpensAboveItWheneverItFits(room: CGFloat, previewHeight: CGFloat, above: Bool) {
+        #expect(DesignReferenceChips.previewFitsAbove(room: room, previewHeight: previewHeight) == above)
+    }
+
     @Test func aSentMessagesChipsStandForItsReferencesLine() throws {
         let record = DesignReferenceRecord(ref: "shepherd-design-ref://local/checkout/A.dc.html@3", design: "Checkout", payload: UUID().uuidString)
         let message = NativeThreadMessage(entryID: "u", role: "user",
