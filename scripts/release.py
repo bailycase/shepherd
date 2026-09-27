@@ -26,8 +26,11 @@ usage:
   release.py deltas <dir> <tag>         name a feed's deltas for upload to <tag> and point the
                                         feed at them; prints the files to upload
   release.py publish <casts> <pages>    write every gh-pages feed, legacy aliases included
+  release.py thin-app <app>             thin every universal Mach-O in a built app to arm64:
+                                        prebuilt frameworks (Sparkle) ship universal
   release.py verify-app <app> <app-key> [version]  check a built app is the app it claims to be,
-                                        and carries the pinned pi engine (scripts/pi_engine.py)
+                                        is arm64 only, and carries the pinned pi engine
+                                        (scripts/pi_engine.py)
   release.py verify-ios <app> <build>   check an archived iOS app before it is uploaded
   release.py retire-testflight --key-file <p8> [--wait-for-build <n>] [--timeout <s>]
                              [--interval <s>] [--dry-run]
@@ -314,9 +317,9 @@ def _write(path: str, text: str) -> None:
 
 
 def verify_app(path: str, key: str, version: str | None = None) -> list[str]:
-    """Problems that would ship one app under the other's identity, or without the engine the
-    pin names (pruned to the files pi's bundle loads). Empty when the build is the app `key`
-    says it is."""
+    """Problems that would ship one app under the other's identity, with code for anything but
+    Apple silicon, or without the engine the pin names (pruned to the files pi's bundle loads).
+    Empty when the build is the app `key` says it is."""
     app = APPS[key]
     problems = []
     if os.path.basename(os.path.normpath(path)) != app.product:
@@ -343,8 +346,51 @@ def verify_app(path: str, key: str, version: str | None = None) -> list[str]:
     executable = info.get("CFBundleExecutable")
     if not executable or not os.path.isfile(os.path.join(path, "Contents", "MacOS", executable)):
         problems.append(f"CFBundleExecutable {executable!r} is not in Contents/MacOS")
+    problems += architecture_problems(path)
     problems += [f"pi engine: {problem}" for problem in pi_engine.verify(path)]
     return problems
+
+
+def mach_o_files(app: str) -> list[tuple[str, list[str]]]:
+    """Every Mach-O file in the app (executables, frameworks, XPC services, helpers), as its
+    path under Contents/ and its architectures. Links are skipped: their targets are listed."""
+    contents = os.path.join(app, "Contents")
+    found = []
+    for directory, _dirs, files in os.walk(contents):
+        for name in files:
+            path = os.path.join(directory, name)
+            if os.path.islink(path):
+                continue
+            archs = pi_engine.slices(path)
+            if archs:
+                found.append((os.path.relpath(path, contents), sorted(archs)))
+    return sorted(found)
+
+
+def architecture_problems(app: str) -> list[str]:
+    """Every Mach-O file in the app that is not arm64 only: Shepherd ships for Apple silicon only.
+    The engine's node is left to pi_engine.verify, which says the same of it."""
+    return [f"{relative} is {' '.join(archs)}; Shepherd ships arm64 only"
+            for relative, archs in mach_o_files(app)
+            if relative != pi_engine.NODE and archs != [pi_engine.ARCHITECTURE]]
+
+
+def thin_app(app: str, run=subprocess.run) -> list[str]:
+    """Thins every universal Mach-O in the app to its arm64 slice, in place, before the app is
+    verified and signed. The build compiles arm64 only, so this reaches prebuilt binaries
+    (Sparkle's framework, its XPC services and helpers). A file with no arm64 slice is left for
+    verify-app to refuse. Returns the files it thinned, under Contents/."""
+    thinned = []
+    for relative, archs in mach_o_files(app):
+        if pi_engine.ARCHITECTURE not in archs or archs == [pi_engine.ARCHITECTURE]:
+            continue
+        path = os.path.join(app, "Contents", relative)
+        partial = path + ".thin"
+        run(["lipo", path, "-thin", pi_engine.ARCHITECTURE, "-output", partial], check=True)
+        os.chmod(partial, os.stat(path).st_mode & 0o7777)
+        os.replace(partial, path)
+        thinned.append(relative)
+    return thinned
 
 
 VERSION_STRING = re.compile(r"^\d+(\.\d+){0,2}$")
@@ -763,6 +809,9 @@ def main(argv: list[str]) -> int:
             print(path)
     elif command == "publish" and len(args) == 2:
         print("\n".join(publish(*args)))
+    elif command == "thin-app" and len(args) == 1:
+        for relative in thin_app(args[0]):
+            print(f"thinned {relative} to {pi_engine.ARCHITECTURE}")
     elif command == "verify-app" and len(args) in (2, 3):
         problems = verify_app(*args)
         for problem in problems:
