@@ -74,6 +74,12 @@ final class PiAuthStore {
         session = nil
     }
 
+    /// Readies Shepherd's pi home off the main thread (`PiSetup.prepare`): why not, or nil.
+    func readyHome() async -> String? {
+        let pi = pi
+        return await Task.detached(priority: .userInitiated) { pi.prepare()?.message }.value
+    }
+
     /// A sign-in landed in Shepherd's pi.
     func landed(_ provider: String) -> Int {
         expired.remove(provider)
@@ -90,13 +96,17 @@ final class PiAuthStore {
         defer { signingOut.remove(provider) }
         problems[provider] = nil
         let failure: String?
-        do {
-            let bridge = try bridge()
-            bridge.send(.logout(provider: provider))
-            failure = await Self.outcome(of: bridge, provider: provider)
-            bridge.close()
-        } catch {
-            failure = String(describing: error)
+        if let problem = await readyHome() {
+            failure = problem
+        } else {
+            do {
+                let bridge = try bridge()
+                bridge.send(.logout(provider: provider))
+                failure = await Self.outcome(of: bridge, provider: provider)
+                bridge.close()
+            } catch {
+                failure = String(describing: error)
+            }
         }
         if let failure { problems[provider] = "Couldn’t sign out: \(failure)" } else { expired.remove(provider) }
         pi.catalog.invalidate()
@@ -238,6 +248,21 @@ final class PiSignInSession: Identifiable {
         reader?.cancel()
         bridge?.close()
         pendingPrompt = nil
+        guard let store else { return }
+        if flow != .paste { phase = flow == .key ? .key : .starting }
+        reader = Task { [weak self] in
+            // The home first (Shepherd's launcher and its guards): nothing signs in to a home the
+            // guards refuse.
+            if let problem = await store.readyHome() {
+                self?.phase = .failed(problem)
+                return
+            }
+            guard let self, !Task.isCancelled else { return }
+            self.run(override)
+        }
+    }
+
+    private func run(_ override: PiSignInFlow?) {
         guard let store else { return }
         do {
             let bridge = try store.bridge()

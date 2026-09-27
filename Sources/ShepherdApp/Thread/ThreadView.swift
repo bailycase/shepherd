@@ -50,6 +50,8 @@ struct ThreadView: View {
     /// the thread's end, and what its buttons do.
     var authNotice: ThreadAuthNotice? = nil
     var authActions: ThreadAuthActions? = nil
+    /// `/login` and `/logout` in the composer (this Mac's agents).
+    var slashLogin: SlashLoginActions? = nil
     /// The composer's "Up next" state, when a test or preview drives it.
     var queueState: QueueStackState? = nil
     /// Previews: the composer opens with the context ring's details showing.
@@ -195,7 +197,8 @@ struct ThreadView: View {
                          } : nil, finder: finder, queueState: queueState, contextDetailsOpen: contextDetailsOpen,
                          inspectSubagent: inspectSubagent, steerSubagent: steerSubagent, inspectedRunID: inspectedRunID,
                          designChat: designChat, restartPi: restartPi,
-                         hidesNotSignedIn: { if case .notSignedIn? = authNotice { true } else { false } }())
+                         hidesNotSignedIn: { if case .notSignedIn? = authNotice { true } else { false } }(),
+                         slashLogin: slashLogin)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { [composerInset] in
                         if composerInset.height != $0 { composerInset.height = $0 }
                     }

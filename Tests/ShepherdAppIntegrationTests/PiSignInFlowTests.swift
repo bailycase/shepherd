@@ -115,4 +115,29 @@ struct PiSignInFlowTests {
 
         #expect(Set(try setup.stored().keys) == ["openai"] && auth.problems.isEmpty && changed == 1)
     }
+
+    /// `/login anthropic` opens Settings ▸ Pi ▸ Sign-in at Anthropic and starts its sign-in;
+    /// `/logout kimi` only scrolls there; a name Shepherd doesn't know opens the page as it is.
+    @Test func slashLoginOpensSignInAndStartsTheProviderItNames() async throws {
+        let setup = try Setup()
+        defer { setup.remove() }
+        let app = try AppHarness(pi: setup.pi)
+        defer { app.stop() }
+        let auth = try setup.store()
+        let vm = try await app.start(with: ShepherdState(), piAuth: auth)
+
+        vm.openSlashLogin(try #require(SlashLogin.parse("/logout kimi")))
+        #expect(vm.showSettings && vm.settingsSection == .piSignIn && auth.focus == "kimi-coding" && auth.session == nil)
+
+        vm.showSettings = false
+        vm.openSlashLogin(try #require(SlashLogin.parse("/login nosuchprovider")))
+        #expect(vm.showSettings && auth.session == nil)
+
+        vm.openSlashLogin(try #require(SlashLogin.parse("/login Anthropic")))
+        let session = try #require(auth.session)
+        #expect(session.provider == "anthropic" && session.origin == .slash && auth.focus == "anthropic")
+        try await eventuallyOnMain("the browser step") { session.phase == .browser }
+        auth.closeSheet()
+        #expect(auth.session == nil)
+    }
 }
