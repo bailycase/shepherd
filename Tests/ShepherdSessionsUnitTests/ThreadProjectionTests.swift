@@ -81,6 +81,18 @@ struct ThreadProjectionTests {
         #expect(RPCThreadState.prompt("/compact please", context: fence) == fence + "/compact please")
     }
 
+    /// A send carrying references and a view record puts only the references' fence ahead, so the
+    /// thread still shows just the words.
+    @Test func aSendWithReferencesCarriesOnlyTheirFence() throws {
+        let view = NativeDesignContext(DesignViewRecord(mode: .canvas, visibleBoards: ["A.dc.html"]))
+        let records = [DesignReferenceRecord(ref: "shepherd-design-ref://local/d1/A.dc.html@4", design: "Checkout")]
+        let context = try #require(RPCThreadState.sendContext(view, references: records))
+        #expect(DesignReferenceFence.opens(context) && !context.contains("design-data"))
+        #expect(DesignViewRecord.strippingFence(from: RPCThreadState.prompt("Build it.", context: context)) == "Build it.")
+        #expect(RPCThreadState.sendContext(view, references: nil)?.contains("design-data") == true)
+        #expect(RPCThreadState.sendContext(nil, references: []) == nil)
+    }
+
     /// A view record stays off a command, which pi reads only at the start of a message; a
     /// comment's fence always goes first, so a comment starting with "/" never runs as one.
     @Test(arguments: [
