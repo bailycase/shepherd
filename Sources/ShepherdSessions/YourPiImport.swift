@@ -150,6 +150,23 @@ public struct YourPiSurvey: Equatable, Sendable {
     public var canStartAgents: Bool {
         logins.contains { $0.shepherd != nil || !$0.environment.isEmpty } || !shepherdCustomProviders.isEmpty
     }
+
+    /// The providers `models` (`provider/model` references) name that nothing in Shepherd's pi
+    /// can sign in to: no login, no key in the environment, no custom provider of that name. Only
+    /// providers Shepherd knows, and never one that signs in with cloud credentials pi doesn't
+    /// store (`PiProviders.ambient`). In first-seen order, once each.
+    public func missingSignIns(for models: [String]) -> [String] {
+        var missing: [String] = []
+        for model in models {
+            guard let slash = model.firstIndex(of: "/"), slash != model.startIndex else { continue }
+            let provider = String(model[..<slash])
+            guard PiProviders.names[provider] != nil, !PiProviders.ambient.contains(provider),
+                  !shepherdCustomProviders.contains(provider), !missing.contains(provider) else { continue }
+            let login = logins.first { $0.provider == provider }
+            if login?.shepherd == nil, login?.environment.isEmpty ?? true { missing.append(provider) }
+        }
+        return missing
+    }
 }
 
 /// Copies the user's pi's logins, custom providers, default model and trust into Shepherd's pi

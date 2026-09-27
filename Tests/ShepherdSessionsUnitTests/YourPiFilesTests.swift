@@ -185,4 +185,28 @@ struct YourPiFilesTests {
         #expect(PiProviders.name("my-proxy") == "my-proxy")
         #expect(PiProviders.allEnvironmentKeys.allSatisfy { $0.allSatisfy { $0.isUppercase || $0.isNumber || $0 == "_" } })
     }
+
+    /// What the welcome step still asks to sign in to: a provider a model names that nothing in
+    /// Shepherd's pi covers. A login, a key in the environment or a custom provider covers it;
+    /// cloud-credential and unknown providers are never asked for.
+    @Test(arguments: [
+        (["anthropic/claude-x"], [String]()),
+        (["openai/gpt-x"], []),
+        (["xai/grok-x"], []),
+        (["local-llm/qwen"], []),
+        (["google/gemini-x", "groq/llama", "google/other"], ["google", "groq"]),
+        (["amazon-bedrock/claude", "google-vertex/gemini"], []),
+        (["my-extension-provider/model", "no-slash", "/leading"], []),
+    ])
+    func missingSignInsAreTheModelsProvidersNothingCovers(models: [String], missing: [String]) {
+        var survey = YourPiSurvey(folder: "/u/.pi/agent")
+        survey.logins = [
+            .init(provider: "anthropic", shepherd: .subscription, yours: .subscription),
+            .init(provider: "openai", shepherd: .apiKey(.command)),
+            .init(provider: "xai", environment: ["XAI_API_KEY"]),
+            .init(provider: "google", yours: .apiKey(.literal)),
+        ]
+        survey.shepherdCustomProviders = ["local-llm"]
+        #expect(survey.missingSignIns(for: models) == missing)
+    }
 }
