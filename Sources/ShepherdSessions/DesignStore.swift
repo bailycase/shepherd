@@ -310,6 +310,44 @@ public final class DesignStore: @unchecked Sendable {
         }
     }
 
+    // MARK: Pins (design references)
+
+    /// Keeps the board's source as it is now under `pins/<sha256>.dc.html` beside `project/`, for
+    /// a design reference pinned at this revision to compare with later (`changes`). A pin is
+    /// never served, never a board, and goes with the design's folder. Answers the board's
+    /// source, its hash and the design's revision.
+    public func pinBoard(_ id: DesignID, path: DesignPath) async throws -> DesignBoardSource {
+        try await run {
+            var design = try self.load(id)
+            let files = try self.files(of: id, &design)
+            guard let sha = files[path], let folder = self.folder(for: id) else { throw DesignStoreError.noSuchBoard(path) }
+            let data: Data
+            do { data = try Data(contentsOf: try self.fileURL(id, path)) } catch { throw DesignStoreError.noSuchBoard(path) }
+            let pins = folder.appendingPathComponent("pins", isDirectory: true)
+            let pin = pins.appendingPathComponent(sha + DesignPath.fileExtension)
+            if !FileManager.default.fileExists(atPath: pin.path) {
+                do {
+                    try FileManager.default.createDirectory(at: pins, withIntermediateDirectories: true)
+                    try data.write(to: pin, options: .atomic)
+                } catch {
+                    throw DesignStoreError.io("could not keep a pinned copy of \(path): \(error.localizedDescription)")
+                }
+            }
+            return DesignBoardSource(path: path, source: String(decoding: data, as: UTF8.self), sha256: sha, revision: design.revision)
+        }
+    }
+
+    /// A board's source as a reference pinned it (`pinBoard`), or nil when no pin has that hash.
+    public func pinnedBoard(_ id: DesignID, sha256: String) async throws -> String? {
+        guard sha256.utf8.count == 64, sha256.utf8.allSatisfy({ (0x30...0x39).contains($0) || (0x61...0x66).contains($0) }) else { return nil }
+        return try await run {
+            guard let folder = self.folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+            let pin = folder.appendingPathComponent("pins", isDirectory: true).appendingPathComponent(sha256 + DesignPath.fileExtension)
+            guard let data = try? Data(contentsOf: pin), Self.sha256(data) == sha256 else { return nil }
+            return String(decoding: data, as: UTF8.self)
+        }
+    }
+
     /// A board's kept versions, oldest first.
     func versions(_ id: DesignID, path: DesignPath) async throws -> [DesignBoardVersion] {
         try await run {
