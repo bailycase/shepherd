@@ -236,12 +236,15 @@ public struct NWSidebarDestination: View, Equatable {
 // MARK: Lists
 
 /// A list's header (NWNavigation, `NWSidebarSection`): "Needs you" in Geist 11.5 medium
-/// `lanternText` with its count in mono 10.5, or "Recents" in `textTertiary`. Padded 14pt (10)
-/// above, 4pt below, and 8pt (6) at the sides.
+/// `lanternText` with its count in mono 10.5, or "Recents" in `textTertiary`; in the project tree
+/// grouped by host, a host's name in `textTertiary` with "unreachable" in mono 10 `failed` while
+/// it is not connected (SidebarTree, `NWSidebarSection(host)`). Padded 14pt (10) above, 4pt
+/// below, and 8pt (6) at the sides.
 public struct NWSidebarSection: View, Equatable {
     public enum Kind: Equatable, Sendable {
         case needsYou(count: Int)
         case recents
+        case host(String, unreachable: Bool)
     }
 
     let kind: Kind
@@ -255,23 +258,37 @@ public struct NWSidebarSection: View, Equatable {
         let attention = if case .needsYou = kind { true } else { false }
         let tone = attention ? Color.nw.lanternText : Color.nw.textTertiary
         HStack(spacing: NW.Space.s) {
-            Text(attention ? "Needs you" : "Recents")
+            Text(title)
                 .font(.nwSans(11.5, .medium))
                 .foregroundStyle(tone)
+                .lineLimit(1)
             Spacer(minLength: NW.Space.xs)
-            if case .needsYou(let count) = kind {
+            switch kind {
+            case .needsYou(let count):
                 Text("\(count)")
                     .font(.nwMono(10.5))
                     .foregroundStyle(tone)
                     .monospacedDigit()
                     .nwContentTransition(.numeric())
                     .nwAnimation(.content, value: count)
+            case .host(_, unreachable: true):
+                Text("unreachable").font(.nwMono(10)).foregroundStyle(.nw.failed).lineLimit(1).fixedSize()
+            case .recents, .host:
+                EmptyView()
             }
         }
         .padding(EdgeInsets(top: density.sidebarHeaderTop, leading: density.sidebarRowPadding, bottom: NW.Space.xs,
                             trailing: density.sidebarRowPadding))
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
+    }
+
+    private var title: String {
+        switch kind {
+        case .needsYou: "Needs you"
+        case .recents: "Recents"
+        case .host(let name, _): name
+        }
     }
 }
 
@@ -307,25 +324,31 @@ public struct NWSidebarRow: View, Equatable {
     let selected: Bool
     let dimmed: Bool
     let accessory: Accessory
+    let nested: Bool
     @Environment(\.nwDensity) private var density
     @State private var hovering = false
 
-    public init(_ title: String, leading: Leading, selected: Bool = false, dimmed: Bool = false, accessory: Accessory = .none) {
+    /// `nested` is a thread inside a project of the project tree: its leading slot sits under
+    /// the project's folder (`NWDensity.treeChildLeading`).
+    public init(_ title: String, leading: Leading, selected: Bool = false, dimmed: Bool = false, accessory: Accessory = .none,
+                nested: Bool = false) {
         self.title = title
         self.leading = leading
         self.selected = selected
         self.dimmed = dimmed
         self.accessory = accessory
+        self.nested = nested
     }
 
     /// A thread's row: its state dot.
-    public init(_ title: String, state: AgentState, selected: Bool = false, dimmed: Bool = false, accessory: Accessory = .none) {
-        self.init(title, leading: .dot(state), selected: selected, dimmed: dimmed, accessory: accessory)
+    public init(_ title: String, state: AgentState, selected: Bool = false, dimmed: Bool = false, accessory: Accessory = .none,
+                nested: Bool = false) {
+        self.init(title, leading: .dot(state), selected: selected, dimmed: dimmed, accessory: accessory, nested: nested)
     }
 
     public nonisolated static func == (a: NWSidebarRow, b: NWSidebarRow) -> Bool {
         a.title == b.title && a.leading == b.leading && a.selected == b.selected && a.dimmed == b.dimmed
-            && a.accessory == b.accessory
+            && a.accessory == b.accessory && a.nested == b.nested
     }
 
     public var body: some View {
@@ -347,7 +370,8 @@ public struct NWSidebarRow: View, Equatable {
             NWSidebarAccessoryView(accessory: accessory)
                 .nwAnimation(.content, value: accessory)
         }
-        .padding(.horizontal, density.sidebarRowPadding)
+        .padding(.leading, nested ? density.treeChildLeading : density.sidebarRowPadding)
+        .padding(.trailing, density.sidebarRowPadding)
         .frame(maxWidth: .infinity, minHeight: density.rowHeight, alignment: .leading)
         .nwRowBackground(selected: selected, hovering: hovering, radius: NW.Radius.m)
         .contentShape(RoundedRectangle(cornerRadius: NW.Radius.m))
