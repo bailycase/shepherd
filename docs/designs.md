@@ -1173,7 +1173,9 @@ The surfaces (DESIGN.md › Design references has their measures):
   board too), the right-click menu (`NWDesignCanvas`'s `contextMenu`: it picks what the click landed
   on first, then answers the items as a native menu), the design's ••• (`DesignMenuAction.implement`,
   `.copyReference`), and the canvas-scoped ⌘↩ and ⇧⌘C (`DesignCanvasKeys`: a local monitor, only
-  while the design shows and no text field, terminal or board page has the keyboard).
+  while the design shows and no terminal or board page has the keyboard, nor a text field holding
+  text or the chat holding a draft; the chat's empty composer, which keeps the keyboard when the
+  canvas is clicked, lets them through).
 - **Implement in a thread…** (`ImplementSheetModel`, `ShepherdViewModel+DesignReferencesUI.swift`):
   the piece is pinned as the sheet opens (`prepareDesignReference`), so the footer's words are what
   goes. An existing thread is one of this Mac's that draws no design (`designAttachTargets`); a new

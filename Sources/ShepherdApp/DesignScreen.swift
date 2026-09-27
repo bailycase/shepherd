@@ -70,6 +70,10 @@ struct DesignCanvasPane: View {
         .background {
             if referencing {
                 DesignCanvasKeys(active: screen.isActive && screen.presented == nil,
+                                 chatHasDraft: { [vm, designID = screen.designID] in
+                                     guard let vm, let agent = vm.design(designID)?.agentID else { return false }
+                                     return vm.threadStores.existing(for: agent)?.hasDraft == true
+                                 },
                                  implement: { screen.implementSelection(designName: designName) },
                                  copy: { screen.copySelectionReference(designName: designName) })
             }
