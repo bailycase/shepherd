@@ -231,6 +231,8 @@ enum RemoteSamples {
                            update: SkillUpdate(commit: "8c04e1d0", committedAt: 1_700_000_900, filesChanged: 3)),
             InstalledSkill(name: "changelog", summary: "Drafts a \"CHANGELOG\" entry.", isOn: false, invocation: .slashOnly,
                            updatedAt: 1_690_000_000),
+            InstalledSkill(name: "triage", summary: "Sorts issues.", updatedAt: 1_695_000_000,
+                           copiedFrom: "/Users/me/.pi/agent/skills/triage"),
         ],
         checkedAt: 1_700_000_500, autoUpdate: true,
         pi: PiSkills(agentDirectory: "~/.pi/agent", skills: [
@@ -356,6 +358,14 @@ struct RemoteRequestTests {
     }
 
     /// Run in terminal is gone: an older client's `typeInTerminal` is no action this side knows.
+    /// An older host's skill carries no `copiedFrom`: it decodes as installed from a repository or
+    /// by hand, as before.
+    @Test func anOlderHostsSkillSaysNothingOfBeingCopied() throws {
+        let json = #"{"name":"pdf","summary":"PDFs.","isOn":true,"invocation":"automatic","updatedAt":1,"files":[]}"#
+        let skill = try JSONDecoder().decode(InstalledSkill.self, from: Data(json.utf8))
+        #expect(skill.copiedFrom == nil && skill.source == nil)
+    }
+
     @Test func anOlderClientsRunInTerminalIsNoLongerAnAction() {
         let line = Data(#"{"type":"agentAction","id":4,"agentID":"a","action":{"typeInTerminal":{"paneID":"p","text":"ls"}}}"#.utf8)
         #expect(throws: DecodingError.self) { try NDJSON.decode(RemoteRequest.self, from: line) }

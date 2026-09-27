@@ -485,7 +485,7 @@ struct AddSkillsSheet: View {
         let hosts = vm.skillsHosts
         SkillsSheetFrame(title: "Add skills from a repo",
                          subtitle: "A GitHub owner/repo or URL, or a folder on this Mac. Shepherd copies the skills you pick into "
-                             + "~/.agents/skills on every host.", close: close) {
+                             + "its own pi's skills on every host.", close: close) {
             EmptyView()
         } content: {
             VStack(spacing: 0) {

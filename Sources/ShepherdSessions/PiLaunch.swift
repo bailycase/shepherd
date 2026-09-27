@@ -85,12 +85,6 @@ public enum PiLaunch {
     public static let refusalPrefix = "Shepherd won't start pi: "
     public static let refusedExitCode: Int32 = 78
 
-    /// Settings ▸ Skills' reader: the engine's node with the script on stdin (no shell: it needs
-    /// nothing from the user's startup files).
-    public static func skillsReader(engine: PiEngine) -> [String] {
-        node(engine) + ["--input-type=module", "-"]
-    }
-
     /// Settings ▸ MCP servers' probe: the agents' MCP client, run by the engine's node with
     /// `probe`, in a login shell, so the servers it starts find what an agent's would. Like the
     /// launcher, it drops the startup files' pi, jiti and Node settings first (keeping

@@ -186,22 +186,16 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    /// Where a server's Settings ▸ Skills reads the skills pi loads from outside ~/.agents/skills.
+    /// What a server's Settings ▸ Skills reports beside its skills (`SkillsSnapshot.pi`).
     public enum PiSkillsSource {
-        /// Its own pi (`piSkillsReader`).
-        case pi
-        /// Nowhere: the page lists none.
+        /// Its pi's own: none outside its home, since Shepherd's pi reads skills only from the
+        /// home's `skills/`, which the page manages. Said, so a client never takes this host for
+        /// one too old to report them.
+        case ownHome
+        /// Nothing at all (tests).
         case off
         /// This reader.
         case reader(SkillsStore.PiSkillsReader)
-    }
-
-    /// This Mac's pi, asked for the skills it loads from outside ~/.agents/skills, with the user's
-    /// own pi read as plain files (one loader per server, so one cache).
-    public static func piSkillsReader(_ pi: PiSetup) -> SkillsStore.PiSkillsReader {
-        let locator = pi.yourPi
-        let loader = PiSkillsLoader(agentDirectory: pi.home, engine: pi.engine, yourPi: { locator.resolve() }, ready: { pi.prepare() == nil })
-        return { loader.read(installedDirectory: $0) }
     }
 
     /// Shared instance the app uses; tests construct their own with scratch
@@ -550,11 +544,11 @@ public final class SessionServer: @unchecked Sendable {
     /// `pi` is which pi the agents run and where it keeps its state (the app's, `PiSetup.app`,
     /// unless a test passes its own). `modelCatalog` answers remote model listings, `pi`'s own
     /// when nil; tests pass a stand-in so nothing runs pi. `skillsDirectory` is where this host's
-    /// skills live, ~/.agents/skills unless a test passes its own; `piSkills` reads the skills pi
-    /// loads from elsewhere (tests pass `.off`, or their own reader).
+    /// skills live: the `skills/` of `pi`'s home, the only folder its pi reads skills from, unless
+    /// a test passes its own; `piSkills` stands in for an older host's outside skills.
     /// `trash` is where an Undo moves the files a turn created; tests pass their own.
     public init(socketPath: String, stateURL: URL, pi: PiSetup = .app, modelCatalog: ModelCatalog? = nil,
-                skillsDirectory: URL? = nil, piSkills: PiSkillsSource = .pi,
+                skillsDirectory: URL? = nil, piSkills: PiSkillsSource = .ownHome,
                 trash: @escaping ChangesService.Trash = ChangesService.systemTrash) {
         self.socketPath = socketPath
         self.store = StateStore(url: stateURL)
@@ -565,15 +559,21 @@ public final class SessionServer: @unchecked Sendable {
         let instructions = InstructionsStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("instructions", isDirectory: true))
         self.instructions = instructions
         self.suggestions = SuggestionsStore(url: instructions.directory.appendingPathComponent("suggestions.json"), instructions: instructions)
-        self.skills = SkillsStore(directory: skillsDirectory ?? ShepherdPaths.agentSkillsDirectory(),
-                                  stateDirectory: stateURL.deletingLastPathComponent().appendingPathComponent("skills", isDirectory: true),
-                                  piSkills: {
+        let skillsState = stateURL.deletingLastPathComponent().appendingPathComponent("skills", isDirectory: true)
+        let imports = YourPiImport(home: pi.files, yourPi: nil, userHome: pi.userHome,
+                                   offSkills: skillsState.appendingPathComponent("off", isDirectory: true))
+        self.skills = SkillsStore(directory: skillsDirectory ?? pi.home.appendingPathComponent("skills", isDirectory: true),
+                                  stateDirectory: skillsState,
+                                  piSkills: { () -> SkillsStore.PiSkillsReader? in
                                       switch piSkills {
-                                      case .pi: SessionServer.piSkillsReader(pi)
-                                      case .off: nil
-                                      case .reader(let reader): reader
+                                      case .ownHome:
+                                          let home = (pi.home.path as NSString).abbreviatingWithTildeInPath
+                                          return { _ in PiSkills(agentDirectory: home) }
+                                      case .off: return nil
+                                      case .reader(let reader): return reader
                                       }
-                                  }())
+                                  }(),
+                                  copiedFrom: { imports.copiedSkills() })
         self.changes = ChangesService(directory: stateURL.deletingLastPathComponent().appendingPathComponent("changes", isDirectory: true),
                                       trash: trash)
         self.designs = DesignStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("designs", isDirectory: true))
