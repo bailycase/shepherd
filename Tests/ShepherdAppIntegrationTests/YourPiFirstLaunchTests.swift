@@ -249,4 +249,53 @@ struct YourPiFirstLaunchTests {
         #expect(!welcome.holdsAgents && !welcome.asksToSignIn && !vm.holdsForWelcome)
         vm.finishWelcome()
     }
+
+    /// The fail-closed path: an extension of the user's that they switched on and that throws as
+    /// it loads is switched off for launches with pi's reason, and the agent starts again without
+    /// it, with no click. The row keeps its switch on and says why it didn't load; Try again
+    /// brings it back into the next launch.
+    @Test func anExtensionThatThrowsAtLoadIsSwitchedOffAndTheAgentStartsWithoutIt() async throws {
+        try StubPi.installAsEngine()
+        let setup = try Setup()
+        defer { setup.remove() }
+        let report = try #require(setup.pi.copyYourPiOnce())
+        let copy = try #require(report.copied(.extensions).first { $0.name == "yours" })
+        try setup.pi.importedState().setExtension(copy.destination, on: true)
+        let entry = setup.pi.home.appendingPathComponent(copy.destination).standardizedFileURL.path
+        let before = try YourPiFixture.tree(setup.yours)
+        let app = try AppHarness(pi: setup.pi)
+        defer { app.stop() }
+        let (space, agent) = try setup.agent()
+        let id = agent.agent.id
+        let sessionID = agent.agent.effectivePiSessionID
+
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]), restoringAgents: true)
+
+        let server = app.server
+        try await eventuallyAsync("the agent to start again, and serve without the extension", timeout: .seconds(20)) {
+            guard StubPi.launches().filter({ $0.argv.contains(sessionID) }).count == 2,
+                  case .snapshot(let snapshot)? = try? await server.nativeThread(agentID: id, request: .snapshot()) else { return false }
+            return snapshot.startProblem == nil
+        }
+        try await eventuallyOnMain("the agent to leave the can't-start list") { !vm.cannotStart.contains(id) }
+        let launches = StubPi.launches().filter { $0.argv.contains(sessionID) }
+        #expect(launches.count == 2, "one launch that failed, one without it: \(launches.map(\.extensions))")
+        #expect(launches.first?.extensions == [entry], "it loaded while switched on")
+        #expect(launches.last?.extensions == [], "and the agent started again without it")
+
+        let state = try #require(setup.pi.importedState().state())
+        #expect(state.extensionsOn == [copy.destination], "the user's choice stands")
+        #expect(state.extensionFailures[copy.destination]?.reason == "your extension must never load")
+        await vm.yourPi.refresh()
+        let row = try #require(vm.yourPi.survey?.extensions.first { $0.copy.destination == copy.destination })
+        #expect(row.on && row.failure == "your extension must never load")
+        let settings = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: setup.pi.files.settings)) as? [String: Any])
+        #expect(settings["extensions"] == nil)
+
+        // Try again: it is back in the next launch's settings.
+        await vm.yourPi.setExtension(copy.destination, on: true)
+        let again = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: setup.pi.files.settings)) as? [String: Any])
+        #expect(again["extensions"] as? [String] == [entry])
+        #expect(try YourPiFixture.tree(setup.yours) == before, "your pi is byte-identical")
+    }
 }
