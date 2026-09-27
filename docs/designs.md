@@ -1235,12 +1235,13 @@ The surfaces (DESIGN.md › Design references has their measures):
 - **A sent chip's preview** opens above the chip whenever the thread's visible part holds it
   above (measured from the thread's top in its own space, not the scroll view's, which starts
   under the thread's top margin), and below only when it doesn't.
-- **Awaiting the user** (departures from the Ref* boards, each either built as drawn or kept once
-  the user decides): the design's ••• menu lists Implement and Copy Reference without their
-  chords; the canvas's right-click menu has no Delete; the @ picker has no Files section; other
-  hosts' designs (the picker's host tags, the chip's "on another host" and "host offline") are
-  ShepherdUI states only; and a pinned version no longer kept is refused (`version_gone`) rather
-  than drawn.
+- **Departures from the Ref* boards** (the user's call, 2026-09-27): the design's ••• menu lists
+  Implement and Copy Reference without their chords; the canvas's right-click menu has no Delete
+  until deleting a board is built, with Undo; the @ picker has no Files section until file
+  mentions come in a PR of their own; other hosts' designs (the picker's host tags, the chip's "on
+  another host" and "host offline") are ShepherdUI states only until remote references come; and
+  a pinned version no longer kept is refused (`version_gone`), with Send vN offered for the
+  current one.
 
 ## Deleting and importing on the Mac (DesignLifecycleStates)
 

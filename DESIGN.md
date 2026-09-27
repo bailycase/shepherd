@@ -8468,8 +8468,10 @@ or in a design's own chat. Choices the boards leave open, and where the build de
   it.
 - **The note's card** opens beside its pin (a choice the boards leave open).
 
-These departures (Other hosts, no Files section, the ••• menu without chords, no Delete, and
-`version_gone`) wait on the user: each is built as drawn or kept once the user decides.
+These departures are the user's call, 2026-09-27: references to another host's designs come
+later; the picker lists designs only, and file mentions wait for a PR of their own; the ••• menu
+keeps its chords off; Delete joins the right-click menu when deleting a board is built, with Undo;
+and a pinned version no longer kept is refused, with Send vN offered for the current one.
 
 - **From the canvas:** the board actions bar floats over the selection's board, an element's too,
   and ends with **Implement…** (`chevron.left.forwardslash.chevron.right`) before •••. A right-click
