@@ -347,19 +347,30 @@ class FeedTests(unittest.TestCase):
         self.assertEqual(release.untag(xml), "<item>\n    <title>62</title>\n    <sparkle:version>62</sparkle:version>\n</item>")
 
 
-def make_engine(contents):
-    """The pinned engine's layout under `contents`, as small stand-ins: a fat node whose slices
-    name the pinned version, and each package.json at its pinned version."""
-    pin = release.pi_engine.load_pin()
-    version = f"node v{pin['node']['version']}\0".encode()
-    slices = [b"\xcf\xfa\xed\xfe" + cputype.to_bytes(4, "little") + version for cputype in (0x0100000C, 0x01000007)]
+ARM64, X86_64 = 0x0100000C, 0x01000007
+
+
+def macho(cputype, body=b""):
+    """A thin 64-bit Mach-O stand-in: the magic, the CPU type, then `body`."""
+    return b"\xcf\xfa\xed\xfe" + cputype.to_bytes(4, "little") + b"\0" * 24 + body
+
+
+def fat(*slices):
+    """What `lipo -create` makes of thin slices: a big-endian fat header, then each slice."""
     header = (0xCAFEBABE).to_bytes(4, "big") + len(slices).to_bytes(4, "big")
     offset, entries, body = 4096, b"", b""
     for data in slices:
         entries += b"".join(n.to_bytes(4, "big") for n in (int.from_bytes(data[4:8], "little"), 0,
                                                               offset + len(body), len(data), 12))
         body += data
-    files = {release.pi_engine.NODE: (header + entries).ljust(offset, b"\0") + body}
+    return (header + entries).ljust(offset, b"\0") + body
+
+
+def make_engine(contents):
+    """The pinned engine's layout under `contents`, as small stand-ins: an arm64 node that names
+    the pinned version, and each package.json at its pinned version."""
+    pin = release.pi_engine.load_pin()
+    files = {release.pi_engine.NODE: macho(ARM64, f"node v{pin['node']['version']}\0".encode())}
     engine = release.pi_engine.ENGINE
     packages = {"": (pin["pi"]["name"], pin["pi"]["version"])}
     packages.update({f"node_modules/{name}/": (name, module["version"]) for name, module in pin["modules"].items()})

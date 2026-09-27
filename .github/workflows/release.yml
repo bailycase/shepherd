@@ -224,13 +224,13 @@ jobs:
       - name: Strip debug symbols
         run: xcrun strip -S -x "$PRODUCTS/$PRODUCT/Contents/MacOS/"*
 
-      # node is signed slice by slice with the engine's entitlements (V8 needs
-      # allow-jit under the hardened runtime); scripts/sign-engine.sh says why.
+      # node is signed with the engine's entitlements (V8 needs allow-jit under
+      # the hardened runtime); scripts/sign-engine.sh says why.
       - name: Sign
         run: |
           scripts/sign-app.sh "$PRODUCTS/$PRODUCT" \
             '${{ steps.cert.outputs.identity }}' App/Shepherd.entitlements \
-            App/Engine.entitlements App/Engine-x86_64.entitlements
+            App/Engine.entitlements
 
       - name: Notarize
         if: steps.cert.outputs.identity != '-'
