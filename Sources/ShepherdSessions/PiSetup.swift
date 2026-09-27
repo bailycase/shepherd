@@ -18,12 +18,15 @@ public struct PiSetup: Sendable {
     public let yourPi: YourPiLocator
     /// The model catalog, asked of Shepherd's pi, kept for this setup's lifetime.
     public let catalog: PiModelCatalog
+    /// The user's home folder, which no agent's pi trusts as a project.
+    public let userHome: String
 
-    public init(engine: PiEngine, home: URL, yourPi: YourPiLocator = YourPiLocator(.fixed(nil))) {
+    public init(engine: PiEngine, home: URL, yourPi: YourPiLocator = YourPiLocator(.fixed(nil)), userHome: String = NSHomeDirectory()) {
         self.engine = engine
         let files = PiHome(directory: home, engine: engine)
         self.files = files
         self.yourPi = yourPi
+        self.userHome = userHome
         catalog = PiModelCatalog(home: files, ready: { PiSetup.prepare(files, yourPi: yourPi) == nil })
     }
 
@@ -53,6 +56,25 @@ public struct PiSetup: Sendable {
     /// The app's: resolved from the process environment the first time it is asked for. In a
     /// test process that environment is the scratch one `ShepherdTestIsolation` set as it loaded.
     public static let app = resolve(environment: ProcessInfo.processInfo.environment)
+
+    // MARK: Your pi's imports
+
+    /// Copies from "your pi" into this home (`YourPiImport`). Blocking the first time (it finds
+    /// "your pi" with a login shell): call it off the main thread and the server queue.
+    public func imports() -> YourPiImport {
+        YourPiImport(home: files, yourPi: yourPi.resolve(), userHome: userHome)
+    }
+
+    /// The first launch of a build with Shepherd's own home: readies the home, then copies the
+    /// user's pi into it once (`YourPiImport.copyOnce`). Nil, with nothing copied, when no pi may
+    /// start in the home. Blocking, like `prepare()`.
+    public func copyYourPiOnce() -> YourPiImportReport? {
+        if let problem = prepare() {
+            ShepherdLog.info("Shepherd didn't copy from your pi: \(problem.message)")
+            return nil
+        }
+        return imports().copyOnce()
+    }
 
     // MARK: Before a launch
 

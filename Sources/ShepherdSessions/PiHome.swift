@@ -210,13 +210,16 @@ struct PiHomeError: Error, CustomStringConvertible {
     init(_ description: String) { self.description = description }
 }
 
-/// pi's `settings.json`, which pi writes too (the TUI's `/settings`, a first `/login`). Shepherd
-/// changes it read-modify-write, under pi's own lock (proper-lockfile's `settings.json.lock`
-/// folder, stale after 10 s), by temp file and rename, and only when its keys differ.
+/// One of pi's JSON files in Shepherd's home that pi writes too: `settings.json` (the TUI's
+/// `/settings`, a first `/login`), `auth.json` (sign-ins and refreshes), `trust.json`. Shepherd
+/// changes it read-modify-write, under pi's own lock (proper-lockfile's `<file>.lock` folder,
+/// stale after 10 s), by temp file and rename, and only when its keys differ.
 struct PiSettingsFile {
     let url: URL
     /// How long a write waits for pi to let go of the lock.
     var patience: TimeInterval = 5
+    /// The file's permissions once written (`auth.json` and `settings.json` are private to the user).
+    var mode: mode_t = 0o600
     /// proper-lockfile's default: a lock this old is abandoned.
     static let stale: TimeInterval = 10
 
@@ -236,9 +239,14 @@ struct PiSettingsFile {
             guard !before.isEqual(to: settings) || !FileManager.default.fileExists(atPath: url.path) else { return notes }
             var data = try JSONSerialization.data(withJSONObject: settings, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
             data.append(UInt8(ascii: "\n"))
-            try PiHome.write(data, to: url, mode: 0o600)
+            try PiHome.write(data, to: url, mode: mode)
             return notes
         }
+    }
+
+    /// Replaces the file with `data`, under the lock, by temp file and rename.
+    func replace(with data: Data) throws {
+        try withLock { try PiHome.write(data, to: url, mode: mode) }
     }
 
     private func withLock<T>(_ body: () throws -> T) throws -> T {
