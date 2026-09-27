@@ -897,7 +897,9 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
 - **Palette:** 620pt wide, or the window minus 16pt margins, and never taller than the window
   leaves room for (`NWPaletteMetrics.placement`).
 - **Composer:** in a narrow thread the chips drop their words ("/" alone, the thinking level
-  alone) instead of truncating mid-word (`ViewThatFits`).
+  alone) instead of truncating mid-word (`ViewThatFits`). A pane under 520pt (a design's 420pt
+  chat) draws the composer at its compact size (`NWComposerSize.compact`), where they never show
+  them.
 
 ## Surfaces
 
@@ -1961,6 +1963,14 @@ while their menu is open. A new model or level cross-fades in its chip (`content
 width changes stay instant. In a narrow thread (a docked side pane) the chips drop their words
 ("/" alone, the level without "Thinking") rather than truncate, once "Starting…" has dropped
 its own.
+
+**Sizes** (NWDesignTool › Chat composer): the composer is the same component everywhere, at one
+of two sizes, `.nwComposerSize(_:)` (`NWComposerSize`). `.regular` is the thread's and New
+design's. `.compact` is for a pane under 520pt, a design's 420pt chat (the canvas's, a system
+build's, a remote design's): the chips never show their words, so "/ commands" is "/" and the
+thinking chip is its level alone (`NWComposerCommandsLabel`, `NWComposerThinkingLabel`). Attach,
+the model, the context ring and Send are the same at both sizes, and so are the chips' 26pt
+metrics (the boards draw the Design tool's composers at their own scale).
 
 **States:**
 
@@ -4994,7 +5004,8 @@ below collects the rest, and the places those sentences point here.
 - **Sidebar and New thread** (NWNavigation, NavNewThread against `SidebarView.swift` and
   `NewThreadPage.swift`):
   - The New thread composer has no "/ commands" chip, and its placeholder drops ", or / for
-    commands": no pi runs before the thread exists to list its commands.
+    commands": no pi runs before the thread exists to list its commands. New design's composer
+    (DZStart, NWDesignTool › Chat composer) leaves it out for the same reason.
 - **iOS** (the phone and iPad boards against `App/iOS` and ShepherdUI's Fleet parts):
   - Row dots are 7pt (`NWListMetrics.dot`), the boards' 8 on iPhone.
   - iPhone user bubbles are the Mac's (`NWUserBubble`: at most 600pt, 10×14); the iPhone boards
@@ -8255,9 +8266,16 @@ opens this page in the main column, with the sidebar showing and Designs selecte
   - **The prompt**, a 720pt composer card (`NWComposer`'s card: `bgRaised`, drawn focused, a
     `textTertiary` line in a 3pt `bgSelected` ring; the board's radius is 10, off the radius scale,
     and the composer's 8: settle which before building): the field (14pt padding, 4pt below, at
-    least 72pt tall, `body`), placeholder "A checkout funnel dashboard for the product team…"; under
-    it only attach (`paperclip`, "Attach a screenshot or file") and Send (the composer's 28pt
-    lantern circle, 35% until there is text).
+    least 72pt tall, `body`), placeholder "A checkout funnel dashboard for the product team…";
+    under it the standard composer's row at the regular size (NWDesignTool › Chat composer):
+    attach (`paperclip`, "Attach a screenshot or file"), the model chip, the thinking chip
+    ("Thinking Medium") and Send (the composer's 28pt lantern circle, 35% until there is text).
+    The model and level are This Mac's defaults (Settings ▸ Agents) until picked; the model
+    picker and the thinking menu open under the card, as on New thread, and the design agent
+    starts on what they say. After that they stay with the design's pi session. There is no
+    context ring before the design has a conversation. The board also draws "/ commands": left
+    out for New thread's reason (no pi runs before the design exists to list its commands);
+    see Known gaps.
   - **"DESIGN SYSTEM & STARTING POINT"** (`.nwSectionLabel()`), 10pt above three equal cards in
     a row, 10pt apart. Each card: 12×14 padding, radius 8, 1px `lineSubtle`, 6pt between its
     lines, the hover fill: a 13pt glyph and a title in mono 12 semibold; a line in 12.5
@@ -8370,11 +8388,16 @@ are off the tokens). Opening a design fills the main column: the header, then th
     A comment you make on the canvas joins the chat as its `NWCommentCard` (below), and the
     agent's answer sits inside the card under a hairline: its activity line, then its reply
     ("Done. Counts sit next to each percentage on both boards.").
-  - **The composer** (12pt above it, 14pt at the sides and below): `NWComposer`'s card at rest (a
-    1px `lineStrong` line; the board's radius is 10, off the radius scale, and the composer's 8:
-    settle which before building), the field at least 34pt, placeholder "Describe a change, or click
-    something on the canvas to comment…", with attach (`paperclip`, "Attach a screenshot or file")
-    and Send (35% until there is text) only: no model, thinking, or command chips.
+  - **The composer** (12pt above it, 14pt at the sides and below) is the thread's composer at its
+    compact size (NWDesignTool › Chat composer; Composer, questions, and menus › Sizes): `NWComposer`'s card at radius
+    8, placeholder "Describe a change, or click something on the canvas to comment…", and one
+    row of attach, "/", the model, the thinking level alone, the context ring (once the design
+    agent has a conversation) and Send. Everything a thread's composer does works here: the slash
+    menu (pi's commands; `/login` stays in Settings), the model picker and thinking menu (⇧⌘M
+    and the menu command reach it), the ring's details and Compact, Up next with queue and steer,
+    and attachments. A model or level change goes to the design agent's pi as a thread's does
+    (`setModel`, `setThinking`). What it sends still carries the canvas's view record. A system
+    build's chat (DZSystem) and a remote design's chat have the same composer.
 
 ### Comments (DZCanvas, DZTweak, NWDesignTool)
 
@@ -8659,7 +8682,8 @@ the Tweak parts `NWTweakRow` (with `NWTweakHeader`, `NWTweakGroup`, `NWTweakNote
 `NWTweakFooter`), `NWTokenChip` (with `NWTokenChipFlow`) and `NWTweakScope`, `NWBoardActions`
 (with `NWDirectionTile`, `NWCanvasNote` and `NWBoardPresentation`), and the page parts
 `NWDesignCard`, `NWDesignSystemCard`, `NWDesignStartCard`, `NWDesignHeader` and
-`NWDesignPaneTabs`, the system page's `NWSectionRail`, `NWTokenSwatch` (DZSystem's 56pt),
+`NWDesignPaneTabs`, the Chat composer section's two sizes (`NWComposer` with
+`.nwComposerSize(.compact)`; Composer, questions, and menus › Sizes), the system page's `NWSectionRail`, `NWTokenSwatch` (DZSystem's 56pt),
 `NWTypeSpecimen`, `NWComponentSpecimen` and `NWDesignSystemBuildTile`, and Export's
 `NWExportSheet`, `NWExportSection`, `NWExportBoardRow` and `NWExportFormatCard`. The rest of the
 table is not built yet.
@@ -8784,10 +8808,13 @@ What the board draws:
   - The chat pane's tabs are 44pt at the bottom of a 76pt header (14pt labels, 18pt apart;
     "Comments 3"). The chat has 16pt padding and 12pt between items. Its prose is 14.5/1.55 and
     its activity lines are at least 34pt tall (14.5 `textSecondary`, a 14pt glyph, 9pt gap, meta
-    in mono 11.5). The composer (10×14 padding, 26pt below, a hairline above) is one field at
-    least 44pt tall (radius 12, 1px `lineStrong`, `bgRaised`, 14pt leading padding),
-    placeholder "Describe a change, or draw on a board…" at 15, with a 32pt send that is a plain
-    `textSecondary` glyph, not the lantern circle.
+    in mono 11.5). The composer (10×14 padding, 26pt below, a hairline above) is the iPad
+    thread's card at the compact size (NWDesignTool › Chat composer), placeholder "Describe a
+    change, or draw on a board…": attach, the model's short name ("opus",
+    `NativeModelChoices.compactName`: no provider, no "claude-" family, no date stamp), the
+    thinking level alone, the context ring and Send. It has no "/" button; typing "/" still
+    opens the commands. The board draws its chips 40pt and the card at radius 16; the iPad's
+    thread card is the Mac's (26pt chips, radius 8), and the design chat keeps it.
 - **Split View** (iPadSplitView): a design in one window beside a thread in another (Windows, under
   iOS). The design's window (586pt on the board, radius 12) carries the window's three-dot handle
   centered at its top, so its header is 76pt with 24pt above: a bare back chevron in `running`, the
@@ -9049,7 +9076,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 
 | Board | Specified in | Status |
 | --- | --- | --- |
-| DZStart | Design tool › New design | Built, without Capture a page and From a screenshot |
+| DZStart | Design tool › New design | Built, without Capture a page, From a screenshot and "/ commands" |
 | DZCanvas | Design tool › A design: canvas and chat, Comments | Partly built: header, canvas, board frames, Chat, comments; not actions, Tweak |
 | DZTweak | Design tool › Tweak | Not built yet |
 | DZSystem | Design tool › Design systems | Not built yet |
@@ -9079,4 +9106,4 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | NWSwift, NWSwiftLight | Theme model › Building on ShepherdUI | Partial |
 | MXVocab, MXVocabLight | Missions › Missions: the map | Not built yet |
 | NWMissions, NWMissionsLight | Missions (Missions: shared parts and the screens that use them) | Not built yet |
-| NWDesignTool, NWDesignToolLight | Design tool › Design components | Partly built: the canvas, board frame, toolbar and system chip |
+| NWDesignTool, NWDesignToolLight | Design tool › Design components | Partly built: the canvas, board frame, toolbar, system chip and chat composer |

@@ -271,7 +271,7 @@ enum DesignPadFixtures {
     /// DZCanvas's chat: the brief, reading the system, drawing four boards, checking them, and the
     /// agent's summary.
     static func chat() -> NativeThreadSnapshot {
-        FixtureData.snapshot([
+        var thread = FixtureData.snapshot([
             FixtureData.user("c1", "Design the checkout funnel dashboard for the product team. They need drop-off per step, a trend over time, and it has to work on a phone."),
             FixtureData.tool("c2", "design_read", args: #"{"path":"ds/acme-web/tokens.json"}"#, output: "acme-web · 18 tokens", at: 6_000),
             FixtureData.tool("c3", "board_write", args: #"{"path":"A.dc.html"}"#, output: "Drew A.dc.html", at: 40_000),
@@ -281,6 +281,10 @@ enum DesignPadFixtures {
             FixtureData.tool("c7", "design_check", args: #"{}"#, output: "Checked against acme-web · 0 off-system values", at: 100_000),
             FixtureData.assistant("c8", "Three directions, all in acme-web. **A** leads with the funnel, **B** with a step table you can sort and export, **C** with the trend. I drew a phone version of A because it holds up best at narrow widths.", at: 104_000),
         ])
+        // The standard composer's chips and ring (iPadDesign): the model, its level, and 28% of
+        // the window.
+        thread.supportedActions += ["setModel", "setThinking", "sendImages"]
+        return ContextFixtures.with(thread, ContextFixtures.context(tokens: 56_000, split: nil, largest: []))
     }
 
     /// iPadSplitView: the agent's latest reply, restyled to the worker's new tokens.

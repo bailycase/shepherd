@@ -41,3 +41,13 @@ struct MenuComponentTests {
         #expect(NWSlashMenu.visibleRows(in: room) == rows)
     }
 }
+
+/// The composer's sizes (NWDesignTool › Chat composer): the chips' words show only at the
+/// regular size with room for them.
+@Suite("Composer sizes")
+struct ComposerSizeTests {
+    @Test(arguments: [(NWComposerSize.regular, false, true), (.regular, true, false), (.compact, false, false), (.compact, true, false)])
+    func theChipsDropTheirWordsWhenCompactOrShortOfRoom(size: NWComposerSize, short: Bool, words: Bool) {
+        #expect(size.showsChipWords(short: short) == words)
+    }
+}

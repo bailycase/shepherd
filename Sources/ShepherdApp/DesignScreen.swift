@@ -112,8 +112,8 @@ struct DesignCommentPopover: View {
     }
 }
 
-/// The chat pane (DZCanvas, DZTweak): its tabs, Chat (the design agent's thread, whose composer
-/// has attach and Send only), Comments (the open comments' cards, with their count) and Tweak (the
+/// The chat pane (DZCanvas, DZTweak): its tabs, Chat (the design agent's thread, with the
+/// standard composer at its compact size), Comments (the open comments' cards, with their count) and Tweak (the
 /// selection's controls). The thread stays mounted under the other tabs, hidden, so switching tabs
 /// never rebuilds it.
 struct DesignChatPane: View {
@@ -154,6 +154,7 @@ struct DesignChatPane: View {
                         restartPi: { [vm] in vm.retryAgentStart(agentID, newConversation: $0) },
                         designChat: true)
                     .environment(\.designCommentCards, screen.commentCards)
+                    .nwComposerSize(.compact)
                     .opacity(chat ? 1 : 0)
                     .allowsHitTesting(chat)
                     .accessibilityHidden(!chat)

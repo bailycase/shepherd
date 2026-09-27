@@ -56,7 +56,7 @@ struct ThreadView: View {
     var queueState: QueueStackState? = nil
     /// Previews: the composer opens with the context ring's details showing.
     var contextDetailsOpen = false
-    /// A design's chat: its composer has attach and Send only.
+    /// A design's chat: its composer says the design's placeholder.
     var designChat = false
     @State private var follower = NativeScrollFollower()
     /// What the context details ask the thread to find (Largest, Show summary). A stable object,

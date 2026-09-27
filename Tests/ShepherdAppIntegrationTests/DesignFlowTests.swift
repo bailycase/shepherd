@@ -73,6 +73,31 @@ struct DesignFlowTests {
         }
     }
 
+    /// New design's model and thinking chips (NWDesignTool › Chat composer): Settings' defaults
+    /// until picked, a pick survives the page opening again, and the design agent starts on it.
+    @Test func newDesignStartsItsAgentOnTheModelAndLevelPicked() async throws {
+        try StubPi.installAsEngine()
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, _) = try await start(app)
+
+        vm.openNewDesign()
+        let draft = vm.newDesign
+        #expect(draft.thinking == app.settings.defaultThinking, "Settings' level until one is picked")
+        draft.setModel("anthropic/claude-opus-4-5")
+        draft.setThinking(.high)
+        vm.openNewDesign()
+        #expect(draft.model == "anthropic/claude-opus-4-5" && draft.thinking == .high, "a pick survives the page opening again")
+        #expect(draft.thinkingLevels().contains(.high))
+
+        draft.brief = "A settings page"
+        draft.send(vm)
+        try await eventuallyOnMain("the design's agent to be on screen") { vm.shownDesign != nil && !draft.starting }
+        let agent = try #require(vm.selectedAgent)
+        #expect(agent.designID == vm.shownDesign?.id)
+        #expect(agent.model == "anthropic/claude-opus-4-5" && agent.thinkingLevel == .high)
+    }
+
     @Test func openingADesignWhoseAgentIsGoneStartsAFreshOne() async throws {
         try StubPi.installAsEngine()
         let app = try AppHarness()

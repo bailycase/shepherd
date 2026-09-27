@@ -304,8 +304,8 @@ struct RemoteDesignLayoutView: View {
     }
 }
 
-/// The chat pane of a remote design: Chat (its agent's thread on the host, whose composer has
-/// attach and Send only), Comments, and Tweak, as a local design's. The thread stays mounted
+/// The chat pane of a remote design: Chat (its agent's thread on the host, with the standard
+/// composer at its compact size), Comments, and Tweak, as a local design's. The thread stays mounted
 /// under the other tabs.
 struct RemoteDesignChatPane: View {
     var vm: ShepherdViewModel
@@ -326,6 +326,7 @@ struct RemoteDesignChatPane: View {
                 RemoteAgentThreadPane(vm: vm, ref: agent, agentName: agentName,
                                       isFocused: chat && vm.remoteFocusedPaneID == threadPaneID, designChat: true)
                     .environment(\.designCommentCards, screen.commentCards)
+                    .nwComposerSize(.compact)
                     .opacity(chat ? 1 : 0)
                     .allowsHitTesting(chat)
                     .accessibilityHidden(!chat)
