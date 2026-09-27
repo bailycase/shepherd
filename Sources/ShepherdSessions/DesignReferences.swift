@@ -30,7 +30,7 @@ public struct DesignReferenceError: Error, Hashable, Sendable, CustomStringConve
         "no_copy", "The copy sent with that message is no longer kept. Ask the user to send the reference again.")
     static let noRenderer = DesignReferenceError("render_unavailable", "Shepherd can't draw design pieces here.")
     static func versionGone(_ revision: UInt64) -> DesignReferenceError {
-        DesignReferenceError("version_gone", "Version \(revision) of that design is no longer kept. Pick the piece again to send it as it is now.")
+        DesignReferenceError("version_gone", "Version \(revision) of that design is no longer kept. Send the newer version from its chip, or pick the piece again.")
     }
 }
 
