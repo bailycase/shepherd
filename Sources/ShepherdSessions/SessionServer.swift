@@ -961,8 +961,9 @@ public final class SessionServer: @unchecked Sendable {
             throw RemoteHostClientError.rejected(code: error.code, message: error.message)
         }
         do {
-            try await grantDesignReferences(kept.map(\.grant), to: agentID)
+            try await grantDesignReferences(kept.map(\.grant), to: agentID, withholding: true)
         } catch {
+            await releaseSendingDesignPayloads(kept.map(\.payload.id), of: agentID)
             await designReferencePayloads.remove(agentID: agentID, payloads: kept.map(\.payload.id))
             if let error = error as? DesignReferenceError { throw RemoteHostClientError.rejected(code: error.code, message: error.message) }
             throw error
@@ -970,12 +971,29 @@ public final class SessionServer: @unchecked Sendable {
         let payloads = kept.map(\.payload.id)
         do {
             let result = try await dispatchNativeThread(agentID: agentID, request: request.withDesignReferences(kept.map(\.record)))
+            await releaseSendingDesignPayloads(payloads, of: agentID)
             if case .failure = result { await withdrawDesignReferences(payloads, from: agentID) }
             return result
         } catch {
+            await releaseSendingDesignPayloads(payloads, of: agentID)
             await withdrawDesignReferences(payloads, from: agentID)
             throw error
         }
+    }
+
+    /// A send's copies are past the thread's `send` (or never got there): nothing on their way
+    /// withholds them any more; a queued message still does.
+    private func releaseSendingDesignPayloads(_ payloads: [UUID], of agentID: AgentID) async {
+        await enqueueValue { self.rpcThread(forAgent: agentID)?.sendingDesignPayloads.subtract(payloads) }
+    }
+
+    /// Server queue: `agent` as design_get and design_note may read it: without the grants of
+    /// copies its thread holds back (a send on its way, or a message waiting in the queue).
+    private func readableGrants(_ agent: Agent) -> Agent {
+        guard let withheld = rpcThread(forAgent: agent.id)?.withheldDesignPayloads, !withheld.isEmpty else { return agent }
+        var agent = agent
+        agent.designGrants.removeAll { $0.payload.map(withheld.contains) == true }
+        return agent
     }
 
     private func dispatchNativeThread(agentID: AgentID, request: NativeThreadRequest) async throws -> NativeThreadResult {
@@ -2412,11 +2430,12 @@ public final class SessionServer: @unchecked Sendable {
     private func designGetRequest(id: Int, agentID: AgentID, reference raw: String, what: String, client: ExtensionConnection) {
         let refuse = { (error: DesignReferenceError) in self.reply(.error(id: id, code: error.code, message: error.message), to: client) }
         let state = store.state
-        guard let agent = state.agents.first(where: { $0.id == agentID }) else {
+        guard let found = state.agents.first(where: { $0.id == agentID }) else {
             reply(.error(id: id, code: "no_such_agent", message: "no such agent"), to: client)
             return
         }
-        guard !state.isDesignAgent(agent), agent.designID == nil else { return refuse(.notAThread) }
+        guard !state.isDesignAgent(found), found.designID == nil else { return refuse(.notAThread) }
+        let agent = readableGrants(found)
         guard let reference = DesignReference(string: raw) else { return refuse(.invalid(raw)) }
         guard let aspect = DesignReferenceAspect(rawValue: what) else {
             return refuse(DesignReferenceError("invalid_what", "what must be one of "
@@ -2438,11 +2457,12 @@ public final class SessionServer: @unchecked Sendable {
     private func designNoteRequest(id: Int, agentID: AgentID, reference raw: String, text: String, client: ExtensionConnection) {
         let refuse = { (error: DesignReferenceError) in self.reply(.error(id: id, code: error.code, message: error.message), to: client) }
         let state = store.state
-        guard let agent = state.agents.first(where: { $0.id == agentID }) else {
+        guard let found = state.agents.first(where: { $0.id == agentID }) else {
             reply(.error(id: id, code: "no_such_agent", message: "no such agent"), to: client)
             return
         }
-        guard !state.isDesignAgent(agent), agent.designID == nil else { return refuse(.notAThread) }
+        guard !state.isDesignAgent(found), found.designID == nil else { return refuse(.notAThread) }
+        let agent = readableGrants(found)
         guard let reference = DesignReference(string: raw) else { return refuse(.invalid(raw)) }
         guard reference.host == .local else { return refuse(.remote) }
         guard let board = reference.board else {
@@ -2553,7 +2573,11 @@ public final class SessionServer: @unchecked Sendable {
     /// Lets `agentID` read the copies `grants` name (design_get), persisted with the agent;
     /// refused for a design's agent or a design no longer here. A grant this replaces (the same
     /// piece sent again at one revision) or pushes past the cap takes its copy with it.
-    public func grantDesignReferences(_ grants: [DesignGrant], to agentID: AgentID) async throws {
+    ///
+    /// `withholding`: the grants belong to a send on its way to the thread, so the thread holds
+    /// their copies back from design_get until its `send` takes them (and while they wait in its
+    /// queue), marked in the same queue turn that commits them.
+    public func grantDesignReferences(_ grants: [DesignGrant], to agentID: AgentID, withholding: Bool = false) async throws {
         guard !grants.isEmpty else { return }
         let gone = try await enqueue { () throws -> [DesignGrant] in
             let state = self.store.state
@@ -2562,6 +2586,7 @@ public final class SessionServer: @unchecked Sendable {
             for grant in grants where !state.designs.contains(where: { $0.id == grant.designID }) {
                 throw DesignReferenceError("no_such_design", "That design is no longer here.")
             }
+            if withholding { self.rpcThread(forAgent: agentID)?.sendingDesignPayloads.formUnion(grants.compactMap(\.payload)) }
             var agent = state.agents[index]
             let gone = agent.addDesignGrants(grants)
             guard agent != state.agents[index] else { return gone }

@@ -100,6 +100,8 @@ extension RPCThreadState {
     /// is a fenced design view record that goes to pi ahead of the message (`QueueItem.context`).
     func send(id: UUID, text: String, delivery: NativeThreadDelivery, images: [NativeImage], alone: Bool = false,
               context: String? = nil, designPayloads: [UUID] = [], completion: @escaping (NativeThreadResult) -> Void) {
+        // From here the copies are pi's (a prompt) or wait in the queue, which withholds them.
+        sendingDesignPayloads.subtract(designPayloads)
         guard piBusy else {
             // A new message resumes a paused queue: it drains after this turn.
             paused = false

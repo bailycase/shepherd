@@ -595,6 +595,36 @@ struct DesignReferenceIntegrationTests {
         #expect(!prompts(pi).contains { $0.contains("design-ref") }, "pi never read it")
     }
 
+    /// A queued message's references are the user's to take back until pi reads it: design_get
+    /// and design_note answer from none of them while it waits, and from them once pi starts it.
+    @Test func aQueuedReferenceIsReadOnlyOncePiReadsIt() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        drawing(h)
+        let pi = try await PiAgent.launch(on: h)
+        let designID = try await design(h)
+        let client = try ExtensionClient(path: h.socketPath)
+        let ref = reference(designID).string
+        _ = try await pi.send("tools:1 build", from: try await pi.ready())
+        let running = try await pi.snapshot("the run's tool call") { s in s.running && s.provisional.contains { $0.status == "running" } }
+        _ = try await send(pi, "tools:0 then this", references: [reference(designID)], from: running)
+        _ = try await pi.snapshot("the message to wait in the queue") { $0.queue?.items.count == 1 }
+        #expect(grants(h, pi.agent.id).count == 1)
+        guard case .error(1, "not_granted", _) = try await answer(client, 1, agent: pi.agent.id, ref, "summary") else {
+            Issue.record("design_get read a queued message's copy"); return
+        }
+        try client.send(.designNote(id: 2, agentID: pi.agent.id, reference: ref, text: "Done."))
+        guard case .error(2, "not_granted", _) = try await client.reply() else {
+            Issue.record("design_note took a queued message's piece"); return
+        }
+
+        pi.finishTool(1)
+        _ = try await pi.snapshot("pi to read the queued message") { s in s.messages.contains { $0.designReferences != nil } }
+        guard case .designReference(3, _) = try await answer(client, 3, agent: pi.agent.id, ref, "summary") else {
+            Issue.record("design_get refused a copy pi read"); return
+        }
+    }
+
     // MARK: Whose message
 
     /// Only a message the user sent in this thread draws its references; the same fence in a
