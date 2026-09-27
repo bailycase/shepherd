@@ -290,6 +290,8 @@ public struct YourPiImport: Sendable {
 
     /// Changes to the state file wait for one another.
     private static let stateLock = NSLock()
+    /// So do copies of files into the home.
+    private static let filesLock = NSLock()
 
     public var stateURL: URL { home.directory.appendingPathComponent(Self.stateName) }
     var auth: URL { home.directory.appendingPathComponent("auth.json") }
@@ -403,7 +405,11 @@ public struct YourPiImport: Sendable {
                 report.problems.append("Your pi has no \(Self.noun(kind)) to copy.")
             }
             try updateState { state in
-                if kind == .instructions { try retireInstructions(keeping: Set(report.copied.map(\.destination)), in: &state) }
+                // Only a clean copy retires the old files: one of theirs that couldn't be read
+                // (or none at all) leaves Shepherd's copy as it was.
+                if kind == .instructions, report.problems.isEmpty {
+                    try retireInstructions(keeping: Set(report.copied.map(\.destination)), in: &state)
+                }
                 record(report.copied, in: &state)
                 if kind == .extensions { try applyExtensions(&state) }
             }
@@ -429,6 +435,9 @@ public struct YourPiImport: Sendable {
     /// already there (a skill installed in Shepherd, an instructions file) as it is; `replacing`
     /// replaces the copies Shepherd made before, never files of Shepherd's own.
     private func copyFiles(of kinds: [YourPiResourceKind], from yourPi: YourPi, replacing: Bool, into report: inout YourPiImportReport) {
+        // One copy at a time: two replacing one folder at once would trip over each other's rename.
+        Self.filesLock.lock()
+        defer { Self.filesLock.unlock() }
         let settings: [String: Any]?
         do {
             settings = try YourPiFiles.read(yourPi.agentDirectory.appendingPathComponent("settings.json"))
@@ -438,8 +447,14 @@ public struct YourPiImport: Sendable {
             settings = nil
         }
         let earlier = Set((state()?.copies ?? []).map(\.destination))
-        let staging = home.directory.appendingPathComponent(".shepherd-staging", isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: staging) }
+        // Each copy has its own staging folder, so none clears another's (from an earlier
+        // process that stopped mid-copy, say) as it ends.
+        let stagingRoot = home.directory.appendingPathComponent(".shepherd-staging", isDirectory: true)
+        let staging = stagingRoot.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer {
+            try? FileManager.default.removeItem(at: staging)
+            rmdir(stagingRoot.path)
+        }
         for kind in kinds {
             let listing = YourPiResources.find(kind, agentDirectory: yourPi.agentDirectory, settings: settings, userHome: userHome)
             report.skipped += listing.skipped
