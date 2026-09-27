@@ -71,3 +71,65 @@ struct DesignReferencePresentationTests {
         #expect(calls.first?.aspects == [.summary, .image, .tokens])
     }
 }
+
+/// The composer's @ picker (MentionPicker): a design's rows from what the host read, the scopes
+/// the picker drills through, and search across every level.
+@Suite("Design mentions")
+struct DesignMentionTests {
+    static let design = Design(id: DesignID(rawValue: "d1"), name: "Checkout funnel dashboard", createdAt: 1)
+
+    static func board(_ template: String) -> String {
+        "<!doctype html>\n<html><head></head><body>\n<x-dc>\n<helmet><style>body{margin:0}</style></helmet>\n\(template)\n</x-dc>\n</body></html>\n"
+    }
+
+    static let funnel = board("""
+        <div data-el="card"><h2>Checkout funnel</h2><ol><li>Cart viewed</li><li>Order placed</li></ol></div>
+        <section><p>Top exit reasons</p></section>
+        <sc-for each="{{ rows }}"><span>{{ row }}</span></sc-for>
+        """)
+
+    static func snapshot() -> DesignSnapshot {
+        var index = DesignIndex(title: nil)
+        index.boards[DesignPath("B.dc.html")!] = DesignIndex.Board(x: 0, y: 0, w: 1280, h: 800, title: "B · Step table")
+        index.boards[DesignPath("A.dc.html")!] = DesignIndex.Board(x: 0, y: 0, w: 1280, h: 800, title: "A · Funnel first")
+        index.order = [DesignPath("A.dc.html")!, DesignPath("B.dc.html")!]
+        return DesignSnapshot(designID: design.id, revision: 3, index: index, boards: [:])
+    }
+
+    static func catalog() throws -> DesignMentionCatalog {
+        let entries = try #require(DesignMentionCatalog.entries(design: design, snapshot: snapshot(),
+                                                                sources: [DesignPath("A.dc.html")!: funnel], system: "acme-web"))
+        return DesignMentionCatalog(designs: [entries.design], boards: [design.id: entries.boards], elements: entries.elements)
+    }
+
+    @Test func aDesignsRowsAreItsBoardsInCanvasOrderThenTheirElements() throws {
+        let catalog = try Self.catalog()
+        let design = try #require(catalog.designs.first)
+        #expect(design.kind == .design && design.reference.board == nil && design.system == "acme-web" && design.boardCount == 2)
+        let rows = catalog.rows(in: .design(Self.design.id))
+        #expect(rows.map(\.title) == ["Checkout funnel dashboard", "A · Funnel first", "B · Step table"], "the whole design first")
+        let board = rows[1]
+        #expect(board.breadcrumb == ["Checkout funnel dashboard"] && board.width == 1280 && board.elementCount == 6)
+        let inside = catalog.rows(in: .board(board.reference.pinned(at: 3)))
+        #expect(inside.first == board, "Whole board first")
+        #expect(inside.dropFirst().map(\.title) == [
+            "card “Checkout funnel Cart viewed Order placed”", "h2 “Checkout funnel”", "ol “Cart viewed Order placed”",
+            "li “Cart viewed”", "li “Order placed”", "section “Top exit reasons”",
+        ], "the helmet, its style and the loop's scaffold left out; a <p> that repeats its section's words too")
+        #expect(inside.last?.breadcrumb == ["Checkout funnel dashboard", "A · Funnel first"])
+        #expect(inside[1].inside == 4 && inside[1].tag == "div")
+        #expect(catalog.rows(in: .board(rows[2].reference)).count == 1, "a board with no source lists no elements")
+        #expect(inside.dropFirst().allSatisfy { $0.reference.revision == nil && $0.reference.element != nil })
+    }
+
+    @Test func searchMatchesEveryLevelInCatalogOrder() throws {
+        let catalog = try Self.catalog()
+        #expect(catalog.search("funnel").map(\.kind) == [.design, .board, .element, .element, .element, .element, .element, .element, .board])
+        #expect(catalog.search("order placed").map(\.title) == ["card “Checkout funnel Cart viewed Order placed”", "ol “Cart viewed Order placed”", "li “Order placed”"])
+        #expect(catalog.search("step table").map(\.title) == ["B · Step table"])
+        #expect(catalog.search("pricng").isEmpty)
+        #expect(catalog.search("  ").map(\.kind) == [.design], "no words: the designs")
+        #expect(catalog.search("funnel", limit: 2).count == 2)
+        #expect(catalog.search("CHECKOUT FÜNNEL").first?.kind == .design, "case and accents aside")
+    }
+}

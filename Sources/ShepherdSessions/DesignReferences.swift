@@ -391,4 +391,57 @@ struct DesignReferenceService: Sendable {
         let lines = DesignReferenceReading.designChangeLines(before: before, after: compared)
         return lines.isEmpty ? .current : .updatedSince(latest: snapshot.revision, changes: lines)
     }
+
+    // MARK: The @ picker
+
+    /// This Mac's designs, their boards and elements, most recently active design first. Designs
+    /// being built as design systems are not designs to reference.
+    func mentionCatalog(state: ShepherdState) async -> DesignMentionCatalog {
+        var catalog = DesignMentionCatalog()
+        let designs = state.designs.filter { !$0.buildsSystem }.sorted { $0.lastActiveAt > $1.lastActiveAt }
+        for design in designs {
+            guard let snapshot = try? await server.designs.snapshot(design.id) else { continue }
+            let entries = await server.designMentions.entries(for: design, snapshot: snapshot) {
+                var sources: [DesignPath: String] = [:]
+                for path in snapshot.index.boards.keys {
+                    if let board = try? await server.designs.board(design.id, path: path) { sources[path] = board.source }
+                }
+                let systems = (try? await server.designs.installedSystems(design.id)) ?? []
+                return (sources, systems.first.map { $0.title ?? $0.namespace })
+            }
+            guard let entries else { continue }
+            catalog.designs.append(entries.design)
+            catalog.boards[design.id] = entries.boards
+            catalog.elements.merge(entries.elements) { $1 }
+        }
+        return catalog
+    }
+}
+
+/// Each design's @ picker rows as last derived, by its revision and name: a picker opening again
+/// reads no board it read before unless the design changed.
+final class DesignMentionCache: @unchecked Sendable {
+    typealias Entries = (design: DesignMentionItem, boards: [DesignMentionItem], elements: [String: [DesignMentionItem]])
+    private struct Kept {
+        var revision: UInt64
+        var name: String
+        var activeAt: Double
+        var entries: Entries
+    }
+    private let lock = NSLock()
+    private var kept: [DesignID: Kept] = [:]
+
+    func entries(for design: Design, snapshot: DesignSnapshot,
+                 read: () async -> (sources: [DesignPath: String], system: String?)) async -> Entries? {
+        let cached = lock.withLock { kept[design.id] }
+        if let cached, cached.revision == snapshot.revision, cached.name == design.name, cached.activeAt == design.lastActiveAt {
+            return cached.entries
+        }
+        let (sources, system) = await read()
+        guard let entries = DesignMentionCatalog.entries(design: design, snapshot: snapshot, sources: sources, system: system) else { return nil }
+        lock.withLock {
+            kept[design.id] = Kept(revision: snapshot.revision, name: design.name, activeAt: design.lastActiveAt, entries: entries)
+        }
+        return entries
+    }
 }

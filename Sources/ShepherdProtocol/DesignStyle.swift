@@ -97,6 +97,19 @@ public enum DesignStyleEdit {
         return StartTag(bytes: bytes, range: range).attribute(name).map { HTMLEntities.decode($0.text(bytes)) }
     }
 
+    /// Every element's attribute `name` as written (character references decoded), read in one
+    /// pass: tid → value, for the elements that write it.
+    public static func attributes(_ name: String, in source: String) -> [Int: String] {
+        let bytes = Array(source.utf8)
+        guard let template = DesignTemplate(board: source) else { return [:] }
+        var out: [Int: String] = [:]
+        for element in template.elements {
+            guard let range = element.tagRange, let value = StartTag(bytes: bytes, range: range).attribute(name) else { continue }
+            out[element.tid] = HTMLEntities.decode(value.text(bytes))
+        }
+        return out
+    }
+
     /// The tids of the elements whose `data-el` is `name`, in document order.
     public static func elements(named name: String, in source: String) -> [Int] {
         let bytes = Array(source.utf8)

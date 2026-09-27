@@ -1,0 +1,182 @@
+import Foundation
+import ShepherdCore
+import ShepherdProtocol
+
+/// Where a design the @ picker lists lives (MentionPicker, DesignRefStates). Only `.local` is
+/// listed yet; the others are the picker's host tags and dimmed rows, drawn by ShepherdUI's
+/// states until remote references come.
+public enum DesignMentionHost: Hashable, Sendable {
+    case local
+    /// A host this Mac connects to: its name, and whether it is offline (when it was last seen,
+    /// ms since 1970).
+    case remote(name: String, offline: Bool, lastSeen: Double?)
+}
+
+/// One row the composer's @ picker can pick: a design, one of its boards, or an element of a
+/// board, with its breadcrumb (docs/designs.md › Design references › The @ picker).
+public struct DesignMentionItem: Identifiable, Hashable, Sendable {
+    public enum Kind: String, Hashable, Sendable {
+        case design, board, element
+    }
+
+    public var id: String { reference.string }
+    public var kind: Kind
+    /// The piece, not pinned: picking it pins it (`SessionServer.pinDesignReference`).
+    public var reference: DesignReference
+    /// A design's name, a board's title (else its stem), an element's name and words
+    /// ("card “Checkout funnel”").
+    public var title: String
+    /// The titles above it, the design first: ["Checkout funnel dashboard", "A · Funnel first"].
+    public var breadcrumb: [String]
+    public var host: DesignMentionHost
+    /// A design's first installed system ("acme-web"), its boards, and when it was last active
+    /// (ms since 1970).
+    public var system: String?
+    public var boardCount: Int?
+    public var activeAt: Double?
+    /// A board's size and how many elements the picker lists on it.
+    public var width: Double?
+    public var height: Double?
+    public var elementCount: Int?
+    /// An element's tag and how many elements are under it.
+    public var tag: String?
+    public var inside: Int?
+
+    public init(kind: Kind, reference: DesignReference, title: String, breadcrumb: [String], host: DesignMentionHost = .local,
+                system: String? = nil, boardCount: Int? = nil, activeAt: Double? = nil, width: Double? = nil, height: Double? = nil,
+                elementCount: Int? = nil, tag: String? = nil, inside: Int? = nil) {
+        self.kind = kind
+        self.reference = reference
+        self.title = title
+        self.breadcrumb = breadcrumb
+        self.host = host
+        self.system = system
+        self.boardCount = boardCount
+        self.activeAt = activeAt
+        self.width = width
+        self.height = height
+        self.elementCount = elementCount
+        self.tag = tag
+        self.inside = inside
+    }
+
+    /// Whether every word of `query` is in its title or breadcrumb, ignoring case and accents.
+    func matches(_ words: [String]) -> Bool {
+        let haystack = (breadcrumb + [title]).joined(separator: " ").folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+        return words.allSatisfy(haystack.contains)
+    }
+}
+
+/// What the @ picker offers from this Mac: its designs (most recently active first), each
+/// design's boards in canvas order, and each board's elements. Derived off the main thread and
+/// off the server's queue (`SessionServer.designMentionCatalog`); the picker reads it and
+/// `search` narrows it, both pure.
+public struct DesignMentionCatalog: Hashable, Sendable {
+    public var designs: [DesignMentionItem]
+    public var boards: [DesignID: [DesignMentionItem]]
+    /// By the board's reference string (`DesignMentionItem.id`).
+    public var elements: [String: [DesignMentionItem]]
+
+    /// A board lists at most this many elements.
+    public static let maxElementsPerBoard = 300
+
+    public init(designs: [DesignMentionItem] = [], boards: [DesignID: [DesignMentionItem]] = [:],
+                elements: [String: [DesignMentionItem]] = [:]) {
+        self.designs = designs
+        self.boards = boards
+        self.elements = elements
+    }
+
+    /// Where the picker is: the designs, inside a design, or inside a board.
+    public enum Scope: Hashable, Sendable {
+        case designs
+        case design(DesignID)
+        case board(DesignReference)
+    }
+
+    /// The rows of a scope: the designs; a design's own row (the whole design, "rare": its first
+    /// row) then its boards; a board's own row ("Whole board") then its elements.
+    public func rows(in scope: Scope) -> [DesignMentionItem] {
+        switch scope {
+        case .designs:
+            return designs
+        case .design(let id):
+            return (designs.first { $0.reference.designID == id }.map { [$0] } ?? []) + (boards[id] ?? [])
+        case .board(let reference):
+            let key = reference.unpinned.string
+            let board = boards[reference.designID]?.first { $0.id == key }
+            return (board.map { [$0] } ?? []) + (elements[key] ?? [])
+        }
+    }
+
+    /// Every design, board and element whose title or breadcrumb holds each word of `query`, in
+    /// the catalog's order (a design, then its boards, each with its elements), at most `limit`.
+    public func search(_ query: String, limit: Int = 60) -> [DesignMentionItem] {
+        let words = query.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+            .split(whereSeparator: \.isWhitespace).map(String.init)
+        guard !words.isEmpty else { return Array(designs.prefix(limit)) }
+        var out: [DesignMentionItem] = []
+        for design in designs {
+            if design.matches(words) { out.append(design) }
+            for board in boards[design.reference.designID] ?? [] {
+                if out.count >= limit { return out }
+                if board.matches(words) { out.append(board) }
+                for element in elements[board.id] ?? [] where element.matches(words) {
+                    if out.count >= limit { return out }
+                    out.append(element)
+                }
+            }
+            if out.count >= limit { return Array(out.prefix(limit)) }
+        }
+        return out
+    }
+
+    /// One design's rows, from what the host read: the design, its boards in canvas order (their
+    /// sources by path; a board without one lists no elements), and each board's elements with
+    /// their words or `data-el` names.
+    public static func entries(design: Design, snapshot: DesignSnapshot, sources: [DesignPath: String], system: String?)
+        -> (design: DesignMentionItem, boards: [DesignMentionItem], elements: [String: [DesignMentionItem]])? {
+        guard let whole = DesignReference(designID: design.id, board: nil) else { return nil }
+        let order = DesignReferenceReading.canvasOrder(snapshot.index)
+        let designItem = DesignMentionItem(kind: .design, reference: whole, title: design.name, breadcrumb: [], system: system,
+                                           boardCount: order.count, activeAt: design.lastActiveAt)
+        var boards: [DesignMentionItem] = []
+        var elements: [String: [DesignMentionItem]] = [:]
+        for path in order {
+            guard let reference = DesignReference(designID: design.id, board: path), let entry = snapshot.index.boards[path] else { continue }
+            let title = entry.title.flatMap(DesignViewRecord.label) ?? path.stem
+            let rows = sources[path].map { Self.elements(of: reference, source: $0, breadcrumb: [design.name, title]) } ?? []
+            boards.append(DesignMentionItem(kind: .board, reference: reference, title: title, breadcrumb: [design.name],
+                                            width: entry.w, height: entry.h, elementCount: rows.count))
+            elements[reference.string] = rows
+        }
+        return (designItem, boards, elements)
+    }
+
+    /// A board's elements as the picker lists them: each that has words or a `data-el` name,
+    /// in document order, leaving out what the runtime and markup scaffold (`<helmet>`,
+    /// `<style>`, `<sc-for>`, …) and an element that only repeats its parent's words.
+    public static func elements(of board: DesignReference, source: String, breadcrumb: [String]) -> [DesignMentionItem] {
+        guard let path = board.board, let template = DesignTemplate(board: source) else { return [] }
+        let names = DesignStyleEdit.attributes("data-el", in: source)
+        let scaffold: Set<String> = ["helmet", "style", "script", "title", "template", "sc-for", "sc-if", "dc-import", "x-dc", "br", "wbr"]
+        var inside = [Int](repeating: 0, count: template.elements.count)
+        for element in template.elements.reversed() {
+            if let parent = element.parent { inside[parent] += 1 + inside[element.tid] }
+        }
+        var out: [DesignMentionItem] = []
+        for element in template.elements where !scaffold.contains(element.name) {
+            let name = names[element.tid].flatMap { $0.contains("{{") || $0.isEmpty ? nil : $0 }
+            let label = template.labels[element.tid]
+            guard name != nil || label != nil else { continue }
+            if name == nil, let parent = element.parent, template.labels[parent] == label { continue }
+            guard let id = DesignElementID(board: path.viewName, tid: element.tid, path: element.path),
+                  let reference = DesignReference(designID: board.designID, board: path, element: id) else { continue }
+            out.append(DesignMentionItem(kind: .element, reference: reference,
+                                         title: DesignReferenceReading.elementTitle(name: name, label: label, tag: element.name),
+                                         breadcrumb: breadcrumb, tag: element.name, inside: inside[element.tid]))
+            if out.count >= maxElementsPerBoard { break }
+        }
+        return out
+    }
+}

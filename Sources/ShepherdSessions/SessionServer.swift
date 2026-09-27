@@ -326,6 +326,8 @@ public final class SessionServer: @unchecked Sendable {
     /// The copies design references keep, per agent and message (the support directory's
     /// `design-refs/`).
     public let designReferencePayloads: DesignReferencePayloadStore
+    /// Each design's @ picker rows as last derived.
+    let designMentions = DesignMentionCache()
     /// Every design system this host keeps (the support directory's `design-systems/`, plus the
     /// built-ins the app registers). Reads go to it directly; writes, installs and re-syncs go
     /// through the server.
@@ -2563,6 +2565,16 @@ public final class SessionServer: @unchecked Sendable {
               let payloadID = grant.payload,
               let payload = await designReferencePayloads.load(agentID: agentID, payload: payloadID) else { return nil }
         return DesignReferenceLookedAt.make(payload, aspects: aspects)
+    }
+
+    /// What the composer's @ picker lists from this Mac: its designs, their boards and elements.
+    /// Derived off the main thread and the server's queue; a design unchanged since the last
+    /// call is not read again.
+    public func designMentionCatalog() async -> DesignMentionCatalog {
+        let state = self.state
+        return await Task.detached(priority: .userInitiated) {
+            await DesignReferenceService(server: self).mentionCatalog(state: state)
+        }.value
     }
 
     /// Server queue: one design extension request. Only the agent drawing the design may read or

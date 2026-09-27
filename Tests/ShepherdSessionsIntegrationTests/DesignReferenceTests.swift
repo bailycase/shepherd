@@ -580,4 +580,29 @@ struct DesignReferenceIntegrationTests {
         #expect(resumed.messages.first { $0.entryID == mine.entryID }?.designReferences == mine.designReferences)
         #expect(resumed.messages.first { $0.entryID == other.entryID }?.designReferences == nil)
     }
+
+    // MARK: The @ picker
+
+    @Test func thePickerListsThisMacsDesignsBoardsAndElements() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let designID = try await design(h)
+        let catalog = await h.server.designMentionCatalog()
+        #expect(catalog.designs.map(\.title) == ["Checkout ☕️ funnel"])
+        #expect(catalog.designs.first?.system == "acme-web" && catalog.designs.first?.boardCount == 1)
+        let boards = catalog.rows(in: .design(designID))
+        #expect(boards.map(\.kind) == [.design, .board] && boards.last?.title == "A · Funnel first")
+        let board = try #require(boards.last)
+        let elements = catalog.rows(in: .board(board.reference))
+        #expect(elements.first?.kind == .board)
+        #expect(elements.dropFirst().map(\.title) == ["Checkout funnel “Checkout funnel Pay now”", "h2 “Checkout funnel”", "button “Pay now”"],
+                "a named element by its data-el and words; the helmet and its style left out")
+        #expect(elements.last?.breadcrumb == ["Checkout ☕️ funnel", "A · Funnel first"])
+        #expect(catalog.search("pay now button").map(\.title) == ["button “Pay now”"])
+        #expect(catalog.search("pay").map(\.kind) == [.element, .element], "the card holds the words too")
+        // A design unchanged since is not read again; one that changed is.
+        _ = try await h.server.writeDesignBoard(designID, path: Self.board,
+                                                source: DesignTests.board(root: Self.card.replacingOccurrences(of: "Pay now", with: "Buy")))
+        #expect(await h.server.designMentionCatalog().search("buy button").map(\.title) == ["button “Buy”"])
+    }
 }
