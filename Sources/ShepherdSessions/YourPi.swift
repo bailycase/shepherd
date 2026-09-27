@@ -78,8 +78,8 @@ public enum PiSessionFolder {
 /// engine override without it, there is no "your pi" at all, so a test never reads the real one.
 public final class YourPiLocator: @unchecked Sendable {
     public enum Source: Sendable {
-        /// This folder, or none.
-        case fixed(URL?)
+        /// This folder, or none, and the provider key variables to report as set (names only).
+        case fixed(URL?, environmentKeys: Set<String> = [])
         /// A login shell with `environment`, refusing folders inside `supportFolders`.
         case loginShell(environment: [String: String], supportFolders: [URL])
     }
@@ -95,6 +95,9 @@ public final class YourPiLocator: @unchecked Sendable {
     struct Answer: Equatable {
         var yourPi: YourPi?
         var refused: URL?
+        /// The provider key variables (`PiProviders.environmentKeys`) the user's login shell sets,
+        /// by name: never a value.
+        var environmentKeys: Set<String> = []
     }
 
     public init(_ source: Source) {
@@ -134,12 +137,18 @@ public final class YourPiLocator: @unchecked Sendable {
         answer().refused
     }
 
+    /// The provider key variables the user's login shell sets, by name only (pi reads them from an
+    /// agent's login shell). Blocking the first time, like `resolve()`.
+    public func environmentKeys() -> Set<String> {
+        answer().environmentKeys
+    }
+
     private func answer() -> Answer {
         lock.withLock {
             if let resolved { return resolved }
             let found: Answer
             switch source {
-            case .fixed(let url): found = Answer(yourPi: url.map { YourPi(agentDirectory: $0) })
+            case .fixed(let url, let keys): found = Answer(yourPi: url.map { YourPi(agentDirectory: $0) }, environmentKeys: keys)
             case .loginShell(let environment, let supportFolders): found = Self.fromLoginShell(environment: environment, supportFolders: supportFolders)
             }
             resolved = found
@@ -154,15 +163,25 @@ public final class YourPiLocator: @unchecked Sendable {
         for key in ["PI_CODING_AGENT_DIR", "PI_CODING_AGENT_SESSION_DIR"] { env[key] = nil }
         for key in env.keys where key.hasPrefix("SHEPHERD_") && key != ShepherdPaths.supportDirectoryEnvKey { env[key] = nil }
         let home = environment["HOME"].flatMap { $0.isEmpty ? nil : $0 } ?? NSHomeDirectory()
-        let script = #"print -r -- "\#(marker)-DIR=${PI_CODING_AGENT_DIR-}"; print -r -- "\#(marker)-SESSIONS=${PI_CODING_AGENT_SESSION_DIR-}""#
+        // The key variables are printed by name, only when set: never a value.
+        let keys = PiProviders.allEnvironmentKeys.joined(separator: " ")
+        let script = #"print -r -- "\#(marker)-DIR=${PI_CODING_AGENT_DIR-}"; print -r -- "\#(marker)-SESSIONS=${PI_CODING_AGENT_SESSION_DIR-}"; "#
+            + #"for _n in \#(keys); do [[ -n ${(P)_n-} ]] && print -r -- "\#(marker)-KEY=$_n"; done; true"#
         let output = LoginShellProbe.run(script: script, environment: env, directory: home, timeout: 10)
         var values: [String: String] = [:]
+        var found: Set<String> = []
         for line in output.split(separator: "\n") {
             for key in ["DIR", "SESSIONS"] where line.hasPrefix("\(marker)-\(key)=") {
                 values[key] = String(line.dropFirst(marker.count + key.count + 2))
             }
+            if line.hasPrefix("\(marker)-KEY=") {
+                let name = String(line.dropFirst(marker.count + 5))
+                if PiProviders.allEnvironmentKeys.contains(name) { found.insert(name) }
+            }
         }
-        return answer(dir: values["DIR"], sessions: values["SESSIONS"], home: home, supportFolders: supportFolders)
+        var result = Self.answer(dir: values["DIR"], sessions: values["SESSIONS"], home: home, supportFolders: supportFolders)
+        result.environmentKeys = found
+        return result
     }
 
     /// What a login shell printed, as pi would take it: the folder (`~` expanded, relative to
