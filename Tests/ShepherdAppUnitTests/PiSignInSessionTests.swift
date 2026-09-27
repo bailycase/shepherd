@@ -52,6 +52,44 @@ struct PiSignInSessionTests {
         #expect(session.flow == .paste)
     }
 
+    /// pi 0.87.1's Anthropic login listens on its port even for a pasted code, so a taken port
+    /// returns the sheet to the port's box, with no paste to offer.
+    @Test func aTakenPortDuringAPasteSaysSoAndAnthropicOffersNoPaste() {
+        let (session, _, _) = Self.session("anthropic")
+        session.handle(.failed(PiSignInFailure(.portBusy, reason: "busy", port: 53692)))
+        #expect(session.phase == .portBusy(53692))
+        session.pasteInstead()
+        #expect(session.flow == .browser && session.phase == .portBusy(53692), "nothing to paste into")
+
+        let (codex, _, _) = Self.session("openai-codex")
+        codex.handle(.authURL(URL(string: "https://auth.openai.com/a")!, instructions: nil))
+        codex.pasteInstead()
+        codex.handle(.failed(PiSignInFailure(.portBusy, reason: "busy", port: 1455)))
+        #expect(codex.flow == .browser && codex.phase == .portBusy(1455), "the box, not a paste form with a port footer")
+    }
+
+    @Test func continueBeforePiAsksSendsTheCodeWhenItDoes() {
+        let (session, _, _) = Self.session("anthropic")
+        session.handle(.authURL(URL(string: "https://claude.ai/a")!, instructions: nil))
+        session.pasteInstead()
+        session.code = " FAKE-CODE "
+        session.submitCode()
+        #expect(session.phase == .saving && !session.submitReady)
+        session.handle(.prompt(PiSignInPrompt(id: "p1", kind: .manualCode, message: "Paste")))
+        #expect(session.phase == .saving && !session.submitReady, "the code went as the prompt's answer")
+    }
+
+    @Test func continueAfterARefusedCodeOpensAFreshPage() {
+        let (session, _, _) = Self.session("anthropic")
+        session.handle(.authURL(URL(string: "https://claude.ai/a")!, instructions: nil))
+        session.handle(.prompt(PiSignInPrompt(id: "p1", kind: .manualCode, message: "Paste")))
+        session.pasteInstead()
+        session.handle(.failed(PiSignInFailure(.other, reason: "That code was already used.")))
+        session.code = "OLD-CODE"
+        session.submitCode()
+        #expect(session.phase == .paste(rejected: nil) && session.code.isEmpty, "the old page's code can't work for a new login")
+    }
+
     @Test func aRefusedCodeStaysOnThePasteFormInTheProvidersWords() {
         let (session, _, _) = Self.session("anthropic")
         session.handle(.authURL(URL(string: "https://claude.ai/a")!, instructions: nil))

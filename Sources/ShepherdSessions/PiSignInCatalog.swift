@@ -20,11 +20,14 @@ public enum PiSignInCatalog {
         public var site: String
         /// Its refresh tokens rotate, so signing in here and in the terminal's pi can sign one out.
         public var sharedLogin: Bool
+        /// pi's login for it listens on its callback port even for a pasted code (Anthropic's, in
+        /// pi 0.87.1, fails outright when the port is taken), so a taken port offers no paste.
+        public var pasteNeedsPort = false
     }
 
     public static let subscriptions: [Subscription] = [
         Subscription(id: "anthropic", name: "Anthropic", plan: "Claude Pro or Max", sheetSubtitle: "With your Claude Pro or Max subscription",
-                     flow: .browser, site: "claude.ai", sharedLogin: true),
+                     flow: .browser, site: "claude.ai", sharedLogin: true, pasteNeedsPort: true),
         Subscription(id: "openai-codex", name: "OpenAI Codex", plan: "ChatGPT Plus or Pro", sheetSubtitle: "With your ChatGPT Plus or Pro subscription",
                      flow: .browser, site: "chatgpt.com", sharedLogin: true),
         Subscription(id: "github-copilot", name: "GitHub Copilot", plan: "Copilot Pro or Business",
