@@ -454,4 +454,262 @@ struct DesignPreviewTests {
             NewThreadPage(vm: vm, chrome: PageHeaderChrome())
         }
     }
+
+    // MARK: Delete and import (DesignLifecycleStates)
+
+    /// A dialog as its sheet draws it: on the window's fill, at its own width.
+    private func renderDialog<V: View>(_ surface: String, width: CGFloat = NWDesignMetrics.alertWidestWidth, height: CGFloat,
+                                       @ViewBuilder _ dialog: () -> V) async throws {
+        try await Preview.render(surface, size: CGSize(width: width + 40, height: height)) {
+            dialog()
+                .padding(NW.Space.xl)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .background(Color.nw.bgBase)
+        }
+    }
+
+    /// DesignCardMenu: a card with ••• on hover beside its menu (the native menu, drawn here from
+    /// its items: a capture can't draw a menu window).
+    @Test func designCardMenu() async throws {
+        let (workspace, checkout, _) = try await designWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        await vm.loadDesignThumbnails()
+        try await Preview.render("design-card-menu", size: CGSize(width: 620, height: 340), ready: {
+            vm.designRendering.thumbnails.image(checkout.id) != nil
+        }) {
+            CardWithMenu(vm: vm, id: checkout.id)
+        }
+    }
+
+    /// DesignRecentsMenu, DesignToolbarMenu, SystemCardMenu and SystemBuiltIn's menus.
+    @Test func lifecycleMenus() async throws {
+        let (workspace, checkout, _) = try await designWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        workspace.server.designSystems.register(NightWatchSystem.builtIn())
+        await vm.loadDesignSystems()
+        try await Preview.render("design-menus", size: CGSize(width: 1100, height: 280)) {
+            HStack(alignment: .top, spacing: NW.Space.xl) {
+                DesignMenuLookalike(menu: vm.designMenu(.local(checkout.id), context: .recents))
+                DesignMenuLookalike(menu: DesignMenu.design(.toolbar, hasSystem: true))
+                DesignMenuLookalike(menu: DesignMenu.system(name: "acme-web", builtIn: false, repo: "dashboard-web", building: false))
+                DesignMenuLookalike(menu: vm.designSystemMenu(.system("night-watch")))
+            }
+            .padding(NW.Space.xl)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(Color.nw.bgWindow)
+        }
+    }
+
+    /// DesignToolbarMenu's •••: the design's toolbar with it after Export.
+    @Test func designToolbarMore() async throws {
+        let (workspace, checkout, _) = try await designWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        vm.selectSidebarRow(.design(checkout.id))
+        let screen = vm.designScreen(checkout.id)
+        try await Preview.render("app-window-design-toolbar", size: Self.windowSize, ready: { screen.isDrawn }) {
+            RootView(vm: vm)
+        }
+    }
+
+    /// DeleteDesignDialog, at rest and while the agent draws (DesignDeleteConfirm, DesignDeleteWorking).
+    @Test(arguments: ["confirm", "working"])
+    func designDeleteDialog(_ state: String) async throws {
+        let (workspace, checkout, _) = try await designWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        vm.requestDesignDelete(.local(checkout.id))
+        try await eventuallyOnMain("the dialog's words") { vm.designDeleteRequest != nil }
+        var words = try #require(vm.designDeleteRequest).words
+        if state == "working" {
+            words = DeleteDesignWords(name: checkout.name, boards: 4, versions: 23, comments: 2, system: "acme-web", agentWorking: true,
+                                      drawing: 2)
+        }
+        try await renderDialog("design-delete-\(state)", width: NWDesignMetrics.alertWidth, height: state == "working" ? 330 : 270) {
+            DeleteDesignDialog(words: words, delete: {}, cancel: {})
+        }
+    }
+
+    /// DesignDeleted: gone from Designs and Recents, the Undo toast over the page; DesignDeleteFailed:
+    /// back, with the reason and Try again.
+    @Test(arguments: ["deleted", "failed"])
+    func designDeletedToast(_ state: String) async throws {
+        let (workspace, checkout, _) = try await designWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        vm.openDestination(.designs)
+        if state == "deleted" {
+            await vm.deleteDesign(.local(checkout.id), name: checkout.name)
+            #expect(!vm.state.designs.contains { $0.id == checkout.id })
+        } else {
+            vm.showDesignToast(DesignToast(kind: .designFailed(checkout.id, host: nil), name: checkout.name,
+                                           reason: "build-01, where it’s saved, didn’t answer, so it’s back."))
+        }
+        await vm.loadDesignThumbnails()
+        try await Preview.render("app-window-design-\(state)", size: Self.windowSize, ready: {
+            vm.state.designs.allSatisfy { vm.designRendering.thumbnails.image($0.id) != nil } && vm.designToast != nil
+        }) {
+            RootView(vm: vm)
+        }
+    }
+
+    /// DeleteSystemDialog (used by designs, built from a repo), while it's built, and its failure.
+    @Test(arguments: ["confirm", "building"])
+    func systemDeleteDialog(_ state: String) async throws {
+        let words = state == "confirm"
+            ? DeleteSystemWords(name: "acme-web", components: 9, usedBy: ["Checkout funnel dashboard", "Events explorer", "Onboarding flow"],
+                                repo: "dashboard-web", building: false)
+            : DeleteSystemWords(name: "acme-mobile", components: 0, usedBy: [], repo: "mobile-app", building: true)
+        try await renderDialog("system-delete-\(state)", width: NWDesignMetrics.alertWideWidth, height: state == "confirm" ? 300 : 250) {
+            DeleteSystemDialog(words: words, delete: {}, cancel: {})
+        }
+    }
+
+    @Test func systemDeleteFailedToast() async throws {
+        let toast = DesignToast(kind: .systemFailed(.system("acme-web")), name: "acme-web",
+                                reason: "Events explorer is exporting with it right now; try again when that’s done.")
+        try await Preview.render("system-delete-failed", size: CGSize(width: 700, height: 120)) {
+            NWUndoToast(tone: .failed, message: Text("\(toast.words.before)\(Text(toast.name).fontWeight(.semibold))\(toast.words.after)"),
+                        actionTitle: toast.actionTitle, actionSymbol: toast.actionSymbol, action: {}, dismiss: {})
+                .frame(width: 620)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.nw.bgBase)
+        }
+    }
+
+    /// ImportDrop: the target over Designs; ImportProgress: the card filling first among Recent
+    /// designs, its system coming dashed; and the systems a design came with and Night Watch's tag.
+    @Test(arguments: ["drop", "progress", "systems"])
+    func importOnDesigns(_ state: String) async throws {
+        let (workspace, _, _) = try await designWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        workspace.server.designSystems.register(NightWatchSystem.builtIn())
+        switch state {
+        case "progress":
+            vm.designImporting = DesignImporting(file: "checkout-funnel.zip", title: "Checkout funnel", done: 7, total: 12, system: "Checkout DS")
+        case "systems":
+            let zip = try makeScratchDirectory("zip").appendingPathComponent("checkout-funnel.zip")
+            try TestZip.make(Self.importProject()).write(to: zip)
+            _ = try await workspace.server.importDesign(from: zip)
+            let server = workspace.server
+            try await eventuallyOnMain("the import to arrive") { vm.state == server.state }
+        default:
+            break
+        }
+        await vm.loadDesignSystems()
+        await vm.loadDesignThumbnails()
+        try await Preview.render("page-designs-import-\(state)", size: Self.pageSize, ready: {
+            vm.state.designs.allSatisfy { vm.designRendering.thumbnails.image($0.id) != nil || $0.boardCount == 0 }
+        }) {
+            DesignsDestination(vm: vm)
+                .overlay { if state == "drop" { NWDesignsDropTarget().padding(.top, NWPageMetrics.headerHeight) } }
+        }
+    }
+
+    /// ImportErrorDialog for each reason, and ImportAgainDialog.
+    @Test(arguments: ["not-a-project", "too-large", "links-outside", "unreadable", "again"])
+    func importDialog(_ reason: String) async throws {
+        let origin = DesignImportOrigin(file: "checkout-funnel.zip", title: "Checkout funnel", stamp: nil,
+                                        importedAt: Date().timeIntervalSince1970 * 1000 - 6 * 86_400_000)
+        let preview = DesignImportPreview(file: "checkout-funnel.zip", title: "Checkout funnel", boards: 12, pages: 3,
+                                          systems: [.init(namespace: "checkout-ds", title: "Checkout DS", existing: "checkout-ds")],
+                                          origin: origin)
+        let prompt: DesignImportPrompt = switch reason {
+        case "not-a-project": .failed(file: "checkout-funnel.zip", .notAProject)
+        case "too-large": .failed(file: "brand-refresh.zip", .tooLarge(bytes: 2_300_000_000, limit: DesignImport.maxProjectBytes))
+        case "links-outside": .failed(file: "checkout-funnel", .linksOutside([
+            DesignImportLink(board: "boards/hero.html", target: "../shared/logo.svg"),
+            DesignImportLink(board: "boards/pricing.html", target: "../../fonts/Inter.woff2"),
+            DesignImportLink(board: "boards/footer.html", target: "/Users/sam/Desktop/bg.png")]))
+        case "unreadable": .unreadable(DesignImportPreview(file: "checkout-funnel.zip", title: "Checkout funnel", boards: 11, pages: 3,
+                                                           unreadable: [DesignImportUnreadable(path: "boards/pricing-v3.html",
+                                                                                               title: "Pricing — v3", reason: "is empty")],
+                                                           origin: origin))
+        default: .again(preview, existing: Design(name: "Checkout funnel", createdAt: 1, importedFrom: origin), copyName: "Checkout funnel 2")
+        }
+        try await renderDialog("import-\(reason)", height: reason == "links-outside" ? 330 : 260) {
+            DesignImportDialog(prompt: prompt, dismiss: {}, resolve: {}, openExisting: {})
+        }
+    }
+
+    /// A Claude Design export as a ZIP: its canvas, one board, and its design system.
+    static func importProject() -> [TestZip.Entry] {
+        [.file("checkout-funnel/project/canvas.json", #"""
+         {"v":3,"title":"Checkout funnel","boards":{"A-phone.dc.html":{"x":0,"y":0,"w":390,"h":844,"title":"Funnel"}},
+          "order":["A-phone.dc.html"],"designSystems":[{"title":"Checkout DS","namespace":"checkout-ds"}]}
+         """#),
+         .file("checkout-funnel/project/A-phone.dc.html", DesignFixtures.source(DesignFixtures.checkout[3])),
+         .file("checkout-funnel/project/ds/checkout-ds/tokens.json",
+               ##"{"format":"shepherd-tokens/1","name":"Checkout DS","namespace":"checkout-ds","colors":[{"name":"--accent","value":"#0f766e"},{"name":"--text","value":"#111827"},{"name":"--bg","value":"#f5f5f4"},{"name":"--warn","value":"#f59e0b"}]}"##)]
+    }
+}
+
+/// A card with ••• showing beside its menu, read from the page as it draws.
+private struct CardWithMenu: View {
+    var vm: ShepherdViewModel
+    let id: DesignID
+
+    var body: some View {
+        HStack(alignment: .top, spacing: NW.Space.xl) {
+            if let card = vm.designsPage.cards.first(where: { $0.id == id }) {
+                NWDesignCard(name: card.name, system: card.system, detail: card.detail, edited: card.edited, board: card.board,
+                             selected: true, action: {}) {
+                    DesignThumbnailSlot(image: vm.designRendering.thumbnails.image(id))
+                }
+                .overlay(alignment: .topTrailing) {
+                    NWDesignMoreButton { EmptyView() }.padding(NWDesignMetrics.cardMoreInset)
+                }
+                .frame(width: 278)
+                DesignMenuLookalike(menu: card.menu)
+            }
+        }
+        .padding(NW.Space.xl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color.nw.bgWindow)
+    }
+}
+
+/// A native menu as the boards draw it (DesignMenu, SystemMenu), for a capture that can't draw a
+/// menu's window: 228pt on the popover's fill, 28pt rows with a 13pt glyph, a hairline between
+/// sections, Delete in `failed`, and an item that's off at 45% with its reason under it.
+private struct DesignMenuLookalike: View {
+    let menu: DesignMenu
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(menu.sections.enumerated()), id: \.offset) { index, section in
+                if index > 0 { NWHairline().padding(.vertical, NW.Space.xs) }
+                ForEach(section) { item in
+                    VStack(alignment: .leading, spacing: NW.Space.xxs) {
+                        HStack(spacing: 10) {
+                            Image(systemName: item.symbol)
+                                .font(.nwSans(13))
+                                .foregroundStyle(item.destructive ? Color.nw.failed : Color.nw.textSecondary)
+                                .frame(width: 13)
+                            Text(item.title)
+                                .font(.nwSans(12.5))
+                                .foregroundStyle(item.destructive ? Color.nw.failed : Color.nw.textPrimary)
+                        }
+                        .opacity(item.enabled ? 1 : 0.45)
+                        .frame(minHeight: NW.Height.controlM)
+                        if let reason = item.disabledReason {
+                            Text(reason)
+                                .font(.nwSans(11.5))
+                                .foregroundStyle(Color.nw.textTertiary)
+                                .padding(.leading, 23)
+                                .padding(.bottom, NW.Space.xs)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding(.horizontal, NW.Space.m)
+                }
+            }
+        }
+        .padding(NW.Space.s)
+        .frame(width: 256, alignment: .leading)
+        .nwPopover(radius: NW.Radius.l)
+    }
 }
