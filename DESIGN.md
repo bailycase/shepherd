@@ -8517,8 +8517,8 @@ or in a design's own chat. Choices the boards leave open, and where the build de
   remove button and sits first among the attachments, which wrap; at most five. In a sent message
   it sits above the words (the "1 design reference attached." line comes off); a click opens the
   piece in the design (its board picked and centered, its element selected once the board draws).
-- **The preview** (`NWDesignReferencePreview`), 8pt above the chip after a 0.45s hover, kept while
-  the pointer is on either: 340pt, 12pt padding, radius 12, the popover's surface, 10pt between
+- **The preview** (`NWDesignReferencePreview`), 8pt above the chip after a 0.45s hover (8pt below
+  a sent chip too near the thread's top to fit it above), kept while the pointer is on either: 340pt, 12pt padding, radius 12, the popover's surface, 10pt between
   parts. The picture 316×107 (radius 6), the breadcrumb, "v23 pinned Sep 27, 10:42 · acme-web" in
   11.5 `textTertiary` (the version `textSecondary`, the system mono), "The agent gets" with mono
   10.5 tags on `bgSelected`, and Open in design (secondary, 24pt). Updated: a box on `lanternTint`

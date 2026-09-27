@@ -114,7 +114,7 @@ struct ThreadView: View {
                             // One view per row whatever it holds, so the lazy stack builds only the
                             // rows on screen: a row that could be nothing would make it evaluate
                             // every row of a long thread on each streamed chunk.
-                            VStack(spacing: 0) {
+                            ThreadRowLayer {
                                 turn(row, running: running, thinking: row.live && thinking, arriving: arrived.contains(row.id),
                                      settled: settled)
                             }
@@ -516,5 +516,20 @@ private struct CommentAnswer: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+/// One thread row, drawn over the rows after it while a design reference's preview in it is open
+/// (`ReferencePreviewOpenKey`), so a preview that opens below its chip stays on top.
+private struct ThreadRowLayer<Content: View>: View {
+    @ViewBuilder let content: Content
+    @State private var raised = false
+
+    var body: some View {
+        VStack(spacing: 0) { content }
+            .onPreferenceChange(ReferencePreviewOpenKey.self) { open in
+                MainActor.assumeIsolated { if raised != open { raised = open } }
+            }
+            .zIndex(raised ? 1 : 0)
     }
 }

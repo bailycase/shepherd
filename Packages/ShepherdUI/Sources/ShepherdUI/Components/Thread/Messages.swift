@@ -105,8 +105,12 @@ public struct NWUserBubble<Leading: View>: View {
             }
             .padding(.vertical, metrics.vertical)
             .padding(.horizontal, metrics.horizontal)
-            .background(nw.bgBubble, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-            .nwBorder(steered ? nw.running : nw.lineStrong, radius: NW.Radius.m)
+            // The border is drawn under the content, so a chip's preview that opens over the
+            // bubble's edge isn't crossed by it.
+            .background {
+                RoundedRectangle(cornerRadius: NW.Radius.m).fill(nw.bgBubble)
+                    .nwBorder(steered ? nw.running : nw.lineStrong, radius: NW.Radius.m)
+            }
             .frame(maxWidth: metrics.maxWidth, alignment: .trailing)
             if timestamp != nil || note != nil {
                 caption

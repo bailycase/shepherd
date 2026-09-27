@@ -254,6 +254,13 @@ final class ReferenceChipHover {
     }
 }
 
+/// Whether a sent chip's preview is open in a thread row: the row draws over the rows after it
+/// while it is, so a preview opening below its chip (near the thread's top) isn't covered.
+struct ReferencePreviewOpenKey: PreferenceKey {
+    static let defaultValue = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
+}
+
 /// The chips a sent message carries (DesignReferenceChip · sent): each opens its piece in the
 /// design, and after a short hover its preview (RefChipHover) with Open in design, and Send vN
 /// when the design moved on (RefChipUpdated). Without the thread's references (another host's
@@ -275,11 +282,32 @@ private struct SentReferenceChip: View {
     let record: DesignReferenceRecord
     let references: DesignReferenceChips?
     @State private var hover = ReferenceChipHover()
+    /// Where the chip's top is in the thread's visible part, kept without redrawing the chip on
+    /// every scroll step: read when the preview opens, which opens below the chip when the thread's
+    /// top is too near to fit it above.
+    @State private var chipTop = ChipTop()
+    /// Whether the open preview sits above the chip (else below).
+    @State private var above = true
     @Environment(\.designReferencesOpen) private var startsOpen
+
+    /// Not observed: the chip's place changes with every scroll step. The preview's height is
+    /// a guess until it has opened once.
+    final class ChipTop {
+        var value = CGFloat.infinity
+        var previewHeight = NWReferenceMetrics.previewPicture.height + NWReferenceMetrics.previewPadding * 12
+        var fitsAbove: Bool { value >= previewHeight + NW.Space.m }
+    }
+
+    /// Places the open preview again from where the chip is now and how tall the preview is.
+    private func place() {
+        guard hover.shown, chipTop.fitsAbove != above else { return }
+        above = chipTop.fitsAbove
+    }
 
     var body: some View {
         let id = record.payloadID
         let kept = id.flatMap { references?.sent[$0] }
+        let roomAbove = above
         let crumbs = kept.map(\.crumbs).flatMap { $0.isEmpty ? nil : $0 } ?? DesignReferenceChips.crumbs(record)
         let state = DesignReferenceChips.state(kept?.freshness)
         let version = DesignReferencePresentation.version(record.revision)
@@ -289,8 +317,12 @@ private struct SentReferenceChip: View {
             .onHover { hover.pointer($0) }
             .accessibilityAddTraits(.isButton)
             .accessibilityAction { open() }
-            .overlay(alignment: .topLeading) {
-                ZStack(alignment: .bottomLeading) {
+            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .scrollView).minY } action: {
+                chipTop.value = $0
+                place()
+            }
+            .overlay(alignment: roomAbove ? .topLeading : .bottomLeading) {
+                ZStack(alignment: roomAbove ? .bottomLeading : .topLeading) {
                     if hover.shown, references != nil {
                         NWDesignReferencePreview(
                         picture: kept?.picture, crumbs: crumbs, version: version, pinned: kept?.pinned, system: kept?.system,
@@ -301,20 +333,28 @@ private struct SentReferenceChip: View {
                         sendLatestTitle: kept.flatMap { DesignReferencePresentation.sendLatest($0.freshness) },
                         sendLatest: sendLatest)
                         .onHover { hover.pointer($0) }
-                        .nwTransition(.overlay, anchor: .bottomLeading)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                            chipTop.previewHeight = $0
+                            place()
+                        }
+                        .nwTransition(.overlay, anchor: roomAbove ? .bottomLeading : .topLeading)
                     }
                 }
                 .fixedSize()
-                // The preview opens above the chip, 8pt over it (RefChipHover).
-                .alignmentGuide(.top) { $0[.bottom] + NW.Space.m }
+                // The preview opens above the chip, 8pt over it (RefChipHover), or 8pt under it
+                // when the thread's top is too near.
+                .alignmentGuide(.top) { $0.height + NW.Space.m }
+                .alignmentGuide(.bottom) { _ in -NW.Space.m }
             }
             .nwAnimation(.overlay, value: hover.shown)
+            .preference(key: ReferencePreviewOpenKey.self, value: hover.shown)
             .onAppear { if startsOpen { hover.show() } }
             .task(id: TaskKey(id: id, generation: references?.generation ?? 0)) {
                 guard let id, let references else { return }
                 await references.loadSent(id)
             }
             .onChange(of: hover.shown) { _, shown in
+                place()
                 // Opening the preview reads how it stands again.
                 guard shown, let id, let references else { return }
                 Task { await references.loadSent(id) }
