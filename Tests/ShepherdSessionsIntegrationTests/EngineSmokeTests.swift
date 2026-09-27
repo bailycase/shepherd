@@ -54,6 +54,45 @@ struct EngineSmokeTests {
         try await EngineSmoke.runYourExtensions(engine: engine)
     }
 
+    /// The sign-in bridge on the engine's own node and pi's own SDK (its bundle's `index.js`),
+    /// against a scratch home: a key saved through pi's login lands in the home's auth.json as pi
+    /// stores it, and pi's logout removes it. No network: a key's login asks nothing of the
+    /// provider.
+    @Test func theSignInBridgeSavesAndRemovesAKeyThroughPisOwnLogin() async throws {
+        let engine = try #require(EngineSmoke.engine)
+        let scratch = try makeScratchDirectory("engine-signin")
+        let home = scratch.appendingPathComponent("pi", isDirectory: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let script = try PiSignInScript.install(in: scratch)
+        let piHome = PiHome(directory: home, engine: PiEngine.bundled(engine))
+        let sdk = engine.packageDirectory.appendingPathComponent(BundledPiEngine.libraryPath).path
+        var environment = ProcessInfo.processInfo.environment
+        environment["HOME"] = scratch.path
+        let bridge = PiSignInBridge(line: PiLaunch.signInBridge(node: .executable(engine.node.path), script: script.path, sdk: sdk, home: piHome),
+                                   environment: environment)
+        defer { bridge.close() }
+        var replies = bridge.replies.makeAsyncIterator()
+        func next(_ what: String, _ match: (PiSignInReply) -> Bool) async throws -> PiSignInReply {
+            while let reply = await replies.next() {
+                if match(reply) { return reply }
+                if case .failed(let failure) = reply { throw CommandFailure(what, failure.reason) }
+            }
+            throw CommandFailure(what, "the bridge ended")
+        }
+        bridge.send(.login(provider: "deepseek", method: .apiKey, flow: .browser))
+        guard case .prompt(let prompt) = try await next("pi's key prompt", { if case .prompt = $0 { true } else { false } }) else { return }
+        #expect(prompt.kind == .secret)
+        bridge.send(.answer(id: prompt.id, value: PiKeyInput.literal("sk-smoke-literal-0001").stored))
+        _ = try await next("the key to land", { if case .done = $0 { true } else { false } })
+        let auth = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: home.appendingPathComponent("auth.json"))) as? [String: Any])
+        #expect((auth["deepseek"] as? [String: Any])?["key"] as? String == "sk-smoke-literal-0001")
+
+        bridge.send(.logout(provider: "deepseek"))
+        _ = try await next("the sign-out", { $0 == .loggedOut(provider: "deepseek") })
+        let after = try JSONSerialization.jsonObject(with: Data(contentsOf: home.appendingPathComponent("auth.json"))) as? [String: Any]
+        #expect(after?["deepseek"] == nil)
+    }
+
     @Test(.enabled(if: EngineSmoke.rosettaRunsX86, "needs an arm64 Mac with Rosetta and an x86_64 slice"))
     func itsX86SliceRunsUnderRosetta() async throws {
         let engine = try #require(EngineSmoke.engine)
