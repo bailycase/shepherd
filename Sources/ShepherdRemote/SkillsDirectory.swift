@@ -85,22 +85,19 @@ public enum DirectoryRanking: String, CaseIterable, Sendable {
 }
 
 public enum SkillsDirectoryError: Error, Equatable, CustomStringConvertible {
-    /// skills.sh's ranked lists need an API key.
-    case needsKey
     case unavailable(String)
 
     public var description: String {
         switch self {
-        case .needsKey: "skills.sh’s rankings need an API key. Search and install work without one."
         case .unavailable(let reason): reason
         }
     }
 }
 
-/// skills.sh over HTTPS: search and a skill's files need no key (as the `skills` CLI uses them);
-/// the ranked lists (`/api/v1`) need one, sent as a bearer token.
+/// The skills.sh directory through Shepherd's public API. Credentials stay on the service.
 public struct SkillsDirectory: Sendable {
     public static let home = URL(string: "https://skills.sh")!
+    public static let api = URL(string: "https://api.useshepherd.app")!
 
     /// Topics narrow a list: each is a search.
     public static let topics: [(title: String, query: String)] = [
@@ -109,11 +106,11 @@ public struct SkillsDirectory: Sendable {
     ]
 
     public var base: URL
-    public var key: String?
+    private let session: URLSession
 
-    public init(base: URL = SkillsDirectory.home, key: String? = nil) {
+    public init(base: URL = SkillsDirectory.api, session: URLSession = .shared) {
         self.base = base
-        self.key = key.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+        self.session = session
     }
 
     /// Skills matching `query`, most installed first.
@@ -123,9 +120,8 @@ public struct SkillsDirectory: Sendable {
         return try Self.decodeSearch(try await get(components.url!))
     }
 
-    /// A ranked list, a page at a time. Throws `needsKey` without a key, or when skills.sh refuses it.
+    /// A ranked list, a page at a time.
     public func ranked(_ ranking: DirectoryRanking, page: Int = 1, perPage: Int = 50) async throws -> [DirectorySkill] {
-        guard key != nil else { throw SkillsDirectoryError.needsKey }
         let path = ranking == .official ? "api/v1/skills/curated" : "api/v1/skills"
         var components = URLComponents(url: base.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
         var items = [URLQueryItem(name: "per_page", value: String(perPage)), URLQueryItem(name: "page", value: String(page))]
@@ -200,17 +196,17 @@ public struct SkillsDirectory: Sendable {
     private func get(_ url: URL) async throws -> Data {
         var request = URLRequest(url: url, timeoutInterval: 15)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let key { request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization") }
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
+            (data, response) = try await session.data(for: request)
         } catch {
-            throw SkillsDirectoryError.unavailable("Couldn't reach skills.sh.")
+            throw SkillsDirectoryError.unavailable("Couldn't reach Shepherd's skills directory.")
         }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 200
-        if status == 401 || status == 403 { throw SkillsDirectoryError.needsKey }
-        guard (200..<300).contains(status) else { throw SkillsDirectoryError.unavailable("skills.sh answered \(status).") }
+        guard (200..<300).contains(status) else {
+            throw SkillsDirectoryError.unavailable("Shepherd's skills directory answered \(status).")
+        }
         return data
     }
 }
