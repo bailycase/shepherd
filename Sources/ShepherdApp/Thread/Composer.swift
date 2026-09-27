@@ -63,6 +63,9 @@ struct Composer: View {
     @Environment(\.designReferences) private var references
     /// The @ picker: where it is and what it lists, derived once per change of the draft.
     @State private var mentions = MentionPickerState()
+    /// Where the field's caret is, for ⌫ at the start of the words (not observed: the caret
+    /// moving redraws nothing).
+    @State private var caret = ComposerCaret()
     /// Why the last design reference couldn't join the message.
     @State private var referenceError: String?
     @State private var attachments = ComposerAttachments()
@@ -603,8 +606,15 @@ struct Composer: View {
         return commands.isEmpty ? "Follow up…" : "Follow up, or / for commands…"
     }
 
+    /// The field's selection, kept in `caret` without redrawing the composer. A selection the
+    /// draft has outgrown (the draft replaced from outside the field) reads as none.
+    private var caretBinding: Binding<TextSelection?> {
+        Binding(get: { [caret, store] in caret.selection(in: store.draft) }, set: { [caret] in caret.selection = $0 })
+    }
+
     private var field: some View {
-        TextField(text: $store.draft, prompt: Text(placeholder).foregroundStyle(Color.nw.textTertiary), axis: .vertical) {
+        TextField(text: $store.draft, selection: caretBinding, prompt: Text(placeholder).foregroundStyle(Color.nw.textTertiary),
+                  axis: .vertical) {
             Text("Message the agent")
         }
             .lineLimit(1...NWComposerMetrics.fieldMaxLines)
@@ -696,8 +706,9 @@ struct Composer: View {
                     mentionBack()
                     return .handled
                 }
-                // ⌫ in an empty field takes the last chip back (like an attachment).
-                guard store.draft.isEmpty, let last = store.attachedReferences.last else { return .ignored }
+                // ⌫ with the caret at the start of the words takes the last chip back (RefPasted).
+                guard let last = store.attachedReferences.last,
+                      ComposerCaret.takesBackChip(draft: store.draft, selection: caret.selection(in: store.draft)) else { return .ignored }
                 store.detachReference(last.id)
                 return .handled
             }
@@ -1368,6 +1379,30 @@ func nativeContextTooltip(_ stats: NativeThreadStats?) -> String {
 }
 
 // MARK: Sending while pi works
+
+/// Where the composer field's caret is. Written by the field as the caret moves, read only when
+/// ⌫ is pressed, so nothing observes it.
+final class ComposerCaret {
+    var selection: TextSelection?
+
+    /// The selection, while it still lies inside `draft`.
+    func selection(in draft: String) -> TextSelection? {
+        guard let selection else { return nil }
+        switch selection.indices {
+        case .selection(let range): return range.upperBound <= draft.endIndex ? selection : nil
+        case .multiSelection(let ranges): return ranges.ranges.allSatisfy { $0.upperBound <= draft.endIndex } ? selection : nil
+        @unknown default: return nil
+        }
+    }
+
+    /// Whether ⌫ takes the last chip back rather than deleting a character: in an empty field, or
+    /// with the caret (no selection) before the first character.
+    static func takesBackChip(draft: String, selection: TextSelection?) -> Bool {
+        if draft.isEmpty { return true }
+        guard let selection, case .selection(let range) = selection.indices else { return false }
+        return range.isEmpty && range.lowerBound == draft.startIndex
+    }
+}
 
 /// What Esc does in the composer, the first that applies: close the open menu, close the
 /// command list, then stop pi (as Stop does, asking first with live subagents).
