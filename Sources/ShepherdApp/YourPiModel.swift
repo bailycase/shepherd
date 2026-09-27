@@ -119,6 +119,9 @@ final class YourPiModel {
         guard report.first else { return false }
         let models = [defaultModel ?? survey.shepherdDefaultModel].compactMap { $0 }
         let step = Welcome(report: report, survey: survey, missing: survey.missingSignIns(for: models))
+        // A user with no pi sees only sign-in: already signed in, with no key found and no
+        // problem to report, there is no step at all.
+        if report.from == nil, !step.asksToSignIn, report.problems.isEmpty, PiWelcomeSheet.sections(step) == .init() { return false }
         welcome = step
         return step.holdsAgents
     }

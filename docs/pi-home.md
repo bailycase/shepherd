@@ -197,8 +197,8 @@ variables the user's login shell sets (names only, found by the same login shell
 pi"), and a sign-in ask only for what's missing: the provider of the default model (Settings ▸
 Agents' own, else pi's) when nothing covers it, or every provider when nothing can start an agent.
 Providers that sign in with cloud credentials pi doesn't store (Amazon Bedrock, Google Vertex AI)
-are never asked for. A new user with no pi sees only sign-in. A later launch copies nothing and
-holds nothing.
+are never asked for. A new user with no pi sees only sign-in, and no step at all when Shepherd's
+pi is already signed in and nothing is missing. A later launch copies nothing and holds nothing.
 
 ## Signing in
 

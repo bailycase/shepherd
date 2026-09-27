@@ -215,6 +215,22 @@ struct YourPiFirstLaunchTests {
         #expect(vm.cannotStart.contains(id) && vm.state.agents.contains { $0.id == id }, "the agent stays, waiting")
     }
 
+    /// A user with no pi whose Shepherd pi is already signed in (a sign-in made before this
+    /// build) has nothing to be asked: no step shows, and restored agents aren't held.
+    @Test func aUserWithNoPiAlreadySignedInSeesNoStep() async throws {
+        let setup = try Setup(yourPi: false)
+        defer { setup.remove() }
+        try FileManager.default.createDirectory(at: setup.pi.home, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try Data(#"{"openai": {"type": "api_key", "key": "sk-FAKE-literal-0001"}}"#.utf8)
+            .write(to: setup.pi.home.appendingPathComponent("auth.json"))
+        let model = YourPiModel(pi: setup.pi)
+
+        let holds = await model.runFirstLaunch(defaultModel: "openai/gpt-fixture")
+
+        #expect(!holds && model.welcome == nil)
+        #expect(model.survey?.canStartAgents == true && model.survey?.copied == true)
+    }
+
     /// Keys the login shell sets count: with one, the welcome step asks for no sign-in.
     @Test func aKeyInTheEnvironmentIsShownAsFound() async throws {
         let setup = try Setup(yourPi: false, environmentKeys: ["OPENAI_API_KEY"])
