@@ -230,7 +230,7 @@ struct PiSettingsFile {
             var settings: [String: Any] = [:]
             if let data = try? Data(contentsOf: url), !data.isEmpty {
                 guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                    return ["Shepherd's pi settings (\(url.path)) aren't a JSON object, so Shepherd left them as they are."]
+                    return ["Shepherd's pi's \(url.lastPathComponent) (\(url.path)) isn't a JSON object, so Shepherd left it as it is."]
                 }
                 settings = object
             }
