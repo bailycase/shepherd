@@ -205,7 +205,7 @@ public struct NWCanvasElement: Identifiable, Equatable, Sendable {
 }
 
 /// A pin on the canvas, on its element's top-trailing corner: a comment's (`NWCommentPin`), or a
-/// thread's note (`NWThreadNotePin`), which stands just before a comment's pin on the same corner.
+/// thread's note (`NWThreadNotePin`), which stands just after a comment's pin on the same corner.
 public struct NWCanvasPin: Identifiable, Equatable, Sendable {
     public enum Style: Equatable, Sendable {
         case comment
