@@ -21,6 +21,7 @@ struct KeyboardSettings: View {
         ("Window", [.toggleSidebar, .toggleRightPane]),
         ("Panes", [.splitVertical, .splitHorizontal, .closePane, .focusNextPane, .focusPreviousPane,
                    .toggleTerminal, .maximizeTerminal]),
+        ("Designs", [.importDesign]),
     ]
 
     var body: some View {

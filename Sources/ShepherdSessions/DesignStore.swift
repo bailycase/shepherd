@@ -150,6 +150,23 @@ public final class DesignStore: @unchecked Sendable {
         }
     }
 
+    /// How many earlier versions of boards the design keeps, in all (DeleteDesignDialog: "their
+    /// 23 versions").
+    public func versionCount(_ id: DesignID) async throws -> Int {
+        try await run {
+            guard let folder = self.folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+            let versions = folder.appendingPathComponent("versions", isDirectory: true)
+            let walker = FileManager.default.enumerator(at: versions, includingPropertiesForKeys: [.isRegularFileKey],
+                                                        options: [.skipsHiddenFiles])
+            var count = 0
+            while let url = walker?.nextObject() as? URL {
+                if url.lastPathComponent.hasSuffix(DesignPath.fileExtension),
+                   (try? url.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true { count += 1 }
+            }
+            return count
+        }
+    }
+
     /// The designs among `ids` whose folder has no canvas.json: startup forgets them. A canvas
     /// that is there but unreadable keeps its design, so nothing is forgotten over a bad edit.
     /// Blocks the caller on the store's queue; call it off the server's.
