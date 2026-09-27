@@ -602,8 +602,9 @@ public final class SessionServer: @unchecked Sendable {
     public func start() throws {
         // Which designs lost their folders is read on the store's queue, not the server's.
         let missingDesigns = designs.missingDesigns(among: store.committed.designs.map(\.id))
-        // A design deleted in its undo window before a crash: state.json no longer lists it.
-        designs.finishAllDeletions()
+        // A design deleted in its undo window before a crash (state.json no longer lists it), and
+        // an import a crash left staged.
+        designs.removeLeftovers()
         try queue.sync { try startOnQueue(missingDesigns: missingDesigns) }
         countDesignBoards()
     }
@@ -613,7 +614,7 @@ public final class SessionServer: @unchecked Sendable {
     /// deleted for good.
     public func stop() {
         queue.sync { stopOnQueue() }
-        designs.finishAllDeletions()
+        designs.removeLeftovers()
     }
 
     // MARK: - Lifecycle (server queue)
@@ -3486,16 +3487,46 @@ public final class SessionServer: @unchecked Sendable {
         return duplicate
     }
 
-    /// Makes a design from a Claude Design folder on disk (decision 4): the folder's canvas and
-    /// project files copied into a new design's folder by `DesignImport`'s rules (the folder is
-    /// only read), then its record, named by the canvas's title. Like any design it belongs to
-    /// no space. It has no agent yet; opening it starts one.
+    /// Makes a design from a Claude Design project on disk (a folder or a ZIP) at once: read and
+    /// checked by `DesignImport`'s rules (the source is only read), then recorded, named by its
+    /// canvas's title. Like any design it belongs to no space and has no agent yet; opening it
+    /// starts one. A board that can't be read refuses it (`prepareDesignImport` offers the choice).
     public func importDesign(from folder: URL) async throws -> Design {
+        let preview = try await prepareDesignImport(from: folder)
+        do {
+            return try await finishDesignImport(preview)
+        } catch {
+            await cancelDesignImport(preview.id)
+            throw error
+        }
+    }
+
+    /// Import, first half (ImportProgress): reads a Claude Design project, a ZIP or a folder,
+    /// into staging and checks it (canvas.json, sizes, names, links), reporting its boards as they
+    /// land. Answers what it holds; nothing is in Designs until `finishDesignImport`, and a
+    /// failure (`DesignImportFailure`) leaves nothing behind. Read off the server's queue.
+    public func prepareDesignImport(from url: URL,
+                                    progress: @escaping @Sendable (DesignImportProgress) -> Void = { _ in }) async throws -> DesignImportPreview {
+        let systems = designSystems
+        return try await designs.prepareImport(from: url, at: Self.nowMilliseconds(),
+                                               existingSystem: { await systems.existing(files: $0) }, progress: progress)
+    }
+
+    /// Import, second half: the staged project becomes a new design named `name` (else its
+    /// title), recorded with where it came from; boards that couldn't be read are left out only
+    /// with `skippingUnreadable`. Its own design systems come along as systems of their own,
+    /// marked with the design they came with, unless this host has them unchanged already.
+    public func finishDesignImport(_ preview: DesignImportPreview, name: String? = nil,
+                                   skippingUnreadable: Bool = false) async throws -> Design {
+        let title = (name ?? preview.title).trimmingCharacters(in: .whitespacesAndNewlines)
         let id = DesignID()
-        let snapshot = try await designs.importFolder(id, from: folder)
-        let title = snapshot.index.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let design = Design(id: id, name: title.isEmpty ? "Imported design" : title,
-                            createdAt: Self.nowMilliseconds(), boardCount: snapshot.index.boards.count)
+        let now = Self.nowMilliseconds()
+        let finished = try await designs.finishImport(preview.id, as: id, title: title.isEmpty ? "Imported design" : title,
+                                                      skippingUnreadable: skippingUnreadable)
+        var origin = preview.origin
+        origin.importedAt = now
+        let design = Design(id: id, name: finished.snapshot.index.title ?? title, systemNamespace: preview.systems.first?.namespace,
+                            createdAt: now, boardCount: finished.snapshot.index.boards.count, importedFrom: origin)
         do {
             try await enqueue {
                 try self.checkNewDesign(design)
@@ -3505,7 +3536,20 @@ public final class SessionServer: @unchecked Sendable {
             try? await designs.delete(id)
             throw error
         }
+        var added = false
+        for system in preview.systems {
+            guard let files = finished.systems[system.namespace],
+                  let adopted = try? await designSystems.adopt(namespace: system.namespace, title: system.title, files: files,
+                                                               cameWith: id, at: now) else { continue }
+            added = added || adopted.added
+        }
+        if added { hopToMain { [weak self] in self?.onDesignSystemsChanged?() } }
         return design
+    }
+
+    /// Import put away (Cancel import, a dialog closed): the staged project goes.
+    public func cancelDesignImport(_ id: UUID) async {
+        await designs.cancelImport(id)
     }
 
     /// What an export of a design's `boards` reads: the canvas, those boards and the ones they

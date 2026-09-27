@@ -221,6 +221,22 @@ public final class DesignSystemStore: @unchecked Sendable {
         }
     }
 
+    /// A system this host keeps with exactly `files` (a built-in's included), if one: an import
+    /// uses it rather than adding a second.
+    func existing(files: [String: Data]) async -> String? {
+        (try? await run { () -> String? in
+            let kept = files.filter { DesignSystemFile.isPath($0.key) }
+            guard !kept.isEmpty else { return nil }
+            if let builtIn = self.builtIns.values.first(where: { $0.files == kept }) { return builtIn.info.namespace }
+            let names = ((try? FileManager.default.contentsOfDirectory(atPath: self.directory.path)) ?? []).sorted()
+            return names.first { name in
+                guard DesignPath.isSystemNamespace(name), self.builtIns[name] == nil, let folder = self.folder(for: name),
+                      FileManager.default.fileExists(atPath: folder.path) else { return false }
+                return self.filesOnQueue(folder) == kept
+            }
+        }) ?? nil
+    }
+
     /// Import: a Claude Design project's own design system (its design's `ds/<namespace>/`), kept
     /// as a system of its own, marked with the design it came with. Only a system's kinds of
     /// file come (tokens.json first; without a readable one nothing does, and nil answers). A
