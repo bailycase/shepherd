@@ -138,6 +138,23 @@ struct DesignProjectImportTests {
         #expect(await h.server.designSystemSummaries().isEmpty)
     }
 
+    /// A ZIP whose table of contents claims less than its data holds passes the table's checks,
+    /// but ditto unpacks what the data holds: what lands is measured as it lands, and past the
+    /// limit the unpacking stops and the import is refused as too large.
+    @Test func aZipThatUnderstatesItsSizesIsStoppedWhileItUnpacks() async throws {
+        var big = TestZip.Entry("big.bin", Data(repeating: 0x61, count: 3_000_000), claimedSize: 10)
+        big.deflated = true
+        let zip = try write([.file("canvas.json", #"{"v":3,"boards":{}}"#), big])
+        let folder = try makeScratchDirectory("unzip").appendingPathComponent("out")
+
+        let failure = #expect(throws: DesignImportFailure.self) { try DesignStore.unzip(zip, into: folder, limit: 1_000_000) }
+        guard case .tooLarge(let bytes, 1_000_000)? = failure else {
+            Issue.record("expected tooLarge, got \(String(describing: failure))")
+            return
+        }
+        #expect(bytes > 1_000_000)
+    }
+
     /// A board that can't be read is the viewer's choice: finishing without it refused, Cancel
     /// import leaves nothing, and "Import the other 1" leaves that board out on purpose.
     @Test func anUnreadableBoardWaitsForTheViewersChoice() async throws {

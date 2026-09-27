@@ -13,17 +13,25 @@ public enum TestZip {
         public var mode: UInt32
         /// The size the archive claims, when it isn't the data's (never unpacked then).
         public var claimedSize: UInt32?
+        /// The system the archive says made the entry: 3 Unix, 0 MS-DOS (whose mode bits ditto
+        /// still reads).
+        public var system: UInt16 = 3
+        /// Deflated rather than stored, as most ZIPs are.
+        public var deflated = false
 
-        public init(_ name: String, _ data: Data = Data(), mode: UInt32 = 0o100644, claimedSize: UInt32? = nil) {
+        public init(_ name: String, _ data: Data = Data(), mode: UInt32 = 0o100644, claimedSize: UInt32? = nil, system: UInt16 = 3) {
             self.name = name
             self.data = data
             self.mode = mode
             self.claimedSize = claimedSize
+            self.system = system
         }
 
         public static func file(_ name: String, _ text: String) -> Entry { Entry(name, Data(text.utf8)) }
         public static func folder(_ name: String) -> Entry { Entry(name.hasSuffix("/") ? name : name + "/", mode: 0o040755) }
-        public static func link(_ name: String, to target: String) -> Entry { Entry(name, Data(target.utf8), mode: 0o120777) }
+        public static func link(_ name: String, to target: String, system: UInt16 = 3) -> Entry {
+            Entry(name, Data(target.utf8), mode: 0o120777, system: system)
+        }
     }
 
     public static func make(_ entries: [Entry]) -> Data {
@@ -32,19 +40,22 @@ public enum TestZip {
         for entry in entries {
             let name = Data(entry.name.utf8)
             let crc = crc32(entry.data)
-            let size = UInt32(entry.data.count)
-            let claimed = entry.claimedSize ?? size
+            // Foundation's zlib is raw DEFLATE, as a ZIP holds it.
+            let stored = entry.deflated ? ((try? (entry.data as NSData).compressed(using: .zlib)) as Data? ?? entry.data) : entry.data
+            let method: UInt16 = entry.deflated ? 8 : 0
+            let size = UInt32(stored.count)
+            let claimed = entry.claimedSize ?? UInt32(entry.data.count)
             let offset = UInt32(body.count)
             body.append(le32(0x0403_4b50))
-            body.append(le16(20)); body.append(le16(0x0800)); body.append(le16(0))
+            body.append(le16(20)); body.append(le16(0x0800)); body.append(le16(method))
             body.append(le16(0)); body.append(le16(0x21))
             body.append(le32(crc)); body.append(le32(size)); body.append(le32(claimed))
             body.append(le16(UInt16(name.count))); body.append(le16(0))
             body.append(name)
-            body.append(entry.data)
+            body.append(stored)
 
             directory.append(le32(0x0201_4b50))
-            directory.append(le16(0x031E)); directory.append(le16(20)); directory.append(le16(0x0800)); directory.append(le16(0))
+            directory.append(le16(entry.system << 8 | 0x1E)); directory.append(le16(20)); directory.append(le16(0x0800)); directory.append(le16(method))
             directory.append(le16(0)); directory.append(le16(0x21))
             directory.append(le32(crc)); directory.append(le32(size)); directory.append(le32(claimed))
             directory.append(le16(UInt16(name.count))); directory.append(le16(0)); directory.append(le16(0))

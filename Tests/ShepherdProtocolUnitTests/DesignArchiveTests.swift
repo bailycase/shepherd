@@ -47,8 +47,11 @@ struct DesignArchiveTests {
         }
     }
 
-    @Test func aLinkInsideTheZipIsRefused() throws {
-        let read = try entries(TestZip.make([.file("canvas.json", "{}"), .link("logo.svg", to: "/Users/sam/logo.svg")]))
+    /// A link is refused whichever system the ZIP says made it: ditto makes a link of any entry
+    /// whose mode says so.
+    @Test(arguments: [UInt16(3), 0])
+    func aLinkInsideTheZipIsRefused(_ system: UInt16) throws {
+        let read = try entries(TestZip.make([.file("canvas.json", "{}"), .link("logo.svg", to: "/Users/sam/logo.svg", system: system)]))
         #expect(throws: DesignImportFailure.linksOutside([DesignImportLink(board: "logo.svg", target: "a link")])) {
             try DesignArchive.check(read)
         }

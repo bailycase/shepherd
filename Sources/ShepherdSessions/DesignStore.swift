@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import os
 import ShepherdCore
 import ShepherdProtocol
 
@@ -865,8 +866,11 @@ public final class DesignStore: @unchecked Sendable {
     }
 
     /// Unpacks a ZIP into `folder` once its table of contents passes the import's rules
-    /// (`DesignArchive.check`): nothing is unpacked from an archive that breaks them.
-    private static func unzip(_ archive: URL, into folder: URL) throws {
+    /// (`DesignArchive.check`): nothing is unpacked from an archive that breaks them. ditto
+    /// unpacks what the data holds, not the sizes the table claims, so what lands is measured as
+    /// it lands and ditto is stopped once it passes `limit`: a ZIP that lies about its sizes
+    /// can't fill the disk.
+    static func unzip(_ archive: URL, into folder: URL, limit: Int64 = DesignImport.maxProjectBytes) throws {
         let handle: FileHandle
         do { handle = try FileHandle(forReadingFrom: archive) } catch { throw DesignImportFailure.notAProject }
         defer { try? handle.close() }
@@ -893,12 +897,43 @@ public final class DesignStore: @unchecked Sendable {
         ditto.standardOutput = FileHandle.nullDevice
         let errors = Pipe()
         ditto.standardError = errors
+        let exited = DispatchSemaphore(value: 0)
+        ditto.terminationHandler = { _ in exited.signal() }
         try ditto.run()
-        let message = errors.fileHandleForReading.readDataToEndOfFile()
-        ditto.waitUntilExit()
-        guard ditto.terminationStatus == 0 else {
-            throw DesignImportFailure.refused("The ZIP couldn’t be unpacked: \(String(decoding: message, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))")
+        let message = OSAllocatedUnfairLock(initialState: Data())
+        let drained = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .utility).async {
+            let read = errors.fileHandleForReading.readDataToEndOfFile()
+            message.withLock { $0 = read }
+            drained.signal()
         }
+        var unpacked: Int64 = 0
+        while exited.wait(timeout: .now() + .milliseconds(100)) == .timedOut {
+            unpacked = bytes(under: folder)
+            if unpacked > limit {
+                ditto.terminate()
+                exited.wait()
+                drained.wait()
+                throw DesignImportFailure.tooLarge(bytes: unpacked, limit: limit)
+            }
+        }
+        drained.wait()
+        unpacked = bytes(under: folder)
+        guard unpacked <= limit else { throw DesignImportFailure.tooLarge(bytes: unpacked, limit: limit) }
+        guard ditto.terminationStatus == 0 else {
+            throw DesignImportFailure.refused("The ZIP couldn’t be unpacked: \(String(decoding: message.withLock { $0 }, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))")
+        }
+    }
+
+    /// The bytes of every file under `folder`, as `lstat` sees them.
+    private static func bytes(under folder: URL) -> Int64 {
+        let walker = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey])
+        var total: Int64 = 0
+        while let url = walker?.nextObject() as? URL {
+            guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]), values.isRegularFile == true else { continue }
+            total += Int64(values.fileSize ?? 0)
+        }
+        return total
     }
 
     /// Every regular file under `folder` by relative path, as `lstat` sees it (links are left
