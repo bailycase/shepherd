@@ -570,7 +570,7 @@ extension DesignReferenceReading {
     }
 
     /// Whether an inline style paints a box: a fill, a border or a shadow.
-    static func draws(_ style: DesignInlineStyle?) -> Bool {
+    public static func draws(_ style: DesignInlineStyle?) -> Bool {
         let nothing: Set<String> = ["", "none", "transparent", "inherit", "initial", "unset", "0", "0px", "hidden"]
         for declaration in style?.declarations ?? [] {
             let value = declaration.value.lowercased().trimmingCharacters(in: .whitespaces)

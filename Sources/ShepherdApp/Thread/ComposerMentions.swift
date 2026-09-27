@@ -219,9 +219,11 @@ struct MentionPickerContent: Equatable {
         [size(item), item.elementCount.map { $0 == 1 ? "1 element" : "\($0) elements" }].compactMap { $0 }.joined(separator: " · ")
     }
 
-    /// "div · 12 inside".
+    /// What the element is and holds ("funnel bars · 5 steps"), else its tag and how many
+    /// elements it holds.
     static func elementLine(_ item: DesignMentionItem) -> String {
-        [item.tag, item.inside.flatMap { $0 > 0 ? "\($0) inside" : nil }].compactMap { $0 }.joined(separator: " · ")
+        if let detail = item.detail, !detail.isEmpty { return detail }
+        return [item.tag, item.inside.flatMap { $0 > 0 ? "\($0) inside" : nil }].compactMap { $0 }.joined(separator: " · ")
     }
 
     static func size(_ item: DesignMentionItem) -> String? {

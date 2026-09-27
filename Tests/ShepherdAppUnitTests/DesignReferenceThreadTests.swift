@@ -31,7 +31,7 @@ struct DesignReferenceThreadTests {
                                   title: "B · Step table", breadcrumb: ["Checkout funnel dashboard"], width: 1280, height: 800, elementCount: 0)
         let card = DesignMentionItem(kind: .element, reference: DesignReference(designID: Self.checkout, board: Self.a, element: Self.card)!,
                                      title: "card “Checkout funnel”", breadcrumb: ["Checkout funnel dashboard", "A · Funnel first"],
-                                     tag: "div", inside: 12)
+                                     tag: "div", inside: 12, detail: "funnel bars · 5 steps")
         return DesignMentionCatalog(designs: [checkout, events], boards: [Self.checkout: [a, b]], elements: [a.id: [card]])
     }
 
@@ -80,8 +80,9 @@ struct DesignReferenceThreadTests {
                                        board: "A · Funnel first")
         let elements = MentionPickerContent.make(catalog: catalog, scope: board, filter: "")
         #expect(elements.rows.map(\.title) == ["Whole board", "card “Checkout funnel”"])
-        #expect(elements.rows.map(\.subtitle) == ["1280 × 800 · 1 element", "div · 12 inside"])
+        #expect(elements.rows.map(\.subtitle) == ["1280 × 800 · 1 element", "funnel bars · 5 steps"])
         #expect(elements.sections.map(\.title) == ["", "Elements"])
+        #expect(elements.sections[1].trailing == "1", "Elements counts what Whole board says the board lists")
 
         let search = MentionPickerContent.make(catalog: catalog, scope: .designs, filter: "funnel")
         #expect(search.rows.map(\.title) == ["Checkout funnel dashboard", "A · Funnel first", "card “Checkout funnel”"])

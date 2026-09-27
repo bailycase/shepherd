@@ -41,10 +41,14 @@ public struct DesignMentionItem: Identifiable, Hashable, Sendable {
     /// An element's tag and how many elements are under it.
     public var tag: String?
     public var inside: Int?
+    /// What an element is and holds, under its title ("funnel bars · 5 steps"; `DesignElementSummary`).
+    public var detail: String?
+    /// The design's revision the row was read at: a row's picture is kept per revision.
+    public var revision: UInt64?
 
     public init(kind: Kind, reference: DesignReference, title: String, breadcrumb: [String], host: DesignMentionHost = .local,
                 system: String? = nil, boardCount: Int? = nil, activeAt: Double? = nil, width: Double? = nil, height: Double? = nil,
-                elementCount: Int? = nil, tag: String? = nil, inside: Int? = nil) {
+                elementCount: Int? = nil, tag: String? = nil, inside: Int? = nil, detail: String? = nil, revision: UInt64? = nil) {
         self.kind = kind
         self.reference = reference
         self.title = title
@@ -58,6 +62,8 @@ public struct DesignMentionItem: Identifiable, Hashable, Sendable {
         self.elementCount = elementCount
         self.tag = tag
         self.inside = inside
+        self.detail = detail
+        self.revision = revision
     }
 
     /// Whether every word of `query` is in its title or breadcrumb, ignoring case and accents.
@@ -139,15 +145,15 @@ public struct DesignMentionCatalog: Hashable, Sendable {
         guard let whole = DesignReference(designID: design.id, board: nil) else { return nil }
         let order = DesignReferenceReading.canvasOrder(snapshot.index)
         let designItem = DesignMentionItem(kind: .design, reference: whole, title: design.name, breadcrumb: [], system: system,
-                                           boardCount: order.count, activeAt: design.lastActiveAt)
+                                           boardCount: order.count, activeAt: design.lastActiveAt, revision: snapshot.revision)
         var boards: [DesignMentionItem] = []
         var elements: [String: [DesignMentionItem]] = [:]
         for path in order {
             guard let reference = DesignReference(designID: design.id, board: path), let entry = snapshot.index.boards[path] else { continue }
             let title = entry.title.flatMap(DesignViewRecord.label) ?? path.stem
-            let rows = sources[path].map { Self.elements(of: reference, source: $0, breadcrumb: [design.name, title]) } ?? []
+            let rows = sources[path].map { Self.elements(of: reference, source: $0, breadcrumb: [design.name, title], revision: snapshot.revision) } ?? []
             boards.append(DesignMentionItem(kind: .board, reference: reference, title: title, breadcrumb: [design.name],
-                                            width: entry.w, height: entry.h, elementCount: rows.count))
+                                            width: entry.w, height: entry.h, elementCount: rows.count, revision: snapshot.revision))
             elements[reference.string] = rows
         }
         return (designItem, boards, elements)
@@ -155,15 +161,19 @@ public struct DesignMentionCatalog: Hashable, Sendable {
 
     /// A board's elements as the picker lists them: each that has words or a `data-el` name,
     /// in document order, leaving out what the runtime and markup scaffold (`<helmet>`,
-    /// `<style>`, `<sc-for>`, …) and an element that only repeats its parent's words.
-    public static func elements(of board: DesignReference, source: String, breadcrumb: [String]) -> [DesignMentionItem] {
+    /// `<style>`, `<sc-for>`, …) and an element that only repeats its parent's words. Each says
+    /// what it is and holds (`DesignElementSummary`).
+    public static func elements(of board: DesignReference, source: String, breadcrumb: [String], revision: UInt64? = nil) -> [DesignMentionItem] {
         guard let path = board.board, let template = DesignTemplate(board: source) else { return [] }
         let names = DesignStyleEdit.attributes("data-el", in: source)
         let roles = DesignStyleEdit.attributes("role", in: source)
         let styles = DesignStyleEdit.styles(in: source)
+        let details = DesignElementSummary(template: template, names: names, roles: roles, styles: styles,
+                                          loopLists: DesignStyleEdit.attributes("list", in: source),
+                                          loopItems: DesignStyleEdit.attributes("as", in: source))
         var parents = Set<Int>()
         for element in template.elements { if let parent = element.parent { parents.insert(parent) } }
-        let scaffold: Set<String> = ["helmet", "style", "script", "title", "template", "sc-for", "sc-if", "dc-import", "x-dc", "br", "wbr"]
+        let scaffold = DesignElementSummary.scaffold
         var inside = [Int](repeating: 0, count: template.elements.count)
         for element in template.elements.reversed() {
             if let parent = element.parent { inside[parent] += 1 + inside[element.tid] }
@@ -182,7 +192,8 @@ public struct DesignMentionCatalog: Hashable, Sendable {
                                                                                               words: label != nil, style: styles[element.tid],
                                                                                               role: roles[element.tid]),
                                              label: label, tag: element.name),
-                                         breadcrumb: breadcrumb, tag: element.name, inside: inside[element.tid]))
+                                         breadcrumb: breadcrumb, tag: element.name, inside: inside[element.tid],
+                                         detail: details.detail(element.tid), revision: revision))
             if out.count >= maxElementsPerBoard { break }
         }
         return out
