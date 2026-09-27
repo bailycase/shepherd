@@ -36,8 +36,12 @@ final class DesignReferenceChips {
         /// design's first board.
         var picture: (DesignReference) -> CGImage? = { _ in nil }
         var catalog: () async -> DesignMentionCatalog = { DesignMentionCatalog() }
-        /// A picker row's picture: a design's first board, a board's own.
+        /// A picker row's picture: a design's first board, a board's own, an element cut from its
+        /// board once it is.
         var rowPicture: (DesignMentionItem) -> CGImage? = { _ in nil }
+        /// An element's row came on screen: its picture is cut (its board, and every element the
+        /// picker lists on it, beside it).
+        var wantCrop: (_ element: DesignMentionItem, _ board: DesignMentionItem, _ tids: [Int]) -> Void = { _, _, _ in }
         /// Asks for the pictures of what a picker scope lists (a design's boards).
         var wantPictures: (MentionScope) -> Void = { _ in }
         var open: (DesignReference) -> Void = { _ in }
@@ -139,9 +143,19 @@ final class DesignReferenceChips {
         if let catalog { self.catalog = catalog }
     }
 
-    /// A picker row's picture, while one is at hand.
+    /// A picker row's picture, while one is at hand. An element's is its own cut, the same for
+    /// its revision, so a picture landing for one row leaves the other rows' alone.
     func rowPicture(_ item: DesignMentionItem) -> NWReferenceImage? {
-        io.rowPicture(item).map { NWReferenceImage(id: item.id + "@\(picturesVersion)", image: Image(decorative: $0, scale: 2)) }
+        let id = item.kind == .element ? "crop:" + item.id + "@\(item.revision ?? 0)" : item.id + "@\(picturesVersion)"
+        return io.rowPicture(item).map { NWReferenceImage(id: id, image: Image(decorative: $0, scale: 2)) }
+    }
+
+    /// A picker row came on screen: an element's picture is cut if it isn't yet.
+    func rowAppeared(_ item: DesignMentionItem) {
+        guard item.kind == .element, let catalog, let board = item.reference.board,
+              let boardItem = catalog.boards[item.reference.designID]?.first(where: { $0.reference.board == board }) else { return }
+        let tids = (catalog.elements[boardItem.id] ?? []).compactMap { $0.reference.element?.tid }
+        io.wantCrop(item, boardItem, tids)
     }
 
     /// A composer chip's picture.
