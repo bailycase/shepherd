@@ -303,6 +303,90 @@ struct DesignReferenceFlowTests {
         #expect(w.vm.referenceToast?.kind == .copied && w.vm.referenceToast?.piece == "button “Pay now”")
     }
 
+    /// Copy reference, then a paste into a thread's composer (RefCopied, RefPasted, RefSentThread):
+    /// the reference becomes a chip and leaves the words, the composer's send carries it, the sent
+    /// message draws the chip from the copy the host kept, and that chip stays (greyed, "deleted")
+    /// once the design is gone.
+    @Test func aCopiedReferencePastedIntoAThreadGoesAsItsChip() async throws {
+        let w = try await workspace()
+        defer { w.app.stop() }
+        var copied: [String] = []
+        w.vm.copyToPasteboard = { copied.append($0) }
+        let screen = w.vm.designScreen(w.design.id)
+        await screen.refresh()
+        screen.setSelection([.init(board: try DesignPath.validate("Hero.dc.html"), element: try buttonPick())])
+        screen.copySelectionReference(designName: w.design.name)
+        try await eventuallyOnMain("the copy") { !copied.isEmpty }
+        let string = try #require(copied.first)
+
+        let id = w.thread.agent.id
+        let store = w.vm.threadStores.store(for: id)
+        let server = w.app.server
+        let polling = Task { await store.run { try await server.nativeThread(agentID: id, request: $0) } }
+        defer { polling.cancel(); store.stop() }
+        try await eventuallyOnMain("the thread to connect") { store.ready }
+        // "tools:0": the stub runs a turn the way pi does, the user's message streamed first.
+        let pasted = try #require(ComposerReferencePaste.extract("tools:0 build this " + string, previous: "tools:0 build this "))
+        #expect(pasted.references.map(\.string) == [string] && !pasted.draft.contains(DesignReference.scheme))
+        let chips = try #require(w.vm.designReferenceChips(for: id))
+        for reference in pasted.references { try await chips.io.attach(reference) }
+        #expect(store.attachedReferences.map(\.reference.string) == [string], "the paste is a chip, pinned as copied")
+
+        store.draft = pasted.draft
+        let before = AppHarness.prompts(in: w.log).count
+        await store.send()
+        try await eventuallyAsync("pi to get the message") { AppHarness.prompts(in: w.log).count > before }
+        #expect(store.attachedReferences.isEmpty && store.draft.isEmpty)
+        let prompt = try #require(AppHarness.prompts(in: w.log).last)
+        let record = try #require(DesignReferenceFence.parse(prompt)?.records.first)
+        #expect(record.ref == string && record.elementLabel == "Pay now")
+
+        try await eventuallyOnMain("the sent message's chip") {
+            store.snapshot?.messages.contains { $0.role == "user" && $0.designReferences?.first?.ref == string } == true
+        }
+        let message = try #require(store.snapshot?.messages.first { $0.designReferences != nil })
+        let bubble = try #require(nativeUserBubbles(message).first)
+        #expect(bubble.references.map(\.ref) == [string] && !bubble.text.contains(DesignReference.scheme))
+        let payload = try #require(record.payloadID)
+        await chips.loadSent(payload)
+        #expect(chips.sent[payload]?.freshness == .current && chips.sent[payload]?.picture != nil)
+        #expect(chips.sent[payload]?.crumbs.last == "button “Pay now”")
+
+        _ = try await server.deleteDesign(w.design.id)
+        chips.designsChanged()
+        await chips.loadSent(payload)
+        #expect(chips.sent[payload]?.freshness == .deleted, "the chip says the design is gone")
+        #expect(chips.sent[payload]?.picture != nil, "and still draws the copy that was sent")
+    }
+
+    /// Note back (RefNoteBack): the thread a piece went to leaves a note on it, and the design's
+    /// canvas shows it at once as the thread's own pin (never a comment), whose card opens the
+    /// thread; Resolve takes it off the canvas.
+    @Test func aThreadsNoteBackShowsOnTheCanvasAsItsPin() async throws {
+        let w = try await workspace()
+        defer { w.app.stop() }
+        let (record, _, _) = try await sent(w, [try reference(w, element: Self.button)])
+        let screen = w.vm.designScreen(w.design.id)
+        await screen.refresh()
+        #expect(screen.threadNotes.isEmpty)
+
+        let client = try ExtensionClient(path: w.app.scratch.socketPath)
+        try client.send(.designNote(id: 7, agentID: w.thread.agent.id, reference: record.ref, text: "Implemented in #142."))
+        let reply = try await Task.detached { try client.readReply(timeout: .seconds(30)) }.value
+        guard case .designNote(7, let note) = reply else { Issue.record("the note was refused: \(reply)"); return }
+        try await eventuallyOnMain("the canvas to show the note") { screen.threadNotes == [note] }
+        let pin = try #require(screen.pins.first { if case .threadNote = $0.style { true } else { false } })
+        #expect(pin.style == .threadNote(w.thread.agent.name))
+        let comments = try await w.app.server.designs.comments(w.design.id)
+        #expect(comments.comments.isEmpty, "a note is never a comment")
+
+        screen.openThread(pin.id)
+        #expect(screen.openThreadNote == note)
+        await screen.resolveNote(note.id)?.value
+        #expect(screen.threadNotes.isEmpty && screen.pins.allSatisfy { if case .threadNote = $0.style { false } else { true } })
+        #expect(try await w.app.server.designThreadNotes(w.design.id).isEmpty)
+    }
+
     /// Isolation (docs/designs.md): a thread's chips, "Looked at…" lines and @ picker exist only
     /// while the Design tool is on, and never in a design's own chat.
     @Test func onlyAnOrdinaryThreadWithTheDesignToolOnGetsReferences() async throws {
