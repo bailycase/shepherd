@@ -29,7 +29,8 @@ struct DesignsDestination: View {
             designMenu: { vm.performDesignMenu($0, on: $1) },
             systemMenu: { vm.performDesignSystemMenu($0, on: $1) }),
             thumbnail: { thumbnails.image($0) }, chrome: chrome)
-            .overlay { if dropTargeted { NWDesignsDropTarget() } }
+            // Over the page under its header (ImportDrop).
+            .overlay { if dropTargeted { NWDesignsDropTarget().padding(.top, NWPageMetrics.headerHeight) } }
             .onDrop(of: DesignsDropDelegate.types, delegate: DesignsDropDelegate(targeted: $dropTargeted) { vm.importDesignProject($0) })
             .task(id: vm.designThumbnailSignature) { await vm.loadDesignThumbnails() }
             .task(id: vm.remoteDesignsSignature) { await vm.loadRemoteDesigns() }

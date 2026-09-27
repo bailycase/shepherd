@@ -114,15 +114,17 @@ struct DesignsPageModel: Equatable {
         }
     }
 
-    /// Night Watch's source line: it is generated from ShepherdUI's tokens.
-    static let builtInSource = "shepherd · ShepherdUI Tokens"
+    /// Night Watch's source line (DesignLifecycleStates: "Built into Shepherd", beside its tag).
+    static let builtInSource = "Built into Shepherd"
 
     static func make(designs: [Design], spaces: [Space], firstBoards: [DesignID: FirstBoard], filter: String,
                      selection: DesignID?, now: Date, systems: [DesignSystemSummary] = [],
                      swatches: [String: [DesignSystemPresentation.Swatch]] = [:], importing: DesignImporting? = nil,
                      building: Set<String> = []) -> DesignsPageModel {
         let names = Dictionary(spaces.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
-        func system(_ design: Design) -> String? { design.systemNamespace }
+        // A card names its system by title (an imported design's "Checkout DS"), else its folder.
+        let titles = Dictionary(systems.map { ($0.namespace, $0.info.title) }, uniquingKeysWith: { first, _ in first })
+        func system(_ design: Design) -> String? { design.systemNamespace.map { titles[$0] ?? $0 } }
         let query = filter.trimmingCharacters(in: .whitespacesAndNewlines)
         func matches(_ text: String?) -> Bool { text?.localizedCaseInsensitiveContains(query) ?? false }
         let canvases = designs.filter { !$0.buildsSystem }
