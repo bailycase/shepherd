@@ -130,6 +130,16 @@ struct ComposerPresentationTests {
         #expect(NativeModelChoices.provider("model") == "Other")
     }
 
+    /// A design's chat on iPad names the model short (iPadDesign's "opus"): no provider, no
+    /// "claude-" family, no date stamp; anything else keeps its name.
+    @Test(arguments: [("anthropic/claude-opus", "opus"), ("anthropic/claude-opus-4-5-20251101", "opus-4-5"),
+                      ("cpa/~anthropic/claude-haiku-latest", "haiku-latest"), ("openai/gpt-5", "gpt-5"),
+                      ("qa/gemini-3.1-flash-lite", "gemini-3.1-flash-lite"), ("claude-", "claude-"), ("o3", "o3"),
+                      ("google/model-2025", "model-2025")])
+    func aNarrowChipNamesTheModelShort(model: String, name: String) {
+        #expect(NativeModelChoices.compactName(model) == name)
+    }
+
     /// A model row's second line: the levels in pi's order, titled as the thinking menu titles
     /// them, or "No thinking" when a model takes none but Off.
     @Test(arguments: [(["off", "minimal", "low", "medium", "high"], "Off · Minimal · Low · Medium · High"),

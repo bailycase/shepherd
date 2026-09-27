@@ -91,6 +91,31 @@ struct DesignPreviewTests {
         }
     }
 
+    /// The chat's composer at its compact size (NWDesignTool › Chat composer) with its model
+    /// picker open (⇧⌘M): the picker fits over the 420pt pane, as a thread's does.
+    @Test func designScreenModelPicker() async throws {
+        let (workspace, checkout, agent) = try await designWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        vm.selectSidebarRow(.design(checkout.id))
+        let screen = vm.designScreen(checkout.id)
+        let store = vm.threadStores.store(for: agent.id)
+        final class Opened { var at: Date? }
+        let opened = Opened()
+        try await Preview.render("app-window-design-model-picker", size: Self.windowSize, ready: {
+            guard screen.isDrawn, store.supports("setModel") else { return false }
+            if opened.at == nil {
+                opened.at = Date()
+                vm.threadCommands.send(.modelPicker, to: ThreadCommandCenter.key(local: agent.id))
+            }
+            return Date().timeIntervalSince(opened.at ?? Date()) > ThreadPreviewTests.motionAtRest
+        }) {
+            // Each appearance renders in a new window: open the picker in each.
+            let _ = opened.at = nil
+            RootView(vm: vm)
+        }
+    }
+
     /// Export (DZExport): the sheet over the design with A and A · phone ticked from the canvas's
     /// selection and HTML chosen; then ZIP with every board ticked; then an export being written.
     @Test(arguments: ["html", "zip", "working"])

@@ -42,6 +42,43 @@ private struct NWPreviewComposerControls: View {
     }
 }
 
+/// NWDesignTool › Chat composer: the regular size (New design, no ring before a conversation)
+/// and the compact size of a 420pt chat pane, whose chips drop their words.
+private struct NWPreviewSizedControls: View {
+    var ring = false
+
+    var body: some View {
+        Button {} label: { Image(systemName: "paperclip") }.buttonStyle(.nwIcon(size: NWComposerMetrics.chipHeight))
+            .accessibilityLabel("Attach file")
+        Button {} label: { NWComposerCommandsLabel() }.buttonStyle(.nwComposerChip())
+        Button {} label: { HStack(spacing: NW.Space.s) { Text("claude-opus").font(.nw(.code)); NWChipChevron() } }
+            .buttonStyle(.nwComposerChip())
+        Button {} label: { NWComposerThinkingLabel(level: "Medium") }.buttonStyle(.nwComposerChip())
+        Spacer(minLength: NW.Space.m)
+        if ring { NWContextRing(.fill(0.34, .calm)) }
+        NWComposerActionButton(.send, enabled: false) {}
+    }
+}
+
+#Preview("Composer sizes") {
+    NWPreviewBoth {
+        VStack(alignment: .leading, spacing: NW.Space.xl) {
+            NWComposer(isFocused: true) {
+                Text("A checkout funnel dashboard for the product team…").font(.nw(.body)).foregroundStyle(.nw.textTertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } controls: { NWPreviewSizedControls() }
+            .frame(width: 720)
+            NWComposer(isFocused: false) {
+                Text("Describe a change, or click something on the canvas to comment…").font(.nw(.body))
+                    .foregroundStyle(.nw.textTertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } controls: { NWPreviewSizedControls(ring: true) }
+            .frame(width: 392)
+            .nwComposerSize(.compact)
+        }
+    }
+}
+
 #Preview("Menus") {
     NWPreviewBoth {
         VStack(alignment: .leading, spacing: NW.Space.xl) {

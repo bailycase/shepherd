@@ -74,8 +74,8 @@ private struct DesignSystemBuildPane: View {
     }
 }
 
-/// The build's chat: the Chat tab over the agent's thread, whose composer has attach and Send
-/// only.
+/// The build's chat: the Chat tab over the agent's thread, with the standard composer at its
+/// compact size.
 struct DesignSystemChatPane: View {
     var vm: ShepherdViewModel
     let model: AgentLayoutModel
@@ -98,6 +98,7 @@ struct DesignSystemChatPane: View {
                     workingDirectory: pane.cwd,
                     restartPi: { [vm] in vm.retryAgentStart(agentID, newConversation: $0) },
                     designChat: true)
+                .nwComposerSize(.compact)
             }
         }
         .frame(maxHeight: .infinity)
