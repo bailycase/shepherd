@@ -223,8 +223,15 @@ extension DesignPreviewTests {
         // The design keeps it beside its project, as design_note leaves it.
         let folder = try #require(workspace.server.designs.folder(for: checkout.id))
         try JSONEncoder().encode(DesignThreadNotes(notes: [note])).write(to: folder.appendingPathComponent("thread-notes.json"))
+        // A comment on the same card beside it, as RefNoteBack draws: the Comments tab counts both.
+        _ = try await workspace.server.addDesignComment(checkout.id, draft: DesignCommentDraft(
+            board: card.board, tid: card.id.tid, path: card.id.path, target: "Step 1",
+            rect: DesignCommentRect(x: card.rect.minX, y: card.rect.minY, w: card.rect.width, h: card.rect.height),
+            text: "Show the absolute counts next to the percentages."))
+        await screen.refresh()
         await screen.refreshNotes()
         screen.noteRects[note.id] = card.rect
+        #expect(screen.commentsTabCount == 2)
         screen.openThread(DesignScreenModel.notePinID(note.id))
         #expect(screen.openThreadNote?.id == note.id)
         #expect(screen.pins.contains { $0.style == .threadNote(thread.name) })
