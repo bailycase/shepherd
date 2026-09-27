@@ -3576,6 +3576,24 @@ public final class SessionServer: @unchecked Sendable {
         hopToMain { [weak self] in self?.onDesignSystemsChanged?() }
     }
 
+    /// Rename… a design system: its title, never its namespace. A built-in is refused.
+    @discardableResult
+    public func renameDesignSystem(_ namespace: String, to title: String) async throws -> DesignSystemSummary {
+        guard DesignPath.isSystemNamespace(namespace) else { throw DesignSystemError.invalidNamespace(namespace) }
+        let summary = try await designSystems.rename(namespace, to: title, at: Self.nowMilliseconds())
+        hopToMain { [weak self] in self?.onDesignSystemsChanged?() }
+        return summary
+    }
+
+    /// Duplicate a design system (a built-in's "Duplicate as a new system"): a new system with
+    /// its files, which designs can pick and which can be changed or deleted.
+    public func duplicateDesignSystem(_ namespace: String) async throws -> DesignSystemSummary {
+        guard DesignPath.isSystemNamespace(namespace) else { throw DesignSystemError.invalidNamespace(namespace) }
+        let summary = try await designSystems.duplicate(namespace, at: Self.nowMilliseconds())
+        hopToMain { [weak self] in self?.onDesignSystemsChanged?() }
+        return summary
+    }
+
     /// A system build still reading its project, before it wrote its system (a "building"
     /// card): the build goes, its agent stopped. Nothing to undo.
     public func deleteSystemBuild(_ designID: DesignID) async throws {
