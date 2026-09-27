@@ -65,6 +65,9 @@ final class ShepherdViewModel {
     var moreOpen = false
     /// Needs you and Recents, derived once per change of what they read (`SidebarSource`).
     @ObservationIgnored var sidebarListsCache: (source: SidebarSource, lists: SidebarLists)?
+    /// The project tree, derived once per change of what it reads (`SidebarSource`, and
+    /// `SidebarTreeOptions` from Settings ▸ Appearance ▸ Sidebar).
+    @ObservationIgnored var sidebarTreeCache: (source: SidebarSource, options: SidebarTreeOptions, tree: SidebarTree)?
     /// Who the sidebar's footer names: the Mac's user and computer, read once. Previews pass their
     /// own, so a render never shows the machine it ran on.
     @ObservationIgnored var sidebarFooterIdentity: (name: String, detail: String)?
@@ -142,6 +145,12 @@ final class ShepherdViewModel {
     var sidebarHidden = false {
         didSet { sidebarDefaults.set(sidebarHidden, forKey: "shepherd.sidebarHidden") }
     }
+    /// The project tree's closed projects (`SidebarProjectID.key`). Persisted, like hiding the
+    /// sidebar.
+    var collapsedProjects: Set<String> = [] {
+        didSet { sidebarDefaults.set(collapsedProjects.sorted(), forKey: Self.collapsedProjectsKey) }
+    }
+    static let collapsedProjectsKey = "shepherd.sidebar.collapsedProjects"
     /// The window is too narrow to dock the sidebar (`ShellLayout.sidebar`), so ⇧⌘S overlays
     /// it instead. Written by the window as it resizes; ephemeral.
     var sidebarAutoHidden = false
@@ -453,6 +462,7 @@ final class ShepherdViewModel {
         // The tree's disclosure keys (collapsed spaces, hosts, This Mac, the Automations
         // footer) stay in older preferences and are no longer read.
         sidebarHidden = sidebarDefaults.bool(forKey: "shepherd.sidebarHidden")
+        collapsedProjects = Set(sidebarDefaults.stringArray(forKey: Self.collapsedProjectsKey) ?? [])
 
         sessions.onStateChanged = { [weak self] serverState in
             self?.adopt(serverState)
@@ -768,8 +778,8 @@ final class ShepherdViewModel {
         )
         switch action {
         case .agentDigit(let digit):
-            // Mirrors the Agent menu's digit rows: live only for an existing Recents row.
-            guard sidebarLists.shortcutRows.count >= digit else { return false }
+            // Mirrors the Agent menu's digit rows: live only for an existing row.
+            guard sidebarShortcutRows.count >= digit else { return false }
             showCommandPalette = false
             selectAgentDigit(digit)
             return true

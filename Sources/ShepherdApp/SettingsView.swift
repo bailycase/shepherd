@@ -255,7 +255,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     /// Row titles on the page, as the search lists them under the section.
     var items: [String] {
         switch self {
-        case .appearance: ["Theme", "Mode", "Sidebar rows", "Density", "Text size", "Sidebar width"]
+        case .appearance: ["Theme", "Mode", "Organize by", "Group by host", "Keep idle threads", "Sidebar rows", "Density", "Text size",
+                           "Sidebar width"]
         case .terminal: ["Font family", "Font size", "Shell"]
         case .agents: ["Default model", "Default thinking level", "Return while the agent is working", "When a turn ends, send the queue"]
         case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically"]
@@ -276,7 +277,9 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     /// Words people search for that aren't row titles ("dark" → Appearance).
     private var keywords: [String: [String]] {
         switch self {
-        case .appearance: ["Mode": ["dark", "light", "color", "night watch", "theme"], "Text size": ["font", "zoom", "scale"], "Sidebar rows": ["row height", "comfortable"], "Density": ["compact", "spacing"]]
+        case .appearance: ["Mode": ["dark", "light", "color", "night watch", "theme"], "Text size": ["font", "zoom", "scale"], "Sidebar rows": ["row height", "comfortable"], "Density": ["compact", "spacing"],
+                           "Organize by": ["projects", "activity", "folders", "sidebar style", "tree"],
+                           "Group by host": ["hosts", "machines"], "Keep idle threads": ["archive", "idle"]]
         case .terminal: ["Font family": ["ghostty", "monospace"], "Shell": ["zsh", "bash", "fish"]]
         case .agents: ["Default model": ["claude", "gpt", "provider"], "Default thinking level": ["reasoning", "effort"],
                        "Return while the agent is working": ["steer", "queue", "enter", "follow-up"],

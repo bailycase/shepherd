@@ -44,6 +44,10 @@ extension AppLayout {
     static let settingsPopupWidth: CGFloat = 200
     static let settingsPortFieldWidth: CGFloat = NWSettingsControlMetrics.portFieldWidth
     static let settingsFontPreviewWidth: CGFloat = 320
+    /// A row whose control sits under its title (Appearance ▸ Organize by): 12pt above, 16 at
+    /// the sides and below, the control 12pt under the words.
+    static let settingsStackedRowInsets = EdgeInsets(top: NW.Space.l, leading: NW.Space.xl, bottom: NW.Space.xl, trailing: NW.Space.xl)
+    static let settingsStackedRowSpacing: CGFloat = NW.Space.l
 
     // Wide pages (Instructions, Experiments): the page fills the detail area instead of the 720pt
     // column.

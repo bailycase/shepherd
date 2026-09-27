@@ -83,6 +83,9 @@ final class AppSettings {
         static let uiTextScale = "shepherd.ui.textScale"
         static let sidebarWidth = "shepherd.ui.sidebarWidth"
         static let sidebarRowDensity = "shepherd.sidebarRowDensity"
+        static let sidebarStyle = "shepherd.sidebar.style"
+        static let sidebarGroupByHost = "shepherd.sidebar.groupByHost"
+        static let sidebarKeepIdleDays = "shepherd.sidebar.keepIdleDays"
         static let remoteListenerEnabled = "shepherd.remote.listener"
         static let remoteListenerPort = "shepherd.remote.listenerPort"
         static let autoUpdatePi = "shepherd.pi.autoUpdate"
@@ -103,6 +106,7 @@ final class AppSettings {
             piMCPExtension,
             childConcurrency, childModel, childThinking, childContext, childScope,
             uiDensity, uiTextScale, sidebarWidth, sidebarRowDensity,
+            sidebarStyle, sidebarGroupByHost, sidebarKeepIdleDays,
             remoteListenerEnabled, remoteListenerPort,
             autoUpdatePi, autoUpdateExtensions,
             worktreeBaseMode, worktreeFetchBeforeCreate,
@@ -129,6 +133,9 @@ final class AppSettings {
         static let queueDelivery: NativeQueueMode = .all
         static let autoUpdatePi = false
         static let autoUpdateExtensions = false
+        static let sidebarStyle: NWSidebarStyle = .activity
+        /// Keep idle threads in the project tree for a week.
+        static let sidebarKeepIdleDays = 7
         /// The user's login shell when it is a real executable, else zsh.
         static var shellPath: String {
             let env = ProcessInfo.processInfo.environment["SHELL"] ?? ""
@@ -299,6 +306,28 @@ final class AppSettings {
         didSet { store.set(sidebarRowDensity.rawValue, forKey: Key.sidebarRowDensity) }
     }
 
+    /// Settings ▸ Appearance ▸ Sidebar ▸ Organize by (also View ▸ Organize Sidebar By): Needs you
+    /// and Recents, or a folder for each project with its threads inside.
+    var sidebarStyle: NWSidebarStyle {
+        didSet { store.set(sidebarStyle.rawValue, forKey: Key.sidebarStyle) }
+    }
+
+    /// Group by host, for the project tree: a section per host with its projects inside. Off,
+    /// every host's threads sit in their project with the host as a tag on the row.
+    var sidebarGroupByHost: Bool {
+        didSet { store.set(sidebarGroupByHost, forKey: Key.sidebarGroupByHost) }
+    }
+
+    /// Keep idle threads, for the project tree: an idle or finished thread leaves its project
+    /// after this many days without activity (it stays in the palette). Running threads and
+    /// anything waiting on you stay. 0 keeps them all.
+    var sidebarKeepIdleDays: Int {
+        didSet { store.set(sidebarKeepIdleDays, forKey: Key.sidebarKeepIdleDays) }
+    }
+
+    /// Keep idle threads' choices, in days; 0 is Forever.
+    static let sidebarKeepIdleChoices = [1, 3, 7, 14, 30, 0]
+
     /// Serve this Mac's sessions to remote Shepherd clients (the mini role).
     /// Applied at launch and on toggle; persists so a host stays a host
     /// across reboots.
@@ -419,6 +448,10 @@ final class AppSettings {
         let width = store.double(forKey: Key.sidebarWidth)
         sidebarWidth = Self.clampSidebarWidth(width == 0 ? Self.defaultSidebarWidth : width)
         sidebarRowDensity = store.string(forKey: Key.sidebarRowDensity).flatMap(NWDensity.init(rawValue:)) ?? .standard
+        sidebarStyle = store.string(forKey: Key.sidebarStyle).flatMap(NWSidebarStyle.init(rawValue:)) ?? Defaults.sidebarStyle
+        sidebarGroupByHost = store.bool(forKey: Key.sidebarGroupByHost)
+        let keep = store.object(forKey: Key.sidebarKeepIdleDays) as? Int
+        sidebarKeepIdleDays = keep.flatMap { Self.sidebarKeepIdleChoices.contains($0) ? $0 : nil } ?? Defaults.sidebarKeepIdleDays
         remoteListenerEnabled = store.bool(forKey: Key.remoteListenerEnabled)
         let port = store.integer(forKey: Key.remoteListenerPort)
         remoteListenerPort = (port > 0 && port <= 65535) ? port : Int(edition.defaultRemoteListenerPort)
@@ -486,6 +519,9 @@ final class AppSettings {
         uiTextScale = 1
         sidebarWidth = Self.defaultSidebarWidth
         sidebarRowDensity = .standard
+        sidebarStyle = Defaults.sidebarStyle
+        sidebarGroupByHost = false
+        sidebarKeepIdleDays = Defaults.sidebarKeepIdleDays
         piPanesExtension = true
         piReviewExtension = true
         piSubagentsExtension = true
