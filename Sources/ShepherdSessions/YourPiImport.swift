@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdProtocol
 import ShepherdRemote
 
 /// What Shepherd brought over from the user's own pi: saved in Shepherd's pi home
@@ -273,6 +274,8 @@ public struct YourPiExtensionRow: Equatable, Sendable, Identifiable {
     public var failure: String?
     /// Its package.json's description, when it has one.
     public var summary: String?
+    /// pi's last lines as it failed (Show log).
+    public var failureLines: [String] = []
 
     public init(copy: YourPiCopy, on: Bool = false, failure: String? = nil, summary: String? = nil) {
         self.copy = copy
@@ -604,14 +607,15 @@ public struct YourPiImport: Sendable {
     /// the user tries again. Returns its name, or nil when `path` isn't one of the user's
     /// switched-on extensions (Shepherd's own, a project's): nothing changes then.
     @discardableResult
-    public func extensionFailed(path: String, reason: String) throws -> String? {
+    public func extensionFailed(path: String, reason: String, lines: [String] = []) throws -> String? {
         let canonical = PiHome.canonical(path)
         return try updateState { state -> String? in
             guard let copy = state.copies(.extensions).first(where: { copy in
                 state.extensionsOn.contains(copy.destination) && state.extensionFailures[copy.destination] == nil
                     && PiHome.isInside(canonical, PiHome.canonical(home.directory.appendingPathComponent(copy.destination).path))
             }) else { return nil }
-            state.extensionFailures[copy.destination] = YourPiExtensionFailure(reason: Self.shortened(reason), modified: modified(copy))
+            state.extensionFailures[copy.destination] = YourPiExtensionFailure(reason: Self.shortened(reason), modified: modified(copy),
+                                                                               lines: Array(lines.suffix(NativeStartProblem.maxLines)))
             try applyExtensions(&state)
             return copy.name
         }
@@ -829,8 +833,10 @@ public struct YourPiImport: Sendable {
             let root = home.directory.appendingPathComponent(copy.destination)
             let summary = (try? YourPiFiles.read(root.appendingPathComponent("package.json")))
                 .flatMap { $0 }.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }?["description"] as? String
-            return YourPiExtensionRow(copy: copy, on: state?.extensionsOn.contains(copy.destination) == true,
-                                      failure: state?.extensionFailures[copy.destination]?.reason, summary: summary)
+            var row = YourPiExtensionRow(copy: copy, on: state?.extensionsOn.contains(copy.destination) == true,
+                                         failure: state?.extensionFailures[copy.destination]?.reason, summary: summary)
+            row.failureLines = state?.extensionFailures[copy.destination]?.lines ?? []
+            return row
         }
 
         survey.copiedAt = state?.copied == true ? state?.copiedAt : nil

@@ -106,6 +106,18 @@ enum YourPiText {
         return text
     }
 
+    /// Where one of the user's extensions came from, short: "extensions/web-search/" for a file or
+    /// folder in their pi's `extensions/`, else the path with `~`, or a package's source.
+    static func extensionPath(_ item: YourPiExtensionRow) -> String {
+        let source = item.copy.source
+        if let range = source.range(of: "/extensions/") {
+            let rest = String(source[range.lowerBound...].dropFirst())
+            let folder = item.copy.entries != nil || !(rest as NSString).pathExtension.isEmpty ? rest : rest + "/"
+            return folder
+        }
+        return (source as NSString).abbreviatingWithTildeInPath
+    }
+
     /// "1 folder", "3 folders".
     static func count(_ n: Int, _ noun: String) -> String {
         "\(n) \(noun)\(n == 1 ? "" : "s")"

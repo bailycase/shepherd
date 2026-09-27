@@ -21,6 +21,12 @@ struct AppDialogs: ViewModifier {
                                onClose: { vm.finishWelcome() })
                     .dialogSheetFrame()
             }
+            // Sign in to <provider>: over Settings or the thread (the first launch's sheet hosts its
+            // own while it shows).
+            .sheet(item: Binding(get: { vm.yourPi.welcome == nil ? vm.piAuth.session : nil }, set: { if $0 == nil { vm.piAuth.closeSheet() } })) { session in
+                PiSignInSheet(session: session) { vm.piAuth.closeSheet() }
+                    .dialogSheetFrame()
+            }
             .sheet(item: $vm.worktreeSheetSpace) { space in
                 NewWorktreeSheet(vm: vm, space: space)
                     .dialogSheetFrame()

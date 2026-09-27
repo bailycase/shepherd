@@ -234,6 +234,8 @@ final class ShepherdViewModel {
     let mcp: MCPStore
     /// Settings ▸ Pi's sign-ins and From your pi, and the first launch's copy and welcome step.
     let yourPi: YourPiModel
+    /// Shepherd's pi's sign-ins: the sign-in sheet, sign-outs, what expired, what agents wait on.
+    let piAuth: PiAuthStore
     /// Restored agents wait for the first launch's copy from the user's pi, and for its welcome
     /// step when no provider can start them.
     @ObservationIgnored private(set) var holdsForWelcome = false
@@ -457,7 +459,8 @@ final class ShepherdViewModel {
         checkoutReader: CheckoutMonitor.Reader? = CheckoutMonitor.git,
         mcp: MCPStore? = nil,
         welcomesYourPi: Bool = false,
-        yourPi: YourPiModel? = nil
+        yourPi: YourPiModel? = nil,
+        piAuth: PiAuthStore? = nil
     ) {
         self.state = ShepherdState()
         self.server = server
@@ -483,6 +486,7 @@ final class ShepherdViewModel {
         self.installThemeMarker = themeInstaller
         self.sessions = TerminalSessionStore(server: server)
         self.yourPi = yourPi ?? YourPiModel(pi: server.pi)
+        self.piAuth = piAuth ?? PiAuthStore(pi: server.pi)
         self.selectedSpaceID = nil
         self.selectedAgentID = nil
         self.focusedPaneID = nil
@@ -494,6 +498,10 @@ final class ShepherdViewModel {
 
         sessions.onStateChanged = { [weak self] serverState in
             self?.adopt(serverState)
+        }
+        // A sign-in or sign-out: Settings reads both sides again.
+        self.piAuth.onChanged = { [weak yourPi = self.yourPi] in
+            Task { await yourPi?.refresh() }
         }
         // Settings ▸ Instructions follows a remote client's save here, and sends a host that
         // comes back what it is owed.
