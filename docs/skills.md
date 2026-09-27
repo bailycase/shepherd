@@ -185,18 +185,19 @@ no switch for it.
 
 ## skills.sh
 
-skills.sh is the open directory of agent skills. `SkillsDirectory` (ShepherdRemote) reads it over
-HTTPS, as the `skills` CLI does:
+skills.sh is the open directory of agent skills. `SkillsDirectory` (ShepherdRemote), shared by
+Mac and iOS, reads it through `https://api.useshepherd.app`. No user API key is needed or sent;
+the service holds upstream credentials. Browser links still open `https://skills.sh`.
 
 - **Search** needs no key: `GET /api/search?q=&limit=` answers each skill's id (its name in its
   repository), name, repository and installs.
 - **A skill's files** need no key: `GET /api/download/<owner>/<repo>/<skill>` answers every file's
   path (relative to the skill's folder) and contents, for the preview.
 - **The ranked lists** (Trending, All time, Hot: `GET /api/v1/skills?view=`; Official:
-  `/api/v1/skills/curated`) need an API key, sent as a bearer token. The Mac keeps one in Settings
-  (`shepherd.skills.directoryKey`), and Reset settings keeps it: it's a credential, not a
-  preference. Without one, Browse says so and search still works. The phone and the iPad only
-  search.
+  `/api/v1/skills/curated`) also need no user key. The phone and the iPad only search.
+
+The Mac removes the retired `shepherd.skills.directoryKey` preference when loading settings.
+Service failures display an error, never a credential prompt.
 
 Installing never downloads from skills.sh: a host installs the skill from its git repository.
 

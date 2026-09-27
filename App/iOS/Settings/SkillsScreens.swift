@@ -103,7 +103,7 @@ struct SkillsScreen: View {
         } catch {
             guard !Task.isCancelled else { return }
             results = []
-            failure = (error as? SkillsDirectoryError)?.description ?? "Couldn't reach skills.sh."
+            failure = (error as? SkillsDirectoryError)?.description ?? "Couldn't reach Shepherd's skills directory."
         }
         searching = false
     }
@@ -488,7 +488,7 @@ struct SkillResultScreen: View {
                         }
                     }
                 } else if unavailable {
-                    SettingsFootnote("skills.sh didn't send this skill's files. It can still be installed.")
+                    SettingsFootnote("The skills directory didn't send this skill's files. It can still be installed.")
                 } else {
                     ProgressView().progressViewStyle(NWSpinnerStyle())
                         .frame(maxWidth: .infinity)
