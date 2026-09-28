@@ -142,10 +142,15 @@ struct MCPServerEntry: Equatable, Sendable, Identifiable {
             var settings = MCPShepherdSettings()
             if let enabled = s?["enabled"]?.boolValue { settings.enabled = enabled }
             if let start = s?["start"]?.stringValue.flatMap(MCPStartMode.init(rawValue:)) { settings.start = start }
-            if let idle = s?["idleMinutes"]?.doubleValue, idle >= 1 { settings.idleMinutes = Int(idle) }
+            // Node timers accept at most 2^31 - 1 milliseconds; larger delays fire immediately.
+            if let idle = s?["idleMinutes"]?.doubleValue, (1...35_791).contains(idle), let minutes = Int(exactly: idle) {
+                settings.idleMinutes = minutes
+            }
             if let exposure = s?["exposure"]?.stringValue.flatMap(MCPExposure.init(rawValue:)) { settings.exposure = exposure }
             settings.tools = s?["tools"]?.arrayValue?.compactMap(\.stringValue)
-            if let timeout = s?["timeoutSeconds"]?.doubleValue, timeout >= 1 { settings.timeoutSeconds = Int(timeout) }
+            if let timeout = s?["timeoutSeconds"]?.doubleValue, (1...300).contains(timeout), let seconds = Int(exactly: timeout) {
+                settings.timeoutSeconds = seconds
+            }
             if let oauth = s?["oauth"] {
                 settings.oauth.clientID = oauth["clientId"]?.stringValue
                 settings.oauth.clientSecret = oauth["clientSecret"]?.stringValue
