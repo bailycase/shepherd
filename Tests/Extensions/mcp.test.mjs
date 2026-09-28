@@ -554,7 +554,7 @@ test("stdio servers die with pi", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sh-mcp-exit-"));
   const pidfile = path.join(dir, "pid");
   const config = path.join(dir, "mcp.json");
-  fs.writeFileSync(config, JSON.stringify({ mcpServers: { fake: stdioServer({ env: { FAKE_MCP_PIDFILE: pidfile, FAKE_MCP_LINGER: "1" } }) } }));
+  fs.writeFileSync(config, JSON.stringify({ mcpServers: { fake: stdioServer({ env: { FAKE_MCP_PIDFILE: pidfile, FAKE_MCP_LINGER: "1", FAKE_MCP_IGNORE_TERM: "1" } }) } }));
   const script = path.join(dir, "pi.mjs");
   fs.writeFileSync(script, `
     import { createRequire } from "node:module";
@@ -584,6 +584,41 @@ test("stdio servers die with pi", async () => {
   await eventually("the server killed with pi", () => !alive(pid), 3_000);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+for (const mode of ["immediate", "graceful", "leader-exit", "probe"]) {
+  test(`stdio ${mode} cleanup kills TERM-resistant owned descendants`, { timeout: 15000 }, async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sh-mcp-owned-"));
+    const pidfile = path.join(dir, "pid"), descendant = path.join(dir, "descendant");
+    const entry = stdioServer({ env: { FAKE_MCP_PIDFILE: pidfile, FAKE_MCP_DESCENDANT: descendant,
+      FAKE_MCP_LINGER: "1", FAKE_MCP_IGNORE_TERM: "1" } });
+    let connection, pid, childPID;
+    try {
+      if (mode === "probe") {
+        const probe = spawn(process.execPath, [clientFile, "probe"], { stdio: ["pipe", "pipe", "pipe"] });
+        let output = "";
+        probe.stdout.on("data", (chunk) => { output += chunk; });
+        // The fixture waits for its descendant before answering initialize.
+        probe.stdin.end(JSON.stringify({ name: "fixture", entry, timeoutSeconds: 5 }));
+        await new Promise((resolve) => probe.once("exit", resolve));
+        assert.equal(JSON.parse(output).ok, true);
+      } else {
+        connection = new client.MCPClient({ name: "fixture", spec: client.resolveEntry("fixture", entry), env: process.env });
+        await connection.connect();
+      }
+      pid = Number(fs.readFileSync(pidfile));
+      childPID = Number(fs.readFileSync(descendant));
+      if (mode === "leader-exit") process.kill(pid, "SIGKILL");
+      else if (connection) connection.close(mode === "immediate");
+      await eventually("the owned server and descendant to exit", () => !alive(pid) && !alive(childPID), 8000);
+    } finally {
+      connection?.close(true);
+      for (const file of [pidfile, descendant]) {
+        if (fs.existsSync(file)) { try { process.kill(Number(fs.readFileSync(file)), "SIGKILL"); } catch {} }
+      }
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
 
 test("the probe lists a server's tools as one JSON line", async () => {
   const run = (input) => new Promise((resolve) => {
@@ -699,7 +734,7 @@ for (const signal of ["SIGTERM", "SIGHUP"]) {
     const mcpConfig = path.join(dir, "mcp.json");
     fs.mkdirSync(path.join(dir, "config"));
     fs.writeFileSync(mcpConfig, JSON.stringify({ mcpServers: { fake: {
-      ...stdioServer({ env: { FAKE_MCP_PIDFILE: pidfile, FAKE_MCP_LINGER: "1" } }), shepherd: { start: "withSession" } } } }));
+      ...stdioServer({ env: { FAKE_MCP_PIDFILE: pidfile, FAKE_MCP_LINGER: "1", FAKE_MCP_IGNORE_TERM: "1" } }), shepherd: { start: "withSession" } } } }));
     const env = { PATH: process.env.PATH, HOME: dir, PI_CODING_AGENT_DIR: path.join(dir, "config"), PI_OFFLINE: "1",
       SHEPHERD_AGENT_ID: "fixture", SHEPHERD_SOCKET: path.join(dir, "none"), SHEPHERD_EXT_MCP: extensionFile,
       SHEPHERD_EXT_MCP_CONFIG: mcpConfig };
