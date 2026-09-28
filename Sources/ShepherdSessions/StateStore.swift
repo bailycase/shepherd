@@ -26,11 +26,11 @@ final class StateStore: @unchecked Sendable {
     private let committedLock = NSLock()
     private var committedState = ShepherdState()
 
-    init(url: URL) {
+    init(url: URL, readOnly: Bool = false) {
         self.url = url
         self.state = ShepherdState()
         self.recoveryError = nil
-        load()
+        load(readOnly: readOnly)
     }
 
     /// The last committed state, readable from any thread without waiting for the queue. It is
@@ -66,7 +66,10 @@ final class StateStore: @unchecked Sendable {
         committedLock.withLock { committedState = next }
     }
 
-    private func load() {
+    /// Before exclusive startup the server may display state, but must not quarantine it.
+    func load(readOnly: Bool = false) {
+        recoveryError = nil
+        commit(ShepherdState())
         let fileManager = FileManager.default
         guard fileManager.fileExists(atPath: url.path) else { return }
 
@@ -77,10 +80,10 @@ final class StateStore: @unchecked Sendable {
                 try loaded.validate()
                 commit(loaded)
             } catch {
-                quarantine(cause: error)
+                if !readOnly { quarantine(cause: error) }
             }
         } catch {
-            quarantine(cause: error)
+            if !readOnly { quarantine(cause: error) }
         }
     }
 

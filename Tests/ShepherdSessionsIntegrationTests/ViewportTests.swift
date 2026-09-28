@@ -71,6 +71,48 @@ struct ViewportTests {
         #expect(await size(r, info.id) == [80, 24])
     }
 
+    @Test func oversizedViewportsCannotReplaceAValidGrid() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let info = try await r.host.shell("cat")
+        let client = try await r.raw()
+        try client.send(.attach(id: 2, sessionID: info.id, cols: 100, rows: 30, viewportGeneration: 0))
+        try await waitForSize(r, info.id, [100, 30])
+
+        for (cols, rows) in [(65_536, 1), (1, Int.max), (1024, 1024)] {
+            try client.send(.resize(sessionID: info.id, cols: cols, rows: rows, viewportGeneration: 1))
+            r.server.reportLocalViewport(sessionID: info.id, cols: cols, rows: rows)
+            r.server.resize(sessionID: info.id, cols: cols, rows: rows)
+            try client.send(.stateFetch(id: 9))
+            _ = try await client.frames(until: { if case .state = $0 { true } else { false } })
+            #expect(await size(r, info.id) == [100, 30])
+        }
+        try client.send(.attach(id: 10, sessionID: info.id, cols: 65_536, rows: 1, viewportGeneration: 2))
+        let refused = try await client.frames(until: { if case .error(id: 10, code: _, message: _) = $0 { true } else { false } })
+        #expect(refused.contains { if case .error(id: 10, code: "invalid_viewport", message: _) = $0 { true } else { false } })
+        #expect(await size(r, info.id) == [100, 30])
+        try client.send(.resize(sessionID: info.id, cols: 120, rows: 40, viewportGeneration: 3))
+        try await waitForSize(r, info.id, [120, 40])
+        // The invalid local report was not stored for later use when the remote detaches.
+        r.server.reportLocalViewport(sessionID: info.id, cols: 90, rows: 25)
+        r.server.reportLocalViewport(sessionID: info.id, cols: Int.max, rows: Int.max)
+        try client.send(.detach(sessionID: info.id))
+        try await waitForSize(r, info.id, [90, 25])
+    }
+
+    @Test func invalidInitialGridsStartNoChild() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        for (cols, rows) in [(0, 24), (-1, 24), (65_536, 1), (1024, 1024), (Int.max, Int.max)] {
+            await #expect(throws: PTYSession.SpawnError.self) {
+                _ = try await h.server.createSession(params: CreateSessionParams(
+                    cwd: h.dir.path, command: ["/bin/sh", "-c", "touch should-not-run"], cols: cols, rows: rows))
+            }
+        }
+        #expect(await h.server.listSessions().isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: h.dir.appendingPathComponent("should-not-run").path))
+    }
+
     @Test func unchangedReportsDoNotSignalTheChild() async throws {
         let r = try RemoteHost()
         defer { r.stop() }
