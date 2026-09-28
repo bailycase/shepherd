@@ -761,6 +761,12 @@ class ContractTests(unittest.TestCase):
         dev = self.setting(self.target_configuration("Debug"), "PRODUCT_BUNDLE_IDENTIFIER")
         self.assertEqual(dev, "com.bailycase.shepherd.dev")
         self.assertNotIn(dev, [app.bundle_id for app in release.APPS.values()])
+        scheme = release.ElementTree.fromstring(self.read(
+            "Shepherd.xcodeproj", "xcshareddata", "xcschemes", "Shepherd (Dev).xcscheme"))
+        for action in ("LaunchAction", "ProfileAction", "ArchiveAction"):
+            with self.subTest(action=action):
+                self.assertEqual(scheme.find(action).get("buildConfiguration"), "Debug")
+        self.assertEqual(scheme.find("ProfileAction").get("shouldUseLaunchSchemeArgsEnv"), "YES")
 
     def test_each_app_has_its_scheme(self):
         for app in release.APPS.values():
