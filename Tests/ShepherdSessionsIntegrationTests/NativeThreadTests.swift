@@ -198,7 +198,7 @@ struct NativeThreadTests {
         _ = try await pi.send("ask-closed-input", from: try await pi.ready())
         let asking = try await pi.snapshot { $0.dialogs.contains { $0.id == "closed-input" } }
         let result = try await pi.request(.answer(expectedSessionID: asking.piSessionID, generation: asking.generation,
-                                                  operationID: UUID(), dialogID: "closed-input", answer: .confirm(true)))
+                                                  operationID: UUID(), dialogID: "closed-input", answer: .confirm(value: true)))
         #expect(result.failureCode == "dispatch_failed")
         let after = try await pi.snapshot()
         #expect(after.dialogs == asking.dialogs)
