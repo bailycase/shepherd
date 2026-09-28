@@ -288,6 +288,8 @@ final class RPCThreadState {
     var captureSettledTurn: ((@escaping () -> Void) -> Void)?
     var discardPreparedTurn: (() -> Void)?
     var settleCapture: UUID?
+    var preparingPrompts: [UUID: (NativeThreadResult) -> Void] = [:]
+    var sendAfterCapture: [UUID]?
     /// The agent's recorded turns, as the server last set them (`setTurnChanges`).
     private(set) var turnChanges: [ChangesTurn]? { didSet { turnChangesHash = turnChanges.hashValue } }
     private var turnChangesHash = Optional<[ChangesTurn]>.none.hashValue

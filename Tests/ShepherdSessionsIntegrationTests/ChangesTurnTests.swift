@@ -177,6 +177,54 @@ struct ChangesTurnTests {
         _ = try await pi.snapshot("capture failure does not stall settlement") { !$0.running }
     }
 
+    @Test func aHangingCleanFilterCannotHoldTheFirstPromptForever() async throws {
+        let repo = try ChangesRepo(files: ["a.txt": "original\n"])
+        try repo.write(".gitattributes", "a.txt filter=hang\n")
+        try repo.git("config", "filter.hang.clean", "/bin/sleep 60")
+        try repo.git("config", "filter.hang.required", "true")
+        try repo.write("a.txt", "changed\n")
+        let host = try ScratchServer.fresh()
+        defer { host.stop() }
+        let pi = try await PiAgent.launch(on: host, cwd: repo.url)
+        let idle = try await pi.ready()
+
+        #expect(try await pi.send("tools:0 capture times out", from: idle).failureCode == nil)
+
+        #expect(pi.stdin("prompt").count == 1)
+        try await eventually("timeout makes the baseline unavailable") {
+            host.server.changes.turns(agentID: pi.agent.id).last?.state == .unavailable
+        }
+        #expect(host.server.changes.turns(agentID: pi.agent.id).last?.reason?.contains("timed out") == true)
+        // The failed command released its owned index lock as well as the prompt.
+        try repo.git("config", "filter.hang.clean", "/bin/cat")
+        _ = try await host.server.changes.list(agentID: pi.agent.id, scope: .uncommitted)
+        #expect(repo.read("a.txt") == "changed\n")
+    }
+
+    @Test func stoppingAHeldPromptAnswersItBeforeCaptureCompletesAndNeverSendsItLater() async throws {
+        let repo = try ChangesRepo()
+        let host = try ScratchServer.fresh()
+        defer { host.stop() }
+        let pi = try await PiAgent.launch(on: host, cwd: repo.url)
+        let idle = try await pi.ready()
+        let release = DispatchSemaphore(value: 0)
+        defer { release.signal() }
+        await withCheckedContinuation { continuation in
+            host.server.changes.captureQueue(pi.agent.id).async { continuation.resume(); release.wait() }
+        }
+        let send = Task { try await pi.send("tools:0 cancelled", from: idle) }
+        _ = try await pi.snapshot("the held pending prompt") { $0.provisional.contains { $0.status == "pending" } }
+
+        #expect(try await pi.request(.abort(expectedSessionID: idle.piSessionID, generation: idle.generation,
+                                           operationID: UUID())).failureCode == nil)
+        #expect(try await send.value.failureCode == "send_cancelled")
+        #expect(pi.stdin("prompt").isEmpty)
+        release.signal()
+        await drain(host.server.changes, pi.agent.id)
+        #expect(try await pi.send("tools:0 new request", from: idle).failureCode == nil)
+        #expect(pi.stdin("prompt").compactMap { $0["message"] as? String } == ["tools:0 new request"])
+    }
+
     private func drain(_ service: ChangesService, _ agent: AgentID) async {
         await withCheckedContinuation { continuation in
             service.captureQueue(agent).async { continuation.resume() }
