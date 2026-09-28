@@ -14,8 +14,9 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// Lifecycle status for one agent.
     case setAgentStatus(agentID: AgentID, status: AgentStatus)
     /// Generated title from the namer extension. The server applies it only
-    /// while the agent's name is still provisional.
-    case setAgentName(agentID: AgentID, name: String)
+    /// while the agent's name is still provisional and the named session is current.
+    /// Older extensions omit sessionID and retain the provisional-only behavior.
+    case setAgentName(agentID: AgentID, name: String, sessionID: String? = nil)
     /// The pi session the agent is now in. `/new` and `/resume` move pi to a
     /// different session, and the agent must reopen that one next launch.
     case setAgentSession(agentID: AgentID, piSessionID: String)
@@ -157,7 +158,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     case mcpReport(agentID: AgentID, report: MCPServerReport)
 
     private enum CodingKeys: String, CodingKey {
-        case type, id, agentID, status, name, piSessionID, children
+        case type, id, agentID, status, name, piSessionID, sessionID, children
         case paneID, axis, cwd, relativeTo, command, text, submit, reference
         case title, body
         case prompt, enabled, start, automationID, targetAgentID, request, requestID, result
@@ -195,7 +196,8 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case .setAgentName:
             self = .setAgentName(
                 agentID: try c.decode(AgentID.self, forKey: .agentID),
-                name: try c.decode(String.self, forKey: .name)
+                name: try c.decode(String.self, forKey: .name),
+                sessionID: try c.decodeIfPresent(String.self, forKey: .sessionID)
             )
         case .setAgentSession:
             self = .setAgentSession(
@@ -443,10 +445,11 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(Kind.setAgentStatus, forKey: .type)
             try c.encode(agentID, forKey: .agentID)
             try c.encode(status, forKey: .status)
-        case .setAgentName(let agentID, let name):
+        case .setAgentName(let agentID, let name, let sessionID):
             try c.encode(Kind.setAgentName, forKey: .type)
             try c.encode(agentID, forKey: .agentID)
             try c.encode(name, forKey: .name)
+            try c.encodeIfPresent(sessionID, forKey: .sessionID)
         case .setAgentSession(let agentID, let piSessionID):
             try c.encode(Kind.setAgentSession, forKey: .type)
             try c.encode(agentID, forKey: .agentID)

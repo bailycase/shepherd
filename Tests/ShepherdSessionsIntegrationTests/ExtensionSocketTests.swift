@@ -190,6 +190,38 @@ struct ExtensionSocketTests {
         #expect(agents.last?.name == "prod-hotfix")
     }
 
+    @Test func delayedNamesCannotFinalizeAnotherSessionAndEarlyNamesDoNotMoveIt() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let space = Fixture.space()
+        var worker = Fixture.agent(in: space, name: "Opening prompt", nameIsFinal: false)
+        worker.agent.piSessionID = "session-a"
+        try await h.seed(Fixture.workspace([worker], space: space))
+        let client = try ExtensionClient(path: h.socketPath)
+
+        // A new session's fast, free name can beat its separate status connection.
+        // It must not rename or move the old conversation.
+        try client.send(.setAgentName(agentID: worker.agent.id, name: "Early B", sessionID: "session-b"))
+        try client.send(.setAgentStatus(agentID: worker.agent.id, status: .working))
+        try await eventually("the early name barrier") { h.server.state.agents.first?.status == .working }
+        #expect(h.server.state.agents.first?.name == "Opening prompt")
+        #expect(h.server.state.agents.first?.piSessionID == "session-a")
+        #expect(h.server.state.agents.first?.nameIsFinal == false)
+
+        try client.send(.setAgentSession(agentID: worker.agent.id, piSessionID: "session-b"))
+        try client.send(.setAgentName(agentID: worker.agent.id, name: "Late A", sessionID: "session-a"))
+        try client.send(.setAgentStatus(agentID: worker.agent.id, status: .done))
+        try await eventually("the stale name barrier") { h.server.state.agents.first?.status == .done }
+        #expect(h.server.state.agents.first?.nameIsFinal == false)
+        try client.send(.setAgentName(agentID: worker.agent.id, name: "Current B", sessionID: "session-b"))
+        try client.send(.setAgentName(agentID: worker.agent.id, name: "Later B", sessionID: "session-b"))
+        try client.send(.setAgentStatus(agentID: worker.agent.id, status: .idle))
+        try await eventually("the current name barrier") { h.server.state.agents.first?.status == .idle }
+        #expect(h.server.state.agents.first?.name == "Current B")
+        #expect(h.server.state.agents.first?.nameIsFinal == true)
+        #expect(try h.persisted().agents.first?.name == "Current B")
+    }
+
     // MARK: - Children, notify, pushes
 
     @Test func childRunsAreForwardedToTheAppWithoutTouchingState() async throws {
