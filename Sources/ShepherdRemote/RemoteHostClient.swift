@@ -68,7 +68,8 @@ public final class RemoteHostClient: @unchecked Sendable {
 
     private let queue = DispatchQueue(label: "shepherd.remote.client")
     private var connectionGeneration = UUID()
-    private let socketOpen: @Sendable (String, UInt16) throws -> Int32
+    private let socketOpen: (@Sendable (String, UInt16) throws -> Int32)?
+    private var pendingOpen: RemoteSocketOpen?
     private var fd: Int32 = -1
     private var readSource: DispatchSourceRead?
     private var writeSource: DispatchSourceWrite?
@@ -101,7 +102,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     private static let requestTimeout: TimeInterval = 10
     private static let maxQueuedWriteBytes = 8 * 1024 * 1024
 
-    public init() { socketOpen = { try Self.openSocket(host: $0, port: $1) } }
+    public init() { socketOpen = nil }
 
     // Allows the pending-open lifecycle to be checked without relying on DNS timing.
     init(socketOpen: @escaping @Sendable (String, UInt16) throws -> Int32) {
@@ -109,6 +110,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     }
 
     deinit {
+        pendingOpen?.cancel()
         // The read source's cancel handler owns closing the fd. Cancel is
         // thread-safe; a source must never be released while still active.
         if let readSource {
@@ -129,23 +131,31 @@ public final class RemoteHostClient: @unchecked Sendable {
         token: String,
         clientName: String
     ) async throws -> ShepherdState {
+        let opening = RemoteSocketOpen()
         let attempt = try queue.sync {
             guard self.fd < 0 else {
                 throw RemoteHostClientError.system(call: "connect", errno: EISCONN)
             }
+            pendingOpen?.cancel()
+            pendingOpen = opening
             connectionGeneration = UUID()
             return connectionGeneration
         }
         return try await withTaskCancellationHandler {
-            let fd = try await Task.detached(priority: .userInitiated) {
-                try self.socketOpen(host, port)
-            }.value
+            let fd: Int32
+            do {
+                fd = try await opening.open(host: host, port: port, override: socketOpen)
+            } catch {
+                queue.sync { if connectionGeneration == attempt { pendingOpen = nil } }
+                throw error
+            }
 
             try queue.sync {
                 guard !Task.isCancelled, connectionGeneration == attempt else {
                     close(fd)
                     throw CancellationError()
                 }
+                pendingOpen = nil
                 self.fd = fd
                 disconnectNotified = false
                 established = false
@@ -725,47 +735,6 @@ public final class RemoteHostClient: @unchecked Sendable {
 
     // MARK: - Connection plumbing (client queue)
 
-    private static func openSocket(host: String, port: UInt16) throws -> Int32 {
-        var hints = addrinfo(
-            ai_flags: 0,
-            ai_family: AF_UNSPEC,
-            ai_socktype: SOCK_STREAM,
-            ai_protocol: IPPROTO_TCP,
-            ai_addrlen: 0,
-            ai_canonname: nil,
-            ai_addr: nil,
-            ai_next: nil
-        )
-        var info: UnsafeMutablePointer<addrinfo>?
-        guard getaddrinfo(host, String(port), &hints, &info) == 0, let first = info else {
-            throw RemoteHostClientError.resolveFailed(host: host)
-        }
-        defer { freeaddrinfo(info) }
-
-        var lastErrno: Int32 = ECONNREFUSED
-        var candidate: UnsafeMutablePointer<addrinfo>? = first
-        while let ai = candidate {
-            let fd = socket(ai.pointee.ai_family, ai.pointee.ai_socktype, ai.pointee.ai_protocol)
-            if fd >= 0 {
-                if Darwin.connect(fd, ai.pointee.ai_addr, ai.pointee.ai_addrlen) == 0 {
-                    var one: Int32 = 1
-                    _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
-                    _ = setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, socklen_t(MemoryLayout<Int32>.size))
-                    let flags = fcntl(fd, F_GETFL, 0)
-                    _ = fcntl(fd, F_SETFL, flags | O_NONBLOCK)
-                    _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
-                    return fd
-                }
-                lastErrno = errno
-                close(fd)
-            } else {
-                lastErrno = errno
-            }
-            candidate = ai.pointee.ai_next
-        }
-        throw RemoteHostClientError.system(call: "connect", errno: lastErrno)
-    }
-
     /// Issue an id-correlated request and await its reply.
     private func request(
         timeout: TimeInterval = RemoteHostClient.requestTimeout,
@@ -966,6 +935,8 @@ public final class RemoteHostClient: @unchecked Sendable {
 
     private func teardown(reason: String) {
         connectionGeneration = UUID()
+        pendingOpen?.cancel()
+        pendingOpen = nil
         guard fd >= 0 else { return }
         readSource?.cancel()
         readSource = nil
