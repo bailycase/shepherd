@@ -46,6 +46,7 @@ extension ShepherdViewModel {
             return false
         }
         pendingMountTabIDs.subtract(next)
+        noteActiveTabForParking()
         return !pendingMountTabIDs.isEmpty
     }
 
