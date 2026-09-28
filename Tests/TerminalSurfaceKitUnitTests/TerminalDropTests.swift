@@ -18,6 +18,8 @@ struct TerminalFileDropTests {
         ("/tmp/[a]{b}<c>", #"/tmp/\[a\]\{b\}\<c\>"#),
         ("/tmp/back\\slash", #"/tmp/back\\slash"#),
         ("/tmp/café", "/tmp/café"),
+        ("/tmp/line\npwd\n", "'/tmp/line\npwd\n'"),
+        ("/tmp/line\rquote'", "'/tmp/line\rquote'\\'''"),
     ])
     func shellMetacharactersAreEscaped(path: String, expected: String) {
         #expect(TerminalFileDrop.shellEscape(path) == expected)
