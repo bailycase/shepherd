@@ -91,15 +91,20 @@ struct ScrollFollowerLayoutTests {
     @Test func nativeMarginsAndIntermediateLayoutDoNotTriggerOverscrollRepair() {
         var follower = NativeScrollFollower()
         let margin = Self.probe(offset: 1448)
-        #expect(!follower.observe(from: Self.tail, to: margin, gesture: false))
+        let marginRepair = follower.observe(from: Self.tail, to: margin, gesture: false)
+        #expect(!marginRepair)
         let shrinking = Self.probe(content: 1000)
-        #expect(!follower.observe(from: Self.tail, to: shrinking, gesture: false))
+        let shrinkRepair = follower.observe(from: Self.tail, to: shrinking, gesture: false)
+        #expect(!shrinkRepair)
         let staleOffset = Self.probe(content: 1000, offset: 1500)
-        #expect(follower.observe(from: shrinking, to: staleOffset, gesture: false))
+        let staleRepair = follower.observe(from: shrinking, to: staleOffset, gesture: false)
+        #expect(staleRepair)
         let collapsed = Self.probe(container: 720, inset: 0)
-        #expect(!follower.observe(from: Self.tail, to: collapsed, gesture: false))
+        let collapseRepair = follower.observe(from: Self.tail, to: collapsed, gesture: false)
+        #expect(!collapseRepair)
         let staleCollapseOffset = Self.probe(offset: 1500, container: 720, inset: 0)
-        #expect(follower.observe(from: collapsed, to: staleCollapseOffset, gesture: false))
+        let staleCollapseRepair = follower.observe(from: collapsed, to: staleCollapseOffset, gesture: false)
+        #expect(staleCollapseRepair)
     }
 
     @Test func theTailIsZeroAndFittingContentIsNegative() {
