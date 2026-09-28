@@ -17,6 +17,11 @@ enum TerminalFileDrop {
     }
 
     static func shellEscape(_ value: String) -> String {
+        // Backslash-newline is a continuation, not a literal filename byte. Quote the
+        // whole argument when it contains controls rather than producing shell commands.
+        if value.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7f }) {
+            return "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        }
         var escaped = ""
         escaped.reserveCapacity(value.utf8.count)
         for character in value {
