@@ -59,12 +59,20 @@ struct PiLauncherTests {
         defer { try? FileManager.default.removeItem(at: dir) }
         let home = try Self.home(in: dir)
 
-        let result = try Self.run(home.launcher.path, ["--mode", "rpc", "it's"], environment: Self.userEnvironment)
+        let startup = dir.appendingPathComponent(".zshenv")
+        try "exit 91\n".write(to: startup, atomically: true, encoding: .utf8)
+        var environment = Self.userEnvironment
+        environment["ZDOTDIR"] = dir.path
+        let result = try Self.run(home.launcher.path, ["--mode", "rpc", "it's"], environment: environment)
 
         #expect(result.status == 0, "\(result.err)")
         let lines = Set(result.out)
         #expect(result.out.prefix(3) == ["arg=--mode", "arg=rpc", "arg=it's"])
-        for (key, value) in home.pins { #expect(lines.contains("\(key)=\(value)"), "\(key): \(result.out)") }
+        #expect(Set(lines.filter { $0.hasPrefix("PI_") }) == [
+            "PI_CODING_AGENT_DIR=\(home.directory.path)", "PI_PACKAGE_DIR=/engine/package",
+            "PI_OFFLINE=1", "PI_SKIP_VERSION_CHECK=1", "PI_TELEMETRY=0",
+            "PI_SUBAGENTS_TEMP_ROOT=\(home.directory.path)/tmp/pi-subagents",
+        ])
         #expect(lines.contains("NODE_EXTRA_CA_CERTS=/their/ca.pem"))
         for key in ["NODE_OPTIONS", "JITI_ALIAS", "OPENSSL_CONF", "PI_EXPERIMENTAL"] {
             #expect(!lines.contains { $0.hasPrefix(key + "=") }, "\(key) reached pi")
@@ -93,10 +101,16 @@ struct PiLauncherTests {
 
         #expect(result.status == 0, "\(result.err)")
         #expect(result.out == [#"--require /their/hook.cjs|{"a":"b c"}|0|/their/pi|unset"#])
+        let all = try Self.run(shell, ["-c", home.shellCommandPrefix + "\nenv | grep -E '^(PI_|JITI_|NODE_|OPENSSL_CONF)' | sort"],
+                               environment: piEnvironment)
+        #expect(all.status == 0)
+        #expect(Set(all.out) == Set(Self.userEnvironment.filter {
+            $0.key.hasPrefix("PI_") || $0.key.hasPrefix("JITI_") || $0.key.hasPrefix("NODE_") || $0.key == "OPENSSL_CONF"
+        }.map { "\($0.key)=\($0.value)" }))
     }
 
     /// pi's own package and config commands change nothing of Shepherd's pi.
-    @Test(arguments: PiHome.refusedSubcommands)
+    @Test(arguments: ["install", "remove", "uninstall", "update", "config"])
     func theLauncherRefusesPisPackageCommands(_ subcommand: String) throws {
         let dir = try makeScratchDirectory("refuse")
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -115,6 +129,44 @@ struct PiLauncherTests {
         let result = try Self.run(home.launcher.path, ["--mode", "rpc"], environment: ["PATH": "/usr/bin:/bin"])
         #expect(result.status == 127)
         #expect(result.err.contains("Shepherd's pi engine is missing"))
+    }
+
+    @Test func anOverrideEngineReceivesNoPackagePin() throws {
+        let dir = try makeScratchDirectory("override")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let installed = try Self.home(in: dir)
+        let home = PiHome(directory: installed.directory,
+            engine: PiEngine(command: [dir.appendingPathComponent("pi-engine").path],
+                             packageDirectory: nil, version: nil, node: .onPath("node")))
+        try home.install()
+        var environment = Self.userEnvironment
+        environment["PI_PACKAGE_DIR"] = "/their/package"
+        let result = try Self.run(home.launcher.path, ["--version"], environment: environment)
+        #expect(result.status == 0, "\(result.err)")
+        #expect(result.out.first == "arg=--version")
+        #expect(!result.out.contains { $0.hasPrefix("PI_PACKAGE_DIR=") })
+        #expect(result.out.contains("_SHEPHERD_STASH_PI_PACKAGE_DIR=/their/package"))
+    }
+
+    @Test(arguments: [false, true])
+    func aBundledEngineRequiresItsScriptBeforeExecutingIt(scriptExists: Bool) throws {
+        let dir = try makeScratchDirectory("missing-script")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let script = dir.appendingPathComponent("engine.sh")
+        if scriptExists { try "printf 'engine=%s\\n' \"$@\"\n".write(to: script, atomically: true, encoding: .utf8) }
+        let home = PiHome(directory: dir.appendingPathComponent("home"),
+            engine: PiEngine(command: ["/bin/sh", script.path],
+                             packageDirectory: nil, version: nil, node: .onPath("node")))
+        try home.install()
+        let result = try Self.run(home.launcher.path, ["--mode", "rpc"], environment: ["PATH": "/usr/bin:/bin"])
+        if scriptExists {
+            #expect(result.status == 0, "\(result.err)")
+            #expect(result.out == ["engine=--mode", "engine=rpc"])
+        } else {
+            #expect(result.status == 127)
+            #expect(result.out.isEmpty)
+            #expect(result.err.contains("Shepherd's pi engine is missing"))
+        }
     }
 
     /// Installing writes the launcher, restore-env.sh, the marker and settings.json, each once.

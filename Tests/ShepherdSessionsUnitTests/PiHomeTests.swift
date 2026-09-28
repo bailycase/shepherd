@@ -12,66 +12,6 @@ struct PiHomeTests {
                                  node: .executable("/Apps/Shepherd.app/Contents/Helpers/node"))
     static let home = PiHome(directory: URL(fileURLWithPath: "/Users/me/Library/Application Support/Shepherd/pi"), engine: engine)
 
-    // MARK: The launcher
-
-    @Test func theLauncherRunsWithNoStartupFiles() {
-        #expect(Self.home.launcherScript.hasPrefix("#!/bin/zsh -f\n"))
-    }
-
-    /// Every pi, jiti and Node variable, and OpenSSL's config, is set aside and unset before the
-    /// pins, keeping only corporate CAs.
-    @Test func theLauncherSetsAsideTheEnvironmentsPiJitiAndNodeVariables() {
-        let script = Self.home.launcherScript
-        #expect(script.contains("(PI_*|JITI_*|NODE_*|OPENSSL_CONF)"))
-        #expect(script.contains(#"export "_SHEPHERD_STASH_$_shepherd_name=${(P)_shepherd_name}""#))
-        #expect(script.contains("unset $_shepherd_name"))
-        #expect(script.contains(#"export _SHEPHERD_STASH_NAMES="${_shepherd_names[*]}""#))
-        #expect(script.contains(#"export NODE_EXTRA_CA_CERTS="$_SHEPHERD_STASH_NODE_EXTRA_CA_CERTS""#))
-        // Set aside first, then pinned: a pin is never stashed as the user's.
-        let stash = try! #require(script.range(of: "unset $_shepherd_name"))
-        let pin = try! #require(script.range(of: "export PI_CODING_AGENT_DIR="))
-        #expect(stash.lowerBound < pin.lowerBound)
-    }
-
-    @Test(arguments: [
-        ("PI_CODING_AGENT_DIR", "'/Users/me/Library/Application Support/Shepherd/pi'"),
-        ("PI_PACKAGE_DIR", "'/Apps/Shepherd.app/Contents/Resources/pi-engine'"),
-        ("PI_OFFLINE", "'1'"), ("PI_SKIP_VERSION_CHECK", "'1'"), ("PI_TELEMETRY", "'0'"),
-        ("PI_SUBAGENTS_TEMP_ROOT", "'/Users/me/Library/Application Support/Shepherd/pi/tmp/pi-subagents'"),
-    ])
-    func theLauncherPins(_ key: String, _ value: String) {
-        #expect(Self.home.launcherScript.contains("\nexport \(key)=\(value)\n"))
-    }
-
-    /// An override brings its own package: no `PI_PACKAGE_DIR` is pinned for it.
-    @Test func anOverrideEngineGetsNoPackagePin() {
-        let home = PiHome(directory: Self.home.directory, engine: PiEngine(command: ["/s/pi-engine"], packageDirectory: nil, version: nil, node: .onPath("node")))
-        #expect(!home.launcherScript.contains("PI_PACKAGE_DIR="))
-        #expect(home.launcherScript.contains("exec '/s/pi-engine' \"$@\"\n"))
-    }
-
-    @Test func theLauncherRefusesPisOwnPackageAndConfigCommands() {
-        #expect(Self.home.launcherScript.contains("  (install|remove|uninstall|update|config)\n"))
-        #expect(Self.home.launcherScript.contains("exit 2 ;;"))
-    }
-
-    /// It execs the engine, or, when a file is missing, says so and exits as a missing command.
-    @Test func theLauncherExecsTheEngineOrSaysItIsMissing() {
-        let script = Self.home.launcherScript
-        #expect(script.contains("if [[ ! -x '/Apps/Shepherd.app/Contents/Helpers/node' || ! -f '/Apps/Shepherd.app/Contents/Resources/pi-engine/dist/bundle/cli.js' ]]; then\n"))
-        #expect(script.contains("  exit 127\n"))
-        #expect(script.hasSuffix("exec '/Apps/Shepherd.app/Contents/Helpers/node' '/Apps/Shepherd.app/Contents/Resources/pi-engine/dist/bundle/cli.js' \"$@\"\n"))
-    }
-
-    /// The bash tool's shell unsets every pin and exports what the launcher set aside, by name.
-    @Test func restoringUnsetsThePinsAndExportsTheStash() {
-        let script = Self.home.restoreEnvScript
-        #expect(script.contains("\nunset PI_CODING_AGENT_DIR PI_PACKAGE_DIR PI_OFFLINE PI_SKIP_VERSION_CHECK PI_TELEMETRY PI_SUBAGENTS_TEMP_ROOT\n"))
-        #expect(script.contains(#"for _shepherd_name in $(printf '%s\n' "${_SHEPHERD_STASH_NAMES-}"); do"#))
-        #expect(script.contains(#"eval "export $_shepherd_name=\"\${_SHEPHERD_STASH_$_shepherd_name}\"""#))
-        #expect(Self.home.shellCommandPrefix == ". '/Users/me/Library/Application Support/Shepherd/pi/restore-env.sh'")
-    }
-
     // MARK: ~/.agents/skills
 
     /// pi enables `$HOME/.agents/skills` unless a `!` pattern in the global `skills` matches its
