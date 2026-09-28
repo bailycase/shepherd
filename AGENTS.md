@@ -1327,7 +1327,14 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   replaces only the one still waiting, so every started run finishes (a cancelled run can leave a
   TestFlight upload unretired or the feeds half written) and the newest commit ships next. A
   TestFlight run queues in a group of its own, so it never replaces a waiting push or is replaced
-  by one.
+  by one. Distinct tags keep separate build groups. Only the `publish-appcasts` job shares one
+  `appcast-publication` concurrency group (`cancel-in-progress: false`): replacing a waiting
+  publisher loses no release, because every admitted publisher rereads all completed releases.
+  Releases upload as drafts, including `shepherd-appcast.json` eligibility metadata, and become
+  public only after their required assets exist. Publication ignores drafts, excludes marked
+  ad-hoc releases, and refuses malformed present metadata. Unmarked historical releases retain
+  their legacy eligibility. The publisher resolves Sparkle from the pinned package versions;
+  it needs the Sparkle key and repository write token, not the Developer ID certificate.
 - **Two apps, never each other's updates.** Shepherd Nightly has its own bundle id, name
   (`Shepherd Nightly.app`), DMG and feed, and every feed carries one app only. Sparkle is not
   the boundary: its installer picks the new app in an archive by the host's *file name* first
@@ -1352,8 +1359,9 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   exist. A Shepherd install that rode nightly sits at a build number above every existing beta
   and stable, so it waits until the first Shepherd beta or stable built after the split: cut one
   soon after the split lands.
-  - Push that tag once the merge's own nightly run has finished. Two runs that write `gh-pages`
-    at once collide: the later push is rejected, and its feeds wait for the next run.
+  - Tags and nightlies built by this workflow serialize publication, not builds. Before shipping
+    a tag from an older commit whose workflow lacks that publication group, wait for other
+    releases to finish: old workflows do not participate in the shared ownership.
   - Tag only commits that contain the split. A tag runs the workflow of its own commit: an
     older one rebuilds `appcast-rc.xml` and `appcast-nightly.xml` the old way until the next run
     here rewrites them, and an rc tag there still cuts an rc.
@@ -1379,9 +1387,11 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   `UpdateChannel`/`UpdateChannelStore`/`ChannelDelegate`, the Advanced row, the Xcode
   configurations, and their tests together. Feed names and bundle ids are a contract between CI
   and the apps; `Tests/Release` reads both sides.
-- **Signing:** with the Developer ID, notarization, and Sparkle secrets configured, builds are
-  signed and notarized. Without them the workflow falls back to ad-hoc signing and skips the
-  appcast.
+- **Signing:** a configured Developer ID requires successful signing and notarization; missing
+  notarization credentials fail that release rather than downgrade it. Without a Developer ID,
+  the build is ad-hoc and its eligibility asset permanently excludes it from appcasts, even if
+  a future signed release regenerates them. Without the Sparkle key, publication is skipped;
+  an eligible signed release can enter the feeds on a later successful publisher.
   - `scripts/sign-app.sh` signs inside-out, never with `--deep`: every nested item first, then
     the app with `App/Shepherd.entitlements` (both apps). Only nested apps and XPC services keep
     their own entitlements, and the pi engine's node gets the engine's: `scripts/sign-engine.sh`
@@ -1395,11 +1405,15 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
     rejects ad-hoc frameworks, which have no Team ID.
   - Shipped binaries are stripped (`strip -S -x`). Their dSYMs go on each release as
     `Shepherd-dSYMs.zip` or `Shepherd-Nightly-dSYMs.zip`.
-- **Appcasts** are rebuilt from every release on each run: one `generate_appcast` per feed
+- **Appcasts** are rebuilt by the serialized publication job from all completed eligible
+  releases, keeping the four newest completed nightlies: one `generate_appcast` per feed
   directory, written to a fixed name (`-o`; left alone it names the file after the app's
   `SUFeedURL`). Deltas go to the feed's newest release, renamed without spaces
   (`Shepherd Nightly63-61.delta` → `Shepherd-Nightly63-61.delta`), because GitHub rewrites
-  spaces in asset names.
+  spaces in asset names. Only after the feed push succeeds (or nothing changed) does that job
+  prune older completed nightlies from its frozen snapshot; drafts and releases completed during
+  publication are never pruned. Failed acquisition, metadata validation, generation or pushing
+  prunes nothing. A skipped publisher (no Sparkle key) prunes nothing either.
 - **Building Shepherd Nightly locally:** the `Shepherd (Nightly)` scheme, or
   `xcodebuild -scheme 'Shepherd (Nightly)' -configuration Nightly …` as the workflow does.
 - **Enhanced Security** is set on the Mac target only, because at project level it would push

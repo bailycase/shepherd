@@ -768,7 +768,10 @@ class ContractTests(unittest.TestCase):
                 root = Path(directory)
                 (root / "routes").write_text(f"{tag} {asset} archive.dmg stable\n")
                 (root / "staged-tags").write_text("")
-                metadata = json.dumps({"assets": [{"name": asset}] if available else []})
+                metadata = json.dumps({"isDraft": False, "assets": [{"name": asset}] if available else []})
+                (root / "scripts").mkdir()
+                for name in ("release.py", "pi_engine.py"):
+                    shutil.copyfile(os.path.join(ROOT, "scripts", name), root / "scripts" / name)
                 fake = 'gh() { if [[ "$2" == view ]]; then printf \'%s\\n\' "$METADATA"; else return "$DOWNLOAD_STATUS"; fi; }\n'
                 result = subprocess.run(["bash", "-c", "set -euo pipefail\n" + fake + loop + "printf REACHED_GENERATION\n"],
                                         cwd=root, env={**os.environ, "RUNNER_TEMP": directory, "METADATA": metadata,
