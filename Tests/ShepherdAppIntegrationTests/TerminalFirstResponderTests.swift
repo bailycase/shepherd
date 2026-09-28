@@ -60,6 +60,22 @@ struct TerminalFirstResponderTests {
         }
     }
 
+    @Test func releasingBeforeAttachmentCancelsThePendingFocusRetry() async throws {
+        let panes = Panes()
+        defer { panes.window.close() }
+        panes.left.takeKeyboardFocus(remainingAttempts: 2)
+        panes.left.releaseKeyboardFocus()
+        panes.show(leftFocused: false, rightFocused: true)
+        try await eventuallyOnMain("right surface to own focus") {
+            panes.firstResponder != nil && panes.firstResponder === panes.surface(of: panes.right)
+        }
+        // Queue a marker after the actual 25ms retry, not a sleep-based expectation.
+        var retryTurnPassed = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(30)) { retryTurnPassed = true }
+        try await eventuallyOnMain("the cancelled retry to pass") { retryTurnPassed }
+        #expect(panes.firstResponder === panes.surface(of: panes.right))
+    }
+
     /// Add to message reads the selection: Select All in a live surface reports what it holds,
     /// with where it starts and a line's height; a click that selects nothing reports nil.
     @Test func aSelectionIsReportedWithItsTextAndPlace() async throws {
