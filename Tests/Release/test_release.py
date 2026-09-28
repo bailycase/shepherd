@@ -795,6 +795,22 @@ class ContractTests(unittest.TestCase):
                 self.assertEqual(scheme.find(action).get("buildConfiguration"), "Debug")
         self.assertEqual(scheme.find("ProfileAction").get("shouldUseLaunchSchemeArgsEnv"), "YES")
 
+    def test_extension_failures_gate_ci_with_the_pinned_pi_package(self):
+        workflow = self.read(".github", "workflows", "ci.yml")
+        job = workflow.split("  extensions:\n", 1)[1].split("\n  test:", 1)[0]
+        self.assertIn('scripts/pi-engine-pin.json', job)
+        self.assertIn('--ignore-scripts', job)
+        self.assertIn('node --test Tests/Extensions/*.test.mjs', job)
+        self.assertNotIn('continue-on-error', job)
+        aggregate = workflow.split("  ci:\n", 1)[1]
+        self.assertIn('needs: [release-rules, extensions, test]', aggregate)
+        gate = next(line.split('run: ', 1)[1] for line in aggregate.splitlines() if 'run: test ' in line)
+        for extension_status in ("success", "failure", "cancelled", "skipped"):
+            command = gate.replace('${{ needs.release-rules.result }}', 'success').replace(
+                '${{ needs.test.result }}', 'success').replace('${{ needs.extensions.result }}', extension_status)
+            result = subprocess.run(["bash", "-c", command], timeout=5)
+            self.assertEqual(result.returncode == 0, extension_status == "success")
+
     def test_each_app_has_its_scheme(self):
         for app in release.APPS.values():
             with self.subTest(app=app.key):
