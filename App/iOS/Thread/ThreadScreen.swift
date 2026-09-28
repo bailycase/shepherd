@@ -128,6 +128,8 @@ struct ThreadTranscript: View {
     @Environment(\.designMarkupCanvas) private var markupCanvas
     /// Follows the tail until the reader drags away from it (DESIGN.md › Thread › Following).
     @State private var follower = NativeScrollFollower()
+    @State private var historyPaging = NativeHistoryPaging()
+    @State private var visibleTurn: String?
 
     private static let bottomID = "thread-bottom"
 
@@ -143,14 +145,7 @@ struct ThreadTranscript: View {
                         Text(banner).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    if store.olderCursor != nil {
-                        Button(store.loadingOlder ? "Loading history…" : "Load older messages") {
-                            Task { await store.loadOlder() }
-                        }
-                        .buttonStyle(.nw(.ghost, size: .s))
-                        .disabled(!store.isLive || !store.ready || store.loadingOlder)
-                        .frame(maxWidth: .infinity)
-                    } else if store.snapshot == nil && store.loadError == nil && store.startProblem == nil && store.isLive {
+                    if store.snapshot == nil && store.loadError == nil && store.startProblem == nil && store.isLive {
                         ProgressView().progressViewStyle(NWSpinnerStyle()).frame(maxWidth: .infinity)
                     }
                     ForEach(rows) { row in
@@ -168,6 +163,15 @@ struct ThreadTranscript: View {
                     if thinking, liveRow == nil { NWThinking.live() }
                     Color.clear.frame(height: 1).id(Self.bottomID)
                 }
+                .scrollTargetLayout()
+                .overlay(alignment: .top) {
+                    Color.clear.frame(height: MobileLayout.turnSpacing)
+                        .onScrollVisibilityChange { visible in
+                            historyPaging.visible = visible
+                            loadVisibleHistory()
+                        }
+                        .accessibilityHidden(true)
+                }
                 .frame(maxWidth: sizeClass == .regular ? MobileLayout.threadMaxWidth : .infinity)
                 .padding(.horizontal, sizeClass == .regular && !designChat ? MobileLayout.padThreadGutter : MobileLayout.gutter)
                 .padding(.vertical, sizeClass == .regular && !designChat ? MobileLayout.padThreadGutter : MobileLayout.gutter)
@@ -181,6 +185,9 @@ struct ThreadTranscript: View {
             }
             // Open at the tail and stay pinned while it grows; only the reader's own drag
             // detaches, and sending re-attaches.
+            .scrollPosition(id: $visibleTurn, anchor: .top)
+            .onChange(of: historyEnabled) { _, _ in loadVisibleHistory() }
+            .onChange(of: store.sessionKey) { _, _ in loadVisibleHistory() }
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .defaultScrollAnchor(follower.sticky ? .bottom : nil, for: .sizeChanges)
             .onScrollGeometryChange(for: NativeScrollProbe.self, of: Self.probe) { old, new in
@@ -192,6 +199,7 @@ struct ThreadTranscript: View {
                 }
             }
             .onScrollPhaseChange { _, phase, context in
+                if phase == .interacting { historyPaging.beginScroll() }
                 // Only a finger on the thread is intent; momentum and programmatic scrolls are
                 // not, and a drag that ends near the bottom re-sticks where it lands.
                 follow { follower in
@@ -210,9 +218,12 @@ struct ThreadTranscript: View {
             .onChange(of: rows.last(where: \.isUser)?.id) { _, id in
                 // The echoed turn joins once pi takes it: land on it, unless the reader dragged
                 // away meanwhile.
-                guard id != nil, follow({ $0.userTurnArrived() }) else { return }
+                guard id != nil else { return }
+                let session = store.sessionKey
                 Task { @MainActor in
                     await Task.yield()
+                    guard !Task.isCancelled, store.isLive, store.sessionKey == session,
+                          follow({ $0.userTurnArrived() }) else { return }
                     proxy.scrollTo(Self.bottomID, anchor: .bottom)
                 }
             }
@@ -232,6 +243,15 @@ struct ThreadTranscript: View {
             }
             .scrollDismissesKeyboard(.interactively)
         }
+    }
+
+    private var historyEnabled: Bool { store.isLive && store.ready && !store.loadingOlder && !follower.sticky }
+
+    private func loadVisibleHistory() {
+        guard historyPaging.takeRequest(session: store.sessionKey, cursor: store.olderCursor, enabled: historyEnabled) else { return }
+        // ScrollViewReader jumps can leave the native position binding nil at the boundary.
+        if visibleTurn == nil { visibleTurn = store.rows.first?.id }
+        Task { await store.loadOlder() }
     }
 
     /// Brings the turn holding `entryID` (a tool result, a compaction) to the top of the thread,

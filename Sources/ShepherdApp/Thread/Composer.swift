@@ -21,6 +21,8 @@ struct Composer: View {
     static let cardSpace = "composer.card"
 
     @Bindable var store: NativeThreadStore
+    var input: ThreadInput
+    var allowsLocalFiles = false
     let active: Bool
     /// The thread is the focused pane: the field takes the keyboard while it is on screen.
     let isFocused: Bool
@@ -58,8 +60,6 @@ struct Composer: View {
     var hidesNotSignedIn = false
     /// `/login` and `/logout`: Shepherd's own commands, for this Mac's agents (nil elsewhere).
     var slashLogin: SlashLoginActions? = nil
-    @State private var attachments = ComposerAttachments()
-    @State private var dropTargeted = false
     @State private var commandIndex = 0
     /// Esc closes the slash menu for the draft as typed; typing more reopens it.
     @State private var dismissedQuery: String?
@@ -143,7 +143,7 @@ struct Composer: View {
     private var dialogs: [NativeThreadDialog] { errored ? [] : store.dialogs }
     /// While pi starts, a send waits for it behind the spinner.
     private var canSend: Bool {
-        active && store.acceptsSend && store.hasDraft
+        active && store.acceptsSend && (store.hasDraft || !input.attachments.isEmpty)
     }
     private var canAttach: Bool { store.supportedActions.contains("sendImages") }
     /// pi answers `/name` prompts itself; the list comes from its command registry. Its skills'
@@ -186,7 +186,7 @@ struct Composer: View {
 
     /// What sits above the card: a banner, the notice, extension widgets, the queue.
     private var accessories: [String] {
-        let banner = store.startProblem.map { !(hidesNotSignedIn && $0.kind == .notSignedIn) } == true ? "cannotStart" : store.loadError != nil ? "lost" : attachments.error != nil ? "attachment" : store.notice != nil ? "notice" : nil
+        let banner = store.startProblem.map { !(hidesNotSignedIn && $0.kind == .notSignedIn) } == true ? "cannotStart" : store.loadError != nil ? "lost" : input.attachments.error != nil ? "attachment" : store.notice != nil ? "notice" : nil
         return [banner].compactMap { $0 } + store.widgets.map(\.id) + (queueStack.isVisible ? ["queue"] : [])
             + (showsTray ? ["tray"] : []) + (answeringRun != nil ? ["answering"] : [])
     }
@@ -260,7 +260,7 @@ struct Composer: View {
                         .buttonStyle(.nw(.secondary, size: .s))
                 }
                 .nwTransition(.list, edge: .bottom)
-            } else if let attachmentError = attachments.error {
+            } else if let attachmentError = input.attachments.error {
                 NWBanner(.failed, title: attachmentError)
                     .nwTransition(.list, edge: .bottom)
             } else if let notice = store.notice {
@@ -323,7 +323,7 @@ struct Composer: View {
                 }
         }
         .nwAnimation(.list, value: accessories)
-        .nwAnimation(.list, value: attachments.ids)
+        .nwAnimation(.list, value: input.attachments.ids)
         .nwAnimation(.list, value: store.attachedFiles.map(\.id))
         .nwAnimation(.disclosure, value: questionKey)
         .nwAnimation(.disclosure, value: questionHiding)
@@ -348,9 +348,9 @@ struct Composer: View {
         .onChange(of: composing || focusedRow != nil, initial: true) { _, focused in
             // Only a press it can use: a focused message, or a draft ready to send. Anything
             // else is left to the window (the review pane's ⌘⏎).
-            keyMonitor.accepts = { [store, focusedRow = $focusedRow] in
+            keyMonitor.accepts = { [store, input, focusedRow = $focusedRow] in
                 focusedRow.wrappedValue != nil
-                    || (store.hasDraft && store.acceptsSend && !store.busy
+                    || ((store.hasDraft || !input.attachments.isEmpty) && store.acceptsSend && !store.busy
                         && store.dialogs.isEmpty)
             }
             keyMonitor.watch(focused)
@@ -358,7 +358,15 @@ struct Composer: View {
         .onChange(of: keyMonitor.presses) { _, _ in sendTheOtherWay() }
         // A hold that opened the Send menu and let go elsewhere leaves the next click a send.
         .onChange(of: menu) { _, menu in if menu != .send { sendHeld = false } }
+        .onChange(of: active && questionKey == nil && answeringRun == nil, initial: true) { _, available in
+            input.available = available
+        }
+        .onChange(of: input.focusRequest) { _, _ in
+            guard active, questionKey == nil, answeringRun == nil else { return }
+            composing = true
+        }
         .onDisappear {
+            input.available = false
             dismissal.watch(false)
             keyMonitor.watch(false)
         }
@@ -411,11 +419,7 @@ struct Composer: View {
         .modifier(ThreadCommandHandler(key: commandKey, active: active, handle: handleCommand))
         .fileImporter(isPresented: $picking, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result else { return }
-            attachments.clearError()
-            Task {
-                let resolved = await AppImageDrop.resolve(urls.map { NSItemProvider(contentsOf: $0) ?? NSItemProvider() })
-                attach(urls: resolved)
-            }
+            attach(urls.map { NSItemProvider(contentsOf: $0) ?? NSItemProvider() })
         }
         .sheet(isPresented: $confirmingStopAll) {
             StopAllDialog(runningSubagents: store.subagents.count { !$0.isTerminal },
@@ -526,16 +530,16 @@ struct Composer: View {
 
     private var card: some View {
         // The context details float over the thread without the card taking focus's look.
-        let focused = composing || dropTargeted || (menuOpen && menu != .context)
+        let focused = composing || (input.available && input.dropTargeted) || (menuOpen && menu != .context)
         return NWComposer(isFocused: focused) {
             ForEach(store.attachedFiles) { file in
                 NWAttachmentChip(file.name, thumbnail: nil) { store.detachFile(file.id) }
                     .help(file.path)
                     .nwTransition(.list, edge: .leading)
             }
-            ForEach(attachments.items) { attachment in
+            ForEach(input.attachments.items) { attachment in
                 NWAttachmentChip(attachment.name, thumbnail: attachment.thumbnail) {
-                    attachments.remove(attachment.id)
+                    input.attachments.remove(attachment.id)
                 }
                 .nwTransition(.list, edge: .leading)
             }
@@ -545,11 +549,6 @@ struct Composer: View {
             ComposerControls(model: controlsModel, actions: controlsActions, store: store).equatable()
         }
         .coordinateSpace(.named(Self.cardSpace))
-        .onDrop(of: [.image, .fileURL], isTargeted: canAttach ? $dropTargeted : nil) { providers in
-            guard canAttach else { return false }
-            attach(providers)
-            return true
-        }
     }
 
     private var placeholder: String {
@@ -643,10 +642,10 @@ struct Composer: View {
     /// The card shows only while no question waits (the question dock takes its place).
     private var controlsModel: ComposerControlsModel {
         let working = running
-        let draftEmpty = store.draft.isEmpty
+        let draftEmpty = !store.hasDraft && input.attachments.isEmpty
         let stops = working && draftEmpty
         return ComposerControlsModel(
-            active: active, canAttach: canAttach, attachFull: attachments.isFull,
+            active: active, canAttach: canAttach, attachFull: input.attachments.isFull,
             hasCommands: !commands.isEmpty, commandsActive: commandQuery != nil,
             model: designChat ? nil : store.model, modelChangeable: store.supportedActions.contains("setModel"),
             modelEnabled: store.supports("setModel"), modelsOpen: menu == .models,
@@ -787,11 +786,11 @@ struct Composer: View {
             openLogin(command)
             return
         }
-        let images = attachments.images
+        let images = input.attachments.images
         Task {
             let before = store.sentCount
             await store.send(images: images, delivery: delivery)
-            if store.sentCount > before { attachments.removeAll() }
+            if store.sentCount > before { input.attachments.removeAll() }
         }
     }
 
@@ -869,15 +868,7 @@ struct Composer: View {
     /// Dropped or pasted images become attachments through the same resize rules as terminal
     /// drops (longest edge 2000px, JPEG stays JPEG, everything else PNG).
     private func attach(_ providers: [NSItemProvider]) {
-        attachments.clearError()
-        Task {
-            let urls = await AppImageDrop.resolve(providers)
-            attach(urls: urls)
-        }
-    }
-
-    private func attach(urls: [URL]) {
-        attachments.add(urls: urls)
+        input.attach(providers, store: store, localFiles: allowsLocalFiles)
     }
 }
 

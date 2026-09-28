@@ -724,7 +724,7 @@ private struct DetachedThread: View {
             // The last reply ends under the card, as a thread scrolled up from its tail does.
             .padding(.bottom, AppLayout.composerFade)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-            Composer(store: store, active: true, isFocused: false, agentName: "Investigate", hasTurns: true,
+            Composer(store: store, input: ThreadInput(), active: true, isFocused: false, agentName: "Investigate", hasTurns: true,
                      gutter: AppLayout.gutter, jumpToLatest: {})
         }
         .background(Color.nw.bgWindow)
