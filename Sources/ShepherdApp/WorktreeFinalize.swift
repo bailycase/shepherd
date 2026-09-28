@@ -63,7 +63,9 @@ enum LoginShell {
         await withCheckedContinuation { continuation in
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-            process.arguments = ["-l", "-c", script]
+            // Startup files can cd elsewhere; reselect the requested checkout before any command.
+            let directory = cwd.map { "cd -- \(shellQuoted($0)) || exit\n" } ?? ""
+            process.arguments = ["-l", "-c", directory + script]
             if let cwd { process.currentDirectoryURL = URL(fileURLWithPath: cwd) }
             var env = ProcessInfo.processInfo.environment
             env["GIT_TERMINAL_PROMPT"] = "0"
