@@ -135,7 +135,11 @@ ceiling, discarded wire case, rewritten golden, or disabled regression was intro
   burst without those layouts and waits on actual completed highlighting. A deterministic
   per-invocation source suffix prevents a repeated test from reusing cached output. Three
   repetitions and the full ListPerformance suite passed with the original limits.
-- PR CI is the final cross-machine check; see the pull request for its current result.
+- First full PR CI passed W/R/A, Node and release checks, but C exposed an automation test
+  race. It sent synthetic done before the real opening turn's agent_start could clear it.
+  The fixture now waits for the opening message and settled snapshot first, and runs with
+  immediate and delayed startup. The full remote automation suite passed locally afterward.
+  Final PR CI is the cross-machine check; see the pull request for its current result.
 
 A passing suite with known issues is not proof that all product bugs or all test-quality defects
 have been resolved. No exhaustive test-body review or whole-repository mutation score is claimed.
