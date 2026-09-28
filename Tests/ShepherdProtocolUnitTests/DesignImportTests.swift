@@ -105,9 +105,11 @@ struct DesignImportTests {
                 do {
                     _ = try DesignBoardCheck.check(source)
                     Issue.record("oversized root should mismatch preview")
-                } catch {
+                } catch let error as DesignBoardCheck.Refusal {
                     #expect(error.code == "size_mismatch")
                     #expect(!error.description.isEmpty)
+                } catch {
+                    Issue.record("Unexpected refusal: \(error)")
                 }
             }
         }
