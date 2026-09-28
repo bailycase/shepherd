@@ -81,10 +81,13 @@ struct RemoteAutomationsTests {
     /// A run that settled only waits to be read: the client offers Run Now again, and the host
     /// replaces the finished run's agent with a new run, keeping the finished one in its runs. A
     /// live run is never cut short by running again.
-    @Test func runningASettledAutomationAgainReplacesItsRun() async throws {
+    @Test(arguments: [0.0, 0.2])
+    func runningASettledAutomationAgainReplacesItsRun(startupDelay: Double) async throws {
         try StubPi.installAsEngine()
         let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
+        let startup = try JSONSerialization.data(withJSONObject: ["delay": startupDelay])
+        try startup.write(to: remote.host.dir.appendingPathComponent("stub-pi-startup.json"))
         let automation = Automation(name: "watch CI", prompt: "watch the build", cwd: remote.host.dir.path, enabled: false)
         let vm = try await local.start()
         try await remote.host.start(with: ShepherdState(spaces: [Fixture.space(path: remote.host.dir.path)], automations: [automation]))
@@ -97,6 +100,15 @@ struct RemoteAutomationsTests {
             Self.row(key, in: vm)?.run != nil && !vm.remoteAutomationsPending.contains(key)
         }
         let first = try #require(host.state.automations.first?.agentID)
+        // Creating the row precedes pi's first turn. Finish that real opening turn before
+        // simulating extension reports: otherwise a late agent_start clears the held done
+        // report, and the stub has no status extension to send it again.
+        try await eventuallyAsync("the automation's opening turn to finish", timeout: .seconds(30)) {
+            guard case .snapshot(let snapshot) = try await host.nativeThread(agentID: first, request: .snapshot()) else { return false }
+            return !snapshot.running && snapshot.messages.contains { message in
+                message.role == "user" && message.blocks.contains { $0.text == automation.prompt }
+            }
+        }
         // pi's status extension reports the turn; the stub pi loads no extensions.
         let reporter = try ExtensionClient(path: remote.host.scratch.socketPath)
         try reporter.send(.setAgentStatus(agentID: first, status: .working))
