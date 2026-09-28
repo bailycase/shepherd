@@ -43,14 +43,14 @@ extension FixtureCatalog {
             FixtureScreen(name: "design-pad-split", hosts: DesignPadFixtures.hosts(split: true), routes: [.thread(thread)],
                           prepare: { app in
                               FixtureWindows.shared.openBeside(.padDesign(.list))
-                              await FixtureWindows.wait(seconds: 10) { app.windows.open.count > 1 }
+                              await FixtureWindows.wait("second design window", seconds: 10) { app.windows.open.count > 1 }
                               if let window = app.windows.open.first(where: { $0.seed.id != MobileWindowSeed.lone.id }) {
                                   PadDesignHooks.open(design, navigator: window.navigator)
                               }
                               // The boards stack in one column, fitted; A picked whole wears its ring.
                               let canvas = await DesignPadFixtures.settle(app, viewport: nil)
                               canvas.pick(NWCanvasPick(board: "A.dc.html"))
-                              await FixtureWindows.wait(seconds: 10) { canvas.isDrawn && !canvas.selectedWhole.isEmpty }
+                              await FixtureWindows.wait("selected board drawn", seconds: 10) { canvas.isDrawn && !canvas.selectedWhole.isEmpty }
                           }),
             // The sidebar over a thread in portrait (iPadSidebar): Designs among the
             // destinations, and designs in Recents with their boards. Render with --sidebar.
@@ -64,7 +64,7 @@ extension FixtureCatalog {
             // The Designs list the sidebar's row opens.
             FixtureScreen(name: "designs-pad", hosts: DesignPadFixtures.hosts(), routes: [.padDesign(.list)],
                           prepare: { _ in
-                              await FixtureWindows.wait(seconds: 20) { PadDesignThumbnails.shared.image(DesignPadFixtures.ref) != nil }
+                              await FixtureWindows.wait("design thumbnail", seconds: 20) { PadDesignThumbnails.shared.image(DesignPadFixtures.ref) != nil }
                           }),
         ]
     }
@@ -136,10 +136,10 @@ enum DesignPadFixtures {
     /// live view to move), sampling the web views alive all the while.
     @MainActor static func pan(_ app: MobileApp) async {
         let canvas = PadDesigns.of(app.hosts).canvas(largeRef)
-        await FixtureWindows.wait(seconds: 15) { canvas.snapshot != nil }
+        await FixtureWindows.wait("large canvas snapshot", seconds: 15) { canvas.snapshot != nil }
         let zoom: CGFloat = 0.5
         canvas.viewport = NWCanvasViewport(offset: CGPoint(x: 28, y: 46), zoom: zoom)
-        await FixtureWindows.wait(seconds: 30) { canvas.isDrawn }
+        await FixtureWindows.wait("initial pan boards drawn", seconds: 30) { !canvas.visibleBoards.isEmpty && canvas.isDrawn }
         let most = WebViewPeak()
         let sampler = Task { @MainActor in
             while most.sampling {
@@ -163,13 +163,14 @@ enum DesignPadFixtures {
             legs += 1
             try? await Task.sleep(for: .milliseconds(450))
         }
-        await FixtureWindows.wait(seconds: 30) { canvas.isDrawn }
+        await FixtureWindows.wait("ending pan boards drawn", seconds: 30) { !canvas.visibleBoards.isEmpty && canvas.isDrawn }
         most.sampling = false
         await sampler.value
-        let cap = DesignTouchLivePlan.liveCap + 1
+        let cap = 2 // Documented iOS budget: one live board and one rasterizer.
         let live = PadDesignRendering.shared.webViews
         let ok = most.renderer <= cap && most.window <= cap && live >= 1
-        print("FIXTURE CHECK \(ok ? "ok" : "FAILED:") design-pad-pan: \(legs) legs across \(largeColumns * largeRows) boards, "
+            && !canvas.visibleBoards.isEmpty && canvas.isDrawn
+        FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED:") design-pad-pan: \(legs) legs across \(largeColumns * largeRows) boards, "
               + "at most \(most.renderer) web views in the renderer and \(most.window) in the window (cap \(cap)), \(live) at rest")
     }
 
@@ -196,20 +197,20 @@ enum DesignPadFixtures {
                        agent: AgentRef = agentRef) async -> PadDesignCanvas {
         let designs = PadDesigns.of(app.hosts)
         let canvas = designs.canvas(ref)
-        await FixtureWindows.wait(seconds: 15) { canvas.snapshot != nil }
+        await FixtureWindows.wait("design canvas snapshot", seconds: 15) { canvas.snapshot != nil }
         if let viewport { canvas.viewport = viewport }
-        await FixtureWindows.wait(seconds: 30) { canvas.isDrawn }
-        await FixtureWindows.wait(seconds: 10) { app.threads.store(for: agent).snapshot != nil }
-        print("FIXTURE CHECK \(canvas.isDrawn ? "ok" : "FAILED: the boards on screen never drew") design")
+        await FixtureWindows.wait("visible design boards drawn", seconds: 30) { !canvas.visibleBoards.isEmpty && canvas.isDrawn }
+        await FixtureWindows.wait("design agent snapshot", seconds: 10) { app.threads.store(for: agent).snapshot != nil }
+        FixtureCheck.report("FIXTURE CHECK \(canvas.isDrawn ? "ok" : "FAILED: the boards on screen never drew") design")
         return canvas
     }
 
     /// Taps a board as a finger would with Select, and waits for its element's ring.
     @MainActor static func select(_ canvas: PadDesignCanvas, board: String, at point: CGPoint) async {
         canvas.pick(NWCanvasPick(board: board, point: point))
-        await FixtureWindows.wait(seconds: 15) { !canvas.selectedElements.isEmpty }
-        await FixtureWindows.wait(seconds: 15) { !canvas.tweak.presentation.isEmpty }
-        await FixtureWindows.wait(seconds: 15) { canvas.isDrawn }
+        await FixtureWindows.wait("tapped element selected", seconds: 15) { !canvas.selectedElements.isEmpty }
+        await FixtureWindows.wait("tweak controls", seconds: 15) { !canvas.tweak.presentation.isEmpty }
+        await FixtureWindows.wait("selected element canvas drawn", seconds: 15) { canvas.isDrawn }
     }
 
     // MARK: The design
@@ -248,7 +249,8 @@ enum DesignPadFixtures {
     /// The element a board names `name` (`data-el`), as a comment anchors to it.
     static func element(_ name: String, in source: String) -> (tid: Int, path: [Int]) {
         let found = DesignTemplate(board: source)?.elements.first { DesignStyleEdit.attribute("data-el", of: $0.tid, in: source) == name }
-        return found.map { ($0.tid, $0.path) } ?? (0, [0])
+        guard let found else { FixtureCheck.fail("Missing required design element: \(name)") }
+        return (found.tid, found.path)
     }
 
     static func empty(_ design: Design) -> FixtureDesigns.Item {
