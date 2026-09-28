@@ -107,6 +107,31 @@ struct ScrollFollowerLayoutTests {
         #expect(staleCollapseRepair)
     }
 
+    @Test func aComposerCollapseFollowedByAnOffsetReboundKeepsFollowing() {
+        var follower = NativeScrollFollower()
+        follower.sent(queued: false)
+        let collapsed = Self.probe(offset: 1220, container: 720, inset: 0)
+        let atTail = follower.observe(from: Self.tail, to: collapsed, gesture: false)
+        #expect(!atTail)
+        let rebound = Self.probe(offset: 1020, container: 720, inset: 0)
+        let repair = follower.observe(from: collapsed, to: rebound, gesture: false)
+        #expect(repair, "the native offset can change after the composer inset has settled")
+        let repaired = follower.observe(from: rebound, to: collapsed, gesture: false)
+        #expect(!repaired)
+        var reader = NativeScrollFollower(sticky: false)
+        let detached = reader.observe(from: collapsed, to: rebound, gesture: false)
+        #expect(!detached)
+        let dragged = follower.observe(from: collapsed, to: rebound, gesture: true)
+        #expect(!dragged)
+        #expect(!follower.sticky)
+        #expect(!follower.followingSentTurn)
+        follower.sent(queued: false)
+        follower.beginJump()
+        let afterNavigation = follower.observe(from: collapsed, to: rebound, gesture: false)
+        #expect(!afterNavigation)
+        #expect(!follower.followingSentTurn)
+    }
+
     @Test func theTailIsZeroAndFittingContentIsNegative() {
         #expect(Self.tail.distance == 0)
         #expect(NativeScrollProbe(content: 300, offset: -60, container: 520, insetTop: 60, insetBottom: 120).distance < 0)

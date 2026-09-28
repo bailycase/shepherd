@@ -283,7 +283,10 @@ public struct NativeRunSections: Equatable, Sendable {
 public func nativeRunSections(_ runs: [ChildRun], placements: [String: NativeSubagentPlacement], turnOrder: [String]) -> NativeRunSections {
     let spawnOrder: (ChildRun, ChildRun) -> Bool = { ($0.startedAt ?? 0, $0.id) < ($1.startedAt ?? 0, $1.id) }
     guard let latest = turnOrder.last(where: { placements[$0]?.isEmpty == false }), let placed = placements[latest] else {
-        return NativeRunSections(current: runs.sorted(by: spawnOrder))
+        return NativeRunSections(current: runs.filter { nativeRunPhase($0).isLive }.sorted(by: spawnOrder),
+                                 earlier: runs.filter { !nativeRunPhase($0).isLive }.sorted {
+                                     ($0.endedAt ?? $0.startedAt ?? 0, $0.id) > ($1.endedAt ?? $1.startedAt ?? 0, $1.id)
+                                 })
     }
     let latestIDs = Set(placed.all.map(\.id))
     let current = runs.filter { latestIDs.contains($0.id) || nativeRunPhase($0).isLive }
