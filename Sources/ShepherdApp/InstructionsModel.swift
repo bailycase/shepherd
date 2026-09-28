@@ -77,7 +77,9 @@ final class InstructionsModel {
     /// What went wrong with the last save, copy or restore, in words.
     private(set) var problem: String?
 
-    @ObservationIgnored private let store: InstructionsStore
+    @ObservationIgnored private var editRevisions: [DraftKey: Int] = [:]
+    // Local requests use an empty wire origin for the store's nil ("This Mac") origin.
+    @ObservationIgnored private let request: (Machine, RemoteInstructionsRequest) async throws -> InstructionsSnapshot
     @ObservationIgnored private let remoteHosts: RemoteHostStore
     @ObservationIgnored private let defaults: UserDefaults
 
@@ -85,8 +87,24 @@ final class InstructionsModel {
     /// name from System Settings, read locally (never a network lookup).
     static let machineName: String = SCDynamicStoreCopyComputerName(nil, nil) as String? ?? "a Mac"
 
-    init(store: InstructionsStore, remoteHosts: RemoteHostStore, defaults: UserDefaults = .standard) {
-        self.store = store
+    init(store: InstructionsStore, remoteHosts: RemoteHostStore, defaults: UserDefaults = .standard,
+         request: ((Machine, RemoteInstructionsRequest) async throws -> InstructionsSnapshot)? = nil) {
+        self.request = request ?? { machine, request in
+            switch machine {
+            case .local:
+                return try await Task.detached(priority: .userInitiated) {
+                    switch request {
+                    case .fetch: return store.snapshot()
+                    case .save(let file, let content, let origin, let sync):
+                        return try store.save(file, content: content, origin: origin.isEmpty ? nil : origin, sync: sync)
+                    case .restore(let revisionID, let origin):
+                        return try store.restore(revisionID: revisionID, origin: origin.isEmpty ? nil : origin)
+                    }
+                }.value
+            case .remote(let hostID):
+                return try await remoteHosts.instructions(hostID: hostID, request: request)
+            }
+        }
         self.remoteHosts = remoteHosts
         self.defaults = defaults
         sameEverywhere = defaults.object(forKey: Key.sameEverywhere) as? Bool ?? true
@@ -157,7 +175,8 @@ final class InstructionsModel {
 
     func setText(_ text: String, file: InstructionFile, on machine: Machine) {
         let key = DraftKey(machine: machine, file: file)
-        let draft: String? = text == saved(file, on: machine) ? nil : text
+        editRevisions[key, default: 0] += 1
+        let draft: String? = !busy && text == saved(file, on: machine) ? nil : text
         if drafts[key] != draft { drafts[key] = draft }
     }
 
@@ -303,24 +322,27 @@ final class InstructionsModel {
     func save() async {
         let key = DraftKey(machine: machine, file: file)
         guard let text = drafts[key], !busy else { return }
+        let revision = editRevisions[key, default: 0]
         await run {
             switch key.machine {
             case .local:
                 try await self.saveLocal(key.file, content: text, origin: nil, sync: false)
-                self.drafts[key] = nil
+                if self.editRevisions[key, default: 0] == revision { self.drafts[key] = nil }
                 if self.sameEverywhere { await self.pushToAll() }
             case .remote(let hostID):
-                let snapshot = try await self.remoteHosts.instructions(
-                    hostID: hostID, request: .save(file: key.file, content: text, origin: Self.machineName, sync: false))
+                let snapshot = try await self.request(
+                    .remote(hostID), .save(file: key.file, content: text, origin: Self.machineName, sync: false))
                 self.remote[hostID] = .loaded(snapshot)
-                self.drafts[key] = nil
+                if self.editRevisions[key, default: 0] == revision { self.drafts[key] = nil }
             }
         }
     }
 
     /// Drops the open file's unsaved changes.
     func revert() {
-        drafts[DraftKey(machine: machine, file: file)] = nil
+        let key = DraftKey(machine: machine, file: file)
+        editRevisions[key, default: 0] += 1
+        drafts[key] = busy ? saved(file, on: machine) : nil
     }
 
     /// Per host: This Mac's copy of the open file onto the chosen host.
@@ -332,9 +354,11 @@ final class InstructionsModel {
     func copyToAllHosts(from hostID: UUID) async {
         guard let theirs = files(of: hostID).snapshot?[file] else { return }
         let file = file
+        let key = DraftKey(machine: .local, file: file)
+        let revision = editRevisions[key, default: 0]
         await run {
             try await self.saveLocal(file, content: theirs, origin: self.name(of: .remote(hostID)), sync: true)
-            self.drafts[DraftKey(machine: .local, file: file)] = nil
+            if self.editRevisions[key, default: 0] == revision { self.drafts[key] = nil }
             for connection in self.remoteHosts.connections where connection.id != hostID {
                 await self.push([file], to: connection.id, owed: false)
             }
@@ -350,18 +374,20 @@ final class InstructionsModel {
 
     /// Puts a saved version back on the machine that saved it.
     func restore(_ entry: InstructionHistoryEntry, on machine: Machine) async {
+        let key = DraftKey(machine: machine, file: entry.file)
+        let revision = editRevisions[key, default: 0]
         await run {
             switch machine {
             case .local:
-                let snapshot = try await self.detached { try $0.restore(revisionID: entry.id) }
+                let snapshot = try await self.request(.local, .restore(revisionID: entry.id, origin: ""))
                 self.local = snapshot
-                self.drafts[DraftKey(machine: .local, file: entry.file)] = nil
+                if self.editRevisions[key, default: 0] == revision { self.drafts[key] = nil }
                 if self.sameEverywhere { await self.pushToAll() }
             case .remote(let hostID):
-                let snapshot = try await self.remoteHosts.instructions(
-                    hostID: hostID, request: .restore(revisionID: entry.id, origin: Self.machineName))
+                let snapshot = try await self.request(
+                    .remote(hostID), .restore(revisionID: entry.id, origin: Self.machineName))
                 self.remote[hostID] = .loaded(snapshot)
-                self.drafts[DraftKey(machine: machine, file: entry.file)] = nil
+                if self.editRevisions[key, default: 0] == revision { self.drafts[key] = nil }
             }
         }
     }
@@ -395,6 +421,7 @@ final class InstructionsModel {
     }
 
     private func run(_ body: @escaping () async throws -> Void) async {
+        guard !busy else { return }
         busy = true
         problem = nil
         defer { busy = false }
@@ -405,18 +432,12 @@ final class InstructionsModel {
         }
     }
 
-    /// The store's file work runs off the main actor.
-    private func detached(_ work: @escaping @Sendable (InstructionsStore) throws -> InstructionsSnapshot) async throws -> InstructionsSnapshot {
-        let store = store
-        return try await Task.detached(priority: .userInitiated) { try work(store) }.value
-    }
-
     private func reloadLocal() async {
-        local = try? await detached { $0.snapshot() }
+        local = try? await request(.local, .fetch)
     }
 
     private func saveLocal(_ file: InstructionFile, content: String, origin: String?, sync: Bool) async throws {
-        local = try await detached { try $0.save(file, content: content, origin: origin, sync: sync) }
+        local = try await request(.local, .save(file: file, content: content, origin: origin ?? "", sync: sync))
     }
 
     private func fetch(_ hostID: UUID) async {
@@ -424,7 +445,7 @@ final class InstructionsModel {
               connection.phase == .connected, connection.supportsInstructions else { return }
         if remote[hostID] == nil { remote[hostID] = .checking }
         do {
-            remote[hostID] = .loaded(try await remoteHosts.instructions(hostID: hostID))
+            remote[hostID] = .loaded(try await request(.remote(hostID), .fetch))
         } catch {
             remote[hostID] = .failed(Self.describe(error))
         }
@@ -454,8 +475,8 @@ final class InstructionsModel {
         do {
             var snapshot: InstructionsSnapshot?
             for file in files {
-                snapshot = try await remoteHosts.instructions(
-                    hostID: hostID, request: .save(file: file, content: local[file], origin: Self.machineName, sync: true))
+                snapshot = try await request(
+                    .remote(hostID), .save(file: file, content: local[file], origin: Self.machineName, sync: true))
             }
             if let snapshot { remote[hostID] = .loaded(snapshot) }
             syncedAt[hostID] = Date()

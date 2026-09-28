@@ -164,9 +164,16 @@ public final class ClientInstructions {
     private var files: [UUID: InstructionsHostFiles] = [:]
     private var drafts: [DraftKey: String] = [:]
     private var syncedAt: [UUID: Date] = [:]
-    private var pending: Set<UUID> {
-        didSet { defaults.set(pending.map(\.uuidString).sorted(), forKey: Key.pending) }
+    private struct Pending: Codable, Equatable {
+        // nil for an older UUID-only marker: its intended content cannot be recovered safely.
+        var snapshot: InstructionsSnapshot?
     }
+    private var pending: [UUID: Pending] {
+        didSet {
+            if let data = try? JSONEncoder().encode(pending) { defaults.set(data, forKey: Key.pending) }
+        }
+    }
+    @ObservationIgnored private var editRevisions: [DraftKey: Int] = [:]
 
     @ObservationIgnored private let defaults: UserDefaults
     /// This device in a host's history ("Synced from iPhone").
@@ -176,7 +183,13 @@ public final class ClientInstructions {
         self.defaults = defaults
         self.origin = origin
         sameEverywhere = defaults.object(forKey: Key.sameEverywhere) as? Bool ?? true
-        pending = Set((defaults.stringArray(forKey: Key.pending) ?? []).compactMap(UUID.init(uuidString:)))
+        if let data = defaults.data(forKey: Key.pending),
+           let stored = try? JSONDecoder().decode([UUID: Pending].self, from: data) {
+            pending = stored
+        } else {
+            pending = Dictionary(uniqueKeysWithValues: Set((defaults.stringArray(forKey: Key.pending) ?? [])
+                .compactMap(UUID.init(uuidString:))).map { ($0, Pending()) })
+        }
     }
 
     // MARK: Reading
@@ -201,12 +214,15 @@ public final class ClientInstructions {
 
     /// Reads every connected host's files, then gives a host that is owed them its copy.
     public func refresh(_ hosts: [SettingsHost]) async {
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }
         for host in hosts where host.serves(RemoteProtocol.instructionsCapability) {
             await fetch(host)
         }
-        guard sameEverywhere, let reference = reference(in: hosts), let snapshot = files(of: reference).snapshot else { return }
-        for host in hosts where pending.contains(host.id) && host.id != reference.id && host.serves(RemoteProtocol.instructionsCapability) {
-            await write(snapshot, to: host)
+        guard sameEverywhere else { return }
+        for host in hosts where pending[host.id] != nil && host.serves(RemoteProtocol.instructionsCapability) {
+            await write(to: host)
         }
     }
 
@@ -221,7 +237,9 @@ public final class ClientInstructions {
 
     public func setText(_ text: String, file: InstructionFile, in hosts: [SettingsHost]) {
         let key = draftKey(file, in: hosts)
-        let draft: String? = text == saved(file, in: hosts) ? nil : text
+        editRevisions[key, default: 0] += 1
+        // While a write waits, even returning to the old saved text is a newer edit.
+        let draft: String? = !busy && text == saved(file, in: hosts) ? nil : text
         if drafts[key] != draft { drafts[key] = draft }
     }
 
@@ -230,14 +248,16 @@ public final class ClientInstructions {
     }
 
     public func revert(_ file: InstructionFile, in hosts: [SettingsHost]) {
-        drafts[draftKey(file, in: hosts)] = nil
+        let key = draftKey(file, in: hosts)
+        editRevisions[key, default: 0] += 1
+        drafts[key] = busy ? saved(file, in: hosts) : nil
     }
 
     /// A host's chip: with Same on every host on how it compares with the reference ("synced",
     /// "differs · 2 lines", "offline · will sync"); per host, how `file` does.
     public func chip(for host: SettingsHost, file: InstructionFile, in hosts: [SettingsHost], now: Date = Date()) -> InstructionsChip {
         InstructionsPresentation.hostChip(files(of: host), local: reference(in: hosts).flatMap { files(of: $0).snapshot },
-                                          file: file, sameEverywhere: sameEverywhere, pending: pending.contains(host.id),
+                                          file: file, sameEverywhere: sameEverywhere, pending: pending[host.id] != nil,
                                           keptDifferent: false, syncedAt: syncedAt[host.id], now: now)
     }
 
@@ -273,7 +293,7 @@ public final class ClientInstructions {
             switch files(of: host) {
             case .loaded(let other):
                 if InstructionFile.allCases.allSatisfy({ other[$0] == snapshot[$0] }) { synced.append(host.name) } else { differing.append(host.name) }
-            case .offline where pending.contains(host.id):
+            case .offline where pending[host.id] != nil:
                 waiting.append(host.name)
             default:
                 break
@@ -294,12 +314,13 @@ public final class ClientInstructions {
     public func save(_ file: InstructionFile, in hosts: [SettingsHost]) async {
         let key = draftKey(file, in: hosts)
         guard let text = drafts[key], let edited = edited(in: hosts), !busy else { return }
+        let revision = editRevisions[key, default: 0]
         busy = true
         problem = nil
         defer { busy = false }
         do {
             try await save(file, content: text, to: edited, sync: false)
-            drafts[key] = nil
+            if editRevisions[key, default: 0] == revision { drafts[key] = nil }
             await spread(from: edited, in: hosts)
         } catch {
             problem = settingsProblem(error)
@@ -311,13 +332,14 @@ public final class ClientInstructions {
     public func restore(_ entry: InstructionHistoryEntry, in hosts: [SettingsHost]) async {
         guard let edited = edited(in: hosts), !busy else { return }
         let key = draftKey(entry.file, in: hosts)
+        let revision = editRevisions[key, default: 0]
         busy = true
         problem = nil
         defer { busy = false }
         do {
             guard let client = edited.client else { throw RemoteHostClientError.disconnected }
             files[edited.id] = .loaded(try await client.instructions(.restore(revisionID: entry.id, origin: origin)))
-            drafts[key] = nil
+            if editRevisions[key, default: 0] == revision { drafts[key] = nil }
             await spread(from: edited, in: hosts)
         } catch {
             problem = settingsProblem(error)
@@ -330,9 +352,9 @@ public final class ClientInstructions {
         busy = true
         problem = nil
         defer { busy = false }
-        for host in differing(in: hosts) where host.id != reference.id {
-            await write(snapshot, to: host)
-        }
+        let targets = differing(in: hosts).filter { $0.id != reference.id }
+        for host in targets { pending[host.id] = Pending(snapshot: snapshot) }
+        for host in targets { await write(to: host) }
     }
 
     public func dismissProblem() {
@@ -358,9 +380,11 @@ public final class ClientInstructions {
     /// With Same on every host on, writes `edited`'s files to every other host.
     private func spread(from edited: SettingsHost, in hosts: [SettingsHost]) async {
         guard sameEverywhere, let snapshot = files(of: edited).snapshot else { return }
-        for host in hosts where host.id != edited.id {
-            await write(snapshot, to: host)
-        }
+        let targets = hosts.filter { $0.id != edited.id && ($0.serves(RemoteProtocol.instructionsCapability) || !$0.isConnected) }
+        // Record every recipient before the first await, not just the ones already attempted.
+        pending[edited.id] = nil
+        for host in targets { pending[host.id] = Pending(snapshot: snapshot) }
+        for host in targets { await write(to: host) }
     }
 
     private func save(_ file: InstructionFile, content: String, to host: SettingsHost, sync: Bool) async throws {
@@ -370,10 +394,10 @@ public final class ClientInstructions {
 
     /// Writes both of `snapshot`'s files to a host; one that can't take them now is owed them,
     /// unless its Shepherd will never take them.
-    private func write(_ snapshot: InstructionsSnapshot, to host: SettingsHost) async {
-        guard host.capabilities.contains(RemoteProtocol.instructionsCapability) || !host.isConnected else { return }
-        guard host.isConnected else {
-            pending.insert(host.id)
+    private func write(to host: SettingsHost) async {
+        guard host.serves(RemoteProtocol.instructionsCapability) else { return }
+        guard let snapshot = pending[host.id]?.snapshot else {
+            problem = "Save the intended instructions again to sync \(host.name)."
             return
         }
         do {
@@ -381,9 +405,8 @@ public final class ClientInstructions {
                 try await save(file, content: snapshot[file], to: host, sync: true)
             }
             syncedAt[host.id] = Date()
-            pending.remove(host.id)
+            pending[host.id] = nil
         } catch {
-            pending.insert(host.id)
             problem = "Couldn't write to \(host.name): \(settingsProblem(error))"
         }
     }
