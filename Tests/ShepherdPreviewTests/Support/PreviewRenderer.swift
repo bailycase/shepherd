@@ -27,6 +27,7 @@ enum Preview {
         ready: @escaping @MainActor () -> Bool = { true },
         afterReady: @MainActor () -> Void = {},
         untilGone text: String? = nil,
+        showing settledText: String? = nil,
         @ViewBuilder _ content: () -> V
     ) async throws {
         let directory = try #require(directory)
@@ -58,10 +59,13 @@ enum Preview {
             }
             afterReady()
             if let text {
-                // Async work the test cannot observe (a sheet's own probes): wait until its
-                // placeholder text is no longer on screen.
+                // These sheets own private loading state. Require terminal-state text too:
+                // a blank capture or missed placeholder is not evidence of readiness.
+                let settledText = try #require(settledText, "OCR readiness needs positive terminal-state text")
                 try await eventuallyOnMain("'\(text)' to leave \(surface)", timeout: .seconds(30), poll: .milliseconds(200)) {
-                    !Self.shows(text, in: host)
+                    let lines = try Self.recognizedText(in: host)
+                    return !lines.contains { $0.localizedCaseInsensitiveContains(text) }
+                        && lines.contains { $0.localizedCaseInsensitiveContains(settledText) }
                 }
             }
             // Let appear transitions finish before capturing: DESIGN.md › Motion anchors one-shot
@@ -80,17 +84,18 @@ enum Preview {
         }
     }
 
-    /// Whether `text` is legible in the rendered view.
+    /// Capture and Vision failures must not count as a placeholder disappearing.
     @MainActor
-    static func shows(_ text: String, in host: NSView) -> Bool {
+    static func recognizedText(in host: NSView) throws -> [String] {
         host.layoutSubtreeIfNeeded()
-        guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return false }
+        let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
         host.cacheDisplay(in: host.bounds, to: bitmap)
-        guard let image = bitmap.cgImage else { return false }
+        let image = try #require(bitmap.cgImage)
         let request = VNRecognizeTextRequest()
         request.usesLanguageCorrection = false
-        try? VNImageRequestHandler(cgImage: image).perform([request])
-        return (request.results ?? []).contains { $0.topCandidates(1).first?.string.localizedCaseInsensitiveContains(text) == true }
+        try VNImageRequestHandler(cgImage: image).perform([request])
+        let results = try #require(request.results)
+        return results.compactMap { $0.topCandidates(1).first?.string }
     }
 
     /// Distinct colors on a coarse grid: a blank or single-fill render has one or two.
