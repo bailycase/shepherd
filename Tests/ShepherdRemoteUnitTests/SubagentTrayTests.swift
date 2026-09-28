@@ -125,13 +125,25 @@ struct SubagentTrayTests {
         let group = [Self.run("a", state: "complete", startedAt: 1, endedAt: 100), Self.run("b", state: "complete", startedAt: 2, endedAt: 200)]
         let placements = ["t1": NativeSubagentPlacement(trailing: group)]
         #expect(nativeTrayRuns(group, placements: placements, turnOrder: ["u1", "t1"], lastUserMessageAt: 0)?.count == 2)
-        #expect(nativeTrayRuns(group, placements: placements, turnOrder: ["u1", "t1"], lastUserMessageAt: 150)?.count == 2,
-                "a message sent while one still ran does not fold it")
+        #expect(nativeTrayRuns(group, placements: placements, turnOrder: ["u1", "t1"], lastUserMessageAt: 150) == nil,
+                "finishing after a new message does not move an old run into its turn")
         #expect(nativeTrayRuns(group, placements: placements, turnOrder: ["u1", "t1", "u2"], lastUserMessageAt: 300) == nil)
         let live = [Self.run("a", startedAt: 1)]
         #expect(nativeTrayRuns(live, placements: ["t1": NativeSubagentPlacement(trailing: live)], turnOrder: ["u1", "t1", "u2"],
                                lastUserMessageAt: 300)?.count == 1, "a live run always shows")
         #expect(nativeTrayRuns([], placements: [:], turnOrder: [], lastUserMessageAt: nil) == nil)
+    }
+
+    @Test func historyPagingNeverPromotesOldRunsIntoTheTray() {
+        let old = Self.run("old", state: "complete", startedAt: 1, endedAt: 500)
+        let current = Self.run("current", state: "complete", startedAt: 210, endedAt: 300)
+        let live = Self.run("continuing", startedAt: 2)
+        let runs = [old, current, live]
+        #expect(nativeTrayRuns(runs, placements: [:], turnOrder: [], lastUserMessageAt: 200)?.map(\.runID)
+                == ["continuing", "current"])
+        #expect(nativeTrayRuns([old], placements: [:], turnOrder: [], lastUserMessageAt: nil) == nil)
+        #expect(nativeTrayRuns(runs, placements: [:], turnOrder: [], lastUserMessageAt: 600)?.map(\.runID)
+                == ["continuing"])
     }
 
     // MARK: The thread's record

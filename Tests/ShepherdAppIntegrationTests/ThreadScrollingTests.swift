@@ -21,9 +21,13 @@ private final class ThreadHarness {
     var olderRequests = 0
     var olderReply: CheckedContinuation<NativeThreadResult, Never>?
 
-    init(messages: Int, running: Bool = false, paragraphs: Int = 3, olderCursor: String? = nil) {
+    init(messages: Int, running: Bool = false, paragraphs: Int = 3, olderCursor: String? = nil, subagents: [ChildRun] = []) {
         var snapshot = Self.snapshot(count: messages, running: running, paragraphs: paragraphs)
         snapshot.olderCursor = olderCursor
+        snapshot.subagents = subagents
+        if !subagents.isEmpty, let user = snapshot.messages.lastIndex(where: { $0.role == "user" }) {
+            snapshot.messages[user].timestamp = 0
+        }
         self.snapshot = snapshot
         window = OffscreenWindow(size: CGSize(width: 900, height: 600), dark: false)
         let request: NativeThreadStore.Request = { [weak self] value in
@@ -35,7 +39,7 @@ private final class ThreadHarness {
             }
             return .snapshot(value: self.snapshot)
         }
-        window.show(ThreadView(store: store, active: true, isFocused: false, request: request, commandKey: "thread", listModels: { .empty })
+        window.show(ThreadView(store: store, active: true, isFocused: false, request: request, commandKey: "thread", inspectSubagent: { _ in }, listModels: { .empty })
             .environment(\.threadCommands, commands))
     }
 
@@ -347,6 +351,42 @@ struct ThreadScrollingTests {
         try await thread.settle()
         #expect(thread.isPinned, "send landed past the transcript: \(thread.distanceFromBottom)")
         #expect(try thread.position(of: "Draft line 8") != nil, "the sent message must remain on screen")
+    }
+
+    @Test func sendingWithTheSubagentTrayOpenKeepsTheNewReplyVisible() async throws {
+        let runs = (0..<4).map { ListFixtures.run($0, state: "complete") }
+        let thread = ThreadHarness(messages: 24, subagents: runs)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        try #require(thread.store.tray != nil)
+        try await thread.settle()
+        let expandedInset = thread.scrollView.contentInsets.bottom
+        thread.store.draft = "Continue with the next step"
+        await thread.store.send()
+        #expect(thread.store.tray == nil, "accepting the next message dismisses the finished tray before the host echo")
+        var next = thread.snapshot
+        next.revision += 1
+        next.running = true
+        next.messages.append(NativeThreadMessage(entryID: "next-user", role: "user",
+            blocks: [NativeThreadBlock(kind: .text, text: "Continue with the next step")], truncated: false,
+            timestamp: Date().timeIntervalSince1970 * 1000))
+        next.provisional = [NativeThreadMessage(entryID: "next-reply", role: "assistant",
+            blocks: [NativeThreadBlock(kind: .text, text: "Working on the next step now.")], truncated: false)]
+        await thread.publish(next)
+        try await eventuallyOnMain("the previous turn's subagent tray to disappear") {
+            thread.window.layout()
+            return thread.store.tray == nil && thread.scrollView.contentInsets.bottom < expandedInset - 60
+        }
+        try await thread.settle()
+        #expect(abs(thread.distanceFromBottom) < 2, "tray collapse left the tail at \(thread.distanceFromBottom)")
+        #expect(try thread.position(of: "Working on the next step now.") != nil)
+        #expect(!thread.showsJumpPill)
+        next.revision += 1
+        next.provisional[0].blocks[0].text += "\nThe new reply keeps streaming."
+        await thread.publish(next)
+        try await thread.settle()
+        #expect(abs(thread.distanceFromBottom) < 2)
+        #expect(try thread.position(of: "The new reply keeps streaming.") != nil)
     }
 
     /// The server's bounded history window can be replaced by a much shorter one; the pinned

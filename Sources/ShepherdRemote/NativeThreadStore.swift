@@ -318,6 +318,7 @@ public final class NativeThreadStore {
         guard sameSession else {
             if !pending.isEmpty { pending = [] }
             aliases = [:]
+            lastPromptAt = nil
             echoAccepted = [:]
             overlays = []
             holding = []
@@ -407,7 +408,8 @@ public final class NativeThreadStore {
         if displayed != displayedMessages { displayedMessages = displayed }
         // A steer lands inside the running turn; it does not restart its clock.
         let promptAt = displayed.last { $0.role == "user" && $0.status != "queued" && $0.origin != .steered }?.timestamp
-        if promptAt != lastPromptAt { lastPromptAt = promptAt }
+        // Keep the current turn boundary when its opening message falls outside a history page.
+        if let promptAt, promptAt > (lastPromptAt ?? -.infinity) { lastPromptAt = promptAt }
         var aliases = self.aliases
         for message in displayed where message.role == "user" {
             if let operation = message.operationID, aliases[message.entryID] == nil { aliases[message.entryID] = "pending:\(operation.uuidString)" }
@@ -418,7 +420,8 @@ public final class NativeThreadStore {
         if runs != subagents { subagents = runs }
         let placements = nativeSubagentPlacements(runs, turns: turns)
         if placements != self.placements { self.placements = placements }
-        let trayRuns = nativeTrayRuns(runs, placements: placements, turnOrder: turns.map(\.id), lastUserMessageAt: promptAt)
+        let currentTurns = turns.suffix(from: turns.lastIndex(where: \.isUser) ?? turns.startIndex)
+        let trayRuns = nativeTrayRuns(runs, placements: placements, turnOrder: currentTurns.map(\.id), lastUserMessageAt: lastPromptAt)
         let tray = trayRuns.map(NativeSubagentTray.init)
         if tray != self.tray { self.tray = tray }
 
@@ -1318,7 +1321,9 @@ public final class NativeThreadStore {
                         let id = "pending:\(operation.uuidString)"
                         pending.append(NativeThreadMessage(entryID: id, role: "user",
                                                            blocks: [NativeThreadBlock(kind: .text, text: sentText)],
-                                                           status: queued ? "queued" : "pending"))
+                                                           status: queued ? "queued" : "pending",
+                                                           timestamp: Date().timeIntervalSince1970 * 1000,
+                                                           origin: current.running && delivery == .steer ? .steered : nil))
                         if hostQueues { echoAccepted[id] = pulls }
                     }
                     derive()
