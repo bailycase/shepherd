@@ -67,7 +67,7 @@ This is not a promise of whole-sync transactional rollback.
 ## Follow-up implementation
 
 The first-pass candidates below have been addressed or deliberately retained with a reason.
-Final combined validation is recorded after integration.
+Final combined validation is recorded below.
 
 1. Replaced hand-written attachment acknowledgement cleanup with the real composer command
    path, delayed success/refusal, and a later attachment. Request bytes and retained images
@@ -117,5 +117,25 @@ been duplicated by Swift Testing. Optional duration/menu consolidation was done 
 behavioral coverage remained equivalent. No new framework, test-count target, changed render
 ceiling, discarded wire case, rewritten golden, or disabled regression was introduced.
 
-Keep the scope explicit as each batch lands. A passing suite with known issues is not proof that
-all product bugs or all test-quality defects have been resolved.
+## Combined validation
+
+- `CI=true swift test --no-parallel`: 4,045 tests reported across 463 suites, no failures.
+  Existing timing-sensitive, preview and external-service opt-ins remain gated. This run used
+  the integrated tree before the final timing-only highlighting-fixture follow-ups; those
+  follow-ups preserve the original bounds and have separate focused/repetition checks.
+- 109 Node extension tests and 162 Python release tests passed.
+- Mac Dev build and scratch launch passed. Instruction-editor previews were inspected in both
+  appearances. The iOS simulator build passed; iPad markup/reply/panning/comment fixtures passed
+  light and dark, plus dark offline-host/New-thread controls. Readiness timeout, cancellation
+  and explicit assertion failure were executed and correctly exit without READY.
+- Focused settings readiness previews passed in both appearances. These captures are evidence
+  for the inspected surfaces, not a visual certification of the entire app.
+- The code-highlight burst fixture initially exceeded its unchanged ceiling under load: fifteen
+  forced layouts stretched one intended burst across throttle intervals. It now delivers the
+  burst without those layouts and waits on actual completed highlighting. A deterministic
+  per-invocation source suffix prevents a repeated test from reusing cached output. Three
+  repetitions and the full ListPerformance suite passed with the original limits.
+- PR CI is the final cross-machine check; see the pull request for its current result.
+
+A passing suite with known issues is not proof that all product bugs or all test-quality defects
+have been resolved. No exhaustive test-body review or whole-repository mutation score is claimed.
