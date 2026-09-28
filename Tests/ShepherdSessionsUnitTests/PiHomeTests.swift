@@ -166,6 +166,28 @@ struct PiHomeTests {
         #expect(refused?.path == (dir.hasPrefix("~/") ? "/u" + dir.dropFirst() : dir), "kept for the guards")
     }
 
+    @Test func sessionSettingsUseTheBoundedReaderForUserAndProjectFiles() throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let agent = dir.appendingPathComponent("agent")
+        let project = dir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: agent, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: project.appendingPathComponent(".pi"), withIntermediateDirectories: true)
+        let userSettings = agent.appendingPathComponent("settings.json")
+        let projectSettings = project.appendingPathComponent(".pi/settings.json")
+        let commented = Data("// pi permits comments\n{\"sessionDir\":\"saved\"}".utf8)
+        for url in [userSettings, projectSettings] { try commented.write(to: url) }
+        let yours = try #require(YourPiLocator.interpret(dir: agent.path, sessions: nil, home: dir.path, supportFolders: []))
+        #expect(yours.sessionDirectory == agent.appendingPathComponent("saved", isDirectory: true))
+        #expect(yours.sessionFolders(forCwd: project.path).contains(project.appendingPathComponent("saved", isDirectory: true)))
+        let oversized = Data(repeating: 0x20, count: YourPiFiles.maxBytes + 1)
+        for url in [userSettings, projectSettings] { try oversized.write(to: url) }
+        let bounded = try #require(YourPiLocator.interpret(dir: agent.path, sessions: nil, home: dir.path, supportFolders: []))
+        #expect(bounded.sessionDirectory == nil)
+        #expect(!bounded.sessionFolders(forCwd: project.path).contains(project.appendingPathComponent("saved", isDirectory: true)))
+        for url in [userSettings, projectSettings] { #expect(try Data(contentsOf: url) == oversized) }
+    }
+
     /// Where an agent's old conversation may be: the folder their pi is set to, then theirs and
     /// `~/.pi/agent`'s project folders, with pi's name for the project.
     @Test func yourPisSessionFoldersForAProject() {
