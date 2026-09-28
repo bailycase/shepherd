@@ -577,7 +577,7 @@ struct Composer: View {
 
     private var card: some View {
         // The context details float over the thread without the card taking focus's look.
-        let focused = composing || (input.available && input.dropTargeted) || (menuOpen && menu != .context)
+        let focused = composing || (active && input.dropTargeted) || (menuOpen && menu != .context)
         return NWComposer(isFocused: focused) {
             // Design references sit first, above the words (DesignReferenceChip(ref)).
             ForEach(store.attachedReferences) { attached in
