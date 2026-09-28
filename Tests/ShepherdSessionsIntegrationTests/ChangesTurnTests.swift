@@ -135,7 +135,8 @@ struct ChangesTurnTests {
         FileManager.default.createFile(atPath: repo.url.appendingPathComponent("tool-1").path, contents: nil)
         let settled = try await pi.snapshot("settled while capture waits") { !$0.running }
         #expect(try await pi.send("tools:0 third", from: settled).failureCode == nil)
-        #expect(try await pi.queue(.sendNow(ids: settled.queue?.items.map(\.id) ?? []), from: settled).failureCode != nil)
+        // Send now while busy accepts/reorders, but must not bypass the capture gate.
+        #expect(try await pi.queue(.sendNow(ids: settled.queue?.items.map(\.id) ?? []), from: settled).failureCode == nil)
         #expect(try await other.send("tools:0 unrelated", from: otherIdle).failureCode == nil)
         _ = try await other.snapshot("unrelated agent completes") { !$0.running && $0.messages.contains { $0.role == "user" && $0.blocks.contains { $0.text.contains("unrelated") } } }
         #expect(pi.stdin("prompt").count == 1, "neither queued nor fresh sends may reach pi during capture")
@@ -163,7 +164,7 @@ struct ChangesTurnTests {
             changes.captureQueue(pi.agent.id).async { continuation.resume(); release.wait() }
         }
         let sending = Task { try await pi.send("tools:0 capture failure", from: idle) }
-        _ = try await pi.snapshot("pending send while baseline is held") { $0.messages.contains { $0.role == "user" && $0.blocks.first?.text == "tools:0 capture failure" } }
+        _ = try await pi.snapshot("pending send while baseline is held") { $0.provisional.contains { $0.status == "pending" && $0.blocks.first?.text == "tools:0 capture failure" } }
         #expect(pi.stdin("prompt").isEmpty)
         let file = repo.url.appendingPathComponent("a.txt")
         try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: file.path)
