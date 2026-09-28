@@ -95,7 +95,7 @@ public enum TerminalImageDrop {
                         throw CocoaError(.fileReadTooLarge, userInfo: [NSLocalizedDescriptionKey: "Remote drops require regular files no larger than \(maximumBytes / 1024 / 1024) MiB."])
                     }
                 }
-                urls.append(shrinkIfOversized(url, into: directory) ?? url)
+                urls.append(try normalizedFile(url, into: directory) ?? url)
             } else if let url = try await materializeImage(from: provider, maximumBytes: maximumBytes, into: directory) {
                 urls.append(url)
             }
@@ -124,32 +124,30 @@ public enum TerminalImageDrop {
         }
     }
 
-    /// Resize an oversized image file into the drop directory, returning the
-    /// replacement path. Returns nil when the file is not an oversized raster
-    /// image, so the original is used untouched.
-    private static func shrinkIfOversized(_ url: URL, into dropDirectory: URL) -> URL? {
+    /// Normalize oversized or unsupported raster files into a copy. A required conversion
+    /// must succeed; silently returning the original could send excessive pixels or wrong MIME.
+    private static func normalizedFile(_ url: URL, into dropDirectory: URL) throws -> URL? {
         guard let type = UTType(filenameExtension: url.pathExtension.lowercased()),
               type.conforms(to: .image),
               type != .svg,
               let data = try? Data(contentsOf: url),
               let rep = NSBitmapImageRep(data: data),
-              resizedDimensions(width: rep.pixelsWide, height: rep.pixelsHigh) != nil
+              resizedDimensions(width: rep.pixelsWide, height: rep.pixelsHigh) != nil || !passthroughTypes.contains(type)
         else { return nil }
 
         let (encoded, encodedType) = normalize(data, type: type)
-        guard encoded.count < data.count else { return nil }
+        guard passthroughTypes.contains(encodedType), let normalized = NSBitmapImageRep(data: encoded),
+              resizedDimensions(width: normalized.pixelsWide, height: normalized.pixelsHigh) == nil else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
 
         let base = (url.lastPathComponent as NSString).deletingPathExtension
         let ext = encodedType.preferredFilenameExtension ?? "png"
         let destination = dropDirectory
             .appendingPathComponent("\(base)-\(UUID().uuidString.prefix(8).lowercased()).\(ext)")
-        do {
-            try FileManager.default.createDirectory(at: dropDirectory, withIntermediateDirectories: true)
-            try encoded.write(to: destination, options: .atomic)
-            return destination
-        } catch {
-            return nil
-        }
+        try FileManager.default.createDirectory(at: dropDirectory, withIntermediateDirectories: true)
+        try encoded.write(to: destination, options: .atomic)
+        return destination
     }
 
     // MARK: Raw image data
