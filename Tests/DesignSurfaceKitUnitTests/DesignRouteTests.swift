@@ -68,13 +68,24 @@ import Testing
     @Test func theContentSecurityPolicyAllowsOnlyTheDesign() {
         let offline = DesignSandbox.contentSecurityPolicy(network: .none)
         let fonts = DesignSandbox.contentSecurityPolicy(network: .googleFonts)
-        #expect(!offline.contains("https:") && !offline.contains("data:"))
-        #expect(fonts.contains("style-src 'self' 'unsafe-inline' https://fonts.googleapis.com"))
-        #expect(fonts.contains("font-src 'self' https://fonts.gstatic.com"))
-        for policy in [offline, fonts] {
-            let script = policy.split(separator: ";").first { $0.contains("script-src") }
-            #expect(script?.contains("unsafe-inline") == false)
-            #expect(policy.hasPrefix("default-src 'none'") && policy.contains("frame-src 'none'") && policy.contains("form-action 'none'"))
+        for (policy, allowsFonts) in [(offline, false), (fonts, true)] {
+            let directives = Dictionary(uniqueKeysWithValues: policy.split(separator: ";").map {
+                let tokens = $0.split(whereSeparator: \.isWhitespace).map(String.init)
+                return (tokens[0], Set(tokens.dropFirst()))
+            })
+            var expected: [String: Set<String>] = [
+                "default-src": ["'none'"], "script-src": ["'self'", "'unsafe-eval'"],
+                "style-src": ["'self'", "'unsafe-inline'"], "font-src": ["'self'"],
+                "img-src": ["'self'"], "media-src": ["'self'"], "connect-src": ["'self'"],
+                "frame-src": ["'none'"], "child-src": ["'none'"], "worker-src": ["'none'"],
+                "object-src": ["'none'"], "manifest-src": ["'none'"], "base-uri": ["'none'"],
+                "form-action": ["'none'"],
+            ]
+            if allowsFonts {
+                expected["style-src"]?.insert("https://fonts.googleapis.com")
+                expected["font-src"]?.insert("https://fonts.gstatic.com")
+            }
+            #expect(directives == expected)
         }
     }
 
@@ -86,6 +97,21 @@ import Testing
             #expect(rules.dropFirst().allSatisfy { $0["action"]?["type"] == "ignore-previous-rules" })
             #expect(allowed.contains("^shepherd-design://"))
             #expect(allowed.count == (network == .googleFonts ? 3 : 1))
+            let patterns = try allowed.map { try NSRegularExpression(pattern: $0) }
+            for (url, fontResource) in [
+                ("https://fonts.googleapis.com/css2?family=Inter", true),
+                ("https://fonts.gstatic.com/s/inter/font.woff2", true),
+                ("https://example.com/", false),
+                ("http://fonts.gstatic.com/s/font.woff2", false),
+                ("https://fonts.gstatic.com.evil.test/font.woff2", false),
+                ("https://fonts.googleapis.com.evil.test/css2?family=Inter", false),
+                ("https://fonts.googleapis.com/css?family=Inter", false),
+                ("https://fonts.googleapis.com/css2evil?family=Inter", false),
+                ("https://fonts.gstatic.com@evil.test/font.woff2", false),
+            ] {
+                let matches = patterns.contains { $0.firstMatch(in: url, range: NSRange(url.startIndex..., in: url)) != nil }
+                #expect(matches == (fontResource && network == .googleFonts), "\(url)")
+            }
         }
     }
 
