@@ -329,6 +329,8 @@ private struct InstructionsEditorCard: View {
             InstructionsDiffView(lines: InstructionsText.diff(from: model.saved(file, on: .local) ?? "",
                                                               to: model.saved(file, on: .remote(hostID)) ?? ""))
         } else if let saved = model.saved(file, on: machine) {
+            let file = file
+            let machine = machine
             InstructionsEditor(
                 text: Binding(get: { model.text(file, on: machine) }, set: { model.setText($0, file: file, on: machine) }),
                 saved: saved,

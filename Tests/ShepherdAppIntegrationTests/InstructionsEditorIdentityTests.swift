@@ -9,7 +9,7 @@ import Testing
 @Suite("Instruction editor identity", .mainActorExclusive)
 @MainActor
 struct InstructionsEditorIdentityTests {
-    @Test(.bug("Undo can modify the newly selected instruction file"))
+    @Test
     func switchingEqualDocumentsDoesNotCarryUndoIntoTheNewDocument() async throws {
         let directory = try makeScratchDirectory("instruction-undo")
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -51,9 +51,25 @@ struct InstructionsEditorIdentityTests {
         let second = try #require(editor(window.host))
         #expect(model.text(.appendSystem, on: .local).isEmpty)
         second.undoManager?.undo()
-        withKnownIssue("Undo from the old instruction editor can write through its binding into the newly selected file") {
-            #expect(second.string.isEmpty)
-            #expect(model.text(.appendSystem, on: .local).isEmpty)
-        }
+        #expect(second.string.isEmpty)
+        #expect(model.text(.appendSystem, on: .local).isEmpty)
+        // A retained old editor must still write to its original document, not the selected tab.
+        undo.undo()
+        #expect(model.text(.agents, on: .local) == "old document")
+        #expect(model.text(.appendSystem, on: .local).isEmpty)
+        _ = window.window.makeFirstResponder(second)
+        let destinationUndo = try #require(second.undoManager)
+        destinationUndo.groupsByEvent = false
+        destinationUndo.beginUndoGrouping()
+        second.insertText("new document", replacementRange: NSRange(location: 0, length: 0))
+        destinationUndo.endUndoGrouping()
+        #expect(model.text(.appendSystem, on: .local) == "new document")
+        #expect(destinationUndo.canUndo)
+        destinationUndo.undo()
+        #expect(second.string.isEmpty)
+        #expect(model.text(.appendSystem, on: .local).isEmpty)
+        destinationUndo.redo()
+        #expect(model.text(.appendSystem, on: .local) == "new document")
+        #expect(model.text(.agents, on: .local) == "old document")
     }
 }
