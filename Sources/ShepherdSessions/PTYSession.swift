@@ -34,6 +34,9 @@ final class PTYSession: @unchecked Sendable {
     private let queue: DispatchQueue
     private let masterFD: Int32
     private let childPID: pid_t
+    private let terminalDevice: UInt32?
+    /// Retained across TERM/HUP so a shell exiting first doesn't hide its job-control groups.
+    private var terminalJobs: [pid_t: proc_bsdinfo] = [:]
     private var readSource: DispatchSourceRead?
     private var readSourceSuspended = false
     private var inputWriteSource: DispatchSourceWrite?
@@ -242,6 +245,10 @@ final class PTYSession: @unchecked Sendable {
 
         self.childPID = pid
         self.masterFD = master
+        var terminalStat = stat()
+        self.terminalDevice = ptsname(master).flatMap { path in
+            stat(path, &terminalStat) == 0 ? UInt32(bitPattern: terminalStat.st_rdev) : nil
+        }
         let flags = fcntl(master, F_GETFL, 0)
         _ = fcntl(master, F_SETFL, flags | O_NONBLOCK)
         _ = fcntl(master, F_SETFD, FD_CLOEXEC)
@@ -314,12 +321,15 @@ final class PTYSession: @unchecked Sendable {
         }
     }
 
-    /// Deliver a signal to the entire process group created by `forkpty`.
-    /// The group id starts equal to the leader pid, and descendants inherit it
-    /// unless they deliberately create another group. Must run under the
-    /// session's queue hierarchy.
+    /// Signal the forkpty group; termination also covers its captured terminal job-control
+    /// groups. Must run under the session's queue hierarchy.
     func signalProcessGroup(_ sig: Int32) {
         guard childPID > 0 else { return }
+        if sig == SIGTERM || sig == SIGHUP || sig == SIGKILL {
+            captureTerminalJobs()
+            signalTerminalJobs(sig)
+        }
+        guard !reaped else { return } // Numeric IDs alone are not ownership after waitpid.
         // Probe first. After the leader exits, the numeric process-group id can
         // eventually be reused. Never signal a gone group. A live child that
         // deliberately created its own group still gets the direct fallback.
@@ -332,6 +342,46 @@ final class PTYSession: @unchecked Sendable {
         }
         if kill(-childPID, sig) != 0, errno != ESRCH, errno != EPERM {
             ShepherdLog.warning("session \(id) group signal \(sig) failed: errno \(errno)")
+        }
+    }
+
+    /// Only our original group and processes attached to our PTY, in forkpty's session.
+    /// No user-wide scan. Jobs that detach before capture are deliberately not chased.
+    /// Remember start identities before signalling the shell: job-control groups may lose their
+    /// controlling terminal when it exits, but remain alive in that same session.
+    private func captureTerminalJobs() {
+        guard !reaped else { return }
+        var filters: [(UInt32, UInt32)] = [(UInt32(PROC_PGRP_ONLY), UInt32(childPID))]
+        if let terminalDevice { filters.append((UInt32(PROC_TTY_ONLY), terminalDevice)) }
+        for (type, identifier) in filters {
+            let bytes = proc_listpids(type, identifier, nil, 0)
+            if bytes > 0 {
+                var pids = [pid_t](repeating: 0, count: Int(bytes) / MemoryLayout<pid_t>.stride + 32)
+                let used = pids.withUnsafeMutableBytes {
+                    proc_listpids(type, identifier, $0.baseAddress, Int32($0.count))
+                }
+                for pid in pids.prefix(max(0, Int(used)) / MemoryLayout<pid_t>.stride) where pid > 0 {
+                    var info = proc_bsdinfo()
+                    guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, Int32(MemoryLayout.size(ofValue: info))) == MemoryLayout.size(ofValue: info),
+                          getsid(pid) == childPID else { continue }
+                    terminalJobs[pid] = info
+                }
+            }
+        }
+    }
+
+    private func signalTerminalJobs(_ sig: Int32) {
+        var signalled = Set<pid_t>()
+        for (pid, saved) in terminalJobs {
+            var now = proc_bsdinfo()
+            guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &now, Int32(MemoryLayout.size(ofValue: now))) == MemoryLayout.size(ofValue: now),
+                  now.pbi_start_tvsec == saved.pbi_start_tvsec, now.pbi_start_tvusec == saved.pbi_start_tvusec,
+                  now.pbi_pgid == saved.pbi_pgid, getsid(pid) == childPID else { continue }
+            let group = pid_t(now.pbi_pgid)
+            guard group > 0, (reaped || group != childPID), signalled.insert(group).inserted else { continue }
+            if kill(-group, sig) != 0, errno != ESRCH {
+                ShepherdLog.warning("session \(id) terminal job group \(group) signal \(sig) failed: errno \(errno)")
+            }
         }
     }
 
@@ -451,6 +501,7 @@ final class PTYSession: @unchecked Sendable {
             deliverExitIfReady()
             return true
         }
+        captureTerminalJobs()
         var status: Int32 = 0
         guard waitpid(childPID, &status, WNOHANG) == childPID else { return false }
         reaped = true
