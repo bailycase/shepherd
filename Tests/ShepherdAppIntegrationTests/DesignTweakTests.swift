@@ -312,6 +312,50 @@ struct DesignTweakTests {
         }
     }
 
+    @Test(arguments: [false, true])
+    func editsAndResetWaitForThePreviousWritesSnapshot(props: Bool) async throws {
+        let opened = try await open()
+        defer { opened.app.stop() }
+        let original = try await source(opened)
+        let gate = TweakGate()
+        defer { gate.release() }
+        var actions = io(opened)
+        let snapshot = actions.snapshot
+        let write = actions.writeBoards
+        var firstWriteFinished = false
+        actions.writeBoards = { sources, revision in
+            let result = try await write(sources, revision)
+            firstWriteFinished = true
+            return result
+        }
+        actions.snapshot = {
+            let result = try await snapshot()
+            if firstWriteFinished && !gate.entered { await gate.wait() }
+            return result
+        }
+        let tweak = DesignTweakModel(designID: opened.design.id, io: actions, host: nil)
+        await tweak.select(DesignTweakTarget(board: Self.a, element: Self.card, kind: .shape, tag: nil))
+        tweak.setStep(.padding, index: 1, phase: .ended)
+        try await eventuallyOnMain("the written padding's snapshot to wait") { gate.entered }
+        #expect(try await padding(opened) == "var(--space-6)")
+        if props { tweak.setProp("rows", .number(7), phase: .ended) }
+        else { tweak.choose(.radius, "8") }
+        // Reset must include that queued edit, and all three actions still belong to A.
+        tweak.reset()
+        await tweak.select(DesignTweakTarget(board: Self.phone,
+            element: DesignElementID(board: Self.phone.rawValue, tid: 3, path: [1, 0]), kind: .shape, tag: nil))
+        gate.release()
+        try await eventuallyReading("the queued edits and Reset to finish without self-conflicts") {
+            guard tweak.writes >= (props ? 4 : 3) else { return false }
+            let text = try await self.source(opened)
+            let current = try await opened.app.server.designSnapshot(opened.design.id)
+            return text == original && current.index.tweaks(for: Self.a).isEmpty
+        }
+        #expect(tweak.writes == (props ? 4 : 3), "one command per edit and each Reset mutation; no self-induced stale retry")
+        #expect(try await source(opened, Self.phone) == Self.board("A · phone"))
+        #expect(tweak.presentation.problem == nil)
+    }
+
     /// Reset puts back the bytes the board had before this session's tweaks.
     @Test func resetPutsBackExactlyWhatWasThere() async throws {
         let opened = try await open()

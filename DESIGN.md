@@ -8636,7 +8636,9 @@ so the least that is honest: the tab with nothing selected (its header says to s
 element), a tweak that couldn't be written (the header's note says so), a data-props text field,
 and a design without tokens for a role (its note says values snap to Shepherd's scale). Tweak
 (the board action or the tab) edits the selected element directly. A released gesture keeps that
-selection and scope even if the viewer selects something else while it saves. Undo and Redo
+selection and scope even if the viewer selects something else while it saves. Local style, prop
+and Reset writes finish in gesture order, including their snapshot refresh; Reset includes edits
+already released before it. Undo and Redo
 refuse later changes to the same style or prop rather than overwrite them; a Redo requested while
 Undo is still saving waits for it.
 
