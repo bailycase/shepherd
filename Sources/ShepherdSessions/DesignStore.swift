@@ -355,15 +355,6 @@ public final class DesignStore: @unchecked Sendable {
                     throw DesignStoreError.io("\(path) changed while its rendering was pinned.")
                 }
                 data = captured
-                let pin = pins.appendingPathComponent(sha + DesignPath.fileExtension)
-                if !FileManager.default.fileExists(atPath: pin.path) {
-                    do {
-                        try FileManager.default.createDirectory(at: pins, withIntermediateDirectories: true)
-                        try data.write(to: pin, options: .atomic)
-                    } catch {
-                        throw DesignStoreError.io("could not keep a pinned copy of \(path): \(error.localizedDescription)")
-                    }
-                }
                 index.record(revision: design.revision, board: path, sha256: sha)
                 out.append(DesignBoardSource(path: path, source: String(decoding: data, as: UTF8.self), sha256: sha, revision: design.revision))
             }
@@ -374,7 +365,7 @@ public final class DesignStore: @unchecked Sendable {
             // Never collect before the new index is durable, or after an unreadable old index.
             try JSONEncoder().encode(index).write(to: pins.appendingPathComponent("index.json"), options: .atomic)
             let kept = index.objects
-            for name in try FileManager.default.contentsOfDirectory(atPath: pins.path)
+            for name in (try? FileManager.default.contentsOfDirectory(atPath: pins.path)) ?? []
                 where Self.isPinObject(name) && !kept.contains(name) {
                 try? FileManager.default.removeItem(at: pins.appendingPathComponent(name))
             }
@@ -508,7 +499,7 @@ public final class DesignStore: @unchecked Sendable {
         return hash.count == 64 && hash.utf8.allSatisfy { (0x30...0x39).contains($0) || (0x61...0x66).contains($0) }
     }
 
-    private func renderInputs(_ id: DesignID, index: DesignIndex) throws -> (RenderInputs, [String: Data]) {
+    private func renderInputs(_ id: DesignID, index: DesignIndex, retainingBytes: Bool = true) throws -> (RenderInputs, [String: Data]) {
         guard let project = projectFolder(for: id), let folder = folder(for: id) else {
             throw DesignStoreError.invalidDesignID(id.rawValue)
         }
@@ -521,7 +512,7 @@ public final class DesignStore: @unchecked Sendable {
             }
             total += data.count
             let name = Self.sha256(data) + (board ? DesignPath.fileExtension : ".blob")
-            objects[name] = data
+            if retainingBytes { objects[name] = data }
             return name
         }
         manifest.project["canvas.json"] = try keep(index.encoded())
@@ -581,10 +572,18 @@ public final class DesignStore: @unchecked Sendable {
         }
     }
 
+    /// Freshness needs only the manifest, not every historical file's bytes.
+    public func pinnedRenderSHA(_ id: DesignID, revision: UInt64) async throws -> String? {
+        try await run {
+            guard let folder = self.folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+            return try Self.pinIndex(folder.appendingPathComponent("pins")).renders?["\(revision)"]?.sha256
+        }
+    }
+
     public func renderSHA(_ id: DesignID) async throws -> String {
         try await run {
             let design = try self.load(id)
-            return try self.renderInputs(id, index: design.index).0.sha256
+            return try self.renderInputs(id, index: design.index, retainingBytes: false).0.sha256
         }
     }
 

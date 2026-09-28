@@ -8817,7 +8817,10 @@ iPhone and iPad none of it.
     too large or links outside; Cancel import and **Import the other 11** for unreadable boards, the
     one case with a choice. Not drawn, built plainly in the same anatomy: one file over 16 MB ("hero.mp4
     is 40 MB. Shepherd imports files up to 16 MB. …"), a name a design can't hold, too many files,
-    or unsafe canvas geometry (imported board sizes must be 40–8000).
+    or unsafe canvas geometry (positive dimensions and native-integer-representable numbers).
+    Tall legacy flow documents keep their sizes. A board beyond native rendering limits reports
+    that it cannot draw; its canvas and source remain intact. Bitmap exports above 64 million
+    pixels refuse with a smaller-image-or-PDF suggestion.
   - **ImportAgainDialog** (the tray, `square.and.arrow.down`): "“Checkout funnel” is already in
     Designs", "You imported **Checkout funnel** on Sep 20. Import it again as a separate copy, or open
     the one you have. The two don’t affect each other.", "New copy: **Checkout funnel 2** · 12 boards

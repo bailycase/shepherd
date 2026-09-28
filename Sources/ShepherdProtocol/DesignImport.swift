@@ -148,11 +148,6 @@ public enum DesignImport {
     /// still keeps every key. Throws when it isn't a canvas this build reads.
     public static func index(_ data: Data, fallbackTitle: String) throws -> (data: Data, index: DesignIndex) {
         let index = try DesignIndex.decode(data)
-        for (path, board) in index.boards {
-            guard DesignIndex.boardSizeRange.contains(board.w), DesignIndex.boardSizeRange.contains(board.h) else {
-                throw DesignIndexDecodingError("\(path): w and h are 40–8000")
-            }
-        }
         if let title = index.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
             return (data, index)
         }

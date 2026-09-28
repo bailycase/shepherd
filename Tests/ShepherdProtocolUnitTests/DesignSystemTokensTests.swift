@@ -23,6 +23,23 @@ struct DesignSystemTokensTests {
         }
     }
 
+    @Test func decodedHugeWeightsAndSourceLinesThrowInsteadOfTrapping() async {
+        await #expect(processExitsWith: .success) {
+            for json in [
+                #"{"type":[{"name":"body","size":14,"weight":1e100}]}"#,
+                #"{"color":{"light":{}},"type":{"body":{"size":14,"weight":1e100}}}"#,
+                #"{"spacing":[{"name":"gap","px":8,"source":{"file":"tokens.css","line":1e100}}]}"#,
+                #"{"type":[{"name":"body","size":14,"weight":400.5}]}"#,
+            ] {
+                #expect(throws: DesignSystemTokensError.self) { try DesignSystemTokens.decode(Data(json.utf8)) }
+            }
+            do {
+                let tokens = try DesignSystemTokens.decode(Data(#"{"type":[{"name":"body","size":14,"weight":400,"source":{"file":"tokens.css","line":8}}]}"#.utf8))
+                #expect(tokens.type.first?.weight == 400 && tokens.type.first?.source?.line == 8)
+            } catch { Issue.record(error) }
+        }
+    }
+
     // MARK: Decoding
 
     struct Case: Sendable, CustomTestStringConvertible {

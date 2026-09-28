@@ -372,9 +372,7 @@ struct DesignReferenceService: Sendable {
         let pinnedSHA: String?
         if let payload { pinnedSHA = payload.renderSHA }
         else if let revision = reference.revision {
-            let render = try? await server.designs.pinnedRender(reference.designID, revision: revision,
-                boards: reference.board.map { [$0] } ?? [])
-            pinnedSHA = render?.sha256
+            pinnedSHA = try? await server.designs.pinnedRenderSHA(reference.designID, revision: revision)
         } else { pinnedSHA = nil }
         let renderChanged: Bool
         if let pinnedSHA {
