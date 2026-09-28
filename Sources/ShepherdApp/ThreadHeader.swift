@@ -49,9 +49,6 @@ struct ThreadHeader: View, Equatable {
             }
             NWOptionsMenu("Thread options") {
                 Button("Refresh Thread") { Task { await store.refresh(fresh: true) } }
-                if store.olderCursor != nil {
-                    Button("Load Older Messages") { Task { await store.loadOlder() } }
-                }
                 if let rename {
                     Divider()
                     Button("Rename…", action: rename)

@@ -18,14 +18,21 @@ private final class ThreadHarness {
     let commands = ThreadCommandCenter()
     var snapshot: NativeThreadSnapshot
     let window: OffscreenWindow
+    var olderRequests = 0
+    var olderReply: CheckedContinuation<NativeThreadResult, Never>?
 
-    init(messages: Int, running: Bool = false, paragraphs: Int = 3) {
-        let snapshot = Self.snapshot(count: messages, running: running, paragraphs: paragraphs)
+    init(messages: Int, running: Bool = false, paragraphs: Int = 3, olderCursor: String? = nil) {
+        var snapshot = Self.snapshot(count: messages, running: running, paragraphs: paragraphs)
+        snapshot.olderCursor = olderCursor
         self.snapshot = snapshot
         window = OffscreenWindow(size: CGSize(width: 900, height: 600), dark: false)
         let request: NativeThreadStore.Request = { [weak self] value in
             guard let self else { return .failure(code: "gone", message: "harness released") }
             if case .send(_, _, let operation, _, _, _, _, _) = value { return .accepted(operationID: operation) }
+            if case .snapshot(_, let before, _) = value, before != nil {
+                self.olderRequests += 1
+                return await withCheckedContinuation { self.olderReply = $0 }
+            }
             return .snapshot(value: self.snapshot)
         }
         window.show(ThreadView(store: store, active: true, isFocused: false, request: request, commandKey: "thread")
@@ -105,6 +112,20 @@ private final class ThreadHarness {
         }
     }
 
+    /// The rendered label's viewport position, independent of lazy document-height estimates.
+    func position(of text: String) throws -> CGFloat? {
+        window.layout()
+        let host = window.host
+        let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        let image = try #require(bitmap.cgImage)
+        let request = VNRecognizeTextRequest()
+        request.usesLanguageCorrection = false
+        try VNImageRequestHandler(cgImage: image).perform([request])
+        return request.results?.first { $0.topCandidates(1).first?.string == text }
+            .map { (1 - $0.boundingBox.midY) * host.bounds.height }
+    }
+
     /// Scrolls the clip view to the end, the way a reader dragging to the bottom lands.
     func scrollToEnd() {
         let clip = scrollView.contentView
@@ -168,6 +189,8 @@ private final class ThreadHarness {
     }
 
     func close() {
+        olderReply?.resume(returning: .failure(code: "gone", message: "closed"))
+        olderReply = nil
         store.stop()
         window.close()
     }
@@ -178,6 +201,32 @@ private final class ThreadHarness {
 @Suite("Thread scroll following", .serialized, .mainActorExclusive)
 @MainActor
 struct ThreadScrollingTests {
+    /// Real SwiftUI geometry, not the reduced viewport assumed by the follower's fixtures.
+    /// Keep this separate from following: a bad distance must not be hidden by repeated repins.
+    @Test func nativeScrollGeometryReportsZeroAtTheInsetTail() async throws {
+        var measured: ScrollGeometry?
+        let inset = ComposerInset()
+        let window = OffscreenWindow(size: CGSize(width: 900, height: 600), dark: false)
+        defer { window.close() }
+        window.show(
+            ScrollView {
+                Color.clear.frame(height: 2000)
+            }
+            .modifier(ComposerInsetPadding(inset: inset))
+            .contentMargins(.top, AppLayout.threadTop, for: .scrollContent)
+            .defaultScrollAnchor(.bottom, for: .initialOffset)
+            .onScrollGeometryChange(for: ScrollGeometry.self, of: { $0 }) { _, new in measured = new }
+        )
+        try await eventuallyOnMain("native scroll geometry to arrive") {
+            window.layout()
+            return measured?.contentSize.height == 2000
+        }
+        let geometry = try #require(measured)
+        let probe = ThreadView.probe(geometry)
+        #expect(abs(probe.distance) < 2,
+                "tail distance \(probe.distance); content \(geometry.contentSize), offset \(geometry.contentOffset), container \(geometry.containerSize), insets \(geometry.contentInsets), visible \(geometry.visibleRect)")
+    }
+
     @Test func aThreadOpensAtItsTailWithNoBlankSpaceBelowTheLastTurn() async throws {
         let thread = ThreadHarness(messages: 24)
         defer { thread.close() }
@@ -417,6 +466,59 @@ struct ThreadScrollingTests {
 
         await thread.publish(ThreadHarness.snapshot(count: 32, running: false, revision: 2, paragraphs: 20))
         try await eventuallyOnMain("the jump pill to show for the new turn", poll: .milliseconds(150)) { thread.showsJumpPill }
+    }
+
+    @Test func steeringFromEarlierHistoryReturnsToTheTailBeforeDelivery() async throws {
+        let thread = ThreadHarness(messages: 30, running: true, paragraphs: 20)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        var queued = thread.snapshot
+        queued.revision = 2
+        queued.queue = NativeQueue()
+        await thread.publish(queued)
+        try await thread.detach()
+        let lastUser = thread.store.rows.last(where: \.isUser)?.id
+
+        thread.store.draft = "Steer this turn"
+        await thread.store.send(delivery: .steer)
+
+        #expect(!thread.store.lastSendQueued)
+        #expect(thread.store.rows.last(where: \.isUser)?.id == lastUser)
+        try await eventuallyOnMain("steer to land before the host delivers its user turn") { thread.distanceFromBottom < 2 }
+    }
+
+    @Test(arguments: [false, true])
+    func reachingTheTopLoadsOnePageWithoutMovingOrRetrying(fails: Bool) async throws {
+        let thread = ThreadHarness(messages: 24, paragraphs: 4, olderCursor: "m0")
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        #expect(thread.olderRequests == 0)
+        // Commands use the same native scroll view without synthetic input.
+        thread.command(.previousTurn)
+        try await thread.settle()
+        for _ in 0..<11 {
+            thread.command(.previousTurn)
+            try await thread.settle()
+        }
+        try await eventuallyOnMain("the visible top to request history") { thread.olderReply != nil }
+        try await thread.settle()
+        let before = try #require(try thread.position(of: "Question 2"))
+        var page = ThreadHarness.snapshot(count: 12, running: false, prefix: "older", paragraphs: 7)
+        for index in page.messages.indices where page.messages[index].role == "user" {
+            page.messages[index].blocks = [NativeThreadBlock(kind: .text, text: "Older question \(index)")]
+        }
+        page.olderCursor = "older0"
+        thread.olderReply?.resume(returning: fails
+            ? .failure(code: "unavailable", message: "History unavailable") : .snapshot(value: page))
+        thread.olderReply = nil
+        try await eventuallyOnMain("the history request to finish") { !thread.store.loadingOlder }
+        #expect(thread.store.messages.count == (fails ? 24 : 36))
+        await thread.store.refresh()
+        try await thread.settle()
+
+        #expect(thread.olderRequests == 1)
+        let after = try #require(try thread.position(of: "Question 2"))
+        #expect(abs(after - before) < 2, "prepending moved the visible turn from \(before) to \(after)")
     }
 
     /// A code block scrolls sideways only when its longest line is wider than the column; one

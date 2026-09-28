@@ -279,6 +279,14 @@ public final class NativeThreadStore {
     @ObservationIgnored private var thinkingCache: [String: [NativeMarkdownBlock]] = [:]
     /// How many times thinking was parsed (tests).
     @ObservationIgnored private(set) var thinkingParses = 0
+    /// Only the latest text and mode per prose item: streaming prefixes never accumulate.
+    @ObservationIgnored private var proseCache: [ProseKey: (text: String, streaming: Bool, blocks: [NativeMarkdownBlock], endsInOpenFence: Bool)] = [:]
+    @ObservationIgnored private(set) var proseParses = 0
+
+    private struct ProseKey: Hashable {
+        var turn: String
+        var item: String
+    }
 
     private struct QueueOverlay {
         let id: UUID
@@ -441,7 +449,9 @@ public final class NativeThreadStore {
                 presentation = cached.value
             } else {
                 presentation = nativeTurnPresentation(turn.messages, live: isLive, cards: key.cards, errors: errors, call: call,
-                                                      thinking: thinkingBlocks)
+                                                      thinking: thinkingBlocks, prose: { id, text, streaming in
+                    self.proseBlocks(turn: turn.id, item: id, text: text, streaming: streaming)
+                })
                 presentationCache[turn.id] = (key, presentation)
             }
             kept.insert(turn.id)
@@ -581,6 +591,19 @@ public final class NativeThreadStore {
         let value = nativeThinkingBlocks(text)
         if thinkingCache.count > 1024 { thinkingCache.removeAll(keepingCapacity: true) }
         thinkingCache[text] = value
+        return value
+    }
+
+    private func proseBlocks(turn: String, item: String, text: String, streaming: Bool)
+        -> (blocks: [NativeMarkdownBlock], endsInOpenFence: Bool) {
+        let key = ProseKey(turn: turn, item: item)
+        if let cached = proseCache[key], cached.text == text, cached.streaming == streaming {
+            return (cached.blocks, cached.endsInOpenFence)
+        }
+        proseParses += 1
+        let value = nativeMarkdownParse(text, streaming: streaming)
+        if proseCache[key] == nil, proseCache.count >= 1024 { proseCache.removeAll(keepingCapacity: true) }
+        proseCache[key] = (text, streaming, value.blocks, value.endsInOpenFence)
         return value
     }
 
@@ -969,11 +992,11 @@ public final class NativeThreadStore {
     /// While pi works, `delivery` says whether the message waits in the queue (`followUp`) or
     /// is steered in; while pi is idle it goes at once either way.
     public func send(images: [NativeImage] = [], delivery: NativeThreadDelivery) async {
-        guard hasDraft, await readyToAct() else { return }
+        guard hasDraft || (!images.isEmpty && supportedActions.contains("sendImages")), await readyToAct() else { return }
         let typed = draft
         let files = attachedFiles
         let references = attachedReferences
-        guard hasDraft, supports("send"), let current = snapshot else { return }
+        guard hasDraft || (!images.isEmpty && supports("sendImages")), supports("send"), let current = snapshot else { return }
         guard references.isEmpty || supports("designReferences") else {
             notice = "This thread's host doesn't take design references."
             return

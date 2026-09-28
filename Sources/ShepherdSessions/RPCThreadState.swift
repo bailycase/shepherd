@@ -578,8 +578,9 @@ final class RPCThreadState {
         switch request {
         case .send(_, _, _, let text, let delivery, let images, let designContext, let designReferences):
             let images = images ?? []
-            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.utf8.count <= Self.textLimit else {
-                completion(.failure(code: "invalid", message: "Send requires text up to 16 KiB and a valid delivery mode."))
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !images.isEmpty,
+                  text.utf8.count <= Self.textLimit else {
+                completion(.failure(code: "invalid", message: "Send requires text or images, with text up to 16 KiB."))
                 return
             }
             guard NativeImage.fitOneSend(images) else {

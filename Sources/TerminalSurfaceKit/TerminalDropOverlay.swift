@@ -37,7 +37,7 @@ private final class InstallerView: NSView {
     }
 }
 
-private final class TerminalDropOverlayView: NSView {
+final class TerminalDropOverlayView: NSView {
     /// Concrete pasteboard types worth accepting. `registerForDraggedTypes`
     /// matches exact types, not UTI conformance, so `public.image` alone
     /// would miss the TIFF/PNG that screenshot drags actually carry.
@@ -63,7 +63,9 @@ private final class TerminalDropOverlayView: NSView {
     /// which prevented this view from ever receiving `draggingEntered`.
     override func hitTest(_ point: NSPoint) -> NSView? {
         let dragTypes = NSPasteboard(name: .drag).types ?? []
-        guard dragTypes.contains(where: Self.draggedTypes.contains) else { return nil }
+        guard dragTypes.contains(where: Self.draggedTypes.contains),
+              let superview,
+              targetModel(at: superview.convert(point, to: nil)) != nil else { return nil }
         return super.hitTest(point)
     }
 
@@ -94,7 +96,7 @@ private final class TerminalDropOverlayView: NSView {
     /// point. Hidden panes keep their NSViews mounted at the same coordinates;
     /// `renderingActive` is the app's authoritative "this pane is visible"
     /// bit, so it filters them out.
-    private func targetModel(at windowPoint: NSPoint) -> TerminalSurfaceModel? {
+    func targetModel(at windowPoint: NSPoint) -> TerminalSurfaceModel? {
         guard let contentView = window?.contentView else { return nil }
         for view in TerminalFirstResponder.surfaceViews(in: contentView) {
             let local = view.convert(windowPoint, from: nil)
