@@ -83,6 +83,36 @@ struct DesignImportTests {
         #expect(((json["notes"] as? [String: Any])?["n"] as? [String: Any])?["points"] as? [Int] == [1, 2])
     }
 
+    @Test func unsafeGeometryIsRefusedWithoutTerminatingTheHost() async {
+        await #expect(processExitsWith: .success) {
+            for geometry in ["\"x\":0,\"y\":0,\"w\":1e100,\"h\":300",
+                             "\"x\":1e100,\"y\":0,\"w\":400,\"h\":300",
+                             "\"x\":0,\"y\":0,\"w\":-1,\"h\":300"] {
+                let data = Data("{\"v\":3,\"title\":\"Unsafe\",\"boards\":{\"A.dc.html\":{\(geometry)}}}".utf8)
+                #expect(throws: (any Error).self) { try DesignImport.index(data, fallbackTitle: "Unsafe") }
+            }
+            for width in [1e100, Double.infinity, -Double.infinity, Double.nan] {
+                let path = DesignPath("A.dc.html")!
+                let index = DesignIndex(title: "Unsafe", boards: [path: .init(x: 0, y: 0, w: width, h: 300)])
+                #expect(!DesignExportSelection(index: index, selected: []).rows[0].size.isEmpty)
+                let size = DesignBoardCheck.Size(width: width, height: 300)
+                #expect(!size.description.isEmpty)
+                let source = """
+                <script src="./support.js"></script>
+                <x-dc><div style="width: \(width)px; height: 300px"></div></x-dc>
+                <script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":400,"height":300}}'></script>
+                """
+                do {
+                    _ = try DesignBoardCheck.check(source)
+                    Issue.record("oversized root should mismatch preview")
+                } catch {
+                    #expect(error.code == "size_mismatch")
+                    #expect(!error.description.isEmpty)
+                }
+            }
+        }
+    }
+
     @Test func aCanvasThisBuildCantReadIsRefused() {
         #expect(throws: (any Error).self) { try DesignImport.index(Data(#"{"v":2,"boards":{}}"#.utf8), fallbackTitle: "x") }
         #expect(throws: (any Error).self) { try DesignImport.index(Data("not json".utf8), fallbackTitle: "x") }

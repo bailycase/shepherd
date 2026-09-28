@@ -144,6 +144,6 @@ public enum DesignSystemPresentation {
     }
 
     private static func number(_ value: Double) -> String {
-        value == value.rounded() ? String(Int(value)) : String(value)
+        Int(exactly: value).map(String.init) ?? String(value)
     }
 }

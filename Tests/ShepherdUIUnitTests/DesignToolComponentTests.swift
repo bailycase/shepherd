@@ -163,6 +163,8 @@ struct DesignToolComponentTests {
     @Test func aBoardsSizeReadsInCSSPixels() {
         #expect(NWCanvasBoard.sizeLabel(CGSize(width: 1280, height: 800)) == "1280 × 800")
         #expect(NWCanvasBoard.sizeLabel(CGSize(width: 389.6, height: 844.2)) == "390 × 844")
+        #expect(NWCanvasBoard.sizeLabel(CGSize(width: 1e100, height: 300)) == "1e+100 × 300")
+        #expect(NWCanvasBoard.sizeLabel(CGSize(width: CGFloat.infinity, height: 300)) == "inf × 300")
     }
 
     /// A comment's age as the boards say it: "now", then minutes, hours and days, never "ago".

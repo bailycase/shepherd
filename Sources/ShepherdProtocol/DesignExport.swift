@@ -33,7 +33,7 @@ public struct DesignExportSelection: Hashable, Sendable {
         public var size: String { "\(Self.number(width)) × \(Self.number(height))" }
 
         static func number(_ value: Double) -> String {
-            value.rounded() == value ? String(Int(value)) : String(format: "%g", value)
+            Int(exactly: value).map(String.init) ?? String(format: "%g", value)
         }
     }
 

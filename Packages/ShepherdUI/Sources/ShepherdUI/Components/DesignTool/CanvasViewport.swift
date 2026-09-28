@@ -128,7 +128,9 @@ public struct NWCanvasBoard: Identifiable, Equatable, Sendable {
 
     /// "1280 × 800", the board's CSS pixel size.
     public static func sizeLabel(_ size: CGSize) -> String {
-        "\(Int(size.width.rounded())) × \(Int(size.height.rounded()))"
+        let width = Int(exactly: size.width.rounded()).map(String.init) ?? String(describing: size.width)
+        let height = Int(exactly: size.height.rounded()).map(String.init) ?? String(describing: size.height)
+        return "\(width) × \(height)"
     }
 }
 

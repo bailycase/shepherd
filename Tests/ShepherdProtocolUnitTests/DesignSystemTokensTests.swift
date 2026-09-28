@@ -13,6 +13,16 @@ struct DesignSystemTokensTests {
         try DesignSystemTokens.decode(Data(json.utf8))
     }
 
+    @Test func oversizedTokenNumbersCanBeReportedWithoutTrapping() async {
+        await #expect(processExitsWith: .success) {
+            let tokens = DesignSystemTokens(spacing: [.init(name: "--huge", px: 1e100)])
+            #expect(tokens.css().contains("--huge: 1e+100px;"))
+            let system = DesignSystemInstalled(namespace: "huge", title: "Huge", shepherd: true, tokens: tokens, tokensFile: nil)
+            let used = DesignReferenceReading.usedTokens(in: "padding: var(--huge)", systems: [system])
+            #expect(used.first?.value == "1e+100px")
+        }
+    }
+
     // MARK: Decoding
 
     struct Case: Sendable, CustomTestStringConvertible {
