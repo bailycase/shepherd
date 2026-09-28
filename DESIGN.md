@@ -1434,8 +1434,11 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   height alone (a scroll or a turn jump measures the rows it reveals). The composer draws it
   over the fade it lays on the thread and under its card and menus, so the fade never washes it
   out and it never covers an open menu. A send that goes in now (pi idle, or a steer)
-  re-attaches and lands on the tail immediately, then on its echoed turn once laid out. A reader
-  scrolling away or jumping to another turn before that deferred landing cancels it. A follow-up
+  re-attaches to the tail. On Mac, a thread already following relies on native size anchoring
+  as the echo arrives and the completed-subagent tray collapses, without duplicate send jumps.
+  A late upward offset adjustment is corrected while following, even if layout arrived earlier.
+  A reader scrolling away or jumping to another turn cancels following; layout recovery never
+  moves the view during a live gesture. A follow-up
   that waits in Up next leaves the reader's place alone, then and when it goes: its delivery is
   new output like any other. The composer floats over the scroll view, which is inset by the
   composer's measured height plus 24pt of transcript breathing room (`composerTranscriptGap`),
@@ -2604,10 +2607,14 @@ turn's record (`NativeSubagentRecord`) with its presentation; `SubagentPresentat
 the components' values, and `Thread/Subagents.swift` lays out the tray. State always comes from
 `AgentState` (a queued run and a run paused before its next model request both draw as `queued`).
 
-- **When the tray shows** (`nativeTrayRuns`): the runs of the newest turn that spawned any, with
-  any run still live from an earlier one, while any of them is live; once every run has finished
-  it stays, reading "all done", until your next message (a message sent after the last run
-  ended), then it folds into the thread's record (SubagentsDone). It sits above the composer card
+- **When the tray shows** (`nativeTrayRuns`): only runs started during the current turn, plus
+  genuinely live or waiting work continuing from an earlier turn. Finished runs stay as that
+  turn's summary until the next immediate message is accepted, then animate away. Refused sends,
+  steering within a turn, and follow-ups still waiting in the queue do not dismiss it. A run
+  finishing after the next turn begins does not become part of that new turn. The store keeps
+  the opening-message timestamp across history paging; unknown historical runs never become
+  current just because their spawn messages are unloaded. Older runs stay accessible through
+  their original transcript records and inspector. It sits above the composer card
   in the composer's column, grows upward as Up next does, and the thread keeps its tail in view as
   the composer grows (`SubagentMotionTests`).
 - **One card with Up next** (`NWDockStack`, SubagentsQueue, NWAgents › NWDockStack): when both

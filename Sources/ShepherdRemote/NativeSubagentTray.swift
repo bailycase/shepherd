@@ -217,18 +217,22 @@ func nativeRunCallWords(tool: String, preview: String?, running: Bool) -> (verb:
 
 // MARK: Which runs the tray shows
 
-/// The runs the tray shows, or nil when it shows none: the newest spawn group (with any run
-/// still live from an earlier one) while any of them is live, and, once all have finished,
-/// until your next message (SubagentsDone: "the tray stays until your next message").
-/// `lastUserMessageAt` is when you last sent a message into the thread (ms).
+/// Current-turn runs plus any earlier run still live. Finished runs disappear on the next
+/// accepted message, not when their history scrolls out of view. `turnOrder` contains the
+/// current user turn and its replies; placements are a fallback for older untimestamped runs.
+/// `lastUserMessageAt` is the current turn's opening message time in milliseconds.
 public func nativeTrayRuns(_ runs: [ChildRun], placements: [String: NativeSubagentPlacement], turnOrder: [String],
                            lastUserMessageAt: Double?) -> [ChildRun]? {
-    let current = nativeRunSections(runs, placements: placements, turnOrder: turnOrder).current
-    guard !current.isEmpty else { return nil }
-    if current.contains(where: { nativeRunPhase($0).isLive }) { return current }
-    let finished = current.compactMap { $0.endedAt ?? $0.startedAt }.max() ?? 0
-    if let sent = lastUserMessageAt, sent > finished { return nil }
-    return current
+    // Run timestamps survive history paging. Completion time cannot identify the owning
+    // turn: a background run may finish after the next user message.
+    let latest = turnOrder.last { placements[$0]?.isEmpty == false }
+    let placed = Set(latest.flatMap { placements[$0]?.all.map(\.id) } ?? [])
+    let current = runs.filter { run in
+        if nativeRunPhase(run).isLive { return true }
+        if let sent = lastUserMessageAt, let started = run.startedAt { return started >= sent }
+        return placed.contains(run.id)
+    }.sorted { ($0.startedAt ?? 0, $0.id) < ($1.startedAt ?? 0, $1.id) }
+    return current.isEmpty ? nil : current
 }
 
 // MARK: The thread's record
