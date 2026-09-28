@@ -45,6 +45,8 @@ public final class ChangesService: @unchecked Sendable {
     let work = DispatchQueue(label: "shepherd.changes", qos: .userInitiated, attributes: .concurrent)
     private let repositories = ChangesLocked<[String: Repository]>([:])
     private let indexLocks = ChangesLocked<[String: NSLock]>([:])
+    private let indexSources = ChangesLocked<[String: Data]>([:])
+    private let restoreLocks = ChangesLocked<[String: NSLock]>([:])
     private let emptyTrees = ChangesLocked<[String: String]>([:])
     private let lists = ChangesCache<[ChangesFile]>(capacity: 64)
     private let diffs = ChangesCache<DiffFile>(capacity: 512)
@@ -110,12 +112,23 @@ public final class ChangesService: @unchecked Sendable {
         }
     }
 
+    /// Undo/Redo from different agents in one checkout must not interleave validation and writes.
+    func restoreLock(for repository: Repository) -> NSLock {
+        restoreLocks.withValue { locks in
+            if let lock = locks[repository.key] { return lock }
+            let lock = NSLock()
+            locks[repository.key] = lock
+            return lock
+        }
+    }
+
     // MARK: Snapshots
 
     /// The working tree as a tree object, untracked files included and ignored ones not: `git add
     /// -A` then `git write-tree` against Shepherd's own index for this working tree. That index
-    /// starts as a copy of the user's (so tracked but ignored files stay, and git's stat cache
-    /// makes the next snapshot re-read only what changed) and lives on in the support
+    /// starts as a copy of the user's and is reseeded when that index changes (so newly tracked
+    /// ignored files stay). Between changes git's stat cache avoids rereading unchanged files
+    /// and the index lives on in the support
     /// directory. Untracked files over `ChangesLimits.untrackedFileBytes` stay out.
     func snapshot(_ repository: Repository) throws -> (tree: String, skipped: [String]) {
         let lock = lock(for: repository)
@@ -130,23 +143,27 @@ public final class ChangesService: @unchecked Sendable {
         }
         let pathspecs = ["."] + skipped.map { ":(exclude,literal)\($0)" }
         let input = Data(pathspecs.joined(separator: "\0").utf8)
-        // A file git cannot read (exit 1 with --ignore-errors) stays as the index had it.
-        _ = try ChangesGit.checked(["add", "-A", "--ignore-errors", "--pathspec-from-file=-", "--pathspec-file-nul"],
-                                   in: repository.root, index: index, input: input, allowed: [0, 1])
+        // An incomplete snapshot cannot prove that Undo is safe; never reuse unreadable entries.
+        _ = try ChangesGit.checked(["add", "-A", "--pathspec-from-file=-", "--pathspec-file-nul"],
+                                   in: repository.root, index: index, input: input)
         let tree = try ChangesGit.checked(["write-tree"], in: repository.root, index: index).trimmed
         return (tree, skipped)
     }
 
-    /// Shepherd's index for this working tree, seeded from the user's the first time.
+    /// Keep the user's tracked set current without throwing away the private stat cache on every read.
     private func snapshotIndex(_ repository: Repository) throws -> String {
         let url = indexDirectory.appendingPathComponent(repository.key)
         let fm = FileManager.default
-        if !fm.fileExists(atPath: url.path) {
+        let source = fm.fileExists(atPath: repository.index) ? try Data(contentsOf: URL(fileURLWithPath: repository.index)) : Data()
+        let fingerprint = Data(SHA256.hash(data: source))
+        if indexSources.withValue({ $0[repository.key] }) != fingerprint || !fm.fileExists(atPath: url.path) {
             try fm.createDirectory(at: indexDirectory, withIntermediateDirectories: true)
-            if fm.fileExists(atPath: repository.index) {
-                try? fm.removeItem(at: url)
-                try fm.copyItem(atPath: repository.index, toPath: url.path)
+            if source.isEmpty {
+                if fm.fileExists(atPath: url.path) { try fm.removeItem(at: url) }
+            } else {
+                try source.write(to: url, options: .atomic)
             }
+            indexSources.withValue { $0[repository.key] = fingerprint }
         }
         return url.path
     }

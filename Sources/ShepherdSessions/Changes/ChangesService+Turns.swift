@@ -15,6 +15,14 @@ struct TurnRecord: Codable, Hashable, Sendable {
     var cwd: String
     var startTree: String?
     var endTree: String?
+    /// A durable, bounded journal: never accept an arbitrary post-failure snapshot as safe.
+    var recovery: Recovery?
+
+    struct Recovery: Codable, Hashable, Sendable {
+        var redo: Bool
+        var completed: [String] = []
+        var inFlight: String?
+    }
 }
 
 /// Every agent's recent turns, in memory and in `turns.json` in the changes directory, so the
@@ -86,8 +94,22 @@ final class TurnStore: @unchecked Sendable {
         writeScheduled = false
         let snapshot = records ?? [:]
         lock.unlock()
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? JSONEncoder().encode(snapshot).write(to: url, options: .atomic)
+        try? write(snapshot)
+    }
+
+    private func write(_ snapshot: [String: [TurnRecord]]) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try JSONEncoder().encode(snapshot).write(to: url, options: .atomic)
+    }
+
+    /// A recovery checkpoint must reach disk before the next working-tree mutation.
+    func checkpoint() throws {
+        try io.sync {
+            lock.lock()
+            let snapshot = records ?? [:]
+            lock.unlock()
+            try write(snapshot)
+        }
     }
 
     /// Waits for pending saves (tests, and the server's stop).
@@ -149,7 +171,7 @@ extension ChangesService {
         guard let context = agentContext(agentID) else { return }
         let id = UUID()
         let started: Bool = turnStore.update(agentID) { records in
-            if let last = records.last, last.turn.state == .running { return false }
+            if let last = records.last, last.turn.state == .running, last.turn.endedAt == nil { return false }
             records.append(TurnRecord(turn: ChangesTurn(id: id, startedAt: time, state: .running), cwd: context.cwd))
             return true
         }
@@ -179,7 +201,7 @@ extension ChangesService {
     /// The user message that started the run: the card's turn and its "after “…”".
     func turnMessage(agentID: AgentID, timestamp: Double?, text: String) {
         let changed: Bool = turnStore.update(agentID) { records in
-            guard let i = records.indices.last, records[i].turn.state == .running, records[i].turn.messageTimestamp == nil,
+            guard let i = records.indices.last, records[i].turn.state == .running, records[i].turn.endedAt == nil, records[i].turn.messageTimestamp == nil,
                   records[i].turn.prompt == nil else { return false }
             records[i].turn.messageTimestamp = timestamp
             records[i].turn.prompt = ChangesParse.promptLine(text)
@@ -191,7 +213,7 @@ extension ChangesService {
     /// pi's run settled: snapshot the working tree again and count what the turn changed.
     func turnSettled(agentID: AgentID, at time: Double = Date().timeIntervalSince1970 * 1000) {
         let id: UUID? = turnStore.update(agentID) { records in
-            guard let i = records.indices.last, records[i].turn.state == .running else { return nil }
+            guard let i = records.indices.last, records[i].turn.state == .running, records[i].turn.endedAt == nil else { return nil }
             records[i].turn.endedAt = time
             return records[i].turn.id
         }
@@ -256,6 +278,9 @@ extension ChangesService {
             throw ChangesError(ChangesError.invalid, redo ? "There is nothing to redo." : "This turn can’t be undone.")
         }
         let repository = try repository(record.cwd)
+        let operation = restoreLock(for: repository)
+        operation.lock()
+        defer { operation.unlock() }
         guard let start = record.startTree, let end = record.endTree, exists(start, in: repository), exists(end, in: repository) else {
             throw ChangesError(ChangesError.unavailable, "The turn’s snapshots are no longer available.")
         }
@@ -265,9 +290,21 @@ extension ChangesService {
         let (from, to) = redo ? (start, end) : (end, start)
         let paths = entries.map(\.path)
         let current = try snapshot(repository).tree
-        let changed = try ChangesGit.checked(["diff", "--no-ext-diff", "--name-only", "--no-renames", "-z", from, current, "--"] + paths,
-                                             in: repository.root, literalPaths: true)
-            .stdout.split(separator: 0).map { String(decoding: $0, as: UTF8.self) }
+        func differences(from tree: String) throws -> Set<String> {
+            Set(try ChangesGit.checked(["diff", "--no-ext-diff", "--name-only", "--no-renames", "-z", tree, current, "--"] + paths,
+                                       in: repository.root, literalPaths: true)
+                .stdout.split(separator: 0).map { String(decoding: $0, as: UTF8.self) })
+        }
+        var recovery = record.recovery ?? TurnRecord.Recovery(redo: redo)
+        guard recovery.redo == redo else { throw ChangesError(ChangesError.invalid, "Finish the interrupted operation first.") }
+        let sourceChanges = try differences(from: from)
+        let targetChanges = try differences(from: to)
+        let completed = Set(recovery.completed)
+        let changed = paths.filter { path in
+            if completed.contains(path) { return targetChanges.contains(path) }
+            if recovery.inFlight == path { return sourceChanges.contains(path) && targetChanges.contains(path) }
+            return sourceChanges.contains(path)
+        }
         guard changed.isEmpty else {
             let names = changed.prefix(3).map { ($0 as NSString).lastPathComponent }.joined(separator: ", ")
             let more = changed.count > 3 ? " and \(changed.count - 3) more" : ""
@@ -275,21 +312,47 @@ extension ChangesService {
                                "\(names)\(more) changed after the \(redo ? "undo" : "turn"), so Shepherd left the files as they are.",
                                files: changed)
         }
-        // Files the target tree has come back from it; files it lacks go to the Trash.
-        let absent: Set<Character> = redo ? ["D"] : ["A"]
-        let restore = entries.filter { !absent.contains($0.status) }.map(\.path)
-        let remove = entries.filter { absent.contains($0.status) }.map(\.path)
-        if !restore.isEmpty { try restoreFiles(repository, from: to, paths: restore) }
+        let action = redo ? "Redo" : "Undo"
+        func checkpoint(_ reason: String) throws {
+            turnStore.update(agentID) { records in
+                guard let i = records.firstIndex(where: { $0.turn.id == turnID }) else { return }
+                records[i].recovery = recovery
+                records[i].turn.reason = reason
+            }
+            try turnStore.checkpoint()
+        }
+        // Each path is journaled before writing. After a crash, only exact source/target bytes
+        // are accepted for the in-flight path; unrelated edits never become a recovery baseline.
+        let absent: Character = redo ? "D" : "A"
         let root = URL(fileURLWithPath: repository.root, isDirectory: true)
-        for path in remove {
-            let url = root.appendingPathComponent(path)
-            guard (try? url.checkResourceIsReachable()) == true || (try? FileManager.default.destinationOfSymbolicLink(atPath: url.path)) != nil else { continue }
-            try trash(url)
+        do {
+            for entry in entries where !completed.contains(entry.path) {
+                recovery.inFlight = entry.path
+                try checkpoint("\(action) was interrupted. Retry \(action.lowercased()) to finish; files may be partially changed.")
+                if targetChanges.contains(entry.path) {
+                    if entry.status == absent {
+                        try trash(root.appendingPathComponent(entry.path))
+                    } else {
+                        try restoreFiles(repository, from: to, paths: [entry.path])
+                    }
+                }
+                recovery.completed.append(entry.path)
+                recovery.inFlight = nil
+                try checkpoint("\(action) was interrupted. Retry \(action.lowercased()) to finish; files may be partially changed.")
+            }
+        } catch {
+            let reason = "\(action) partially applied. Retry \(action.lowercased()) to finish: \(error)"
+            try? checkpoint(reason)
+            publish(agentID)
+            throw ChangesError(ChangesError.gitFailed, reason)
         }
         turnStore.update(agentID) { records in
             guard let i = records.firstIndex(where: { $0.turn.id == turnID }) else { return }
             records[i].turn.state = redo ? .ready : .undone
+            records[i].turn.reason = nil
+            records[i].recovery = nil
         }
+        try turnStore.checkpoint()
         publish(agentID)
         guard let turn = turnStore.published(agentID).last else { throw ChangesError(ChangesError.unavailable, "The turn is gone.") }
         return turn
@@ -299,8 +362,7 @@ extension ChangesService {
     /// throwaway index so the user's is never read for writing), with git's own filters and modes.
     private func restoreFiles(_ repository: Repository, from tree: String, paths: [String]) throws {
         try FileManager.default.createDirectory(at: indexDirectory, withIntermediateDirectories: true)
-        let scratch = indexDirectory.appendingPathComponent(repository.key + ".restore")
-        try? FileManager.default.removeItem(at: scratch)
+        let scratch = indexDirectory.appendingPathComponent(repository.key + ".restore-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: scratch) }
         _ = try ChangesGit.checked(["read-tree", tree], in: repository.root, index: scratch.path)
         _ = try ChangesGit.checked(["restore", "--source=\(tree)", "--worktree", "--pathspec-from-file=-", "--pathspec-file-nul"],

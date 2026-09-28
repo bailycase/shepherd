@@ -112,6 +112,147 @@ struct ChangesTurnTests {
         #expect(!FileManager.default.fileExists(atPath: t.host.trash.path))
     }
 
+    private func drain(_ service: ChangesService, _ agent: AgentID) async {
+        await withCheckedContinuation { continuation in
+            service.captureQueue(agent).async { continuation.resume() }
+        }
+    }
+
+    @Test func aNewTurnStartsWhileThePreviousEndCaptureIsPending() async throws {
+        let repo = try ChangesRepo(files: ["a.txt": "start\n"])
+        let h = try ChangesHarness(repo: repo)
+        h.service.turnStarted(agentID: h.agent, at: 1)
+        await drain(h.service, h.agent)
+        try repo.write("a.txt", "first turn\n")
+        let release = DispatchSemaphore(value: 0)
+        defer { release.signal() }
+        await withCheckedContinuation { continuation in
+            h.service.captureQueue(h.agent).async {
+                continuation.resume()
+                release.wait()
+            }
+        }
+        h.service.turnSettled(agentID: h.agent, at: 2)
+        h.service.turnSettled(agentID: h.agent, at: 99) // duplicate settle cannot replace the end
+        h.service.turnStarted(agentID: h.agent, at: 3)
+        h.service.turnStarted(agentID: h.agent, at: 4) // a retry still belongs to that run
+        h.service.turnMessage(agentID: h.agent, timestamp: 3, text: "second turn")
+        let pending = h.service.turnStore.all(h.agent)
+        #expect(pending.count == 2)
+        #expect(pending.first?.turn.endedAt == 2)
+        #expect(pending.last?.turn.prompt == "second turn")
+        release.signal()
+        await drain(h.service, h.agent)
+        let captured = h.service.turnStore.all(h.agent)
+        #expect(captured.first?.endTree == captured.last?.startTree)
+        try repo.write("a.txt", "second turn\n")
+        h.service.turnSettled(agentID: h.agent, at: 5)
+        await drain(h.service, h.agent)
+        #expect(h.service.turns(agentID: h.agent).map(\.fileCount) == [1, 1])
+        let last = try await h.list(.lastTurn)
+        let diff = try await h.service.file(agentID: h.agent, revision: last.revision, path: "a.txt")
+        #expect(diff.file.hunks.flatMap(\.lines).filter { $0.kind == .removed }.map(\.text) == ["first turn"])
+    }
+
+    @Test func concurrentUndosForDisjointAgentsKeepBothEditsAndTheUserIndexSafe() async throws {
+        let repo = try ChangesRepo(files: ["a.txt": "a\n", "b.txt": "b\n"])
+        let h = try ChangesHarness(repo: repo)
+        let second = AgentID()
+        h.service.agentContext = { _ in ChangesService.AgentContext(cwd: repo.path) }
+        h.service.turnStarted(agentID: h.agent)
+        await drain(h.service, h.agent)
+        try repo.write("a.txt", "changed a\n")
+        h.service.turnSettled(agentID: h.agent)
+        await drain(h.service, h.agent)
+        h.service.turnStarted(agentID: second)
+        await drain(h.service, second)
+        try repo.write("b.txt", "changed b\n")
+        h.service.turnSettled(agentID: second)
+        await drain(h.service, second)
+        let firstTurn = try #require(h.service.turns(agentID: h.agent).last)
+        let secondTurn = try #require(h.service.turns(agentID: second).last)
+        let index = try Data(contentsOf: repo.url.appendingPathComponent(".git/index"))
+
+        async let firstUndo = h.service.undoTurn(agentID: h.agent, turnID: firstTurn.id)
+        async let secondUndo = h.service.undoTurn(agentID: second, turnID: secondTurn.id)
+        let results = try await [firstUndo, secondUndo]
+
+        #expect(results.allSatisfy { $0.state == .undone })
+        #expect(repo.read("a.txt") == "a\n" && repo.read("b.txt") == "b\n")
+        #expect(try Data(contentsOf: repo.url.appendingPathComponent(".git/index")) == index)
+    }
+
+    @Test func anUnreadableChangedFileCannotBeMistakenForTheTurnSnapshot() async throws {
+        let repo = try ChangesRepo(files: ["a.txt": "start\n"])
+        let h = try ChangesHarness(repo: repo)
+        h.service.turnStarted(agentID: h.agent)
+        await drain(h.service, h.agent)
+        try repo.write("a.txt", "turn edit\n")
+        h.service.turnSettled(agentID: h.agent)
+        await drain(h.service, h.agent)
+        let turn = try #require(h.service.turns(agentID: h.agent).last)
+        try repo.write("a.txt", "user edit that must survive\n")
+        let before = try repo.state()
+        let path = repo.url.appendingPathComponent("a.txt").path
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: path) }
+        try #require(!FileManager.default.isReadableFile(atPath: path), "requires an unprivileged test process")
+
+        await #expect(throws: ChangesError.self) { _ = try await h.service.undoTurn(agentID: h.agent, turnID: turn.id) }
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: path)
+        try repo.expectUnchanged(since: before)
+        #expect(h.service.turns(agentID: h.agent).last?.state == .ready)
+    }
+
+    @Test(arguments: [false, true])
+    func aPartialUndoSurvivesRestartAndRetriesWithoutAcceptingLaterEdits(changeAfterFailure: Bool) async throws {
+        let repo = try ChangesRepo(files: ["a.txt": "original\n"])
+        let directory = try makeScratchDirectory("recovery")
+        let trash = directory.appendingPathComponent("Trash")
+        try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: true)
+        let fail = Locked(true)
+        let move: ChangesService.Trash = { url in
+            if url.lastPathComponent == "z2.txt", fail.withValue({ $0 }) { throw CommandFailure("trash", "injected failure") }
+            try FileManager.default.moveItem(at: url, to: trash.appendingPathComponent(url.lastPathComponent))
+        }
+        let service = ChangesService(directory: directory, trash: move)
+        let agent = AgentID()
+        service.agentContext = { _ in ChangesService.AgentContext(cwd: repo.path) }
+        service.turnStarted(agentID: agent)
+        await drain(service, agent)
+        try repo.write("a.txt", "turn edit\n")
+        try repo.write("z1.txt", "new one\n")
+        try repo.write("z2.txt", "new two\n")
+        service.turnSettled(agentID: agent)
+        await drain(service, agent)
+        let turn = try #require(service.turns(agentID: agent).last)
+        let index = try Data(contentsOf: repo.url.appendingPathComponent(".git/index"))
+
+        let failure = await #expect(throws: ChangesError.self) { _ = try await service.undoTurn(agentID: agent, turnID: turn.id) }
+
+        #expect(failure?.message.contains("partially applied") == true)
+        #expect(repo.read("a.txt") == "original\n" && repo.read("z1.txt") == nil && repo.read("z2.txt") == "new two\n")
+        service.turnStore.flush()
+        let restarted = ChangesService(directory: directory, trash: move)
+        #expect(restarted.turns(agentID: agent).last?.reason?.contains("partially applied") == true)
+        fail.withValue { $0 = false }
+        if changeAfterFailure {
+            try repo.write("a.txt", "later user edit\n")
+            let before = try repo.state()
+            let error = await #expect(throws: ChangesError.self) { _ = try await restarted.undoTurn(agentID: agent, turnID: turn.id) }
+            #expect(error?.code == ChangesError.changedSince && error?.files == ["a.txt"])
+            try repo.expectUnchanged(since: before)
+        } else {
+            let result = try await restarted.undoTurn(agentID: agent, turnID: turn.id)
+            #expect(result.state == .undone && result.reason == nil && result.canRedo)
+            #expect(repo.read("a.txt") == "original\n" && repo.read("z2.txt") == nil)
+            _ = try await restarted.redoTurn(agentID: agent, turnID: turn.id)
+            #expect(repo.read("a.txt") == "turn edit\n" && repo.read("z1.txt") == "new one\n" && repo.read("z2.txt") == "new two\n")
+        }
+        #expect(try Data(contentsOf: repo.url.appendingPathComponent(".git/index")) == index)
+    }
+
     /// The next turn ends the last one's Undo; the engine's turns and their Undo also reach a
     /// remote client, which falls back to nothing it does not know.
     @Test func turnsAndUndoTravelTheRemoteProtocol() async throws {
