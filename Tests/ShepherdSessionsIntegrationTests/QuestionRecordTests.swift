@@ -28,7 +28,7 @@ struct QuestionRecordTests {
     private func settled(_ pi: PiAgent) async throws -> NativeThreadSnapshot {
         try await pi.snapshot("the run to settle with its question recorded") { s in
             !s.running && s.messages.contains { $0.question != nil }
-                && s.messages.last(where: { $0.question == nil })?.role == "assistant"
+                && s.messages.last(where: { $0.question == nil })?.blocks.contains { $0.text.hasPrefix("Going with ") } == true
         }
     }
 
