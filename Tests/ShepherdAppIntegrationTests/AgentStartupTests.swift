@@ -68,7 +68,11 @@ struct AgentStartupTests {
         await sending.value
 
         #expect(store.sentCount == 1 && store.draft.isEmpty && store.notice == nil)
-        #expect(store.ready && !store.starting && store.loadError == nil)
+        // A pushed refresh may supersede the send's own refresh. Acceptance is already
+        // known, but readiness belongs to the latest pull rather than the send Task's return.
+        try await eventuallyOnMain("the latest pull to show the ready thread") {
+            store.ready && !store.starting && store.loadError == nil
+        }
         try await eventuallyAsync("pi to receive the message sent while it started", timeout: .seconds(20)) {
             guard case .snapshot(let snapshot)? = try? await server.nativeThread(agentID: id, request: .snapshot()) else { return false }
             return snapshot.messages.contains { $0.role == "user" && $0.blocks.contains { $0.text == "hello while starting" } }
