@@ -447,12 +447,14 @@ struct QueueTests {
         let running = try await startRun(pi)
         let id = UUID()
         _ = try await pi.send("keep me", operationID: id, from: running)
-        // Each control character takes six JSON bytes, though the text itself is only 16 KiB.
-        let escaped = String(repeating: "\u{0001}", count: 16 * 1024)
+        // Each request is below the 64 KiB wire cap, but two together exceed the queue's
+        // encoded budget: six JSON bytes per control character, only 16 KiB raw in total.
+        let escaped = String(repeating: "\u{0001}", count: 8 * 1024)
+        #expect(try await pi.send(escaped, from: running).failureCode == nil)
         #expect(try await pi.queue(.edit(id: id, text: escaped), from: running).failureCode == "queue_full")
         #expect(try await pi.send(escaped, from: running).failureCode == "queue_full")
-        let snapshot = try await pi.snapshot { $0.queue?.items.count == 1 }
-        #expect(snapshot.queue?.items.first?.text == "keep me")
+        let snapshot = try await pi.snapshot { $0.queue?.items.count == 2 }
+        #expect(snapshot.queue?.items.map(\.text) == ["keep me", escaped])
         #expect(try JSONEncoder().encode(RemoteReply.nativeThread(id: 1, result: .snapshot(value: snapshot))).count < NDJSON.maxPayloadBytes)
     }
 

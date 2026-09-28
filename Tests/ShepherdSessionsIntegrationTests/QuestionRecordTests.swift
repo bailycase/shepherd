@@ -23,10 +23,12 @@ struct QuestionRecordTests {
                                             dialogID: dialog.id, answer: answer))
     }
 
-    /// Once the run settles with the question recorded.
+    /// Once the run settles with the question recorded. A delayed host deadline can stamp an
+    /// expired question after pi's final reply; the last pi message must still be that reply.
     private func settled(_ pi: PiAgent) async throws -> NativeThreadSnapshot {
         try await pi.snapshot("the run to settle with its question recorded") { s in
-            !s.running && s.messages.contains { $0.question != nil } && s.messages.last?.role == "assistant"
+            !s.running && s.messages.contains { $0.question != nil }
+                && s.messages.last(where: { $0.question == nil })?.role == "assistant"
         }
     }
 
@@ -74,6 +76,27 @@ struct QuestionRecordTests {
         let record = try #require(done.messages.first { $0.question != nil }?.question)
         #expect(record.outcome == outcome && record.answer == nil && record.confirmed == nil)
         #expect(done.dialogs.isEmpty)
+    }
+
+    @Test func aHostTimeoutAfterTheTurnSettlesStillPlacesTheQuestionInHistory() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        _ = try await ask(pi, "question-timeout-late-host")
+        // The stub completes its turn before the host's dialog deadline. Observing its saved
+        // final reply proves the refresh occurred while the dialog was still pending.
+        let before = try await pi.snapshot("pi to settle before the host deadline") {
+            !$0.running && !$0.dialogs.isEmpty
+                && $0.messages.last?.blocks.first?.text == "Going with (no answer)"
+        }
+        #expect(!before.messages.contains { $0.question != nil })
+        let after = try await pi.snapshot("the late timeout record to enter history") {
+            $0.dialogs.isEmpty && $0.messages.contains { $0.question?.outcome == .expired }
+        }
+        #expect(!after.running)
+        #expect(after.messages.filter { $0.question != nil }.count == 1)
+        #expect(!after.provisional.contains { $0.question != nil })
+        #expect(pi.stdin("prompt").count == 1)
     }
 
     /// Stop refuses the question pi waits on (the Mac's dock has no Dismiss); the thread

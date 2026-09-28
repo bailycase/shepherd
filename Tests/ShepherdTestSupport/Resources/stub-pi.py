@@ -485,9 +485,10 @@ def question_turn(prompt):
                "title": "How should I handle Horizon's uncommitted edits?",
                "options": ["Compare, keep what's unique, then go through GitHub (Recommended)\nNew branch and PR for anything not merged.",
                            "Leave Horizon alone"]}
-    timeout = 0.15 if prompt == "question-timeout" else 30.0
-    if prompt == "question-timeout":
-        request["timeout"] = 150
+    timeout = 0.15 if prompt.startswith("question-timeout") else 30.0
+    if prompt.startswith("question-timeout"):
+        # Model a host timer delayed behind the history refresh, without blocking test queues.
+        request["timeout"] = 1000 if prompt == "question-timeout-late-host" else 150
     emit(request)
     QUESTION["answered"].wait(timeout)
     response = QUESTION["response"] or {}
@@ -762,7 +763,7 @@ for raw in sys.stdin.buffer:
             emit({"type": "agent_start"})
             emit({"type": "extension_ui_request", "id": "uuid-3", "method": "select",
                   "title": "Pick one", "options": ["Allow", "Deny"]})
-        elif message in ("question", "question-timeout"):
+        elif message in ("question", "question-timeout", "question-timeout-late-host"):
             turn_thread = threading.Thread(target=question_turn, args=(message,), daemon=True)
             turn_thread.start()
         elif message == "ask-choice":
