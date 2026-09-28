@@ -2341,8 +2341,8 @@ public final class SessionServer: @unchecked Sendable {
         switch message {
         case .setAgentStatus(let agentID, let status):
             applyAgentStatus(agentID: agentID, status: status)
-        case .setAgentName(let agentID, let name):
-            applyAgentName(agentID: agentID, name: name)
+        case .setAgentName(let agentID, let name, let sessionID):
+            applyAgentName(agentID: agentID, name: name, sessionID: sessionID)
         case .setAgentSession(let agentID, let piSessionID):
             applyAgentSession(agentID: agentID, piSessionID: piSessionID)
         case .setAgentChildren(let agentID, let children):
@@ -3223,13 +3223,14 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Apply a namer-proposed title. Provisional names only: a user rename (or
     /// a title that already landed) marks the agent final and wins forever.
-    private func applyAgentName(agentID: AgentID, name: String) {
+    private func applyAgentName(agentID: AgentID, name: String, sessionID: String?) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         guard let index = store.state.agents.firstIndex(where: { $0.id == agentID }) else {
             ShepherdLog.warning("setAgentName for unknown agent \(agentID); dropped")
             return
         }
+        if let sessionID, sessionID != store.state.agents[index].effectivePiSessionID { return }
         guard !store.state.agents[index].nameIsFinal else {
             ShepherdLog.info("setAgentName for agent \(agentID) ignored; name is final")
             return
