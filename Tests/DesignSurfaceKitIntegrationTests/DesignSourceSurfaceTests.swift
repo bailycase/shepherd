@@ -11,18 +11,21 @@ import WebKit
 private final class SourcedFiles: DesignFileSource, @unchecked Sendable {
     let files: [String: Data]
     let blobs: [String: (name: String, data: Data)]
+    let stylesheetDelay: Duration
     private let lock = NSLock()
     private var asked: [String] = []
 
-    init(files: [String: Data], blobs: [String: (name: String, data: Data)]) {
+    init(files: [String: Data], blobs: [String: (name: String, data: Data)], stylesheetDelay: Duration = .zero) {
         self.files = files
         self.blobs = blobs
+        self.stylesheetDelay = stylesheetDelay
     }
 
     var requested: [String] { lock.withLock { asked } }
 
     func projectFile(_ path: String) async -> Data? {
         lock.withLock { asked.append(path) }
+        if path.hasSuffix(".css"), stylesheetDelay > .zero { try? await Task.sleep(for: stylesheetDelay) }
         return files[path]
     }
 
@@ -81,6 +84,27 @@ struct DesignSourceSurfaceTests {
             #expect(text == "Pinned rows 7")
         }
         #expect(!transport.requested.current.contains("canvas.json"))
+    }
+
+    @Test func loadingWaitsForStylesheetsHoistedFromTheTemplate() async throws {
+        let html = """
+        <html><head><script src="./support.js"></script></head><body><x-dc>
+        <helmet><link rel="stylesheet" href="./sample.css"></helmet>
+        <button id="sample">Sample</button>
+        </x-dc></body></html>
+        """
+        // A slow resource response, not a sleep used to wait for the assertion.
+        let source = SourcedFiles(files: ["Main.dc.html": Data(html.utf8),
+            "sample.css": Data("#sample { color: rgb(12, 34, 56); border-radius: 13px; }".utf8)],
+            blobs: [:], stylesheetDelay: .milliseconds(200))
+        let surface = DesignSurface(designID: DesignID(), source: source, network: .none)
+        let view = DesignBoardView(surface: surface, board: try #require(DesignPath("Main.dc.html")), size: CGSize(width: 320, height: 92))
+        try await view.load()
+        let style = try await view.webView.callAsyncJavaScript("""
+            const style = getComputedStyle(document.getElementById('sample'));
+            return style.color + '|' + style.borderRadius;
+            """, arguments: [:], in: nil, contentWorld: .page) as? String
+        #expect(style == "rgb(12, 34, 56)|13px", "load must not finish with unstyled component defaults")
     }
 
     @Test func aBoardRendersFromAFileSource() async throws {
