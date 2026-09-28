@@ -169,6 +169,21 @@ struct DesignExportFlowTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: root.path) == [destination.lastPathComponent])
     }
 
+    @Test(arguments: [false, true])
+    func replacingAnExistingExportPublishesTheCompleteNewFileOrFolder(isFolder: Bool) async throws {
+        let root = try makeScratchDirectory("export-success")
+        let destination = root.appendingPathComponent(isFolder ? "Pages" : "A.html")
+        if isFolder { try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true) }
+        let old = isFolder ? destination.appendingPathComponent("old.html") : destination
+        try Data("previous export".utf8).write(to: old)
+        let outputs = isFolder ? ["A.html": Data("new A".utf8), "nested/B.html": Data("new B".utf8)] : ["A.html": Data("new A".utf8)]
+        let boards = outputs.keys.sorted().map { DesignPath($0.replacingOccurrences(of: ".html", with: ".dc.html"))! }
+        try await DesignExporter.place(outputs, format: .html, boards: boards, name: "Pages", at: destination)
+        if isFolder { #expect(files(destination) == outputs) }
+        else { #expect(try Data(contentsOf: destination) == outputs["A.html"]) }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: root.path) == [destination.lastPathComponent])
+    }
+
     // MARK: Formats
 
     @Test func aZipHoldsThePagesTokensUploadsAndTheCanvasAsAProjectFolder() async throws {

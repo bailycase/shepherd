@@ -278,9 +278,8 @@ extension DesignIndex {
                 guard let entry = JSONFields.object(value).flatMap(Board.init(json:)) else {
                     throw DesignIndexDecodingError("board \"\(key)\" needs numbers for x, y, w and h")
                 }
-                guard [entry.x, entry.y].allSatisfy({ Int(exactly: $0.rounded()) != nil }),
-                      entry.w > 0, entry.h > 0,
-                      entry.w <= Self.boardSizeRange.upperBound, entry.h <= Self.boardSizeRange.upperBound else {
+                guard [entry.x, entry.y, entry.w, entry.h].allSatisfy({ Int(exactly: $0.rounded()) != nil }),
+                      entry.w > 0, entry.h > 0 else {
                     throw DesignIndexDecodingError("board \"\(key)\" has geometry outside the supported numeric range")
                 }
                 boards[path] = entry

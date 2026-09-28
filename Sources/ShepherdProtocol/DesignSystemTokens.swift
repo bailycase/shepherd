@@ -250,7 +250,7 @@ extension DesignSystemTokens {
             guard let name = Self.take(&f, "name")?.stringValue, let value = Self.take(&f, "value")?.stringValue else {
                 throw DesignSystemTokensError("a color needs a name and a value")
             }
-            return Color(name: name, value: value, dark: Self.take(&f, "dark")?.stringValue,
+            return try Color(name: name, value: value, dark: Self.take(&f, "dark")?.stringValue,
                          source: Self.source(Self.take(&f, "source")), extra: f)
         }
         type = try list("type").map { fields in
@@ -258,7 +258,7 @@ extension DesignSystemTokens {
             guard let name = Self.take(&f, "name")?.stringValue, let size = Self.number(Self.take(&f, "size")) else {
                 throw DesignSystemTokensError("a type style needs a name and a size")
             }
-            return TypeStyle(name: name, size: size, weight: Self.number(Self.take(&f, "weight")).map { Int($0) },
+            return try TypeStyle(name: name, size: size, weight: Self.integer(Self.take(&f, "weight")),
                              lineHeight: Self.number(Self.take(&f, "lineHeight")), family: Self.take(&f, "family")?.stringValue,
                              tracking: Self.number(Self.take(&f, "tracking")), transform: Self.take(&f, "transform")?.stringValue,
                              sample: Self.take(&f, "sample")?.stringValue, source: Self.source(Self.take(&f, "source")), extra: f)
@@ -275,7 +275,7 @@ extension DesignSystemTokens {
         components = try list("components").map { fields in
             var f = fields
             guard let name = Self.take(&f, "name")?.stringValue else { throw DesignSystemTokensError("a component needs a name") }
-            return Component(name: name, source: Self.source(Self.take(&f, "source")), specimen: Self.take(&f, "specimen")?.stringValue,
+            return try Component(name: name, source: Self.source(Self.take(&f, "source")), specimen: Self.take(&f, "specimen")?.stringValue,
                              export: Self.take(&f, "export")?.stringValue, extra: f)
         }
     }
@@ -318,7 +318,7 @@ extension DesignSystemTokens {
                 }
                 let font = Self.take(&f, "font")?.stringValue
                 if let font, families[font] == nil { f["font"] = .string(font) }
-                return TypeStyle(name: name, size: size, weight: Self.number(Self.take(&f, "weight")).map { Int($0) },
+                return try TypeStyle(name: name, size: size, weight: Self.integer(Self.take(&f, "weight")),
                                  lineHeight: Self.number(Self.take(&f, "lineHeight")),
                                  family: font.flatMap { families[$0] } ?? Self.take(&f, "family")?.stringValue,
                                  tracking: Self.number(Self.take(&f, "tracking")), transform: Self.take(&f, "transform")?.stringValue,
@@ -343,7 +343,7 @@ extension DesignSystemTokens {
         guard let name = take(&f, "name")?.stringValue, let px = number(take(&f, "px")) else {
             throw DesignSystemTokensError("a step needs a name and px")
         }
-        return Length(name: name, px: px, source: source(take(&f, "source")), extra: f)
+        return try Length(name: name, px: px, source: source(take(&f, "source")), extra: f)
     }
 
     private static func take(_ fields: inout [String: JSONValue], _ key: String) -> JSONValue? {
@@ -354,11 +354,19 @@ extension DesignSystemTokens {
         value?.doubleValue.flatMap { $0.isFinite ? $0 : nil }
     }
 
+    private static func integer(_ value: JSONValue?) throws -> Int? {
+        guard let number = number(value) else { return nil }
+        guard let integer = Int(exactly: number) else {
+            throw DesignSystemTokensError("weight and source line must be representable whole numbers")
+        }
+        return integer
+    }
+
     /// `{"file": "tokens.css", "line": 8}`, or the same written `"tokens.css:8"`.
-    private static func source(_ value: JSONValue?) -> Source? {
+    private static func source(_ value: JSONValue?) throws -> Source? {
         guard let value else { return nil }
         if let fields = value.objectValue, let file = fields["file"]?.stringValue {
-            return Source(file: file, line: number(fields["line"]).map { Int($0) })
+            return try Source(file: file, line: integer(fields["line"]))
         }
         if let text = value.stringValue, !text.isEmpty {
             if let colon = text.lastIndex(of: ":"), let line = Int(text[text.index(after: colon)...]) {

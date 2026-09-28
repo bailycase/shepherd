@@ -103,6 +103,24 @@ struct DesignReferenceIntegrationTests {
         #expect(try await h.server.designs.pinnedBoard(id, path: Self.board, revision: first.revision)?.source == first.source)
     }
 
+    @Test func historicalFreshnessReadsOnlyTheManifest() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let id = try await design(h, system: false)
+        let pin = try await h.server.designs.pinBoard(id, path: Self.board)
+        let render = try #require(try await h.server.designs.pinnedRender(id, revision: pin.revision, boards: [Self.board]))
+        #expect(try await h.server.designs.renderSHA(id) == render.sha256)
+        let folder = try #require(h.server.designs.folder(for: id)).appendingPathComponent("pins")
+        // Corrupt only the historical source object: a manifest lookup must not read it.
+        try Data("not the pinned source".utf8).write(to: folder.appendingPathComponent(pin.sha256 + DesignPath.fileExtension))
+        #expect(try await h.server.designs.pinnedRenderSHA(id, revision: pin.revision) == render.sha256)
+        await #expect(throws: (any Error).self) {
+            try await h.server.designs.pinnedRender(id, revision: pin.revision, boards: [Self.board])
+        }
+        _ = try await h.server.updateDesignIndex(id, patch: DesignIndex.tweakPatch(Self.board, ["rows": .number(7)]))
+        #expect(try await h.server.designs.renderSHA(id) != render.sha256)
+    }
+
     @Test func legacySourceOnlyPinsNeverSubstituteTodaysRendering() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }

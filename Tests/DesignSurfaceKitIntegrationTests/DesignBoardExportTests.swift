@@ -93,6 +93,15 @@ struct DesignBoardExportTests {
         #expect(page.contains(">bad</a>"), "the link's text stays, without its script")
     }
 
+    @Test func anUnsafeRenderSizeIsRefusedBeforeWebKitNavigates() async throws {
+        let harness = try BoardHarness()
+        let view = try harness.view("Main.dc.html", size: CGSize(width: 1e100, height: 300))
+        await #expect(throws: DesignBoardError.self) { try await view.load() }
+        #expect(view.navigationsStarted == 0)
+        #expect(view.frame.size == .zero && view.webView.frame.size == .zero)
+        await #expect(throws: DesignBoardError.self) { try await view.image(scale: 2) }
+    }
+
     @Test func anImageIsTwiceTheBoardsSize() async throws {
         let harness = try BoardHarness()
         let view = try harness.view("Main.dc.html")

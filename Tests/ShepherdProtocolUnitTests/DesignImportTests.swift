@@ -83,6 +83,20 @@ struct DesignImportTests {
         #expect(((json["notes"] as? [String: Any])?["n"] as? [String: Any])?["points"] as? [Int] == [1, 2])
     }
 
+    @Test(arguments: [8001, 10000])
+    func tallLegacyFlowDocumentsKeepTheirGeometryAndUnknownKeys(height: Int) throws {
+        let data = Data("""
+            {"v":3,"title":"Tall","boards":{"Report.dc.html":{"x":0,"y":0,"w":816,"h":\(height),"print":"flow","custom":{"kept":true}}},"order":["Report.dc.html"]}
+            """.utf8)
+        let decoded = try DesignIndex.decode(data)
+        let imported = try DesignImport.index(data, fallbackTitle: "unused")
+        let path = DesignPath("Report.dc.html")!
+        #expect(decoded.boards[path]?.h == Double(height))
+        #expect(imported.data == data)
+        #expect(imported.index.boards[path]?.extra["custom"] == .object(["kept": .bool(true)]))
+        #expect(try decoded.merging(.object(["title": .string("Renamed")])).boards[path]?.h == Double(height))
+    }
+
     @Test func unsafeGeometryIsRefusedWithoutTerminatingTheHost() async {
         await #expect(processExitsWith: .success) {
             for geometry in ["\"x\":0,\"y\":0,\"w\":1e100,\"h\":300",

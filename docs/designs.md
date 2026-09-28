@@ -23,8 +23,12 @@ serves its own runtime there.
   shape than expected is kept as it came, too.
 - **Unreadable:** a version other than 3, a board keyed by a path outside the grammar, or a board
   without numbers for `x`, `y`, `w` and `h`. Geometry must be safe to render: coordinates must
-  round to a native integer, and dimensions must be positive and at most 8000. Unsafe values
-  refuse decoding, including old saved canvases, rather than reaching the native renderer.
+  round to a native integer, and dimensions must be positive and round to a native integer.
+  Unsafe values refuse decoding, including old saved canvases. Tall legacy documents (including
+  8001 and 10000 px) stay lossless; the 40–8000 authoring rule does not reject their import.
+  Native rendering has separate allocation limits: 131072 CSS px per edge and 128 million CSS
+  pixels in a layout (enough for 100 A4 flow pages), and 64 million output pixels per bitmap.
+  Larger stored boards report a rendering refusal instead of allocating or changing the canvas.
 - **Order:** `order` lists each board once, back to front. `inSync()` drops stray entries and
   appends unlisted boards by path.
 - **Updates** (canvas_update) are JSON merge patches (RFC 7396): objects merge key by key, `null`
@@ -935,8 +939,8 @@ Designs until the viewer's choice, if one is needed, is made.
   512 files, 16 MB a file and 1 GB in all (`maxProjectBytes`; an export still reads at most 256 MB
   of a project's other files); uploads are `assets/<id>.<ext>`. Each file is opened without
   following a link and checked for its size before it is read. Hidden files and any `support.js`
-  (Shepherd serves its own runtime there) are left behind. Imported board dimensions must be
-  40–8000; unsafe geometry refuses the import without changing the original canvas or its metadata.
+  (Shepherd serves its own runtime there) are left behind. Imported geometry uses the safe numeric
+  rules above, not the narrower authoring size range; original metadata and tall flow sizes stay.
 - **Boards** are read in canvas order and copied into `.import-<token>/` as they are, the
   progress counting them (`DesignImportProgress`: checking, then "7 of 12 boards", then opening).
   A board whose markup points outside the project (`DesignImport.outsideReferences`: a `src`,
@@ -1015,7 +1019,8 @@ shepherd-design-ref://<host>/<designID>[/<board view name>[#<tid>:<path>]][@<rev
   The newest 200 revisions are retained; after the trimmed index is written successfully, only
   unreferenced hash objects are removed. An unreadable or unwritable index refuses the pin and
   never authorizes collection. Inputs are capped at 16 MB per file and 256 MB per pin; a pin over
-  the cap fails explicitly rather than omitting dependencies. It answers `PreparedDesignReference`: the pinned, labelled
+  the cap fails explicitly rather than omitting dependencies. Freshness reads historical hashes
+  from the manifest alone and hashes current files one at a time without retaining their bytes. It answers `PreparedDesignReference`: the pinned, labelled
   reference, what the host read (the design's name, the board's title and size, the element's
   words and `data-el` name or tag), and `outline` (`DesignReferenceOutline`), what a send of it
   carries, which the sheet's footer says (`DesignReferencePresentation.sends`: "Sends a picture,
