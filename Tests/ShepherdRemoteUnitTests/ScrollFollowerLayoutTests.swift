@@ -38,10 +38,10 @@ struct ScrollFollowerLayoutTests {
              new: probe(offset: 1120), sticky: true, repins: false),
         Case(testDescription: "detached, growth is left where it is and is not output by itself",
              start: NativeScrollFollower(sticky: false), new: probe(content: 2400, offset: 1120), sticky: false, repins: false),
-        Case(testDescription: "history shrinking under a stale offset returns from past the tail",
-             new: probe(content: 1000), sticky: true, repins: true),
-        Case(testDescription: "a composer collapse returns from past the tail",
-             new: probe(container: 620, inset: 20), sticky: true, repins: true),
+        Case(testDescription: "history shrinking lets native size anchoring settle first",
+             new: probe(content: 1000), sticky: true, repins: false),
+        Case(testDescription: "a composer collapse lets native size anchoring settle first",
+             new: probe(container: 620, inset: 20), sticky: true, repins: false),
         Case(testDescription: "a layout change that leaves it at the tail needs no scroll",
              new: probe(content: 2002, offset: 1422), sticky: true, repins: false),
     ]
@@ -86,6 +86,20 @@ struct ScrollFollowerLayoutTests {
         let pastShortContent = Self.probe(content: 300, offset: 400)
         let repairShort = follower.observe(from: short, to: pastShortContent, gesture: false)
         #expect(repairShort)
+    }
+
+    @Test func nativeMarginsAndIntermediateLayoutDoNotTriggerOverscrollRepair() {
+        var follower = NativeScrollFollower()
+        let margin = Self.probe(offset: 1448)
+        #expect(!follower.observe(from: Self.tail, to: margin, gesture: false))
+        let shrinking = Self.probe(content: 1000)
+        #expect(!follower.observe(from: Self.tail, to: shrinking, gesture: false))
+        let staleOffset = Self.probe(content: 1000, offset: 1500)
+        #expect(follower.observe(from: shrinking, to: staleOffset, gesture: false))
+        let collapsed = Self.probe(container: 720, inset: 0)
+        #expect(!follower.observe(from: Self.tail, to: collapsed, gesture: false))
+        let staleCollapseOffset = Self.probe(offset: 1500, container: 720, inset: 0)
+        #expect(follower.observe(from: collapsed, to: staleCollapseOffset, gesture: false))
     }
 
     @Test func theTailIsZeroAndFittingContentIsNegative() {
