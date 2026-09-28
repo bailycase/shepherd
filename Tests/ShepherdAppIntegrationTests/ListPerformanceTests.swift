@@ -753,18 +753,26 @@ struct ListPerformanceTests {
         let thread = FakeThread(ThreadFixture.snapshot(turn, provisional: [ThreadFixture.streaming(Self.codeReply(2))], running: true))
         defer { thread.close() }
         try await thread.waitUntilReady()
-        try await Task.sleep(for: .milliseconds(500))
-        ListPerf.settle(thread.window)
+        let initialCode = CodeHighlightCache.Key(fence: Self.codeReply(2).components(separatedBy: "```swift\n")[1], language: "swift")
+        try await eventuallyOnMain("initial complete code lines to finish highlighting") {
+            ListPerf.settle(thread.window)
+            return CodeHighlightCache.cached(initialCode.prefix(lines: 2)) != nil
+        }
 
         let burst = try await counting(thread.window) {
+            // Deliver a burst without forcing fifteen full native layouts between chunks.
+            // Those layouts can span several throttle intervals on a busy machine.
             for chunk in 1...15 {
                 var next = thread.snapshot
                 next.revision += 1
                 next.provisional = [ThreadFixture.streaming(Self.codeReply(2 + chunk * 6) + "    let partial")]
                 await thread.serve(next)
-                ListPerf.settle(thread.window)
             }
-            try await Task.sleep(for: .milliseconds(600))
+            let code = CodeHighlightCache.Key(fence: (Self.codeReply(92) + "    let partial").components(separatedBy: "```swift\n")[1], language: "swift")
+            try await eventuallyOnMain("burst's final complete lines to finish highlighting") {
+                ListPerf.settle(thread.window)
+                return CodeHighlightCache.cached(code.prefix(lines: 93)) != nil
+            }
         }
         let finished = try await counting(thread.window) {
             var next = thread.snapshot
@@ -773,7 +781,11 @@ struct ListPerformanceTests {
             next.messages = turn + [ThreadFixture.assistant("done", Self.codeReply(2 + 15 * 6) + "    let partial\n}\n```\n")]
             next.provisional = []
             await thread.serve(next)
-            try await Task.sleep(for: .milliseconds(600))
+            let code = CodeHighlightCache.Key(fence: (Self.codeReply(92) + "    let partial\n}").components(separatedBy: "```swift\n")[1], language: "swift")
+            try await eventuallyOnMain("finished code block to finish highlighting") {
+                ListPerf.settle(thread.window)
+                return CodeHighlightCache.cached(code) != nil
+            }
         }
 
         #expect((1...2).contains(burst["highlight.render", default: 0]), "\(burst)")
