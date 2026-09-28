@@ -26,6 +26,14 @@ struct HerdrSession: Decodable {
 }
 
 enum HerdrImport {
+    /// Only a missing workspace starts empty. An unreadable one must never be overwritten.
+    static func existingState(at url: URL, read: (URL) throws -> Data = { try Data(contentsOf: $0) }) throws -> ShepherdState {
+        let data: Data
+        do { data = try read(url) }
+        catch CocoaError.fileReadNoSuchFile { return ShepherdState() }
+        return try JSONDecoder().decode(ShepherdState.self, from: data)
+    }
+
     struct Summary {
         var spacesAdded = 0
         var agentsAdded = 0

@@ -173,6 +173,47 @@ struct WorkspaceNavigationTests {
         #expect(vm.mountedTabs.contains { $0.id == agents[0].tab.id })
     }
 
+    @Test func foregroundSettingsAndPaletteRemoveWorkspaceKeyboardOwnership() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        let agent = Fixture.agent("ask", in: space)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        vm.selectAgent(agent.agent.id)
+        vm.focusedPaneID = agent.piPane.id
+        func focus() -> PaneID? {
+            AgentLayoutModel.Resolver(vm: vm, visibleTabID: agent.tab.id).model(for: agent.tab).focusedPaneID
+        }
+        #expect(focus() == agent.piPane.id)
+        vm.showSettings = true
+        #expect(focus() == nil)
+        vm.showSettings = false
+        vm.showCommandPalette = true
+        #expect(focus() == nil)
+        vm.showCommandPalette = false
+        vm.showComponentGallery = true
+        #expect(focus() == nil)
+        vm.showComponentGallery = false
+        #expect(focus() == agent.piPane.id)
+    }
+
+    @Test func deferredHiddenMountsStartTheirParkingClockWithoutNavigation() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        let agents = (0..<8).map { Fixture.agent("a\($0)", in: space, order: $0, auxiliary: 1) }
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents))
+        vm.selectAgent(agents[0].agent.id)
+        vm.noteActiveTabVisited()
+        while vm.mountNextPending() {}
+        let active = vm.activeTabID
+        #expect(vm.mountedTabs.count == agents.count)
+        vm.sweepColdPanes(now: Date().addingTimeInterval(60))
+        #expect(!vm.parkedTabIDs.isEmpty)
+        #expect(active.map { !vm.parkedTabIDs.contains($0) } == true)
+        #expect(vm.tabHiddenSince.count == agents.count - 1)
+    }
+
     /// A layout that is only a thread never parks: it has no surface to release and polls
     /// nothing while hidden, so returning to it after any time away is a flip.
     @Test func threadOnlyLayoutsNeverPark() async throws {

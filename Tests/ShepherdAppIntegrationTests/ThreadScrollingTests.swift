@@ -521,6 +521,101 @@ struct ThreadScrollingTests {
         #expect(abs(after - before) < 2, "prepending moved the visible turn from \(before) to \(after)")
     }
 
+    /// A real clip view provides exact partial-row geometry without SwiftUI's outstanding
+    /// programmatic turn jump undoing the test's scroll before the page can arrive.
+    @Test(arguments: [false, true])
+    func aPartialHistoryAnchorRestoresItsOffsetUnlessNavigationCancelledIt(cancelled: Bool) async throws {
+        final class Document: NSView {
+            override var isFlipped: Bool { true }
+        }
+        let window = OffscreenWindow(size: CGSize(width: 500, height: 300))
+        defer { window.close() }
+        let scroll = NSScrollView(frame: window.host.bounds)
+        scroll.autoresizingMask = [.width, .height]
+        let document = Document(frame: CGRect(x: 0, y: 0, width: 500, height: 2000))
+        scroll.documentView = document
+        window.host.addSubview(scroll)
+        let marker = ThreadHistoryAnchor.Marker(frame: CGRect(x: 0, y: 100, width: 500, height: 60))
+        document.addSubview(marker)
+        let anchor = ThreadHistoryAnchor()
+        marker.attach(to: anchor, rowID: "boundary")
+        window.layout()
+        let clip = scroll.contentView
+        func move(to y: CGFloat) {
+            clip.scroll(to: clip.constrainBoundsRect(CGRect(origin: CGPoint(x: 0, y: y), size: clip.bounds.size)).origin)
+            scroll.reflectScrolledClipView(clip)
+        }
+        move(to: 108)
+        let before = try #require(marker.viewportTop)
+        #expect(abs(before + 8) < 0.25, "the retained row really is partially clipped: \(before)")
+        let token = anchor.begin("boundary", session: "s")
+        if cancelled {
+            anchor.cancel()
+            move(to: 600)
+        }
+        // Exactly the production ordering: model commit finishes, then new row layout arrives.
+        anchor.finished(token, firstID: "older")
+        document.frame.size.height += 700
+        marker.frame.origin.y += 700
+        let navigationOffset = clip.bounds.origin.y
+        var materializations = 0
+        anchor.prepended(firstID: "older", session: "s", active: true) { id in
+            #expect(id == "boundary")
+            materializations += 1
+            move(to: marker.frame.minY)
+        }
+        anchor.moved()
+        // Drain queued correction callbacks before asserting the cancellation branch too.
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+        if cancelled {
+            #expect(materializations == 0)
+            #expect(abs(clip.bounds.origin.y - navigationOffset) < 0.25)
+        } else {
+            #expect(materializations == 1)
+            let after = try #require(marker.viewportTop)
+            #expect(abs(after - before) < 2, "partial row moved from \(before) to \(after)")
+            // A later lazy measurement moves the row again: preserve the same fractional offset.
+            marker.frame.origin.y += 37.5
+            anchor.moved()
+            await withCheckedContinuation { continuation in
+                DispatchQueue.main.async { continuation.resume() }
+            }
+            #expect(abs(try #require(marker.viewportTop) - before) < 2)
+        }
+    }
+
+    @Test func navigatingToTheTailWhileHistoryWaitsCancelsItsOldAnchor() async throws {
+        let thread = ThreadHarness(messages: 24, paragraphs: 2, olderCursor: "m0")
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        for _ in 0..<12 {
+            thread.command(.previousTurn)
+            try await thread.settle()
+        }
+        try await eventuallyOnMain("the history reply to wait") { thread.olderReply != nil }
+        // isPinned includes the 80pt sticky band. Step past the final user turn so this
+        // comparison starts at the actual tail, not a gap that growth correctly repins.
+        for _ in 0..<12 {
+            thread.command(.nextTurn)
+            try await thread.settle()
+        }
+        try await eventuallyOnMain("navigation to land on the exact tail") { abs(thread.distanceFromBottom) < 2 }
+        let before = try #require(try thread.position(of: "Question 22"))
+        var page = ThreadHarness.snapshot(count: 12, running: false, prefix: "older", paragraphs: 7)
+        page.olderCursor = "older0"
+        thread.olderReply?.resume(returning: .snapshot(value: page))
+        thread.olderReply = nil
+        try await eventuallyOnMain("the older page to land") { !thread.store.loadingOlder && thread.store.messages.count == 36 }
+        await thread.store.refresh()
+        try await thread.settle()
+        #expect(thread.olderRequests == 1)
+        #expect(thread.isPinned)
+        let after = try #require(try thread.position(of: "Question 22"))
+        #expect(abs(after - before) < 2, "an obsolete history anchor displaced the new navigation from \(before) to \(after)")
+    }
+
     /// A code block scrolls sideways only when its longest line is wider than the column; one
     /// that fits draws its code with no scroll view, at the same place.
     @Test(arguments: [false, true]) func aCodeBlockScrollsSidewaysOnlyWhenItsLinesDoNotFit(wide: Bool) {

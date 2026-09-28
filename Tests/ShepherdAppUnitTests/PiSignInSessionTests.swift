@@ -111,17 +111,33 @@ struct PiSignInSessionTests {
         #expect(recorder.opened == [URL(string: "https://github.com/login/device")!])
     }
 
-    @Test func aKeyIsCheckedBeforeItCanBeSavedAndOnlyItsOwnCheckCounts() {
+    @Test func aKeyCannotBeSavedBeforeItsCheckIsRequested() {
         let (session, _, _) = Self.session("deepseek", key: true)
         #expect(session.flow == .key && session.variable == "DEEPSEEK_API_KEY", "the variable pi reads is offered")
         session.handle(.prompt(PiSignInPrompt(id: "p1", kind: .secret, message: "Enter DeepSeek API key")))
         #expect(session.phase == .key && !session.keyCheck.allowsSave)
         session.handle(.checked(id: "c9", .works(models: ["x"])))
         #expect(session.keyCheck == .idle, "a check the sheet didn't ask for is ignored")
-        session.handle(.checked(id: "c0", .rejected("401")))
-        #expect(session.keyCheck == .rejected("401") && !session.keyCheck.allowsSave)
-        session.handle(.checked(id: "c0", .unreachable("offline")))
-        #expect(session.keyCheck.allowsSave, "a provider that can't be reached lets the key be saved")
+        // No check was dispatched: fabricated replies cannot establish that this key was checked.
+        session.handle(.checked(id: "c0", .works(models: ["x"])))
+        #expect(!session.keyCheck.allowsSave)
+    }
+
+    @Test(arguments: ["edit", "clear", "mode"])
+    func aReplyForThePreviousKeyCannotEnableSaveDuringDebounce(change: String) {
+        let (session, _, _) = Self.session("deepseek", key: true)
+        defer { session.end() }
+        session.handle(.prompt(PiSignInPrompt(id: "p1", kind: .secret, message: "Key")))
+        // No suspension here: the new key's debounced request cannot have been dispatched.
+        switch change {
+        case "mode": session.setKeyMode(.variable)
+        case "clear": session.key = "old"; session.key = ""
+        default: session.key = "new-unchecked-key"
+        }
+        session.handle(.checked(id: "c0", .works(models: ["fixture"])))
+        #expect(!session.keyCheck.allowsSave)
+        session.saveKey()
+        #expect(session.phase == .key)
     }
 
     @Test(arguments: [

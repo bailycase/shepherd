@@ -104,7 +104,8 @@ Screens reach each other only through `MobileNavigator` (in the environment):
   thread's runs or review (`MobileRoute.thread`) opened from elsewhere, such as Needs you or the
   palette, first makes its thread the detail, so the sidebar marks it and closing returns to it.
 - `navigator.present(route)`: modal, with its own stack (New thread, forms).
-- `navigator.selectedThread`: the thread on screen, for highlighting rows.
+- `navigator.selectedThread`: the thread on screen (including its pushed review, subagents or
+  terminal route), for highlighting rows.
 - A `NavigationLink(value: MobileRoute…)` works too; every stack applies `.mobileDestinations()`.
 
 The shell: iPhone (compact width) is `PhoneShell`, a `TabView` with Home (`HomeScreen`) and
@@ -123,6 +124,11 @@ keyboard reads wider than tall, and switching the split view's style as the comp
 dropped the focus again, so no keyboard ever stayed up in portrait. Never key a layout mode (a
 style, which columns show) off a size the keyboard shrinks; sizing within a mode (the composer's
 share of the thread, the terminal panel's clamp) should follow what is left.
+
+Crossing compact and regular width carries the active route stack, including Settings' root;
+restoring at a different width uses the same conversion. A previously selected thread in the
+inactive layout never replaces the current route. New thread captures its `PresentedRoute.id`
+before creation and navigates on completion only if that same presentation is still current.
 
 A change of style (turning the iPad, or resizing a window across square) builds the split view's
 columns anew: the selection and pushed screens stay, but the views under them are new. So a
@@ -231,6 +237,22 @@ WindowGroup(for: MobileWindowSeed.self) { $seed in MobileWindowRoot(app: app, se
   loop already running over the same connection instead of restarting it (a restart would
   report the other window's send in flight as unknown), a window on a newer connection takes
   it over, and another takes it over when the driving one leaves.
+- **Per window:** the navigator owns Settings' selected page and host (Instructions' per-host
+  editor has its own scene-local choice, passed explicitly to the shared drafts model), the composer's Model,
+  Context and queued-message editor presentation (and Context's scroll request), and the Commit
+  popover. Only one window may edit a thread's queued message at a time: the shared composer
+  owns the host's single hold until its save/release finishes; another window cannot steal or
+  release it. Settings summaries follow that window's selected host too.
+  Shared stores keep drafts, attachments, catalogs and operation progress, never those
+  presentation flags. Forget host closes its scene-local presentations and evicts unmounted
+  terminal/composer/review/commit/worktree state, including pending image preparations. It also
+  removes that host's Settings snapshots and durable owed instructions/skills, even before
+  Settings first opens, and its automation runs, selection and in-flight presentation callbacks.
+  Every returning request checks forgotten-host ownership before updating a cache; disconnecting
+  alone keeps pending operations, and forgetting one host keeps every other host's obligations.
+  Design Forget also removes that host's on-disk and in-memory files/assets/partial downloads,
+  phone indexes/comments and iPad canvases/renderers. Pending replies cannot refill them;
+  caches and canvases of other hosts stay intact.
 - **Per window:** the navigator and the subagent inspector's selection
   (`SubagentInspection.of(navigator)`), so an inspector opened in one window leaves another's
   alone.

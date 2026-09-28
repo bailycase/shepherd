@@ -232,8 +232,8 @@ public enum DesignArchive {
     /// Where the central directory is, from the file's last bytes (`tail`) and its size.
     public static func directory(tail: Data, fileSize: Int64) throws(ReadError) -> (offset: Int64, size: Int64, count: Int) {
         let bytes = [UInt8](tail)
+        guard fileSize >= Int64(bytes.count), bytes.count >= 22 else { throw .notAZip }
         let tailStart = fileSize - Int64(bytes.count)
-        guard bytes.count >= 22 else { throw .notAZip }
         var end = -1
         var at = bytes.count - 22
         while at >= 0 {
@@ -247,15 +247,20 @@ public enum DesignArchive {
         if count == 0xFFFF || size == 0xFFFF_FFFF || offset == 0xFFFF_FFFF {
             let locator = end - 20
             guard locator >= 0, read32(bytes, locator) == 0x0706_4b50 else { throw .unsupported("a ZIP64 archive without its locator") }
-            let record = Int64(bitPattern: read64(bytes, locator + 8)) - tailStart
-            guard record >= 0, record + 56 <= Int64(bytes.count), read32(bytes, Int(record)) == 0x0606_4b50 else {
+            let recordOffset = read64(bytes, locator + 8)
+            guard bytes.count >= 56, recordOffset >= UInt64(tailStart),
+                  recordOffset <= UInt64(fileSize - 56) else {
+                throw .unsupported("a ZIP64 archive whose end record isn't at its end")
+            }
+            let record = Int(recordOffset - UInt64(tailStart))
+            guard read32(bytes, record) == 0x0606_4b50 else {
                 throw .unsupported("a ZIP64 archive whose end record isn't at its end")
             }
             count = Int64(bitPattern: read64(bytes, Int(record) + 32))
             size = Int64(bitPattern: read64(bytes, Int(record) + 40))
             offset = Int64(bitPattern: read64(bytes, Int(record) + 48))
         }
-        guard count >= 0, size >= 0, offset >= 0, offset + size <= fileSize else { throw .notAZip }
+        guard count >= 0, size >= 0, offset >= 0, offset <= fileSize, size <= fileSize - offset else { throw .notAZip }
         guard size <= maxDirectoryBytes else { throw .unsupported("a table of contents over \(maxDirectoryBytes) bytes") }
         return (offset, size, Int(count))
     }
@@ -282,10 +287,17 @@ public enum DesignArchive {
             while extra + 4 <= extraEnd {
                 let id = read16(bytes, extra)
                 let length = Int(read16(bytes, extra + 2))
+                guard length <= extraEnd - extra - 4 else { throw .notAZip }
                 if id == 0x0001 {
                     var field = extra + 4
-                    if size == 0xFFFF_FFFF, field + 8 <= extra + 4 + length { size = Int64(bitPattern: read64(bytes, field)); field += 8 }
-                    if compressed == 0xFFFF_FFFF, field + 8 <= extra + 4 + length { compressed = Int64(bitPattern: read64(bytes, field)) }
+                    if size == 0xFFFF_FFFF {
+                        guard field + 8 <= extra + 4 + length else { throw .notAZip }
+                        size = Int64(bitPattern: read64(bytes, field)); field += 8
+                    }
+                    if compressed == 0xFFFF_FFFF {
+                        guard field + 8 <= extra + 4 + length else { throw .notAZip }
+                        compressed = Int64(bitPattern: read64(bytes, field))
+                    }
                 }
                 extra += 4 + length
             }
@@ -301,7 +313,7 @@ public enum DesignArchive {
             } else {
                 kind = .file
             }
-            _ = compressed
+            guard size >= 0, compressed >= 0, size != 0xFFFF_FFFF, compressed != 0xFFFF_FFFF else { throw .notAZip }
             entries.append(Entry(name, size: size, kind: kind))
             at = extraEnd + commentLength
         }
@@ -329,7 +341,10 @@ public enum DesignArchive {
             case .other: throw .refused("\(path) is neither a file nor a folder.")
             case .directory: break
             case .file:
-                total += max(0, entry.size)
+                guard entry.size >= 0 else { throw .refused("\(path) has an invalid size.") }
+                let (sum, overflow) = total.addingReportingOverflow(entry.size)
+                guard !overflow else { throw .tooLarge(bytes: .max, limit: DesignImport.maxProjectBytes) }
+                total = sum
                 let hidden = segments.contains { $0.hasPrefix(".") } || segments.first == "__MACOSX"
                 if !hidden, entry.size > Int64(DesignImport.maxFileBytes) {
                     throw .fileTooLarge(path: path, bytes: entry.size, limit: Int64(DesignImport.maxFileBytes))

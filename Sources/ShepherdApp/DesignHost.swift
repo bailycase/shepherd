@@ -1258,7 +1258,7 @@ extension DesignRendering {
 /// and the element's markup and computed styles, written into the copy's folder.
 extension DesignRendering {
     func capture(_ request: DesignReferenceCaptureRequest, files: DesignExportFiles) async throws -> DesignReferenceCaptured {
-        guard let surface = surface(for: request.reference.designID) else { throw DesignExportFailure("The design's folder is gone.") }
+        let surface = DesignSurface(designID: request.reference.designID, source: files, network: network)
         var outputs: [String: Data] = [:]
         var captured = DesignReferenceCaptured(boards: [])
         for (index, board) in request.boards.enumerated() {
@@ -1361,7 +1361,7 @@ enum DesignExporter {
     }
 
     /// What a reference's copy holds of one board, from one view of it showing `board.source`
-    /// (swapped in after the file loads when the design moved on since it was pinned): the PNG
+    /// (loaded from immutable pinned inputs, never the current design folder): the PNG
     /// (the element cut from the board where it names one), the standalone page, and the
     /// element's detail.
     static func reference(_ board: DesignReferenceCaptureRequest.Board, element: DesignElementID?, files: DesignExportFiles,
@@ -1369,7 +1369,7 @@ enum DesignExporter {
                                                                   element: DesignElementDetail?) {
         let path = board.path
         return try await render(path, files: files, surface: surface) { view in
-            if !board.isCurrent { try await view.replaceSource(board.source) }
+            try await view.replaceSource(board.source, props: DesignTweakModel.json(.object(files.index.tweaks(for: path))) ?? "{}")
             var drawn = try await view.image(scale: 2)
             if let tid = element?.tid {
                 guard let hit = await view.element(tid: tid) else { throw DesignExportFailure("The element isn't drawn on \(path).") }
@@ -1405,13 +1405,17 @@ enum DesignExporter {
     /// Stages `outputs` and moves them into `destination`: the one file a single-file export
     /// writes, a ZIP of the staged folder, or the staged folder itself.
     static func place(_ outputs: [String: Data], format: DesignExportFormat, boards: [DesignPath], name: String,
-                      at destination: URL) async throws {
-        let staging = FileManager.default.temporaryDirectory.appendingPathComponent("shepherd-export-\(UUID().uuidString)", isDirectory: true)
+                      at destination: URL,
+                      replace: @escaping @Sendable (URL, URL) throws -> Void = { destination, result in
+                          _ = try FileManager.default.replaceItemAt(destination, withItemAt: result)
+                      }) async throws {
+        // Complete the replacement on the destination volume before touching the old export.
+        let staging = destination.deletingLastPathComponent().appendingPathComponent(".shepherd-export-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: staging) }
         let folder = staging.appendingPathComponent(DesignExportNames.fileName(name), isDirectory: true)
         try await write(outputs, into: folder)
         let isFolder = DesignExportNames.destination(format, boards: boards, design: name).isFolder
         try await Task.detached(priority: .userInitiated) {
-            defer { try? FileManager.default.removeItem(at: staging) }
             let result: URL
             if format == .zip {
                 result = staging.appendingPathComponent("export.zip")
@@ -1423,13 +1427,7 @@ enum DesignExporter {
                 result = folder.appendingPathComponent(only)
             }
             if FileManager.default.fileExists(atPath: destination.path) {
-                do {
-                    _ = try FileManager.default.replaceItemAt(destination, withItemAt: result)
-                } catch {
-                    // Another volume: what was there goes, as the save panel confirmed.
-                    try FileManager.default.removeItem(at: destination)
-                    try FileManager.default.moveItem(at: result, to: destination)
-                }
+                try replace(destination, result)
             } else {
                 try FileManager.default.moveItem(at: result, to: destination)
             }

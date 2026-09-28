@@ -12,6 +12,8 @@ final class FakeSkillsClient: SkillsClient, @unchecked Sendable {
     private var log: [String] = []
     var repo: RepoSkills?
     var refusesInstalls = false
+    var beforeRequest: (@Sendable (RemoteSkillsRequest) async throws -> Void)?
+    var afterRequest: (@Sendable (RemoteSkillsRequest) async throws -> Void)?
 
     init(_ skills: [InstalledSkill] = [], pi: PiSkills? = nil) {
         snapshot = SkillsSnapshot(directory: "~/.agents/skills", skills: skills, pi: pi)
@@ -21,7 +23,8 @@ final class FakeSkillsClient: SkillsClient, @unchecked Sendable {
     var skills: SkillsSnapshot { lock.withLock { snapshot } }
 
     func skills(_ request: RemoteSkillsRequest) async throws -> RemoteSkillsResult {
-        try lock.withLock {
+        try await beforeRequest?(request)
+        let result: RemoteSkillsResult = try lock.withLock {
             log.append(String(describing: request).prefix { $0 != "(" }.description)
             func index(_ name: String) throws -> Int {
                 guard let index = snapshot.skills.firstIndex(where: { $0.name == name }) else {
@@ -68,6 +71,8 @@ final class FakeSkillsClient: SkillsClient, @unchecked Sendable {
             }
             return .skills(snapshot)
         }
+        try await afterRequest?(request)
+        return result
     }
 }
 
@@ -133,6 +138,161 @@ struct ClientSkillsTests {
         #expect(later.requests == ["setOn", "fetch"])
         #expect(later.skills.skill("pdf")?.isOn == false)
         #expect(!model.owes(id))
+    }
+
+    @Test func catchUpAcknowledgesOnlySuccessfulRequestsAndKeepsNewChangesAcrossRelaunch() async {
+        let defaults = ScratchDefaults()
+        let id = UUID()
+        let offline = Self.host("later", nil, id: id)
+        let client = FakeSkillsClient([Self.skill("pdf")])
+        let live = Self.host("later", client, id: id)
+        let model = ClientSkills(defaults: defaults)
+        await model.setOn("pdf", false, in: [offline]).value
+        await model.setInvocation("pdf", .slashOnly, in: [offline]).value
+        await model.setAutoUpdate(true, in: [offline]).value
+        let gate = SettingsRequestGate()
+        client.beforeRequest = { request in
+            if case .setOn = request { await gate.hold() }
+            if case .setInvocation = request { throw RemoteHostClientError.disconnected }
+        }
+        let catchingUp = Task { await model.hostConnected(live) }
+        await gate.waitUntilHeld()
+        #expect(ClientSkills(defaults: defaults).owes(id))
+        // A replacement queued while sending must not be consumed by the old receipt.
+        await model.setOn("pdf", true, in: [offline]).value
+        await model.hostConnected(live) // A concurrent refresh must not replay the held prefix.
+        await gate.release()
+        await catchingUp.value
+        #expect(client.requests.filter { $0 == "setOn" }.count == 1)
+        #expect(client.skills.skill("pdf")?.isOn == false)
+        #expect(!client.skills.autoUpdate)
+        let relaunched = ClientSkills(defaults: defaults)
+        #expect(relaunched.owes(id))
+        client.beforeRequest = nil
+        await relaunched.hostConnected(live)
+        #expect(client.skills.skill("pdf")?.invocation == .slashOnly)
+        #expect(client.skills.skill("pdf")?.isOn == true)
+        #expect(client.skills.autoUpdate)
+        #expect(client.requests.filter { $0 == "setOn" }.count == 2)
+        #expect(!relaunched.owes(id))
+    }
+
+    @Test func forgettingAnOwedHostDuringDeliveryCannotRecreateItsQueueOrSnapshot() async {
+        let defaults = ScratchDefaults()
+        let gone = UUID(), kept = UUID()
+        let offline = [Self.host("gone", nil, id: gone), Self.host("kept", nil, id: kept)]
+        let model = ClientSkills(defaults: defaults)
+        await model.setAutoUpdate(true, in: offline).value
+        let client = FakeSkillsClient()
+        let live = Self.host("gone", client, id: gone)
+        let gate = SettingsRequestGate()
+        client.beforeRequest = { request in if case .configure = request { await gate.hold() } }
+        let delivery = Task { await model.hostConnected(live) }
+        await gate.waitUntilHeld()
+        model.forget(host: gone)
+        await gate.release()
+        await delivery.value
+        #expect(model.state(of: live) == .offline && !model.owes(gone))
+        #expect(model.owes(kept) && model.problem == nil)
+        await model.setAutoUpdate(false, in: offline).value // stale captured host arrays cannot re-owe it
+        let recreated = ClientSkills(defaults: defaults)
+        #expect(!recreated.owes(gone) && recreated.owes(kept))
+        client.beforeRequest = nil
+        let count = client.requests.count
+        await model.hostConnected(live)
+        model.hostChanged(gone, client.skills)
+        #expect(client.requests.count == count && model.state(of: live) == .offline)
+        let other = FakeSkillsClient()
+        await recreated.hostConnected(Self.host("kept", other, id: kept))
+        #expect(!other.skills.autoUpdate && !recreated.owes(kept))
+    }
+
+    @Test func aTerminalMissingSkillRejectionDropsOnlyThatRequest() async {
+        let defaults = ScratchDefaults()
+        let id = UUID()
+        // The previous on-disk request-array format still loads.
+        let legacy: [String: [RemoteSkillsRequest]] = [id.uuidString: [.setOn(name: "gone", on: false), .configure(autoUpdate: true)]]
+        defaults.set(try! JSONEncoder().encode(legacy), forKey: "shepherd.skills.owed")
+        let client = FakeSkillsClient()
+        let model = ClientSkills(defaults: defaults)
+        await model.hostConnected(Self.host("later", client, id: id))
+        #expect(client.skills.autoUpdate)
+        #expect(!model.owes(id))
+    }
+
+    @Test func aRejectedOwedInstallRemainsAvailableForRetry() async {
+        let defaults = ScratchDefaults()
+        let id = UUID()
+        let model = ClientSkills(defaults: defaults)
+        await model.install("copy", repo: "acme/skills", paths: ["pdf"], commit: "fixed", invocation: nil,
+                            in: [Self.host("later", nil, id: id)])
+        let client = FakeSkillsClient()
+        client.refusesInstalls = true
+        let live = Self.host("later", client, id: id)
+        await model.hostConnected(live)
+        #expect(model.owes(id) && model.problem != nil)
+        client.refusesInstalls = false
+        let relaunched = ClientSkills(defaults: defaults)
+        await relaunched.hostConnected(live)
+        #expect(client.skills.skill("pdf")?.source?.commit == "fixed")
+        #expect(!relaunched.owes(id))
+    }
+
+    @Test(arguments: [false, true])
+    func anUnacknowledgedRemovalOrRestoreIsReconciledWithoutReplayingIt(restore: Bool) async {
+        let defaults = ScratchDefaults()
+        let id = UUID()
+        let client = FakeSkillsClient([Self.skill("pdf")])
+        if restore { _ = try? await client.skills(.remove(name: "pdf")) }
+        let request: RemoteSkillsRequest = restore ? .restore(name: "pdf") : .remove(name: "pdf")
+        defaults.set(try! JSONEncoder().encode([id.uuidString: [request, .configure(autoUpdate: true)]]), forKey: "shepherd.skills.owed")
+        let live = Self.host("later", client, id: id)
+        client.afterRequest = { sent in
+            if sent == request { throw RemoteHostClientError.timeout }
+        }
+        await ClientSkills(defaults: defaults).hostConnected(live)
+        client.afterRequest = nil
+        let relaunched = ClientSkills(defaults: defaults)
+        await relaunched.hostConnected(live)
+        #expect(client.requests.filter { $0 == (restore ? "restore" : "remove") }.count == 1)
+        #expect((client.skills.skill("pdf") != nil) == restore)
+        #expect(client.skills.autoUpdate)
+        #expect(!relaunched.owes(id))
+    }
+
+    @Test func anInstallWithAnUnknownOutcomeRemainsOwedWithoutAutomaticReplay() async {
+        let defaults = ScratchDefaults()
+        let id = UUID()
+        let offline = Self.host("later", nil, id: id)
+        let model = ClientSkills(defaults: defaults)
+        await model.installFiles("copy", name: "pdf", files: [SkillFile(path: "SKILL.md", contents: Data("PDF".utf8))],
+                                 invocation: .automatic, in: [offline])
+        await model.setAutoUpdate(true, in: [offline]).value
+        let client = FakeSkillsClient()
+        client.afterRequest = { request in
+            if case .installFiles = request { throw RemoteHostClientError.disconnected }
+        }
+        let live = Self.host("later", client, id: id)
+        await model.hostConnected(live)
+        client.afterRequest = nil
+        let relaunched = ClientSkills(defaults: defaults)
+        await relaunched.hostConnected(live)
+        #expect(client.requests.filter { $0 == "installFiles" }.count == 1)
+        #expect(client.skills.skills.count == 1)
+        #expect(relaunched.owes(id))
+        #expect(relaunched.problem != nil)
+        #expect(!client.skills.autoUpdate) // The unattempted suffix stays ordered behind it.
+        guard let entry = relaunched.unacknowledged else { Issue.record("Missing explicit recovery"); return }
+        // Confirm while offline, then recreate: exactly one receipt is abandoned durably.
+        await relaunched.resolveUnacknowledged(entry, in: [offline])
+        let recovered = ClientSkills(defaults: defaults)
+        #expect(recovered.owes(id))
+        await recovered.hostConnected(live)
+        #expect(client.skills.autoUpdate)
+        #expect(!recovered.owes(id))
+        #expect(client.requests.filter { $0 == "installFiles" }.count == 1)
+        await recovered.resolveUnacknowledged(entry, in: [live]) // A stale confirmation cannot eat later work.
+        #expect(!recovered.owes(id))
     }
 
     /// An offline host is owed the last of each change, and a removal undone before it's back
@@ -220,6 +380,35 @@ struct ClientSkillsTests {
         #expect(install.steps.map(\.state) == [.installed, .installed, .owed])
         #expect(SkillsPresentation.installLine(install) == "Installed · horizon when it's back")
         #expect(model.owes(hosts[2].id))
+    }
+
+    @Test(arguments: [false, true])
+    func aCancelledOrReplacedDirectoryLookupCannotStartAnInstall(replace: Bool) async {
+        let client = FakeSkillsClient()
+        client.repo = RepoSkills(repo: "acme/skills", branch: "main", commit: "old",
+                                 skills: [RepoSkill(path: "skills/pdf", name: "pdf", summary: "PDF")])
+        let offline = Self.host("later", nil)
+        let hosts = [Self.host("here", client), offline]
+        let model = ClientSkills(defaults: ScratchDefaults())
+        let gate = SettingsRequestGate()
+        client.beforeRequest = { request in
+            if case .lookUp = request { await gate.hold() }
+        }
+        let lookingUp = Task { await model.install("same-key", source: "acme/skills", skill: "pdf", invocation: nil, in: hosts) }
+        await gate.waitUntilHeld()
+        model.cancelInstall("same-key")
+        if replace {
+            await model.install("same-key", repo: "acme/skills", paths: ["skills/pdf"], commit: "new", invocation: nil, in: hosts)
+        }
+        await gate.release()
+        await lookingUp.value
+        #expect(client.requests.filter { $0 == "install" }.count == (replace ? 1 : 0))
+        #expect(model.owes(offline.id) == replace)
+        if replace {
+            #expect(client.skills.skill("pdf")?.source?.commit == "new")
+        } else {
+            #expect(model.installs["same-key"]?.cancelled == true)
+        }
     }
 
     /// A skill on skills.sh reads as the hosts have it: Install, Installed, or Update while a

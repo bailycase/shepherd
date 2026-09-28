@@ -87,9 +87,13 @@ struct KeyboardSettings: View {
             HStack(spacing: NW.Space.xs) {
                 if !keys.isDefault(action) {
                     Button("Reset") {
-                        keys.reset(action)
-                        vm.rebuildSurfaces()
-                        clearError()
+                        if let error = keys.reset(action) {
+                            errorAction = action
+                            errorText = "\(action.defaultChord.display): \(error)"
+                        } else {
+                            vm.rebuildSurfaces()
+                            clearError()
+                        }
                     }
                     // SettingsKeyboard: Geist 12, 6pt either side, just before the caps.
                     .buttonStyle(.nwLink(font: .nwSans(AppLayout.shortcutResetSize)))

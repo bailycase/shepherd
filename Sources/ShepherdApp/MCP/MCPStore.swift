@@ -88,6 +88,7 @@ final class MCPStore {
     @ObservationIgnored private var challenges: [String: String] = [:]
     @ObservationIgnored private var tokens: [String: MCPOAuthToken?] = [:]
     @ObservationIgnored private var refreshes: [String: Task<MCPOAuthToken, Error>] = [:]
+    @ObservationIgnored private var credentialGenerations: [String: UUID] = [:]
     @ObservationIgnored private var fileStamp: Data?
     /// A needs-sign-in answer opens the sheet by itself ("Open sign-in pages by itself").
     @ObservationIgnored var onNeedsSignIn: ((String) -> Void)?
@@ -121,6 +122,7 @@ final class MCPStore {
         switch MCPConfigFile.parse(data ?? Data()) {
         case .document(let parsed):
             invalidLine = nil
+            invalidateChangedCredentials(in: parsed)
             if document != parsed { document = parsed }
         case .invalid(let line):
             if invalidLine != line { invalidLine = line }
@@ -404,6 +406,7 @@ final class MCPStore {
         let written = try dependencies.file.update(change)
         fileStamp = try? Data(contentsOf: dependencies.file.url)
         invalidLine = nil
+        invalidateChangedCredentials(in: written)
         if document != written { document = written }
         rebuild()
     }
@@ -436,6 +439,7 @@ final class MCPStore {
             if let replacing, replacing != entry.name { document.remove(replacing) }
             document.upsert(entry)
         }
+        invalidateCredentials(entry.name)
         flags[entry.name] = nil
         rebuild()
         probe(entry.name)
@@ -464,6 +468,18 @@ final class MCPStore {
             change(&settings)
             entry.settings = settings
             document.upsert(entry)
+        }
+    }
+
+    private func invalidateCredentials(_ name: String) {
+        credentialGenerations[name] = UUID()
+        refreshes.removeValue(forKey: name)?.cancel()
+        if signIn?.server == name { signIn?.cancel() }
+    }
+
+    private func invalidateChangedCredentials(in next: MCPConfigDocument) {
+        for entry in document.servers where next.server(entry.name) != entry {
+            invalidateCredentials(entry.name)
         }
     }
 
@@ -512,7 +528,7 @@ final class MCPStore {
         try edit { document in
             for entry in added { document.upsert(entry) }
         }
-        for entry in added { probe(entry.name) }
+        for entry in added { invalidateCredentials(entry.name); probe(entry.name) }
         return added.count
     }
 
@@ -670,8 +686,10 @@ final class MCPStore {
             if request.reason == .unauthorized, nowMs - token.refreshedAtMs < 10_000 {
                 return expired(name)
             }
+            let generation = credentialGenerations[name]
             do {
                 token = try await refreshed(name)
+                guard credentialGenerations[name] == generation else { throw MCPOAuthError.cancelled }
             } catch MCPOAuthError.expired {
                 return expired(name)
             } catch {
@@ -701,22 +719,41 @@ final class MCPStore {
     func currentToken(_ name: String) async throws -> MCPOAuthToken? {
         guard let token = token(name) else { return nil }
         guard token.needsRefresh(nowMs: Self.ms(dependencies.now())) else { return token }
-        return try await refreshed(name)
+        let generation = credentialGenerations[name]
+        let next = try await refreshed(name)
+        guard credentialGenerations[name] == generation else { throw MCPOAuthError.cancelled }
+        return next
     }
 
     /// One refresh per server; other requests wait for it.
     func refreshed(_ name: String) async throws -> MCPOAuthToken {
-        if let running = refreshes[name] { return try await running.value }
-        guard let token = token(name) else { throw MCPOAuthError.expired }
-        let service = MCPOAuthService(http: dependencies.http)
-        let nowMs = Self.ms(dependencies.now())
-        let task = Task { try await service.refresh(token, nowMs: nowMs) }
-        refreshes[name] = task
-        defer { refreshes[name] = nil }
-        let next = try await task.value
-        try saveToken(next, for: name)
-        rebuild()
-        return next
+        let generation = credentialGenerations[name]
+        let task: Task<MCPOAuthToken, Error>
+        if let running = refreshes[name] {
+            task = running
+        } else {
+            guard let entry = document.server(name), let token = token(for: entry) else { throw MCPOAuthError.expired }
+            let service = MCPOAuthService(http: dependencies.http)
+            let nowMs = Self.ms(dependencies.now())
+            task = Task {
+                defer { if credentialGenerations[name] == generation { refreshes[name] = nil } }
+                let next = try await service.refresh(token, nowMs: nowMs)
+                try Task.checkCancellation()
+                reload()
+                guard credentialGenerations[name] == generation, document.server(name) == entry else {
+                    throw MCPOAuthError.cancelled
+                }
+                try saveToken(next, for: name)
+                rebuild()
+                return next
+            }
+            refreshes[name] = task
+        }
+        // Every waiter checks again: sign-out may run after the shared task saved its result.
+        let result = await task.result
+        reload()
+        guard credentialGenerations[name] == generation else { throw MCPOAuthError.cancelled }
+        return try result.get()
     }
 
     // MARK: Sign-in
@@ -724,7 +761,9 @@ final class MCPStore {
     /// Opens the sign-in sheet for a server and starts it.
     func beginSignIn(_ name: String) {
         guard let entry = document.server(name), let url = entry.url.flatMap(URL.init(string:)) else { return }
-        signIn?.cancel()
+        closeSignIn()
+        invalidateCredentials(name)
+        let generation = credentialGenerations[name]
         let missing: [String] = if case .needsScopes(let scopes) = flags[name] { scopes } else { [] }
         var oauth = entry.settings.oauth
         oauth.clientSecret = oauth.clientSecret.map(resolveKeychain)
@@ -733,14 +772,22 @@ final class MCPStore {
             missingScopes: missing, service: MCPOAuthService(http: dependencies.http), dependencies: dependencies,
             complete: { [weak self] token in
                 guard let self else { return nil }
+                try Task.checkCancellation()
+                self.reload()
+                guard self.credentialGenerations[name] == generation, self.document.server(name) == entry else {
+                    throw MCPOAuthError.cancelled
+                }
                 try self.saveToken(token, for: name)
                 self.flags[name] = nil
                 self.usesOAuth.insert(name)
                 self.rebuild()
                 guard let entry = self.document.server(name) else { return nil }
                 self.probing.insert(name)
+                defer { self.probing.remove(name) }
                 let resolved = await self.resolvedForProbe(entry)
+                guard self.credentialGenerations[name] == generation else { throw MCPOAuthError.cancelled }
                 let result = await self.dependencies.probe.probe(name: name, entry: resolved, timeoutSeconds: entry.settings.timeoutSeconds)
+                guard self.credentialGenerations[name] == generation else { throw MCPOAuthError.cancelled }
                 return self.finishProbe(name, entry: entry, result: result)
             })
         signIn = flow
@@ -748,13 +795,14 @@ final class MCPStore {
     }
 
     func signOut(_ name: String) {
+        invalidateCredentials(name)
         try? saveToken(nil, for: name)
         flags[name] = nil
         rebuild()
     }
 
     func closeSignIn() {
-        signIn?.cancel()
+        if let signIn { invalidateCredentials(signIn.server) }
         signIn = nil
     }
 

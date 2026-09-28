@@ -25,6 +25,12 @@ final class AutomationRunLog: @unchecked Sendable {
 
     init(url: URL) {
         self.url = url
+        reload()
+    }
+
+    /// Startup rereads under workspace ownership, including a retry after another owner stopped.
+    func reload() {
+        runs = [:]
         if let data = try? Data(contentsOf: url), let file = try? JSONDecoder().decode(File.self, from: data) {
             runs = Dictionary(uniqueKeysWithValues: file.runs.map { (AutomationID(rawValue: $0.key), $0.value) })
         }

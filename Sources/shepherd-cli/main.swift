@@ -52,13 +52,11 @@ func importHerdr() {
     }
 
     let stateURL = ShepherdPaths.stateURL()
-    var state = ShepherdState()
-    if let existing = try? Data(contentsOf: stateURL) {
-        do {
-            state = try JSONDecoder().decode(ShepherdState.self, from: existing)
-        } catch {
-            fail("could not parse existing \(stateURL.path): \(error)")
-        }
+    var state: ShepherdState
+    do {
+        state = try HerdrImport.existingState(at: stateURL)
+    } catch {
+        fail("could not read existing \(stateURL.path): \(error)")
     }
 
     let summary = HerdrImport.merge(herdr, into: &state) { sessionPath in

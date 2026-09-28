@@ -166,10 +166,19 @@ struct NewThreadRulesTests {
         #expect(creation.worktreeFetchFirst == nil)
     }
 
-    @Test func imagesMoveThePromptToTheFirstSend() throws {
+    @Test func imagesKeepThePromptInTheAtomicCreationRequest() throws {
         let creation = try #require(NewThreadRules.creation(Self.draft(attachments: 2)))
-        #expect(creation.initialPrompt == nil)
-        #expect(creation.firstSend == "Fix the tool rows")
+        #expect(creation.initialPrompt == "Fix the tool rows")
+        #expect(creation.firstSend == nil)
+    }
+
+    @Test func nativeImageSupportAloneCannotStartAThreadWithImages() {
+        var host = Self.studio
+        host.capabilities.remove(RemoteProtocol.createAgentImagesCapability)
+        #expect(host.capabilities.contains(RemoteProtocol.nativeThreadV2Capability))
+        let draft = Self.draft(host: host, attachments: 1)
+        #expect(NewThreadRules.blocker(draft) == .imagesUnsupported(host.name))
+        #expect(NewThreadRules.creation(draft) == nil)
     }
 
     @Test func aHostWithoutWorktreesCreatesInItsCheckout() throws {

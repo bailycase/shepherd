@@ -485,9 +485,10 @@ def question_turn(prompt):
                "title": "How should I handle Horizon's uncommitted edits?",
                "options": ["Compare, keep what's unique, then go through GitHub (Recommended)\nNew branch and PR for anything not merged.",
                            "Leave Horizon alone"]}
-    timeout = 0.15 if prompt == "question-timeout" else 30.0
-    if prompt == "question-timeout":
-        request["timeout"] = 150
+    timeout = 0.15 if prompt.startswith("question-timeout") else 30.0
+    if prompt.startswith("question-timeout"):
+        # Model a host timer delayed behind the history refresh, without blocking test queues.
+        request["timeout"] = 1000 if prompt == "question-timeout-late-host" else 150
     emit(request)
     QUESTION["answered"].wait(timeout)
     response = QUESTION["response"] or {}
@@ -609,6 +610,9 @@ pending_ui = None
 turn_thread = None
 # An abort ends a "slow" turn as far as pi's state goes (its thread still waits for its files).
 turn_aborted = False
+stale_history = None
+held_history_request = None
+fail_switched_history = False
 
 for raw in sys.stdin.buffer:
     line = raw.rstrip(b"\n").rstrip(b"\r")
@@ -628,8 +632,18 @@ for raw in sys.stdin.buffer:
         with QUEUE_LOCK:
             pending_count = len(steering) + len(follow_up)
         respond(cmd, t, data=dict(STATE, isStreaming=streaming, pendingMessageCount=pending_count))
+        if held_history_request is not None:
+            respond(held_history_request, "get_messages", data={"messages": stale_history})
+            held_history_request = None
+            stale_history = None
     elif t == "get_messages":
-        respond(cmd, t, data={"messages": MESSAGES})
+        if stale_history is not None:
+            held_history_request = cmd
+        elif fail_switched_history:
+            fail_switched_history = False
+            respond(cmd, t, success=False, error="Switched history unavailable")
+        else:
+            respond(cmd, t, data={"messages": MESSAGES})
     elif t == "get_commands":
         # STUB_PI_PROMPT_TEMPLATE: the file fix-tests came from, as pi reports a template's source.
         template = os.environ.get("STUB_PI_PROMPT_TEMPLATE")
@@ -753,7 +767,7 @@ for raw in sys.stdin.buffer:
             emit({"type": "agent_start"})
             emit({"type": "extension_ui_request", "id": "uuid-3", "method": "select",
                   "title": "Pick one", "options": ["Allow", "Deny"]})
-        elif message in ("question", "question-timeout"):
+        elif message in ("question", "question-timeout", "question-timeout-late-host"):
             turn_thread = threading.Thread(target=question_turn, args=(message,), daemon=True)
             turn_thread.start()
         elif message == "ask-choice":
@@ -851,13 +865,28 @@ for raw in sys.stdin.buffer:
             emit({"type": "agent_start"})
             emit({"type": "agent_end", "messages": [], "willRetry": False})
             emit({"type": "agent_settled"})
-        elif message == "newsession":
+        elif message in ("newsession", "resume-nonempty", "resume-stale-history", "resume-history-failure"):
+            if message == "resume-history-failure":
+                # The agent-end fetch predates get_state. Hold it behind the changed identity,
+                # then fail the fresh get_messages issued by the host for that generation.
+                fail_switched_history = True
+            if message in ("resume-stale-history", "resume-history-failure"):
+                stale_history = list(MESSAGES)
             STATE["sessionId"] = "stub-session-2"
             del MESSAGES[:]
-            STATE["messageCount"] = 0
+            if message != "newsession":
+                MESSAGES.extend([
+                    {"role": "user", "content": "resumed question"},
+                    {"role": "assistant", "content": [{"type": "text", "text": "resumed answer"}]},
+                ])
+            STATE["messageCount"] = len(MESSAGES)
             emit({"type": "agent_start"})
             emit({"type": "agent_end", "messages": [], "willRetry": False})
             emit({"type": "agent_settled"})
+        elif message == "ask-closed-input":
+            os.close(0)
+            emit({"type": "extension_ui_request", "id": "closed-input", "method": "confirm", "title": "Keep this question?"})
+            time.sleep(60)
         elif message == "big":
             emit({"type": "extension_ui_request", "id": "uuid-9", "method": "set_editor_text",
                   "text": "x" * (1_100_000)})

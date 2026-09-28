@@ -8,6 +8,15 @@ import ShepherdRemote
 @MainActor
 final class NativeThreadStores<Key: Hashable> {
     private var stores: [Key: NativeThreadStore] = [:]
+    private var inputs: [Key: ThreadInput] = [:]
+
+    /// Image drafts belong to the agent, not to a mounted SwiftUI view.
+    func input(for key: Key) -> ThreadInput {
+        if let input = inputs[key] { return input }
+        let input = ThreadInput()
+        inputs[key] = input
+        return input
+    }
     /// The keys whose thread is on screen: its store's poll loop runs (`NativeThreadStore.isLive`).
     private(set) var live: Set<Key> = []
     /// Told the new `live` whenever it changes: the local app asks its server to push revisions
@@ -42,6 +51,7 @@ final class NativeThreadStores<Key: Hashable> {
 
     func prune(live: Set<Key>) {
         for key in Set(stores.keys).subtracting(live) { stores.removeValue(forKey: key)?.stop() }
+        for key in Set(inputs.keys).subtracting(live) { inputs.removeValue(forKey: key) }
     }
 }
 

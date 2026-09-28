@@ -553,7 +553,7 @@ public struct NWQueueEditor: View {
                     .autocorrectionDisabled()
                     .focused($focused)
                     .onKeyPress(.return, phases: .down) { press in
-                        if press.modifiers.contains(.shift) { text += "\n"; return .handled }
+                        if press.modifiers.contains(.shift) { return .ignored }
                         if canSave { onSave() }
                         return .handled
                     }

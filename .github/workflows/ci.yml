@@ -53,6 +53,24 @@ jobs:
       - uses: actions/checkout@v4
       - run: python3 -m unittest discover -s Tests/Release
 
+  extensions:
+    name: extension tests
+    if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/nightly') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install the pinned modular pi package
+        run: |
+          package=$(python3 -c 'import json; p=json.load(open("scripts/pi-engine-pin.json"))["pi"]; print(p["name"]+"@"+p["version"])')
+          npm install --prefix "$RUNNER_TEMP/pi-tests" --ignore-scripts --no-audit --no-fund "$package"
+          echo "PI_PACKAGE_DIR=$RUNNER_TEMP/pi-tests/node_modules/@earendil-works/pi-coding-agent" >> "$GITHUB_ENV"
+      - name: Test extensions with isolated fake providers
+        run: node --test Tests/Extensions/*.test.mjs
+
   test:
     name: tests ${{ matrix.shard }} (${{ matrix.label }})
     if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/nightly') }}
@@ -204,8 +222,8 @@ jobs:
   ci:
     name: CI
     if: ${{ always() && !(github.event_name == 'push' && github.ref == 'refs/heads/nightly') }}
-    needs: [release-rules, test]
+    needs: [release-rules, extensions, test]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - run: test "${{ needs.release-rules.result }}" = success && test "${{ needs.test.result }}" = success
+      - run: test "${{ needs.release-rules.result }}" = success && test "${{ needs.extensions.result }}" = success && test "${{ needs.test.result }}" = success

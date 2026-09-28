@@ -81,6 +81,8 @@ struct DesignReferenceService: Sendable {
         var elementLabel: String?
         var elementName: String?
         var systems: [DesignSystemInstalled]
+        var files: DesignExportFiles
+        var renderSHA: String
     }
 
     /// The design, the board and the element as the reference names them, at its revision when a
@@ -93,20 +95,19 @@ struct DesignReferenceService: Sendable {
             throw DesignReferenceError("no_such_design", "That design is no longer here.")
         }
         do {
-            let snapshot = try await server.designs.snapshot(reference.designID)
-            let systems = (try? await server.designs.installedSystems(reference.designID)) ?? []
+            var snapshot = try await server.designs.snapshot(reference.designID)
             var boards: [(source: DesignBoardSource, isCurrent: Bool)] = []
             var revision = snapshot.revision
             var boardCount = snapshot.index.boards.count
             let older = reference.revision.flatMap { $0 != snapshot.revision ? $0 : nil }
             if let board = reference.board {
-                guard snapshot.index.boards[board] != nil, snapshot.boards[board] != nil else { throw DesignStoreError.noSuchBoard(board) }
                 if let wanted = older, let pinned = try await server.designs.pinnedBoard(reference.designID, path: board, revision: wanted) {
                     boards = [(pinned, pinned.sha256 == snapshot.boards[board])]
                     revision = wanted
                 } else if let wanted = older, exact {
                     throw DesignReferenceError.versionGone(wanted)
                 } else {
+                    guard snapshot.index.boards[board] != nil, snapshot.boards[board] != nil else { throw DesignStoreError.noSuchBoard(board) }
                     let now = try await server.designs.pinBoard(reference.designID, path: board)
                     boards = [(now, true)]
                     revision = now.revision
@@ -125,6 +126,15 @@ struct DesignReferenceService: Sendable {
                 revision = pinned.first?.revision ?? snapshot.revision
                 boards = pinned.map { ($0, $0.sha256 == snapshot.boards[$0.path]) }
             }
+            if exact, let wanted = reference.revision, wanted != revision {
+                throw DesignReferenceError.versionGone(wanted)
+            }
+            guard let render = try await server.designs.pinnedRender(reference.designID, revision: revision, boards: boards.map(\.source.path)) else {
+                throw DesignReferenceError.versionGone(revision)
+            }
+            snapshot.index = render.files.index
+            snapshot.revision = revision
+            boardCount = render.files.index.boards.count
             var label: String?
             var name: String?
             if let element = reference.element, let source = boards.first?.source.source {
@@ -135,7 +145,7 @@ struct DesignReferenceService: Sendable {
                 name = DesignReferenceReading.elementNoun(element, in: source) ?? template.element(for: element)?.name
             }
             return Resolved(design: design, snapshot: snapshot, revision: revision, boards: boards, boardCount: boardCount, elementLabel: label,
-                            elementName: name, systems: systems)
+                            elementName: name, systems: render.systems, files: render.files, renderSHA: render.sha256)
         } catch let error as DesignStoreError {
             throw DesignReferenceError(error.code, error.description)
         }
@@ -189,12 +199,13 @@ struct DesignReferenceService: Sendable {
         let folder = try await payloads.create(agentID: agentID, payload: id)
         do {
             let read = Self.reading(pinned, sources: resolved.boards.map(\.source.source), systems: resolved.systems)
-            var request = DesignReferenceCaptureRequest(reference: pinned, boards: [], folder: folder)
+            var request = DesignReferenceCaptureRequest(reference: pinned, boards: [], folder: folder, files: resolved.files)
             var sources: [String: Data] = [:]
             var payload = DesignReferencePayload(
                 id: id, agentID: agentID, reference: pinned, design: resolved.design.name,
                 elementLabel: resolved.elementLabel, elementName: resolved.elementName, revision: resolved.revision, capturedAt: now,
                 styles: read.styles, tokens: read.tokens, components: read.components, system: read.system)
+            payload.renderSHA = resolved.renderSHA
             if let board = pinned.board, let first = resolved.boards.first {
                 let entry = resolved.snapshot.index.boards[board]
                 payload.boardTitle = entry?.title.flatMap(DesignViewRecord.label)
@@ -358,6 +369,18 @@ struct DesignReferenceService: Sendable {
         guard state.designs.contains(where: { $0.id == reference.designID }),
               let snapshot = try? await server.designs.snapshot(reference.designID) else { return .deleted }
         let payloads = server.designReferencePayloads
+        let pinnedSHA: String?
+        if let payload { pinnedSHA = payload.renderSHA }
+        else if let revision = reference.revision {
+            pinnedSHA = try? await server.designs.pinnedRenderSHA(reference.designID, revision: revision)
+        } else { pinnedSHA = nil }
+        let renderChanged: Bool
+        if let pinnedSHA {
+            renderChanged = (try? await server.designs.renderSHA(reference.designID)) != pinnedSHA
+        } else {
+            // Old sent copies have no rendering fingerprint; don't call source equality fresh.
+            renderChanged = reference.revision.map { $0 != snapshot.revision } ?? false
+        }
         if let board = reference.board {
             guard snapshot.index.boards[board] != nil, let now = snapshot.boards[board] else { return .deleted }
             var before: String?
@@ -375,7 +398,9 @@ struct DesignReferenceService: Sendable {
             guard let sha else {
                 return reference.revision.map { $0 == snapshot.revision } ?? true ? .current : .updatedSince(latest: snapshot.revision, changes: [])
             }
-            guard sha != now else { return .current }
+            guard sha != now else {
+                return renderChanged ? .updatedSince(latest: snapshot.revision, changes: []) : .current
+            }
             guard let before, let after = try? await server.designs.board(reference.designID, path: board) else {
                 return .updatedSince(latest: snapshot.revision, changes: [])
             }
@@ -392,7 +417,7 @@ struct DesignReferenceService: Sendable {
         let heldAll = held.count == (payload.boardCount ?? held.count)
         let compared = heldAll ? current : current.filter { board in held.contains { $0.board == board.board } }
         let lines = DesignReferenceReading.designChangeLines(before: before, after: compared)
-        return lines.isEmpty ? .current : .updatedSince(latest: snapshot.revision, changes: lines)
+        return lines.isEmpty && !renderChanged ? .current : .updatedSince(latest: snapshot.revision, changes: lines)
     }
 
     // MARK: The @ picker

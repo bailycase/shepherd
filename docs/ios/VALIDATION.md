@@ -48,8 +48,9 @@ temporary directory, then builds and runs three programs:
 - **`ThreadStoreCheck`:** `NativeThreadStore`. It covers revisions, merging history with live
   entries, stale sessions, acceptance, drafts, unknown outcomes with no automatic resend,
   questions, abort, and stop and reconnect.
-- **`RemoteConnectCheck`:** checks that cancelling or disconnecting while a socket is still
-  opening never sends `hello`.
+- **`RemoteConnectCheck`:** cancellation/disconnect must finish while the socket-open gate is
+  still held; a deadline must also release its waiter. A late returned descriptor closes without
+  sending `hello`.
 
 Real Keychain behavior is not tested here. Pure logic (host records and entries, backoff) has
 unit tests in `ShepherdRemoteUnitTests`.
@@ -128,6 +129,29 @@ expect. With it, a screen can open more windows (CONTRACTS.md › Fixture screen
 and `windows-sent` draw two windows side by side as Split View does, and `windows-new` opens a
 real second window, which the simulator's full-screen mode shows over the first. Windows the
 system restores from an earlier run are closed before a screen starts.
+
+**Client state regressions.** `client-state-regressions` exercises the actual New thread,
+review and navigation models against gated in-memory request closures (the fixture host still
+refuses mutations). It checks atomic prompt/image creation and retained images on rejection,
+completion ownership for replaced sheets, same-revision diff option invalidation and stale file
+replies, route/restoration preservation across compact and regular width, independent Settings,
+composer and Commit presentation in two windows, and release of unmounted per-host stores.
+`forgotten-automation-regression` gates a run-history response, forgets its host, then confirms
+that neither that reply nor a stale selection recreates it while other hosts' automations stay.
+`forgotten-design-regression` seeds phone and iPad design data, invokes full `MobileApp.forget`,
+and checks canvas release, phone-cache eviction, stale lookup refusal and another host's cache.
+RemoteDesignCacheTests gates a late file response across Forget and checks disk recreation,
+assets and interrupted downloads. Skills tests resume an ambiguous install's untouched suffix
+only after explicit one-entry resolution, including recreation from persisted pending work.
+Shared ClientSettingsTests/ClientSkillsTests cover late forgotten-host replies and durable
+pending work across recreation, plus independent instruction edit/save targets. Its
+`FIXTURE CHECK ok|FAILED client-state` lines are the assertions, not the screenshot. It also
+calls the actual composer send entry point with a real `NativeThreadStore` and a gated fake
+request: image B finishes attaching while A awaits acceptance; accepted sends remove A alone,
+and rejected or unknown outcomes retain both. Gated commit checks ensure a second viewer
+joins the form without resetting edits and Forget invalidates late loads/polls. A gated queue
+hold release keeps the first scene's ownership until completion. Shared instruction tests toggle
+Same on every host during Save/Restore to verify the captured recipient scope.
 
 **The Changes pane's screens.** `review`, `diff`, `review-comment`, `review-base`, `review-pr`,
 `review-empty`, `review-error` (MobileChanges, MobileDiff) and `changes-pad`, `changes-pad-full`,

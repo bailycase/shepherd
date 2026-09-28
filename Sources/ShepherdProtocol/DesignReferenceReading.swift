@@ -427,7 +427,7 @@ public enum DesignReferenceReading {
     }
 
     static func number(_ value: Double) -> String {
-        value == value.rounded() ? String(Int(value)) : String(value)
+        Int(exactly: value).map(String.init) ?? String(value)
     }
 
     private static let variablePattern = try! NSRegularExpression(pattern: "var\\(\\s*(--[A-Za-z0-9_-]+)")

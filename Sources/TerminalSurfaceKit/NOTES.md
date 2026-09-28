@@ -112,9 +112,10 @@ patch when the vendored copy is refreshed.
 - **Model identity.** `TerminalSurfaceView` keys its subtree on the model's identity. libghostty
   assigns the NSView delegate only in `makeNSView`, so a reused NSView would otherwise stay wired
   to the previous pane.
-- **Drops.** SwiftUI `.onDrop` cannot route drops correctly when hidden layouts stay mounted, so
-  `TerminalDropOverlay` is one window-level overlay. It joins hit-testing only while a file drag
-  is in flight, and delivers the drop to the visible pane under the cursor.
+- **Drops.** `TerminalSurfaceDrop` registers on the actual `AppTerminalView`, through its
+  host-drop callbacks (a small vendored patch). AppKit owns drag lifetime and foreground
+  hit-testing; the adapter rejects hidden/non-rendering surfaces and resolves only the sender's
+  pasteboard. There is no window overlay or window-wide surface search per drag update.
   - `TerminalFileDrop` inserts shell-escaped absolute paths.
   - `TerminalImageDrop` resizes images to a 2000 px longest edge before they are referenced. JPEG
     stays JPEG and everything else becomes PNG. The copies live in a drop directory and are

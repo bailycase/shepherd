@@ -39,13 +39,13 @@ extension FixtureCatalog {
                           routes: [.settings(.experiments), .settings(.suggestion(FixtureData.joinKeys))], tab: .settings),
             // The iPad's list beside a page (iPadSettingsInstructions).
             FixtureScreen(name: "settings-pad-instructions", routes: [.settings(.root)], tab: .settings, prepare: { app in
-                SettingsStore.of(app.hosts).page = .instructions
+                app.navigator.settingsSelection.page = .instructions
                 await FixtureData.draft(app, .agents, adding: "- Prefer a draft PR over a long explanation.")
             }),
             FixtureScreen(name: "settings-pad-experiments", hosts: FixtureData.suggestingHosts(), routes: [.settings(.root)], tab: .settings,
-                          prepare: { app in SettingsStore.of(app.hosts).page = .experiments }),
+                          prepare: { app in app.navigator.settingsSelection.page = .experiments }),
             FixtureScreen(name: "settings-pad-skills", routes: [.settings(.root)], tab: .settings,
-                          prepare: { app in SettingsStore.of(app.hosts).page = .skills }),
+                          prepare: { app in app.navigator.settingsSelection.page = .skills }),
         ]
     }
 }

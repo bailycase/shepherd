@@ -58,6 +58,7 @@ final class DesignRendering {
     static let liveCap = 2
 
     private var surfaces: [HostDesignRef: DesignSurface] = [:]
+    private var forgottenHosts: Set<UUID> = []
     private var images: [String: UIImage] = [:]
     private var imageOrder: [String] = []
     private var busy = false
@@ -73,8 +74,15 @@ final class DesignRendering {
     func surface(_ ref: HostDesignRef, source: RemoteDesignSource) -> DesignSurface {
         if let surface = surfaces[ref] { return surface }
         let surface = DesignSurface(designID: ref.design, source: source)
-        surfaces[ref] = surface
+        if !forgottenHosts.contains(ref.host) { surfaces[ref] = surface }
         return surface
+    }
+
+    func forget(host: UUID) {
+        forgottenHosts.insert(host)
+        surfaces = surfaces.filter { $0.key.host != host }
+        images = images.filter { !$0.key.hasPrefix(host.uuidString + "/") }
+        imageOrder.removeAll { $0.hasPrefix(host.uuidString + "/") }
     }
 
     /// Forgets the sandboxes and images of designs no host lists any more.
@@ -88,17 +96,19 @@ final class DesignRendering {
     /// The board drawn as an image `width` points wide, from the cache while its hash holds.
     func image(_ ref: HostDesignRef, source: RemoteDesignSource, path: DesignPath, sha256: String, size: CGSize,
                width: CGFloat) async -> UIImage? {
+        guard !forgottenHosts.contains(ref.host) else { return nil }
         let key = "\(ref.host.uuidString)/\(ref.design.rawValue)/\(path.rawValue)/\(sha256)/\(Int(width))"
         if let image = images[key] { return image }
         let rendered: UIImage? = await exclusively {
             // A tile scrolled away while it waited its turn draws nothing: no web view for it.
-            guard !Task.isCancelled else { return nil }
+            guard !Task.isCancelled, !self.forgottenHosts.contains(ref.host) else { return nil }
             let view = self.makeView(ref, source: source, path: path, size: size)
             defer { self.release(view) }
             guard (try? await Self.load(view)) != nil, let image = try? await view.snapshot(width: min(width, size.width)) else { return nil }
             return UIImage(cgImage: image, scale: max(1, image.width > 0 ? CGFloat(image.width) / min(width, size.width) : 1),
                            orientation: .up)
         }
+        guard !forgottenHosts.contains(ref.host) else { return nil }
         if let rendered { remember(rendered, key) }
         return rendered
     }

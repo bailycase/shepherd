@@ -48,6 +48,24 @@ final class MobileDesigns {
         return store
     }
 
+    static func forget(host: UUID, in hosts: MobileHosts) {
+        guard let store = stores[ObjectIdentifier(hosts)] else { return }
+        for (ref, tokens) in store.watchers where ref.host == host {
+            for token in tokens { store.observers[token] = nil }
+        }
+        store.watchers = store.watchers.filter { $0.key.host != host }
+        store.indexes = store.indexes.filter { $0.key.host != host }
+        store.comments = store.comments.filter { $0.key.host != host }
+        store.failures = store.failures.filter { $0.key.host != host }
+        store.swatches = store.swatches.filter { !$0.key.hasPrefix(host.uuidString + "/") }
+        store.connections[host] = nil
+        store.signatures[host] = nil
+        store.again.remove(host)
+        store.setServing(host, false)
+        store.derive()
+        DesignRendering.shared.forget(host: host)
+    }
+
     private init(hosts: MobileHosts) {
         self.hosts = hosts
         libraries = HostDesignLibraries.of(hosts)
@@ -64,7 +82,7 @@ final class MobileDesigns {
     /// `designs.v1` (its Design tool on); MobileHosts follows `capabilitiesChanged`.
     private func track() {
         let inputs = withObservationTracking {
-            hosts.hosts.map { host in
+            hosts.hosts.filter { !libraries.cache.isForgotten(host: $0.id) }.map { host in
                 (host: host, session: host.session,
                  serves: host.connectedClient != nil && host.supports(RemoteProtocol.designsCapability),
                  signature: host.state.designs.map { "\($0.id.rawValue)/\($0.lastActiveAt)/\($0.boardCount ?? -1)/\($0.agentID?.rawValue ?? "")" }
@@ -77,10 +95,7 @@ final class MobileDesigns {
         let live = Set(inputs.map(\.host.id))
         for id in Set(connections.keys).subtracting(live) {
             libraries.forget(id)
-            connections[id] = nil
-            signatures[id] = nil
-            watchers = watchers.filter { $0.key.host != id }
-            setServing(id, false)
+            Self.forget(host: id, in: hosts)
         }
         var changed = false
         for input in inputs {
@@ -109,7 +124,7 @@ final class MobileDesigns {
     }
 
     func library(_ host: UUID) -> RemoteDesignLibrary? {
-        serving.contains(host) ? libraries.library(host) : nil
+        serving.contains(host) && !libraries.cache.isForgotten(host: host) ? libraries.library(host) : nil
     }
 
     func source(_ ref: HostDesignRef) -> RemoteDesignSource? {
@@ -169,13 +184,16 @@ final class MobileDesigns {
     /// Reads a design's index and fetches the files whose hashes this phone lacks.
     @discardableResult
     func sync(_ ref: HostDesignRef) async -> RemoteDesignIndex? {
+        guard !libraries.cache.isForgotten(host: ref.host) else { return nil }
         guard let source = source(ref) else { return indexes[ref] }
         do {
             let index = try await source.sync()
+            guard !libraries.cache.isForgotten(host: ref.host) else { return nil }
             if indexes[ref] != index { indexes[ref] = index }
             if failures[ref] != nil { failures[ref] = nil }
             return index
         } catch {
+            guard !libraries.cache.isForgotten(host: ref.host) else { return nil }
             failures[ref] = MobileDesignsError.words(error)
             return indexes[ref]
         }
@@ -194,6 +212,7 @@ final class MobileDesigns {
     /// Screens stack (a design, its board over it), so a design stays watched until the last
     /// screen showing it leaves.
     func watch(_ ref: HostDesignRef, on: Bool, token: UUID, observer: ((HostDesignRef, Bool, Bool) -> Void)? = nil) {
+        guard !libraries.cache.isForgotten(host: ref.host) else { return }
         if on {
             watchers[ref, default: []].insert(token)
             observers[token] = observer

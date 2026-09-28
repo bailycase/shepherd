@@ -19,6 +19,7 @@ struct SkillsSettings: View {
     @State private var expanded: String?
     @State private var sheet: SkillsSheet?
     @State private var toast: NWToast?
+    @State private var resolving: ClientSkills.Unacknowledged?
 
     var body: some View {
         let hosts = vm.skillsHosts
@@ -32,6 +33,9 @@ struct SkillsSettings: View {
                     if let problem = model.problem {
                         HStack(spacing: NW.Space.m) {
                             NWInlineProblem(problem)
+                            if let entry = model.unacknowledged {
+                                Button("Resolve…") { resolving = entry }.buttonStyle(.nwLink)
+                            }
                             Button("Dismiss") { model.dismissProblem() }.buttonStyle(.nwLink)
                         }
                         .nwTransition(.disclosure)
@@ -58,6 +62,15 @@ struct SkillsSettings: View {
         .nwAnimation(.list, value: rows.map(\.id))
         .nwAnimation(.list, value: groups.map { $0.rows.map(\.id) })
         .nwAnimation(.disclosure, value: model.problem)
+        .confirmationDialog("Stop waiting for this skill change?", isPresented: Binding(get: { resolving != nil }, set: { if !$0 { resolving = nil } }), presenting: resolving) { entry in
+            Button("Continue without retrying") {
+                resolving = nil
+                Task { await model.resolveUnacknowledged(entry, in: vm.skillsHosts) }
+            }
+            Button("Cancel", role: .cancel) { resolving = nil }
+        } message: { entry in
+            Text("Check the skill on \(entry.hostName) first. This forgets only this change's missing receipt, without retrying or undoing it, then sends the later changes.")
+        }
         .task { await model.refresh(vm.skillsHosts) }
         .sheet(item: $sheet) { sheet in
             switch sheet {

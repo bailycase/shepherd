@@ -94,7 +94,7 @@ struct DesignImportIntegrationTests {
         #expect(Set(snapshot.boards.keys) == [try DesignPath.validate("Minimal.dc.html")])
     }
 
-    enum BadFolder: String, CaseIterable, Sendable { case link, linkedProject, noCanvas, badName, oversize, unreadableCanvas }
+    enum BadFolder: String, CaseIterable, Sendable { case link, linkedProject, noCanvas, badName, oversize, unreadableCanvas, unsafeGeometry }
 
     @Test(arguments: BadFolder.allCases)
     func aFolderThatCantBecomeADesignLeavesNothingBehind(_ bad: BadFolder) async throws {
@@ -125,6 +125,9 @@ struct DesignImportIntegrationTests {
             try handle.close()
         case .unreadableCanvas:
             try Data(#"{"v":2}"#.utf8).write(to: project.appendingPathComponent("canvas.json"))
+        case .unsafeGeometry:
+            try Data(#"{"v":3,"boards":{"Minimal.dc.html":{"x":0,"y":0,"w":1e100,"h":300}}}"#.utf8)
+                .write(to: project.appendingPathComponent("canvas.json"))
         }
         let designsFolder = h.server.designs.directory
         let before = (try? FileManager.default.contentsOfDirectory(atPath: designsFolder.path)) ?? []

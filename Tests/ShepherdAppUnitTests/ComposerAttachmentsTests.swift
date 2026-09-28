@@ -18,6 +18,27 @@ struct ComposerAttachmentsTests {
         #expect(attachments.images.count == 2 && attachments.error == nil && !attachments.isFull)
     }
 
+    @Test @MainActor func imageDraftsSurviveThreadRemountsAndAreReleasedWithTheAgent() {
+        let stores = NativeThreadStores<String>()
+        let input = stores.input(for: "a")
+        input.attachments.add([Self.image("a.png")])
+        #expect(stores.input(for: "a") === input)
+        #expect(stores.input(for: "a").attachments.images.count == 1)
+        stores.prune(live: ["a"])
+        #expect(stores.input(for: "a") === input)
+        stores.prune(live: [])
+        #expect(stores.input(for: "a").attachments.isEmpty)
+    }
+
+    @Test func acknowledgingSubmittedImagesKeepsLaterAttachments() {
+        var attachments = ComposerAttachments()
+        attachments.add([Self.image("sent.png")])
+        let submitted = attachments.ids
+        attachments.add([Self.image("next.png")])
+        for id in submitted { attachments.remove(id) }
+        #expect(attachments.items.map(\.name) == ["next.png"])
+    }
+
     @Test func aFifthImageIsLeftOutAndSaysWhy() {
         var attachments = ComposerAttachments()
         attachments.add((1...5).map { Self.image("\($0).png") })

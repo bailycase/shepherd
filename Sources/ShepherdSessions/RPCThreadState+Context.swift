@@ -87,7 +87,8 @@ extension RPCThreadState {
             completion(.failure(code: "busy", message: "The agent is already compacting."))
             return
         }
-        guard !piBusy else {
+        // Settled-turn filesystem capture gates prompts, not an idle pi's context operation.
+        guard !running, dispatches.isEmpty else {
             completion(.failure(code: "busy", message: "Compact once the agent has stopped: compacting ends its turn."))
             return
         }

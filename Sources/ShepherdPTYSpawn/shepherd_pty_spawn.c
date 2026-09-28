@@ -27,8 +27,10 @@ pid_t shepherd_forkpty_exec(int *master_fd,
     for (int fd = STDERR_FILENO + 1, max = getdtablesize(); fd < max; fd++) {
         (void)close(fd);
     }
-    if (cwd != NULL) {
-        (void)chdir(cwd);
+    if (cwd != NULL && chdir(cwd) != 0) {
+        static const char message[] = "shepherd: chdir failed\r\n";
+        (void)write(STDERR_FILENO, message, sizeof(message) - 1);
+        _exit(127);
     }
     execve(path, argv, envp);
     if (exec_fail_message != NULL) {

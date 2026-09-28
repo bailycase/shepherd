@@ -33,9 +33,22 @@ public final class RemoteDesignLibrary {
         self.cache = cache
     }
 
+    public func forget() {
+        cache.forget(host: hostID)
+        link.transport = nil
+        available = false
+        listing = nil
+        error = nil
+        watched = []
+        for source in sources.values { source.invalidate() }
+        sources = [:]
+        onDesignChanged = nil
+    }
+
     /// The host's connection changed: `transport` while it is connected and offers designs, nil
     /// otherwise. A new connection is told again which designs are on screen.
     public func connect(_ transport: (any RemoteDesignTransport)?, available: Bool) {
+        guard !cache.isForgotten(host: hostID) else { return }
         link.transport = available ? transport : nil
         if self.available != available { self.available = available }
         if !available {
@@ -47,9 +60,9 @@ public final class RemoteDesignLibrary {
 
     /// Lists the host's designs again.
     public func refresh() async {
-        guard let transport else { return }
+        guard transport != nil else { return }
         do {
-            guard case .listing(let next) = try await transport.design(.list) else { return }
+            guard case .listing(let next) = try await request(.list) else { return }
             if listing != next { listing = next }
             if error != nil { error = nil }
             let live = Set(next.designs.map(\.id))
@@ -58,6 +71,7 @@ public final class RemoteDesignLibrary {
                 cache.remove(RemoteDesignCache.Key(host: hostID, design: id))
             }
         } catch {
+            guard !cache.isForgotten(host: hostID) else { return }
             self.error = "\(error)"
         }
     }
@@ -67,12 +81,13 @@ public final class RemoteDesignLibrary {
         if let source = sources[id] { return source }
         let link = link
         let source = RemoteDesignSource(key: RemoteDesignCache.Key(host: hostID, design: id), cache: cache) { link.transport }
-        sources[id] = source
+        if !cache.isForgotten(host: hostID) { sources[id] = source }
         return source
     }
 
     /// The designs on screen: the host pushes changes for these alone.
     public func watch(_ ids: Set<DesignID>) {
+        guard !cache.isForgotten(host: hostID) else { return }
         guard ids != watched else { return }
         watched = ids
         sendWatch()
@@ -85,14 +100,16 @@ public final class RemoteDesignLibrary {
 
     /// Asks the host whatever `request` asks, through its connection now.
     public func request(_ request: RemoteDesignRequest) async throws -> RemoteDesignResult {
-        guard let transport else { throw RemoteHostClientError.rejected(code: "update_required", message: RemoteHostClient.designsRefusal) }
-        return try await transport.design(request)
+        guard !cache.isForgotten(host: hostID), let transport else { throw RemoteHostClientError.rejected(code: "update_required", message: RemoteHostClient.designsRefusal) }
+        let result = try await transport.design(request)
+        guard !cache.isForgotten(host: hostID) else { throw CancellationError() }
+        return result
     }
 
     private func sendWatch() {
-        guard let transport else { return }
+        guard transport != nil else { return }
         let ids = watched.sorted { $0.rawValue < $1.rawValue }
-        Task { _ = try? await transport.design(.watch(designIDs: ids)) }
+        Task { _ = try? await request(.watch(designIDs: ids)) }
     }
 }
 

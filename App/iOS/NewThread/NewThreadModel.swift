@@ -49,6 +49,7 @@ final class NewThreadModel {
     @ObservationIgnored private let navigator: MobileNavigator
     @ObservationIgnored private let preferredHost: UUID?
     @ObservationIgnored private let context: AgentRef?
+    @ObservationIgnored private let create: (RemoteHostClient, NewThreadCreation, [NativeImage]) async throws -> AgentID
     @ObservationIgnored private var began = false
     /// Each host's connection, so defaults that failed load again only on a new one.
     @ObservationIgnored private var sessions: [UUID: UUID] = [:]
@@ -56,12 +57,20 @@ final class NewThreadModel {
     /// A repo just added, until the host's state push brings it.
     @ObservationIgnored private var pendingSpace: SpaceID?
 
-    init(hosts: MobileHosts, threads: ThreadStores, navigator: MobileNavigator, preferredHost: UUID?, context: AgentRef?) {
+    init(hosts: MobileHosts, threads: ThreadStores, navigator: MobileNavigator, preferredHost: UUID?, context: AgentRef?,
+         create: @escaping (RemoteHostClient, NewThreadCreation, [NativeImage]) async throws -> AgentID = { client, creation, images in
+             try await client.createAgent(
+                 spaceID: creation.spaceID, cwd: creation.cwd, model: creation.model, thinking: creation.thinking,
+                 initialPrompt: creation.initialPrompt, worktreeBranch: creation.worktreeBranch,
+                 worktreeBase: creation.worktreeBase, worktreeFetchFirst: creation.worktreeFetchFirst,
+                 initialImages: images)
+         }) {
         self.hosts = hosts
         self.threads = threads
         self.navigator = navigator
         self.preferredHost = preferredHost
         self.context = context
+        self.create = create
     }
 
     // MARK: Derived
@@ -301,46 +310,30 @@ final class NewThreadModel {
 
     // MARK: Start
 
-    /// Creates the agent as the Mac does, then opens its thread. Images go with the first send,
-    /// since createAgent takes none.
-    func start() {
-        guard let creation = NewThreadRules.creation(draft), let hostID, let client = hosts.host(hostID)?.connectedClient else { return }
+    /// Creates the agent with its opening prompt and images in one request, then opens it
+    /// only while the initiating presentation still owns completion.
+    @discardableResult
+    func start() -> Task<Void, Never>? {
+        guard let creation = NewThreadRules.creation(draft), let hostID, let client = hosts.host(hostID)?.connectedClient else { return nil }
         starting = true
         errorText = nil
         let images = attachments.map(\.image)
-        Task {
+        let presentationID = navigator.presented?.id
+        return Task {
             do {
-                let agentID = try await client.createAgent(
-                    spaceID: creation.spaceID, cwd: creation.cwd, model: creation.model, thinking: creation.thinking,
-                    initialPrompt: creation.initialPrompt, worktreeBranch: creation.worktreeBranch,
-                    worktreeBase: creation.worktreeBase, worktreeFetchFirst: creation.worktreeFetchFirst)
+                let agentID = try await create(client, creation, images)
                 let ref = AgentRef(host: hostID, agent: agentID)
                 // The prompt shows while the host's pi starts, as the row the host's first snapshot carries.
                 if let opening = OpeningPrompt(creation.initialPrompt, agentID: agentID) {
                     threads.store(for: ref).preview(opening.preview(model: creation.model, thinking: creation.thinking.rawValue))
                 }
-                if let text = creation.firstSend { sendFirst(text, images: images, to: ref) }
+                guard let presentationID, navigator.presented?.id == presentationID else { return }
                 navigator.dismissPresented()
                 navigator.open(.thread(ref))
             } catch {
                 errorText = Self.message(error)
                 starting = false
             }
-        }
-    }
-
-    /// Puts the prompt in the new thread's composer and sends it with the images once the
-    /// thread's screen runs its store; the send itself waits for pi to start.
-    private func sendFirst(_ text: String, images: [NativeImage], to ref: AgentRef) {
-        let store = threads.store(for: ref)
-        store.draft = text
-        Task {
-            let deadline = ContinuousClock.now + .seconds(30)
-            while !store.isLive, ContinuousClock.now < deadline {
-                try? await Task.sleep(for: .milliseconds(100))
-            }
-            guard store.isLive, store.draft == text else { return }
-            await store.send(images: images)
         }
     }
 

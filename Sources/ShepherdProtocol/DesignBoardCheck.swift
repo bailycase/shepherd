@@ -57,7 +57,7 @@ public enum DesignBoardCheck {
         public var description: String { "\(Self.format(width))×\(Self.format(height))" }
 
         private static func format(_ value: Double) -> String {
-            value == value.rounded() ? String(Int(value)) : String(value)
+            Int(exactly: value).map(String.init) ?? String(value)
         }
     }
 

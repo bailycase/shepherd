@@ -55,6 +55,45 @@ struct InstructionsModelTests {
         #expect(model.problem == nil)
     }
 
+    @Test(arguments: [false, true], [false, true])
+    func savingOrRestoringKeepsNewerEditsOnEitherMachine(restore: Bool, remote: Bool) async throws {
+        let hosts = RemoteHostStore(defaults: defaults, connects: false)
+        let machine: InstructionsModel.Machine = remote ? .remote(UUID()) : .local
+        let entry = InstructionHistoryEntry(id: UUID(), file: .agents, savedAt: 0, summary: "older")
+        let (requests, arrivals) = AsyncStream<RemoteInstructionsRequest>.makeStream()
+        let (replies, resume) = AsyncStream<InstructionsSnapshot>.makeStream()
+        let model = InstructionsModel(store: store, remoteHosts: hosts, defaults: defaults) { destination, request in
+            #expect(destination == machine)
+            arrivals.yield(request)
+            for await snapshot in replies { return snapshot }
+            throw RemoteHostClientError.disconnected
+        }
+        model.sameEverywhere = false
+        model.machine = machine
+        model.setText("submitted", file: .agents, on: machine)
+        let writing = Task {
+            if restore { await model.restore(entry, on: machine) }
+            else { await model.save() }
+        }
+        for await request in requests {
+            if restore {
+                #expect(request == .restore(revisionID: entry.id, origin: remote ? InstructionsModel.machineName : ""))
+            } else {
+                #expect(request == .save(file: .agents, content: "submitted", origin: remote ? InstructionsModel.machineName : "", sync: false))
+            }
+            break
+        }
+        model.setText("newer edit", file: .agents, on: machine)
+        resume.yield(InstructionsSnapshot(agents: restore ? "restored" : "submitted", directory: "~/i"))
+        await writing.value
+        arrivals.finish()
+        resume.finish()
+        #expect(model.text(.agents, on: machine) == "newer edit")
+        #expect(model.isEdited(.agents, on: machine))
+        #expect(model.problem == nil)
+        if !remote { #expect(model.saved(.agents, on: machine) == (restore ? "restored" : "submitted")) }
+    }
+
     @Test func revertDropsTheDraft() async throws {
         try store.save(.appendSystem, content: "rule\n")
         let model = await makeModel()

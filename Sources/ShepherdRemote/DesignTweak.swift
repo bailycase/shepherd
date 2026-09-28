@@ -204,7 +204,7 @@ public enum DesignTweakControls {
 
     /// `24`, `1.5`.
     public static func format(_ value: Double) -> String {
-        value == value.rounded() ? String(Int(value)) : String(format: "%g", value)
+        Int(exactly: value).map(String.init) ?? String(format: "%g", value)
     }
 
     // MARK: Writing

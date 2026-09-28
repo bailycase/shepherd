@@ -163,6 +163,21 @@ struct MCPConfigFileTests {
         #expect(entry.kind == kind)
     }
 
+    @Test(arguments: [
+        ("1e100", 10, 30), ("-1", 10, 30), ("0", 10, 30), ("1.5", 10, 30),
+        ("1", 1, 1), ("300", 300, 300), ("301", 301, 30),
+        ("35791", 35791, 30), ("35792", 10, 30),
+    ])
+    func externalNumbersUseOnlySupportedWholeDelays(number: String, idle: Int, timeout: Int) throws {
+        let json = "{\"mcpServers\":{\"fixture\":{\"command\":\"fixture\",\"shepherd\":{\"idleMinutes\":\(number),\"timeoutSeconds\":\(number)}}}}"
+        guard case .document(let document) = MCPConfigFile.parse(Data(json.utf8)) else {
+            Issue.record("valid JSON number did not parse"); return
+        }
+        let settings = try #require(document.server("fixture")).settings
+        #expect(settings.idleMinutes == idle)
+        #expect(settings.timeoutSeconds == timeout)
+    }
+
     @Test func shepherdFieldsDefaultWhenMissingAndOnlyChangesAreWritten() {
         var entry = MCPServerEntry.local("grafana", command: "mcp-grafana")
         #expect(entry.settings == MCPShepherdSettings())

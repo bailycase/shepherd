@@ -57,6 +57,31 @@ struct SubagentTranscriptTests {
         #expect(oldest.earlierCount == 0)
     }
 
+    @Test func escapedToolResultsPageWithinTheWireBudgetWithoutLosingEntries() throws {
+        // Leave room in the per-row 16 KiB projection budget for tool name and call ID.
+        let text = String(repeating: "\\", count: 15 * 1024)
+        let encodedText = String(decoding: try JSONEncoder().encode(text), as: UTF8.self)
+        let lines = (0..<40).map { index in
+            "{\"type\":\"message\",\"id\":\"t\(index)\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call\(index)\",\"toolName\":\"read\",\"content\":[{\"type\":\"text\",\"text\":\(encodedText)}],\"isError\":false}}"
+        }
+        let (dir, file) = try sessionFile(pairs: 0, extra: lines)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        var cursor: String?
+        var recovered: [String] = []
+        repeat {
+            let value = try page(file, before: cursor)
+            #expect(!value.messages.isEmpty)
+            #expect(try JSONEncoder().encode(value).count <= 240 * 1024)
+            #expect(try NDJSON.encode(RemoteReply.nativeThread(id: 1, result: .transcript(value: value))).count <= NDJSON.maxPayloadBytes)
+            #expect(value.messages.allSatisfy { $0.blocks.map(\.text).joined() == text })
+            recovered.insert(contentsOf: value.messages.map(\.entryID), at: 0)
+            #expect(value.earlierCount == 40 - recovered.count)
+            cursor = value.olderCursor
+        } while cursor != nil && recovered.count < 40
+        #expect(cursor == nil)
+        #expect(recovered == (0..<40).map { "c:t\($0)" })
+    }
+
     @Test func aCursorNotInTheFileIsStale() throws {
         let (dir, file) = try sessionFile(pairs: 2)
         defer { try? FileManager.default.removeItem(at: dir) }

@@ -157,6 +157,36 @@ struct ChangesEngineTests {
         try repo.expectUnchanged(since: before)
     }
 
+    @Test(arguments: [false, true])
+    func snapshotsFollowNewlyTrackedIgnoredFilesAndBranchSwitches(switchBranch: Bool) async throws {
+        let repo = try ChangesRepo(files: [".gitignore": "*.log\n"])
+        let h = try ChangesHarness(repo: repo)
+        #expect(try await h.list(.uncommitted).files.isEmpty)
+        if switchBranch { try repo.git("switch", "-qc", "tracks-log") }
+        try repo.write("tracked.log", "committed\n")
+        try repo.git("add", "-f", "tracked.log")
+        try repo.git("commit", "-qm", "track ignored file")
+        if switchBranch {
+            try repo.git("switch", "-q", "main")
+            #expect(try await h.list(.uncommitted).files.isEmpty)
+            try repo.git("switch", "-q", "tracks-log")
+        }
+        try repo.write("tracked.log", "working edit\n")
+        try repo.write("ignored.log", "never tracked\n")
+        let before = try repo.state()
+
+        let list = try await h.list(.uncommitted)
+
+        #expect(list.summary == ["M tracked.log"])
+        let file = try await h.service.file(agentID: h.agent, revision: list.revision, path: "tracked.log")
+        #expect(file.file.hunks.flatMap(\.lines).filter { $0.kind == .added }.map(\.text) == ["working edit"])
+        try repo.expectUnchanged(since: before)
+        // A removed ignored path must stop being privately tracked too.
+        try repo.git("rm", "--cached", "tracked.log")
+        try repo.git("commit", "-qm", "stop tracking log")
+        #expect(try await h.list(.uncommitted).files.isEmpty)
+    }
+
     /// A file's hunks come from the revision its list was made from, whatever changed since; the
     /// options hide whitespace changes and load the whole file.
     @Test func aFilesHunksBelongToItsListAndFollowTheOptions() async throws {

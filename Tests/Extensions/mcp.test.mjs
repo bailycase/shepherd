@@ -27,7 +27,7 @@ const aliases = {
 const jiti = createJiti(import.meta.url, { alias: aliases });
 const extensionFile = path.join(root, "Extensions/shepherd-mcp.ts");
 const clientFile = path.join(root, "Extensions/shepherd-mcp-client.mjs");
-const { default: install, directToolName, projectConfigPath, parseSettings } = await jiti.import(extensionFile);
+const { default: install, directToolName, projectConfigPath, parseSettings, readServers } = await jiti.import(extensionFile);
 const client = await import(clientFile);
 const fixture = path.join(root, "Tests/Extensions/fixtures/fake-mcp-stdio.mjs");
 
@@ -166,6 +166,24 @@ test("settings default when missing, and a direct tool's name is sanitized and c
   const long = directToolName("s".repeat(40), "t".repeat(40));
   assert.equal(long.length, 64);
   assert.match(long, /^s{40}_t{14}_[0-9a-f]{8}$/);
+});
+
+test("both server maps are merged with the same precedence as Settings", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sh-mcp-maps-"));
+  const file = path.join(dir, "mcp.json");
+  const legacy = { command: "legacy" }, preferred = { command: "preferred" };
+  try {
+    for (const [document, expected] of [
+      [{ servers: { vscode: legacy }, mcpServers: { shepherd: preferred } }, { vscode: legacy, shepherd: preferred }],
+      [{ servers: { same: legacy }, mcpServers: { same: preferred } }, { same: preferred }],
+      [{ servers: { same: legacy }, mcpServers: { same: null } }, { same: legacy }],
+      [{ servers: { same: legacy }, mcpServers: { same: {} } }, {}],
+      [{ servers: { vscode: legacy }, mcpServers: [] }, { vscode: legacy }],
+    ]) {
+      fs.writeFileSync(file, JSON.stringify(document));
+      assert.deepEqual(readServers(file), expected);
+    }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("variables expand from the environment; keychain references wait for the app", () => {
@@ -536,7 +554,7 @@ test("stdio servers die with pi", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sh-mcp-exit-"));
   const pidfile = path.join(dir, "pid");
   const config = path.join(dir, "mcp.json");
-  fs.writeFileSync(config, JSON.stringify({ mcpServers: { fake: stdioServer({ env: { FAKE_MCP_PIDFILE: pidfile, FAKE_MCP_LINGER: "1" } }) } }));
+  fs.writeFileSync(config, JSON.stringify({ mcpServers: { fake: stdioServer({ env: { FAKE_MCP_PIDFILE: pidfile, FAKE_MCP_LINGER: "1", FAKE_MCP_IGNORE_TERM: "1" } }) } }));
   const script = path.join(dir, "pi.mjs");
   fs.writeFileSync(script, `
     import { createRequire } from "node:module";
@@ -566,6 +584,51 @@ test("stdio servers die with pi", async () => {
   await eventually("the server killed with pi", () => !alive(pid), 3_000);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+for (const mode of ["immediate", "graceful", "leader-exit", "probe"]) {
+  test(`stdio ${mode} cleanup kills TERM-resistant owned descendants`, { timeout: 15000 }, async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sh-mcp-owned-"));
+    const pidfile = path.join(dir, "pid"), descendant = path.join(dir, "descendant");
+    const entry = stdioServer({ env: { FAKE_MCP_PIDFILE: pidfile, FAKE_MCP_DESCENDANT: descendant,
+      FAKE_MCP_LINGER: "1", FAKE_MCP_IGNORE_TERM: "1" } });
+    // The client intentionally unrefs all handles; the stand-in pi must stay alive while
+    // initialize is pending. A ref'd deadline also fails a genuinely hung operation.
+    let deadline;
+    const bounded = new Promise((_, reject) => { deadline = setTimeout(() => reject(new Error("MCP lifecycle fixture timed out")), 12000); });
+    let connection, pid, childPID, probe;
+    try {
+      if (mode === "probe") {
+        probe = spawn(process.execPath, [clientFile, "probe"], { stdio: ["pipe", "pipe", "pipe"] });
+        let output = "";
+        probe.stdout.on("data", (chunk) => { output += chunk; });
+        // The fixture waits for its descendant before answering initialize.
+        probe.stdin.end(JSON.stringify({ name: "fixture", entry, timeoutSeconds: 5 }));
+        await Promise.race([new Promise((resolve) => probe.once("exit", resolve)), bounded]);
+        assert.equal(JSON.parse(output).ok, true);
+      } else {
+        connection = new client.MCPClient({ name: "fixture", spec: client.resolveEntry("fixture", entry), env: process.env });
+        await Promise.race([connection.connect(), bounded]);
+      }
+      pid = Number(fs.readFileSync(pidfile));
+      childPID = Number(fs.readFileSync(descendant));
+      if (mode === "leader-exit") process.kill(pid, "SIGKILL");
+      else if (connection) connection.close(mode === "immediate");
+      await Promise.race([eventually("the owned server and descendant to exit", () => !alive(pid) && !alive(childPID), 8000), bounded]);
+    } finally {
+      clearTimeout(deadline);
+      if (probe?.exitCode === null && probe?.signalCode === null) {
+        const exited = new Promise((resolve) => probe.once("exit", resolve));
+        probe.kill("SIGKILL");
+        await exited;
+      }
+      connection?.close(true);
+      for (const file of [pidfile, descendant]) {
+        if (fs.existsSync(file)) { try { process.kill(Number(fs.readFileSync(file)), "SIGKILL"); } catch {} }
+      }
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
 
 test("the probe lists a server's tools as one JSON line", async () => {
   const run = (input) => new Promise((resolve) => {
@@ -681,7 +744,7 @@ for (const signal of ["SIGTERM", "SIGHUP"]) {
     const mcpConfig = path.join(dir, "mcp.json");
     fs.mkdirSync(path.join(dir, "config"));
     fs.writeFileSync(mcpConfig, JSON.stringify({ mcpServers: { fake: {
-      ...stdioServer({ env: { FAKE_MCP_PIDFILE: pidfile, FAKE_MCP_LINGER: "1" } }), shepherd: { start: "withSession" } } } }));
+      ...stdioServer({ env: { FAKE_MCP_PIDFILE: pidfile, FAKE_MCP_LINGER: "1", FAKE_MCP_IGNORE_TERM: "1" } }), shepherd: { start: "withSession" } } } }));
     const env = { PATH: process.env.PATH, HOME: dir, PI_CODING_AGENT_DIR: path.join(dir, "config"), PI_OFFLINE: "1",
       SHEPHERD_AGENT_ID: "fixture", SHEPHERD_SOCKET: path.join(dir, "none"), SHEPHERD_EXT_MCP: extensionFile,
       SHEPHERD_EXT_MCP_CONFIG: mcpConfig };

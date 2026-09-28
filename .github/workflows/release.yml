@@ -142,7 +142,7 @@ jobs:
           # the two apps build different ones. Keyed on the engine's pin too: a
           # restored app holding another pin's engine fails the "Embed pi engine"
           # phase, whose sandbox can't remove files the new pin doesn't declare.
-          key: xcode-${{ runner.os }}-${{ env.CONFIGURATION }}-${{ steps.xcode.outputs.version }}-${{ hashFiles('Package.resolved', 'Sources/**/*.swift', 'App/**/*.swift', 'scripts/pi-engine-pin.json') }}
+          key: xcode-${{ runner.os }}-${{ env.CONFIGURATION }}-${{ steps.xcode.outputs.version }}-${{ github.sha }}
 
       # The pi engine (Node and pi's bundle) the Mac target's "Embed pi engine" phase copies
       # into Contents/Helpers and Contents/Resources/pi-engine. Staging downloads Node from
@@ -190,6 +190,7 @@ jobs:
             -configuration "$CONFIGURATION" \
             -destination 'platform=macOS,arch=arm64' \
             -derivedDataPath build \
+            -onlyUsePackageVersionsFromResolvedFile \
             ARCHS=arm64 \
             CODE_SIGNING_ALLOWED=NO \
             MARKETING_VERSION="$VERSION" \
@@ -286,8 +287,12 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
+          SIGNING_IDENTITY: ${{ steps.cert.outputs.identity }}
         run: |
-          ARGS=(--title "$TITLE" --notes "$NOTES")
+          # New releases always declare eligibility, including ad-hoc builds. A later
+          # signed publisher must never mistake an ad-hoc archive for legacy history.
+          python3 -c 'import json,os; print(json.dumps({"version":1,"tag":os.environ["TAG"],"eligible":bool(os.environ["SIGNING_IDENTITY"] and os.environ["SIGNING_IDENTITY"] != "-")}))' > shepherd-appcast.json
+          ARGS=(--title "$TITLE" --notes "$NOTES" --draft)
           # beta and nightly are GitHub prereleases; feed membership is by tag
           # NAME (release.py route), never by the prerelease flag — so the
           # nightly cleanup matches names too, or it would eat betas.
@@ -295,20 +300,31 @@ jobs:
             ARGS+=(--prerelease)
           fi
           if [[ "$CHANNEL" == "nightly" ]]; then
-            # Keep only the latest few nightlies. Those from before Shepherd
-            # Nightly (Shepherd.dmg only) age out the same way.
-            for old in $(gh release list --limit 100 --json tagName \
-              --jq '.[] | select(.tagName | startswith("nightly-")) | .tagName' | tail -n +4); do
-              gh release delete "$old" --cleanup-tag --yes || true
-            done
             git tag "$TAG" && git push origin "$TAG"
           fi
-          gh release create "$TAG" "$DMG" "${ARGS[@]}"
+          gh release create "$TAG" "$DMG" shepherd-appcast.json "${ARGS[@]}"
           if [[ -f "$DSYMS" ]]; then
             gh release upload "$TAG" "$DSYMS" \
               || echo "::warning::Could not attach dSYMs to $TAG."
           fi
+          # Publish last: nobody may consume a partly uploaded release.
+          gh release edit "$TAG" --draft=false
 
+  publish-appcasts:
+    name: publish appcasts
+    needs: [plan, release]
+    if: needs.release.result == 'success'
+    runs-on: macos-26
+    timeout-minutes: 45
+    # Only publication coalesces: every tagged build keeps its own release. A replacement
+    # waiting publisher rebuilds from all completed releases once it acquires this slot.
+    concurrency:
+      group: appcast-publication
+      cancel-in-progress: false
+    env:
+      TAG: ${{ fromJSON(needs.plan.outputs.plan).tag }}
+    steps:
+      - uses: actions/checkout@v4
       - name: Update appcasts
         env:
           GH_TOKEN: ${{ github.token }}
@@ -317,13 +333,10 @@ jobs:
           if [[ -z "$SPARKLE_PRIVATE_KEY" ]]; then
             echo "No SPARKLE_PRIVATE_KEY secret; skipping appcast." && exit 0
           fi
-          BIN=$(find ~/Library/Developer/Xcode/DerivedData build .build \
-            -path '*artifacts*Sparkle/bin' -type d 2>/dev/null | head -1)
-          if [[ -z "$BIN" ]]; then
-            # Resolve tools straight from the package if the build cache moved.
-            swift package resolve
-            BIN=$(find .build -path '*artifacts*Sparkle/bin' -type d | head -1)
-          fi
+          # This job has no build products. Resolve pinned tools, never a floating download.
+          swift package resolve --force-resolved-versions
+          BIN=$(find .build -path '*artifacts*Sparkle/bin' -type d | head -1)
+          test -x "$BIN/generate_appcast"
           echo "$SPARKLE_PRIVATE_KEY" > "$RUNNER_TEMP/sparkle_key"
 
           # The appcasts are rebuilt from every published release so they
@@ -331,17 +344,34 @@ jobs:
           # directories each release lands in and which asset feeds them: a
           # stable DMG also lands in beta (the superset), and a nightly-*
           # release feeds Shepherd Nightly only through Shepherd-Nightly.dmg.
-          gh release list --limit 100 --json tagName --jq '.[].tagName' > "$RUNNER_TEMP/tags"
-          while read -r dir channel; do mkdir -p "casts/$dir"; done < <(python3 scripts/release.py feeds)
-          python3 scripts/release.py route < "$RUNNER_TEMP/tags" \
-          | while read -r tag asset archive feeds; do
+          gh release list --limit 100 --exclude-drafts --json tagName --jq '.[].tagName' > "$RUNNER_TEMP/tags"
+          # Keep four completed nightlies. Freeze this selection under the publication lock;
+          # prune only these superseded releases, and only after the feeds no longer name them.
+          awk '/^nightly-/ { if (++n > 4) print }' "$RUNNER_TEMP/tags" > "$RUNNER_TEMP/prune-tags"
+          awk 'FILENAME==ARGV[1] { old[$0]=1; next } !($0 in old)' "$RUNNER_TEMP/prune-tags" "$RUNNER_TEMP/tags" > "$RUNNER_TEMP/feed-tags"
+          : > "$RUNNER_TEMP/staged-tags"
+          python3 scripts/release.py feeds > "$RUNNER_TEMP/feeds"
+          while read -r dir channel; do mkdir -p "casts/$dir"; done < "$RUNNER_TEMP/feeds"
+          python3 scripts/release.py route < "$RUNNER_TEMP/feed-tags" > "$RUNNER_TEMP/routes"
+          while read -r tag asset archive feeds; do
+            # Metadata/download errors fail closed, including malformed eligibility records.
+            gh release view "$tag" --json assets,isDraft > "$RUNNER_TEMP/release-assets.json" </dev/null
+            policy=-
+            marked=$(python3 -c 'import json,sys; print(any(a["name"] == "shepherd-appcast.json" for a in json.load(open(sys.argv[1]))["assets"]))' "$RUNNER_TEMP/release-assets.json")
+            if [[ "$marked" == True ]]; then
+              policy="$RUNNER_TEMP/appcast-policy.json"
+              gh release download "$tag" -p shepherd-appcast.json -O "$policy" --clobber </dev/null
+            fi
+            disposition=$(python3 scripts/release.py appcast-asset "$tag" "$asset" "$RUNNER_TEMP/release-assets.json" "$policy")
+            if [[ "$disposition" == skip ]]; then continue; fi
             IFS=, read -r -a dirs <<<"$feeds"
             first="casts/${dirs[0]}"
-            gh release download "$tag" -p "$asset" -O "$first/$archive" </dev/null || continue
+            gh release download "$tag" -p "$asset" -O "$first/$archive" </dev/null
+            printf '%s\n' "$tag" >> "$RUNNER_TEMP/staged-tags"
             for dir in "${dirs[@]:1}"; do
               cp "$first/$archive" "casts/$dir/"
             done
-          done
+          done < "$RUNNER_TEMP/routes"
 
           # generate_appcast errors on an empty directory (e.g. no stable
           # releases yet); an empty channel keeps an empty feed instead.
@@ -370,20 +400,21 @@ jobs:
               empty_feed "casts/$dir/appcast.xml"
             fi
             python3 scripts/release.py fix-urls "casts/$dir/appcast.xml" "$dir"
-            latest=$(python3 scripts/release.py latest "$dir" < "$RUNNER_TEMP/tags")
+            latest=$(python3 scripts/release.py latest "$dir" < "$RUNNER_TEMP/staged-tags")
             if [[ -n "$latest" ]]; then
+              python3 scripts/release.py deltas "casts/$dir" "$latest" > "$RUNNER_TEMP/deltas.txt"
               deltas=()
-              while IFS= read -r delta; do deltas+=("$delta"); done \
-                < <(python3 scripts/release.py deltas "casts/$dir" "$latest")
+              while IFS= read -r delta; do deltas+=("$delta"); done < "$RUNNER_TEMP/deltas.txt"
               if [[ ${#deltas[@]} -gt 0 ]]; then
                 gh release upload "$latest" "${deltas[@]}" --clobber </dev/null
               fi
             fi
-          done < <(python3 scripts/release.py feeds)
+          done < "$RUNNER_TEMP/feeds"
 
           git config user.name github-actions
           git config user.email github-actions@github.com
-          git fetch origin gh-pages || true
+          git ls-remote --heads origin gh-pages > "$RUNNER_TEMP/pages-ref"
+          if [[ -s "$RUNNER_TEMP/pages-ref" ]]; then git fetch origin gh-pages; fi
           if git rev-parse --verify origin/gh-pages >/dev/null 2>&1; then
             git worktree add pages origin/gh-pages
           else
@@ -392,13 +423,20 @@ jobs:
           # Every feed, plus appcast-rc.xml and appcast-nightly.xml for the
           # Shepherd builds already installed that still read them. publish
           # marks every item arm64 only, so no Intel Mac is offered an update.
+          python3 scripts/release.py publish casts pages > "$RUNNER_TEMP/published-feeds.txt"
           written=()
-          while IFS= read -r file; do written+=("$file"); done \
-            < <(python3 scripts/release.py publish casts pages)
+          while IFS= read -r file; do written+=("$file"); done < "$RUNNER_TEMP/published-feeds.txt"
           cd pages
           git add "${written[@]}"
-          git commit -m "appcast: $TAG" || exit 0
-          git push origin HEAD:gh-pages
+          if ! git diff --cached --quiet; then
+            git commit -m "appcast: $TAG"
+            git push origin HEAD:gh-pages
+          fi
+          # Never delete drafts, newly completed releases outside this snapshot, or an
+          # archive while another publisher is using it. A failed push reaches none of this.
+          while IFS= read -r old; do
+            gh release delete "$old" --cleanup-tag --yes </dev/null
+          done < "$RUNNER_TEMP/prune-tags"
 
   # The iOS client, archived unsigned and signed only at export with the team's
   # cloud-managed Apple Distribution certificate: no .p12, no keychain. Signing

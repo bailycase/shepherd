@@ -366,6 +366,15 @@ enum ChildrenExtension {
             })();
             return run.stopping;
           }
+          function releaseWriter(run) {
+            const dir = path.join(run.dir, "writer"), owner = path.join(dir, "owner.json");
+            try {
+              const lease = JSON.parse(fs.readFileSync(owner, "utf8"));
+              if (lease.token !== run.token) return;
+              fs.unlinkSync(owner);
+            } catch (error) { if (error.code !== "ENOENT") return; }
+            try { fs.rmdirSync(dir); } catch {}
+          }
           function finish(run, code, signal) {
             if (run.exited) return;
             run.exited = true;
@@ -380,10 +389,7 @@ enum ChildrenExtension {
             } else run.state = "complete";
             run.endedAt = Date.now(); run.currentTool = undefined; run.paused = false;
             if (run.lastActivity?.kind === "running") run.lastActivity = { ...run.lastActivity, kind: "tool" };
-            try {
-              const lease = JSON.parse(fs.readFileSync(path.join(run.dir, "writer", "owner.json"), "utf8"));
-              if (lease.token === run.token) { fs.unlinkSync(path.join(run.dir, "writer", "owner.json")); fs.rmdirSync(path.join(run.dir, "writer")); }
-            } catch {}
+            releaseWriter(run);
             run.proc = undefined;
             save(run); run.resolveClosed();
             const notice = `${run.state}\n${run.error || run.output || "No text result"}\nSession: ${run.sessionFile}`;
@@ -458,16 +464,6 @@ enum ChildrenExtension {
             signal?.throwIfAborted();
             const inherited = await childUserExtensions(run.cwd);
             signal?.throwIfAborted();
-            const leaseDir = path.join(run.dir, "writer");
-            try { fs.mkdirSync(leaseDir, { mode: 0o700 }); }
-            catch (error) {
-              if (error.code !== "EEXIST") throw error;
-              const lease = JSON.parse(fs.readFileSync(path.join(leaseDir, "owner.json"), "utf8"));
-              if (alive(lease.pid)) throw new Error("Child session already has a live writer");
-              throw new Error(`Child has an interrupted writer lease at ${leaseDir}. Verify the old process has exited before removing that lease directory; automatic crash recovery is disabled.`);
-            }
-            run.token = randomUUID();
-            atomic(path.join(leaseDir, "owner.json"), { pid: process.pid, token: run.token });
             run.pending = new Map(); run.exited = false; run.cancelled = false; run.settled = false;
             run.paused = false;
             run.stopping = undefined; run.output = ""; run.error = undefined; run.stderr = ""; run.lastStop = undefined; run.availableTools = undefined;
@@ -495,7 +491,19 @@ enum ChildrenExtension {
             if (!/^node(\.exe)?$/i.test(path.basename(process.execPath)) || !fs.existsSync(script)) {
               throw new Error(`Native subagents run on pi's own node and bundle, and this pi has none (${process.execPath}, ${script})`);
             }
-            run.proc = spawn(process.execPath, [script, ...args], { cwd: run.cwd, env, detached: false, stdio: ["pipe", "pipe", "pipe"] });
+            const leaseDir = path.join(run.dir, "writer");
+            try { fs.mkdirSync(leaseDir, { mode: 0o700 }); }
+            catch (error) {
+              if (error.code !== "EEXIST") throw error;
+              const lease = JSON.parse(fs.readFileSync(path.join(leaseDir, "owner.json"), "utf8"));
+              if (alive(lease.pid)) throw new Error("Child session already has a live writer");
+              throw new Error(`Child has an interrupted writer lease at ${leaseDir}. Verify the old process has exited before removing that lease directory; automatic crash recovery is disabled.`);
+            }
+            run.token = randomUUID();
+            try {
+              atomic(path.join(leaseDir, "owner.json"), { pid: process.pid, token: run.token });
+              run.proc = spawn(process.execPath, [script, ...args], { cwd: run.cwd, env, detached: false, stdio: ["pipe", "pipe", "pipe"] });
+            } catch (error) { releaseWriter(run); throw error; }
             if (run.proc.pid) atomic(path.join(leaseDir, "owner.json"), { pid: run.proc.pid, token: run.token });
             const proc = run.proc;
             proc.stdin.on("error", () => {});

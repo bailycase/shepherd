@@ -43,10 +43,19 @@ public struct ShepherdMacApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var vm: ShepherdViewModel
     /// Menus rebuild when a shortcut is rebound: the rebindings are passed into each menu.
-    private let keys = KeybindingsStore.shared
-    private let themes = ThemeManager.shared
+    private let keys: KeybindingsStore
+    private let themes: ThemeManager
 
     public init() {
+        // Acquire the workspace before constructing anything that can restore agents or write it.
+        do {
+            try SessionServer.shared.start()
+        } catch {
+            NSLog("Shepherd: failed to start session server: \(error)")
+            exit(EXIT_FAILURE)
+        }
+        keys = KeybindingsStore.shared
+        themes = ThemeManager.shared
         // Geist and Geist Mono ship in the ShepherdUI bundle; register them before any view draws.
         NWFonts.register()
         _vm = State(initialValue: ShepherdViewModel(server: .shared, welcomesYourPi: true))
@@ -58,9 +67,8 @@ public struct ShepherdMacApp: App {
         Window(ShepherdEdition.current.displayName, id: MainWindow.id) {
             RootView(vm: vm)
                 // Host role: bind the remote listener if this Mac serves its
-                // sessions (the toggle persists; a host stays a host). The
-                // TCP listener is independent of the extension socket, so
-                // ordering against server.start() does not matter.
+                // sessions (the toggle persists; a host stays a host). Workspace ownership
+                // was acquired before the view model was constructed.
                 .task {
                     vm.applyRemoteListenerSetting()
                     vm.startSkillChecks()
@@ -133,15 +141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         QuitConfirmation.shared.watchForPowerOff()
 
-        // Sessions live and die with the app: start the in-process session
-        // server (extension socket) and shut it down on quit so every agent
-        // stops when Shepherd stops, like any terminal app.
         SessionServer.shared.designSystems.register(NightWatchSystem.builtIn())
-        do {
-            try SessionServer.shared.start()
-        } catch {
-            NSLog("Shepherd: failed to start session server: \(error)")
-        }
     }
 
     /// Agents keep running with the window closed; only Quit stops them.

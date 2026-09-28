@@ -226,6 +226,40 @@ struct ReviewCommitStoreTests {
         }
     }
 
+    @Test func aSecondViewerKeepsTheSharedCommitForm() async {
+        let fake = host(info: info(drafts: false))
+        let store = fake.store()
+        await store.begin()
+        store.title = "Edited in window A"
+        store.toggle("App/iOS/HostCard.swift")
+        let selected = store.selected
+        await store.begin()
+        #expect(store.title == "Edited in window A" && store.selected == selected)
+        #expect(fake.asked == [.commitInfo])
+    }
+
+    @Test(arguments: [false, true])
+    func forgettingInvalidatesALateLoadOrActiveOperation(operation: Bool) async {
+        let gate = CommitGate()
+        let entered = CommitGate()
+        let store = ReviewCommitStore { query in
+            entered.open()
+            await gate.wait()
+            if case .worktreeStatus(let id) = query { return .worktreeOperation(RemoteWorktreeOperation(id: id, finished: true)) }
+            return .commitInfo(info(drafts: false))
+        }
+        if operation { store.adopt(RemoteWorktreeOperation(id: Self.id, finished: false)) }
+        let pending = Task { if operation { _ = await store.pollOnce() } else { await store.begin() } }
+        await entered.wait()
+        store.invalidate()
+        gate.open()
+        await pending.value
+        #expect(store.info == nil && store.operation == nil && store.operationID == nil)
+        #expect(store.title.isEmpty && store.error == nil && store.query == nil)
+        await store.begin()
+        #expect(store.info == nil)
+    }
+
     @Test func openingAsksForTheInfoThenADraftAndTicksEveryFile() async {
         let fake = host()
         let store = fake.store()

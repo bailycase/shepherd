@@ -60,6 +60,7 @@ public final class RemoteDesignCache: @unchecked Sendable {
     public let memoryBudget: Int
     private let lock = NSLock()
     private var entries: [Key: Entry] = [:]
+    private var forgottenHosts: Set<UUID> = []
     private var clock: UInt64 = 0
 
     public init(directory: URL? = nil, memoryBudget: Int = 96 * 1024 * 1024) {
@@ -71,27 +72,34 @@ public final class RemoteDesignCache: @unchecked Sendable {
 
     /// The bytes kept for `sha256` in the design, from memory or disk.
     public func object(_ key: Key, sha256: String) -> Data? {
-        if let data = locked({ touch(key)?.objects[sha256] }) { return data }
-        guard let url = fileURL(key, sha256), let data = try? Data(contentsOf: url), Self.sha256(data) == sha256 else { return nil }
-        locked { entries[key, default: Entry()].objects[sha256] = data }
+        let result: Data? = locked {
+            guard !forgottenHosts.contains(key.host) else { return nil }
+            if let data = touch(key)?.objects[sha256] { return data }
+            guard let url = fileURL(key, sha256), let data = try? Data(contentsOf: url), Self.sha256(data) == sha256 else { return nil }
+            entries[key, default: Entry()].objects[sha256] = data
+            return data
+        }
         trim(keeping: key)
-        return data
+        return result
     }
 
     /// Keeps `data` under its hash; false (and nothing kept) when it doesn't hash to `sha256`.
     @discardableResult
     public func store(_ data: Data, sha256: String, in key: Key) -> Bool {
         guard Self.sha256(data) == sha256 else { return false }
-        locked {
+        let stored = locked {
+            guard !forgottenHosts.contains(key.host) else { return false }
             touch(key, create: true)
             entries[key]?.objects[sha256] = data
-        }
-        if let url = fileURL(key, sha256) {
-            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try? data.write(to: url, options: .atomic)
+            // Serialize disk writes with explicit Forget so a late writer cannot recreate its folder.
+            if let url = fileURL(key, sha256) {
+                try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try? data.write(to: url, options: .atomic)
+            }
+            return true
         }
         trim(keeping: key)
-        return true
+        return stored
     }
 
     /// Which hash each path of the design names, as last synced.
@@ -156,6 +164,17 @@ public final class RemoteDesignCache: @unchecked Sendable {
         if let directory { try? FileManager.default.removeItem(at: Self.folder(directory, key)) }
     }
 
+    /// Explicit host Forget invalidates late writers and removes objects, assets and partials.
+    public func forget(host: UUID) {
+        locked {
+            forgottenHosts.insert(host)
+            entries = entries.filter { $0.key.host != host }
+            if let directory { try? FileManager.default.removeItem(at: directory.appendingPathComponent(host.uuidString, isDirectory: true)) }
+        }
+    }
+
+    public func isForgotten(host: UUID) -> Bool { locked { forgottenHosts.contains(host) } }
+
     /// Bytes held in memory now.
     public var memoryBytes: Int { locked { entries.values.reduce(0) { $0 + $1.bytes } } }
 
@@ -176,6 +195,7 @@ public final class RemoteDesignCache: @unchecked Sendable {
 
     @discardableResult
     private func touch(_ key: Key, create: Bool = false) -> Entry? {
+        guard !forgottenHosts.contains(key.host) else { return nil }
         clock += 1
         if entries[key] == nil {
             guard create else { return nil }
@@ -231,11 +251,17 @@ public final class RemoteDesignSource: DesignFileSource, @unchecked Sendable {
         self.transport = transport
     }
 
+    public func invalidate() {
+        lock.lock()
+        lastIndex = nil
+        lock.unlock()
+    }
+
     /// The index as last synced.
     public var index: RemoteDesignIndex? {
         lock.lock()
         defer { lock.unlock() }
-        return lastIndex
+        return cache.isForgotten(host: key.host) ? nil : lastIndex
     }
 
     /// Reads the design's index and fetches every file whose hash this device doesn't hold:
@@ -253,12 +279,15 @@ public final class RemoteDesignSource: DesignFileSource, @unchecked Sendable {
     private func syncOnce() async throws -> RemoteDesignIndex {
         let transport = try requireTransport()
         guard case .index(let index) = try await transport.design(.index(designID: key.design)) else { throw Self.unexpected }
+        guard !cache.isForgotten(host: key.host) else { throw CancellationError() }
         var paths = Dictionary(index.files.map { ($0.path, $0.sha256) }, uniquingKeysWith: { first, _ in first })
         var remaining = index.files.filter { cache.object(key, sha256: $0.sha256) == nil }.map(\.path)
         while !remaining.isEmpty {
+            guard !cache.isForgotten(host: key.host) else { throw CancellationError() }
             guard case .files(let reply) = try await transport.design(.boards(designID: key.design, paths: remaining, knownShas: [:])) else {
                 throw Self.unexpected
             }
+            guard !cache.isForgotten(host: key.host) else { throw CancellationError() }
             var next: [String] = []
             for file in reply.changed {
                 paths[file.path] = file.sha256
@@ -279,6 +308,7 @@ public final class RemoteDesignSource: DesignFileSource, @unchecked Sendable {
             }
             remaining = next
         }
+        guard !cache.isForgotten(host: key.host) else { throw CancellationError() }
         cache.setPaths(paths, for: key)
         remember(index)
         return index
@@ -293,10 +323,20 @@ public final class RemoteDesignSource: DesignFileSource, @unchecked Sendable {
     // MARK: DesignFileSource
 
     public func projectFile(_ path: String) async -> Data? {
+        guard !cache.isForgotten(host: key.host) else { return nil }
+        if path == "canvas.json" {
+            if let index { return try? index.snapshot.index.encoded() }
+            guard let transport = transport(),
+                  case .index(let fetched) = try? await transport.design(.index(designID: key.design)),
+                  !cache.isForgotten(host: key.host) else { return nil }
+            remember(fetched)
+            return try? fetched.snapshot.index.encoded()
+        }
         if let data = cache.file(key, path: path) { return data }
         guard let transport = transport(),
               case .files(let reply) = try? await transport.design(.boards(designID: key.design, paths: [path], knownShas: [:])),
               let file = reply.changed.first(where: { $0.path == path }) else { return nil }
+        guard !cache.isForgotten(host: key.host) else { return nil }
         if let data = file.data {
             guard cache.store(data, sha256: file.sha256, in: key) else { return nil }
         } else {
@@ -309,6 +349,7 @@ public final class RemoteDesignSource: DesignFileSource, @unchecked Sendable {
     }
 
     public func blob(_ id: String) async -> (name: String, data: Data)? {
+        guard !cache.isForgotten(host: key.host) else { return nil }
         if let asset = cache.asset(key, id: id) { return (asset.name, asset.data) }
         guard let transport = transport() else { return nil }
         return try? await downloadAsset(id, transport: transport)
@@ -320,10 +361,12 @@ public final class RemoteDesignSource: DesignFileSource, @unchecked Sendable {
         var partial = cache.partial(key, name)
         var fileName: String?
         while true {
+            guard !cache.isForgotten(host: key.host) else { throw CancellationError() }
             let offset = partial?.data.count ?? 0
             guard case .chunk(let chunk) = try await transport.design(.asset(designID: key.design, blobID: id, offset: offset)) else {
                 throw Self.unexpected
             }
+            guard !cache.isForgotten(host: key.host) else { throw CancellationError() }
             // The upload changed since the earlier try: start again.
             if let known = partial, known.sha256 != chunk.sha256 || known.total != chunk.total {
                 cache.setPartial(nil, name, in: key)
@@ -342,6 +385,7 @@ public final class RemoteDesignSource: DesignFileSource, @unchecked Sendable {
             cache.setPartial(nil, name, in: key)
             throw RemoteHostClientError.rejected(code: "corrupt", message: "The upload \(id) didn't arrive whole.")
         }
+        guard !cache.isForgotten(host: key.host) else { throw CancellationError() }
         let asset = RemoteDesignCache.Asset(name: fileName ?? id, data: done.data)
         cache.storeAsset(asset, id: id, in: key)
         return (asset.name, asset.data)
@@ -352,9 +396,11 @@ public final class RemoteDesignSource: DesignFileSource, @unchecked Sendable {
         let name = "file:" + path
         var partial = cache.partial(key, name).flatMap { $0.sha256 == sha256 ? $0 : nil }
         while true {
+            guard !cache.isForgotten(host: key.host) else { throw CancellationError() }
             let offset = partial?.data.count ?? 0
             guard case .chunk(let chunk) = try await transport.design(.file(designID: key.design, path: path, sha256: sha256, offset: offset)),
                   chunk.offset == offset else { throw Self.unexpected }
+            guard !cache.isForgotten(host: key.host) else { throw CancellationError() }
             var next = partial ?? RemoteDesignCache.Partial(sha256: sha256, total: chunk.total, data: Data())
             guard Self.fits(chunk, into: next) else {
                 cache.setPartial(nil, name, in: key)
@@ -374,11 +420,12 @@ public final class RemoteDesignSource: DesignFileSource, @unchecked Sendable {
     private func remember(_ index: RemoteDesignIndex) {
         lock.lock()
         defer { lock.unlock() }
+        guard !cache.isForgotten(host: key.host) else { return }
         lastIndex = index
     }
 
     private func requireTransport() throws -> any RemoteDesignTransport {
-        guard let transport = transport() else { throw RemoteHostClientError.disconnected }
+        guard !cache.isForgotten(host: key.host), let transport = transport() else { throw RemoteHostClientError.disconnected }
         return transport
     }
 

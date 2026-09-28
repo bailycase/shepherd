@@ -20,7 +20,11 @@ Branch from `nightly` and target `nightly` with your pull request. Use `feat/…
 
 ## Build and run
 
+Stage the bundled engine before the first Mac build, and again after its pin changes
+([docs/pi-engine.md](docs/pi-engine.md)).
+
 ```sh
+python3 scripts/pi_engine.py stage
 swift build
 xcodebuild -project Shepherd.xcodeproj -scheme 'Shepherd (Dev)' -destination 'platform=macOS' \
   -onlyUsePackageVersionsFromResolvedFile build

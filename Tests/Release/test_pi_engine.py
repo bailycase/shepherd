@@ -573,8 +573,11 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("path: .build/pi-engine-cache", cache)
         self.assertIn("hashFiles('scripts/pi-engine-pin.json')", cache)
 
-    def test_a_cached_build_from_another_pin_is_never_restored(self):
-        self.assertIn("'scripts/pi-engine-pin.json') }}", self.step("Cache DerivedData"))
+    def test_a_cached_build_from_another_commit_is_never_restored(self):
+        cache = self.step("Cache DerivedData")
+        # A changed pin necessarily changes the commit, as does any other build input.
+        self.assertIn("${{ github.sha }}", cache)
+        self.assertNotIn("restore-keys:", cache)
 
     def test_the_verified_app_is_the_one_signed_and_node_is_never_stripped(self):
         names = [title for title, _ in self.steps()]

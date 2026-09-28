@@ -18,6 +18,8 @@ struct TerminalFileDropTests {
         ("/tmp/[a]{b}<c>", #"/tmp/\[a\]\{b\}\<c\>"#),
         ("/tmp/back\\slash", #"/tmp/back\\slash"#),
         ("/tmp/café", "/tmp/café"),
+        ("/tmp/line\npwd\n", "'/tmp/line\npwd\n'"),
+        ("/tmp/line\rquote'", "'/tmp/line\rquote'\\'''"),
     ])
     func shellMetacharactersAreEscaped(path: String, expected: String) {
         #expect(TerminalFileDrop.shellEscape(path) == expected)
@@ -132,6 +134,16 @@ final class TerminalImageDropTests {
         #expect(resolved.map(\.path) == [source.path])
     }
 
+    @Test func aSmallTIFFFileIsConvertedToPNGWithoutChangingTheOriginal() async throws {
+        let original = try Images.encoded(width: 2, height: 2, as: .tiff)
+        let source = try Images.write(original, ext: "tiff", in: scratch)
+        let provider = try #require(NSItemProvider(contentsOf: source))
+        let url = try #require(await TerminalImageDrop.resolve([provider], directory: drops).first)
+        #expect(url.pathExtension == "png")
+        #expect(Array(try Data(contentsOf: url).prefix(8)) == Images.pngMagic)
+        #expect(try Data(contentsOf: source) == original)
+    }
+
     /// An oversized dropped file is referenced through a resized copy; the user's file is
     /// never rewritten.
     @Test func anOversizedFileIsCopiedDownAndTheOriginalIsUntouched() async throws {
@@ -144,6 +156,21 @@ final class TerminalImageDropTests {
         #expect(url != source)
         #expect(url.deletingLastPathComponent() == drops)
         #expect(try #require(NSBitmapImageRep(data: try Data(contentsOf: url))).pixelsWide == 2000)
+        #expect(try Data(contentsOf: source) == original)
+    }
+
+    @Test func downscalingKeepsThePixelLimitEvenWhenTheEncodedCopyGrows() async throws {
+        // 4096px one-bit indexed PNG, generated with stdlib PNG/zlib. Its tiny compressed
+        // input grows when AppKit converts it to RGBA, despite having fewer pixels.
+        let fixture = try #require(Bundle.module.url(forResource: "oversized-indexed", withExtension: "png", subdirectory: "Fixtures"))
+        let original = try Data(contentsOf: fixture)
+        let source = try Images.write(original, ext: "png", in: scratch)
+        let normalized = TerminalImageDrop.normalize(original, type: .png).0
+        #expect(normalized.count > original.count, "fixture must exercise compressed-byte expansion")
+        let provider = try #require(NSItemProvider(contentsOf: source))
+        let url = try #require(await TerminalImageDrop.resolve([provider], directory: drops).first)
+        let image = try #require(NSBitmapImageRep(data: try Data(contentsOf: url)))
+        #expect(max(image.pixelsWide, image.pixelsHigh) == 2000)
         #expect(try Data(contentsOf: source) == original)
     }
 

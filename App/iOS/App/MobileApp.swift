@@ -34,6 +34,17 @@ final class MobileApp {
         navigator.forget(host: host)
         windows.forget(host: host)
         threads.forget(host: host)
+        SettingsStore.forget(host: host, in: hosts)
+        AutomationsStore.forget(host: host, in: hosts)
+        MobileTerminals.shared.forget(host: host)
+        ComposerStates.shared.forget(host: host)
+        ReviewStores.shared.forget(host: host)
+        CommitStores.shared.forget(host: host)
+        WorktreeOperations.shared.forget(host: host)
+        TurnUndoStore.shared.forget(host: host)
+        HostDesignLibraries.of(hosts).forget(host)
+        PadDesigns.forget(host: host, in: hosts)
+        MobileDesigns.forget(host: host, in: hosts)
     }
 }
 

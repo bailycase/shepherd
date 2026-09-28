@@ -12,8 +12,16 @@ final class ReviewStores {
     static let shared = ReviewStores()
 
     @ObservationIgnored private var stores: [AgentRef: ReviewStore] = [:]
+    @ObservationIgnored private var forgottenHosts: Set<UUID> = []
+
+    func forget(host: UUID) {
+        forgottenHosts.insert(host)
+        for (ref, store) in stores where ref.host == host { store.forget() }
+        stores = stores.filter { $0.key.host != host }
+    }
 
     func store(for ref: AgentRef) -> ReviewStore {
+        if forgottenHosts.contains(ref.host) { return ReviewStore(ref: ref) }
         if let store = stores[ref] { return store }
         let store = ReviewStore(ref: ref)
         stores[ref] = store
@@ -124,6 +132,7 @@ final class ReviewStore {
     var actionError: String?
 
     @ObservationIgnored private weak var hosts: MobileHosts?
+    @ObservationIgnored private let request: (RemoteHostClient, AgentID, RemoteAgentQuery) async throws -> RemoteAgentResult
     @ObservationIgnored private var loadID = UUID()
     /// The connection and side the files were loaded for: showing the review again reloads
     /// only when either changed.
@@ -131,8 +140,10 @@ final class ReviewStore {
     /// Hunks by the revision and options they came from: never stale, so switching back to a
     /// scope whose trees did not move costs no request.
     @ObservationIgnored private var diffCache: [FileKey: ChangesFileDiff] = [:]
-    @ObservationIgnored private var fileLoads: Set<String> = []
-    @ObservationIgnored private var textLoads: Set<String> = []
+    @ObservationIgnored private var fileLoads: [String: UUID] = [:]
+    @ObservationIgnored private var textLoads: [String: UUID] = [:]
+    @ObservationIgnored private var wantedFiles: Set<String> = []
+    @ObservationIgnored private var listOptions: ChangesOptions?
     /// Files asked for whole (a gap row tapped): their unchanged lines come with the hunks.
     @ObservationIgnored private var wholeFiles: Set<String> = []
     @ObservationIgnored private var fileVersions: [String: Int] = [:]
@@ -147,6 +158,8 @@ final class ReviewStore {
     private struct FileKey: Hashable {
         let revision: ChangesRevision
         let path: String
+        let oldPath: String?
+        let scope: ChangesScope
         let options: ChangesOptions
     }
 
@@ -157,9 +170,27 @@ final class ReviewStore {
         let rows: [Row]
     }
 
-    init(ref: AgentRef) {
+    init(ref: AgentRef, request: @escaping (RemoteHostClient, AgentID, RemoteAgentQuery) async throws -> RemoteAgentResult = {
+        try await $0.agentQuery(agentID: $1, query: $2)
+    }) {
         self.ref = ref
+        self.request = request
         finalize = FinalizeStore(ref: ref)
+    }
+
+    func forget() {
+        hosts = nil
+        loadID = UUID()
+        resetFiles()
+        diffCache = [:]
+        unifiedCache = [:]
+        splitCache = [:]
+        wantedFiles = []
+        comments = []
+        entries = []
+        list = nil
+        overview = nil
+        clearSelection()
     }
 
     // MARK: Loading
@@ -213,12 +244,13 @@ final class ReviewStore {
     /// review nobody pointed anywhere opens where the host says: Branch for a worktree agent.
     private func loadChanges(id: UUID, host: MobileHost) async {
         let agent = host.agent(ref.agent)
+        let options = options
         let guess = pickedScope ?? overview?.defaultScope ?? (agent?.worktreeBase != nil ? .branch(base: nil) : .uncommitted)
         async let overviewReply = try? query(.changesOverview)
         do {
-            let list = try await changesList(guess)
+            let list = try await changesList(guess, options: options)
             guard loadID == id else { return }
-            apply(list)
+            apply(list, options: options)
             loadedKey = LoadKey(session: host.session, pullRequest: pullRequest)
         } catch {
             guard loadID == id else { return }
@@ -227,14 +259,14 @@ final class ReviewStore {
         if case .changesOverview(let overview)? = await overviewReply, loadID == id {
             self.overview = overview
             // The host's default differs from the guess: show what it would have opened on.
-            if pickedScope == nil, overview.defaultScope.kind != guess.kind, let list = try? await changesList(overview.defaultScope),
+            if pickedScope == nil, overview.defaultScope.kind != guess.kind, let list = try? await changesList(overview.defaultScope, options: options),
                loadID == id {
-                apply(list)
+                apply(list, options: options)
             }
         }
     }
 
-    private func changesList(_ scope: ChangesScope) async throws -> ChangesList {
+    private func changesList(_ scope: ChangesScope, options: ChangesOptions) async throws -> ChangesList {
         guard case .changesList(let list) = try await query(.changesList(scope: scope, options: options)) else {
             throw RemoteReviewError.unexpectedReply
         }
@@ -242,17 +274,20 @@ final class ReviewStore {
     }
 
     /// Shows `list`: its files, and the hunks already fetched for its revision.
-    private func apply(_ list: ChangesList) {
-        let moved = list.revision != self.list?.revision || list.scope != self.list?.scope
+    private func apply(_ list: ChangesList, options: ChangesOptions) {
+        let moved = list.revision != self.list?.revision || list.scope != self.list?.scope || listOptions != options
         self.list = list
+        listOptions = options
         if moved {
             resetFiles()
             for file in list.files {
-                if let cached = diffCache[fileKey(file, revision: list.revision)] { setDiff(cached, for: file.id) }
+                if let cached = diffCache[fileKey(file, list: list)] { setDiff(cached, for: file.id) }
             }
         }
         if entries != list.files { entries = list.files }
         loaded = true
+        wantedFiles.formIntersection(Set(list.files.map(\.id)))
+        for id in wantedFiles { ensure(id) }
     }
 
     private func resetFiles() {
@@ -260,8 +295,8 @@ final class ReviewStore {
         texts = [:]
         fileErrors = [:]
         truncated = []
-        fileLoads = []
-        textLoads = []
+        fileLoads = [:]
+        textLoads = [:]
         wholeFiles = []
         expandedRuns = [:]
         for id in fileVersions.keys { fileVersions[id, default: 0] &+= 1 }
@@ -334,12 +369,14 @@ final class ReviewStore {
     func setIgnoreWhitespace(_ on: Bool) {
         guard options.ignoreWhitespace != on else { return }
         options.ignoreWhitespace = on
+        resetFiles()
         reloadList()
     }
 
     func setFullFiles(_ on: Bool) {
         guard options.fullFiles != on else { return }
         options.fullFiles = on
+        resetFiles()
         reloadList()
     }
 
@@ -347,7 +384,7 @@ final class ReviewStore {
         guard wordDiffs != on else { return }
         wordDiffs = on
         texts = [:]
-        textLoads = []
+        textLoads = [:]
         for id in diffs.keys {
             fileVersions[id, default: 0] &+= 1
             prepare(id)
@@ -423,33 +460,41 @@ final class ReviewStore {
     }
 
     /// Fetches a file's hunks (and prepares its text) unless it has them or is fetching them.
-    func ensure(_ id: String) {
+    @discardableResult
+    func ensure(_ id: String) -> Task<Void, Never>? {
+        wantedFiles.insert(id)
         if diffs[id] != nil {
             prepare(id)
-            return
+            return nil
         }
-        guard usesChanges, let list, let file = entry(id), !file.isBinary, !fileLoads.contains(id) else { return }
-        fileLoads.insert(id)
-        let key = fileKey(file, revision: list.revision)
-        Task { await loadFile(file, key: key) }
+        guard usesChanges, listOptions == options, let list, let file = entry(id), !file.isBinary, fileLoads[id] == nil else { return nil }
+        let requestID = UUID()
+        fileLoads[id] = requestID
+        let key = fileKey(file, list: list)
+        return Task { await loadFile(file, key: key, requestID: requestID) }
     }
 
-    private func fileKey(_ file: ChangesFile, revision: ChangesRevision) -> FileKey {
+    private func fileKey(_ file: ChangesFile, list: ChangesList) -> FileKey {
         var options = options
         if wholeFiles.contains(file.id) { options.fullFiles = true }
-        return FileKey(revision: revision, path: file.path, options: options)
+        return FileKey(revision: list.revision, path: file.path, oldPath: file.oldPath, scope: list.scope, options: options)
     }
 
-    private func loadFile(_ file: ChangesFile, key: FileKey) async {
-        defer { fileLoads.remove(file.id) }
+    private func loadFile(_ file: ChangesFile, key: FileKey, requestID: UUID) async {
+        defer { if fileLoads[file.id] == requestID { fileLoads[file.id] = nil } }
+        func isCurrent() -> Bool {
+            guard fileLoads[file.id] == requestID, let list, let current = entry(file.id), listOptions == options else { return false }
+            return fileKey(current, list: list) == key
+        }
         do {
             let reply = try await query(.changesFile(revision: key.revision, path: file.path, oldPath: file.oldPath, options: key.options))
             guard case .changesFile(let diff) = reply else { throw RemoteReviewError.unexpectedReply }
+            guard hosts != nil else { return }
             diffCache[key] = diff
-            guard list?.revision == key.revision, entry(file.id) != nil else { return }
+            guard isCurrent() else { return }
             setDiff(diff, for: file.id)
         } catch {
-            guard list?.revision == key.revision else { return }
+            guard isCurrent() else { return }
             fileErrors[file.id] = reviewErrorText(error)
         }
     }
@@ -459,18 +504,20 @@ final class ReviewStore {
         if diff.truncated { truncated.insert(id) } else { truncated.remove(id) }
         fileErrors[id] = nil
         texts[id] = nil
-        textLoads.remove(id)
+        textLoads[id] = nil
         fileVersions[id, default: 0] &+= 1
         prepare(id)
     }
 
     /// A gap row tapped: asks for the file whole, so every unchanged line comes with it.
     func loadWhole(_ id: String) {
-        guard usesChanges, !wholeFiles.contains(id), let list, let file = entry(id) else { return }
+        guard usesChanges, listOptions == options, !wholeFiles.contains(id), let list, let file = entry(id) else { return }
         wholeFiles.insert(id)
-        fileLoads.insert(id)
-        let key = fileKey(file, revision: list.revision)
-        Task { await loadFile(file, key: key) }
+        wantedFiles.insert(id)
+        let requestID = UUID()
+        fileLoads[id] = requestID
+        let key = fileKey(file, list: list)
+        Task { await loadFile(file, key: key, requestID: requestID) }
     }
 
     /// Whether a gap row can open (the host sends whole files).
@@ -478,14 +525,15 @@ final class ReviewStore {
 
     /// Colors a file's lines and tints its changed words, off the main thread, once.
     private func prepare(_ id: String) {
-        guard texts[id] == nil, !textLoads.contains(id), let file = diffs[id], !file.isBinary else { return }
-        textLoads.insert(id)
+        guard texts[id] == nil, textLoads[id] == nil, let file = diffs[id], !file.isBinary else { return }
+        let requestID = UUID()
+        textLoads[id] = requestID
         let palette = ReviewTextPalette(Color.nw)
         let words = wordDiffs
         Task {
             let lines = await Task.detached(priority: .userInitiated) { ReviewText.prepare(file, palette: palette, words: words) }.value
-            guard textLoads.contains(id), diffs[id] == file else { return }
-            textLoads.remove(id)
+            guard textLoads[id] == requestID, diffs[id] == file else { return }
+            textLoads[id] = nil
             texts[id] = lines
             fileVersions[id, default: 0] &+= 1
         }
@@ -680,7 +728,7 @@ final class ReviewStore {
         guard let client = hosts?.host(ref.host)?.connectedClient else {
             throw RemoteHostClientError.rejected(code: "not_sent", message: "The host is offline.")
         }
-        return try await client.agentQuery(agentID: ref.agent, query: query)
+        return try await request(client, ref.agent, query)
     }
 
     // MARK: Derived

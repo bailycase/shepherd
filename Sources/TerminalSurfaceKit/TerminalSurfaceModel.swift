@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import Combine
 import GhosttyTerminal
 
 func terminalOpenURL(_ value: String) -> URL? {
@@ -134,6 +135,9 @@ public final class TerminalSurfaceModel: ObservableObject {
     public var onSelectionChange: ((Selection?) -> Void)? {
         didSet { observeSelection() }
     }
+    /// AppKit acquired this surface as first responder (click, selection drag, or programmatic).
+    public var onFocusAcquired: (() -> Void)?
+    private var focusObservation: AnyCancellable?
     public var maximumDropBytes: Int?
     public var onFileDropError: ((String) -> Void)?
     public var onFileDrop: (([URL]) -> Void)?
@@ -156,6 +160,7 @@ public final class TerminalSurfaceModel: ObservableObject {
     /// not run a render loop. Also read by the drop delegate: a hidden pane
     /// must not accept drops.
     private(set) var renderingActive = true
+    private var focusGeneration = 0
     let acceptsFileDrops: Bool
 
     public init(
@@ -188,6 +193,10 @@ public final class TerminalSurfaceModel: ObservableObject {
         viewState.configuration = TerminalSurfaceOptions(backend: .inMemory(session))
         bridge.model = self
         Self.modelsByViewState.setObject(self, forKey: viewState)
+        focusObservation = viewState.$isFocused.removeDuplicates().sink { [weak self] focused in
+            guard focused else { return }
+            self?.onFocusAcquired?()
+        }
     }
 
     /// Reconfigure the live Ghostty surface without replacing its view or
@@ -268,6 +277,7 @@ public final class TerminalSurfaceModel: ObservableObject {
     public func setRenderingActive(_ active: Bool) {
         guard renderingActive != active else { return }
         renderingActive = active
+        if !active { focusGeneration &+= 1 }
         applyRenderingActive(remainingAttempts: 8)
     }
 
@@ -311,6 +321,16 @@ public final class TerminalSurfaceModel: ObservableObject {
     /// spawns, the surface is created, and the New Agent sheet is still
     /// dismissing — so the window has to cover roughly a second, not a frame.
     public func takeKeyboardFocus(remainingAttempts: Int = 40) {
+        focusGeneration &+= 1
+        applyKeyboardFocus(generation: focusGeneration, remainingAttempts: remainingAttempts)
+    }
+
+    private func applyKeyboardFocus(generation: Int, remainingAttempts: Int) {
+        guard generation == focusGeneration else { return }
+        guard renderingActive else {
+            retryFocus(generation: generation, remainingAttempts: remainingAttempts)
+            return
+        }
         let windows = [NSApp.keyWindow, NSApp.mainWindow] + NSApp.windows
         for window in windows.compactMap({ $0 }) {
             guard let view = TerminalFirstResponder.view(ownedBy: viewState, in: window) else { continue }
@@ -323,18 +343,18 @@ public final class TerminalSurfaceModel: ObservableObject {
             // case where a fresh agent came up unfocused. Keep asserting until
             // it sticks or the budget runs out.
             if window.firstResponder !== view {
-                retryFocus(remainingAttempts: remainingAttempts)
+                retryFocus(generation: generation, remainingAttempts: remainingAttempts)
             }
             return
         }
-        retryFocus(remainingAttempts: remainingAttempts)
+        retryFocus(generation: generation, remainingAttempts: remainingAttempts)
     }
 
-    private func retryFocus(remainingAttempts: Int) {
+    private func retryFocus(generation: Int, remainingAttempts: Int) {
         guard remainingAttempts > 1 else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(25)) { [weak self] in
             MainActor.assumeIsolated {
-                self?.takeKeyboardFocus(remainingAttempts: remainingAttempts - 1)
+                self?.applyKeyboardFocus(generation: generation, remainingAttempts: remainingAttempts - 1)
             }
         }
     }
@@ -342,6 +362,7 @@ public final class TerminalSurfaceModel: ObservableObject {
     /// Give up the keyboard if this pane's surface currently holds it. Only
     /// ever releases its own surface, never another pane's.
     public func releaseKeyboardFocus() {
+        focusGeneration &+= 1
         for window in NSApp.windows {
             guard let view = TerminalFirstResponder.view(ownedBy: viewState, in: window),
                   window.firstResponder === view else { continue }
@@ -408,6 +429,7 @@ public final class TerminalSurfaceModel: ObservableObject {
                 guard let self, self.attachment.isActive(id) else { return }
                 if self.session.readViewportText() != nil {
                     self.observeSelection()
+                    if let view = self.surfaceView { TerminalSurfaceDrop.install(on: view, model: self) }
                     self.handleSurfaceReadiness(self.attachment.becameReady(id))
                 } else if remainingAttempts > 1 {
                     self.confirmSurfaceReady(id, remainingAttempts: remainingAttempts - 1)

@@ -20,11 +20,6 @@ final class SettingsStore {
 
     /// The hosts as Settings sees them now.
     private(set) var hosts: [SettingsHost] = []
-    /// The host Defaults, Worktrees and Extensions show; the first that serves its settings
-    /// when nil or forgotten.
-    var chosenHost: UUID?
-    /// The page the iPad shows beside the list.
-    var page: SettingsPage = .appearance
 
     @ObservationIgnored private let mobileHosts: MobileHosts
     @ObservationIgnored private var inputs: [Input] = []
@@ -56,25 +51,40 @@ final class SettingsStore {
         track()
     }
 
+    static func forget(host: UUID, in hosts: MobileHosts) {
+        // Pending saves survive launches even if Settings has not been opened this launch.
+        let store = of(hosts)
+        store.hostSettings.forget(host: host)
+        store.instructions.forget(host: host)
+        store.suggestions.forget(host: host)
+        store.skills.forget(host: host)
+        store.inputs.removeAll { $0.id == host }
+        store.hosts.removeAll { $0.id == host }
+    }
+
     // MARK: Reading
 
     /// The host Defaults, Worktrees and Extensions show: the one chosen, else the first that
     /// serves its settings, else the first.
-    var settingsHost: SettingsHost? {
+    func settingsHost(chosenHost: UUID?) -> SettingsHost? {
         if let chosen = hosts.first(where: { $0.id == chosenHost }) { return chosen }
         return hosts.first { $0.serves(RemoteProtocol.hostSettingsCapability) } ?? hosts.first
     }
 
     /// The settings host's settings, once read.
-    var settings: HostSettings? {
-        settingsHost.flatMap { hostSettings.settings(of: $0) }
+    func settings(chosenHost: UUID?) -> HostSettings? {
+        settingsHost(chosenHost: chosenHost).flatMap { hostSettings.settings(of: $0) }
     }
 
+    var settings: HostSettings? { settings(chosenHost: nil) }
+
     /// Defaults' value on the list: the model without its provider ("claude-opus").
-    var defaultsValue: String? { settings.map(HostSettingsPresentation.defaultsValue) }
+    var defaultsValue: String? { defaultsValue(chosenHost: nil) }
+    func defaultsValue(chosenHost: UUID?) -> String? { settings(chosenHost: chosenHost).map(HostSettingsPresentation.defaultsValue) }
 
     /// Extensions' value: how many load ("6").
-    var extensionsValue: String? { settings.map(HostSettingsPresentation.extensionsValue) }
+    var extensionsValue: String? { extensionsValue(chosenHost: nil) }
+    func extensionsValue(chosenHost: UUID?) -> String? { settings(chosenHost: chosenHost).map(HostSettingsPresentation.extensionsValue) }
 
     /// Instructions' value: the files that hold anything ("AGENTS.md, APPEND").
     var instructionsValue: String? {
@@ -96,10 +106,13 @@ final class SettingsStore {
     }
 
     /// About's agent: "agent 0.87.1", from the settings host.
-    var agentVersion: String? { HostSettingsPresentation.agentVersion(settings) }
+    var agentVersion: String? { agentVersion(chosenHost: nil) }
+    func agentVersion(chosenHost: UUID?) -> String? { HostSettingsPresentation.agentVersion(settings(chosenHost: chosenHost)) }
 
     /// The iPad list's foot names the program beside the Pi page ("pi 0.87.1"), as the Mac's does.
-    var listFootVersion: String? { HostSettingsPresentation.agentVersion(settings, namingPi: page == .pi) }
+    func listFootVersion(page: SettingsPage, chosenHost: UUID?) -> String? {
+        HostSettingsPresentation.agentVersion(settings(chosenHost: chosenHost), namingPi: page == .pi)
+    }
 
     /// The app's host (its thread lists, its models), for a Settings host.
     func mobileHost(_ id: UUID) -> MobileHost? { mobileHosts.host(id) }

@@ -160,9 +160,8 @@ public final class SuggestionsStore: @unchecked Sendable {
         let item = InstructionsText.listItem(line ?? suggestion.line)
         let file = file ?? suggestion.file
         let text = instructions.snapshot()[file]
-        if !InstructionsText.holds(item, in: text) {
-            try instructions.save(file, content: InstructionsText.appending(item, to: text), origin: suggestion.source.name, now: now)
-        }
+        guard !InstructionsText.holds(item, in: text) else { return }
+        try instructions.save(file, content: InstructionsText.appending(item, to: text), origin: suggestion.source.name, now: now)
         stored.added.insert(AddedSuggestion(id: suggestion.id, line: item, file: file, sourceName: suggestion.source.name,
                                             addedAt: now.timeIntervalSince1970), at: 0)
         stored.added = Array(stored.added.prefix(Self.addedLimit))

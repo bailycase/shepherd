@@ -13,12 +13,13 @@ struct NWProseImageView: View {
     @Environment(\.nwProseFileRoot) private var root
     @Environment(\.openURL) private var openURL
     @Environment(\.displayScale) private var displayScale
-    @State private var thumbnail: CGImage?
+    @State private var thumbnail: (url: URL, image: CGImage)?
 
     var body: some View {
         let source = NWProseImageSource(image.source, root: root)
         Group {
-            if case .file(let url) = source, let cg = thumbnail ?? NWProseThumbnails.cached(url) {
+            if case .file(let url) = source,
+               let cg = (thumbnail?.url == url ? thumbnail?.image : nil) ?? NWProseThumbnails.cached(url) {
                 Button { openURL(url) } label: {
                     Image(decorative: cg, scale: displayScale)
                         .resizable()
@@ -40,7 +41,9 @@ struct NWProseImageView: View {
         }
         .task(id: source) {
             guard case .file(let url) = source, NWProseThumbnails.cached(url) == nil else { return }
-            thumbnail = await NWProseThumbnails.load(url, pixels: NWThreadMetrics.proseImageMaxWidth * displayScale)
+            let loaded = await NWProseThumbnails.load(url, pixels: NWThreadMetrics.proseImageMaxWidth * displayScale)
+            guard !Task.isCancelled else { return }
+            thumbnail = loaded.map { (url, $0) }
         }
     }
 

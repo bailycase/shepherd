@@ -111,6 +111,20 @@ once; the user's review arrives later as a message.
 - Pointing it at a different directory starts the review over: comments, the summary, viewed
   marks, and the pane's folds belonged to the old diff. The same directory keeps them.
 
+## Automation completion reports
+
+`automation_create(replyToCreator: true, …)` appends instructions to the saved watch prompt
+asking it to call `agent_send` with the creating agent's exact ID when it succeeds, fails, or
+is blocked, as well as `notify`. Automation agents already have `agent_send`; they cannot
+create further automations. The default remains notification-only unless the prompt asks
+otherwise.
+
+This is an instruction to the watch agent, not a guaranteed completion callback. Dispatch
+queues a follow-up if the creator is busy. The saved target survives a restart, but a deleted
+creator cannot receive it: the watcher reports the delivery failure in its notification and
+stops rather than choosing a different thread. Editing the automation's prompt replaces
+these instructions too, so retain them if completion reporting is still wanted.
+
 ## Tests
 
 ```bash

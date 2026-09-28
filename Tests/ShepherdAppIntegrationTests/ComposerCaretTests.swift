@@ -11,6 +11,37 @@ import Testing
 @Suite("Composer caret", .mainActorExclusive)
 @MainActor
 struct ComposerCaretTests {
+    /// Exercise the native command, not synthetic keyboard events delivered to the user's app.
+    @Test(arguments: [0, 5])
+    func aNativeNewlineReplacesTheSelectionAndKeepsTheDraftUnsent(selectionLength: Int) async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, window, agents) = try await MountedWorkspace.open(1, in: app)
+        defer { window.close() }
+        vm.focusedPaneID = agents[0].piPane.id
+        let store = vm.threadStores.store(for: agents[0].agent.id)
+        store.draft = "beforeafter"
+        var found: NSTextView?
+        try await eventuallyOnMain("the composer field to mount") {
+            ListPerf.settle(window)
+            found = window.window.firstResponder as? NSTextView
+            return found?.string == "beforeafter"
+        }
+        let editor = try #require(found)
+        let sent = store.sentCount
+        editor.setSelectedRange(NSRange(location: 6, length: selectionLength))
+
+        editor.insertNewlineIgnoringFieldEditor(nil)
+
+        let expected = selectionLength == 0 ? "before\nafter" : "before\n"
+        try await eventuallyOnMain("native insertion to update the draft") {
+            ListPerf.settle(window)
+            return store.draft == expected
+        }
+        #expect(editor.selectedRange() == NSRange(location: 7, length: 0))
+        #expect(store.sentCount == sent)
+    }
+
     @Test func aDraftReplacedFromOutsideTheFieldLeavesTheCaretAtItsEnd() async throws {
         let app = try AppHarness()
         defer { app.stop() }
