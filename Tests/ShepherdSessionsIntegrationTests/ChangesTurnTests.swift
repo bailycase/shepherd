@@ -112,6 +112,70 @@ struct ChangesTurnTests {
         #expect(!FileManager.default.fileExists(atPath: t.host.trash.path))
     }
 
+    @Test func nextPromptWaitsForTheSettledSnapshotWithoutBlockingOtherAgents() async throws {
+        let repo = try ChangesRepo(files: ["a.txt": "original\n"])
+        try "tool-*\n".write(to: repo.url.appendingPathComponent(".git/info/exclude"), atomically: true, encoding: .utf8)
+        let host = try ScratchServer.fresh()
+        defer { host.stop() }
+        let pi = try await PiAgent.launch(on: host, cwd: repo.url)
+        let other = try await PiAgent.launch(on: host)
+        let idle = try await pi.ready()
+        let otherIdle = try await other.ready()
+        #expect(try await pi.send("tools:1 first", from: idle).failureCode == nil)
+        let changes = host.server.changes
+        try await eventually("first baseline") { changes.turnStore.latest(pi.agent.id)?.startTree != nil }
+        try repo.write("a.txt", "first turn\n")
+        let running = try await pi.snapshot { $0.running }
+        #expect(try await pi.send("tools:1 second", from: running).failureCode == nil)
+        let release = DispatchSemaphore(value: 0)
+        defer { release.signal() }
+        await withCheckedContinuation { continuation in
+            changes.captureQueue(pi.agent.id).async { continuation.resume(); release.wait() }
+        }
+        FileManager.default.createFile(atPath: repo.url.appendingPathComponent("tool-1").path, contents: nil)
+        let settled = try await pi.snapshot("settled while capture waits") { !$0.running }
+        #expect(try await pi.send("tools:0 third", from: settled).failureCode == nil)
+        #expect(try await pi.queue(.sendNow(ids: settled.queue?.items.map(\.id) ?? []), from: settled).failureCode != nil)
+        #expect(try await other.send("tools:0 unrelated", from: otherIdle).failureCode == nil)
+        _ = try await other.snapshot("unrelated agent completes") { !$0.running && $0.messages.contains { $0.role == "user" && $0.blocks.contains { $0.text?.contains("unrelated") == true } } }
+        #expect(pi.stdin("prompt").count == 1, "neither queued nor fresh sends may reach pi during capture")
+        release.signal()
+        _ = try await pi.waitForStdin("prompt", count: 2)
+        try await eventually("second baseline") { changes.turnStore.all(pi.agent.id).count == 2 && changes.turnStore.latest(pi.agent.id)?.startTree != nil }
+        let records = changes.turnStore.all(pi.agent.id)
+        #expect(records.first?.endTree == records.last?.startTree)
+        try repo.write("a.txt", "second turn\n")
+        FileManager.default.createFile(atPath: repo.url.appendingPathComponent("tool-2").path, contents: nil)
+        try await eventually("both captures finish") { changes.turns(agentID: pi.agent.id).last?.state == .ready }
+        #expect(changes.turns(agentID: pi.agent.id).map(\.fileCount) == [1, 1])
+    }
+
+    @Test func promptBaselineFinishesBeforePiReceivesThePromptAndCaptureFailureDoesNotStallIt() async throws {
+        let repo = try ChangesRepo(files: ["a.txt": "original\n"])
+        let host = try ScratchServer.fresh()
+        defer { host.stop() }
+        let pi = try await PiAgent.launch(on: host, cwd: repo.url)
+        let idle = try await pi.ready()
+        let changes = host.server.changes
+        let release = DispatchSemaphore(value: 0)
+        defer { release.signal() }
+        await withCheckedContinuation { continuation in
+            changes.captureQueue(pi.agent.id).async { continuation.resume(); release.wait() }
+        }
+        let sending = Task { try await pi.send("tools:0 capture failure", from: idle) }
+        _ = try await pi.snapshot("pending send while baseline is held") { $0.messages.contains { $0.role == "user" && $0.blocks.first?.text == "tools:0 capture failure" } }
+        #expect(pi.stdin("prompt").isEmpty)
+        let file = repo.url.appendingPathComponent("a.txt")
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: file.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path) }
+        try #require(!FileManager.default.isReadableFile(atPath: file.path))
+        release.signal()
+        #expect(try await sending.value.failureCode == nil)
+        _ = try await pi.waitForStdin("prompt")
+        try await eventually("failed baseline reported") { changes.turns(agentID: pi.agent.id).last?.state == .unavailable }
+        _ = try await pi.snapshot("capture failure does not stall settlement") { !$0.running }
+    }
+
     private func drain(_ service: ChangesService, _ agent: AgentID) async {
         await withCheckedContinuation { continuation in
             service.captureQueue(agent).async { continuation.resume() }

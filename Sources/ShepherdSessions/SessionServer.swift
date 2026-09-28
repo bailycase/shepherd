@@ -4517,6 +4517,20 @@ public final class SessionServer: @unchecked Sendable {
             session.onExit = { [weak serverWeak] code in
                 serverWeak?.sessionDidExit(sid, code: code)
             }
+            thread.beforePrompt = { [weak serverWeak] completion in
+                guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { completion(); return }
+                server.changes.prepareTurn(agentID: agentID) { sessionQueue.async(execute: completion) }
+            }
+            thread.captureSettledTurn = { [weak serverWeak] completion in
+                guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { completion(); return }
+                server.changes.turnSettled(agentID: agentID) { sessionQueue.async(execute: completion) }
+            }
+            thread.discardPreparedTurn = { [weak serverWeak] in
+                guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
+                server.changes.captureQueue(agentID).async {
+                    server.changes.preparedTurns.withValue { $0.removeValue(forKey: agentID) }
+                }
+            }
             thread.onTurnEvent = { [weak serverWeak] event in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
                 switch event {

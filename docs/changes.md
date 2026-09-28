@@ -23,9 +23,10 @@ Every scope (`ChangesScope`) resolves to two git objects and a diff between them
 | Pull request | merge base of HEAD and the PR's base | HEAD | Pull request · vs main |
 
 - **The working tree** is a tree object: `git add -A` then `git write-tree` against Shepherd's own
-  index file for that working tree (`<support>/changes/index/<hash>`), seeded once from a copy of
-  the user's index, so tracked-but-ignored files stay and git's stat cache makes the next snapshot
-  re-read only what changed. Untracked files are included and ignored ones are not. Untracked files
+  index file for that working tree (`<support>/changes/index/<hash>`), reseeded from a copy of
+  the user's index whenever its bytes change, so newly tracked ignored files and branch switches
+  are reflected. Between those changes git's stat cache avoids rereading unchanged files.
+  A failed read makes the snapshot fail; stale index content is never evidence that Undo is safe. Untracked files are included and ignored ones are not. Untracked files
   over 16 MiB stay out (`ChangesList.skipped`) so a stray dump never lands in `.git/objects`.
 - **The index** is `git write-tree` on a throwaway copy of the user's index (write-tree writes the
   index file it reads). An index with unresolved conflicts has no tree: Staged and Unstaged say so.
@@ -81,6 +82,12 @@ files" card and its Undo arrive with the thread, locally and remotely. `changesT
 finds a turn's record from its user message; `NativeTurnChanges(turn:)` makes the card.
 
 A retry's second `agent_start` belongs to the same turn. A run the user steers into stays one turn.
+Logical settlement is recorded before its asynchronous capture completes. Host prompt delivery
+waits for that end capture, including queued messages and new sends arriving during capture.
+Before sending the next prompt, the host captures its baseline; `agent_start` consumes that
+baseline rather than racing the agent's first write. Captures run off the server queue, so other
+agents remain responsive. Capture failure releases delivery but makes the affected turn unavailable;
+a refused prompt creates no turn.
 Edits the user makes in their editor while the agent works are in the turn too: the snapshots
 cannot tell who wrote a file.
 
@@ -100,6 +107,15 @@ from the start tree to the end tree, until the next turn starts, and refuses whe
 turn's files changed after the Undo. The card draws Undo without a dialog; Redo is what makes it
 safe, and the refusal is what keeps it from overwriting anything the user wrote. The agent is not
 told about an Undo or a Redo. (Both the user's call, 2026-09-25.)
+
+Undo/Redo operations in the same checkout serialize their validation and writes, even across
+agents, and each restore owns a unique temporary index. This does not lock out external editors.
+A filesystem failure can leave an operation partially applied: its error says so, and the same
+Undo or Redo retries it. A per-path journal in `turns.json` survives relaunch. Completed paths
+must still match the target snapshot, untouched paths the source snapshot; a write interrupted
+before its checkpoint must match one of those exactly. Otherwise retry refuses and names the
+conflicting paths without writing anything. Recovery never adopts arbitrary partial bytes as a
+new baseline and does not promise atomic rollback. Redo becomes available only after Undo finishes.
 
 ## What it writes
 

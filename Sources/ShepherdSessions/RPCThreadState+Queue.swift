@@ -85,7 +85,7 @@ extension RPCThreadState {
 
     /// pi is working, or about to be on a prompt it has not answered: a send now waits in the
     /// queue (or steers).
-    var piBusy: Bool { running || !dispatches.isEmpty }
+    var piBusy: Bool { running || !dispatches.isEmpty || settleCapture != nil }
 
     /// pi settling does not leave the agent idle: a prompt of ours is on its way, or the
     /// queue goes next.
@@ -317,6 +317,7 @@ extension RPCThreadState {
     func dispatch(id: UUID, text: String, context: String? = nil, images: [NativeImage], parts: [NativeQueuePart]?, items batch: [QueueItem],
                   designPayloads: [UUID] = [], completion: @escaping (NativeThreadResult) -> Void) {
         let prompt = Self.prompt(text, context: context)
+        stopRequested = false
         let expectsMessage = !isExtensionCommand(prompt)
         dispatches.append(Dispatch(id: id, text: prompt, parts: parts, items: batch, expectsMessage: expectsMessage,
                                    designPayloads: designPayloads + batch.flatMap(\.designPayloads)))
@@ -328,18 +329,34 @@ extension RPCThreadState {
         }
         commit()
         let rpcImages = images.map { RPCImage(data: $0.data.base64EncodedString(), mimeType: $0.mimeType) }
-        session.request(.prompt(message: prompt, images: rpcImages, streamingBehavior: .followUp), timeout: Self.promptTimeout) { [weak self] result in
+        let generation = generation
+        let send = { [weak self] in
             guard let self else { return }
-            let failure = Self.dispatchFailure(result)
-            if let failure, case .failure(let code, _) = failure, code != "outcome_unknown" {
-                self.dropDispatch(id)
-            } else if let index = self.dispatches.firstIndex(where: { $0.id == id }) {
-                self.dispatches[index].responded = true
-                self.confirmDispatch(id)
+            guard self.generation == generation else {
+                completion(.failure(code: "stale_session", message: "The session changed before pi started the send."))
+                return
             }
-            self.commit()
-            completion(failure ?? .accepted(operationID: id))
+            guard self.session.isAlive, self.dispatches.contains(where: { $0.id == id }), !self.stopRequested else {
+                self.dropDispatch(id)
+                self.discardPreparedTurn?()
+                completion(.failure(code: "send_cancelled", message: "The send was cancelled before pi started it."))
+                return
+            }
+            self.session.request(.prompt(message: prompt, images: rpcImages, streamingBehavior: .followUp), timeout: Self.promptTimeout) { [weak self] result in
+                guard let self else { return }
+                let failure = Self.dispatchFailure(result)
+                if let failure, case .failure(let code, _) = failure, code != "outcome_unknown" {
+                    self.dropDispatch(id)
+                    self.discardPreparedTurn?()
+                } else if let index = self.dispatches.firstIndex(where: { $0.id == id }) {
+                    self.dispatches[index].responded = true
+                    self.confirmDispatch(id)
+                }
+                self.commit()
+                completion(failure ?? .accepted(operationID: id))
+            }
         }
+        if expectsMessage, let beforePrompt { beforePrompt(send) } else { send() }
     }
 
     /// pi answered a prompt that has not started a message yet: if pi is not working, it never
@@ -351,6 +368,7 @@ extension RPCThreadState {
                   response.data?["isStreaming"]?.boolValue == false,
                   self.dispatches.contains(where: { $0.id == id && $0.responded }) else { return }
             self.dropDispatch(id)
+            self.discardPreparedTurn?()
             self.commit()
             self.drainIfReady()
             self.idleAfterQueue()
@@ -606,6 +624,8 @@ extension RPCThreadState {
 
     /// A new pi session: its queue is new, so steering items wait in the queue again.
     func resetQueueForNewSession() {
+        settleCapture = nil
+        discardPreparedTurn?()
         for dispatch in dispatches { live.removeAll { $0.kind == .pending(dispatch.id) } }
         dispatches.removeAll()
         for index in items.indices where items[index].entry.state == .steering {
