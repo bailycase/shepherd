@@ -1,8 +1,8 @@
 import Testing
 @testable import ShepherdSessions
 
-/// The remote listener's hello token check compares every byte, so its answer is the same as
-/// `==`'s without leaking where two tokens first differ.
+/// The remote listener's hello token check agrees with byte equality and rejects wrong lengths.
+/// These functional checks do not measure timing or establish side-channel resistance.
 @Suite("Remote token")
 struct RemoteTokenTests {
     private static let token = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"

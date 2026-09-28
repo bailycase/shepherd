@@ -149,7 +149,8 @@ struct ChangesParseTests {
         #expect(kept.last?.turn.startedAt == 99)
         #expect(kept.dropLast().allSatisfy { $0.turn.fileCount > 0 })
         #expect(kept.count == 8)
-        #expect(TurnStore.pruned((0..<30).map { Self.record(.ready, files: 1, id: $0) }).count == ChangesLimits.turns)
+        #expect(TurnStore.pruned((0..<30).map { Self.record(.ready, files: 1, id: $0) }).map(\.turn.startedAt)
+                == (20..<30).map(Double.init))
     }
 
     @Test func aHugeFileIsCutAtItsLineLimit() throws {
