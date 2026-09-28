@@ -87,20 +87,26 @@ enum DesignReferencesExtension {
           // ---- socket client (request/reply, NDJSON) -------------------------------
 
           let socket: net.Socket | undefined;
-          let buffer = "";
+          let connecting: Promise<net.Socket> | undefined;
+          let stopped = false;
           let nextID = 1;
-          const pending = new Map<number, (reply: Reply) => void>();
+          const pending = new Map<number, { socket: net.Socket; resolve: (reply: Reply) => void }>();
 
           function connect(): Promise<net.Socket> {
+            if (stopped) return Promise.reject(new Error("Shepherd session ended"));
+            if (connecting) return connecting;
             if (socket && !socket.destroyed) return Promise.resolve(socket);
-            return new Promise((resolve, reject) => {
+            connecting = new Promise((resolve, reject) => {
               const s = net.createConnection(socketPath);
+              socket = s;
+              let buffer = "";
               s.setEncoding("utf8");
               s.on("connect", () => {
                 socket = s;
                 resolve(s);
               });
               s.on("data", (chunk: string) => {
+                if (socket !== s) return;
                 buffer += chunk;
                 let index = buffer.indexOf("\n");
                 while (index >= 0) {
@@ -112,7 +118,7 @@ enum DesignReferencesExtension {
                       const resolver = pending.get(reply.id);
                       if (resolver) {
                         pending.delete(reply.id);
-                        resolver(reply);
+                        resolver.resolve(reply);
                       }
                     } catch {
                       // Ignore undecodable lines; the request times out.
@@ -121,24 +127,25 @@ enum DesignReferencesExtension {
                   index = buffer.indexOf("\n");
                 }
               });
-              s.on("error", (error) => {
-                socket = undefined;
-                reject(error);
-              });
+              s.on("error", (error) => { reject(error); });
               s.on("close", () => {
-                socket = undefined;
+                reject(new Error("Shepherd closed the connection"));
+                if (socket === s) socket = undefined;
                 for (const [id, resolver] of pending) {
+                  if (resolver.socket !== s) continue;
                   pending.delete(id);
-                  resolver({ type: "error", id, code: "disconnected", message: "Shepherd closed the connection" });
+                  resolver.resolve({ type: "error", id, code: "disconnected", message: "Shepherd closed the connection" });
                 }
               });
               s.unref();
-            });
+            }).finally(() => { connecting = undefined; });
+            return connecting;
           }
 
           // Throws on failure: pi marks a tool errored only when execute throws.
           async function request(payload: Record<string, unknown>): Promise<Reply> {
             const s = await connect();
+            if (stopped || s.destroyed) throw new Error("Shepherd closed the connection");
             const id = nextID++;
             const reply = await new Promise<Reply>((resolve) => {
               const timer = setTimeout(() => {
@@ -146,10 +153,10 @@ enum DesignReferencesExtension {
                 resolve({ type: "error", id, code: "timeout", message: "Shepherd did not reply in time" });
               }, REQUEST_TIMEOUT_MS);
               timer.unref?.();
-              pending.set(id, (received) => {
+              pending.set(id, { socket: s, resolve: (received) => {
                 clearTimeout(timer);
                 resolve(received);
-              });
+              } });
               s.write(JSON.stringify({ ...payload, id, agentID }) + "\n");
             });
             if (reply.type === "error") {
@@ -236,12 +243,12 @@ enum DesignReferencesExtension {
           });
 
           pi.on("session_shutdown", () => {
+            stopped = true;
             try {
-              socket?.end();
+              socket?.destroy();
             } catch {
               // Swallow; the process is going away.
             }
-            socket = undefined;
           });
         }
 
