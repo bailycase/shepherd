@@ -774,5 +774,66 @@
         }
       }
     }
+  },
+  {
+    "type": "nativeThread",
+    "id": 26,
+    "result": {
+      "snapshot": {
+        "value": {
+          "piSessionID": "session",
+          "generation": "generation",
+          "revision": 10,
+          "running": false,
+          "supportedActions": [
+            "send",
+            "abort",
+            "answer",
+            "setModel",
+            "setThinking",
+            "sendImages",
+            "subagents",
+            "queue",
+            "compact",
+            "designContext",
+            "designReferences"
+          ],
+          "dialogsSupported": true,
+          "dialogs": [],
+          "messages": [
+            {
+              "entryID": "user:1790281449000",
+              "role": "user",
+              "blocks": [
+                {
+                  "kind": "text",
+                  "text": "Build this in the checkout page.\n\n1 design reference attached."
+                }
+              ],
+              "truncated": false,
+              "timestamp": 1790281449000,
+              "operationID": "00000000-0000-0000-0000-000000000026",
+              "designReferences": [
+                {
+                  "ref": "shepherd-design-ref://local/d1/A.dc.html#2:0/1@23",
+                  "design": "Checkout funnel dashboard",
+                  "board": "A.dc.html",
+                  "boardTitle": "A · Funnel first",
+                  "element": "A.dc.html#2:0/1",
+                  "elementLabel": "Checkout funnel",
+                  "revision": 23,
+                  "width": 1280,
+                  "height": 800,
+                  "payload": "00000000-0000-0000-0000-000000000027"
+                }
+              ]
+            }
+          ],
+          "provisional": [],
+          "clipped": false,
+          "runtime": "rpc"
+        }
+      }
+    }
   }
 ]

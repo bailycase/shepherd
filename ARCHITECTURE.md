@@ -287,11 +287,13 @@ authentication boundary ([SECURITY.md](SECURITY.md)).
   design's installed systems, else the CSS custom properties in its working folder (the design's
   own folder: a design belongs to no project). It hands pi the design skill through `resources_discover` and
   adds the design's facts to each run's system prompt ([docs/designs.md](docs/designs.md)).
-- **`shepherd-design-refs.ts`:** an ordinary thread's `design_get`, loaded for agents that draw no
-  design (`SHEPHERD_DESIGN_REFS`) and registered only once the thread holds a design reference.
-  It sends `designGet`; the server answers `designReference` only for a piece the agent holds a
-  grant for, reading through `DesignStore` off its queue, and hands the drawn aspects (image,
-  page, element) to the app (`onDesignReferenceRender`), which renders them into the drop folder
+- **`shepherd-design-refs.ts`:** an ordinary thread's `design_get` and `design_note`, loaded for
+  agents that draw no design while the Design tool is on (`SHEPHERD_DESIGN_REFS`) and registered
+  only once the thread holds a design reference. A send with references keeps each piece's copy
+  under the support directory's `design-refs/` (`DesignReferencePayloadStore`), drawn by the app
+  (`onDesignReferenceCapture`); `designGet` is answered (`designReference`) only from the copies
+  the agent was sent, read off the server's queue, and `designNote` (`designNote`) keeps a short
+  note in the design's `thread-notes.json` for the canvas's thread pins
   ([docs/designs.md](docs/designs.md) › Design references).
 
 The server owns PTYs but not layouts, so pane requests from an agent (and from remote clients,

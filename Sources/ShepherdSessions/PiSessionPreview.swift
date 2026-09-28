@@ -33,12 +33,14 @@ public enum PiSessionPreview {
 
     /// The newest page of the thread in pi's session `file`; nil when the file is missing, is
     /// not a pi session, or is in an older format.
-    public static func snapshot(file: URL, sessionID: String) -> NativeThreadSnapshot? {
-        snapshot(file: file, sessionID: sessionID, initialWindow: initialWindow, maxWindow: maxWindow)
+    /// `origins` is the support directory's `thread-origins/`, which says which messages the user
+    /// sent with design references (drawn as chips; any other fence shows as text).
+    public static func snapshot(file: URL, sessionID: String, origins: URL? = nil) -> NativeThreadSnapshot? {
+        snapshot(file: file, sessionID: sessionID, initialWindow: initialWindow, maxWindow: maxWindow, origins: origins)
     }
 
     /// `snapshot(file:sessionID:)` reading windows of these sizes (tests make them small).
-    static func snapshot(file: URL, sessionID: String, initialWindow: Int, maxWindow: Int) -> NativeThreadSnapshot? {
+    static func snapshot(file: URL, sessionID: String, initialWindow: Int, maxWindow: Int, origins: URL? = nil) -> NativeThreadSnapshot? {
         guard let handle = try? FileHandle(forReadingFrom: file) else { return nil }
         defer { try? handle.close() }
         guard let size = try? handle.seekToEnd(), size > 0 else { return nil }
@@ -74,7 +76,9 @@ public enum PiSessionPreview {
                let level = newestThinkingLevel(in: handle, before: oldest) {
                 settings.thinking = level
             }
-            return snapshot(walk, settings: settings, sessionID: sessionID, moreBefore: !walk.reachedStart)
+            let sent = origins.map { ThreadOriginStore(directory: $0).load(sessionID: sessionID) } ?? []
+            let references = Dictionary(sent.compactMap { entry in entry.record.references.map { (entry.id, $0) } }, uniquingKeysWith: { $1 })
+            return snapshot(walk, settings: settings, sessionID: sessionID, moreBefore: !walk.reachedStart, sentReferences: references)
         }
     }
 
@@ -339,9 +343,10 @@ public enum PiSessionPreview {
         return nil
     }
 
-    private static func snapshot(_ walk: Walk, settings: (model: String?, thinking: String?), sessionID: String, moreBefore: Bool) -> NativeThreadSnapshot {
+    private static func snapshot(_ walk: Walk, settings: (model: String?, thinking: String?), sessionID: String, moreBefore: Bool,
+                                 sentReferences: [String: [String]]) -> NativeThreadSnapshot {
         var value = base(sessionID: sessionID, model: settings.model, thinking: settings.thinking)
-        let history = RPCThreadState.projectHistory(messages(walk.path))
+        let history = RPCThreadState.projectHistory(messages(walk.path), sentReferences: sentReferences)
         RPCThreadState.fillPage(&value, from: history, end: history.count, moreBefore: moreBefore)
         return value
     }

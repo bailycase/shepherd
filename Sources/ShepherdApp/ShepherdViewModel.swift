@@ -86,6 +86,20 @@ final class ShepherdViewModel {
     var designSystemDeleteRequest: DesignSystemDeleteRequest?
     /// The toast over the main column after a deletion (UndoToast, DeleteFailedToast).
     var designToast: DesignToast?
+    /// Implement in a thread's sheet over a design (RefImplementSheet), while it is up.
+    var implementSheet: ImplementSheetModel?
+    /// The toast on a design's canvas after a reference went (RefSentStay, RefCopied).
+    var referenceToast: DesignReferenceToast?
+    /// Each local thread's design references: its chips, "Looked at…" lines and @ picker.
+    @ObservationIgnored var referenceChips: [AgentID: DesignReferenceChips] = [:]
+    /// The designs as references last saw them (their activity and boards): a change reads every
+    /// chip's standing again.
+    @ObservationIgnored var referenceDesignSignature: [DesignID: [Double]] = [:]
+    /// Where Copy reference puts a reference's string: the general pasteboard (tests their own).
+    @ObservationIgnored var copyToPasteboard: (String) -> Void = { text in
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
     /// Rename… of a design or a design system, while its sheet is up.
     var designRename: DesignRenameRequest?
     /// An import running (its card first on Designs), and what it asks (ImportFailed,

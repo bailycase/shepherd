@@ -978,7 +978,7 @@ public final class NativeThreadStore {
             notice = "This thread's host doesn't take design references."
             return
         }
-        let text = NativeAttachedFile.message(typed, files: files + references.flatMap(\.files), references: references.count)
+        let text = NativeAttachedFile.message(typed, files: files, references: references.count)
         let operation = UUID()
         let attached: [NativeImage]? = images.isEmpty || !supports("sendImages") ? nil : images
         let context = supports("designContext") ? designContext?().map(NativeDesignContext.init) : nil
@@ -994,11 +994,18 @@ public final class NativeThreadStore {
         !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachedFiles.isEmpty || !attachedReferences.isEmpty
     }
 
-    /// Adds a design reference beside the draft, once per piece (a later one replaces it).
-    public func attach(reference: NativeAttachedReference) {
-        attachedReferences.removeAll { $0.reference.designID == reference.reference.designID
-            && $0.reference.board == reference.reference.board && $0.reference.element == reference.reference.element }
+    /// Adds a design reference beside the draft, once per piece (a later one, "Send vN" among
+    /// them, replaces it in place), at most `DesignReferenceRecord.maxPerMessage`. False when the
+    /// composer already holds that many other pieces.
+    @discardableResult
+    public func attach(reference: NativeAttachedReference) -> Bool {
+        if let index = attachedReferences.firstIndex(where: { $0.reference.isSamePiece(as: reference.reference) }) {
+            attachedReferences[index] = reference
+            return true
+        }
+        guard attachedReferences.count < DesignReferenceRecord.maxPerMessage else { return false }
         attachedReferences.append(reference)
+        return true
     }
 
     public func detachReference(_ id: UUID) {
@@ -1052,7 +1059,7 @@ public final class NativeThreadStore {
             return false
         }
         let sent = sentCount
-        let message = NativeAttachedFile.message(text, files: references.flatMap(\.files), references: references.count)
+        let message = NativeAttachedFile.message(text, files: [], references: references.count)
         let operation = UUID()
         await perform(.send(expectedSessionID: current.piSessionID, generation: current.generation, operationID: operation,
                             text: message, delivery: delivery,

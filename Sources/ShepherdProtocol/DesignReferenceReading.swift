@@ -1,58 +1,40 @@
 import Foundation
 import ShepherdCore
 
-/// What design_get reads of a reference (docs/designs.md › Design references).
+/// What design_get reads of a reference's kept copy (docs/designs.md › design_get).
 public enum DesignReferenceAspect: String, Codable, Hashable, Sendable, CaseIterable {
-    /// The label, size, revision, and whether it changed since the pinned revision.
+    /// The label, size, the revision it was sent at, and the other versions this thread was sent.
     case summary
-    /// A PNG of the board, or of the element cut from it, at twice its size.
+    /// A PNG of the board, or of the element cut from it, at twice its size (a whole design's: each
+    /// board's).
     case image
-    /// The board as a standalone page: no runtime, no scripts.
+    /// The board as a standalone page: no runtime, no scripts (a whole design's: each board's).
     case html
     /// The element's drawn markup and computed styles.
     case element
     /// The design system tokens the piece uses, each with the file and line it came from.
     case tokens
-    /// What changed since the pinned revision.
+    /// What changed between this version and the one before it that this thread was sent.
     case changes
-
-    /// What the app renders (a board view off screen); the rest the server reads from the files.
-    public var isRendered: Bool { self == .image || self == .html || self == .element }
 }
 
-/// design_get's answer: its text (every word of it from the design fenced as data), and the files
-/// it wrote in the drop folder (a PNG, a page, an element's markup), by absolute path. Files keep
+/// design_get's answer: its text (every word of it from the design fenced as data), and the kept
+/// copy's files it names (a PNG, a page, an element's markup), by absolute path. Files keep
 /// megabytes off the socket.
 public struct DesignReferenceAnswer: Codable, Hashable, Sendable {
     public var text: String
     public var files: [String]
     /// A PNG among `files` that the extension hands pi as an image.
     public var image: String?
+    /// What the "Looked at…" line says of this read.
+    public var lookedAt: DesignReferenceLookedAt?
 
-    public init(text: String, files: [String] = [], image: String? = nil) {
+    public init(text: String, files: [String] = [], image: String? = nil, lookedAt: DesignReferenceLookedAt? = nil) {
         self.text = text
         self.files = files
         self.image = image
+        self.lookedAt = lookedAt
     }
-}
-
-/// The app's rendering of a reference for design_get and for the files a send attaches, written
-/// into the drop folder: each file's absolute path.
-public struct DesignReferenceRendering: Hashable, Sendable {
-    public var image: String?
-    public var html: String?
-    /// The element's drawn markup (`element.html`) and its computed styles (`styles.json`).
-    public var elementHTML: String?
-    public var elementStyles: String?
-
-    public init(image: String? = nil, html: String? = nil, elementHTML: String? = nil, elementStyles: String? = nil) {
-        self.image = image
-        self.html = html
-        self.elementHTML = elementHTML
-        self.elementStyles = elementStyles
-    }
-
-    public var files: [String] { [image, html, elementHTML, elementStyles].compactMap { $0 } }
 }
 
 // MARK: - Fencing what the design says
@@ -90,25 +72,37 @@ public enum DesignReferenceData {
 /// The words of a reference's answers, from what the server read: pure, so the rules are tested
 /// without a design on disk.
 public enum DesignReferenceReading {
-    /// What `summary` says, before fencing.
-    public static func summary(reference: DesignReference, record: DesignReferenceRecord, pinned: UInt64,
-                               changed: Bool?, onCanvas: Bool) -> String {
-        var lines = ["ref: \(reference.string)"]
-        if let design = record.design { lines.append("design: \(design)") }
-        lines.append("board: \(reference.board.rawValue)" + (record.boardTitle.map { " (\($0))" } ?? ""))
-        if let element = reference.element {
-            lines.append("element: \(element)" + (record.elementLabel.map { " (\($0))" } ?? ""))
+    /// What `summary` says of a kept copy, before fencing: the piece, its size, the revision it
+    /// was sent at, what the copy holds, and every other version of it this thread was sent.
+    public static func summary(_ payload: DesignReferencePayload, versions: [UInt64]) -> String {
+        var lines = ["ref: \(payload.reference.string)", "design: \(payload.design)"]
+        if let board = payload.reference.board {
+            lines.append("board: \(board.rawValue)" + (payload.boardTitle.map { " (\($0))" } ?? ""))
         }
-        if let width = record.width, let height = record.height {
+        if let element = payload.reference.element {
+            lines.append("element: \(element)" + (payload.elementLabel.map { " (\($0))" } ?? ""))
+        }
+        if let width = payload.width, let height = payload.height {
             lines.append("size: \(number(width)) × \(number(height)) px")
         }
-        lines.append("pinned at revision \(pinned); the design is at revision \(record.revision ?? pinned) now")
-        if !onCanvas {
-            lines.append("the board is no longer on the canvas")
-        } else if let changed {
-            lines.append(changed ? "it changed since the pinned revision (design_get with what: \"changes\" says how)"
-                                 : "unchanged since the pinned revision")
+        if let boards = payload.boards {
+            let titles = boards.map { $0.title ?? $0.board.stem }.joined(separator: ", ")
+            lines.append("boards: \(boards.count) of \(payload.boardCount ?? boards.count) (\(titles))")
         }
+        lines.append("sent at revision \(payload.revision); this copy is what the user sent and never changes")
+        let others = versions.filter { $0 != payload.revision }
+        if !others.isEmpty {
+            lines.append("this thread was also sent revision " + others.map(String.init).joined(separator: ", ")
+                + " of it (design_get with that ref's revision reads it; what: \"changes\" compares them)")
+        }
+        let outline = payload.outline
+        var holds: [String] = []
+        if payload.picture != nil || payload.boards?.contains(where: { $0.picture != nil }) == true { holds.append("picture") }
+        if payload.html != nil || payload.boards?.contains(where: { $0.html != nil }) == true { holds.append("html") }
+        if payload.element != nil { holds.append("element markup and computed styles") }
+        holds.append("\(outline.styles) declared styles")
+        holds.append("\(outline.tokens) tokens")
+        lines.append("the copy holds: " + holds.joined(separator: ", "))
         return lines.joined(separator: "\n")
     }
 
@@ -260,35 +254,48 @@ public enum DesignReferenceReading {
 
     // MARK: Changes
 
-    /// What changed in a board between its pinned source and its source now, for the reference's
-    /// piece: the board whole, or one element found again by its path and words
-    /// (`DesignCommentAnchor`). Only the referenced board is described; other boards are never
-    /// named. `pinned` is nil when the pinned copy is gone.
-    public static func changes(reference: DesignReference, label: String?, pinnedRevision: UInt64, revision: UInt64,
-                               pinned: String?, current: String?) -> String {
-        guard let current else {
-            return "The board is no longer on the canvas (revision \(revision); pinned at \(pinnedRevision))."
+    /// What changed in a board between two versions of the piece this thread was sent (`from`, the
+    /// earlier, and `to`), for the reference's piece: the board whole, or one element found again
+    /// by its path and words (`DesignCommentAnchor`). Only the referenced board is described.
+    public static func changes(reference: DesignReference, label: String?, from: UInt64, to: UInt64,
+                               before: String, after: String) -> String {
+        if before == after {
+            return "Unchanged between revision \(from) and revision \(to), both sent to this thread."
         }
-        guard let pinned else {
-            return "The pinned copy of the board is not kept, so what changed since revision \(pinnedRevision) can't be listed. "
-                + "Read it again with what: \"html\" or \"image\"."
-        }
-        if pinned == current {
-            return "Unchanged since revision \(pinnedRevision) (the design is at revision \(revision))."
-        }
-        var lines = ["Since revision \(pinnedRevision) (the design is at revision \(revision)):"]
-        guard let before = DesignTemplate(board: pinned), let after = DesignTemplate(board: current) else {
+        var lines = ["From revision \(from) to revision \(to), both sent to this thread:"]
+        guard let old = DesignTemplate(board: before), let new = DesignTemplate(board: after) else {
             lines.append("- the board's source changed (it has no template to compare)")
             return lines.joined(separator: "\n")
         }
-        let old = signatures(before, source: pinned)
-        let new = signatures(after, source: current)
+        let oldSignatures = signatures(old, source: before)
+        let newSignatures = signatures(new, source: after)
         if let element = reference.element {
-            lines += elementChanges(element, label: label, before: before, after: after, old: old, new: new)
+            lines += elementChanges(element, label: label, before: old, after: new, old: oldSignatures, new: newSignatures)
         } else {
-            lines += boardChanges(old: old, new: new, before: before, after: after)
+            lines += boardChanges(old: oldSignatures, new: newSignatures, before: old, after: new)
         }
         if lines.count == 1 { lines.append("- the board's source changed outside its elements (its logic, head or text)") }
+        return lines.joined(separator: "\n")
+    }
+
+    /// What changed across a whole design between two copies this thread was sent: boards added,
+    /// removed and changed, and for each changed board what changed in it.
+    public static func designChanges(from: UInt64, to: UInt64, before: [(board: DesignPath, title: String?, source: String)],
+                                     after: [(board: DesignPath, title: String?, source: String)]) -> String {
+        let old = Dictionary(before.map { ($0.board, $0) }, uniquingKeysWith: { $1 })
+        let new = Dictionary(after.map { ($0.board, $0) }, uniquingKeysWith: { $1 })
+        func name(_ board: DesignPath, _ title: String?) -> String { board.rawValue + (title.map { " (\($0))" } ?? "") }
+        var lines = ["From revision \(from) to revision \(to), both sent to this thread:"]
+        for board in after where old[board.board] == nil { lines.append("- board added: " + name(board.board, board.title)) }
+        for board in before where new[board.board] == nil { lines.append("- board removed: " + name(board.board, board.title)) }
+        for board in after {
+            guard let was = old[board.board], was.source != board.source,
+                  let reference = DesignReference(designID: DesignID(rawValue: "d"), board: board.board) else { continue }
+            let text = changes(reference: reference, label: nil, from: from, to: to, before: was.source, after: board.source)
+            lines.append("- " + name(board.board, board.title) + " changed:")
+            lines += text.split(separator: "\n").dropFirst().map { "  " + $0 }
+        }
+        if lines.count == 1 { lines.append("- no board it holds changed") }
         return lines.joined(separator: "\n")
     }
 
@@ -432,16 +439,27 @@ private extension Array {
     subscript(safe index: Int) -> Element? { indices.contains(index) ? self[index] : nil }
 }
 
-/// The files a reference's rendering writes, named for its board's stem and element's tid, so
-/// each is one plain path segment (`Hero@2x.png`, `Hero-12.element.html`).
+/// The files of a reference's kept copy, named for its board's stem and element's tid, so each is
+/// one plain path segment (`Hero@2x.png`, `Hero-12.element.html`); a whole design's boards are
+/// numbered in canvas order (`01-Hero@2x.png`).
 public enum DesignReferenceFileNames {
     public static func base(_ reference: DesignReference) -> String {
-        reference.board.stem + (reference.element.map { "-\($0.tid)" } ?? "")
+        (reference.board?.stem ?? "design") + (reference.element.map { "-\($0.tid)" } ?? "")
     }
 
     public static func image(_ reference: DesignReference) -> String { base(reference) + "@2x.png" }
-    public static func html(_ reference: DesignReference) -> String { reference.board.stem + ".html" }
+    public static func html(_ reference: DesignReference) -> String { (reference.board?.stem ?? "design") + ".html" }
     public static func elementHTML(_ reference: DesignReference) -> String { base(reference) + ".element.html" }
     public static func elementStyles(_ reference: DesignReference) -> String { base(reference) + ".styles.json" }
     public static func tokens(_ reference: DesignReference) -> String { base(reference) + "-tokens.md" }
+    public static func source(_ reference: DesignReference) -> String { (reference.board?.stem ?? "design") + ".source.dc.html" }
+
+    /// A whole design's board `index` (from 0).
+    public static func boardImage(_ index: Int, _ board: DesignPath) -> String { numbered(index, board) + "@2x.png" }
+    public static func boardHTML(_ index: Int, _ board: DesignPath) -> String { numbered(index, board) + ".html" }
+    public static func boardSource(_ index: Int, _ board: DesignPath) -> String { numbered(index, board) + ".source.dc.html" }
+
+    private static func numbered(_ index: Int, _ board: DesignPath) -> String {
+        (index + 1 < 10 ? "0" : "") + "\(index + 1)-" + board.stem
+    }
 }

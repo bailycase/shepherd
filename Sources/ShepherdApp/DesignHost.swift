@@ -107,6 +107,10 @@ final class DesignRendering {
     let thumbnails: DesignThumbnails
     /// Design systems' component specimens (DZSystem).
     let specimens: DesignSpecimens
+    /// Boards' small pictures for the @ picker's rows and the composer's chips.
+    let boardPictures: DesignBoardPictures
+    /// The @ picker's element pictures, cut from their boards.
+    let elementCrops: DesignElementCrops
 
     /// Live views a design on screen may hold (previews take none: their captures can't draw a
     /// web view, so every board draws its snapshot).
@@ -134,7 +138,11 @@ final class DesignRendering {
         rasterizer = shared ?? DesignRasterizer()
         thumbnails = DesignThumbnails(rasterizer: rasterizer)
         specimens = DesignSpecimens(rasterizer: rasterizer, network: network.sandbox)
+        boardPictures = DesignBoardPictures(rasterizer: rasterizer)
+        elementCrops = DesignElementCrops(rasterizer: rasterizer)
         thumbnails.surface = { [weak self] id in self?.surface(for: id) }
+        boardPictures.surface = { [weak self] id in self?.surface(for: id) }
+        elementCrops.surface = { [weak self] id in self?.surface(for: id) }
         if shared == nil { rasterizer.countWebViews = { [weak self] in self?.webViews ?? 0 } }
     }
 
@@ -160,6 +168,8 @@ final class DesignRendering {
         for id in Set(hosts.keys).subtracting(ids) { hosts.removeValue(forKey: id)?.release() }
         for id in Set(surfaces.keys).subtracting(ids) { surfaces.removeValue(forKey: id) }
         thumbnails.prune(keeping: ids)
+        boardPictures.prune(keeping: ids)
+        elementCrops.prune(keeping: ids)
     }
 
     /// Web views alive now: every host's live views and the rasterizer's.
@@ -619,9 +629,14 @@ final class DesignRasterizer {
         let wanted: () -> Bool
         /// The snapshot, or nil when the board could not render.
         let done: (CGImage?) -> Void
+        /// Elements to find on the board once it renders, and where it draws them (in the
+        /// board's points), told before `done`.
+        let locate: [Int]
+        let located: ([Int: CGRect]) -> Void
 
         init(key: String, surface: DesignSurface, path: DesignPath, size: CGSize, sha: String, priority: Priority,
-             wanted: @escaping () -> Bool, done: @escaping (CGImage?) -> Void) {
+             wanted: @escaping () -> Bool, locate: [Int] = [], located: @escaping ([Int: CGRect]) -> Void = { _ in },
+             done: @escaping (CGImage?) -> Void) {
             self.key = key
             self.surface = surface
             self.path = path
@@ -629,6 +644,8 @@ final class DesignRasterizer {
             self.sha = sha
             self.priority = priority
             self.wanted = wanted
+            self.locate = locate
+            self.located = located
             self.done = done
         }
     }
@@ -671,15 +688,18 @@ final class DesignRasterizer {
             self?.webViews = 1
             self?.noteWebViews()
             var image: CGImage?
+            var rects: [Int: CGRect] = [:]
             do {
                 try await view.load()
                 image = try await view.snapshot()
+                if !job.locate.isEmpty { rects = await view.elements(tids: job.locate).mapValues(\.rect) }
             } catch {
                 image = nil
             }
             guard let self else { return }
             self.webViews = 0
             self.running = false
+            if image != nil, !job.locate.isEmpty { job.located(rects) }
             job.done(image)
             self.run()
         }
@@ -734,12 +754,232 @@ final class DesignThumbnails {
             guard let self, let image, self.entries[id]?.sha == sha else { return }
             self.images[id] = (sha, image.scaled(toWidth: width))
             self.entries[id]?.version += 1
+            self.landed?()
         })
     }
+
+    /// Told when an image lands (the @ picker's rows draw it).
+    @ObservationIgnored var landed: (() -> Void)?
 
     func prune(keeping ids: Set<DesignID>) {
         for id in Set(entries.keys).subtracting(ids) { entries.removeValue(forKey: id) }
         for id in Set(images.keys).subtracting(ids) { images.removeValue(forKey: id) }
+    }
+}
+
+/// Boards' small pictures (the @ picker's rows, the composer's reference chips): each board a
+/// design lists, rendered by the shared rasterizer when its hash is new, at thumbnail priority.
+@MainActor
+final class DesignBoardPictures {
+    private var images: [String: (sha: String, image: CGImage)] = [:]
+    private var wanted: [String: String] = [:]
+    private let rasterizer: DesignRasterizer
+    var surface: ((DesignID) -> DesignSurface?)?
+    /// Told when an image lands.
+    var landed: (() -> Void)?
+    /// A design's boards are asked for at most this many at once.
+    static let perDesign = 24
+
+    init(rasterizer: DesignRasterizer) {
+        self.rasterizer = rasterizer
+    }
+
+    nonisolated static func key(_ id: DesignID, _ path: DesignPath) -> String { id.rawValue + "/" + path.rawValue }
+
+    func image(_ id: DesignID, _ path: DesignPath) -> CGImage? { images[Self.key(id, path)]?.image }
+
+    /// Renders a design's boards whose pictures are missing or out of date.
+    func request(_ id: DesignID, snapshot: DesignSnapshot) {
+        guard let surface = surface?(id) else { return }
+        let order = DesignReferenceReading.canvasOrder(snapshot.index).prefix(Self.perDesign)
+        for path in order {
+            guard let board = snapshot.index.boards[path], let sha = snapshot.boards[path] else { continue }
+            let key = Self.key(id, path)
+            guard images[key]?.sha != sha, wanted[key] != sha else { continue }
+            wanted[key] = sha
+            let size = CGSize(width: board.w, height: board.h)
+            rasterizer.enqueue(DesignRasterizer.Job(key: "picture/" + key, surface: surface, path: path, size: size, sha: sha,
+                                                    priority: .thumbnail, wanted: { [weak self] in self?.wanted[key] == sha }) { [weak self] image in
+                guard let self, self.wanted[key] == sha else { return }
+                self.wanted[key] = nil
+                guard let image else { return }
+                self.images[key] = (sha, image.scaled(toWidth: AppLayout.referenceRowPicturePixels))
+                self.landed?()
+            })
+        }
+    }
+
+    func prune(keeping ids: Set<DesignID>) {
+        let keep = Set(ids.map(\.rawValue))
+        images = images.filter { keep.contains(String($0.key.prefix { $0 != "/" })) }
+        wanted = wanted.filter { keep.contains(String($0.key.prefix { $0 != "/" })) }
+    }
+}
+
+/// The @ picker's element pictures (RefAtElements): each element cut from its board as the
+/// rasterizer drew it at the design's revision, only for the rows on screen. A board is drawn
+/// once per revision, finding every element the picker lists on it; the few most recent boards
+/// are kept to cut from as more rows come on screen, and the cuts are made off the main thread.
+@MainActor
+final class DesignElementCrops {
+    /// A board as drawn at a revision, and where it draws its elements.
+    struct Source {
+        let revision: UInt64
+        let image: CGImage
+        /// Pixels per board point.
+        let scale: CGFloat
+        let rects: [Int: CGRect]
+    }
+
+    struct Board: Equatable {
+        let design: DesignID
+        let path: DesignPath
+        let size: CGSize
+        let revision: UInt64
+        /// Every element the picker lists on it.
+        let tids: [Int]
+
+        var key: String { DesignBoardPictures.key(design, path) }
+    }
+
+    private var sources: [String: Source] = [:]
+    /// Most recently used last.
+    private var recent: [String] = []
+    private var crops: [String: CGImage] = [:]
+    private var cropOrder: [String] = []
+    /// Elements asked for while their board draws or is cut, by board.
+    private var waiting: [String: Set<Int>] = [:]
+    /// The revision each board is being drawn at.
+    private var drawing: [String: UInt64] = [:]
+    private var cutting: Set<String> = []
+    private let rasterizer: DesignRasterizer
+    var surface: ((DesignID) -> DesignSurface?)?
+    /// Told when pictures land.
+    var landed: (() -> Void)?
+    /// Boards kept to cut from.
+    static let keptSources = 2
+    /// Pictures kept, the oldest going first.
+    static let keptCrops = 600
+    /// Tests: boards drawn, and pictures cut.
+    private(set) var drawn = 0
+    private(set) var cut = 0
+
+    init(rasterizer: DesignRasterizer) {
+        self.rasterizer = rasterizer
+    }
+
+    nonisolated static func key(_ board: String, revision: UInt64, tid: Int) -> String { "\(board)@\(revision)#\(tid)" }
+
+    /// Element `tid`'s picture on `path` at `revision`, once it is cut.
+    func crop(_ design: DesignID, _ path: DesignPath, revision: UInt64, tid: Int) -> CGImage? {
+        crops[Self.key(DesignBoardPictures.key(design, path), revision: revision, tid: tid)]
+    }
+
+    /// A row came on screen: its element's picture is cut, from the board drawn at its revision
+    /// (drawn first when it isn't yet).
+    func want(_ tid: Int, on board: Board) {
+        let key = board.key
+        guard crops[Self.key(key, revision: board.revision, tid: tid)] == nil else { return }
+        waiting[key, default: []].insert(tid)
+        if let source = sources[key], source.revision == board.revision {
+            touch(key)
+            cutWaiting(key, source: source)
+            return
+        }
+        guard drawing[key] != board.revision, let surface = surface?(board.design) else { return }
+        drawing[key] = board.revision
+        var rects: [Int: CGRect] = [:]
+        rasterizer.enqueue(DesignRasterizer.Job(
+            key: "crops/" + key, surface: surface, path: board.path, size: board.size, sha: "\(board.revision)", priority: .thumbnail,
+            wanted: { [weak self] in self?.drawing[key] == board.revision }, locate: board.tids, located: { rects = $0 }) { [weak self] image in
+                guard let self, self.drawing[key] == board.revision else { return }
+                self.drawing[key] = nil
+                guard let image else { return }
+                self.drawn += 1
+                Task { await self.keep(image, rects: rects, for: board) }
+            })
+    }
+
+    /// Keeps a board drawn at `board.revision`, made smaller off the main thread, then cuts what waits.
+    private func keep(_ image: CGImage, rects: [Int: CGRect], for board: Board) async {
+        let limit = AppLayout.referenceCropSourcePixels
+        let width = board.size.width
+        let kept = await Task.detached(priority: .utility) { image.scaled(toWidth: limit) }.value
+        let source = Source(revision: board.revision, image: kept, scale: width > 0 ? CGFloat(kept.width) / width : 1, rects: rects)
+        let key = board.key
+        if let old = sources[key], old.revision != board.revision { forget(key, before: board.revision) }
+        sources[key] = source
+        touch(key)
+        cutWaiting(key, source: source)
+    }
+
+    private func touch(_ key: String) {
+        recent.removeAll { $0 == key }
+        recent.append(key)
+        while recent.count > Self.keptSources { sources.removeValue(forKey: recent.removeFirst()) }
+    }
+
+    /// A board's pictures from before `revision` go.
+    private func forget(_ key: String, before revision: UInt64) {
+        let prefix = key + "@"
+        let current = Self.key(key, revision: revision, tid: 0).prefix { $0 != "#" }
+        crops = crops.filter { !$0.key.hasPrefix(prefix) || $0.key.hasPrefix(current + "#") }
+        cropOrder.removeAll { crops[$0] == nil }
+    }
+
+    /// Cuts the pictures waiting on a board, in one pass off the main thread.
+    private func cutWaiting(_ key: String, source: Source) {
+        guard !cutting.contains(key), let tids = waiting[key], !tids.isEmpty else { return }
+        waiting[key] = nil
+        cutting.insert(key)
+        let size = AppLayout.referenceCropPixels
+        Task {
+            let pieces = await Task.detached(priority: .utility) {
+                tids.compactMap { tid in source.rects[tid].flatMap { Self.cut(source, rect: $0, to: size) }.map { (tid, $0) } }
+            }.value
+            cutting.remove(key)
+            for (tid, image) in pieces {
+                let cropKey = Self.key(key, revision: source.revision, tid: tid)
+                crops[cropKey] = image
+                cropOrder.append(cropKey)
+            }
+            while cropOrder.count > Self.keptCrops { crops.removeValue(forKey: cropOrder.removeFirst()) }
+            cut += pieces.count
+            if !pieces.isEmpty { landed?() }
+            // Rows that came on screen meanwhile.
+            if let current = sources[key], current.revision == source.revision { cutWaiting(key, source: current) }
+        }
+    }
+
+    /// An element's rect cut from its board and drawn at `size` as its row's thumbnail shows it:
+    /// filling the width from the top-leading corner.
+    nonisolated static func cut(_ source: Source, rect: CGRect, to size: CGSize) -> CGImage? {
+        let bounds = CGRect(x: 0, y: 0, width: source.image.width, height: source.image.height)
+        var pixels = CGRect(x: rect.minX * source.scale, y: rect.minY * source.scale, width: rect.width * source.scale,
+                            height: rect.height * source.scale).integral.intersection(bounds)
+        guard pixels.width >= 1, pixels.height >= 1 else { return nil }
+        // Only the part the thumbnail shows: its aspect, from the top-leading corner.
+        let aspect = size.height / size.width
+        if pixels.height > pixels.width * aspect { pixels.size.height = max(1, (pixels.width * aspect).rounded()) }
+        else { pixels.size.width = max(1, (pixels.height / aspect).rounded()) }
+        guard let piece = source.image.cropping(to: pixels),
+              let context = CGContext(data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return nil }
+        context.interpolationQuality = .high
+        context.draw(piece, in: CGRect(origin: .zero, size: size))
+        return context.makeImage()
+    }
+
+    func prune(keeping ids: Set<DesignID>) {
+        let keep = Set(ids.map(\.rawValue))
+        func kept(_ key: String) -> Bool { keep.contains(String(key.prefix { $0 != "/" })) }
+        sources = sources.filter { kept($0.key) }
+        recent = recent.filter(kept)
+        crops = crops.filter { kept($0.key) }
+        cropOrder = cropOrder.filter(kept)
+        waiting = waiting.filter { kept($0.key) }
+        drawing = drawing.filter { kept($0.key) }
     }
 }
 
@@ -798,7 +1038,7 @@ final class DesignSpecimens {
     }
 }
 
-private extension CGImage {
+extension CGImage {
     /// A smaller copy, `width` pixels wide at the same aspect; itself when it is no wider.
     func scaled(toWidth target: CGFloat) -> CGImage {
         guard CGFloat(width) > target, target > 0 else { return self }
@@ -1012,29 +1252,39 @@ extension DesignRendering {
     }
 }
 
-/// A design piece handed to a thread (docs/designs.md › Design references), drawn off screen by a
-/// view of its own at zoom 1: the board (or the element cut from it) as a PNG at twice its size,
-/// the board's standalone page, and the element's markup and computed styles.
+/// A design reference's copy (docs/designs.md › Design references › The copy), drawn off screen
+/// when the message goes, each board by a view of its own at zoom 1 from the version pinned: the
+/// board (or the element cut from it) as a PNG at twice its size, the board's standalone page,
+/// and the element's markup and computed styles, written into the copy's folder.
 extension DesignRendering {
-    /// Draws `aspects` of `reference` from `files` into `folder` (made if needed), each file named
-    /// by `DesignReferenceFileNames`, and answers where each went.
-    func reference(_ reference: DesignReference, aspects: Set<DesignReferenceAspect>, files: DesignExportFiles,
-                   into folder: URL) async throws -> DesignReferenceRendering {
-        guard let surface = surface(for: reference.designID) else { throw DesignExportFailure("The design's folder is gone.") }
-        let drawn = try await DesignExporter.reference(reference, aspects: aspects, files: files, surface: surface)
+    func capture(_ request: DesignReferenceCaptureRequest, files: DesignExportFiles) async throws -> DesignReferenceCaptured {
+        guard let surface = surface(for: request.reference.designID) else { throw DesignExportFailure("The design's folder is gone.") }
         var outputs: [String: Data] = [:]
-        var rendering = DesignReferenceRendering()
-        func put(_ name: String, _ data: Data?) -> String? {
-            guard let data else { return nil }
-            outputs[name] = data
-            return folder.appendingPathComponent(name).path
+        var captured = DesignReferenceCaptured(boards: [])
+        for (index, board) in request.boards.enumerated() {
+            let element = index == 0 ? request.reference.element : nil
+            let drawn = try await DesignExporter.reference(board, element: element, files: files, surface: surface)
+            outputs[board.picture] = drawn.image.data
+            outputs[board.html] = Data(drawn.page.utf8)
+            captured.boards.append(.init(
+                picture: .init(name: board.picture, bytes: drawn.image.data.count, pixelWidth: drawn.image.width, pixelHeight: drawn.image.height),
+                html: .init(name: board.html, bytes: drawn.page.utf8.count)))
+            if let detail = drawn.element, let markup = request.elementHTML, let styles = request.elementStyles {
+                outputs[markup] = Data(detail.html.utf8)
+                outputs[styles] = detail.styles
+                captured.element = .init(name: markup, bytes: detail.html.utf8.count)
+                captured.elementStyles = .init(name: styles, bytes: detail.styles.count)
+                captured.computedStyles = Self.ownStyles(detail.styles)
+            }
         }
-        rendering.image = put(DesignReferenceFileNames.image(reference), drawn.image)
-        rendering.html = put(DesignReferenceFileNames.html(reference), drawn.page.map { Data($0.utf8) })
-        rendering.elementHTML = put(DesignReferenceFileNames.elementHTML(reference), drawn.element.map { Data($0.html.utf8) })
-        rendering.elementStyles = put(DesignReferenceFileNames.elementStyles(reference), drawn.element?.styles)
-        try await DesignExporter.write(outputs, into: folder)
-        return rendering
+        try await DesignExporter.write(outputs, into: request.folder)
+        return captured
+    }
+
+    /// The element's own computed styles: the first entry of its detail's styles.
+    static func ownStyles(_ json: Data) -> [String: String]? {
+        guard let entries = try? JSONSerialization.jsonObject(with: json) as? [[String: Any]] else { return nil }
+        return entries.first?["style"] as? [String: String]
     }
 }
 
@@ -1110,34 +1360,32 @@ enum DesignExporter {
         return DesignBundle.rewritingBoardLinks(withAssets, page: path, exported: Set(files.boards))
     }
 
-    /// What a reference hands over, from one view of its board: the PNG (the element cut from
-    /// the board where it names one), the standalone page, and the element's detail.
-    static func reference(_ reference: DesignReference, aspects: Set<DesignReferenceAspect>, files: DesignExportFiles,
-                          surface: DesignSurface) async throws -> (image: Data?, page: String?, element: DesignElementDetail?) {
-        let path = reference.board
+    /// What a reference's copy holds of one board, from one view of it showing `board.source`
+    /// (swapped in after the file loads when the design moved on since it was pinned): the PNG
+    /// (the element cut from the board where it names one), the standalone page, and the
+    /// element's detail.
+    static func reference(_ board: DesignReferenceCaptureRequest.Board, element: DesignElementID?, files: DesignExportFiles,
+                          surface: DesignSurface) async throws -> (image: (data: Data, width: Int, height: Int), page: String,
+                                                                  element: DesignElementDetail?) {
+        let path = board.path
         return try await render(path, files: files, surface: surface) { view in
-            var image: Data?
-            var page: String?
-            var element: DesignElementDetail?
-            if aspects.contains(.image) {
-                var drawn = try await view.image(scale: 2)
-                if let tid = reference.element?.tid {
-                    guard let hit = await view.element(tid: tid) else { throw DesignExportFailure("The element isn't drawn on \(path).") }
-                    let crop = CGRect(x: hit.rect.minX * 2, y: hit.rect.minY * 2, width: hit.rect.width * 2, height: hit.rect.height * 2)
-                        .integral.intersection(CGRect(x: 0, y: 0, width: drawn.width, height: drawn.height))
-                    guard !crop.isEmpty, let cut = drawn.cropping(to: crop) else { throw DesignExportFailure("The element has no size on \(path).") }
-                    drawn = cut
-                }
-                image = try DesignImageFile.png(drawn)
+            if !board.isCurrent { try await view.replaceSource(board.source) }
+            var drawn = try await view.image(scale: 2)
+            if let tid = element?.tid {
+                guard let hit = await view.element(tid: tid) else { throw DesignExportFailure("The element isn't drawn on \(path).") }
+                let crop = CGRect(x: hit.rect.minX * 2, y: hit.rect.minY * 2, width: hit.rect.width * 2, height: hit.rect.height * 2)
+                    .integral.intersection(CGRect(x: 0, y: 0, width: drawn.width, height: drawn.height))
+                guard !crop.isEmpty, let cut = drawn.cropping(to: crop) else { throw DesignExportFailure("The element has no size on \(path).") }
+                drawn = cut
             }
-            if aspects.contains(.html) {
-                page = Self.baked(try await view.staticPage(), path: path, files: files, assets: .inline)
+            let image = (data: try DesignImageFile.png(drawn), width: drawn.width, height: drawn.height)
+            let page = Self.baked(try await view.staticPage(), path: path, files: files, assets: .inline)
+            var detail: DesignElementDetail?
+            if let tid = element?.tid {
+                detail = try await view.elementDetail(tid: tid)
+                guard detail != nil else { throw DesignExportFailure("The element isn't drawn on \(path).") }
             }
-            if aspects.contains(.element), let tid = reference.element?.tid {
-                element = try await view.elementDetail(tid: tid)
-                guard element != nil else { throw DesignExportFailure("The element isn't drawn on \(path).") }
-            }
-            return (image, page, element)
+            return (image, page, detail)
         }
     }
 

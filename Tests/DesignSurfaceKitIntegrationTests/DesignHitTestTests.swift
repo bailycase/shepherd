@@ -75,6 +75,17 @@ struct DesignHitTestTests {
         #expect(await view.element(tid: 999) == nil)
     }
 
+    /// The @ picker's pictures ask for many elements at once, and each answers as it would alone.
+    @Test func manyElementsAreFoundInOneCall() async throws {
+        let harness = try BoardHarness()
+        let view = try harness.view("Main.dc.html")
+        try await view.load()
+        let found = await view.elements(tids: [3, 5, 9, 999])
+        #expect(Set(found.keys) == [3, 5], "a node its sc-if doesn't draw, or none at all, is missing")
+        let title = await view.element(tid: 3), row = await view.element(tid: 5)
+        #expect(found[3] == title && found[5] == row)
+    }
+
     /// Every element the runtime can find on a golden board carries the path the golden
     /// numbering gives it, and a hit anywhere on the board names one of them.
     @Test(arguments: DesignBoardViewTests.goldenBoards)

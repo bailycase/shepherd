@@ -45,8 +45,9 @@ stand-in), never a `pi` looked up on PATH ([pi-home.md](pi-home.md)).
   with `-e`. Nothing is installed into a pi home. The status extension is always loaded; the
   rest follow Settings ▸ Pi ▸ Bundled extensions: "Panes and agent tools", "Diff review tool",
   "Subagent display", "Native subagents", "Name agents automatically" (the namer, and only
-  for agents whose name is not final), and "Design references" (design_get, for agents that draw
-  no design; `SHEPHERD_DESIGN_REFS`).
+  for agents whose name is not final), and "Design references" (design_get and design_note, for
+  agents that draw no design, while Settings ▸ Experiments ▸ Design tool is on;
+  `SHEPHERD_DESIGN_REFS`).
 - **Environment:**
   - Always: `SHEPHERD_AGENT_ID`, `SHEPHERD_SOCKET`, `SHEPHERD_EXT_STATUS`.
   - With the panes extension: `SHEPHERD_EXT_PANES`.
@@ -268,11 +269,16 @@ events come out on stdout, one record per LF.
   after a relaunch without a record in `thread-origins/`; it wins over a queue delivery's parts.
 - **Design references:** an ordinary thread's send may carry design pieces the user hands it
   (`send`'s `designReferences`: each reference's string; docs/designs.md › Design references).
-  The host checks them against the design, grants the thread's agent those pieces, and fences
-  what it read ahead of the message between `design-ref` markers (`DesignReferenceFence`), first
-  even before words starting with "/"; such a message is never joined in the queue. The
-  projection takes the fence off like the others. Only a local thread takes them: a remote
-  client's are refused (`design_references_local`).
+  The host resolves each at the version it pins, keeps its copy with the message under the
+  support directory, grants the thread's agent that copy, and fences what it read ahead of the
+  message between `design-ref` markers (`DesignReferenceFence`), first even before words starting
+  with "/"; such a message is never joined in the queue, and deleting it from the queue before pi
+  reads it withdraws its copies (it can't be restored). The projection takes the fence off, and
+  gives the message `designReferences` (the records, without the copy's paths) for its chips, only
+  when the user sent it in this thread: the message's origin record in `thread-origins/` names
+  every copy the fence carries. Anything else carrying the fence (another agent's message) shows it
+  as text. Only a local thread takes them: a remote client's are refused
+  (`design_references_local`).
 - **Subagents:** the rows the subagent display extension publishes (`setAgentChildren`) ride the
   snapshot as `subagents`.
 
