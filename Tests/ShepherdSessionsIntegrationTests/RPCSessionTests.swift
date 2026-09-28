@@ -330,12 +330,23 @@ struct RPCSessionTests {
     }
 
     @Test func killTerminatesWithSIGTERM() async throws {
-        let h = try Harness()
+        let script = """
+        import signal, sys
+        def stop(signum, frame):
+            print("TERM cleanup", file=sys.stderr, flush=True)
+            sys.exit(42)
+        signal.signal(signal.SIGTERM, stop)
+        print("READY", file=sys.stderr, flush=True)
+        while True:
+            signal.pause()
+        """
+        let h = try Harness(command: ["/usr/bin/python3", "-c", script])
         defer { h.stop() }
-        #expect(try await h.request(.getState).get().success)
+        try await eventually("the TERM handler to be ready") { h.stderr.current.contains("READY") }
         h.queue.async { h.session.kill() }
         try await eventually("the exit callback") { h.exit.current.done }
-        #expect(h.exit.current.code == nil, "python dies to SIGTERM, so there is no exit code")
+        #expect(h.exit.current.code == 42, "SIGTERM must allow cleanup before escalation")
+        #expect(h.stderr.current.contains("TERM cleanup"))
     }
 
     /// App shutdown: requests in flight fail, and no exit callback fires into a torn-down app.

@@ -17,9 +17,7 @@ extension FixtureCatalog {
                           routes: NewThreadFixtures.behind, presented: NewThreadFixtures.compose,
                           prepare: { _ in
                               await NewThreadFixtures.form()
-                              for _ in 0..<100 where NewThreadModel.active?.models == nil {
-                                  try? await Task.sleep(for: .milliseconds(50))
-                              }
+                              await FixtureWindows.wait("new thread model catalog", seconds: 5) { NewThreadModel.active?.models != nil }
                           }),
             FixtureScreen(name: "newthread-where", hosts: NewThreadFixtures.hosts(),
                           routes: NewThreadFixtures.behind, presented: NewThreadFixtures.compose,
@@ -123,18 +121,14 @@ enum NewThreadFixtures {
     /// Waits for the form and its host's defaults, fills the board's prompt and branch, then
     /// runs `change`.
     @MainActor static func form(_ change: (NewThreadModel) -> Void = { _ in }) async {
-        var model: NewThreadModel?
-        for _ in 0..<200 {
-            model = NewThreadModel.active
-            if let model, model.defaults.ready || model.host?.phase.isConnected != true { break }
-            try? await Task.sleep(for: .milliseconds(50))
+        await FixtureWindows.wait("new thread form and online host defaults", seconds: 10) {
+            guard let model = NewThreadModel.active else { return false }
+            return model.defaults.ready || model.host?.phase.isConnected != true
         }
-        guard let model else { return }
+        guard let model = NewThreadModel.active else { FixtureCheck.fail("New thread form disappeared") }
         model.prompt = prompt
         if model.usesWorktree { model.setBranch(branch) }
-        for _ in 0..<100 where model.usesWorktree && !model.base.resolved {
-            try? await Task.sleep(for: .milliseconds(50))
-        }
+        await FixtureWindows.wait("new thread worktree base", seconds: 5) { !model.usesWorktree || model.base.resolved }
         change(model)
     }
 

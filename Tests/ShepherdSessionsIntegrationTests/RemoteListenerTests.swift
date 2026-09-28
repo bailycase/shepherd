@@ -225,14 +225,18 @@ struct RemoteListenerTests {
         let connections = 64
         let release = DispatchSemaphore(value: 0)
         await r.server.holdQueue(until: release)
-        let sockets = try (0..<connections).map { _ in try Self.connectInBackground(port: r.port) }
-        let established = try await blocking { Self.established(sockets, within: .seconds(5)) }
+        defer { release.signal() }
+        var sockets: [Int32] = []
+        defer { for fd in sockets { close(fd) } }
+        for _ in 0..<connections { sockets.append(try Self.connectInBackground(port: r.port)) }
+        let established = try await blocking { [sockets] in Self.established(sockets, within: .seconds(5)) }
         release.signal()
         #expect(established == connections)
 
         var authenticated = 0
-        for fd in sockets {
-            if (try? await RawRemote(connected: fd).hello(token: r.token)) != nil { authenticated += 1 }
+        while let fd = sockets.popLast() {
+            let client = RawRemote(connected: fd) // Ownership transfers before the first suspension.
+            if (try? await client.hello(token: r.token)) != nil { authenticated += 1 }
         }
         #expect(authenticated == connections)
     }

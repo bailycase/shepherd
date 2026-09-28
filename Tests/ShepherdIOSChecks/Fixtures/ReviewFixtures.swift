@@ -289,10 +289,7 @@ enum ReviewFixture {
         await until { store.loaded && !store.loading }
     }
 
-    @MainActor static func until(_ condition: () -> Bool) async {
-        let deadline = Date().addingTimeInterval(10)
-        while !condition(), Date() < deadline {
-            try? await Task.sleep(for: .milliseconds(50))
-        }
+    @MainActor static func until(file: StaticString = #fileID, line: UInt = #line, _ condition: () -> Bool) async {
+        await FixtureWindows.wait("review readiness", seconds: 10, file: file, line: line, until: condition)
     }
 }

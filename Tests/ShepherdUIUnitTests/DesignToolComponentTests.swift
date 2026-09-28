@@ -59,10 +59,15 @@ struct DesignToolComponentTests {
     }
 
     /// A board just below the view still shows while its label reaches in.
-    @Test func aBoardWhoseLabelIsOnScreenIsShown() {
-        let viewport = NWCanvasViewport(offset: CGPoint(x: 0, y: -780), zoom: 1)
+    @Test func aBoardWhoseLabelIsOnScreenIsShown() throws {
+        let viewport = NWCanvasViewport(offset: CGPoint(x: 0, y: -760), zoom: 1)
         let size = CGSize(width: 400, height: 150)
-        #expect(Self.boards.visible(in: viewport, size: size).map(\.id).contains("A-phone.dc.html"))
+        let phone = try #require(Self.boards.first { $0.id == "A-phone.dc.html" })
+        #expect(!viewport.screen(phone.frame).intersects(CGRect(origin: .zero, size: size)),
+                "the board itself must be entirely below the viewport")
+        #expect(Self.boards.visible(in: viewport, size: size).map(\.id).contains(phone.id))
+        let below = NWCanvasViewport(offset: CGPoint(x: 0, y: -700), zoom: 1)
+        #expect(!Self.boards.visible(in: below, size: size).map(\.id).contains(phone.id))
     }
 
     @Test func aClickPicksTheFrontMostBoardUnderIt() {

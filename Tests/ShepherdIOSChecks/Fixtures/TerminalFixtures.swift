@@ -110,8 +110,7 @@ enum TerminalFixture {
         }
         guard focus else { return }
         let session = terminals.session(host: ref.host, id: shellSession)
-        let deadline = Date().addingTimeInterval(5)
-        while session.surface?.window == nil, Date() < deadline { try? await Task.sleep(for: .milliseconds(50)) }
+        await FixtureWindows.wait("terminal surface mounted", seconds: 5) { session.surface?.window != nil }
         // As with a hardware keyboard: the key row without the software keyboard over the shot.
         session.surface?.inputView = UIView(frame: .zero)
         _ = session.surface?.becomeFirstResponder()
@@ -126,7 +125,7 @@ enum TerminalFixture {
         let old = terminals.session(host: ref.host, id: shellSession)
         await wait { old.surface?.window != nil }
         guard let host = FixtureHost.running(ref.host) else {
-            print("FIXTURE CHECK FAILED: no running host for \(ref.host)")
+            FixtureCheck.report("FIXTURE CHECK FAILED: no running host for \(ref.host)")
             return
         }
         var state = host.data.state
@@ -139,14 +138,13 @@ enum TerminalFixture {
         if new?.surface?.window != nil, old.surface?.window == nil {
             print("FIXTURE CHECK ok: the relaunched shell has its own screen")
         } else {
-            print("FIXTURE CHECK FAILED: the pane kept the old shell's screen (new on screen: \(new?.surface?.window != nil), old on screen: \(old.surface?.window != nil))")
+            FixtureCheck.report("FIXTURE CHECK FAILED: the pane kept the old shell's screen (new on screen: \(new?.surface?.window != nil), old on screen: \(old.surface?.window != nil))")
         }
         fflush(stdout)
     }
 
-    @MainActor private static func wait(until condition: () -> Bool) async {
-        let deadline = Date().addingTimeInterval(5)
-        while !condition(), Date() < deadline { try? await Task.sleep(for: .milliseconds(50)) }
+    @MainActor private static func wait(file: StaticString = #fileID, line: UInt = #line, until condition: () -> Bool) async {
+        await FixtureWindows.wait("terminal readiness", seconds: 5, file: file, line: line, until: condition)
     }
 
     private static let esc = "\u{1B}"

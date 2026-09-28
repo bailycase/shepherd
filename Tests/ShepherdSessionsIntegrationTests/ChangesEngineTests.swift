@@ -47,8 +47,15 @@ struct ChangesRepo {
         let head: String
         let refs: String
         let stash: String
-        let gitEntries: [String]
-        let files: [String: Data]
+        let gitEntries: [String: Entry]
+        let files: [String: Entry]
+    }
+
+    struct Entry: Equatable {
+        let kind: FileAttributeType
+        let mode: UInt16
+        let bytes: Data?
+        let destination: String?
     }
 
     /// Expects `state()` to equal `before`, naming the parts that differ.
@@ -67,19 +74,26 @@ struct ChangesRepo {
         let gitDir = url.appendingPathComponent(".git")
         let index = gitDir.appendingPathComponent("index")
         let modified = try FileManager.default.attributesOfItem(atPath: index.path)[.modificationDate] as? Date
-        let entries = try FileManager.default.contentsOfDirectory(atPath: gitDir.path).filter { $0 != "objects" }.sorted()
-        var files: [String: Data] = [:]
-        let enumerator = FileManager.default.enumerator(atPath: url.path)
-        while let relative = enumerator?.nextObject() as? String {
-            if relative == ".git" { enumerator?.skipDescendants(); continue }
-            if enumerator?.fileAttributes?[.type] as? FileAttributeType == .typeRegular {
-                files[relative] = try Data(contentsOf: url.appendingPathComponent(relative))
+        func entries(in directory: URL, excluding excluded: String) throws -> [String: Entry] {
+            var result: [String: Entry] = [:]
+            let enumerator = try #require(FileManager.default.enumerator(atPath: directory.path))
+            while let relative = enumerator.nextObject() as? String {
+                if relative == excluded { enumerator.skipDescendants(); continue }
+                let file = directory.appendingPathComponent(relative)
+                let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
+                let kind = try #require(attributes[.type] as? FileAttributeType)
+                result[relative] = Entry(kind: kind, mode: try #require(attributes[.posixPermissions] as? NSNumber).uint16Value,
+                    bytes: kind == .typeRegular ? try Data(contentsOf: file) : nil,
+                    destination: kind == .typeSymbolicLink ? try FileManager.default.destinationOfSymbolicLink(atPath: file.path) : nil)
             }
+            return result
         }
+        let metadata = try entries(in: gitDir, excluding: "objects")
+        let files = try entries(in: url, excluding: ".git")
         return State(index: try Data(contentsOf: index), indexModified: modified,
                      head: try String(contentsOf: gitDir.appendingPathComponent("HEAD"), encoding: .utf8),
                      refs: try git("for-each-ref", "--format=%(refname) %(objectname)"), stash: try git("stash", "list", "--format=%H"),
-                     gitEntries: entries, files: files)
+                     gitEntries: metadata, files: files)
     }
 }
 
@@ -116,12 +130,35 @@ extension ChangesList {
 
 @Suite("Changes engine", .integrationTimeLimit)
 struct ChangesEngineTests {
+    @Test(arguments: ["config", "hook", "mode", "link"])
+    func preservationSnapshotDetectsMetadataAndFilesystemChanges(change: String) throws {
+        let repo = try ChangesRepo()
+        try repo.write("executable", "#!/bin/sh\nexit 0\n")
+        try repo.write(".git/hooks/sentinel", "original\n")
+        try FileManager.default.createSymbolicLink(atPath: repo.url.appendingPathComponent("link").path, withDestinationPath: "README.md")
+        let before = try repo.state()
+        switch change {
+        case "config": try repo.git("config", "test.sentinel", "changed")
+        case "hook": try repo.write(".git/hooks/sentinel", "changed\n")
+        case "mode": try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: repo.url.appendingPathComponent("executable").path)
+        default:
+            try repo.remove("link")
+            try FileManager.default.createSymbolicLink(atPath: repo.url.appendingPathComponent("link").path, withDestinationPath: "executable")
+        }
+        #expect(try repo.state() != before)
+    }
+
     /// Working tree, index and HEAD: each scope sees its own part of the changes, untracked files
     /// count, ignored ones don't — and reading them touches nothing the user owns (loose objects
     /// in `.git/objects` are the only trace).
     @Test func scopesSplitTheWorkingTreeAndLeaveTheRepositoryAlone() async throws {
         let repo = try ChangesRepo(files: ["a.txt": "one\ntwo\n", "b.txt": "bee\n", "c.txt": "a file that moves\nwith its lines\n",
                                           "dir/d.txt": "dee\n", ".gitignore": "*.log\n"])
+        try repo.write("executable", "#!/bin/sh\nexit 0\n")
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: repo.url.appendingPathComponent("executable").path)
+        try FileManager.default.createSymbolicLink(atPath: repo.url.appendingPathComponent("link").path, withDestinationPath: "a.txt")
+        try repo.git("add", "executable", "link")
+        try repo.git("commit", "-qm", "executable and symlink")
         // A stash entry, to prove it survives.
         try repo.write("a.txt", "stashed\n")
         try repo.git("stash")
@@ -277,7 +314,8 @@ struct ChangesEngineTests {
         let repo = try ChangesRepo(files: ["a.txt": "one\n", "gone.txt": "bye\n"])
         try repo.write("a.txt", "one\ntwo\n")
         try repo.remove("gone.txt")
-        try repo.write("bin.dat", String(decoding: [0, 1, 2, 255, 0, 7].map { UInt8($0) }, as: UTF8.self))
+        let binary = Data([0, 1, 2, 255, 0, 7])
+        try binary.write(to: repo.url.appendingPathComponent("bin.dat"))
         let h = try ChangesHarness(repo: repo)
         let list = try await h.list(.uncommitted)
         let patch = try await h.service.patch(agentID: h.agent, revision: list.revision)
@@ -290,7 +328,7 @@ struct ChangesEngineTests {
         try ShepherdTestSupport.git(["apply", "changes.patch"], in: clone)
         #expect(try String(contentsOf: clone.appendingPathComponent("a.txt"), encoding: .utf8) == "one\ntwo\n")
         #expect(!FileManager.default.fileExists(atPath: clone.appendingPathComponent("gone.txt").path))
-        #expect(FileManager.default.fileExists(atPath: clone.appendingPathComponent("bin.dat").path))
+        #expect(try Data(contentsOf: clone.appendingPathComponent("bin.dat")) == binary)
     }
 
     @Test func aDirectoryOutsideGitHasNothingToCompare() async throws {

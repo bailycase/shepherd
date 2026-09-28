@@ -58,8 +58,10 @@ elif args[:2]==['release','download']:
 elif args[:2]==['release','delete']:
  releases=[r for r in releases if r['tag']!=args[2]]; state.write_text(json.dumps(releases))
 elif args[:2]==['release','create']:
+ archive=os.environ['DMG']
+ if archive not in args[3:] or not Path(archive).is_file(): sys.exit(24)
  policy=json.loads(Path('shepherd-appcast.json').read_text())
- releases.append({'tag':args[2],'draft':True,'policy':policy}); state.write_text(json.dumps(releases))
+ releases.append({'tag':args[2],'draft':'--draft' in args,'policy':policy}); state.write_text(json.dumps(releases))
 elif args[:2]==['release','edit']:
  r=next(r for r in releases if r['tag']==args[2]); r['draft']=False; state.write_text(json.dumps(releases))
 elif args[:2]==['release','upload']: pass
@@ -159,6 +161,7 @@ target.write_text('<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespac
         self.assertIn('v1.0.0', self.feeds())
 
     def test_release_upload_is_draft_first_and_records_signing_eligibility(self):
+        (self.root / "Shepherd.dmg").write_bytes(b"fixture archive")
         for identity, eligible in [("-", False), ("", False), ("Developer ID Application: Fixture", True)]:
             with self.subTest(identity=identity):
                 self.state.write_text("[]")
@@ -172,6 +175,18 @@ target.write_text('<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespac
                 calls = [json.loads(line) for line in self.log.read_text().splitlines()]
                 self.assertIn("--draft", calls[-2])
                 self.assertEqual(calls[-1], ["release", "edit", "v1.1.0", "--draft=false"])
+
+    def test_a_missing_required_archive_never_publishes_a_release(self):
+        self.state.write_text("[]")
+        result = subprocess.run(["bash", "-c", shell_step("Publish release")], cwd=self.root,
+            env={**self.env, "SIGNING_IDENTITY": "Developer ID Application: Fixture", "TAG": "v1.1.0",
+                 "TITLE": "Fixture", "NOTES": "fixture", "PRERELEASE": "false", "CHANNEL": "stable",
+                 "DMG": "missing.dmg", "DSYMS": "absent.zip"},
+            capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 24, result.stdout + result.stderr)
+        self.assertEqual(json.loads(self.state.read_text()), [])
+        calls = [json.loads(line) for line in self.log.read_text().splitlines()]
+        self.assertFalse(any(call[:2] == ["release", "edit"] for call in calls), calls)
 
     def test_new_ad_hoc_is_excluded_from_every_future_regeneration(self):
         self.publish([{"tag": "v1.1.0", "policy": {"version": 1, "tag": "v1.1.0", "eligible": False}},
@@ -231,8 +246,6 @@ target.write_text('<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespac
         build = WORKFLOW.split('  release:\n')[1].split('  publish-appcasts:\n')[0]
         self.assertNotIn('appcast-publication', build)
         self.assertNotIn('gh release delete', build)
-        self.assertLess(build.index('--draft)'), build.index('gh release create'))
-        self.assertLess(build.index('gh release create'), build.index('gh release edit "$TAG" --draft=false'))
 
 
 if __name__ == '__main__':

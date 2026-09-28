@@ -4,6 +4,7 @@ import ShepherdRemote
 import ShepherdTestSupport
 import SwiftUI
 import Testing
+import UniformTypeIdentifiers
 @testable import ShepherdApp
 @testable import TerminalSurfaceKit
 
@@ -24,16 +25,33 @@ struct ThreadInputTests {
         #expect(input.attachments.error?.contains("remote thread") == true)
     }
 
-    @Test func anUnavailableComposerDoesNotRequestFocusOrAcceptProviders() {
+    @Test func anUnavailableComposerDoesNotRequestFocusOrAcceptProviders() async throws {
+        let directory = try makeScratchDirectory("unavailable-input")
+        let file = directory.appendingPathComponent("notes.txt")
+        try Data("notes".utf8).write(to: file)
+        let loads = Locked(0)
+        let provider = NSItemProvider()
+        provider.registerDataRepresentation(forTypeIdentifier: UTType.fileURL.identifier, visibility: .all) { completion in
+            loads.withValue { $0 += 1 }
+            completion(file.dataRepresentation, nil)
+            return nil
+        }
         let input = ThreadInput()
         let store = NativeThreadStore()
         input.focus()
-        input.attach([], store: store, localFiles: true)
+        input.attach([provider], store: store, localFiles: true)
+        await Task { @MainActor in }.value
+        #expect(loads.current == 0)
         #expect(input.focusRequest == 0)
         #expect(input.attachments.isEmpty && store.attachedFiles.isEmpty)
         input.available = true
         input.focus()
         #expect(input.focusRequest == 1)
+        input.attach([provider], store: store, localFiles: true)
+        try await eventuallyOnMain("available input to resolve the real file provider") {
+            store.attachedFiles.map(\.path) == [file.path]
+        }
+        #expect(loads.current == 1)
         input.available = false
         input.focus()
         #expect(input.focusRequest == 1)

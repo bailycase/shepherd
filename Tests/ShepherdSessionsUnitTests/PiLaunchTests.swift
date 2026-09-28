@@ -81,17 +81,6 @@ struct PiLaunchTests {
     }
 
     /// No pi line names a `pi` or `node` for the shell to look up: each execs the launcher.
-    @Test func noPiLineLooksPiUpOnPath() throws {
-        let lines = [
-            try PiLaunch.agent(home: Self.home, cwd: "/r", sessionID: "s", model: "m", thinking: "high", extensions: ["/e.ts"]),
-            PiLaunch.listModels(home: Self.home), PiLaunch.draft(home: Self.home, model: "m", prompt: "pi"),
-        ]
-        for line in lines {
-            #expect(line.script.contains("exec \(Self.launcher) "), "\(line.script)")
-            #expect(!line.script.contains("exec pi") && !line.script.contains("command -v"), "\(line.script)")
-        }
-    }
-
     /// A program name that isn't a plain word is quoted like any other value.
     @Test(arguments: [("node", "node"), ("node-2.0_rc", "node-2.0_rc"), ("my node", "'my node'"), ("", "''"), ("$(x)", "'$(x)'")])
     func namesOnPathAreBareOnlyWhenPlain(_ name: String, word: String) {

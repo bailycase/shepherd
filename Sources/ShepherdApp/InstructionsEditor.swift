@@ -167,6 +167,10 @@ struct InstructionsEditorStyles {
 /// The text view behind the editor: its text starts after the gutter, and its background draws
 /// the changed lines' tint and the line numbers.
 final class InstructionsTextView: NSTextView {
+    // A window's shared undo stack outlives an editor replaced when its file or host changes.
+    private let documentUndoManager = UndoManager()
+    override var undoManager: UndoManager? { documentUndoManager }
+
     /// Lines (from 0) changed since the last save.
     var changedLines: Set<Int> = []
 

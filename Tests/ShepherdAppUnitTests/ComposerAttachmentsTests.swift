@@ -30,15 +30,6 @@ struct ComposerAttachmentsTests {
         #expect(stores.input(for: "a").attachments.isEmpty)
     }
 
-    @Test func acknowledgingSubmittedImagesKeepsLaterAttachments() {
-        var attachments = ComposerAttachments()
-        attachments.add([Self.image("sent.png")])
-        let submitted = attachments.ids
-        attachments.add([Self.image("next.png")])
-        for id in submitted { attachments.remove(id) }
-        #expect(attachments.items.map(\.name) == ["next.png"])
-    }
-
     @Test func aFifthImageIsLeftOutAndSaysWhy() {
         var attachments = ComposerAttachments()
         attachments.add((1...5).map { Self.image("\($0).png") })

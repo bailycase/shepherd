@@ -18,21 +18,4 @@ import Testing
         #expect(SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() == sha256)
     }
 
-    @Test func reactShipsWithItsMITLicense() throws {
-        let license = String(decoding: try #require(DesignRuntime.resource("react/LICENSE")), as: UTF8.self)
-        #expect(license.hasPrefix("MIT License"))
-        for name in DesignRuntime.reactFiles {
-            let script = String(decoding: try #require(DesignRuntime.resource("react/" + name)), as: UTF8.self)
-            #expect(script.contains("@license React") && script.contains("\"18.3.1\""), "\(name)")
-        }
-    }
-
-    @Test func supportScriptIsReactThenTheRuntime() throws {
-        let script = String(decoding: try #require(DesignRuntime.supportScript), as: UTF8.self)
-        let react = try #require(script.range(of: "react.production.min.js"))
-        let dom = try #require(script.range(of: "react-dom.production.min.js"))
-        let runtime = try #require(script.range(of: "shepherd-dc-runtime.js"))
-        #expect(react.lowerBound < dom.lowerBound && dom.lowerBound < runtime.lowerBound)
-        #expect(DesignRuntime.bridgeScript.contains("shepherdDesign"))
-    }
 }

@@ -291,8 +291,14 @@ struct ClientSkillsTests {
         #expect(client.skills.autoUpdate)
         #expect(!recovered.owes(id))
         #expect(client.requests.filter { $0 == "installFiles" }.count == 1)
-        await recovered.resolveUnacknowledged(entry, in: [live]) // A stale confirmation cannot eat later work.
-        #expect(!recovered.owes(id))
+        await recovered.setAutoUpdate(false, in: [offline]).value
+        #expect(recovered.owes(id))
+        await recovered.resolveUnacknowledged(entry, in: [offline]) // A stale confirmation cannot eat later work.
+        #expect(recovered.owes(id))
+        let afterStaleConfirmation = ClientSkills(defaults: defaults)
+        await afterStaleConfirmation.hostConnected(live)
+        #expect(!client.skills.autoUpdate)
+        #expect(!afterStaleConfirmation.owes(id))
     }
 
     /// An offline host is owed the last of each change, and a removal undone before it's back
@@ -341,10 +347,12 @@ struct ClientSkillsTests {
         let removal = try #require(model.removal)
         #expect(SkillsPresentation.removed(removal) == "Removed pdf from every host")
         await removing.value
+        #expect(first.skills.skill("pdf") == nil && second.skills.skill("pdf") == nil)
+        #expect(first.skills.skill("docx") != nil)
         await model.undoRemoval(in: hosts)?.value
         #expect(model.removal == nil)
         #expect(model.rows(in: hosts).map(\.name) == ["docx", "pdf"])
-        #expect(second.skills.skill("pdf") != nil)
+        #expect(first.skills.skill("pdf") != nil && second.skills.skill("pdf") != nil)
     }
 
     @Test func updateInstallsTheNewerCommitOnEveryHost() async {

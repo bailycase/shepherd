@@ -112,7 +112,10 @@ struct NativeThreadStoreQueueTests {
         let png = NativeImage(mimeType: "image/png", data: Data([1, 2]), name: "checkout.png")
         store.draft = "look"
         await store.send(images: [png])
-        guard case .send(_, _, let op, _, _, let images, _, _) = try #require(host.actions.first) else { return }
+        guard case .send(_, _, let op, _, _, let images, _, _) = try #require(host.actions.first) else {
+            Issue.record("expected a send carrying the queued image")
+            return
+        }
         #expect(images == [png])
         #expect(store.queuedImages(op) == [png])
         #expect(store.queuedImages(UUID()).isEmpty)

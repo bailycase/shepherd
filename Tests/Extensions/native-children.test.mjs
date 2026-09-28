@@ -26,7 +26,7 @@ const source = path.join(root, "Extensions/shepherd-children.ts");
 const mod = await jiti.import(source);
 const { SessionManager } = await import(path.join(pkg, "dist/index.js"));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-async function until(fn, timeout = 15000) { const end = Date.now() + timeout; while (!fn()) { if (Date.now() > end) throw Error("Timed out waiting for condition"); await sleep(30); } }
+async function until(fn, timeout = 15000) { const end = Date.now() + timeout; while (!await fn()) { if (Date.now() > end) throw Error("Timed out waiting for condition"); await sleep(30); } }
 const live = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 const usage = { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 const assistant = (content) => ({ role: "assistant", content, api: "openai-completions", provider: "fixture", model: "fixture", usage, stopReason: "stop", timestamp: Date.now() });
@@ -58,7 +58,8 @@ test("fork extracts selected branch, omits incomplete tool batch, preserves pare
     assert.equal(parent.getSessionId(), id); assert.equal(parent.getSessionFile(), file); assert.deepEqual(fs.readFileSync(file), before);
     const fork = SessionManager.open(output);
     assert.notEqual(fork.getSessionId(), id);
-    assert.equal(fork.getBranch().length, 2);
+    assert.deepEqual(fork.getBranch().filter((e) => e.type === "message").map((e) => e.message.content),
+      ["active fact", [{ type: "text", text: "complete" }]]);
     assert(!fs.readFileSync(output, "utf8").includes("abandoned fact"));
     assert.equal(fork.getHeader().parentSession, file);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
@@ -67,7 +68,8 @@ test("fork extracts selected branch, omits incomplete tool batch, preserves pare
 test("bash operations preserve cwd/env/output, timeouts and abort kill normal descendants", async () => {
   const ops = mod.childBashOperations(), output = [];
   const completed = await ops.exec('printf "$MARKER:$PWD"', os.tmpdir(), { env: { MARKER: "ok" }, onData: (d) => output.push(d) });
-  assert.equal(completed.exitCode, 0); assert(Buffer.concat(output).toString().startsWith("ok:"));
+  assert.equal(completed.exitCode, 0);
+  assert.equal(Buffer.concat(output).toString(), `ok:${fs.realpathSync(os.tmpdir())}`);
   assert.equal((await ops.exec('false', os.tmpdir(), { onData() {} })).exitCode, 1);
   assert.equal((await ops.exec('exit 7', os.tmpdir(), { onData() {} })).exitCode, 7);
   await assert.rejects(ops.exec("sleep 10", os.tmpdir(), { onData() {}, timeout: 0.05 }), /timeout/);
@@ -656,17 +658,25 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     await until(() => h.projections.at(-1).children.some((c) => c.label.includes("SHELL:sleep 30") && c.state === "running"));
     const owned = h.projections.at(-1).children.find((c) => c.label.includes("SHELL:sleep 30") && c.state === "running");
     assert.equal(owned.context, "async"); assert.deepEqual(owned.step, { index: 1, total: 1 });
+    await until(async () => {
+      const status = await h.tool("shepherd_workflow", { action: "status", id: slowWorkflow.id });
+      return status.children.some((c) => c.id === owned.runID && c.state === "running");
+    });
     const cancelling = h.tool("shepherd_workflow", { action: "cancel", id: slowWorkflow.id });
     await assert.rejects(h.call("resume", { id: owned.runID, message: "must reject without detaching" }), /owned|already active/);
     const stoppedWorkflow = await cancelling;
     assert.equal(stoppedWorkflow.state, "stopped");
-    assert(stoppedWorkflow.children.every((c) => c.state === "stopped"));
+    const stoppedChild = await h.call("result", { id: owned.runID });
+    assert.equal(stoppedChild.state, "stopped");
     const siblings = await h.tool("shepherd_workflow", { mission: false, workflowScript: `return await Promise.all([
       runs.run("one", {agent:"worker",task:"SHELL:sleep 30"}), runs.run("two", {agent:"worker",task:"SHELL:sleep 30"})]);` });
     let siblingStatus;
     await until(() => { siblingStatus = h.entries.filter((e) => e.customType === "shepherd-child" && e.data.workflowId === siblings.id); return siblingStatus.length === 2; });
     // Wait for both run keys to be registered, not just process admission.
-    for (;;) { siblingStatus = await h.tool("shepherd_workflow", {action:"status",id:siblings.id}); if (siblingStatus.children.length === 2) break; await sleep(30); }
+    await until(async () => {
+      siblingStatus = await h.tool("shepherd_workflow", { action: "status", id: siblings.id });
+      return siblingStatus.children.length === 2;
+    });
     const victim = siblingStatus.children[0].id;
     let confirmation;
     await h.commands.get("subagents-stop").handler(victim, { ...h.ctx, mode:"rpc",hasUI:true,ui:{notify(){},confirm:async(_title,text)=>{confirmation=text;return true;}} });
