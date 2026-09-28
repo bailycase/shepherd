@@ -313,6 +313,8 @@
    * Puts a board's helmet (style, link and meta) in the head, replacing what `key` put there.
    * The board's own helmet keeps its tids; an imported board's helmet carries none.
    */
+  var pendingStylesheets = new Set();
+
   function hoistHelmet(key, helmets, stampTids) {
     var signature = JSON.stringify(helmets.map(function (helmet) { return helmet.children; }));
     var existing = document.head.querySelectorAll('[data-dc-helmet]');
@@ -334,6 +336,14 @@
         }).join('');
         if (stampTids) node.setAttribute('data-dc-tid', String(child.tid));
         node.setAttribute('data-dc-helmet', key);
+        if (node.tagName === 'LINK' && node.rel === 'stylesheet') {
+          var loaded = new Promise(function (resolve) {
+            node.addEventListener('load', resolve, { once: true });
+            node.addEventListener('error', resolve, { once: true });
+          });
+          pendingStylesheets.add(loaded);
+          loaded.then(function (promise) { pendingStylesheets.delete(promise); }.bind(null, loaded));
+        }
         document.head.appendChild(node);
         added.push(node);
       });
@@ -1009,7 +1019,7 @@
     return { ok: true };
   }
 
-  /** Waits (at most three seconds) for imports, fonts and images, so a first look is whole. */
+  /** Waits (at most three seconds) for imports, styles, fonts and images before capture. */
   function settle() {
     var images = function () {
       return Promise.all(Array.prototype.filter.call(document.images, function (image) { return !image.complete; })
@@ -1024,7 +1034,8 @@
       void document.body.offsetHeight;
       return document.fonts ? document.fonts.ready : Promise.resolve();
     };
-    var work = whenImportsIdle().then(fonts).then(images).then(fonts);
+    var work = whenImportsIdle().then(function () { return Promise.all(Array.from(pendingStylesheets)); })
+      .then(fonts).then(images).then(fonts);
     return Promise.race([work, new Promise(function (resolve) { setTimeout(resolve, 3000); })]);
   }
 
