@@ -472,8 +472,10 @@ struct DesignReferenceIntegrationTests {
         let designID = try await design(h)
         let ready = try await pi.ready()
         _ = try await send(pi, "tools:0 go", references: [reference(designID, element: element)], from: ready)
-        try await eventually("the grant") { !grants(h, pi.agent.id).isEmpty }
-        let ref = try #require(lastRecord(pi)?.ref)
+        let delivered = try await pi.snapshot("the first reference to reach pi") {
+            $0.messages.contains { $0.role == "user" && $0.designReferences?.count == 1 }
+        }
+        let ref = try #require(delivered.messages.last { $0.role == "user" }?.designReferences?.first?.ref)
         return (pi, designID, try ExtensionClient(path: h.socketPath), ref)
     }
 
@@ -594,8 +596,14 @@ struct DesignReferenceIntegrationTests {
 
         _ = try await g.pi.snapshot("the first turn to settle") { !$0.running }
         _ = try await send(g.pi, "tools:0 again", references: [reference(g.design, element: Self.buttonID)], from: try await g.pi.ready())
-        try await eventually("the second copy") { grants(h, g.pi.agent.id).count == 2 }
-        let latest = try #require(lastRecord(g.pi)?.ref)
+        // A settled turn may still be capturing its files: send can queue while the saved
+        // grant already exists. Only a delivered user message makes that copy readable.
+        let delivered = try await g.pi.snapshot("the second reference to reach pi") {
+            $0.messages.filter { $0.role == "user" && $0.designReferences?.count == 1 }.count == 2
+        }
+        let latest = try #require(delivered.messages.last { $0.role == "user" }?.designReferences?.first?.ref)
+        #expect(latest != g.ref)
+        #expect(grants(h, g.pi.agent.id).count == 2)
         guard case .designReference(8, let changes) = try await answer(g.client, 8, agent: g.pi.agent.id, latest, "changes") else {
             Issue.record("changes were refused"); return
         }
