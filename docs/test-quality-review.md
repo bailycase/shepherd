@@ -12,7 +12,8 @@ Prefer real observable results to source-string checks or fixtures that reproduc
 This is a first pass, not a completed body-level review of every test. All test domains were
 inventoried. Reviewers examined selected server/protocol, app/terminal, client/design, iOS,
 preview, extension, and release tests. Entire files not read receive no keep/delete verdict.
-No production code changes are part of this batch.
+The initial batch changed tests only. Follow-up work fixes concrete product bugs those tests
+exposed, without expanding public APIs.
 
 ## First cleanup batch
 
@@ -29,17 +30,25 @@ No production code changes are part of this batch.
 | Process termination | Await installed TERM handlers and require their distinctive normal exit | Immediate SIGKILL passes a test named SIGTERM |
 | Redundancy | Remove standalone stable-order case, two status cases already in the complete table, and image-limit constant assertion covered by real boundary/output tests | No unique behavior removed |
 
-## Product bug exposed, not fixed here
+## Product bugs exposed
 
 **TQ1. Instruction Undo can modify the newly selected file's draft.** The real Settings page
 starts with two empty documents. Editing and deleting text in AGENTS.md creates an undoable
 change. After selecting APPEND_SYSTEM.md, Undo changes its model draft to the old text even
 though the new editor remains empty. The previous fixture applied its own document identity
-and did not establish an effective undo operation. The replacement test runs with a named
-`withKnownIssue` and `.bug` trait. This must not be described as corrected by test cleanup.
-The test makes no disk save; the observed fault is in the destination draft.
+and did not establish an effective undo operation. Fixed by a document-owned native UndoManager
+and binding captures for the specific file/host. The regression now runs without a known-issue
+wrapper and also verifies destination Undo/Redo still works and old callbacks target the old
+file. The test makes no disk save; the observed fault was in the destination draft.
 
-## Validation
+**TQ2. Remote design sync accepted inconsistent transport results.** Executed regressions
+showed corrupt inline data advancing the index and losing the last good file; a chunk with
+incorrect SHA metadata and a three-byte transfer claiming four bytes also reported success.
+Sync now refuses failed inline storage before publishing paths/index, rejects chunk digest
+mismatch, and requires the final declared length. Invalid partial transfers are discarded.
+This is not a promise of whole-sync transactional rollback.
+
+## Initial validation
 
 - Focused Swift run: 118 tests reported across affected targets, with the one newly demonstrated
   instruction-Undo known issue. This includes scroll, image, queue, mount, CLI, status, canvas,
@@ -55,28 +64,58 @@ The test makes no disk save; the observed fault is in the destination draft.
   environment repair, not evidence that a mutation was detected.
 - No whole-suite, iOS simulator, or visual acceptance claim follows from these focused checks.
 
-## Remaining review work
+## Follow-up implementation
 
-The first-pass reports identify candidates, not permission to delete whole suites:
+The first-pass candidates below have been addressed or deliberately retained with a reason.
+Final combined validation is recorded after integration.
 
-1. Replace the ordinary composer attachment acknowledgement test's hand-written cleanup with
-   the real submit path, delayed acceptance, later attachment, and refusal outcomes.
-2. Make iOS simulator readiness timeouts fail rather than print READY after a missed condition.
-3. Strengthen design sandbox Google Fonts allowlists and independently inspect exported PDF
-   content/order, not only page count or expectations computed by the same paginator.
-4. Check remote design downloads with independently known digests and corrupt/stale chunks.
-   Investigate ignored inline-cache-store failure before deciding its intended contract.
-5. Isolate inherited Git configuration/environment at test-process startup; extend repository
-   preservation observations to metadata bytes, symlinks, and executable modes.
-6. Replace launcher shell-fragment checks only after independent executed pin/refusal inputs
-   cover the same contract. Keep shipping identity and workflow configuration checks where
-   configuration itself is the contract.
-7. Add positive rendering controls to upper-only budgets without changing ceilings. Correct
-   divider endpoint expectations and nonempty input rejection fixtures.
-8. Consolidate shared duration tests and redundant vendored-resource marker checks while keeping
-   independent checksums, interoperability fixtures, and actual runtime execution.
-9. Review remaining bodies in lifecycle, design storage, worktree/commit, remote transport,
-   settings/sync, preview, and extension suites. The inventory is broader than the deep review.
+1. Replaced hand-written attachment acknowledgement cleanup with the real composer command
+   path, delayed success/refusal, and a later attachment. Request bytes and retained images
+   are checked independently; the old unit test was removed.
+2. iOS fixture readiness now fails with a named condition instead of continuing to READY.
+   Assertions require actual visible proposals, target identities, expected recognized text,
+   and the independent live-view cap. Preview capture/OCR errors propagate and readiness needs
+   positive loaded-content evidence. The standalone ThreadStoreCheck stays: it protects unique
+   gated acknowledgement/history races, so wholesale deletion would lose coverage.
+3. Sandbox tests parse independent CSP rules, exercise both font policies, and require real
+   violation events with permitted local controls. PDF tests extract ordered unique paragraphs,
+   rasterize a drawing across a hand-calculated page cut, and merge distinguishable inputs.
+4. Remote download tests use independent SHA-256 vectors and scripted corrupt, stale, changed,
+   truncated and wrong-offset responses. TQ2 fixes the three demonstrated missing checks.
+   Existing changed-only, resume, forget and cache-eviction contracts remain.
+5. Test startup clears inherited Git controls and installs scratch configuration/templates.
+   A hostile child environment check executes the actual C isolation constructor. Repository
+   preservation now includes non-object metadata bytes, symlinks, and executable modes, with
+   deliberate scratch mutations proving the observation detects them.
+6. Removed redundant launcher fragments after independent execution cases covered pins,
+   refused commands, restored shell environments, startup isolation and missing engine files.
+   Shipping identity/workflow checks remain where configuration itself is the contract.
+   Signing now compiles a non-executable unsigned native addon and verifies its signature;
+   removing addon discovery in an isolated copy fails that check.
+7. Added nonempty/positive controls to rendering budgets without increasing ceilings, exact
+   pane-span endpoint checks, and a usable item provider for unavailable-input rejection.
+8. Consolidated duration tests and removed resource-marker and self-comparison assertions.
+   Independent checksums, interpolation limits, token completeness, and real runtime boot tests
+   remain. Extension tests now check retained fork content, exact cwd, actual stopped-child
+   outcome, and a bounded asynchronous workflow-key readiness condition.
+9. Additional review strengthened client remove/Undo state, pending recovery receipts,
+   suggestion text/identity, image payloads, newest retained records, deterministic mutation
+   orders and no-op disk preservation. Backlog teardown releases held queues and untransferred
+   sockets on setup failure. No deletion is justified for unreviewed test bodies.
+
+## Limits and deliberately retained coverage
+
+This work completes the concrete cleanup candidates above, not an exhaustive assertion-by-
+assertion audit of the repository. Review depth is recorded rather than inferred from passing
+execution. Unreviewed bodies remain in lifecycle, design storage, worktree/commit, remote
+transport and other domains. InstructionsModel's yield-based test readiness, optional splitter
+unit-tier relocation, more late-provider/session-change scenarios, and end-to-end uncertain
+remote commit recovery remain follow-up candidates, not demonstrated product defects.
+
+The shared-store standalone executable remains because its unique gated races have not all
+been duplicated by Swift Testing. Optional duration/menu consolidation was done only where
+behavioral coverage remained equivalent. No new framework, test-count target, changed render
+ceiling, discarded wire case, rewritten golden, or disabled regression was introduced.
 
 Keep the scope explicit as each batch lands. A passing suite with known issues is not proof that
 all product bugs or all test-quality defects have been resolved.
