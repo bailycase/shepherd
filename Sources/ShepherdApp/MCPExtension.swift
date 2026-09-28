@@ -1305,18 +1305,14 @@ enum MCPExtension {
         function signalGroup(pid, signal) {
           try {
             process.kill(-pid, signal);
-            return;
-          } catch {}
-          try {
-            process.kill(pid, signal);
-          } catch {}
+          } catch {} // Never fall back to a leader PID that may have been reused.
         }
 
-        /** SIGTERMs every live stdio server's process group, synchronously (pi exiting, session_shutdown). */
+        /** Exit cleanup cannot wait for a timer: kill every owned stdio group synchronously. */
         export function killAllServers() {
           const groups = globalThis[GROUPS];
           if (!groups) return;
-          for (const pid of groups) signalGroup(pid, "SIGTERM");
+          for (const pid of groups) signalGroup(pid, "SIGKILL");
           groups.clear();
         }
 
@@ -1357,7 +1353,10 @@ enum MCPExtension {
                 resolve();
               });
               child.on("exit", () => {
-                if (child.pid) liveGroups().delete(child.pid);
+                // The leader can exit while its descendants keep running (and holding its pipes).
+                if (child.pid && liveGroups().delete(child.pid)) signalGroup(child.pid, "SIGKILL");
+                clearTimeout(this.termTimer);
+                clearTimeout(this.killTimer);
               });
               // "close" waits for stdio to drain, so the stderr tail is whole.
               child.on("close", (code, signal) => {
@@ -1407,10 +1406,10 @@ enum MCPExtension {
             child.stdin.write(JSON.stringify(message) + "\n");
           }
 
-          /** Close stdin, SIGTERM the group after 2 s and SIGKILL it after 5 s; `now` signals at once. */
+          /** Close stdin, TERM after 2 s and KILL after 5 s; immediate shutdown cannot await a grace period. */
           close(now = false) {
             const child = this.child;
-            if (!child || child.exitCode !== null || child.signalCode !== null || this.stopping) return;
+            if (!child || child.exitCode !== null || child.signalCode !== null || (this.stopping && !now)) return;
             this.stopping = true;
             try {
               child.stdin.end();
@@ -1418,14 +1417,14 @@ enum MCPExtension {
             const pid = child.pid;
             if (!pid) return;
             if (now) {
-              signalGroup(pid, "SIGTERM");
-              liveGroups().delete(pid);
+              clearTimeout(this.termTimer);
+              clearTimeout(this.killTimer);
+              if (liveGroups().delete(pid)) signalGroup(pid, "SIGKILL");
               return;
             }
-            this.termTimer = setTimeout(() => signalGroup(pid, "SIGTERM"), 2_000);
+            this.termTimer = setTimeout(() => { if (liveGroups().has(pid)) signalGroup(pid, "SIGTERM"); }, 2_000);
             this.killTimer = setTimeout(() => {
-              signalGroup(pid, "SIGKILL");
-              liveGroups().delete(pid);
+              if (liveGroups().delete(pid)) signalGroup(pid, "SIGKILL");
             }, 5_000);
             this.termTimer.unref?.();
             this.killTimer.unref?.();
