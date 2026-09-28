@@ -564,6 +564,20 @@ struct PaneSeparatorView: View {
             .animation(nil, value: rect)
             .nwAnimation(.hover, value: color)
             .zIndex(1)
+            .accessibilityElement()
+            .accessibilityLabel(axis == .vertical ? "Terminal column split" : "Terminal row split")
+            .accessibilityValue("\(Int(currentRatio * 100)) percent")
+            .accessibilityAdjustableAction { direction in
+                let span = axis == .vertical ? containerRect.width : containerRect.height
+                let step = direction == .increment ? AppLayout.splitAccessibilityStep : -AppLayout.splitAccessibilityStep
+                onCommit(ShellLayout.splitRatio(position: CGFloat(currentRatio + step) * (span - AppLayout.dividerWidth), span: span))
+            }
+    }
+
+    private var currentRatio: Double {
+        let span = axis == .vertical ? containerRect.width : containerRect.height
+        let position = axis == .vertical ? rect.minX - containerRect.minX : rect.minY - containerRect.minY
+        return liveRatio ?? Double(position / max(1, span - AppLayout.dividerWidth))
     }
 
     private var dragGesture: some Gesture {

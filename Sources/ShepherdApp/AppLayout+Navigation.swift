@@ -76,6 +76,8 @@ extension AppLayout {
     static let threadMinWidth: CGFloat = 400
     /// Dragging a split's divider leaves each side at least this long (when the split allows).
     static let splitPaneMinSpan: CGFloat = 160
+    /// VoiceOver adjusts a terminal split by five percentage points, within the drag limits.
+    static let splitAccessibilityStep: Double = 0.05
 
     // Palette
     static let paletteWidth: CGFloat = NWPaletteMetrics.width
