@@ -100,6 +100,21 @@ struct TerminalSessionTests {
         }
     }
 
+    @Test func aFailedDirectoryChangeNeverExecutesTheCommand() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let callbacks = Callbacks(h.server)
+        let marker = h.dir.appendingPathComponent("must-not-execute")
+        let info = try await h.server.createSession(params: CreateSessionParams(
+            cwd: h.dir.appendingPathComponent("missing-directory").path,
+            command: ["/bin/sh", "-c", "printf ran > \"$MARKER\""], env: ["MARKER": marker.path]))
+        _ = try await h.server.attachSnapshot(sessionID: info.id, replay: true)
+        try await eventually("the failed chdir exit") { callbacks.exited(info.id) }
+        #expect(callbacks.exitCode(info.id) == .some(127))
+        #expect(await h.screen(info.id).contains("shepherd: chdir failed"))
+        #expect(!FileManager.default.fileExists(atPath: marker.path))
+    }
+
     /// Children see the terminal Shepherd actually is, not whichever one launched the app.
     @Test func childrenGetShepherdsTerminalIdentity() async throws {
         let h = try ScratchServer.fresh()
