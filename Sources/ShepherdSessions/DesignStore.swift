@@ -310,6 +310,194 @@ public final class DesignStore: @unchecked Sendable {
         }
     }
 
+    // MARK: Pins (design references)
+
+    /// Keeps the board's source as it is now under `pins/<sha256>.dc.html` beside `project/`, and
+    /// records which source the board had at this revision (`pins/index.json`), so a reference
+    /// pinned now is sent as it was even if the design moves on before the send. A pin is never
+    /// served, never a board, and goes with the design's folder. Answers the board's source, its
+    /// hash and the design's revision.
+    public func pinBoard(_ id: DesignID, path: DesignPath) async throws -> DesignBoardSource {
+        guard let pinned = try await pinBoards(id, paths: [path]).first else { throw DesignStoreError.noSuchBoard(path) }
+        return pinned
+    }
+
+    /// `pinBoard` for several boards at one revision, in the order given. `wholeDesign` records
+    /// them as what a whole-design reference holds at that revision (`pinnedDesign`), with the
+    /// number of boards the design had then.
+    public func pinBoards(_ id: DesignID, paths: [DesignPath], wholeDesign boardCount: Int? = nil) async throws -> [DesignBoardSource] {
+        try await run {
+            var design = try self.load(id)
+            let files = try self.files(of: id, &design)
+            guard let folder = self.folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+            let pins = folder.appendingPathComponent("pins", isDirectory: true)
+            var index = Self.pinIndex(pins)
+            var out: [DesignBoardSource] = []
+            for path in paths {
+                guard let sha = files[path] else { throw DesignStoreError.noSuchBoard(path) }
+                let data: Data
+                do { data = try Data(contentsOf: try self.fileURL(id, path)) } catch { throw DesignStoreError.noSuchBoard(path) }
+                let pin = pins.appendingPathComponent(sha + DesignPath.fileExtension)
+                if !FileManager.default.fileExists(atPath: pin.path) {
+                    do {
+                        try FileManager.default.createDirectory(at: pins, withIntermediateDirectories: true)
+                        try data.write(to: pin, options: .atomic)
+                    } catch {
+                        throw DesignStoreError.io("could not keep a pinned copy of \(path): \(error.localizedDescription)")
+                    }
+                }
+                index.record(revision: design.revision, board: path, sha256: sha)
+                out.append(DesignBoardSource(path: path, source: String(decoding: data, as: UTF8.self), sha256: sha, revision: design.revision))
+            }
+            if let boardCount {
+                index.record(revision: design.revision, design: PinIndex.Held(boards: paths.map(\.rawValue), boardCount: boardCount))
+            }
+            if let data = try? JSONEncoder().encode(index) {
+                try? data.write(to: pins.appendingPathComponent("index.json"), options: .atomic)
+            }
+            return out
+        }
+    }
+
+    /// A board's source as a reference pinned it (`pinBoard`), or nil when no pin has that hash.
+    public func pinnedBoard(_ id: DesignID, sha256: String) async throws -> String? {
+        guard sha256.utf8.count == 64, sha256.utf8.allSatisfy({ (0x30...0x39).contains($0) || (0x61...0x66).contains($0) }) else { return nil }
+        return try await run {
+            guard let folder = self.folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+            let pin = folder.appendingPathComponent("pins", isDirectory: true).appendingPathComponent(sha256 + DesignPath.fileExtension)
+            guard let data = try? Data(contentsOf: pin), Self.sha256(data) == sha256 else { return nil }
+            return String(decoding: data, as: UTF8.self)
+        }
+    }
+
+    /// The board's source at `revision`, when a reference pinned it then; nil when none did.
+    public func pinnedBoard(_ id: DesignID, path: DesignPath, revision: UInt64) async throws -> DesignBoardSource? {
+        try await run {
+            guard let folder = self.folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+            let pins = folder.appendingPathComponent("pins", isDirectory: true)
+            guard let sha = Self.pinIndex(pins).sha256(revision: revision, board: path),
+                  let data = try? Data(contentsOf: pins.appendingPathComponent(sha + DesignPath.fileExtension)),
+                  Self.sha256(data) == sha else { return nil }
+            return DesignBoardSource(path: path, source: String(decoding: data, as: UTF8.self), sha256: sha, revision: revision)
+        }
+    }
+
+    /// What a whole-design reference pinned at `revision` holds (`pinBoards(wholeDesign:)`): each
+    /// board's source then, in the order it was held, and how many boards the design had. Nil
+    /// when no whole-design reference was pinned then, or a pin is gone.
+    public func pinnedDesign(_ id: DesignID, revision: UInt64) async throws -> (boards: [DesignBoardSource], boardCount: Int)? {
+        try await run {
+            guard let folder = self.folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+            let pins = folder.appendingPathComponent("pins", isDirectory: true)
+            let index = Self.pinIndex(pins)
+            guard let held = index.designs?["\(revision)"] else { return nil }
+            var boards: [DesignBoardSource] = []
+            for raw in held.boards {
+                guard let path = DesignPath(raw), let sha = index.sha256(revision: revision, board: path),
+                      let data = try? Data(contentsOf: pins.appendingPathComponent(sha + DesignPath.fileExtension)),
+                      Self.sha256(data) == sha else { return nil }
+                boards.append(DesignBoardSource(path: path, source: String(decoding: data, as: UTF8.self), sha256: sha, revision: revision))
+            }
+            return (boards, held.boardCount)
+        }
+    }
+
+    /// Which source each board had at the revisions references were pinned at, newest
+    /// `PinIndex.limit` revisions kept, and what whole-design references held then.
+    struct PinIndex: Codable {
+        static let limit = 200
+        var revisions: [String: [String: String]] = [:]
+        /// Absent from an index written before whole-design pins were recorded.
+        var designs: [String: Held]?
+
+        struct Held: Codable, Equatable {
+            var boards: [String]
+            var boardCount: Int
+        }
+
+        mutating func record(revision: UInt64, board: DesignPath, sha256: String) {
+            revisions["\(revision)", default: [:]][board.rawValue] = sha256
+            trim()
+        }
+
+        mutating func record(revision: UInt64, design held: Held) {
+            designs = designs ?? [:]
+            designs?["\(revision)"] = held
+            trim()
+        }
+
+        private mutating func trim() {
+            if revisions.count > Self.limit {
+                let old = revisions.keys.compactMap(UInt64.init).sorted().prefix(revisions.count - Self.limit)
+                for key in old { revisions["\(key)"] = nil }
+            }
+            if let designs, designs.count > Self.limit {
+                let old = designs.keys.compactMap(UInt64.init).sorted().prefix(designs.count - Self.limit)
+                for key in old { self.designs?["\(key)"] = nil }
+            }
+        }
+
+        func sha256(revision: UInt64, board: DesignPath) -> String? {
+            revisions["\(revision)"]?[board.rawValue]
+        }
+    }
+
+    private static func pinIndex(_ pins: URL) -> PinIndex {
+        (try? Data(contentsOf: pins.appendingPathComponent("index.json"))).flatMap { try? JSONDecoder().decode(PinIndex.self, from: $0) }
+            ?? PinIndex()
+    }
+
+    // MARK: Notes back (docs/designs.md › Notes back)
+
+    /// The notes threads left on the design's pieces, oldest first: `thread-notes.json` beside
+    /// `project/`, never inside it. Empty when there are none or the file is unreadable.
+    public func threadNotes(_ id: DesignID) async throws -> [DesignThreadNote] {
+        try await run {
+            _ = try self.load(id)
+            return self.loadThreadNotes(id).notes
+        }
+    }
+
+    /// Adds `note` in place of the same thread's note on the same piece.
+    func addThreadNote(_ id: DesignID, _ note: DesignThreadNote) async throws -> DesignThreadNote {
+        try await run {
+            _ = try self.load(id)
+            var file = self.loadThreadNotes(id)
+            file.add(note)
+            try self.saveThreadNotes(file, id)
+            return note
+        }
+    }
+
+    /// Removes a note; false when the design has none by that id.
+    func removeThreadNote(_ id: DesignID, noteID: UUID) async throws -> Bool {
+        try await run {
+            _ = try self.load(id)
+            var file = self.loadThreadNotes(id)
+            guard file.notes.contains(where: { $0.id == noteID }) else { return false }
+            file.notes.removeAll { $0.id == noteID }
+            try self.saveThreadNotes(file, id)
+            return true
+        }
+    }
+
+    private func loadThreadNotes(_ id: DesignID) -> DesignThreadNotes {
+        guard let folder = folder(for: id),
+              let data = try? Data(contentsOf: folder.appendingPathComponent("thread-notes.json")) else { return DesignThreadNotes() }
+        return (try? JSONDecoder().decode(DesignThreadNotes.self, from: data)) ?? DesignThreadNotes()
+    }
+
+    private func saveThreadNotes(_ file: DesignThreadNotes, _ id: DesignID) throws {
+        guard let folder = folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        do {
+            try encoder.encode(file).write(to: folder.appendingPathComponent("thread-notes.json"), options: .atomic)
+        } catch {
+            throw DesignStoreError.io("could not keep the note: \(error.localizedDescription)")
+        }
+    }
+
     /// A board's kept versions, oldest first.
     func versions(_ id: DesignID, path: DesignPath) async throws -> [DesignBoardVersion] {
         try await run {

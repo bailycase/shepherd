@@ -118,6 +118,7 @@ struct RootView: View {
         }
         // Export (DZExport) sits over the whole window on its own scrim.
         .overlay { DesignExportOverlay(vm: vm) }
+        .overlay { ImplementSheetOverlay(vm: vm) }
         // ⌘K floats over everything, 18% down and capped to the window; the scrim dismisses.
         .nwCommandPalette(isPresented: Binding(
             get: { vm.showCommandPalette && !vm.showSettings && !vm.showComponentGallery },

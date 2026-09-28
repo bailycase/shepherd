@@ -40,6 +40,65 @@ struct ThreadOriginTests {
         #expect(try #require(Record(.queue(parts: Self.parts))).origin(text: text) == nil)
     }
 
+    /// The design references' copies a message the user sent carried are kept with its origin,
+    /// so a relaunch still draws that message's chips (and no other's); a file from before they
+    /// were kept reads without them.
+    @Test func sentReferencesRoundTripBesideTheOrigin() throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = ThreadOriginStore(directory: dir)
+        var queued = try #require(Record(.queue(parts: Self.parts)))
+        queued.references = ["7c9e6679-7425-40de-944b-e07fc1f90ae7"]
+        let alone = Record(references: ["00000000-0000-0000-0000-00000000000a"])
+        store.save(sessionID: "s", records: [("user:1", queued), ("user:2", alone)])
+        store.flush()
+        let loaded = store.load(sessionID: "s")
+        #expect(loaded.map(\.record) == [queued, alone])
+        #expect(alone.origin(text: "anything") == nil, "references alone say nothing of where it came from")
+        let older = try JSONDecoder().decode(Record.self, from: Data(#"{"steered":true}"#.utf8))
+        #expect(older.references == nil && older.origin(text: "x") == .steered)
+    }
+
+    static let keptA = UUID(uuidString: "7c9e6679-7425-40de-944b-e07fc1f90ae7")!
+    static let keptB = UUID(uuidString: "00000000-0000-0000-0000-00000000000a")!
+
+    static func fenced(_ payloads: [String]) -> String {
+        let records = payloads.map { DesignReferenceRecord(ref: "shepherd-design-ref://local/d1/A.dc.html@1", design: "Checkout", payload: $0) }
+        return (DesignReferenceFence.fenced(records, nonce: "0123456789ab") ?? "") + "words"
+    }
+
+    /// A message draws its references only when the host kept every copy its fence names for the
+    /// send or queued message it is: never from ids the text alone carries (a peer agent's prompt,
+    /// a client typing a fence).
+    struct FenceCase: Sendable, CustomTestStringConvertible {
+        let label: String
+        let named: [String]
+        let kept: [UUID]
+        let draws: Bool
+        var testDescription: String { label }
+    }
+
+    static let fenceCases: [FenceCase] = [
+        FenceCase(label: "kept, one", named: [keptA.uuidString], kept: [keptA], draws: true),
+        FenceCase(label: "kept, lowercase", named: [keptA.uuidString.lowercased()], kept: [keptA], draws: true),
+        FenceCase(label: "kept, both", named: [keptA.uuidString, keptB.uuidString], kept: [keptA, keptB], draws: true),
+        FenceCase(label: "nothing kept", named: [keptA.uuidString], kept: [], draws: false),
+        FenceCase(label: "another copy", named: ["11111111-2222-3333-4444-555555555555"], kept: [keptA], draws: false),
+        FenceCase(label: "one of two forged", named: [keptA.uuidString, "11111111-2222-3333-4444-555555555555"], kept: [keptA], draws: false),
+        FenceCase(label: "not an id", named: ["../../etc"], kept: [keptA], draws: false),
+    ]
+
+    /// A message draws its references only when the host kept every copy its fence names for the
+    /// send or queued message it is: never from ids the text alone carries (a peer agent's prompt,
+    /// a client typing a fence).
+    @Test(arguments: fenceCases)
+    func aFenceDrawsOnlyTheCopiesTheHostKept(_ c: FenceCase) {
+        let drawn = RPCThreadState.sentReferences(in: Self.fenced(c.named), kept: c.kept)
+        #expect((drawn != nil) == c.draws)
+        if c.draws { #expect(drawn == c.named) }
+        #expect(RPCThreadState.sentReferences(in: "no fence at all", kept: c.kept) == nil)
+    }
+
     @Test func onlyTheNewestAreKept() throws {
         let dir = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }

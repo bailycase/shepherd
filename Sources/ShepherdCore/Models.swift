@@ -161,6 +161,9 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     /// The design this agent draws (the Design tool): its extension and skill load with it.
     /// Decodes nil from older state files; startup clears it when the design is gone.
     public var designID: DesignID?
+    /// The design references handed to this agent's thread (`DesignGrant`): what its design_get
+    /// may read. Persisted; decodes empty from older state files. A design's agent holds none.
+    public var designGrants: [DesignGrant]
 
     public init(
         id: AgentID = AgentID(),
@@ -180,7 +183,8 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         waitingOn: String? = nil,
         waitingReason: String? = nil,
         checkout: AgentCheckout? = nil,
-        designID: DesignID? = nil
+        designID: DesignID? = nil,
+        designGrants: [DesignGrant] = []
     ) {
         self.id = id
         self.name = name
@@ -200,6 +204,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         self.waitingReason = waitingReason
         self.checkout = checkout
         self.designID = designID
+        self.designGrants = designGrants
     }
 
     /// The pi session to launch this agent with. Falls back to the agent's id,
@@ -211,6 +216,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     private enum CodingKeys: String, CodingKey {
         case id, name, spaceID, tabID, paneID, status, model, thinkingLevel, nameIsFinal
         case piSessionID, worktreeBranch, worktreeBase, worktreePath, lastActiveAt, waitingOn, waitingReason, checkout, designID, runtime
+        case designGrants
     }
 
     public init(from decoder: Decoder) throws {
@@ -242,6 +248,8 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         checkout = try c.decodeIfPresent(AgentCheckout.self, forKey: .checkout)
         // Absent before the Design tool.
         designID = try c.decodeIfPresent(DesignID.self, forKey: .designID)
+        // Absent before design references.
+        designGrants = try c.decodeIfPresent([DesignGrant].self, forKey: .designGrants) ?? []
         // `runtime` is ignored: agents from the terminal era ("terminal") relaunch over RPC in
         // the same pi session, which is the whole migration.
     }
@@ -266,6 +274,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(waitingReason, forKey: .waitingReason)
         try c.encodeIfPresent(checkout, forKey: .checkout)
         try c.encodeIfPresent(designID, forKey: .designID)
+        if !designGrants.isEmpty { try c.encode(designGrants, forKey: .designGrants) }
         // Older remote clients default a missing runtime to terminal and would try to attach a
         // PTY that does not exist.
         try c.encode(SessionRuntime.rpc, forKey: .runtime)
@@ -564,6 +573,8 @@ extension ShepherdState {
         state.agents.removeAll { ids.contains($0.id) }
         state.tabs.removeAll { tabs.contains($0.id) }
         state.designs = []
+        // A client with no designs gets no design ids either.
+        for index in state.agents.indices { state.agents[index].designGrants = [] }
         return state
     }
 }

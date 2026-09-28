@@ -312,7 +312,8 @@ keep the version for real breaks.
   Designs row opens the Designs list, and each design is a Recents row with its boards (its
   agent's thread has none of its own). A design (iPadDesign) fills the window: the canvas under
   "‹ Designs", the name, the system's chip and Export, beside the 360pt pane with Chat (the
-  design agent's thread, one field with Send; Scribble writes into it), Tweak and Comments. The
+  design agent's thread, the iPad's composer card at its compact size with no "/"; Scribble
+  writes into its field), Tweak and Comments. The
   boards render on the iPad from the files the host serves, one live and the rest as snapshots;
   pan, pinch, tap to select or, with Comment, to pin a comment; pins open their threads; the
   board actions and Play work as on the Mac. Every change goes to the host through its own

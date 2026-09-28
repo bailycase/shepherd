@@ -42,6 +42,8 @@ struct UserTurn: View, Equatable {
         /// The time: "2:41 PM", or "10:58" in a child's transcript.
         var caption: String?
         var pending: Bool
+        /// The design references it carries, drawn as chips above its words.
+        var references: [DesignReferenceRecord] = []
     }
 
     let bubbles: [Bubble]
@@ -54,7 +56,11 @@ struct UserTurn: View, Equatable {
     /// A thread's user turn: each bubble with its own time.
     init(turn: NativeTurn, hover: MessageHover? = nil) {
         self.init(bubbles: turn.bubbles.map { bubble in
-            Bubble(text: bubble.text, images: bubble.images, caption: bubble.sentAt.map { nativeClockText($0) }, pending: bubble.pending)
+            // Its chips stand for the line saying how many references went with it.
+            Bubble(text: bubble.references.isEmpty ? bubble.text
+                       : DesignReferenceFence.withoutHumanLine(bubble.text, count: bubble.references.count),
+                   images: bubble.images, caption: bubble.sentAt.map { nativeClockText($0) }, pending: bubble.pending,
+                   references: bubble.references)
         }, fromQueue: turn.fromQueue, hover: hover)
     }
 
@@ -91,7 +97,9 @@ struct UserTurn: View, Equatable {
                 ForEach(Array(bubbles.enumerated()), id: \.offset) { index, bubble in
                     let last = index == bubbles.count - 1
                     NWUserBubble(bubble.text, attachments: Array(repeating: "Image", count: bubble.images),
-                                 timestamp: bubble.caption, note: last ? note : nil, revealed: hover.hovering)
+                                 timestamp: bubble.caption, note: last ? note : nil, revealed: hover.hovering) {
+                        if !bubble.references.isEmpty { SentReferenceChips(records: bubble.references) }
+                    }
                         .opacity(bubble.pending ? 0.7 : 1)
                         .nwAnimation(.hover, value: bubble.pending)
                 }

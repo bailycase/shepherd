@@ -5,8 +5,11 @@ public enum NativeThreadRequest: Codable, Hashable, Sendable {
     /// `images` is v2 (RPC agents, `sendImages` in `supportedActions`); absent on the wire when nil.
     /// `designContext` is what the sender's design screen showed (`DesignViewRecord`), gated by
     /// `designContext` in `supportedActions` and, remotely, `design.context.v1`; absent when nil.
+    /// `designReferences` are design pieces the user hands an ordinary thread (a client sends each
+    /// reference's string alone; the host reads the rest from the design and fences it), gated by
+    /// `designReferences` in `supportedActions`, local threads only; absent when nil.
     case send(expectedSessionID: String, generation: String, operationID: UUID, text: String, delivery: NativeThreadDelivery, images: [NativeImage]? = nil,
-              designContext: NativeDesignContext? = nil)
+              designContext: NativeDesignContext? = nil, designReferences: [DesignReferenceRecord]? = nil)
     case abort(expectedSessionID: String, generation: String, operationID: UUID)
     case answer(expectedSessionID: String, generation: String, operationID: UUID, dialogID: String, answer: NativeDialogAnswer)
     /// v2: `model` is "provider/id". Gated by `setModel` in `supportedActions`.
@@ -27,19 +30,36 @@ public enum NativeThreadRequest: Codable, Hashable, Sendable {
     case compact(expectedSessionID: String, generation: String, operationID: UUID, instructions: String? = nil)
 
     public var images: [NativeImage] {
-        if case .send(_, _, _, _, _, let images, _) = self { return images ?? [] }
+        if case .send(_, _, _, _, _, let images, _, _) = self { return images ?? [] }
         return []
     }
 
     public var designContext: NativeDesignContext? {
-        if case .send(_, _, _, _, _, _, let context) = self { return context }
+        if case .send(_, _, _, _, _, _, let context, _) = self { return context }
+        return nil
+    }
+
+    public var designReferences: [DesignReferenceRecord]? {
+        if case .send(_, _, _, _, _, _, _, let references) = self { return references }
         return nil
     }
 
     /// The same request without a design context (for a host that doesn't take one).
     public var droppingDesignContext: NativeThreadRequest {
-        guard case .send(let session, let generation, let operation, let text, let delivery, let images, .some) = self else { return self }
-        return .send(expectedSessionID: session, generation: generation, operationID: operation, text: text, delivery: delivery, images: images)
+        guard case .send(let session, let generation, let operation, let text, let delivery, let images, .some, let references) = self else {
+            return self
+        }
+        return .send(expectedSessionID: session, generation: generation, operationID: operation, text: text, delivery: delivery, images: images,
+                     designReferences: references)
+    }
+
+    /// The same send carrying `references` in place of what it carried.
+    public func withDesignReferences(_ references: [DesignReferenceRecord]?) -> NativeThreadRequest {
+        guard case .send(let session, let generation, let operation, let text, let delivery, let images, let context, _) = self else {
+            return self
+        }
+        return .send(expectedSessionID: session, generation: generation, operationID: operation, text: text, delivery: delivery, images: images,
+                     designContext: context, designReferences: references)
     }
 }
 
@@ -515,12 +535,19 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
     /// to (pi's ids, "openai" and "gpt-5"), for the error card's facts. Absent from older hosts.
     public var provider: String?
     public var model: String?
+    /// User messages the user sent in this thread with design references: each reference as the
+    /// host read it and kept its copy (without the copy's file paths). The thread draws them as
+    /// chips; the words carry `DesignReferenceFence.humanLine` for clients that don't. A message
+    /// that carries a references fence the user didn't send here (another agent's) has none, and
+    /// shows the fence as text. Absent from older hosts.
+    public var designReferences: [DesignReferenceRecord]?
 
     public init(
         entryID: String, role: String, blocks: [NativeThreadBlock], toolName: String? = nil, toolCallID: String? = nil,
         argumentsText: String? = nil, status: String? = nil, isError: Bool? = nil, truncated: Bool = false, timestamp: Double? = nil,
         startedAt: Double? = nil, thinkingSeconds: Double? = nil, origin: NativeMessageOrigin? = nil, operationID: UUID? = nil,
-        compaction: NativeCompaction? = nil, question: NativeQuestionRecord? = nil, provider: String? = nil, model: String? = nil
+        compaction: NativeCompaction? = nil, question: NativeQuestionRecord? = nil, provider: String? = nil, model: String? = nil,
+        designReferences: [DesignReferenceRecord]? = nil
     ) {
         self.entryID = entryID
         self.role = role
@@ -540,6 +567,7 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
         self.question = question
         self.provider = provider
         self.model = model
+        self.designReferences = designReferences
     }
 }
 

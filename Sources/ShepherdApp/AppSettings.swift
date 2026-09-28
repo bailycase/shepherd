@@ -72,6 +72,7 @@ final class AppSettings {
         static let piSubagentsExtension = "shepherd.pi.extension.subagents"
         static let piNativeSubagents = "shepherd.pi.extension.nativeSubagents"
         static let piMCPExtension = "shepherd.pi.extension.mcp"
+        static let piDesignReferences = "shepherd.pi.extension.designReferences"
         static let childConcurrency = "shepherd.pi.children.concurrency"
         static let childModel = "shepherd.pi.children.model"
         static let childThinking = "shepherd.pi.children.thinking"
@@ -95,12 +96,13 @@ final class AppSettings {
         static let worktreeAutoMergePR = "shepherd.worktree.autoMergePR"
         static let worktreeMergeMethod = "shepherd.worktree.mergeMethod"
         static let designToolEnabled = "shepherd.experiments.designTool"
+        static let implementOpensThread = "shepherd.designs.implementOpensThread"
 
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
             defaultThinking, autoNameAgents, returnWhileWorking, queueDelivery, shellPath,
             piPanesExtension, piReviewExtension, piSubagentsExtension, piNativeSubagents,
-            piMCPExtension,
+            piMCPExtension, piDesignReferences,
             childConcurrency, childModel, childThinking, childContext, childScope,
             uiDensity, uiTextScale, sidebarWidth, sidebarRowDensity,
             sidebarStyle, sidebarGroupByHost, sidebarKeepIdleDays,
@@ -110,7 +112,7 @@ final class AppSettings {
             worktreeDeleteLocalBranch, worktreeAutoMergePR,
             worktreeMergeMethod, skillsInSlashMenu,
             mcpOpenSignInPages, mcpProjectConfig, mcpSameEverywhere,
-            designToolEnabled,
+            designToolEnabled, implementOpensThread,
         ]
 
         /// What Reset settings clears: everything but Remote's listener, which only its own
@@ -209,6 +211,12 @@ final class AppSettings {
 
     var piReviewExtension: Bool {
         didSet { store.set(piReviewExtension, forKey: Key.piReviewExtension) }
+    }
+
+    /// design_get for design pieces handed to a thread (the Design tool's references). Its row
+    /// shows only while the Design tool is on; the tool registers only in a thread that holds one.
+    var piDesignReferences: Bool {
+        didSet { store.set(piDesignReferences, forKey: Key.piDesignReferences) }
     }
 
     var piSubagentsExtension: Bool {
@@ -377,6 +385,12 @@ final class AppSettings {
         }
     }
 
+    /// Implement in a thread's "Open the thread after sending" (RefSentStay): off stays on the
+    /// canvas with a toast; the sheet remembers the last choice.
+    var implementOpensThread: Bool {
+        didSet { store.set(implementOpensThread, forKey: Key.implementOpensThread) }
+    }
+
     /// Tells the server whether to serve designs to remote clients (set by the view model).
     @ObservationIgnored var onDesignToolChange: ((Bool) -> Void)?
 
@@ -408,6 +422,7 @@ final class AppSettings {
         piSubagentsExtension = store.object(forKey: Key.piSubagentsExtension) as? Bool ?? true
         piNativeSubagents = store.object(forKey: Key.piNativeSubagents) as? Bool ?? true
         piMCPExtension = store.object(forKey: Key.piMCPExtension) as? Bool ?? true
+        piDesignReferences = store.object(forKey: Key.piDesignReferences) as? Bool ?? true
         childConcurrency = min(16, max(1, store.object(forKey: Key.childConcurrency) as? Int ?? 4))
         childModel = store.string(forKey: Key.childModel) ?? ""
         let childReasoning = store.string(forKey: Key.childThinking) ?? ""
@@ -441,6 +456,7 @@ final class AppSettings {
         worktreeMergeMethod = store.string(forKey: Key.worktreeMergeMethod)
             .flatMap(WorktreeMergeMethod.init(rawValue:)) ?? .squash
         designToolEnabled = store.bool(forKey: Key.designToolEnabled)
+        implementOpensThread = store.object(forKey: Key.implementOpensThread) as? Bool ?? true
     }
 
     static let uiDensityRange: ClosedRange<Double> = 0.8...1.5
@@ -503,6 +519,7 @@ final class AppSettings {
         piSubagentsExtension = true
         piNativeSubagents = true
         piMCPExtension = true
+        piDesignReferences = true
         childConcurrency = 4
         childModel = ""
         childThinking = ""
@@ -517,6 +534,7 @@ final class AppSettings {
         worktreeAutoMergePR = false
         worktreeMergeMethod = .squash
         designToolEnabled = false
+        implementOpensThread = true
         // Then clear the store, so an unset preference reads as "never
         // configured" and follows a future change of default.
         for key in Key.resettable {

@@ -35,6 +35,17 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// Pi with the Design tool on: Bundled extensions add the Design references row.
+    @Test func settingsPiWithTheDesignTool() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        workspace.settings.designToolEnabled = true
+        workspace.vm.settingsSection = .pi
+        try await Preview.render("settings-pi-design-tool", size: CGSize(width: 1280, height: 1400)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
+
     /// Appearance with the sidebar organized by project (SettingsAppearanceProjects): the
     /// Projects card chosen, and Group by host and Keep idle threads under it.
     @Test func settingsAppearanceProjects() async throws {

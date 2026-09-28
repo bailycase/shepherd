@@ -21,11 +21,11 @@ struct ExtensionMessageTests {
              .coordinateAgent, .agentResponse, .cancelAgentRequest, .createAutomation, .listAutomations,
              .updateAutomation, .deleteAutomation, .startAutomation, .stopAutomation, .suggestInstruction,
              .designRead, .designWriteBoard, .designUpdateIndex, .designComments, .designCommentReply,
-             .designSystemRead, .designSystemWrite, .designProposeComments, .mcpCredentials, .mcpReport:
+             .designSystemRead, .designSystemWrite, .designProposeComments, .designGet, .designNote, .mcpCredentials, .mcpReport:
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 38
+    static let caseCount = 40
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
@@ -85,6 +85,10 @@ struct ExtensionMessageTests {
         .designProposeComments(id: 28, agentID: agent, designID: design, call: "toolu_01",
                                proposals: [DesignMarkupProposal(element: "A-phone.dc.html#31:1/1/2", text: "Thicker bars on phone."),
                                            DesignMarkupProposal(element: "not an id", text: "Counts “here” too?")]),
+        .designGet(id: 29, agentID: agent, reference: "shepherd-design-ref://local/d1/flows%2FCart.dc.html#12:0/1@7", what: "element"),
+        .designGet(id: 32, agentID: agent, reference: "shepherd-design-ref://local/d1@7", what: "image"),
+        .designNote(id: 33, agentID: agent, reference: "shepherd-design-ref://local/d1/A.dc.html#2:0/1@7",
+                    text: "Implemented in #142 on agent/checkout-funnel. Bars use --accent; “counts” use the table cell."),
         .mcpCredentials(id: 28, agentID: agent, server: "linear", reason: .unauthorized,
                         challenge: #"Bearer resource_metadata="https://mcp.linear.app/.well-known/oauth-protected-resource""#),
         .mcpReport(agentID: agent, report: MCPServerReport(
@@ -183,6 +187,12 @@ struct ExtensionMessageTests {
          .designProposeComments(id: 11, agentID: agent, designID: design, call: "call-7",
                                 proposals: [DesignMarkupProposal(element: "A.dc.html#18:1/1/1", text: "Counts too"),
                                             DesignMarkupProposal(element: "?", text: "x")])),
+        // design_get's frame: the extension spreads its fields, then adds id and agentID; a bad ref or
+        // aspect still decodes, so the server can answer it.
+        (#"{"type":"designGet","reference":"shepherd-design-ref://local/d1/A.dc.html@3","what":"summary","id":12,"agentID":"a1"}"#,
+         .designGet(id: 12, agentID: agent, reference: "shepherd-design-ref://local/d1/A.dc.html@3", what: "summary")),
+        (#"{"type":"designGet","reference":"not a ref","what":"everything","id":13,"agentID":"a1"}"#,
+         .designGet(id: 13, agentID: agent, reference: "not a ref", what: "everything")),
         // The MCP extension spreads its fields, then the link adds id last; a connect carries no challenge.
         (#"{"type":"mcpCredentials","agentID":"a1","server":"grafana","reason":"connect","id":1}"#,
          .mcpCredentials(id: 1, agentID: agent, server: "grafana", reason: .connect, challenge: nil)),
@@ -242,11 +252,12 @@ struct ExtensionReplyTests {
         switch reply {
         case .childCommand, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .automations,
              .agents, .message, .agentRequest, .agentResult, .suggestion, .design, .designBoard, .designWritten,
-             .designComments, .designComment, .designSystems, .designSystem, .designSystemWritten, .designProposals, .mcpCredentials:
+             .designComments, .designComment, .designSystems, .designSystem, .designSystemWritten, .designProposals,
+             .designReference, .designNote, .mcpCredentials:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 23
+    static let caseCount = 25
     static let system = DesignSystemSummary(
         info: DesignSystemInfo(namespace: "acme-web", title: "acme-web", revision: 3, createdAt: 1_000, updatedAt: 2_000,
                                syncedAt: 2_000, ownerDesignID: DesignID(rawValue: "d1"), spaceID: SpaceID(rawValue: "s1"),
@@ -316,6 +327,17 @@ struct ExtensionReplyTests {
             summary: system, changed: true, installed: DesignWriteResult(revision: 9, changed: true, title: "Checkout", boardCount: 4),
             notes: ["tokens.css is the one you wrote"])),
         .designProposals(id: 29, proposals: [proposal]),
+        .designReference(id: 30, answer: DesignReferenceAnswer(text: "design_get image of …\nA PNG.", files: ["/tmp/d/Hero@2x.png"],
+                                                               image: "/tmp/d/Hero@2x.png")),
+        .designReference(id: 31, answer: DesignReferenceAnswer(text: "unchanged")),
+        .designReference(id: 32, answer: DesignReferenceAnswer(
+            text: "design_get tokens of …", lookedAt: DesignReferenceLookedAt(
+                ref: "shepherd-design-ref://local/d1/A.dc.html@4", title: "Checkout › A", aspects: [.tokens],
+                tokens: .init(names: ["--accent"], sources: ["web/static/tokens.css:8"])))),
+        .designNote(id: 33, note: DesignThreadNote(
+            id: UUID(uuidString: "7C9E6679-7425-40DE-944B-E07FC1F90AE7")!, agentID: AgentID(rawValue: "a1"), thread: "Checkout page polish",
+            board: DesignPath("A.dc.html")!, element: DesignElementID("A.dc.html#2:0/1"), label: "Pay now", revision: 23,
+            text: "Implemented in #142.", createdAt: 1_000)),
         .mcpCredentials(id: 29, credentials: MCPCredentials(bearer: "at-1", headers: ["X-Org": "acme"],
                                                             env: ["DATABASE_URI": "postgres://u:p@db/app"], expiresAtMs: 1_790_000_000_000)),
     ]
@@ -425,6 +447,19 @@ struct ExtensionReplyTests {
         #expect(first["board"] as? String == "A-phone.dc.html" && first["tid"] as? Int == 31 && first["path"] as? [Int] == [1, 1, 2])
         #expect(first["target"] as? String == "Steps list" && first["text"] as? String == "Thicker bars on phone.")
         #expect(first["proposal"] as? String == "toolu_01#0")
+    }
+
+    /// What design_get reads: the answer's text, its files, and the image it hands pi inline.
+    @Test func designReferenceRepliesCarryTheShapeTheExtensionReads() throws {
+        let object = try Wire.object(ExtensionReply.designReference(
+            id: 4, answer: DesignReferenceAnswer(text: "A PNG.", files: ["/drops/Hero@2x.png"], image: "/drops/Hero@2x.png")))
+        #expect(object["type"] as? String == "designReference" && object["id"] as? Int == 4)
+        let answer = try #require(object["answer"] as? [String: Any])
+        #expect(answer["text"] as? String == "A PNG." && answer["files"] as? [String] == ["/drops/Hero@2x.png"])
+        #expect(answer["image"] as? String == "/drops/Hero@2x.png")
+        let bare = try #require(try Wire.object(ExtensionReply.designReference(id: 5, answer: DesignReferenceAnswer(text: "x")))["answer"]
+            as? [String: Any])
+        #expect(bare["image"] == nil && bare["files"] as? [String] == [])
     }
 
     @Test func emptyCollectionsRoundTrip() throws {

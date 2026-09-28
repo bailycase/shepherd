@@ -17,7 +17,7 @@ struct KeybindingsTests {
         (.focusNextPane, "⌥⌘→"), (.focusPreviousPane, "⌥⌘←"),
         (.toggleSidebar, "⇧⌘S"), (.toggleRightPane, "⇧⌘B"), (.modelPicker, "⇧⌘M"),
         (.stopAgent, "⌘."), (.previousTurn, "⌥⌘↑"), (.nextTurn, "⌥⌘↓"), (.inspectSubagent, "⌘I"),
-        (.alternateSend, "⌘↩"), (.importDesign, "⇧⌘I"),
+        (.alternateSend, "⌘↩"), (.importDesign, "⇧⌘I"), (.implementInThread, "⌘↩"), (.copyDesignReference, "⇧⌘C"),
     ])
     func defaultsMatchTheDesignTable(action: ShortcutAction, display: String) {
         let keys = KeybindingsStore(store: Fixture.defaults())
@@ -26,13 +26,29 @@ struct KeybindingsTests {
     }
 
     /// Every default must itself pass validation: it includes ⌘, is not reserved, and no two
-    /// actions share a chord.
+    /// actions that can be pressed in the same place share a chord.
     @Test func everyDefaultIsAValidDistinctChord() {
         let keys = KeybindingsStore(store: Fixture.defaults())
         for action in ShortcutAction.allCases {
             #expect(keys.validate(action.defaultChord, for: action) == nil, "\(action) default is invalid")
+            for other in ShortcutAction.allCases where other != action && other.sharesScope(with: action) {
+                #expect(other.defaultChord != action.defaultChord, "\(action) and \(other)")
+            }
         }
-        #expect(Set(ShortcutAction.allCases.map(\.defaultChord)).count == ShortcutAction.allCases.count)
+    }
+
+    /// The canvas's ⌘↩ (Implement in a thread…) and the composer's (send the other way) never
+    /// meet: a design's canvas has no composer. Neither may take an app-wide chord, and neither is
+    /// unbound in a terminal.
+    @Test func theCanvasAndTheComposerShareChordsButNotWithTheApp() {
+        let keys = KeybindingsStore(store: Fixture.defaults())
+        #expect(ShortcutAction.implementInThread.scope == .canvas && ShortcutAction.alternateSend.scope == .composer)
+        #expect(!ShortcutAction.implementInThread.sharesScope(with: .alternateSend))
+        #expect(keys.validate(ShortcutAction.renameAgent.defaultChord, for: .implementInThread) == .conflict(.renameAgent))
+        #expect(keys.validate(ShortcutAction.copyDesignReference.defaultChord, for: .renameAgent) == .conflict(.copyDesignReference))
+        #expect(keys.assign(KeyChord(key: "e", command: true, shift: true), to: .copyDesignReference) == nil)
+        #expect(keys.validate(KeyChord(key: "e", command: true, shift: true), for: .implementInThread) == .conflict(.copyDesignReference))
+        #expect(keys.customGhosttyUnbinds.isEmpty, "a canvas chord never reaches a terminal")
     }
 
     @Test func defaultsNeedNoCustomGhosttyUnbinds() {

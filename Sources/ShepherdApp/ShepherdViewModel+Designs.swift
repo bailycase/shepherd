@@ -130,7 +130,9 @@ extension ShepherdViewModel {
     /// in the design's own folder (a system build: in the project it reads). `brief` is its
     /// opening message.
     @discardableResult
-    func startDesignAgent(_ design: Design, brief: String?, images: [NativeImage], select: Bool = true) async throws -> AgentID {
+    /// `model` and `thinking` are what New design's chips chose; nil takes Settings' defaults.
+    func startDesignAgent(_ design: Design, brief: String?, images: [NativeImage], select: Bool = true,
+                          model: String? = nil, thinking: ThinkingLevel? = nil) async throws -> AgentID {
         let folder: String
         if design.buildsSystem {
             guard let space = design.sourceSpaceID.flatMap({ id in state.spaces.first { $0.id == id } }) else {
@@ -150,8 +152,8 @@ extension ShepherdViewModel {
             adopt(canonical)
         }
         let defaults = settings.agentDefaults
-        var config = NewAgentConfig(spaceID: spaceID, workingDirectory: folder, model: defaults.model,
-                                    thinking: defaults.thinking, initialPrompt: brief)
+        var config = NewAgentConfig(spaceID: spaceID, workingDirectory: folder, model: model ?? defaults.model,
+                                    thinking: thinking ?? defaults.thinking, initialPrompt: brief)
         config.initialImages = images
         config.initialName = design.name
         config.designID = design.id
@@ -161,12 +163,14 @@ extension ShepherdViewModel {
     }
 
     /// New design's Send: makes the design (in no project), installs the chosen design system in
-    /// it, starts its agent with the brief as its first message, and opens the canvas.
+    /// it, starts its agent with the brief as its first message, on the model and level chosen
+    /// (nil: Settings' defaults), and opens the canvas.
     @discardableResult
-    func createDesign(brief: String, images: [NativeImage], system: String? = nil) async throws -> DesignID {
+    func createDesign(brief: String, images: [NativeImage], system: String? = nil, model: String? = nil,
+                      thinking: ThinkingLevel? = nil) async throws -> DesignID {
         let design = try await makeDesign(brief: brief, system: system)
         // A design whose agent failed to start still opens later, and starts one then.
-        try await startDesignAgent(design, brief: brief, images: images)
+        try await startDesignAgent(design, brief: brief, images: images, model: model, thinking: thinking)
         return design.id
     }
 
@@ -209,6 +213,7 @@ extension ShepherdViewModel {
                                        source: { try await server.designBoard($0, path: $1).source },
                                        comments: designCommentActions(), tweak: tweak, actions: designCanvasActions())
         if let design = design(id), let system = designSystemName(design) { screen.tweak?.systemName = system }
+        screen.referenceActions = designReferenceCanvasActions()
         designScreens[id] = screen
         return screen
     }
@@ -268,6 +273,7 @@ extension ShepherdViewModel {
 
     /// The host pushed a design's new revision: its canvas pulls what changed.
     func designRevised(_ id: DesignID) {
+        referencesDesignsChanged()
         guard let screen = designScreens[id] else { return }
         Task { await screen.refresh() }
     }
@@ -282,18 +288,28 @@ extension ShepherdViewModel {
         }
         if let selection = designsPageSelection, !live.contains(selection) { designsPageSelection = nil }
         madeDesignRendering?.prune(keeping: live)
+        referencesDesignsChanged()
     }
 }
 
 // MARK: New design
 
-/// The New design page's draft (DZStart): the brief, its images, and the design system it is
-/// drawn in. A design belongs to no project. Owned by the view model, so it survives the page
-/// going away.
+/// The New design page's draft (DZStart): the brief, its images, the model and level its agent
+/// starts with, and the design system it is drawn in. A design belongs to no project. Owned by
+/// the view model, so it survives the page going away.
 @MainActor @Observable
 final class NewDesignState {
     var brief = ""
     var attachments = ComposerAttachments()
+    /// The model and level the design agent starts with (This Mac's defaults until picked); a
+    /// blank model is pi's default. They stay with the design's pi session after that.
+    private(set) var model = ""
+    private(set) var thinking: ThinkingLevel = .medium
+    /// This Mac's catalog, for the model picker and the levels its model takes.
+    private(set) var listing: ModelListing?
+    private(set) var catalog: ModelCatalog?
+    @ObservationIgnored private var edited = (model: false, thinking: false)
+    @ObservationIgnored private var loadingDefaults = false
     /// The design system picked from the card's menu; nil draws in the default
     /// (`defaultSystem`).
     private(set) var system: String?
@@ -302,9 +318,43 @@ final class NewDesignState {
     /// Bumped to give the field the keyboard.
     var focusRequest = 0
 
-    /// The page is opening: a system picked earlier that is gone reads as none picked.
+    /// The page is opening: a system picked earlier that is gone reads as none picked, and the
+    /// model and level follow Settings unless picked here.
     func prepare(for vm: ShepherdViewModel) {
         if let system, !vm.designSystems.summaries.isEmpty, vm.designSystems.summary(system) == nil { self.system = nil }
+        loadDefaults(vm)
+    }
+
+    func setModel(_ id: String) {
+        model = id
+        edited.model = true
+    }
+
+    func setThinking(_ level: ThinkingLevel) {
+        thinking = level
+        edited.thinking = true
+    }
+
+    /// The levels the chosen model takes before its pi starts; empty when it takes none.
+    func thinkingLevels() -> [ThinkingLevel] {
+        ThinkingLevel.offered(model: model, listing: listing, hostTakesAllLevels: true)
+    }
+
+    /// This Mac's model and level (Settings, else pi's default model) and its catalog, the
+    /// catalog read once.
+    private func loadDefaults(_ vm: ShepherdViewModel) {
+        if !edited.model { model = vm.settings.agentDefaults.model ?? PiConfig.defaultModel(in: vm.server.pi.home) ?? "" }
+        if !edited.thinking { thinking = vm.settings.defaultThinking }
+        guard listing == nil, !loadingDefaults else { return }
+        loadingDefaults = true
+        let server = vm.server
+        Task {
+            defer { loadingDefaults = false }
+            let listing = await Task.detached(priority: .userInitiated) { server.modelListing() }.value
+            let catalog = await ModelCatalog.loadLocal(from: server.pi.catalog)
+            self.listing = listing
+            self.catalog = catalog
+        }
     }
 
     /// Draws the design in `namespace` (a system from the card's menu).
@@ -376,12 +426,15 @@ final class NewDesignState {
         let text = brief.trimmingCharacters(in: .whitespacesAndNewlines)
         let images = attachments.images
         let system = systemToInstall(vm)
+        let chosenModel = model.trimmingCharacters(in: .whitespaces)
+        let level = thinking.clamped(to: thinkingLevels())
         starting = true
         error = nil
         Task {
             defer { starting = false }
             do {
-                try await vm.createDesign(brief: text, images: images, system: system)
+                try await vm.createDesign(brief: text, images: images, system: system,
+                                          model: chosenModel.isEmpty ? nil : chosenModel, thinking: level)
                 brief = ""
                 attachments.removeAll()
             } catch {

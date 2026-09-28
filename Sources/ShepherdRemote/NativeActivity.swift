@@ -278,6 +278,9 @@ public struct NativeActivityCall: Equatable, Sendable, Identifiable {
         case drew
         /// The design agent's design_check: "Checked against acme-web".
         case checked
+        /// A thread's design_get on a design piece it was sent: consecutive reads of one piece
+        /// join ("Looked at Checkout funnel dashboard › A · Funnel first · picture · html").
+        case lookedAt
         /// Any other tool; consecutive calls of the same tool merge.
         case other
     }
@@ -321,6 +324,9 @@ public struct NativeActivityCall: Equatable, Sendable, Identifiable {
     /// nil when no system was found.
     public var system: String?
     public var offSystem: Int?
+    /// For a design_get: the reference it read and what of it.
+    public var designRef: String?
+    public var designAspect: DesignReferenceAspect?
     /// First line of a failed call's output ("no such file"), for its line's meta.
     public var failure: String?
     /// The user's Stop interrupted it (the host's `aborted`): done, not failed, and it reads
@@ -391,6 +397,8 @@ extension NativeActivityCall {
         self.boardCreated = nil
         self.system = nil
         self.offSystem = nil
+        self.designRef = nil
+        self.designAspect = nil
         self.failure = failed ? (firstLine.isEmpty ? nil : String(firstLine.prefix(60))) : nil
         self.stopped = stopped
         self.startedAt = message.startedAt
@@ -530,6 +538,16 @@ extension NativeActivityCall {
                 offSystem = found.offSystem
                 stat = nativeCount(found.offSystem, "off-system value")
             }
+        case "design_get":
+            kind = .lookedAt
+            label = "design"
+            designRef = string("ref")
+            designAspect = string("what").flatMap(DesignReferenceAspect.init(rawValue:))
+            detail = designAspect.map(nativeDesignAspectWord) ?? firstLine
+        case "design_note":
+            kind = .other
+            label = "note"
+            detail = string("text") ?? firstLine
         case "markup_propose":
             // The comments proposed from the viewer's Pencil markup: a design's chat on iPad draws
             // them as cards (`NativeMarkupProposals`); elsewhere this line says how many.
@@ -599,7 +617,7 @@ public func nativeActivityBursts(_ calls: [NativeActivityCall]) -> [NativeActivi
     var groups: [[NativeActivityCall]] = []
     for call in calls {
         if call.state == .done, !call.stopped, let last = groups.last?.last, last.state == .done, !last.stopped, last.kind == call.kind,
-           call.kind != .other || last.name == call.name {
+           call.kind != .other || last.name == call.name, call.kind != .lookedAt || last.designRef == call.designRef {
             groups[groups.count - 1].append(call)
         } else {
             groups.append([call])
@@ -665,6 +683,7 @@ private func progressiveLabel(_ call: NativeActivityCall) -> String {
     case .subagents: return "Starting a subagent"
     case .drew: return call.name == "canvas_update" ? "Arranging the canvas" : "Drawing"
     case .checked: return "Checking the boards"
+    case .lookedAt: return "Looking at a design"
     case .other: return "Running \(call.label)"
     }
 }
@@ -689,6 +708,7 @@ private func failedLabel(_ call: NativeActivityCall) -> String {
     case .subagents: return "Subagent failed to start"
     case .drew: return call.name == "canvas_update" ? "Canvas update failed" : "Board write failed"
     case .checked: return "Check failed"
+    case .lookedAt: return "Couldn’t read the design"
     case .other: return "\(call.label) failed"
     }
 }
@@ -714,6 +734,7 @@ private func stoppedLabel(_ call: NativeActivityCall) -> String {
     case .subagents: return "Subagent stopped"
     case .drew: return call.name == "canvas_update" ? "Canvas update stopped" : "Drawing stopped"
     case .checked: return "Check stopped"
+    case .lookedAt: return "Design read stopped"
     case .other: return "\(call.label) stopped"
     }
 }
@@ -758,6 +779,8 @@ private func doneWords(_ calls: [NativeActivityCall]) -> (String, [String]) {
             return ("Checked the boards", ["no design system found"])
         }
         return ("Checked against \(system)", [nativeCount(total, "off-system value")])
+    case .lookedAt:
+        return ("Looked at a design", [nativeDesignAspects(calls).map(nativeDesignAspectWord).joined(separator: " · ")])
     case .other:
         let label = calls.count == 1 ? "Used \(first.label)" : "Used \(first.label) \(calls.count) times"
         return (label, (calls.count == 1 ? [first.detail] : []) + [duration].compactMap { $0 })
@@ -974,4 +997,23 @@ public func nativeTurnChanges(_ calls: [NativeActivityCall]) -> NativeTurnChange
     guard !order.isEmpty else { return nil }
     let list = order.compactMap { files[$0] }
     return NativeTurnChanges(files: list, added: list.reduce(0) { $0 + $1.added }, removed: list.reduce(0) { $0 + $1.removed })
+}
+
+
+/// What a run of design_get calls read, in the tool's own order.
+public func nativeDesignAspects(_ calls: [NativeActivityCall]) -> [DesignReferenceAspect] {
+    let read = Set(calls.compactMap(\.designAspect))
+    return DesignReferenceAspect.allCases.filter(read.contains)
+}
+
+/// A design_get aspect as the "Looked at…" line names it: "picture", "html", "styles", "tokens".
+public func nativeDesignAspectWord(_ aspect: DesignReferenceAspect) -> String {
+    switch aspect {
+    case .summary: "summary"
+    case .image: "picture"
+    case .html: "html"
+    case .element: "styles"
+    case .tokens: "tokens"
+    case .changes: "changes"
+    }
 }

@@ -34,7 +34,8 @@ extension MobileLayout {
 }
 
 extension EnvironmentValues {
-    /// The thread shown is a design's chat (iPadDesign): its composer is one field with Send, and
-    /// its transcript sits 16pt in (`ThreadComposer`, `ThreadTranscript`).
+    /// The thread shown is a design's chat (iPadDesign): its composer is the iPad's card at the
+    /// compact size, without "/" and with the model's short name, and its transcript sits 16pt in
+    /// (`ThreadComposer`, `ThreadTranscript`).
     @Entry var composerDesignChat = false
 }

@@ -21,6 +21,21 @@ extension DesignBoardView {
         return Self.unscheme(page, host: surface.designID.rawValue)
     }
 
+    /// Element `tid` as a design reference hands it over (the bridge's `elementDetail`): its markup
+    /// as drawn now, cleaned as a standalone page is, and the computed styles of it and the
+    /// elements under it as JSON. Nil when the board doesn't draw it.
+    public func elementDetail(tid: Int) async throws -> DesignElementDetail? {
+        guard contentSize != nil else { throw DesignBoardError.notBooted }
+        guard tid >= 0 else { return nil }
+        let value = try await webView.callAsyncJavaScript(
+            "return window.__shepherdBridge && window.__shepherdBridge.elementDetail ? window.__shepherdBridge.elementDetail(tid) : null",
+            arguments: ["tid": tid], in: nil, contentWorld: Self.bridgeWorld)
+        guard let object = value as? [String: Any], let html = object["html"] as? String else { return nil }
+        let styles = object["styles"].flatMap { try? JSONSerialization.data(withJSONObject: $0, options: [.prettyPrinted, .sortedKeys]) }
+        return DesignElementDetail(html: Self.unscheme(html, host: surface.designID.rawValue), clipped: object["clipped"] as? Bool ?? false,
+                                   styles: styles ?? Data("[]".utf8))
+    }
+
     /// `shepherd-design://<design>/_blob/<id>` back to `/_blob/<id>`, and a project file's url to
     /// its path from the canvas root.
     static func unscheme(_ page: String, host: String) -> String {
@@ -227,4 +242,14 @@ public enum DesignImageFile {
         guard CGImageDestinationFinalize(destination) else { throw DesignBoardError.snapshotFailed }
         return data as Data
     }
+}
+
+/// An element's markup and computed styles, as a design reference hands them over.
+public struct DesignElementDetail: Sendable {
+    /// Its outer HTML as drawn, with nothing that runs and none of Shepherd's stamps.
+    public var html: String
+    /// Cut at 512 KB.
+    public var clipped: Bool
+    /// `[{path, tag, rect, style}]`: it and up to 300 elements under it, by child path under it.
+    public var styles: Data
 }

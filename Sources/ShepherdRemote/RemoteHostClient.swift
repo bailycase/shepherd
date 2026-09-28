@@ -384,6 +384,10 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// Why a host without `createAgentImagesCapability` cannot start a thread with images.
     public static let createAgentImagesRefusal = "Update Shepherd on the host to start a thread with images."
     static let imagesTooLarge = "Images exceed the remote payload limit. Send fewer or smaller images."
+    /// Design references go only into a thread on the Mac that runs it (docs/designs.md › Design
+    /// references), never over the remote listener.
+    public static let designReferencesRefusal = "Design references can't go to a thread on another Mac yet: send it from that Mac."
+
 
     /// One NDJSON frame per request: the host drops anything over the cap.
     static func overFrame(_ request: RemoteRequest) -> Bool {
@@ -420,6 +424,9 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
         if let missing = Self.missingCapability(command, capabilities: capabilities) {
             throw RemoteHostClientError.rejected(code: "update_required", message: missing)
+        }
+        if let references = command.designReferences, !references.isEmpty {
+            throw RemoteHostClientError.rejected(code: "design_references_local", message: Self.designReferencesRefusal)
         }
         switch command {
         case .send where !command.images.isEmpty:

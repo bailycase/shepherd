@@ -5,7 +5,7 @@ import ShepherdRemote
 import ShepherdUI
 
 /// The design's 360pt pane (iPadDesign): its tabs, Chat (the design agent's thread on the host,
-/// whose composer is one field with Send; Scribble writes into it), Tweak (the selection's
+/// with the iPad's composer at its compact size; Scribble writes into its field), Tweak (the selection's
 /// controls, written through `designs.v1`) and Comments (the open comments' cards, with their
 /// count). The thread stays mounted under the other tabs, hidden, so switching tabs never
 /// rebuilds it.
@@ -82,6 +82,7 @@ private struct PadDesignChat: View {
                 }
             }
             .environment(\.composerDesignChat, true)
+            .nwComposerSize(.compact)
             .environment(\.nwProseSize, .small)
             .background(Color.nw.bgWindow)
             .designAgentThread(ref)

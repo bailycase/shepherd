@@ -204,22 +204,64 @@ public struct NWCanvasElement: Identifiable, Equatable, Sendable {
     }
 }
 
-/// A comment's pin on the canvas (`NWCommentPin`), on its element's top-trailing corner.
+/// A pin on the canvas, on its element's top-trailing corner: a comment's (`NWCommentPin`), or a
+/// thread's note (`NWThreadNotePin`), which stands just after a comment's pin on the same corner.
 public struct NWCanvasPin: Identifiable, Equatable, Sendable {
-    /// The comment's id.
+    public enum Style: Equatable, Sendable {
+        case comment
+        /// A note a thread left, naming the thread (its help).
+        case threadNote(String)
+    }
+
+    /// The comment's id, or the note's.
     public let id: String
     /// The board it is on (`NWCanvasBoard.id`).
     public var board: String
     /// Where its element is drawn, in the board's own points.
     public var rect: CGRect
     public var number: Int
+    public var style: Style
 
-    public init(id: String, board: String, rect: CGRect, number: Int) {
+    public init(id: String, board: String, rect: CGRect, number: Int, style: Style = .comment) {
         self.id = id
         self.board = board
         self.rect = rect
         self.number = number
+        self.style = style
     }
+}
+
+/// One item of the canvas's right-click menu (CanvasContextMenu): its words, glyph, the chord it
+/// shows, and whether it is destructive. A `divider` item draws the hairline between sections.
+public struct NWCanvasMenuItem: Identifiable, Sendable {
+    public let id: String
+    public var title: String
+    public var symbol: String?
+    /// The key the chord shows ("\r", "c") and its modifiers; nil shows none.
+    public var key: String?
+    public var command: Bool
+    public var shift: Bool
+    public var destructive: Bool
+    public var action: @MainActor @Sendable () -> Void
+
+    public init(id: String, title: String, symbol: String? = nil, key: String? = nil, command: Bool = false, shift: Bool = false,
+                destructive: Bool = false, action: @escaping @MainActor @Sendable () -> Void) {
+        self.id = id
+        self.title = title
+        self.symbol = symbol
+        self.key = key
+        self.command = command
+        self.shift = shift
+        self.destructive = destructive
+        self.action = action
+    }
+
+    /// The hairline between two sections.
+    public static func divider(_ id: String) -> NWCanvasMenuItem {
+        NWCanvasMenuItem(id: "divider." + id, title: "", action: {})
+    }
+
+    public var isDivider: Bool { id.hasPrefix("divider.") }
 }
 
 /// The board actions over one board (`NWBoardActions`): which board, and what each does.

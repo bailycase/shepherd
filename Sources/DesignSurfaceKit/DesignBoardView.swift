@@ -392,6 +392,24 @@ public final class DesignBoardView: DesignPlatformView {
         return DesignHit(bridge: value)
     }
 
+    /// Elements `tids` where they are drawn now, asked in one call (the @ picker's element
+    /// pictures): an element the board doesn't draw is missing.
+    public func elements(tids: [Int]) async -> [Int: DesignHit] {
+        let wanted = tids.filter { $0 >= 0 }
+        guard contentSize != nil, !wanted.isEmpty else { return [:] }
+        let value = try? await webView.callAsyncJavaScript(
+            """
+            var bridge = window.__shepherdBridge, out = [];
+            if (!bridge) return out;
+            for (var i = 0; i < tids.length; i++) { var hit = bridge.element(tids[i]); if (hit) out.push(hit); }
+            return out;
+            """,
+            arguments: ["tids": wanted], in: nil, contentWorld: Self.bridgeWorld)
+        var found: [Int: DesignHit] = [:]
+        for hit in (value as? [Any] ?? []).compactMap(DesignHit.init(bridge:)) { found[hit.tid] = hit }
+        return found
+    }
+
     // MARK: Events
 
     private func finishBoot(_ result: Result<CGSize, any Error>) {
