@@ -28,8 +28,13 @@ struct TerminalSplitAccessibilityTests {
         control().adjust(.decrement)
         #expect(abs(ratio - 0.5) < 0.001)
         for _ in 0..<30 { control().adjust(.increment) }
-        #expect(ratio <= 0.85)
+        // The 799 usable points must leave 160 points for the smaller pane.
+        #expect(abs(ratio - 0.799749687) < 0.000001)
+        control().adjust(.increment)
+        #expect(abs(ratio - 0.799749687) < 0.000001)
         for _ in 0..<30 { control().adjust(.decrement) }
-        #expect(ratio >= 0.15)
+        #expect(abs(ratio - 0.200250313) < 0.000001)
+        control().adjust(.decrement)
+        #expect(abs(ratio - 0.200250313) < 0.000001)
     }
 }

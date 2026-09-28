@@ -33,7 +33,7 @@ final class QueueThread {
         store.draft = draft
         window = OffscreenWindow(size: size, dark: false)
         window.show(ThreadView(store: store, active: true, isFocused: false, request: { [host] in host.answer($0) },
-                               commandKey: Self.key, queueState: state)
+                               commandKey: Self.key, listModels: { .empty }, queueState: state)
             .environment(\.threadCommands, commands)
             .environment(\._accessibilityReduceMotion, true))
     }
