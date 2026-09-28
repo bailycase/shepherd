@@ -628,6 +628,7 @@ struct PaneLeafView: View, Equatable {
                 AgentThreadPane(
                     session: vm.sessions.session(for: pane, in: tab),
                     store: vm.threadStores.store(for: agentID),
+                    input: vm.threadStores.input(for: agentID),
                     active: model.isVisible,
                     isFocused: model.isFocused && inspecting == nil,
                     request: { [vm] in try await vm.server.nativeThread(agentID: agentID, request: $0) },
@@ -674,6 +675,7 @@ struct PaneLeafView: View, Equatable {
 struct AgentThreadPane: View {
     var session: TerminalSessionStore.PaneSession
     var store: NativeThreadStore
+    var input: ThreadInput? = nil
     let active: Bool
     let isFocused: Bool
     let request: NativeThreadStore.Request
@@ -705,7 +707,7 @@ struct AgentThreadPane: View {
                            agentName: agentName, workingDirectory: workingDirectory, inspectSubagent: inspectSubagent,
                            steerSubagent: steerSubagent, inspectedRunID: inspectedRunID, review: review, turnActions: turnActions,
                            restartPi: restartPi, authNotice: authNotice, authActions: authActions, slashLogin: designChat ? nil : slashLogin,
-                           designChat: designChat, allowsLocalFiles: true)
+                           designChat: designChat, allowsLocalFiles: true, retainedInput: input)
             case .failed(let reason):
                 PanePlaceholder(text: "session unavailable · \(reason)")
                     .nwTransition(.content)
@@ -1108,7 +1110,7 @@ struct RemoteAgentThreadPane: View {
                 let allLevels = vm.remoteHosts.connections.first { $0.id == ref.hostID }?.supportsAllThinkingLevels ?? false
                 return await ModelCatalog.derive(listing, hostTakesAllLevels: allLevels)
             },
-            designChat: designChat
+            designChat: designChat, retainedInput: vm.remoteThreadStores.input(for: ref)
         )
     }
 }

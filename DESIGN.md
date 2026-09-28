@@ -2066,7 +2066,9 @@ Clicking the thread's blank background focuses the composer, without taking clic
 selectable transcript text, links, buttons, menus, queue editors, or questions. This adds no
 window-wide Tab handler; terminal and editing focus keep their normal keyboard behavior.
 
-Images are resized on the
+Image drafts belong to the thread, so switching remote threads or parking a terminal-bearing
+layout does not discard them. A successful send removes only its submitted image IDs; images
+added while it waits remain for the next message. Images are resized on the
 way in (longest edge 2000px), at most four per message and 2 MiB each, and shown as
 `NWAttachmentChip`s in the row above the field (NWComposer, "with attachment"): 26pt, a
 `lineStrong` line at radius 6, a 20pt thumbnail (radius 4) 3pt from the leading edge, 6pt, the
