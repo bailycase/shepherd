@@ -177,6 +177,36 @@ struct ClientSkillsTests {
         #expect(!relaunched.owes(id))
     }
 
+    @Test func forgettingAnOwedHostDuringDeliveryCannotRecreateItsQueueOrSnapshot() async {
+        let defaults = ScratchDefaults()
+        let gone = UUID(), kept = UUID()
+        let offline = [Self.host("gone", nil, id: gone), Self.host("kept", nil, id: kept)]
+        let model = ClientSkills(defaults: defaults)
+        await model.setAutoUpdate(true, in: offline).value
+        let client = FakeSkillsClient()
+        let live = Self.host("gone", client, id: gone)
+        let gate = SettingsRequestGate()
+        client.beforeRequest = { request in if case .configure = request { await gate.hold() } }
+        let delivery = Task { await model.hostConnected(live) }
+        await gate.waitUntilHeld()
+        model.forget(host: gone)
+        await gate.release()
+        await delivery.value
+        #expect(model.state(of: live) == .offline && !model.owes(gone))
+        #expect(model.owes(kept) && model.problem == nil)
+        await model.setAutoUpdate(false, in: offline).value // stale captured host arrays cannot re-owe it
+        let recreated = ClientSkills(defaults: defaults)
+        #expect(!recreated.owes(gone) && recreated.owes(kept))
+        client.beforeRequest = nil
+        let count = client.requests.count
+        await model.hostConnected(live)
+        model.hostChanged(gone, client.skills)
+        #expect(client.requests.count == count && model.state(of: live) == .offline)
+        let other = FakeSkillsClient()
+        await recreated.hostConnected(Self.host("kept", other, id: kept))
+        #expect(!other.skills.autoUpdate && !recreated.owes(kept))
+    }
+
     @Test func aTerminalMissingSkillRejectionDropsOnlyThatRequest() async {
         let defaults = ScratchDefaults()
         let id = UUID()

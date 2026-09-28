@@ -135,7 +135,11 @@ review and navigation models against gated in-memory request closures (the fixtu
 refuses mutations). It checks atomic prompt/image creation and retained images on rejection,
 completion ownership for replaced sheets, same-revision diff option invalidation and stale file
 replies, route/restoration preservation across compact and regular width, independent Settings,
-composer and Commit presentation in two windows, and release of unmounted per-host stores. Its
+composer and Commit presentation in two windows, and release of unmounted per-host stores.
+`forgotten-automation-regression` gates a run-history response, forgets its host, then confirms
+that neither that reply nor a stale selection recreates it while other hosts' automations stay.
+Shared ClientSettingsTests/ClientSkillsTests cover late forgotten-host replies and durable
+pending work across recreation, plus independent instruction edit/save targets. Its
 `FIXTURE CHECK ok|FAILED client-state` lines are the assertions, not the screenshot.
 
 **The Changes pane's screens.** `review`, `diff`, `review-comment`, `review-base`, `review-pr`,

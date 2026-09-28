@@ -5787,6 +5787,11 @@ beside up-down chevrons.
 
 ### iPhone: Instructions (MobileInstructions, MobileInstructionsEdit)
 
+With Per host selected, each window chooses its own instruction host. Drafts for the same file
+and host remain shared; switching hosts in another window never retargets this window's Save
+or Restore. Explicitly forgetting a host removes its drafts and owed copies, never another
+host's, and late replies cannot bring the forgotten host's data back.
+
 Settings ▸ Instructions edits the root instructions every session Shepherd starts reads, on
 every host (`Settings/InstructionsScreens.swift`; the Mac's page is SettingsInstructions). Each
 host keeps Shepherd's own copies in its support folder and serves them over `instructions.v1`;

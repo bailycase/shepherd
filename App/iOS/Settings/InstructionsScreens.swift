@@ -43,7 +43,7 @@ private struct InstructionsPhonePage: View {
     var body: some View {
         let model = store.instructions
         let hosts = store.hosts
-        let edited = model.edited(in: hosts)
+        let edited = model.edited(in: hosts, selectedHost: navigator.settingsSelection.instructionsHost)
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
                 VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
@@ -67,8 +67,8 @@ private struct InstructionsPhonePage: View {
                         NWListCard {
                             ForEach(InstructionFile.allCases, id: \.self) { file in
                                 Button { navigator.open(.settings(.instructionsFile(file))) } label: {
-                                    InstructionsFileRow(file: file, note: InstructionsPresentation.fileNote(file, text: model.text(file, in: hosts), sentence: true),
-                                                        edited: model.isEdited(file, in: hosts))
+                                    InstructionsFileRow(file: file, note: InstructionsPresentation.fileNote(file, text: model.text(file, in: hosts, selectedHost: navigator.settingsSelection.instructionsHost), sentence: true),
+                                                        edited: model.isEdited(file, in: hosts, selectedHost: navigator.settingsSelection.instructionsHost))
                                 }
                                 .buttonStyle(.nwRow(radius: 0))
                             }
@@ -152,6 +152,7 @@ private struct InstructionsFileRow: View {
 /// every host on, how it compares ("synced 2m ago", "differs · 2 lines", "offline · will
 /// sync"); per host, the files it holds, the host being edited checked, and a tap to edit it.
 private struct InstructionsHostLine: View {
+    @Environment(MobileNavigator.self) private var navigator
     let model: ClientInstructions
     let host: SettingsHost
     let hosts: [SettingsHost]
@@ -160,8 +161,8 @@ private struct InstructionsHostLine: View {
         if model.sameEverywhere {
             line(chosen: false)
         } else {
-            Button { model.chosenHost = host.id } label: {
-                line(chosen: model.edited(in: hosts)?.id == host.id)
+            Button { navigator.settingsSelection.instructionsHost = host.id } label: {
+                line(chosen: model.edited(in: hosts, selectedHost: navigator.settingsSelection.instructionsHost)?.id == host.id)
             }
             .buttonStyle(.nwRow(radius: 0))
             .accessibilityHint("Edits \(host.name)'s own files")
@@ -244,6 +245,7 @@ private struct InstructionsUnavailable: View {
 /// The phone's editor (MobileInstructionsEdit): the file under an inline header naming it and
 /// where a save goes ("every host · edited"), Save trailing, and the key row over the keyboard.
 struct InstructionsEditorScreen: View {
+    @Environment(MobileNavigator.self) private var navigator
     let file: InstructionFile
     @Environment(MobileHosts.self) private var hosts
     @State private var focus = InstructionsEditorFocus()
@@ -252,13 +254,14 @@ struct InstructionsEditorScreen: View {
         let store = SettingsStore.of(hosts)
         let model = store.instructions
         let settingsHosts = store.hosts
-        let edited = model.edited(in: settingsHosts)
-        let isEdited = model.isEdited(file, in: settingsHosts)
+        let selectedHost = navigator.settingsSelection.instructionsHost
+        let edited = model.edited(in: settingsHosts, selectedHost: selectedHost)
+        let isEdited = model.isEdited(file, in: settingsHosts, selectedHost: selectedHost)
         Group {
             if let edited, model.files(of: edited).snapshot != nil {
                 InstructionsTextEditor(
-                    text: Binding(get: { model.text(file, in: settingsHosts) }, set: { model.setText($0, file: file, in: settingsHosts) }),
-                    saved: model.saved(file, in: settingsHosts) ?? "",
+                    text: Binding(get: { model.text(file, in: settingsHosts, selectedHost: selectedHost) }, set: { model.setText($0, file: file, in: settingsHosts, selectedHost: selectedHost) }),
+                    saved: model.saved(file, in: settingsHosts, selectedHost: selectedHost) ?? "",
                     metrics: .phone, focus: focus, accessibilityLabel: file.fileName
                 )
             } else {
@@ -288,7 +291,7 @@ struct InstructionsEditorScreen: View {
                     Text(file.fileName)
                         .font(.nwMono(NWTextStyle.ui.size, .semibold))
                         .foregroundStyle(Color.nw.textPrimary)
-                    Text(model.scope(in: settingsHosts) + (isEdited ? " · edited" : ""))
+                    Text(model.scope(in: settingsHosts, selectedHost: selectedHost) + (isEdited ? " · edited" : ""))
                         .font(.nw(.micro, weight: .regular))
                         .foregroundStyle(Color.nw.textTertiary)
                 }
@@ -298,9 +301,9 @@ struct InstructionsEditorScreen: View {
                 if model.busy {
                     ProgressView().progressViewStyle(NWSpinnerStyle())
                 } else {
-                    Button("Save") { Task { await model.save(file, in: settingsHosts) } }
+                    Button("Save") { Task { await model.save(file, in: settingsHosts, selectedHost: selectedHost) } }
                         .disabled(!isEdited)
-                        .accessibilityLabel(model.saveTitle(in: settingsHosts))
+                        .accessibilityLabel(model.saveTitle(in: settingsHosts, selectedHost: selectedHost))
                 }
             }
         }
@@ -314,6 +317,7 @@ struct InstructionsEditorScreen: View {
 /// The iPad's page (iPadSettingsInstructions): Every host | Per host with each host's state,
 /// History and Save, the files as tabs, the editor, and the order pi reads them in.
 private struct InstructionsPadPage: View {
+    @Environment(MobileNavigator.self) private var navigator
     let store: SettingsStore
     @State private var file: InstructionFile = .agents
     @State private var focus = InstructionsEditorFocus()
@@ -322,7 +326,7 @@ private struct InstructionsPadPage: View {
     var body: some View {
         let model = store.instructions
         let hosts = store.hosts
-        let edited = model.edited(in: hosts)
+        let edited = model.edited(in: hosts, selectedHost: navigator.settingsSelection.instructionsHost)
         let snapshot = edited.flatMap { model.files(of: $0).snapshot }
         VStack(alignment: .leading, spacing: MobileLayout.instructionsPadSpacing) {
             // History's popover hangs off its button, so the actions are built once: only the
@@ -347,7 +351,7 @@ private struct InstructionsPadPage: View {
                 }
             }
             if let snapshot {
-                InstructionsFileTabs(file: $file, note: { InstructionsPresentation.fileNote($0, text: model.text($0, in: hosts)) })
+                InstructionsFileTabs(file: $file, note: { InstructionsPresentation.fileNote($0, text: model.text($0, in: hosts, selectedHost: navigator.settingsSelection.instructionsHost)) })
                 editor(model, hosts: hosts, path: snapshot.path(of: file))
                 if !focus.editing {
                     InstructionsReadOrder(file: file)
@@ -387,12 +391,12 @@ private struct InstructionsPadPage: View {
             } else {
                 Menu {
                     ForEach(hosts) { host in
-                        Button { model.chosenHost = host.id } label: {
-                            if host.id == model.edited(in: hosts)?.id { Label(host.name, systemImage: "checkmark") } else { Text(host.name) }
+                        Button { navigator.settingsSelection.instructionsHost = host.id } label: {
+                            if host.id == model.edited(in: hosts, selectedHost: navigator.settingsSelection.instructionsHost)?.id { Label(host.name, systemImage: "checkmark") } else { Text(host.name) }
                         }
                     }
                 } label: {
-                    SettingsMenuLabel(model.edited(in: hosts)?.name ?? "No host", mono: true)
+                    SettingsMenuLabel(model.edited(in: hosts, selectedHost: navigator.settingsSelection.instructionsHost)?.name ?? "No host", mono: true)
                 }
                 .accessibilityLabel("Host to edit")
             }
@@ -401,19 +405,20 @@ private struct InstructionsPadPage: View {
 
     /// History and Save.
     private func actions(_ model: ClientInstructions, hosts: [SettingsHost], ready: Bool) -> some View {
-        HStack(spacing: NW.Space.m) {
+        let selectedHost = navigator.settingsSelection.instructionsHost
+        return HStack(spacing: NW.Space.m) {
             Button("History") { showsHistory = true }
                 .buttonStyle(.nw(.secondary, size: .l))
                 .disabled(!ready)
                 .popover(isPresented: $showsHistory, arrowEdge: .top) {
-                    InstructionsHistoryList(entries: model.history(file, in: hosts)) { entry in
+                    InstructionsHistoryList(entries: model.history(file, in: hosts, selectedHost: selectedHost)) { entry in
                         showsHistory = false
-                        Task { await model.restore(entry, in: hosts) }
+                        Task { await model.restore(entry, in: hosts, selectedHost: selectedHost) }
                     }
                 }
-            Button(model.saveTitle(in: hosts)) { Task { await model.save(file, in: hosts) } }
+            Button(model.saveTitle(in: hosts, selectedHost: selectedHost)) { Task { await model.save(file, in: hosts, selectedHost: selectedHost) } }
                 .buttonStyle(.nw(.primary, size: .l))
-                .disabled(!model.isEdited(file, in: hosts) || model.busy)
+                .disabled(!model.isEdited(file, in: hosts, selectedHost: selectedHost) || model.busy)
         }
         .fixedSize()
     }
@@ -421,6 +426,7 @@ private struct InstructionsPadPage: View {
     /// The editor card: the file's path and "● edited" over the file.
     private func editor(_ model: ClientInstructions, hosts: [SettingsHost], path: String) -> some View {
         let nw = Color.nw
+        let selectedHost = navigator.settingsSelection.instructionsHost
         return VStack(spacing: 0) {
             HStack(spacing: NW.Space.m) {
                 Text(path)
@@ -429,7 +435,7 @@ private struct InstructionsPadPage: View {
                     .lineLimit(1)
                     .truncationMode(.head)
                 Spacer(minLength: NW.Space.m)
-                if model.isEdited(file, in: hosts) {
+                if model.isEdited(file, in: hosts, selectedHost: selectedHost) {
                     Text("● edited").font(.nw(.caption)).foregroundStyle(nw.lanternText)
                 }
             }
@@ -438,8 +444,8 @@ private struct InstructionsPadPage: View {
             .background(nw.bgSunken)
             NWHairline()
             InstructionsTextEditor(
-                text: Binding(get: { model.text(file, in: hosts) }, set: { model.setText($0, file: file, in: hosts) }),
-                saved: model.saved(file, in: hosts) ?? "",
+                text: Binding(get: { model.text(file, in: hosts, selectedHost: selectedHost) }, set: { model.setText($0, file: file, in: hosts, selectedHost: selectedHost) }),
+                saved: model.saved(file, in: hosts, selectedHost: selectedHost) ?? "",
                 metrics: .pad, focus: focus, accessibilityLabel: file.fileName
             )
             .frame(minHeight: MobileLayout.instructionsEditorMinHeight, maxHeight: .infinity)

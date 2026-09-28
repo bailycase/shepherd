@@ -8,6 +8,8 @@ extension FixtureCatalog {
     static var clientState: [FixtureScreen] {
         [FixtureScreen(name: "client-state-regressions", hosts: NewThreadFixtures.hosts(), prepare: { app in
             await ClientStateChecks.run(app)
+        }), FixtureScreen(name: "forgotten-automation-regression", hosts: AutomationsFixtureData.fleet(), prepare: { app in
+            await ClientStateChecks.forgottenAutomation(app)
         })]
     }
 }
@@ -27,22 +29,51 @@ enum ClientStateChecks {
         await review(app)
     }
 
+    static func forgottenAutomation(_ app: MobileApp) async {
+        let gate = ClientStateGate<[AutomationRun]>()
+        var reads = 0
+        let store = AutomationsStore.of(app.hosts, readRuns: { _, _ in
+            reads += 1
+            if reads == 1 { return try await gate.wait() }
+            return []
+        })
+        guard let gone = app.hosts.hosts.first(where: { !$0.state.automations.isEmpty }),
+              let automation = gone.state.automations.first else { check(false, "automation fixture has a host"); return }
+        let key = AutomationKey(host: gone.id, automation: automation.id)
+        store.chosen = key
+        store.confirming = .init(key: key, kind: .stop)
+        let task = Task { await store.refreshRuns() }
+        await FixtureWindows.wait(seconds: 5) { gate.isWaiting }
+        guard gate.isWaiting else { check(false, "automation read reached gate"); return }
+        AutomationsStore.forget(host: gone.id, in: app.hosts)
+        gate.finish(.success([]))
+        await task.value
+        AutomationsStore.choose(key)
+        store.chosen = key
+        store.confirming = .init(key: key, kind: .stop)
+        check(store.chosen == nil && store.confirming == nil && store.details.keys.allSatisfy { $0.host != gone.id },
+              "forgotten automation replies and selection cannot recreate host state")
+        check(store.model.rows.allSatisfy { $0.key.host != gone.id } && !store.model.rows.isEmpty,
+              "forget removes only one host's automations")
+    }
+
     static func sceneOwnershipAndForget(_ app: MobileApp) {
         let a = MobileNavigator(), b = MobileNavigator()
         let ref = FixtureData.ref(FixtureData.preview)
         a.settingsSelection.chosenHost = ref.host
         a.settingsSelection.page = .instructions
+        a.settingsSelection.instructionsHost = ref.host
         a.composerPresentation.state(for: ref).choosingModel = true
         a.composerPresentation.state(for: ref).showingContext = true
         a.commitPopover = ref
-        check(b.settingsSelection.chosenHost == nil && b.settingsSelection.page == .appearance,
+        check(b.settingsSelection.chosenHost == nil && b.settingsSelection.instructionsHost == nil && b.settingsSelection.page == .appearance,
               "Settings host and page belong to their window")
         check(!b.composerPresentation.state(for: ref).choosingModel && !b.composerPresentation.state(for: ref).showingContext,
               "composer sheets open in one window only")
         b.commitPopover = nil
         check(a.commitPopover == ref, "closing another window's commit does not close this one")
         a.forget(host: ref.host)
-        check(a.settingsSelection.chosenHost == nil && a.commitPopover == nil
+        check(a.settingsSelection.chosenHost == nil && a.settingsSelection.instructionsHost == nil && a.commitPopover == nil
               && !a.composerPresentation.state(for: ref).showingContext, "forget clears scene-local host state")
 
         let forgotten = AgentRef(host: UUID(), agent: AgentID(rawValue: "forgotten"))

@@ -225,6 +225,7 @@ public final class ClientSkills {
         didSet { saveOwed() }
     }
 
+    @ObservationIgnored private var forgotten: Set<UUID> = []
     @ObservationIgnored private var catchingUp: Set<UUID> = []
     @ObservationIgnored private var installAttempts: [String: UUID] = [:]
     @ObservationIgnored private let defaults: UserDefaults
@@ -245,10 +246,24 @@ public final class ClientSkills {
         }
     }
 
+    /// Explicit Forget, not a disconnect: discard only this host's saved obligations.
+    public func forget(host: UUID) {
+        forgotten.insert(host)
+        loaded[host] = nil
+        owed[host] = nil
+        sending[host] = nil
+        for key in Array(installs.keys) {
+            installs[key]?.steps.removeAll { $0.id == host }
+            if installs[key]?.steps.isEmpty == true { dismissInstall(key) }
+        }
+        removal?.hosts.removeAll { $0 == host }
+        if removal?.hosts.isEmpty == true { removal = nil }
+    }
+
     // MARK: Reading
 
     public func state(of host: SkillsHost) -> HostSkills {
-        guard host.isConnected else { return .offline }
+        guard !forgotten.contains(host.id), host.isConnected else { return .offline }
         guard host.serves else { return .unsupported }
         return loaded[host.id] ?? .loading
     }
@@ -260,6 +275,7 @@ public final class ClientSkills {
 
     /// The hosts a change goes to: every host, or with Same skills on every host off the first.
     public func targets(in hosts: [SkillsHost]) -> [SkillsHost] {
+        let hosts = hosts.filter { !forgotten.contains($0.id) }
         if sameEverywhere { return hosts }
         return (reference(in: hosts) ?? hosts.first).map { [$0] } ?? []
     }
@@ -404,6 +420,7 @@ public final class ClientSkills {
 
     /// A host's skills changed without this page (another device, the host's own check).
     public func hostChanged(_ id: UUID, _ snapshot: SkillsSnapshot) {
+        guard !forgotten.contains(id) else { return }
         loaded[id] = .loaded(snapshot)
     }
 
@@ -484,11 +501,11 @@ public final class ClientSkills {
 
     /// A repository's skills, looked up on the first connected host (Add from repo).
     public func lookUp(_ repo: String, in hosts: [SkillsHost]) async throws -> RepoSkills {
-        guard let host = targets(in: hosts).first(where: { $0.isConnected && $0.serves }) ?? hosts.first(where: { $0.isConnected && $0.serves }),
-              let client = host.client else {
+        guard let host = targets(in: hosts).first(where: { $0.isConnected && $0.serves }) ?? hosts.first(where: { !forgotten.contains($0.id) && $0.isConnected && $0.serves }),
+              host.client != nil else {
             throw RemoteHostClientError.rejected(code: "offline", message: "No host is connected to look it up.")
         }
-        guard case .repo(let found) = try await client.skills(.lookUp(repo: repo)) else {
+        guard case .repo(let found) = try await request(.lookUp(repo: repo), on: host) else {
             throw RemoteHostClientError.rejected(code: "protocol", message: "The host didn't answer with the repository.")
         }
         return found
@@ -509,6 +526,7 @@ public final class ClientSkills {
 
     private func run(_ key: String, _ request: RemoteSkillsRequest, in hosts: [SkillsHost]) async {
         let destinations = targets(in: hosts)
+        guard !destinations.isEmpty else { return }
         let attempt = UUID()
         installAttempts[key] = attempt
         installs[key] = SkillInstall(steps: destinations.map { host in
@@ -516,7 +534,8 @@ public final class ClientSkills {
         }, request: request)
         for host in destinations {
             guard installAttempts[key] == attempt, installs[key]?.cancelled == false, !Task.isCancelled else { break }
-            guard let client = host.client else {
+            guard !forgotten.contains(host.id) else { continue }
+            guard host.client != nil else {
                 owe(request, to: host.id)
                 continue
             }
@@ -526,11 +545,12 @@ public final class ClientSkills {
             }
             step(key, host.id, .copying)
             do {
-                if case .skills(let snapshot) = try await client.skills(request) { loaded[host.id] = .loaded(snapshot) }
+                if case .skills(let snapshot) = try await self.request(request, on: host) { loaded[host.id] = .loaded(snapshot) }
                 guard installAttempts[key] == attempt else { return }
                 step(key, host.id, .installed)
             } catch {
                 guard installAttempts[key] == attempt else { return }
+                guard !forgotten.contains(host.id) else { continue }
                 step(key, host.id, .failed(settingsProblem(error)))
             }
         }
@@ -539,6 +559,7 @@ public final class ClientSkills {
     /// Installs a skill from skills.sh: its repository is looked up on a host to find the
     /// skill's folder, then installed like one from Add from repo.
     public func install(_ key: String, source: String, skill: String, invocation: SkillInvocation?, in hosts: [SkillsHost]) async {
+        guard !targets(in: hosts).isEmpty else { return }
         let attempt = UUID()
         installAttempts[key] = attempt
         installs[key] = SkillInstall(steps: targets(in: hosts).map { SkillInstall.Step(id: $0.id, name: $0.name, state: .waiting) })
@@ -605,15 +626,17 @@ public final class ClientSkills {
     /// owed it (except a check, which it does itself).
     private func send(_ request: RemoteSkillsRequest, name: String?, to targets: [SkillsHost]) async {
         for host in targets {
-            guard let client = host.client else {
+            guard !forgotten.contains(host.id) else { continue }
+            guard host.client != nil else {
                 if request != .checkUpdates { owe(request, to: host.id) }
                 continue
             }
             guard host.serves else { continue }
             if let name { sending[host.id, default: []].insert(name) }
             do {
-                if case .skills(let snapshot) = try await client.skills(request) { loaded[host.id] = .loaded(snapshot) }
+                if case .skills(let snapshot) = try await self.request(request, on: host) { loaded[host.id] = .loaded(snapshot) }
             } catch {
+                guard !forgotten.contains(host.id) else { continue }
                 problem = targets.count > 1 ? "\(host.name): \(settingsProblem(error))" : settingsProblem(error)
                 await fetch(host)
             }
@@ -622,18 +645,26 @@ public final class ClientSkills {
     }
 
     private func fetch(_ host: SkillsHost) async {
-        guard let client = host.client, host.serves else { return }
+        guard !forgotten.contains(host.id), host.client != nil, host.serves else { return }
         if loaded[host.id] == nil { loaded[host.id] = .loading }
         do {
-            if case .skills(let snapshot) = try await client.skills(.fetch) { loaded[host.id] = .loaded(snapshot) }
+            if case .skills(let snapshot) = try await request(.fetch, on: host) { loaded[host.id] = .loaded(snapshot) }
         } catch {
+            guard !forgotten.contains(host.id) else { return }
             loaded[host.id] = .failed(settingsProblem(error))
         }
     }
 
+    private func request(_ request: RemoteSkillsRequest, on host: SkillsHost) async throws -> RemoteSkillsResult {
+        guard !forgotten.contains(host.id), let client = host.client else { throw CancellationError() }
+        let result = try await client.skills(request)
+        guard !forgotten.contains(host.id) else { throw CancellationError() }
+        return result
+    }
+
     /// Acknowledge one entry at a time; never consume a replacement or an unattempted suffix.
     private func catchUp(_ host: SkillsHost) async {
-        guard let client = host.client, let requests = owed[host.id], !requests.isEmpty,
+        guard !forgotten.contains(host.id), host.client != nil, let requests = owed[host.id], !requests.isEmpty,
               catchingUp.insert(host.id).inserted else { return }
         defer { catchingUp.remove(host.id) }
         for entry in requests {
@@ -641,7 +672,7 @@ public final class ClientSkills {
             guard owed[host.id]?.contains(where: { $0.id == entry.id }) == true else { continue }
             do {
                 if entry.attempted == true {
-                    guard case .skills(let snapshot) = try await client.skills(.fetch) else { return }
+                    guard case .skills(let snapshot) = try await request(.fetch, on: host) else { return }
                     loaded[host.id] = .loaded(snapshot)
                     switch entry.request {
                     case .remove(let name) where snapshot.skill(name) == nil,
@@ -659,10 +690,11 @@ public final class ClientSkills {
                 }
                 guard let current = owed[host.id]?.firstIndex(where: { $0.id == entry.id }) else { continue }
                 owed[host.id]?[current].attempted = true
-                guard case .skills(let snapshot) = try await client.skills(entry.request) else { return }
+                guard case .skills(let snapshot) = try await request(entry.request, on: host) else { return }
                 loaded[host.id] = .loaded(snapshot)
                 owed[host.id]?.removeAll { $0.id == entry.id }
             } catch {
+                guard !forgotten.contains(host.id) else { return }
                 if case RemoteHostClientError.rejected(code: "no_such_skill", message: _) = error {
                     owed[host.id]?.removeAll { $0.id == entry.id }
                     continue
@@ -681,6 +713,7 @@ public final class ClientSkills {
 
     /// Adds a change a host is owed, dropping any earlier one it replaces.
     private func owe(_ request: RemoteSkillsRequest, to host: UUID) {
+        guard !forgotten.contains(host) else { return }
         var requests = owed[host] ?? []
         switch request {
         case .setOn(let name, _):
