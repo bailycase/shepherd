@@ -441,8 +441,10 @@ timing-sensitive tests. Docs-only changes (`docs/**`, `*.md`) don't trigger it.
 - **Serial within a shard:** on the shared 3-core runner, a parallel run queued tests behind one
   another's main-thread work until their waits ran out. A watchdog samples a test host still
   running after 10 minutes, then ends the run.
-- **Release rules** run on `ubuntu-latest` (stdlib Python). The `CI` job passes only when every
-  shard and the release rules did; it is the one check to require.
+- **Release rules** run on `ubuntu-latest` (stdlib Python). **Extension tests** run there too,
+  with Node 24 and the modular pi package version from `scripts/pi-engine-pin.json`, installed
+  with lifecycle scripts disabled. The `CI` job passes only when every Swift shard, extension
+  tests and release rules did; it is the one check to require.
 - **Caches:** dependency checkouts (keyed on `Package.resolved`) and build products (one entry per
   commit, restored from the nearest earlier one) are cached apart. `scripts/ci_mtimes.py` puts
   each unchanged source's saved mtime back after checkout, so a restored build compiles only
