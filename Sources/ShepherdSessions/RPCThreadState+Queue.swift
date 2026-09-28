@@ -294,8 +294,11 @@ extension RPCThreadState {
               !items.contains(where: { $0.entry.held }) else { return }
         if let ids = sendAfterCapture {
             sendAfterCapture = nil
-            sendNow(ids, completion: { _ in }, operationID: UUID())
-            return
+            let remaining = ids.filter { id in items.contains { $0.entry.id == id && $0.entry.state == .queued } }
+            if !remaining.isEmpty {
+                sendNow(remaining, completion: { _ in }, operationID: UUID())
+                return
+            }
         }
         let queued = items.filter { $0.entry.state == .queued }
         let count = NativeQueueRules.batchCount(queued, mode: effectiveMode)

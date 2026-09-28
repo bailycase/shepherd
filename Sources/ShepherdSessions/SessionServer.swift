@@ -494,7 +494,9 @@ public final class SessionServer: @unchecked Sendable {
         func shutdown() {
             switch self {
             case .pty(let s): s.shutdown()
-            case .rpc(let s, _): s.shutdown()
+            case .rpc(let s, let thread):
+                thread.cancelPreparingPrompts()
+                s.shutdown()
             }
         }
     }
