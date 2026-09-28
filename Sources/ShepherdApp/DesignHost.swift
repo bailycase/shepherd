@@ -1405,13 +1405,17 @@ enum DesignExporter {
     /// Stages `outputs` and moves them into `destination`: the one file a single-file export
     /// writes, a ZIP of the staged folder, or the staged folder itself.
     static func place(_ outputs: [String: Data], format: DesignExportFormat, boards: [DesignPath], name: String,
-                      at destination: URL) async throws {
-        let staging = FileManager.default.temporaryDirectory.appendingPathComponent("shepherd-export-\(UUID().uuidString)", isDirectory: true)
+                      at destination: URL,
+                      replace: @escaping @Sendable (URL, URL) throws -> Void = { destination, result in
+                          _ = try FileManager.default.replaceItemAt(destination, withItemAt: result)
+                      }) async throws {
+        // Complete the replacement on the destination volume before touching the old export.
+        let staging = destination.deletingLastPathComponent().appendingPathComponent(".shepherd-export-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: staging) }
         let folder = staging.appendingPathComponent(DesignExportNames.fileName(name), isDirectory: true)
         try await write(outputs, into: folder)
         let isFolder = DesignExportNames.destination(format, boards: boards, design: name).isFolder
         try await Task.detached(priority: .userInitiated) {
-            defer { try? FileManager.default.removeItem(at: staging) }
             let result: URL
             if format == .zip {
                 result = staging.appendingPathComponent("export.zip")
@@ -1423,13 +1427,7 @@ enum DesignExporter {
                 result = folder.appendingPathComponent(only)
             }
             if FileManager.default.fileExists(atPath: destination.path) {
-                do {
-                    _ = try FileManager.default.replaceItemAt(destination, withItemAt: result)
-                } catch {
-                    // Another volume: what was there goes, as the save panel confirmed.
-                    try FileManager.default.removeItem(at: destination)
-                    try FileManager.default.moveItem(at: result, to: destination)
-                }
+                try replace(destination, result)
             } else {
                 try FileManager.default.moveItem(at: result, to: destination)
             }

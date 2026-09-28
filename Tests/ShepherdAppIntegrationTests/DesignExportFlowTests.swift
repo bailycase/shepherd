@@ -143,6 +143,32 @@ struct DesignExportFlowTests {
         #expect(model.exportTitle == "Export 2 boards" && model.format == .html)
     }
 
+    @Test(arguments: [false, true])
+    func aFailedReplacementKeepsThePreviousExport(isFolder: Bool) async throws {
+        let root = try makeScratchDirectory("export-replace")
+        let destination = root.appendingPathComponent(isFolder ? "Pages" : "A.html")
+        let sentinel = Data("previous export".utf8)
+        if isFolder { try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true) }
+        let oldFile = isFolder ? destination.appendingPathComponent("old.html") : destination
+        try sentinel.write(to: oldFile)
+        let outputs = isFolder ? ["A.html": Data("new A".utf8), "B.html": Data("new B".utf8)] : ["A.html": Data("new A".utf8)]
+        let boards = outputs.keys.sorted().map { DesignPath($0.replacingOccurrences(of: ".html", with: ".dc.html"))! }
+        do {
+            try await DesignExporter.place(outputs, format: .html, boards: boards, name: "Pages", at: destination) { old, staged in
+                #expect(old == destination)
+                #expect(staged.path.hasPrefix(root.path + "/.shepherd-export-"), "staging is on the destination volume")
+                #expect(FileManager.default.fileExists(atPath: staged.path), "the new export is complete before replacement")
+                throw CocoaError(.fileWriteOutOfSpace)
+            }
+            Issue.record("replacement should fail")
+        } catch {
+            #expect((error as? CocoaError)?.code == .fileWriteOutOfSpace)
+        }
+        #expect(try Data(contentsOf: oldFile) == sentinel)
+        if isFolder { #expect(files(destination) == ["old.html": sentinel]) }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: root.path) == [destination.lastPathComponent])
+    }
+
     // MARK: Formats
 
     @Test func aZipHoldsThePagesTokensUploadsAndTheCanvasAsAProjectFolder() async throws {
