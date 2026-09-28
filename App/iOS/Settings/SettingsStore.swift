@@ -20,11 +20,6 @@ final class SettingsStore {
 
     /// The hosts as Settings sees them now.
     private(set) var hosts: [SettingsHost] = []
-    /// The host Defaults, Worktrees and Extensions show; the first that serves its settings
-    /// when nil or forgotten.
-    var chosenHost: UUID?
-    /// The page the iPad shows beside the list.
-    var page: SettingsPage = .appearance
 
     @ObservationIgnored private let mobileHosts: MobileHosts
     @ObservationIgnored private var inputs: [Input] = []
@@ -60,15 +55,17 @@ final class SettingsStore {
 
     /// The host Defaults, Worktrees and Extensions show: the one chosen, else the first that
     /// serves its settings, else the first.
-    var settingsHost: SettingsHost? {
+    func settingsHost(chosenHost: UUID?) -> SettingsHost? {
         if let chosen = hosts.first(where: { $0.id == chosenHost }) { return chosen }
         return hosts.first { $0.serves(RemoteProtocol.hostSettingsCapability) } ?? hosts.first
     }
 
     /// The settings host's settings, once read.
-    var settings: HostSettings? {
-        settingsHost.flatMap { hostSettings.settings(of: $0) }
+    func settings(chosenHost: UUID?) -> HostSettings? {
+        settingsHost(chosenHost: chosenHost).flatMap { hostSettings.settings(of: $0) }
     }
+
+    var settings: HostSettings? { settings(chosenHost: nil) }
 
     /// Defaults' value on the list: the model without its provider ("claude-opus").
     var defaultsValue: String? { settings.map(HostSettingsPresentation.defaultsValue) }
@@ -99,7 +96,9 @@ final class SettingsStore {
     var agentVersion: String? { HostSettingsPresentation.agentVersion(settings) }
 
     /// The iPad list's foot names the program beside the Pi page ("pi 0.87.1"), as the Mac's does.
-    var listFootVersion: String? { HostSettingsPresentation.agentVersion(settings, namingPi: page == .pi) }
+    func listFootVersion(page: SettingsPage, chosenHost: UUID?) -> String? {
+        HostSettingsPresentation.agentVersion(settings(chosenHost: chosenHost), namingPi: page == .pi)
+    }
 
     /// The app's host (its thread lists, its models), for a Settings host.
     func mobileHost(_ id: UUID) -> MobileHost? { mobileHosts.host(id) }

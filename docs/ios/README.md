@@ -150,7 +150,9 @@ keep the version for real breaks.
 ## What it does
 
 - **Hosts (`MobileHosts`):** several hosts at once, each with its own `RemoteHostClient`,
-  connection state and backoff (1, 2, 4… up to 30 s). A host that refuses the token or speaks
+  connection state and backoff (1, 2, 4… up to 30 s). DNS and socket establishment share a
+  cancellable 10-second deadline; stopping an attempt releases its resolver and pending sockets.
+  A host that refuses the token or speaks
   another protocol says so on its card and waits for Edit or Retry; an unreachable one says
   Shepherd isn't running there or can't be reached, with the client's own reason in its form. Records (name, address, port) are saved in
   UserDefaults (`shepherd.ios.hosts`); each token is a Keychain generic password per host

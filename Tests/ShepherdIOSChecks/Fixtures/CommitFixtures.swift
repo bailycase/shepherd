@@ -117,7 +117,7 @@ enum CommitFixture {
     /// Opens the iPad popover from Commit… once the review's diff is in.
     @MainActor static func popover(_ app: MobileApp) async {
         await ReviewFixture.loaded(ReviewStores.shared.store(for: FixtureData.ref(FixtureData.preview)))
-        CommitStores.shared.popover = FixtureData.ref(FixtureData.preview)
+        app.navigator.commitPopover = FixtureData.ref(FixtureData.preview)
         await drafted(app)
     }
 }

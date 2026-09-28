@@ -5770,7 +5770,9 @@ beside up-down chevrons.
   deletes the remote branch: merging the PR cleans it up on GitHub."
 - **Extensions:** Bundled with Shepherd: a switch for each extension the host bundles, with its
   note. Installed on <host>: the host's own packages and extensions in mono ("None yet…" without).
-  Updates: Update the agent daily and Update extensions daily, over "<host> runs agent 0.87.1."
+  Updates explains that the agent engine and bundled extensions update with Shepherd on the
+  host, over "<host> runs agent 0.87.1." No daily-update switches: current hosts bundle pi and
+  intentionally ignore those legacy settings.
 - **States:** a spinner while the host answers; offline, "<host> is offline. Its settings show here
   once it's back."; a Shepherd from before `hostSettings.v1`, "…is too old to share its settings.
   Update it to change them here."; a failed read, its reason in `failed`. A change shows at once
@@ -6341,7 +6343,8 @@ landscape, Known gaps).
 
 #### Commit (iPadCommit)
 
-Commit… opens a popover under it (`.commitPopover`): 400pt wide, `bgRaised`, with its arrow; 16pt
+Commit… opens a popover in the invoking window only (`.commitPopover`); another window shares
+its operation status, never its presentation or dismissal. The popover is 400pt wide, `bgRaised`, with its arrow; 16pt
 inset, parts 12pt apart.
 
 - **Title:** "Commit 5 files" at 17/600 and "to agent/refund-events" in mono 12 `textTertiary`

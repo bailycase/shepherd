@@ -229,7 +229,7 @@ struct ThreadTranscript: View {
             }
             // New output at the tail is what "unseen" means, never the content height.
             .onChange(of: rows.last) { _, _ in follow { $0.contentArrived(); return false } }
-            .onChange(of: ComposerStates.shared.state(for: ref).findRequest) { _, request in
+            .onChange(of: navigator.composerPresentation.state(for: ref).findRequest) { _, request in
                 guard let request else { return }
                 Task { await find(request.entryID, proxy: proxy) }
             }

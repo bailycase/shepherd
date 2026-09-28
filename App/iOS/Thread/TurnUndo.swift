@@ -18,6 +18,13 @@ final class TurnUndoStore {
     private(set) var busy: Set<UUID> = []
     /// Why the host refused, for the alert.
     var failure: Failure?
+    @ObservationIgnored private var failureHost: UUID?
+    @ObservationIgnored private var forgottenHosts: Set<UUID> = []
+
+    func forget(host: UUID) {
+        forgottenHosts.insert(host)
+        if failureHost == host { failure = nil; failureHost = nil }
+    }
 
     struct Failure: Identifiable, Equatable {
         let id = UUID()
@@ -34,8 +41,9 @@ final class TurnUndoStore {
     }
 
     private func run(_ query: RemoteAgentQuery, turnID: UUID, title: String, ref: AgentRef, hosts: MobileHosts, threads: ThreadStores) {
-        guard !busy.contains(turnID) else { return }
+        guard !forgottenHosts.contains(ref.host), !busy.contains(turnID) else { return }
         guard let client = hosts.host(ref.host)?.connectedClient else {
+            failureHost = ref.host
             failure = Failure(title: title, message: "The host is offline.")
             return
         }
@@ -46,11 +54,14 @@ final class TurnUndoStore {
                 guard case .changesTurn = try await client.agentQuery(agentID: ref.agent, query: query) else {
                     throw RemoteReviewError.unexpectedReply
                 }
+                guard !forgottenHosts.contains(ref.host) else { return }
                 // The card follows the host's record: pull it now rather than at the next poll.
                 await threads.store(for: ref).refresh()
                 // A review of the turn compares the files as they are now.
                 ReviewStores.shared.store(for: ref).refresh()
             } catch {
+                guard !forgottenHosts.contains(ref.host) else { return }
+                failureHost = ref.host
                 failure = Failure(title: title, message: reviewErrorText(error))
             }
         }
