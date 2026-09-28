@@ -27,7 +27,7 @@ const aliases = {
 const jiti = createJiti(import.meta.url, { alias: aliases });
 const extensionFile = path.join(root, "Extensions/shepherd-mcp.ts");
 const clientFile = path.join(root, "Extensions/shepherd-mcp-client.mjs");
-const { default: install, directToolName, projectConfigPath, parseSettings } = await jiti.import(extensionFile);
+const { default: install, directToolName, projectConfigPath, parseSettings, readServers } = await jiti.import(extensionFile);
 const client = await import(clientFile);
 const fixture = path.join(root, "Tests/Extensions/fixtures/fake-mcp-stdio.mjs");
 
@@ -166,6 +166,24 @@ test("settings default when missing, and a direct tool's name is sanitized and c
   const long = directToolName("s".repeat(40), "t".repeat(40));
   assert.equal(long.length, 64);
   assert.match(long, /^s{40}_t{14}_[0-9a-f]{8}$/);
+});
+
+test("both server maps are merged with the same precedence as Settings", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sh-mcp-maps-"));
+  const file = path.join(dir, "mcp.json");
+  const legacy = { command: "legacy" }, preferred = { command: "preferred" };
+  try {
+    for (const [document, expected] of [
+      [{ servers: { vscode: legacy }, mcpServers: { shepherd: preferred } }, { vscode: legacy, shepherd: preferred }],
+      [{ servers: { same: legacy }, mcpServers: { same: preferred } }, { same: preferred }],
+      [{ servers: { same: legacy }, mcpServers: { same: null } }, { same: legacy }],
+      [{ servers: { same: legacy }, mcpServers: { same: {} } }, {}],
+      [{ servers: { vscode: legacy }, mcpServers: [] }, { vscode: legacy }],
+    ]) {
+      fs.writeFileSync(file, JSON.stringify(document));
+      assert.deepEqual(readServers(file), expected);
+    }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("variables expand from the environment; keychain references wait for the app", () => {

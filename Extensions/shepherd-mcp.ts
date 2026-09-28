@@ -117,7 +117,7 @@ function withoutShepherd(entry: Record<string, unknown>): Record<string, unknown
   return rest;
 }
 
-/** `{name: entry}` from `mcpServers` (or VS Code's `servers`); anything unreadable is no servers. */
+/** Merge both server maps, preferring `mcpServers` like Settings; unreadable files have no servers. */
 export function readServers(file: string): Record<string, Record<string, unknown>> {
   let parsed: unknown;
   try {
@@ -126,12 +126,14 @@ export function readServers(file: string): Record<string, Record<string, unknown
     return {};
   }
   if (!isObject(parsed)) return {};
-  const block = isObject(parsed.mcpServers) ? parsed.mcpServers : isObject(parsed.servers) ? parsed.servers : {};
-  const out: Record<string, Record<string, unknown>> = {};
-  for (const [name, entry] of Object.entries(block)) {
-    if (isObject(entry) && transportKind(entry)) out[name] = entry;
+  const out = new Map<string, Record<string, unknown>>();
+  for (const block of [parsed.servers, parsed.mcpServers]) {
+    if (!isObject(block)) continue;
+    for (const [name, entry] of Object.entries(block)) {
+      if (isObject(entry)) out.set(name, entry);
+    }
   }
-  return out;
+  return Object.fromEntries([...out].filter(([, entry]) => transportKind(entry)));
 }
 
 /** The repo's `.mcp.json`: at `cwd`, or at the nearest ancestor holding `.git`, where the search stops. */
