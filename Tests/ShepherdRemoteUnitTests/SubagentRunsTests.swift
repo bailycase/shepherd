@@ -180,9 +180,12 @@ struct SubagentRunsTests {
         #expect(sections.earlier.map(\.runID) == ["old2", "old1"])
     }
 
-    @Test func withoutPlacementsEveryRunIsCurrent() {
-        let runs = [Self.run("b", startedAt: 2), Self.run("a", startedAt: 1)]
-        #expect(nativeRunSections(runs, placements: [:], turnOrder: []).current.map(\.runID) == ["a", "b"])
+    @Test func withoutPlacementsOnlyLiveRunsAreCurrent() {
+        let runs = [Self.run("b", startedAt: 2), Self.run("old", state: "complete", startedAt: 0, endedAt: 3),
+                    Self.run("a", startedAt: 1)]
+        let sections = nativeRunSections(runs, placements: [:], turnOrder: [])
+        #expect(sections.current.map(\.runID) == ["a", "b"])
+        #expect(sections.earlier.map(\.runID) == ["old"])
     }
 
     @Test func theTallyCountsLivePhasesWhileAnyRunIsLive() {

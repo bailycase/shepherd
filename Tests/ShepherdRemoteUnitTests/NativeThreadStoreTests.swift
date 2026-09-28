@@ -862,6 +862,29 @@ struct NativeThreadStoreTests {
         #expect(dialog == "ok" && answer == .confirm(value: true))
     }
 
+    @Test func aFinishedTrayDismissesOnlyAfterAnAcceptedSendAndStaysOutOfLaterHistoryPages() async {
+        var opening = F.user("original", id: "u1")
+        opening.timestamp = 100
+        let run = F.run("worker", state: "complete", startedAt: 110, endedAt: 200, toolCallID: "spawn")
+        let tool = F.tool("shepherd_child_start", id: "tool", callID: "spawn")
+        let (store, host, task) = await started(F.snapshot(messages: [opening, tool], subagents: [run]))
+        defer { task.cancel() }
+        #expect(store.tray?.cells.count == 1)
+        store.draft = "next"
+        await store.send()
+        #expect(store.tray != nil, "a refused send preserves the completed summary")
+        host.acceptAll()
+        await store.send()
+        #expect(store.tray == nil, "acceptance dismisses it before the host echo arrives")
+        #expect(store.placements.values.flatMap(\.all).map(\.runID) == ["worker"], "the transcript keeps its original record")
+        host.snapshot = F.snapshot(revision: 2, messages: [F.assistant("new reply", id: "reply")], subagents: [run])
+        await store.refresh()
+        #expect(store.tray == nil, "an unloaded opener must not resurrect a session-wide tray")
+        host.snapshot = F.snapshot(session: "new-session", revision: 1, messages: [opening], subagents: [run])
+        await store.refresh()
+        #expect(store.tray != nil, "a session change resets the remembered turn boundary")
+    }
+
     @Test func stopAllCancelsEveryLiveSubagentThenAbortsTheTurn() async {
         let runs = [F.run("live1"), F.run("done", state: "complete"), F.run("live2", state: "queued")]
         let (store, host, task) = await started(F.snapshot(subagents: runs))

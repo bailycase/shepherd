@@ -175,8 +175,8 @@ struct ThreadView: View {
                 .onScrollGeometryChange(for: NativeScrollProbe.self, of: Self.probe) { old, new in
                     // Intent is a wheel tick (350 ms window) or a live drag phase.
                     let gesture = Date() <= wheelIntentUntil || follower.userScrolling
-                    // The size-change anchor does not re-pin when the inset or the composer
-                    // changes under it; while stuck, every layout change lands on the tail.
+                    // Native anchoring can report size and offset adjustments separately.
+                    // After a send, keep following through the composer's tray collapse.
                     if follower.observe(from: old, to: new, gesture: gesture) {
                         proxy.scrollTo(Self.bottomID, anchor: .bottom)
                     }
@@ -198,21 +198,16 @@ struct ThreadView: View {
                     // thing in the thread, and the reply streams in under it. A follow-up that
                     // waits in Up next leaves the reader where they are, now and when it goes.
                     let queued = store.lastSendQueued
+                    let wasFollowing = follower.sticky
                     follower.sent(queued: queued)
                     if !queued {
                         historyAnchor.cancel()
                         jumpedTurn = nil
-                        proxy.scrollTo(Self.bottomID, anchor: .bottom)
-                    }
-                }
-                .onChange(of: rows.last(where: \.isUser)?.id) { _, id in
-                    guard id != nil else { return }
-                    let session = store.sessionKey
-                    Task { @MainActor in
-                        await Task.yield()
-                        guard !Task.isCancelled, store.isLive, store.sessionKey == session,
-                              follower.userTurnArrived() else { return }
-                        proxy.scrollTo(Self.bottomID, anchor: .bottom)
+                        // Already following, let native size anchoring carry the echo and the
+                        // collapsing tray together instead of issuing two competing jumps.
+                        if !wasFollowing {
+                            proxy.scrollTo(Self.bottomID, anchor: .bottom)
+                        }
                     }
                 }
                 // New output at the tail is what "unseen" means, never the content height.
