@@ -422,21 +422,18 @@ public struct NativeSubagentPlacement: Equatable, Sendable {
     public var isEmpty: Bool { byToolCall.isEmpty && trailing.isEmpty }
 }
 
-/// Every subagent belongs to the turn whose tool rows contain its spawn call. Runs whose spawn
-/// call is in no loaded turn (older publishes, paged-out history) attach to the last agent
-/// turn as trailing cards, so nothing live is ever hidden.
+/// Every subagent belongs to the turn whose tool rows contain its spawn call. An unloaded
+/// or unknown spawn has no transcript placement; the tray and inspector still expose the run.
+/// Assigning it to the latest reply would move old records whenever another turn arrives.
 public func nativeSubagentPlacements(_ subagents: [ChildRun], turns: [NativeTurn]) -> [String: NativeSubagentPlacement] {
     var placements: [String: NativeSubagentPlacement] = [:]
     var owner: [String: String] = [:]
     for turn in turns where !turn.isUser {
         for id in turn.messages.compactMap(\.toolCallID) { owner[id] = turn.id }
     }
-    let lastAgentTurn = turns.last { !$0.isUser }?.id
     for run in subagents {
         if let id = run.toolCallID, let turnID = owner[id] {
             placements[turnID, default: NativeSubagentPlacement()].byToolCall[id, default: []].append(run)
-        } else if let lastAgentTurn {
-            placements[lastAgentTurn, default: NativeSubagentPlacement()].trailing.append(run)
         }
     }
     return placements
@@ -531,6 +528,36 @@ public func nativeSubagentRollup(_ runs: [ChildRun]) -> String? {
 public func nativeSubagentNeedsYouLabel(_ runs: [ChildRun]) -> String? {
     let n = runs.count(where: \.needsAttention)
     return n > 0 ? "\(n) subagent\(n == 1 ? "" : "s") need\(n == 1 ? "s" : "") you" : nil
+}
+
+/// One automatic history page per visit to the top. A failed or unchanged cursor is not
+/// retried by layout or polling; a new session starts a fresh paging history.
+@MainActor
+public final class NativeHistoryPaging {
+    public var visible = false
+
+    /// Layout can hide and reveal the sentinel while prepending. Only another scroll away
+    /// from it opens a new visit, never those transient visibility changes.
+    public func beginScroll() {
+        if !visible { loadedThisVisit = false }
+    }
+    private var session: String?
+    private var attemptedCursor: String?
+    private var loadedThisVisit = false
+
+    public init() {}
+
+    public func takeRequest(session: String?, cursor: String?, enabled: Bool) -> Bool {
+        if self.session != session {
+            self.session = session
+            attemptedCursor = nil
+            loadedThisVisit = false
+        }
+        guard enabled, visible, !loadedThisVisit, let cursor, cursor != attemptedCursor else { return false }
+        attemptedCursor = cursor
+        loadedThisVisit = true
+        return true
+    }
 }
 
 // MARK: Sticky scroll

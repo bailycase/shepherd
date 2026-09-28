@@ -705,7 +705,7 @@ struct AgentThreadPane: View {
                            agentName: agentName, workingDirectory: workingDirectory, inspectSubagent: inspectSubagent,
                            steerSubagent: steerSubagent, inspectedRunID: inspectedRunID, review: review, turnActions: turnActions,
                            restartPi: restartPi, authNotice: authNotice, authActions: authActions, slashLogin: designChat ? nil : slashLogin,
-                           designChat: designChat)
+                           designChat: designChat, allowsLocalFiles: true)
             case .failed(let reason):
                 PanePlaceholder(text: "session unavailable · \(reason)")
                     .nwTransition(.content)

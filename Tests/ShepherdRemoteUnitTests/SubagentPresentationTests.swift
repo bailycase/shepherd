@@ -61,15 +61,35 @@ struct SubagentGroupTests {
 struct SubagentPlacementTests {
     typealias F = Fixture
 
-    @Test func runsSitAtTheirSpawnCallOrTrailTheLastAgentTurn() {
+    @Test func runsSitOnlyAtTheirLoadedSpawnCall() {
         let spawnA = F.tool("shepherd_child_start", callID: "spawn-a"), spawnB = F.tool("shepherd_child_start", callID: "spawn-b")
         let turns = nativeTurns([F.user(), F.assistant("Splitting."), spawnA, F.tool("read"), F.user(), spawnB])
         let runA = F.run("ra", toolCallID: "spawn-a"), runB = F.run("rb", toolCallID: "spawn-b")
         let orphan = F.run("ro", state: "complete", toolCallID: "gone"), bare = F.run("rn")
         let placements = nativeSubagentPlacements([runA, runB, orphan, bare], turns: turns)
         #expect(placements[turns[1].id] == NativeSubagentPlacement(byToolCall: ["spawn-a": [runA]]))
-        #expect(placements[turns[3].id] == NativeSubagentPlacement(byToolCall: ["spawn-b": [runB]], trailing: [orphan, bare]))
+        #expect(placements[turns[3].id] == NativeSubagentPlacement(byToolCall: ["spawn-b": [runB]]))
         #expect(placements.count == 2)
+    }
+
+    @Test func olderRunsNeverMoveToNewRepliesAndReturnWhenTheirSpawnLoads() {
+        let finished = F.run("done", state: "complete", toolCallID: "old-spawn")
+        let live = F.run("live", toolCallID: "old-spawn")
+        let runs = [finished, live]
+        let recent = [F.user("make a pr", id: "new-user"), F.assistant("Opened the PR", id: "new-answer")]
+        let more = recent + [F.user("next", id: "next-user"), F.assistant("Next reply", id: "next-answer")]
+        for messages in [recent, more] {
+            let turns = nativeTurns(messages)
+            let placements = nativeSubagentPlacements(runs, turns: turns)
+            #expect(placements.isEmpty)
+            #expect(Set(nativeRunSections(runs, placements: placements, turnOrder: turns.map(\.id)).all.map(\.id)) == Set(runs.map(\.id)))
+        }
+        let turns = nativeTurns([F.user("investigate", id: "old-user"),
+                                 F.tool("shepherd_child_start", callID: "old-spawn")] + more)
+        let placements = nativeSubagentPlacements(runs, turns: turns)
+        #expect(placements.count == 1)
+        #expect(placements[turns[1].id]?.byToolCall["old-spawn"] == runs)
+        #expect(placements[turns.last!.id] == nil)
     }
 
     @Test func runsSharingASpawnCallStayTogetherInPublishOrder() {

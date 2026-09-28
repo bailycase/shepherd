@@ -86,7 +86,8 @@ struct NativeThreadTests {
         #expect(finished.current.map(\.1) == ["bash"])
     }
 
-    @Test func imagesTravelWithThePromptAndAreBounded() async throws {
+    @Test(arguments: ["look", ""])
+    func imagesTravelWithThePromptAndAreBounded(text: String) async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let pi = try await PiAgent.launch(on: h)
@@ -94,7 +95,7 @@ struct NativeThreadTests {
         let png = NativeImage(mimeType: "image/png", data: Data([0x89, 0x50, 0x4E, 0x47]))
         let jpeg = NativeImage(mimeType: "image/jpeg", data: Data([0xFF, 0xD8]))
 
-        #expect(try await pi.send("look", images: [png, jpeg], from: s).failureCode == nil)
+        #expect(try await pi.send(text, images: [png, jpeg], from: s).failureCode == nil)
         let images = try #require(try await pi.waitForStdin("prompt")["images"] as? [[String: Any]])
         #expect(images.map { $0["mimeType"] as? String } == ["image/png", "image/jpeg"])
         #expect(images.first?["data"] as? String == png.data.base64EncodedString())
