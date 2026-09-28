@@ -948,10 +948,14 @@ private struct RemotePaneTreeView: View {
                                                  maximized: panel.maximized, height: liveHeight ?? vm.terminalPanels.height,
                                                  in: geo.size, liveRatios: liveRatios)
             ZStack(alignment: .topLeading) {
-                ForEach(geometry.leaves.filter(\.shown), id: \.pane.id) { leaf in
-                    RemotePaneLeafView(vm: vm, connection: connection, ref: ref, tab: tab, leaf: leaf.pane, hasThread: true)
+                ForEach(geometry.leaves.filter { $0.shown || $0.pane.id == thread }, id: \.pane.id) { leaf in
+                    RemotePaneLeafView(vm: vm, connection: connection, ref: ref, tab: tab, leaf: leaf.pane,
+                                       hasThread: true, active: leaf.shown)
                         .frame(width: leaf.rect.width, height: leaf.rect.height)
                         .offset(x: leaf.rect.minX, y: leaf.rect.minY)
+                        .opacity(leaf.shown ? 1 : 0)
+                        .allowsHitTesting(leaf.shown)
+                        .accessibilityHidden(!leaf.shown)
                 }
                 ForEach(geometry.separators) { separator in
                     PaneSeparatorView(
@@ -1038,6 +1042,7 @@ private struct RemotePaneLeafView: View {
     /// The layout has the agent's thread (not a host's utility terminal): a terminal's
     /// selection can go to it.
     var hasThread = false
+    var active = true
 
     /// What the leaf shows, for its cross-fade.
     private enum Showing: Equatable {
@@ -1058,7 +1063,8 @@ private struct RemotePaneLeafView: View {
         ZStack {
             if let agent {
                 RemoteAgentThreadPane(vm: vm, ref: ref, agentName: agent.name,
-                                      isFocused: !vm.showSettings && !vm.showComponentGallery && !vm.showCommandPalette && vm.remoteFocusedPaneID == leaf.id)
+                                      isFocused: active && !vm.showSettings && !vm.showComponentGallery && !vm.showCommandPalette && vm.remoteFocusedPaneID == leaf.id,
+                                      active: active)
             } else if let target = reviewTarget {
                 if let review {
                     ReviewPane(session: review, actions: vm.reviewActions(for: review, remote: true), chrome: .header)
@@ -1098,12 +1104,13 @@ struct RemoteAgentThreadPane: View {
     let isFocused: Bool
     /// A design's chat (`ThreadView.designChat`).
     var designChat = false
+    var active = true
 
     var body: some View {
         let inspecting = vm.subagentInspector.remoteRuns[ref]
         ThreadView(
             store: vm.remoteThreadStores.store(for: ref),
-            active: true,
+            active: active,
             isFocused: isFocused && inspecting == nil,
             request: { try await vm.remoteHosts.nativeThread(ref, request: $0) },
             commandKey: ThreadCommandCenter.key(remote: ref),
