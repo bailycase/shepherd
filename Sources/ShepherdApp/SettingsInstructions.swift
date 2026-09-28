@@ -334,6 +334,7 @@ private struct InstructionsEditorCard: View {
                 saved: saved,
                 accessibilityLabel: "\(file.fileName) on \(model.name(of: machine))"
             )
+            .id(InstructionsModel.DraftKey(machine: machine, file: file))
         } else {
             InstructionsUnavailable(model: model)
         }
