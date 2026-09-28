@@ -511,16 +511,16 @@ struct ThreadScrollingTests {
             let top = try #require(boundary.viewportTop)
             let clip = thread.scrollView.contentView
             let initialBounds = clip.bounds
-            var bounds = initialBounds
-            bounds.origin.y += top + 8 // The first bubble is partially above the viewport.
-            let constrained = clip.constrainBoundsRect(bounds).origin
-            clip.scroll(to: constrained)
-            thread.scrollView.reflectScrolledClipView(clip)
-            let immediateTop = boundary.viewportTop
+            // A raw clip.scroll leaves ScrollViewReader's m0/top command in force:
+            // SwiftUI restores it on the next layout. Exercise native wheel handling on
+            // this off-screen scroll view only; never post an event to the user's app.
+            let wheel = try #require(CGEvent(scrollWheelEvent2Source: nil, units: .pixel,
+                                             wheelCount: 1, wheel1: -Int32((top + 8).rounded()), wheel2: 0, wheel3: 0))
+            thread.scrollView.scrollWheel(with: try #require(NSEvent(cgEvent: wheel)))
             try await thread.settle()
             let partialTop = try #require(boundary.viewportTop)
             #expect(partialTop < 0,
-                    "boundary \(boundary.rowID): top \(top), immediate \(String(describing: immediateTop)), settled \(partialTop); clip \(initialBounds) -> requested \(bounds.origin) -> constrained \(constrained) -> actual \(clip.bounds); flipped clip=\(clip.isFlipped), document=\(thread.scrollView.documentView!.isFlipped)")
+                    "boundary \(boundary.rowID): top \(top) -> \(partialTop); clip \(initialBounds) -> \(clip.bounds)")
         }
         let before = try #require(try thread.position(of: "Question 2"))
         var page = ThreadHarness.snapshot(count: 12, running: false, prefix: "older", paragraphs: 7)
