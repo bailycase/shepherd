@@ -125,6 +125,43 @@ struct MCPOAuthTests {
         #expect(token.needsRefresh(nowMs: 1_000_000) == refresh)
     }
 
+    @Test(arguments: [
+        ("1e100", Int64(1_000)), ("-1", 1_000), ("1.5", 1_000),
+        ("9223372036854776", 0), ("1", Int64.max - 999),
+    ])
+    func invalidExpiryFailsExchangeAndRefreshWithoutTrapping(seconds: String, now: Int64) async throws {
+        let endpoint = "https://fixture.invalid/token"
+        let service = MCPOAuthService(http: MetadataStub([endpoint: "{\"access_token\":\"fixture\",\"expires_in\":\(seconds)}"]))
+        let discovery = MCPOAuthDiscovery(issuer: "fixture", metadata: MCPAuthorizationServerMetadata(
+            authorizationEndpoint: "https://fixture.invalid/authorize", tokenEndpoint: endpoint), resource: "fixture", challengeScopes: [])
+        let client = MCPOAuthClient(clientID: "fixture", redirectURI: "http://127.0.0.1/callback", registeredDynamically: false)
+        let token = MCPOAuthToken(issuer: "fixture", tokenEndpoint: endpoint, clientID: "fixture", redirectURI: client.redirectURI,
+                                 resource: "fixture", accessToken: "old", refreshToken: "refresh", scopes: [], refreshedAtMs: 0)
+        let error = MCPOAuthError.badResponse("The token answer had an invalid expires_in.")
+        await #expect(throws: error) {
+            try await service.exchange(code: "code", verifier: "verifier", discovery: discovery, client: client,
+                                       requestedScopes: [], nowMs: now)
+        }
+        await #expect(throws: error) { try await service.refresh(token, nowMs: now) }
+    }
+
+    @Test(arguments: [("0", Int64?(1_000)), ("3600", Int64?(3_601_000)), ("null", nil)] as [(String, Int64?)])
+    func validExpiryKeepsItsMeaning(seconds: String, expected: Int64?) async throws {
+        let endpoint = "https://fixture.invalid/token"
+        let service = MCPOAuthService(http: MetadataStub([endpoint: "{\"access_token\":\"fixture\",\"expires_in\":\(seconds)}"]))
+        let token = MCPOAuthToken(issuer: "fixture", tokenEndpoint: endpoint, clientID: "fixture", redirectURI: "fixture",
+                                 resource: "fixture", accessToken: "old", refreshToken: "refresh", scopes: [], refreshedAtMs: 0)
+        #expect(try await service.refresh(token, nowMs: 1_000).expiresAtMs == expected)
+    }
+
+    @Test func refreshTimingDoesNotOverflowForPersistedExtremeDates() {
+        var token = MCPOAuthToken(issuer: "i", tokenEndpoint: "t", clientID: "c", redirectURI: "r", resource: "x", accessToken: "a",
+                                 expiresAtMs: .min, scopes: [], refreshedAtMs: 0)
+        #expect(token.needsRefresh(nowMs: 1_000))
+        token.expiresAtMs = .max
+        #expect(!token.needsRefresh(nowMs: -1_000))
+    }
+
     @Test func theAccountComesFromTheIDTokensEmailOrUsername() {
         func token(_ payload: String) -> String {
             "h." + Data(payload.utf8).base64EncodedString().replacingOccurrences(of: "=", with: "") + ".s"
