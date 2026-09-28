@@ -410,6 +410,52 @@ struct QueueTests {
 
     // MARK: - Editing
 
+    @Test func queueEditsAndUndoPreserveAdmissionLimitsAndRejectedContent() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        let running = try await startRun(pi)
+        let ids = (0..<5).map { _ in UUID() }
+        for id in ids { _ = try await pi.send("small", operationID: id, from: running) }
+        let plain = String(repeating: "x", count: 16 * 1024)
+        for id in ids.prefix(3) {
+            #expect(try await pi.queue(.edit(id: id, text: plain), from: running).failureCode == nil)
+        }
+        #expect(try await pi.queue(.edit(id: ids[3], text: plain), from: running).failureCode == "queue_full")
+        let unchanged = try await pi.snapshot { $0.queue?.items.count == 5 }
+        #expect(unchanged.queue?.items[3].text == "small")
+        #expect(try JSONEncoder().encode(unchanged).count <= 240 * 1024)
+
+        _ = try await pi.queue(.clear, from: running)
+        let refill = (0..<32).map { _ in UUID() }
+        for id in refill { _ = try await pi.send("refill", operationID: id, from: running) }
+        #expect(try await pi.queue(.restore(ids: ids, index: 0), from: running).failureCode == "queue_full")
+        let full = try await pi.snapshot { $0.queue?.items.count == 32 }
+        #expect(full.queue?.items.map(\.id) == refill)
+        // Refusal must retain the undo record: freeing room lets the same restore succeed.
+        _ = try await pi.queue(.clear, from: running)
+        #expect(try await pi.queue(.restore(ids: ids + ids, index: 0), from: running).failureCode == nil)
+        let restored = try await pi.snapshot { $0.queue?.items.count == 5 }
+        #expect(restored.queue?.items.map(\.id) == ids)
+        #expect(restored.queue?.items.map(\.text) == [plain, plain, plain, "small", "small"])
+    }
+
+    @Test func escapeHeavyQueueTextIsBoundedByItsEncodedSize() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        let running = try await startRun(pi)
+        let id = UUID()
+        _ = try await pi.send("keep me", operationID: id, from: running)
+        // Each control character takes six JSON bytes, though the text itself is only 16 KiB.
+        let escaped = String(repeating: "\u{0001}", count: 16 * 1024)
+        #expect(try await pi.queue(.edit(id: id, text: escaped), from: running).failureCode == "queue_full")
+        #expect(try await pi.send(escaped, from: running).failureCode == "queue_full")
+        let snapshot = try await pi.snapshot { $0.queue?.items.count == 1 }
+        #expect(snapshot.queue?.items.first?.text == "keep me")
+        #expect(try JSONEncoder().encode(RemoteReply.nativeThread(id: 1, result: .snapshot(value: snapshot))).count < NDJSON.maxPayloadBytes)
+    }
+
     @Test func editMoveDeleteRestoreAndClearChangeTheQueueInPlace() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
