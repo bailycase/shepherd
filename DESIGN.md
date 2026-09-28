@@ -244,7 +244,7 @@ Additions the boards don't have:
   that drifted, and the reasons a machine's files can't be shown (with Try again).
 - **The terminal panel's empty state** ("No terminals in this thread yet." and New Terminal).
 - **Thread additions** no board draws (Thread; Composer, questions, and menus): "↓ Jump to
-  latest" while detached from the tail; turn jumps (⌥⌘↑ ⌥⌘↓); "Load older messages" and the
+  latest" while detached from the tail; turn jumps (⌥⌘↑ ⌥⌘↓); automatic older history and the
   degraded-state notices; quiet starting and resuming ("Starting…" only when pi is slow, history
   read from pi's session file); the framed empty thread ("New agent in `~/path`"); the "Stopped"
   note; a call's output sheet and context menu (Show Call, Review <file>, Open Output, Copy
@@ -1143,8 +1143,7 @@ SidebarTree, SidebarProjects and SidebarProjectsHosts. Mac only: the iPad and iP
     see the departures). While pi has opened something the tab strip can't show (the pane is
     closed, or a subagent is inspected over it), it takes an 8pt `running` dot at its top
     trailing corner, ringed 2pt in `bgWindow` (`NWToggleBadge`), and its tip (Side pane).
-  - the options menu (`NWOptionsMenu`, "Thread options"): Refresh Thread, Load Older Messages (while
-    older history exists), then Rename… after a divider.
+  - the options menu (`NWOptionsMenu`, "Thread options"): Refresh Thread, then Rename… after a divider.
 - **Where the count comes from** (`Agent.checkout`, live state the host broadcasts, so a remote
   viewer's chip matches): the host reads each local agent's checkout with one `git
   --no-optional-locks status --porcelain=v2 --branch -z --untracked-files=all` off the main thread
@@ -1428,14 +1427,20 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   height alone (a scroll or a turn jump measures the rows it reveals). The composer draws it
   over the fade it lays on the thread and under its card and menus, so the fade never washes it
   out and it never covers an open menu. A send that goes in now (pi idle, or a steer)
-  re-attaches and lands on its turn, unless the reader leaves the tail again first. A follow-up
+  re-attaches and lands on the tail immediately, then on its echoed turn once laid out. A reader
+  scrolling away or jumping to another turn before that deferred landing cancels it. A follow-up
   that waits in Up next leaves the reader's place alone, then and when it goes: its delivery is
   new output like any other. The composer floats over the scroll view, which is inset by the
   composer's measured height, so the thread always ends at its last turn.
 - **Turn jumps:** ⌥⌘↑ and ⌥⌘↓ move between user turns (the target lands at the top); stepping
   past the last returns to the tail.
-- **History:** "Load older messages" (a small ghost button, centered) heads a thread that has
-  older pages. It reads "Loading history…" while a page loads, and acts only once pi is ready.
+- **History:** on Mac, iPhone and iPad, reaching the top of loaded history automatically fetches
+  one older page while the thread is active and ready, without a button or menu item. Native scroll
+  visibility triggers the fetch; stable turn identities and native scroll position keep the visible
+  turn in place as older rows prepend. Each visit to the top fetches at most one page, never an
+  unbounded drain of history; another scroll away from the top arms the next visit, not layout
+  hiding and revealing the top while a page prepends. An unchanged or failed cursor is not automatically retried by layout
+  or polling; a changed cursor or session permits another fetch.
 - **Notices** above the thread explain degraded states in caption tertiary: "Last known thread ·
   refreshing before enabling actions", "This host's agent cannot answer questions here · update
   Shepherd on the host", "Some earlier output is clipped".
@@ -1511,14 +1516,14 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   `textPrimary` truncating in the middle, 6pt gaps. An image chip leads with its 20pt thumbnail
   (radius 4, 3pt from the chip's edges); a file chip leads with the `doc` glyph in
   `textSecondary`, 8pt from each edge. In the composer a chip ends with a remove × in
-  `textTertiary`; in a sent bubble it has none. Shepherd attaches images only today (see
-  Composer › Images).
+  `textTertiary`; in a sent bubble it has none. Images travel as image payloads; local file
+  attachments currently travel as paths in the message (see Composer › Images and files).
   - **Not built yet.** A sent bubble's chips show each image's thumbnail and file name, as the
     board draws `screenshot.png`. Today they read "Image" behind the file glyph, because the
     thread keeps only how many images a message carried.
-  - **Not built yet.** File attachments: any file dropped, pasted, or picked (the board's
-    `Spec.dc.html`) attaches as a file chip and rides with the message, in the composer and in
-    the sent bubble.
+  - **Partially built.** Local files dropped on a thread attach as removable file chips in the
+    composer and ride with the message as paths. Sent file chips and remote file uploads are
+    not built; the paperclip still picks images only.
 - A message sent while pi is idle shows at once, at 70% opacity until pi reads it. One sent
   while pi works never enters the thread early: it waits in the composer's **Up next** (see
   Composer) and joins the thread only when pi reads it, where pi read it.
@@ -2040,7 +2045,18 @@ corner nearest Send. Nothing about the choice is written under the composer.
   on the other. ↑↓ move, ↩ chooses, Esc closes, and a click outside closes it. While it is open
   Send wears a 3pt `lanternTint` ring (`hover`).
 
-**Images** attach by drop, paste, or the paperclip (a file importer). They are resized on the
+**Images and files.** Images attach by dropping anywhere in the thread (history, blank space,
+or composer), pasting, or the paperclip (an image importer). Readable regular files dropped
+on a local thread attach as removable chips and send their absolute paths under the message.
+Remote threads accept image bytes, but reject ordinary files with an inline explanation:
+client-local paths are never sent to the host. A question occupying the composer disables
+thread drops until the normal composer returns. Existing attachments remain.
+
+Clicking the thread's blank background focuses the composer, without taking clicks from
+selectable transcript text, links, buttons, menus, queue editors, or questions. This adds no
+window-wide Tab handler; terminal and editing focus keep their normal keyboard behavior.
+
+Images are resized on the
 way in (longest edge 2000px), at most four per message and 2 MiB each, and shown as
 `NWAttachmentChip`s in the row above the field (NWComposer, "with attachment"): 26pt, a
 `lineStrong` line at radius 6, a 20pt thumbnail (radius 4) 3pt from the leading edge, 6pt, the
@@ -6035,8 +6051,8 @@ selected thread, or the Overview when none is. Other screens push over the detai
   offline · showing the last known thread", "This agent is no longer on <host>.", "Update
   Shepherd on <host> to open threads here.", "Some output is clipped · the full thread is on
   <host>", "This host was forgotten.", and a pi that can't start as the phone's one line (iPhone:
-  Thread › Banners) "Load older messages" ("Loading history…" while it loads)
-  is a small ghost button at the head.
+  Thread › Banners). Older history loads automatically when the reader reaches the top, keeping
+  their visible turn in place (Thread › History); there is no load-history button.
 
 #### Composer and commands (iPadThread, iPadPortrait)
 

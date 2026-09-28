@@ -105,13 +105,17 @@ public struct NativeTurnPresentation: Equatable, Sendable {
 /// start of its stretch, so a thinking model's per-call reasoning does not break every line
 /// in two; the block still streaming stays last, live. `call` builds a call from its message
 /// and `thinking` parses a stretch's finished thinking (the store passes memoised ones, so a
-/// reply streaming under a thought never parses it again). `errors` says where the agent runs
-/// and whether pi is retrying, for the turn's errors.
+/// reply streaming under a thought never parses it again). `prose` parses an item by id, text
+/// and streaming mode, so the store can reuse finished prose while the tail grows. `errors`
+/// says where the agent runs and whether pi is retrying, for the turn's errors.
 public func nativeTurnPresentation(
     _ messages: [NativeThreadMessage], live: Bool, cards: NativeCardLayout = .none,
     errors: NativeTurnErrorContext = NativeTurnErrorContext(),
     call: (NativeThreadMessage) -> NativeActivityCall = NativeActivityCall.init,
-    thinking: (String) -> [NativeMarkdownBlock] = nativeThinkingBlocks
+    thinking: (String) -> [NativeMarkdownBlock] = nativeThinkingBlocks,
+    prose: (String, String, Bool) -> (blocks: [NativeMarkdownBlock], endsInOpenFence: Bool) = { _, text, streaming in
+        nativeMarkdownParse(text, streaming: streaming)
+    }
 ) -> NativeTurnPresentation {
     enum Raw {
         case thinking(String, Double?, message: String, since: Double?)
@@ -274,8 +278,9 @@ public func nativeTurnPresentation(
             calls.append(value)
         case .prose(let text, let streaming):
             flushStretch()
-            let parsed = nativeMarkdownParse(text, streaming: live && streaming)
-            items.append(.prose(id: nextID("prose"), text: text, blocks: parsed.blocks, openFence: parsed.endsInOpenFence))
+            let id = nextID("prose")
+            let parsed = prose(id, text, live && streaming)
+            items.append(.prose(id: id, text: text, blocks: parsed.blocks, openFence: parsed.endsInOpenFence))
             copy.append(text)
         case .note(let text):
             flushStretch()

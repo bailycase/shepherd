@@ -524,6 +524,36 @@ public func nativeSubagentNeedsYouLabel(_ runs: [ChildRun]) -> String? {
     return n > 0 ? "\(n) subagent\(n == 1 ? "" : "s") need\(n == 1 ? "s" : "") you" : nil
 }
 
+/// One automatic history page per visit to the top. A failed or unchanged cursor is not
+/// retried by layout or polling; a new session starts a fresh paging history.
+@MainActor
+public final class NativeHistoryPaging {
+    public var visible = false
+
+    /// Layout can hide and reveal the sentinel while prepending. Only another scroll away
+    /// from it opens a new visit, never those transient visibility changes.
+    public func beginScroll() {
+        if !visible { loadedThisVisit = false }
+    }
+    private var session: String?
+    private var attemptedCursor: String?
+    private var loadedThisVisit = false
+
+    public init() {}
+
+    public func takeRequest(session: String?, cursor: String?, enabled: Bool) -> Bool {
+        if self.session != session {
+            self.session = session
+            attemptedCursor = nil
+            loadedThisVisit = false
+        }
+        guard enabled, visible, !loadedThisVisit, let cursor, cursor != attemptedCursor else { return false }
+        attemptedCursor = cursor
+        loadedThisVisit = true
+        return true
+    }
+}
+
 // MARK: Sticky scroll
 
 /// bb's sticky-bottom rule as a value: follow the tail until the user scrolls away, re-stick

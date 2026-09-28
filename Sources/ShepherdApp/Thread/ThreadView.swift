@@ -58,7 +58,12 @@ struct ThreadView: View {
     var contextDetailsOpen = false
     /// A design's chat: its composer has attach and Send only.
     var designChat = false
+    /// Only this Mac's agents may receive paths from this Mac.
+    var allowsLocalFiles = false
+    @State private var input = ThreadInput()
     @State private var follower = NativeScrollFollower()
+    @State private var historyPaging = NativeHistoryPaging()
+    @State private var visibleTurn: String?
     /// What the context details ask the thread to find (Largest, Show summary). A stable object,
     /// not a closure, so the composer is not redrawn with every render of the thread.
     @State private var finder = ThreadFinder()
@@ -99,15 +104,6 @@ struct ThreadView: View {
                     // every streamed chunk): turns that arrive make their own entrance.
                     LazyVStack(alignment: .leading, spacing: AppLayout.turnSpacing) {
                         notices
-                        if store.olderCursor != nil {
-                            Button(store.loadingOlder ? "Loading history…" : "Load older messages") {
-                                Task { await store.loadOlder() }
-                            }
-                            .buttonStyle(NWButtonStyle(.ghost, size: .s))
-                            .disabled(!active || !store.ready || store.loadingOlder)
-                            .nwAnimation(.content, value: store.loadingOlder)
-                            .frame(maxWidth: .infinity)
-                        }
                         if rows.isEmpty { emptyState }
                         ForEach(rows) { row in
                             let _ = NWRenderProbe.tick("thread.rowBuilder")
@@ -127,9 +123,19 @@ struct ThreadView: View {
                         }
                         Color.clear.frame(height: 1).id(Self.bottomID)
                     }
+                    .scrollTargetLayout()
+                    .overlay(alignment: .top) {
+                        Color.clear.frame(height: AppLayout.turnSpacing)
+                            .onScrollVisibilityChange { visible in
+                                historyPaging.visible = visible
+                                loadVisibleHistory()
+                            }
+                            .accessibilityHidden(true)
+                    }
                     .frame(maxWidth: AppLayout.threadMaxWidth)
                     .padding(.horizontal, gutter)
                     .frame(maxWidth: .infinity)
+                    .background { ThreadInputBackground(input: input) }
                     .environment(\.compactionExpansion, store.compactions)
                     .environment(\.turnErrorExpansion, store.errors)
                     // A local agent's images draw from its folder; a remote agent's files are not here.
@@ -142,6 +148,9 @@ struct ThreadView: View {
                 .modifier(ComposerInsetPadding(inset: composerInset))
                 // A margin rather than padding so scrollTo(.top) keeps the 28pt above a turn.
                 .contentMargins(.top, AppLayout.threadTop, for: .scrollContent)
+                .scrollPosition(id: $visibleTurn, anchor: .top)
+                .onChange(of: historyEnabled) { _, _ in loadVisibleHistory() }
+                .onChange(of: store.sessionKey) { _, _ in loadVisibleHistory() }
                 .defaultScrollAnchor(.bottom, for: .initialOffset)
                 // While stuck, growth keeps the tail pinned without any scrollTo; detaching only
                 // ever happens on user scroll intent.
@@ -159,6 +168,7 @@ struct ThreadView: View {
                     // Only a live finger/wheel counts. Momentum and programmatic phases are not
                     // intent; a gesture that ends near the bottom re-sticks from where it lands.
                     follower.userScrolling = phase == .interacting
+                    if phase == .interacting { historyPaging.beginScroll() }
                     if phase == .idle {
                         follower.observe(distanceFromBottom: Self.distanceFromBottom(context.geometry))
                     }
@@ -169,12 +179,18 @@ struct ThreadView: View {
                     // waits in Up next leaves the reader where they are, now and when it goes.
                     let queued = store.lastSendQueued
                     follower.sent(queued: queued)
-                    if !queued { jumpedTurn = nil }
+                    if !queued {
+                        jumpedTurn = nil
+                        proxy.scrollTo(Self.bottomID, anchor: .bottom)
+                    }
                 }
                 .onChange(of: rows.last(where: \.isUser)?.id) { _, id in
-                    guard id != nil, follower.userTurnArrived() else { return }
+                    guard id != nil else { return }
+                    let session = store.sessionKey
                     Task { @MainActor in
                         await Task.yield()
+                        guard !Task.isCancelled, store.isLive, store.sessionKey == session,
+                              follower.userTurnArrived() else { return }
                         proxy.scrollTo(Self.bottomID, anchor: .bottom)
                     }
                 }
@@ -189,7 +205,7 @@ struct ThreadView: View {
                 }
                 // The composer draws "Jump to latest" over the fade it lays on the thread and under
                 // its card and menus, so the pill reads clearly and never covers an open menu.
-                Composer(store: store, active: active, isFocused: isFocused, agentName: agentName, hasTurns: !rows.isEmpty,
+                Composer(store: store, input: input, allowsLocalFiles: allowsLocalFiles, active: active, isFocused: isFocused, agentName: agentName, hasTurns: !rows.isEmpty,
                          gutter: gutter, listModels: listModels, commandKey: commandKey,
                          jumpToLatest: follower.showsJump(running: running) ? {
                              follower.jumpToLatest()
@@ -206,6 +222,7 @@ struct ThreadView: View {
         }
         // The composer's menus float over the thread and fit the room above the card in it.
         .coordinateSpace(.named(Composer.threadSpace))
+        .modifier(ThreadInputDrop(input: input, store: store, localFiles: allowsLocalFiles))
         // Switching back to an agent is a visibility flip: the pull that catches its thread up
         // runs none of the thread's view-attached motion (the composer gates its own).
         // Keyed on what the render drew, so only the update carrying it is touched: a hover or a
@@ -218,6 +235,7 @@ struct ThreadView: View {
         .environment(\.threadActionsEnabled, active && store.supports("subagents"))
         .foregroundStyle(Color.nw.textPrimary)
         .tint(Color.nw.running)
+        .background { ThreadInputBackground(input: input) }
         .background(Color.nw.bgWindow)
         .onGeometryChange(for: CGFloat.self) { AppLayout.threadGutter(width: $0.size.width) } action: { gutter = $0 }
         .onHover { hovering = $0 }
@@ -264,6 +282,16 @@ struct ThreadView: View {
 
     private static let bottomID = "thread-bottom"
 
+    private var historyEnabled: Bool { active && store.ready && !store.loadingOlder && !follower.sticky }
+
+    private func loadVisibleHistory() {
+        guard historyPaging.takeRequest(session: store.sessionKey, cursor: store.olderCursor, enabled: historyEnabled) else { return }
+        // A ScrollViewReader jump can leave the position binding nil. At the history
+        // boundary the first turn is the visible native target; seed it before prepending.
+        if visibleTurn == nil { visibleTurn = store.rows.first?.id }
+        Task { await store.loadOlder() }
+    }
+
     private var subagentActions: SubagentActions {
         SubagentActions(
             inspect: { run in inspectSubagent?(run) },
@@ -289,6 +317,7 @@ struct ThreadView: View {
             if let run = store.subagents.first(where: { !$0.isTerminal }) ?? store.subagents.last { inspectSubagent?(run) }
             else { NSSound.beep() }
         case .previousTurn, .nextTurn:
+            historyPaging.beginScroll()
             let userTurns = store.rows.filter(\.isUser).map(\.id)
             guard !userTurns.isEmpty else { NSSound.beep(); return }
             let current = jumpedTurn.flatMap(userTurns.firstIndex(of:)) ?? userTurns.count
@@ -337,7 +366,10 @@ struct ThreadView: View {
     private func installWheelMonitor() {
         guard wheelMonitor == nil else { return }
         wheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
-            if hovering { wheelIntentUntil = Date().addingTimeInterval(0.35) }
+            if hovering {
+                wheelIntentUntil = Date().addingTimeInterval(0.35)
+                historyPaging.beginScroll()
+            }
             return event
         }
     }

@@ -724,6 +724,17 @@ struct NativeThreadStoreTests {
         #expect(try #require(host.actions.first).images.isEmpty == !attached)
     }
 
+    @Test(arguments: [false, true])
+    func imagesAloneSendOnlyWhenTheHostAcceptsImages(supported: Bool) async throws {
+        let (store, host, task) = await started(F.snapshot(actions: supported ? ["send", "sendImages"] : ["send"]))
+        defer { task.cancel() }
+        host.acceptAll()
+        await store.send(images: [NativeImage(mimeType: "image/png", data: Data([1]))])
+        #expect(host.actions.count == (supported ? 1 : 0))
+        #expect(store.sentCount == (supported ? 1 : 0))
+        if supported { #expect(try #require(host.actions.first).images.count == 1) }
+    }
+
     @Test func steeringUsesTheSelectedDelivery() async throws {
         let (store, host, task) = await started()
         defer { task.cancel() }

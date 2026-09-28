@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 import ShepherdProtocol
+import ShepherdRemote
 
 /// Images waiting in a composer (a thread's, or the New thread page's) and the rules a send
 /// takes: at most `NativeImage.maxPerSend`, each a raster image of at most `NativeImage.maxBytes`
@@ -55,6 +56,90 @@ struct ComposerAttachments: Equatable {
 
     mutating func clearError() {
         error = nil
+    }
+
+    mutating func reject(_ message: String) { error = message }
+}
+
+/// Shared by a thread's drop surface and composer; only the composer observes attachments
+/// and focus requests, so these interactions do not rebuild the transcript.
+@MainActor
+@Observable
+final class ThreadInput {
+    var attachments = ComposerAttachments()
+    var dropTargeted = false
+    private(set) var focusRequest = 0
+    var available = false {
+        didSet { if available != oldValue { generation += 1 } }
+    }
+    private var generation = 0
+
+    func focus() {
+        guard available else { return }
+        focusRequest += 1
+    }
+
+    func attach(_ providers: [NSItemProvider], store: NativeThreadStore, localFiles: Bool) {
+        guard available else { return }
+        attachments.clearError()
+        let generation = generation
+        let session = store.sessionKey
+        Task {
+            let urls = await AppImageDrop.resolve(providers)
+            guard available, self.generation == generation, store.sessionKey == session else { return }
+            add(urls: urls, store: store, localFiles: localFiles)
+        }
+    }
+
+    func add(urls: [URL], store: NativeThreadStore, localFiles: Bool) {
+        var rejection: String?
+        for url in urls {
+            if let image = ImageAttachment(url: url) {
+                guard store.supportedActions.contains("sendImages") else {
+                    rejection = "This agent does not support image attachments."
+                    continue
+                }
+                attachments.add([(url.lastPathComponent, image)])
+                if let error = attachments.error { rejection = error }
+            } else if UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) == true {
+                rejection = "\(url.lastPathComponent) is not an image Shepherd can attach."
+            } else if !localFiles {
+                rejection = "Files cannot be attached to a remote thread yet. Images are supported."
+            } else if url.isFileURL,
+                      (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true,
+                      FileManager.default.isReadableFile(atPath: url.path) {
+                store.attach(files: [NativeAttachedFile(name: url.lastPathComponent, path: url.path)])
+            } else {
+                rejection = "\(url.lastPathComponent) is not a readable file."
+            }
+        }
+        if let rejection { attachments.reject(rejection) }
+    }
+}
+
+/// A background, never an ancestor gesture: text selection and foreground controls retain
+/// their clicks. No keyboard interception is needed to reclaim the field.
+struct ThreadInputBackground: View {
+    let input: ThreadInput
+
+    var body: some View {
+        Color.clear.contentShape(Rectangle())
+            .onTapGesture { input.focus() }
+            .accessibilityHidden(true)
+    }
+}
+
+struct ThreadInputDrop: ViewModifier {
+    @Bindable var input: ThreadInput
+    let store: NativeThreadStore
+    let localFiles: Bool
+
+    func body(content: Content) -> some View {
+        content.onDrop(of: [.image, .fileURL], isTargeted: $input.dropTargeted) { providers in
+            guard input.available else { return false }
+            input.attach(providers, store: store, localFiles: localFiles)
+            return true
+        }
     }
 }
 
