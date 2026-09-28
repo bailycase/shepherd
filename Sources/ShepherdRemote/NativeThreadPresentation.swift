@@ -413,21 +413,18 @@ public struct NativeSubagentPlacement: Equatable, Sendable {
     public var isEmpty: Bool { byToolCall.isEmpty && trailing.isEmpty }
 }
 
-/// Every subagent belongs to the turn whose tool rows contain its spawn call. Runs whose spawn
-/// call is in no loaded turn (older publishes, paged-out history) attach to the last agent
-/// turn as trailing cards, so nothing live is ever hidden.
+/// Every subagent belongs to the turn whose tool rows contain its spawn call. An unloaded
+/// or unknown spawn has no transcript placement; the tray and inspector still expose the run.
+/// Assigning it to the latest reply would move old records whenever another turn arrives.
 public func nativeSubagentPlacements(_ subagents: [ChildRun], turns: [NativeTurn]) -> [String: NativeSubagentPlacement] {
     var placements: [String: NativeSubagentPlacement] = [:]
     var owner: [String: String] = [:]
     for turn in turns where !turn.isUser {
         for id in turn.messages.compactMap(\.toolCallID) { owner[id] = turn.id }
     }
-    let lastAgentTurn = turns.last { !$0.isUser }?.id
     for run in subagents {
         if let id = run.toolCallID, let turnID = owner[id] {
             placements[turnID, default: NativeSubagentPlacement()].byToolCall[id, default: []].append(run)
-        } else if let lastAgentTurn {
-            placements[lastAgentTurn, default: NativeSubagentPlacement()].trailing.append(run)
         }
     }
     return placements
