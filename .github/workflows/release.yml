@@ -373,9 +373,9 @@ jobs:
             python3 scripts/release.py fix-urls "casts/$dir/appcast.xml" "$dir"
             latest=$(python3 scripts/release.py latest "$dir" < "$RUNNER_TEMP/tags")
             if [[ -n "$latest" ]]; then
+              python3 scripts/release.py deltas "casts/$dir" "$latest" > "$RUNNER_TEMP/deltas.txt"
               deltas=()
-              while IFS= read -r delta; do deltas+=("$delta"); done \
-                < <(python3 scripts/release.py deltas "casts/$dir" "$latest")
+              while IFS= read -r delta; do deltas+=("$delta"); done < "$RUNNER_TEMP/deltas.txt"
               if [[ ${#deltas[@]} -gt 0 ]]; then
                 gh release upload "$latest" "${deltas[@]}" --clobber </dev/null
               fi
@@ -393,12 +393,13 @@ jobs:
           # Every feed, plus appcast-rc.xml and appcast-nightly.xml for the
           # Shepherd builds already installed that still read them. publish
           # marks every item arm64 only, so no Intel Mac is offered an update.
+          python3 scripts/release.py publish casts pages > "$RUNNER_TEMP/published-feeds.txt"
           written=()
-          while IFS= read -r file; do written+=("$file"); done \
-            < <(python3 scripts/release.py publish casts pages)
+          while IFS= read -r file; do written+=("$file"); done < "$RUNNER_TEMP/published-feeds.txt"
           cd pages
           git add "${written[@]}"
-          git commit -m "appcast: $TAG" || exit 0
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "appcast: $TAG"
           git push origin HEAD:gh-pages
 
   # The iOS client, archived unsigned and signed only at export with the team's

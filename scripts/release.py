@@ -343,9 +343,11 @@ def publish(casts: str, pages: str) -> list[str]:
     and writes the legacy aliases."""
     written = []
     generated = {}
+    # Validate every input before changing any published feed.
     for feed in FEEDS:
         with open(os.path.join(casts, feed.dir, "appcast.xml"), encoding="utf-8") as f:
             generated[feed.dir] = require_arm64(f.read())
+    for feed in FEEDS:
         _write(os.path.join(pages, feed.file), generated[feed.dir])
         written.append(feed.file)
     for file, source in LEGACY_ALIASES:
