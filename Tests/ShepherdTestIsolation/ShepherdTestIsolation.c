@@ -82,14 +82,17 @@ static void refuse(const char *bin, const char *command) {
     write_file(bin, command, script, 0755);
 }
 
-/// Agent-only variables (AGENTS.md "Environment variables"), matched by prefix.
+/// Inherited variables to clear before tests start, matched by prefix.
 static const char *const agentVariables[] = {
     "SHEPHERD_AGENT_ID=", "SHEPHERD_SOCKET=", "SHEPHERD_EXT_", "SHEPHERD_NATIVE_CHILDREN=", "SHEPHERD_CHILD_",
     "SHEPHERD_NEEDS_NAME=", "SHEPHERD_AUTOMATION=", "SHEPHERD_MODEL=", "SHEPHERD_PI_THEME_",
     "SHEPHERD_INSTRUCTIONS_DIR=", "SHEPHERD_SUGGEST_FILES=", "SHEPHERD_PI_EXECUTABLE=", "SHEPHERD_DESIGN_REFS=",
+    // Git's repository selection, config injection, tracing and external helpers must never
+    // escape the scratch process. Install our own config paths after clearing inherited GIT_*.
+    "GIT_",
 };
 
-/// The name of the first agent-only variable in the environment, or an empty string.
+/// The name of the first unsafe inherited variable, or an empty string.
 static void next_agent_variable(char *name, size_t size) {
     name[0] = '\0';
     for (char **entry = environ; *entry != NULL; entry++) {
@@ -141,6 +144,21 @@ static void shepherd_test_isolation_install(void) {
         || setenv("SHEPHERD_MCP_CONFIG", mcpConfig, 1) != 0
         || setenv("PATH", newPath, 1) != 0) fail("setenv");
     free(newPath);
+
+    char git[600], gitConfig[700], gitTemplate[600];
+    make("git", git, sizeof git);
+    make("git-template", gitTemplate, sizeof gitTemplate);
+    write_file(git, "config", "", 0600);
+    // Keep the standard empty directories, but never copy a user's template hooks.
+    char templateInfo[600], templateHooks[600];
+    make("git-template/info", templateInfo, sizeof templateInfo);
+    make("git-template/hooks", templateHooks, sizeof templateHooks);
+    if ((size_t)snprintf(gitConfig, sizeof gitConfig, "%s/config", git) >= sizeof gitConfig) fail("path");
+    if (setenv("GIT_CONFIG_GLOBAL", gitConfig, 1) != 0
+        || setenv("GIT_CONFIG_SYSTEM", "/dev/null", 1) != 0
+        || setenv("GIT_CONFIG_NOSYSTEM", "1", 1) != 0
+        || setenv("GIT_TEMPLATE_DIR", gitTemplate, 1) != 0
+        || setenv("GIT_TERMINAL_PROMPT", "0", 1) != 0) fail("setenv");
 
     // zsh reads .zshenv for every shell and .zlogin last for a login shell, after the system files.
     if (strchr(bin, '\'') != NULL || strchr(root, '\'') != NULL) fail("path");

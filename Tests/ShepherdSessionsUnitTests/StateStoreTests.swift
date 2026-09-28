@@ -110,6 +110,31 @@ struct StateStoreTests {
         #expect(StateStore(url: url).state.spaces == expected.spaces + [later])
     }
 
+    @Test func aFailedWritePublishesNothingAndALaterWriteCanSucceed() throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("state.json")
+        let store = StateStore(url: url)
+        let original = Self.validState()
+        try store.update { $0 = original }
+        let bytes = try Data(contentsOf: url)
+        // A file where a directory is needed fails even when tests run with elevated privileges.
+        let backup = dir.appendingPathComponent("saved.json")
+        try FileManager.default.moveItem(at: url, to: backup)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
+        try Data("keep".utf8).write(to: url.appendingPathComponent("sentinel"))
+        let later = Space(name: "later", path: "/tmp/later")
+        #expect(throws: (any Error).self) { try store.update { $0.spaces.append(later) } }
+        #expect(store.state == original)
+        #expect(store.committed == original)
+        #expect(try Data(contentsOf: backup) == bytes)
+        #expect(try Data(contentsOf: url.appendingPathComponent("sentinel")) == Data("keep".utf8))
+        try FileManager.default.removeItem(at: url)
+        try FileManager.default.moveItem(at: backup, to: url)
+        try store.update { $0.spaces.append(later) }
+        #expect(StateStore(url: url).state.spaces == original.spaces + [later])
+    }
+
     /// `committed`, which any thread reads, is the store's state after a load and an update, and a
     /// rejected update leaves it as it was.
     @Test func theCommittedCopyFollowsLoadsAndUpdatesButNotRejections() throws {
