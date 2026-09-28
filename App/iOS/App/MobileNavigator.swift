@@ -121,6 +121,7 @@ final class MobileNavigator {
     /// Closes every screen of a forgotten host.
     func forget(host: UUID) {
         if settingsSelection.chosenHost == host { settingsSelection.chosenHost = nil }
+        if settingsSelection.instructionsHost == host { settingsSelection.instructionsHost = nil }
         composerPresentation.forget(host: host)
         if commitPopover?.host == host { commitPopover = nil }
         homePath.removeAll { $0.host == host }

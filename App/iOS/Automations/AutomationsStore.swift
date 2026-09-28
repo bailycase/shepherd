@@ -31,10 +31,14 @@ final class AutomationsStore {
     /// The last change a host refused.
     var failure: Failure?
     /// The automation the iPad shows beside the list; the first one when nil or gone.
-    var chosen: AutomationKey?
+    var chosen: AutomationKey? {
+        didSet { if let chosen, forgotten.contains(chosen.host) { self.chosen = nil } }
+    }
     /// The destructive change a detail asks about, over the control that asked (Stop, or the
     /// ••• menu's Delete).
-    var confirming: Confirmation?
+    var confirming: Confirmation? {
+        didSet { if let confirming, forgotten.contains(confirming.key.host) { self.confirming = nil } }
+    }
 
     struct Confirmation: Equatable {
         enum Kind: Equatable { case stop, delete }
@@ -43,34 +47,59 @@ final class AutomationsStore {
     }
 
     @ObservationIgnored private let hosts: MobileHosts
+    @ObservationIgnored private let readRuns: (RemoteHostClient, AutomationID) async throws -> [AutomationRun]
     @ObservationIgnored private var inputs: [AutomationHost] = []
     @ObservationIgnored private var runs: [AutomationKey: [AutomationRun]] = [:]
     /// What each automation's run looked like when its runs were last read (its agent and status).
     @ObservationIgnored private var readAt: [AutomationKey: String] = [:]
     @ObservationIgnored private var sessions: [UUID: UUID] = [:]
     @ObservationIgnored private var watchers = 0
+    @ObservationIgnored private var forgotten: Set<UUID> = []
+    @ObservationIgnored private var failureHost: UUID?
 
     private static var stores: [ObjectIdentifier: AutomationsStore] = [:]
     /// What `choose` asked for before a store existed.
     private static var firstChoice: AutomationKey?
+    private static var forgottenHosts: Set<UUID> = []
 
     /// Shows `key` beside the iPad's list, whenever that list appears.
     static func choose(_ key: AutomationKey) {
+        guard !forgottenHosts.contains(key.host) else { return }
         firstChoice = key
-        for store in stores.values { store.chosen = key }
+        for store in stores.values where !store.forgotten.contains(key.host) { store.chosen = key }
     }
 
     /// The store of the app's hosts: one per `MobileHosts`, made on first use.
-    static func of(_ hosts: MobileHosts) -> AutomationsStore {
+    static func of(_ hosts: MobileHosts,
+                   readRuns: @escaping (RemoteHostClient, AutomationID) async throws -> [AutomationRun] = { try await $0.automationRuns($1) }) -> AutomationsStore {
         if let store = stores[ObjectIdentifier(hosts)] { return store }
-        let store = AutomationsStore(hosts: hosts)
+        let store = AutomationsStore(hosts: hosts, readRuns: readRuns)
         stores[ObjectIdentifier(hosts)] = store
         return store
     }
 
-    private init(hosts: MobileHosts) {
+    static func forget(host: UUID, in hosts: MobileHosts) {
+        forgottenHosts.insert(host)
+        if firstChoice?.host == host { firstChoice = nil }
+        guard let store = stores[ObjectIdentifier(hosts)] else { return }
+        store.forgotten.insert(host)
+        store.inputs.removeAll { $0.id == host }
+        store.runs = store.runs.filter { $0.key.host != host }
+        store.readAt = store.readAt.filter { $0.key.host != host }
+        store.sessions[host] = nil
+        store.pendingEnabled = store.pendingEnabled.filter { $0.key.host != host }
+        store.busy = store.busy.filter { $0.host != host }
+        if store.chosen?.host == host { store.chosen = nil }
+        if store.confirming?.key.host == host { store.confirming = nil }
+        if store.failureHost == host { store.failure = nil; store.failureHost = nil }
+        store.derive()
+    }
+
+    private init(hosts: MobileHosts, readRuns: @escaping (RemoteHostClient, AutomationID) async throws -> [AutomationRun]) {
         self.hosts = hosts
+        self.readRuns = readRuns
         chosen = Self.firstChoice
+        forgotten = Self.forgottenHosts
         track()
     }
 
@@ -88,7 +117,7 @@ final class AutomationsStore {
 
     private func track() {
         let (next, connections) = withObservationTracking {
-            (hosts.hosts.map { host in
+            (hosts.hosts.filter { !forgotten.contains($0.id) }.map { host in
                 AutomationHost(id: host.id, name: host.name, connected: host.phase.isConnected,
                                manageable: host.supports(RemoteProtocol.automationsCapability), state: host.state)
             }, Dictionary(hosts.hosts.compactMap { host in host.session.map { (host.id, $0) } }, uniquingKeysWith: { a, _ in a }))
@@ -156,17 +185,19 @@ final class AutomationsStore {
     /// Reads the runs of every automation whose run moved since they were last read.
     func refreshRuns() async {
         var changed = false
-        for host in hosts.hosts {
+        for host in hosts.hosts where !forgotten.contains(host.id) {
             guard let client = host.connectedClient, host.supports(RemoteProtocol.automationsCapability) else { continue }
             for automation in host.state.automations {
+                guard !forgotten.contains(host.id) else { break }
                 let key = AutomationKey(host: host.id, automation: automation.id)
                 let signature = Self.signature(key, in: inputs)
                 guard readAt[key] != signature else { continue }
                 readAt[key] = signature
-                guard let read = try? await client.automationRuns(automation.id) else {
+                guard let read = try? await readRuns(client, automation.id) else {
                     readAt[key] = nil
                     continue
                 }
+                guard !forgotten.contains(host.id) else { break }
                 if runs[key] != read {
                     runs[key] = read
                     changed = true
@@ -179,6 +210,7 @@ final class AutomationsStore {
     // MARK: Changes
 
     func setEnabled(_ key: AutomationKey, _ on: Bool) {
+        guard !forgotten.contains(key.host) else { return }
         pendingEnabled[key] = on
         send(key, .setEnabled(enabled: on)) { [weak self] ok in
             if !ok { self?.pendingEnabled[key] = nil }
@@ -197,7 +229,7 @@ final class AutomationsStore {
     /// Saves a new automation (`key` names the id this client minted) or an edited one. Throws
     /// the host's reason when it refuses.
     func save(_ key: AutomationKey, draft: RemoteAutomationDraft, creating: Bool) async throws {
-        guard let client = hosts.host(key.host)?.connectedClient else { throw RemoteHostClientError.disconnected }
+        guard !forgotten.contains(key.host), let client = hosts.host(key.host)?.connectedClient else { throw RemoteHostClientError.disconnected }
         busy.insert(key)
         defer { busy.remove(key) }
         do {
@@ -206,11 +238,13 @@ final class AutomationsStore {
             // The host already has this id, which only this form minted: an earlier save whose
             // answer never came back landed.
         }
+        guard !forgotten.contains(key.host) else { throw CancellationError() }
     }
 
     private func send(_ key: AutomationKey, _ request: RemoteAutomationRequest, done: ((Bool) -> Void)? = nil) {
-        guard !busy.contains(key) else { return }
+        guard !forgotten.contains(key.host), !busy.contains(key) else { return }
         guard let client = hosts.host(key.host)?.connectedClient else {
+            failureHost = key.host
             failure = Failure(message: "The host is offline.")
             done?(false)
             return
@@ -220,8 +254,11 @@ final class AutomationsStore {
             defer { busy.remove(key) }
             do {
                 try await client.automation(key.automation, request: request)
+                guard !forgotten.contains(key.host) else { return }
                 done?(true)
             } catch {
+                guard !forgotten.contains(key.host) else { return }
+                failureHost = key.host
                 failure = Failure(message: AutomationsModel.failureText(request, error))
                 done?(false)
             }

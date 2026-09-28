@@ -5,5 +5,6 @@ import Observation
 @MainActor @Observable
 final class SettingsSelection {
     var chosenHost: UUID?
+    var instructionsHost: UUID?
     var page: SettingsPage = .appearance
 }

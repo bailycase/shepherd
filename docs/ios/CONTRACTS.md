@@ -237,11 +237,16 @@ WindowGroup(for: MobileWindowSeed.self) { $seed in MobileWindowRoot(app: app, se
   loop already running over the same connection instead of restarting it (a restart would
   report the other window's send in flight as unknown), a window on a newer connection takes
   it over, and another takes it over when the driving one leaves.
-- **Per window:** the navigator owns Settings' selected page and host, the composer's Model,
+- **Per window:** the navigator owns Settings' selected page and host (Instructions' per-host
+  editor has its own scene-local choice, passed explicitly to the shared drafts model), the composer's Model,
   Context and queued-message editor presentation (and Context's scroll request), and the Commit
   popover. Shared stores keep drafts, attachments, catalogs and operation progress, never those
   presentation flags. Forget host closes its scene-local presentations and evicts unmounted
-  terminal/composer/review/commit/worktree state, including pending image preparations.
+  terminal/composer/review/commit/worktree state, including pending image preparations. It also
+  removes that host's Settings snapshots and durable owed instructions/skills, even before
+  Settings first opens, and its automation runs, selection and in-flight presentation callbacks.
+  Every returning request checks forgotten-host ownership before updating a cache; disconnecting
+  alone keeps pending operations, and forgetting one host keeps every other host's obligations.
 - **Per window:** the navigator and the subagent inspector's selection
   (`SubagentInspection.of(navigator)`), so an inspector opened in one window leaves another's
   alone.

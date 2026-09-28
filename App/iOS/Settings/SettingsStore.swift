@@ -51,6 +51,17 @@ final class SettingsStore {
         track()
     }
 
+    static func forget(host: UUID, in hosts: MobileHosts) {
+        // Pending saves survive launches even if Settings has not been opened this launch.
+        let store = of(hosts)
+        store.hostSettings.forget(host: host)
+        store.instructions.forget(host: host)
+        store.suggestions.forget(host: host)
+        store.skills.forget(host: host)
+        store.inputs.removeAll { $0.id == host }
+        store.hosts.removeAll { $0.id == host }
+    }
+
     // MARK: Reading
 
     /// The host Defaults, Worktrees and Extensions show: the one chosen, else the first that
