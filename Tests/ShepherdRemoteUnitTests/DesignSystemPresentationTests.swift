@@ -37,6 +37,14 @@ struct DesignSystemPresentationTests {
                 == "16px · tokens.css:20")
     }
 
+    @Test func oversizedNumericDetailsAndTweakLabelsDoNotTrap() async {
+        await #expect(processExitsWith: .success) {
+            #expect(DesignSystemPresentation.detail(DesignSystemTokens.Length(name: "huge", px: 1e100)) == "1e+100px")
+            #expect(DesignTweakControls.format(1e100) == "1e+100")
+            #expect(DesignTweakControls.format(.infinity) == "inf")
+        }
+    }
+
     // MARK: Colors
 
     @Test(arguments: [

@@ -57,7 +57,7 @@ struct DesignBoardExportTests {
     @Test func aStandalonePageKeepsNothingThatRunsEmbedsOrRedirects() async throws {
         let hostile = """
         <!doctype html>
-        <html lang="en">
+        <html lang="en" onclick="alert('root')" onpointerenter="alert('root')" data-dc-root="stamp">
         <head><meta charset="utf-8"><title>Hostile</title><script src="./support.js"></script></head>
         <body>
         <x-dc>
@@ -84,6 +84,8 @@ struct DesignBoardExportTests {
         let page = try await view.staticPage().lowercased()
 
         #expect(!page.contains("javascript:"))
+        #expect(page.hasPrefix("<!doctype html>\n<html lang=\"en\">"), "root language stays; handlers and stamps do not")
+        #expect(!page.contains("onclick") && !page.contains("onpointerenter"))
         for tag in ["<script", "<iframe", "<object", "<embed", "<base", "http-equiv", "<animate"] {
             #expect(!page.contains(tag), "\(tag) left")
         }
