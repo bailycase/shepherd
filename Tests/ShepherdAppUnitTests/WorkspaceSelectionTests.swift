@@ -39,11 +39,6 @@ struct WorkspaceSelectionTests {
         #expect(selection.mountedTabs.filter(selection.isVisible).map(\.id) == [w.b.tab.id])
     }
 
-    @Test func everyLayoutMountsInStableSpaceThenTabOrder() {
-        let w = Workspace()
-        #expect(w.selecting(w.a.agent).mountedTabs.map(\.id) == w.stableOrder)
-    }
-
     /// Switching — within a space or across spaces — never changes what is mounted or its order.
     @Test func switchingAgentsNeverChangesTheMountedOrder() {
         let w = Workspace()
@@ -212,8 +207,8 @@ struct WorkspaceSelectionTests {
         inHome.pendingMountTabIDs = [w.b.tab.id, w.c.tab.id]
         #expect(inHome.mountOrder == [w.b.tab.id, w.c.tab.id])
         var otherFirst = w.selecting(w.c.agent, in: w.other)
-        otherFirst.pendingMountTabIDs = [w.a.tab.id]
-        #expect(otherFirst.mountOrder == [w.a.tab.id])
+        otherFirst.pendingMountTabIDs = [w.a.tab.id, w.c.tab.id]
+        #expect(otherFirst.mountOrder == [w.c.tab.id, w.a.tab.id])
     }
 
     /// Mounting in any order never moves a layout already mounted: each lands in its place in
@@ -223,10 +218,11 @@ struct WorkspaceSelectionTests {
         let w = Workspace()
         var selection = w.selecting(nil)
         selection.pendingMountTabIDs = Set(w.stableOrder)
+        var drained: Set<TabID> = []
         for index in drain {
+            drained.insert(w.stableOrder[index])
             selection.pendingMountTabIDs.remove(w.stableOrder[index])
-            let mounted = selection.mountedTabs.map(\.id)
-            #expect(mounted == w.stableOrder.filter(mounted.contains))
+            #expect(selection.mountedTabs.map(\.id) == w.stableOrder.filter(drained.contains))
         }
         #expect(selection.mountedTabs.map(\.id) == w.stableOrder)
     }

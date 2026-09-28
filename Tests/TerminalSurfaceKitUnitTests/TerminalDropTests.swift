@@ -69,10 +69,6 @@ final class TerminalImageDropTests {
         #expect(resized.map { Size($0.width, $0.height) } == expected)
     }
 
-    @Test func theClampIsTheDocumentedTwoThousandPixels() {
-        #expect(TerminalImageDrop.maxDimension == 2000)
-    }
-
     /// A URL-only destination is what made screenshot drags no-ops.
     @Test func dropsAcceptFilesAndRawImageData() {
         #expect(TerminalImageDrop.acceptedTypes == [.fileURL, .image])

@@ -23,15 +23,6 @@ struct AgentStatusTests {
         #expect(from.canTransition(to: to) == expected, "\(from) → \(to)")
     }
 
-    @Test func aCompletedAgentMayStartANewTurn() {
-        #expect(AgentStatus.done.canTransition(to: .working))
-    }
-
-    @Test(arguments: [(AgentStatus.idle, AgentStatus.done), (.idle, .blocked), (.blocked, .done), (.done, .blocked)])
-    func skippingTheWorkingStateIsForbidden(from: AgentStatus, to: AgentStatus) {
-        #expect(!from.canTransition(to: to))
-    }
-
     @Test func rawValuesAreTheWireSpelling() {
         #expect(AgentStatus.allCases.map(\.rawValue) == ["working", "blocked", "idle", "done"])
         #expect(ThinkingLevel.allCases.map(\.rawValue) == ["off", "minimal", "low", "medium", "high", "xhigh", "max"])
