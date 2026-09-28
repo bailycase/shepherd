@@ -1336,7 +1336,7 @@ now (no schedules, triggers or next-run column)").
     (a hollow `textTertiary` dot, `textTertiary` words) for stopped, "not run yet", "off" and
     "host offline". Empty until the host's runs are read.
   - **Context menu:** Open Run while its run's thread exists, Stop while the run is live else Run
-    Now, Edit…, and Delete Automation (it stops the run too), each disabled where the host can't
+    Now, Edit…, and Delete Automation (it stops the run too, including a run still being created), each disabled where the host can't
     take it. These are the actions the sidebar's Automations rows had.
   - **Empty:** "No automations yet. …" or "No automations match “…”." in the table's place.
 - **Detail pane:** 360pt at the trailing edge with a hairline on its leading side, for the
