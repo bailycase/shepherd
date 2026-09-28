@@ -3976,7 +3976,9 @@ AGENTS.md." (file names in mono; see the departures).
     mono 10.5 at 60% inside the button (lantern fill, `textOnLantern`, 12/600). With nothing
     edited, Save and Revert disable (honest affordances); ⌘S saves while the page is open. Unsaved
     edits are kept per machine and file while Shepherd runs, so switching tabs, hosts or pages
-    loses nothing.
+    loses nothing. Undo belongs to the mounted file and host, never the window's shared undo
+    stack. Switching documents cannot undo text into the new file, even when their contents
+    match; callbacks from an old editor remain bound to its original document.
   - **History** (with Same on every host on; per host the side column lists it) opens a popover on
     `bgRaised`, 380pt wide, scrolling past 340pt: This Mac's saves of the open file as the per-host
     History list draws them. Restore puts a version back as a new save ("Restored the Sep 19

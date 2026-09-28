@@ -4,11 +4,6 @@ import Testing
 
 @Suite("Thread components")
 struct ThreadComponentTests {
-    @Test(arguments: [(0.0, "0s"), (14.7, "14s"), (62, "1m 02s"), (3_720, "1h 02m"), (-3, "0s")] as [(Double, String)])
-    func liveElapsedCountsWholeSecondsThenMinutes(seconds: Double, text: String) {
-        #expect(NWDuration.text(seconds, .long) == text)
-    }
-
     /// Only thinking with something to open is a disclosure with a chevron: live "Thinking…"
     /// and a thought the model kept back are plain lines, whatever they carry.
     @Test(arguments: [

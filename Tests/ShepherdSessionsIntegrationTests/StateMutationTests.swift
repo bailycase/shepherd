@@ -42,10 +42,16 @@ struct StateMutationTests {
     /// A no-op mutation succeeds without writing or broadcasting.
     private func expectNoChange(on h: ScratchServer, _ mutation: () async throws -> Void) async throws {
         let before = h.server.state
+        let bytes = try Data(contentsOf: h.stateURL)
+        let attributes = try FileManager.default.attributesOfItem(atPath: h.stateURL.path)
         try await mutation()
         await drainMainQueue()
         #expect(h.server.state == before)
         #expect(h.broadcasts.current.isEmpty)
+        #expect(try Data(contentsOf: h.stateURL) == bytes)
+        let after = try FileManager.default.attributesOfItem(atPath: h.stateURL.path)
+        #expect(after[.systemFileNumber] as? NSNumber == attributes[.systemFileNumber] as? NSNumber)
+        #expect(after[.modificationDate] as? Date == attributes[.modificationDate] as? Date)
     }
 
     // MARK: - Reading state
@@ -436,7 +442,8 @@ struct StateMutationTests {
     }
 
     /// Binding and structural writes may be queued in either order; neither loses the other.
-    @Test func bindingAndStructuralWritesInterleaveWithoutLosingEither() async throws {
+    @Test(arguments: [false, true])
+    func bindingAndStructuralWritesInterleaveWithoutLosingEither(bindingFirst: Bool) async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let space = Fixture.space()
@@ -446,9 +453,13 @@ struct StateMutationTests {
         let split = PaneNode.split(axis: .vertical, ratio: 0.5, first: .leaf(pane), second: .leaf(LeafPane(cwd: space.path)))
         let session = SessionID()
 
-        async let structural: Void = h.server.updateLayoutStructure(tabID: tab.id, layout: split)
-        async let binding: Void = h.server.updatePaneSession(tabID: tab.id, paneID: pane.id, sessionID: session)
-        _ = try await (structural, binding)
+        if bindingFirst {
+            try await h.server.updatePaneSession(tabID: tab.id, paneID: pane.id, sessionID: session)
+            try await h.server.updateLayoutStructure(tabID: tab.id, layout: split)
+        } else {
+            try await h.server.updateLayoutStructure(tabID: tab.id, layout: split)
+            try await h.server.updatePaneSession(tabID: tab.id, paneID: pane.id, sessionID: session)
+        }
 
         let layout = try #require(h.server.state.tabs.first?.layout)
         #expect(layout.leaves.count == 2)

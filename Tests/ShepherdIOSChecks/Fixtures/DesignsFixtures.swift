@@ -44,7 +44,11 @@ extension FixtureCatalog {
                 // The keyboard (and the simulator's first-run tip over it) stays out of the shot.
                 try? await Task.sleep(for: .seconds(1))
                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                print(model.draft == nil ? "FIXTURE CHECK FAILED: the tap named no element" : "FIXTURE CHECK ok: picked \(model.draft!.tag)")
+                guard let pick = model.draft, model.current == DesignsFixtures.phone,
+                      pick.label?.contains("Checkout started") == true else {
+                    FixtureCheck.fail("Comment tap did not pick Checkout started on the phone board")
+                }
+                print("FIXTURE CHECK ok: picked \(pick.tag)")
             }),
             FixtureScreen(name: "design-boards", hosts: quiet,
                           routes: [.designs(.design(checkout)), .designs(.board(checkout, path: phone))],
@@ -178,13 +182,14 @@ enum DesignsFixtures {
     static func comments(now: Double) -> DesignComments {
         let source = String(decoding: Boards.phone, as: UTF8.self)
         func anchor(_ marker: String) -> (tid: Int, path: [Int]) {
-            guard let template = DesignTemplate(board: source) else { return (0, [0]) }
+            guard let template = DesignTemplate(board: source) else { FixtureCheck.fail("Invalid phone board template") }
             let bytes = Array(source.utf8)
             let element = template.elements.first { element in
                 guard let range = element.tagRange else { return false }
                 return String(decoding: bytes[range], as: UTF8.self).contains(marker)
             }
-            return (element?.tid ?? 0, element?.path ?? [0])
+            guard let element else { FixtureCheck.fail("Missing required phone element: \(marker)") }
+            return (element.tid, element.path)
         }
         let cart = anchor(#"data-el="Cart viewed""#)
         let steps = anchor(#"data-el="Steps list""#)
@@ -205,28 +210,27 @@ enum DesignsFixtures {
     @MainActor static func listed(_ app: MobileApp) async {
         let designs = MobileDesigns.of(app.hosts)
         await designs.refresh()
-        await FixtureWindows.wait(seconds: 10) { !designs.model.tiles.isEmpty }
+        await FixtureWindows.wait("design listing", seconds: 10) { !designs.model.tiles.isEmpty }
     }
 
     @MainActor static func synced(_ app: MobileApp, _ ref: HostDesignRef) async {
         let designs = MobileDesigns.of(app.hosts)
-        await FixtureWindows.wait(seconds: 10) { designs.indexes[ref] != nil }
+        await FixtureWindows.wait("design index \(ref)", seconds: 10) { designs.indexes[ref] != nil }
     }
 
     /// Boards drawn into images by the renderer (the tiles).
     @MainActor static func drawn(images: Int) async {
-        await FixtureWindows.wait(seconds: 30) { DesignRendering.shared.renderedImages >= images }
+        await FixtureWindows.wait("\(images) board images rendered", seconds: 30) { DesignRendering.shared.renderedImages >= images }
     }
 
     /// The board screen on show, once its board has drawn and its pins are placed.
     @MainActor static func board() async -> DesignBoardModel? {
-        await FixtureWindows.wait(seconds: 10) { DesignBoardModel.onScreen?.live != nil }
+        await FixtureWindows.wait("live board on screen", seconds: 10) { DesignBoardModel.onScreen?.live != nil }
         guard let model = DesignBoardModel.onScreen, let live = model.live else {
-            print("FIXTURE CHECK FAILED: no board on screen")
-            return nil
+            FixtureCheck.fail("No board on screen")
         }
-        await FixtureWindows.wait(seconds: 20) { live.booted || live.failure != nil }
-        if !live.booted { print("FIXTURE CHECK FAILED: the board didn't draw") }
+        await FixtureWindows.wait("board boot", seconds: 20) { live.booted || live.failure != nil }
+        if !live.booted { FixtureCheck.fail("The board didn't draw: \(String(describing: live.failure))") }
         await model.measurePins()
         return model
     }
@@ -234,7 +238,7 @@ enum DesignsFixtures {
     /// At most two web views lived at once: the board on screen and the renderer's.
     @MainActor static func checkLiveViews() async {
         let peak = DesignRendering.shared.peakLiveViews
-        print(peak <= DesignRendering.liveCap ? "FIXTURE CHECK ok: at most \(peak) live web views"
+        FixtureCheck.report(peak > 0 && peak <= 2 && peak <= DesignRendering.liveCap ? "FIXTURE CHECK ok: at most \(peak) live web views"
               : "FIXTURE CHECK FAILED: \(peak) live web views at once (the cap is \(DesignRendering.liveCap))")
     }
 }

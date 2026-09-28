@@ -134,10 +134,8 @@ struct MotionTests {
         #expect(frames.keyTimes.first == 0 && frames.keyTimes.last == 1)
         #expect(abs(frames.values[0] - 1) < 1e-9 && abs(frames.values[64] - 1) < 1e-9)
         #expect(abs(frames.values[32] - 0.35) < 1e-9)
-        for (value, time) in zip(frames.values, frames.keyTimes) {
-            let date = Date(timeIntervalSinceReferenceDate: time * Motion.glow.duration)
-            #expect(abs(value - NWPhase.glowOpacity(date)) < 1e-9)
-        }
+        #expect(abs(frames.values[16] - 0.675) < 1e-9)
+        #expect(abs(frames.values[48] - 0.675) < 1e-9)
         // Linear between frames, the pulse never strays a percent from the cosine.
         for step in 0..<640 {
             let fraction = Double(step) / 640

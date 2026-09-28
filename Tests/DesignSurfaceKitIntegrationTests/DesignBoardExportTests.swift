@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import PDFKit
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdTestSupport
@@ -131,18 +132,53 @@ struct DesignBoardExportTests {
         try await view.load()
         let layout = try #require(try await view.printLayout())
         #expect(layout.height > 3000)
-        let expected = DesignPrint.pages(contentHeight: layout.height, pageHeight: 1056, lines: layout.lines, blocks: layout.blocks)
 
         let pdf = try await view.pdf(.flow(.letter))
 
         let pages = try #require(DesignPDF.pages(pdf))
-        #expect(pages.count == expected.count && pages.count >= 3)
+        #expect(pages.count >= 3)
         #expect(pages.allSatisfy { $0 == CGSize(width: 612, height: 792) }, "Letter")
-        // Every cut falls between lines, never through the drawing.
-        for slice in expected.dropLast() {
-            #expect(!layout.lines.contains { $0.lowerBound < slice.end && $0.upperBound > slice.end })
-            #expect(!layout.blocks.contains { $0.lowerBound < slice.end && $0.upperBound > slice.end })
+        let document = try #require(PDFDocument(data: pdf))
+        let text = (0..<document.pageCount).compactMap { document.page(at: $0)?.string }.joined(separator: "\n")
+        let labels = try NSRegularExpression(pattern: #"Paragraph \d+\."#)
+        let actual = labels.matches(in: text, range: NSRange(text.startIndex..., in: text)).map {
+            String(text[Range($0.range, in: text)!])
         }
+        #expect(actual == (0..<60).map { "Paragraph \($0)." }, "each paragraph survives once, in reading order")
+    }
+
+    @Test func aDrawingAcrossTheFirstCutMovesIntactToTheSecondPage() async throws {
+        // Letter's first printable region ends at 1003 CSS px. This 120px SVG begins
+        // at 960, so it belongs wholly on page two, below that page's 53px top gap.
+        let board = """
+        <html><head><script src="./support.js"></script></head><body style="margin:0;background:white">
+        <x-dc><div style="height:960px">Before</div><svg width="100" height="120" style="display:block"><rect width="100" height="120" fill="red"/></svg><div>After</div></x-dc>
+        </body></html>
+        """
+        let harness = try BoardHarness(files: ["Cut.dc.html": board])
+        let view = try harness.view("Cut.dc.html", size: CGSize(width: 816, height: 1056))
+        try await view.load()
+        let pdf = try await view.pdf(.flow(.letter))
+        let provider = try #require(CGDataProvider(data: pdf as CFData))
+        let document = try #require(CGPDFDocument(provider))
+        #expect(document.numberOfPages == 2)
+        let first = try #require(document.page(at: 1))
+        let second = try #require(document.page(at: 2))
+        func pixel(_ page: CGPDFPage, x: Int, y: Int) throws -> [UInt8] {
+            var bytes = [UInt8](repeating: 0, count: 4)
+            let context = try #require(CGContext(data: &bytes, width: 1, height: 1, bitsPerComponent: 8,
+                bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.translateBy(x: CGFloat(-x), y: CGFloat(y + 1) - page.getBoxRect(.mediaBox).height)
+            context.drawPDFPage(page)
+            return Array(bytes.prefix(3))
+        }
+        #expect(try pixel(first, x: 30, y: 730) == [255, 255, 255])
+        #expect(try pixel(second, x: 30, y: 50) == [255, 0, 0])
+        #expect(try pixel(second, x: 30, y: 125) == [255, 0, 0])
+        #expect(try pixel(second, x: 30, y: 140) == [255, 255, 255])
+        let text = try #require(PDFDocument(data: pdf))
+        #expect(text.page(at: 0)?.string?.contains("Before") == true)
+        #expect(text.page(at: 1)?.string?.contains("After") == true)
     }
 
     @Test func documentsMergePageAfterPage() async throws {
@@ -151,8 +187,15 @@ struct DesignBoardExportTests {
         try await view.load()
         let one = try await view.pdf(.fixed)
 
-        let merged = try DesignPDF.merge([one, one, one])
-
-        #expect(DesignPDF.pages(merged)?.count == 3)
+        let report = try BoardHarness(files: ["Report.dc.html": Self.flowBoard(paragraphs: 60)])
+        let reportView = try report.view("Report.dc.html", size: CGSize(width: 816, height: 1056))
+        try await reportView.load()
+        let many = try await reportView.pdf(.flow(.letter))
+        let inputs = try [one, many].map { try #require(PDFDocument(data: $0)) }
+        let expected = inputs.flatMap { doc in (0..<doc.pageCount).map { doc.page(at: $0)?.string } }
+        #expect(expected.count > 2)
+        #expect(inputs[0].page(at: 0)?.string?.contains("Checkout") == true)
+        let merged = try #require(PDFDocument(data: DesignPDF.merge([one, many])))
+        #expect((0..<merged.pageCount).map { merged.page(at: $0)?.string } == expected)
     }
 }

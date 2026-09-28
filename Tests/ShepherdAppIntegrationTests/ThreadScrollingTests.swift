@@ -35,7 +35,7 @@ private final class ThreadHarness {
             }
             return .snapshot(value: self.snapshot)
         }
-        window.show(ThreadView(store: store, active: true, isFocused: false, request: request, commandKey: "thread")
+        window.show(ThreadView(store: store, active: true, isFocused: false, request: request, commandKey: "thread", listModels: { .empty })
             .environment(\.threadCommands, commands))
     }
 
@@ -101,12 +101,19 @@ private final class ThreadHarness {
         let host = window.host
         // The pill floats just above the composer: OCR only the lower half.
         let region = NSRect(x: 0, y: host.isFlipped ? host.bounds.height / 2 : 0, width: host.bounds.width, height: host.bounds.height / 2)
-        guard let bitmap = host.bitmapImageRepForCachingDisplay(in: region) else { return false }
+        guard let bitmap = host.bitmapImageRepForCachingDisplay(in: region) else {
+            Issue.record("Could not capture the thread while checking the jump pill")
+            return false
+        }
         host.cacheDisplay(in: region, to: bitmap)
-        guard let image = bitmap.cgImage else { return false }
+        guard let image = bitmap.cgImage else {
+            Issue.record("The thread capture had no image")
+            return false
+        }
         let request = VNRecognizeTextRequest()
         request.usesLanguageCorrection = false
-        try? VNImageRequestHandler(cgImage: image).perform([request])
+        do { try VNImageRequestHandler(cgImage: image).perform([request]) }
+        catch { Issue.record(error); return false }
         return (request.results ?? []).contains {
             $0.topCandidates(1).first?.string.localizedCaseInsensitiveContains("Jump to latest") == true
         }

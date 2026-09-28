@@ -710,7 +710,7 @@ struct NativeThreadStoreTests {
         #expect(store.displayedMessages.map(\.entryID) == ["a", echo.entryID, "live"], "history, then the echo, then the live reply")
     }
 
-    @Test func theEchoLeavesOnlyWhenPiPersistsTheSameText() async {
+    @Test func aLegacyHostsEchoLeavesOnlyWhenPiPersistsTheSameText() async {
         let (store, host, task) = await started()
         defer { task.cancel() }
         host.acceptAll()
@@ -781,7 +781,7 @@ struct NativeThreadStoreTests {
         host.acceptAll()
         store.draft = "look"
         await store.send(images: [NativeImage(mimeType: "image/png", data: Data([1]))])
-        #expect(try #require(host.actions.first).images.isEmpty == !attached)
+        #expect(try #require(host.actions.first).images == (attached ? [NativeImage(mimeType: "image/png", data: Data([1]))] : []))
     }
 
     @Test(arguments: [false, true])
@@ -792,7 +792,7 @@ struct NativeThreadStoreTests {
         await store.send(images: [NativeImage(mimeType: "image/png", data: Data([1]))])
         #expect(host.actions.count == (supported ? 1 : 0))
         #expect(store.sentCount == (supported ? 1 : 0))
-        if supported { #expect(try #require(host.actions.first).images.count == 1) }
+        if supported { #expect(try #require(host.actions.first).images == [NativeImage(mimeType: "image/png", data: Data([1]))]) }
     }
 
     @Test func sendReturnsOnlyItsOwnAcceptance() async {

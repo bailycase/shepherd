@@ -228,7 +228,10 @@ Tests come in tiers, and the switch is `--filter` on target names.
   `support/pi`, whose `skills/` Settings ▸ Skills manages), `SHEPHERD_MCP_CONFIG`, `SHEPHERD_YOUR_PI` and
   `PI_CODING_AGENT_DIR` (both "your pi", `pi-agent/`: the second a decoy the app must ignore), and
   `ZDOTDIR` at a scratch root for that process, and clears the
-  agent-only `SHEPHERD_*` variables a run started from a Shepherd agent inherits. It also puts a
+  agent-only `SHEPHERD_*` variables a run started from a Shepherd agent inherits. It clears
+  inherited `GIT_*` controls, installs empty scratch global/system Git configuration and
+  scratch templates, and disables credential prompts. Tests may still configure local hooks
+  explicitly inside their scratch repositories. It also puts a
   `bin/` first on `PATH`, holding stand-ins for `gh` and `pi` that refuse to run, and the scratch
   `ZDOTDIR`'s `.zshenv` and `.zlogin` keep it first in every zsh a test starts. Without them, a
   login shell from a minimal environment (Xcode, launchd) reaches the user's own `gh` and `pi`,

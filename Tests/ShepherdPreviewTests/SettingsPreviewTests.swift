@@ -386,8 +386,9 @@ struct SettingsPreviewTests {
         defer { try? FileManager.default.removeItem(at: repo) }
         try await workspace.seed(ShepherdState(spaces: [Space(name: "Shepherd", path: repo.path)]))
         workspace.vm.selectedSpaceID = workspace.vm.state.spaces.first?.id
+        workspace.vm.settings.defaultModel = "qa/gemini-3.1-flash-lite"
         try await Preview.render(name, size: CGSize(width: AppLayout.newAgentSheetWidth, height: 640),
-                                 untilGone: reasons ? nil : "Thinking") {
+                                 untilGone: reasons ? nil : "Thinking", showing: "gemini-3.1-flash-lite") {
             NewAgentSheet(vm: workspace.vm)
         }
     }
@@ -400,7 +401,7 @@ struct SettingsPreviewTests {
         let space = Space(name: "Shepherd", path: repo.path)
         try await workspace.seed(ShepherdState(spaces: [space]))
         try await Preview.render("sheet-new-worktree", size: CGSize(width: AppLayout.newWorktreeSheetWidth, height: 360),
-                                 untilGone: "resolving") {
+                                 untilGone: "resolving", showing: "no origin") {
             NewWorktreeSheet(vm: workspace.vm, space: space)
         }
     }
@@ -415,7 +416,7 @@ struct SettingsPreviewTests {
         let space = Space(name: "Shepherd", path: repo.path)
         let (agent, tab) = try await workspace.agent("Fix the login redirect", in: space, order: 0, branch: "worktree/fix-login")
         try await workspace.seed(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
-        try await Preview.render("sheet-finalize-setup", size: CGSize(width: AppLayout.finalizeSheetWidth, height: 620), untilGone: "Checking") {
+        try await Preview.render("sheet-finalize-setup", size: CGSize(width: AppLayout.finalizeSheetWidth, height: 620), untilGone: "Checking", showing: "Re-run checks") {
             FinalizeWorktreeSheet(vm: workspace.vm, agent: agent, space: space)
         }
     }
@@ -503,7 +504,7 @@ struct SettingsPreviewTests {
             try FileManager.default.createDirectory(at: root.appendingPathComponent(name), withIntermediateDirectories: true)
         }
         try await Preview.render("sheet-directory-picker", size: CGSize(width: AppLayout.directoryPickerWidth, height: 480),
-                                 untilGone: "Loading") {
+                                 untilGone: "Loading", showing: "billing-service") {
             RemoteDirectoryPicker(hostName: "this Mac", startPath: root.path,
                                   list: { try await LocalDirectoryLister.load(path: $0) }, choose: { _ in }, cancel: {})
         }
@@ -635,7 +636,7 @@ struct SettingsPreviewTests {
         agent.worktreePath = repo.path
         try await workspace.seed(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
         try await Preview.render("sheet-delete-worktree", size: CGSize(width: AppLayout.confirmSheetWideWidth, height: 360),
-                                 untilGone: "Checking") {
+                                 untilGone: "Checking", showing: "uncommitted change") {
             WorktreeDeleteDialog(vm: workspace.vm, agent: agent)
         }
     }

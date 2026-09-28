@@ -286,7 +286,7 @@ struct NativeThreadWireTests {
         #expect(try Self.snapshot(adding: ["runtime": runtime]).isRPC == isRPC)
     }
 
-    @Test func messagesDefaultToUntruncated() throws {
+    @Test func messagesDecodeExplicitTruncationWithNoOptionalTimingFields() throws {
         let message = try Wire.decode(NativeThreadMessage.self, #"{"entryID":"e","role":"user","blocks":[],"truncated":false}"#)
         #expect(!message.truncated && message.timestamp == nil && message.startedAt == nil && message.thinkingSeconds == nil)
         #expect(NativeThreadMessage(entryID: "e", role: "user", blocks: []).truncated == false)
@@ -385,7 +385,7 @@ struct NativeThreadWireTests {
         #expect(try Wire.object(NativeImage(mimeType: "image/png", data: Data([1])))["name"] == nil)
     }
 
-    @Test func transcriptPagesDefaultToNoEarlierEntries() {
+    @Test func transcriptPageInitializerDefaultsToNoEarlierEntries() {
         let page = NativeSubagentTranscript(runID: "r", messages: [])
         #expect(page.earlierCount == 0 && page.olderCursor == nil)
     }

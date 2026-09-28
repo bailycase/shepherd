@@ -292,7 +292,9 @@ public final class RemoteDesignSource: DesignFileSource, @unchecked Sendable {
             for file in reply.changed {
                 paths[file.path] = file.sha256
                 if let data = file.data {
-                    cache.store(data, sha256: file.sha256, in: key)
+                    guard cache.store(data, sha256: file.sha256, in: key) else {
+                        throw RemoteHostClientError.rejected(code: "corrupt", message: "\(file.path) didn't arrive whole.")
+                    }
                 } else if file.size > RemoteProtocol.designChunkBytes {
                     try await fetchInPieces(file.path, sha256: file.sha256, transport: transport)
                 } else {
@@ -402,7 +404,7 @@ public final class RemoteDesignSource: DesignFileSource, @unchecked Sendable {
                   chunk.offset == offset else { throw Self.unexpected }
             guard !cache.isForgotten(host: key.host) else { throw CancellationError() }
             var next = partial ?? RemoteDesignCache.Partial(sha256: sha256, total: chunk.total, data: Data())
-            guard Self.fits(chunk, into: next) else {
+            guard chunk.sha256 == sha256, Self.fits(chunk, into: next) else {
                 cache.setPartial(nil, name, in: key)
                 throw Self.unexpected
             }
@@ -412,7 +414,7 @@ public final class RemoteDesignSource: DesignFileSource, @unchecked Sendable {
             if chunk.isLast || chunk.data.isEmpty { break }
         }
         cache.setPartial(nil, name, in: key)
-        guard let data = partial?.data, cache.store(data, sha256: sha256, in: key) else {
+        guard let done = partial, done.data.count == done.total, cache.store(done.data, sha256: sha256, in: key) else {
             throw RemoteHostClientError.rejected(code: "corrupt", message: "\(path) didn't arrive whole.")
         }
     }

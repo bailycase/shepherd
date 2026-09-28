@@ -128,7 +128,8 @@ test("workflow JSON boundary rejects host constructors, imports, thenables and h
     let imported = false; try { await import("node:fs"); imported = true; } catch {}
     return { escaped, imported, globals: [typeof process, typeof require, typeof fetch] };
   `, call, { timeoutMs: 2000 });
-  assert(output.escaped.every((p) => p === false)); assert.equal(output.imported, false);
+  assert.deepEqual(output.escaped, [false, false, false, false, false]);
+  assert.equal(output.imported, false);
   assert.deepEqual(output.globals, ["undefined", "undefined", "undefined"]);
   await assert.rejects(executeWorkflow('return runs.cancel("x");', call, { timeoutMs: 2000 }), /host failure/);
   const thenable = await executeWorkflow('return { then(resolve) { try { resolve(resolve.constructor("return process")().pid); } catch { resolve("blocked"); } } };', call, { timeoutMs: 2000 });

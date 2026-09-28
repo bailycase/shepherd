@@ -530,6 +530,10 @@ struct ClientSettingsTests {
         let newest = try! #require(model.waiting(hosts).first)
         await model.add(newest, line: "- b, edited", in: hosts)
         #expect(second.requests.last == "suggestions.add")
+        let added = try! await second.suggestions(.fetch).added
+        #expect(added.map(\.line) == ["- b, edited"])
+        #expect(added.map(\.id) == [newest.suggestion.id])
+        #expect(try! await first.suggestions(.fetch).added.isEmpty)
         #expect(model.waiting(hosts).map(\.suggestion.line) == ["- a"])
         await model.addAll(hosts)
         #expect(model.waiting(hosts).isEmpty)

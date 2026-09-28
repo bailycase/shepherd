@@ -153,8 +153,9 @@ struct DesignBoardViewTests {
 
     // MARK: The sandbox
 
-    @Test func aBoardReachesOnlyItsOwnDesign() async throws {
-        let harness = try BoardHarness()
+    @Test(arguments: [DesignSandbox.Network.none, .googleFonts])
+    func aBoardReachesOnlyItsOwnDesign(network: DesignSandbox.Network) async throws {
+        let harness = try BoardHarness(network: network)
         try Data("secret".utf8).write(to: harness.folder.appendingPathComponent("secret.txt"))
         let assets = harness.folder.appendingPathComponent("assets", isDirectory: true)
         try FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
@@ -165,6 +166,8 @@ struct DesignBoardViewTests {
         try await view.load()
 
         let reached = try await harness.text(view, """
+            window.__violations = [];
+            document.addEventListener('securitypolicyviolation', e => window.__violations.push(e.effectiveDirective + ':' + e.blockedURI));
             const probe = async (url) => { try { return String((await fetch(url)).status); } catch (e) { return 'blocked'; } };
             const image = (url) => new Promise(resolve => {
               const i = new Image(); i.onload = () => resolve('loaded'); i.onerror = () => resolve('blocked'); i.src = url;
@@ -179,6 +182,20 @@ struct DesignBoardViewTests {
             """)
         // The last: the bridge's message handler lives only in Shepherd's content world.
         #expect(reached == "200,200,200,404,404,404,404,blocked,blocked,true,undefined")
+        // A failed fetch alone could just mean no internet. Require WebKit's policy evidence.
+        let violations = try await harness.text(view, """
+            return await new Promise(resolve => {
+              const ready = () => {
+                const all = window.__violations.join(',');
+                if (all.includes('connect-src:https://example.com') && all.includes('img-src:https://example.com')) resolve(all);
+              };
+              document.addEventListener('securitypolicyviolation', ready);
+              ready();
+              setTimeout(() => resolve(window.__violations.join(',')), 5000);
+            });
+            """)
+        #expect(violations.contains("connect-src:https://example.com"))
+        #expect(violations.contains("img-src:https://example.com"))
 
         // No navigation leaves the board: another site is refused, and an in-project link is
         // handed to the host instead.

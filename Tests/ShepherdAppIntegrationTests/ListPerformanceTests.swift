@@ -29,7 +29,12 @@ struct ListPerformanceTests {
 
     /// The fleet in an off-screen sidebar, settled.
     private func openSidebar(_ app: AppHarness) async throws -> (ShepherdViewModel, OffscreenWindow) {
-        let vm = try await app.start(with: ListFixtures.fleet(in: app.dir))
+        var fleet = ListFixtures.fleet(in: app.dir)
+        // Keep Recents visible rather than below 43 Needs you rows.
+        for index in fleet.agents.indices where fleet.agents[index].status == .blocked {
+            fleet.agents[index].status = .idle
+        }
+        let vm = try await app.start(with: fleet)
         let window = OffscreenWindow(size: Self.sidebarSize, dark: true, SidebarView(vm: vm))
         ListPerf.settle(window)
         return (vm, window)
@@ -50,6 +55,7 @@ struct ListPerformanceTests {
             ListPerf.settle(window)
         }
         defer { window.close() }
+        #expect(rows["sidebar.row", default: 0] > 0, "\(rows)")
         #expect(rows["sidebar.row", default: 0] <= 2 * Self.sidebarRowsOnScreen, "\(rows)")
         #expect(rows["sidebar.lists", default: 0] <= 1, "one derivation for the whole list: \(rows)")
     }
@@ -79,17 +85,18 @@ struct ListPerformanceTests {
         let (vm, window) = try await openSidebar(app)
         defer { window.close() }
         let shown = recentsOnScreen(vm).prefix(6)
+        try #require(!shown.isEmpty)
+        let indices = try shown.map { row in try #require(vm.state.agents.firstIndex { $0.id == row.id.agentID }) }
         let order = vm.sidebarLists.recents.map(\.id)
 
         let rows = ListPerf.counting {
-            for row in shown {
+            for index in indices {
                 var next = vm.state
-                if let index = next.agents.firstIndex(where: { $0.id == row.id.agentID }) {
-                    next.agents[index].status = next.agents[index].status == .working ? .done : .working
-                }
+                next.agents[index].status = next.agents[index].status == .working ? .done : .working
                 ListPerf.time(window) { vm.adopt(next) }
             }
         }
+        #expect(rows["sidebar.row", default: 0] > 0, "\(rows)")
         #expect(vm.sidebarLists.recents.map(\.id) == order)
         #expect(rows["sidebar.row", default: 0] <= shown.count * 2, "\(rows)")
         #expect(rows["sidebar.destination", default: 0] == 0, "\(rows)")
@@ -103,16 +110,17 @@ struct ListPerformanceTests {
         let (vm, window) = try await openSidebar(app)
         defer { window.close() }
         let shown = recentsOnScreen(vm).prefix(6)
+        try #require(!shown.isEmpty)
+        let indices = try shown.map { row in try #require(vm.state.agents.firstIndex { $0.id == row.id.agentID }) }
 
         let rows = ListPerf.counting {
-            for row in shown {
+            for index in indices {
                 var next = vm.state
-                if let index = next.agents.firstIndex(where: { $0.id == row.id.agentID }) {
-                    next.agents[index].name += " (renamed)"
-                }
+                next.agents[index].name += " (renamed)"
                 ListPerf.time(window) { vm.adopt(next) }
             }
         }
+        #expect(rows["sidebar.row", default: 0] > 0, "\(rows)")
         #expect(rows["sidebar.row", default: 0] <= shown.count * 2, "\(rows)")
     }
 
@@ -123,10 +131,12 @@ struct ListPerformanceTests {
         let (vm, window) = try await openSidebar(app)
         defer { window.close() }
         let shown = recentsOnScreen(vm).prefix(6)
+        try #require(!shown.isEmpty)
 
         let rows = ListPerf.counting {
             for row in shown { ListPerf.time(window) { vm.selectSidebarRow(row.id) } }
         }
+        #expect(rows["sidebar.row", default: 0] > 0, "\(rows)")
         #expect(rows["sidebar.row", default: 0] <= shown.count * 2 + 2, "\(rows)")
         #expect(rows["sidebar.lists", default: 0] == 0, "a selection derives nothing: \(rows)")
     }
@@ -159,6 +169,8 @@ struct ListPerformanceTests {
         }
         defer { window.close() }
         let built = rows["sidebar.row", default: 0] + rows["sidebar.project", default: 0]
+        #expect(rows["sidebar.row", default: 0] > 0, "\(rows)")
+        #expect(rows["sidebar.project", default: 0] > 0, "\(rows)")
         #expect(built <= 2 * Self.sidebarRowsOnScreen, "\(rows)")
         #expect(rows["sidebar.tree", default: 0] <= 1, "one derivation for the whole tree: \(rows)")
         #expect(rows["sidebar.lists", default: 0] == 0, "Activity's lists are not derived for the tree: \(rows)")
@@ -190,16 +202,17 @@ struct ListPerformanceTests {
         let (vm, window) = try await openProjectsSidebar(app)
         defer { window.close() }
         let shown = treeRowsOnScreen(vm).prefix(6)
+        try #require(!shown.isEmpty)
+        let indices = try shown.map { row in try #require(vm.state.agents.firstIndex { $0.id == row.id.agentID }) }
 
         let rows = ListPerf.counting {
-            for row in shown {
+            for index in indices {
                 var next = vm.state
-                if let index = next.agents.firstIndex(where: { $0.id == row.id.agentID }) {
-                    next.agents[index].status = next.agents[index].status == .working ? .done : .working
-                }
+                next.agents[index].status = next.agents[index].status == .working ? .done : .working
                 ListPerf.time(window) { vm.adopt(next) }
             }
         }
+        #expect(rows["sidebar.row", default: 0] > 0, "\(rows)")
         #expect(rows["sidebar.row", default: 0] <= shown.count * 2, "\(rows)")
         #expect(rows["sidebar.project", default: 0] <= shown.count * 2, "\(rows)")
         #expect(rows["sidebar.destination", default: 0] == 0, "\(rows)")
@@ -473,7 +486,7 @@ struct ListPerformanceTests {
         let store = NativeThreadStore()
         let window = OffscreenWindow(size: CGSize(width: 900, height: 800), dark: true,
                                      ThreadView(store: store, active: true, isFocused: false, request: { _ in .snapshot(value: snapshot) },
-                                                commandKey: "budget"))
+                                                commandKey: "budget", listModels: { .empty }))
         defer {
             store.stop()
             window.close()
@@ -504,7 +517,7 @@ struct ListPerformanceTests {
         let store = NativeThreadStore()
         let window = OffscreenWindow(size: CGSize(width: 900, height: 800), dark: true,
                                      ThreadView(store: store, active: true, isFocused: false, request: { _ in .snapshot(value: snapshot) },
-                                                commandKey: "entrances"))
+                                                commandKey: "entrances", listModels: { .empty }))
         defer {
             store.stop()
             window.close()
@@ -732,35 +745,55 @@ struct ListPerformanceTests {
         return "Here it is:\n\n```swift\nfunc build() {\n" + body.joined(separator: "\n") + "\n"
     }
 
+    private static var highlightRun = 0
+
     /// Fifteen chunks of a growing fenced block, delivered in one burst, color it at most twice
     /// (the first complete lines at once, then at most every 250 ms, at line boundaries); the
     /// finished reply colors it once more, in full.
     @Test(.timingSensitive) func aBurstOfCodeChunksColorsTheBlockAtMostTwice() async throws {
+        // The process-wide highlight cache survives repeated test invocations.
+        Self.highlightRun += 1
+        let function = "func burstBudget\(Self.highlightRun)()"
+        func reply(_ lines: Int) -> String {
+            Self.codeReply(lines).replacingOccurrences(of: "func build()", with: function)
+        }
         let turn = ThreadFixture.history(2) + [ThreadFixture.user("u", "Write it")]
-        let thread = FakeThread(ThreadFixture.snapshot(turn, provisional: [ThreadFixture.streaming(Self.codeReply(2))], running: true))
+        let thread = FakeThread(ThreadFixture.snapshot(turn, provisional: [ThreadFixture.streaming(reply(2))], running: true))
         defer { thread.close() }
         try await thread.waitUntilReady()
-        try await Task.sleep(for: .milliseconds(500))
-        ListPerf.settle(thread.window)
+        let initialCode = CodeHighlightCache.Key(fence: reply(2).components(separatedBy: "```swift\n")[1], language: "swift")
+        try await eventuallyOnMain("initial complete code lines to finish highlighting") {
+            ListPerf.settle(thread.window)
+            return CodeHighlightCache.cached(initialCode.prefix(lines: 2)) != nil
+        }
 
         let burst = try await counting(thread.window) {
+            // Deliver a burst without forcing fifteen full native layouts between chunks.
+            // Those layouts can span several throttle intervals on a busy machine.
             for chunk in 1...15 {
                 var next = thread.snapshot
                 next.revision += 1
-                next.provisional = [ThreadFixture.streaming(Self.codeReply(2 + chunk * 6) + "    let partial")]
+                next.provisional = [ThreadFixture.streaming(reply(2 + chunk * 6) + "    let partial")]
                 await thread.serve(next)
-                ListPerf.settle(thread.window)
             }
-            try await Task.sleep(for: .milliseconds(600))
+            let code = CodeHighlightCache.Key(fence: (reply(92) + "    let partial").components(separatedBy: "```swift\n")[1], language: "swift")
+            try await eventuallyOnMain("burst's final complete lines to finish highlighting") {
+                ListPerf.settle(thread.window)
+                return CodeHighlightCache.cached(code.prefix(lines: 93)) != nil
+            }
         }
         let finished = try await counting(thread.window) {
             var next = thread.snapshot
             next.revision += 1
             next.running = false
-            next.messages = turn + [ThreadFixture.assistant("done", Self.codeReply(2 + 15 * 6) + "    let partial\n}\n```\n")]
+            next.messages = turn + [ThreadFixture.assistant("done", reply(2 + 15 * 6) + "    let partial\n}\n```\n")]
             next.provisional = []
             await thread.serve(next)
-            try await Task.sleep(for: .milliseconds(600))
+            let code = CodeHighlightCache.Key(fence: (reply(92) + "    let partial\n}").components(separatedBy: "```swift\n")[1], language: "swift")
+            try await eventuallyOnMain("finished code block to finish highlighting") {
+                ListPerf.settle(thread.window)
+                return CodeHighlightCache.cached(code) != nil
+            }
         }
 
         #expect((1...2).contains(burst["highlight.render", default: 0]), "\(burst)")
@@ -1025,11 +1058,12 @@ struct ListPerformanceTests {
         defer { window.close() }
         ListPerf.settle(window)
         var next = runs
-        next[2].state = "complete"
-        next[2].endedAt = 2_000
+        // Paused retains the running row's sort position; complete would move it offscreen.
+        next[2].state = "paused"
 
         let rows = ListPerf.counting { ListPerf.time(window) { window.show(TrayHost(runs: next, state: state)) } }
 
+        #expect(rows["tray.row", default: 0] > 0, "\(rows)")
         #expect(rows["tray.row", default: 0] <= 2, "\(rows)")
     }
 
@@ -1057,6 +1091,7 @@ struct ListPerformanceTests {
         defer { window.close() }
         // About a dozen rows fit under the page's header; the lazy stack builds some ahead of
         // them (50 here, at any speed). All 200 would mean it isn't lazy.
+        #expect(opened["skills.row", default: 0] > 0, "\(opened)")
         #expect(opened["skills.row", default: 0] <= 80, "\(opened)")
 
         var snapshot = try #require(vm.skills.state(of: vm.skillsHosts[0]).snapshot)
@@ -1064,6 +1099,7 @@ struct ListPerformanceTests {
         let changed = ListPerf.counting {
             ListPerf.time(window) { vm.skills.hostChanged(ShepherdViewModel.thisMacSkills, snapshot) }
         }
+        #expect(changed["skills.row", default: 0] > 0, "\(changed)")
         #expect(changed["skills.row", default: 0] <= 2, "\(changed)")
     }
 
@@ -1089,6 +1125,7 @@ struct ListPerformanceTests {
             ListPerf.settle(window)
         }
         defer { window.close() }
+        #expect(opened["skills.row", default: 0] > 0, "\(opened)")
         #expect(opened["skills.row", default: 0] <= 80, "\(opened)")
 
         var snapshot = try #require(vm.skills.state(of: vm.skillsHosts[0]).snapshot)
@@ -1096,6 +1133,7 @@ struct ListPerformanceTests {
         let changed = ListPerf.counting {
             ListPerf.time(window) { vm.skills.hostChanged(ShepherdViewModel.thisMacSkills, snapshot) }
         }
+        #expect(changed["skills.row", default: 0] > 0, "\(changed)")
         #expect(changed["skills.row", default: 0] <= 2, "\(changed)")
     }
 
@@ -1127,6 +1165,7 @@ struct ListPerformanceTests {
         }
         defer { window.close() }
         // About a dozen rows fit under the page's header; the lazy stack builds some ahead.
+        #expect(opened["mcp.row", default: 0] > 0, "\(opened)")
         #expect(opened["mcp.row", default: 0] <= 80, "\(opened)")
 
         let changed = ListPerf.counting {
@@ -1134,6 +1173,7 @@ struct ListPerformanceTests {
                 store.receive(MCPServerReport(server: "server-100", status: MCPServerStatus(state: .connected)), from: AgentID())
             }
         }
+        #expect(changed["mcp.row", default: 0] > 0, "\(changed)")
         #expect(changed["mcp.row", default: 0] <= 2, "\(changed)")
     }
 
@@ -1152,6 +1192,8 @@ struct ListPerformanceTests {
         }
         defer { window.close() }
         // A chip is at least its letter, a short name, and padding: about a dozen fit 600pt.
+        #expect(rows["review.fileChip", default: 0] > 0, "\(rows)")
+        #expect(rows["diff.line", default: 0] > 0, "\(rows)")
         #expect(rows["review.fileChip", default: 0] <= 24, "\(rows)")
         #expect(rows["diff.line", default: 0] <= 2 * Int(800 / NWDiffMetrics.lineHeight), "\(rows)")
     }

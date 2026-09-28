@@ -105,17 +105,19 @@ enum DesignPadMarkupFixtures {
         canvas.markup.setDraft(drawing)
         guard read else {
             canvas.markup.finishReading(sent: true)
-            await FixtureWindows.wait(seconds: 15) { !canvas.comments.isEmpty }
+            await FixtureWindows.wait("markup comments", seconds: 15) { !canvas.comments.isEmpty }
             // The proposals are comments 2 and 3 already, still to apply, and the pins of those on
             // boards on screen, kept with no place drawn, find their elements.
             let placed = { (number: Int) in canvas.pins.first { $0.number == number }.map { $0.rect != .zero } ?? false }
             let shown = { canvas.openComments.filter { [2, 3].contains($0.number) && canvas.visibleBoards.contains($0.board) }.map(\.number) }
-            await FixtureWindows.wait(seconds: 30) { canvas.isDrawn && shown().allSatisfy(placed) }
+            await FixtureWindows.wait("both proposal pins drawn", seconds: 30) {
+                canvas.isDrawn && Set(shown()) == [2, 3] && shown().allSatisfy(placed)
+            }
             let card = canvas.markupCard(NativeMarkupProposals(proposals: proposed))
             let through = touchesReachTheCanvas()
             let ok = card.cards.map(\.number) == [2, 3] && card.state == .open && canvas.openComments.count == 3
-                && shown().allSatisfy(placed) && canvas.markup.showsPalette && through
-            print("FIXTURE CHECK \(ok ? "ok" : "FAILED:") design-pad-markup-reply: cards \(card.cards.map(\.number)) \(card.state), "
+                && canvas.isDrawn && Set(shown()) == [2, 3] && shown().allSatisfy(placed) && canvas.markup.showsPalette && through
+            FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED:") design-pad-markup-reply: cards \(card.cards.map(\.number)) \(card.state), "
                   + "\(canvas.openComments.count) comments, pins on screen \(shown()) placed \(shown().map(placed)), "
                   + "palette \(canvas.markup.showsPalette), a touch the ink doesn't take reaches the canvas \(through)")
             return
@@ -123,10 +125,9 @@ enum DesignPadMarkupFixtures {
         let boards = canvas.boards.compactMap { board in DesignPath(board.id).map { (path: $0, frame: board.frame) } }
         let source = canvas.source
         let record = await PadDesignMarkupReader.read(drawing, boards: boards, host: canvas.host, source: { try await source.source($0) })
-        await FixtureWindows.wait(seconds: 30) { canvas.isDrawn }
+        await FixtureWindows.wait("markup canvas drawn", seconds: 30) { canvas.isDrawn }
         guard let record else {
-            print("FIXTURE CHECK FAILED: design-pad-markup read no marks")
-            return
+            FixtureCheck.fail("design-pad-markup read no marks")
         }
         let marks = record.strokes.map { stroke in
             "\(stroke.kind.rawValue) on \(stroke.board)#\(stroke.element.map { "\($0.tid):\($0.path.map(String.init).joined(separator: "/"))" } ?? "-")"
@@ -136,10 +137,16 @@ enum DesignPadMarkupFixtures {
         let kpis = DesignPadFixtures.element("KPI row", in: DesignPadBoards.funnel)
         let circle = record.strokes.first { $0.kind == .circle }
         let underline = record.strokes.first { $0.kind == .underline }
+        // Ignore case, punctuation and whitespace only, not missing or swapped words.
+        func words(_ note: String?) -> [String] {
+            (note ?? "").lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
+        }
         let ok = record.isValid && record.strokes.count == 2 && record.noteCount == 2
+            && words(circle?.note) == ["thicker", "bars", "on", "phone"]
+            && words(underline?.note) == ["counts", "here", "too"]
             && circle?.board == "A-phone.dc.html" && circle?.element?.tid == steps.tid
             && underline?.board == "A.dc.html" && underline?.element?.tid == kpis.tid
-        print("FIXTURE CHECK \(ok ? "ok" : "FAILED:") design-pad-markup read \(DesignMarkup.countsText(strokes: record.strokes.count, notes: record.noteCount)): "
+        FixtureCheck.report("FIXTURE CHECK \(ok ? "ok" : "FAILED:") design-pad-markup read \(DesignMarkup.countsText(strokes: record.strokes.count, notes: record.noteCount)): "
               + marks.joined(separator: "; "))
     }
 

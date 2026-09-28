@@ -86,7 +86,9 @@ struct QuestionRecordStoreTests {
         try Data(#"{"version":1,"entries":[{"id":"user:1","record":{"steered":true}}]}"#.utf8)
             .write(to: dir.appendingPathComponent("s.json"))
         let store = ThreadOriginStore(directory: dir)
-        #expect(store.load(sessionID: "s").map(\.id) == ["user:1"])
+        let origins = store.load(sessionID: "s")
+        #expect(origins.map(\.id) == ["user:1"])
+        #expect(origins.first?.record.origin(text: "steered message") == .steered)
         #expect(store.loadQuestions(sessionID: "s").isEmpty)
     }
 }
