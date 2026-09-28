@@ -293,9 +293,7 @@ struct ThreadComposer: View {
         let images = state.attachments.map(\.image)
         let submitted = state.attachments.map(\.id)
         return Task {
-            let before = store.sentCount
-            await store.send(images: images, delivery: delivery)
-            if store.sentCount > before {
+            if await store.send(images: images, delivery: delivery) {
                 for id in submitted { state.remove(id) }
             }
         }

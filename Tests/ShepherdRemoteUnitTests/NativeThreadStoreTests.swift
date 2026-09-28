@@ -795,6 +795,22 @@ struct NativeThreadStoreTests {
         if supported { #expect(try #require(host.actions.first).images.count == 1) }
     }
 
+    @Test func sendReturnsOnlyItsOwnAcceptance() async {
+        let (store, host, task) = await started()
+        defer { task.cancel() }
+        host.acceptAll()
+        store.draft = "accepted"
+        let first = await store.send(delivery: .followUp)
+        #expect(first)
+        host.action = { _ in .failure(code: "rejected", message: "No") }
+        store.draft = "keep this"
+        let rejected = await store.send(delivery: .followUp)
+        #expect(!rejected && store.draft == "keep this" && store.sentCount == 1)
+        host.action = { _ in .accepted(operationID: UUID()) }
+        let unrelated = await store.send(delivery: .followUp)
+        #expect(!unrelated && store.draft == "keep this" && store.sentCount == 1)
+    }
+
     @Test func steeringUsesTheSelectedDelivery() async throws {
         let (store, host, task) = await started()
         defer { task.cancel() }

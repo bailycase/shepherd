@@ -991,21 +991,22 @@ public final class NativeThreadStore {
 
     /// While pi works, `delivery` says whether the message waits in the queue (`followUp`) or
     /// is steered in; while pi is idle it goes at once either way.
-    public func send(images: [NativeImage] = [], delivery: NativeThreadDelivery) async {
-        guard hasDraft || (!images.isEmpty && supportedActions.contains("sendImages")), await readyToAct() else { return }
+    @discardableResult
+    public func send(images: [NativeImage] = [], delivery: NativeThreadDelivery) async -> Bool {
+        guard hasDraft || (!images.isEmpty && supportedActions.contains("sendImages")), await readyToAct() else { return false }
         let typed = draft
         let files = attachedFiles
         let references = attachedReferences
-        guard hasDraft || (!images.isEmpty && supports("sendImages")), supports("send"), let current = snapshot else { return }
+        guard hasDraft || (!images.isEmpty && supports("sendImages")), supports("send"), let current = snapshot else { return false }
         guard references.isEmpty || supports("designReferences") else {
             notice = "This thread's host doesn't take design references."
-            return
+            return false
         }
         let text = NativeAttachedFile.message(typed, files: files, references: references.count)
         let operation = UUID()
         let attached: [NativeImage]? = images.isEmpty || !supports("sendImages") ? nil : images
         let context = supports("designContext") ? designContext?().map(NativeDesignContext.init) : nil
-        await perform(.send(expectedSessionID: current.piSessionID, generation: current.generation,
+        return await perform(.send(expectedSessionID: current.piSessionID, generation: current.generation,
                             operationID: operation, text: text, delivery: delivery, images: attached, designContext: context,
                             designReferences: references.isEmpty ? nil : references.map(\.record)),
                       operation: operation, current: current, sentText: text, typed: typed, files: files, references: references,
@@ -1273,11 +1274,13 @@ public final class NativeThreadStore {
                               dialogID: dialogID, answer: answer), operation: operation, current: current)
     }
 
+    @discardableResult
     private func perform(_ action: NativeThreadRequest, operation: UUID, current: NativeThreadSnapshot, sentText: String? = nil,
                          typed: String? = nil, files: [NativeAttachedFile] = [], references: [NativeAttachedReference] = [],
-                         delivery: NativeThreadDelivery = .followUp, images: [NativeImage] = []) async {
-        guard let request else { return }
+                         delivery: NativeThreadDelivery = .followUp, images: [NativeImage] = []) async -> Bool {
+        guard let request else { return false }
         let run = epoch
+        var wasAccepted = false
         // A follow-up sent while a turn runs waits in the queue until the turn ends.
         let queued = current.running && delivery == .followUp
         let hostQueues = current.queue != nil
@@ -1285,14 +1288,15 @@ public final class NativeThreadStore {
         notice = nil
         do {
             let result = try await request(action)
-            guard epoch == run else { return }
+            guard epoch == run else { return false }
             guard snapshot?.piSessionID == current.piSessionID, snapshot?.generation == current.generation else {
                 busy = false
                 notice = "The session changed while the action was pending. Check the thread before trying again."
-                return
+                return false
             }
             switch result {
             case .accepted(let accepted) where accepted == operation:
+                wasAccepted = true
                 if let sentText {
                     if draft == (typed ?? sentText) { draft = "" }
                     if !files.isEmpty { attachedFiles.removeAll { file in files.contains { $0.id == file.id } } }
@@ -1326,15 +1330,16 @@ public final class NativeThreadStore {
                 notice = "Action outcome unknown. Refresh and check the thread before trying again. Nothing will be resent automatically."
             }
         } catch {
-            guard epoch == run else { return }
+            guard epoch == run else { return false }
             if case RemoteHostClientError.outcomeUnknown = error {
                 notice = "Action outcome unknown. Refresh and check the thread before trying again. Nothing will be resent automatically."
             } else { notice = String(describing: error) }
         }
-        guard epoch == run else { return }
+        guard epoch == run else { return wasAccepted }
         busy = false
         ready = false
         await refresh(fresh: true)
+        return wasAccepted
     }
 }
 
