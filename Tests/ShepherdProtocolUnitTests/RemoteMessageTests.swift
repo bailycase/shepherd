@@ -393,6 +393,9 @@ struct RemoteRequestTests {
     func everyHostSettingChangeRoundTrips(_ change: HostSettingChange) throws {
         let message = RemoteRequest.hostSettings(id: 1, request: .change(change))
         #expect(try Wire.roundTrip(message) == message)
+    }
+
+    @Test func fetchingHostSettingsRoundTrips() throws {
         #expect(try Wire.roundTrip(RemoteRequest.hostSettings(id: 2, request: .fetch)) == .hostSettings(id: 2, request: .fetch))
     }
 

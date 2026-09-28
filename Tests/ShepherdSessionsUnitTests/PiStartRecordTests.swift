@@ -55,6 +55,13 @@ struct PiStartRecordTests {
         #expect(record.keepsAgent)
     }
 
+    @Test func aStartupFailureKeepsItsReadableDiagnostics() {
+        var record = PiStartRecord()
+        _ = record.note(stderr: "\(Self.red)Error: Failed to load extension /broken.ts\(Self.reset)")
+        _ = record.note(stderr: "  SyntaxError: Unexpected token")
+        #expect(record.problem(exitCode: 1)?.lines == ["Error: Failed to load extension /broken.ts", "SyntaxError: Unexpected token"])
+    }
+
     @Test func aProblemCarriesOnlyTheNewestLines() {
         var record = PiStartRecord()
         for n in 1...(PiStartRecord.keptLines + 5) { _ = record.note(stderr: "line \(n)") }
