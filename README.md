@@ -40,7 +40,7 @@ coherent over covering every use case.
   one waiting on your answer marks its agent in the sidebar.
 - **Review.** A review pane docks beside the thread with the working-tree or PR diff and inline
   comments. It sends "request changes" (or "commit") back to the agent as its next turn. An
-  agent can open it for you, on its own checkout or on another repository or worktree.
+  agent can ready it on its own checkout or another repository or worktree; only you open the pane.
 - **Agents working together.** An agent can list, message, and start other agents, read another
   agent's thread, steer or interrupt it, and wait for it to settle. Deleting another agent always
   asks you first. See [docs/agent-coordination.md](docs/agent-coordination.md).
@@ -54,7 +54,7 @@ coherent over covering every use case.
 - **Keyboard-first.** A command palette (⌘K) with transcript search across all your agents,
   plus rebindable shortcuts.
 - **Night Watch.** Shepherd's design system, in light and dark, set in Geist and Geist Mono, and
-  also applied to terminal panes and to pi run by hand in one.
+  also applied to terminal panes. Pi run by hand keeps its own theme.
 
 Nothing runs in the background without the app. Quit Shepherd and every agent stops. Relaunch it
 and the workspace comes back, with each agent resumed in its pi session.
@@ -91,7 +91,9 @@ next update, and a former nightly rider is told once where nightly builds went.
 
 ## Build from source
 
-Open `Shepherd.xcodeproj`, pick a scheme, choose My Mac, and Run. There are three Mac schemes,
+First run `python3 scripts/pi_engine.py stage` to stage the bundled engine, and repeat after
+its pin changes. See [docs/pi-engine.md](docs/pi-engine.md). Then open `Shepherd.xcodeproj`,
+pick a scheme, choose My Mac, and Run. There are three Mac schemes,
 so that a development build never shares state with your everyday copy. The Dev build also has
 its own bundle id (`com.bailycase.shepherd.dev`), so its preferences and notifications stay
 apart from an installed Shepherd's, and it never updates itself:
@@ -105,6 +107,7 @@ apart from an installed Shepherd's, and it never updates itself:
 To build from the command line, and to build and test the libraries with SwiftPM:
 
 ```sh
+python3 scripts/pi_engine.py stage
 xcodebuild -project Shepherd.xcodeproj -scheme 'Shepherd (Dev)' -destination 'platform=macOS' \
   -onlyUsePackageVersionsFromResolvedFile build
 swift build
@@ -143,8 +146,8 @@ disconnecting a client does not.
 itself is unencrypted. Use a VPN or trusted network, and never expose the listener to the
 internet. See [SECURITY.md](SECURITY.md).
 
-An iOS client exists in `App/iOS` but is deferred until after the macOS redesign; see
-[docs/ios](docs/ios/README.md).
+The iPhone and iPad client in `App/iOS` is distributed through internal TestFlight builds.
+See [docs/ios](docs/ios/README.md) for its current scope and validation.
 
 ## pi in terminal panes
 
@@ -171,7 +174,7 @@ Shepherd agent when you want those.
   and on the review pane.
 - [docs/clean-mac-simulation.md](docs/clean-mac-simulation.md): testing the finalize setup
   checks.
-- [docs/ios](docs/ios/README.md): the deferred iOS client.
+- [docs/ios](docs/ios/README.md): the iPhone and iPad client and its TestFlight distribution.
 - [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
 
 ## License

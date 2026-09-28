@@ -12,7 +12,8 @@ agents.
   does the iPad; the iPhone opens them full screen. On the Mac they are real PTYs rendered with
   libghostty; the iOS client attaches to the host's over the remote protocol and renders them
   with SwiftTerm. There are no global shells and no space shell workspaces.
-- **Spaces** are projects: the folders threads start in. The sidebar has no tree; it lists
+- **Spaces** are projects: the folders threads start in. The default Activity sidebar has no
+  tree; the optional Projects style groups threads in a project tree. Activity lists
   destinations (New thread, Automations, More ▸ Hosts and Extensions), then Needs you and Recents
   (every agent, local and remote, most recently active first). The New thread page's workplace
   chip lists each host's spaces, flat. With no agent on screen, the main column shows New thread.
@@ -1360,8 +1361,9 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   `-beta.`, `-rc.` and `-nightly.` versions as Beta. Shepherd Nightly always rides nightly and
   stores no channel. Debug builds (the Dev scheme, `com.bailycase.shepherd.dev`) have no
   updater, so they never resolve or migrate a channel.
-- **Promotion re-tags the same commit** (`v0.2.0-beta.1` → `v0.2.0`). Never rebuild for a
-  promotion.
+- **Promotion tags the same source commit** (`v0.2.0-beta.1` → `v0.2.0`). The workflow builds
+  that commit again with the stable marketing version and a new run-number build. It does not
+  promote an unchanged binary artifact.
 - **The beta feed is a superset**, so riding beta never strands a user behind a stable hotfix.
   Sparkle picks the newest *build number* (`CURRENT_PROJECT_VERSION`, the workflow run number,
   shared by both apps), so a hotfix built after a beta supersedes it for beta riders.

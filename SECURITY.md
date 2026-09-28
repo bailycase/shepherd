@@ -80,15 +80,19 @@ Settings ▸ Remote ▸ Serve this Mac ▸ Listener.
 - **macOS client:** host configurations, *including their tokens*, are stored as JSON in
   UserDefaults (`shepherd.remote.hosts`), not in the Keychain. Treat Shepherd's preferences as
   secrets.
-- **iOS client (deferred; see [docs/ios](docs/ios/README.md)):** the host's name, address, and
+- **iOS client (internal TestFlight; see [docs/ios](docs/ios/README.md)):** the host's name, address, and
   port go in UserDefaults. The token goes in the Keychain, device-only, available when unlocked.
 
 ### Everything else Shepherd writes
 
-- **Repository changes:** Shepherd changes repositories only through its worktree flows
-  (create, finalize, delete; [worktrees.md](docs/worktrees.md)) and the review pane's
-  confirmed per-file Revert. Finalize never deletes a remote branch, and Shepherd never prunes
-  worktrees.
+- **Repository changes:** worktree creation, confirmed deletion and Finalize can change
+  checkouts, commits and branches ([worktrees.md](docs/worktrees.md)). The Changes pane also
+  supports confirmed per-file Revert, selected-file Commit with optional push/PR, and Undo/Redo
+  of a recorded agent turn. Undo requires no extra confirmation and refuses when the turn's
+  files changed afterward. Reading changes creates unreachable loose git objects through a
+  private index; it does not write the user's index, working tree, HEAD, refs, stash or config.
+  See [changes.md](docs/changes.md) for these separate mutation and refusal rules. Finalize
+  never deletes a remote branch, and Shepherd never prunes worktrees.
 - **pi configuration:** Shepherd runs its own pi, shipped inside the app, in its own home
   (`<support directory>/pi`: its settings, sign-ins, models and conversations;
   [pi-home.md](docs/pi-home.md)). It never runs your `pi` or `npm`, and never writes your pi's
