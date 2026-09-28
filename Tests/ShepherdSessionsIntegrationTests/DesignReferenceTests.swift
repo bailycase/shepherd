@@ -41,6 +41,86 @@ struct DesignReferenceIntegrationTests {
         return id
     }
 
+    @Test func pinEvictionCollectsOnlyObjectsUnreferencedByTheDurableIndex() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let id = try await design(h, system: false)
+        let folder = try #require(h.server.designs.folder(for: id)).appendingPathComponent("pins")
+        var first: UInt64 = 0
+        for step in 0...200 {
+            _ = try await h.server.writeDesignBoard(id, path: Self.board,
+                source: DesignTests.board(root: Self.card + "<!-- \(step) -->"))
+            let pin = try await h.server.designs.pinBoard(id, path: Self.board)
+            if step == 0 { first = pin.revision }
+        }
+        #expect(try await h.server.designs.pinnedBoard(id, path: Self.board, revision: first) == nil)
+        let data = try Data(contentsOf: folder.appendingPathComponent("index.json"))
+        let index = try JSONDecoder().decode(DesignStore.PinIndex.self, from: data)
+        let names = Set(try FileManager.default.contentsOfDirectory(atPath: folder.path))
+        #expect(names == index.objects.union(["index.json"]))
+        #expect(index.revisions.count == 200)
+        let latest = try #require(index.revisions.keys.compactMap(UInt64.init).max())
+        #expect(try await h.server.designs.pinnedRender(id, revision: latest, boards: [Self.board]) != nil)
+        // Reusing a source across revisions must keep its shared object, not collect by age.
+        _ = try await h.server.updateDesignIndex(id, patch: .object(["title": .string("Same source")]))
+        let again = try await h.server.designs.pinBoard(id, path: Self.board)
+        #expect(try await h.server.designs.pinnedBoard(id, path: Self.board, revision: latest)?.sha256 == again.sha256)
+        #expect(FileManager.default.fileExists(atPath: folder.appendingPathComponent(again.sha256 + DesignPath.fileExtension).path))
+    }
+
+    @Test func anUnreadablePinIndexRefusesPinningWithoutCollectingOldObjects() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let id = try await design(h, system: false)
+        let first = try await h.server.designs.pinBoard(id, path: Self.board)
+        let folder = try #require(h.server.designs.folder(for: id)).appendingPathComponent("pins")
+        let index = folder.appendingPathComponent("index.json")
+        let saved = folder.appendingPathComponent("saved-index.json")
+        try FileManager.default.moveItem(at: index, to: saved)
+        try FileManager.default.createDirectory(at: index, withIntermediateDirectories: false)
+        _ = try await h.server.writeDesignBoard(id, path: Self.board, source: DesignTests.board(root: Self.card + "<!-- next -->"))
+        await #expect(throws: (any Error).self) { try await h.server.designs.pinBoard(id, path: Self.board) }
+        #expect(FileManager.default.fileExists(atPath: folder.appendingPathComponent(first.sha256 + DesignPath.fileExtension).path))
+        try FileManager.default.removeItem(at: index)
+        try FileManager.default.moveItem(at: saved, to: index)
+        #expect(try await h.server.designs.pinnedBoard(id, path: Self.board, revision: first.revision)?.source == first.source)
+    }
+
+    @Test func failingToPersistAPinNeverCollectsObjectsFromTheOldIndex() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let id = try await design(h, system: false)
+        let first = try await h.server.designs.pinBoard(id, path: Self.board)
+        let folder = try #require(h.server.designs.folder(for: id)).appendingPathComponent("pins")
+        let index = folder.appendingPathComponent("index.json")
+        let before = try Data(contentsOf: index)
+        // The index remains readable but its atomic replacement is refused by the filesystem.
+        try FileManager.default.setAttributes([.immutable: true], ofItemAtPath: index.path)
+        defer { try? FileManager.default.setAttributes([.immutable: false], ofItemAtPath: index.path) }
+        _ = try await h.server.writeDesignBoard(id, path: Self.board, source: DesignTests.board(root: Self.card + "<!-- next -->"))
+        await #expect(throws: (any Error).self) { try await h.server.designs.pinBoard(id, path: Self.board) }
+        #expect(try Data(contentsOf: index) == before)
+        #expect(try await h.server.designs.pinnedBoard(id, path: Self.board, revision: first.revision)?.source == first.source)
+    }
+
+    @Test func legacySourceOnlyPinsNeverSubstituteTodaysRendering() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let id = try await design(h, system: false)
+        let first = try await h.server.designs.pinBoard(id, path: Self.board)
+        let folder = try #require(h.server.designs.folder(for: id)).appendingPathComponent("pins")
+        let indexURL = folder.appendingPathComponent("index.json")
+        var fields = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: indexURL)) as? [String: Any])
+        fields["renders"] = nil // The format older builds wrote.
+        try JSONSerialization.data(withJSONObject: fields).write(to: indexURL, options: .atomic)
+        #expect(try await h.server.designs.pinnedBoard(id, path: Self.board, revision: first.revision)?.source == first.source)
+        #expect(try await h.server.designs.pinnedRender(id, revision: first.revision, boards: [Self.board]) == nil)
+        _ = try await h.server.updateDesignIndex(id, patch: DesignIndex.tweakPatch(Self.board, ["rows": .number(7)]))
+        await #expect(throws: DesignReferenceError.versionGone(first.revision)) {
+            try await DesignReferenceService(server: h.server).resolve(reference(id, revision: first.revision), state: h.server.state, exact: true)
+        }
+    }
+
     private func reference(_ design: DesignID, element: DesignElementID? = nil, revision: UInt64? = nil) -> DesignReference {
         DesignReference(designID: design, board: Self.board, element: element, revision: revision)!
     }

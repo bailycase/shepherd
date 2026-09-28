@@ -87,6 +87,7 @@ elements).
   assets/<id>.<ext>            uploads, served to boards as /_blob/<id>
   versions/<path>/<n>.dc.html  each board's last 20 earlier versions
   pins/<sha256>.dc.html        a board as a design reference pinned it (Design references, below)
+  pins/<sha256>.blob           pinned canvas, support files and uploads
   project/ds/<namespace>/…     an installed design system's copy (Design systems, below)
 <support>/designs/.deleted-<designID>/   a design deleted within its undo window (Deleting, below)
 <support>/designs/.import-<token>/       a project being imported, staged until it is finished
@@ -1003,10 +1004,18 @@ shepherd-design-ref://<host>/<designID>[/<board view name>[#<tid>:<path>]][@<rev
   revision that isn't a number) is no reference.
 - **Pinned when picked:** `SessionServer.pinDesignReference` (Copy reference, the @ picker, the
   Implement sheet, a pasted chip) checks the design is here, the board on its canvas and the
-  element in its source, and pins the reference at the design's revision then. The board's source
-  is kept as a pin (`DesignStore.pinBoards`: `pins/<sha256>.dc.html`, and `pins/index.json`
-  saying which source each board had at each pinned revision, and for a whole design which boards
-  it held then and of how many), so a send later sends that version even if the design moved on. It answers `PreparedDesignReference`: the pinned, labelled
+  element in its source, and pins the reference at the design's revision then. The complete bounded
+  rendering input set is kept: canvas.json (unknown keys intact), project files, installed tokens
+  and uploads. `DesignStore.pinBoards` writes content-addressed board and blob files under `pins/`;
+  `pins/index.json` maps each revision to those inputs and each whole-design pin to its board set.
+  Capture serves only these immutable bytes, including boards removed from today's canvas. Props,
+  frame and CSS-only edits count as updated since, even when board text is unchanged. Source-only
+  pins from older builds still answer source reads, but cannot capture an old rendering: that send
+  returns `version_gone`, never a current rendering labelled as an older revision.
+  The newest 200 revisions are retained; after the trimmed index is written successfully, only
+  unreferenced hash objects are removed. An unreadable or unwritable index refuses the pin and
+  never authorizes collection. Inputs are capped at 16 MB per file and 256 MB per pin; a pin over
+  the cap fails explicitly rather than omitting dependencies. It answers `PreparedDesignReference`: the pinned, labelled
   reference, what the host read (the design's name, the board's title and size, the element's
   words and `data-el` name or tag), and `outline` (`DesignReferenceOutline`), what a send of it
   carries, which the sheet's footer says (`DesignReferencePresentation.sends`: "Sends a picture,
@@ -1381,7 +1390,9 @@ a VPN or trusted network is the transport boundary, as for everything else it se
 - **`RemoteDesignSource`** is one design's files: `sync()` reads the index and fetches every file
   whose hash the cache lacks (a few to a reply, a large one in pieces, a stale file read again
   once), and it serves them to the renderer as a `DesignFileSource`, fetching a file not yet
-  synced on demand and an upload in pieces on first use.
+  synced on demand and an upload in pieces on first use. It serves `canvas.json` from the synced
+  index (fetching that index on demand for a fresh thumbnail), never through `boards`, so the
+  first load and every recycled view receive persisted tweaks.
 - **`RemoteDesignLibrary`** (`@Observable`) is one host's designs: its listing, a source per
   design, the designs on screen (`watch`), and the pushes for them.
 - **Rendering:** `DesignSurface(designID:source:)` (DesignSurfaceKit) serves a source's files by

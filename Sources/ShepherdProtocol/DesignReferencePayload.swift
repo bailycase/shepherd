@@ -105,6 +105,8 @@ public struct DesignReferencePayload: Codable, Hashable, Sendable, Identifiable 
     public var elementLabel: String?
     public var elementName: String?
     public var revision: UInt64
+    /// All immutable rendering inputs, not just the selected board source. Absent in old copies.
+    public var renderSHA: String? = nil
     /// Milliseconds since 1970.
     public var capturedAt: Double
     public var width: Double?
@@ -221,7 +223,7 @@ public struct DesignReferenceCaptureRequest: Sendable {
     public struct Board: Sendable {
         public var path: DesignPath
         public var source: String
-        /// The file on disk holds this source (else the view swaps it in after it loads).
+        /// Whether the current board source matches. Informational only; capture uses pinned files.
         public var isCurrent: Bool
         /// The PNG (the board at twice its size, or the element cut from it) and the standalone page.
         public var picture: String
@@ -244,13 +246,17 @@ public struct DesignReferenceCaptureRequest: Sendable {
     public var elementHTML: String?
     public var elementStyles: String?
     public var folder: URL
+    /// Immutable rendering inputs from the same pin. Nil only for older callers; capture refuses it.
+    public var files: DesignExportFiles?
 
-    public init(reference: DesignReference, boards: [Board], elementHTML: String? = nil, elementStyles: String? = nil, folder: URL) {
+    public init(reference: DesignReference, boards: [Board], elementHTML: String? = nil, elementStyles: String? = nil, folder: URL,
+                files: DesignExportFiles? = nil) {
         self.reference = reference
         self.boards = boards
         self.elementHTML = elementHTML
         self.elementStyles = elementStyles
         self.folder = folder
+        self.files = files
     }
 }
 

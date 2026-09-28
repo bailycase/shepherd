@@ -1258,7 +1258,7 @@ extension DesignRendering {
 /// and the element's markup and computed styles, written into the copy's folder.
 extension DesignRendering {
     func capture(_ request: DesignReferenceCaptureRequest, files: DesignExportFiles) async throws -> DesignReferenceCaptured {
-        guard let surface = surface(for: request.reference.designID) else { throw DesignExportFailure("The design's folder is gone.") }
+        let surface = DesignSurface(designID: request.reference.designID, source: files, network: network)
         var outputs: [String: Data] = [:]
         var captured = DesignReferenceCaptured(boards: [])
         for (index, board) in request.boards.enumerated() {
@@ -1361,7 +1361,7 @@ enum DesignExporter {
     }
 
     /// What a reference's copy holds of one board, from one view of it showing `board.source`
-    /// (swapped in after the file loads when the design moved on since it was pinned): the PNG
+    /// (loaded from immutable pinned inputs, never the current design folder): the PNG
     /// (the element cut from the board where it names one), the standalone page, and the
     /// element's detail.
     static func reference(_ board: DesignReferenceCaptureRequest.Board, element: DesignElementID?, files: DesignExportFiles,
@@ -1369,7 +1369,7 @@ enum DesignExporter {
                                                                   element: DesignElementDetail?) {
         let path = board.path
         return try await render(path, files: files, surface: surface) { view in
-            if !board.isCurrent { try await view.replaceSource(board.source) }
+            try await view.replaceSource(board.source, props: DesignTweakModel.json(.object(files.index.tweaks(for: path))) ?? "{}")
             var drawn = try await view.image(scale: 2)
             if let tid = element?.tid {
                 guard let hit = await view.element(tid: tid) else { throw DesignExportFailure("The element isn't drawn on \(path).") }
