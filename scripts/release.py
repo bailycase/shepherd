@@ -22,6 +22,8 @@ usage:
   release.py route                      tags on stdin (newest first) -> "tag asset archive feeds"
   release.py latest <feed>              tags on stdin (newest first) -> the newest tag in <feed>
   release.py feeds                      "dir channel" per feed generate_appcast builds
+  release.py appcast-asset <tag> <asset> <release.json> <policy.json|->
+                                       stage/skip a completed release (invalid metadata fails)
   release.py fix-urls <appcast> <dir>   point a feed's archives at their per-tag release assets
   release.py deltas <dir> <tag>         name a feed's deltas for upload to <tag> and point the
                                         feed at them; prints the files to upload
@@ -252,6 +254,27 @@ def route(tag: str) -> tuple[str, str, list[str]] | None:
     else:
         return None
     return app.dmg, staged_archive(app.dmg, tag), feeds
+
+
+def appcast_asset(tag: str, asset: str, metadata: dict, policy: dict | None) -> bool:
+    """Only completed, eligible releases feed Sparkle; unmarked history keeps its old rules."""
+    if type(metadata.get("isDraft")) is not bool or not isinstance(metadata.get("assets"), list):
+        raise ValueError("invalid release metadata")
+    names = [entry["name"] for entry in metadata["assets"]]
+    if any(not isinstance(name, str) for name in names):
+        raise ValueError("invalid release asset names")
+    marked = "shepherd-appcast.json" in names
+    if marked:
+        if (not isinstance(policy, dict) or type(policy.get("version")) is not int or policy["version"] != 1 or policy.get("tag") != tag
+                or type(policy.get("eligible")) is not bool):
+            raise ValueError("invalid appcast eligibility metadata")
+    if metadata["isDraft"] or (marked and not policy["eligible"]):
+        return False
+    if asset in names:
+        return True
+    if not marked and tag.startswith("nightly-") and asset == "Shepherd-Nightly.dmg":
+        return False  # Historical pre-split nightly, not a failed upload.
+    raise ValueError(f"Missing expected {asset} on {tag}")
 
 
 def staged_archive(asset: str, tag: str) -> str:
@@ -835,6 +858,15 @@ def main(argv: list[str]) -> int:
             if routed:
                 asset, archive, feeds = routed
                 print(tag, asset, archive, ",".join(feeds))
+    elif command == "appcast-asset" and len(args) == 4:
+        tag, asset, metadata_path, policy_path = args
+        with open(metadata_path, encoding="utf-8") as f:
+            metadata = json.load(f)
+        policy = None
+        if policy_path != "-":
+            with open(policy_path, encoding="utf-8") as f:
+                policy = json.load(f)
+        print("stage" if appcast_asset(tag, asset, metadata, policy) else "skip")
     elif command == "latest" and len(args) == 1:
         tag = latest(args[0], _tags_from_stdin())
         if tag:

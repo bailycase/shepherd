@@ -287,8 +287,12 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
+          SIGNING_IDENTITY: ${{ steps.cert.outputs.identity }}
         run: |
-          ARGS=(--title "$TITLE" --notes "$NOTES")
+          # New releases always declare eligibility, including ad-hoc builds. A later
+          # signed publisher must never mistake an ad-hoc archive for legacy history.
+          python3 -c 'import json,os; print(json.dumps({"version":1,"tag":os.environ["TAG"],"eligible":bool(os.environ["SIGNING_IDENTITY"] and os.environ["SIGNING_IDENTITY"] != "-")}))' > shepherd-appcast.json
+          ARGS=(--title "$TITLE" --notes "$NOTES" --draft)
           # beta and nightly are GitHub prereleases; feed membership is by tag
           # NAME (release.py route), never by the prerelease flag — so the
           # nightly cleanup matches names too, or it would eat betas.
@@ -296,20 +300,31 @@ jobs:
             ARGS+=(--prerelease)
           fi
           if [[ "$CHANNEL" == "nightly" ]]; then
-            # Keep only the latest few nightlies. Those from before Shepherd
-            # Nightly (Shepherd.dmg only) age out the same way.
-            for old in $(gh release list --limit 100 --json tagName \
-              --jq '.[] | select(.tagName | startswith("nightly-")) | .tagName' | tail -n +4); do
-              gh release delete "$old" --cleanup-tag --yes || true
-            done
             git tag "$TAG" && git push origin "$TAG"
           fi
-          gh release create "$TAG" "$DMG" "${ARGS[@]}"
+          gh release create "$TAG" "$DMG" shepherd-appcast.json "${ARGS[@]}"
           if [[ -f "$DSYMS" ]]; then
             gh release upload "$TAG" "$DSYMS" \
               || echo "::warning::Could not attach dSYMs to $TAG."
           fi
+          # Publish last: nobody may consume a partly uploaded release.
+          gh release edit "$TAG" --draft=false
 
+  publish-appcasts:
+    name: publish appcasts
+    needs: [plan, release]
+    if: needs.release.result == 'success'
+    runs-on: macos-26
+    timeout-minutes: 45
+    # Only publication coalesces: every tagged build keeps its own release. A replacement
+    # waiting publisher rebuilds from all completed releases once it acquires this slot.
+    concurrency:
+      group: appcast-publication
+      cancel-in-progress: false
+    env:
+      TAG: ${{ fromJSON(needs.plan.outputs.plan).tag }}
+    steps:
+      - uses: actions/checkout@v4
       - name: Update appcasts
         env:
           GH_TOKEN: ${{ github.token }}
@@ -318,13 +333,10 @@ jobs:
           if [[ -z "$SPARKLE_PRIVATE_KEY" ]]; then
             echo "No SPARKLE_PRIVATE_KEY secret; skipping appcast." && exit 0
           fi
-          BIN=$(find ~/Library/Developer/Xcode/DerivedData build .build \
-            -path '*artifacts*Sparkle/bin' -type d 2>/dev/null | head -1)
-          if [[ -z "$BIN" ]]; then
-            # Resolve tools straight from the package if the build cache moved.
-            swift package resolve
-            BIN=$(find .build -path '*artifacts*Sparkle/bin' -type d | head -1)
-          fi
+          # This job has no build products. Resolve pinned tools, never a floating download.
+          swift package resolve --force-resolved-versions
+          BIN=$(find .build -path '*artifacts*Sparkle/bin' -type d | head -1)
+          test -x "$BIN/generate_appcast"
           echo "$SPARKLE_PRIVATE_KEY" > "$RUNNER_TEMP/sparkle_key"
 
           # The appcasts are rebuilt from every published release so they
@@ -332,20 +344,26 @@ jobs:
           # directories each release lands in and which asset feeds them: a
           # stable DMG also lands in beta (the superset), and a nightly-*
           # release feeds Shepherd Nightly only through Shepherd-Nightly.dmg.
-          gh release list --limit 100 --json tagName --jq '.[].tagName' > "$RUNNER_TEMP/tags"
+          gh release list --limit 100 --exclude-drafts --json tagName --jq '.[].tagName' > "$RUNNER_TEMP/tags"
+          # Keep four completed nightlies. Freeze this selection under the publication lock;
+          # prune only these superseded releases, and only after the feeds no longer name them.
+          awk '/^nightly-/ { if (++n > 4) print }' "$RUNNER_TEMP/tags" > "$RUNNER_TEMP/prune-tags"
+          awk 'FILENAME==ARGV[1] { old[$0]=1; next } !($0 in old)' "$RUNNER_TEMP/prune-tags" "$RUNNER_TEMP/tags" > "$RUNNER_TEMP/feed-tags"
           : > "$RUNNER_TEMP/staged-tags"
           python3 scripts/release.py feeds > "$RUNNER_TEMP/feeds"
           while read -r dir channel; do mkdir -p "casts/$dir"; done < "$RUNNER_TEMP/feeds"
-          python3 scripts/release.py route < "$RUNNER_TEMP/tags" > "$RUNNER_TEMP/routes"
+          python3 scripts/release.py route < "$RUNNER_TEMP/feed-tags" > "$RUNNER_TEMP/routes"
           while read -r tag asset archive feeds; do
-            # Only old pre-split nightlies may legitimately lack this app's asset.
-            # Metadata or download failures for expected assets must stop publication.
-            gh release view "$tag" --json assets > "$RUNNER_TEMP/release-assets.json" </dev/null
-            if ! python3 -c 'import json,sys; sys.exit(0 if any(a["name"] == sys.argv[1] for a in json.load(open(sys.argv[2]))["assets"]) else 1)' "$asset" "$RUNNER_TEMP/release-assets.json"; then
-              if [[ "$tag" == nightly-* && "$asset" == Shepherd-Nightly.dmg ]]; then continue; fi
-              echo "Missing expected $asset on $tag" >&2
-              exit 1
+            # Metadata/download errors fail closed, including malformed eligibility records.
+            gh release view "$tag" --json assets,isDraft > "$RUNNER_TEMP/release-assets.json" </dev/null
+            policy=-
+            marked=$(python3 -c 'import json,sys; print(any(a["name"] == "shepherd-appcast.json" for a in json.load(open(sys.argv[1]))["assets"]))' "$RUNNER_TEMP/release-assets.json")
+            if [[ "$marked" == True ]]; then
+              policy="$RUNNER_TEMP/appcast-policy.json"
+              gh release download "$tag" -p shepherd-appcast.json -O "$policy" --clobber </dev/null
             fi
+            disposition=$(python3 scripts/release.py appcast-asset "$tag" "$asset" "$RUNNER_TEMP/release-assets.json" "$policy")
+            if [[ "$disposition" == skip ]]; then continue; fi
             IFS=, read -r -a dirs <<<"$feeds"
             first="casts/${dirs[0]}"
             gh release download "$tag" -p "$asset" -O "$first/$archive" </dev/null
@@ -395,7 +413,8 @@ jobs:
 
           git config user.name github-actions
           git config user.email github-actions@github.com
-          git fetch origin gh-pages || true
+          git ls-remote --heads origin gh-pages > "$RUNNER_TEMP/pages-ref"
+          if [[ -s "$RUNNER_TEMP/pages-ref" ]]; then git fetch origin gh-pages; fi
           if git rev-parse --verify origin/gh-pages >/dev/null 2>&1; then
             git worktree add pages origin/gh-pages
           else
@@ -409,9 +428,15 @@ jobs:
           while IFS= read -r file; do written+=("$file"); done < "$RUNNER_TEMP/published-feeds.txt"
           cd pages
           git add "${written[@]}"
-          if git diff --cached --quiet; then exit 0; fi
-          git commit -m "appcast: $TAG"
-          git push origin HEAD:gh-pages
+          if ! git diff --cached --quiet; then
+            git commit -m "appcast: $TAG"
+            git push origin HEAD:gh-pages
+          fi
+          # Never delete drafts, newly completed releases outside this snapshot, or an
+          # archive while another publisher is using it. A failed push reaches none of this.
+          while IFS= read -r old; do
+            gh release delete "$old" --cleanup-tag --yes </dev/null
+          done < "$RUNNER_TEMP/prune-tags"
 
   # The iOS client, archived unsigned and signed only at export with the team's
   # cloud-managed Apple Distribution certificate: no .p12, no keychain. Signing
