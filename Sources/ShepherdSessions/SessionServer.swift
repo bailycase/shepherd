@@ -4528,7 +4528,7 @@ public final class SessionServer: @unchecked Sendable {
             thread.discardPreparedTurn = { [weak serverWeak] in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
                 server.changes.captureQueue(agentID).async {
-                    server.changes.preparedTurns.withValue { $0.removeValue(forKey: agentID) }
+                    _ = server.changes.preparedTurns.withValue { $0.removeValue(forKey: agentID) }
                 }
             }
             thread.onTurnEvent = { [weak serverWeak] event in
