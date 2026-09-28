@@ -655,8 +655,8 @@ public struct NativeScrollFollower: Equatable, Sendable {
     /// Two scroll-geometry readings in a row. Intent is a live gesture (`gesture`: a finger or a
     /// wheel) moving the offset up with the layout unchanged; an offset change alone never is,
     /// because a layout change and the offset shift it causes arrive in separate readings.
-    /// Returns true when the view should land on its tail again: it is stuck and the layout
-    /// changed under it (rows arrived or re-wrapped, the composer or keyboard resized the inset),
+    /// Returns true when a stuck view should land on its tail again: its offset overshot the
+    /// end, or layout changed under it (rows re-wrapped, the composer or keyboard resized the inset),
     /// which the scroll view's size-change anchor does not follow on its own. Never during a
     /// gesture: a drag up measures the rows it reveals, and moving the view then would pull it
     /// out from under the finger (on iOS it also ends the drag, so the reader could never leave
@@ -665,7 +665,11 @@ public struct NativeScrollFollower: Equatable, Sendable {
         let layoutChanged = new.layoutDiffers(from: old)
         let intent = gesture && new.distance > old.distance && !layoutChanged
         observe(distanceFromBottom: new.distance, userIntent: intent)
-        return sticky && layoutChanged && !gesture && new.distance > Self.repinSlack
+        // Lazy layout can report its size and the resulting offset in separate readings.
+        // A stale offset past the tail must recover even when this reading changes no size.
+        // Fitting content legitimately has negative distance at its top; don't scroll it.
+        let pastTail = new.distance < min(0, new.content - new.container) - Self.repinSlack
+        return sticky && !gesture && (pastTail || (layoutChanged && new.distance > Self.repinSlack))
     }
 }
 
