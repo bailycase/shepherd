@@ -277,7 +277,8 @@ struct ChangesEngineTests {
         let repo = try ChangesRepo(files: ["a.txt": "one\n", "gone.txt": "bye\n"])
         try repo.write("a.txt", "one\ntwo\n")
         try repo.remove("gone.txt")
-        try repo.write("bin.dat", String(decoding: [0, 1, 2, 255, 0, 7].map { UInt8($0) }, as: UTF8.self))
+        let binary = Data([0, 1, 2, 255, 0, 7])
+        try binary.write(to: repo.url.appendingPathComponent("bin.dat"))
         let h = try ChangesHarness(repo: repo)
         let list = try await h.list(.uncommitted)
         let patch = try await h.service.patch(agentID: h.agent, revision: list.revision)
@@ -290,7 +291,7 @@ struct ChangesEngineTests {
         try ShepherdTestSupport.git(["apply", "changes.patch"], in: clone)
         #expect(try String(contentsOf: clone.appendingPathComponent("a.txt"), encoding: .utf8) == "one\ntwo\n")
         #expect(!FileManager.default.fileExists(atPath: clone.appendingPathComponent("gone.txt").path))
-        #expect(FileManager.default.fileExists(atPath: clone.appendingPathComponent("bin.dat").path))
+        #expect(try Data(contentsOf: clone.appendingPathComponent("bin.dat")) == binary)
     }
 
     @Test func aDirectoryOutsideGitHasNothingToCompare() async throws {

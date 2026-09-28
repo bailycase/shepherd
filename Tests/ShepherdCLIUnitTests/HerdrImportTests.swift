@@ -17,9 +17,17 @@ struct HerdrImportTests {
         #expect(throws: DecodingError.self) {
             try HerdrImport.existingState(at: url) { _ in Data("not a workspace".utf8) }
         }
-        let saved = ShepherdState()
-        let loaded = try HerdrImport.existingState(at: url) { _ in try JSONEncoder().encode(saved) }
-        #expect(loaded == saved)
+        let space = Space(name: "Existing project", path: "/work/existing")
+        let pane = LeafPane(cwd: space.path)
+        let tab = Tab(spaceID: space.id, order: 4, layout: .leaf(pane))
+        let agent = Agent(name: "Keep this conversation", spaceID: space.id, tabID: tab.id,
+                          paneID: pane.id, piSessionID: "existing-session")
+        let saved = ShepherdState(spaces: [space], tabs: [tab], agents: [agent])
+        let loaded = try HerdrImport.existingState(at: url) { requested in
+            #expect(requested == url)
+            return try JSONEncoder().encode(saved)
+        }
+        #expect(loaded == saved, "import must not discard the workspace it is extending")
     }
 
     /// One workspace with a pi pane, a plain shell pane, and a non-pi agent pane, plus fields
@@ -108,6 +116,8 @@ struct HerdrImportTests {
         let summary = HerdrImport.merge(try Self.herdr(Self.workspace(cwd: "/tmp/proj", sessions: ["abc123", "new1"])), into: &state) { _ in nil }
         #expect(summary.spacesAdded == 0 && summary.agentsAdded == 1 && summary.agentsSkipped == 1)
         #expect(state.spaces == [space])
+        #expect(state.agents.first == existing, "existing conversations keep their identity and title")
+        #expect(state.tabs.first == tab, "import must preserve existing layouts")
         #expect(state.tabs.last?.order == 5, "imported tabs order after existing ones")
         try state.validate()
     }

@@ -274,11 +274,12 @@ struct TerminalSessionTests {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let callbacks = Callbacks(h.server)
-        let info = try await h.shell("sleep 100")
+        let info = try await h.shell("trap 'exit 42' TERM; echo READY; while :; do sleep 0.05; done")
+        try await h.waitForScreen(info.id, toContain: "READY")
 
         h.server.killSession(info.id)
         try await eventually("the kill to land") { callbacks.exited(info.id) }
-        #expect(callbacks.exitCode(info.id) == .some(nil), "killed by a signal, so no exit code")
+        #expect(callbacks.exitCode(info.id) == .some(42), "the TERM handler must run before escalation")
         h.server.killSession(info.id)
         h.server.killSession(SessionID())
         #expect(await h.server.listSessions().map(\.isAlive) == [false])
