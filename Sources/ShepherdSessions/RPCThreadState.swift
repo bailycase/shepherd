@@ -283,6 +283,11 @@ final class RPCThreadState {
     /// Installed by SessionServer: where a turn starts and ends, for the Changes engine's
     /// snapshots of the working tree (`ChangesService`). Called on the session queue.
     var onTurnEvent: ((TurnEvent) -> Void)?
+    /// Asynchronous filesystem boundaries; completions return to this thread's queue.
+    var beforePrompt: ((@escaping () -> Void) -> Void)?
+    var captureSettledTurn: ((@escaping () -> Void) -> Void)?
+    var discardPreparedTurn: (() -> Void)?
+    var settleCapture: UUID?
     /// The agent's recorded turns, as the server last set them (`setTurnChanges`).
     private(set) var turnChanges: [ChangesTurn]? { didSet { turnChangesHash = turnChanges.hashValue } }
     private var turnChangesHash = Optional<[ChangesTurn]>.none.hashValue
@@ -371,8 +376,20 @@ final class RPCThreadState {
             running = false
             retry = nil
             askingCalls.removeAll()
+            let token = UUID()
+            settleCapture = token
+            if let captureSettledTurn {
+                captureSettledTurn { [weak self] in
+                    guard let self, self.settleCapture == token else { return }
+                    self.settleCapture = nil
+                    self.drainIfReady()
+                    self.idleAfterQueue()
+                }
+            } else {
+                onTurnEvent?(.settled)
+                settleCapture = nil
+            }
             settled()
-            onTurnEvent?(.settled)
         case .messageStart(let message) where message.role == "user":
             onTurnEvent?(.message(timestamp: message.timestamp, text: DesignViewRecord.strippingFence(from: message.content.compactMap { block -> String? in
                 if case .text(let text) = block { return text }

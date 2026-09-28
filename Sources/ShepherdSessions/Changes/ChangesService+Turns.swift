@@ -165,6 +165,17 @@ extension ChangesService {
 
     // MARK: Turn events (server queue; the work happens on the agent's capture queue)
 
+    /// Capture before a host prompt can write. No turn is created until pi actually starts it.
+    func prepareTurn(agentID: AgentID, completion: @escaping () -> Void) {
+        let context = agentContext(agentID)
+        captureQueue(agentID).async { [self] in
+            defer { completion() }
+            guard let context else { return }
+            let baseline = Result { try snapshot(repository(context.cwd)).tree }
+            preparedTurns.withValue { $0[agentID] = (context.cwd, baseline) }
+        }
+    }
+
     /// pi started a run: record a turn and snapshot its baseline. A second start before the run
     /// settles (a retry) belongs to the same turn.
     func turnStarted(agentID: AgentID, at time: Double = Date().timeIntervalSince1970 * 1000) {
@@ -179,7 +190,8 @@ extension ChangesService {
         captureQueue(agentID).async { [self] in
             do {
                 let repository = try repository(context.cwd)
-                let tree = try snapshot(repository).tree
+                let prepared = preparedTurns.withValue { $0.removeValue(forKey: agentID) }
+                let tree = try prepared.flatMap { $0.cwd == context.cwd ? $0.tree : nil }?.get() ?? snapshot(repository).tree
                 turnStore.update(agentID) { records in
                     guard let i = records.firstIndex(where: { $0.turn.id == id }) else { return }
                     records[i].startTree = tree
@@ -211,15 +223,17 @@ extension ChangesService {
     }
 
     /// pi's run settled: snapshot the working tree again and count what the turn changed.
-    func turnSettled(agentID: AgentID, at time: Double = Date().timeIntervalSince1970 * 1000) {
+    func turnSettled(agentID: AgentID, at time: Double = Date().timeIntervalSince1970 * 1000,
+                     completion: @escaping () -> Void = {}) {
         let id: UUID? = turnStore.update(agentID) { records in
             guard let i = records.indices.last, records[i].turn.state == .running, records[i].turn.endedAt == nil else { return nil }
             records[i].turn.endedAt = time
             return records[i].turn.id
         }
-        guard let id else { return }
+        // Even a duplicate settle waits behind the original capture before releasing delivery.
         captureQueue(agentID).async { [self] in
-            guard let record = turnStore.record(agentID, id) else { return }
+            defer { completion() }
+            guard let id, let record = turnStore.record(agentID, id) else { return }
             do {
                 guard let start = record.startTree else {
                     throw ChangesError(ChangesError.unavailable, record.turn.reason ?? "Shepherd couldn’t record where this turn started.")

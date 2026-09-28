@@ -54,6 +54,7 @@ public final class ChangesService: @unchecked Sendable {
     private let recents: ChangesRecents
     let turnStore: TurnStore
     let captureQueues = ChangesLocked<[AgentID: DispatchQueue]>([:])
+    let preparedTurns = ChangesLocked<[AgentID: (cwd: String, tree: Result<String, Error>)]>([:])
 
     /// How long a pull request lookup (gh, over the network) is reused.
     static let pullRequestTTL: TimeInterval = 60

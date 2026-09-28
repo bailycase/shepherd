@@ -1799,6 +1799,10 @@ turn's edit and write calls, without Undo.
   dialog, since Redo reverses it, and the agent isn't told (both the user's call, 2026-09-25). It is offered on the last turn only, once it ended having changed
   something. While it runs its buttons hold; a refusal says why under the card in `caption`
   `failed` ("Didn’t undo: outbox.go changed after the turn. Nothing was touched.").
+  A filesystem failure after some writes explicitly reports a partially applied operation, not
+  “nothing was touched.” The same Undo (or Redo) retries the remaining work, including after a
+  relaunch; changes made since the partial operation cause a refusal instead of being overwritten.
+  Undo must finish before Redo is offered. Recovery is journaled per file, not an atomic rollback.
 - **After Undo** (ChangesCard · after Undo) the card is one line on a dashed `lineStrong` border,
   radius 10, padding 10×12: the undo glyph, "Undid the agent’s edits to 5 files" in `ui`
   `textSecondary`, and **Redo** (ghost `s`) until the next turn starts.
