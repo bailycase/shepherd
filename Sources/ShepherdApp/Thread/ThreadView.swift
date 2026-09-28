@@ -60,7 +60,9 @@ struct ThreadView: View {
     var designChat = false
     /// Only this Mac's agents may receive paths from this Mac.
     var allowsLocalFiles = false
-    @State private var input = ThreadInput()
+    var retainedInput: ThreadInput? = nil
+    @State private var fallbackInput = ThreadInput()
+    private var input: ThreadInput { retainedInput ?? fallbackInput }
     @State private var follower = NativeScrollFollower()
     @State private var historyPaging = NativeHistoryPaging()
     @State private var visibleTurn: String?

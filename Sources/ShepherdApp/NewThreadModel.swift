@@ -268,7 +268,10 @@ final class NewThreadState {
     /// asked, and selects it. The draft clears once the agent exists.
     func send(_ vm: ShepherdViewModel) {
         guard blocker(vm) == nil, let place else { NSSound.beep(); return }
-        let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let submittedPrompt = prompt
+        let submittedImages = attachments.ids
+        let submittedWorktree = worktree
+        let text = submittedPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let chosenModel = model.trimmingCharacters(in: .whitespaces)
         let level = thinking.clamped(to: thinkingLevels(vm))
         let useWorktree = worktree && offersWorktree(vm)
@@ -313,9 +316,9 @@ final class NewThreadState {
                     }
                     try await vm.startAgent(config, focusWindow: false)
                 }
-                prompt = ""
-                attachments.removeAll()
-                worktree = false
+                if prompt == submittedPrompt { prompt = "" }
+                for id in submittedImages { attachments.remove(id) }
+                if worktree == submittedWorktree { worktree = false }
             } catch RemoteHostClientError.rejected(_, let message) {
                 self.error = message
             } catch {

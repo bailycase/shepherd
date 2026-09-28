@@ -288,10 +288,13 @@ struct ThreadComposer: View {
 
     private func send(_ delivery: NativeThreadDelivery, store: NativeThreadStore, state: ComposerState) {
         let images = state.attachments.map(\.image)
+        let submitted = state.attachments.map(\.id)
         Task {
             let before = store.sentCount
             await store.send(images: images, delivery: delivery)
-            if store.sentCount > before { state.clearAttachments() }
+            if store.sentCount > before {
+                for id in submitted { state.remove(id) }
+            }
         }
     }
 
