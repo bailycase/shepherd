@@ -1,0 +1,36 @@
+name: Scroll diagnostic
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: macos-26
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [baseline, gap, recovery, combined]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select diagnostic variant
+        env:
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          variant = os.environ['VARIANT']
+          if variant in ('baseline', 'recovery'):
+              p = Path('Sources/ShepherdApp/AppLayout+Thread.swift')
+              p.write_text(p.read_text().replace('composerTranscriptGap: CGFloat = NW.Space.xxl', 'composerTranscriptGap: CGFloat = 0'))
+          if variant in ('baseline', 'gap'):
+              p = Path('Sources/ShepherdRemote/NativeThreadPresentation.swift')
+              p.write_text(p.read_text().replace('return sticky && !gesture && (pastTail || (layoutChanged && new.distance > Self.repinSlack))', 'return sticky && layoutChanged && !gesture && new.distance > Self.repinSlack'))
+          p = Path('Tests/ShepherdAppIntegrationTests/ListPerformanceTests.swift')
+          p.write_text(p.read_text().replace('return NWRenderProbe.stop()', 'let counts = NWRenderProbe.stop(); print("DIAGNOSTIC COUNTS", counts); return counts'))
+          p = Path('Sources/ShepherdApp/Thread/ThreadView.swift')
+          p.write_text(p.read_text().replace('if follower.observe(from: old, to: new, gesture: gesture) {', 'if follower.observe(from: old, to: new, gesture: gesture) {\n                        print("DIAGNOSTIC REPIN", old, new)'))
+          PY
+      - uses: ./.github/actions/swift-build
+      - name: Run affected tests
+        run: swift test --skip-build --no-parallel --filter 'ListPerformanceTests/(aSwitchRebuildsEachThreadOnce|aQuestionArrivingAndAnsweredRedrawsOnlyTheComposer)'
