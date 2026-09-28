@@ -890,9 +890,7 @@ struct Composer: View {
         let images = input.attachments.images
         let submitted = input.attachments.ids
         Task {
-            let before = store.sentCount
-            await store.send(images: images, delivery: delivery)
-            if store.sentCount > before {
+            if await store.send(images: images, delivery: delivery) {
                 for id in submitted { input.attachments.remove(id) }
             }
         }
