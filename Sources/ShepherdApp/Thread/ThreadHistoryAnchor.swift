@@ -44,13 +44,13 @@ final class ThreadHistoryAnchor {
         waiting = false
     }
 
-    func prepended(firstID: String?, session: String?, active: Bool, proxy: ScrollViewProxy) {
+    func prepended(firstID: String?, session: String?, active: Bool, materialize: (String) -> Void) {
         guard active, session == self.session else { cancel(); return }
         guard !waiting, !restoring, let rowID, savedTop != nil, firstID != rowID else { return }
         restoring = true
         var transaction = Transaction()
         transaction.disablesAnimations = true
-        withTransaction(transaction) { proxy.scrollTo(rowID, anchor: .top) }
+        withTransaction(transaction) { materialize(rowID) }
         scheduleCorrection()
     }
 
@@ -85,16 +85,21 @@ final class ThreadHistoryAnchor {
 
         func makeNSView(context: Context) -> Marker { Marker() }
         func updateNSView(_ view: Marker, context: Context) {
-            view.anchor = anchor
-            view.rowID = rowID
-            anchor.marker = view
-            anchor.moved()
+            view.attach(to: anchor, rowID: rowID)
         }
     }
 
     final class Marker: NSView {
         weak var anchor: ThreadHistoryAnchor?
         var rowID = ""
+
+        func attach(to anchor: ThreadHistoryAnchor, rowID: String) {
+            self.anchor = anchor
+            self.rowID = rowID
+            anchor.marker = self
+            anchor.moved()
+        }
+
         override var isFlipped: Bool { true }
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
 

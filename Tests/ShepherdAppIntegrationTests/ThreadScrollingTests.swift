@@ -487,8 +487,8 @@ struct ThreadScrollingTests {
         try await eventuallyOnMain("steer to land before the host delivers its user turn") { thread.distanceFromBottom < 2 }
     }
 
-    @Test(arguments: [false, true], [false, true])
-    func reachingTheTopLoadsOnePageWithoutMovingOrRetrying(fails: Bool, partial: Bool) async throws {
+    @Test(arguments: [false, true])
+    func reachingTheTopLoadsOnePageWithoutMovingOrRetrying(fails: Bool) async throws {
         let thread = ThreadHarness(messages: 24, paragraphs: 4, olderCursor: "m0")
         defer { thread.close() }
         try await thread.waitUntilReady()
@@ -502,26 +502,6 @@ struct ThreadScrollingTests {
         }
         try await eventuallyOnMain("the visible top to request history") { thread.olderReply != nil }
         try await thread.settle()
-        if partial {
-            func marker(in view: NSView) -> ThreadHistoryAnchor.Marker? {
-                if let marker = view as? ThreadHistoryAnchor.Marker { return marker }
-                return view.subviews.lazy.compactMap(marker).first
-            }
-            let boundary = try #require(marker(in: thread.window.host))
-            let top = try #require(boundary.viewportTop)
-            let clip = thread.scrollView.contentView
-            let initialBounds = clip.bounds
-            // A raw clip.scroll leaves ScrollViewReader's m0/top command in force:
-            // SwiftUI restores it on the next layout. Exercise native wheel handling on
-            // this off-screen scroll view only; never post an event to the user's app.
-            let wheel = try #require(CGEvent(scrollWheelEvent2Source: nil, units: .pixel,
-                                             wheelCount: 1, wheel1: -Int32((top + 8).rounded()), wheel2: 0, wheel3: 0))
-            thread.scrollView.scrollWheel(with: try #require(NSEvent(cgEvent: wheel)))
-            try await thread.settle()
-            let partialTop = try #require(boundary.viewportTop)
-            #expect(partialTop < 0,
-                    "boundary \(boundary.rowID): top \(top) -> \(partialTop); clip \(initialBounds) -> \(clip.bounds)")
-        }
         let before = try #require(try thread.position(of: "Question 2"))
         var page = ThreadHarness.snapshot(count: 12, running: false, prefix: "older", paragraphs: 7)
         for index in page.messages.indices where page.messages[index].role == "user" {
@@ -539,6 +519,71 @@ struct ThreadScrollingTests {
         #expect(thread.olderRequests == 1)
         let after = try #require(try thread.position(of: "Question 2"))
         #expect(abs(after - before) < 2, "prepending moved the visible turn from \(before) to \(after)")
+    }
+
+    /// A real clip view provides exact partial-row geometry without SwiftUI's outstanding
+    /// programmatic turn jump undoing the test's scroll before the page can arrive.
+    @Test(arguments: [false, true])
+    func aPartialHistoryAnchorRestoresItsOffsetUnlessNavigationCancelledIt(cancelled: Bool) async throws {
+        final class Document: NSView {
+            override var isFlipped: Bool { true }
+        }
+        let window = OffscreenWindow(size: CGSize(width: 500, height: 300))
+        defer { window.close() }
+        let scroll = NSScrollView(frame: window.host.bounds)
+        scroll.autoresizingMask = [.width, .height]
+        let document = Document(frame: CGRect(x: 0, y: 0, width: 500, height: 2000))
+        scroll.documentView = document
+        window.host.addSubview(scroll)
+        let marker = ThreadHistoryAnchor.Marker(frame: CGRect(x: 0, y: 100, width: 500, height: 60))
+        document.addSubview(marker)
+        let anchor = ThreadHistoryAnchor()
+        marker.attach(to: anchor, rowID: "boundary")
+        window.layout()
+        let clip = scroll.contentView
+        func move(to y: CGFloat) {
+            clip.scroll(to: clip.constrainBoundsRect(CGRect(origin: CGPoint(x: 0, y: y), size: clip.bounds.size)).origin)
+            scroll.reflectScrolledClipView(clip)
+        }
+        move(to: 108)
+        let before = try #require(marker.viewportTop)
+        #expect(abs(before + 8) < 0.25, "the retained row really is partially clipped: \(before)")
+        let token = anchor.begin("boundary", session: "s")
+        if cancelled {
+            anchor.cancel()
+            move(to: 600)
+        }
+        // Exactly the production ordering: model commit finishes, then new row layout arrives.
+        anchor.finished(token, firstID: "older")
+        document.frame.size.height += 700
+        marker.frame.origin.y += 700
+        let navigationOffset = clip.bounds.origin.y
+        var materializations = 0
+        anchor.prepended(firstID: "older", session: "s", active: true) { id in
+            #expect(id == "boundary")
+            materializations += 1
+            move(to: marker.frame.minY)
+        }
+        anchor.moved()
+        // Drain queued correction callbacks before asserting the cancellation branch too.
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+        if cancelled {
+            #expect(materializations == 0)
+            #expect(abs(clip.bounds.origin.y - navigationOffset) < 0.25)
+        } else {
+            #expect(materializations == 1)
+            let after = try #require(marker.viewportTop)
+            #expect(abs(after - before) < 2, "partial row moved from \(before) to \(after)")
+            // A later lazy measurement moves the row again: preserve the same fractional offset.
+            marker.frame.origin.y += 37.5
+            anchor.moved()
+            await withCheckedContinuation { continuation in
+                DispatchQueue.main.async { continuation.resume() }
+            }
+            #expect(abs(try #require(marker.viewportTop) - before) < 2)
+        }
     }
 
     @Test func navigatingToTheTailWhileHistoryWaitsCancelsItsOldAnchor() async throws {

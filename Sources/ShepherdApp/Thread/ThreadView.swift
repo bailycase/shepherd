@@ -161,7 +161,9 @@ struct ThreadView: View {
                 .contentMargins(.top, AppLayout.threadTop, for: .scrollContent)
                 .scrollPosition(id: $visibleTurn, anchor: .top)
                 .onChange(of: rows.first?.id) { _, first in
-                    historyAnchor.prepended(firstID: first, session: store.sessionKey, active: active, proxy: proxy)
+                    historyAnchor.prepended(firstID: first, session: store.sessionKey, active: active) { id in
+                        proxy.scrollTo(id, anchor: .top)
+                    }
                 }
                 .onChange(of: historyEnabled) { _, _ in loadVisibleHistory() }
                 .onChange(of: store.sessionKey) { _, _ in
