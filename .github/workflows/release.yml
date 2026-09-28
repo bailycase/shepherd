@@ -142,7 +142,7 @@ jobs:
           # the two apps build different ones. Keyed on the engine's pin too: a
           # restored app holding another pin's engine fails the "Embed pi engine"
           # phase, whose sandbox can't remove files the new pin doesn't declare.
-          key: xcode-${{ runner.os }}-${{ env.CONFIGURATION }}-${{ steps.xcode.outputs.version }}-${{ hashFiles('Package.resolved', 'Sources/**/*.swift', 'App/**/*.swift', 'scripts/pi-engine-pin.json') }}
+          key: xcode-${{ runner.os }}-${{ env.CONFIGURATION }}-${{ steps.xcode.outputs.version }}-${{ github.sha }}
 
       # The pi engine (Node and pi's bundle) the Mac target's "Embed pi engine" phase copies
       # into Contents/Helpers and Contents/Resources/pi-engine. Staging downloads Node from
@@ -190,6 +190,7 @@ jobs:
             -configuration "$CONFIGURATION" \
             -destination 'platform=macOS,arch=arm64' \
             -derivedDataPath build \
+            -onlyUsePackageVersionsFromResolvedFile \
             ARCHS=arm64 \
             CODE_SIGNING_ALLOWED=NO \
             MARKETING_VERSION="$VERSION" \
