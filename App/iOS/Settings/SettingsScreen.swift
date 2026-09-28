@@ -38,10 +38,10 @@ private struct SettingsList: View {
                 }
                 SettingsSection("Agents") {
                     NWListCard {
-                        row(.defaults, trailing: value(store.defaultsValue))
+                        row(.defaults, trailing: value(store.defaultsValue(chosenHost: navigator.settingsSelection.chosenHost)))
                         row(.instructions, trailing: value(store.instructionsValue))
                         row(.skills, trailing: value(store.skillsValue))
-                        row(.pi, trailing: value(store.extensionsValue))
+                        row(.pi, trailing: value(store.extensionsValue(chosenHost: navigator.settingsSelection.chosenHost)))
                     }
                 }
                 SettingsSection("Machines") {
@@ -55,7 +55,7 @@ private struct SettingsList: View {
                     row(.experiments, trailing: value(store.experimentsValue))
                 }
                 SettingsSection("About") {
-                    NWListCard { AboutRow(agent: store.agentVersion) }
+                    NWListCard { AboutRow(agent: store.agentVersion(chosenHost: navigator.settingsSelection.chosenHost)) }
                 }
             }
             .padding(.horizontal, MobileLayout.gutter)

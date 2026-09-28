@@ -240,7 +240,10 @@ WindowGroup(for: MobileWindowSeed.self) { $seed in MobileWindowRoot(app: app, se
 - **Per window:** the navigator owns Settings' selected page and host (Instructions' per-host
   editor has its own scene-local choice, passed explicitly to the shared drafts model), the composer's Model,
   Context and queued-message editor presentation (and Context's scroll request), and the Commit
-  popover. Shared stores keep drafts, attachments, catalogs and operation progress, never those
+  popover. Only one window may edit a thread's queued message at a time: the shared composer
+  owns the host's single hold until its save/release finishes; another window cannot steal or
+  release it. Settings summaries follow that window's selected host too.
+  Shared stores keep drafts, attachments, catalogs and operation progress, never those
   presentation flags. Forget host closes its scene-local presentations and evicts unmounted
   terminal/composer/review/commit/worktree state, including pending image preparations. It also
   removes that host's Settings snapshots and durable owed instructions/skills, even before

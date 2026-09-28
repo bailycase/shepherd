@@ -35,7 +35,7 @@ final class CommitStores {
 
     func forget(host: UUID) {
         forgottenHosts.insert(host)
-        for (ref, store) in stores where ref.host == host { store.query = nil; store.reset() }
+        for (ref, store) in stores where ref.host == host { store.invalidate() }
         stores = stores.filter { $0.key.host != host }
     }
 

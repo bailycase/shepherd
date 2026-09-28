@@ -46,7 +46,7 @@ struct MoreScreen: View {
                             .buttonStyle(.nwRow(radius: 0))
                         }
                         Button { navigator.open(.settings(SettingsPage.pi.route)) } label: {
-                            NWListRow(SettingsPage.pi.title, subtitle: settings.extensionsValue.map { "\($0) installed" },
+                            NWListRow(SettingsPage.pi.title, subtitle: settings.extensionsValue(chosenHost: navigator.settingsSelection.chosenHost).map { "\($0) installed" },
                                       subtitleMono: false, leading: .symbol(SettingsPage.pi.symbol))
                         }
                         .buttonStyle(.nwRow(radius: 0))

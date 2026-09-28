@@ -42,6 +42,7 @@ struct QueueSection: View {
                 options(running: running)
             }
             .nwTransition(.list)
+            .onDisappear { closeEditor(save: false) }
             .sheet(item: Binding(get: { presentation.editing }, set: { if $0 == nil { closeEditor(save: false) } })) { message in
                 QueueEditorSheet(number: (state.queuedIndex(message.id) ?? 0) + 1, text: Binding(get: { presentation.editText }, set: { presentation.editText = $0 }),
                                  save: { closeEditor(save: true) }, cancel: { closeEditor(save: false) })
@@ -66,9 +67,7 @@ struct QueueSection: View {
             steer: { id in Task { await store.running ? store.steerQueued([id]) : store.sendQueuedNow([id]) } },
             back: { id in Task { await store.unsteer(id) } },
             edit: { id in
-                guard let message = state.message(id) else { return }
-                presentation.editText = message.text
-                presentation.editing = message
+                guard let message = state.message(id), state.beginQueueEdit(message, presentation: presentation) else { return }
                 Task { await store.holdQueued(id, true) }
             },
             moveToTop: { id in Task { await store.moveQueued(id, to: 0) } },
@@ -112,16 +111,7 @@ struct QueueSection: View {
     }
 
     private func closeEditor(save: Bool) {
-        guard let message = presentation.editing else { return }
-        let text = presentation.editText
-        presentation.editing = nil
-        Task {
-            if save, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text != message.text {
-                await store.editQueued(message.id, text: text)
-            } else {
-                await store.holdQueued(message.id, false)
-            }
-        }
+        Task { await state.closeQueueEdit(presentation: presentation, store: store, save: save) }
     }
 }
 

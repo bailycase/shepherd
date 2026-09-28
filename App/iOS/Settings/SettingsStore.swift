@@ -79,10 +79,12 @@ final class SettingsStore {
     var settings: HostSettings? { settings(chosenHost: nil) }
 
     /// Defaults' value on the list: the model without its provider ("claude-opus").
-    var defaultsValue: String? { settings.map(HostSettingsPresentation.defaultsValue) }
+    var defaultsValue: String? { defaultsValue(chosenHost: nil) }
+    func defaultsValue(chosenHost: UUID?) -> String? { settings(chosenHost: chosenHost).map(HostSettingsPresentation.defaultsValue) }
 
     /// Extensions' value: how many load ("6").
-    var extensionsValue: String? { settings.map(HostSettingsPresentation.extensionsValue) }
+    var extensionsValue: String? { extensionsValue(chosenHost: nil) }
+    func extensionsValue(chosenHost: UUID?) -> String? { settings(chosenHost: chosenHost).map(HostSettingsPresentation.extensionsValue) }
 
     /// Instructions' value: the files that hold anything ("AGENTS.md, APPEND").
     var instructionsValue: String? {
@@ -104,7 +106,8 @@ final class SettingsStore {
     }
 
     /// About's agent: "agent 0.87.1", from the settings host.
-    var agentVersion: String? { HostSettingsPresentation.agentVersion(settings) }
+    var agentVersion: String? { agentVersion(chosenHost: nil) }
+    func agentVersion(chosenHost: UUID?) -> String? { HostSettingsPresentation.agentVersion(settings(chosenHost: chosenHost)) }
 
     /// The iPad list's foot names the program beside the Pi page ("pi 0.87.1"), as the Mac's does.
     func listFootVersion(page: SettingsPage, chosenHost: UUID?) -> String? {

@@ -5797,7 +5797,9 @@ beside up-down chevrons.
 
 With Per host selected, each window chooses its own instruction host. Drafts for the same file
 and host remain shared; switching hosts in another window never retargets this window's Save
-or Restore. Explicitly forgetting a host removes its drafts and owed copies, never another
+or Restore. Save and Restore keep the scope and recipient list selected at invocation, even
+if another window changes Same on every host while the request waits. Explicitly forgetting a
+host removes its drafts and owed copies, never another
 host's, and late replies cannot bring the forgotten host's data back.
 
 Settings ▸ Instructions edits the root instructions every session Shepherd starts reads, on
@@ -6364,7 +6366,9 @@ landscape, Known gaps).
 #### Commit (iPadCommit)
 
 Commit… opens a popover in the invoking window only (`.commitPopover`); another window shares
-its operation status, never its presentation or dismissal. The popover is 400pt wide, `bgRaised`, with its arrow; 16pt
+its operation status, never its presentation or dismissal. A second viewer joins the existing
+editable form without reloading over its unsaved message. Forget discards local form and operation
+state, ignores later replies, and never rolls back a commit already sent to the host. The popover is 400pt wide, `bgRaised`, with its arrow; 16pt
 inset, parts 12pt apart.
 
 - **Title:** "Commit 5 files" at 17/600 and "to agent/refund-events" in mono 12 `textTertiary`

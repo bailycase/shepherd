@@ -271,27 +271,28 @@ struct ThreadComposer: View {
         let hasDraft = !store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let enabled = live && store.acceptsSend && hasDraft && !store.busy
         let running = store.running
-        return NWComposerActionButton(.send, enabled: enabled) { send(.followUp, store: store, state: state) }
+        return NWComposerActionButton(.send, enabled: enabled) { Self.send(.followUp, store: store, state: state) }
             .keyboardShortcut(.return, modifiers: .command)
             .contextMenu {
                 if running, enabled {
-                    Button("Queue", systemImage: "text.line.first.and.arrowtriangle.forward") { send(.followUp, store: store, state: state) }
-                    Button("Steer now", systemImage: "arrow.turn.down.right") { send(.steer, store: store, state: state) }
+                    Button("Queue", systemImage: "text.line.first.and.arrowtriangle.forward") { Self.send(.followUp, store: store, state: state) }
+                    Button("Steer now", systemImage: "arrow.turn.down.right") { Self.send(.steer, store: store, state: state) }
                 }
             }
             .accessibilityLabel(running ? "Queue message" : "Send")
             .accessibilityHint(running ? "Goes when the agent finishes this turn" : "")
             .accessibilityActions {
                 if running, enabled {
-                    Button("Steer now") { send(.steer, store: store, state: state) }
+                    Button("Steer now") { Self.send(.steer, store: store, state: state) }
                 }
             }
     }
 
-    private func send(_ delivery: NativeThreadDelivery, store: NativeThreadStore, state: ComposerState) {
+    @MainActor @discardableResult
+    static func send(_ delivery: NativeThreadDelivery, store: NativeThreadStore, state: ComposerState) -> Task<Void, Never> {
         let images = state.attachments.map(\.image)
         let submitted = state.attachments.map(\.id)
-        Task {
+        return Task {
             let before = store.sentCount
             await store.send(images: images, delivery: delivery)
             if store.sentCount > before {

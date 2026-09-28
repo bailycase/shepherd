@@ -343,13 +343,14 @@ public final class ClientInstructions {
         let key = draftKey(file, in: hosts, selectedHost: selectedHost)
         guard let text = drafts[key], let edited = edited(in: hosts, selectedHost: selectedHost), !busy else { return }
         let revision = editRevisions[key, default: 0]
+        let recipients = sameEverywhere ? hosts.filter { $0.id != edited.id } : []
         busy = true
         problem = nil
         defer { busy = false }
         do {
             try await save(file, content: text, to: edited, sync: false)
             if editRevisions[key, default: 0] == revision { drafts[key] = nil }
-            await spread(from: edited, in: hosts)
+            await spread(from: edited, in: recipients)
         } catch {
             if !forgotten.contains(edited.id) { problem = settingsProblem(error) }
         }
@@ -361,13 +362,14 @@ public final class ClientInstructions {
         guard let edited = edited(in: hosts, selectedHost: selectedHost), !busy else { return }
         let key = draftKey(entry.file, in: hosts, selectedHost: selectedHost)
         let revision = editRevisions[key, default: 0]
+        let recipients = sameEverywhere ? hosts.filter { $0.id != edited.id } : []
         busy = true
         problem = nil
         defer { busy = false }
         do {
             files[edited.id] = .loaded(try await request(.restore(revisionID: entry.id, origin: origin), on: edited))
             if editRevisions[key, default: 0] == revision { drafts[key] = nil }
-            await spread(from: edited, in: hosts)
+            await spread(from: edited, in: recipients)
         } catch {
             if !forgotten.contains(edited.id) { problem = settingsProblem(error) }
         }
@@ -405,9 +407,9 @@ public final class ClientInstructions {
         }
     }
 
-    /// With Same on every host on, writes `edited`'s files to every other host.
+    /// Writes to the recipients captured when Save or Restore began, not its current UI scope.
     private func spread(from edited: SettingsHost, in hosts: [SettingsHost]) async {
-        guard sameEverywhere, let snapshot = files(of: edited).snapshot else { return }
+        guard let snapshot = files(of: edited).snapshot else { return }
         let targets = hosts.filter { !forgotten.contains($0.id) && $0.id != edited.id && ($0.serves(RemoteProtocol.instructionsCapability) || !$0.isConnected) }
         // Record every recipient before the first await, not just the ones already attempted.
         pending[edited.id] = nil

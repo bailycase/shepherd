@@ -6,7 +6,7 @@ import ShepherdRemote
 
 extension FixtureCatalog {
     static var clientState: [FixtureScreen] {
-        [FixtureScreen(name: "client-state-regressions", hosts: NewThreadFixtures.hosts(), prepare: { app in
+        [FixtureScreen(name: "client-state-regressions", hosts: ClientStateChecks.hosts(), prepare: { app in
             await ClientStateChecks.run(app)
         }), FixtureScreen(name: "forgotten-automation-regression", hosts: AutomationsFixtureData.fleet(), prepare: { app in
             await ClientStateChecks.forgottenAutomation(app)
@@ -18,6 +18,13 @@ extension FixtureCatalog {
 /// still refuses mutations; none of these checks asks it to create an agent or change files.
 @MainActor
 enum ClientStateChecks {
+    nonisolated static func hosts() -> [FixtureHostData] {
+        var hosts = NewThreadFixtures.hosts()
+        hosts[0].hostSettings = HostSettings(piVersion: "1", defaultModel: "provider/model-a", installedExtensions: ["a"])
+        hosts[1].hostSettings = HostSettings(piVersion: "2", defaultModel: "provider/model-b", installedExtensions: ["b", "c"])
+        return hosts
+    }
+
     static func check(_ condition: Bool, _ name: String) {
         print("FIXTURE CHECK \(condition ? "ok" : "FAILED") client-state: \(name)")
     }
@@ -25,8 +32,160 @@ enum ClientStateChecks {
     static func run(_ app: MobileApp) async {
         navigation()
         sceneOwnershipAndForget(app)
+        await selectedHostSummaries(app)
+        await sentImagesKeepTheNextAttachment()
+        await commitAndQueueOwnership()
         await creation(app)
         await review(app)
+    }
+
+    static func sentImagesKeepTheNextAttachment() async {
+        for outcome in ["accepted", "rejected", "unknown"] {
+            let store = NativeThreadStore(pause: { _ in
+                let (stream, continuation) = AsyncStream<Void>.makeStream()
+                for await _ in stream {}
+                continuation.finish()
+                throw CancellationError()
+            })
+            var snapshot = FixtureData.snapshot([])
+            snapshot.supportedActions.append("sendImages")
+            let gate = ClientStateGate<NativeThreadResult>()
+            var submitted: [NativeImage] = []
+            var operation: UUID?
+            let serving = Task {
+                await store.run { request in
+                    switch request {
+                    case .snapshot: return .snapshot(value: snapshot)
+                    case .send(_, _, let id, _, _, let images, _, _):
+                        operation = id
+                        submitted = images ?? []
+                        return try await gate.wait()
+                    default: return .failure(code: "fixture", message: "Unexpected request")
+                    }
+                }
+            }
+            await FixtureWindows.wait(seconds: 5) { store.isLive }
+            guard store.isLive else { serving.cancel(); check(false, "send fixture became live"); return }
+            let state = ComposerState()
+            guard let first = NewThreadFixtures.image(.systemTeal, name: "first"),
+                  let second = NewThreadFixtures.image(.systemOrange, name: "next") else {
+                serving.cancel(); store.stop(); check(false, "send images prepared"); return
+            }
+            await state.attach([(first.image.data, "first.png")])
+            guard let a = state.attachments.first else {
+                serving.cancel(); store.stop(); check(false, "first attachment loaded"); return
+            }
+            store.draft = "Inspect this"
+            let sending = ThreadComposer.send(.followUp, store: store, state: state)
+            await FixtureWindows.wait(seconds: 5) { gate.isWaiting }
+            guard gate.isWaiting, let operation else {
+                serving.cancel(); store.stop(); check(false, "actual composer send reached gate"); return
+            }
+            // Image preparation is asynchronous too: B must finish while A's send is held.
+            await state.attach([(second.image.data, "next.png")])
+            guard let b = state.attachments.last, b.id != a.id else {
+                gate.finish(.success(.failure(code: "fixture", message: "Image preparation failed")))
+                await sending.value
+                serving.cancel(); store.stop(); check(false, "next attachment loaded while awaiting send"); return
+            }
+            check(submitted == [a.image], "only captured image A went to the delayed send")
+            switch outcome {
+            case "accepted": gate.finish(.success(.accepted(operationID: operation)))
+            case "rejected": gate.finish(.success(.failure(code: "refused", message: "Not accepted")))
+            default: gate.finish(.failure(RemoteHostClientError.outcomeUnknown(message: "Connection lost")))
+            }
+            await sending.value
+            check(state.attachments.map(\.id) == (outcome == "accepted" ? [b.id] : [a.id, b.id]),
+                  "\(outcome) send removes only its acknowledged image IDs")
+            check(store.sentCount == (outcome == "accepted" ? 1 : 0), "attachment cleanup follows acceptance")
+            serving.cancel()
+            store.stop()
+            await serving.value
+        }
+    }
+
+    static func selectedHostSummaries(_ app: MobileApp) async {
+        let settings = SettingsStore.of(app.hosts)
+        await settings.refresh()
+        for host in settings.hosts where host.isConnected {
+            guard let value = settings.hostSettings.settings(of: host) else { check(false, "summary host loaded"); continue }
+            let nav = MobileNavigator()
+            nav.settingsSelection.chosenHost = host.id
+            check(settings.defaultsValue(chosenHost: nav.settingsSelection.chosenHost) == HostSettingsPresentation.defaultsValue(value)
+                  && settings.extensionsValue(chosenHost: nav.settingsSelection.chosenHost) == HostSettingsPresentation.extensionsValue(value)
+                  && settings.agentVersion(chosenHost: nav.settingsSelection.chosenHost) == HostSettingsPresentation.agentVersion(value),
+                  "Settings and More summaries follow the scene-selected host")
+        }
+    }
+
+    static func commitAndQueueOwnership() async {
+        let info = CommitFixture.info(drafts: false)
+        let readGate = ClientStateGate<RemoteAgentResult>()
+        var reads = 0
+        let commit = ReviewCommitStore { _ in
+            reads += 1
+            return try await readGate.wait()
+        }
+        let opening = Task { await commit.begin() }
+        await FixtureWindows.wait(seconds: 5) { readGate.isWaiting }
+        guard readGate.isWaiting else { check(false, "commit load reached gate"); return }
+        await commit.begin()
+        check(reads == 1, "a second commit viewer joins the in-flight load")
+        readGate.finish(.success(.commitInfo(info)))
+        await opening.value
+        commit.title = "Window A's unsaved message"
+        let selected = commit.selected
+        await commit.begin()
+        check(reads == 1 && commit.title == "Window A's unsaved message" && commit.selected == selected,
+              "opening a second commit window preserves the shared form")
+        for operation in [false, true] {
+            let gate = ClientStateGate<RemoteAgentResult>()
+            let store = ReviewCommitStore { _ in try await gate.wait() }
+            let id = UUID()
+            if operation { store.adopt(RemoteWorktreeOperation(id: id, finished: false)) }
+            let waiting = Task { if operation { _ = await store.pollOnce() } else { await store.begin() } }
+            await FixtureWindows.wait(seconds: 5) { gate.isWaiting }
+            guard gate.isWaiting else { check(false, "forget commit reached gate"); return }
+            store.invalidate()
+            gate.finish(.success(operation ? .worktreeOperation(RemoteWorktreeOperation(id: id, finished: true)) : .commitInfo(info)))
+            await waiting.value
+            check(store.info == nil && store.operationID == nil && store.operation == nil && store.title.isEmpty,
+                  "Forget invalidates late commit load/operation without rollback")
+        }
+        let state = ComposerState(), a = ComposerPresentation(), b = ComposerPresentation()
+        guard let message = ThreadFixtures.queued().queue?.items.first else { check(false, "queue fixture has a message"); return }
+        check(state.beginQueueEdit(message, presentation: a), "window A owns the queue editor")
+        check(!state.beginQueueEdit(message, presentation: b) && b.editing == nil && a.editing?.id == message.id,
+              "window B cannot steal the host's single queue hold")
+        let thread = NativeThreadStore()
+        let releaseGate = ClientStateGate<NativeThreadResult>()
+        var releaseID: UUID?
+        let serving = Task {
+            await thread.run { request in
+                switch request {
+                case .snapshot: return .snapshot(value: ThreadFixtures.queued())
+                case .queue(_, _, let id, _):
+                    releaseID = id
+                    return try await releaseGate.wait()
+                default: return .failure(code: "fixture", message: "Unexpected request")
+                }
+            }
+        }
+        await FixtureWindows.wait(seconds: 5) { thread.isLive }
+        await state.closeQueueEdit(presentation: b, store: thread, save: false)
+        check(a.editing?.id == message.id && releaseID == nil, "closing a non-owner sends no hold release")
+        let closing = Task { await state.closeQueueEdit(presentation: a, store: thread, save: false) }
+        await FixtureWindows.wait(seconds: 5) { releaseGate.isWaiting }
+        guard releaseGate.isWaiting, let releaseID else {
+            serving.cancel(); thread.stop(); check(false, "queue release reached gate"); return
+        }
+        check(!state.beginQueueEdit(message, presentation: b), "new editor waits until the old hold release finishes")
+        releaseGate.finish(.success(.accepted(operationID: releaseID)))
+        await closing.value
+        check(state.beginQueueEdit(message, presentation: b), "queue editor transfers after acknowledged release")
+        serving.cancel()
+        thread.stop()
+        await serving.value
     }
 
     static func forgottenAutomation(_ app: MobileApp) async {
