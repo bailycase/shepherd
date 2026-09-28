@@ -487,8 +487,8 @@ struct ThreadScrollingTests {
         try await eventuallyOnMain("steer to land before the host delivers its user turn") { thread.distanceFromBottom < 2 }
     }
 
-    @Test(arguments: [false, true])
-    func reachingTheTopLoadsOnePageWithoutMovingOrRetrying(fails: Bool) async throws {
+    @Test(arguments: [false, true], [false, true])
+    func reachingTheTopLoadsOnePageWithoutMovingOrRetrying(fails: Bool, partial: Bool) async throws {
         let thread = ThreadHarness(messages: 24, paragraphs: 4, olderCursor: "m0")
         defer { thread.close() }
         try await thread.waitUntilReady()
@@ -502,6 +502,21 @@ struct ThreadScrollingTests {
         }
         try await eventuallyOnMain("the visible top to request history") { thread.olderReply != nil }
         try await thread.settle()
+        if partial {
+            func marker(in view: NSView) -> ThreadHistoryAnchor.Marker? {
+                if let marker = view as? ThreadHistoryAnchor.Marker { return marker }
+                return view.subviews.lazy.compactMap(marker).first
+            }
+            let boundary = try #require(marker(in: thread.window.host))
+            let top = try #require(boundary.viewportTop)
+            let clip = thread.scrollView.contentView
+            var bounds = clip.bounds
+            bounds.origin.y += top + 8 // The first bubble is partially above the viewport.
+            clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
+            thread.scrollView.reflectScrolledClipView(clip)
+            try await thread.settle()
+            #expect(try #require(boundary.viewportTop) < 0)
+        }
         let before = try #require(try thread.position(of: "Question 2"))
         var page = ThreadHarness.snapshot(count: 12, running: false, prefix: "older", paragraphs: 7)
         for index in page.messages.indices where page.messages[index].role == "user" {
@@ -519,6 +534,31 @@ struct ThreadScrollingTests {
         #expect(thread.olderRequests == 1)
         let after = try #require(try thread.position(of: "Question 2"))
         #expect(abs(after - before) < 2, "prepending moved the visible turn from \(before) to \(after)")
+    }
+
+    @Test func navigatingToTheTailWhileHistoryWaitsCancelsItsOldAnchor() async throws {
+        let thread = ThreadHarness(messages: 24, paragraphs: 2, olderCursor: "m0")
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        for _ in 0..<12 {
+            thread.command(.previousTurn)
+            try await thread.settle()
+        }
+        try await eventuallyOnMain("the history reply to wait") { thread.olderReply != nil }
+        try await thread.jumpDownToTheTail()
+        try await thread.settle()
+        let before = try #require(try thread.position(of: "Question 22"))
+        var page = ThreadHarness.snapshot(count: 12, running: false, prefix: "older", paragraphs: 7)
+        page.olderCursor = "older0"
+        thread.olderReply?.resume(returning: .snapshot(value: page))
+        thread.olderReply = nil
+        try await eventuallyOnMain("the older page to land") { !thread.store.loadingOlder && thread.store.messages.count == 36 }
+        await thread.store.refresh()
+        try await thread.settle()
+        #expect(thread.olderRequests == 1)
+        #expect(thread.isPinned)
+        let after = try #require(try thread.position(of: "Question 22"))
+        #expect(abs(after - before) < 2, "an obsolete history anchor displaced the new navigation")
     }
 
     /// A code block scrolls sideways only when its longest line is wider than the column; one

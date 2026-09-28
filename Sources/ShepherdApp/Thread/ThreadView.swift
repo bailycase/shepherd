@@ -65,6 +65,7 @@ struct ThreadView: View {
     private var input: ThreadInput { retainedInput ?? fallbackInput }
     @State private var follower = NativeScrollFollower()
     @State private var historyPaging = NativeHistoryPaging()
+    @State private var historyAnchor = ThreadHistoryAnchor()
     @State private var visibleTurn: String?
     /// What the context details ask the thread to find (Largest, Show summary). A stable object,
     /// not a closure, so the composer is not redrawn with every render of the thread.
@@ -117,6 +118,14 @@ struct ThreadView: View {
                                      settled: settled)
                             }
                             .id(row.id)
+                            .background {
+                                if row.id == (historyAnchor.rowID ?? rows.first?.id) {
+                                    ThreadHistoryAnchor.Probe(anchor: historyAnchor, rowID: row.id)
+                                        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .scrollView).minY } action: { _ in
+                                            historyAnchor.moved()
+                                        }
+                                }
+                            }
                         }
                         if thinking, liveRow == nil { NWThinking.live().nwArrival(settled) }
                         if let authNotice {
@@ -151,8 +160,14 @@ struct ThreadView: View {
                 // A margin rather than padding so scrollTo(.top) keeps the 28pt above a turn.
                 .contentMargins(.top, AppLayout.threadTop, for: .scrollContent)
                 .scrollPosition(id: $visibleTurn, anchor: .top)
+                .onChange(of: rows.first?.id) { _, first in
+                    historyAnchor.prepended(firstID: first, session: store.sessionKey, active: active, proxy: proxy)
+                }
                 .onChange(of: historyEnabled) { _, _ in loadVisibleHistory() }
-                .onChange(of: store.sessionKey) { _, _ in loadVisibleHistory() }
+                .onChange(of: store.sessionKey) { _, _ in
+                    historyAnchor.cancel()
+                    loadVisibleHistory()
+                }
                 .defaultScrollAnchor(.bottom, for: .initialOffset)
                 // While stuck, growth keeps the tail pinned without any scrollTo; detaching only
                 // ever happens on user scroll intent.
@@ -170,7 +185,10 @@ struct ThreadView: View {
                     // Only a live finger/wheel counts. Momentum and programmatic phases are not
                     // intent; a gesture that ends near the bottom re-sticks from where it lands.
                     follower.userScrolling = phase == .interacting
-                    if phase == .interacting { historyPaging.beginScroll() }
+                    if phase == .interacting {
+                        historyAnchor.cancel()
+                        historyPaging.beginScroll()
+                    }
                     if phase == .idle {
                         follower.observe(distanceFromBottom: Self.distanceFromBottom(context.geometry))
                     }
@@ -182,6 +200,7 @@ struct ThreadView: View {
                     let queued = store.lastSendQueued
                     follower.sent(queued: queued)
                     if !queued {
+                        historyAnchor.cancel()
                         jumpedTurn = nil
                         proxy.scrollTo(Self.bottomID, anchor: .bottom)
                     }
@@ -210,6 +229,7 @@ struct ThreadView: View {
                 Composer(store: store, input: input, allowsLocalFiles: allowsLocalFiles, active: active, isFocused: isFocused, agentName: agentName, hasTurns: !rows.isEmpty,
                          gutter: gutter, listModels: listModels, commandKey: commandKey,
                          jumpToLatest: follower.showsJump(running: running) ? {
+                             historyAnchor.cancel()
                              follower.jumpToLatest()
                              proxy.scrollTo(Self.bottomID, anchor: .bottom)
                          } : nil, finder: finder, queueState: queueState, contextDetailsOpen: contextDetailsOpen,
@@ -243,6 +263,7 @@ struct ThreadView: View {
         .onHover { hovering = $0 }
         .onAppear { installWheelMonitor() }
         .onDisappear {
+            historyAnchor.cancel()
             store.stop()
             if let wheelMonitor { NSEvent.removeMonitor(wheelMonitor) }
             wheelMonitor = nil
@@ -250,7 +271,7 @@ struct ThreadView: View {
         // Hidden, the thread stops polling and keeps what it shows; shown again, it polls from
         // there (`NativeThreadStore.suspend`).
         .task(id: active) {
-            guard active else { store.suspend(); return }
+            guard active else { historyAnchor.cancel(); store.suspend(); return }
             await store.run(request: request, preview: preview)
         }
     }
@@ -288,10 +309,11 @@ struct ThreadView: View {
 
     private func loadVisibleHistory() {
         guard historyPaging.takeRequest(session: store.sessionKey, cursor: store.olderCursor, enabled: historyEnabled) else { return }
-        // A ScrollViewReader jump can leave the position binding nil. At the history
-        // boundary the first turn is the visible native target; seed it before prepending.
-        if visibleTurn == nil { visibleTurn = store.rows.first?.id }
-        Task { await store.loadOlder() }
+        let token = historyAnchor.begin(store.rows.first?.id, session: store.sessionKey)
+        Task {
+            await store.loadOlder()
+            historyAnchor.finished(token, firstID: store.rows.first?.id)
+        }
     }
 
     private var subagentActions: SubagentActions {
@@ -319,6 +341,7 @@ struct ThreadView: View {
             if let run = store.subagents.first(where: { !$0.isTerminal }) ?? store.subagents.last { inspectSubagent?(run) }
             else { NSSound.beep() }
         case .previousTurn, .nextTurn:
+            historyAnchor.cancel()
             historyPaging.beginScroll()
             let userTurns = store.rows.filter(\.isUser).map(\.id)
             guard !userTurns.isEmpty else { NSSound.beep(); return }
@@ -340,6 +363,7 @@ struct ThreadView: View {
     /// thread, loading older pages until it is there (the context meter's Largest and Show
     /// summary).
     private func find(_ entryID: String, proxy: ScrollViewProxy) async {
+        historyAnchor.cancel()
         var pages = 0
         while store.rows.first(where: { $0.turn.messages.contains { $0.entryID == entryID } }) == nil,
               store.olderCursor != nil, pages < AppLayout.findPageLimit {
@@ -369,6 +393,7 @@ struct ThreadView: View {
         guard wheelMonitor == nil else { return }
         wheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
             if hovering {
+                historyAnchor.cancel()
                 wheelIntentUntil = Date().addingTimeInterval(0.35)
                 historyPaging.beginScroll()
             }
