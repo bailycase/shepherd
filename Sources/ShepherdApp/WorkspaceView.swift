@@ -70,7 +70,6 @@ struct WorkspaceView: View {
         // Window-level file/image drop routing for terminal panes; per-pane
         // SwiftUI .onDrop cannot coexist with permanently mounted hidden
         // layouts (see TerminalDropOverlay.swift).
-        .background { AppTerminalDropOverlay() }
     }
 }
 
@@ -673,6 +672,7 @@ struct PaneLeafView: View, Equatable {
                     session: vm.sessions.session(for: pane, in: tab),
                     isFocused: model.isFocused,
                     isRendering: model.isVisible,
+                    onFocusAcquired: { [vm] in vm.focusedPaneID = pane.id },
                     addToMessage: model.threadAgentID.map { agentID in { [vm] in vm.addTerminalSelection($0, to: .local(agentID)) } }
                 )
             }
@@ -751,6 +751,7 @@ struct LiveTerminalPane: View {
     /// False for a mounted-but-hidden pane, which keeps its surface but must
     /// stop running a render loop.
     var isRendering: Bool = true
+    var onFocusAcquired: (() -> Void)? = nil
     /// Puts a selection in the thread's composer; nil where the layout has no thread.
     var addToMessage: ((String) -> Void)? = nil
 
@@ -787,6 +788,8 @@ struct LiveTerminalPane: View {
             }
         }
         .nwAnimation(.content, value: session.phase)
+        .onAppear { session.terminal.onFocusAcquired = onFocusAcquired }
+        .onDisappear { session.terminal.onFocusAcquired = nil }
     }
 }
 
@@ -1068,6 +1071,7 @@ private struct RemotePaneLeafView: View {
             } else if let terminal {
                 RemoteTerminalPane(pane: terminal.pane,
                                    isFocused: !vm.showSettings && !vm.showComponentGallery && !vm.showCommandPalette && vm.remoteFocusedPaneID == leaf.id,
+                                   onFocusAcquired: { [vm] in vm.remoteFocusedPaneID = leaf.id },
                                    addToMessage: hasThread ? { [vm, ref] in vm.addTerminalSelection($0, to: .remote(ref)) } : nil)
                     .id(terminal.id)
                     .onDisappear { vm.remoteHosts.closePane(connection: connection, sessionID: terminal.id) }
@@ -1134,6 +1138,7 @@ struct RemoteAgentThreadPane: View {
 private struct RemoteTerminalPane: View {
     var pane: RemotePaneSession
     let isFocused: Bool
+    var onFocusAcquired: (() -> Void)? = nil
     /// Puts a selection in the thread's composer; nil in a host's utility terminal.
     var addToMessage: ((String) -> Void)? = nil
 
@@ -1162,6 +1167,8 @@ private struct RemoteTerminalPane: View {
             }
         }
         .nwAnimation(.content, value: pane.phase)
+        .onAppear { pane.terminal.onFocusAcquired = onFocusAcquired }
+        .onDisappear { pane.terminal.onFocusAcquired = nil }
     }
 }
 

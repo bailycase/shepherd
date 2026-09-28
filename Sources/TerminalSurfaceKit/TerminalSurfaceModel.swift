@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import Combine
 import GhosttyTerminal
 
 func terminalOpenURL(_ value: String) -> URL? {
@@ -134,6 +135,9 @@ public final class TerminalSurfaceModel: ObservableObject {
     public var onSelectionChange: ((Selection?) -> Void)? {
         didSet { observeSelection() }
     }
+    /// AppKit acquired this surface as first responder (click, selection drag, or programmatic).
+    public var onFocusAcquired: (() -> Void)?
+    private var focusObservation: AnyCancellable?
     public var maximumDropBytes: Int?
     public var onFileDropError: ((String) -> Void)?
     public var onFileDrop: (([URL]) -> Void)?
@@ -189,6 +193,10 @@ public final class TerminalSurfaceModel: ObservableObject {
         viewState.configuration = TerminalSurfaceOptions(backend: .inMemory(session))
         bridge.model = self
         Self.modelsByViewState.setObject(self, forKey: viewState)
+        focusObservation = viewState.$isFocused.removeDuplicates().sink { [weak self] focused in
+            guard focused else { return }
+            self?.onFocusAcquired?()
+        }
     }
 
     /// Reconfigure the live Ghostty surface without replacing its view or
@@ -417,6 +425,7 @@ public final class TerminalSurfaceModel: ObservableObject {
                 guard let self, self.attachment.isActive(id) else { return }
                 if self.session.readViewportText() != nil {
                     self.observeSelection()
+                    if let view = self.surfaceView { TerminalSurfaceDrop.install(on: view, model: self) }
                     self.handleSurfaceReadiness(self.attachment.becameReady(id))
                 } else if remainingAttempts > 1 {
                     self.confirmSurfaceReady(id, remainingAttempts: remainingAttempts - 1)

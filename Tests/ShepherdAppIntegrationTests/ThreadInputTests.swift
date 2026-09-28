@@ -1,4 +1,5 @@
 import AppKit
+import GhosttyTerminal
 import ShepherdRemote
 import ShepherdTestSupport
 import SwiftUI
@@ -70,14 +71,25 @@ struct ThreadInputTests {
             TerminalFirstResponder.view(ownedBy: model.viewState, in: window.window) != nil
         }
         let content = try #require(window.window.contentView)
-        let overlay = TerminalDropOverlayView(frame: content.bounds)
-        content.addSubview(overlay)
         let surface = try #require(TerminalFirstResponder.view(ownedBy: model.viewState, in: window.window))
         let point = surface.convert(NSPoint(x: surface.bounds.midX, y: surface.bounds.midY), to: nil)
-        #expect(overlay.targetModel(at: point) === model)
-        let blank = content.convert(NSPoint(x: content.bounds.maxX - 20, y: content.bounds.midY), to: nil)
-        #expect(overlay.targetModel(at: blank) == nil)
+        let native = try #require(surface as? AppTerminalView)
+        try await eventuallyOnMain("native drag registration") { native.onHostDrop != nil }
+        #expect(native.registeredDraggedTypes.contains(.fileURL))
+        #expect(native.acceptsHostDrop?() == true)
+        let local = content.convert(point, from: nil)
+        #expect(content.hitTest(local) === native, "ordinary hit testing is independent of any drag pasteboard")
+        let cover = NSView(frame: content.convert(native.bounds, from: native))
+        content.addSubview(cover, positioned: .above, relativeTo: nil)
+        #expect(content.hitTest(local) === cover, "foreground controls, not covered terminals, own native hits")
+        cover.removeFromSuperview()
+        native.isHidden = true
+        #expect(native.acceptsHostDrop?() == false)
+        native.isHidden = false
         model.setRenderingActive(false)
-        #expect(overlay.targetModel(at: point) == nil)
+        #expect(native.acceptsHostDrop?() == false)
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        #expect(native.onHostDrop?(pasteboard) == false, "empty actual drag has nothing to insert")
     }
 }
