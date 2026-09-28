@@ -69,9 +69,11 @@ extension FixtureCatalog {
             // The editor on a queued message (the sheet only; the hold is the app's action).
             FixtureScreen(name: "queue-edit", hosts: ThreadFixtures.hosts(running: ThreadFixtures.queued()), routes: [.thread(running)],
                           prepare: { app in
-                              let state = app.navigator.composerPresentation.state(for: running)
-                              state.editText = "Also cover partial refunds in the tests."
-                              state.editing = ThreadFixtures.queued().queue?.items.first { $0.id == ThreadFixtures.second }
+                              let presentation = app.navigator.composerPresentation.state(for: running)
+                              if let message = ThreadFixtures.queued().queue?.items.first(where: { $0.id == ThreadFixtures.second }) {
+                                  ComposerStates.shared.state(for: running).beginQueueEdit(message, presentation: presentation)
+                                  presentation.editText = "Also cover partial refunds in the tests."
+                              }
                           }),
             // iPadPortrait: "/re" lists the commands that match.
             FixtureScreen(name: "commands", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)],

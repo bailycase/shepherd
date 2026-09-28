@@ -140,7 +140,13 @@ composer and Commit presentation in two windows, and release of unmounted per-ho
 that neither that reply nor a stale selection recreates it while other hosts' automations stay.
 Shared ClientSettingsTests/ClientSkillsTests cover late forgotten-host replies and durable
 pending work across recreation, plus independent instruction edit/save targets. Its
-`FIXTURE CHECK ok|FAILED client-state` lines are the assertions, not the screenshot.
+`FIXTURE CHECK ok|FAILED client-state` lines are the assertions, not the screenshot. It also
+calls the actual composer send entry point with a real `NativeThreadStore` and a gated fake
+request: image B finishes attaching while A awaits acceptance; accepted sends remove A alone,
+and rejected or unknown outcomes retain both. Gated commit checks ensure a second viewer
+joins the form without resetting edits and Forget invalidates late loads/polls. A gated queue
+hold release keeps the first scene's ownership until completion. Shared instruction tests toggle
+Same on every host during Save/Restore to verify the captured recipient scope.
 
 **The Changes pane's screens.** `review`, `diff`, `review-comment`, `review-base`, `review-pr`,
 `review-empty`, `review-error` (MobileChanges, MobileDiff) and `changes-pad`, `changes-pad-full`,

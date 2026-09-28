@@ -46,6 +46,8 @@ final class ComposerState {
 
     func forget() {
         forgotten = true
+        queueEditor?.editing = nil
+        queueEditor = nil
         clearAttachments()
         for task in undoTasks.values { task.cancel() }
         undoTasks = [:]
@@ -102,6 +104,31 @@ final class ComposerState {
     }
 
     // MARK: Up next
+
+    // The host has one hold bit, not per-window leases. Only one window may edit a queued
+    // message in this thread; keep ownership until its save/release is acknowledged.
+    @ObservationIgnored private weak var queueEditor: ComposerPresentation?
+
+    @discardableResult
+    func beginQueueEdit(_ message: NativeQueuedMessage, presentation: ComposerPresentation) -> Bool {
+        guard !forgotten, queueEditor == nil else { return false }
+        queueEditor = presentation
+        presentation.editText = message.text
+        presentation.editing = message
+        return true
+    }
+
+    func closeQueueEdit(presentation: ComposerPresentation, store: NativeThreadStore, save: Bool) async {
+        guard queueEditor === presentation, let message = presentation.editing else { return }
+        let text = presentation.editText
+        presentation.editing = nil
+        defer { if queueEditor === presentation { queueEditor = nil } }
+        if save, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text != message.text {
+            await store.editQueued(message.id, text: text)
+        } else {
+            await store.holdQueued(message.id, false)
+        }
+    }
 
     /// The host's queue changed (or this client's view of it).
     func update(queue: [NativeQueuedMessage]) {

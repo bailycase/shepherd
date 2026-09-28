@@ -320,6 +320,31 @@ struct ClientSettingsTests {
         #expect(model.isEdited(.agents, in: hosts))
     }
 
+    @Test(arguments: [false, true], [false, true])
+    func anInstructionWriteKeepsTheScopeChosenBeforeAwait(restore: Bool, sameEverywhere: Bool) async {
+        let revision = InstructionRevision(file: .agents, savedAt: 1, summary: "old", content: "restored")
+        let first = FakeSettingsClient(files: InstructionsSnapshot(agents: "A", directory: "~/i"))
+        first.revisions = [revision]
+        let second = FakeSettingsClient(files: InstructionsSnapshot(agents: "B", directory: "~/i"))
+        let hosts = [Self.host("A", first), Self.host("B", second)]
+        let model = ClientInstructions(defaults: ScratchDefaults(), origin: "iPad")
+        await model.refresh(hosts)
+        model.sameEverywhere = sameEverywhere
+        model.setText("submitted", file: .agents, in: hosts)
+        let gate = SettingsRequestGate()
+        first.beforeInstructions = { _ in await gate.hold() }
+        let writing = Task {
+            if restore { await model.restore(revision.entry, in: hosts) }
+            else { await model.save(.agents, in: hosts) }
+        }
+        await gate.waitUntilHeld()
+        model.sameEverywhere.toggle()
+        await gate.release()
+        await writing.value
+        #expect(first.saved.agents == (restore ? "restored" : "submitted"))
+        #expect(second.saved.agents == (sameEverywhere ? first.saved.agents : "B"))
+    }
+
     @Test func explicitInstructionSelectionsKeepEachWindowsDraftAndSaveTarget() async {
         let first = FakeSettingsClient(files: InstructionsSnapshot(agents: "A", directory: "~/i"))
         let second = FakeSettingsClient(files: InstructionsSnapshot(agents: "B", directory: "~/i"))
