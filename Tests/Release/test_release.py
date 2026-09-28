@@ -732,6 +732,8 @@ class ContractTests(unittest.TestCase):
         build = workflow.split("      - name: Build ${{ env.APP_NAME }}\n", 1)[1].split("\n      - ", 1)[0]
         # SwiftPM package targets take no target settings: only the command line reaches them.
         self.assertIn("ARCHS=arm64 \\\n", build)
+        self.assertIn("-onlyUsePackageVersionsFromResolvedFile", build)
+        self.assertIn("key: xcode-${{ runner.os }}-${{ env.CONFIGURATION }}-${{ steps.xcode.outputs.version }}-${{ github.sha }}", workflow)
         self.assertNotIn("x86_64", workflow)
         thin = workflow.index('python3 scripts/release.py thin-app "$PRODUCTS/$PRODUCT"')
         self.assertLess(workflow.index("      - name: Build ${{ env.APP_NAME }}"), thin)
