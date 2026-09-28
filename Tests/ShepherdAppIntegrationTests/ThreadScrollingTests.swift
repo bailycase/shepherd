@@ -510,12 +510,17 @@ struct ThreadScrollingTests {
             let boundary = try #require(marker(in: thread.window.host))
             let top = try #require(boundary.viewportTop)
             let clip = thread.scrollView.contentView
-            var bounds = clip.bounds
+            let initialBounds = clip.bounds
+            var bounds = initialBounds
             bounds.origin.y += top + 8 // The first bubble is partially above the viewport.
-            clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
+            let constrained = clip.constrainBoundsRect(bounds).origin
+            clip.scroll(to: constrained)
             thread.scrollView.reflectScrolledClipView(clip)
+            let immediateTop = boundary.viewportTop
             try await thread.settle()
-            #expect(try #require(boundary.viewportTop) < 0)
+            let partialTop = try #require(boundary.viewportTop)
+            #expect(partialTop < 0,
+                    "boundary \(boundary.rowID): top \(top), immediate \(String(describing: immediateTop)), settled \(partialTop); clip \(initialBounds) -> requested \(bounds.origin) -> constrained \(constrained) -> actual \(clip.bounds); flipped clip=\(clip.isFlipped), document=\(thread.scrollView.documentView!.isFlipped)")
         }
         let before = try #require(try thread.position(of: "Question 2"))
         var page = ThreadHarness.snapshot(count: 12, running: false, prefix: "older", paragraphs: 7)
@@ -545,8 +550,13 @@ struct ThreadScrollingTests {
             try await thread.settle()
         }
         try await eventuallyOnMain("the history reply to wait") { thread.olderReply != nil }
-        try await thread.jumpDownToTheTail()
-        try await thread.settle()
+        // isPinned includes the 80pt sticky band. Step past the final user turn so this
+        // comparison starts at the actual tail, not a gap that growth correctly repins.
+        for _ in 0..<12 {
+            thread.command(.nextTurn)
+            try await thread.settle()
+        }
+        try await eventuallyOnMain("navigation to land on the exact tail") { abs(thread.distanceFromBottom) < 2 }
         let before = try #require(try thread.position(of: "Question 22"))
         var page = ThreadHarness.snapshot(count: 12, running: false, prefix: "older", paragraphs: 7)
         page.olderCursor = "older0"
@@ -558,7 +568,7 @@ struct ThreadScrollingTests {
         #expect(thread.olderRequests == 1)
         #expect(thread.isPinned)
         let after = try #require(try thread.position(of: "Question 22"))
-        #expect(abs(after - before) < 2, "an obsolete history anchor displaced the new navigation")
+        #expect(abs(after - before) < 2, "an obsolete history anchor displaced the new navigation from \(before) to \(after)")
     }
 
     /// A code block scrolls sideways only when its longest line is wider than the column; one
