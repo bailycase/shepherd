@@ -5,6 +5,23 @@ import Testing
 
 @Suite("herdr import")
 struct HerdrImportTests {
+    @Test func onlyAMissingWorkspaceStartsAnEmptyImport() throws {
+        let url = URL(fileURLWithPath: "/unused/state.json")
+        let missing = try HerdrImport.existingState(at: url) { _ in throw CocoaError(.fileReadNoSuchFile) }
+        #expect(missing == ShepherdState())
+        for code in [CocoaError.Code.fileReadNoPermission, .fileReadUnknown, .fileReadCorruptFile] {
+            #expect(throws: CocoaError.self) {
+                try HerdrImport.existingState(at: url) { _ in throw CocoaError(code) }
+            }
+        }
+        #expect(throws: DecodingError.self) {
+            try HerdrImport.existingState(at: url) { _ in Data("not a workspace".utf8) }
+        }
+        let saved = ShepherdState()
+        let loaded = try HerdrImport.existingState(at: url) { _ in try JSONEncoder().encode(saved) }
+        #expect(loaded == saved)
+    }
+
     /// One workspace with a pi pane, a plain shell pane, and a non-pi agent pane, plus fields
     /// Shepherd doesn't read.
     static let herdrJSON = """
