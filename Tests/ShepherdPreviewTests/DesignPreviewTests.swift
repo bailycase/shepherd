@@ -380,9 +380,8 @@ struct DesignPreviewTests {
         }
     }
 
-    /// The board actions over A picked whole (DZCanvas), "Ask for another direction" after the
-    /// last board, and a canvas with two pages: its title and sticky notes, and the pages menu in
-    /// the toolbar.
+    /// The board actions over A picked whole and a canvas with two pages: its title and
+    /// sticky notes, and the pages menu in the toolbar. No direction-prompt tile follows boards.
     @Test func designScreenActionsPagesAndNotes() async throws {
         let (workspace, checkout, _) = try await designWorkspace()
         defer { workspace.stop() }
