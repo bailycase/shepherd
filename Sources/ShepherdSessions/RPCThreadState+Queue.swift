@@ -128,6 +128,12 @@ extension RPCThreadState {
             images: images, goesAlone: alone, context: context, designPayloads: designPayloads)
         guard admitsQueue(items + [item]) else { completion(queueFull); return }
         items.append(item)
+        if settleCapture != nil, !running, dispatches.isEmpty, paused {
+            // A fresh send after Stop still resumes the queue, even while its end is captured.
+            sendAfterCapture = [id]
+            paused = false
+            queueNotice = nil
+        }
         // Only a running pi can take a steer: one of our prompts still on its way has not
         // started a run, so the message goes first after it instead.
         guard delivery == .steer, running else {
@@ -225,6 +231,16 @@ extension RPCThreadState {
             guard items.contains(where: { $0.entry.id == id && $0.entry.state == .steering }) else { completion(missing); return }
             unsteer(id) { completion($0 ?? accepted) }
         case .sendNow(let ids):
+            if settleCapture != nil, !running, dispatches.isEmpty {
+                let chosen = ids.filter { id in items.contains { $0.entry.id == id && $0.entry.state == .queued } }
+                guard !chosen.isEmpty else { completion(missing); return }
+                sendAfterCapture = chosen
+                paused = false
+                queueNotice = nil
+                commit()
+                completion(accepted)
+                return
+            }
             guard !piBusy else {
                 perform(.steer(ids: ids), operationID: operationID, completion: completion)
                 return
@@ -276,6 +292,11 @@ extension RPCThreadState {
         releaseLapsedHolds()
         guard !piBusy, !paused, session.isAlive, isServable, dialogs.isEmpty,
               !items.contains(where: { $0.entry.held }) else { return }
+        if let ids = sendAfterCapture {
+            sendAfterCapture = nil
+            sendNow(ids, completion: { _ in }, operationID: UUID())
+            return
+        }
         let queued = items.filter { $0.entry.state == .queued }
         let count = NativeQueueRules.batchCount(queued, mode: effectiveMode)
         guard count > 0 else { return }
@@ -330,8 +351,9 @@ extension RPCThreadState {
         commit()
         let rpcImages = images.map { RPCImage(data: $0.data.base64EncodedString(), mimeType: $0.mimeType) }
         let generation = generation
+        preparingPrompts[id] = completion
         let send = { [weak self] in
-            guard let self else { return }
+            guard let self, let completion = self.preparingPrompts.removeValue(forKey: id) else { return }
             guard self.generation == generation else {
                 completion(.failure(code: "stale_session", message: "The session changed before pi started the send."))
                 return
@@ -520,8 +542,22 @@ extension RPCThreadState {
 
     /// Stop: pi's queue is emptied first (pi's recipe; `abort` alone still delivers it), steering
     /// items return to the queue, and the queue pauses until the user resumes it.
+    /// Stop/reset/exit must answer a send even while its filesystem preparation is still held.
+    func cancelPreparingPrompts() {
+        let pending = preparingPrompts
+        preparingPrompts.removeAll()
+        sendAfterCapture = nil
+        if !pending.isEmpty { discardPreparedTurn?() }
+        for (id, completion) in pending {
+            dropDispatch(id)
+            completion(.failure(code: "send_cancelled", message: "The send was cancelled before pi started it."))
+        }
+        if !pending.isEmpty { commit() }
+    }
+
     func stop(_ done: @escaping (Result<RPCResponse, RPCError>) -> Void) {
         stopRequested = true
+        cancelPreparingPrompts()
         clearPiQueue { [weak self] steering, followUp, _ in
             guard let self else { return }
             self.reclaim(steering: steering, followUp: followUp)
@@ -624,6 +660,7 @@ extension RPCThreadState {
 
     /// A new pi session: its queue is new, so steering items wait in the queue again.
     func resetQueueForNewSession() {
+        cancelPreparingPrompts()
         settleCapture = nil
         discardPreparedTurn?()
         for dispatch in dispatches { live.removeAll { $0.kind == .pending(dispatch.id) } }

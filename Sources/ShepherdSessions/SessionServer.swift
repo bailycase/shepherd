@@ -4514,7 +4514,8 @@ public final class SessionServer: @unchecked Sendable {
                 ShepherdLog.warning("rpc session \(sid) would start a new conversation in place of \(resuming ?? "-"); stopping it")
                 session?.kill()
             }
-            session.onExit = { [weak serverWeak] code in
+            session.onExit = { [weak serverWeak, weak thread] code in
+                thread?.cancelPreparingPrompts()
                 serverWeak?.sessionDidExit(sid, code: code)
             }
             thread.beforePrompt = { [weak serverWeak] completion in

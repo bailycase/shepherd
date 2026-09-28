@@ -34,14 +34,10 @@ struct ChangesGit {
     /// a command that writes one); `literalPaths` turns off pathspec magic, so paths after `--`
     /// mean exactly those files.
     static func run(_ arguments: [String], in directory: String, index: String? = nil, literalPaths: Bool = false,
-                    input: Data? = nil) throws -> Result {
+                    input: Data? = nil, timeout: TimeInterval = 10) throws -> Result {
         #if DEBUG
         runs.withValue { $0[directory, default: 0] += 1 }
         #endif
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = configuration + arguments
-        process.currentDirectoryURL = URL(fileURLWithPath: directory, isDirectory: true)
         var environment = ProcessInfo.processInfo.environment
         environment["GIT_TERMINAL_PROMPT"] = "0"
         environment["GIT_OPTIONAL_LOCKS"] = "0"
@@ -52,46 +48,27 @@ struct ChangesGit {
         }
         if let index { environment["GIT_INDEX_FILE"] = index }
         if literalPaths { environment["GIT_LITERAL_PATHSPECS"] = "1" }
-        process.environment = environment
-
-        let stdout = Pipe(), stderr = Pipe()
-        process.standardOutput = stdout
-        process.standardError = stderr
-        let stdin = input.map { _ in Pipe() }
-        process.standardInput = stdin ?? FileHandle.nullDevice
         do {
-            try process.run()
+            let result = try BoundedCommand.run([executable] + configuration + arguments,
+                                                directory: URL(fileURLWithPath: directory), environment: environment,
+                                                input: input, timeout: timeout)
+            return Result(status: result.status, stdout: result.output,
+                          stderr: String(decoding: result.errors, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
+        } catch BoundedCommand.Failure.timedOut {
+            // The bounded runner has stopped this command's group. git cannot clean its lock
+            // after SIGKILL; `index` is always our private, caller-serialized index, never git's.
+            if let index { try? FileManager.default.removeItem(atPath: index + ".lock") }
+            throw ChangesError(ChangesError.gitFailed, "git \(arguments.first ?? "") timed out after \(timeout) seconds.")
         } catch {
-            throw ChangesError(ChangesError.gitFailed, "Could not run git in \(directory): \(error.localizedDescription)")
+            if let index { try? FileManager.default.removeItem(atPath: index + ".lock") }
+            throw ChangesError(ChangesError.gitFailed, "Could not run git in \(directory): \(error)")
         }
-        // stderr drains on its own thread so a chatty command never blocks on a full pipe.
-        let errors = ChangesLocked(Data())
-        let drained = DispatchSemaphore(value: 0)
-        DispatchQueue.global(qos: .utility).async {
-            let data = stderr.fileHandleForReading.readDataToEndOfFile()
-            errors.withValue { $0 = data }
-            drained.signal()
-        }
-        if let stdin, let input {
-            // git may exit before reading all of it: a write then fails instead of raising
-            // SIGPIPE, which would end the app.
-            _ = fcntl(stdin.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
-            DispatchQueue.global(qos: .utility).async {
-                try? stdin.fileHandleForWriting.write(contentsOf: input)
-                try? stdin.fileHandleForWriting.close()
-            }
-        }
-        let output = stdout.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        drained.wait()
-        let message = String(decoding: errors.withValue { $0 }, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        return Result(status: process.terminationStatus, stdout: output, stderr: message)
     }
 
     /// `run`, throwing unless git exits 0 (or one of `allowed`).
     static func checked(_ arguments: [String], in directory: String, index: String? = nil, literalPaths: Bool = false,
-                        input: Data? = nil, allowed: Set<Int32> = [0]) throws -> Result {
-        let result = try run(arguments, in: directory, index: index, literalPaths: literalPaths, input: input)
+                        input: Data? = nil, allowed: Set<Int32> = [0], timeout: TimeInterval = 10) throws -> Result {
+        let result = try run(arguments, in: directory, index: index, literalPaths: literalPaths, input: input, timeout: timeout)
         guard allowed.contains(result.status) else {
             let detail = result.stderr.isEmpty ? "exit \(result.status)" : result.stderr
             throw ChangesError(ChangesError.gitFailed, "git \(arguments.first ?? "") failed: \(detail)")

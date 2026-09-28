@@ -87,7 +87,11 @@ waits for that end capture, including queued messages and new sends arriving dur
 Before sending the next prompt, the host captures its baseline; `agent_start` consumes that
 baseline rather than racing the agent's first write. Captures run off the server queue, so other
 agents remain responsive. Capture failure releases delivery but makes the affected turn unavailable;
-a refused prompt creates no turn.
+a refused prompt creates no turn. Each git command (including clean filters, stdin and inherited
+output pipes) has a ten-second deadline; expiration terminates its owned process group and fails
+the capture rather than holding delivery indefinitely. Stop answers a prompt waiting for its
+baseline immediately, and a late completion cannot deliver that cancelled prompt. Send now after
+Stop resumes the requested message first once the end capture releases the queue.
 Edits the user makes in their editor while the agent works are in the turn too: the snapshots
 cannot tell who wrote a file.
 

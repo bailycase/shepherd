@@ -318,6 +318,11 @@ struct QueueTests {
         _ = try await pi.send("tools:0 after", operationID: follow, from: running)
         _ = try await pi.send("tools:0 instead", delivery: .steer, operationID: steer, from: running)
         _ = try await pi.snapshot { $0.queue?.items.count == 2 }
+        let releaseCapture = DispatchSemaphore(value: 0)
+        defer { releaseCapture.signal() }
+        await withCheckedContinuation { continuation in
+            h.server.changes.captureQueue(pi.agent.id).async { continuation.resume(); releaseCapture.wait() }
+        }
 
         #expect(try await pi.request(.abort(expectedSessionID: running.piSessionID, generation: running.generation, operationID: UUID())).failureCode == nil)
         let types = pi.stdin().compactMap { $0["type"] as? String }
@@ -337,6 +342,8 @@ struct QueueTests {
 
         // Send now resumes it: that message opens the next turn, and the rest follows.
         #expect(try await pi.queue(.sendNow(ids: [follow]), from: stopped).failureCode == nil)
+        #expect(prompts(pi).count == 2, "Send now resumes intent but cannot bypass the held capture")
+        releaseCapture.signal()
         _ = try await pi.snapshot("both to go") { s in
             !s.running && s.queue?.items.isEmpty == true && s.messages.contains { $0.operationID == steer }
         }
