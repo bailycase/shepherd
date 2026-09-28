@@ -194,6 +194,20 @@ public enum NativeModelChoices {
         return String(model[model.index(after: slash)...])
     }
 
+    /// A model as a narrow chip names it (iPadDesign's "opus"): its last path part, without the
+    /// "claude-" family prefix or a trailing date stamp ("anthropic/claude-opus-4-5-20251101" →
+    /// "opus-4-5").
+    public static func compactName(_ model: String) -> String {
+        var name = model.split(separator: "/").last.map(String.init) ?? model
+        if let dash = name.lastIndex(of: "-"), name.distance(from: dash, to: name.endIndex) == 9,
+           name[name.index(after: dash)...].allSatisfy({ $0.isASCII && $0.isNumber }) {
+            name = String(name[..<dash])
+        }
+        let family = "claude-"
+        if name.hasPrefix(family), name.count > family.count { name.removeFirst(family.count) }
+        return name.isEmpty ? model : name
+    }
+
     /// "provider/model" → "provider" ("Other" without one).
     public static func provider(_ model: String) -> String {
         guard let slash = model.firstIndex(of: "/") else { return "Other" }

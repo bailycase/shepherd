@@ -32,6 +32,17 @@ struct DesignIsolationTests {
         #expect(TerminalSessionStore.wantsPanes(for: agent, enabled: enabled) == wants)
     }
 
+    /// design_get and design_note are a thread's, and only while the Design tool and the setting
+    /// are both on; a design's agent never gets them.
+    @Test(arguments: [
+        (false, true, true, true), (true, true, true, false), (false, false, true, false), (false, true, false, false),
+        (true, false, false, false), (true, true, false, false), (false, false, false, false),
+    ])
+    func onlyAThreadLaunchesWithDesignReferences(drawsDesign: Bool, enabled: Bool, designTool: Bool, wants: Bool) {
+        let agent = Agent(name: "a", spaceID: SpaceID(), tabID: TabID(), designID: drawsDesign ? DesignID() : nil)
+        #expect(TerminalSessionStore.wantsDesignReferences(for: agent, enabled: enabled, designTool: designTool) == wants)
+    }
+
     @Test func agentListShowsThreadsAndNoDesignsAgent() {
         let (state, thread, drawer) = workspace()
         let infos = ShepherdViewModel.peerInfos(in: state, sender: thread.id)

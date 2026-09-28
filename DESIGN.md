@@ -897,7 +897,9 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
 - **Palette:** 620pt wide, or the window minus 16pt margins, and never taller than the window
   leaves room for (`NWPaletteMetrics.placement`).
 - **Composer:** in a narrow thread the chips drop their words ("/" alone, the thinking level
-  alone) instead of truncating mid-word (`ViewThatFits`).
+  alone) instead of truncating mid-word (`ViewThatFits`). A pane under 520pt (a design's 420pt
+  chat) draws the composer at its compact size (`NWComposerSize.compact`), where they never show
+  them.
 
 ## Surfaces
 
@@ -1966,6 +1968,14 @@ while their menu is open. A new model or level cross-fades in its chip (`content
 width changes stay instant. In a narrow thread (a docked side pane) the chips drop their words
 ("/" alone, the level without "Thinking") rather than truncate, once "Starting…" has dropped
 its own.
+
+**Sizes** (NWDesignTool › Chat composer): the composer is the same component everywhere, at one
+of two sizes, `.nwComposerSize(_:)` (`NWComposerSize`). `.regular` is the thread's and New
+design's. `.compact` is for a pane under 520pt, a design's 420pt chat (the canvas's, a system
+build's, a remote design's): the chips never show their words, so "/ commands" is "/" and the
+thinking chip is its level alone (`NWComposerCommandsLabel`, `NWComposerThinkingLabel`). Attach,
+the model, the context ring and Send are the same at both sizes, and so are the chips' 26pt
+metrics (the boards draw the Design tool's composers at their own scale).
 
 **States:**
 
@@ -3650,6 +3660,10 @@ automated step of the worktree flows can be turned off here.
   - Subagent display, "Show subagent runs in their agent's thread, the inspector and the palette.
     Off doesn't stop them running." (the board says "in the sidebar"; subagents have no sidebar
     rows, see Subagents)
+  - Design references, "Let a thread read the design pieces you hand it with `design_get`. Only a
+    thread you sent one to gets the tool.", shown only while Settings ▸ Experiments ▸ Design tool
+    is on (not drawn; it follows the rows above). With the Design tool off no thread loads it,
+    whatever the row says; a running agent follows either change at its next start.
 - **Native subagent defaults** (only while Native subagents is on; footnote "Precedence: explicit
   call → agent file → these defaults → parent. Child tools run with your account's access."):
   - Concurrency, "Child process limit per parent, including workflows.": a stepper, 1–16, default 4.
@@ -5009,7 +5023,8 @@ below collects the rest, and the places those sentences point here.
 - **Sidebar and New thread** (NWNavigation, NavNewThread against `SidebarView.swift` and
   `NewThreadPage.swift`):
   - The New thread composer has no "/ commands" chip, and its placeholder drops ", or / for
-    commands": no pi runs before the thread exists to list its commands.
+    commands": no pi runs before the thread exists to list its commands. New design's composer
+    (DZStart, NWDesignTool › Chat composer) leaves it out for the same reason.
 - **iOS** (the phone and iPad boards against `App/iOS` and ShepherdUI's Fleet parts):
   - Row dots are 7pt (`NWListMetrics.dot`), the boards' 8 on iPhone.
   - iPhone user bubbles are the Mac's (`NWUserBubble`: at most 600pt, 10×14); the iPhone boards
@@ -8104,7 +8119,9 @@ systems, the system chip opening its page, and New design's system card;
 docs/designs.md › Design systems), Export (its sheet, the four formats and Attach to a thread;
 docs/designs.md › Export and import), and deleting (with Undo), renaming and duplicating designs and
 design systems and importing a Claude Design project from a ZIP or a folder (Delete and import,
-below). Not built: the live link, Attach to a mission, Present
+below), and design references (Implement in a thread…, Copy reference, the composer's @ picker,
+the reference chip, the agent's "Looked at…" line and the thread's note back on the canvas;
+Design references, below). Not built: the live link, Attach to a mission, Present
 mode's own board, Tweak snapping to an installed system's tokens, and every iPhone and iPad part;
 each subsection below says what of it is built. On iPhone, a host's designs show while that host
 serves them (docs/designs.md › On iPhone); the iPad's parts are not built yet. The canvas marks the whole page an
@@ -8270,9 +8287,16 @@ opens this page in the main column, with the sidebar showing and Designs selecte
   - **The prompt**, a 720pt composer card (`NWComposer`'s card: `bgRaised`, drawn focused, a
     `textTertiary` line in a 3pt `bgSelected` ring; the board's radius is 10, off the radius scale,
     and the composer's 8: settle which before building): the field (14pt padding, 4pt below, at
-    least 72pt tall, `body`), placeholder "A checkout funnel dashboard for the product team…"; under
-    it only attach (`paperclip`, "Attach a screenshot or file") and Send (the composer's 28pt
-    lantern circle, 35% until there is text).
+    least 72pt tall, `body`), placeholder "A checkout funnel dashboard for the product team…";
+    under it the standard composer's row at the regular size (NWDesignTool › Chat composer):
+    attach (`paperclip`, "Attach a screenshot or file"), the model chip, the thinking chip
+    ("Thinking Medium") and Send (the composer's 28pt lantern circle, 35% until there is text).
+    The model and level are This Mac's defaults (Settings ▸ Agents) until picked; the model
+    picker and the thinking menu open under the card, as on New thread, and the design agent
+    starts on what they say. After that they stay with the design's pi session. There is no
+    context ring before the design has a conversation. The board also draws "/ commands": left
+    out for New thread's reason (no pi runs before the design exists to list its commands);
+    see Known gaps.
   - **"DESIGN SYSTEM & STARTING POINT"** (`.nwSectionLabel()`), 10pt above three equal cards in
     a row, 10pt apart. Each card: 12×14 padding, radius 8, 1px `lineSubtle`, 6pt between its
     lines, the hover fill: a 13pt glyph and a title in mono 12 semibold; a line in 12.5
@@ -8385,11 +8409,16 @@ are off the tokens). Opening a design fills the main column: the header, then th
     A comment you make on the canvas joins the chat as its `NWCommentCard` (below), and the
     agent's answer sits inside the card under a hairline: its activity line, then its reply
     ("Done. Counts sit next to each percentage on both boards.").
-  - **The composer** (12pt above it, 14pt at the sides and below): `NWComposer`'s card at rest (a
-    1px `lineStrong` line; the board's radius is 10, off the radius scale, and the composer's 8:
-    settle which before building), the field at least 34pt, placeholder "Describe a change, or click
-    something on the canvas to comment…", with attach (`paperclip`, "Attach a screenshot or file")
-    and Send (35% until there is text) only: no model, thinking, or command chips.
+  - **The composer** (12pt above it, 14pt at the sides and below) is the thread's composer at its
+    compact size (NWDesignTool › Chat composer; Composer, questions, and menus › Sizes): `NWComposer`'s card at radius
+    8, placeholder "Describe a change, or click something on the canvas to comment…", and one
+    row of attach, "/", the model, the thinking level alone, the context ring (once the design
+    agent has a conversation) and Send. Everything a thread's composer does works here: the slash
+    menu (pi's commands; `/login` stays in Settings), the model picker and thinking menu (⇧⌘M
+    and the menu command reach it), the ring's details and Compact, Up next with queue and steer,
+    and attachments. A model or level change goes to the design agent's pi as a thread's does
+    (`setModel`, `setThinking`). What it sends still carries the canvas's view record. A system
+    build's chat (DZSystem) and a remote design's chat have the same composer.
 
 ### Comments (DZCanvas, DZTweak, NWDesignTool)
 
@@ -8403,8 +8432,8 @@ Comments), as below, with these choices the boards leave open:
   board draws a comment being written. The board action (Comment) waits for the board actions bar.
 - In the chat, the agent's reply inside the card has no turn footer.
 - A resolved comment leaves the canvas and the Comments tab (the chat keeps its card); nothing
-  lists resolved comments yet. The Comments tab's count is the open comments', and it shows no
-  count at zero; with none it is blank.
+  lists resolved comments yet. The Comments tab's count is the open comments' and the notes
+  threads left (RefNoteBack), and it shows no count at zero; with none it is blank.
 - A comment whose element a rewrite left nowhere keeps its pin where the element was, and its
   thread and card add "element changed". Not drawn on any board: design it.
 - A comment that couldn't reach the agent is kept, and the app's error dialog says why. Not drawn.
@@ -8435,6 +8464,116 @@ Comments), as below, with these choices the boards leave open:
   funnel"), and trailing author · age ("You · 2m"). The comment in 13/1.5. On iPad the card is
   10×12 with 6pt between parts, its header in 12 and the comment in 13.5/1.45 (iPadDesign); on
   iPhone it is a sheet over the board (On iPhone, below).
+
+### Design references (DesignRefStates, RefImplementMenu, RefImplementSheet, RefImplementBoard, RefSentStay, RefCopied, RefNoteBack, RefPasted, RefAtDesigns, RefAtElements, RefAtSearch, RefSentThread, RefChipHover, RefChipUpdated, RefAgentRead)
+
+**Built on the Mac, this Mac's designs only** (docs/designs.md › Design references; ShepherdUI's
+`References.swift`, `ImplementSheet.swift`, `MentionPicker.swift`, every state specimen in
+`NWDesignReferenceSpecimens` with its `#Preview`). A thread shows nothing of a design but the chip
+in the user's own message and one "Looked at…" line; none of it exists with the Design tool off,
+or in a design's own chat. Choices the boards leave open, and where the build departs:
+
+- **Other hosts** are ShepherdUI states only (the chip's "on another host" and "host offline",
+  the picker's host tags and dimmed offline rows): the app lists and sends this Mac's designs, and
+  never reaches them until remote references come.
+- **The picker lists no files** (the boards' "Files" section): the component draws the rows, the
+  composer offers none, as the composer has no file mentions yet.
+- **Native menus** (the right-click menu, the design's •••) use the app's title case ("Implement
+  in a Thread…", "Copy Reference"). The ••• menu lists the chords' actions without their chords: a
+  popup button's key equivalents would answer ⌘↩ anywhere in the window.
+- **The right-click menu** has no Delete: the canvas deletes no board yet.
+- **A pinned version no longer kept** is refused (`version_gone`) with its reason; no board draws
+  it.
+- **The note's card** opens beside its pin (a choice the boards leave open).
+
+These departures are the user's call, 2026-09-27: references to another host's designs come
+later; the picker lists designs only, and file mentions wait for a PR of their own; the ••• menu
+keeps its chords off; Delete joins the right-click menu when deleting a board is built, with Undo;
+and a pinned version no longer kept is refused, with Send vN offered for the current one.
+
+- **From the canvas:** the board actions bar floats over the selection's board, an element's too,
+  and ends with **Implement…** (`chevron.left.forwardslash.chevron.right`) before •••. A right-click
+  (or ⌃-click) picks what it lands on, then opens Comment, Tweak | Implement in a Thread… (⌘↩) ·
+  Copy Reference (⇧⌘C) | Duplicate; on the empty canvas, "Implement <design>…" and Copy Reference.
+  The design's ••• (its toolbar) adds "Implement <piece>…" and Copy Reference before Delete Design…,
+  naming the selection (the whole design with nothing selected). ⌘↩ and ⇧⌘C are canvas-scoped
+  (`ShortcutAction.Scope.canvas`, Settings ▸ Keyboard's Designs group): answered only while the
+  design shows and nothing that takes text has the keyboard with something in it, so the chat's
+  composer keeps its own ⌘↩ for a draft. Clicking the canvas leaves the keyboard where it was
+  (usually the chat's empty composer), and that lets them through.
+- **The sheet** (`NWImplementSheet`), centered over the window on the sheet scrim: 540pt, radius
+  14, `bgWindow` with the popover's line and shadow. A header (20/18/16/20): the piece's picture
+  88×56 (radius 6; an element cut from its board as the canvas drew it), "Implement <piece>" in 16
+  semibold, the design (and board) in 12.5 `textSecondary` · the version in mono 11 `textTertiary`,
+  and a 28pt bordered close. Existing thread | New thread (`NWSegmentedPicker`). Existing: Search
+  threads, then the threads (`NWImplementThreadList`: 38pt rows in a `lineSubtle` list at radius 9,
+  hairlines between; the chosen one on `runningTint` with a filled 7pt `running` dot, semibold, and
+  a check; others an open 1.5pt `textTertiary` ring; the project in mono 11 with a folder glyph, a
+  host tag, the age in 11.5 `textTertiary`), five before they scroll: this Mac's threads that draw
+  no design, most recently active first. New: Project (`NWImplementProjectLabel`, 34pt: the project
+  in mono 12.5 · "This Mac", a menu of the sidebar's projects; it defaults to the project the
+  design's system was built from, else the latest thread's) and "Starts on a new worktree,
+  agent/implement-<piece>" (a project that isn't a git checkout: "Starts in the project: it isn’t a
+  git repository, so no worktree."). Then Message ("Anything the agent should know (optional)",
+  13/1.5 on `bgRaised`, radius 8), "Open the thread after sending" (`.nwCheckbox`, remembered), and
+  the footer on `bgSunken` (12/16/14/20, a hairline above): exactly what goes
+  (`DesignReferencePresentation.sends`, the system in mono 11), Cancel, and Send (primary, ↑).
+- **Sent:** with "Open the thread after sending" on, the thread shows; off, the canvas stays and a
+  toast (`NWReferenceToast`, 520pt, 11/12/11/14 padding, radius 12, a `done` check) says "Sent
+  <piece> to **<thread>**." with Open thread; **Copy reference** puts the pinned string on the
+  pasteboard and says "Copied a reference to <piece>. Paste it into any thread’s composer." (a
+  link glyph). A toast sits 22pt above the canvas's bottom, centered, and goes after 6 seconds.
+  The sheet, the toasts and a new thread's name and branch name the piece as the canvas did (its
+  `data-el` name, else the canvas tag's noun: "card “Checkout funnel”"); the host names it the same
+  way from the source for the chip and the picker (`DesignReferenceReading.elementNoun`: a box
+  that draws a fill, border or shadow is a card, else a group; words alone are text). The footer
+  names only what goes: never "0 tokens".
+- **The chip** (`NWDesignReferenceChip`): 6/8/6/6 padding, radius 9, 1px `lineStrong` on
+  `bgBubble`, 9pt gaps: a 40×26 picture (radius 4, a hairline ring), then design › board ›
+  **element** in 12.5 (`textSecondary`, the piece `textPrimary` semibold, `›` `textTertiary`; the
+  design's name gives way first) over the version in mono 10.5 · the state in 11 `textTertiary`
+  ("design reference"). Updated: a 5pt `lantern` dot and "updated since · now v26" in `lanternText`.
+  Deleted: 75%, the picture a dashed tile with a trash glyph, "design deleted · the copy sent here
+  is kept". Hovered or open: a 1px `running` line on `runningTint`. In the composer it has a 20pt
+  remove button and sits first among the attachments, which wrap; at most five. In a sent message
+  it sits above the words (the "1 design reference attached." line comes off); a click opens the
+  piece in the design (its board picked and centered, its element selected once the board draws).
+- **The preview** (`NWDesignReferencePreview`), 8pt above the chip after a 0.45s hover, whenever
+  the thread's visible part holds it there (8pt below only a sent chip too near the thread's top
+  for it), kept while the pointer is on either: 340pt, 12pt padding, radius 12, the popover's surface, 10pt between
+  parts. The picture 316×107 (radius 6), the breadcrumb, "v23 pinned Sep 27, 10:42 · acme-web" in
+  11.5 `textTertiary` (the version `textSecondary`, the system mono), "The agent gets" with mono
+  10.5 tags on `bgSelected`, and Open in design (secondary, 24pt). Updated: a box on `lanternTint`
+  (8×10, radius 8): "Changed since v23 · now v26" in 12 semibold `lanternText` over mono 11 lines,
+  "Open v26 in design" and **Send v26** (ghost), which puts v26 in the composer; old messages keep
+  theirs.
+- **The @ picker** (`NWMentionPicker`), over the thread above the card like the slash menu: "@" at
+  the start or after a space opens it on the designs (40×26 pictures, the name in 13 medium, the
+  system in mono · "4 boards · edited 2h ago" in 11.5 `textTertiary`, a chevron); → or ⏎ drills
+  into a design (Whole design, then its boards) and a board ("Whole board", then Elements), each
+  under a breadcrumb with Back (← or ⌫ with nothing typed after it), the draft spelling the way
+  in ("@Checkout funnel dashboard › A · Funnel first › "); ⏎ on an element or a whole row picks it:
+  the mention leaves the words and the chip joins the composer. Typing searches designs, boards
+  and elements by their own names, each with its path, the words underlined ("6 matches").
+  "Nothing matches “pricng”" and "No designs yet. Start a design and its boards show up here." are
+  its empty stages. 48pt rows, runningTint highlight, at most eight rows (a lazy list). An
+  element's row draws the element itself, cut from its board (made only once the row is on screen),
+  and says what it is and holds: "funnel bars · 5 steps", "list · 5 rows", "KPI tile · 1 of 4",
+  "chips · All platforms, Web, iOS, Android". Whole board's "14 elements" and the Elements count
+  are the rows the list holds. Esc closes it for the draft as typed.
+- **A pasted reference** (a paste bringing a whole `shepherd-design-ref://…` word) becomes a chip,
+  the words around it staying; typed characters and plain text stay text. ⌫ with the caret at the
+  start of the words (or in an empty composer) takes the last chip back.
+- **"Looked at…"** (NWActivityLine(.lookedAtDesign), the nib): "Looked at Checkout funnel
+  dashboard › A · Funnel first" with what it got in mono ("picture · html · 11 styles · 8 tokens");
+  open, `NWLookedAtDetails` on the calls' rail: `pic` the picture and its size, `html` the page and
+  its weight, `css` the properties, `tok` the tokens and the file:lines they live in.
+- **A note back** (`NWThreadNotePin`, `NWThreadNoteCard`): the comment pin's 26pt teardrop in
+  `running` (a 1.5pt ring on `runningTint` over `bgRaised`, a code glyph), just after a comment's
+  pin on the same element, on the board's corner while its element isn't found; its card beside it
+  (300pt, 12×14, radius 12): a "Thread" tag on `runningTint`, the thread's name semibold, the age;
+  the note in 13/1.5 with its `code` and #142 in mono (#142 `running`); a hairline, Open thread,
+  Resolve, and "from v23".
 
 ### Tweak (DZTweak)
 
@@ -8674,7 +8813,8 @@ the Tweak parts `NWTweakRow` (with `NWTweakHeader`, `NWTweakGroup`, `NWTweakNote
 `NWTweakFooter`), `NWTokenChip` (with `NWTokenChipFlow`) and `NWTweakScope`, `NWBoardActions`
 (with `NWDirectionTile`, `NWCanvasNote` and `NWBoardPresentation`), and the page parts
 `NWDesignCard`, `NWDesignSystemCard`, `NWDesignStartCard`, `NWDesignHeader` and
-`NWDesignPaneTabs`, the system page's `NWSectionRail`, `NWTokenSwatch` (DZSystem's 56pt),
+`NWDesignPaneTabs`, the Chat composer section's two sizes (`NWComposer` with
+`.nwComposerSize(.compact)`; Composer, questions, and menus › Sizes), the system page's `NWSectionRail`, `NWTokenSwatch` (DZSystem's 56pt),
 `NWTypeSpecimen`, `NWComponentSpecimen` and `NWDesignSystemBuildTile`, and Export's
 `NWExportSheet`, `NWExportSection`, `NWExportBoardRow` and `NWExportFormatCard`. The rest of the
 table is not built yet.
@@ -8799,10 +8939,13 @@ What the board draws:
   - The chat pane's tabs are 44pt at the bottom of a 76pt header (14pt labels, 18pt apart;
     "Comments 3"). The chat has 16pt padding and 12pt between items. Its prose is 14.5/1.55 and
     its activity lines are at least 34pt tall (14.5 `textSecondary`, a 14pt glyph, 9pt gap, meta
-    in mono 11.5). The composer (10×14 padding, 26pt below, a hairline above) is one field at
-    least 44pt tall (radius 12, 1px `lineStrong`, `bgRaised`, 14pt leading padding),
-    placeholder "Describe a change, or draw on a board…" at 15, with a 32pt send that is a plain
-    `textSecondary` glyph, not the lantern circle.
+    in mono 11.5). The composer (10×14 padding, 26pt below, a hairline above) is the iPad
+    thread's card at the compact size (NWDesignTool › Chat composer), placeholder "Describe a
+    change, or draw on a board…": attach, the model's short name ("opus",
+    `NativeModelChoices.compactName`: no provider, no "claude-" family, no date stamp), the
+    thinking level alone, the context ring and Send. It has no "/" button; typing "/" still
+    opens the commands. The board draws its chips 40pt and the card at radius 16; the iPad's
+    thread card is the Mac's (26pt chips, radius 8), and the design chat keeps it.
 - **Split View** (iPadSplitView): a design in one window beside a thread in another (Windows, under
   iOS). The design's window (586pt on the board, radius 12) carries the window's three-dot handle
   centered at its top, so its header is 76pt with 24pt above: a bare back chevron in `running`, the
@@ -9064,7 +9207,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 
 | Board | Specified in | Status |
 | --- | --- | --- |
-| DZStart | Design tool › New design | Built, without Capture a page and From a screenshot |
+| DZStart | Design tool › New design | Built, without Capture a page, From a screenshot and "/ commands" |
 | DZCanvas | Design tool › A design: canvas and chat, Comments | Partly built: header, canvas, board frames, Chat, comments; not actions, Tweak |
 | DZTweak | Design tool › Tweak | Not built yet |
 | DZSystem | Design tool › Design systems | Not built yet |
@@ -9094,4 +9237,4 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | NWSwift, NWSwiftLight | Theme model › Building on ShepherdUI | Partial |
 | MXVocab, MXVocabLight | Missions › Missions: the map | Not built yet |
 | NWMissions, NWMissionsLight | Missions (Missions: shared parts and the screens that use them) | Not built yet |
-| NWDesignTool, NWDesignToolLight | Design tool › Design components | Partly built: the canvas, board frame, toolbar and system chip |
+| NWDesignTool, NWDesignToolLight | Design tool › Design components | Partly built: the canvas, board frame, toolbar, system chip and chat composer |

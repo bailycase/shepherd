@@ -258,4 +258,32 @@ struct DesignToolComponentTests {
     func aPresentedBoardFitsTheView(_ board: CGSize, _ view: CGSize, _ zoom: CGFloat) {
         #expect(abs(NWBoardPresentation<EmptyView>.zoom(for: board, in: view) - zoom) < 0.0001)
     }
+
+    // MARK: Design references
+
+    @Test(arguments: [
+        ("Implemented in #142 on `agent/checkout-funnel`.",
+         [NWThreadNoteText.Run.words("Implemented in "), .number("#142"), .words(" on "), .code("agent/checkout-funnel"), .words(".")]),
+        ("Bars use `--accent`; counts reuse the cell.", [.words("Bars use "), .code("--accent"), .words("; counts reuse the cell.")]),
+        ("issue#12 and `` and # alone", [.words("issue#12 and `` and # alone")]),
+    ])
+    func aNotesCodeAndPullRequestNumbersAreItsOnlyMarkup(_ text: String, _ runs: [NWThreadNoteText.Run]) {
+        #expect(NWThreadNoteText.runs(text) == runs)
+    }
+
+    @Test func aSearchUnderlinesTheWordsItFoundInTheTitle() {
+        let title = "Checkout funnel dashboard"
+        let ranges = NWMentionRowView.matchRanges(title, words: ["FUNNEL", "missing"])
+        #expect(ranges.map { String(title[$0]) } == ["funnel"])
+    }
+
+    @Test func thePickerShowsAtMostEightRowsAndFitsTheRoomAboveTheCard() {
+        let M = NWMentionMetrics.self
+        let rows = (0..<20).map { NWMentionRow(id: "\($0)", kind: .design, title: "D\($0)", trailing: .drill) }
+        let section = [NWMentionSection(id: "designs", title: "Designs", rows: rows)]
+        #expect(NWMentionPicker.listHeight(section, room: nil) == M.headerHeight + 8 * M.rowHeight)
+        #expect(NWMentionPicker.listHeight([NWMentionSection(id: "d", title: "Designs", rows: Array(rows.prefix(2)))], room: nil)
+            == M.headerHeight + 2 * M.rowHeight)
+        #expect(NWMentionPicker.listHeight(section, room: 200) == 200)
+    }
 }

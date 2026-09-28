@@ -119,6 +119,10 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
     Settings ▸ Experiments ▸ Suggested instructions is on for its kind of agent), and, for an
     agent that draws a design, `SHEPHERD_DESIGN_ID` and `SHEPHERD_DESIGN_SKILL_DIR` (the design
     skill the app writes to the support directory's `design-skill/`; docs/designs.md).
+    `SHEPHERD_DESIGN_REFS` (`on`, or `granted` for a thread that already holds a design
+    reference) loads design_get and design_note in a thread that draws no design, while Settings ▸
+    Experiments ▸ Design tool and Settings ▸ Pi ▸ Design references are on (docs/designs.md ›
+    Design references).
 - **`SHEPHERD_PR_DESCRIPTION_MODEL`** overrides the model that drafts finalize PR bodies.
 - **`SHEPHERD_NAMER_MODELS`** (`provider/id,provider/id`; an entry without a slash matches any
   provider) overrides the cheap models the namer tries before the agent's own. The namer reads it
@@ -291,8 +295,8 @@ too: `get_state`, a TypeScript fixture extension loaded through jiti, and an RPC
 It also starts the engine through the real launcher in a scratch Shepherd home, with a
 `NODE_OPTIONS` pi must not see: an RPC `bash` command there finds `pi` at the launcher and gets
 that `NODE_OPTIONS` back (`restore-env.sh`).
-It runs the x86_64 slice under Rosetta where it can, and a scratch copy signed with the hardened
-runtime (`scripts/sign-engine.sh`), so the engine's entitlements are checked too. It never reaches
+It also runs a scratch copy signed with the hardened runtime (`scripts/sign-engine.sh`), so the
+engine's entitlements are checked too. It never reaches
 a model: the home's one provider points at a closed port and no prompt is sent.
 
 **Long lists** (DESIGN.md › Performance) are measured, not guessed:
@@ -333,15 +337,16 @@ and use a local fake provider.
 
 **Release rules** (`Tests/Release/test_release.py`, Python's `unittest`, stdlib only) test
 `scripts/release.py`: what each trigger builds (the manual TestFlight run included), which feeds
-each release lands in, the legacy aliases, `verify-app`, `verify-ios`, and which TestFlight builds
+each release lands in, the legacy aliases, the Apple silicon requirement on every feed item,
+`verify-app`, `verify-ios`, and which TestFlight builds
 `retire-testflight` expires (against a local fake App Store Connect). They also read the
 Xcode project, `App/Info.plist`, `App/iOS/ExportOptions.plist`, `ShepherdEdition.swift`,
 `AppUpdater.swift`, and the Release workflow (its `testflight` input included), so a bundle id,
 feed name or signing setting that drifts from the script fails before a release builds.
 `Tests/Release/test_pi_engine.py` tests `scripts/pi_engine.py` against archives built in memory
 (what staging keeps and refuses, and `verify-app`'s engine checks), the pin, the engine's
-entitlements, `sign-app.sh`'s per-slice signing of node (on macOS), the "Embed pi engine" phase,
-and the Release workflow's staging and signing steps.
+entitlements, `sign-app.sh`'s and `sign-engine.sh`'s signing of node (on macOS), the "Embed pi
+engine" phase, and the Release workflow's staging and signing steps.
 
 **Tests never take the user's focus or drive their mouse or keyboard.**
 
@@ -407,7 +412,7 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
 - **Core:** the status transition table, `PaneNode` operations, and state validation.
 - **Migration:** terminal-era `runtime` keys, global shells and space shells dropped at startup,
   and review leaves.
-- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all sixteen files, and
+- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all seventeen files, and
   the design skill's two files).
 - **Themes:** every theme variant complete, and the WCAG contrast rules met.
 - **App logic:** keybindings (defaults, validation, stored overrides for removed actions
@@ -416,7 +421,7 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
 - **Updates and editions:** each channel's feed and Sparkle tag, the channels each app offers,
   the launch migration of every stored channel (`UpdateChannelStore`: rc and nightly to Beta,
   the nightly notice armed once), the support directory and listener port per edition, and the
-  release rules (every trigger, feed routing, the legacy aliases).
+  release rules (every trigger, feed routing, the legacy aliases, every feed item arm64 only).
 
 CI (`.github/workflows/ci.yml`) runs on pull requests and pushes to `master`, skipping the
 timing-sensitive tests. Docs-only changes (`docs/**`, `*.md`) don't trigger it.
@@ -467,7 +472,7 @@ timing-sensitive tests. Docs-only changes (`docs/**`, `*.md`) don't trigger it.
 ```text
 App/
   ShepherdLauncher.swift   Mac @main shim.   Shepherd.entitlements   iOS/  the iPhone and iPad client
-  Engine.entitlements, Engine-x86_64.entitlements   the pi engine's node, per slice
+  Engine.entitlements      the pi engine's node (allow-jit)
   Info.plist               names, executable, and feed from build settings
   AppIcon.icon, AppIconNightly.icon   Shepherd's and Shepherd Nightly's icons
 Sources/
@@ -490,6 +495,11 @@ Sources/
                        the Design tool's format (docs/designs.md): DesignIndex (canvas.json v3,
                        unknown keys kept), DesignPath (the board path grammar), DesignTemplate
                        and DesignElementID (a board's elements as `File.dc.html#tid:path`),
+                       DesignReference (a whole design, board or element handed to a thread: its
+                       `shepherd-design-ref://` string, the record and fence pi reads),
+                       DesignReferencePayload (the copy a send keeps, its outline, freshness,
+                       "Looked at…", the capture the app draws), DesignThreadNote (notes back),
+                       and DesignReferenceReading (design_get's words: tokens with sources, changes),
                        DesignBoardCheck (what a board may hold), DesignStyle/DesignTokens/DesignProps
                        (Tweak: inline-style splices at parser offsets, token snapping, data-props
                        and canvas.json's tweaks), DesignCanvasLayout (pages, notes, where a
@@ -522,7 +532,10 @@ Sources/
                        ClientSkills (Settings ▸ Skills' model on every platform),
                        DesignSystemPresentation ("synced 4m ago", a token's source), SkillsText
                        (SKILL.md's frontmatter, prompt tokens, repository references),
-                       SkillsPresentation (its words), SkillsDirectory (skills.sh), ShepherdLog.
+                       SkillsPresentation (its words), SkillsDirectory (skills.sh),
+                       DesignMentions (the composer's @ picker: its rows and search),
+                       DesignReferencePresentation (a reference's footer, chip and toast words,
+                       and the design_get calls one "Looked at…" line joins), ShepherdLog.
                        Shared with the iOS client.
   ShepherdPTYSpawn/    The PTY child side (fork → exec) in C: no Swift runs between the two.
   ShepherdSessions/    SessionServer (state, sessions, extension socket, remote listener),
@@ -555,7 +568,11 @@ Sources/
                        DesignStore (each design's files in the support directory's designs/, on
                        its own queue, with a revision per design, each board's last 20
                        versions, its comments.json, and installed systems under ds/; what an
-                       export reads; a Claude Design folder imported; docs/designs.md),
+                       export reads; a Claude Design folder imported; a reference's pinned
+                       board copies under pins/ and thread-notes.json; docs/designs.md),
+                       DesignReferences (references pinned and resolved, their copies kept,
+                       design_get's answers, freshness, the @ picker's catalog),
+                       DesignReferencePayloads (the copies, per agent, under design-refs/),
                        DesignSystemStore (design systems in the support directory's
                        design-systems/, their owners and sources, built-ins).
   TerminalSurfaceKit/  Ghostty adapter for terminal panes; see its NOTES.md.
@@ -600,13 +617,21 @@ Sources/
       custom properties a design agent's folder declares), NightWatchSystem (Night Watch as a
       built-in design system, from ShepherdUI's tokens), DesignSystemCatalog (the host's systems
       as last read), DesignSystemPageModel (DZSystem as values; specimen boards), DesignSystemPage
-      (the Design systems page, a build's layout beside its chat, the header)
+      (the Design systems page, a build's layout beside its chat, the header),
+      ShepherdViewModel+DesignReferences (a design piece handed to a thread: pinned, attached,
+      "Send vN", sent; the copies it draws) and DesignReferencesExtension;
+      +DesignReferencesUI (the thread's chips and picker, Implement in a thread's send, Copy
+      reference, "Open in design"), ImplementSheet (the sheet's model and view, the canvas's
+      toasts), DesignScreenModel+References (the selection as a reference, the right-click menu,
+      notes back), DesignCanvasKeys (the canvas's ⌘↩ and ⇧⌘C)
     TerminalPanels (each layout's terminal panel: shown, tab, maximized, activity),
       TerminalPanelLayout (TerminalPanelGeometry, pure), TerminalPanelViews (strip, divider)
     Thread/            ThreadView, ThreadTurns, ThreadTools (activity lines), ThreadMarkdown,
                        Composer, QuestionDock (a question in the composer's place),
                        QueueStack ("Up next", the queue above the composer),
                        ContextMeter (the ring beside Send, its details, compaction lines),
+                       ComposerMentions (the @ picker's rules, a pasted reference),
+                       DesignReferenceChips (a thread's chips, their preview, "Looked at…"),
                        Subagents, SubagentPresentation, SubagentInspector
     TerminalSessions (TerminalSessionStore), AgentStartQueue (launch order of restored pi),
       TerminalHost (the only TerminalSurfaceKit import),
@@ -655,7 +680,10 @@ Packages/
                                      NWBoardActions, NWDirectionTile, NWCanvasNote,
                                      NWBoardPresentation, NWSectionRail, NWTokenSwatch,
                                      NWTypeSpecimen, NWComponentSpecimen,
-                                     NWDesignSystemBuildTile)
+                                     NWDesignSystemBuildTile, NWDesignReferenceChip,
+                                     NWDesignReferencePreview, NWThreadNotePin,
+                                     NWThreadNoteCard, NWReferenceToast, NWImplementSheet,
+                                     NWDesignReferenceSpecimens); Composer's NWMentionPicker
                        Previews/     a #Preview per component, light and dark
                        Diagnostics/  NWRenderProbe (row-body counts for tests; debug only)
                        Its unit tests live in the root package (Tests/ShepherdUIUnitTests).
@@ -674,6 +702,8 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
                           design_check, comment_list, comment_reply, system_read and
                           system_write; hands pi the design skill
                           (design-skill/: SKILL.md, format.md); see docs/designs.md
+  shepherd-design-refs.ts an ordinary thread's design_get and design_note, registered only once the
+                          thread holds a design reference; see docs/designs.md › Design references
   shepherd-mcp.ts         the mcp tool (search, describe, call) and direct <server>_<tool> tools
                           over the servers in Settings ▸ MCP servers; credentials from the app
   shepherd-mcp-client.mjs the dependency-free MCP client (stdio, Streamable HTTP, legacy SSE),
@@ -694,7 +724,7 @@ Tests/
 scripts/               release.py (the release workflow's rules), sign-app.sh (release
                        signing), sync-embedded-extension.py, ci_mtimes.py (CI's incremental builds),
                        pi_engine.py + pi-engine-pin.json (stage and verify the pi engine),
-                       sign-engine.sh (node, slice by slice)
+                       sign-engine.sh (node, with the engine's entitlements)
 Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
 ```
 
@@ -911,9 +941,9 @@ the same change.
 - A new `SessionServer` mutation needs an integration test.
 - New persisted fields decode with defaults, so older `state.json` files keep loading.
 
-**Embedded extensions have one canonical copy.** The sixteen files in `Extensions/` are canonical,
+**Embedded extensions have one canonical copy.** The seventeen files in `Extensions/` are canonical,
 and so is the design skill in `Extensions/design-skill/`.
-pi loads the copies that the ten `Sources/ShepherdApp/*Extension.swift` files write to the
+pi loads the copies that the eleven `Sources/ShepherdApp/*Extension.swift` files write to the
 support directory from embedded string literals. `installedPath()` rewrites an installed copy
 whenever its content differs, so drift ships bugs. `ChildrenExtension.swift` carries children,
 children-config, children-ui, workflow, and missions, and installs `InspectExtension`'s
@@ -924,7 +954,7 @@ children-config, children-ui, workflow, and missions, and installs `InspectExten
 carries it and installs it beside them, and the app runs it on the engine's node.
 
 - Edit a `.ts`/`.mjs` file (or a design skill file) and its literal in the same change, with
-  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all sixteen pairs
+  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all seventeen pairs
   and the skill's two files.
 - Extensions stay dependency-free and inert without their environment variables.
 - They must never throw into pi or keep the process alive (unref'd sockets and timers).
@@ -1237,6 +1267,29 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
 | Shepherd Nightly | nightly | push to `nightly` | `appcast-shepherd-nightly.xml` | Shepherd Nightly builds | `Shepherd-Nightly.dmg` |
 | Shepherd iOS | TestFlight internal | manual run (`gh workflow run release.yml --ref nightly -f testflight=true`) | none (App Store Connect) | Shepherd iOS builds | none |
 
+- **Apple silicon only.** Both Mac apps ship arm64 only. The Mac target's configurations set
+  `ARCHS = arm64`, and the release build also passes `ARCHS=arm64`, because SwiftPM package
+  targets take no target settings and would otherwise compile x86_64 too (a local Release or
+  Nightly build from Xcode still does, so its package frameworks and `shepherd-cli` come out
+  universal). `release.py thin-app` then thins what comes prebuilt universal (Sparkle's framework
+  and its helpers) to arm64, and `verify-app` refuses any Mach-O in the app with another slice.
+  The pi engine pins only Node's `darwin-arm64` archive.
+- **No updates for Intel Macs.** `release.py publish` gives every item it writes to gh-pages
+  (all three feeds and both legacy aliases, old releases included)
+  `<sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>`. Sparkle 2.9.0 and later
+  skip such an item on an Intel Mac, so an Intel install is offered nothing: its background
+  checks stay quiet, and Check for Updates says "Your Mac is too old" (the update "requires a
+  new Apple silicon Mac").
+  - generate_appcast adds the element itself only for an archive whose executable has no x86_64
+    slice, so the universal builds from before the switch need it added. `publish` inserts it
+    as text, leaving every other byte as generated, keeps one generate_appcast already wrote,
+    and refuses a feed where an item lacks it, names it twice, or names another requirement.
+  - The feeds are unsigned (no `SURequireSignedFeed`), so editing them, like `fix-urls`,
+    invalidates nothing: the EdDSA signatures cover the archives and deltas, not the XML.
+  - Every Shepherd and Shepherd Nightly release shipped Sparkle 2.9.6, so no installed build
+    ignores the element (`Tests/Release` holds the pin at 2.9.0 or later). A build with an older
+    Sparkle would ignore it: it would still be offered the update, and the arm64-only app would
+    not open on an Intel Mac. No Intel users are expected.
 - **Release candidates are retired.** A `vX.Y.Z-rc.N` tag builds nothing (the plan job says
   why), and old rc releases land in no feed.
 - **Only `nightly` ships Shepherd Nightly.** A manual run (`workflow_dispatch`) plans like a
@@ -1324,9 +1377,8 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   - `scripts/sign-app.sh` signs inside-out, never with `--deep`: every nested item first, then
     the app with `App/Shepherd.entitlements` (both apps). Only nested apps and XPC services keep
     their own entitlements, and the pi engine's node gets the engine's: `scripts/sign-engine.sh`
-    signs each slice with its own (`App/Engine.entitlements`, allow-jit, for arm64;
-    `App/Engine-x86_64.entitlements` adds allow-unsigned-executable-memory, without which V8
-    aborts at startup under the hardened runtime). `node` is never stripped.
+    signs it with `App/Engine.entitlements` (allow-jit, which V8 needs under the hardened
+    runtime) as `node`, and refuses a node with any slice but arm64. `node` is never stripped.
   - The iOS client is archived unsigned and signed only at export, with the team's
     cloud-managed Apple Distribution certificate through the `APP_STORE_CONNECT_*` API key
     (`-allowProvisioningUpdates`). There is no `.p12` and no keychain.

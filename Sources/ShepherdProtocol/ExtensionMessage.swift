@@ -132,6 +132,20 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// `call` is the tool call's id, which names each proposal. Answered with `designProposals`.
     case designProposeComments(id: Int, agentID: AgentID, designID: DesignID, call: String, proposals: [DesignMarkupProposal])
 
+    // MARK: Design references (request/reply)
+
+    /// An ordinary thread's `design_get(ref, what)`: one aspect (`DesignReferenceAspect`) of the
+    /// copy of a design piece the user sent the thread. Answered with `designReference` only from
+    /// a copy the thread was sent (`not_granted` otherwise), and never to a design's agent
+    /// (`not_a_thread`). `reference` and `what` stay strings so bad ones are answered.
+    case designGet(id: Int, agentID: AgentID, reference: String, what: String)
+    /// An ordinary thread's `design_note(ref, text)`: a short note on a board or element it was
+    /// sent, shown on the canvas as the thread's pin (`DesignThreadNote`). Answered with
+    /// `designNote`; refused for a piece it wasn't sent (`not_granted`), a whole design
+    /// (`no_piece`), text that is empty or too long (`invalid_note`), a thread writing too many
+    /// (`rate_limited`), a design that is gone, and a design's agent (`not_a_thread`).
+    case designNote(id: Int, agentID: AgentID, reference: String, text: String)
+
     // MARK: MCP servers
 
     /// The MCP extension needs a server's credentials: its Keychain secrets, or an OAuth token
@@ -152,6 +166,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case designID, path, source, baseRevision, changes, commentID
         case namespace, system
         case call, proposals
+        case what
         case server, challenge, report
     }
 
@@ -165,6 +180,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case suggestInstruction
         case designRead, designWriteBoard, designUpdateIndex, designComments, designCommentReply
         case designSystemRead, designSystemWrite, designProposeComments
+        case designGet, designNote
         case mcpCredentials, mcpReport
     }
 
@@ -390,6 +406,20 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                 designID: try c.decode(DesignID.self, forKey: .designID),
                 system: try c.decode(DesignSystemWrite.self, forKey: .system)
             )
+        case .designGet:
+            self = .designGet(
+                id: try c.decode(Int.self, forKey: .id),
+                agentID: try c.decode(AgentID.self, forKey: .agentID),
+                reference: try c.decode(String.self, forKey: .reference),
+                what: try c.decode(String.self, forKey: .what)
+            )
+        case .designNote:
+            self = .designNote(
+                id: try c.decode(Int.self, forKey: .id),
+                agentID: try c.decode(AgentID.self, forKey: .agentID),
+                reference: try c.decode(String.self, forKey: .reference),
+                text: try c.decode(String.self, forKey: .text)
+            )
         case .mcpCredentials:
             self = .mcpCredentials(
                 id: try c.decode(Int.self, forKey: .id),
@@ -601,6 +631,18 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(agentID, forKey: .agentID)
             try c.encode(designID, forKey: .designID)
             try c.encode(system, forKey: .system)
+        case .designGet(let id, let agentID, let reference, let what):
+            try c.encode(Kind.designGet, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(reference, forKey: .reference)
+            try c.encode(what, forKey: .what)
+        case .designNote(let id, let agentID, let reference, let text):
+            try c.encode(Kind.designNote, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(reference, forKey: .reference)
+            try c.encode(text, forKey: .text)
         case .mcpCredentials(let id, let agentID, let server, let reason, let challenge):
             try c.encode(Kind.mcpCredentials, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -963,6 +1005,10 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     /// A `designProposeComments`: each proposal as the chat offers it, a comment draft the host
     /// checked, named `<call>#<n>`.
     case designProposals(id: Int, proposals: [DesignCommentDraft])
+    /// A `designGet`: the aspect's text (the design's words fenced as data) and the files it wrote.
+    case designReference(id: Int, answer: DesignReferenceAnswer)
+    /// A `designNote`: the note as the design keeps it.
+    case designNote(id: Int, note: DesignThreadNote)
     /// A server's credentials for the MCP extension (`ExtensionMessage.mcpCredentials`).
     case mcpCredentials(id: Int, credentials: MCPCredentials)
 
@@ -975,6 +1021,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case comments, comment
         case listing, system
         case proposals
+        case answer, note
         case credentials
     }
 
@@ -984,6 +1031,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case suggestion
         case design, designBoard, designWritten, designComments, designComment
         case designSystems, designSystem, designSystemWritten, designProposals
+        case designReference, designNote
         case mcpCredentials
     }
 
@@ -1093,6 +1141,16 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             self = .designSystems(
                 id: try c.decode(Int.self, forKey: .id),
                 listing: try c.decode(DesignSystemListing.self, forKey: .listing)
+            )
+        case .designReference:
+            self = .designReference(
+                id: try c.decode(Int.self, forKey: .id),
+                answer: try c.decode(DesignReferenceAnswer.self, forKey: .answer)
+            )
+        case .designNote:
+            self = .designNote(
+                id: try c.decode(Int.self, forKey: .id),
+                note: try c.decode(DesignThreadNote.self, forKey: .note)
             )
         case .designSystem:
             self = .designSystem(
@@ -1209,6 +1267,14 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             try c.encode(Kind.designSystemWritten, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(result, forKey: .result)
+        case .designReference(let id, let answer):
+            try c.encode(Kind.designReference, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(answer, forKey: .answer)
+        case .designNote(let id, let note):
+            try c.encode(Kind.designNote, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(note, forKey: .note)
         case .mcpCredentials(let id, let credentials):
             try c.encode(Kind.mcpCredentials, forKey: .type)
             try c.encode(id, forKey: .id)

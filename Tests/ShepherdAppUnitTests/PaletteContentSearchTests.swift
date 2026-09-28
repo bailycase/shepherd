@@ -63,6 +63,19 @@ struct PaletteContentSearchTests {
         #expect(snippet("funnel card", in: message) == "Make the funnel card taller")
     }
 
+    /// A thread's message that hands it design references carries them fenced ahead of its words
+    /// for pi: only what the user typed is searched, never the design's words.
+    @Test func designReferencesFencedAheadOfAMessageNeverMatch() throws {
+        let record = DesignReferenceRecord(ref: "shepherd-design-ref://local/d1/A.dc.html#2:0/1@4", design: "Checkout funnel",
+                                           boardTitle: "A · Funnel first", elementLabel: "Pay now")
+        let text = try #require(DesignReferenceFence.fenced([record], nonce: "0123456789ab")) + "Build the pay button\n\n1 design reference attached."
+        let message = #"{"type":"message","message":{"role":"user","content":[{"type":"text","text":\#(try jsonString(text))}]}}"#
+        for hidden in ["Checkout", "Funnel first", "Pay now", "design-ref", "shepherd-design-ref"] {
+            #expect(snippet(hidden, in: message) == nil, "\(hidden) is the design's, not the user's")
+        }
+        #expect(snippet("pay button", in: message) == "Build the pay button 1 design reference attached.")
+    }
+
     @Test func aSnippetIsOneLineCutAtWordsAroundTheMatch() throws {
         let text = "The first line of a long reply\nthat keeps going well past what fits, and then mentions quokka habitats somewhere in the middle before it goes on and on until the end of the message."
         let message = #"{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":\#(try jsonString(text))}]}}"#

@@ -49,6 +49,9 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
     let anotherDirection: (() -> Void)?
     /// A board being dragged: nil when boards don't move.
     let move: ((NWBoardMove) -> Void)?
+    /// A right-click (or a control-click) with Select or Comment: the items of the menu it opens
+    /// for what it landed on, once the host has picked it (CanvasContextMenu); nil opens none.
+    let contextMenu: ((NWCanvasPick) async -> [NWCanvasMenuItem])?
     let slot: (NWCanvasBoard) -> Slot
     let popover: () -> Popover
     @State private var size: CGSize = .zero
@@ -59,7 +62,7 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
                 disabledTools: Set<NWCanvasTool> = [], selection: [NWCanvasElement] = [], hover: NWCanvasElement? = nil,
                 pins: [NWCanvasPin] = [], openPin: @escaping (String) -> Void = { _ in }, popoverAnchor: NWCanvasElement? = nil,
                 notes: [NWCanvasNote] = [], actions: NWCanvasActions? = nil, anotherDirection: (() -> Void)? = nil,
-                move: ((NWBoardMove) -> Void)? = nil,
+                move: ((NWBoardMove) -> Void)? = nil, contextMenu: ((NWCanvasPick) async -> [NWCanvasMenuItem])? = nil,
                 pick: @escaping (NWCanvasPick) -> Void, point: @escaping (NWCanvasPick?) -> Void = { _ in },
                 resized: @escaping (CGSize) -> Void = { _ in }, zooming: @escaping (Bool) -> Void = { _ in },
                 @ViewBuilder slot: @escaping (NWCanvasBoard) -> Slot, @ViewBuilder popover: @escaping () -> Popover) {
@@ -76,6 +79,7 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
         self.actions = actions
         self.anotherDirection = anotherDirection
         self.move = move
+        self.contextMenu = contextMenu
         self.pick = pick
         self.point = point
         self.resized = resized
@@ -185,28 +189,65 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
         return viewport.screen(rect.offsetBy(dx: frame.minX, dy: frame.minY))
     }
 
-    /// Each pin centered on its element's top-trailing corner, over boards on screen.
+    /// Where a pin's center is on screen: its element's top-trailing corner, a thread's note just
+    /// after a comment's pin on the same element (RefNoteBack), so the note's card, opening beside
+    /// it, leaves the comment's pin in sight. Nil when its board isn't on the canvas.
+    private func pinCorner(_ pin: NWCanvasPin, frames: [String: CGRect]) -> CGPoint? {
+        guard let rect = screenRect(of: pin.rect, on: pin.board, frames: frames) else { return nil }
+        var corner = CGPoint(x: rect.maxX, y: rect.minY)
+        if pin.style != .comment, pins.contains(where: { $0.style == .comment && $0.board == pin.board && $0.rect == pin.rect }) {
+            corner.x += NWDesignMetrics.pinSize + NW.Space.xs
+        }
+        return corner
+    }
+
+    /// Each pin centered on its element's top-trailing corner, over boards on screen; a thread's
+    /// note stands just after a comment's pin on the same element.
     private var pinLayer: some View {
         let frames = Dictionary(boards.map { ($0.id, $0.frame) }, uniquingKeysWith: { a, _ in a })
         let half = NWDesignMetrics.pinSize / 2
         let bounds = CGRect(origin: .zero, size: size).insetBy(dx: -half, dy: -half)
         let shown = pins.compactMap { pin -> (NWCanvasPin, CGPoint)? in
-            guard let rect = screenRect(of: pin.rect, on: pin.board, frames: frames) else { return nil }
-            let corner = CGPoint(x: rect.maxX, y: rect.minY)
+            guard let corner = pinCorner(pin, frames: frames) else { return nil }
             return bounds.contains(corner) ? (pin, corner) : nil
         }
         return ForEach(shown, id: \.0.id) { pin, corner in
-            Button { openPin(pin.id) } label: { NWCommentPin(pin.number) }
-                .buttonStyle(.plain)
-                .placed(x: corner.x - half, y: corner.y - half)
-                .help("Comment \(pin.number)")
+            Button { openPin(pin.id) } label: {
+                switch pin.style {
+                case .comment: NWCommentPin(pin.number)
+                case .threadNote: NWThreadNotePin()
+                }
+            }
+            .buttonStyle(.plain)
+            .placed(x: corner.x - half, y: corner.y - half)
+            .help(Self.help(pin))
         }
     }
 
-    /// The popover under its element, its trailing edge at the pin's, inside the canvas.
+    private static func help(_ pin: NWCanvasPin) -> String {
+        switch pin.style {
+        case .comment: "Comment \(pin.number)"
+        case .threadNote(let thread): "Note from \(thread)"
+        }
+    }
+
+    /// The popover under its element, its trailing edge at the pin's, inside the canvas; a
+    /// thread's note opens beside its pin (RefNoteBack).
     @ViewBuilder private var popoverLayer: some View {
         let frames = Dictionary(boards.map { ($0.id, $0.frame) }, uniquingKeysWith: { a, _ in a })
-        if let anchor = popoverAnchor, let rect = screenRect(of: anchor.rect, on: anchor.board, frames: frames) {
+        if let anchor = popoverAnchor, let pin = pins.first(where: { $0.id == anchor.id && $0.style != .comment }),
+           let corner = pinCorner(pin, frames: frames) {
+            let inset = NWDesignMetrics.toolbarInset
+            let half = NWDesignMetrics.pinSize / 2
+            let width = NWReferenceMetrics.noteWidth
+            let beside = corner.x + half + NWReferenceMetrics.noteGap
+            let x = beside + width + inset <= size.width ? beside : max(inset, corner.x - half - NWReferenceMetrics.noteGap - width)
+            let y = min(max(inset, corner.y - half - NWReferenceMetrics.noteGap), max(inset, size.height - popoverHeight - inset))
+            popover()
+                .fixedSize()
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { popoverHeight = $0 }
+                .placed(x: x, y: y)
+        } else if let anchor = popoverAnchor, let rect = screenRect(of: anchor.rect, on: anchor.board, frames: frames) {
             let width = NWDesignMetrics.threadWidth
             let inset = NWDesignMetrics.toolbarInset
             let trailing = rect.maxX + NWDesignMetrics.pinSize / 2
@@ -243,7 +284,10 @@ public struct NWDesignCanvas<Slot: View, Popover: View>: View {
                 let found = boards.pick(at: location, viewport: viewport)
                 point(found.board == nil ? nil : found)
             },
-            zooming: zooming))
+            zooming: zooming,
+            contextMenu: contextMenu.map { menu in
+                { location in await menu(boards.pick(at: location, viewport: viewport)) }
+            }))
         #elseif os(iOS)
         NWCanvasTouchInput(tool: tool, handlers: NWCanvasTouchInput.Handlers(
             pan: { viewport.pan(by: $0) },
@@ -349,6 +393,8 @@ struct NWCanvasInput: NSViewRepresentable {
         /// The pointer moving with Select or Comment (nil once it leaves the canvas, or a drag starts).
         var move: (CGPoint?) -> Void
         var zooming: (Bool) -> Void
+        /// A right-click or control-click with Select or Comment: the menu's items for that point.
+        var contextMenu: ((CGPoint) async -> [NWCanvasMenuItem])? = nil
     }
 
     let tool: NWCanvasTool
@@ -460,6 +506,10 @@ struct NWCanvasInput: NSViewRepresentable {
         // MARK: Clicks and drags
 
         override func mouseDown(with event: NSEvent) {
+            if event.modifierFlags.contains(.control), handlers?.contextMenu != nil {
+                rightMouseDown(with: event)
+                return
+            }
             dragOrigin = location(event)
             dragStart = dragOrigin
             dragged = false
@@ -502,6 +552,59 @@ struct NWCanvasInput: NSViewRepresentable {
 
         private func location(_ event: NSEvent) -> CGPoint {
             convert(event.locationInWindow, from: nil)
+        }
+
+        // MARK: The context menu
+
+        /// Asks for the items for what the click landed on (the host picks it first), then opens
+        /// them as a native menu at the click.
+        override func rightMouseDown(with event: NSEvent) {
+            guard let contextMenu = handlers?.contextMenu, !panning else {
+                super.rightMouseDown(with: event)
+                return
+            }
+            let point = location(event)
+            Task { @MainActor [weak self] in
+                let items = await contextMenu(point)
+                guard let self, self.window != nil, !items.isEmpty else { return }
+                Self.menu(items).popUp(positioning: nil, at: point, in: self)
+            }
+        }
+
+        static func menu(_ items: [NWCanvasMenuItem]) -> NSMenu {
+            let menu = NSMenu()
+            menu.autoenablesItems = false
+            for item in items {
+                if item.isDivider {
+                    menu.addItem(.separator())
+                    continue
+                }
+                let target = MenuTarget(item.action)
+                let entry = NSMenuItem(title: item.title, action: #selector(MenuTarget.run), keyEquivalent: item.key ?? "")
+                entry.target = target
+                entry.representedObject = target
+                var modifiers: NSEvent.ModifierFlags = []
+                if item.command { modifiers.insert(.command) }
+                if item.shift { modifiers.insert(.shift) }
+                entry.keyEquivalentModifierMask = modifiers
+                if let symbol = item.symbol { entry.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) }
+                if item.destructive {
+                    entry.attributedTitle = NSAttributedString(string: item.title, attributes: [.foregroundColor: NSColor.systemRed])
+                }
+                menu.addItem(entry)
+            }
+            return menu
+        }
+
+        /// Runs a menu item's action: the item holds it, so it lives as long as the menu.
+        final class MenuTarget: NSObject {
+            let action: @MainActor @Sendable () -> Void
+
+            init(_ action: @escaping @MainActor @Sendable () -> Void) {
+                self.action = action
+            }
+
+            @MainActor @objc func run() { action() }
         }
 
         // MARK: Space

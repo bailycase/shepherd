@@ -50,8 +50,8 @@ struct Composer: View {
     var steerSubagent: ((ChildRun) -> Void)? = nil
     /// The run open in the inspector: its tray row wears the selection.
     var inspectedRunID: String? = nil
-    /// A design's chat (DZCanvas): attach and Send only, with no commands, model, thinking or
-    /// context ring.
+    /// A design's chat (DZCanvas): the standard composer with the design's placeholder. Its pane
+    /// draws it compact (`nwComposerSize(.compact)`).
     var designChat = false
     /// Retry in the Can't start banner (true: start a new conversation); nil for a remote agent,
     /// whose banner says to retry on its host.
@@ -60,6 +60,16 @@ struct Composer: View {
     var hidesNotSignedIn = false
     /// `/login` and `/logout`: Shepherd's own commands, for this Mac's agents (nil elsewhere).
     var slashLogin: SlashLoginActions? = nil
+    /// The thread's design references (the @ picker, a pasted reference, the chips); nil where
+    /// none reach: a design's chat, another host's thread, the Design tool off.
+    @Environment(\.designReferences) private var references
+    /// The @ picker: where it is and what it lists, derived once per change of the draft.
+    @State private var mentions = MentionPickerState()
+    /// Where the field's caret is, for ⌫ at the start of the words (not observed: the caret
+    /// moving redraws nothing).
+    @State private var caret = ComposerCaret()
+    /// Why the last design reference couldn't join the message.
+    @State private var referenceError: String?
     @State private var commandIndex = 0
     /// Esc closes the slash menu for the draft as typed; typing more reopens it.
     @State private var dismissedQuery: String?
@@ -132,7 +142,7 @@ struct Composer: View {
 
     /// The menu over the card, whichever path opened it (typing "/", a chip, ⇧⌘M, Esc, holding
     /// Send).
-    private enum OpenMenu: Equatable { case none, slash, models, thinking, send, context }
+    private enum OpenMenu: Equatable { case none, slash, mention, models, thinking, send, context }
 
     // One effective state: a lost connection wins over a cached running snapshot (error maps
     // to Send + an inline error, never Stop).
@@ -149,13 +159,12 @@ struct Composer: View {
     /// pi answers `/name` prompts itself; the list comes from its command registry. Its skills'
     /// commands stay out unless Settings ▸ Skills lists them.
     private var commands: [NativeCommand] {
-        if designChat { return [] }
         let pi = AppSettings.shared.skillsInSlashMenu ? store.commands : store.commands.filter { $0.source != "skill" }
         return slashLogin == nil ? pi : pi + SlashLogin.commands
     }
     /// "/login " (or "/logout ") being typed: its verb and argument so far, for the provider list.
     private var loginQuery: (verb: SlashLogin.Verb, partial: String)? {
-        guard slashLogin != nil, !designChat, store.draft != dismissedQuery else { return nil }
+        guard slashLogin != nil, store.draft != dismissedQuery else { return nil }
         return SlashLogin.argumentQuery(store.draft)
     }
     /// The provider rows for `loginQuery`, as the menu last drew them.
@@ -171,10 +180,19 @@ struct Composer: View {
     /// The commands the slash menu lists for the draft, as `body` last derived them: every key
     /// press comes after the render that saw the draft change.
     private var commandMatches: [NativeCommand] { commandQuery == nil ? [] : slash.matches }
-    private var menuOpen: Bool { commandQuery != nil || loginQuery != nil || menu != nil }
+    private var menuOpen: Bool { commandQuery != nil || loginQuery != nil || mentionShown || menu != nil }
+
+    /// @ picks design pieces here: a local thread (not a design's chat) whose host takes references.
+    private var mentionsAvailable: Bool { references != nil && !designChat && store.supportedActions.contains("designReferences") }
+
+    /// The @ picker is up: a mention is being typed and the catalog is read.
+    private var mentionShown: Bool {
+        mentions.isOpen && commandQuery == nil && loginQuery == nil && references?.catalog != nil
+    }
 
     private var openMenu: OpenMenu {
         if commandQuery != nil || loginQuery != nil { return .slash }
+        if mentionShown { return .mention }
         return switch menu {
         case .models: .models
         case .thinking: .thinking
@@ -186,7 +204,7 @@ struct Composer: View {
 
     /// What sits above the card: a banner, the notice, extension widgets, the queue.
     private var accessories: [String] {
-        let banner = store.startProblem.map { !(hidesNotSignedIn && $0.kind == .notSignedIn) } == true ? "cannotStart" : store.loadError != nil ? "lost" : input.attachments.error != nil ? "attachment" : store.notice != nil ? "notice" : nil
+        let banner = store.startProblem.map { !(hidesNotSignedIn && $0.kind == .notSignedIn) } == true ? "cannotStart" : store.loadError != nil ? "lost" : input.attachments.error != nil ? "attachment" : referenceError != nil ? "reference" : store.notice != nil ? "notice" : nil
         return [banner].compactMap { $0 } + store.widgets.map(\.id) + (queueStack.isVisible ? ["queue"] : [])
             + (showsTray ? ["tray"] : []) + (answeringRun != nil ? ["answering"] : [])
     }
@@ -263,6 +281,11 @@ struct Composer: View {
             } else if let attachmentError = input.attachments.error {
                 NWBanner(.failed, title: attachmentError)
                     .nwTransition(.list, edge: .bottom)
+            } else if let referenceError {
+                NWBanner(.failed, title: referenceError) {
+                    Button("Dismiss") { self.referenceError = nil }.buttonStyle(.nw(.ghost, size: .s))
+                }
+                .nwTransition(.list, edge: .bottom)
             } else if let notice = store.notice {
                 Text(notice).font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary).textSelection(.enabled)
                     .padding(.horizontal, NW.Space.xs)
@@ -325,6 +348,7 @@ struct Composer: View {
         .nwAnimation(.list, value: accessories)
         .nwAnimation(.list, value: input.attachments.ids)
         .nwAnimation(.list, value: store.attachedFiles.map(\.id))
+        .nwAnimation(.list, value: store.attachedReferences.map(\.id))
         .nwAnimation(.disclosure, value: questionKey)
         .nwAnimation(.disclosure, value: questionHiding)
         // What a catch-up brings lands at once, however it changes the composer; keyed on what
@@ -408,6 +432,12 @@ struct Composer: View {
             // One menu at a time: typing a command takes over from a chip's menu.
             if query != nil { menu = nil }
         }
+        // A pasted reference becomes a chip; a mention opens the @ picker.
+        .onChange(of: store.draft, initial: true) { old, new in draftChanged(from: old, to: new) }
+        .onChange(of: references?.catalog) { _, _ in updateMentions() }
+        .onChange(of: mentionsAvailable) { _, _ in updateMentions() }
+        .onChange(of: references?.picturesVersion) { _, _ in if mentions.isOpen { updateMentions() } }
+        .onChange(of: mentionShown) { _, shown in if shown { menu = nil } }
         .onChange(of: loginQuery?.partial) { _, partial in
             commandIndex = 0
             if partial != nil { menu = nil }
@@ -468,6 +498,17 @@ struct Composer: View {
                     openLogin(SlashLogin.Command(verb: login.verb, provider: row.name))
                 }
                 .nwTransition(.overlay, anchor: .bottomLeading)
+            } else if mentionShown {
+                // MentionPicker: designs, then a design's boards and a board's elements.
+                let content = mentions.content
+                NWMentionPicker(sections: content.sections, crumbs: content.crumbs, empty: content.empty, highlighted: mentions.highlighted,
+                                maxHeight: room, choose: { chooseMention($0) }, drill: { chooseMention($0) },
+                                back: { mentionBack() }, hover: { mentions.highlighted = $0 }, startDesign: references?.io.startDesign,
+                                appear: { id in
+                                    // An element's row on screen: its picture is cut now, not before.
+                                    if let item = mentions.content.items[id] { references?.rowAppeared(item) }
+                                })
+                    .nwTransition(.overlay, anchor: .bottomLeading)
             }
             // The picker and the thinking menu compare what they draw, so a composer redraw for
             // something else (the field losing focus to them, a keystroke) leaves their rows alone.
@@ -502,9 +543,15 @@ struct Composer: View {
     /// (without taking focus). It holds the menu's state, never the composer: the composer holds
     /// the watcher that keeps it.
     private func closeMenu(_ open: OpenMenu) -> () -> Void {
-        let (menu, dismissedQuery, store) = ($menu, $dismissedQuery, store)
+        let (menu, dismissedQuery, store, mentions) = ($menu, $dismissedQuery, store, $mentions)
         return {
-            if open == .slash { dismissedQuery.wrappedValue = store.draft } else { menu.wrappedValue = nil }
+            switch open {
+            case .slash: dismissedQuery.wrappedValue = store.draft
+            case .mention:
+                mentions.wrappedValue.dismissed = store.draft
+                mentions.wrappedValue.close()
+            default: menu.wrappedValue = nil
+            }
         }
     }
 
@@ -532,6 +579,11 @@ struct Composer: View {
         // The context details float over the thread without the card taking focus's look.
         let focused = composing || (input.available && input.dropTargeted) || (menuOpen && menu != .context)
         return NWComposer(isFocused: focused) {
+            // Design references sit first, above the words (DesignReferenceChip(ref)).
+            ForEach(store.attachedReferences) { attached in
+                ComposerReferenceChip(attached: attached, references: references) { store.detachReference(attached.id) }
+                    .nwTransition(.list, edge: .leading)
+            }
             ForEach(store.attachedFiles) { file in
                 NWAttachmentChip(file.name, thumbnail: nil) { store.detachFile(file.id) }
                     .help(file.path)
@@ -557,8 +609,15 @@ struct Composer: View {
         return commands.isEmpty ? "Follow up…" : "Follow up, or / for commands…"
     }
 
+    /// The field's selection, kept in `caret` without redrawing the composer. A selection the
+    /// draft has outgrown (the draft replaced from outside the field) reads as none.
+    private var caretBinding: Binding<TextSelection?> {
+        Binding(get: { [caret, store] in caret.selection(in: store.draft) }, set: { [caret] in caret.selection = $0 })
+    }
+
     private var field: some View {
-        TextField(text: $store.draft, prompt: Text(placeholder).foregroundStyle(Color.nw.textTertiary), axis: .vertical) {
+        TextField(text: $store.draft, selection: caretBinding, prompt: Text(placeholder).foregroundStyle(Color.nw.textTertiary),
+                  axis: .vertical) {
             Text("Message the agent")
         }
             .lineLimit(1...NWComposerMetrics.fieldMaxLines)
@@ -581,6 +640,10 @@ struct Composer: View {
                     if matches.indices.contains(commandIndex) { choose(matches[commandIndex]) }
                     return .handled
                 }
+                if mentionShown {
+                    if let row = mentions.highlightedRow { chooseMention(row) }
+                    return .handled
+                }
                 guard canSend, !store.busy else { return .handled }
                 // ⌘↩ when a key press brings it here; the key monitor usually takes it first.
                 let alternate = KeybindingsStore.shared.chord(for: .alternateSend).matches(press)
@@ -594,12 +657,20 @@ struct Composer: View {
                     store.draft = "/\(login.verb.rawValue) \(matches[commandIndex].id)"
                     return .handled
                 }
+                if mentionShown, commandQuery == nil {
+                    if let row = mentions.highlightedRow { chooseMention(row) }
+                    return .handled
+                }
                 let matches = commandMatches
                 guard commandQuery != nil, matches.indices.contains(commandIndex) else { return .ignored }
                 complete(matches[commandIndex])
                 return .handled
             }
             .onKeyPress(.upArrow) {
+                if mentionShown {
+                    mentions.move(-1)
+                    return .handled
+                }
                 guard commandQuery == nil, loginQuery == nil else {
                     commandIndex = max(0, commandIndex - 1)
                     return .handled
@@ -609,6 +680,10 @@ struct Composer: View {
                 return .handled
             }
             .onKeyPress(.downArrow) {
+                if mentionShown {
+                    mentions.move(1)
+                    return .handled
+                }
                 if loginQuery != nil {
                     commandIndex = min(max(0, loginMatches.count - 1), commandIndex + 1)
                     return .handled
@@ -617,10 +692,36 @@ struct Composer: View {
                 commandIndex = min(max(0, commandMatches.count - 1), commandIndex + 1)
                 return .handled
             }
+            // → drills into a design or a board; ← and ⌫ with nothing typed after the breadcrumb go
+            // back a level (MentionPicker · inside a board).
+            .onKeyPress(.rightArrow) {
+                guard mentionShown, let row = mentions.highlightedRow, row.trailing == .drill else { return .ignored }
+                chooseMention(row)
+                return .handled
+            }
+            .onKeyPress(.leftArrow) {
+                guard mentionShown, mentions.filterIsEmpty, mentions.scope != .designs else { return .ignored }
+                mentionBack()
+                return .handled
+            }
+            .onKeyPress(.delete) {
+                if mentionShown, mentions.filterIsEmpty, mentions.scope != .designs {
+                    mentionBack()
+                    return .handled
+                }
+                // ⌫ with the caret at the start of the words takes the last chip back (RefPasted).
+                guard let last = store.attachedReferences.last,
+                      ComposerCaret.takesBackChip(draft: store.draft, selection: caret.selection(in: store.draft)) else { return .ignored }
+                store.detachReference(last.id)
+                return .handled
+            }
             .onKeyPress(.escape) {
-                switch ComposerEscape(menuOpen: menu != nil, commandsOpen: commandQuery != nil || loginQuery != nil,
+                switch ComposerEscape(menuOpen: menu != nil, commandsOpen: commandQuery != nil || loginQuery != nil || mentionShown,
                                       canStop: running && dialogs.isEmpty && active && store.supports("abort")) {
                 case .closeMenu: menu = nil
+                case .dismissCommands where mentionShown && commandQuery == nil && loginQuery == nil:
+                    mentions.dismissed = store.draft
+                    mentions.close()
                 case .dismissCommands: dismissedQuery = store.draft
                 case .stop: stop()
                 case .pass: return .ignored
@@ -647,12 +748,12 @@ struct Composer: View {
         return ComposerControlsModel(
             active: active, canAttach: canAttach, attachFull: input.attachments.isFull,
             hasCommands: !commands.isEmpty, commandsActive: commandQuery != nil,
-            model: designChat ? nil : store.model, modelChangeable: store.supportedActions.contains("setModel"),
+            model: store.model, modelChangeable: store.supportedActions.contains("setModel"),
             modelEnabled: store.supports("setModel"), modelsOpen: menu == .models,
-            thinking: store.thinking, thinkingShown: !designChat && thinkingAvailable, thinkingEnabled: store.supports("setThinking"),
+            thinking: store.thinking, thinkingShown: thinkingAvailable, thinkingEnabled: store.supports("setThinking"),
             thinkingOpen: menu == .thinking,
             startingShown: startingShown, busy: store.busy, stops: stops, beside: working && !draftEmpty && !store.busy,
-            sendRinged: menu == .send, contextOpen: menu == .context, showsContext: !designChat,
+            sendRinged: menu == .send, contextOpen: menu == .context,
             stopEnabled: active && store.supports("abort"),
             actionEnabled: stops ? active && store.supports("abort") : canSend,
             stopHelp: stopHelp, actionHelp: stops ? stopHelp : sendHelp(working: working))
@@ -811,6 +912,70 @@ struct Composer: View {
         sendDraft(.alternate)
     }
 
+    // MARK: Design references
+
+    /// The draft changed: a reference it gained by a paste becomes a chip (the text around it
+    /// stays), and the @ picker follows the mention it ends in.
+    private func draftChanged(from old: String, to new: String) {
+        guard mentionsAvailable else {
+            if mentions.isOpen { mentions.close() }
+            return
+        }
+        if let pasted = ComposerReferencePaste.extract(new, previous: old) {
+            store.draft = pasted.draft
+            for reference in pasted.references { attachReference(reference) }
+            return
+        }
+        updateMentions()
+    }
+
+    /// Derives what the @ picker lists for the draft as it is; opening it reads this Mac's designs.
+    private func updateMentions() {
+        guard mentionsAvailable, let references else { return }
+        let wasOpen = mentions.isOpen, scope = mentions.scope
+        mentions.update(draft: store.draft, catalog: references.catalog) { references.rowPicture($0) }
+        if mentions.isOpen, !wasOpen {
+            referenceError = nil
+            Task { await references.loadCatalog() }
+            references.io.wantPictures(mentions.scope)
+        } else if mentions.isOpen, mentions.scope != scope {
+            references.io.wantPictures(mentions.scope)
+        }
+    }
+
+    /// A row chosen: a design or board drills in; anything else joins the message as a chip, its
+    /// mention taken out of the words.
+    private func chooseMention(_ row: NWMentionRow) {
+        switch mentions.choose(row) {
+        case .drill(let draft):
+            store.draft = draft
+        case .pick(let reference, let draft):
+            store.draft = draft
+            attachReference(reference)
+        case nil:
+            break
+        }
+        composing = true
+    }
+
+    private func mentionBack() {
+        if let draft = mentions.back() { store.draft = draft }
+        composing = true
+    }
+
+    /// Pins `reference` and puts its chip in the composer; why it can't, in the banner.
+    private func attachReference(_ reference: DesignReference) {
+        guard let references else { return }
+        Task {
+            do {
+                try await references.io.attach(reference)
+                referenceError = nil
+            } catch {
+                referenceError = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+            }
+        }
+    }
+
     // MARK: Send menu
 
     private func openSendMenu() {
@@ -899,8 +1064,6 @@ struct ComposerControlsModel: Equatable {
     var sendRinged: Bool
     /// The context ring's details are open.
     var contextOpen: Bool
-    /// The ring shows (a design's chat has none).
-    var showsContext = true
     var stopEnabled: Bool
     var actionEnabled: Bool
     var stopHelp: String
@@ -925,7 +1088,7 @@ struct ComposerControlsActions {
 /// The composer's control row: attach · / commands · model · thinking, then the context ring and
 /// Send or Stop, with full chip labels when they fit; in a narrow thread (a docked right pane) the chips drop their words
 /// ("/", the thinking level alone) instead of truncating mid-word, after "Starting…" drops
-/// its own. `ViewThatFits` builds and measures every alternative, each with its tooltips and
+/// its own. At the compact size (`NWComposerSize`: a design's chat) they never show their words. `ViewThatFits` builds and measures every alternative, each with its tooltips and
 /// accessibility, whenever the row is rebuilt, so the row compares what it draws first: a
 /// keystroke past the first character and the field losing focus to a menu rebuild the field,
 /// never the chips.
@@ -935,30 +1098,31 @@ struct ComposerControls: View, Equatable {
     /// Handed to the ring, which reads its meter; the row itself reads nothing from it.
     let store: NativeThreadStore
 
+    @Environment(\.nwComposerSize) private var size
+
     static func == (a: Self, b: Self) -> Bool { a.model == b.model && a.store === b.store }
 
     var body: some View {
         ComposerControlsMinimum {
             HStack(spacing: NW.Space.xxs) {
                 ViewThatFits(in: .horizontal) {
-                    chips(compact: false, startingLabel: true)
+                    // At the compact size the chips never show their words: only "Starting…" can drop its own.
+                    chips(compact: size == .compact, startingLabel: true)
                     // "Starting…" gives up its words before the chips do.
-                    chips(compact: false, startingLabel: false)
-                    chips(compact: true, startingLabel: false)
+                    chips(compact: size == .compact, startingLabel: false)
+                    if size == .regular { chips(compact: true, startingLabel: false) }
                 }
                 // A new model or level cross-fades. Only these: typing and width changes stay instant.
                 .nwAnimation(.content, value: [model.model, model.thinking])
                 // The ring and the action, 6pt apart, keep their place whatever the chips drop; out
                 // of the fitting candidates, each is built once (a streamed chunk redraws neither).
                 HStack(spacing: NW.Space.s) {
-                    if model.showsContext {
-                        ContextMeterButton(store: store, expanded: model.contextOpen, toggle: actions.context)
-                            .equatable()
-                            .onGeometryChange(for: CGFloat.self) { proxy in
-                                (proxy.bounds(of: .named(Composer.cardSpace))?.width ?? 0)
-                                    - proxy.frame(in: .named(Composer.cardSpace)).maxX
-                            } action: { actions.meterInset($0) }
-                    }
+                    ContextMeterButton(store: store, expanded: model.contextOpen, toggle: actions.context)
+                        .equatable()
+                        .onGeometryChange(for: CGFloat.self) { proxy in
+                            (proxy.bounds(of: .named(Composer.cardSpace))?.width ?? 0)
+                                - proxy.frame(in: .named(Composer.cardSpace)).maxX
+                        } action: { actions.meterInset($0) }
                     primary
                 }
             }
@@ -976,17 +1140,12 @@ struct ComposerControls: View, Equatable {
                     .accessibilityLabel("Attach file")
             }
             if model.hasCommands {
-                Button(action: actions.commands) {
-                    HStack(spacing: NW.Space.s) {
-                        Text("/").font(Font.nw(.code))
-                        if !compact { Text("commands") }
-                    }
-                }
+                Button(action: actions.commands) { NWComposerCommandsLabel(short: compact) }
                 .buttonStyle(.nwComposerChip(active: model.commandsActive))
                 .help("Commands")
                 .accessibilityLabel("Commands")
             }
-            modelChip
+            modelChip(compact: compact)
             thinkingChip(compact: compact)
             Spacer(minLength: NW.Space.m)
             if model.startingShown { startingIndicator(label: startingLabel).nwTransition(.content) }
@@ -994,12 +1153,13 @@ struct ComposerControls: View, Equatable {
         .nwAnimation(.content, value: model.startingShown)
     }
 
-    @ViewBuilder private var modelChip: some View {
+    @ViewBuilder private func modelChip(compact: Bool) -> some View {
         if let name = model.model {
             Button(action: actions.models) {
                 HStack(spacing: NW.Space.s) {
                     // A long id keeps both ends: the provider prefix and the model's tail.
-                    Text(nativeModelShortName(name)).font(Font.nw(.code)).lineLimit(1).truncationMode(.middle)
+                    Text(compact ? nativeModelCompactName(name) : nativeModelShortName(name))
+                        .font(Font.nw(.code)).lineLimit(1).truncationMode(.middle)
                         .nwContentTransition(.crossFade)
                     if model.modelChangeable { NWChipChevron() }
                 }
@@ -1015,15 +1175,7 @@ struct ComposerControls: View, Equatable {
     /// no thinking level.
     @ViewBuilder private func thinkingChip(compact: Bool) -> some View {
         if model.thinkingShown, let thinking = model.thinking {
-            Button(action: actions.thinking) {
-                HStack(spacing: NW.Space.s) {
-                    Image(systemName: "lightbulb").font(.system(size: AppLayout.chipSymbol, weight: .medium)).foregroundStyle(Color.nw.textSecondary)
-                    if !compact { Text("Thinking") }
-                    Text(NativeThinkingLevel.title(thinking)).foregroundStyle(Color.nw.textPrimary).fontWeight(.medium)
-                        .nwContentTransition(.crossFade)
-                    NWChipChevron()
-                }
-            }
+            Button(action: actions.thinking) { NWComposerThinkingLabel(level: NativeThinkingLevel.title(thinking), short: compact) }
             .buttonStyle(.nwComposerChip(active: model.thinkingOpen))
             .disabled(!model.thinkingEnabled)
             .accessibilityLabel("Thinking level: \(NativeThinkingLevel.title(thinking))")
@@ -1189,6 +1341,17 @@ func nativeModelShortName(_ model: String) -> String {
     return String(model[model.index(after: slash)...])
 }
 
+/// The narrow composer's model name: the short name without a trailing release date, so a
+/// long id keeps the model ("claude-sonnet-4") rather than its date.
+func nativeModelCompactName(_ model: String) -> String {
+    var name = nativeModelShortName(model)
+    if let dash = name.lastIndex(of: "-"), name.distance(from: dash, to: name.endIndex) == 9,
+       name[name.index(after: dash)...].allSatisfy({ $0.isASCII && $0.isNumber }) {
+        name = String(name[..<dash])
+    }
+    return name.isEmpty ? model : name
+}
+
 /// "42k" / "1.2M" for the header's context count.
 func nativeTokenCount(_ tokens: Int) -> String {
     if tokens >= 1_000_000 { return String(format: "%.1fM", Double(tokens) / 1_000_000) }
@@ -1211,6 +1374,30 @@ func nativeContextTooltip(_ stats: NativeThreadStats?) -> String {
 }
 
 // MARK: Sending while pi works
+
+/// Where the composer field's caret is. Written by the field as the caret moves, read only when
+/// ⌫ is pressed, so nothing observes it.
+final class ComposerCaret {
+    var selection: TextSelection?
+
+    /// The selection, while it still lies inside `draft`.
+    func selection(in draft: String) -> TextSelection? {
+        guard let selection else { return nil }
+        switch selection.indices {
+        case .selection(let range): return range.upperBound <= draft.endIndex ? selection : nil
+        case .multiSelection(let ranges): return ranges.ranges.allSatisfy { $0.upperBound <= draft.endIndex } ? selection : nil
+        @unknown default: return nil
+        }
+    }
+
+    /// Whether ⌫ takes the last chip back rather than deleting a character: in an empty field, or
+    /// with the caret (no selection) before the first character.
+    static func takesBackChip(draft: String, selection: TextSelection?) -> Bool {
+        if draft.isEmpty { return true }
+        guard let selection, case .selection(let range) = selection.indices else { return false }
+        return range.isEmpty && range.lowerBound == draft.startIndex
+    }
+}
 
 /// What Esc does in the composer, the first that applies: close the open menu, close the
 /// command list, then stop pi (as Stop does, asking first with live subagents).

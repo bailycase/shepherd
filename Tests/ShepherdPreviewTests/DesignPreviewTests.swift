@@ -23,7 +23,7 @@ struct DesignPreviewTests {
     /// A workspace with the Design tool on, two projects, a plain thread, and two designs: the
     /// checkout funnel (three directions and a phone) drawn by a live stub agent in the reserved
     /// designs space, and a phone-first onboarding design. Designs belong to no project.
-    private func designWorkspace() async throws -> (workspace: PreviewWorkspace, checkout: Design, agent: Agent) {
+    func designWorkspace() async throws -> (workspace: PreviewWorkspace, checkout: Design, agent: Agent) {
         let workspace = try PreviewWorkspace()
         workspace.settings.designToolEnabled = true
         let vm = workspace.vm
@@ -87,6 +87,31 @@ struct DesignPreviewTests {
         let screen = vm.designScreen(checkout.id)
         screen.select("A.dc.html")
         try await Preview.render("app-window-design", size: Self.windowSize, ready: { screen.isDrawn }) {
+            RootView(vm: vm)
+        }
+    }
+
+    /// The chat's composer at its compact size (NWDesignTool › Chat composer) with its model
+    /// picker open (⇧⌘M): the picker fits over the 420pt pane, as a thread's does.
+    @Test func designScreenModelPicker() async throws {
+        let (workspace, checkout, agent) = try await designWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        vm.selectSidebarRow(.design(checkout.id))
+        let screen = vm.designScreen(checkout.id)
+        let store = vm.threadStores.store(for: agent.id)
+        final class Opened { var at: Date? }
+        let opened = Opened()
+        try await Preview.render("app-window-design-model-picker", size: Self.windowSize, ready: {
+            guard screen.isDrawn, store.supports("setModel") else { return false }
+            if opened.at == nil {
+                opened.at = Date()
+                vm.threadCommands.send(.modelPicker, to: ThreadCommandCenter.key(local: agent.id))
+            }
+            return Date().timeIntervalSince(opened.at ?? Date()) > ThreadPreviewTests.motionAtRest
+        }) {
+            // Each appearance renders in a new window: open the picker in each.
+            let _ = opened.at = nil
             RootView(vm: vm)
         }
     }
@@ -249,7 +274,7 @@ struct DesignPreviewTests {
     }
 
     /// Close enough on A to read a pin's thread (the canvas opens fitted, at about 17%).
-    private static let closeOnA = NWCanvasViewport(offset: CGPoint(x: NWDesignMetrics.fitLeading, y: NWDesignMetrics.fitFrameTop), zoom: 0.55)
+    static let closeOnA = NWCanvasViewport(offset: CGPoint(x: NWDesignMetrics.fitLeading, y: NWDesignMetrics.fitFrameTop), zoom: 0.55)
 
     /// Comments (DZCanvas, DZTweak; NWCommentPin, NWCommentThread, NWCommentCard): two pins on A,
     /// the first's thread open with the design agent's answer, and in the chat the comment's card

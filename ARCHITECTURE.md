@@ -157,8 +157,8 @@ agent's board_write / canvas_update → SessionServer → DesignStore (its own q
 ```
 
 - **A design's screen is its agent's layout.** `AgentLayoutView` draws `DesignLayoutView` for an
-  agent whose `designID` names a design: the canvas beside the agent's own `ThreadView` (composer
-  with attach and Send only). It mounts and hides like any layout, so switching is a flip; hidden,
+  agent whose `designID` names a design: the canvas beside the agent's own `ThreadView` (its
+  composer at the compact size, `.nwComposerSize(.compact)`). It mounts and hides like any layout, so switching is a flip; hidden,
   its `DesignHost` gives up its live views and keeps its snapshots.
 - **Web views are pooled.** `DesignLivePlan` picks at most five live boards (the selected one, then
   the nearest the middle, above a zoom threshold) and recycles the least recently wanted;
@@ -287,6 +287,14 @@ authentication boundary ([SECURITY.md](SECURITY.md)).
   design's installed systems, else the CSS custom properties in its working folder (the design's
   own folder: a design belongs to no project). It hands pi the design skill through `resources_discover` and
   adds the design's facts to each run's system prompt ([docs/designs.md](docs/designs.md)).
+- **`shepherd-design-refs.ts`:** an ordinary thread's `design_get` and `design_note`, loaded for
+  agents that draw no design while the Design tool is on (`SHEPHERD_DESIGN_REFS`) and registered
+  only once the thread holds a design reference. A send with references keeps each piece's copy
+  under the support directory's `design-refs/` (`DesignReferencePayloadStore`), drawn by the app
+  (`onDesignReferenceCapture`); `designGet` is answered (`designReference`) only from the copies
+  the agent was sent, read off the server's queue, and `designNote` (`designNote`) keeps a short
+  note in the design's `thread-notes.json` for the canvas's thread pins
+  ([docs/designs.md](docs/designs.md) › Design references).
 
 The server owns PTYs but not layouts, so pane requests from an agent (and from remote clients,
 through `onRemotePaneRequest`) are forwarded to the GUI and answered with a `PaneOutcome`.

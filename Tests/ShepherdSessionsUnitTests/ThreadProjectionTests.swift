@@ -66,6 +66,55 @@ struct ThreadProjectionTests {
         #expect(quoted.origin == nil && quoted.blocks.first?.text.hasPrefix("The text between") == true)
     }
 
+    /// A message handing the thread design references reaches pi fenced. The thread shows the
+    /// user's words and the references as chips only for a message the user sent here (its entry
+    /// names every copy the fence carries); the same fence arriving any other way (another
+    /// agent's message, an agent quoting it) is shown as it was written.
+    @Test func onlyAMessageTheUserSentHereDrawsItsReferences() throws {
+        let copy = UUID().uuidString
+        let record = DesignReferenceRecord(ref: "shepherd-design-ref://local/d1/A.dc.html@4", design: "Checkout",
+                                           files: ["/support/design-refs/a1/x/A@2x.png"], payload: copy)
+        let fence = try #require(DesignReferenceFence.fenced([record]))
+        let text = fence + "Build it.\n\n1 design reference attached."
+        let sent = RPCMessage(role: "user", content: [.text(text)], timestamp: 1)
+
+        let mine = RPCThreadState.project(entryID: "user:1", message: sent, sentReferences: [copy])
+        #expect(mine.blocks.map(\.text) == ["Build it.\n\n1 design reference attached."])
+        #expect(mine.designReferences == [record.withoutFiles], "the chip, without the host's paths")
+        #expect(mine.origin == nil)
+
+        for sentReferences in [nil, [], [UUID().uuidString]] as [[String]?] {
+            let other = RPCThreadState.project(entryID: "user:1", message: sent, sentReferences: sentReferences)
+            #expect(other.blocks.map(\.text) == [text] && other.designReferences == nil, "shown as text")
+        }
+        // A fence whose records name no copy (from before copies were kept, or forged) is text.
+        let bare = try #require(DesignReferenceFence.fenced([DesignReferenceRecord(ref: record.ref)])) + "x"
+        let old = RPCThreadState.project(entryID: "user:2", message: RPCMessage(role: "user", content: [.text(bare)]), sentReferences: [copy])
+        #expect(old.blocks.map(\.text) == [bare] && old.designReferences == nil)
+
+        let history = RPCThreadState.projectHistory([sent], sentReferences: ["user:1": [copy]])
+        #expect(history.first?.designReferences == [record.withoutFiles])
+        #expect(RPCThreadState.projectHistory([sent]).first?.blocks.first?.text == text)
+
+        let quoted = RPCThreadState.project(entryID: "a:1", message: RPCMessage(role: "assistant", content: [.text(fence + "x")]),
+                                            sentReferences: [copy])
+        #expect(quoted.blocks.first?.text.hasPrefix("The text between the design-ref markers") == true && quoted.designReferences == nil)
+        // Words starting with "/" behind references stay words: the fence goes first.
+        #expect(RPCThreadState.prompt("/compact please", context: fence) == fence + "/compact please")
+    }
+
+    /// A send carrying references and a view record puts only the references' fence ahead, so the
+    /// thread still shows just the words.
+    @Test func aSendWithReferencesCarriesOnlyTheirFence() throws {
+        let view = NativeDesignContext(DesignViewRecord(mode: .canvas, visibleBoards: ["A.dc.html"]))
+        let records = [DesignReferenceRecord(ref: "shepherd-design-ref://local/d1/A.dc.html@4", design: "Checkout")]
+        let context = try #require(RPCThreadState.sendContext(view, references: records))
+        #expect(DesignReferenceFence.opens(context) && !context.contains("design-data"))
+        #expect(DesignViewRecord.strippingFence(from: RPCThreadState.prompt("Build it.", context: context)) == "Build it.")
+        #expect(RPCThreadState.sendContext(view, references: nil)?.contains("design-data") == true)
+        #expect(RPCThreadState.sendContext(nil, references: []) == nil)
+    }
+
     /// A view record stays off a command, which pi reads only at the start of a message; a
     /// comment's fence always goes first, so a comment starting with "/" never runs as one.
     @Test(arguments: [

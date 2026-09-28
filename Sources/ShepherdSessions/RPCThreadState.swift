@@ -22,7 +22,8 @@ final class RPCThreadState {
     static let widgetTitleBytes = 256
     static let widgetAggregateBytes = 32 * 1024
     static let operationTableSize = 256
-    static let supportedActions = ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents", "queue", "compact", "designContext"]
+    static let supportedActions = ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents", "queue", "compact", "designContext",
+                                   "designReferences"]
     /// pi answers `compact` only once the summary is written, which takes as long as a reply.
     static let compactTimeout: TimeInterval = 600
     /// Bytes of a child session file the transcript reader will scan (tail); older is unreachable.
@@ -262,9 +263,23 @@ final class RPCThreadState {
     var piFollowUp: [String] = []
     /// What a delete or a clear removed, for an undo.
     var deleted: [(item: QueueItem, index: Int)] = []
+    /// Copies a send is granting that have not reached this thread yet: the server marks them in
+    /// the queue turn that grants them, and `send` clears them once the message is pi's or waits
+    /// in the queue (`withheldDesignPayloads`).
+    var sendingDesignPayloads: Set<UUID> = []
+
+    /// Copies the thread was granted but pi has not read: a send still on its way here, or a
+    /// message waiting in the queue (steering ones included) that the user may still take back.
+    /// design_get and design_note answer from none of them.
+    var withheldDesignPayloads: Set<UUID> {
+        sendingDesignPayloads.union(items.flatMap(\.designPayloads))
+    }
 
     /// Installed by SessionServer: the queue was expected to go when pi settled, and did not.
     var onIdleAfterQueue: (() -> Void)?
+    /// Installed by SessionServer: queued messages carrying design references were deleted
+    /// before pi read them, and these copies go with them. Called on the session queue.
+    var onDesignPayloadsWithdrawn: (([UUID]) -> Void)?
     /// Installed by SessionServer: where a turn starts and ends, for the Changes engine's
     /// snapshots of the working tree (`ChangesService`). Called on the session queue.
     var onTurnEvent: ((TurnEvent) -> Void)?
@@ -486,7 +501,7 @@ final class RPCThreadState {
                 return
             }
             completion(Self.transcript(runID: runID, file: file, beforeEntryID: beforeEntryID))
-        case .send(let expectedSessionID, let generation, let operationID, _, _, _, _),
+        case .send(let expectedSessionID, let generation, let operationID, _, _, _, _, _),
              .abort(let expectedSessionID, let generation, let operationID),
              .answer(let expectedSessionID, let generation, let operationID, _, _),
              .setModel(let expectedSessionID, let generation, let operationID, _),
@@ -546,13 +561,22 @@ final class RPCThreadState {
         }
     }
 
+    /// The fence a send puts ahead of its words: its references', else its design view record's.
+    /// References go only to an ordinary thread and a view record only to a design's chat, so one
+    /// send never carries both; if one did, the view record is dropped, since every display
+    /// surface takes off only the one fence a message starts with.
+    static func sendContext(_ designContext: NativeDesignContext?, references: [DesignReferenceRecord]?) -> String? {
+        if let references, let fence = DesignReferenceFence.fenced(references) { return fence }
+        return designContext?.valid?.fenced()
+    }
+
     private func perform(_ request: NativeThreadRequest, operationID: UUID, olderClient: Bool, completion: @escaping (NativeThreadResult) -> Void) {
         let accepted = NativeThreadResult.accepted(operationID: operationID)
         let settle: (Result<RPCResponse, RPCError>) -> Void = { result in
             completion(Self.dispatchFailure(result) ?? accepted)
         }
         switch request {
-        case .send(_, _, _, let text, let delivery, let images, let designContext):
+        case .send(_, _, _, let text, let delivery, let images, let designContext, let designReferences):
             let images = images ?? []
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !images.isEmpty,
                   text.utf8.count <= Self.textLimit else {
@@ -563,9 +587,13 @@ final class RPCThreadState {
                 completion(.failure(code: "invalid", message: "Send accepts up to \(NativeImage.maxPerSend) images of \(NativeImage.maxBytes / 1024 / 1024) MiB each."))
                 return
             }
-            // A record that breaks the grammar is dropped whole; the message still goes.
-            let context = designContext?.valid?.fenced()
-            send(id: operationID, text: text, delivery: delivery, images: images, alone: olderClient, context: context, completion: completion)
+            // A record that breaks the grammar is dropped whole; the message still goes. Design
+            // references reach here only as the server read them (`SessionServer.nativeThread`).
+            let context = Self.sendContext(designContext, references: designReferences)
+            send(id: operationID, text: text, delivery: delivery, images: images,
+                 // A message with references goes to pi on its own: joined, its fence would give way.
+                 alone: olderClient || !(designReferences ?? []).isEmpty, context: context,
+                 designPayloads: (designReferences ?? []).compactMap(\.payloadID), completion: completion)
         case .abort:
             // Stopping refuses what pi is waiting on: a question has no Dismiss, and a turn
             // waiting on an answer would not stop.
@@ -811,7 +839,8 @@ final class RPCThreadState {
             defer { done?(result) }
             guard let self, case .success(let response) = result, response.success,
                   let messages = response.messages else { return }
-            let history = Self.projectHistory(self.markingStopped(messages)) { value, message in
+            let history = Self.projectHistory(self.markingStopped(messages),
+                                              sentReferences: self.origins.compactMapValues(\.references)) { value, message in
                 if message.role == "compactionSummary", let summary = message.summary,
                    let note = self.compactionNotes.last(where: { $0.summary == summary }) {
                     value.compaction?.reason = note.reason
@@ -1025,7 +1054,20 @@ final class RPCThreadState {
     }
 
     func recordOrigin(_ origin: NativeMessageOrigin, entryID: String) {
-        guard let record = ThreadOriginStore.Record(origin) else { return }
+        guard var record = ThreadOriginStore.Record(origin) else { return }
+        record.references = origins[entryID]?.references
+        keepOrigin(record, entryID: entryID)
+    }
+
+    /// Records that the user sent the message `entryID` in this thread with these design
+    /// references' copies, so the thread draws its fence as chips (and after a relaunch).
+    func recordReferences(_ payloads: [String], entryID: String) {
+        var record = origins[entryID] ?? ThreadOriginStore.Record(references: payloads)
+        record.references = payloads
+        keepOrigin(record, entryID: entryID)
+    }
+
+    private func keepOrigin(_ record: ThreadOriginStore.Record, entryID: String) {
         origins[entryID] = record
         originOrder.removeAll { $0 == entryID }
         originOrder.append(entryID)
@@ -1544,8 +1586,13 @@ final class RPCThreadState {
     /// a call's arguments and start on the assistant's toolCall block; the toolResult row is
     /// what the thread shows, so both are handed across by call id. `adjust` sees each row with
     /// its message last.
+    ///
+    /// `sentReferences` names, by entry id, the design references' copies of each message the
+    /// user sent in this thread (`ThreadOriginStore`): only those messages show their references
+    /// as chips; any other fence shows as text.
     static func projectHistory(
         _ messages: [RPCMessage],
+        sentReferences: [String: [String]] = [:],
         adjust: (inout NativeThreadMessage, RPCMessage) -> Void = { _, _ in }
     ) -> [NativeThreadMessage] {
         var arguments: [String: JSONValue] = [:]
@@ -1563,7 +1610,8 @@ final class RPCThreadState {
             if message.role == "custom" && message.display != true { return nil }
             if message.role == "custom" && message.customType == "shepherd-child" { return nil }
             let args = message.role == "toolResult" ? message.toolCallId.flatMap { arguments[$0] } : nil
-            var value = project(entryID: historyEntryID(message, index: index, seen: &seen), message: message, args: args)
+            let entryID = historyEntryID(message, index: index, seen: &seen)
+            var value = project(entryID: entryID, message: message, args: args, sentReferences: sentReferences[entryID])
             if let id = message.toolCallId, message.role == "toolResult" { value.startedAt = callTimes[id] }
             adjust(&value, message)
             if let origin = value.origin { value.origin = clipped(origin) }
@@ -1621,7 +1669,11 @@ final class RPCThreadState {
         return .queue(parts: parts)
     }
 
-    static func project(entryID: String, message: RPCMessage, args: JSONValue? = nil) -> NativeThreadMessage {
+    ///
+    /// A user message's design references fence comes off (its records become the message's
+    /// `designReferences`) only when `sentReferences` names every copy it carries: a message the
+    /// user sent in this thread. Otherwise it stays, as text.
+    static func project(entryID: String, message: RPCMessage, args: JSONValue? = nil, sentReferences: [String]? = nil) -> NativeThreadMessage {
         var remaining = textLimit
         var truncated = false
         func clip(_ value: String) -> String {
@@ -1657,7 +1709,12 @@ final class RPCThreadState {
                     // Pencil markup: the chat draws what the agent read.
                     result.origin = .designMarkup(strokes: markup.markup.strokes.count, notes: markup.markup.noteCount)
                 }
-                let shown = fenced ? DesignViewRecord.strippingFence(from: text) : text
+                var shown = fenced ? DesignViewRecord.strippingFence(from: text, references: false) : text
+                if fenced, let sentReferences, let parsed = DesignReferenceFence.parse(text),
+                   let ids = DesignReferenceFence.payloadIDs(parsed.records), Set(ids).isSubset(of: sentReferences) {
+                    shown = String(parsed.text)
+                    result.designReferences = parsed.records.map(\.withoutFiles)
+                }
                 fenced = false
                 result.blocks.append(NativeThreadBlock(kind: .text, text: clip(shown)))
             case .thinking(let text):

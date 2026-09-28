@@ -132,15 +132,7 @@ struct NewThreadPage: View {
             .help(draft.model.isEmpty ? "Model: the default" : "Model: \(draft.model)")
             .accessibilityLabel("Model \(NewThreadRules.shortModel(draft.model))")
             if !levels.isEmpty {
-                Button { toggle(.thinking) } label: {
-                    HStack(spacing: NW.Space.s) {
-                        Image(systemName: "lightbulb").font(.system(size: AppLayout.chipSymbol, weight: .medium))
-                            .foregroundStyle(Color.nw.textSecondary)
-                        Text("Thinking")
-                        Text(draft.thinking.clamped(to: levels).title).foregroundStyle(Color.nw.textPrimary).fontWeight(.medium)
-                        NWChipChevron()
-                    }
-                }
+                Button { toggle(.thinking) } label: { NWComposerThinkingLabel(level: draft.thinking.clamped(to: levels).title) }
                 .buttonStyle(.nwComposerChip(active: menu == .thinking))
                 .accessibilityLabel("Thinking level: \(draft.thinking.clamped(to: levels).title)")
             }

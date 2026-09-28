@@ -1080,6 +1080,9 @@ final class TerminalSessionStore {
             instructions: (try InstructionsExtension.installedPath(), ShepherdPaths.instructionsDirectory().path),
             suggestFiles: suggestFiles.map(\.fileName),
             design: try agent.designID.map { (try DesignExtension.installedPath(), $0, try DesignExtension.installedSkillDirectory()) },
+            designReferences: Self.wantsDesignReferences(for: agent, enabled: settings.piDesignReferences,
+                                                         designTool: settings.designToolEnabled)
+                ? (try DesignReferencesExtension.installedPath(), !agent.designGrants.isEmpty) : nil,
             mcp: try MCPLaunch.forAgents(settings: settings),
             userHome: pi.userHome,
             // Use another model (an agent not signed in): its next start takes the model picked.
@@ -1092,6 +1095,14 @@ final class TerminalSessionStore {
     /// agent never gets it: its screen shows no panes, and it must not reach threads.
     static func wantsPanes(for agent: Agent, enabled: Bool) -> Bool {
         enabled && agent.designID == nil
+    }
+
+    /// design_get and design_note are for threads: a design's agent never gets them (it reads its
+    /// design with its own tools), and a thread gets them only while Settings ▸ Experiments ▸
+    /// Design tool and Settings ▸ Pi ▸ Design references are both on. A running agent follows a
+    /// change at its next start.
+    static func wantsDesignReferences(for agent: Agent, enabled: Bool, designTool: Bool) -> Bool {
+        enabled && designTool && agent.designID == nil
     }
 
     /// An agent gets pi's namer only while its name is still provisional and

@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdProtocol
 
 /// A file waiting in a composer beside the draft (a design's boards attached to a thread): its
 /// chip's name and where it is on the host. pi reads it from there; the message it goes with
@@ -16,11 +17,40 @@ public struct NativeAttachedFile: Identifiable, Hashable, Sendable {
         self.path = path
     }
 
-    /// The message that goes: the words, then the attached files' paths.
-    public static func message(_ text: String, files: [NativeAttachedFile]) -> String {
-        guard !files.isEmpty else { return text }
-        let list = (["Attached files:"] + files.map { "- \($0.path)" }).joined(separator: "\n")
+    /// The message that goes: the words, the line saying how many design references go with it
+    /// (their records reach pi fenced ahead of the message, never in it), then the attached
+    /// files' paths.
+    public static func message(_ text: String, files: [NativeAttachedFile], references: Int = 0) -> String {
+        guard !files.isEmpty || references > 0 else { return text }
         let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return words.isEmpty ? list : text + "\n\n" + list
+        var parts = words.isEmpty ? [] : [text]
+        if references > 0 { parts.append(DesignReferenceFence.humanLine(count: references)) }
+        if !files.isEmpty { parts.append((["Attached files:"] + files.map { "- \($0.path)" }).joined(separator: "\n")) }
+        return parts.joined(separator: "\n\n")
+    }
+}
+
+/// A design reference waiting in a composer beside the draft (docs/designs.md › Design
+/// references): the piece, pinned at the revision it was picked at, its chip's label, and what
+/// it will send (`outline`, the Implement sheet's footer). Sent, the host resolves the piece at
+/// that revision, keeps the copy with the message, fences it for pi, and lets the thread's agent
+/// read that copy (design_get).
+public struct NativeAttachedReference: Identifiable, Hashable, Sendable {
+    public let id: UUID
+    public let reference: DesignReference
+    /// "Checkout › A · Checkout funnel › Primary button".
+    public let label: String
+    public let outline: DesignReferenceOutline?
+
+    public init(id: UUID = UUID(), reference: DesignReference, label: String, outline: DesignReferenceOutline? = nil) {
+        self.id = id
+        self.reference = reference
+        self.label = label
+        self.outline = outline
+    }
+
+    /// The record a client sends: the reference alone.
+    public var record: DesignReferenceRecord {
+        DesignReferenceRecord(reference)
     }
 }

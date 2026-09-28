@@ -43,6 +43,9 @@ extension RPCThreadState {
         /// The sender's design view record, fenced (`DesignViewRecord.fenced`): pi reads it
         /// ahead of the message, and the thread and the queue show the message alone.
         var context: String?
+        /// The design references' copies it carries (`DesignReferencePayload.id`): deleting it
+        /// before pi reads it withdraws them, and it can't be restored.
+        var designPayloads: [UUID] = []
 
         /// What pi is handed for it: the fenced record, then the message.
         var promptText: String { RPCThreadState.prompt(entry.text, context: context) }
@@ -61,6 +64,9 @@ extension RPCThreadState {
         var responded = false
         /// An extension command runs at once and starts no user message of its own.
         let expectsMessage: Bool
+        /// The design references' copies the host kept for it: its user message draws a
+        /// references fence as chips only when the fence names these (never ids from its text).
+        var designPayloads: [UUID] = []
     }
 
     var effectiveMode: NativeQueueMode { modeOverride ?? defaultQueueMode }
@@ -93,12 +99,15 @@ extension RPCThreadState {
     /// keeps a queued message from being joined with others (`QueueItem.goesAlone`). `context`
     /// is a fenced design view record that goes to pi ahead of the message (`QueueItem.context`).
     func send(id: UUID, text: String, delivery: NativeThreadDelivery, images: [NativeImage], alone: Bool = false,
-              context: String? = nil, completion: @escaping (NativeThreadResult) -> Void) {
+              context: String? = nil, designPayloads: [UUID] = [], completion: @escaping (NativeThreadResult) -> Void) {
+        // From here the copies are pi's (a prompt) or wait in the queue, which withholds them.
+        sendingDesignPayloads.subtract(designPayloads)
         guard piBusy else {
             // A new message resumes a paused queue: it drains after this turn.
             paused = false
             queueNotice = nil
-            dispatch(id: id, text: text, context: context, images: images, parts: nil, items: [], completion: completion)
+            dispatch(id: id, text: text, context: context, images: images, parts: nil, items: [], designPayloads: designPayloads,
+                     completion: completion)
             return
         }
         guard items.count < Self.queueItemLimit,
@@ -109,7 +118,7 @@ extension RPCThreadState {
         let item = QueueItem(
             entry: NativeQueuedMessage(id: id, text: text, images: images.map { NativeQueuedImage(mimeType: $0.mimeType, name: $0.name) },
                                        sentAt: Date().timeIntervalSince1970 * 1000),
-            images: images, goesAlone: alone, context: context)
+            images: images, goesAlone: alone, context: context, designPayloads: designPayloads)
         items.append(item)
         // Only a running pi can take a steer: one of our prompts still on its way has not
         // started a run, so the message goes first after it instead.
@@ -209,7 +218,12 @@ extension RPCThreadState {
         }
     }
 
+    /// Keeps deleted items for Undo, except one carrying design references: its grants and copies
+    /// are withdrawn at once, so it can't come back.
     private func remember(_ removed: [(item: QueueItem, index: Int)]) {
+        let withdrawn = removed.flatMap(\.item.designPayloads)
+        if !withdrawn.isEmpty { onDesignPayloadsWithdrawn?(withdrawn) }
+        let removed = removed.filter { $0.item.designPayloads.isEmpty }
         deleted.append(contentsOf: removed)
         if deleted.count > Self.deletedLimit { deleted.removeFirst(deleted.count - Self.deletedLimit) }
     }
@@ -286,10 +300,11 @@ extension RPCThreadState {
     /// own (an extension, a child's report) queues it instead of refusing it; while idle pi
     /// treats it as a plain prompt. A fenced design record (`context`) goes ahead of the text.
     func dispatch(id: UUID, text: String, context: String? = nil, images: [NativeImage], parts: [NativeQueuePart]?, items batch: [QueueItem],
-                  completion: @escaping (NativeThreadResult) -> Void) {
+                  designPayloads: [UUID] = [], completion: @escaping (NativeThreadResult) -> Void) {
         let prompt = Self.prompt(text, context: context)
         let expectsMessage = !isExtensionCommand(prompt)
-        dispatches.append(Dispatch(id: id, text: prompt, parts: parts, items: batch, expectsMessage: expectsMessage))
+        dispatches.append(Dispatch(id: id, text: prompt, parts: parts, items: batch, expectsMessage: expectsMessage,
+                                   designPayloads: designPayloads + batch.flatMap(\.designPayloads)))
         if expectsMessage {
             var row = NativeThreadMessage.pendingSend(operationID: id, text: text, images: images.count,
                                                       timestamp: Date().timeIntervalSince1970 * 1000)
@@ -333,10 +348,11 @@ extension RPCThreadState {
     }
 
     /// The fenced design record ahead of the text, except for a command, which pi reads only at
-    /// the start of a message. A design comment or markup is never a command: its fence always
-    /// goes first, so words that start with "/" stay words.
+    /// the start of a message. A design comment, markup or reference is never a command: its fence
+    /// always goes first, so words that start with "/" stay words.
     static func prompt(_ text: String, context: String?) -> String {
-        guard let context, !text.hasPrefix("/") || DesignCommentFence.opens(context) || DesignMarkupFence.opens(context) else { return text }
+        guard let context, !text.hasPrefix("/") || DesignCommentFence.opens(context) || DesignMarkupFence.opens(context)
+            || DesignReferenceFence.opens(context) else { return text }
         return context + text
     }
 
@@ -525,26 +541,43 @@ extension RPCThreadState {
         }.joined()
         var origin: NativeMessageOrigin?
         var operationID: UUID?
+        var kept: [UUID] = []
         if let index = items.firstIndex(where: { $0.entry.state == .steering && ($0.piText ?? $0.promptText) == text }) {
             let item = items.remove(at: index)
             unboundSteers.removeAll { $0 == item.entry.id }
             origin = .steered
             operationID = item.entry.id
+            kept = item.designPayloads
         } else if let index = boundDispatch(for: text) {
             let dispatch = dispatches[index]
             dropDispatch(dispatch.id)
             origin = dispatch.parts.map { .queue(parts: $0) }
             operationID = dispatch.id
+            kept = dispatch.designPayloads
         }
         let id = liveEntryID(for: message)
-        var value = Self.project(entryID: id, message: message)
+        let sentReferences = Self.sentReferences(in: text, kept: kept)
+        var value = Self.project(entryID: id, message: message, sentReferences: sentReferences)
         // A design comment or markup keeps the origin its fence gives it (`project`).
         if value.origin?.designComment != nil || value.origin?.designMarkup != nil { origin = nil }
         value.origin = value.origin ?? origin.map(Self.clipped)
         value.operationID = operationID
         live.append(LiveItem(kind: .user, value: value, raw: message, ended: false))
+        if let sentReferences { recordReferences(sentReferences, entryID: id) }
         if let origin { recordOrigin(origin, entryID: id) }
         if let operationID { operationsByEntry[id] = operationID }
+    }
+
+    /// The copies a user message's references fence names, when the host kept every one of them
+    /// for the send or queued message it is (the user's own, through the composer or the
+    /// Implement sheet); nil otherwise, so a fence anything else wrote (a peer agent's prompt, a
+    /// client typing one) stays text.
+    static func sentReferences(in text: String, kept: [UUID]) -> [String]? {
+        guard !kept.isEmpty, let parsed = DesignReferenceFence.parse(text),
+              let ids = DesignReferenceFence.payloadIDs(parsed.records) else { return nil }
+        let keptSet = Set(kept)
+        guard ids.allSatisfy({ UUID(uuidString: $0).map(keptSet.contains) == true }) else { return nil }
+        return ids
     }
 
     /// The prompt this user message is: the same text (pi may append image notes after it),

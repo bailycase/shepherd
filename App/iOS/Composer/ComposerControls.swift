@@ -46,14 +46,16 @@ struct AttachButton: View {
 // a ghost button on the phone, whose chips grow with Dynamic Type.
 
 /// The model chip: the current model in mono with a chevron; it opens the picker sheet when the
-/// agent can change model, and is plain text otherwise.
+/// agent can change model, and is plain text otherwise. `short` draws the model's short name
+/// (a design's chat, iPadDesign: "opus").
 struct ModelChip: View {
     let model: String?
     let canChange: Bool
+    var short = false
     let open: () -> Void
 
     var body: some View {
-        let title = model.map(NativeModelChoices.shortName) ?? "Model"
+        let title = model.map(short ? NativeModelChoices.compactName : NativeModelChoices.shortName) ?? "Model"
         Button(action: open) {
             HStack(spacing: NW.Space.s) {
                 Text(title).font(.nw(.mono)).lineLimit(1).truncationMode(.middle)
@@ -67,12 +69,13 @@ struct ModelChip: View {
 }
 
 /// The thinking chip: a menu of the levels pi offers the thread's model, checked at the current
-/// level.
+/// level. At the compact size (a design's chat) it shows the level without "Thinking".
 struct ThinkingChip: View {
     let level: String?
     let levels: [NativeThinkingLevel]
     let enabled: Bool
     let choose: (String) -> Void
+    @Environment(\.nwComposerSize) private var size
 
     var body: some View {
         let title = level.map(NativeThinkingLevel.title) ?? "Default"
@@ -86,7 +89,7 @@ struct ThinkingChip: View {
         } label: {
             HStack(spacing: NW.Space.s) {
                 Image(systemName: "lightbulb")
-                Text("Thinking")
+                if size.showsChipWords() { Text("Thinking") }
                 Text(title).fontWeight(.medium).foregroundStyle(Color.nw.textPrimary)
                 NWChipChevron()
             }

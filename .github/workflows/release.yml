@@ -180,6 +180,8 @@ jobs:
             | awk -F'"' '/Developer ID Application/ {print $2; exit}')
           echo "identity=$IDENTITY" >> "$GITHUB_OUTPUT"
 
+      # Apple silicon only. The Mac target sets ARCHS = arm64, but SwiftPM package
+      # targets take no target settings, so the command line sets it for them too.
       - name: Build ${{ env.APP_NAME }}
         run: |
           xcodebuild \
@@ -188,14 +190,20 @@ jobs:
             -configuration "$CONFIGURATION" \
             -destination 'platform=macOS,arch=arm64' \
             -derivedDataPath build \
+            ARCHS=arm64 \
             CODE_SIGNING_ALLOWED=NO \
             MARKETING_VERSION="$VERSION" \
             CURRENT_PROJECT_VERSION='${{ github.run_number }}' \
             build
 
+      # Prebuilt binaries (Sparkle's framework and its helpers) come universal.
+      - name: Thin to arm64
+        run: python3 scripts/release.py thin-app "$PRODUCTS/$PRODUCT"
+
       # The one guard against shipping one app under the other's identity:
       # bundle id, name, executable and feed must be this app's. It also checks
-      # the pi engine is the pinned one, with nothing but what pi's bundle loads.
+      # every binary is arm64 only, and the pi engine is the pinned one, with
+      # nothing but what pi's bundle loads.
       - name: Verify the app's identity
         run: python3 scripts/release.py verify-app "$PRODUCTS/$PRODUCT" "$APP_KEY" "$VERSION"
 
@@ -224,13 +232,13 @@ jobs:
       - name: Strip debug symbols
         run: xcrun strip -S -x "$PRODUCTS/$PRODUCT/Contents/MacOS/"*
 
-      # node is signed slice by slice with the engine's entitlements (V8 needs
-      # allow-jit under the hardened runtime); scripts/sign-engine.sh says why.
+      # node is signed with the engine's entitlements (V8 needs allow-jit under
+      # the hardened runtime); scripts/sign-engine.sh says why.
       - name: Sign
         run: |
           scripts/sign-app.sh "$PRODUCTS/$PRODUCT" \
             '${{ steps.cert.outputs.identity }}' App/Shepherd.entitlements \
-            App/Engine.entitlements App/Engine-x86_64.entitlements
+            App/Engine.entitlements
 
       - name: Notarize
         if: steps.cert.outputs.identity != '-'
@@ -382,7 +390,8 @@ jobs:
             git worktree add --orphan -b gh-pages pages
           fi
           # Every feed, plus appcast-rc.xml and appcast-nightly.xml for the
-          # Shepherd builds already installed that still read them.
+          # Shepherd builds already installed that still read them. publish
+          # marks every item arm64 only, so no Intel Mac is offered an update.
           written=()
           while IFS= read -r file; do written+=("$file"); done \
             < <(python3 scripts/release.py publish casts pages)

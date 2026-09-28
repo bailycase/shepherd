@@ -84,6 +84,7 @@ elements).
   comments.json                the viewer's comments (Comments, below), beside project/
   assets/<id>.<ext>            uploads, served to boards as /_blob/<id>
   versions/<path>/<n>.dc.html  each board's last 20 earlier versions
+  pins/<sha256>.dc.html        a board as a design reference pinned it (Design references, below)
   project/ds/<namespace>/…     an installed design system's copy (Design systems, below)
 <support>/designs/.deleted-<designID>/   a design deleted within its undo window (Deleting, below)
 <support>/designs/.import-<token>/       a project being imported, staged until it is finished
@@ -256,6 +257,9 @@ them, whether the experiment is on or off. The rule holds in both directions:
 - **A forgotten design.** Deleting a design, or startup forgetting one whose folder is gone,
   takes the agents that drew it (Undo brings them back with it, still drawing it). Clearing their `designID` instead would turn the design's chat,
   fences and all, into an ordinary thread.
+- **The one way in.** A thread gets a piece of a design only when the user hands it one: a
+  design reference (Design references, below). Nothing else of a design reaches a thread, and a
+  reference never reaches a design's agent.
 
 ### Comments
 
@@ -610,6 +614,10 @@ board's own world, where a board can only affect itself.
   its own world); `printLayout()` its height, its lines of text and its images and drawings, and
   its paper's color, for a flow document's page breaks; `image(scale:)` and `pdf(_:)` draw it as
   an image and as PDF pages (Export).
+- **An element's detail.** `elementDetail(tid:)` (the bridge's `elementDetail`) answers an
+  element as a design reference hands it over: its markup as drawn, cleaned as a standalone page
+  is (no script, no handler, none of Shepherd's stamps, cut at 512 KB), and the computed styles
+  of it and up to 300 elements under it by child path, leaving out values that say nothing.
 
 ### React
 
@@ -645,7 +653,7 @@ was on keep their files and agents either way.
   and the brief as its first message, and opens the design. The agent is named after the design
   and gets no namer.
 - **A design's screen** (DZCanvas) is its agent's layout (`DesignLayoutView`): the canvas beside a
-  420pt chat pane holding the agent's thread, whose composer has attach and Send only, under a
+  420pt chat pane holding the agent's thread, with the thread's composer at its compact size, under a
   toolbar with the breadcrumb, the pages menu (with more than one page), the design's system,
   Present (below) and Export (below). Opening a design whose agent is gone starts a fresh one. Switching away and back is
   a visibility flip, and a design's canvas (where it looks, the tool, the selected board) lasts
@@ -693,7 +701,9 @@ was on keep their files and agents either way.
   small pin, "on A · Checkout funnel", "You · 2m", the words), and the agent's reply to it sits
   inside the card under a hairline, without the turn's footer.
 - **The Comments tab** lists the open comments' cards, oldest first (a lazy list, one row per
-  card), and its label counts them. The chat's thread stays mounted under it.
+  card), and its label counts them with the notes threads left on the design (Notes back,
+  RefNoteBack's "Comments 2" over a comment and a note; `DesignScreenModel.commentsTabCount`). The
+  chat's thread stays mounted under it.
 - **Failures** (a comment kept but not delivered, a refused one) go to the app's error dialog.
 
 ### Board actions (DZCanvas)
@@ -959,6 +969,280 @@ Designs until the viewer's choice, if one is needed, is made.
   notes and design system, run design_check, say what it found, change nothing until asked, and
   ask what to work on first.
 
+## Design references
+
+A design reference hands a thread a piece of a design on purpose: the whole design, a board, or
+one element of it (docs/native-thread.md › Design references). It is the only way anything of a
+design reaches an ordinary thread (Design agents and ordinary threads, above), and it never
+reaches a design's agent. The whole feature waits behind Settings ▸ Experiments ▸ Design tool.
+"Implement in a thread…", "Copy reference", the composer's @ picker, the reference chip and the
+canvas's thread pins are built on the Mac from DesignRefStates and the Ref* boards (On the Mac,
+below; DESIGN.md › Design references); the model below is what they call.
+
+### The reference
+
+`DesignReference` (ShepherdProtocol) names the host (`local`, or a remote host's id), the design,
+optionally a board (nil: the whole design), optionally an element of that board (`tid:path`), and a
+pinned revision; its label ("Checkout › A · Funnel first › button “Pay now”", each part one line
+cut short) is for chips and menus and never travels. Its string is what Copy reference copies:
+
+```text
+shepherd-design-ref://<host>/<designID>[/<board view name>[#<tid>:<path>]][@<revision>]
+```
+
+- **By id only:** a design folder's id, the board's view name (`flows%2FCart.dc.html`) and the
+  element's halves. Never a path on disk, a token, or anything the design's files say.
+- **Not `shepherd-design://`,** the board sandbox's scheme, which WebKit serves boards from.
+- **Read forgivingly:** whitespace and line breaks around it, wrapping `<…>`, quotes or
+  backticks, the scheme and host in any case, lower-case escapes, a trailing slash, and a board
+  written as its path. Anything outside the grammars (a board with `..`, under `ds/`, or with
+  characters a board path can't hold; an element with no board; an element's rendering index; a
+  revision that isn't a number) is no reference.
+- **Pinned when picked:** `SessionServer.pinDesignReference` (Copy reference, the @ picker, the
+  Implement sheet, a pasted chip) checks the design is here, the board on its canvas and the
+  element in its source, and pins the reference at the design's revision then. The board's source
+  is kept as a pin (`DesignStore.pinBoards`: `pins/<sha256>.dc.html`, and `pins/index.json`
+  saying which source each board had at each pinned revision, and for a whole design which boards
+  it held then and of how many), so a send later sends that version even if the design moved on. It answers `PreparedDesignReference`: the pinned, labelled
+  reference, what the host read (the design's name, the board's title and size, the element's
+  words and `data-el` name or tag), and `outline` (`DesignReferenceOutline`), what a send of it
+  carries, which the sheet's footer says (`DesignReferencePresentation.sends`: "Sends a picture,
+  its HTML, 11 styles and 8 tokens from acme-web."). The footer and the copy count by the same
+  rules from the same source (`DesignReferenceService.reading`): styles are the CSS properties the
+  piece's elements declare inline (`DesignReferenceReading.declaredStyles`; custom properties are
+  tokens), tokens the installed systems' tokens it reads.
+
+### Sending one
+
+`NativeThreadStore` keeps up to five references beside the draft (`attach(reference:)`, one per
+piece: a later one, "Send vN" among them, takes the older one's place; `NativeAttachedReference`:
+the pinned reference, its label and outline) and sends them with the next message;
+`send(text:references:)` sends at once without touching the draft. A message with references
+reads its words, then "1 design reference attached." (the count, nothing the design says). The
+send carries each reference's string alone (`NativeThreadRequest.send`'s `designReferences`,
+`designReferences` in `supportedActions`).
+
+- **The host keeps a copy** (`SessionServer.nativeThread` → `captureDesignReferences`, off its
+  queue): the design is here, the board on its canvas, the element in the board's source; a
+  design's agent, another Mac's design, more than five references, or a piece that is gone is
+  refused and nothing goes. Each reference is resolved at the revision it pins (a whole design:
+  the boards it held then, even when the canvas has others first now), and its copy is kept with
+  the message (below). A pinned version no longer kept is refused (`version_gone`), never swapped
+  for the design as it is now: only "Send vN" sends a newer one. A reference with no revision is
+  pinned as it is now. Nothing is kept if any of it fails, and with no app to draw the
+  copy the send is refused (`render_unavailable`).
+- **pi reads it fenced** (`DesignReferenceFence`): a line saying it is data, then one JSON
+  record per reference between `design-ref` markers carrying a nonce new to the message: its
+  pinned string, what the host read from the files (the design's name, the board's view name,
+  title and size, the element's id and words, the revision), the copy's id and its files' paths
+  (a whole design's: how many boards it holds, of how many). What a client sent beyond the string
+  is never kept. The fence always goes first, so words starting with "/" stay words, and such a
+  message goes to pi on its own, never joined in the queue. It is the only fence such a message
+  carries: a design view record sent beside it is dropped (`RPCThreadState.sendContext`).
+- **Only the user's own message draws its references.** The thread takes the fence off, and
+  carries its records (without the copy's paths) as the message's `designReferences` for the chip,
+  only for a message the user sent in that thread: one the host dispatched or delivered from its
+  queue carrying copies it kept for that send (`Dispatch.designPayloads`,
+  `QueueItem.designPayloads`), whose fence names those copies and no other (never ids read from
+  the text alone: a peer agent's prompt or a client typing a fence reaches pi as a send too), and
+  whose origin record (`ThreadOriginStore.Record.references`, kept per pi session, so it
+  outlives a relaunch and a session preview reads it too) names every copy the fence carries. A
+  message that arrived any other way (another agent's `agent_send`, an extension) shows the fence
+  as text, and so does a fence whose records name no copy. The palette's transcript search and
+  notifications take the fence off to show the words. Clients that draw no chip (the iOS client,
+  for now) show the words and the "1 design reference attached." line.
+- **Grants.** A send grants the thread's agent the copies it kept (`Agent.designGrants`,
+  persisted, empty in older files; each grant names its copy, `payload`): design_get reads those
+  copies and nothing else, and only once pi has the message: while it is on its way or waits in
+  the host's queue (steering included) its copies are withheld
+  (`RPCThreadState.withheldDesignPayloads`), so design_get and design_note answer `not_granted`
+  for them. A send pi refused, or a queued message deleted before pi read it, takes
+  its grants and copies back; such a message can't be restored (Undo leaves it out). The same
+  piece sent twice keeps both copies (each message's chip reads its own). An agent keeps at most
+  100 grants, the oldest (and their copies) going first. Deleting the agent takes its grants and
+  copies. Deleting the design keeps them: the copy was sent with the message and still reaches the
+  agent (the chip says the design is gone). Startup drops a design agent's grants and grants from
+  before copies were kept, and removes copies no grant names.
+- **Remote:** a reference goes only into a thread on the Mac that runs it. A remote client's
+  send with references is refused (`design_references_local`), and `RemoteHostClient` refuses
+  one before it goes; a reference to another Mac's design is refused (`remote_design`). The
+  picker lists this Mac's designs only; the chip's "another host" and "host offline" states and the
+  picker's host tags are ShepherdUI states the app doesn't reach yet (`DesignReferenceFreshness.hostOffline`,
+  `DesignMentionHost.remote`).
+
+### The copy
+
+`DesignReferencePayload` (ShepherdProtocol) is what a reference sent, resolved once when the
+message went and kept with it under the support directory's
+`design-refs/<agent>/<payload>/` (`DesignReferencePayloadStore`, on its own queue; never the drop
+folder, which is pruned after a day). `payload.json` is the manifest; beside it:
+
+- `<stem>[-<tid>]@2x.png`: the board, or the element cut from it, at twice its size;
+- `<stem>.html`: the board's standalone page (Export's: no runtime, no scripts);
+- for an element, `<stem>-<tid>.element.html` and `.styles.json`: its markup and computed styles
+  (`elementDetail`), the element's own computed styles also in the manifest;
+- `<stem>.source.dc.html`: the board's source as it was sent (`changes` compares two copies);
+- `<stem>[-<tid>]-tokens.md`: the installed systems' tokens the piece reads, each with the file and
+  line it came from when the system was built from a repository, and each `<x-import>` component
+  with the system's source component for its export;
+- a whole design: each board's picture, page and source (`01-<stem>@2x.png`, …), at most twelve
+  (`DesignReferencePayload.maxBoards`), in canvas order, and how many boards the design had.
+
+The app draws it (`SessionServer.onDesignReferenceCapture`, `DesignRendering.capture`): each board
+off screen at zoom 1 in a view of its own, the pinned source swapped in (`replaceSource`) when the
+file on disk moved on since (the head's lines are the file's). The server's queue never renders
+or reads files; nothing but paths crosses the socket. The chip reads the copy
+(`SessionServer.designReferencePayload(agentID:payloadID:)`), so it keeps showing what was sent.
+
+**Freshness** (`DesignReferenceFreshness`, DesignRefStates' chip states), computed by the host off
+the main thread and its queue: `current`; `updatedSince(latest:changes:)`, the design's revision now
+and short lines of what changed in the piece since the copy (a sent chip,
+`designReferenceFreshness(agentID:payloadID:)`) or since the version pinned (a chip in the
+composer, `designReferenceFreshness(_:)`): an element's own style changes ("padding 24px → 20px",
+a token by its name), its words, and elements added or removed inside it; a board's elements; a
+whole design's boards (`DesignReferenceReading.changeLines`, `designChangeLines`, six lines at
+most); `deleted` when the design or the board is gone. "Send vN" (`sendLatestDesignReference`)
+puts the same piece pinned at the revision now in the composer in place of the older chip; nothing
+newer reaches the agent until the user sends it.
+
+### The @ picker
+
+`SessionServer.designMentionCatalog()` answers `DesignMentionCatalog` (ShepherdRemote): this Mac's
+designs (most recently active first; a design being built as a design system is left out), each
+design's boards in canvas order, and each board's elements (at most 300: those with words or a
+`data-el` name, leaving out the runtime's scaffold and an element that only repeats its parent's
+words), each row with its breadcrumb and the design's revision. An element's row says what it is
+and holds (`DesignElementSummary`, from the source): a kind noun, then the first run of like
+children in it or up to three levels under it counted with their noun (their `data-el` name, a
+loop's `as`, else row, bar or card: "funnel bars · 5 steps", "list · 5 rows"), or its place among
+like siblings qualified by its parent's name ("KPI tile · 1 of 4"), with chips (buttons, links or
+pills of a few words) listed by their words ("chips · All platforms, Web, iOS, Android"), else
+what it is and how many elements it holds. A board's element count is the rows the picker lists
+on it. It is derived off the main thread and the server's queue, and a design unchanged since the
+last call is not read again (`DesignMentionCache`, by revision).
+`rows(in:)` gives a scope's rows (the designs; a design's own row, the whole design, then its
+boards; a board's own row, "Whole board", then its elements), and `search(_:)` matches every level
+by each word of the query, in the catalog's order. The composer keeps the results whose own name
+holds a word of the query (the path places each; RefAtSearch), so a design named for the query
+doesn't list every board and element in it.
+
+### design_get
+
+`shepherd-design-refs.ts` gives an ordinary thread `design_get(ref, what)`, read only, and
+`design_note(ref, text)` (Notes back, below). It loads for every agent that draws no design while
+Settings ▸ Experiments ▸ Design tool and Settings ▸ Pi ▸ Design references are both on (a running
+agent follows a change at its next start), inert without `SHEPHERD_DESIGN_REFS`, and registers its
+tools only once the thread holds a reference: at load when the variable is `granted` (the agent
+held a grant when pi started), else the first time a message arrives with the fence (pi's `input`
+event). A thread that was never handed a piece carries nothing of them in its prompt.
+
+design_get answers only from the copies the user sent to this thread, never the design as it is
+now: a ref with a revision reads the copy sent at that revision, one without the latest sent.
+
+| `what` | Answer |
+| --- | --- |
+| `summary` | The ref, design, board (title), element (words), size, the revision it was sent at, what the copy holds, and the other versions of the piece this thread was sent |
+| `image` | The copy's PNG (the board, or the element cut from it, at twice its size), which the extension hands pi as an image (up to 4.5 MB); a whole design's: each board's, as files |
+| `html` | The copy's standalone page (a whole design's: each board's), files |
+| `element` | The element's markup and computed styles, two files; refused for a board or design |
+| `tokens` | The installed systems' tokens the piece read, with their sources, and its components |
+| `changes` | What changed from the previous version of the piece sent to this thread to this one: for a board, its elements added, removed and changed (matched by content, then by place), and how many moved; for an element, whether it moved, its tag, words or attributes, and what changed inside it; for a whole design, its boards. With one version sent, it says a newer one reaches the thread only when the user sends it |
+
+- **The server answers** (`designGet`, answered with `designReference`) only for a copy the
+  agent was sent (`not_granted`; `no_copy` when its folder is gone), never to a design's agent
+  (`not_a_thread`), and refuses a ref outside the grammar (`invalid_reference`), an unknown aspect
+  (`invalid_what`) and another Mac's design (`remote_design`).
+- **Data, never instructions:** everything read from the design comes back between
+  `design-data` markers with a nonce new to the answer (`DesignReferenceData`), cut at 128 KB so a
+  reply fits the socket's 1 MiB frame; `changes` quotes a start tag on one line, cut at 300
+  characters.
+- **"Looked at…"** (NWActivityLine(.lookedAtDesign)): each answer carries
+  `DesignReferenceLookedAt` (the piece, what the agent got: picture and its size, page and its
+  bytes, styles, tokens and the files and lines they came from), which the extension keeps in the
+  call's details. The thread joins consecutive design_get calls on one ref into one line
+  (`DesignReferenceCall.calls(in:)`, ShepherdRemote) and reads what they got from the copy
+  (`SessionServer.designReferenceLookedAt(agentID:ref:aspects:)`).
+
+### Notes back
+
+`design_note(ref, text)` leaves a short note on a board or element the thread was sent
+("Implemented in #142 on agent/checkout-funnel."): `designNote`, answered with `designNote`
+(`DesignThreadNote`). One paragraph of plain text, whitespace and control characters folded, at
+most 500 characters (`invalid_note`); only for a board or element this thread was sent
+(`not_granted`, `no_piece` for a whole design), on a design still here, never from a design's
+agent; at most six in ten minutes per thread (`rate_limited`). A new note from the thread on the
+same piece replaces its last; a design keeps at most 200. Notes are kept in the design's
+`thread-notes.json`, beside `project/` and never inside it, so the design agent never edits or
+reads them, and export, duplicate and remote sync leave them out. The canvas reads them
+(`SessionServer.designThreadNotes`, hinted by `onDesignThreadNotesChanged`) and draws each as the
+thread's pin (blue, a code glyph: never a comment, never the design agent), naming the thread
+(`thread`, its name then; `agentID` opens it) and the version it was sent ("from v23"); Resolve
+removes it (`removeDesignThreadNote`). A note is never shown to a design agent; one that ever is
+goes fenced as data.
+
+### On the Mac
+
+The surfaces (DESIGN.md › Design references has their measures):
+
+- **The canvas** (`DesignScreenModel+References.swift`): the selection is the reference (the last
+  pick: an element, or a board picked whole; nothing selected, the whole design,
+  `DesignReferenceSelection`). Implement… in the board actions (which float over an element's
+  board too), the right-click menu (`NWDesignCanvas`'s `contextMenu`: it picks what the click landed
+  on first, then answers the items as a native menu), the design's ••• (`DesignMenuAction.implement`,
+  `.copyReference`), and the canvas-scoped ⌘↩ and ⇧⌘C (`DesignCanvasKeys`: a local monitor, only
+  while the design shows and no terminal or board page has the keyboard, nor a text field holding
+  text or the chat holding a draft; the chat's empty composer, which keeps the keyboard when the
+  canvas is clicked, lets them through).
+- **Implement in a thread…** (`ImplementSheetModel`, `ShepherdViewModel+DesignReferencesUI.swift`):
+  the piece is pinned as the sheet opens (`prepareDesignReference`), so the footer's words are what
+  goes. An existing thread is one of this Mac's that draws no design (`designAttachTargets`); a new
+  one starts through the New thread page's creation (`startAgent`) in the chosen project, on a new
+  worktree (`GitWorktree.add`, based per Settings ▸ Worktrees) named `agent/implement-<piece>` (a
+  direction's letter dropped; "-2", "-3"… when taken), named "Implement <piece>" until the namer
+  names it, and gets the piece as its first message. A thread on screen sends through its store; one
+  that isn't (the sheet's usual case) through the host, once its pi serves
+  (`sendDesignReferences`, at most 90 seconds' wait), into the host's queue while pi works. "Open
+  the thread after sending" is remembered (`AppSettings.implementOpensThread`,
+  `shepherd.designs.implementOpensThread`); off, the canvas keeps the screen and a toast offers the
+  thread. Copy reference pins the piece and copies its string (`copyToPasteboard`).
+- **The thread** (`Thread/DesignReferenceChips.swift`): `DesignReferenceChips`, one per local
+  thread that draws no design while the Design tool is on (the `designReferences` environment
+  value, nil otherwise), reads each sent chip's copy (its picture, scaled off the main thread, and
+  what it holds) and how it stands, once per chip and again when a design changes, and the
+  "Looked at…" lines' `DesignReferenceLookedAt`. A thread without it (another host's) draws each
+  chip from its record, with no picture or state.
+- **The composer** (`Thread/ComposerMentions.swift`): the mention is the draft's last "@" at its
+  start or after whitespace with no line break after it (`ComposerMention`); its words spell the
+  scope ("Design › Board › ", resolved by titles, `MentionScope.spelled`) and the filter after it.
+  The picker's rows are derived once per change of the draft or the catalog
+  (`MentionPickerState`), read from `designMentionCatalog()` each time it opens, with pictures from
+  the renderer: a design's first board, a board's own (rendered on demand at thumbnail priority:
+  `DesignBoardPictures`), and an element's own, cut from its board (`DesignElementCrops`). An
+  element's picture is asked for only when its row comes on screen (the lazy list's rows); the
+  shared rasterizer draws the board once per design revision, finding every element the picker
+  lists on it in one call (`DesignBoardView.elements(tids:)`), the last two boards are kept to cut
+  from, and the cuts (the thumbnail's 40×26 at 2x, from the element's top-leading corner) are made
+  off the main thread and kept per revision. A cut landing redraws its own row alone. ⌫ with the
+  caret at the start of the words (or in an empty field) takes the last chip back: the field binds
+  its selection outside Observation (`ComposerCaret`). A pick pins the piece and attaches it (`attachDesignReference`); a paste
+  that brings a whole reference word does the same (`ComposerReferencePaste`); a failure says why in
+  the composer's banner. The iOS client draws no chip yet: its thread shows the words and the
+  "1 design reference attached." line.
+- **Notes back** on the canvas: read with the design's pulls and on `onDesignThreadNotesChanged`;
+  a note's pin sits on its element's top-trailing corner where a live board finds it (after a
+  comment's pin there), else on its board's corner; its card opens beside the pin, with Open thread
+  (while the thread is here) and Resolve. The Comments tab counts notes with the comments.
+- **A sent chip's preview** opens above the chip whenever the thread's visible part holds it
+  above (measured from the thread's top in its own space, not the scroll view's, which starts
+  under the thread's top margin), and below only when it doesn't.
+- **Departures from the Ref* boards** (the user's call, 2026-09-27): the design's ••• menu lists
+  Implement and Copy Reference without their chords; the canvas's right-click menu has no Delete
+  until deleting a board is built, with Undo; the @ picker has no Files section until file
+  mentions come in a PR of their own; other hosts' designs (the picker's host tags, the chip's "on
+  another host" and "host offline") are ShepherdUI states only until remote references come; and
+  a pinned version no longer kept is refused (`version_gone`), with Send vN offered for the
+  current one.
+
 ## Deleting and importing on the Mac (DesignLifecycleStates)
 
 Built on the Mac behind the Design tool experiment (`ShepherdViewModel+DesignLifecycle.swift`,
@@ -1023,6 +1307,15 @@ written its system, the Spacing & radii and Boards using it sections (rows in th
 anatomy), a type style without a sample (its name), and a failed build or re-sync (the error
 dialog). The chat's "Read dashboard-web · tokens.css · 9 partials · 3 pages" activity line isn't
 built: the agent's reads join "Explored N files".
+
+For design references: remote references (a design on another host, the chip's "on another host"
+and "host offline" states, the picker's host tags and dimmed offline rows) are drawn as ShepherdUI
+states only; the picker lists no files; an element's picker row draws its board's picture and says
+its tag and what is inside it; the right-click menu has no Delete (the canvas deletes no board);
+the iOS client shows a sent reference as its words and the "1 design reference attached." line.
+Not drawn and built plainly: a sheet whose piece couldn't be pinned (the footer says why and Send
+stays off), a send that failed (the sheet stays, the reason under its fields), no thread yet (the
+sheet opens on New thread), and a reference that couldn't join the composer (its banner).
 
 ## Remote
 

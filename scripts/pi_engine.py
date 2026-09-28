@@ -4,7 +4,8 @@
 Staging downloads Node from nodejs.org and pi's tarballs from the npm registry, checks every
 download against the pin, and writes the tree the app carries:
 
-  Helpers/node                      Node, universal (lipo -create of the pinned slices)
+  Helpers/node                      Node's darwin-arm64 binary as published: Shepherd runs on
+                                    Apple silicon only
   Resources/pi-engine/              pi's package.json, dist/bundle, its assets, docs and examples,
                                     and a node_modules holding only chord's context entry, jiti
                                     and photon-node, plus LICENSE, NODE-LICENSE and
@@ -37,7 +38,6 @@ import mmap
 import os
 import shutil
 import struct
-import subprocess
 import sys
 import tarfile
 import tempfile
@@ -60,8 +60,8 @@ STAGED_IN_XCODE = "$(SRCROOT)/.build/pi-engine"
 CONTENTS_IN_XCODE = "$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)"
 LICENSES = ("LICENSE", "NODE-LICENSE", "THIRD-PARTY-NOTICES")
 
-# Architectures in pin order; Node names x86_64 "x64".
-ARCHITECTURES = ("arm64", "x86_64")
+# The one architecture Shepherd ships. x86_64 is named only to report a slice that must not ship.
+ARCHITECTURE = "arm64"
 CPU_TYPES = {0x0100000C: "arm64", 0x01000007: "x86_64"}
 
 # What of pi's package ships. "dir/**" keeps a whole tree. pi finds its themes, export
@@ -158,11 +158,10 @@ def pin_problems(pin: dict) -> list[str]:
     if node.get("dist") != f"https://nodejs.org/dist/v{node.get('version')}/":
         problems.append(f"node.dist {node.get('dist')!r} is not nodejs.org's folder for the pinned version")
     archives = node.get("archives", {})
-    if tuple(archives) != ARCHITECTURES:
-        problems.append(f"node.archives covers {list(archives)}, expected {list(ARCHITECTURES)} (universal)")
+    if list(archives) != [ARCHITECTURE]:
+        problems.append(f"node.archives covers {list(archives)}, expected {[ARCHITECTURE]} (Apple silicon only)")
     for arch, archive in archives.items():
-        node_arch = "x64" if arch == "x86_64" else arch
-        expected = f"node-v{node.get('version')}-darwin-{node_arch}.tar.xz"
+        expected = f"node-v{node.get('version')}-darwin-{arch}.tar.xz"
         if archive.get("file") != expected:
             problems.append(f"node.archives.{arch}.file is {archive.get('file')!r}, expected {expected!r}")
         digest = archive.get("sha256", "")
@@ -252,16 +251,15 @@ def _text(path: str) -> str:
 
 
 def download_all(pin: dict, cache: str, offline: bool = False, opener=urllib.request.urlopen) -> dict:
-    """Every pinned download, verified, as {"node": {arch: path}, "pi": path, "modules": {name: path}}."""
+    """Every pinned download, verified, as {"node": path, "pi": path, "modules": {name: path}}."""
     node = pin["node"]
     downloads = os.path.join(cache, "downloads")
     fetch(node["dist"] + "SHASUMS256.txt", os.path.join(downloads, f"node-v{node['version']}-SHASUMS256.txt"),
           lambda path: not node_shasums_problems(pin, _text(path)), offline, opener)
-    result = {"node": {}, "modules": {}}
-    for arch, archive in node["archives"].items():
-        result["node"][arch] = fetch(node["dist"] + archive["file"], os.path.join(downloads, archive["file"]),
-                                     lambda path, want=archive["sha256"]: sha256_of(path) == want,
-                                     offline, opener)
+    result = {"modules": {}}
+    archive = node["archives"][ARCHITECTURE]
+    result["node"] = fetch(node["dist"] + archive["file"], os.path.join(downloads, archive["file"]),
+                           lambda path: sha256_of(path) == archive["sha256"], offline, opener)
     packages = [("pi", pin["pi"])] + [(name, module) for name, module in pin["modules"].items()]
     for name, package in packages:
         path = fetch(package["tarball"], os.path.join(downloads, os.path.basename(package["tarball"])),
@@ -311,9 +309,9 @@ def package_files(archive: str, rules) -> dict[str, bytes]:
     return files
 
 
-def node_files(archive: str, version: str, arch: str) -> tuple[bytes, bytes]:
-    """`bin/node` and `LICENSE` from Node's darwin archive."""
-    prefix = f"node-v{version}-darwin-{'x64' if arch == 'x86_64' else arch}/"
+def node_files(archive: str, version: str) -> tuple[bytes, bytes]:
+    """`bin/node` and `LICENSE` from Node's darwin-arm64 archive."""
+    prefix = f"node-v{version}-darwin-{ARCHITECTURE}/"
     with tarfile.open(archive, "r:*") as tar:
         found = {}
         for wanted in ("bin/node", "LICENSE"):
@@ -361,7 +359,7 @@ def _author(package: dict) -> str:
     return author.strip()
 
 
-def build_tree(pin: dict, downloads: dict, lipo=None) -> dict[str, bytes]:
+def build_tree(pin: dict, downloads: dict) -> dict[str, bytes]:
     """The staged tree as {relative path: bytes}, node included."""
     tree: dict[str, bytes] = {}
     pi = package_files(downloads["pi"], PI_KEEP + ("npm-shrinkwrap.json",))
@@ -398,30 +396,11 @@ def build_tree(pin: dict, downloads: dict, lipo=None) -> dict[str, bytes]:
             if _kept(relative, MODULE_KEEP[name]):
                 tree[f"{ENGINE}/node_modules/{name}/{relative}"] = data
 
-    node_licence = None
-    slices = {}
-    for arch in ARCHITECTURES:
-        slices[arch], node_licence = node_files(downloads["node"][arch], pin["node"]["version"], arch)
-    tree[NODE] = (lipo or lipo_create)(slices)
-    tree[f"{ENGINE}/NODE-LICENSE"] = node_licence
+    tree[NODE], tree[f"{ENGINE}/NODE-LICENSE"] = node_files(downloads["node"], pin["node"]["version"])
     # pi's tarball carries no LICENSE; package.json says MIT and names the author.
     tree[f"{ENGINE}/LICENSE"] = MIT.format(holder=_author(manifest)).encode()
     tree[f"{ENGINE}/THIRD-PARTY-NOTICES"] = notices(pin, shrinkwrap, licences).encode()
     return tree
-
-
-def lipo_create(slices: dict[str, bytes]) -> bytes:
-    with tempfile.TemporaryDirectory() as scratch:
-        inputs = []
-        for arch, data in slices.items():
-            path = os.path.join(scratch, f"node-{arch}")
-            with open(path, "wb") as f:
-                f.write(data)
-            inputs.append(path)
-        output = os.path.join(scratch, "node")
-        subprocess.run(["lipo", "-create", *inputs, "-output", output], check=True)
-        with open(output, "rb") as f:
-            return f.read()
 
 
 def file_lists(tree: dict[str, bytes]) -> tuple[str, str]:
@@ -473,7 +452,7 @@ def write_tree(tree: dict[str, bytes], pin_text: str, out: str) -> None:
 
 
 def stage(cache: str = DEFAULT_CACHE, out: str = DEFAULT_STAGED, offline: bool = False, pin_path: str = PIN,
-          opener=urllib.request.urlopen, lipo=None) -> None:
+          opener=urllib.request.urlopen) -> None:
     with open(pin_path, encoding="utf-8") as f:
         pin_text = f.read()
     pin = json.loads(pin_text)
@@ -481,7 +460,7 @@ def stage(cache: str = DEFAULT_CACHE, out: str = DEFAULT_STAGED, offline: bool =
     if problems:
         raise EngineError("the pin is not usable: " + "; ".join(problems))
     downloads = download_all(pin, cache, offline, opener)
-    write_tree(build_tree(pin, downloads, lipo), pin_text, out)
+    write_tree(build_tree(pin, downloads), pin_text, out)
     problems = verify(out, pin)
     if problems:
         raise EngineError("the staged engine fails verification: " + "; ".join(problems))
@@ -516,7 +495,7 @@ def _slice_mentions(path: str, offset: int, size: int, needle: bytes) -> bool:
 
 def verify(root: str, pin: dict | None = None) -> list[str]:
     """Problems with the engine under `root`: an app bundle, its Contents/, or a staged tree.
-    Empty when node carries every pinned slice at the pinned version, pi and its three modules
+    Empty when node is arm64 only, at the pinned version, pi and its three modules
     are the pinned ones, nothing else is in node_modules, nothing native or esbuild is in the
     engine, and the licences are there."""
     pin = pin or load_pin()
@@ -530,11 +509,12 @@ def verify(root: str, pin: dict | None = None) -> list[str]:
         found = slices(node)
         if not found:
             problems.append(f"{NODE} is not a Mach-O file")
-        for arch in ARCHITECTURES:
-            if arch not in found:
-                problems.append(f"{NODE} has no {arch} slice")
-            elif not _slice_mentions(node, *found[arch], f"v{pin['node']['version']}\0".encode()):
-                problems.append(f"{NODE}'s {arch} slice is not node {pin['node']['version']}")
+        elif ARCHITECTURE not in found:
+            problems.append(f"{NODE} has no {ARCHITECTURE} slice")
+        elif not _slice_mentions(node, *found[ARCHITECTURE], f"v{pin['node']['version']}\0".encode()):
+            problems.append(f"{NODE}'s {ARCHITECTURE} slice is not node {pin['node']['version']}")
+        for arch in sorted(set(found) - {ARCHITECTURE}):
+            problems.append(f"{NODE} has an {arch} slice; Shepherd ships for Apple silicon only")
         if not os.access(node, os.X_OK):
             problems.append(f"{NODE} is not executable")
     engine = os.path.join(root, ENGINE)
@@ -598,7 +578,7 @@ def main(argv: list[str]) -> int:
         started = datetime.datetime.now()
         try:
             stage(options["--cache"], options["--out"], offline)
-        except (EngineError, OSError, subprocess.CalledProcessError) as error:
+        except (EngineError, OSError) as error:
             print(f"error: {error}", file=sys.stderr)
             return 1
         pin = load_pin()

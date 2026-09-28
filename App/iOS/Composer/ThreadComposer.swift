@@ -12,6 +12,8 @@ import ShepherdRemote
 ///   Send inside it. While the field is in use, the commands, model and thinking chips sit above.
 /// - **iPad** (iPadThread, iPadQueue, iPadPortrait boards): the Mac's card, the field over one
 ///   row of the paperclip, "/ commands", the model and thinking chips, and Send.
+/// - **A design's chat on iPad** (iPadDesign): the same card at the compact size, with no "/"
+///   (typing / still opens the commands), the model's short name and the thinking level alone.
 ///
 /// Send queues the message while pi works (it goes when pi settles); hold it to Steer now, which
 /// pi reads once its current tool calls finish. Stop lives in the thread's header. The context
@@ -23,7 +25,7 @@ struct ThreadComposer: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(MobileNavigator.self) private var navigator
-    /// A design's chat (iPadDesign): one field with Send, no chips (DesignPad/).
+    /// A design's chat (iPadDesign): the card without "/", the model's short name (DesignPad/).
     @Environment(\.composerDesignChat) private var designChat
     @FocusState private var focused: Bool
 
@@ -99,9 +101,7 @@ struct ThreadComposer: View {
                     }
                     .nwTransition(.content)
                 }
-                if designChat {
-                    designBox(store: store, state: state, live: live)
-                } else if wide {
+                if wide || designChat {
                     card(store: store, state: state, host: host, live: live)
                 } else {
                     phone(store: store, state: state, host: host, live: live)
@@ -189,7 +189,7 @@ struct ThreadComposer: View {
             if !state.attachments.isEmpty { attachmentChips(state) }
         } field: {
             // A command draft shows in mono while its list is open (iPadPortrait).
-            field(store: store, placeholder: store.running ? "Queue a follow-up…"
+            field(store: store, placeholder: designChat ? MobileLayout.padDesignComposerPlaceholder : store.running ? "Queue a follow-up…"
                   : store.commands.isEmpty ? "Follow up…" : "Follow up, or / for commands…", command: state.matches != nil)
         } controls: {
             if typeSize.isAccessibilitySize {
@@ -211,49 +211,6 @@ struct ThreadComposer: View {
         }
     }
 
-    // MARK: A design's chat
-
-    /// The design chat's field (iPadDesign): one 44pt box, the field and Send inside it. Scribble
-    /// writes into it as into any text field.
-    private func designBox(store: NativeThreadStore, state: ComposerState, live: Bool) -> some View {
-        let shape = RoundedRectangle(cornerRadius: NW.Radius.l)
-        let empty = store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return HStack(alignment: .bottom, spacing: NW.Space.xs) {
-            field(store: store, placeholder: MobileLayout.padDesignComposerPlaceholder, style: .ui)
-                .padding(.vertical, NW.Space.m)
-                .frame(minHeight: NW.Height.touch, alignment: .leading)
-            // Send is the field's plain glyph, never the lantern circle (iPadDesign).
-            let enabled = live && store.acceptsSend && !empty && !store.busy
-            Button { send(.followUp, store: store, state: state) } label: {
-                Image(systemName: "arrow.up")
-                    .font(.nw(.ui, weight: .medium))
-                    .foregroundStyle(enabled ? Color.nw.textPrimary : Color.nw.textSecondary)
-                    .frame(width: NW.Height.controlL, height: NW.Height.controlL)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(!enabled)
-            .keyboardShortcut(.return, modifiers: .command)
-            .contextMenu {
-                if store.running, enabled {
-                    Button("Queue", systemImage: "text.line.first.and.arrowtriangle.forward") { send(.followUp, store: store, state: state) }
-                    Button("Steer now", systemImage: "arrow.turn.down.right") { send(.steer, store: store, state: state) }
-                }
-            }
-            .accessibilityLabel(store.running ? "Queue message" : "Send")
-            .frame(minHeight: NW.Height.touch)
-        }
-        .padding(.leading, MobileLayout.padDesignComposerInset)
-        .padding(.trailing, NW.Space.s)
-        .background(Color.nw.bgRaised, in: shape)
-        .overlay {
-            Color.clear
-                .nwBorder(focused ? Color.nw.textTertiary : Color.nw.lineStrong, in: shape)
-                .nwAnimation(.hover, value: focused)
-                .allowsHitTesting(false)
-        }
-    }
-
     @ViewBuilder private func cardControls(store: NativeThreadStore, state: ComposerState, live: Bool) -> some View {
         if acceptsImages(store) { AttachButton(state: state, enabled: live, chip: true) }
         chips(store: store, state: state, live: live).buttonStyle(.nwComposerChip())
@@ -272,14 +229,16 @@ struct ThreadComposer: View {
     }
 
     @ViewBuilder private func chips(store: NativeThreadStore, state: ComposerState, live: Bool) -> some View {
-        if !store.commands.isEmpty {
+        if !store.commands.isEmpty, !designChat {
             CommandsChip {
                 if store.draft.isEmpty { store.draft = "/" }
                 focused = true
             }
         }
         if store.model != nil || store.supportedActions.contains("setModel") {
-            ModelChip(model: store.model, canChange: live && store.supportedActions.contains("setModel")) { state.choosingModel = true }
+            ModelChip(model: store.model, canChange: live && store.supportedActions.contains("setModel"), short: designChat) {
+                state.choosingModel = true
+            }
         }
         if NativeThinkingLevel.offered(thinking: store.thinking, supportedActions: store.supportedActions, model: store.model,
                                        listing: state.models, levels: store.thinkingLevels) {

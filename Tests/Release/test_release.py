@@ -328,16 +328,22 @@ class FeedTests(unittest.TestCase):
             def read(name):
                 with open(os.path.join(pages, name), encoding="utf-8") as f:
                     return f.read()
-            self.assertEqual(read("appcast.xml"), sources["stable"])
-            self.assertEqual(read("appcast-beta.xml"), sources["beta"])
-            self.assertEqual(read("appcast-shepherd-nightly.xml"), sources["shepherd-nightly"])
+            self.assertEqual(read("appcast.xml"), release.require_arm64(sources["stable"]))
+            self.assertEqual(read("appcast-beta.xml"), release.require_arm64(sources["beta"]))
+            self.assertEqual(read("appcast-shepherd-nightly.xml"), release.require_arm64(sources["shepherd-nightly"]))
+            for name in written:
+                with self.subTest(requirement=name):
+                    xml = read(name)
+                    self.assertEqual(release.arm64_problems(xml), [])
+                    self.assertEqual(xml.count(release.ARM64_REQUIREMENT), xml.count("<item>"))
             # Old rc and nightly installs of Shepherd read the beta feed's items on the default
             # channel, which Sparkle shows whatever channels a build allows (the first nightly
             # builds allowed none).
             for alias in ("appcast-rc.xml", "appcast-nightly.xml"):
                 with self.subTest(alias=alias):
                     xml = read(alias)
-                    self.assertEqual(xml, sources["beta"].replace("<sparkle:channel>beta</sparkle:channel>", ""))
+                    self.assertEqual(xml, release.require_arm64(sources["beta"])
+                                     .replace("<sparkle:channel>beta</sparkle:channel>", ""))
                     self.assertNotIn("sparkle:channel", xml)
                     self.assertEqual(xml.count("<item>"), 2)
                     self.assertNotIn("Shepherd-Nightly", xml)
@@ -347,19 +353,135 @@ class FeedTests(unittest.TestCase):
         self.assertEqual(release.untag(xml), "<item>\n    <title>62</title>\n    <sparkle:version>62</sparkle:version>\n</item>")
 
 
-def make_engine(contents):
-    """The pinned engine's layout under `contents`, as small stand-ins: a fat node whose slices
-    name the pinned version, and each package.json at its pinned version."""
-    pin = release.pi_engine.load_pin()
-    version = f"node v{pin['node']['version']}\0".encode()
-    slices = [b"\xcf\xfa\xed\xfe" + cputype.to_bytes(4, "little") + version for cputype in (0x0100000C, 0x01000007)]
+SIG = "sparkle:edSignature"
+HEADER = '<?xml version="1.0" standalone="yes"?>\n<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">\n    <channel>\n        <title>Shepherd</title>\n'
+FOOTER = "    </channel>\n</rss>\n"
+
+
+def generated_item(version, url, channel="", deltas=(), requirement=""):
+    """An item as generate_appcast writes it, indented, with its signatures."""
+    lines = [f"<title>{version}</title>", "<pubDate>Sun, 27 Sep 2026 17:38:08 +0000</pubDate>",
+             "<link>https://github.com/bailycase/shepherd</link>"]
+    if channel:
+        lines.append(f"<sparkle:channel>{channel}</sparkle:channel>")
+    lines += [f"<sparkle:version>{version}</sparkle:version>",
+              "<sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>"]
+    if requirement:
+        lines.append(f"<sparkle:hardwareRequirements>{requirement}</sparkle:hardwareRequirements>")
+    lines.append(f'<enclosure url="{url}" length="18749293" type="application/octet-stream" {SIG}="NQEVwSKB+x/{version}=="/>')
+    if deltas:
+        lines.append("<sparkle:deltas>")
+        lines += [f'    <enclosure url="{d}" sparkle:deltaFrom="{d[-8:-6]}" length="1146822" type="application/octet-stream" '
+                  f'sparkle:deltaFromSparkleExecutableSize="977808" {SIG}="2sThLfsr/{version}=="/>' for d in deltas]
+        lines.append("</sparkle:deltas>")
+    return "        <item>\n" + "".join(f"            {line}\n" for line in lines) + "        </item>\n"
+
+
+DOWNLOAD = "https://github.com/bailycase/shepherd/releases/download"
+# One fixture per feed shape the workflow publishes. The newest beta and nightly items carry the
+# requirement already, as generate_appcast writes it for an archive with no x86_64 slice.
+FEED_SHAPES = {
+    "stable": HEADER + generated_item("25", f"{DOWNLOAD}/v0.1.0/Shepherd.dmg") + FOOTER,
+    "beta": HEADER
+    + generated_item("35", f"{DOWNLOAD}/v0.1.0-beta.6/Shepherd.dmg", "beta",
+                     [f"{DOWNLOAD}/v0.1.0-beta.6/Shepherd35-33.delta", f"{DOWNLOAD}/v0.1.0-beta.6/Shepherd35-31.delta"],
+                     requirement="arm64")
+    + generated_item("33", f"{DOWNLOAD}/v0.1.0-beta.5/Shepherd.dmg", "beta")
+    + generated_item("25", f"{DOWNLOAD}/v0.1.0/Shepherd.dmg", "beta") + FOOTER,
+    "shepherd-nightly": HEADER
+    + generated_item("63", f"{DOWNLOAD}/nightly-{STAMP}/Shepherd-Nightly.dmg",
+                     deltas=[f"{DOWNLOAD}/nightly-{STAMP}/Shepherd-Nightly63-61.delta"])
+    + generated_item("61", f"{DOWNLOAD}/nightly-202609221900/Shepherd-Nightly.dmg") + FOOTER,
+    # The compact shape the other feed tests build, and the workflow's empty_feed.
+    "compact": feed(item("60", "beta", deltas=["Shepherd60-59.delta"]), item("59", "beta")),
+    "empty": '<?xml version="1.0" encoding="utf-8"?>\n<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel><title>Shepherd</title></channel></rss>\n',
+}
+
+
+def without_requirement(xml):
+    return re.sub(r"\s*<sparkle:hardwareRequirements>[^<]*</sparkle:hardwareRequirements>", "", xml)
+
+
+class ArchitectureRequirementTests(unittest.TestCase):
+    """Shepherd is Apple silicon only: no feed item may be offered to an Intel Mac."""
+
+    def requirements(self, xml):
+        root = release.ElementTree.fromstring(xml)
+        return [[r.text for r in i.findall(f"{{{release.SPARKLE_NS}}}hardwareRequirements")]
+                for i in root.iter("item")]
+
+    def test_every_item_of_every_feed_shape_requires_arm64_exactly_once(self):
+        for shape, xml in FEED_SHAPES.items():
+            with self.subTest(shape=shape):
+                marked = release.require_arm64(xml)
+                self.assertEqual(self.requirements(marked), [["arm64"]] * xml.count("<item>"))
+                self.assertEqual(release.arm64_problems(marked), [])
+
+    def test_nothing_else_in_a_feed_changes(self):
+        # Signatures, enclosures, channels, deltas, the declaration and the ordering stay
+        # byte for byte: removing the requirement gives back exactly what was generated.
+        for shape, xml in FEED_SHAPES.items():
+            with self.subTest(shape=shape):
+                self.assertEqual(without_requirement(release.require_arm64(xml)), without_requirement(xml))
+                self.assertTrue(release.require_arm64(xml).startswith(xml.split("<item>")[0]))
+
+    def test_marking_twice_changes_nothing(self):
+        for shape, xml in FEED_SHAPES.items():
+            with self.subTest(shape=shape):
+                once = release.require_arm64(xml)
+                self.assertEqual(release.require_arm64(once), once)
+
+    def test_the_requirement_sits_among_the_items_children_at_their_indentation(self):
+        marked = release.require_arm64(FEED_SHAPES["stable"])
+        self.assertIn(f"{SIG}=\"NQEVwSKB+x/25==\"/>\n            {release.ARM64_REQUIREMENT}\n        </item>", marked)
+        self.assertIn(f"</sparkle:deltas>{release.ARM64_REQUIREMENT}</item>", release.require_arm64(FEED_SHAPES["compact"]))
+
+    def test_an_item_generate_appcast_already_marked_keeps_its_own(self):
+        beta = FEED_SHAPES["beta"]
+        self.assertEqual(release.require_arm64(beta).count(release.ARM64_REQUIREMENT), 3)
+        newest = beta.split("</item>")[0]
+        self.assertEqual(release.require_arm64(beta).split("</item>")[0], newest)
+
+    def test_a_feed_an_intel_mac_could_still_read_is_refused(self):
+        cases = {
+            "another requirement": HEADER + generated_item("35", f"{DOWNLOAD}/v1/Shepherd.dmg", requirement="x86_64") + FOOTER,
+            "two requirements": feed(item("35").replace("</item>", release.ARM64_REQUIREMENT * 2 + "</item>")),
+        }
+        for why, xml in cases.items():
+            with self.subTest(why=why):
+                with self.assertRaises(ValueError):
+                    release.require_arm64(xml)
+
+    def test_a_requirement_list_naming_arm64_is_enough(self):
+        # Sparkle splits the value on whitespace and commas, and ignores case.
+        xml = HEADER + generated_item("35", f"{DOWNLOAD}/v1/Shepherd.dmg", requirement="ARM64, metal") + FOOTER
+        self.assertEqual(release.require_arm64(xml), xml)
+
+
+ARM64, X86_64 = 0x0100000C, 0x01000007
+
+
+def macho(cputype, body=b""):
+    """A thin 64-bit Mach-O stand-in: the magic, the CPU type, then `body`."""
+    return b"\xcf\xfa\xed\xfe" + cputype.to_bytes(4, "little") + b"\0" * 24 + body
+
+
+def fat(*slices):
+    """What `lipo -create` makes of thin slices: a big-endian fat header, then each slice."""
     header = (0xCAFEBABE).to_bytes(4, "big") + len(slices).to_bytes(4, "big")
     offset, entries, body = 4096, b"", b""
     for data in slices:
         entries += b"".join(n.to_bytes(4, "big") for n in (int.from_bytes(data[4:8], "little"), 0,
                                                               offset + len(body), len(data), 12))
         body += data
-    files = {release.pi_engine.NODE: (header + entries).ljust(offset, b"\0") + body}
+    return (header + entries).ljust(offset, b"\0") + body
+
+
+def make_engine(contents):
+    """The pinned engine's layout under `contents`, as small stand-ins: an arm64 node that names
+    the pinned version, and each package.json at its pinned version."""
+    pin = release.pi_engine.load_pin()
+    files = {release.pi_engine.NODE: macho(ARM64, f"node v{pin['node']['version']}\0".encode())}
     engine = release.pi_engine.ENGINE
     packages = {"": (pin["pi"]["name"], pin["pi"]["version"])}
     packages.update({f"node_modules/{name}/": (name, module["version"]) for name, module in pin["modules"].items()})
@@ -418,6 +540,85 @@ class VerifyAppTests(unittest.TestCase):
             path = self.make_app(root, "Shepherd.app", **self.info("main"))
             os.makedirs(os.path.join(path, "Contents", "Resources", "pi-engine", "node_modules", "esbuild"))
             self.assertTrue(any("esbuild" in p for p in release.verify_app(path, "main")))
+
+    def test_code_for_anything_but_apple_silicon_is_refused(self):
+        cases = {
+            "a universal app executable": ("MacOS/Shepherd", fat(macho(ARM64), macho(X86_64))),
+            "an Intel framework": ("Frameworks/Sparkle.framework/Versions/B/Sparkle", macho(X86_64)),
+            "a universal XPC service": ("Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc/"
+                                        "Contents/MacOS/Installer", fat(macho(X86_64), macho(ARM64))),
+            "a universal helper": ("MacOS/shepherd-cli", fat(macho(ARM64), macho(X86_64))),
+        }
+        for name, (relative, data) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as root:
+                path = self.make_app(root, "Shepherd.app", **self.info("main"))
+                target = os.path.join(path, "Contents", relative)
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                with open(target, "wb") as f:
+                    f.write(data)
+                problems = release.verify_app(path, "main")
+                self.assertEqual(len(problems), 1, problems)
+                self.assertIn(f"{relative} is ", problems[0])
+                self.assertIn("arm64 only", problems[0])
+        with tempfile.TemporaryDirectory() as root:
+            path = self.make_app(root, "Shepherd.app", **self.info("main"))
+            with open(os.path.join(path, "Contents", "MacOS", "Shepherd"), "wb") as f:
+                f.write(fat(macho(ARM64)))
+            os.symlink("Shepherd", os.path.join(path, "Contents", "MacOS", "Link"))
+            self.assertEqual(release.verify_app(path, "main"), [], "arm64 code, thin or in a fat file, is fine")
+            node = os.path.join(path, "Contents", release.pi_engine.NODE)
+            with open(node, "rb") as f:
+                arm64 = f.read()
+            with open(node, "wb") as f:
+                f.write(fat(arm64, macho(X86_64)))
+            self.assertEqual(release.verify_app(path, "main"),
+                             ["pi engine: Helpers/node has an x86_64 slice; Shepherd ships for Apple silicon only"])
+
+    def test_thinning_keeps_the_arm64_slice_of_universal_files_and_leaves_the_rest(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = self.make_app(root, "Shepherd.app", **self.info("main"))
+            contents = os.path.join(path, "Contents")
+            files = {
+                "Frameworks/Sparkle.framework/Versions/B/Sparkle": fat(macho(X86_64), macho(ARM64)),
+                "MacOS/Shepherd": macho(ARM64),
+                "Resources/intel-only": macho(X86_64),
+            }
+            for relative, data in files.items():
+                os.makedirs(os.path.dirname(os.path.join(contents, relative)), exist_ok=True)
+                with open(os.path.join(contents, relative), "wb") as f:
+                    f.write(data)
+            os.chmod(os.path.join(contents, "Frameworks/Sparkle.framework/Versions/B/Sparkle"), 0o755)
+            calls = []
+
+            def lipo(command, check):
+                calls.append(command)
+                with open(command[-1], "wb") as f:
+                    f.write(macho(ARM64))
+            thinned = release.thin_app(path, run=lipo)
+            self.assertEqual(thinned, ["Frameworks/Sparkle.framework/Versions/B/Sparkle"])
+            sparkle = os.path.join(contents, thinned[0])
+            self.assertEqual(calls, [["lipo", sparkle, "-thin", "arm64", "-output", sparkle + ".thin"]])
+            self.assertEqual(os.stat(sparkle).st_mode & 0o777, 0o755)
+            self.assertFalse(os.path.exists(sparkle + ".thin"))
+            self.assertEqual(release.verify_app(path, "main"),
+                             ["Resources/intel-only is x86_64; Shepherd ships arm64 only"],
+                             "a file with no arm64 slice is left for verify-app to refuse")
+
+    @unittest.skipUnless(sys.platform == "darwin" and shutil.which("clang") and shutil.which("lipo"),
+                         "needs macOS's clang and lipo")
+    def test_thinning_a_real_universal_binary_leaves_its_arm64_slice(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = self.make_app(root, "Shepherd.app", **self.info("main"))
+            source = os.path.join(root, "main.c")
+            with open(source, "w") as f:
+                f.write("int main(void) { return 0; }\n")
+            helper = os.path.join(path, "Contents", "MacOS", "helper")
+            subprocess.run(["clang", "-arch", "arm64", "-arch", "x86_64", "-o", helper, source],
+                           check=True, capture_output=True)
+            self.assertEqual(release.thin_app(path), ["MacOS/helper"])
+            archs = subprocess.run(["lipo", "-archs", helper], capture_output=True, text=True, check=True)
+            self.assertEqual(archs.stdout.split(), ["arm64"])
+            self.assertEqual(release.verify_app(path, "main"), [])
 
     def test_a_nightly_build_with_the_main_feed_or_id_is_refused(self):
         for override in ({"SUFeedURL": release.REPOSITORY_PAGES + "appcast.xml"},
@@ -520,6 +721,39 @@ class ContractTests(unittest.TestCase):
                 self.assertEqual(self.setting(block, "PRODUCT_BUNDLE_IDENTIFIER"), app.bundle_id)
                 self.assertEqual(self.setting(block, "PRODUCT_NAME"), app.name)
                 self.assertEqual(self.setting(block, "SHEPHERD_APPCAST"), app.appcast)
+
+    def test_every_mac_configuration_builds_arm64_only(self):
+        for name in ("Debug", "Release", "Nightly"):
+            with self.subTest(configuration=name):
+                self.assertEqual(self.setting(self.target_configuration(name), "ARCHS"), "arm64")
+
+    def test_the_release_builds_arm64_only_and_thins_what_came_prebuilt_before_verifying(self):
+        workflow = self.read(".github", "workflows", "release.yml")
+        build = workflow.split("      - name: Build ${{ env.APP_NAME }}\n", 1)[1].split("\n      - ", 1)[0]
+        # SwiftPM package targets take no target settings: only the command line reaches them.
+        self.assertIn("ARCHS=arm64 \\\n", build)
+        self.assertNotIn("x86_64", workflow)
+        thin = workflow.index('python3 scripts/release.py thin-app "$PRODUCTS/$PRODUCT"')
+        self.assertLess(workflow.index("      - name: Build ${{ env.APP_NAME }}"), thin)
+        self.assertLess(thin, workflow.index("scripts/release.py verify-app"))
+
+    def test_every_feed_reaches_gh_pages_through_publish(self):
+        # publish is what marks each item Apple silicon only; nothing else may write a feed.
+        step = self.read(".github", "workflows", "release.yml").split("      - name: Update appcasts\n", 1)[1]
+        step = step.split("\n  # ", 1)[0]
+        self.assertIn("< <(python3 scripts/release.py publish casts pages)", step)
+        self.assertIn('git add "${written[@]}"', step)
+        self.assertNotIn("cp casts", step)
+
+    def test_the_shipped_sparkle_honours_the_hardware_requirement(self):
+        # sparkle:hardwareRequirements arrived in Sparkle 2.9.0; an older client would ignore it
+        # and offer an Intel Mac an update it cannot run.
+        for parts in (("Package.resolved",),
+                      ("Shepherd.xcodeproj", "project.xcworkspace", "xcshareddata", "swiftpm", "Package.resolved")):
+            with self.subTest(file="/".join(parts)):
+                pins = {p["identity"]: p["state"] for p in json.loads(self.read(*parts))["pins"]}
+                version = tuple(int(n) for n in pins["sparkle"]["version"].split("."))
+                self.assertGreaterEqual(version, (2, 9, 0))
 
     def test_the_dev_build_shares_no_shipped_apps_identity(self):
         # Preferences, notifications and Sparkle's installer are keyed by bundle id, so a Dev
