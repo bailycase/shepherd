@@ -4056,7 +4056,11 @@ switch's row "Off: each host keeps its own files. Pick a host to edit it."
 
 The page (`SettingsSkills.swift`, `ClientSkills`) manages the agent skills each host's own pi
 reads from its home, `<support>/pi/skills` (docs/skills.md): folders of instructions and scripts the agent picks up
-when a task calls for them. Skills are global: with Same skills on every host on, every install,
+when a task calls for them. A deferred change with an unknown result pauses its host's queue;
+its error offers Resolve… on Mac and iOS. After checking the host, the user may confirm Continue
+without retrying: only that missing receipt is abandoned, no mutation is replayed or undone,
+and later queued changes continue. Dismissing the error alone never resolves it.
+Skills are global: with Same skills on every host on, every install,
 update, switch and removal goes to every host, and a host that is offline catches up when it's
 back. The page sits between Instructions and Remote in the nav, with `graduationcap`.
 

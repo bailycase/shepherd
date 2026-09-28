@@ -210,11 +210,37 @@ final class PadDesignCanvas {
         snapshot != nil && canvasSize.width > 0 && host.isDrawn(visibleBoards)
     }
 
+    func forget() {
+        rest?.cancel()
+        rest = nil
+        picking?.cancel()
+        picking = nil
+        refreshAgain = false
+        isActive = false
+        snapshot = nil
+        comments = []
+        picks = []
+        pinRects = [:]
+        draftText = ""
+        replyText = ""
+        draftElement = nil
+        openComment = nil
+        loadError = nil
+        problem = nil
+        labelRooms = [:]
+        host.source = nil
+        host.redrawn = nil
+        host.rasterized = nil
+        host.linked = nil
+        host.release()
+    }
+
     // MARK: Pulling
 
     /// Reads the design (only files whose hash changed travel) and hands the renderer the
     /// boards that changed, then its comments. A pull asked for while one runs runs again after.
     func refresh() async {
+        guard !source.cache.isForgotten(host: ref.host) else { return }
         if refreshing { refreshAgain = true; return }
         refreshing = true
         defer { refreshing = false }
@@ -224,6 +250,7 @@ final class PadDesignCanvas {
                 apply(try await source.sync().snapshot)
                 if loadError != nil { loadError = nil }
             } catch {
+                guard !source.cache.isForgotten(host: ref.host) else { return }
                 loadError = Self.message(error)
             }
             await refreshComments()
@@ -231,7 +258,7 @@ final class PadDesignCanvas {
     }
 
     private func apply(_ next: DesignSnapshot) {
-        guard snapshot != next else { return }
+        guard !source.cache.isForgotten(host: ref.host), snapshot != next else { return }
         let previous = snapshot?.index
         if page == nil || next.index.pages?.contains(where: { $0.id == page }) != true {
             let opening = next.index.openingPage
@@ -537,6 +564,7 @@ final class PadDesignCanvas {
     }
 
     func applyComments(_ next: DesignComments) {
+        guard !source.cache.isForgotten(host: ref.host) else { return }
         guard next.revision >= commentsRevision else { return }
         commentsRevision = next.revision
         if next.comments != comments { comments = next.comments }
@@ -787,6 +815,7 @@ final class PadDesignCanvas {
 
     /// On screen, the design takes a live view and pulls what changed while it was away.
     func setActive(_ active: Bool) {
+        guard !source.cache.isForgotten(host: ref.host) else { return }
         guard isActive != active else { return }
         isActive = active
         host.setActive(active)

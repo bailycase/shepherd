@@ -21,6 +21,7 @@ struct SkillsScreen: View {
     @State private var results: [DirectorySkill] = []
     @State private var searching = false
     @State private var failure: String?
+    @State private var resolving: ClientSkills.Unacknowledged?
     @FocusState private var searchFocused: Bool
 
     private var term: String { query.trimmingCharacters(in: .whitespaces) }
@@ -41,6 +42,9 @@ struct SkillsScreen: View {
                 }
                 if let problem = model.problem {
                     NWBanner(.failed, title: problem) {
+                        if let entry = model.unacknowledged {
+                            Button("Resolve…") { resolving = entry }.buttonStyle(.nw(.secondary))
+                        }
                         Button("OK") { model.dismissProblem() }.buttonStyle(.nw(.secondary))
                     }
                 }
@@ -64,6 +68,15 @@ struct SkillsScreen: View {
             .padding(.bottom, MobileLayout.sectionSpacing)
             .frame(maxWidth: MobileLayout.homeMaxWidth)
             .frame(maxWidth: .infinity)
+        }
+        .confirmationDialog("Stop waiting for this skill change?", isPresented: Binding(get: { resolving != nil }, set: { if !$0 { resolving = nil } }), presenting: resolving) { entry in
+            Button("Continue without retrying") {
+                resolving = nil
+                Task { await model.resolveUnacknowledged(entry, in: skillsHosts) }
+            }
+            Button("Cancel", role: .cancel) { resolving = nil }
+        } message: { entry in
+            Text("Check the skill on \(entry.hostName) first. This forgets only this change's missing receipt, without retrying or undoing it, then sends the later changes.")
         }
         .scrollDismissesKeyboard(.interactively)
         .refreshable { await store.refresh() }

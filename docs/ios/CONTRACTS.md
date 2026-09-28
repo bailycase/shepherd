@@ -250,6 +250,9 @@ WindowGroup(for: MobileWindowSeed.self) { $seed in MobileWindowRoot(app: app, se
   Settings first opens, and its automation runs, selection and in-flight presentation callbacks.
   Every returning request checks forgotten-host ownership before updating a cache; disconnecting
   alone keeps pending operations, and forgetting one host keeps every other host's obligations.
+  Design Forget also removes that host's on-disk and in-memory files/assets/partial downloads,
+  phone indexes/comments and iPad canvases/renderers. Pending replies cannot refill them;
+  caches and canvases of other hosts stay intact.
 - **Per window:** the navigator and the subagent inspector's selection
   (`SubagentInspection.of(navigator)`), so an inspector opened in one window leaves another's
   alone.

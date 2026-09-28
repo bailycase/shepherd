@@ -138,6 +138,11 @@ replies, route/restoration preservation across compact and regular width, indepe
 composer and Commit presentation in two windows, and release of unmounted per-host stores.
 `forgotten-automation-regression` gates a run-history response, forgets its host, then confirms
 that neither that reply nor a stale selection recreates it while other hosts' automations stay.
+`forgotten-design-regression` seeds phone and iPad design data, invokes full `MobileApp.forget`,
+and checks canvas release, phone-cache eviction, stale lookup refusal and another host's cache.
+RemoteDesignCacheTests gates a late file response across Forget and checks disk recreation,
+assets and interrupted downloads. Skills tests resume an ambiguous install's untouched suffix
+only after explicit one-entry resolution, including recreation from persisted pending work.
 Shared ClientSettingsTests/ClientSkillsTests cover late forgotten-host replies and durable
 pending work across recreation, plus independent instruction edit/save targets. Its
 `FIXTURE CHECK ok|FAILED client-state` lines are the assertions, not the screenshot. It also

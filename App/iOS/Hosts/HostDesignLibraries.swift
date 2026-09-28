@@ -38,7 +38,7 @@ final class HostDesignLibraries {
     func library(_ host: UUID) -> RemoteDesignLibrary {
         if let library = libraries[host] { return library }
         let library = RemoteDesignLibrary(hostID: host, cache: cache)
-        libraries[host] = library
+        if !cache.isForgotten(host: host) { libraries[host] = library }
         return library
     }
 
@@ -46,6 +46,7 @@ final class HostDesignLibraries {
     /// and takes the host's pushes. Every store calls it as it sees the host change; only a new
     /// connection or a change in what it offers reaches the library.
     func connect(_ host: MobileHost) {
+        guard !cache.isForgotten(host: host.id) else { return }
         let client = host.connectedClient
         let offers = client != nil && host.supports(RemoteProtocol.designsCapability)
         let next = (session: client == nil ? nil : host.session, offers: offers)
@@ -54,20 +55,22 @@ final class HostDesignLibraries {
         library(host.id).connect(offers ? client : nil, available: offers)
         let id = host.id
         host.onDesignChanged = { [weak self] design, revision, comments in
-            guard let self else { return }
+            guard let self, !self.cache.isForgotten(host: id) else { return }
             for observer in self.observers.values { observer(id, design, revision, comments) }
         }
     }
 
     /// A host this device no longer knows.
     func forget(_ host: UUID) {
-        libraries.removeValue(forKey: host)?.connect(nil, available: false)
+        libraries.removeValue(forKey: host)?.forget()
+        cache.forget(host: host)
         connections[host] = nil
         watching[host] = nil
     }
 
     /// The designs `owner` has on screen on `host`: the host pushes changes for every store's.
     func watch(_ designs: Set<DesignID>, on host: UUID, for owner: String) {
+        guard !cache.isForgotten(host: host) else { return }
         watching[host, default: [:]][owner] = designs.isEmpty ? nil : designs
         library(host).watch(watching[host]?.values.reduce(into: Set<DesignID>()) { $0.formUnion($1) } ?? [])
     }
