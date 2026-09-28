@@ -109,10 +109,10 @@ final class ComposerThread {
     /// The scroll view inside the open menu.
     var menuScroll: NSScrollView? { scrollViews().first { $0 !== threadScroll } }
 
-    /// The thread's bottom inset: the composer's measured height.
+    /// The composer's measured height, excluding the separate transcript gap.
     var composerInset: CGFloat {
         window.layout()
-        return threadScroll?.contentInsets.bottom ?? .nan
+        return (threadScroll?.contentInsets.bottom ?? .nan) - AppLayout.composerTranscriptGap
     }
 
     /// How far the thread is scrolled.
