@@ -417,7 +417,7 @@ private struct SubagentRunInspector: View {
                     .focused($composing)
                     .padding(EdgeInsets(top: AppLayout.steerTopInset, leading: NW.Space.l, bottom: NW.Space.xxs, trailing: NW.Space.l))
                     .onKeyPress(.return, phases: .down) { press in
-                        if press.modifiers.contains(.shift) { draft += "\n"; return .handled }
+                        if press.modifiers.contains(.shift) { return .ignored }
                         send()
                         return .handled
                     }
