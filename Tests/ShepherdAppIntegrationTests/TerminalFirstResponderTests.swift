@@ -82,6 +82,23 @@ struct TerminalFirstResponderTests {
         }
     }
 
+    @Test(arguments: [false, true])
+    func revealingAPaneAcceptsFocusInEitherBridgeOrder(focusFirst: Bool) async throws {
+        let panes = Panes()
+        defer { panes.window.close() }
+        panes.show(leftFocused: false, rightFocused: true)
+        try await eventuallyOnMain("initial focus bridges to settle on the right") {
+            panes.surface(of: panes.left) != nil && panes.firstResponder === panes.surface(of: panes.right)
+        }
+        panes.left.setRenderingActive(false)
+        if focusFirst { panes.left.takeKeyboardFocus() }
+        panes.left.setRenderingActive(true)
+        if !focusFirst { panes.left.takeKeyboardFocus() }
+        try await eventuallyOnMain("revealed pane to own keyboard") {
+            panes.firstResponder === panes.surface(of: panes.left)
+        }
+    }
+
     @Test func releasingBeforeAttachmentCancelsThePendingFocusRetry() async throws {
         let panes = Panes()
         defer { panes.window.close() }

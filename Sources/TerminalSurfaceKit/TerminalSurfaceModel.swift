@@ -326,7 +326,11 @@ public final class TerminalSurfaceModel: ObservableObject {
     }
 
     private func applyKeyboardFocus(generation: Int, remainingAttempts: Int) {
-        guard generation == focusGeneration, renderingActive else { return }
+        guard generation == focusGeneration else { return }
+        guard renderingActive else {
+            retryFocus(generation: generation, remainingAttempts: remainingAttempts)
+            return
+        }
         let windows = [NSApp.keyWindow, NSApp.mainWindow] + NSApp.windows
         for window in windows.compactMap({ $0 }) {
             guard let view = TerminalFirstResponder.view(ownedBy: viewState, in: window) else { continue }
