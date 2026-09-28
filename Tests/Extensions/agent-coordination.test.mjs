@@ -124,6 +124,54 @@ test("live recipient read, control, cancellable wait and deletion request", asyn
     assert.equal(typeof initialStatus.connectionID, "string");
     assert.equal((await receive({ operation: "status" })).connectionID, initialStatus.connectionID);
 
+    handle = (f) => {
+      if (f.type === "createAutomation") connection.write(JSON.stringify({ type: "ok", id: f.id }) + "\n");
+    };
+    await run("automation_create", { name: "watch", prompt: "Watch CI", cwd: dir, replyToCreator: true });
+    const reporting = frames.findLast((f) => f.type === "createAutomation");
+    assert.ok(reporting.prompt.startsWith("Watch CI\n\n"));
+    assert.match(reporting.prompt, /agent_send with agentID "recipient"/);
+    assert.match(reporting.prompt, /success, failure, or a blocked watch/);
+    assert.match(reporting.prompt, /creator no longer exists/);
+    await run("automation_create", { name: "plain", prompt: "Notify only", cwd: dir });
+    assert.equal(frames.findLast((f) => f.type === "createAutomation").prompt, "Notify only");
+
+    const automationTools = new Map();
+    const automationEvents = new Map();
+    const creatorConnection = connection;
+    const previousAutomation = process.env.SHEPHERD_AUTOMATION;
+    process.env.SHEPHERD_AUTOMATION = "1";
+    process.env.SHEPHERD_AGENT_ID = "watcher";
+    try {
+      install({ registerTool: (t) => automationTools.set(t.name, t), on: (event, cb) => automationEvents.set(event, cb) });
+      assert.ok(automationTools.has("agent_send"));
+      assert.ok(!automationTools.has("automation_create"));
+      const target = JSON.parse(reporting.prompt.match(/agent_send with agentID ("[^"]+")/)[1]);
+      handle = (f) => {
+        if (f.type !== "sendToAgent") return;
+        assert.equal(f.agentID, "watcher");
+        assert.equal(f.targetAgentID, "recipient");
+        creatorConnection.write(JSON.stringify({ type: "message", id: 0, text: `[from: watcher] ${f.text}` }) + "\n");
+        connection.write(JSON.stringify({ type: "ok", id: f.id }) + "\n");
+      };
+      const before = sent.length;
+      const report = await automationTools.get("agent_send").execute("report", { agentID: target, text: "CI passed: https://example.test/run/1" });
+      assert.match(report.content[0].text, /dispatch requested/);
+      await waitFor(() => sent.length === before + 1);
+      assert.deepEqual(sent.at(-1), { text: "[from: watcher] CI passed: https://example.test/run/1", options: { deliverAs: "followUp" } });
+      handle = (f) => {
+        if (f.type === "sendToAgent") connection.write(JSON.stringify({ type: "error", id: f.id, code: "not_found", message: "Creator was deleted" }) + "\n");
+      };
+      await assert.rejects(automationTools.get("agent_send").execute("report", { agentID: target, text: "Failed" }), /Creator was deleted/);
+      assert.equal(sent.length, before + 1, "failed delivery must not reach another thread");
+    } finally {
+      automationEvents.get("session_shutdown")?.();
+      connection = creatorConnection;
+      process.env.SHEPHERD_AGENT_ID = "recipient";
+      if (previousAutomation === undefined) delete process.env.SHEPHERD_AUTOMATION;
+      else process.env.SHEPHERD_AUTOMATION = previousAutomation;
+    }
+
     let polls = 0;
     handle = (f) => {
       if (f.type === "coordinateAgent") connection.write(JSON.stringify({ type: "agentResult", id: f.id,

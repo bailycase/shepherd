@@ -543,11 +543,13 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       "with sleep between checks), the exact success/failure conditions, and to call its " +
       "notify tool then stop when a condition is met. The watch agent does the watching " +
       "itself — its prompt must never instruct it to create further automations. Enabled " +
-      "automations restart when Shepherd relaunches.",
+      "automations restart when Shepherd relaunches. Set replyToCreator to ask the watch " +
+      "agent to send its final result back to your thread using agent_send, as well as notify.",
     promptSnippet: "Create a Shepherd automation (a saved watch task)",
     parameters: Type.Object({
       name: Type.String({ description: "Short sidebar title, e.g. 'pr-watch #4821'" }),
       prompt: Type.String({ description: "Full instructions for the watch agent" }),
+      replyToCreator: Type.Optional(Type.Boolean({ description: "Ask the watch agent to report completion or failure back to your thread (default false). Adds instructions, not a guaranteed delivery hook." })),
       cwd: Type.String({ description: "Absolute working directory for the watch agent" }),
       enabled: Type.Optional(
         Type.Boolean({ description: "Restart the watch when Shepherd relaunches (default true)" }),
@@ -560,7 +562,9 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       await request({
         type: "createAutomation",
         name: params.name,
-        prompt: params.prompt,
+        prompt: params.replyToCreator
+          ? `${params.prompt}\n\nCompletion report: Before stopping, on success, failure, or a blocked watch, call agent_send with agentID ${JSON.stringify(agentID)} and a concise result including relevant links. This is the creator thread, not an agent to find by name. Also call notify. If the creator no longer exists or delivery fails, include that in the notification and stop; do not retry indefinitely or send to another thread. This requests dispatch, not confirmation that the creator read it.`
+          : params.prompt,
         cwd: params.cwd,
         enabled: params.enabled !== false,
         start: params.start !== false,
