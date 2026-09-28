@@ -52,7 +52,8 @@ private final class TweakedRemoteTransport: RemoteDesignTransport, @unchecked Se
             index = try index.merging(DesignIndex.tweakPatch(path, ["rows": .number(7)]))
             return .index(.init(snapshot: .init(designID: id, revision: 3, index: index, boards: [path: sha]),
                                 files: [.init(path: path.rawValue, sha256: sha, size: board.count)]))
-        case .boards(_, let paths, _):
+        case .boards(_, let requestedPaths, _):
+            let paths = requestedPaths ?? [path.rawValue]
             requested.withValue { $0 += paths }
             return .files(.init(designID: id, revision: 3, changed: paths.contains(path.rawValue) ? [.init(path: path.rawValue, sha256: sha, size: board.count, data: board)] : [],
                                 unchanged: [], missing: paths.filter { $0 != path.rawValue }))
