@@ -566,11 +566,13 @@ struct PaneSeparatorView: View {
             .accessibilityElement()
             .accessibilityLabel(axis == .vertical ? "Terminal column split" : "Terminal row split")
             .accessibilityValue("\(Int(currentRatio * 100)) percent")
-            .accessibilityAdjustableAction { direction in
-                let span = axis == .vertical ? containerRect.width : containerRect.height
-                let step = direction == .increment ? AppLayout.splitAccessibilityStep : -AppLayout.splitAccessibilityStep
-                onCommit(ShellLayout.splitRatio(position: CGFloat(currentRatio + step) * (span - AppLayout.dividerWidth), span: span))
-            }
+            .accessibilityAdjustableAction { adjust($0) }
+    }
+
+    func adjust(_ direction: AccessibilityAdjustmentDirection) {
+        let span = axis == .vertical ? containerRect.width : containerRect.height
+        let step = direction == .increment ? AppLayout.splitAccessibilityStep : -AppLayout.splitAccessibilityStep
+        onCommit(ShellLayout.splitRatio(position: CGFloat(currentRatio + step) * span, span: span))
     }
 
     private var currentRatio: Double {
