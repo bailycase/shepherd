@@ -325,6 +325,7 @@ final class RPCThreadState {
     func bootstrap(timeout: TimeInterval = 10) {
         bootstrapAttempts += 1
         let attempt = bootstrapAttempts
+        let generation = generation
         refreshState(timeout: timeout) { [weak self] result in
             guard let self, self.piSessionID == nil, case .failure(.timeout) = result, self.session.isAlive else { return }
             ShepherdLog.info("rpc session \(self.session.id) has not started within \(timeout)s; asking again")
@@ -333,7 +334,7 @@ final class RPCThreadState {
         refreshMessages(timeout: timeout) { [weak self] _ in
             // Loaded or not (a history over the record cap never arrives), the thread serves now;
             // an attempt the bootstrap has since repeated waits for the repeat.
-            guard let self, attempt == self.bootstrapAttempts else { return }
+            guard let self, attempt == self.bootstrapAttempts, generation == self.generation else { return }
             self.historyPending = false
             self.announceIfServable()
         }
@@ -639,10 +640,13 @@ final class RPCThreadState {
                 command = .extensionUIResponse(id: dialogID, cancelled: true)
             }
             // pi never answers extension_ui_response; the write is the dispatch.
-            session.send(command)
+            guard session.send(command) else {
+                completion(.failure(code: "dispatch_failed", message: "The agent's input is closed or full. Try again."))
+                return
+            }
             let dialog = dialogs.remove(at: index)
-            if session.isAlive { recordQuestion(dialog, answer: answer) }
-            completion(session.isAlive ? accepted : .failure(code: "dispatch_failed", message: "The agent is not running."))
+            recordQuestion(dialog, answer: answer)
+            completion(accepted)
         case .subagentCommand(_, _, _, let runID, let action, let text, let mode):
             // Unknown runs and empty replies never reach the socket; the dispatch itself is the
             // server's (it owns the children extension's connection).
@@ -706,13 +710,26 @@ final class RPCThreadState {
             }
             end = index
         }
-        let pageStart = max(0, end - pageSize)
-        let page = entries[pageStart..<end].map { entry in
+        var pageStart = end
+        var page: [NativeThreadMessage] = []
+        // Reserve the envelope and cursor before admitting rows, like the parent history page.
+        var pageBytes = bytes(NativeSubagentTranscript(runID: runID, messages: [], olderCursor: nil, earlierCount: end)) + 1024
+        while pageStart > 0, page.count < pageSize {
+            let entry = entries[pageStart - 1]
             let args = entry.message.role == "toolResult" ? entry.message.toolCallId.flatMap { arguments[$0] } : nil
             var value = project(entryID: "c:\(entry.id)", message: entry.message, args: args)
             if entry.message.role == "toolResult" { value.startedAt = entry.message.toolCallId.flatMap { callTimes[$0] } }
             if fromUser.contains(entry.id) { value.origin = .user }
-            return value
+            let nextBytes = bytes(value) + 1 + jsonStringBytes(value.entryID)
+            guard pageBytes + nextBytes <= snapshotLimit else {
+                if page.isEmpty {
+                    return .failure(code: "transcript_unavailable", message: "A transcript entry exceeds the page limit.")
+                }
+                break
+            }
+            pageBytes += nextBytes
+            page.insert(value, at: 0)
+            pageStart -= 1
         }
         return .transcript(value: NativeSubagentTranscript(
             runID: runID, messages: page, olderCursor: pageStart > 0 ? page.first?.entryID : nil, earlierCount: pageStart))
@@ -771,9 +788,11 @@ final class RPCThreadState {
             defer { done?(result) }
             guard let self, case .success(let response) = result, response.success, let data = response.data else { return }
             if let id = data["sessionId"]?.stringValue, id != self.piSessionID {
-                if self.piSessionID != nil { self.resetForNewSession() }
+                let switched = self.piSessionID != nil
+                if switched { self.resetForNewSession() }
                 self.piSessionID = id
                 self.loadOrigins(sessionID: id)
+                if switched { self.refreshMessages(timeout: timeout) }
             }
             if let m = data["model"], let provider = m["provider"]?.stringValue, let id = m["id"]?.stringValue {
                 self.model = "\(provider)/\(id)"
@@ -835,9 +854,11 @@ final class RPCThreadState {
     }
 
     func refreshMessages(timeout: TimeInterval = 10, done: ((Result<RPCResponse, RPCError>) -> Void)? = nil) {
+        let generation = generation
         session.request(.getMessages, timeout: timeout) { [weak self] result in
             defer { done?(result) }
-            guard let self, case .success(let response) = result, response.success,
+            guard let self, generation == self.generation,
+                  case .success(let response) = result, response.success,
                   let messages = response.messages else { return }
             let history = Self.projectHistory(self.markingStopped(messages),
                                               sentReferences: self.origins.compactMapValues(\.references)) { value, message in
@@ -884,7 +905,10 @@ final class RPCThreadState {
                 }
             }
             self.updateContext()
+            self.historyPending = false
             self.commit()
+            self.announceIfServable()
+            self.drainIfReady()
         }
     }
 
@@ -1016,6 +1040,7 @@ final class RPCThreadState {
     /// pi switched sessions (new_session / switch): nothing from the previous
     /// session may be acted on with the old generation.
     private func resetForNewSession() {
+        historyPending = true
         generation = UUID().uuidString
         operations.removeAll()
         live.removeAll()

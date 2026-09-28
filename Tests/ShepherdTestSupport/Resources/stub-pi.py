@@ -609,6 +609,8 @@ pending_ui = None
 turn_thread = None
 # An abort ends a "slow" turn as far as pi's state goes (its thread still waits for its files).
 turn_aborted = False
+stale_history = None
+held_history_request = None
 
 for raw in sys.stdin.buffer:
     line = raw.rstrip(b"\n").rstrip(b"\r")
@@ -628,8 +630,15 @@ for raw in sys.stdin.buffer:
         with QUEUE_LOCK:
             pending_count = len(steering) + len(follow_up)
         respond(cmd, t, data=dict(STATE, isStreaming=streaming, pendingMessageCount=pending_count))
+        if held_history_request is not None:
+            respond(held_history_request, "get_messages", data={"messages": stale_history})
+            held_history_request = None
+            stale_history = None
     elif t == "get_messages":
-        respond(cmd, t, data={"messages": MESSAGES})
+        if stale_history is not None:
+            held_history_request = cmd
+        else:
+            respond(cmd, t, data={"messages": MESSAGES})
     elif t == "get_commands":
         # STUB_PI_PROMPT_TEMPLATE: the file fix-tests came from, as pi reports a template's source.
         template = os.environ.get("STUB_PI_PROMPT_TEMPLATE")
@@ -851,13 +860,24 @@ for raw in sys.stdin.buffer:
             emit({"type": "agent_start"})
             emit({"type": "agent_end", "messages": [], "willRetry": False})
             emit({"type": "agent_settled"})
-        elif message == "newsession":
+        elif message in ("newsession", "resume-nonempty", "resume-stale-history"):
+            if message == "resume-stale-history":
+                stale_history = list(MESSAGES)
             STATE["sessionId"] = "stub-session-2"
             del MESSAGES[:]
-            STATE["messageCount"] = 0
+            if message != "newsession":
+                MESSAGES.extend([
+                    {"role": "user", "content": "resumed question"},
+                    {"role": "assistant", "content": [{"type": "text", "text": "resumed answer"}]},
+                ])
+            STATE["messageCount"] = len(MESSAGES)
             emit({"type": "agent_start"})
             emit({"type": "agent_end", "messages": [], "willRetry": False})
             emit({"type": "agent_settled"})
+        elif message == "ask-closed-input":
+            os.close(0)
+            emit({"type": "extension_ui_request", "id": "closed-input", "method": "confirm", "title": "Keep this question?"})
+            time.sleep(60)
         elif message == "big":
             emit({"type": "extension_ui_request", "id": "uuid-9", "method": "set_editor_text",
                   "text": "x" * (1_100_000)})

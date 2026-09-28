@@ -274,15 +274,17 @@ final class PTYSession: @unchecked Sendable {
     /// remainder stays in a FIFO and a write source resumes it later. This
     /// method never waits for the child and therefore cannot stall the server
     /// queue that owns every session.
-    func writeInput(_ data: Data) {
-        guard isAlive, !masterClosed, !data.isEmpty else { return }
+    @discardableResult
+    func writeInput(_ data: Data) -> Bool {
+        guard isAlive, !masterClosed else { return false }
+        guard !data.isEmpty else { return true }
 
         let pendingCount = pendingInput.count - pendingInputOffset
         guard data.count <= Self.inputQueueLimit - pendingCount else {
             ShepherdLog.warning(
                 "session \(id) input rejected: pending input limit is \(Self.inputQueueLimit) bytes"
             )
-            return
+            return false
         }
 
         if pendingInputOffset > 0 {
@@ -290,7 +292,7 @@ final class PTYSession: @unchecked Sendable {
             pendingInputOffset = 0
         }
         pendingInput.append(data)
-        drainPendingInput()
+        return drainPendingInput()
     }
 
     /// Must run under the session's queue hierarchy.
@@ -487,12 +489,13 @@ final class PTYSession: @unchecked Sendable {
         reapTimer = t
     }
 
-    private func drainPendingInput() {
+    @discardableResult
+    private func drainPendingInput() -> Bool {
         guard isAlive, !masterClosed else {
             pendingInput.removeAll(keepingCapacity: false)
             pendingInputOffset = 0
             cancelInputWriteSource()
-            return
+            return false
         }
 
         while pendingInputOffset < pendingInput.count {
@@ -511,24 +514,25 @@ final class PTYSession: @unchecked Sendable {
             }
             if result == 0 {
                 armInputWriteSource()
-                return
+                return true
             }
             if errno == EINTR { continue }
             if result < 0, errno == EAGAIN || errno == EWOULDBLOCK {
                 armInputWriteSource()
-                return
+                return true
             }
 
             ShepherdLog.warning("session \(id) input write failed: errno \(errno)")
             pendingInput.removeAll(keepingCapacity: false)
             pendingInputOffset = 0
             cancelInputWriteSource()
-            return
+            return false
         }
 
         pendingInput.removeAll(keepingCapacity: true)
         pendingInputOffset = 0
         cancelInputWriteSource()
+        return true
     }
 
     private func armInputWriteSource() {

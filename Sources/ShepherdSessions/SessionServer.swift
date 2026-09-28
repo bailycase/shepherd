@@ -999,6 +999,9 @@ public final class SessionServer: @unchecked Sendable {
 
     private func releaseOwnershipOnQueue() {
         if ownershipFD >= 0 {
+            // A concurrent fork may still hold this open-file description until its C child
+            // closes inherited descriptors. close alone leaves our flock alive in that child.
+            _ = flock(ownershipFD, LOCK_UN)
             close(ownershipFD)
             ownershipFD = -1
         }
@@ -2055,7 +2058,10 @@ public final class SessionServer: @unchecked Sendable {
             send(.error(id: id, code: "no_such_session", message: "session is not running or has no terminal"), to: client)
             return
         }
-        session.writeInput(RemoteProtocol.composedInput(text: text, submit: submit))
+        guard session.writeInput(RemoteProtocol.composedInput(text: text, submit: submit)) else {
+            send(.error(id: id, code: "input_rejected", message: "Terminal input is closed or full. Try again."), to: client)
+            return
+        }
         send(.ok(id: id), to: client)
     }
 

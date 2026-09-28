@@ -176,6 +176,37 @@ struct NativeThreadTests {
         #expect(try await pi.send("late", from: s) == stale)
     }
 
+    @Test(arguments: ["resume-nonempty", "resume-stale-history"])
+    func aNonemptySessionSwitchServesItsHistoryWithoutAnotherPrompt(prompt: String) async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        let original = try await pi.ready()
+        _ = try await pi.send(prompt, from: original)
+        // Match identity alone: the first ready snapshot of the new generation must have history.
+        let switched = try await pi.snapshot("the resumed session") { $0.piSessionID == "stub-session-2" }
+        #expect(switched.generation != original.generation)
+        #expect(switched.messages.map { $0.blocks.map(\.text).joined() } == ["resumed question", "resumed answer"])
+        #expect(pi.stdin("prompt").count == 1)
+        #expect(try await pi.send("late", from: original) == stale)
+    }
+
+    @Test func anAnswerRejectedByClosedInputKeepsTheQuestionOpen() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        _ = try await pi.send("ask-closed-input", from: try await pi.ready())
+        let asking = try await pi.snapshot { $0.dialogs.contains { $0.id == "closed-input" } }
+        let result = try await pi.request(.answer(expectedSessionID: asking.piSessionID, generation: asking.generation,
+                                                  operationID: UUID(), dialogID: "closed-input", answer: .confirm(true)))
+        #expect(result.failureCode == "dispatch_failed")
+        let after = try await pi.snapshot()
+        #expect(after.dialogs == asking.dialogs)
+        #expect(after.messages == asking.messages)
+        #expect(after.provisional == asking.provisional)
+        #expect(pi.stdin("extension_ui_response").isEmpty)
+    }
+
     // MARK: - Abort, model, thinking
 
     @Test func abortReachesPiAndEndsTheRun() async throws {
