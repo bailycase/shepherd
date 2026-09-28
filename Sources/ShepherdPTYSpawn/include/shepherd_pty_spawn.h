@@ -11,7 +11,8 @@
 /// The child resets every signal disposition to SIG_DFL and clears the signal mask (the app may
 /// ignore or block signals, and those survive exec), closes every descriptor except the pty on
 /// 0–2 (so it holds no other process's pipes open), changes to `cwd` when given, and execs
-/// `path`; on failure it writes `exec_fail_message` (if given) to stderr and exits 127.
+/// `path`. A failed chdir writes a fixed diagnostic and exits 127 without exec; a failed exec
+/// writes `exec_fail_message` (if given) to stderr and exits 127.
 ///
 /// Returns the child's pid in the parent and stores the pty's master side in `master_fd`, or -1
 /// with errno set when forkpty fails. Every pointer must be valid C memory owned by the caller.
