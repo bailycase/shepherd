@@ -104,7 +104,8 @@ Screens reach each other only through `MobileNavigator` (in the environment):
   thread's runs or review (`MobileRoute.thread`) opened from elsewhere, such as Needs you or the
   palette, first makes its thread the detail, so the sidebar marks it and closing returns to it.
 - `navigator.present(route)`: modal, with its own stack (New thread, forms).
-- `navigator.selectedThread`: the thread on screen, for highlighting rows.
+- `navigator.selectedThread`: the thread on screen (including its pushed review, subagents or
+  terminal route), for highlighting rows.
 - A `NavigationLink(value: MobileRoute…)` works too; every stack applies `.mobileDestinations()`.
 
 The shell: iPhone (compact width) is `PhoneShell`, a `TabView` with Home (`HomeScreen`) and
@@ -123,6 +124,11 @@ keyboard reads wider than tall, and switching the split view's style as the comp
 dropped the focus again, so no keyboard ever stayed up in portrait. Never key a layout mode (a
 style, which columns show) off a size the keyboard shrinks; sizing within a mode (the composer's
 share of the thread, the terminal panel's clamp) should follow what is left.
+
+Crossing compact and regular width carries the active route stack, including Settings' root;
+restoring at a different width uses the same conversion. A previously selected thread in the
+inactive layout never replaces the current route. New thread captures its `PresentedRoute.id`
+before creation and navigates on completion only if that same presentation is still current.
 
 A change of style (turning the iPad, or resizing a window across square) builds the split view's
 columns anew: the selection and pushed screens stay, but the views under them are new. So a

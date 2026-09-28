@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 import ShepherdUI
 import ShepherdProtocol
 
-/// An image waiting to go with a new thread's first send: the bytes pi receives, and a
+/// An image waiting to go with a new thread's creation: the bytes pi receives, and a
 /// thumbnail decoded once.
 struct NewThreadAttachment: Identifiable, Equatable, Sendable {
     let id = UUID()
