@@ -191,6 +191,26 @@ struct NativeThreadTests {
         #expect(try await pi.send("late", from: original) == stale)
     }
 
+    @Test func failedSwitchedHistoryDoesNotLockOutRecoveryOrRestoreOldHistory() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        let original = try await pi.ready()
+        _ = try await pi.send("resume-history-failure", from: original)
+        let switched = try await pi.snapshot("the new session to serve despite unavailable history") {
+            $0.piSessionID == "stub-session-2"
+        }
+        #expect(switched.generation != original.generation)
+        #expect(switched.messages.isEmpty)
+        #expect(switched.clipped)
+        #expect(try await pi.send("late", from: original) == stale)
+        #expect(try await pi.send("recover", from: switched).failureCode == nil)
+        let recovered = try await pi.snapshot("a later refresh to recover the switched history") {
+            !$0.running && $0.messages.contains { $0.blocks.first?.text == "resumed answer" }
+        }
+        #expect(recovered.messages.prefix(2).map { $0.blocks.map(\.text).joined() } == ["resumed question", "resumed answer"])
+    }
+
     @Test func anAnswerRejectedByClosedInputKeepsTheQuestionOpen() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }

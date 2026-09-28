@@ -876,9 +876,21 @@ final class RPCThreadState {
         let generation = generation
         session.request(.getMessages, timeout: timeout) { [weak self] result in
             defer { done?(result) }
-            guard let self, generation == self.generation,
-                  case .success(let response) = result, response.success,
-                  let messages = response.messages else { return }
+            guard let self, generation == self.generation else { return }
+            // A failed history fetch must not lock out snapshots, Send, or Stop forever.
+            // Reset already discarded the old session; serve the new one as incomplete, as
+            // bootstrap does, and let a later refresh recover its history.
+            defer {
+                self.historyPending = false
+                self.commit()
+                self.announceIfServable()
+                self.drainIfReady()
+            }
+            guard case .success(let response) = result, response.success,
+                  let messages = response.messages else {
+                self.projectionClipped = true
+                return
+            }
             let history = Self.projectHistory(self.markingStopped(messages),
                                               sentReferences: self.origins.compactMapValues(\.references)) { value, message in
                 if message.role == "compactionSummary", let summary = message.summary,
@@ -924,10 +936,6 @@ final class RPCThreadState {
                 }
             }
             self.updateContext()
-            self.historyPending = false
-            self.commit()
-            self.announceIfServable()
-            self.drainIfReady()
         }
     }
 
