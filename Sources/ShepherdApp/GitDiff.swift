@@ -137,7 +137,7 @@ enum GitDiff {
     private static func runLoginShell(_ command: String, cwd: String) throws -> GitResult {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        process.arguments = ["-l", "-c", command]
+        process.arguments = ["-l", "-c", "cd -- \(shellQuoted(cwd)) || exit\n" + command]
         process.currentDirectoryURL = URL(fileURLWithPath: cwd, isDirectory: true)
         let stdout = Pipe()
         let stderr = Pipe()
@@ -162,7 +162,8 @@ enum GitDiff {
     private static func runGit(_ arguments: [String], cwd: String) throws -> GitResult {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = arguments
+        // Review paths are filenames, never git pathspec patterns (even after `--`).
+        process.arguments = ["--literal-pathspecs"] + arguments
         process.currentDirectoryURL = URL(fileURLWithPath: cwd, isDirectory: true)
         var environment = ProcessInfo.processInfo.environment
         environment["GIT_TERMINAL_PROMPT"] = "0"
