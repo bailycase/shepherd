@@ -194,20 +194,26 @@ enum DesignExtension {
           // ---- socket client (request/reply, NDJSON) -------------------------------
 
           let socket: net.Socket | undefined;
-          let buffer = "";
+          let connecting: Promise<net.Socket> | undefined;
+          let stopped = false;
           let nextID = 1;
-          const pending = new Map<number, (reply: Reply) => void>();
+          const pending = new Map<number, { socket: net.Socket; resolve: (reply: Reply) => void }>();
 
           function connect(): Promise<net.Socket> {
+            if (stopped) return Promise.reject(new Error("Shepherd session ended"));
+            if (connecting) return connecting;
             if (socket && !socket.destroyed) return Promise.resolve(socket);
-            return new Promise((resolve, reject) => {
+            connecting = new Promise((resolve, reject) => {
               const s = net.createConnection(socketPath);
+              socket = s;
+              let buffer = "";
               s.setEncoding("utf8");
               s.on("connect", () => {
                 socket = s;
                 resolve(s);
               });
               s.on("data", (chunk: string) => {
+                if (socket !== s) return;
                 buffer += chunk;
                 let index = buffer.indexOf("\n");
                 while (index >= 0) {
@@ -219,7 +225,7 @@ enum DesignExtension {
                       const resolver = pending.get(reply.id);
                       if (resolver) {
                         pending.delete(reply.id);
-                        resolver(reply);
+                        resolver.resolve(reply);
                       }
                     } catch {
                       // Ignore undecodable lines; the request times out.
@@ -228,20 +234,19 @@ enum DesignExtension {
                   index = buffer.indexOf("\n");
                 }
               });
-              s.on("error", (error) => {
-                socket = undefined;
-                reject(error);
-              });
+              s.on("error", (error) => { reject(error); });
               s.on("close", () => {
-                socket = undefined;
-                buffer = "";
+                reject(new Error("Shepherd closed the connection"));
+                if (socket === s) socket = undefined;
                 for (const [id, resolver] of pending) {
+                  if (resolver.socket !== s) continue;
                   pending.delete(id);
-                  resolver({ type: "error", id, code: "disconnected", message: "Shepherd closed the connection" });
+                  resolver.resolve({ type: "error", id, code: "disconnected", message: "Shepherd closed the connection" });
                 }
               });
               s.unref();
-            });
+            }).finally(() => { connecting = undefined; });
+            return connecting;
           }
 
           // Throws on failure: pi marks a tool errored only when execute throws.
@@ -252,16 +257,17 @@ enum DesignExtension {
               throw new Error("the request is larger than Shepherd's 1 MiB frame; make the board smaller (frame_too_large)");
             }
             const s = await connect();
+            if (stopped || s.destroyed) throw new Error("Shepherd closed the connection");
             const reply = await new Promise<Reply>((resolve) => {
               const timer = setTimeout(() => {
                 pending.delete(id);
                 resolve({ type: "error", id, code: "timeout", message: "Shepherd did not reply in time" });
               }, timeoutMs);
               timer.unref?.();
-              pending.set(id, (received) => {
+              pending.set(id, { socket: s, resolve: (received) => {
                 clearTimeout(timer);
                 resolve(received);
-              });
+              } });
               s.write(frame);
             });
             if (reply.type === "error") {
@@ -621,12 +627,12 @@ enum DesignExtension {
           });
 
           pi.on("session_shutdown", () => {
+            stopped = true;
             try {
-              socket?.end();
+              socket?.destroy();
             } catch {
               // Swallow; the process is going away.
             }
-            socket = undefined;
           });
         }
 
