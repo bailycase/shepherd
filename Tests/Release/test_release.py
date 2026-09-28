@@ -754,6 +754,29 @@ class ContractTests(unittest.TestCase):
         self.assertLess(workflow.index("      - name: Build ${{ env.APP_NAME }}"), thin)
         self.assertLess(thin, workflow.index("scripts/release.py verify-app"))
 
+    def test_expected_asset_download_failures_stop_before_feed_generation(self):
+        workflow = self.read(".github", "workflows", "release.yml")
+        start = workflow.index('          while read -r tag asset archive feeds; do')
+        end = workflow.index('          done < "$RUNNER_TEMP/routes"', start)
+        loop = '\n'.join(line[10:] for line in workflow[start:end].splitlines()) + '\ndone < "$RUNNER_TEMP/routes"\n'
+        for tag, asset, available, download_status, expected in [
+            ("v1.0.0", "Shepherd.dmg", True, 23, 23),
+            ("v1.0.0", "Shepherd.dmg", False, 0, 1),
+            ("nightly-old", "Shepherd-Nightly.dmg", False, 0, 0),
+        ]:
+            with self.subTest(tag=tag, available=available), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / "routes").write_text(f"{tag} {asset} archive.dmg stable\n")
+                (root / "staged-tags").write_text("")
+                metadata = json.dumps({"assets": [{"name": asset}] if available else []})
+                fake = 'gh() { if [[ "$2" == view ]]; then printf \'%s\\n\' "$METADATA"; else return "$DOWNLOAD_STATUS"; fi; }\n'
+                result = subprocess.run(["bash", "-c", "set -euo pipefail\n" + fake + loop + "printf REACHED_GENERATION\n"],
+                                        cwd=root, env={**os.environ, "RUNNER_TEMP": directory, "METADATA": metadata,
+                                                       "DOWNLOAD_STATUS": str(download_status)}, text=True, capture_output=True, timeout=5)
+                self.assertEqual(result.returncode, expected, result.stderr)
+                self.assertEqual("REACHED_GENERATION" in result.stdout, expected == 0)
+        self.assertIn('latest "$dir" < "$RUNNER_TEMP/staged-tags"', workflow)
+
     def test_every_feed_reaches_gh_pages_through_publish(self):
         # publish is what marks each item Apple silicon only; nothing else may write a feed.
         step = self.read(".github", "workflows", "release.yml").split("      - name: Update appcasts\n", 1)[1]

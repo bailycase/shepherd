@@ -333,16 +333,27 @@ jobs:
           # stable DMG also lands in beta (the superset), and a nightly-*
           # release feeds Shepherd Nightly only through Shepherd-Nightly.dmg.
           gh release list --limit 100 --json tagName --jq '.[].tagName' > "$RUNNER_TEMP/tags"
-          while read -r dir channel; do mkdir -p "casts/$dir"; done < <(python3 scripts/release.py feeds)
-          python3 scripts/release.py route < "$RUNNER_TEMP/tags" \
-          | while read -r tag asset archive feeds; do
+          : > "$RUNNER_TEMP/staged-tags"
+          python3 scripts/release.py feeds > "$RUNNER_TEMP/feeds"
+          while read -r dir channel; do mkdir -p "casts/$dir"; done < "$RUNNER_TEMP/feeds"
+          python3 scripts/release.py route < "$RUNNER_TEMP/tags" > "$RUNNER_TEMP/routes"
+          while read -r tag asset archive feeds; do
+            # Only old pre-split nightlies may legitimately lack this app's asset.
+            # Metadata or download failures for expected assets must stop publication.
+            gh release view "$tag" --json assets > "$RUNNER_TEMP/release-assets.json" </dev/null
+            if ! python3 -c 'import json,sys; sys.exit(0 if any(a["name"] == sys.argv[1] for a in json.load(open(sys.argv[2]))["assets"]) else 1)' "$asset" "$RUNNER_TEMP/release-assets.json"; then
+              if [[ "$tag" == nightly-* && "$asset" == Shepherd-Nightly.dmg ]]; then continue; fi
+              echo "Missing expected $asset on $tag" >&2
+              exit 1
+            fi
             IFS=, read -r -a dirs <<<"$feeds"
             first="casts/${dirs[0]}"
-            gh release download "$tag" -p "$asset" -O "$first/$archive" </dev/null || continue
+            gh release download "$tag" -p "$asset" -O "$first/$archive" </dev/null
+            printf '%s\n' "$tag" >> "$RUNNER_TEMP/staged-tags"
             for dir in "${dirs[@]:1}"; do
               cp "$first/$archive" "casts/$dir/"
             done
-          done
+          done < "$RUNNER_TEMP/routes"
 
           # generate_appcast errors on an empty directory (e.g. no stable
           # releases yet); an empty channel keeps an empty feed instead.
@@ -371,7 +382,7 @@ jobs:
               empty_feed "casts/$dir/appcast.xml"
             fi
             python3 scripts/release.py fix-urls "casts/$dir/appcast.xml" "$dir"
-            latest=$(python3 scripts/release.py latest "$dir" < "$RUNNER_TEMP/tags")
+            latest=$(python3 scripts/release.py latest "$dir" < "$RUNNER_TEMP/staged-tags")
             if [[ -n "$latest" ]]; then
               python3 scripts/release.py deltas "casts/$dir" "$latest" > "$RUNNER_TEMP/deltas.txt"
               deltas=()
@@ -380,7 +391,7 @@ jobs:
                 gh release upload "$latest" "${deltas[@]}" --clobber </dev/null
               fi
             fi
-          done < <(python3 scripts/release.py feeds)
+          done < "$RUNNER_TEMP/feeds"
 
           git config user.name github-actions
           git config user.email github-actions@github.com
