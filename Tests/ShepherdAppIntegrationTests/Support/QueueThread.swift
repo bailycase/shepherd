@@ -80,7 +80,7 @@ final class QueueThread {
     /// The composer's measured height, the thread's bottom inset: the card and anything above it.
     var composerInset: CGFloat {
         window.layout()
-        return threadScroll?.contentInsets.bottom ?? .nan
+        return (threadScroll?.contentInsets.bottom ?? .nan) - AppLayout.composerTranscriptGap
     }
 
     var threadOffset: CGFloat {
