@@ -47,6 +47,10 @@ Mac schemes:
 | `Shepherd (Prod)` | Release | Shepherd | `~/Library/Application Support/Shepherd` |
 | `Shepherd (Nightly)` | Nightly | Shepherd Nightly | `~/Library/Application Support/Shepherd Nightly` |
 
+Dev's Run, Profile, and Archive actions all use Debug and its isolated identity. Use the Prod
+or Nightly scheme to archive a shipping build. Dev profiling is unoptimized until a separately
+isolated optimized configuration is introduced.
+
 ⌘R on Dev never disturbs the agents in your everyday copy. The Debug configuration also has its
 own bundle id, `com.bailycase.shepherd.dev`, because preferences, delivered notifications and
 Sparkle's installer are keyed by bundle id: on a shipped id, every Dev launch would prune the
