@@ -175,11 +175,14 @@ final class PTYSession: @unchecked Sendable {
         params: CreateSessionParams,
         queue: DispatchQueue
     ) throws {
+        guard TerminalGrid.isValid(cols: params.cols, rows: params.rows) else {
+            throw SpawnError(message: "invalid terminal grid: \(params.cols)x\(params.rows)")
+        }
         self.id = id
         self.queue = queue
         self.cwd = params.cwd
-        self.cols = max(1, params.cols)
-        self.rows = max(1, params.rows)
+        self.cols = params.cols
+        self.rows = params.rows
         self.screen = SessionScreen(cols: self.cols, rows: self.rows)
 
         let argv = params.command.isEmpty ? ["/bin/zsh", "-l"] : params.command
@@ -292,9 +295,10 @@ final class PTYSession: @unchecked Sendable {
 
     /// Must run under the session's queue hierarchy.
     func resize(cols: Int, rows: Int) {
-        let unchanged = self.cols == max(1, cols) && self.rows == max(1, rows)
-        self.cols = max(1, cols)
-        self.rows = max(1, rows)
+        guard TerminalGrid.isValid(cols: cols, rows: rows) else { return }
+        let unchanged = self.cols == cols && self.rows == rows
+        self.cols = cols
+        self.rows = rows
         screen.resize(cols: self.cols, rows: self.rows)
         guard isAlive, !masterClosed else { return }
         var ws = winsize(

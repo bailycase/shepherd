@@ -383,6 +383,10 @@ public final class SessionServer: @unchecked Sendable {
     /// How queues go for agents with no choice of their own (Settings ▸ Agents).
     private var defaultQueueMode: NativeQueueMode = .all
     private var listenFD: Int32 = -1
+    private var ownershipFD: Int32 = -1
+    private var isStarted = false
+    // start/stop also visit independent stores off the server queue.
+    private let lifecycleLock = NSLock()
     private var acceptSource: DispatchSourceRead?
     private var remoteListenFD: Int32 = -1
     private var remoteAcceptSource: DispatchSourceRead?
@@ -590,7 +594,7 @@ public final class SessionServer: @unchecked Sendable {
                 skillsDirectory: URL? = nil, piSkills: PiSkillsSource = .ownHome,
                 trash: @escaping ChangesService.Trash = ChangesService.systemTrash) {
         self.socketPath = socketPath
-        self.store = StateStore(url: stateURL)
+        self.store = StateStore(url: stateURL, readOnly: true)
         self.pi = pi
         self.modelCatalog = modelCatalog ?? SessionServer.piModelCatalog(pi)
         self.originStore = ThreadOriginStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("thread-origins", isDirectory: true))
@@ -660,6 +664,31 @@ public final class SessionServer: @unchecked Sendable {
     /// previous run (sessions died with the app; agent statuses no longer
     /// mean anything until pi reports fresh ones).
     public func start() throws {
+        lifecycleLock.lock()
+        defer { lifecycleLock.unlock() }
+        if queue.sync(execute: { isStarted }) { return }
+        do {
+            try queue.sync {
+                try acquireOwnershipOnQueue()
+                try bindOnQueue()
+                store.load()
+                runLog.reload()
+            }
+            try finishStart()
+            queue.sync {
+                isStarted = true
+                acceptOnQueue()
+            }
+        } catch {
+            queue.sync {
+                stopOnQueue()
+                releaseOwnershipOnQueue()
+            }
+            throw error
+        }
+    }
+
+    private func finishStart() throws {
         // Which designs lost their folders is read on the store's queue, not the server's.
         let missingDesigns = designs.missingDesigns(among: store.committed.designs.map(\.id))
         // A design deleted in its undo window before a crash (state.json no longer lists it), and
@@ -677,8 +706,16 @@ public final class SessionServer: @unchecked Sendable {
     /// terminates: sessions must not outlive the app. A design deleted within its undo window is
     /// deleted for good.
     public func stop() {
-        queue.sync { stopOnQueue() }
-        designs.removeLeftovers()
+        lifecycleLock.lock()
+        defer { lifecycleLock.unlock() }
+        let owned = queue.sync { () -> Bool in
+            let owned = isStarted
+            stopOnQueue()
+            return owned
+        }
+        // Keep ownership until cleanup is over; a rejected instance cleans up nothing.
+        if owned { designs.removeLeftovers() }
+        queue.sync { releaseOwnershipOnQueue() }
     }
 
     // MARK: - Lifecycle (server queue)
@@ -849,7 +886,32 @@ public final class SessionServer: @unchecked Sendable {
         // Runs still open died with the previous launch, their agents with them.
         runLog.closeOpenRuns()
         changes.pruneTurns(keeping: Set(store.state.agents.map(\.id)))
+    }
 
+    private func acceptOnQueue() {
+        let fd = listenFD
+        let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
+        source.setEventHandler { [weak self] in self?.acceptPending(on: fd) }
+        source.setCancelHandler { close(fd) }
+        acceptSource = source
+        source.activate()
+        ShepherdLog.info("extension socket listening on \(socketPath)")
+    }
+
+    private func acquireOwnershipOnQueue() throws {
+        let directory = store.url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let fd = open(directory.appendingPathComponent("server.lock").path, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
+        guard fd >= 0 else { throw SessionServerError.system(call: "open ownership lock", errno: errno) }
+        guard flock(fd, LOCK_EX | LOCK_NB) == 0 else {
+            close(fd)
+            throw SessionServerError.system(call: "bind", errno: EADDRINUSE)
+        }
+        // Never unlink this file: contenders must lock the same inode across restarts.
+        ownershipFD = fd
+    }
+
+    private func bindOnQueue() throws {
         let fm = FileManager.default
         let supportDirectory = (socketPath as NSString).deletingLastPathComponent
         try fm.createDirectory(atPath: supportDirectory, withIntermediateDirectories: true)
@@ -865,10 +927,10 @@ public final class SessionServer: @unchecked Sendable {
             unlink(socketPath)
         }
 
+        var addr = try Self.socketAddress(for: socketPath)
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { throw SessionServerError.system(call: "socket", errno: errno) }
 
-        var addr = try Self.socketAddress(for: socketPath)
         let bound = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
                 bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
@@ -898,16 +960,10 @@ public final class SessionServer: @unchecked Sendable {
         _ = fcntl(fd, F_SETFL, flags | O_NONBLOCK)
         _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
         listenFD = fd
-
-        let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
-        source.setEventHandler { [weak self] in self?.acceptPending(on: fd) }
-        source.setCancelHandler { close(fd) }
-        acceptSource = source
-        source.activate()
-        ShepherdLog.info("extension socket listening on \(socketPath)")
     }
 
     private func stopOnQueue() {
+        isStarted = false
         pendingDesignDeletions.removeAll()
         for session in sessions.values {
             session.shutdown()
@@ -925,7 +981,11 @@ public final class SessionServer: @unchecked Sendable {
         for token in Array(agentRequests.keys) {
             finishAgentRequest(token, result: .init(text: "server stopped", code: "disconnected"))
         }
-        acceptSource?.cancel()
+        if let acceptSource {
+            acceptSource.cancel()
+        } else if listenFD >= 0 {
+            close(listenFD)
+        }
         acceptSource = nil
         if listenFD >= 0 {
             unlink(socketPath)
@@ -935,6 +995,13 @@ public final class SessionServer: @unchecked Sendable {
         // Where delivered messages came from is written off the queue; a relaunch reads it.
         originStore.flush()
         runLog.flush()
+    }
+
+    private func releaseOwnershipOnQueue() {
+        if ownershipFD >= 0 {
+            close(ownershipFD)
+            ownershipFD = -1
+        }
     }
 
     // MARK: - Native thread
@@ -1145,6 +1212,7 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private func startRemoteListenerOnQueue(port: UInt16, tokenURL: URL) throws -> UInt16 {
+        try requireStarted()
         guard remoteListenFD < 0 else {
             throw SessionServerError.conflict("remote listener already running")
         }
@@ -1995,7 +2063,7 @@ public final class SessionServer: @unchecked Sendable {
     /// smallest-screen-wins. No generation fences needed: our transport
     /// delivers reports in order per client.
     private func recordRemoteViewport(sessionID: SessionID, fd: Int32, cols: Int, rows: Int) {
-        guard cols > 0, rows > 0 else { return }
+        guard TerminalGrid.isValid(cols: cols, rows: rows) else { return }
         remoteViewports[sessionID, default: [:]][fd] = (cols, rows)
         applyMinViewport(sessionID: sessionID)
     }
@@ -2016,6 +2084,7 @@ public final class SessionServer: @unchecked Sendable {
     /// Server queue. Every PTY resize goes through here: what the child prints next redraws
     /// its screen, which is not news (`TerminalNews`).
     private func resizePTY(_ session: PTYSession, sessionID: SessionID, cols: Int, rows: Int) {
+        guard TerminalGrid.isValid(cols: cols, rows: rows) else { return }
         outputStates[sessionID]?.news.resized(at: .now)
         session.resize(cols: cols, rows: rows)
     }
@@ -2024,7 +2093,7 @@ public final class SessionServer: @unchecked Sendable {
     /// remote viewers are attached; remote viewers share their own min-grid.
     public func reportLocalViewport(sessionID: SessionID, cols: Int, rows: Int) {
         queue.async {
-            guard cols > 0, rows > 0 else { return }
+            guard TerminalGrid.isValid(cols: cols, rows: rows) else { return }
             self.localViewports[sessionID] = (cols, rows)
             self.applyMinViewport(sessionID: sessionID)
         }
@@ -2049,10 +2118,12 @@ public final class SessionServer: @unchecked Sendable {
             send(.error(id: id, code: "no_terminal", message: "session \(sessionID) is an RPC session and has no terminal"), to: client)
             return
         }
-        if cols > 0, rows > 0 {
-            remoteViewports[sessionID, default: [:]][client.fd] = (cols, rows)
-            applyMinViewport(sessionID: sessionID)
+        // A zero-sized attach is the legacy request to replay without reporting a viewport.
+        guard (cols == 0 && rows == 0) || TerminalGrid.isValid(cols: cols, rows: rows) else {
+            send(.error(id: id, code: "invalid_viewport", message: "terminal grid is out of bounds"), to: client)
+            return
         }
+        recordRemoteViewport(sessionID: sessionID, fd: client.fd, cols: cols, rows: rows)
         remoteAttachments[sessionID, default: []].insert(client.fd)
         send(.attached(
             id: id,
@@ -3172,6 +3243,7 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Apply a state mutation, persist it, and notify the GUI.
     private func mutateState(_ mutate: (inout ShepherdState) -> Void) throws {
+        try requireStarted()
         let before = store.state
         do {
             try store.update(mutate)
@@ -4374,6 +4446,7 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private func makeSessionOnQueue(params: CreateSessionParams, resuming: String? = nil) throws -> SessionInfo {
+        try requireStarted()
         let server = self
         weak let serverWeak = server
         if params.runtime == .rpc {
@@ -4847,11 +4920,16 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    private func requireStarted() throws {
+        guard isStarted else { throw SessionServerError.conflict("session server is not started") }
+    }
+
     /// Run on the server queue and resume the caller with the result.
     private func enqueue<T>(_ body: @escaping () throws -> T) async throws -> T {
         try await withCheckedThrowingContinuation { continuation in
             queue.async {
                 do {
+                    try self.requireStarted()
                     continuation.resume(returning: try body())
                 } catch {
                     continuation.resume(throwing: error)

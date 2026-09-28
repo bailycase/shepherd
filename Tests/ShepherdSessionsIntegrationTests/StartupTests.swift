@@ -120,14 +120,89 @@ struct StartupTests {
         #expect(mode(h.socketPath) == 0o600)
     }
 
-    @Test func aSecondServerRefusesToBindOverALiveSocket() throws {
+    @Test func aSecondServerRefusesWithoutChangingTheLiveWorkspace() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
-        let second = SessionServer(socketPath: h.socketPath, stateURL: h.dir.appendingPathComponent("other.json"))
+        let space = Fixture.space()
+        let worker = Fixture.agent(in: space, status: .working)
+        var state = Fixture.workspace([worker], space: space)
+        state.automations = [Automation(name: "Live run", prompt: "work", cwd: space.path, agentID: worker.agent.id)]
+        try await h.server.putState(state)
+        let logURL = h.dir.appendingPathComponent("automation-runs.json")
+        try await eventually("the live run to be saved") { FileManager.default.fileExists(atPath: logURL.path) }
+        let stateBytes = try Data(contentsOf: h.stateURL)
+        let logBytes = try Data(contentsOf: logURL)
+        let pendingImport = h.dir.appendingPathComponent("designs/.import-live/marker")
+        try FileManager.default.createDirectory(at: pendingImport.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("in progress".utf8).write(to: pendingImport)
+        let second = SessionServer(socketPath: h.socketPath, stateURL: h.stateURL)
+        defer { second.stop() }
         let error = #expect(throws: SessionServerError.self) { try second.start() }
         guard case .system("bind", EADDRINUSE)? = error else { Issue.record("expected EADDRINUSE, got \(String(describing: error))"); return }
-        // The live server is undisturbed.
+        await #expect(throws: SessionServerError.self) { try await second.addSpace(Fixture.space("refused")) }
+        for runtime in [SessionRuntime.pty, .rpc] {
+            await #expect(throws: SessionServerError.self) {
+                _ = try await second.createSession(params: CreateSessionParams(
+                    cwd: h.dir.path, command: ["/bin/sh", "-c", "touch should-not-run"], runtime: runtime))
+            }
+        }
+        #expect(throws: SessionServerError.self) {
+            _ = try second.startRemoteListener(port: 0, tokenURL: h.dir.appendingPathComponent("rejected-token"))
+        }
+        second.stop() // Flushes any accidental deferred writes too.
+        #expect(try Data(contentsOf: h.stateURL) == stateBytes)
+        #expect(try Data(contentsOf: logURL) == logBytes)
+        #expect(try Data(contentsOf: pendingImport) == Data("in progress".utf8))
+        #expect(h.server.state == state)
+        #expect(await second.listSessions().isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: h.dir.appendingPathComponent("should-not-run").path))
         #expect(throws: Never.self) { _ = try ExtensionClient(path: h.socketPath) }
+    }
+
+    @Test func ownershipAlsoProtectsTheStateWithADifferentSocketAndBeforeQuarantine() throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let invalid = Data("invalid state".utf8)
+        try invalid.write(to: h.stateURL)
+        let second = SessionServer(socketPath: h.dir.appendingPathComponent("other.sock").path, stateURL: h.stateURL)
+        defer { second.stop() }
+        #expect(try Data(contentsOf: h.stateURL) == invalid)
+        #expect(throws: SessionServerError.self) { try second.start() }
+        second.stop()
+        #expect(try Data(contentsOf: h.stateURL) == invalid)
+        #expect(!(try FileManager.default.contentsOfDirectory(atPath: h.dir.path)).contains { $0.contains(".corrupt-") })
+    }
+
+    @Test func retryingStartupReloadsStateAfterTheOwnerStops() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let second = SessionServer(socketPath: h.socketPath, stateURL: h.stateURL)
+        defer { second.stop() }
+        #expect(throws: SessionServerError.self) { try second.start() }
+        let space = Fixture.space("saved after refusal")
+        try await h.server.addSpace(space)
+        h.server.stop()
+        try second.start()
+        #expect(second.state.spaces == [space])
+        try second.start() // An idempotent start cannot reconcile a live server again.
+        #expect(second.state.spaces == [space])
+    }
+
+    @Test func aLiveSocketStillRefusesAnOwnerUsingAnotherStateDirectory() throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let other = try makeScratchDirectory("owner")
+        defer { try? FileManager.default.removeItem(at: other) }
+        let second = SessionServer(socketPath: h.socketPath, stateURL: other.appendingPathComponent("state.json"))
+        defer { second.stop() }
+        #expect(throws: SessionServerError.self) { try second.start() }
+        second.stop()
+        #expect(throws: Never.self) { _ = try ExtensionClient(path: h.socketPath) }
+        // Bind failure releases the lock, so another server can use the second directory.
+        let retry = SessionServer(socketPath: other.appendingPathComponent("s.sock").path,
+                                  stateURL: other.appendingPathComponent("state.json"))
+        defer { retry.stop() }
+        try retry.start()
     }
 
     @Test func aStaleSocketFileIsReplaced() throws {
