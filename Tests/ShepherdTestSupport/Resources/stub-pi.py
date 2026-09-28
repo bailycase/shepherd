@@ -612,6 +612,7 @@ turn_thread = None
 turn_aborted = False
 stale_history = None
 held_history_request = None
+fail_switched_history = False
 
 for raw in sys.stdin.buffer:
     line = raw.rstrip(b"\n").rstrip(b"\r")
@@ -638,6 +639,9 @@ for raw in sys.stdin.buffer:
     elif t == "get_messages":
         if stale_history is not None:
             held_history_request = cmd
+        elif fail_switched_history:
+            fail_switched_history = False
+            respond(cmd, t, success=False, error="Switched history unavailable")
         else:
             respond(cmd, t, data={"messages": MESSAGES})
     elif t == "get_commands":
@@ -861,8 +865,12 @@ for raw in sys.stdin.buffer:
             emit({"type": "agent_start"})
             emit({"type": "agent_end", "messages": [], "willRetry": False})
             emit({"type": "agent_settled"})
-        elif message in ("newsession", "resume-nonempty", "resume-stale-history"):
-            if message == "resume-stale-history":
+        elif message in ("newsession", "resume-nonempty", "resume-stale-history", "resume-history-failure"):
+            if message == "resume-history-failure":
+                # The agent-end fetch predates get_state. Hold it behind the changed identity,
+                # then fail the fresh get_messages issued by the host for that generation.
+                fail_switched_history = True
+            if message in ("resume-stale-history", "resume-history-failure"):
                 stale_history = list(MESSAGES)
             STATE["sessionId"] = "stub-session-2"
             del MESSAGES[:]
