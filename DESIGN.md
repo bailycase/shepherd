@@ -8172,7 +8172,7 @@ and a design's canvas beside its chat, with the design agent, live reload, Selec
 boards picked on the canvas, their view record sent with each chat message; docs/designs.md),
 comments (pins, threads, cards in the chat and the Comments tab, answered by the agent),
 Tweak (its tab, written once per gesture, with Reset and Undo over each board's versions), the
-board actions and "Ask for another direction", boards moved by dragging, Present (decision 11:
+board actions, boards moved by dragging, Present (decision 11:
 the board focused over a scrim, its links playing) and Play, and pages with title and sticky
 notes, design systems (the format, the store, installing one in a design, `system_read` and
 `system_write`, `design_check` against it, `<x-import>`, Night Watch as a built-in, the system
@@ -8375,7 +8375,7 @@ opens this page in the main column, with the sidebar showing and Designs selecte
 toolbar; the system chip opens its system's page, Export opens its sheet), the canvas with its board frames and
 toolbar, the chat pane with its Chat, Comments and Tweak tabs and the agent's thread; its
 composer is `NWComposer`'s card at radius 8, Select (Selection, below), comments (Comments,
-below), the board actions and "Ask for another direction", boards moved by dragging, Present and
+below), the board actions, boards moved by dragging, Present and
 Play, and pages with their notes. Not built: the tabs' •••. A
 board frame's outline is `lineStrong` and its shadow the popover's (the board's black 30% and 35%
 are off the tokens). Opening a design fills the main column: the header, then the canvas beside a
@@ -8411,11 +8411,8 @@ are off the tokens). Opening a design fills the main column: the header, then th
     shadow (0, 12, 32 at black 35%). A selected board wears a 2pt `running` ring outside the
     frame. Several boards can be selected at once (DZExport shows two); how is not drawn, and
     Shepherd uses shift (Selection, below).
-  - **"Ask for another direction"**: after the last board (36pt after it on DZCanvas), a
-    300×190 dashed tile (1px `lineStrong`, radius 6), `plus` (16pt) over "Ask for another
-    direction" in 12 `textTertiary`, 6pt apart, centered. It asks the agent for one more
-    direction. Built: the tile keeps its size at every zoom (it is chrome), top-aligned with the
-    last board of the page in canvas order, and its words lighten to `textSecondary` on hover.
+  - No "Ask for another direction" tile follows the boards. Ask in the design chat for a new
+    direction; the selected board's Variations action remains available.
   - **Board actions** (`NWBoardActions`) float above the selected board: Comment (`text.bubble`),
     Tweak (`slider.horizontal.3`), Variations (`square.grid.2x2`), Duplicate (`doc.on.doc`), and •••
     (a 28pt circle). On NWDesignTool: a `bgRaised` bar with 4pt padding, radius 12, 2pt between
