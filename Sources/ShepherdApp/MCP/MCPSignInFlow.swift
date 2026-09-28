@@ -134,7 +134,7 @@ final class MCPSignInFlow: Identifiable {
                                         redirectURI: listener.redirectURI, registeredDynamically: false)
                 registration = "Client ID from Advanced"
             } else if let reuse, reuse.redirectURI == listener.redirectURI {
-                client = MCPOAuthClient(clientID: reuse.clientID, clientSecret: reuse.clientSecret, authMethod: nil,
+                client = MCPOAuthClient(clientID: reuse.clientID, clientSecret: reuse.clientSecret, authMethod: reuse.authMethod,
                                         redirectURI: reuse.redirectURI, registeredDynamically: true)
                 registration = "Dynamic client registration"
             } else {

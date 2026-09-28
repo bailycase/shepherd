@@ -31,6 +31,25 @@ final class TokenEndpointStub: MCPHTTP, @unchecked Sendable {
     }
 }
 
+/// Deliberately ignores cancellation, like a response already received by the transport.
+private actor GatedTokenEndpoint: MCPHTTP {
+    private var reply: CheckedContinuation<Void, Never>?
+    private var started: CheckedContinuation<Void, Never>?
+
+    func waitForRequest() async {
+        if reply != nil { return }
+        await withCheckedContinuation { started = $0 }
+    }
+
+    func finish() { reply?.resume(); reply = nil }
+
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        await withCheckedContinuation { reply = $0; started?.resume(); started = nil }
+        return (Data(#"{"access_token":"late-token","expires_in":3600}"#.utf8),
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+    }
+}
+
 @MainActor
 enum MCPFixtures {
     /// The contract's seven board servers.
@@ -232,6 +251,29 @@ struct MCPStoreTests {
         let form = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
         #expect(form.contains("grant_type=refresh_token") && form.contains("refresh_token=r1"))
         #expect(store.token("sentry")?.refreshToken == "r2")
+    }
+
+    @Test(arguments: ["signOut", "remove", "replace"])
+    func revokingCredentialsWhileRefreshWaitsNeverRestoresOrReturnsThem(action: String) async throws {
+        let secrets = InMemorySecretStore(["oauth/linear": MCPFixtures.tokenJSON(MCPFixtures.token(expiresIn: 1))])
+        let http = GatedTokenEndpoint()
+        let store = try MCPFixtures.store(secrets: secrets, http: http)
+        let waiting = Task { await store.credentials(for: MCPRequest(agentID: AgentID(), server: "linear", reason: .connect)) }
+        await http.waitForRequest()
+        switch action {
+        case "remove": store.remove("linear")
+        case "replace":
+            var entry = try #require(store.entry("linear"))
+            entry.url = "https://replacement.invalid/mcp"
+            try store.save(entry, replacing: "linear")
+        default: store.signOut("linear")
+        }
+        let afterRevocation = secrets.value(for: "oauth/linear")
+        await http.finish()
+        let outcome = await waiting.value
+        #expect(secrets.value(for: "oauth/linear") == afterRevocation)
+        #expect(store.token("linear")?.accessToken != "late-token")
+        guard case .failure = outcome else { Issue.record("revoked bearer returned"); return }
     }
 
     @Test func aRefusedRefreshMeansExpired() async throws {
