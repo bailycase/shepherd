@@ -73,7 +73,7 @@ struct ThreadInputTests {
         let content = try #require(window.window.contentView)
         let surface = try #require(TerminalFirstResponder.view(ownedBy: model.viewState, in: window.window))
         let point = surface.convert(NSPoint(x: surface.bounds.midX, y: surface.bounds.midY), to: nil)
-        let native = try #require(surface as? AppTerminalView)
+        let native = try #require(surface as? GhosttyTerminal.AppTerminalView)
         try await eventuallyOnMain("native drag registration") { native.onHostDrop != nil }
         #expect(native.registeredDraggedTypes.contains(.fileURL))
         #expect(native.acceptsHostDrop?() == true)
