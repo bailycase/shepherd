@@ -26,6 +26,9 @@ struct DesignReferenceTests {
         (reference(.remote(host), "d1", "deep/er/v2.final_Board.dc.html", "9999:99/0/1/2/3/4/5/6/7", UInt64.max),
          "shepherd-design-ref://9b2f6c1e-4a7d-4e0b-8c3a-2d5f7a9b1c0e/d1/deep%2Fer%2Fv2.final_Board.dc.html#9999:99/0/1/2/3/4/5/6/7@18446744073709551615"),
         (reference(.local, "d1", "_hidden.1.dc.html", nil, 3), "shepherd-design-ref://local/d1/_hidden.1.dc.html@3"),
+        (DesignReference(designID: DesignID(rawValue: "d1"), board: nil)!, "shepherd-design-ref://local/d1"),
+        (DesignReference(host: .remote(host), designID: DesignID(rawValue: "d1"), board: nil, revision: 26)!,
+         "shepherd-design-ref://9b2f6c1e-4a7d-4e0b-8c3a-2d5f7a9b1c0e/d1@26"),
     ]
 
     @Test(arguments: roundTrips)
@@ -61,7 +64,8 @@ struct DesignReferenceTests {
         "A.dc.html",
         "shepherd-design://local/d1/A.dc.html",                        // the board sandbox's scheme
         "https://local/d1/A.dc.html",
-        "shepherd-design-ref://local/d1",                              // no board
+        "shepherd-design-ref://local",                                 // no design
+        "shepherd-design-ref://local/d1#2:0/1",                        // an element with no board
         "shepherd-design-ref://mac-mini/d1/A.dc.html",                 // a host that is neither
         "shepherd-design-ref://local/d%201/A.dc.html",                 // a design id outside its grammar
         "shepherd-design-ref://local/\(String(repeating: "a", count: 65))/A.dc.html",
@@ -83,9 +87,24 @@ struct DesignReferenceTests {
         #expect(DesignReference(string: text) == nil)
     }
 
-    @Test func anElementOnAnotherBoardIsNoReference() {
+    @Test func anElementOnAnotherBoardOrOnNoBoardIsNoReference() {
         let element = DesignElementID("B.dc.html#2:0/1")
         #expect(DesignReference(designID: DesignID(rawValue: "d1"), board: DesignPath("A.dc.html")!, element: element) == nil)
+        #expect(DesignReference(designID: DesignID(rawValue: "d1"), board: nil, element: element) == nil)
+    }
+
+    /// A whole design, a board, or an element; the same piece whatever its revision or label.
+    @Test func aReferenceSaysWhatItNamesAndWhichPieceItIs() throws {
+        let whole = try #require(DesignReference(string: "shepherd-design-ref://local/d1@3"))
+        let board = Self.reference(.local, "d1", "A.dc.html", nil, 3)
+        var element = Self.reference(.local, "d1", "A.dc.html", "2:0/1", 3)
+        #expect(whole.kind == .design && board.kind == .board && element.kind == .element)
+        #expect(whole.board == nil && whole.revision == 3)
+        element.label = "Checkout › A"
+        #expect(element.unpinned == Self.reference(.local, "d1", "A.dc.html", "2:0/1"))
+        #expect(element.isSamePiece(as: Self.reference(.local, "d1", "A.dc.html", "2:0/1", 9)))
+        #expect(!element.isSamePiece(as: board) && !board.isSamePiece(as: whole))
+        #expect(!board.isSamePiece(as: DesignReference(host: .remote(Self.host), designID: DesignID(rawValue: "d1"), board: DesignPath("A.dc.html"))!))
     }
 
     /// The string names things by id: the label (the design's words) never travels in it.
@@ -164,10 +183,42 @@ struct DesignReferenceFenceTests {
         #expect(DesignViewRecord.strippingFence(from: text) == text)
     }
 
-    @Test func aMessageCarriesAtMostEightReferences() {
+    /// A send carries at most five (the composer's chips); a fence of eight from an older send
+    /// still reads, nine never does.
+    @Test func aMessageCarriesAtMostFiveReferences() {
+        #expect(DesignReferenceRecord.maxPerMessage == 5)
+        let eight = (0..<8).map { DesignReferenceRecord(ref: "shepherd-design-ref://local/d1/A\($0).dc.html") }
+        #expect(DesignReferenceFence.parse(DesignReferenceFence.fenced(eight, nonce: "0123456789ab")! + "x")?.records.count == 8)
         let records = (0..<9).map { DesignReferenceRecord(ref: "shepherd-design-ref://local/d1/A\($0).dc.html") }
         let fenced = DesignReferenceFence.fenced(records, nonce: "0123456789ab")!
         #expect(DesignReferenceFence.parse(fenced + "x") == nil)
+    }
+
+    /// The thread keeps a references fence unless it knows the user sent the message; the
+    /// palette and notifications take it off.
+    @Test func aReferencesFenceComesOffOnlyWhenAskedTo() throws {
+        let message = try #require(DesignReferenceFence.fenced([Self.record], nonce: "0123456789ab")) + "Build it."
+        #expect(DesignViewRecord.strippingFence(from: message) == "Build it.")
+        #expect(DesignViewRecord.strippingFence(from: message, references: false) == message)
+    }
+
+    @Test func aSentMessagesWordsLeaveTheHumanLineToTheChips() {
+        #expect(DesignReferenceFence.withoutHumanLine("Build it.\n\n2 design references attached.", count: 2) == "Build it.")
+        #expect(DesignReferenceFence.withoutHumanLine("1 design reference attached.", count: 1) == "")
+        #expect(DesignReferenceFence.withoutHumanLine("Build it.", count: 1) == "Build it.")
+    }
+
+    /// A fence names the host's copies only when every record names one.
+    @Test func aFenceNamesItsCopiesOnlyWhenEveryRecordDoes() {
+        var kept = Self.record
+        kept.payload = "7C9E6679-7425-40DE-944B-E07FC1F90AE7"
+        #expect(DesignReferenceFence.payloadIDs([kept]) == ["7C9E6679-7425-40DE-944B-E07FC1F90AE7"])
+        #expect(DesignReferenceFence.payloadIDs([kept, Self.record]) == nil)
+        #expect(DesignReferenceFence.payloadIDs([]) == nil)
+        #expect(kept.payloadID?.uuidString == "7C9E6679-7425-40DE-944B-E07FC1F90AE7")
+        var withFiles = kept
+        withFiles.files = ["/support/design-refs/a1/x/A@2x.png"]
+        #expect(withFiles.withoutFiles.files == nil && withFiles.withoutFiles.payload == kept.payload)
     }
 
     @Test func eachMessageGetsANewNonce() {
@@ -239,12 +290,12 @@ struct DesignReferenceReadingTests {
     static let reference = DesignReference(string: "shepherd-design-ref://local/d1/A.dc.html@4")!
     static let button = DesignReference(string: "shepherd-design-ref://local/d1/A.dc.html#2:0/1@4")!
 
-    private func changes(_ reference: DesignReference, pinned: String?, current: String?, label: String? = "Pay now") -> String {
-        DesignReferenceReading.changes(reference: reference, label: label, pinnedRevision: 4, revision: 6, pinned: pinned, current: current)
+    private func changes(_ reference: DesignReference, pinned: String, current: String, label: String? = "Pay now") -> String {
+        DesignReferenceReading.changes(reference: reference, label: label, from: 4, to: 6, before: pinned, after: current)
     }
 
     @Test func anUnchangedBoardSaysSo() {
-        #expect(changes(Self.reference, pinned: Self.hero, current: Self.hero) == "Unchanged since revision 4 (the design is at revision 6).")
+        #expect(changes(Self.reference, pinned: Self.hero, current: Self.hero) == "Unchanged between revision 4 and revision 6, both sent to this thread.")
     }
 
     @Test func aBoardsChangesListItsElementsAddedRemovedAndChanged() {
@@ -257,7 +308,7 @@ struct DesignReferenceReadingTests {
             </div>
             """)
         let text = changes(Self.reference, pinned: Self.hero, current: next)
-        #expect(text.hasPrefix("Since revision 4 (the design is at revision 6):"))
+        #expect(text.hasPrefix("From revision 4 to revision 6, both sent to this thread:"))
         #expect(text.contains("- 1 element added:\n  - <p> at 4:0/3 \"Secure payment\""))
         #expect(text.contains("<h1> at 1:0/0 \"Checkout today\": words \"Checkout\" → \"Checkout today\""))
         #expect(!text.contains("removed"))
@@ -282,19 +333,28 @@ struct DesignReferenceReadingTests {
         #expect(text.contains("- its words changed: \"Pay now\" → \"Pay $24\""))
     }
 
-    @Test func aBoardOffTheCanvasOrWithoutItsPinSaysSo() {
-        #expect(changes(Self.reference, pinned: Self.hero, current: nil).hasPrefix("The board is no longer on the canvas"))
-        #expect(changes(Self.reference, pinned: nil, current: Self.hero).hasPrefix("The pinned copy of the board is not kept"))
+    @Test func aSummaryIsTheCopyAndTheOtherVersionsSent() {
+        let payload = DesignReferencePayload(agentID: AgentID(rawValue: "a1"), reference: Self.button, design: "Checkout",
+                                             boardTitle: "A · Funnel", elementLabel: "Pay now", revision: 4, capturedAt: 1,
+                                             width: 1280, height: 800, picture: .init(name: "A-2@2x.png", bytes: 10),
+                                             html: .init(name: "A.html", bytes: 20), styles: ["padding", "color"])
+        let text = DesignReferenceReading.summary(payload, versions: [4, 9])
+        #expect(text.contains("element: A.dc.html#2:0/1 (Pay now)") && text.contains("size: 1280 × 800 px"))
+        #expect(text.contains("sent at revision 4; this copy is what the user sent and never changes"))
+        #expect(text.contains("this thread was also sent revision 9 of it"))
+        #expect(text.contains("the copy holds: picture, html, 2 declared styles, 0 tokens"))
+        #expect(!DesignReferenceReading.summary(payload, versions: [4]).contains("also sent"))
     }
 
-    @Test func aSummarySaysWhetherItChanged() {
-        let record = DesignReferenceRecord(ref: Self.button.string, design: "Checkout", board: "A.dc.html", boardTitle: "A · Funnel",
-                                           elementLabel: "Pay now", revision: 6, width: 1280, height: 800)
-        let text = DesignReferenceReading.summary(reference: Self.button, record: record, pinned: 4, changed: true, onCanvas: true)
-        #expect(text.contains("element: A.dc.html#2:0/1 (Pay now)") && text.contains("size: 1280 × 800 px"))
-        #expect(text.contains("pinned at revision 4; the design is at revision 6 now") && text.contains("it changed since"))
-        let gone = DesignReferenceReading.summary(reference: Self.button, record: record, pinned: 4, changed: nil, onCanvas: false)
-        #expect(gone.contains("no longer on the canvas"))
+    /// A whole design's copy is compared board by board, and names only its boards.
+    @Test func aWholeDesignsChangesListItsBoards() {
+        let a = DesignPath("A.dc.html")!, b = DesignPath("B.dc.html")!, c = DesignPath("C.dc.html")!
+        let edited = Self.hero.replacingOccurrences(of: ">Pay now<", with: ">Pay $24<")
+        let text = DesignReferenceReading.designChanges(from: 4, to: 6, before: [(a, "A · Funnel", Self.hero), (b, nil, Self.hero)],
+                                                        after: [(a, "A · Funnel", edited), (c, "C · Trend", Self.hero)])
+        #expect(text.hasPrefix("From revision 4 to revision 6, both sent to this thread:"))
+        #expect(text.contains("- board added: C.dc.html (C · Trend)") && text.contains("- board removed: B.dc.html"))
+        #expect(text.contains("- A.dc.html (A · Funnel) changed:\n  - ") && text.contains("\"Pay $24\""))
     }
 
     @Test func designTextIsFencedAsData() {

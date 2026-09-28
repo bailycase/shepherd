@@ -213,6 +213,7 @@ extension ShepherdViewModel {
                                        source: { try await server.designBoard($0, path: $1).source },
                                        comments: designCommentActions(), tweak: tweak, actions: designCanvasActions())
         if let design = design(id), let system = designSystemName(design) { screen.tweak?.systemName = system }
+        screen.referenceActions = designReferenceCanvasActions()
         designScreens[id] = screen
         return screen
     }
@@ -272,6 +273,7 @@ extension ShepherdViewModel {
 
     /// The host pushed a design's new revision: its canvas pulls what changed.
     func designRevised(_ id: DesignID) {
+        referencesDesignsChanged()
         guard let screen = designScreens[id] else { return }
         Task { await screen.refresh() }
     }
@@ -286,6 +288,7 @@ extension ShepherdViewModel {
         }
         if let selection = designsPageSelection, !live.contains(selection) { designsPageSelection = nil }
         madeDesignRendering?.prune(keeping: live)
+        referencesDesignsChanged()
     }
 }
 

@@ -626,21 +626,28 @@ struct NativeThreadStoreTests {
         #expect(NativeAttachedFile.message(words, files: []) == words)
     }
 
-    /// A design reference waits beside the draft; it goes as its string alone (the host reads the
-    /// rest from the design), with its files listed and a line saying it went, and leaves with the
-    /// message. A host that doesn't take references is sent nothing.
-    @Test func attachedReferencesGoAsTheirStringsWithTheirFiles() async throws {
+    /// A design reference waits beside the draft; it goes as its string alone (the host resolves
+    /// it, keeps its copy and fences it), with a line saying it went, and leaves with the message.
+    /// A later chip for the same piece ("Send vN") takes the older one's place; five at most.
+    @Test func attachedReferencesGoAsTheirStringsAlone() async throws {
         let (store, host, task) = await started(F.snapshot(actions: ["send", "designReferences"], messages: [hi]))
         defer { task.cancel() }
         let piece = try #require(DesignReference(string: "shepherd-design-ref://local/d1/A.dc.html#2:0/1@4"))
         var labelled = piece
         labelled.label = "Checkout › A › Pay now"
-        let files = [NativeAttachedFile(name: "A-2@2x.png", path: "/drops/r1/A-2@2x.png"),
-                     NativeAttachedFile(name: "A.html", path: "/drops/r1/A.html")]
-        store.attach(reference: NativeAttachedReference(reference: labelled, label: "Checkout › A › Pay now", files: files))
-        store.attach(reference: NativeAttachedReference(reference: piece, label: "again", files: files))
+        let outline = DesignReferenceOutline(kind: .element, styles: 11, tokens: 8, system: "acme-web")
+        #expect(store.attach(reference: NativeAttachedReference(reference: labelled, label: "Checkout › A › Pay now", outline: outline)))
+        #expect(store.attach(reference: NativeAttachedReference(reference: piece.pinned(at: 26), label: "again")))
         #expect(store.attachedReferences.map(\.label) == ["again"], "each piece once")
+        #expect(store.attachedReferences.first?.reference.revision == 26, "the newer version in its place")
         #expect(store.hasDraft, "a reference alone is something to send")
+        for index in 0..<4 {
+            let other = try #require(DesignReference(string: "shepherd-design-ref://local/d1/B\(index).dc.html@4"))
+            #expect(store.attach(reference: NativeAttachedReference(reference: other, label: "B\(index)")))
+        }
+        let sixth = try #require(DesignReference(string: "shepherd-design-ref://local/d1@4"))
+        #expect(!store.attach(reference: NativeAttachedReference(reference: sixth, label: "whole")), "five at most")
+        for reference in store.attachedReferences.dropFirst() { store.detachReference(reference.id) }
 
         host.acceptAll()
         store.draft = "Build this"
@@ -648,11 +655,11 @@ struct NativeThreadStoreTests {
         guard case .send(_, _, _, let text, _, _, _, let references) = try #require(host.actions.first) else {
             Issue.record("expected a send"); return
         }
-        #expect(text == "Build this\n\n1 design reference attached.\n\nAttached files:\n- /drops/r1/A-2@2x.png\n- /drops/r1/A.html")
-        #expect(references == [DesignReferenceRecord(ref: piece.string, files: ["A-2@2x.png", "A.html"])])
+        #expect(text == "Build this\n\n1 design reference attached.")
+        #expect(references == [DesignReferenceRecord(ref: piece.pinned(at: 26).string)])
         #expect(store.attachedReferences.isEmpty && store.draft.isEmpty)
 
-        let direct = await store.send(text: "Now the phone", references: [NativeAttachedReference(reference: piece, label: "x", files: [])])
+        let direct = await store.send(text: "Now the phone", references: [NativeAttachedReference(reference: piece, label: "x")])
         #expect(direct)
         guard case .send(_, _, _, let second, _, _, _, let carried) = try #require(host.actions.last) else {
             Issue.record("expected a send"); return
@@ -665,12 +672,12 @@ struct NativeThreadStoreTests {
         defer { task.cancel() }
         host.acceptAll()
         let piece = try #require(DesignReference(string: "shepherd-design-ref://local/d1/A.dc.html"))
-        store.attach(reference: NativeAttachedReference(reference: piece, label: "A", files: []))
+        store.attach(reference: NativeAttachedReference(reference: piece, label: "A"))
         store.draft = "Build this"
         await store.send()
         #expect(host.actions.isEmpty && store.draft == "Build this" && store.attachedReferences.count == 1)
         #expect(store.notice == "This thread's host doesn't take design references.")
-        #expect(await store.send(text: "x", references: [NativeAttachedReference(reference: piece, label: "A", files: [])]) == false)
+        #expect(await store.send(text: "x", references: [NativeAttachedReference(reference: piece, label: "A")]) == false)
     }
 
     @Test func aReferencesMessageListsTheLineThenTheFiles() {

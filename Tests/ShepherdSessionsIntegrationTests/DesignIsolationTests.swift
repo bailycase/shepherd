@@ -97,9 +97,12 @@ struct DesignIsolationTests {
         try client.send(.designGet(id: 2, agentID: drawer.id, reference: reference.string, what: "summary"))
         guard case .error(2, "not_a_thread", _) = try await client.reply() else { Issue.record("a design's agent was answered"); return }
         await #expect(throws: DesignReferenceError.self) {
-            _ = try await h.server.checkDesignReferences([reference], for: drawer.id)
+            _ = try await h.server.captureDesignReferences([reference], for: drawer.id)
         }
+        try client.send(.designNote(id: 3, agentID: thread.id, reference: reference.string, text: "Done"))
+        guard case .error(3, "not_granted", _) = try await client.reply() else { Issue.record("a thread noted a design it was not sent"); return }
         #expect(h.server.state.agents.allSatisfy { $0.designGrants.isEmpty })
+        #expect(try await h.server.designThreadNotes(design).isEmpty)
     }
 
     /// A remote client (another Mac, an iPhone) has no design screen: it is sent the threads only.

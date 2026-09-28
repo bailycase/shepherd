@@ -110,9 +110,9 @@ final class DesignScreenModel {
     /// Every comment, open and resolved, in the order they were made.
     private(set) var comments: [DesignComment] = []
     /// The comment whose thread is open beside its pin.
-    private(set) var openComment: UUID?
+    var openComment: UUID?
     /// The element a new comment is being written on (the Comment tool's click).
-    private(set) var draftElement: DesignElementPick?
+    var draftElement: DesignElementPick?
     var draftText = ""
     var replyText = ""
     /// Where live boards draw commented elements now, by comment: a rewrite may have moved them
@@ -123,6 +123,19 @@ final class DesignScreenModel {
     /// The chat's cards, by comment.
     let commentCards = DesignCommentCards()
 
+    // Design references
+    /// The notes threads left on the design's pieces (RefNoteBack), oldest first.
+    var threadNotes: [DesignThreadNote] = []
+    /// The note whose card is open beside its pin.
+    var openNote: UUID?
+    /// Where live boards draw noted elements now, by note.
+    var noteRects: [UUID: CGRect] = [:]
+    /// What Implement in a thread…, Copy reference and the notes' buttons do; nil where the canvas
+    /// hands nothing to threads (another host's design, previews of other screens).
+    @ObservationIgnored var referenceActions: DesignReferenceCanvasActions?
+    /// A piece "Open in design" asked for, shown once the canvas has read the design.
+    @ObservationIgnored var pendingReveal: (board: DesignPath, element: DesignElementID?)?
+
     // Pages, moving, presenting
     /// The page the canvas shows (canvas.json's page id); nil on a canvas without pages.
     private(set) var page: String?
@@ -132,7 +145,7 @@ final class DesignScreenModel {
     private(set) var movedTo: [DesignPath: CGPoint] = [:]
     /// The board shown focused (Present, Play); nil on the canvas.
     private(set) var presented: DesignPath?
-    @ObservationIgnored private let canvasActions: DesignCanvasActions?
+    @ObservationIgnored let canvasActions: DesignCanvasActions?
     /// Tests: index writes made for moves.
     @ObservationIgnored private(set) var moveWrites = 0
 
@@ -141,7 +154,7 @@ final class DesignScreenModel {
     @ObservationIgnored private let commentActions: DesignCommentActions?
     /// The comments' revision as last read: a change names it, and a stale one is read again.
     @ObservationIgnored private(set) var commentsRevision: UInt64 = 0
-    @ObservationIgnored private var canvasSize: CGSize = .zero
+    @ObservationIgnored private(set) var canvasSize: CGSize = .zero
     @ObservationIgnored private var fitted = false
     @ObservationIgnored private var refreshing = false
     @ObservationIgnored private var refreshAgain = false
@@ -284,6 +297,7 @@ final class DesignScreenModel {
                 loadError = String(describing: error)
             }
             if let list = commentActions?.list, let next = try? await list(designID) { applyComments(next) }
+            await refreshNotes()
         } while refreshAgain
     }
 
@@ -319,6 +333,7 @@ final class DesignScreenModel {
         if let tweak { Task { await tweak.snapshotChanged(next) } }
         fitIfNeeded()
         planLive()
+        applyReveal()
     }
 
     // MARK: The canvas
@@ -465,6 +480,7 @@ final class DesignScreenModel {
         let tids = picks.compactMap { $0.board == board ? $0.element?.id.tid : nil }
         if hover?.board == board { hover = nil }
         locatePins(on: board)
+        locateNotes(on: board)
         guard !tids.isEmpty, let host else { return }
         Task {
             guard let found = await host.locate(board, tids: tids) else { return }
@@ -523,6 +539,10 @@ final class DesignScreenModel {
     /// The open comments, in the order they were made.
     var openComments: [DesignComment] { comments.filter(\.isOpen) }
 
+    /// The Comments tab's count: the open comments and the notes threads left (RefNoteBack's
+    /// "Comments 2" over one comment and one note).
+    var commentsTabCount: Int { openComments.count + threadNotes.count }
+
     /// The canvas's pins: each open comment on a board the canvas holds, where a live view last
     /// found its element, else where it was when the comment was made; and the pin of the comment
     /// being written.
@@ -535,7 +555,7 @@ final class DesignScreenModel {
         if let draft = draftElement {
             pins.append(NWCanvasPin(id: Self.draftPin, board: draft.board.rawValue, rect: draft.rect, number: nextNumber))
         }
-        return pins
+        return pins + notePins(snapshot.index)
     }
 
     static let draftPin = "draft"
@@ -554,6 +574,9 @@ final class DesignScreenModel {
         if let draft = draftElement {
             return NWCanvasElement(id: Self.draftPin, board: draft.board.rawValue, rect: draft.rect)
         }
+        if let note = openThreadNote, let index = snapshot?.index {
+            return NWCanvasElement(id: Self.notePinID(note.id), board: note.board.rawValue, rect: noteRect(note, index))
+        }
         guard let id = openComment, let comment = comments.first(where: { $0.id == id }) else { return nil }
         return NWCanvasElement(id: id.uuidString, board: comment.board.rawValue, rect: pinRect(comment))
     }
@@ -570,15 +593,22 @@ final class DesignScreenModel {
         openComment = nil
     }
 
-    /// Closes the editor, or the open thread.
+    /// Closes the editor, the open thread, or the open note.
     func closeComment() {
         if draftElement != nil { draftElement = nil }
         if openComment != nil { openComment = nil }
+        if openNote != nil { openNote = nil }
     }
 
-    /// A pin (or a card in the Comments tab): its thread opens beside it.
+    /// A pin (or a card in the Comments tab): its thread opens beside it; a thread's note opens
+    /// its card.
     func openThread(_ id: String) {
+        if let note = Self.noteID(fromPin: id) {
+            openNote(note)
+            return
+        }
         guard let id = UUID(uuidString: id), comments.contains(where: { $0.id == id }) else { return }
+        openNote = nil
         draftElement = nil
         replyText = ""
         openComment = id
@@ -811,10 +841,10 @@ final class DesignScreenModel {
 
     // MARK: Board actions
 
-    /// The board the actions float over: the last pick when it is a board picked whole, while
-    /// nothing is presented and the canvas can act.
+    /// The board the actions float over: the last pick's board (picked whole, or an element on
+    /// it, RefImplementMenu), while nothing is presented and the canvas can act.
     var actionsBoard: DesignPath? {
-        guard canvasActions != nil, presented == nil, moving == nil, let pick = picks.last, pick.element == nil,
+        guard canvasActions != nil, presented == nil, moving == nil, let pick = picks.last,
               snapshot?.index.boards[pick.board] != nil else { return nil }
         return pick.board
     }

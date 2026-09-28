@@ -126,7 +126,9 @@ struct DesignBoardActionsTests {
 
     // MARK: The actions bar
 
-    @Test func theActionsFloatOverTheBoardPickedWholeLast() async throws {
+    /// RefImplementMenu: the bar floats over the last pick's board, an element's too, so
+    /// Implement… reaches whatever is selected.
+    @Test func theActionsFloatOverTheLastPicksBoard() async throws {
         let screen = await screen(CanvasHost(try Self.index()))
         #expect(screen.actionsBoard == nil)
         screen.select("A.dc.html")
@@ -134,7 +136,7 @@ struct DesignBoardActionsTests {
         let element = DesignElementPick(board: Self.b, id: DesignElementID(board: "B.dc.html", tid: 3, path: [1, 0])!,
                                         rect: CGRect(x: 0, y: 0, width: 10, height: 10), kind: .shape, label: nil, tag: "card")
         screen.setSelection([.init(board: Self.a), .init(board: Self.b, element: element)])
-        #expect(screen.actionsBoard == nil, "an element picked last has its tag, not the board's actions")
+        #expect(screen.actionsBoard == Self.b, "an element picked last brings its board's actions (RefImplementMenu)")
         screen.select("B.dc.html")
         #expect(screen.isInteractive(Self.b) && !screen.isInteractive(Self.a))
         screen.present(Self.b)

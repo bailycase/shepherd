@@ -2,7 +2,8 @@ import SwiftUI
 
 /// The board actions (NWBoardActions; NWDesignTool, DZCanvas), floating over the selected board:
 /// Comment (`text.bubble`), Tweak (`slider.horizontal.3`), Variations (`square.grid.2x2`),
-/// Duplicate (`doc.on.doc`), and ••• (a circle). A `bgRaised` bar with the popover's line and
+/// Duplicate (`doc.on.doc`), Implement… (the code glyph, RefImplementMenu) where the selection can go
+/// to a thread, and ••• (a circle). A `bgRaised` bar with the popover's line and
 /// shadow; each item a 13pt glyph in `textSecondary` beside its label in `textPrimary`.
 ///
 /// `.regular` is NWDesignTool's specimen; `.compact` is how DZCanvas draws it over a board.
@@ -21,14 +22,17 @@ public struct NWBoardActions: View {
         public var duplicate: () -> Void
         /// Play, for an interactive board; nil for a static one.
         public var play: (() -> Void)?
+        /// Implement in a thread… for what is selected; nil where it can't go to one.
+        public var implement: (() -> Void)?
 
         public init(comment: @escaping () -> Void, tweak: @escaping () -> Void, variations: @escaping () -> Void,
-                    duplicate: @escaping () -> Void, play: (() -> Void)? = nil) {
+                    duplicate: @escaping () -> Void, play: (() -> Void)? = nil, implement: (() -> Void)? = nil) {
             self.comment = comment
             self.tweak = tweak
             self.variations = variations
             self.duplicate = duplicate
             self.play = play
+            self.implement = implement
         }
     }
 
@@ -49,6 +53,9 @@ public struct NWBoardActions: View {
             NWBoardAction("Tweak", symbol: "slider.horizontal.3", size: size, action: actions.tweak)
             NWBoardAction("Variations", symbol: "square.grid.2x2", size: size, action: actions.variations)
             NWBoardAction("Duplicate", symbol: "doc.on.doc", size: size, action: actions.duplicate)
+            if let implement = actions.implement {
+                NWBoardAction("Implement…", symbol: "chevron.left.forwardslash.chevron.right", size: size, action: implement)
+            }
             Menu {
                 if let play = actions.play { Button("Play", systemImage: "play.fill", action: play) }
             } label: {

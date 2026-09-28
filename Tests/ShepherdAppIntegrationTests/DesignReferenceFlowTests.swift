@@ -2,16 +2,17 @@ import AppKit
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 import ShepherdSessions
 import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
 
 /// Design references end to end (docs/designs.md › Design references): a real server, a stub pi,
-/// and boards drawn off screen by the renderer. A reference readies its files in the drop folder
-/// (the board's or the element's PNG, the standalone page, the element's markup and styles, the
-/// tokens with their sources); sent, pi reads the host's fence and the files' paths, and the
-/// thread's design_get draws through the app.
+/// and boards drawn off screen by the renderer. A send keeps the piece's copy under the support
+/// directory (the board's or the element's PNG, the standalone page, the element's markup and
+/// styles, the tokens with their sources), drawn at the version the reference pinned; pi reads
+/// the host's fence with the copy's paths, and the thread's design_get reads that copy.
 @Suite("Design references", .mainActorExclusive)
 @MainActor
 struct DesignReferenceFlowTests {
@@ -84,81 +85,106 @@ struct DesignReferenceFlowTests {
         try #require(w.vm.designReference(w.design.id, board: try DesignPath.validate("Hero.dc.html"), element: element))
     }
 
-    @Test func aReferenceDrawsTheElementItsBoardsPageAndTheTokensItUses() async throws {
-        let w = try await workspace()
-        defer { w.app.stop() }
-        let prepared = try await w.vm.prepareDesignReference(try reference(w, element: Self.button), for: w.thread.agent.id)
-
-        #expect(prepared.label == "Checkout ☕️ › Hero › Pay now")
-        #expect(prepared.reference.revision != nil, "pinned at the design's revision")
-        #expect(prepared.files.map(\.name) == ["Hero-4@2x.png", "Hero.html", "Hero-4.element.html", "Hero-4.styles.json", "Hero-4-tokens.md"])
-        for file in prepared.files { #expect(file.path.hasPrefix(w.drops.path), "written in the drop folder") }
-
-        let png = try #require(NSBitmapImageRep(data: try Data(contentsOf: URL(fileURLWithPath: prepared.files[0].path))))
-        #expect(png.pixelsWide == 240 && png.pixelsHigh == 80, "the button cut from its board at twice its size")
-
-        let page = try String(contentsOfFile: prepared.files[1].path, encoding: .utf8)
-        #expect(page.contains("Pay now") && !page.localizedCaseInsensitiveContains("<script") && !page.contains("onclick"))
-        #expect(!page.contains("data-dc-"))
-
-        let element = try String(contentsOfFile: prepared.files[2].path, encoding: .utf8)
-        #expect(element.hasPrefix("<button") && element.contains("Pay now") && !element.contains("onclick") && !element.contains("data-dc-"))
-        let styles = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: prepared.files[3].path)))
-            as? [[String: Any]])
-        let own = try #require(styles.first?["style"] as? [String: String])
-        #expect(styles.first?["tag"] as? String == "button" && own["width"] == "120px" && own["border-radius"] == "8px")
-        #expect(own["background-color"] == "rgb(79, 70, 229)", "the token's value, as drawn")
-
-        let tokens = try String(contentsOfFile: prepared.files[4].path, encoding: .utf8)
-        #expect(tokens.contains("--accent: #4f46e5 · color · acme-web · web/static/tokens.css:8"))
-        #expect(!tokens.contains("--space-6"), "the card's padding is not the button's")
-    }
-
-    @Test func aBoardsReferenceDrawsTheBoardWhole() async throws {
-        let w = try await workspace()
-        defer { w.app.stop() }
-        let prepared = try await w.vm.prepareDesignReference(try reference(w), for: w.thread.agent.id)
-        #expect(prepared.files.map(\.name) == ["Hero@2x.png", "Hero.html", "Hero-tokens.md"])
-        let png = try #require(NSBitmapImageRep(data: try Data(contentsOf: URL(fileURLWithPath: prepared.files[0].path))))
-        #expect(png.pixelsWide == 800 && png.pixelsHigh == 600)
-        let tokens = try String(contentsOfFile: prepared.files[2].path, encoding: .utf8)
-        #expect(tokens.contains("--space-6: 24px · spacing · acme-web · web/static/tokens.css:22") && tokens.contains("--accent"))
-    }
-
-    /// Sent, pi reads the host's fence ahead of the words, then the line and the files' paths; the
-    /// thread's agent holds the grant, and its design_get draws through the app.
-    @Test func aSentReferenceReachesPiAndItsAgentCanReadIt() async throws {
-        let w = try await workspace()
-        defer { w.app.stop() }
+    /// Sends `references` to the live thread and answers the record pi read and the copy's folder.
+    private func sent(_ w: Workspace, _ references: [DesignReference], text: String = "Build the pay button")
+        async throws -> (record: DesignReferenceRecord, folder: URL, prompt: String) {
         let store = w.vm.threadStores.store(for: w.thread.agent.id)
         let server = w.app.server, id = w.thread.agent.id
         let polling = Task { await store.run { try await server.nativeThread(agentID: id, request: $0) } }
         defer { polling.cancel(); store.stop() }
         try await eventuallyOnMain("the thread to connect") { store.ready }
-        store.draft = "keep this draft"
+        let before = AppHarness.prompts(in: w.log).count
+        try await w.vm.sendDesignReferences(references, text: text, to: id)
+        try await eventuallyAsync("pi to get the message") { AppHarness.prompts(in: w.log).count > before }
+        let prompt = try #require(AppHarness.prompts(in: w.log).last)
+        let record = try #require(DesignReferenceFence.parse(prompt)?.records.first)
+        let payload = try #require(record.payloadID)
+        let folder = w.app.dir.appendingPathComponent("design-refs/\(id.rawValue)/\(payload.uuidString.lowercased())", isDirectory: true)
+        return (record, folder, prompt)
+    }
 
-        try await w.vm.sendDesignReferences([try reference(w, element: Self.button)], text: "Build the pay button", to: id)
+    @Test func aSentElementKeepsItsDrawnCopyAndTheTokensItUses() async throws {
+        let w = try await workspace()
+        defer { w.app.stop() }
+        let store = w.vm.threadStores.store(for: w.thread.agent.id)
+        store.draft = "keep this draft"
+        let (record, folder, prompt) = try await sent(w, [try reference(w, element: Self.button)])
 
         #expect(store.draft == "keep this draft", "a reference's send leaves the draft alone")
-        try await eventuallyAsync("pi to get the message") { !AppHarness.prompts(in: w.log).isEmpty }
-        let prompt = try #require(AppHarness.prompts(in: w.log).last)
-        let parsed = try #require(DesignReferenceFence.parse(prompt))
-        #expect(parsed.records.first?.elementLabel == "Pay now" && parsed.records.first?.design == "Checkout ☕️")
-        #expect(parsed.records.first?.files == ["Hero-4@2x.png", "Hero.html", "Hero-4.element.html", "Hero-4.styles.json", "Hero-4-tokens.md"])
-        #expect(parsed.text.hasPrefix("Build the pay button\n\n1 design reference attached.\n\nAttached files:\n- \(w.drops.path)/design-ref-"))
-        #expect(parsed.text.contains("/Hero-4@2x.png\n") && parsed.text.hasSuffix("/Hero-4-tokens.md"))
+        #expect(record.elementLabel == "Pay now" && record.design == "Checkout ☕️")
+        let names = ["Hero-4@2x.png", "Hero.html", "Hero-4.element.html", "Hero-4.styles.json", "Hero-4-tokens.md"]
+        #expect(record.files == names.map { folder.appendingPathComponent($0).path }, "kept under the support directory")
+        #expect(DesignReferenceFence.parse(prompt)?.text == "Build the pay button\n\n1 design reference attached.")
+        #expect((try? FileManager.default.contentsOfDirectory(atPath: w.drops.path))?.isEmpty ?? true, "nothing in the drop folder")
 
-        let grant = try #require(w.app.server.state.agents.first { $0.id == id }?.designGrants.first)
+        let png = try #require(NSBitmapImageRep(data: try Data(contentsOf: folder.appendingPathComponent(names[0]))))
+        #expect(png.pixelsWide == 240 && png.pixelsHigh == 80, "the button cut from its board at twice its size")
+        let page = try String(contentsOf: folder.appendingPathComponent(names[1]), encoding: .utf8)
+        #expect(page.contains("Pay now") && !page.localizedCaseInsensitiveContains("<script") && !page.contains("onclick"))
+        #expect(!page.contains("data-dc-"))
+        let element = try String(contentsOf: folder.appendingPathComponent(names[2]), encoding: .utf8)
+        #expect(element.hasPrefix("<button") && element.contains("Pay now") && !element.contains("onclick") && !element.contains("data-dc-"))
+        let styles = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: folder.appendingPathComponent(names[3])))
+            as? [[String: Any]])
+        let own = try #require(styles.first?["style"] as? [String: String])
+        #expect(styles.first?["tag"] as? String == "button" && own["width"] == "120px" && own["border-radius"] == "8px")
+        #expect(own["background-color"] == "rgb(79, 70, 229)", "the token's value, as drawn")
+        let tokens = try String(contentsOf: folder.appendingPathComponent(names[4]), encoding: .utf8)
+        #expect(tokens.contains("--accent: #4f46e5 · color · acme-web · web/static/tokens.css:8"))
+        #expect(!tokens.contains("--space-6"), "the card's padding is not the button's")
+
+        let payloadID = try #require(record.payloadID)
+        let payload = try #require(await w.app.server.designReferencePayload(agentID: w.thread.agent.id, payloadID: payloadID))
+        #expect(payload.payload.computedStyles?["border-radius"] == "8px" && payload.payload.picture?.pixelWidth == 240)
+        #expect(payload.payload.styles == ["width", "height", "border-radius", "background"])
+
+        let grant = try #require(w.app.server.state.agents.first { $0.id == w.thread.agent.id }?.designGrants.first)
         #expect(grant.element == Self.button.description && grant.label == "Pay now")
-
         let client = try ExtensionClient(path: w.app.scratch.socketPath)
-        let ref = try #require(parsed.records.first?.ref)
-        try client.send(.designGet(id: 1, agentID: id, reference: ref, what: "image"))
+        try client.send(.designGet(id: 1, agentID: w.thread.agent.id, reference: record.ref, what: "image"))
         let reply = try await Task.detached { try client.readReply(timeout: .seconds(30)) }.value
         guard case .designReference(1, let answer) = reply else { Issue.record("design_get image was refused: \(reply)"); return }
-        let image = try #require(answer.image)
-        #expect(image.hasPrefix(w.drops.path) && image.hasSuffix("/Hero-4@2x.png"))
-        #expect(NSBitmapImageRep(data: try Data(contentsOf: URL(fileURLWithPath: image)))?.pixelsWide == 240)
+        #expect(answer.image == folder.appendingPathComponent(names[0]).path)
+    }
+
+    @Test func aBoardsReferenceDrawsTheBoardWhole() async throws {
+        let w = try await workspace()
+        defer { w.app.stop() }
+        let (record, folder, _) = try await sent(w, [try reference(w)])
+        #expect(record.files?.map { URL(fileURLWithPath: $0).lastPathComponent } == ["Hero@2x.png", "Hero.html", "Hero-tokens.md"])
+        let png = try #require(NSBitmapImageRep(data: try Data(contentsOf: folder.appendingPathComponent("Hero@2x.png"))))
+        #expect(png.pixelsWide == 800 && png.pixelsHigh == 600)
+        let tokens = try String(contentsOf: folder.appendingPathComponent("Hero-tokens.md"), encoding: .utf8)
+        #expect(tokens.contains("--space-6: 24px · spacing · acme-web · web/static/tokens.css:22") && tokens.contains("--accent"))
+    }
+
+    /// Picked, then the design moved on: the send draws the version picked, from its pin.
+    @Test func aPickedVersionIsDrawnAfterTheDesignMovesOn() async throws {
+        let w = try await workspace()
+        defer { w.app.stop() }
+        let picked = try await w.vm.prepareDesignReference(try reference(w, element: Self.button))
+        #expect(picked.piece == "button “Pay now”")
+        #expect(DesignReferencePresentation.sends(picked.outline) == "Sends a picture, its HTML, 4 styles and 1 token from acme-web.")
+        _ = try await w.app.server.writeDesignBoard(w.design.id, path: try DesignPath.validate("Hero.dc.html"),
+                                                    source: Self.hero.replacingOccurrences(of: "Pay now", with: "Pay $24"))
+        let (record, folder, _) = try await sent(w, [picked.reference])
+        #expect(record.revision == picked.reference.revision)
+        let element = try String(contentsOf: folder.appendingPathComponent("Hero-4.element.html"), encoding: .utf8)
+        #expect(element.contains("Pay now") && !element.contains("Pay $24"), "the version picked, not the design now")
+    }
+
+    /// "Send vN": the chip in the composer takes the design's version now.
+    @Test func sendingTheLatestVersionPutsItInTheComposer() async throws {
+        let w = try await workspace()
+        defer { w.app.stop() }
+        let first = try await w.vm.attachDesignReference(try reference(w, element: Self.button), to: w.thread.agent.id)
+        _ = try await w.app.server.writeDesignBoard(w.design.id, path: try DesignPath.validate("Hero.dc.html"),
+                                                    source: Self.hero.replacingOccurrences(of: "Pay now", with: "Pay $24"))
+        let latest = try await w.vm.sendLatestDesignReference(first.reference, to: w.thread.agent.id)
+        let store = w.vm.threadStores.store(for: w.thread.agent.id)
+        #expect(store.attachedReferences.map(\.id) == [latest.id], "in the older chip's place")
+        #expect((latest.reference.revision ?? 0) > (first.reference.revision ?? 0))
+        #expect(latest.outline?.kind == .element)
     }
 
     /// A design's own agent is never a reference's thread, and a reference to another Mac's
@@ -167,17 +193,208 @@ struct DesignReferenceFlowTests {
         let w = try await workspace()
         defer { w.app.stop() }
         await #expect(throws: DesignReferenceFailure.self) {
-            _ = try await w.vm.prepareDesignReference(try reference(w), for: w.drawer.id)
+            _ = try await w.vm.attachDesignReference(try reference(w), to: w.drawer.id)
+        }
+        await #expect(throws: DesignReferenceFailure.self) {
+            try await w.vm.sendDesignReferences([try reference(w)], text: "x", to: w.drawer.id)
         }
         var remote = try reference(w)
         remote.host = .remote(UUID())
         do {
-            _ = try await w.vm.prepareDesignReference(remote, for: w.thread.agent.id)
+            _ = try await w.vm.prepareDesignReference(remote)
             Issue.record("another Mac's design was prepared")
         } catch let failure as DesignReferenceFailure {
             #expect(failure.message.contains("another Mac"))
         }
         #expect(w.app.server.state.agents.allSatisfy { $0.designGrants.isEmpty })
-        #expect((try? FileManager.default.contentsOfDirectory(atPath: w.drops.path))?.isEmpty ?? true, "nothing was drawn")
+    }
+
+    // MARK: From the canvas (RefImplementSheet, RefImplementBoard, RefSentStay, RefCopied)
+
+    /// The pay button as the canvas picks it.
+    private func buttonPick() throws -> DesignElementPick {
+        DesignElementPick(board: try DesignPath.validate("Hero.dc.html"), id: Self.button, rect: CGRect(x: 0, y: 44, width: 120, height: 40),
+                          kind: .shape, label: "Pay now", tag: "button · Pay now")
+    }
+
+    /// Implement in a thread… into the thread picked: the piece pinned as the sheet opens, the
+    /// thread gets it with the message, and "Open the thread after sending" lands there (and is
+    /// remembered).
+    @Test func implementingIntoAThreadSendsThePieceAndOpensTheThread() async throws {
+        let w = try await workspace()
+        defer { w.app.stop() }
+        let store = w.vm.threadStores.store(for: w.thread.agent.id)
+        let server = w.app.server, id = w.thread.agent.id
+        let polling = Task { await store.run { try await server.nativeThread(agentID: id, request: $0) } }
+        defer { polling.cancel(); store.stop() }
+        try await eventuallyOnMain("the thread to connect") { store.ready }
+        let screen = w.vm.designScreen(w.design.id)
+        await screen.refresh()
+        screen.setSelection([.init(board: try DesignPath.validate("Hero.dc.html"), element: try buttonPick())])
+        screen.implementSelection(designName: w.design.name)
+        let model = try #require(w.vm.implementSheet)
+        try await eventuallyOnMain("the piece to be pinned") { model.prepared != nil }
+        #expect(model.title == "Implement button “Pay now”")
+        #expect(model.threads.map(\.id) == [id], "a design's own agent is never offered")
+        model.message = "Build the pay button"
+        model.opensThread = true
+        let before = AppHarness.prompts(in: w.log).count
+        w.vm.sendImplementSheet(model)
+        try await eventuallyOnMain("the send", timeout: .seconds(60)) { w.vm.implementSheet == nil }
+        try await eventuallyAsync("pi to get the message") { AppHarness.prompts(in: w.log).count > before }
+        let prompt = try #require(AppHarness.prompts(in: w.log).last)
+        #expect(DesignReferenceFence.parse(prompt)?.records.first?.elementLabel == "Pay now")
+        #expect(DesignReferenceFence.parse(prompt)?.text == "Build the pay button\n\n1 design reference attached.")
+        #expect(w.vm.selectedAgentID == id && w.vm.referenceToast == nil, "landed in the thread")
+        #expect(w.vm.settings.implementOpensThread)
+    }
+
+    /// Implement in a new thread: it starts in the project on a new worktree named for the piece,
+    /// gets the piece as its first message, and the canvas stays with a toast offering it.
+    @Test func implementingInANewThreadStartsItOnAWorktreeAndStaysOnTheCanvas() async throws {
+        try StubPi.installAsEngine()
+        let w = try await workspace()
+        defer { w.app.stop() }
+        let repo = try makeScratchRepo()
+        defer { try? FileManager.default.removeItem(at: repo) }
+        let spaceID = try #require(await w.vm.addSpace(at: repo))
+        w.vm.selectAgent(w.drawer.id)
+        let screen = w.vm.designScreen(w.design.id)
+        await screen.refresh()
+        screen.select("Hero.dc.html")
+        screen.implementSelection(designName: w.design.name)
+        let model = try #require(w.vm.implementSheet)
+        try await eventuallyOnMain("the piece to be pinned") { model.prepared != nil }
+        model.mode = .new
+        model.project = spaceID
+        model.opensThread = false
+        #expect(model.chosenProject?.isRepo == true && model.branch == "agent/implement-hero")
+        w.vm.sendImplementSheet(model)
+        try await eventuallyOnMain("the send", timeout: .seconds(60)) { w.vm.implementSheet == nil }
+        let agent = try #require(w.app.server.state.agents.first { $0.worktreeBranch == "agent/implement-hero" })
+        #expect(agent.spaceID == spaceID && agent.name == "Implement Hero" && !agent.nameIsFinal)
+        let worktree = try #require(agent.worktreePath)
+        defer { try? FileManager.default.removeItem(atPath: worktree) }
+        #expect(FileManager.default.fileExists(atPath: worktree))
+        guard case .sent(let thread, _)? = w.vm.referenceToast?.kind else { Issue.record("no toast"); return }
+        #expect(thread == agent.id && w.vm.selectedAgentID == w.drawer.id, "the canvas stays")
+        #expect(!w.vm.settings.implementOpensThread, "the choice is remembered")
+        let server = w.app.server
+        try await eventuallyAsync("the new thread to get the piece", timeout: .seconds(30)) {
+            guard case .snapshot(let snapshot)? = try? await server.nativeThread(agentID: agent.id, request: .snapshot()) else { return false }
+            return snapshot.messages.contains { $0.role == "user" && ($0.designReferences != nil || $0.blocks.contains { DesignReferenceFence.opens($0.text) }) }
+        }
+        #expect(server.state.agents.first { $0.id == agent.id }?.designGrants.count == 1)
+    }
+
+    /// Copy reference: the piece pinned, its string on the pasteboard (the test's own), a toast.
+    @Test func copyingAReferencePutsItsStringOnThePasteboard() async throws {
+        let w = try await workspace()
+        defer { w.app.stop() }
+        var copied: [String] = []
+        w.vm.copyToPasteboard = { copied.append($0) }
+        let screen = w.vm.designScreen(w.design.id)
+        await screen.refresh()
+        screen.setSelection([.init(board: try DesignPath.validate("Hero.dc.html"), element: try buttonPick())])
+        screen.copySelectionReference(designName: w.design.name)
+        try await eventuallyOnMain("the toast") { w.vm.referenceToast != nil }
+        let reference = try #require(copied.first.flatMap { DesignReference(string: $0) })
+        #expect(reference.element == Self.button && reference.revision != nil, "pinned when copied")
+        #expect(w.vm.referenceToast?.kind == .copied && w.vm.referenceToast?.piece == "button “Pay now”")
+    }
+
+    /// Copy reference, then a paste into a thread's composer (RefCopied, RefPasted, RefSentThread):
+    /// the reference becomes a chip and leaves the words, the composer's send carries it, the sent
+    /// message draws the chip from the copy the host kept, and that chip stays (greyed, "deleted")
+    /// once the design is gone.
+    @Test func aCopiedReferencePastedIntoAThreadGoesAsItsChip() async throws {
+        let w = try await workspace()
+        defer { w.app.stop() }
+        var copied: [String] = []
+        w.vm.copyToPasteboard = { copied.append($0) }
+        let screen = w.vm.designScreen(w.design.id)
+        await screen.refresh()
+        screen.setSelection([.init(board: try DesignPath.validate("Hero.dc.html"), element: try buttonPick())])
+        screen.copySelectionReference(designName: w.design.name)
+        try await eventuallyOnMain("the copy") { !copied.isEmpty }
+        let string = try #require(copied.first)
+
+        let id = w.thread.agent.id
+        let store = w.vm.threadStores.store(for: id)
+        let server = w.app.server
+        let polling = Task { await store.run { try await server.nativeThread(agentID: id, request: $0) } }
+        defer { polling.cancel(); store.stop() }
+        try await eventuallyOnMain("the thread to connect") { store.ready }
+        // "tools:0": the stub runs a turn the way pi does, the user's message streamed first.
+        let pasted = try #require(ComposerReferencePaste.extract("tools:0 build this " + string, previous: "tools:0 build this "))
+        #expect(pasted.references.map(\.string) == [string] && !pasted.draft.contains(DesignReference.scheme))
+        let chips = try #require(w.vm.designReferenceChips(for: id))
+        for reference in pasted.references { try await chips.io.attach(reference) }
+        #expect(store.attachedReferences.map(\.reference.string) == [string], "the paste is a chip, pinned as copied")
+
+        store.draft = pasted.draft
+        let before = AppHarness.prompts(in: w.log).count
+        await store.send()
+        try await eventuallyAsync("pi to get the message") { AppHarness.prompts(in: w.log).count > before }
+        #expect(store.attachedReferences.isEmpty && store.draft.isEmpty)
+        let prompt = try #require(AppHarness.prompts(in: w.log).last)
+        let record = try #require(DesignReferenceFence.parse(prompt)?.records.first)
+        #expect(record.ref == string && record.elementLabel == "Pay now")
+
+        try await eventuallyOnMain("the sent message's chip") {
+            store.snapshot?.messages.contains { $0.role == "user" && $0.designReferences?.first?.ref == string } == true
+        }
+        let message = try #require(store.snapshot?.messages.first { $0.designReferences != nil })
+        let bubble = try #require(nativeUserBubbles(message).first)
+        #expect(bubble.references.map(\.ref) == [string] && !bubble.text.contains(DesignReference.scheme))
+        let payload = try #require(record.payloadID)
+        await chips.loadSent(payload)
+        #expect(chips.sent[payload]?.freshness == .current && chips.sent[payload]?.picture != nil)
+        #expect(chips.sent[payload]?.crumbs.last == "button “Pay now”")
+
+        _ = try await server.deleteDesign(w.design.id)
+        chips.designsChanged()
+        await chips.loadSent(payload)
+        #expect(chips.sent[payload]?.freshness == .deleted, "the chip says the design is gone")
+        #expect(chips.sent[payload]?.picture != nil, "and still draws the copy that was sent")
+    }
+
+    /// Note back (RefNoteBack): the thread a piece went to leaves a note on it, and the design's
+    /// canvas shows it at once as the thread's own pin (never a comment), whose card opens the
+    /// thread; Resolve takes it off the canvas.
+    @Test func aThreadsNoteBackShowsOnTheCanvasAsItsPin() async throws {
+        let w = try await workspace()
+        defer { w.app.stop() }
+        let (record, _, _) = try await sent(w, [try reference(w, element: Self.button)])
+        let screen = w.vm.designScreen(w.design.id)
+        await screen.refresh()
+        #expect(screen.threadNotes.isEmpty)
+
+        let client = try ExtensionClient(path: w.app.scratch.socketPath)
+        try client.send(.designNote(id: 7, agentID: w.thread.agent.id, reference: record.ref, text: "Implemented in #142."))
+        let reply = try await Task.detached { try client.readReply(timeout: .seconds(30)) }.value
+        guard case .designNote(7, let note) = reply else { Issue.record("the note was refused: \(reply)"); return }
+        try await eventuallyOnMain("the canvas to show the note") { screen.threadNotes == [note] }
+        let pin = try #require(screen.pins.first { if case .threadNote = $0.style { true } else { false } })
+        #expect(pin.style == .threadNote(w.thread.agent.name))
+        let comments = try await w.app.server.designs.comments(w.design.id)
+        #expect(comments.comments.isEmpty, "a note is never a comment")
+
+        screen.openThread(pin.id)
+        #expect(screen.openThreadNote == note)
+        await screen.resolveNote(note.id)?.value
+        #expect(screen.threadNotes.isEmpty && screen.pins.allSatisfy { if case .threadNote = $0.style { false } else { true } })
+        #expect(try await w.app.server.designThreadNotes(w.design.id).isEmpty)
+    }
+
+    /// Isolation (docs/designs.md): a thread's chips, "Looked at…" lines and @ picker exist only
+    /// while the Design tool is on, and never in a design's own chat.
+    @Test func onlyAnOrdinaryThreadWithTheDesignToolOnGetsReferences() async throws {
+        let w = try await workspace()
+        defer { w.app.stop() }
+        #expect(w.vm.designReferenceChips(for: w.thread.agent.id) != nil)
+        #expect(w.vm.designReferenceChips(for: w.drawer.id) == nil, "a design's agent")
+        w.app.settings.designToolEnabled = false
+        #expect(w.vm.designReferenceChips(for: w.thread.agent.id) == nil, "the Design tool off")
     }
 }

@@ -120,8 +120,9 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
     agent that draws a design, `SHEPHERD_DESIGN_ID` and `SHEPHERD_DESIGN_SKILL_DIR` (the design
     skill the app writes to the support directory's `design-skill/`; docs/designs.md).
     `SHEPHERD_DESIGN_REFS` (`on`, or `granted` for a thread that already holds a design
-    reference) loads design_get in a thread that draws no design, while Settings ▸ Pi ▸ Design
-    references is on (docs/designs.md › Design references).
+    reference) loads design_get and design_note in a thread that draws no design, while Settings ▸
+    Experiments ▸ Design tool and Settings ▸ Pi ▸ Design references are on (docs/designs.md ›
+    Design references).
 - **`SHEPHERD_PR_DESCRIPTION_MODEL`** overrides the model that drafts finalize PR bodies.
 - **`SHEPHERD_NAMER_MODELS`** (`provider/id,provider/id`; an entry without a slash matches any
   provider) overrides the cheap models the namer tries before the agent's own. The namer reads it
@@ -494,9 +495,11 @@ Sources/
                        the Design tool's format (docs/designs.md): DesignIndex (canvas.json v3,
                        unknown keys kept), DesignPath (the board path grammar), DesignTemplate
                        and DesignElementID (a board's elements as `File.dc.html#tid:path`),
-                       DesignReference (a board or element handed to a thread: its
-                       `shepherd-design-ref://` string, the record and fence pi reads) and
-                       DesignReferenceReading (design_get's words: tokens with sources, changes),
+                       DesignReference (a whole design, board or element handed to a thread: its
+                       `shepherd-design-ref://` string, the record and fence pi reads),
+                       DesignReferencePayload (the copy a send keeps, its outline, freshness,
+                       "Looked at…", the capture the app draws), DesignThreadNote (notes back),
+                       and DesignReferenceReading (design_get's words: tokens with sources, changes),
                        DesignBoardCheck (what a board may hold), DesignStyle/DesignTokens/DesignProps
                        (Tweak: inline-style splices at parser offsets, token snapping, data-props
                        and canvas.json's tweaks), DesignCanvasLayout (pages, notes, where a
@@ -529,7 +532,10 @@ Sources/
                        ClientSkills (Settings ▸ Skills' model on every platform),
                        DesignSystemPresentation ("synced 4m ago", a token's source), SkillsText
                        (SKILL.md's frontmatter, prompt tokens, repository references),
-                       SkillsPresentation (its words), SkillsDirectory (skills.sh), ShepherdLog.
+                       SkillsPresentation (its words), SkillsDirectory (skills.sh),
+                       DesignMentions (the composer's @ picker: its rows and search),
+                       DesignReferencePresentation (a reference's footer, chip and toast words,
+                       and the design_get calls one "Looked at…" line joins), ShepherdLog.
                        Shared with the iOS client.
   ShepherdPTYSpawn/    The PTY child side (fork → exec) in C: no Swift runs between the two.
   ShepherdSessions/    SessionServer (state, sessions, extension socket, remote listener),
@@ -563,8 +569,10 @@ Sources/
                        its own queue, with a revision per design, each board's last 20
                        versions, its comments.json, and installed systems under ds/; what an
                        export reads; a Claude Design folder imported; a reference's pinned
-                       board copies under pins/; docs/designs.md), DesignReferences (a send's
-                       references checked against the design, design_get's answers),
+                       board copies under pins/ and thread-notes.json; docs/designs.md),
+                       DesignReferences (references pinned and resolved, their copies kept,
+                       design_get's answers, freshness, the @ picker's catalog),
+                       DesignReferencePayloads (the copies, per agent, under design-refs/),
                        DesignSystemStore (design systems in the support directory's
                        design-systems/, their owners and sources, built-ins).
   TerminalSurfaceKit/  Ghostty adapter for terminal panes; see its NOTES.md.
@@ -610,14 +618,20 @@ Sources/
       built-in design system, from ShepherdUI's tokens), DesignSystemCatalog (the host's systems
       as last read), DesignSystemPageModel (DZSystem as values; specimen boards), DesignSystemPage
       (the Design systems page, a build's layout beside its chat, the header),
-      ShepherdViewModel+DesignReferences (a board or element handed to a thread: readied, drawn
-      into the drop folder, sent; design_get's drawn aspects) and DesignReferencesExtension
+      ShepherdViewModel+DesignReferences (a design piece handed to a thread: pinned, attached,
+      "Send vN", sent; the copies it draws) and DesignReferencesExtension;
+      +DesignReferencesUI (the thread's chips and picker, Implement in a thread's send, Copy
+      reference, "Open in design"), ImplementSheet (the sheet's model and view, the canvas's
+      toasts), DesignScreenModel+References (the selection as a reference, the right-click menu,
+      notes back), DesignCanvasKeys (the canvas's ⌘↩ and ⇧⌘C)
     TerminalPanels (each layout's terminal panel: shown, tab, maximized, activity),
       TerminalPanelLayout (TerminalPanelGeometry, pure), TerminalPanelViews (strip, divider)
     Thread/            ThreadView, ThreadTurns, ThreadTools (activity lines), ThreadMarkdown,
                        Composer, QuestionDock (a question in the composer's place),
                        QueueStack ("Up next", the queue above the composer),
                        ContextMeter (the ring beside Send, its details, compaction lines),
+                       ComposerMentions (the @ picker's rules, a pasted reference),
+                       DesignReferenceChips (a thread's chips, their preview, "Looked at…"),
                        Subagents, SubagentPresentation, SubagentInspector
     TerminalSessions (TerminalSessionStore), AgentStartQueue (launch order of restored pi),
       TerminalHost (the only TerminalSurfaceKit import),
@@ -666,7 +680,10 @@ Packages/
                                      NWBoardActions, NWDirectionTile, NWCanvasNote,
                                      NWBoardPresentation, NWSectionRail, NWTokenSwatch,
                                      NWTypeSpecimen, NWComponentSpecimen,
-                                     NWDesignSystemBuildTile)
+                                     NWDesignSystemBuildTile, NWDesignReferenceChip,
+                                     NWDesignReferencePreview, NWThreadNotePin,
+                                     NWThreadNoteCard, NWReferenceToast, NWImplementSheet,
+                                     NWDesignReferenceSpecimens); Composer's NWMentionPicker
                        Previews/     a #Preview per component, light and dark
                        Diagnostics/  NWRenderProbe (row-body counts for tests; debug only)
                        Its unit tests live in the root package (Tests/ShepherdUIUnitTests).
@@ -685,8 +702,8 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
                           design_check, comment_list, comment_reply, system_read and
                           system_write; hands pi the design skill
                           (design-skill/: SKILL.md, format.md); see docs/designs.md
-  shepherd-design-refs.ts an ordinary thread's design_get, registered only once the thread holds a
-                          design reference; see docs/designs.md › Design references
+  shepherd-design-refs.ts an ordinary thread's design_get and design_note, registered only once the
+                          thread holds a design reference; see docs/designs.md › Design references
   shepherd-mcp.ts         the mcp tool (search, describe, call) and direct <server>_<tool> tools
                           over the servers in Settings ▸ MCP servers; credentials from the app
   shepherd-mcp-client.mjs the dependency-free MCP client (stdio, Streamable HTTP, legacy SSE),

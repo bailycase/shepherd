@@ -1,15 +1,18 @@
 // @ts-nocheck -- loaded by pi/jiti; this project intentionally has no Node TS workspace.
-// Shepherd design references extension: design_get(ref, what) reads a piece of a design (a board,
-// or one element of it) that the user handed this thread with a message (docs/designs.md ›
-// Design references). Shepherd answers only for pieces this thread was handed, read only, and
-// fences everything the design's files say as data. Images and pages come back as files in the
-// drop folder, never megabytes over the socket.
+// Shepherd design references extension (docs/designs.md › Design references):
+// - design_get(ref, what) reads the copy of a design piece (a whole design, a board, or one
+//   element of it) that Shepherd kept when the user sent it to this thread. It answers only from
+//   those copies, never the design as it is now: a newer version reaches the thread only when the
+//   user sends it. Everything the design's files say comes back fenced as data; pictures and
+//   pages come back as the copy's files, never megabytes over the socket.
+// - design_note(ref, text) leaves a short note on a board or element this thread was sent
+//   ("Implemented in #142 on agent/checkout-funnel."), shown on the canvas as the thread's pin.
 //
-// The tool is registered only once the thread holds a reference, so a thread without one carries
-// nothing of it in its prompt: at load when SHEPHERD_DESIGN_REFS is "granted" (the thread held one
-// when pi started), else the first time a message arrives with a design-ref fence. Inert without
-// SHEPHERD_DESIGN_REFS, and in a design's own agent (SHEPHERD_DESIGN_ID). Nothing here throws into
-// pi except a tool's own failure, and the socket never keeps pi alive.
+// The tools are registered only once the thread holds a reference, so a thread without one
+// carries nothing of them in its prompt: at load when SHEPHERD_DESIGN_REFS is "granted" (the
+// thread held one when pi started), else the first time a message arrives with a design-ref
+// fence. Inert without SHEPHERD_DESIGN_REFS, and in a design's own agent (SHEPHERD_DESIGN_ID).
+// Nothing here throws into pi except a tool's own failure, and the socket never keeps pi alive.
 import * as fs from "node:fs";
 import * as net from "node:net";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -18,6 +21,8 @@ import { Type } from "typebox";
 const REQUEST_TIMEOUT_MS = 60_000;
 // What pi is handed inline as an image; a larger PNG is left as its file.
 const MAX_INLINE_IMAGE_BYTES = 4_500_000;
+// A note is one short paragraph; Shepherd refuses a longer one.
+const MAX_NOTE_LENGTH = 500;
 const ASPECTS = ["summary", "image", "html", "element", "tokens", "changes"];
 // The fence Shepherd puts ahead of a message that hands this thread design references.
 const FENCE = /(^|\n)<design-ref nonce="[0-9a-f]{12}">\n/;
@@ -26,6 +31,15 @@ interface Answer {
   text: string;
   files?: string[];
   image?: string;
+  lookedAt?: unknown;
+}
+
+interface Note {
+  id: string;
+  board: string;
+  element?: string;
+  revision: number;
+  text: string;
 }
 
 interface Reply {
@@ -34,6 +48,7 @@ interface Reply {
   code?: string;
   message?: string;
   answer?: Answer;
+  note?: Note;
 }
 
 /** Whether a message carries design references. */
@@ -132,12 +147,14 @@ export default function shepherdDesignRefs(pi: ExtensionAPI) {
       name: "design_get",
       label: "Design Get",
       description:
-        "Read a design piece the user handed you in this thread (a design-ref record's ref). " +
-        "what: summary (label, size, revision, whether it changed since the reference), image (a PNG at twice its size), " +
-        "html (the board as a standalone page), element (the element's markup as drawn and its computed styles), " +
+        "Read the copy of a design piece the user sent you in this thread (a design-ref record's ref): what it was when sent, " +
+        "never the design as it is now. what: summary (label, size, the revision it was sent at, other versions sent here), " +
+        "image (a PNG at twice its size; a whole design's: each board's), html (the board as a standalone page), " +
+        "element (the element's markup as drawn and its computed styles), " +
         "tokens (the design system tokens it uses, with the source file and line of each in the project), " +
-        "changes (what changed since the pinned revision). Read only; works for the references in this thread's messages.",
-      promptSnippet: "Read a design piece handed to this thread: summary, image, html, element, tokens or changes",
+        "changes (what changed from the previous version of the piece sent to this thread). " +
+        "Read only; a newer version reaches you only when the user sends it.",
+      promptSnippet: "Read a design piece sent to this thread: summary, image, html, element, tokens or changes",
       parameters: Type.Object({
         ref: Type.String({ description: "The ref of a design-ref record in this thread, e.g. shepherd-design-ref://local/…" }),
         what: Type.Union(ASPECTS.map((aspect) => Type.Literal(aspect)), { description: "What to read" }),
@@ -157,7 +174,30 @@ export default function shepherdDesignRefs(pi: ExtensionAPI) {
             // The path in the text still says where it is.
           }
         }
-        return { content, details: { files: answer.files ?? [] } };
+        return { content, details: { files: answer.files ?? [], lookedAt: answer.lookedAt } };
+      },
+    });
+    pi.registerTool({
+      name: "design_note",
+      label: "Design Note",
+      description:
+        "Leave a short note on a board or element of a design the user sent you in this thread (a design-ref record's ref), " +
+        "shown to the user on the design's canvas as this thread's pin: say what you did with it, e.g. " +
+        "\"Implemented in #142 on agent/checkout-funnel.\" Plain text, one short paragraph (at most 500 characters). " +
+        "A new note on the same piece replaces your last. Leave one when the work is done, not as you go.",
+      promptSnippet: "Leave a short note on a design piece sent to this thread, shown on its canvas",
+      parameters: Type.Object({
+        ref: Type.String({ description: "The ref of a board or element design-ref record in this thread" }),
+        text: Type.String({ description: "The note: plain text, at most 500 characters", maxLength: MAX_NOTE_LENGTH }),
+      }),
+      async execute(_toolCallId, params) {
+        const reply = await request({ type: "designNote", reference: String(params.ref ?? ""), text: String(params.text ?? "") });
+        const note = reply.note;
+        if (!note || typeof note.text !== "string") throw new Error("Shepherd's design_note reply had no note");
+        return {
+          content: [{ type: "text", text: `Left a note on ${String(params.ref ?? "")}: ${note.text}` }],
+          details: { note: note.id },
+        };
       },
     });
   }

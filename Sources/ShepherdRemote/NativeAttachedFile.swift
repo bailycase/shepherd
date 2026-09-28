@@ -31,27 +31,26 @@ public struct NativeAttachedFile: Identifiable, Hashable, Sendable {
 }
 
 /// A design reference waiting in a composer beside the draft (docs/designs.md › Design
-/// references): the piece, its chip's label, and the files drawn for it (its image, page,
-/// element and tokens), which go with the message like attached files. Sent, the host reads the
-/// piece from the design, fences it for pi, and lets the thread's agent read it (design_get).
+/// references): the piece, pinned at the revision it was picked at, its chip's label, and what
+/// it will send (`outline`, the Implement sheet's footer). Sent, the host resolves the piece at
+/// that revision, keeps the copy with the message, fences it for pi, and lets the thread's agent
+/// read that copy (design_get).
 public struct NativeAttachedReference: Identifiable, Hashable, Sendable {
     public let id: UUID
     public let reference: DesignReference
     /// "Checkout › A · Checkout funnel › Primary button".
     public let label: String
-    public let files: [NativeAttachedFile]
+    public let outline: DesignReferenceOutline?
 
-    public init(id: UUID = UUID(), reference: DesignReference, label: String, files: [NativeAttachedFile]) {
+    public init(id: UUID = UUID(), reference: DesignReference, label: String, outline: DesignReferenceOutline? = nil) {
         self.id = id
         self.reference = reference
         self.label = label
-        self.files = files
+        self.outline = outline
     }
 
-    /// The record a client sends: the reference, and its files' names.
+    /// The record a client sends: the reference alone.
     public var record: DesignReferenceRecord {
-        var record = DesignReferenceRecord(reference)
-        record.files = files.isEmpty ? nil : files.map(\.name)
-        return record
+        DesignReferenceRecord(reference)
     }
 }

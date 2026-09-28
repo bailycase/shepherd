@@ -17,7 +17,7 @@ struct DesignLayoutView: View {
     var body: some View {
         let _ = NWRenderProbe.tick("layout.design")
         HStack(spacing: 0) {
-            DesignCanvasPane(screen: vm.designScreen(designID))
+            DesignCanvasPane(screen: vm.designScreen(designID), vm: vm, designName: vm.design(designID)?.name ?? "")
             DesignChatPane(vm: vm, screen: vm.designScreen(designID), model: model, thread: thread)
                 .frame(width: AppLayout.designChatWidth)
         }
@@ -39,16 +39,23 @@ struct DesignLayoutView: View {
 /// another direction" follows the last board. A presented board (Present, Play) covers it all.
 struct DesignCanvasPane: View {
     @Bindable var screen: DesignScreenModel
+    /// This Mac's view model, for the references' toast; nil for another host's design.
+    var vm: ShepherdViewModel? = nil
+    var designName = ""
 
     var body: some View {
         let host = screen.host
         let zoom = screen.viewport.zoom
+        let referencing = screen.referenceActions != nil
         NWDesignCanvas(boards: screen.boards, viewport: $screen.viewport, tool: $screen.tool,
                        selection: screen.selectionRings, hover: screen.hoverRing,
                        pins: screen.pins, openPin: { screen.openThread($0) }, popoverAnchor: screen.popoverAnchor,
                        notes: screen.notes, actions: actions,
                        anotherDirection: screen.canAsk ? { screen.askForAnotherDirection() } : nil,
                        move: { screen.move($0) },
+                       contextMenu: referencing ? { [designName] pick in
+                           await screen.contextMenu(for: pick, designName: designName, keys: KeybindingsStore.shared)
+                       } : nil,
                        pick: { screen.pick($0) }, point: { screen.pointer($0) },
                        resized: { screen.resized($0) }, zooming: { screen.setZooming($0) }) { board in
             if let host, let path = DesignPath(board.id) {
@@ -56,6 +63,20 @@ struct DesignCanvasPane: View {
             }
         } popover: {
             DesignCommentPopover(screen: screen)
+        }
+        .overlay {
+            if let vm { DesignReferenceToastLayer(vm: vm, designID: screen.designID) }
+        }
+        .background {
+            if referencing {
+                DesignCanvasKeys(active: screen.isActive && screen.presented == nil,
+                                 chatHasDraft: { [vm, designID = screen.designID] in
+                                     guard let vm, let agent = vm.design(designID)?.agentID else { return false }
+                                     return vm.threadStores.existing(for: agent)?.hasDraft == true
+                                 },
+                                 implement: { screen.implementSelection(designName: designName) },
+                                 copy: { screen.copySelectionReference(designName: designName) })
+            }
         }
         .overlay {
             if let host, let path = screen.presented, let board = screen.snapshot?.index.boards[path] {
@@ -68,18 +89,21 @@ struct DesignCanvasPane: View {
         }
     }
 
-    /// The board actions over the board picked whole: Comment takes the Comment tool (the next
+    /// The board actions over the selection's board: Comment takes the Comment tool (the next
     /// element picked takes the comment), Tweak opens its tab, Variations and Duplicate act on
-    /// the board, and ••• plays an interactive one.
+    /// the board, Implement… hands the selection to a thread (RefImplementMenu), and ••• plays an
+    /// interactive one.
     private var actions: NWCanvasActions? {
         guard let path = screen.actionsBoard else { return nil }
         let screen = screen
+        let designName = designName
         return NWCanvasActions(board: path.rawValue, actions: NWBoardActions.Actions(
             comment: { screen.tool = .comment },
             tweak: { screen.paneTab = .tweak },
             variations: { screen.askForVariations(of: path) },
             duplicate: { screen.duplicate(path) },
-            play: screen.isInteractive(path) ? { screen.present(path) } : nil))
+            play: screen.isInteractive(path) ? { screen.present(path) } : nil,
+            implement: screen.referenceActions == nil ? nil : { screen.implementSelection(designName: designName) }))
     }
 }
 
@@ -90,7 +114,19 @@ struct DesignCommentPopover: View {
     @FocusState private var editorFocused: Bool
 
     var body: some View {
-        if let element = screen.draftElement {
+        if let note = screen.openThreadNote {
+            // A thread's note (ThreadNoteCard): never a comment, never the design agent's.
+            let actions = screen.referenceActions
+            NWThreadNoteCard(thread: note.thread, age: nwCommentAge(since: note.createdAt), text: note.text,
+                             from: DesignReferencePresentation.version(note.revision).map { "from \($0)" },
+                             openThread: actions.flatMap { actions in
+                                 actions.threadExists(note.agentID) ? {
+                                     screen.closeComment()
+                                     actions.openThread?(note.agentID)
+                                 } : nil
+                             },
+                             resolve: { screen.resolveNote(note.id) })
+        } else if let element = screen.draftElement {
             NWCommentEditor(text: $screen.draftText, isFocused: $editorFocused, placeholder: "Comment for the design agent",
                             context: "on \(nativeBoardName(element.board.rawValue))\(element.words.map { " · \($0)" } ?? "")",
                             onSave: { screen.submitComment() }, onCancel: { screen.closeComment() })
@@ -113,7 +149,7 @@ struct DesignCommentPopover: View {
 }
 
 /// The chat pane (DZCanvas, DZTweak): its tabs, Chat (the design agent's thread, with the
-/// standard composer at its compact size), Comments (the open comments' cards, with their count) and Tweak (the
+/// standard composer at its compact size), Comments (the open comments' cards, counted with the threads' notes) and Tweak (the
 /// selection's controls). The thread stays mounted under the other tabs, hidden, so switching tabs
 /// never rebuilds it.
 struct DesignChatPane: View {
@@ -131,7 +167,7 @@ struct DesignChatPane: View {
     }
 
     var body: some View {
-        let open = screen.openComments.count
+        let open = screen.commentsTabCount
         let tab = screen.paneTab == .tweak && screen.tweak == nil ? .chat : screen.paneTab
         let chat = tab == .chat
         VStack(spacing: 0) {
