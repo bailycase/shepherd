@@ -22,7 +22,9 @@ serves its own runtime there.
   board's `frameless` or `guides`, the user's drawing notes. A known key whose value has another
   shape than expected is kept as it came, too.
 - **Unreadable:** a version other than 3, a board keyed by a path outside the grammar, or a board
-  without numbers for `x`, `y`, `w` and `h`.
+  without numbers for `x`, `y`, `w` and `h`. Geometry must be safe to render: coordinates must
+  round to a native integer, and dimensions must be positive and at most 8000. Unsafe values
+  refuse decoding, including old saved canvases, rather than reaching the native renderer.
 - **Order:** `order` lists each board once, back to front. `inSync()` drops stray entries and
   appends unlisted boards by path.
 - **Updates** (canvas_update) are JSON merge patches (RFC 7396): objects merge key by key, `null`
@@ -932,7 +934,8 @@ Designs until the viewer's choice, if one is needed, is made.
   512 files, 16 MB a file and 1 GB in all (`maxProjectBytes`; an export still reads at most 256 MB
   of a project's other files); uploads are `assets/<id>.<ext>`. Each file is opened without
   following a link and checked for its size before it is read. Hidden files and any `support.js`
-  (Shepherd serves its own runtime there) are left behind.
+  (Shepherd serves its own runtime there) are left behind. Imported board dimensions must be
+  40–8000; unsafe geometry refuses the import without changing the original canvas or its metadata.
 - **Boards** are read in canvas order and copied into `.import-<token>/` as they are, the
   progress counting them (`DesignImportProgress`: checking, then "7 of 12 boards", then opening).
   A board whose markup points outside the project (`DesignImport.outsideReferences`: a `src`,

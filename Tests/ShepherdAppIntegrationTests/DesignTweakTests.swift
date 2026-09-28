@@ -83,6 +83,118 @@ struct DesignTweakTests {
         DesignStyleEdit.style(of: 3, in: try await source(opened, path))?.value("padding")
     }
 
+    private func io(_ opened: Opened) -> DesignTweakIO {
+        let server = opened.app.server
+        let id = opened.design.id
+        return DesignTweakIO(
+            snapshot: { try await server.designSnapshot(id) },
+            board: { try await server.designBoard(id, path: $0) },
+            writeBoards: { try await server.writeDesignBoards(id, sources: $0, baseRevision: $1) },
+            updateIndex: { try await server.updateDesignIndex(id, patch: $0, baseRevision: $1) },
+            restore: { try await server.restoreDesignVersions(id, $0, ifCurrent: $1) },
+            projectTokens: { DesignTokens() },
+            isStale: { if case DesignStoreError.stale = $0 { true } else { false } })
+    }
+
+    @Test(arguments: [false, true])
+    func aTweakKeepsItsSelectionAndScopeAcrossAPreviewAndStaleRetry(every: Bool) async throws {
+        let opened = try await open()
+        defer { opened.app.stop() }
+        let preview = HeldPreview()
+        let tweak = DesignTweakModel(designID: opened.design.id, io: io(opened), host: preview)
+        await tweak.select(DesignTweakTarget(board: Self.a, element: Self.card, kind: .shape, tag: nil))
+        if every {
+            tweak.scope = .every
+            try await eventuallyOnMain("both boards in scope") { tweak.presentation.scopeNote?.contains("A · phone") == true }
+        }
+        // A later write forces a retry against fresh source after the preview has settled.
+        _ = try await opened.app.server.writeDesignBoard(opened.design.id, path: Self.a, source: Self.board("A", note: " agent"))
+        tweak.setStep(.padding, index: 0, phase: .ended)
+        try await eventuallyOnMain("the preview to wait") { preview.gate.entered }
+        await tweak.select(DesignTweakTarget(board: Self.phone,
+            element: DesignElementID(board: Self.phone.rawValue, tid: 3, path: [1, 0]), kind: .shape, tag: nil))
+        tweak.scope = every ? .board : .every
+        preview.gate.release()
+        try await eventuallyOnMain("the original preview to end") { preview.ended.contains(Self.a) }
+        #expect(try await padding(opened) == "var(--space-4)")
+        #expect(try await padding(opened, Self.phone) == (every ? "var(--space-4)" : "20px 24px"))
+        #expect(try await source(opened).contains(" agent"))
+        #expect(tweak.writes == 2)
+        #expect(tweak.presentation.problem == nil)
+    }
+
+    /// The server has changed the bytes, but hasn't returned Undo's inverse to the model yet.
+    @Test func redoWaitsForTheInFlightUndoInsteadOfDiscardingIt() async throws {
+        let opened = try await open()
+        defer { opened.app.stop() }
+        let gate = TweakGate()
+        var actions = io(opened)
+        let restore = actions.restore
+        actions.restore = { versions, shas in
+            let result = try await restore(versions, shas)
+            if !gate.entered { await gate.wait() }
+            return result
+        }
+        let tweak = DesignTweakModel(designID: opened.design.id, io: actions, host: nil)
+        let undo = UndoManager()
+        tweak.undoManager = undo
+        await tweak.select(DesignTweakTarget(board: Self.a, element: Self.card, kind: .shape, tag: nil))
+        tweak.setStep(.padding, index: 0, phase: .ended)
+        try await eventuallyOnMain("the tweak's undo to register") { undo.canUndo }
+        undo.undo()
+        try await eventuallyOnMain("Undo to hold its result") { gate.entered }
+        #expect(try await padding(opened) == "20px 24px")
+        #expect(undo.canRedo)
+        undo.redo()
+        gate.release()
+        try await eventuallyReading("the queued Redo to restore the tweak") { try await self.padding(opened) == "var(--space-4)" }
+        #expect(tweak.writes == 3)
+    }
+
+    @Test(arguments: [false, true])
+    func propsUndoAndRedoRefuseLaterChanges(redo: Bool) async throws {
+        let opened = try await open()
+        defer { opened.app.stop() }
+        let tweak = DesignTweakModel(designID: opened.design.id, io: io(opened), host: nil)
+        let undo = UndoManager()
+        tweak.undoManager = undo
+        await tweak.select(DesignTweakTarget(board: Self.a, element: Self.card, kind: .shape, tag: nil))
+        tweak.setProp("rows", .number(7), phase: .ended)
+        try await eventuallyOnMain("the props undo to register") { undo.canUndo }
+        if redo {
+            undo.undo()
+            try await eventuallyReading("props Undo to finish") {
+                try await opened.app.server.designSnapshot(opened.design.id).index.tweaks(for: Self.a)["rows"] == nil
+            }
+        }
+        _ = try await opened.app.server.updateDesignIndex(opened.design.id, patch: DesignIndex.tweakPatch(Self.a, ["rows": .number(8)]))
+        if redo { undo.redo() } else { undo.undo() }
+        try await eventuallyOnMain("props conflict to be reported") { tweak.presentation.problem != nil }
+        #expect(try await opened.app.server.designSnapshot(opened.design.id).index.tweaks(for: Self.a)["rows"] == .number(8))
+    }
+
+    @Test func propsUndoUsesTheSuccessfulRetryAndKeepsUnrelatedProps() async throws {
+        let opened = try await open()
+        defer { opened.app.stop() }
+        let tweak = DesignTweakModel(designID: opened.design.id, io: io(opened), host: nil)
+        let undo = UndoManager()
+        tweak.undoManager = undo
+        await tweak.select(DesignTweakTarget(board: Self.a, element: Self.card, kind: .shape, tag: nil))
+        _ = try await opened.app.server.updateDesignIndex(opened.design.id, patch: DesignIndex.tweakPatch(Self.a, ["rows": .number(6)]))
+        tweak.setProp("rows", .number(7), phase: .ended)
+        try await eventuallyOnMain("the retried props undo to register") { undo.canUndo }
+        #expect(tweak.writes == 2)
+        _ = try await opened.app.server.updateDesignIndex(opened.design.id, patch: DesignIndex.tweakPatch(Self.a, ["other": .bool(true)]))
+        undo.undo()
+        try await eventuallyReading("Undo to restore the value it actually replaced") {
+            try await opened.app.server.designSnapshot(opened.design.id).index.tweaks(for: Self.a) == ["rows": .number(6), "other": .bool(true)]
+        }
+        undo.redo()
+        try await eventuallyReading("Redo to keep unrelated props too") {
+            try await opened.app.server.designSnapshot(opened.design.id).index.tweaks(for: Self.a) == ["rows": .number(7), "other": .bool(true)]
+        }
+    }
+
     @Test func theCardOffersItsControls() async throws {
         let opened = try await open()
         defer { opened.app.stop() }
@@ -247,6 +359,28 @@ struct DesignTweakTests {
         try await eventuallyOnMain("Undo to say it couldn't") { opened.tweak.presentation.problem != nil }
         #expect(try await source(opened) == agent)
     }
+}
+
+@MainActor
+private final class TweakGate {
+    var entered = false
+    private var continuation: CheckedContinuation<Void, Never>?
+    func wait() async {
+        await withCheckedContinuation { continuation = $0; entered = true }
+    }
+    func release() { continuation?.resume(); continuation = nil }
+}
+
+@MainActor
+private final class HeldPreview: DesignTweakPreviews {
+    let gate = TweakGate()
+    var ended: Set<DesignPath> = []
+    func previewStyle(_ path: DesignPath, _ changes: [Int: [String: String?]]) async -> Bool {
+        if !gate.entered { await gate.wait() }
+        return true
+    }
+    func previewProps(_ path: DesignPath, _ json: String) async -> Bool { true }
+    func endPreview(_ path: DesignPath) async { ended.insert(path) }
 }
 
 private struct NeverHappened: Error, CustomStringConvertible {

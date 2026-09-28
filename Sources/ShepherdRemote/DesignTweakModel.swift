@@ -322,7 +322,8 @@ public final class DesignTweakModel {
             presentation.groups = presentation.groups.map { DesignTweakGroup(title: $0.title, rows: $0.rows.map(showingDrag)) }
             return
         }
-        Task { await commit(changes, name: "Tweak") }
+        let scope = scope
+        Task { await commit(changes, target: target, scope: scope, name: "Tweak") }
     }
 
     // MARK: Previews
@@ -361,9 +362,11 @@ public final class DesignTweakModel {
 
     /// Writes style changes to every board they reach as one change. A stale revision is read
     /// again and the change made once more on what is there now.
-    private func commit(_ changes: [DesignPath: [Int: [String: String?]]], name: String, isReset: Bool = false) async {
+    private func commit(_ changes: [DesignPath: [Int: [String: String?]]], target: DesignTweakTarget,
+                        scope: Scope, name: String, isReset: Bool = false) async {
         await previewsSettled()
-        dragging = [:]
+        if self.target == target { dragging = [:] }
+        var previewPaths = Set(changes.keys)
         for attempt in 0..<2 {
             do {
                 let base = try await baseRevision(fresh: attempt > 0)
@@ -371,9 +374,10 @@ public final class DesignTweakModel {
                 var edits = changes
                 // The elements as the board holds them now: an agent's write may have moved them
                 // since the change was worked out.
-                if !isReset, let target, let refound = try await refind(target) { edits = refound.mapValues { tids in
+                if !isReset, let refound = try await refind(target, scope: scope) { edits = refound.mapValues { tids in
                     Dictionary(uniqueKeysWithValues: tids.map { ($0, changes.values.first?.values.first ?? [:]) })
                 } }
+                previewPaths.formUnion(edits.keys)
                 for (path, elements) in edits {
                     let current = try await source(path)
                     let elements = isReset ? unmoved(elements, on: path, in: current.source) : elements
@@ -391,21 +395,22 @@ public final class DesignTweakModel {
                     originals = originals.filter { changes[$0.key] == nil }
                     originalPaths = originalPaths.filter { changes[$0.key] == nil }
                 }
-                snapshot = (try? await io.snapshot()) ?? snapshot
                 registerUndo(.boards(written.versions, written.shas), name: name)
+                snapshot = (try? await io.snapshot()) ?? snapshot
+                for path in previewPaths { await host?.endPreview(path) }
                 report(nil)
                 await rebuild(loadingScope: false)
                 return
             } catch let error where attempt == 0 && io.isStale(error) {
                 continue
             } catch {
-                for path in changes.keys { await host?.endPreview(path) }
+                for path in previewPaths { await host?.endPreview(path) }
                 report("Couldn't keep the tweak: \(Self.describe(error))")
                 await rebuild(loadingScope: false)
                 return
             }
         }
-        for path in changes.keys { await host?.endPreview(path) }
+        for path in previewPaths { await host?.endPreview(path) }
         report("Couldn't keep the tweak: the design kept changing. Try again.")
     }
 
@@ -417,7 +422,7 @@ public final class DesignTweakModel {
 
     /// After the design moved: where the target's element (by its path) and every element of its
     /// name are now. Nil when nothing needs finding again.
-    private func refind(_ target: DesignTweakTarget) async throws -> [DesignPath: [Int]]? {
+    private func refind(_ target: DesignTweakTarget, scope: Scope) async throws -> [DesignPath: [Int]]? {
         guard let id = target.element else { return nil }
         let source = try await self.source(target.board)
         // The path anchors the element: a write above it moves its tid, not its place.
@@ -477,9 +482,7 @@ public final class DesignTweakModel {
             presentation.groups = presentation.groups.map { DesignTweakGroup(title: $0.title, rows: $0.rows.map(showingDrag)) }
             return
         }
-        let before = snapshot?.index.tweaks(for: target.board)[name]
-        if propOriginals[target.board]?[name] == nil { propOriginals[target.board, default: [:]][name] = .some(before) }
-        Task { await commitProps(target.board, [name: accepted], undo: [name: before], name: "Tweak") }
+        Task { await commitProps(target.board, [name: accepted], name: "Tweak") }
     }
 
     /// An enum prop's option, by the title its picker shows: the value as data-props wrote it.
@@ -504,17 +507,23 @@ public final class DesignTweakModel {
         }
     }
 
-    private func commitProps(_ path: DesignPath, _ values: [String: JSONValue?], undo: [String: JSONValue?], name: String) async {
+    private func commitProps(_ path: DesignPath, _ values: [String: JSONValue?], name: String) async {
         await previewsSettled()
         dragging = [:]
         let patch = DesignIndex.tweakPatch(path, values)
         for attempt in 0..<2 {
             do {
                 let base = try await baseRevision(fresh: attempt > 0)
+                let before = snapshot?.index.tweaks(for: path) ?? [:]
+                let undo = Dictionary(uniqueKeysWithValues: values.keys.map { ($0, before[$0]) })
                 writes += 1
                 _ = try await io.updateIndex(patch, base)
-                snapshot = try await io.snapshot()
+                for key in values.keys where propOriginals[path]?[key] == nil {
+                    propOriginals[path, default: [:]][key] = .some(before[key])
+                }
                 registerUndo(.props(path, undo, redo: values), name: name)
+                snapshot = try await io.snapshot()
+                await host?.endPreview(path)
                 report(nil)
                 await rebuild(loadingScope: false)
                 return
@@ -548,13 +557,15 @@ public final class DesignTweakModel {
     public func reset() {
         guard let target else { return }
         let (styles, props) = resetChanges(target)
+        let scope = scope
         Task {
-            if !styles.isEmpty { await commit(styles, name: "Reset", isReset: true) }
+            if !styles.isEmpty { await commit(styles, target: target, scope: scope, name: "Reset", isReset: true) }
             if !props.isEmpty {
-                let now = snapshot?.index.tweaks(for: target.board) ?? [:]
-                propOriginals[target.board] = nil
-                let undo = Dictionary(uniqueKeysWithValues: props.keys.map { ($0, now[$0]) })
-                await commitProps(target.board, props, undo: undo, name: "Reset")
+                await commitProps(target.board, props, name: "Reset")
+                if keptProblem == nil {
+                    propOriginals[target.board] = nil
+                    await rebuild(loadingScope: false)
+                }
             }
         }
     }
@@ -572,6 +583,7 @@ public final class DesignTweakModel {
     /// knows what to put back.
     private final class Pending {
         var step: Step?
+        var task: Task<Void, Never>?
     }
 
     private func registerUndo(_ step: Step, name: String) {
@@ -584,17 +596,20 @@ public final class DesignTweakModel {
         undoManager.setActionName(name)
     }
 
-    private func run(_ step: Step, name: String, then pending: Pending) {
+    private func run(_ step: Step?, waitingFor previous: Pending? = nil, name: String, then pending: Pending) {
         // The step opposite this one, registered now so it lands as the redo (or undo).
         undoManager?.registerUndo(withTarget: self) { model in
             MainActor.assumeIsolated {
-                guard let next = pending.step else { return }
                 let again = Pending()
-                model.run(next, name: name, then: again)
+                model.run(nil, waitingFor: pending, name: name, then: again)
             }
         }
         undoManager?.setActionName(name)
-        Task {
+        pending.task = Task {
+            // UndoManager exposes Redo before the asynchronous write has returned. Queue it,
+            // rather than consuming the action while its inverse is still unknown.
+            await previous?.task?.value
+            guard let step = step ?? previous?.step else { return }
             do {
                 switch step {
                 case .boards(let versions, let shas):
@@ -602,11 +617,16 @@ public final class DesignTweakModel {
                     let written = try await io.restore(versions, shas)
                     pending.step = .boards(written.versions, written.shas)
                 case .props(let path, let values, let redo):
+                    let current = try await io.snapshot()
+                    let props = current.index.tweaks(for: path)
+                    guard redo.allSatisfy({ props[$0.key] == $0.value }) else {
+                        throw DesignTweakProblem.elementChanged
+                    }
                     writes += 1
-                    _ = try await io.updateIndex(DesignIndex.tweakPatch(path, values), nil)
-                    snapshot = try await io.snapshot()
+                    _ = try await io.updateIndex(DesignIndex.tweakPatch(path, values), current.revision)
                     pending.step = .props(path, redo, redo: values)
                 }
+                snapshot = try await io.snapshot()
                 report(nil)
             } catch {
                 report("Couldn't undo: the board changed since.")
