@@ -322,6 +322,51 @@ struct TerminalSessionTests {
         try await eventually("the descendant to die") { !isRunning(child) }
     }
 
+    @Test(arguments: [false, true])
+    func closingAJobControlledTerminalKillsItsForegroundAndBackgroundGroups(stoppingServer: Bool) async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let worker = h.dir.appendingPathComponent("job.py")
+        try """
+        import os, pathlib, signal, sys, time
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        parent = os.getpid()
+        if os.fork() == 0:
+            # An external watchdog per scratch job, independent of server/test cleanup. It
+            # holds no PTY descriptor and signals only its still-current parent, never a PID
+            # read from a stale file. A broken implementation cannot leave the worker alive.
+            os.setsid()
+            os.closerange(0, 1024)
+            deadline = time.monotonic() + 20
+            while os.getppid() == parent and time.monotonic() < deadline:
+                time.sleep(0.01)
+            if os.getppid() == parent: os.kill(parent, signal.SIGKILL)
+            os._exit(0)
+        pathlib.Path(sys.argv[1]).write_text(str(parent))
+        while True: time.sleep(1)
+        """.write(to: worker, atomically: true, encoding: .utf8)
+        let callbacks = Callbacks(h.server)
+        let info = try await h.shell("set -m; trap '' HUP TERM; python3 job.py bg.pid & python3 job.py fg.pid; wait")
+        let foreground = h.dir.appendingPathComponent("fg.pid"), background = h.dir.appendingPathComponent("bg.pid")
+        try await eventually("both resistant jobs to start") {
+            FileManager.default.fileExists(atPath: foreground.path) && FileManager.default.fileExists(atPath: background.path)
+        }
+        let jobs = try [pid(in: foreground), pid(in: background)]
+        let groups = jobs.map { getpgid($0) }
+        #expect(Set(groups).count == 2 && groups.allSatisfy { $0 > 0 })
+        let session = getsid(jobs[0])
+        #expect(session > 0 && groups.allSatisfy { $0 != session })
+        if stoppingServer { h.server.stop() } else { h.server.killSession(info.id) }
+        // Before the independent 20s watchdog: its rescue must not make this test pass.
+        try await eventually("both owned job-control groups to die", timeout: .seconds(10)) {
+            jobs.allSatisfy { !isRunning($0) }
+        }
+        if !stoppingServer {
+            try await eventually("the pane exit after job cleanup", timeout: .seconds(5)) { callbacks.exited(info.id) }
+        }
+    }
+
     /// A leader that exits while a descendant still holds the PTY is reaped, and the
     /// descendant goes with it.
     @Test func anEarlyLeaderExitReapsDescendantsHoldingThePty() async throws {
