@@ -167,6 +167,7 @@ struct MCPOAuthToken: Codable, Equatable, Sendable {
     var tokenEndpoint: String
     var clientID: String
     var clientSecret: String?
+    var authMethod: String? = nil
     var redirectURI: String
     var resource: String
     var accessToken: String
@@ -459,7 +460,7 @@ struct MCPOAuthService: Sendable {
                                             clientID: client.clientID, clientSecret: client.clientSecret, authMethod: client.authMethod)
         return MCPOAuthToken(
             issuer: discovery.issuer, tokenEndpoint: discovery.metadata.tokenEndpoint, clientID: client.clientID,
-            clientSecret: client.clientSecret, redirectURI: client.redirectURI, resource: discovery.resource,
+            clientSecret: client.clientSecret, authMethod: client.authMethod, redirectURI: client.redirectURI, resource: discovery.resource,
             accessToken: answer.accessToken, refreshToken: answer.refreshToken,
             expiresAtMs: try answer.expiry(nowMs: nowMs),
             scopes: answer.scope?.split(separator: " ").map(String.init) ?? requestedScopes,
@@ -474,7 +475,7 @@ struct MCPOAuthService: Sendable {
         let answer: TokenAnswer
         do {
             answer = try await tokenRequest(endpoint: token.tokenEndpoint, form: form, clientID: token.clientID,
-                                            clientSecret: token.clientSecret, authMethod: nil)
+                                            clientSecret: token.clientSecret, authMethod: token.authMethod)
         } catch MCPOAuthError.tokenFailed(let error, _) where error == "invalid_grant" {
             throw MCPOAuthError.expired
         }

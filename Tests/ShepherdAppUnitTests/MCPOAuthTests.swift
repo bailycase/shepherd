@@ -154,6 +154,24 @@ struct MCPOAuthTests {
         #expect(try await service.refresh(token, nowMs: 1_000).expiresAtMs == expected)
     }
 
+    @Test func aRegisteredBasicClientKeepsItsMethodAcrossPersistenceAndRefresh() async throws {
+        let http = BasicClientEndpoint()
+        let service = MCPOAuthService(http: http)
+        let metadata = MCPAuthorizationServerMetadata(authorizationEndpoint: "https://fixture.invalid/authorize",
+            tokenEndpoint: "https://fixture.invalid/token", registrationEndpoint: "https://fixture.invalid/register")
+        let client = try await service.register(metadata, redirectURI: "http://127.0.0.1/callback", provider: "fixture")
+        let discovery = MCPOAuthDiscovery(issuer: "fixture", metadata: metadata, resource: "fixture", challengeScopes: [])
+        let first = try await service.exchange(code: "code", verifier: "v", discovery: discovery, client: client, requestedScopes: [], nowMs: 0)
+        let saved = try JSONDecoder().decode(MCPOAuthToken.self, from: JSONEncoder().encode(first))
+        #expect(saved.authMethod == "client_secret_basic")
+        let refreshed = try await service.refresh(saved, nowMs: 1_000)
+        #expect(refreshed.accessToken == "accepted" && refreshed.authMethod == "client_secret_basic")
+        var legacy = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(first)) as? [String: Any])
+        legacy.removeValue(forKey: "authMethod")
+        let old = try JSONDecoder().decode(MCPOAuthToken.self, from: JSONSerialization.data(withJSONObject: legacy))
+        #expect(old.authMethod == nil)
+    }
+
     @Test func refreshTimingDoesNotOverflowForPersistedExtremeDates() {
         var token = MCPOAuthToken(issuer: "i", tokenEndpoint: "t", clientID: "c", redirectURI: "r", resource: "x", accessToken: "a",
                                  expiresAtMs: .min, scopes: [], refreshedAtMs: 0)
@@ -221,6 +239,19 @@ struct MCPOAuthTransportTests {
         let discovery = MCPOAuthDiscovery(issuer: "x", metadata: metadata, resource: "https://mcp.example.com", challengeScopes: [])
         let client = MCPOAuthClient(clientID: "c", redirectURI: "http://127.0.0.1:1/callback", registeredDynamically: true)
         #expect(MCPOAuthService.authorizationURL(discovery, client: client, scopes: [], state: "s", challenge: "c") == nil)
+    }
+}
+
+private struct BasicClientEndpoint: MCPHTTP {
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let registration = request.url!.path == "/register"
+        let basic = "Basic " + Data("client:secret".utf8).base64EncodedString()
+        let form = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
+        let accepted = registration || (request.value(forHTTPHeaderField: "Authorization") == basic && !form.contains("client_secret="))
+        let body = registration
+            ? #"{"client_id":"client","client_secret":"secret","token_endpoint_auth_method":"client_secret_basic"}"#
+            : accepted ? #"{"access_token":"accepted","refresh_token":"refresh","expires_in":3600}"# : #"{"error":"invalid_client"}"#
+        return (Data(body.utf8), HTTPURLResponse(url: request.url!, statusCode: accepted ? 200 : 401, httpVersion: nil, headerFields: nil)!)
     }
 }
 
