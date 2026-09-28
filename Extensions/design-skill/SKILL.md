@@ -101,7 +101,13 @@ canvas under `ds/<namespace>/`, and `design_check` checks every board against it
      (for a component, its template's file, and a `specimen` file holding a small HTML sample of
      it) — the files it needs (`README.md` saying how to consume it, `components/<Name>.html`
      specimens), and `sources`: the stylesheets its tokens came from, so the viewer can re-sync
-     it later. Add `install: true` to draw in it at once.
+     it later. Specimens are self-contained HTML fragments, not raw application components.
+     Include the component's actual styles inline or link a saved system-local CSS file with
+     `<helmet><link rel="stylesheet" href="./component.css"></helmet>`; paths resolve beside
+     the specimen. `tokens.css` supplies variables, not component classes. Do not assume TSX,
+     utility CSS, CSS Modules or application providers run in the specimen renderer. Say when
+     a static specimen approximates the component instead of presenting it as the real runtime.
+     Add `install: true` to draw in it at once.
   3. Say what you built in a line ("11 colors, 4 type styles, 7 spacing and radius steps, 9
      components") and what doesn't match: values the templates or pages hard-code instead of a
      token ("three templates hard-code #4338ca for buttons instead of --accent"). Boards always

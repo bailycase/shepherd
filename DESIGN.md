@@ -8719,6 +8719,9 @@ design system chip, the Designs page, or More ▸ Design systems, and keeps the 
     button tile shows "Export CSV" beside "Cancel"; the chip tile a selected and a plain chip),
     and 10pt under it the name in 12.5 semibold and its template trailing in mono 10.5
     `textTertiary` ("partials/button.html"). Button, Chip, KPI tile, Card, Nav bar, Input.
+    A specimen renders from its own directory so linked component styles and assets resolve
+    correctly. Its HTML must include the component styling; token variables alone do not
+    reproduce application components.
   - Each section's title ("Colors", "Type", "Components") is a `.nwSectionLabel()`, 6pt above
     its content.
   - Spacing & radii and Boards using it are listed but not drawn.
