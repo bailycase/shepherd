@@ -665,10 +665,11 @@ public struct NativeScrollFollower: Equatable, Sendable {
         let layoutChanged = new.layoutDiffers(from: old)
         let intent = gesture && new.distance > old.distance && !layoutChanged
         observe(distanceFromBottom: new.distance, userIntent: intent)
-        // Lazy layout can report its size and the resulting offset in separate readings.
-        // A stale offset past the tail must recover even when this reading changes no size.
-        // Fitting content legitimately has negative distance at its top; don't scroll it.
-        let pastTail = new.distance < min(0, new.content - new.container) - Self.repinSlack
+        // Let native size anchoring finish before repairing an offset-only overshoot. Negative
+        // distances during layout are intermediate readings, not a settled scroll position.
+        // SwiftUI can also leave the top content margin below the tail on older systems.
+        let pastTail = !layoutChanged && new.distance < min(0, new.content - new.container)
+            - max(0, new.insetTop) - Self.repinSlack
         return sticky && !gesture && (pastTail || (layoutChanged && new.distance > Self.repinSlack))
     }
 }
@@ -681,6 +682,8 @@ public struct NativeScrollProbe: Equatable, Sendable {
     public var container: Double
     /// The bottom inset (the composer, and on iOS the keyboard).
     public var inset: Double
+    /// The top content margin can remain below the tail after native size anchoring.
+    public var insetTop: Double
 
     /// From SwiftUI's `ScrollGeometry`: `container` is the viewport less both insets, and the
     /// offset runs from `-insetTop` to `content + insetBottom - frame`, so at the tail the
@@ -690,9 +693,10 @@ public struct NativeScrollProbe: Equatable, Sendable {
         self.content = content
         self.container = container
         inset = insetBottom
+        self.insetTop = insetTop
     }
 
     public func layoutDiffers(from other: NativeScrollProbe) -> Bool {
-        content != other.content || container != other.container || inset != other.inset
+        content != other.content || container != other.container || inset != other.inset || insetTop != other.insetTop
     }
 }
