@@ -8,6 +8,8 @@ extension FixtureCatalog {
     static var clientState: [FixtureScreen] {
         [FixtureScreen(name: "client-state-regressions", hosts: ClientStateChecks.hosts(), prepare: { app in
             await ClientStateChecks.run(app)
+        }), FixtureScreen(name: "forgotten-design-regression", hosts: DesignsFixtures.hosts(updating: false), prepare: { app in
+            await ClientStateChecks.forgottenDesign(app)
         }), FixtureScreen(name: "forgotten-automation-regression", hosts: AutomationsFixtureData.fleet(), prepare: { app in
             await ClientStateChecks.forgottenAutomation(app)
         })]
@@ -186,6 +188,30 @@ enum ClientStateChecks {
         serving.cancel()
         thread.stop()
         await serving.value
+    }
+
+    static func forgottenDesign(_ app: MobileApp) async {
+        let ref = DesignsFixtures.ref(DesignsFixtures.checkout)
+        let libraries = HostDesignLibraries.of(app.hosts)
+        let phone = MobileDesigns.of(app.hosts)
+        let pad = PadDesigns.of(app.hosts)
+        await phone.refresh()
+        _ = await phone.sync(ref)
+        await phone.loadComments(ref)
+        weak var canvas = pad.canvas(PadDesignRef(host: ref.host, design: ref.design))
+        check(canvas != nil && phone.indexes[ref] != nil, "design data seeded before full host Forget")
+        let kept = RemoteDesignCache.Key(host: FixtureData.buildBox, design: DesignID(rawValue: "kept"))
+        let bytes = Data("other host".utf8), sha = RemoteDesignCache.sha256(bytes)
+        libraries.cache.store(bytes, sha256: sha, in: kept)
+        libraries.cache.setPaths(["kept": sha], for: kept)
+        do { try app.forget(host: ref.host) } catch { check(false, "fixture full host Forget succeeded"); return }
+        check(canvas == nil, "full Forget releases the unmounted iPad canvas")
+        check(phone.indexes[ref] == nil && phone.comments[ref] == nil && phone.source(ref) == nil,
+              "full Forget evicts phone indexes/comments/source")
+        check(libraries.cache.paths(.init(host: ref.host, design: ref.design)).isEmpty
+              && libraries.cache.file(kept, path: "kept") == bytes, "full Forget purges only this host's design cache")
+        weak var transient = pad.canvas(PadDesignRef(host: ref.host, design: ref.design))
+        check(transient == nil && libraries.cache.isForgotten(host: ref.host), "stale design lookup cannot recreate the canvas cache")
     }
 
     static func forgottenAutomation(_ app: MobileApp) async {

@@ -206,6 +206,14 @@ public final class ClientSkills {
     }
     /// The last change a host refused, in words.
     public private(set) var problem: String?
+    /// An ambiguous queued mutation the user must inspect before explicitly abandoning its receipt.
+    public struct Unacknowledged: Equatable, Identifiable, Sendable {
+        public let id: UUID
+        public let host: UUID
+        public let hostName: String
+    }
+    public private(set) var unacknowledged: Unacknowledged?
+
     /// The removal Undo takes back.
     public private(set) var removal: Removal?
     /// Installs from Browse and Add from repo, by the key the sheet gave them.
@@ -249,6 +257,7 @@ public final class ClientSkills {
     /// Explicit Forget, not a disconnect: discard only this host's saved obligations.
     public func forget(host: UUID) {
         forgotten.insert(host)
+        if unacknowledged?.host == host { unacknowledged = nil }
         loaded[host] = nil
         owed[host] = nil
         sending[host] = nil
@@ -426,6 +435,16 @@ public final class ClientSkills {
 
     public func dismissProblem() {
         problem = nil
+    }
+
+    /// User-confirmed only: stop waiting for this one receipt, without retrying or rolling back
+    /// its possibly completed mutation. Later requests remain ordered and can catch up normally.
+    public func resolveUnacknowledged(_ entry: Unacknowledged, in hosts: [SkillsHost]) async {
+        guard !forgotten.contains(entry.host), unacknowledged?.id == entry.id, !catchingUp.contains(entry.host),
+              let index = owed[entry.host]?.firstIndex(where: { $0.id == entry.id && $0.attempted == true }) else { return }
+        owed[entry.host]?.remove(at: index)
+        if unacknowledged?.id == entry.id { unacknowledged = nil; problem = nil }
+        if let host = hosts.first(where: { $0.id == entry.host }) { await hostConnected(host) }
     }
 
     // MARK: Changes
@@ -682,7 +701,8 @@ public final class ClientSkills {
                     case .install, .installFiles, .remove, .restore:
                         // No operation receipt or file hashes: a fetch cannot prove a timed-out
                         // copy has stopped. Keep it owed rather than blindly replaying it.
-                        problem = "A skill change on \(host.name) wasn't acknowledged. Check it on the host before retrying."
+                        unacknowledged = Unacknowledged(id: entry.id, host: host.id, hostName: host.name)
+                        problem = "A skill change on \(host.name) wasn't acknowledged. Check it on the host before continuing."
                         return
                     default:
                         break // Setters can safely send their desired value again.

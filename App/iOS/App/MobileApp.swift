@@ -43,6 +43,8 @@ final class MobileApp {
         WorktreeOperations.shared.forget(host: host)
         TurnUndoStore.shared.forget(host: host)
         HostDesignLibraries.of(hosts).forget(host)
+        PadDesigns.forget(host: host, in: hosts)
+        MobileDesigns.forget(host: host, in: hosts)
     }
 }
 

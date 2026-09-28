@@ -282,6 +282,17 @@ struct ClientSkillsTests {
         #expect(relaunched.owes(id))
         #expect(relaunched.problem != nil)
         #expect(!client.skills.autoUpdate) // The unattempted suffix stays ordered behind it.
+        guard let entry = relaunched.unacknowledged else { Issue.record("Missing explicit recovery"); return }
+        // Confirm while offline, then recreate: exactly one receipt is abandoned durably.
+        await relaunched.resolveUnacknowledged(entry, in: [offline])
+        let recovered = ClientSkills(defaults: defaults)
+        #expect(recovered.owes(id))
+        await recovered.hostConnected(live)
+        #expect(client.skills.autoUpdate)
+        #expect(!recovered.owes(id))
+        #expect(client.requests.filter { $0 == "installFiles" }.count == 1)
+        await recovered.resolveUnacknowledged(entry, in: [live]) // A stale confirmation cannot eat later work.
+        #expect(!recovered.owes(id))
     }
 
     /// An offline host is owed the last of each change, and a removal undone before it's back

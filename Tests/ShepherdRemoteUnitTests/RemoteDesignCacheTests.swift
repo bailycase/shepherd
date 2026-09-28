@@ -15,6 +15,7 @@ private final class FakeDesignHost: RemoteDesignTransport, @unchecked Sendable {
     private(set) var requests: [RemoteDesignRequest] = []
     /// Fails the next asset request after this many succeeded.
     var failAssetAfter: Int?
+    var beforeReply: (@Sendable () async -> Void)?
 
     init(files: [String: Data], assets: [String: (name: String, data: Data)] = [:]) {
         self.files = files
@@ -28,7 +29,9 @@ private final class FakeDesignHost: RemoteDesignTransport, @unchecked Sendable {
     var asked: [RemoteDesignRequest] { lock.lock(); defer { lock.unlock() }; return requests }
 
     func design(_ request: RemoteDesignRequest) async throws -> RemoteDesignResult {
-        try answer(request)
+        let reply = try answer(request)
+        await beforeReply?()
+        return reply
     }
 
     private func answer(_ request: RemoteDesignRequest) throws -> RemoteDesignResult {
@@ -76,6 +79,37 @@ private final class FakeDesignHost: RemoteDesignTransport, @unchecked Sendable {
 
 @Suite("Remote design cache")
 struct RemoteDesignCacheTests {
+    @Test @MainActor func forgettingAHostPurgesFilesAssetsPartialsAndRejectsLateDownloads() async throws {
+        let directory = try makeScratchDirectory("design-forget")
+        let cache = RemoteDesignCache(directory: directory)
+        let gone = RemoteDesignCache.Key(host: UUID(), design: DesignID(rawValue: "gone"))
+        let kept = RemoteDesignCache.Key(host: UUID(), design: DesignID(rawValue: "kept"))
+        let data = Data("board".utf8), sha = RemoteDesignCache.sha256(data)
+        for key in [gone, kept] {
+            #expect(cache.store(data, sha256: sha, in: key))
+            cache.setPaths(["A.dc.html": sha], for: key)
+            cache.storeAsset(.init(name: "image.png", data: data), id: "image", in: key)
+            cache.setPartial(.init(sha256: sha, total: 10, data: data), "file:large", in: key)
+        }
+        let fake = FakeDesignHost(files: ["late.dc.html": data])
+        let source = RemoteDesignSource(key: gone, cache: cache) { fake }
+        let gate = SettingsRequestGate()
+        fake.beforeReply = { await gate.hold() }
+        let reading = Task { await source.projectFile("late.dc.html") }
+        await gate.waitUntilHeld()
+        cache.forget(host: gone.host)
+        await gate.release()
+        #expect(await reading.value == nil)
+        #expect(cache.object(gone, sha256: sha) == nil && cache.paths(gone).isEmpty)
+        #expect(cache.asset(gone, id: "image") == nil && cache.partial(gone, "file:large") == nil)
+        #expect(!FileManager.default.fileExists(atPath: directory.appendingPathComponent(gone.host.uuidString).path))
+        #expect(cache.file(kept, path: "A.dc.html") == data && cache.asset(kept, id: "image")?.data == data)
+        #expect(cache.partial(kept, "file:large") != nil)
+        #expect(!cache.store(data, sha256: sha, in: gone))
+        let recreated = RemoteDesignCache(directory: directory)
+        #expect(recreated.object(gone, sha256: sha) == nil && recreated.object(kept, sha256: sha) == data)
+    }
+
     static let host = UUID(uuidString: "00000000-0000-0000-0000-0000000000A1")!
 
     static func bytes(_ count: Int, seed: UInt8 = 1) -> Data {
