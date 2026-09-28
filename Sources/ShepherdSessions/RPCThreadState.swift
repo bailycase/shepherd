@@ -1276,6 +1276,9 @@ final class RPCThreadState {
                     guard let self, let index = self.dialogs.firstIndex(where: { $0.id == request.id }) else { return }
                     self.recordQuestion(self.dialogs.remove(at: index), answer: nil)
                     self.commit()
+                    // pi may already have settled and its history refresh beaten this timer.
+                    // Place the record in history even when no later turn will refresh it.
+                    self.refreshMessages()
                 }
             }
         case "setWidget":

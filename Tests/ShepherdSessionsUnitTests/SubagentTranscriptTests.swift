@@ -58,7 +58,8 @@ struct SubagentTranscriptTests {
     }
 
     @Test func escapedToolResultsPageWithinTheWireBudgetWithoutLosingEntries() throws {
-        let text = String(repeating: "\\", count: 16 * 1024)
+        // Leave room in the per-row 16 KiB projection budget for tool name and call ID.
+        let text = String(repeating: "\\", count: 15 * 1024)
         let encodedText = String(decoding: try JSONEncoder().encode(text), as: UTF8.self)
         let lines = (0..<40).map { index in
             "{\"type\":\"message\",\"id\":\"t\(index)\",\"message\":{\"role\":\"toolResult\",\"toolCallId\":\"call\(index)\",\"toolName\":\"read\",\"content\":[{\"type\":\"text\",\"text\":\(encodedText)}],\"isError\":false}}"
