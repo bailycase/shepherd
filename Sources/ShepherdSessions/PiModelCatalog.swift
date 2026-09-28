@@ -28,11 +28,17 @@ public final class PiModelCatalog: @unchecked Sendable {
     public let files: PiHome
     /// Readies the home before pi is asked; false when no pi may start there.
     private let ready: @Sendable () -> Bool
+    private let timeout: TimeInterval
     private let lock = NSLock()
     private var cached: (fingerprint: [Double], entries: [Entry])?
 
-    public init(home: PiHome, ready: @escaping @Sendable () -> Bool) {
+    public convenience init(home: PiHome, ready: @escaping @Sendable () -> Bool) {
+        self.init(home: home, timeout: 20, ready: ready)
+    }
+
+    init(home: PiHome, timeout: TimeInterval, ready: @escaping @Sendable () -> Bool) {
         files = home
+        self.timeout = timeout
         self.ready = ready
     }
 
@@ -60,23 +66,11 @@ public final class PiModelCatalog: @unchecked Sendable {
         if let cached = lock.withLock({ cached }), cached.fingerprint == fingerprint { return cached.entries }
 
         guard ready() else { return [] }
-        let process = Process()
         let line = PiLaunch.listModels(home: files)
-        process.executableURL = URL(fileURLWithPath: line.argv[0])
-        process.arguments = Array(line.argv.dropFirst())
-        let stdout = Pipe()
-        process.standardOutput = stdout
-        process.standardError = Pipe()
-        do {
-            try process.run()
-        } catch {
-            return []
-        }
-        let data = stdout.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else { return [] }
+        guard let result = try? BoundedCommand.run(line.argv, timeout: timeout, outputLimit: 8 << 20),
+              result.status == 0 else { return [] }
 
-        let entries = Self.parseEntries(String(decoding: data, as: UTF8.self))
+        let entries = Self.parseEntries(String(decoding: result.output, as: UTF8.self))
         lock.withLock { cached = (fingerprint, entries) }
         return entries
     }

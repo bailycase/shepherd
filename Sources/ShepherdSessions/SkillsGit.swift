@@ -157,64 +157,27 @@ struct SkillsGit {
     /// asks for credentials: a repository that needs them and has none fails.
     @discardableResult
     static func run(_ arguments: [String], in directory: URL?, input: Data? = nil, timeout: TimeInterval = 60) throws -> Data {
-        let process = Process()
-        process.executableURL = executable
-        process.arguments = arguments
-        if let directory { process.currentDirectoryURL = directory }
         var environment = ProcessInfo.processInfo.environment
         environment["GIT_TERMINAL_PROMPT"] = "0"
         environment["GCM_INTERACTIVE"] = "never"
         environment["GIT_ASKPASS"] = "/usr/bin/true"
         environment["SSH_ASKPASS"] = "/usr/bin/true"
         environment["GIT_SSH_COMMAND"] = environment["GIT_SSH_COMMAND"] ?? "ssh -o BatchMode=yes"
-        process.environment = environment
-        let stdout = Pipe(), stderr = Pipe(), stdin = Pipe()
-        process.standardOutput = stdout
-        process.standardError = stderr
-        if input != nil {
-            process.standardInput = stdin
-        } else {
-            process.standardInput = FileHandle.nullDevice
-        }
+        let result: BoundedCommand.Result
         do {
-            try process.run()
-        } catch {
-            throw Failure(message: "Couldn't run git: \(error.localizedDescription)")
-        }
-        // Both pipes drain at once, so neither can fill while git waits on the other.
-        let group = DispatchGroup()
-        let output = Drained(), errors = Drained()
-        for (pipe, drained) in [(stdout, output), (stderr, errors)] {
-            group.enter()
-            DispatchQueue.global(qos: .userInitiated).async {
-                drained.data = pipe.fileHandleForReading.readDataToEndOfFile()
-                group.leave()
-            }
-        }
-        if let input {
-            DispatchQueue.global(qos: .userInitiated).async {
-                try? stdin.fileHandleForWriting.write(contentsOf: input)
-                try? stdin.fileHandleForWriting.close()
-            }
-        }
-        if group.wait(timeout: .now() + timeout) == .timedOut {
-            process.terminate()
-            group.wait()
-            process.waitUntilExit()
+            result = try BoundedCommand.run([executable.path] + arguments, directory: directory,
+                                            environment: environment, input: input, timeout: timeout)
+        } catch BoundedCommand.Failure.timedOut {
             throw Failure(message: "git took too long and was stopped.")
+        } catch {
+            throw Failure(message: "Couldn't run git: \(error)")
         }
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            let message = String(decoding: errors.data, as: UTF8.self)
+        guard result.status == 0 else {
+            let message = String(decoding: result.errors, as: UTF8.self)
                 .split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
-                .last { !$0.isEmpty && !$0.hasPrefix("hint:") } ?? "git exited with status \(process.terminationStatus)."
+                .last { !$0.isEmpty && !$0.hasPrefix("hint:") } ?? "git exited with status \(result.status)."
             throw Failure(message: message.hasPrefix("fatal: ") ? String(message.dropFirst("fatal: ".count)) : message)
         }
-        return output.data
-    }
-
-    /// A pipe's bytes, written by the one read that drains it and read after the group waits.
-    private final class Drained: @unchecked Sendable {
-        var data = Data()
+        return result.output
     }
 }
