@@ -350,6 +350,28 @@ struct QueueTests {
         #expect(prompts(pi).suffix(2) == ["tools:0 after", "tools:0 instead"])
     }
 
+    @Test func deletingTheDeferredSendNowSelectionStillDrainsTheRemainingQueue() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        let running = try await startRun(pi)
+        let first = UUID(), second = UUID()
+        _ = try await pi.send("tools:0 first", operationID: first, from: running)
+        _ = try await pi.send("tools:0 second", operationID: second, from: running)
+        let release = DispatchSemaphore(value: 0)
+        defer { release.signal() }
+        await withCheckedContinuation { continuation in
+            h.server.changes.captureQueue(pi.agent.id).async { continuation.resume(); release.wait() }
+        }
+        pi.finishTool(1)
+        let settled = try await pi.snapshot("settled with capture held") { !$0.running }
+        #expect(try await pi.queue(.sendNow(ids: [first]), from: settled).failureCode == nil)
+        #expect(try await pi.queue(.delete(id: first), from: settled).failureCode == nil)
+        release.signal()
+        _ = try await pi.waitForStdin("prompt", count: 2)
+        #expect(prompts(pi).last == "tools:0 second")
+    }
+
     @Test func aHeldItemKeepsTheQueueWaitingUntilItsEditorCloses() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }

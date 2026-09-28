@@ -225,6 +225,27 @@ struct ChangesTurnTests {
         #expect(pi.stdin("prompt").compactMap { $0["message"] as? String } == ["tools:0 new request"])
     }
 
+    @Test func serverShutdownAnswersAHeldPromptBeforeCaptureCompletes() async throws {
+        let repo = try ChangesRepo()
+        let host = try ScratchServer.fresh()
+        defer { host.stop() }
+        let pi = try await PiAgent.launch(on: host, cwd: repo.url)
+        let idle = try await pi.ready()
+        let release = DispatchSemaphore(value: 0)
+        defer { release.signal() }
+        await withCheckedContinuation { continuation in
+            host.server.changes.captureQueue(pi.agent.id).async { continuation.resume(); release.wait() }
+        }
+        let send = Task { try await pi.send("tools:0 cancelled by shutdown", from: idle) }
+        _ = try await pi.snapshot("held prompt before shutdown") { $0.provisional.contains { $0.status == "pending" } }
+        host.stop()
+        #expect(try await send.value.failureCode == "send_cancelled")
+        #expect(pi.stdin("prompt").isEmpty)
+        release.signal()
+        await drain(host.server.changes, pi.agent.id)
+        #expect(pi.stdin("prompt").isEmpty)
+    }
+
     private func drain(_ service: ChangesService, _ agent: AgentID) async {
         await withCheckedContinuation { continuation in
             service.captureQueue(agent).async { continuation.resume() }
