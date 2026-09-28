@@ -38,6 +38,10 @@ struct ScrollFollowerLayoutTests {
              new: probe(offset: 1120), sticky: true, repins: false),
         Case(testDescription: "detached, growth is left where it is and is not output by itself",
              start: NativeScrollFollower(sticky: false), new: probe(content: 2400, offset: 1120), sticky: false, repins: false),
+        Case(testDescription: "history shrinking lets native size anchoring settle first",
+             new: probe(content: 1000), sticky: true, repins: false),
+        Case(testDescription: "a composer collapse lets native size anchoring settle first",
+             new: probe(container: 620, inset: 20), sticky: true, repins: false),
         Case(testDescription: "a layout change that leaves it at the tail needs no scroll",
              new: probe(content: 2002, offset: 1422), sticky: true, repins: false),
     ]
@@ -67,6 +71,40 @@ struct ScrollFollowerLayoutTests {
         let further = follower.observe(from: measured, to: Self.probe(content: 2159, offset: 1320), gesture: true)
         #expect(!further)
         #expect(!follower.sticky)
+    }
+
+    @Test func aPinnedViewRepairsOffsetsPastTheContentWithoutFightingGestures() {
+        let beyondTail = Self.probe(offset: 2300)
+        var follower = NativeScrollFollower()
+        let repair = follower.observe(from: Self.tail, to: beyondTail, gesture: false)
+        #expect(repair, "an offset-only jump past the end must recover without another wheel event")
+        let duringGesture = follower.observe(from: Self.tail, to: beyondTail, gesture: true)
+        #expect(!duringGesture)
+        let short = Self.probe(content: 300, offset: -60)
+        let fits = follower.observe(from: Self.tail, to: short, gesture: false)
+        #expect(!fits, "short content above its tail is not overscroll")
+        let pastShortContent = Self.probe(content: 300, offset: 400)
+        let repairShort = follower.observe(from: short, to: pastShortContent, gesture: false)
+        #expect(repairShort)
+    }
+
+    @Test func nativeMarginsAndIntermediateLayoutDoNotTriggerOverscrollRepair() {
+        var follower = NativeScrollFollower()
+        let margin = Self.probe(offset: 1448)
+        let marginRepair = follower.observe(from: Self.tail, to: margin, gesture: false)
+        #expect(!marginRepair)
+        let shrinking = Self.probe(content: 1000)
+        let shrinkRepair = follower.observe(from: Self.tail, to: shrinking, gesture: false)
+        #expect(!shrinkRepair)
+        let staleOffset = Self.probe(content: 1000, offset: 1500)
+        let staleRepair = follower.observe(from: shrinking, to: staleOffset, gesture: false)
+        #expect(staleRepair)
+        let collapsed = Self.probe(container: 720, inset: 0)
+        let collapseRepair = follower.observe(from: Self.tail, to: collapsed, gesture: false)
+        #expect(!collapseRepair)
+        let staleCollapseOffset = Self.probe(offset: 1500, container: 720, inset: 0)
+        let staleCollapseRepair = follower.observe(from: collapsed, to: staleCollapseOffset, gesture: false)
+        #expect(staleCollapseRepair)
     }
 
     @Test func theTailIsZeroAndFittingContentIsNegative() {

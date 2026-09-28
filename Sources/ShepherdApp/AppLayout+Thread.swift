@@ -50,6 +50,8 @@ extension AppLayout {
     // Composer and its menus
     /// Space under the composer card, and the fade above it.
     static let composerBottom: CGFloat = 16
+    /// Extra breathing room between the transcript tail and the floating composer.
+    static let composerTranscriptGap: CGFloat = NW.Space.xxl
     static let composerFade: CGFloat = 48
     /// A menu opens this far above the card, and keeps this far from the thread's top edge.
     static let menuGap: CGFloat = 8

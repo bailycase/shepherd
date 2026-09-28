@@ -655,8 +655,8 @@ public struct NativeScrollFollower: Equatable, Sendable {
     /// Two scroll-geometry readings in a row. Intent is a live gesture (`gesture`: a finger or a
     /// wheel) moving the offset up with the layout unchanged; an offset change alone never is,
     /// because a layout change and the offset shift it causes arrive in separate readings.
-    /// Returns true when the view should land on its tail again: it is stuck and the layout
-    /// changed under it (rows arrived or re-wrapped, the composer or keyboard resized the inset),
+    /// Returns true when a stuck view should land on its tail again: its offset overshot the
+    /// end, or layout changed under it (rows re-wrapped, the composer or keyboard resized the inset),
     /// which the scroll view's size-change anchor does not follow on its own. Never during a
     /// gesture: a drag up measures the rows it reveals, and moving the view then would pull it
     /// out from under the finger (on iOS it also ends the drag, so the reader could never leave
@@ -665,7 +665,12 @@ public struct NativeScrollFollower: Equatable, Sendable {
         let layoutChanged = new.layoutDiffers(from: old)
         let intent = gesture && new.distance > old.distance && !layoutChanged
         observe(distanceFromBottom: new.distance, userIntent: intent)
-        return sticky && layoutChanged && !gesture && new.distance > Self.repinSlack
+        // Let native size anchoring finish before repairing an offset-only overshoot. Negative
+        // distances during layout are intermediate readings, not a settled scroll position.
+        // SwiftUI can also leave the top content margin below the tail on older systems.
+        let pastTail = !layoutChanged && new.distance < min(0, new.content - new.container)
+            - max(0, new.insetTop) - Self.repinSlack
+        return sticky && !gesture && (pastTail || (layoutChanged && new.distance > Self.repinSlack))
     }
 }
 
@@ -677,6 +682,8 @@ public struct NativeScrollProbe: Equatable, Sendable {
     public var container: Double
     /// The bottom inset (the composer, and on iOS the keyboard).
     public var inset: Double
+    /// The top content margin can remain below the tail after native size anchoring.
+    public var insetTop: Double
 
     /// From SwiftUI's `ScrollGeometry`: `container` is the viewport less both insets, and the
     /// offset runs from `-insetTop` to `content + insetBottom - frame`, so at the tail the
@@ -686,9 +693,10 @@ public struct NativeScrollProbe: Equatable, Sendable {
         self.content = content
         self.container = container
         inset = insetBottom
+        self.insetTop = insetTop
     }
 
     public func layoutDiffers(from other: NativeScrollProbe) -> Bool {
-        content != other.content || container != other.container || inset != other.inset
+        content != other.content || container != other.container || inset != other.inset || insetTop != other.insetTop
     }
 }
