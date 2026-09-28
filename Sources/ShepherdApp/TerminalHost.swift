@@ -52,6 +52,11 @@ final class AppTerminalModel {
         surface.updateConfiguration(fontSize: fontSize, fontFamily: fontFamily, extraUnbinds: extraUnbinds)
     }
 
+    var onFocusAcquired: (() -> Void)? {
+        get { surface.onFocusAcquired }
+        set { surface.onFocusAcquired = newValue }
+    }
+
     var maximumDropBytes: Int? {
         get { surface.maximumDropBytes }
         set { surface.maximumDropBytes = newValue }
@@ -116,11 +121,6 @@ enum AppImageDrop {
 
     /// Where drops and attachments are copied; pruned of anything older than a day.
     static var directory: URL { TerminalImageDrop.dropDirectory }
-}
-
-/// Installs the window-level file-drop overlay. Mount once per window.
-struct AppTerminalDropOverlay: View {
-    var body: some View { TerminalDropOverlayInstaller().frame(width: 0, height: 0) }
 }
 
 struct AppTerminalView: View {

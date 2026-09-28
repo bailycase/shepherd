@@ -13,6 +13,33 @@ struct DesignSystemTokensTests {
         try DesignSystemTokens.decode(Data(json.utf8))
     }
 
+    @Test func oversizedTokenNumbersCanBeReportedWithoutTrapping() async {
+        await #expect(processExitsWith: .success) {
+            let tokens = DesignSystemTokens(spacing: [.init(name: "--huge", px: 1e100)])
+            #expect(tokens.css().contains("--huge: 1e+100px;"))
+            let system = DesignSystemInstalled(namespace: "huge", title: "Huge", shepherd: true, tokens: tokens, tokensFile: nil)
+            let used = DesignReferenceReading.usedTokens(in: "padding: var(--huge)", systems: [system])
+            #expect(used.first?.value == "1e+100px")
+        }
+    }
+
+    @Test func decodedHugeWeightsAndSourceLinesThrowInsteadOfTrapping() async {
+        await #expect(processExitsWith: .success) {
+            for json in [
+                #"{"type":[{"name":"body","size":14,"weight":1e100}]}"#,
+                #"{"color":{"light":{}},"type":{"body":{"size":14,"weight":1e100}}}"#,
+                #"{"spacing":[{"name":"gap","px":8,"source":{"file":"tokens.css","line":1e100}}]}"#,
+                #"{"type":[{"name":"body","size":14,"weight":400.5}]}"#,
+            ] {
+                #expect(throws: DesignSystemTokensError.self) { try DesignSystemTokens.decode(Data(json.utf8)) }
+            }
+            do {
+                let tokens = try DesignSystemTokens.decode(Data(#"{"type":[{"name":"body","size":14,"weight":400,"source":{"file":"tokens.css","line":8}}]}"#.utf8))
+                #expect(tokens.type.first?.weight == 400 && tokens.type.first?.source?.line == 8)
+            } catch { Issue.record(error) }
+        }
+    }
+
     // MARK: Decoding
 
     struct Case: Sendable, CustomTestStringConvertible {

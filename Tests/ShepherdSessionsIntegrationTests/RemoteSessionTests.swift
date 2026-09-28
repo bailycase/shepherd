@@ -124,6 +124,27 @@ struct RemoteSessionTests {
         #expect(screen.contains("line two^[[201~"))
     }
 
+    @Test func aPasteRefusedByTheInputQueueIsNotAcknowledgedAsDelivered() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let info = try await r.host.shell("stty raw -echo; printf READY; sleep 30")
+        try await r.host.waitForScreen(info.id, toContain: "READY")
+        let client = try await r.typed()
+        defer { client.disconnect() }
+        let text = String(repeating: "x", count: 512 * 1024)
+        var refused = false
+        for _ in 0..<32 {
+            do { try await client.paste(sessionID: info.id, text: text, submit: false) }
+            catch RemoteHostClientError.rejected(let code, _) {
+                #expect(code == "input_rejected")
+                refused = true
+                break
+            }
+        }
+        #expect(refused)
+        #expect(await r.server.sessionInfo(sessionID: info.id)?.isAlive == true)
+    }
+
     @Test func pasteToADeadSessionIsARejection() async throws {
         let r = try RemoteHost()
         defer { r.stop() }

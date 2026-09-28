@@ -25,7 +25,7 @@ extension FixtureCatalog {
             FixtureScreen(name: "changes-pad-commit", hosts: ChangesFixture.hosts(), routes: [thread, changes], prepare: { app in
                 await ChangesFixture.annotate(app)
                 ChangesFixture.store.padLayout = .full
-                CommitStores.shared.popover = ref
+                app.navigator.commitPopover = ref
                 let commit = CommitStores.shared.store(for: ref, hosts: app.hosts)
                 await ReviewFixture.until { commit.stage == .form && commit.drafted && !commit.drafting }
             }),

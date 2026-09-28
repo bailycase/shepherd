@@ -113,7 +113,8 @@ let package = Package(
         .testTarget(name: "ShepherdSessionsUnitTests", dependencies: ["ShepherdSessions", "ShepherdTestKit"]),
         .testTarget(name: "ShepherdAppUnitTests", dependencies: ["ShepherdApp", "ShepherdTestKit"]),
         .testTarget(name: "ShepherdCLIUnitTests", dependencies: ["shepherd-cli"]),
-        .testTarget(name: "TerminalSurfaceKitUnitTests", dependencies: ["TerminalSurfaceKit", "ShepherdTestKit"]),
+        .testTarget(name: "TerminalSurfaceKitUnitTests", dependencies: ["TerminalSurfaceKit", "ShepherdTestKit"],
+                    resources: [.copy("Fixtures")]),
         .testTarget(name: "DesignSurfaceKitUnitTests", dependencies: ["DesignSurfaceKit", "ShepherdTestKit"]),
         // Test helpers every tier can use, with no Shepherd dependencies. Loading them isolates
         // the whole test process (scratch support and pi agent directories, PATH, ZDOTDIR) before

@@ -62,6 +62,8 @@ public final class ReviewCommitStore {
 
     @ObservationIgnored public var query: ((RemoteAgentQuery) async throws -> RemoteAgentResult)?
     @ObservationIgnored private var loadID = UUID()
+    @ObservationIgnored private var loading = false
+    @ObservationIgnored private var invalidated = false
     /// The message as the host wrote it, so a draft replaces it only while nobody has typed.
     @ObservationIgnored private var written: (title: String, body: String) = ("", "")
     /// The written message is the one written from the file list, so it follows the selection.
@@ -112,15 +114,20 @@ public final class ReviewCommitStore {
     /// Asks the host what would be committed, then for a drafted message. A finished commit
     /// starts over; one still running keeps the sheet on its progress.
     public func begin() async {
+        guard !invalidated, !loading else { return }
         if operation?.finished == true { reset() }
         guard operationID == nil else { stage = .operation; return }
+        guard info == nil else { return } // A second viewer joins the existing editable form.
         await load()
     }
 
     public func load() async {
+        guard !invalidated else { return }
         guard let query else { stage = .unavailable("The host is offline."); return }
         let id = UUID()
         loadID = id
+        loading = true
+        defer { if loadID == id { loading = false } }
         stage = .loading
         error = nil
         do {
@@ -137,6 +144,7 @@ public final class ReviewCommitStore {
 
     /// Shows what the host would commit, every file selected, with the host's plain message.
     public func adopt(_ info: RemoteCommitInfo) {
+        guard !invalidated else { return }
         cancelDraft()
         self.info = info
         written = (info.title, info.body)
@@ -280,7 +288,7 @@ public final class ReviewCommitStore {
     /// Starts the commit on the host. A refusal brings the form back with why; an unknown
     /// outcome keeps polling rather than inviting a second commit.
     public func commit() async {
-        guard canCommit, let info, let query else { return }
+        guard !invalidated, canCommit, let info, let query else { return }
         cancelDraft()
         let id = UUID()
         let options = RemoteCommitOptions(head: info.head, files: selectedFiles, title: title.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -295,12 +303,15 @@ public final class ReviewCommitStore {
             guard case .worktreeOperation(let status) = try await query(.commit(operationID: id, options: options)) else { throw ReviewCommitStoreError.reply }
             adopt(status)
         } catch RemoteHostClientError.rejected(_, let message) {
+            guard !invalidated else { return }
             refused(message)
             await refreshChecks()
         } catch let error as ReviewCommitRefusal {
+            guard !invalidated else { return }
             refused(error.message)
             await refreshChecks()
         } catch {
+            guard !invalidated else { return }
             self.error = "\(Self.sentence(error)) Don't commit again; its status is checked again."
         }
     }
@@ -349,6 +360,7 @@ public final class ReviewCommitStore {
                 error = nil
             }
         } catch {
+            guard !invalidated else { return true }
             self.error = "\(Self.sentence(error)) Don't commit again."
         }
         return operation?.finished == true
@@ -364,15 +376,27 @@ public final class ReviewCommitStore {
 
     /// Shows an operation the host reported (and the previews' and fixtures' staged ones).
     public func adopt(_ status: RemoteWorktreeOperation) {
+        guard !invalidated else { return }
         operationID = status.id
         operation = status
         steps = finalizeSteps(status.progress)
         stage = .operation
     }
 
+    /// Forget the host locally, even during an operation. Never cancels or rolls back host work.
+    public func invalidate() {
+        invalidated = true
+        query = nil
+        operation = nil
+        reset()
+    }
+
     /// Done with a finished commit (or never started): the next one starts over.
     public func reset() {
         guard operation?.finished != false else { return }
+        loadID = UUID()
+        loading = false
+        submitting = false
         cancelDraft()
         stage = .loading
         info = nil

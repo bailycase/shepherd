@@ -469,9 +469,9 @@ final class KeybindingsStore {
         return nil
     }
 
-    func reset(_ action: ShortcutAction) {
-        overrides.removeValue(forKey: action)
-        persist()
+    @discardableResult
+    func reset(_ action: ShortcutAction) -> AssignmentError? {
+        assign(action.defaultChord, to: action)
     }
 
     func resetAll() {

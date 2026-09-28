@@ -863,7 +863,9 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
   is at most 820pt (prose 640, bubbles 600), and the composer is exactly as wide as the column
   (Thread). Pane dividers between split terminals are 1pt `lineStrong` (TerminalPane), tinted
   `focusDivider` where they border the focused pane; dragging one
-  keeps each side at least 160pt (`splitPaneMinSpan`), between 15% and 85%.
+  keeps each side at least 160pt (`splitPaneMinSpan`), between 15% and 85%. VoiceOver exposes
+  each divider as Terminal column split or Terminal row split, with a percentage value and
+  adjustable five-percentage-point steps clamped by the same limits.
 - **Switching agents flips visibility; it never remounts.** Every mounted layout stays in the
   view tree, each in a hosting view of its own, and hidden ones are hidden views. This is what
   makes switching instant.
@@ -1336,7 +1338,7 @@ now (no schedules, triggers or next-run column)").
     (a hollow `textTertiary` dot, `textTertiary` words) for stopped, "not run yet", "off" and
     "host offline". Empty until the host's runs are read.
   - **Context menu:** Open Run while its run's thread exists, Stop while the run is live else Run
-    Now, Edit…, and Delete Automation (it stops the run too), each disabled where the host can't
+    Now, Edit…, and Delete Automation (it stops the run too, including a run still being created), each disabled where the host can't
     take it. These are the actions the sidebar's Automations rows had.
   - **Empty:** "No automations yet. …" or "No automations match “…”." in the table's place.
 - **Detail pane:** 360pt at the trailing edge with a hairline on its leading side, for the
@@ -1439,7 +1441,10 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
 - **History:** on Mac, iPhone and iPad, reaching the top of loaded history automatically fetches
   one older page while the thread is active and ready, without a button or menu item. Native scroll
   visibility triggers the fetch; stable turn identities and native scroll position keep the visible
-  turn in place as older rows prepend. Each visit to the top fetches at most one page, never an
+  turn in place as older rows prepend. On the Mac a boundary-row anchor also preserves its exact
+  viewport offset through lazy remeasurement, including a partially clipped row. A new scroll,
+  turn jump, send, session change or hiding the thread cancels that restoration, so a late page
+  never takes back the reader's newer navigation. Each visit to the top fetches at most one page, never an
   unbounded drain of history; another scroll away from the top arms the next visit, not layout
   hiding and revealing the top while a page prepends. An unchanged or failed cursor is not automatically retried by layout
   or polling; a changed cursor or session permits another fetch.
@@ -1797,6 +1802,10 @@ turn's edit and write calls, without Undo.
   dialog, since Redo reverses it, and the agent isn't told (both the user's call, 2026-09-25). It is offered on the last turn only, once it ended having changed
   something. While it runs its buttons hold; a refusal says why under the card in `caption`
   `failed` ("Didn’t undo: outbox.go changed after the turn. Nothing was touched.").
+  A filesystem failure after some writes explicitly reports a partially applied operation, not
+  “nothing was touched.” The same Undo (or Redo) retries the remaining work, including after a
+  relaunch; changes made since the partial operation cause a refusal instead of being overwritten.
+  Undo must finish before Redo is offered. Recovery is journaled per file, not an atomic rollback.
 - **After Undo** (ChangesCard · after Undo) the card is one line on a dashed `lineStrong` border,
   radius 10, padding 10×12: the undo glyph, "Undid the agent’s edits to 5 files" in `ui`
   `textSecondary`, and **Redo** (ghost `s`) until the next turn starts.
@@ -2036,7 +2045,10 @@ working directory in or under the composer.
 (pi reads it once its current tool calls finish, before its next step). ⌘↩
 (`alternateSend`, rebindable) always does the other one, ahead of any key equivalent in the
 window (the review pane's ⌘⏎), and only while the composer or one of its queued messages has
-focus. ⇧↩ inserts a newline; while pi is idle ↩ and ⌘↩ both send. Attachments ride along with a
+focus. ⇧↩ inserts a newline at the caret, replacing selected text and leaving the caret after
+it; this native editing behavior also applies to New thread, New design, subagent replies,
+queued-message editing and inline review comments. It never sends or saves. While pi is idle
+↩ and ⌘↩ both send. Attachments ride along with a
 queued or steered message.
 
 **Send menu** (`NWSendMenu`): right-clicking Send, or holding it for
@@ -2066,7 +2078,9 @@ Clicking the thread's blank background focuses the composer, without taking clic
 selectable transcript text, links, buttons, menus, queue editors, or questions. This adds no
 window-wide Tab handler; terminal and editing focus keep their normal keyboard behavior.
 
-Images are resized on the
+Image drafts belong to the thread, so switching remote threads or parking a terminal-bearing
+layout does not discard them. A successful send removes only its submitted image IDs; images
+added while it waits remain for the next message. Images are resized on the
 way in (longest edge 2000px), at most four per message and 2 MiB each, and shown as
 `NWAttachmentChip`s in the row above the field (NWComposer, "with attachment"): 26pt, a
 `lineStrong` line at radius 6, a 20pt thumbnail (radius 4) 3pt from the leading edge, 6pt, the
@@ -2167,7 +2181,9 @@ rules (QuestionStates › Rules):
   shows the question. They are the dock's while its thread has the keyboard
   (`QuestionKeyMonitor`), from its own fields too (where numbers type and ⇧↩ breaks a line),
   never with ⌘, ⌃ or ⌥ held (⌘1–9 still select agents), and never from another text field (the
-  palette's search, a terminal).
+  palette's search, a terminal). Settings, the component gallery, and the command palette
+  suspend workspace keyboard ownership, including hidden question shortcuts; closing them
+  restores the previously focused pane.
 - **Stopping** (⌘., Agent ▸ Stop) is how a question is refused: it cancels the questions pi is
   waiting on (their asker gets pi's cancelled answer), then stops the turn. The thread records
   each as not answered.
@@ -3169,6 +3185,11 @@ before building it (as iOS: iPad › Side pane says).
 
 ### Terminal panes
 
+File and image drags route through the native terminal surface, not a window-wide input overlay.
+Ordinary clicks never depend on leftover drag pasteboard contents. Covered and hidden terminals
+must not receive a drop intended for foreground UI; resolving a drag does not enumerate hidden
+agent layouts.
+
 A terminal pane is a real PTY: libghostty on the Mac (`AppTerminalView`, through
 `TerminalHost.swift`), SwiftTerm on iOS (`TerminalSurface`). Each one is a real shell and nothing in
 it is pi's (TerminalStates: "Each tab is a real shell; nothing here is the agent’s"). The chrome never
@@ -3355,7 +3376,10 @@ splits.
   Every chord resolves through `KeybindingsStore`, shows in the Pane menu ("Show or Hide Terminal",
   "Maximize or Restore Terminal", and New Terminal without one) and in the strip's tooltips, and is
   unbound in Ghostty (`appOwnedChords`) so a focused terminal never eats it. ⌥⌘←/→ move among the
-  panes on screen. Plain Space belongs to the terminal while its surface is first responder,
+  panes on screen. A terminal becoming AppKit's first responder also selects its owning pane,
+  including right-click and selection-drag acquisition: Close, Split and Kill act on the terminal
+  receiving keyboard input, not the last pane whose SwiftUI tap gesture completed.
+  Plain Space belongs to the terminal while its surface is first responder,
   before AppKit or SwiftUI can use it to activate a control. It follows the terminal's normal
   text-input path, including input-method composition; unfocused terminals leave it alone.
   A canvas's window-wide Space-to-pan handler ignores hidden layouts and text-input clients,
@@ -3851,7 +3875,8 @@ nothing here changes your pi."
   - Fixed, not recordable: Select agent 1–9, "Sidebar order; hold ⌘ to see the numbers." (⌘ 1–9) ·
     Settings (⌘ ,) · Confirm / cancel in sheets (⏎ esc).
   - Under the last group, trailing: Reset all shortcuts, a secondary button, disabled while nothing
-    is changed.
+    is changed. An individual Reset checks for conflicts just like a new assignment. If another
+    action now uses that default, the row shows the existing conflict message and keeps its chord.
 - **Every rebindable action is listed**, in the menu bar's groups: the app adds Delete agent ⇧⌘W to
   Agents, a Thread group (Stop agent, Model picker, Previous turn, Next turn, Inspect subagent),
   While the agent is working (QueueStates' Keyboard card, in its order: ↩ and ⌘↩ named for what they do
@@ -4034,7 +4059,11 @@ switch's row "Off: each host keeps its own files. Pick a host to edit it."
 
 The page (`SettingsSkills.swift`, `ClientSkills`) manages the agent skills each host's own pi
 reads from its home, `<support>/pi/skills` (docs/skills.md): folders of instructions and scripts the agent picks up
-when a task calls for them. Skills are global: with Same skills on every host on, every install,
+when a task calls for them. A deferred change with an unknown result pauses its host's queue;
+its error offers Resolve… on Mac and iOS. After checking the host, the user may confirm Continue
+without retrying: only that missing receipt is abandoned, no mutation is replayed or undone,
+and later queued changes continue. Dismissing the error alone never resolves it.
+Skills are global: with Same skills on every host on, every install,
 update, switch and removal goes to every host, and a host that is offline catches up when it's
 back. The page sits between Instructions and Remote in the nav, with `graduationcap`.
 
@@ -5426,7 +5455,10 @@ follows the Mac's rules (Thread) with the phone's measures below.
     Branch and Base fields (the base as the host resolved it) and Fetch origin first.
 - **States:** an older host says what it lacks ("Update Shepherd on <host> to start threads in a new
   worktree."); a failed start shows a `failed` `NWBanner` "Couldn't start the thread" with Try again
-  or Resolve; images ride on the first send.
+  or Resolve. Images and the prompt go in the same creation request; a host without image
+  creation support, or an image exceeding the encoded frame limit, leaves the form intact.
+  A completed start opens its thread only if its original sheet is still presented; cancelling
+  or replacing that sheet leaves the created thread in Recents without changing the current screen.
 
 ### iPhone: Up next and questions
 
@@ -5760,13 +5792,22 @@ beside up-down chevrons.
   deletes the remote branch: merging the PR cleans it up on GitHub."
 - **Extensions:** Bundled with Shepherd: a switch for each extension the host bundles, with its
   note. Installed on <host>: the host's own packages and extensions in mono ("None yet…" without).
-  Updates: Update the agent daily and Update extensions daily, over "<host> runs agent 0.87.1."
+  Updates explains that the agent engine and bundled extensions update with Shepherd on the
+  host, over "<host> runs agent 0.87.1." No daily-update switches: current hosts bundle pi and
+  intentionally ignore those legacy settings.
 - **States:** a spinner while the host answers; offline, "<host> is offline. Its settings show here
   once it's back."; a Shepherd from before `hostSettings.v1`, "…is too old to share its settings.
   Update it to change them here."; a failed read, its reason in `failed`. A change shows at once
   and goes to the host; one it refuses springs back, its reason in a banner.
 
 ### iPhone: Instructions (MobileInstructions, MobileInstructionsEdit)
+
+With Per host selected, each window chooses its own instruction host. Drafts for the same file
+and host remain shared; switching hosts in another window never retargets this window's Save
+or Restore. Save and Restore keep the scope and recipient list selected at invocation, even
+if another window changes Same on every host while the request waits. Explicitly forgetting a
+host removes its drafts and owed copies, never another
+host's, and late replies cannot bring the forgotten host's data back.
 
 Settings ▸ Instructions edits the root instructions every session Shepherd starts reads, on
 every host (`Settings/InstructionsScreens.swift`; the Mac's page is SettingsInstructions). Each
@@ -5961,7 +6002,9 @@ selected thread, or the Overview when none is. Other screens push over the detai
   (iPadPortraitLaunch, drawn by the user's decision of 25 Sep 2026); a tap on the dim only closes
   it, as iPadOS overlays do, and Show sidebar brings it back. The thread's header gains Show sidebar
   (`sidebar.left`, a 44pt circle) at its leading end. Rotating keeps the selection, the pushed
-  screens and the composer's focus.
+  screens and the composer's focus. Crossing compact and regular width keeps the active route
+  stack too (review, subagents, terminals and Settings included), never an old thread selection
+  from the other layout. Settings keeps its root and returns to the Settings tab at compact width.
 - **Top bar** (56pt, 14pt leading and 8pt trailing inset): Search (⌘K), which opens the palette,
   and Hide sidebar, trailing, as 36pt circles with 16pt `textSecondary` glyphs. The board has no
   title. The app's bar is the system's, with no title as the board: Search, and the split view's
@@ -6278,7 +6321,9 @@ than clip (Known gaps).
   capsule, 12 `textSecondary`), Commit… (secondary, 28pt, the commit glyph), then 36pt icons:
   Refresh, Collapse all files (Expand all once every file is folded), the split toggle (its
   glyph is the mode it switches to), and Diff options (•••: Word diffs, Hide whitespace changes,
-  Load full files, then Copy git apply command and Copy as patch).
+  Load full files, then Copy git apply command and Copy as patch). Changing a host-side diff
+  option reloads the displayed hunks even when the compared trees did not change; a late reply
+  for an older option or scope never replaces them.
 - **Compare row** (38pt on `bgBase`, 12pt inset): the head in mono 12 `textSecondary`, →, the
   base in mono 12 `textPrimary` with a chevron (Branch only: the base picker, a popover), and
   "merge base 3f2a91c" (or a turn's `after “…”`) in mono 11 `textTertiary` trailing.
@@ -6327,7 +6372,10 @@ landscape, Known gaps).
 
 #### Commit (iPadCommit)
 
-Commit… opens a popover under it (`.commitPopover`): 400pt wide, `bgRaised`, with its arrow; 16pt
+Commit… opens a popover in the invoking window only (`.commitPopover`); another window shares
+its operation status, never its presentation or dismissal. A second viewer joins the existing
+editable form without reloading over its unsaved message. Forget discards local form and operation
+state, ignores later replies, and never rolls back a commit already sent to the host. The popover is 400pt wide, `bgRaised`, with its arrow; 16pt
 inset, parts 12pt apart.
 
 - **Title:** "Commit 5 files" at 17/600 and "to agent/refund-events" in mono 12 `textTertiary`
@@ -8483,7 +8531,9 @@ or in a design's own chat. Choices the boards leave open, and where the build de
   popup button's key equivalents would answer ⌘↩ anywhere in the window.
 - **The right-click menu** has no Delete: the canvas deletes no board yet.
 - **A pinned version no longer kept** is refused (`version_gone`) with its reason; no board draws
-  it.
+  it. This includes old source-only pins without retained rendering inputs. A retained pin draws
+  its original props, frame, token styles and board set, including a board since removed. “Updated
+  since” includes changes to these inputs, not just changes to the board's source.
 - **The note's card** opens beside its pin (a choice the boards leave open).
 
 These departures are the user's call, 2026-09-27: references to another host's designs come
@@ -8585,7 +8635,12 @@ data-props by their section, not DZTweak's per-element ones (Bars, Labels). Slid
 so the least that is honest: the tab with nothing selected (its header says to select an
 element), a tweak that couldn't be written (the header's note says so), a data-props text field,
 and a design without tokens for a role (its note says values snap to Shepherd's scale). Tweak
-(the board action or the tab) edits the selected element directly.
+(the board action or the tab) edits the selected element directly. A released gesture keeps that
+selection and scope even if the viewer selects something else while it saves. Local style, prop
+and Reset writes finish in gesture order, including their snapshot refresh; Reset includes edits
+already released before it. Undo and Redo
+refuse later changes to the same style or prop rather than overwrite them; a Redo requested while
+Undo is still saving waits for it.
 
 - **On the canvas**, the element (`NWSelectionRing`, built with Select) wears a 1.5pt `running`
   ring (on NWDesignTool over a `runningTint` fill, which Shepherd draws), 8pt square handles on its corners (white, a 1.5pt
@@ -8676,7 +8731,8 @@ opens ticked; past eight boards the rows scroll; Attach to a thread is a menu of
 (most recently active first); while an export is written the sheet dims and its primary button
 reads "Exporting…"; the scrim takes clicks and does nothing (Cancel, close or Escape put the sheet
 away); a failure goes to the app's error dialog. What each format writes is docs/designs.md ›
-Export and import.
+Export and import. Replacing an existing export stages the complete new output on its volume;
+a failed replacement reports the error and never deletes the previous export as a fallback.
 
 Export (the header's button) opens a sheet over the design, with the boards
 selected on the canvas already ticked.
@@ -8773,7 +8829,11 @@ iPhone and iPad none of it.
     `textTertiary`. Buttons: Choose another… and OK (primary) when it wasn't a project; OK alone for
     too large or links outside; Cancel import and **Import the other 11** for unreadable boards, the
     one case with a choice. Not drawn, built plainly in the same anatomy: one file over 16 MB ("hero.mp4
-    is 40 MB. Shepherd imports files up to 16 MB. …"), a name a design can't hold, too many files.
+    is 40 MB. Shepherd imports files up to 16 MB. …"), a name a design can't hold, too many files,
+    or unsafe canvas geometry (positive dimensions and native-integer-representable numbers).
+    Tall legacy flow documents keep their sizes. A board beyond native rendering limits reports
+    that it cannot draw; its canvas and source remain intact. Bitmap exports above 64 million
+    pixels refuse with a smaller-image-or-PDF suggestion.
   - **ImportAgainDialog** (the tray, `square.and.arrow.down`): "“Checkout funnel” is already in
     Designs", "You imported **Checkout funnel** on Sep 20. Import it again as a separate copy, or open
     the one you have. The two don’t affect each other.", "New copy: **Checkout funnel 2** · 12 boards

@@ -68,10 +68,12 @@ extension FixtureCatalog {
                           }),
             // The editor on a queued message (the sheet only; the hold is the app's action).
             FixtureScreen(name: "queue-edit", hosts: ThreadFixtures.hosts(running: ThreadFixtures.queued()), routes: [.thread(running)],
-                          prepare: { _ in
-                              let state = ComposerStates.shared.state(for: running)
-                              state.editText = "Also cover partial refunds in the tests."
-                              state.editing = ThreadFixtures.queued().queue?.items.first { $0.id == ThreadFixtures.second }
+                          prepare: { app in
+                              let presentation = app.navigator.composerPresentation.state(for: running)
+                              if let message = ThreadFixtures.queued().queue?.items.first(where: { $0.id == ThreadFixtures.second }) {
+                                  ComposerStates.shared.state(for: running).beginQueueEdit(message, presentation: presentation)
+                                  presentation.editText = "Also cover partial refunds in the tests."
+                              }
                           }),
             // iPadPortrait: "/re" lists the commands that match.
             FixtureScreen(name: "commands", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)],
@@ -108,7 +110,7 @@ extension FixtureCatalog {
                           prepare: FollowFixture.focusRotateAndCheck),
             // The model picker, from the host's catalog: each model's thinking levels under its name.
             FixtureScreen(name: "models", hosts: ThreadFixtures.levels(ThreadFixtures.hosts()), routes: [.thread(preview)],
-                          prepare: { _ in ComposerStates.shared.state(for: preview).choosingModel = true }),
+                          prepare: { app in app.navigator.composerPresentation.state(for: preview).choosingModel = true }),
         ]
     }
 }

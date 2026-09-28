@@ -11,6 +11,7 @@ import io
 import json
 import os
 import plistlib
+from pathlib import Path
 import re
 import shutil
 import subprocess
@@ -305,6 +306,20 @@ class FeedTests(unittest.TestCase):
             with open(os.path.join(directory, "appcast.xml"), encoding="utf-8") as f:
                 xml = f.read()
             self.assertEqual(xml.count(f"download/nightly-{STAMP}/Shepherd-Nightly63-6"), 2)
+
+    def test_invalid_later_feed_leaves_all_existing_feeds_unchanged(self):
+        with tempfile.TemporaryDirectory() as root:
+            casts, pages = Path(root) / "casts", Path(root) / "pages"
+            pages.mkdir()
+            for index, spec in enumerate(release.FEEDS):
+                source = casts / spec.dir
+                source.mkdir(parents=True)
+                (source / "appcast.xml").write_text(feed(item("25")) if index == 0 else "not xml")
+                (pages / spec.file).write_text("existing " + spec.file)
+            before = {p.name: p.read_bytes() for p in pages.iterdir()}
+            with self.assertRaises(release.ElementTree.ParseError):
+                release.publish(str(casts), str(pages))
+            self.assertEqual({p.name: p.read_bytes() for p in pages.iterdir()}, before)
 
     def test_publish_writes_every_feed_and_the_legacy_aliases(self):
         with tempfile.TemporaryDirectory() as root:
@@ -732,18 +747,56 @@ class ContractTests(unittest.TestCase):
         build = workflow.split("      - name: Build ${{ env.APP_NAME }}\n", 1)[1].split("\n      - ", 1)[0]
         # SwiftPM package targets take no target settings: only the command line reaches them.
         self.assertIn("ARCHS=arm64 \\\n", build)
+        self.assertIn("-onlyUsePackageVersionsFromResolvedFile", build)
+        self.assertIn("key: xcode-${{ runner.os }}-${{ env.CONFIGURATION }}-${{ steps.xcode.outputs.version }}-${{ github.sha }}", workflow)
         self.assertNotIn("x86_64", workflow)
         thin = workflow.index('python3 scripts/release.py thin-app "$PRODUCTS/$PRODUCT"')
         self.assertLess(workflow.index("      - name: Build ${{ env.APP_NAME }}"), thin)
         self.assertLess(thin, workflow.index("scripts/release.py verify-app"))
 
+    def test_expected_asset_download_failures_stop_before_feed_generation(self):
+        workflow = self.read(".github", "workflows", "release.yml")
+        start = workflow.index('          while read -r tag asset archive feeds; do')
+        end = workflow.index('          done < "$RUNNER_TEMP/routes"', start)
+        loop = '\n'.join(line[10:] for line in workflow[start:end].splitlines()) + '\ndone < "$RUNNER_TEMP/routes"\n'
+        for tag, asset, available, download_status, expected in [
+            ("v1.0.0", "Shepherd.dmg", True, 23, 23),
+            ("v1.0.0", "Shepherd.dmg", False, 0, 1),
+            ("nightly-old", "Shepherd-Nightly.dmg", False, 0, 0),
+        ]:
+            with self.subTest(tag=tag, available=available), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / "routes").write_text(f"{tag} {asset} archive.dmg stable\n")
+                (root / "staged-tags").write_text("")
+                metadata = json.dumps({"isDraft": False, "assets": [{"name": asset}] if available else []})
+                (root / "scripts").mkdir()
+                for name in ("release.py", "pi_engine.py"):
+                    shutil.copyfile(os.path.join(ROOT, "scripts", name), root / "scripts" / name)
+                fake = 'gh() { if [[ "$2" == view ]]; then printf \'%s\\n\' "$METADATA"; else return "$DOWNLOAD_STATUS"; fi; }\n'
+                result = subprocess.run(["bash", "-c", "set -euo pipefail\n" + fake + loop + "printf REACHED_GENERATION\n"],
+                                        cwd=root, env={**os.environ, "RUNNER_TEMP": directory, "METADATA": metadata,
+                                                       "DOWNLOAD_STATUS": str(download_status)}, text=True, capture_output=True, timeout=5)
+                self.assertEqual(result.returncode, expected, result.stderr)
+                self.assertEqual("REACHED_GENERATION" in result.stdout, expected == 0)
+        self.assertIn('latest "$dir" < "$RUNNER_TEMP/staged-tags"', workflow)
+
     def test_every_feed_reaches_gh_pages_through_publish(self):
         # publish is what marks each item Apple silicon only; nothing else may write a feed.
         step = self.read(".github", "workflows", "release.yml").split("      - name: Update appcasts\n", 1)[1]
         step = step.split("\n  # ", 1)[0]
-        self.assertIn("< <(python3 scripts/release.py publish casts pages)", step)
+        self.assertIn('python3 scripts/release.py publish casts pages > "$RUNNER_TEMP/published-feeds.txt"', step)
         self.assertIn('git add "${written[@]}"', step)
+        self.assertNotIn("git commit -m \"appcast: $TAG\" || exit 0", step)
         self.assertNotIn("cp casts", step)
+        # Execute the workflow's producer line with a failing stand-in. Its status must
+        # stop publication, not disappear inside a process substitution.
+        producer = next(line.strip() for line in step.splitlines() if 'scripts/release.py publish casts pages >' in line)
+        with tempfile.TemporaryDirectory() as directory:
+            script = 'set -euo pipefail\npython3() { return 23; }\n' + producer + '\nprintf SHOULD_NOT_REACH\n'
+            result = subprocess.run(["bash", "-c", script], env={**os.environ, "RUNNER_TEMP": directory},
+                                    text=True, capture_output=True, timeout=5)
+            self.assertEqual(result.returncode, 23)
+            self.assertNotIn("SHOULD_NOT_REACH", result.stdout)
 
     def test_the_shipped_sparkle_honours_the_hardware_requirement(self):
         # sparkle:hardwareRequirements arrived in Sparkle 2.9.0; an older client would ignore it
@@ -761,6 +814,28 @@ class ContractTests(unittest.TestCase):
         dev = self.setting(self.target_configuration("Debug"), "PRODUCT_BUNDLE_IDENTIFIER")
         self.assertEqual(dev, "com.bailycase.shepherd.dev")
         self.assertNotIn(dev, [app.bundle_id for app in release.APPS.values()])
+        scheme = release.ElementTree.fromstring(self.read(
+            "Shepherd.xcodeproj", "xcshareddata", "xcschemes", "Shepherd (Dev).xcscheme"))
+        for action in ("LaunchAction", "ProfileAction", "ArchiveAction"):
+            with self.subTest(action=action):
+                self.assertEqual(scheme.find(action).get("buildConfiguration"), "Debug")
+        self.assertEqual(scheme.find("ProfileAction").get("shouldUseLaunchSchemeArgsEnv"), "YES")
+
+    def test_extension_failures_gate_ci_with_the_pinned_pi_package(self):
+        workflow = self.read(".github", "workflows", "ci.yml")
+        job = workflow.split("  extensions:\n", 1)[1].split("\n  test:", 1)[0]
+        self.assertIn('scripts/pi-engine-pin.json', job)
+        self.assertIn('--ignore-scripts', job)
+        self.assertIn('node --test Tests/Extensions/*.test.mjs', job)
+        self.assertNotIn('continue-on-error', job)
+        aggregate = workflow.split("  ci:\n", 1)[1]
+        self.assertIn('needs: [release-rules, extensions, test]', aggregate)
+        gate = next(line.split('run: ', 1)[1] for line in aggregate.splitlines() if 'run: test ' in line)
+        for extension_status in ("success", "failure", "cancelled", "skipped"):
+            command = gate.replace('${{ needs.release-rules.result }}', 'success').replace(
+                '${{ needs.test.result }}', 'success').replace('${{ needs.extensions.result }}', extension_status)
+            result = subprocess.run(["bash", "-c", command], timeout=5)
+            self.assertEqual(result.returncode == 0, extension_status == "success")
 
     def test_each_app_has_its_scheme(self):
         for app in release.APPS.values():

@@ -73,6 +73,51 @@ struct DesignArchiveTests {
         #expect(throws: Never.self) { try DesignArchive.check(try entries(TestZip.make([.file("canvas.json", "{}")]))) }
     }
 
+    /// These are tiny, hostile headers, not archives we ever hand to an unpacker.
+    @Test func malformedZIP64FieldsThrowWithoutTerminatingTheHost() async {
+        await #expect(processExitsWith: .success) {
+            func put(_ value: UInt64, at offset: Int, in bytes: inout [UInt8], width: Int = 8) {
+                for byte in 0..<width { bytes[offset + byte] = UInt8(truncatingIfNeeded: value >> (byte * 8)) }
+            }
+            func zip(locator: UInt64 = 0, size: UInt64 = 0, offset: UInt64 = 0) -> Data {
+                var bytes = [UInt8](repeating: 0, count: 98)
+                put(0x0606_4b50, at: 0, in: &bytes, width: 4)
+                put(size, at: 40, in: &bytes)
+                put(offset, at: 48, in: &bytes)
+                put(0x0706_4b50, at: 56, in: &bytes, width: 4)
+                put(locator, at: 64, in: &bytes)
+                put(0x0605_4b50, at: 76, in: &bytes, width: 4)
+                put(0xFFFF, at: 86, in: &bytes, width: 2)
+                return Data(bytes)
+            }
+            for locator in [UInt64(Int64.max), UInt64.max, UInt64(1) << 63] {
+                for fileSize in [Int64(98), 1000] {
+                    #expect(throws: (any Error).self) {
+                        try DesignArchive.directory(tail: zip(locator: locator), fileSize: fileSize)
+                    }
+                }
+            }
+            #expect(throws: (any Error).self) {
+                try DesignArchive.directory(tail: zip(size: UInt64(Int64.max), offset: 42), fileSize: 98)
+            }
+            #expect(throws: (any Error).self) {
+                try DesignArchive.check([.init(".hidden-a", size: .max), .init(".hidden-b", size: .max)])
+            }
+            #expect(throws: (any Error).self) { try DesignArchive.check([.init(".hidden", size: -1)]) }
+            // ZIP64 sizes with the high bit set must not turn into ignored negative sizes.
+            var entry = [UInt8](repeating: 0, count: 59)
+            put(0x0201_4b50, at: 0, in: &entry, width: 4)
+            put(0xFFFF_FFFF, at: 24, in: &entry, width: 4)
+            put(1, at: 28, in: &entry, width: 2)
+            put(12, at: 30, in: &entry, width: 2)
+            entry[46] = 65
+            put(1, at: 47, in: &entry, width: 2)
+            put(8, at: 49, in: &entry, width: 2)
+            put(UInt64.max, at: 51, in: &entry)
+            #expect(throws: (any Error).self) { try DesignArchive.entries(Data(entry), count: 1) }
+        }
+    }
+
     // MARK: Links in boards
 
     @Test(arguments: [

@@ -61,6 +61,7 @@ final class PadDesignRendering {
 
     let rasterizer = PadDesignRasterizer()
     private var hosts: [PadDesignRef: PadDesignHost] = [:]
+    private var forgottenHosts: Set<UUID> = []
 
     /// A design's renderer, over `source` (its files, fetched by hash and cached here).
     func host(for ref: PadDesignRef, source: @autoclosure () -> any DesignFileSource) -> PadDesignHost {
@@ -73,8 +74,13 @@ final class PadDesignRendering {
             guard let self, let host else { return }
             for other in self.hosts.values where other !== host { other.yieldLive() }
         }
-        hosts[ref] = host
+        if !forgottenHosts.contains(ref.host) { hosts[ref] = host }
         return host
+    }
+
+    func forget(host: UUID) {
+        forgottenHosts.insert(host)
+        for ref in Array(hosts.keys) where ref.host == host { hosts.removeValue(forKey: ref)?.release() }
     }
 
     /// Designs that are gone give up everything they held.
@@ -246,7 +252,10 @@ final class PadDesignHost {
     func release() {
         isActive = false
         for path in Array(slots.keys) { releaseSlot(path) }
+        boards = [:]
+        visible = []
         images.removeAll()
+        rasterizer.discard(surface: surface)
     }
 
     /// Shows `path` focused (nil: back to the canvas). While it is, it is the only live board.
@@ -442,7 +451,7 @@ final class PadDesignHost {
                                                              self.visible.contains(path) else { return false }
                                                        return self.boards[path]?.drawing == drawing && self.images.sha(path) != drawing
                                                    }) { [weak self] image in
-            guard let self else { return }
+            guard let self, self.boards[path]?.drawing == drawing else { return }
             guard let image else { self.failed[path] = drawing; self.bump(path); return }
             guard self.boards[path]?.drawing == drawing else { return }
             self.images.store(image, sha: drawing, for: path, keeping: self.onScreen)
@@ -550,6 +559,12 @@ final class PadDesignRasterizer {
     private var running = false
     /// Its web view, while one renders.
     private(set) var webViews = 0
+
+    func discard(surface: DesignSurface) {
+        let removed = queue.filter { $0.surface === surface }
+        queue.removeAll { $0.surface === surface }
+        for job in removed { job.done(nil) }
+    }
 
     func enqueue(_ job: Job) {
         queue.removeAll { $0.key == job.key }

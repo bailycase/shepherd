@@ -167,6 +167,7 @@ struct MCPOAuthToken: Codable, Equatable, Sendable {
     var tokenEndpoint: String
     var clientID: String
     var clientSecret: String?
+    var authMethod: String? = nil
     var redirectURI: String
     var resource: String
     var accessToken: String
@@ -181,7 +182,9 @@ struct MCPOAuthToken: Codable, Equatable, Sendable {
 
     func needsRefresh(nowMs: Int64) -> Bool {
         guard let expiresAtMs else { return false }
-        return expiresAtMs - nowMs < Self.refreshMargin
+        if expiresAtMs <= nowMs { return true }
+        let remaining = expiresAtMs.subtractingReportingOverflow(nowMs)
+        return !remaining.overflow && remaining.partialValue < Self.refreshMargin
     }
 
     func isExpired(nowMs: Int64) -> Bool {
@@ -457,9 +460,9 @@ struct MCPOAuthService: Sendable {
                                             clientID: client.clientID, clientSecret: client.clientSecret, authMethod: client.authMethod)
         return MCPOAuthToken(
             issuer: discovery.issuer, tokenEndpoint: discovery.metadata.tokenEndpoint, clientID: client.clientID,
-            clientSecret: client.clientSecret, redirectURI: client.redirectURI, resource: discovery.resource,
+            clientSecret: client.clientSecret, authMethod: client.authMethod, redirectURI: client.redirectURI, resource: discovery.resource,
             accessToken: answer.accessToken, refreshToken: answer.refreshToken,
-            expiresAtMs: answer.expiresIn.map { nowMs + Int64($0 * 1000) },
+            expiresAtMs: try answer.expiry(nowMs: nowMs),
             scopes: answer.scope?.split(separator: " ").map(String.init) ?? requestedScopes,
             account: answer.idToken.flatMap(Self.account(fromIDToken:)), refreshedAtMs: nowMs)
     }
@@ -472,14 +475,14 @@ struct MCPOAuthService: Sendable {
         let answer: TokenAnswer
         do {
             answer = try await tokenRequest(endpoint: token.tokenEndpoint, form: form, clientID: token.clientID,
-                                            clientSecret: token.clientSecret, authMethod: nil)
+                                            clientSecret: token.clientSecret, authMethod: token.authMethod)
         } catch MCPOAuthError.tokenFailed(let error, _) where error == "invalid_grant" {
             throw MCPOAuthError.expired
         }
         var next = token
         next.accessToken = answer.accessToken
         next.refreshToken = answer.refreshToken ?? refreshToken
-        next.expiresAtMs = answer.expiresIn.map { nowMs + Int64($0 * 1000) }
+        next.expiresAtMs = try answer.expiry(nowMs: nowMs)
         if let scope = answer.scope { next.scopes = scope.split(separator: " ").map(String.init) }
         next.refreshedAtMs = nowMs
         return next
@@ -491,6 +494,19 @@ struct MCPOAuthService: Sendable {
         var expiresIn: Double?
         var scope: String?
         var idToken: String?
+
+        func expiry(nowMs: Int64) throws -> Int64? {
+            guard let expiresIn else { return nil }
+            guard expiresIn >= 0, let seconds = Int64(exactly: expiresIn) else {
+                throw MCPOAuthError.badResponse("The token answer had an invalid expires_in.")
+            }
+            let milliseconds = seconds.multipliedReportingOverflow(by: 1000)
+            let expiry = nowMs.addingReportingOverflow(milliseconds.partialValue)
+            guard !milliseconds.overflow, !expiry.overflow else {
+                throw MCPOAuthError.badResponse("The token answer had an invalid expires_in.")
+            }
+            return expiry.partialValue
+        }
 
         enum CodingKeys: String, CodingKey {
             case accessToken = "access_token"

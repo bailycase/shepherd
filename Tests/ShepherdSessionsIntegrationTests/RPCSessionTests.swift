@@ -78,6 +78,38 @@ struct RPCSessionTests {
         }
     }
 
+    @Test func aFullInputQueueRefusesRequestsWithoutAnUnknownOutcome() async throws {
+        let h = try Harness(command: ["python3", "-c", """
+        import json, pathlib, time, sys
+        print('{"type":"agent_start"}', flush=True)
+        while not pathlib.Path('read-now').exists(): time.sleep(0.01)
+        for line in sys.stdin:
+            command = json.loads(line)
+            print(json.dumps({'type':'response', 'id':command.get('id'), 'command':command['type'], 'success':True}), flush=True)
+        """])
+        defer { h.stop() }
+        try await h.waitFor("agent_start")
+        let refused = await h.onQueue { () -> Bool in
+            let command = RPCCommand.prompt(message: String(repeating: "x", count: 1024 * 1024))
+            for _ in 0..<16 { if !h.session.send(command) { return true } }
+            return false
+        }
+        #expect(refused)
+        // A large request cannot fit the remaining space; no deadline or child reply is needed.
+        #expect(await h.request(.prompt(message: String(repeating: "y", count: 2 * 1024 * 1024))) == .failure(.inputRejected))
+        try Data().write(to: h.dir.appendingPathComponent("read-now"))
+        #expect(try await h.request(.getState).get().success)
+    }
+
+    @Test func closedStdinRejectsWhileTheChildIsStillAlive() async throws {
+        let h = try Harness(command: ["python3", "-c", "import os,time; os.close(0); print('{\"type\":\"agent_start\"}',flush=True); time.sleep(30)"])
+        defer { h.stop() }
+        try await h.waitFor("agent_start")
+        #expect(await h.onQueue { h.session.isAlive })
+        #expect(await h.onQueue { !h.session.send(.extensionUIResponse(id: "question", confirmed: true)) })
+        #expect(await h.request(.getState) == .failure(.notAlive))
+    }
+
     @Test func aRequestIsAnsweredByItsResponse() async throws {
         let h = try Harness()
         defer { h.stop() }
@@ -139,6 +171,36 @@ struct RPCSessionTests {
         #expect(order.current == ["history:12", "prompt", "agent_start", "turn_start", "message_start"]
             + Array(repeating: "message_update", count: 7)
             + ["message_end", "tool_execution_start", "tool_execution_end", "turn_end", "unknown:stub_unmodelled_event", "agent_end", "agent_settled"])
+    }
+
+    @Test func deferredDecodeBackpressuresTheProducerAndThenDeliversEveryRecordInOrder() async throws {
+        let h = try Harness(command: ["python3", "-c", """
+        import json, pathlib, sys, time
+        while not pathlib.Path('produce').exists(): time.sleep(0.01)
+        for i in range(48):
+            print(json.dumps({'type':'record_' + str(i), 'padding':'x' * (300 * 1024)}), flush=True)
+        pathlib.Path('produced-all').touch()
+        """])
+        defer { h.stop() }
+        let release = DispatchSemaphore(value: 0)
+        defer { release.signal() }
+        let first = Locked(true)
+        await h.onQueue {
+            h.session.beforeOffQueueDecode = {
+                let blocks = first.withValue { value in let was = value; value = false; return was }
+                if blocks { release.wait() }
+            }
+        }
+        try Data().write(to: h.dir.appendingPathComponent("produce"))
+        try await eventually("stdout to backpressure behind the gated decode") { await h.onQueue { h.session.stdoutSuspended } }
+        #expect(await h.onQueue { h.session.retainedRecordBytes } <= RPCSession.decodeHighWaterBytes + 64 * 1024)
+        #expect(!FileManager.default.fileExists(atPath: h.dir.appendingPathComponent("produced-all").path))
+        #expect(h.types().isEmpty)
+        release.signal()
+        try await eventually("all records followed by exit") { h.exit.current.done }
+        #expect(h.types() == (0..<48).map { "unknown:record_\($0)" })
+        #expect(await h.onQueue { h.session.retainedRecordBytes } == 0)
+        #expect(await h.onQueue { !h.session.stdoutSuspended })
     }
 
     /// An answer that arrived before its deadline wins, even while it is still decoding off the

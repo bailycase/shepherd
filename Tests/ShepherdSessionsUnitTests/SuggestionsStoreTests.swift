@@ -82,6 +82,24 @@ struct SuggestionsStoreTests {
         #expect(host.instructions.snapshot().agents == "# How I work\n")
     }
 
+    @Test(arguments: ["add", "retarget", "addAll"])
+    func addingAnExistingLessonNeverOffersToUndoUserContent(action: String) throws {
+        let host = try Host()
+        defer { try? FileManager.default.removeItem(at: host.dir) }
+        _ = try host.suggest("Ask for join keys first.")
+        let id = try #require(host.suggestions.snapshot().waiting.first?.id)
+        let file: InstructionFile = action == "retarget" ? .appendSystem : .agents
+        let original = "# My instructions\n- ASK for join keys first\n"
+        try host.instructions.save(file, content: original)
+        let before = host.instructions.snapshot()
+        let added = try action == "addAll" ? host.suggestions.addAll() : host.suggestions.add(id, file: file)
+        #expect(added.waiting.isEmpty)
+        #expect(added.added.isEmpty)
+        #expect(throws: SuggestionsStore.StoreError.noSuchSuggestion) { try host.suggestions.undo(id) }
+        #expect(host.instructions.snapshot() == before)
+        #expect(host.instructions.snapshot()[file] == original)
+    }
+
     @Test func aLineCanBeEditedAndRetargetedFirst() throws {
         let host = try Host()
         defer { try? FileManager.default.removeItem(at: host.dir) }

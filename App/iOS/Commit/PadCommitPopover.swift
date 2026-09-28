@@ -5,7 +5,7 @@ import ShepherdRemote
 
 extension View {
     /// Commit on iPad (iPadCommit board): a popover from the Commit… it is attached to, open
-    /// while `CommitStores.popover` is this thread. `arrowEdge` is the side of the anchor the
+    /// while this window's `MobileNavigator.commitPopover` is this thread. `arrowEdge` is the side of the anchor the
     /// arrow points from: `.top` under a toolbar button, `.bottom` over the docked composer.
     func commitPopover(ref: AgentRef, arrowEdge: Edge = .top) -> some View {
         modifier(PadCommitPopoverPresenter(ref: ref, arrowEdge: arrowEdge))
@@ -16,10 +16,10 @@ private struct PadCommitPopoverPresenter: ViewModifier {
     let ref: AgentRef
     let arrowEdge: Edge
     @Environment(MobileHosts.self) private var hosts
+    @Environment(MobileNavigator.self) private var navigator
 
     func body(content: Content) -> some View {
-        let stores = CommitStores.shared
-        content.popover(isPresented: Binding(get: { stores.popover == ref }, set: { if !$0 { close() } }),
+        content.popover(isPresented: Binding(get: { navigator.commitPopover == ref }, set: { if !$0 { close() } }),
                         arrowEdge: arrowEdge) {
             PadCommitPopover(ref: ref, close: close)
                 .presentationCompactAdaptation(.popover)
@@ -29,8 +29,8 @@ private struct PadCommitPopoverPresenter: ViewModifier {
     /// Closing a finished commit (or one whose outcome never came back) reloads the review, so
     /// what was committed leaves it.
     private func close() {
-        guard CommitStores.shared.popover == ref else { return }
-        CommitStores.shared.popover = nil
+        guard navigator.commitPopover == ref else { return }
+        navigator.commitPopover = nil
         if CommitStores.shared.store(for: ref, hosts: hosts).closed() {
             Task { await ReviewStores.shared.store(for: ref).load(hosts: hosts) }
         }

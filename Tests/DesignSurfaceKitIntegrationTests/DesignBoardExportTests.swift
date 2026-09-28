@@ -57,7 +57,7 @@ struct DesignBoardExportTests {
     @Test func aStandalonePageKeepsNothingThatRunsEmbedsOrRedirects() async throws {
         let hostile = """
         <!doctype html>
-        <html lang="en">
+        <html lang="en" onclick="alert('root')" onpointerenter="alert('root')" data-dc-root="stamp">
         <head><meta charset="utf-8"><title>Hostile</title><script src="./support.js"></script></head>
         <body>
         <x-dc>
@@ -84,11 +84,22 @@ struct DesignBoardExportTests {
         let page = try await view.staticPage().lowercased()
 
         #expect(!page.contains("javascript:"))
+        #expect(page.hasPrefix("<!doctype html>\n<html lang=\"en\">"), "root language stays; handlers and stamps do not")
+        #expect(!page.contains("onclick") && !page.contains("onpointerenter"))
         for tag in ["<script", "<iframe", "<object", "<embed", "<base", "http-equiv", "<animate"] {
             #expect(!page.contains(tag), "\(tag) left")
         }
         #expect(page.contains("href=\"https://example.com/page\""), "an ordinary link stays")
         #expect(page.contains(">bad</a>"), "the link's text stays, without its script")
+    }
+
+    @Test func anUnsafeRenderSizeIsRefusedBeforeWebKitNavigates() async throws {
+        let harness = try BoardHarness()
+        let view = try harness.view("Main.dc.html", size: CGSize(width: 1e100, height: 300))
+        await #expect(throws: DesignBoardError.self) { try await view.load() }
+        #expect(view.navigationsStarted == 0)
+        #expect(view.frame.size == .zero && view.webView.frame.size == .zero)
+        await #expect(throws: DesignBoardError.self) { try await view.image(scale: 2) }
     }
 
     @Test func anImageIsTwiceTheBoardsSize() async throws {

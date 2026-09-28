@@ -57,6 +57,29 @@ public enum DesignBoardError: Error, Equatable, Sendable {
     case rulesUnavailable
 }
 
+/// Storage stays lossless; native surfaces and bitmap allocations have separate resource limits.
+/// 131072 CSS px accommodates the existing 100-page flow PDF limit (112300 px for A4).
+/// ponytail: fixed ceilings, tiled rendering if genuinely larger canvases need to draw.
+enum DesignRenderLimits {
+    static let maxDimension: CGFloat = 131_072
+    static let maxLayoutPixels: CGFloat = 128_000_000
+    static let maxImagePixels: CGFloat = 64_000_000 // 256 MB for one RGBA bitmap, before WebKit overhead.
+
+    static func accepts(_ size: CGSize) -> Bool {
+        size.width.isFinite && size.height.isFinite && size.width > 0 && size.height > 0
+            && size.width <= maxDimension && size.height <= maxDimension
+            && size.width <= maxLayoutPixels / size.height
+    }
+
+    static func pixels(_ size: CGSize, scale: CGFloat) -> (width: Int, height: Int)? {
+        guard accepts(size), scale.isFinite, scale > 0,
+              let width = Int(exactly: (size.width * scale).rounded()),
+              let height = Int(exactly: (size.height * scale).rounded()), width > 0, height > 0,
+              CGFloat(width) <= maxImagePixels / CGFloat(height) else { return nil }
+        return (width, height)
+    }
+}
+
 /// One board of a design, live: a `WKWebView` in the design's sandbox, loaded from
 /// `shepherd-design://`, that runs Shepherd's runtime and reports through a bridge in a content
 /// world of its own. The page always lays out at the board's size (its canvas `w` × `h` in CSS
@@ -78,7 +101,7 @@ public final class DesignBoardView: DesignPlatformView {
     public var boardSize: CGSize {
         didSet {
             guard boardSize != oldValue else { return }
-            frame.size = scaledSize
+            frame.size = DesignRenderLimits.accepts(boardSize) ? scaledSize : .zero
             layOutPage()
         }
     }
@@ -97,7 +120,7 @@ public final class DesignBoardView: DesignPlatformView {
                 return
             }
             guard zoom != oldValue else { return }
-            frame.size = scaledSize
+            frame.size = DesignRenderLimits.accepts(boardSize) ? scaledSize : .zero
             #if !(canImport(AppKit) && !targetEnvironment(macCatalyst))
             fitScale()
             #endif
@@ -126,6 +149,7 @@ public final class DesignBoardView: DesignPlatformView {
         self.surface = surface
         self.board = board
         boardSize = size
+        let size = DesignRenderLimits.accepts(size) ? size : .zero
         let configuration = surface.makeConfiguration()
         let controller = configuration.userContentController
         controller.addUserScript(WKUserScript(source: DesignRuntime.bridgeScript, injectionTime: .atDocumentStart,
@@ -187,6 +211,7 @@ public final class DesignBoardView: DesignPlatformView {
 
     /// The page drawn at the canvas's zoom: its viewport says the new scale.
     private func fitScale() {
+        guard DesignRenderLimits.accepts(boardSize) else { return }
         let content = Self.viewportContent(width: boardSize.width, scale: zoom)
         guard content != appliedViewport else { return }
         appliedViewport = content
@@ -202,6 +227,7 @@ public final class DesignBoardView: DesignPlatformView {
 
     /// The web view at the board's size, scaled to the view's bounds.
     private func layOutPage() {
+        guard DesignRenderLimits.accepts(boardSize) else { webView.frame = .zero; return }
         #if canImport(AppKit) && !targetEnvironment(macCatalyst)
         webView.frame = CGRect(origin: .zero, size: boardSize)
         scaleToFrame()
@@ -247,6 +273,9 @@ public final class DesignBoardView: DesignPlatformView {
     /// Loads the board from its file and waits until it has rendered. Returns what it drew.
     @discardableResult
     public func load() async throws -> CGSize {
+        guard DesignRenderLimits.accepts(boardSize) else {
+            throw DesignBoardError.refused("The board exceeds the native rendering size limit; its source and canvas are unchanged.")
+        }
         if !rulesInstalled {
             let rules = try await DesignContentRules.list(network: surface.network)
             if !rulesInstalled {
@@ -306,6 +335,14 @@ public final class DesignBoardView: DesignPlatformView {
     /// width unless given) at the view's backing scale, whatever the zoom.
     public func snapshot(width: CGFloat? = nil) async throws -> CGImage {
         guard contentSize != nil else { throw DesignBoardError.notBooted }
+        #if canImport(AppKit) && !targetEnvironment(macCatalyst)
+        let backing = window?.backingScaleFactor ?? 1
+        #else
+        let backing = window?.screen.scale ?? 1
+        #endif
+        guard DesignRenderLimits.pixels(boardSize, scale: (width ?? boardSize.width) / boardSize.width * max(backing, 1)) != nil else {
+            throw DesignBoardError.refused("The image exceeds 64 million pixels; export a smaller image or use PDF.")
+        }
         #if !(canImport(AppKit) && !targetEnvironment(macCatalyst))
         // iOS paints a page's tiles over a few frames after it lays out: wait for two, so the
         // snapshot never keeps a tile still drawn at low resolution.

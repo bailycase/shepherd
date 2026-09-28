@@ -86,7 +86,7 @@ struct NewThreadPage: View {
             .autocorrectionDisabled()
             .focused($composing)
             .onKeyPress(.return, phases: .down) { press in
-                if press.modifiers.contains(.shift) { draft.prompt += "\n"; return .handled }
+                if press.modifiers.contains(.shift) { return .ignored }
                 draft.send(vm)
                 return .handled
             }

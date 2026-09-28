@@ -577,7 +577,7 @@ struct Composer: View {
 
     private var card: some View {
         // The context details float over the thread without the card taking focus's look.
-        let focused = composing || (input.available && input.dropTargeted) || (menuOpen && menu != .context)
+        let focused = composing || (active && input.dropTargeted) || (menuOpen && menu != .context)
         return NWComposer(isFocused: focused) {
             // Design references sit first, above the words (DesignReferenceChip(ref)).
             ForEach(store.attachedReferences) { attached in
@@ -628,7 +628,7 @@ struct Composer: View {
             .autocorrectionDisabled()
             .focused($composing)
             .onKeyPress(.return, phases: .down) { press in
-                if press.modifiers.contains(.shift) { store.draft += "\n"; return .handled }
+                if press.modifiers.contains(.shift) { return .ignored }
                 if let login = loginQuery {
                     let matches = loginMatches
                     openLogin(SlashLogin.Command(verb: login.verb,
@@ -888,10 +888,11 @@ struct Composer: View {
             return
         }
         let images = input.attachments.images
+        let submitted = input.attachments.ids
         Task {
-            let before = store.sentCount
-            await store.send(images: images, delivery: delivery)
-            if store.sentCount > before { input.attachments.removeAll() }
+            if await store.send(images: images, delivery: delivery) {
+                for id in submitted { input.attachments.remove(id) }
+            }
         }
     }
 

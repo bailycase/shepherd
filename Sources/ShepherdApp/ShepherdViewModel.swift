@@ -175,6 +175,7 @@ final class ShepherdViewModel {
     var openAutomationRuns: [AutomationID: AutomationRun] = [:]
     /// Automations whose next run is being started: a second start refuses rather than racing it.
     @ObservationIgnored var startingAutomations: Set<AutomationID> = []
+    @ObservationIgnored var cancelledAutomationStarts: Set<AutomationID> = []
     /// ⌘⇧S hides the sidebar. Persisted, like the other sidebar disclosure choices.
     var sidebarHidden = false {
         didSet { sidebarDefaults.set(sidebarHidden, forKey: "shepherd.sidebarHidden") }

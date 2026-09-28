@@ -16,7 +16,7 @@ enum CommitHooks {
     /// Opens the commit: a sheet on iPhone, the popover beside Commit… on iPad.
     static func open(thread: AgentRef, navigator: MobileNavigator, sizeClass: UserInterfaceSizeClass?) {
         if sizeClass == .regular {
-            CommitStores.shared.popover = thread
+            navigator.commitPopover = thread
         } else {
             navigator.present(.review(.commit(thread)))
         }
@@ -24,17 +24,24 @@ enum CommitHooks {
 }
 
 /// One commit store per agent, kept while the app runs, so a commit that is still running shows
-/// its progress when Commit… is opened again. `popover` is the thread whose iPad popover is open.
+/// its progress when Commit… is opened again. The navigator owns each window's popover.
 @MainActor
 @Observable
 final class CommitStores {
     static let shared = CommitStores()
 
-    var popover: AgentRef?
     @ObservationIgnored private var stores: [AgentRef: ReviewCommitStore] = [:]
+    @ObservationIgnored private var forgottenHosts: Set<UUID> = []
+
+    func forget(host: UUID) {
+        forgottenHosts.insert(host)
+        for (ref, store) in stores where ref.host == host { store.invalidate() }
+        stores = stores.filter { $0.key.host != host }
+    }
 
     /// The agent's store, asking its host through the connection current at each request.
     func store(for ref: AgentRef, hosts: MobileHosts) -> ReviewCommitStore {
+        if forgottenHosts.contains(ref.host) { return ReviewCommitStore() }
         let store = stores[ref] ?? ReviewCommitStore()
         stores[ref] = store
         store.query = { [weak hosts] query in

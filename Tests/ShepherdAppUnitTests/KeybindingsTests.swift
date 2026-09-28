@@ -219,6 +219,19 @@ struct KeybindingsTests {
         #expect(store.data(forKey: KeybindingsStore.defaultsKey) == nil)
     }
 
+    @Test func resettingRefusesADefaultNowAssignedToAnotherAction() {
+        let store = Fixture.defaults()
+        let keys = KeybindingsStore(store: store)
+        let custom = KeyChord(key: "k", command: true, shift: true)
+        #expect(keys.assign(custom, to: .renameAgent) == nil)
+        #expect(keys.assign(ShortcutAction.renameAgent.defaultChord, to: .closePane) == nil)
+        #expect(keys.reset(.renameAgent) == .conflict(.closePane))
+        #expect(keys.chord(for: .renameAgent) == custom)
+        let reloaded = KeybindingsStore(store: store)
+        #expect(reloaded.chord(for: .renameAgent) == custom)
+        #expect(reloaded.chord(for: .closePane) == ShortcutAction.renameAgent.defaultChord)
+    }
+
     @Test func resettingOneActionKeepsTheOthers() {
         let keys = KeybindingsStore(store: Fixture.defaults())
         keys.assign(KeyChord(key: "k", command: true, option: true), to: .closePane)

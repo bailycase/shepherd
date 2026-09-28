@@ -30,7 +30,7 @@ struct ExtensionMessageTests {
 
     static let samples: [ExtensionMessage] = [
         .setAgentStatus(agentID: agent, status: .blocked),
-        .setAgentName(agentID: agent, name: "Title with \"quotes\" and ünicode"),
+        .setAgentName(agentID: agent, name: "Title with \"quotes\" and ünicode", sessionID: "session-a"),
         .setAgentSession(agentID: agent, piSessionID: "01a026dd-ce9a-7ea2-b1bb-195d958cca0c"),
         .setAgentChildren(agentID: agent, children: [
             ChildRun(runID: "r1", childIndex: 2, label: "src/jobs", state: "failed", startedAt: 1, endedAt: 2,
@@ -123,6 +123,8 @@ struct ExtensionMessageTests {
          .setAgentStatus(agentID: agent, status: .working)),
         (#"{"type":"setAgentName","agentID":"a1","name":"Fix plan mode over SSH"}"#,
          .setAgentName(agentID: agent, name: "Fix plan mode over SSH")),
+        (#"{"type":"setAgentName","agentID":"a1","name":"Current title","sessionID":"session-b"}"#,
+         .setAgentName(agentID: agent, name: "Current title", sessionID: "session-b")),
         (#"{"type":"setAgentSession","agentID":"a1","piSessionID":"sess-9"}"#,
          .setAgentSession(agentID: agent, piSessionID: "sess-9")),
         (#"{"type":"notify","agentID":"a1","title":"Done"}"#,

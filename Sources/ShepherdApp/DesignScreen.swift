@@ -180,6 +180,7 @@ struct DesignChatPane: View {
                     AgentThreadPane(
                         session: vm.sessions.session(for: pane, in: model.tab),
                         store: vm.threadStores.store(for: agentID),
+                        input: vm.threadStores.input(for: agentID),
                         active: model.isVisible,
                         isFocused: chat && model.focusedPaneID == thread.paneID,
                         request: { [vm] in try await vm.server.nativeThread(agentID: agentID, request: $0) },

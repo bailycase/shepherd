@@ -4,6 +4,13 @@
 // the tool list. FAKE_MCP_CRASH makes it die at start with a message on stderr; FAKE_MCP_PIDFILE
 // gets its pid; FAKE_MCP_LOG gets every message it received.
 import * as fs from "node:fs";
+import { spawn } from "node:child_process";
+
+if (process.env.FAKE_MCP_IGNORE_TERM) process.on("SIGTERM", () => {});
+if (process.env.FAKE_MCP_DESCENDANT) {
+  spawn(process.execPath, ["-e", `process.on('SIGTERM', () => {}); require('node:fs').writeFileSync(process.argv[1], String(process.pid)); setInterval(() => {}, 1000);`, process.env.FAKE_MCP_DESCENDANT], { stdio: "ignore" });
+  while (!fs.existsSync(process.env.FAKE_MCP_DESCENDANT)) await new Promise((resolve) => setTimeout(resolve, 5));
+}
 
 if (process.env.FAKE_MCP_PIDFILE) fs.writeFileSync(process.env.FAKE_MCP_PIDFILE, String(process.pid));
 if (process.env.FAKE_MCP_CRASH) {

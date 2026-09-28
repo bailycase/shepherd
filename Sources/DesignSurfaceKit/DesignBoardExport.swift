@@ -46,14 +46,15 @@ extension DesignBoardView {
 
     /// The board as an image `scale` times its size in pixels (2 for @2x), whatever the screen.
     public func image(scale: CGFloat) async throws -> CGImage {
+        guard let (width, height) = DesignRenderLimits.pixels(boardSize, scale: scale) else {
+            throw DesignBoardError.refused("The image exceeds 64 million pixels; export a smaller image or use PDF.")
+        }
         #if canImport(AppKit) && !targetEnvironment(macCatalyst)
         let backing = window?.backingScaleFactor ?? 1
         #else
         let backing = window?.screen.scale ?? 1
         #endif
         let image = try await snapshot(width: boardSize.width * scale / max(backing, 1))
-        let width = Int((boardSize.width * scale).rounded())
-        let height = Int((boardSize.height * scale).rounded())
         guard image.width != width || image.height != height else { return image }
         guard width > 0, height > 0,
               let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
@@ -71,6 +72,7 @@ extension DesignBoardView {
     /// with the paper's color.
     public func pdf(_ mode: DesignPrint) async throws -> Data {
         guard contentSize != nil else { throw DesignBoardError.notBooted }
+        guard DesignRenderLimits.accepts(boardSize) else { throw DesignBoardError.refused("The board exceeds the native rendering size limit.") }
         // Swift 6.3.3's optimizer (SimplifyCFG) crashes on the flow case, which broke every Release
         // and Nightly build, so that case is its own function and left unoptimized; it runs once
         // per export.
@@ -90,8 +92,10 @@ extension DesignBoardView {
     private func flowPDF(on paper: DesignPrint.Paper) async throws -> Data {
         guard let first = try await printLayout() else { throw DesignBoardError.notBooted }
         let height = min(max(first.height, 1), Double(paper.size.height) * Double(DesignPrint.maxPages))
+        let expanded = CGSize(width: boardSize.width, height: height)
+        guard DesignRenderLimits.accepts(expanded) else { throw DesignBoardError.refused("The document exceeds the native rendering size limit.") }
         if abs(boardSize.height - height) >= 1 {
-            boardSize = CGSize(width: boardSize.width, height: height)
+            boardSize = expanded
             try await settle(height: height)
         }
         let layout = try await printLayout() ?? first

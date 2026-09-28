@@ -27,6 +27,24 @@
         /// a key, Select All (Shepherd: the terminal's Add to message bar).
         public var onSelectionChange: (() -> Void)?
 
+        /// Host-owned file/image drops. AppKit chooses this actual surface as the destination,
+        /// so foreground controls and hidden views retain normal native drag routing.
+        public var acceptsHostDrop: (() -> Bool)?
+        public var onHostDrop: ((NSPasteboard) -> Bool)?
+
+        override open func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+            acceptsHostDrop?() == true ? .copy : []
+        }
+
+        override open func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
+            draggingEntered(sender)
+        }
+
+        override open func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+            guard acceptsHostDrop?() == true else { return false }
+            return onHostDrop?(sender.draggingPasteboard) ?? false
+        }
+
         open weak var delegate: (any TerminalSurfaceViewDelegate)? {
             get { core.delegate }
             set { core.delegate = newValue }

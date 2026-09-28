@@ -51,6 +51,19 @@ final class PadDesigns {
         return store
     }
 
+    static func forget(host: UUID, in hosts: MobileHosts) {
+        guard let store = stores[ObjectIdentifier(hosts)] else { return }
+        for ref in Array(store.canvases.keys) where ref.host == host {
+            store.canvases.removeValue(forKey: ref)?.forget()
+        }
+        store.onScreen = store.onScreen.filter { $0.key.host != host }
+        store.sessions.removeValue(forKey: host)
+        store.rows.removeAll { $0.ref.host == host }
+        store.available = hosts.hosts.contains { $0.id != host && $0.phase.isConnected && $0.supports(RemoteProtocol.designsCapability) }
+        store.recentsCache = nil
+        PadDesignRendering.shared.forget(host: host)
+    }
+
     private init(hosts: MobileHosts) {
         self.hosts = hosts
         libraries = HostDesignLibraries.of(hosts)
@@ -66,7 +79,7 @@ final class PadDesigns {
     /// offer, and derives the rows when their state changed.
     private func track() {
         let inputs = withObservationTracking {
-            hosts.hosts.map { host in
+            hosts.hosts.filter { !libraries.cache.isForgotten(host: $0.id) }.map { host in
                 Input(id: host.id, name: host.name, session: host.session, offers: host.phase.isConnected
                         && host.supports(RemoteProtocol.designsCapability),
                       designs: host.state.designs)
@@ -77,7 +90,7 @@ final class PadDesigns {
         let live = Set(inputs.map(\.id))
         for id in Set(sessions.keys).subtracting(live) {
             libraries.forget(id)
-            sessions.removeValue(forKey: id)
+            Self.forget(host: id, in: hosts)
         }
         for input in inputs {
             if let host = hosts.host(input.id) { libraries.connect(host) }
@@ -135,13 +148,15 @@ final class PadDesigns {
     func canvas(_ ref: PadDesignRef) -> PadDesignCanvas {
         if let canvas = canvases[ref] { return canvas }
         let canvas = PadDesignCanvas(ref: ref, library: library(ref.host))
-        canvases[ref] = canvas
+        if libraries.cache.isForgotten(host: ref.host) { canvas.forget() }
+        else { canvases[ref] = canvas }
         return canvas
     }
 
     /// A design came on screen (in any window) or left it: only designs on screen take a live
     /// view, and their hosts push changes for them alone.
     func setVisible(_ ref: PadDesignRef, _ visible: Bool) {
+        guard !libraries.cache.isForgotten(host: ref.host) else { return }
         let count = max(0, onScreen[ref, default: 0] + (visible ? 1 : -1))
         onScreen[ref] = count == 0 ? nil : count
         canvas(ref).setActive(count > 0)

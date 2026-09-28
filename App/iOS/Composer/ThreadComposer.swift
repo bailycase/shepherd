@@ -29,6 +29,8 @@ struct ThreadComposer: View {
     @Environment(\.composerDesignChat) private var designChat
     @FocusState private var focused: Bool
 
+    private var presentation: ComposerPresentation { navigator.composerPresentation.state(for: ref) }
+
     var body: some View {
         let store = threads.store(for: ref)
         let state = ComposerStates.shared.state(for: ref)
@@ -87,11 +89,11 @@ struct ThreadComposer: View {
                     NWDockStack(size: wide ? .pad : .phone, showsTray: true, showsQueue: !state.rows.isEmpty) {
                         SubagentTraySection(ref: ref, tray: tray, store: store, state: state, size: wide ? .pad : .phone, enabled: live)
                     } queue: {
-                        QueueSection(store: store, state: state, enabled: live, framed: false)
+                        QueueSection(store: store, state: state, presentation: presentation, enabled: live, framed: false)
                     }
                     .nwTransition(.list)
                 } else {
-                    QueueSection(store: store, state: state, enabled: live)
+                    QueueSection(store: store, state: state, presentation: presentation, enabled: live)
                 }
                 if let matches = state.matches {
                     NWTouchCommandList(commands: matches.commands.map(Self.command), total: matches.total, query: matches.query,
@@ -130,10 +132,10 @@ struct ThreadComposer: View {
         .task(id: ModelsAsk(session: host?.session, thinking: store.thinking != nil && store.supportedActions.contains("setThinking"))) {
             if store.thinking != nil && store.supportedActions.contains("setThinking") { await state.loadModels(host: host) }
         }
-        .sheet(isPresented: Binding(get: { state.showingContext }, set: { state.showingContext = $0 })) {
-            ContextDetailsSheet(store: store, live: live) { id in state.find(id) }
+        .sheet(isPresented: Binding(get: { presentation.showingContext }, set: { presentation.showingContext = $0 })) {
+            ContextDetailsSheet(store: store, live: live) { id in presentation.find(id) }
         }
-        .sheet(isPresented: Binding(get: { state.choosingModel }, set: { state.choosingModel = $0 })) {
+        .sheet(isPresented: Binding(get: { presentation.choosingModel }, set: { presentation.choosingModel = $0 })) {
             ModelPickerSheet(host: host, current: store.model, currentLevels: { store.snapshot?.thinkingLevels }) { model in
                 Task { await store.setModel(model) }
             }
@@ -237,7 +239,7 @@ struct ThreadComposer: View {
         }
         if store.model != nil || store.supportedActions.contains("setModel") {
             ModelChip(model: store.model, canChange: live && store.supportedActions.contains("setModel"), short: designChat) {
-                state.choosingModel = true
+                presentation.choosingModel = true
             }
         }
         if NativeThinkingLevel.offered(thinking: store.thinking, supportedActions: store.supportedActions, model: store.model,
@@ -255,7 +257,7 @@ struct ThreadComposer: View {
     /// The context ring (no ring from a host that reports no context). Its own equatable view:
     /// a keystroke or a streamed chunk never redraws it.
     private func contextMeter(store: NativeThreadStore, state: ComposerState) -> some View {
-        ContextMeterButton(store: store, expanded: state.showingContext) { state.showingContext = true }
+        ContextMeterButton(store: store, expanded: presentation.showingContext) { presentation.showingContext = true }
             .equatable()
     }
 
@@ -269,29 +271,31 @@ struct ThreadComposer: View {
         let hasDraft = !store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let enabled = live && store.acceptsSend && hasDraft && !store.busy
         let running = store.running
-        return NWComposerActionButton(.send, enabled: enabled) { send(.followUp, store: store, state: state) }
+        return NWComposerActionButton(.send, enabled: enabled) { Self.send(.followUp, store: store, state: state) }
             .keyboardShortcut(.return, modifiers: .command)
             .contextMenu {
                 if running, enabled {
-                    Button("Queue", systemImage: "text.line.first.and.arrowtriangle.forward") { send(.followUp, store: store, state: state) }
-                    Button("Steer now", systemImage: "arrow.turn.down.right") { send(.steer, store: store, state: state) }
+                    Button("Queue", systemImage: "text.line.first.and.arrowtriangle.forward") { Self.send(.followUp, store: store, state: state) }
+                    Button("Steer now", systemImage: "arrow.turn.down.right") { Self.send(.steer, store: store, state: state) }
                 }
             }
             .accessibilityLabel(running ? "Queue message" : "Send")
             .accessibilityHint(running ? "Goes when the agent finishes this turn" : "")
             .accessibilityActions {
                 if running, enabled {
-                    Button("Steer now") { send(.steer, store: store, state: state) }
+                    Button("Steer now") { Self.send(.steer, store: store, state: state) }
                 }
             }
     }
 
-    private func send(_ delivery: NativeThreadDelivery, store: NativeThreadStore, state: ComposerState) {
+    @MainActor @discardableResult
+    static func send(_ delivery: NativeThreadDelivery, store: NativeThreadStore, state: ComposerState) -> Task<Void, Never> {
         let images = state.attachments.map(\.image)
-        Task {
-            let before = store.sentCount
-            await store.send(images: images, delivery: delivery)
-            if store.sentCount > before { state.clearAttachments() }
+        let submitted = state.attachments.map(\.id)
+        return Task {
+            if await store.send(images: images, delivery: delivery) {
+                for id in submitted { state.remove(id) }
+            }
         }
     }
 

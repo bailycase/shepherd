@@ -150,7 +150,9 @@ keep the version for real breaks.
 ## What it does
 
 - **Hosts (`MobileHosts`):** several hosts at once, each with its own `RemoteHostClient`,
-  connection state and backoff (1, 2, 4… up to 30 s). A host that refuses the token or speaks
+  connection state and backoff (1, 2, 4… up to 30 s). DNS and socket establishment share a
+  cancellable 10-second deadline; stopping an attempt releases its resolver and pending sockets.
+  A host that refuses the token or speaks
   another protocol says so on its card and waits for Edit or Retry; an unreachable one says
   Shepherd isn't running there or can't be reached, with the client's own reason in its form. Records (name, address, port) are saved in
   UserDefaults (`shepherd.ios.hosts`); each token is a Keychain generic password per host
@@ -225,7 +227,8 @@ keep the version for real breaks.
   Add repo browses the host's folders (`listDir`, `addSpace`). Host shows each one's status and
   running threads. The New worktree switch (on by default) takes a generated branch and a base
   resolved through `creationOptions`. Start sends `createAgent` as the Mac's New Agent sheet
-  does, then opens the thread; images ride on the first send. An older host says what it lacks
+  does, with images in that same request, then opens the thread only while the original form
+  remains presented. A rejected creation keeps its prompt and images. An older host says what it lacks
   instead of failing. On iPad it is a small form over the thread, with a popover per chip.
 - **Subagents (`Subagents/`):** the tray above the composer (one row per run, in one card with
   Up next) and two record lines in the thread where they started and finished, the runs list (this turn and

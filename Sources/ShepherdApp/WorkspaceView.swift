@@ -70,7 +70,6 @@ struct WorkspaceView: View {
         // Window-level file/image drop routing for terminal panes; per-pane
         // SwiftUI .onDrop cannot coexist with permanently mounted hidden
         // layouts (see TerminalDropOverlay.swift).
-        .background { AppTerminalDropOverlay() }
     }
 }
 
@@ -181,7 +180,7 @@ struct AgentLayoutModel: Equatable {
             terminals = vm.terminalPanels
             designs = Dictionary(vm.state.designs.map { ($0.id, $0.buildsSystem) }, uniquingKeysWith: { first, _ in first })
             self.visibleTabID = visibleTabID
-            focusedPaneID = vm.focusedPaneID
+            focusedPaneID = vm.showSettings || vm.showComponentGallery || vm.showCommandPalette ? nil : vm.focusedPaneID
             agentsByTab = Dictionary(vm.state.agents.map { ($0.tabID, $0) }, uniquingKeysWith: { first, _ in first })
             runs = vm.subagentInspector.runByAgent
             panes = vm.subagentInspector
@@ -564,6 +563,22 @@ struct PaneSeparatorView: View {
             .animation(nil, value: rect)
             .nwAnimation(.hover, value: color)
             .zIndex(1)
+            .accessibilityElement()
+            .accessibilityLabel(axis == .vertical ? "Terminal column split" : "Terminal row split")
+            .accessibilityValue("\(Int(currentRatio * 100)) percent")
+            .accessibilityAdjustableAction { adjust($0) }
+    }
+
+    func adjust(_ direction: AccessibilityAdjustmentDirection) {
+        let span = axis == .vertical ? containerRect.width : containerRect.height
+        let step = direction == .increment ? AppLayout.splitAccessibilityStep : -AppLayout.splitAccessibilityStep
+        onCommit(ShellLayout.splitRatio(position: CGFloat(currentRatio + step) * span, span: span))
+    }
+
+    private var currentRatio: Double {
+        let span = axis == .vertical ? containerRect.width : containerRect.height
+        let position = axis == .vertical ? rect.minX - containerRect.minX : rect.minY - containerRect.minY
+        return liveRatio ?? Double(position / max(1, span - AppLayout.dividerWidth))
     }
 
     private var dragGesture: some Gesture {
@@ -628,6 +643,7 @@ struct PaneLeafView: View, Equatable {
                 AgentThreadPane(
                     session: vm.sessions.session(for: pane, in: tab),
                     store: vm.threadStores.store(for: agentID),
+                    input: vm.threadStores.input(for: agentID),
                     active: model.isVisible,
                     isFocused: model.isFocused && inspecting == nil,
                     request: { [vm] in try await vm.server.nativeThread(agentID: agentID, request: $0) },
@@ -658,6 +674,7 @@ struct PaneLeafView: View, Equatable {
                     session: vm.sessions.session(for: pane, in: tab),
                     isFocused: model.isFocused,
                     isRendering: model.isVisible,
+                    onFocusAcquired: { [vm] in vm.focusedPaneID = pane.id },
                     addToMessage: model.threadAgentID.map { agentID in { [vm] in vm.addTerminalSelection($0, to: .local(agentID)) } }
                 )
             }
@@ -674,6 +691,7 @@ struct PaneLeafView: View, Equatable {
 struct AgentThreadPane: View {
     var session: TerminalSessionStore.PaneSession
     var store: NativeThreadStore
+    var input: ThreadInput? = nil
     let active: Bool
     let isFocused: Bool
     let request: NativeThreadStore.Request
@@ -705,7 +723,7 @@ struct AgentThreadPane: View {
                            agentName: agentName, workingDirectory: workingDirectory, inspectSubagent: inspectSubagent,
                            steerSubagent: steerSubagent, inspectedRunID: inspectedRunID, review: review, turnActions: turnActions,
                            restartPi: restartPi, authNotice: authNotice, authActions: authActions, slashLogin: designChat ? nil : slashLogin,
-                           designChat: designChat, allowsLocalFiles: true)
+                           designChat: designChat, allowsLocalFiles: true, retainedInput: input)
             case .failed(let reason):
                 PanePlaceholder(text: "session unavailable · \(reason)")
                     .nwTransition(.content)
@@ -735,6 +753,7 @@ struct LiveTerminalPane: View {
     /// False for a mounted-but-hidden pane, which keeps its surface but must
     /// stop running a render loop.
     var isRendering: Bool = true
+    var onFocusAcquired: (() -> Void)? = nil
     /// Puts a selection in the thread's composer; nil where the layout has no thread.
     var addToMessage: ((String) -> Void)? = nil
 
@@ -771,6 +790,8 @@ struct LiveTerminalPane: View {
             }
         }
         .nwAnimation(.content, value: session.phase)
+        .onAppear { session.terminal.onFocusAcquired = onFocusAcquired }
+        .onDisappear { session.terminal.onFocusAcquired = nil }
     }
 }
 
@@ -929,10 +950,14 @@ private struct RemotePaneTreeView: View {
                                                  maximized: panel.maximized, height: liveHeight ?? vm.terminalPanels.height,
                                                  in: geo.size, liveRatios: liveRatios)
             ZStack(alignment: .topLeading) {
-                ForEach(geometry.leaves.filter(\.shown), id: \.pane.id) { leaf in
-                    RemotePaneLeafView(vm: vm, connection: connection, ref: ref, tab: tab, leaf: leaf.pane, hasThread: true)
+                ForEach(geometry.leaves.filter { $0.shown || $0.pane.id == thread }, id: \.pane.id) { leaf in
+                    RemotePaneLeafView(vm: vm, connection: connection, ref: ref, tab: tab, leaf: leaf.pane,
+                                       hasThread: true, active: leaf.shown)
                         .frame(width: leaf.rect.width, height: leaf.rect.height)
                         .offset(x: leaf.rect.minX, y: leaf.rect.minY)
+                        .opacity(leaf.shown ? 1 : 0)
+                        .allowsHitTesting(leaf.shown)
+                        .accessibilityHidden(!leaf.shown)
                 }
                 ForEach(geometry.separators) { separator in
                     PaneSeparatorView(
@@ -1019,6 +1044,7 @@ private struct RemotePaneLeafView: View {
     /// The layout has the agent's thread (not a host's utility terminal): a terminal's
     /// selection can go to it.
     var hasThread = false
+    var active = true
 
     /// What the leaf shows, for its cross-fade.
     private enum Showing: Equatable {
@@ -1038,7 +1064,9 @@ private struct RemotePaneLeafView: View {
             : terminal.map { .terminal($0.id) } ?? .starting
         ZStack {
             if let agent {
-                RemoteAgentThreadPane(vm: vm, ref: ref, agentName: agent.name, isFocused: vm.remoteFocusedPaneID == leaf.id)
+                RemoteAgentThreadPane(vm: vm, ref: ref, agentName: agent.name,
+                                      isFocused: active && !vm.showSettings && !vm.showComponentGallery && !vm.showCommandPalette && vm.remoteFocusedPaneID == leaf.id,
+                                      active: active)
             } else if let target = reviewTarget {
                 if let review {
                     ReviewPane(session: review, actions: vm.reviewActions(for: review, remote: true), chrome: .header)
@@ -1049,7 +1077,9 @@ private struct RemotePaneLeafView: View {
                         .nwTransition(.content)
                 }
             } else if let terminal {
-                RemoteTerminalPane(pane: terminal.pane, isFocused: vm.remoteFocusedPaneID == leaf.id,
+                RemoteTerminalPane(pane: terminal.pane,
+                                   isFocused: !vm.showSettings && !vm.showComponentGallery && !vm.showCommandPalette && vm.remoteFocusedPaneID == leaf.id,
+                                   onFocusAcquired: { [vm] in vm.remoteFocusedPaneID = leaf.id },
                                    addToMessage: hasThread ? { [vm, ref] in vm.addTerminalSelection($0, to: .remote(ref)) } : nil)
                     .id(terminal.id)
                     .onDisappear { vm.remoteHosts.closePane(connection: connection, sessionID: terminal.id) }
@@ -1076,12 +1106,13 @@ struct RemoteAgentThreadPane: View {
     let isFocused: Bool
     /// A design's chat (`ThreadView.designChat`).
     var designChat = false
+    var active = true
 
     var body: some View {
         let inspecting = vm.subagentInspector.remoteRuns[ref]
         ThreadView(
             store: vm.remoteThreadStores.store(for: ref),
-            active: true,
+            active: active,
             isFocused: isFocused && inspecting == nil,
             request: { try await vm.remoteHosts.nativeThread(ref, request: $0) },
             commandKey: ThreadCommandCenter.key(remote: ref),
@@ -1108,7 +1139,7 @@ struct RemoteAgentThreadPane: View {
                 let allLevels = vm.remoteHosts.connections.first { $0.id == ref.hostID }?.supportsAllThinkingLevels ?? false
                 return await ModelCatalog.derive(listing, hostTakesAllLevels: allLevels)
             },
-            designChat: designChat
+            designChat: designChat, retainedInput: vm.remoteThreadStores.input(for: ref)
         )
     }
 }
@@ -1116,6 +1147,7 @@ struct RemoteAgentThreadPane: View {
 private struct RemoteTerminalPane: View {
     var pane: RemotePaneSession
     let isFocused: Bool
+    var onFocusAcquired: (() -> Void)? = nil
     /// Puts a selection in the thread's composer; nil in a host's utility terminal.
     var addToMessage: ((String) -> Void)? = nil
 
@@ -1144,6 +1176,8 @@ private struct RemoteTerminalPane: View {
             }
         }
         .nwAnimation(.content, value: pane.phase)
+        .onAppear { pane.terminal.onFocusAcquired = onFocusAcquired }
+        .onDisappear { pane.terminal.onFocusAcquired = nil }
     }
 }
 

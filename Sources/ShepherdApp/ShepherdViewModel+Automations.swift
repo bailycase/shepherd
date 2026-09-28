@@ -92,9 +92,14 @@ extension ShepherdViewModel {
         guard startingAutomations.insert(id).inserted else {
             throw AgentStartFailure(message: "\(previous.name) is already running")
         }
-        defer { startingAutomations.remove(id) }
+        cancelledAutomationStarts.remove(id)
+        defer {
+            startingAutomations.remove(id)
+            cancelledAutomationStarts.remove(id)
+        }
         let settled = try await settledRun(of: previous)
-        guard let automation = state.automations.first(where: { $0.id == id }), automation.agentID == settled else { return }
+        guard !cancelledAutomationStarts.contains(id),
+              let automation = state.automations.first(where: { $0.id == id }), automation.agentID == settled else { return }
 
         let cwd = (automation.cwd as NSString).expandingTildeInPath
         // Watch agents always live in the reserved hidden space — the
@@ -102,6 +107,7 @@ extension ShepherdViewModel {
         // rows. The space is just sidebar grouping; the agent's pane runs in
         // the automation's own cwd regardless.
         let spaceID = try await automationsSpaceID()
+        guard !cancelledAutomationStarts.contains(id), state.automations.contains(where: { $0.id == id }) else { return }
 
         let config = NewAgentConfig(
             spaceID: spaceID,
@@ -112,14 +118,26 @@ extension ShepherdViewModel {
             isAutomation: true
         )
         let agentID = try await startAgent(config, selectAfter: false)
-        // Wear the automation's name; it was chosen deliberately.
-        try? await server.renameAgent(agentID, to: automation.name)
-
-        // Re-read: the automation may have been edited while its run started.
-        var updated = state.automations.first { $0.id == id } ?? automation
-        updated.agentID = agentID
-        try await server.updateAutomation(updated)
-        adoptCanonical()
+        do {
+            // Wear the automation's name; it was chosen deliberately.
+            try? await server.renameAgent(agentID, to: automation.name)
+            guard !cancelledAutomationStarts.contains(id),
+                  var updated = state.automations.first(where: { $0.id == id }) else {
+                try await deleteAgentPersisted(agentID)
+                return
+            }
+            updated.agentID = agentID
+            try await server.updateAutomation(updated)
+            adoptCanonical()
+            // Stop can arrive while the link is awaiting the server too.
+            if cancelledAutomationStarts.contains(id) {
+                try await deleteAgentPersisted(agentID)
+                return
+            }
+        } catch {
+            try? await deleteAgentPersisted(agentID)
+            throw error
+        }
 
         guard let settled, state.agents.contains(where: { $0.id == settled }) else { return }
         // Selected before the old run goes, so its deletion has no selection to fall back from.
@@ -145,6 +163,7 @@ extension ShepherdViewModel {
     /// Stop an automation's run by deleting its agent (the automation itself
     /// stays saved; deleteAgent clears the back-reference server-side).
     func stopAutomation(_ id: AutomationID) {
+        if startingAutomations.contains(id) { cancelledAutomationStarts.insert(id) }
         guard let agentID = state.automations.first(where: { $0.id == id })?.agentID else { return }
         deleteAgent(agentID)
     }

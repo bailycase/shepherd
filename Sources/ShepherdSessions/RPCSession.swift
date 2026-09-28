@@ -11,12 +11,15 @@ enum RPCError: Error, Equatable, CustomStringConvertible {
     case exited(code: Int32?)
     /// The request was issued after the process had already exited.
     case notAlive
+    /// The complete command was not admitted to stdin's bounded queue.
+    case inputRejected
 
     var description: String {
         switch self {
         case .timeout: return "RPC request timed out"
         case .exited(let code): return "The agent exited (\(code.map(String.init) ?? "signal")) with the request outstanding"
         case .notAlive: return "The agent is not running"
+        case .inputRejected: return "The agent's input is closed or full. Try again."
         }
     }
 }
@@ -61,6 +64,10 @@ final class RPCSession: @unchecked Sendable {
     static let offQueueDecodeBytes = 256 * 1024
     /// Stdout one queue turn reads before yielding to other work.
     static let readBudgetPerTurn = 1024 * 1024
+    /// Backpressure while a record decodes: at most this backlog plus one record (256 MiB
+    /// maximum) and one 64 KiB read. A lone partial record must reach its LF to make progress.
+    static let decodeHighWaterBytes = 8 * 1024 * 1024
+    static let decodeLowWaterBytes = 4 * 1024 * 1024
     /// Concurrent, so the histories of agents resuming together decode side by side.
     private static let decodeQueue = DispatchQueue(label: "shepherd.rpc.decode", qos: .utility, attributes: .concurrent)
 
@@ -73,6 +80,7 @@ final class RPCSession: @unchecked Sendable {
     private let stdoutFD: Int32
     private let stderrFD: Int32
     private var stdoutSource: DispatchSourceRead?
+    private(set) var stdoutSuspended = false
     private var stderrSource: DispatchSourceRead?
     private var writeSource: DispatchSourceWrite?
     private var procSource: DispatchSourceProcess?
@@ -95,6 +103,9 @@ final class RPCSession: @unchecked Sendable {
     /// arrival order, so the session handles its records in exactly the order pi wrote them.
     private var decodingOffQueue = false
     private var deferredRecords: [Data] = []
+    private var deferredBytes = 0
+    private var decodingBytes = 0
+    var retainedRecordBytes: Int { stdoutBuffer.count + deferredBytes + decodingBytes }
     private var recordsInFlight: Bool { decodingOffQueue || !deferredRecords.isEmpty }
     /// Requests whose deadline passed while records were in flight.
     private var expiring: [(id: String, type: String, timeout: TimeInterval)] = []
@@ -220,19 +231,20 @@ final class RPCSession: @unchecked Sendable {
 
     /// Fire-and-forget: write one command record. Must run under the
     /// session's queue hierarchy.
-    func send(_ command: RPCCommand, id: String? = nil) {
-        guard isAlive, !stdinClosed else { return }
+    @discardableResult
+    func send(_ command: RPCCommand, id: String? = nil) -> Bool {
+        guard isAlive, !stdinClosed else { return false }
         let line: Data
         do {
             line = try NDJSON.encode(RPCCommandFrame(id: id, command: command))
         } catch {
             ShepherdLog.warning("rpc session \(self.id) failed to encode \(command.type): \(error)")
-            return
+            return false
         }
         let pendingCount = pendingOutput.count - pendingOutputOffset
         guard line.count <= Self.outputQueueLimit - pendingCount else {
             ShepherdLog.warning("rpc session \(self.id) command dropped: pending output limit is \(Self.outputQueueLimit) bytes")
-            return
+            return false
         }
         if pendingOutputOffset > 0 {
             pendingOutput.removeSubrange(0..<pendingOutputOffset)
@@ -240,6 +252,7 @@ final class RPCSession: @unchecked Sendable {
         }
         pendingOutput.append(line)
         drainPendingOutput()
+        return !stdinClosed
     }
 
     /// Send a command with a fresh id and resolve on the matching response.
@@ -255,8 +268,11 @@ final class RPCSession: @unchecked Sendable {
         }
         nextRequestID += 1
         let requestID = "\(id.rawValue)-\(nextRequestID)"
+        guard send(command, id: requestID) else {
+            completion(.failure(.inputRejected))
+            return
+        }
         pendingRequests[requestID] = completion
-        send(command, id: requestID)
         queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
             self?.expire(requestID, type: command.type, timeout: timeout)
         }
@@ -300,6 +316,8 @@ final class RPCSession: @unchecked Sendable {
         exitDelivered = true
         isShutDown = true
         deferredRecords.removeAll()
+        deferredBytes = 0
+        stdoutBuffer.removeAll()
         onEvent = nil
         onStderr = nil
         onExit = nil
@@ -308,8 +326,7 @@ final class RPCSession: @unchecked Sendable {
         for (_, completion) in outstanding { completion(.failure(.notAlive)) }
         closeStdin()
         stdoutClosed = true
-        stdoutSource?.cancel()
-        stdoutSource = nil
+        cancelStdoutSource()
         stderrClosed = true
         stderrSource?.cancel()
         stderrSource = nil
@@ -385,7 +402,7 @@ final class RPCSession: @unchecked Sendable {
     /// again while the pipe holds more, so a long record arriving never holds the server queue
     /// for its whole length.
     private func drainStdout(budget: Int = RPCSession.readBudgetPerTurn) {
-        guard !stdoutClosed else { return }
+        guard !stdoutClosed, !stdoutSuspended else { return }
         var buf = [UInt8](repeating: 0, count: 64 * 1024)
         var read = 0
         while true {
@@ -393,7 +410,8 @@ final class RPCSession: @unchecked Sendable {
             if n > 0 {
                 feedStdout(Data(bytes: buf, count: n))
                 read += n
-                if read >= budget { return }
+                updateStdoutPressure()
+                if stdoutSuspended || read >= budget { return }
                 continue
             }
             if n == 0 {
@@ -456,6 +474,7 @@ final class RPCSession: @unchecked Sendable {
     private func receiveRecord(_ line: Data) {
         if decodingOffQueue {
             deferredRecords.append(line)
+            deferredBytes += line.count
         } else if line.count >= Self.offQueueDecodeBytes {
             decodeOffQueue(line)
         } else {
@@ -465,6 +484,7 @@ final class RPCSession: @unchecked Sendable {
 
     private func decodeOffQueue(_ line: Data) {
         decodingOffQueue = true
+        decodingBytes = line.count
         let hook = beforeOffQueueDecode
         Self.decodeQueue.async { [weak self] in
             hook?()
@@ -478,7 +498,9 @@ final class RPCSession: @unchecked Sendable {
     /// they run out or another long one goes off the queue.
     private func finishOffQueueDecode(_ decoded: Result<RPCIncoming, Error>) {
         decodingOffQueue = false
+        decodingBytes = 0
         guard !isShutDown else { return }
+        defer { updateStdoutPressure() }
         switch decoded {
         case .success(let incoming): dispatch(incoming)
         case .failure(let error): ShepherdLog.warning("rpc session \(id) dropped a malformed record: \(error)")
@@ -486,6 +508,7 @@ final class RPCSession: @unchecked Sendable {
         var waiting = deferredRecords[...]
         deferredRecords.removeAll()
         while let line = waiting.popFirst() {
+            deferredBytes -= line.count
             receiveRecord(line)
             if decodingOffQueue {
                 deferredRecords = Array(waiting)
@@ -567,14 +590,35 @@ final class RPCSession: @unchecked Sendable {
         onStderr?(String(decoding: bytes, as: UTF8.self))
     }
 
+    private func updateStdoutPressure() {
+        guard let source = stdoutSource, !stdoutClosed else { return }
+        if !stdoutSuspended, decodingOffQueue, retainedRecordBytes >= Self.decodeHighWaterBytes {
+            stdoutSuspended = true
+            source.suspend()
+        } else if stdoutSuspended, !decodingOffQueue || retainedRecordBytes < Self.decodeLowWaterBytes {
+            stdoutSuspended = false
+            source.resume()
+        }
+    }
+
+    private func cancelStdoutSource() {
+        if stdoutSuspended {
+            stdoutSuspended = false
+            stdoutSource?.resume()
+        }
+        stdoutSource?.cancel()
+        stdoutSource = nil
+    }
+
     private func handleStdoutEOF() {
         guard !stdoutClosed else { return }
         stdoutClosed = true
-        stdoutSource?.cancel()  // cancel handler closes the fd
-        stdoutSource = nil
+        cancelStdoutSource() // cancel handler closes the fd
         if !reap() {
             startReapTimer()
         }
+        failRequestsAfterExit()
+        deliverExitIfReady()
     }
 
     private func handleChildExited() {
@@ -610,7 +654,7 @@ final class RPCSession: @unchecked Sendable {
     /// Requests pi never answered fail once it is gone, but only after every record it wrote
     /// has been handled: an answer may still be decoding.
     private func failRequestsAfterExit() {
-        guard reaped, !recordsInFlight else { return }
+        guard reaped, stdoutClosed, !recordsInFlight else { return }
         let outstanding = pendingRequests
         pendingRequests.removeAll()
         for (_, completion) in outstanding {

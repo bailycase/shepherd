@@ -18,6 +18,45 @@ private final class RecordingProbe: MCPProbeRunner, @unchecked Sendable {
     }
 }
 
+/// Holds a successful token response even after cancellation, so sign-out races real completion.
+private actor GatedSignInHTTP: MCPHTTP {
+    private var release: CheckedContinuation<Void, Never>?
+    private(set) var waiting = false
+    func finish() { release?.resume(); release = nil }
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let result = try await URLSessionHTTP().send(request)
+        if request.url?.path == "/auth/token" {
+            await withCheckedContinuation { release = $0; waiting = true }
+        }
+        return result
+    }
+}
+
+/// Adds a strict Basic registration to the local fake authorization server.
+private actor BasicRegistrationHTTP: MCPHTTP {
+    private(set) var registrations = 0
+    private(set) var acceptedTokens = 0
+    private var clientID = ""
+    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        if request.url?.path == "/auth/token" {
+            let basic = "Basic " + Data("\(clientID):fixture-secret".utf8).base64EncodedString()
+            let body = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
+            guard request.value(forHTTPHeaderField: "Authorization") == basic, !body.contains("client_secret=") else {
+                return (Data(#"{"error":"invalid_client"}"#.utf8), HTTPURLResponse(url: request.url!, statusCode: 401, httpVersion: nil, headerFields: nil)!)
+            }
+            acceptedTokens += 1
+        }
+        let (data, response) = try await URLSessionHTTP().send(request)
+        guard request.url?.path == "/auth/register" else { return (data, response) }
+        registrations += 1
+        var json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        clientID = try #require(json["client_id"] as? String)
+        json["client_secret"] = "fixture-secret"
+        json["token_endpoint_auth_method"] = "client_secret_basic"
+        return (try JSONSerialization.data(withJSONObject: json), response)
+    }
+}
+
 /// OAuth end to end against a fake protected MCP server and authorization server on 127.0.0.1:
 /// discovery from the 401, dynamic registration, PKCE in a scripted browser that follows the
 /// authorize redirect to the loopback listener, the token exchange, refresh, and signing in
@@ -33,7 +72,7 @@ struct MCPOAuthFlowTests {
         let now: Locked<Date>
     }
 
-    private func harness(deny: Bool = false) throws -> Harness {
+    private func harness(deny: Bool = false, http: MCPHTTP = URLSessionHTTP()) throws -> Harness {
         let fake = try FakeMCPOAuth(deny: deny)
         let directory = try makeScratchDirectory()
         let config = directory.appendingPathComponent("mcp.json")
@@ -43,7 +82,7 @@ struct MCPOAuthFlowTests {
         let now = Locked(Date())
         let store = MCPStore(dependencies: MCPStore.Dependencies(
             file: MCPConfigFile(url: config), cacheURL: directory.appendingPathComponent("tools.json"), secrets: secrets,
-            http: URLSessionHTTP(), probe: MCPProbe(runner: probe),
+            http: http, probe: MCPProbe(runner: probe),
             // The scripted browser: it follows the authorize page's redirect to the loopback listener.
             openURL: { url in Task.detached { _ = try? await URLSession(configuration: .ephemeral).data(from: url) } },
             copy: { _ in }, now: { now.current }))
@@ -110,6 +149,41 @@ struct MCPOAuthFlowTests {
         #expect(refreshed.bearer != token.accessToken)
         #expect(try await status(of: h.fake, bearer: refreshed.bearer ?? "") == 200)
         #expect(h.store.token("fake")?.refreshToken != token.refreshToken)
+    }
+
+    @Test(arguments: [false, true])
+    func revokingASignInWhileTheTokenResponseWaitsSavesNothing(remove: Bool) async throws {
+        let http = GatedSignInHTTP()
+        let h = try harness(http: http)
+        defer { h.fake.stop() }
+        h.store.beginSignIn("fake")
+        weak var flow = try #require(h.store.signIn)
+        try await eventuallyAsync("the sign-in token response to wait") { await http.waiting }
+        if remove { h.store.remove("fake") } else { h.store.signOut("fake") }
+        h.store.signIn = nil
+        await http.finish()
+        // run() holds its flow until the late response has been fully handled.
+        try await eventuallyOnMain("the cancelled flow to finish and release") { flow == nil }
+        #expect(h.secrets.value(for: "oauth/fake") == nil)
+        #expect(h.probe.inputs.current.isEmpty)
+    }
+
+    @Test func aBasicRegistrationIsReusedAndRefreshedWithBasicAuthentication() async throws {
+        let http = BasicRegistrationHTTP()
+        let h = try harness(http: http)
+        defer { h.fake.stop() }
+        h.store.beginSignIn("fake")
+        let first = try #require(h.store.signIn)
+        try await eventuallyOnMain("the Basic sign-in") { first.succeeded || first.model.phase == .failed }
+        #expect(first.succeeded)
+        #expect(h.store.token("fake")?.authMethod == "client_secret_basic")
+        _ = try await h.store.refreshed("fake")
+        h.store.beginSignIn("fake")
+        let reused = try #require(h.store.signIn)
+        try await eventuallyOnMain("the reused Basic sign-in") { reused.succeeded || reused.model.phase == .failed }
+        #expect(reused.succeeded)
+        #expect(await http.registrations == 1, "the second sign-in must reuse its registered client")
+        #expect(await http.acceptedTokens == 3, "exchange, refresh, and reused exchange all require Basic")
     }
 
     /// The provider said no: the sheet says so in its words, and nothing is saved.

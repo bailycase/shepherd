@@ -72,17 +72,21 @@ enum NamerExtension {
           const wanted = process.env.SHEPHERD_NEEDS_NAME === "1";
 
           let done = false;
+          let sessionID = "";
+          let generation = 0;
           // Session ids this process already titled (or started titling), so a run of
           // /resume back and forth never repeats an LLM call.
           const namedSessions = new Set<string>();
 
           // ---- socket (fire-and-forget, one message, then close) -------------------
 
-          function report(name: string) {
+          function report(name: string, origin = sessionID, epoch = generation) {
+            if (!origin || origin !== sessionID || epoch !== generation) return;
             try {
               const socket = net.createConnection(socketPath, () => {
                 try {
-                  socket.end(JSON.stringify({ type: "setAgentName", agentID, name }) + "\n");
+                  if (origin !== sessionID || epoch !== generation) { socket.end(); return; }
+                  socket.end(JSON.stringify({ type: "setAgentName", agentID, name, sessionID: origin }) + "\n");
                 } catch {
                   // Swallow; a missing title is never worth disturbing the session.
                 }
@@ -244,6 +248,8 @@ enum NamerExtension {
               // Swallow.
             }
 
+            sessionID = sessionId;
+            const epoch = ++generation;
             try {
               const existing = sanitize(ctx.sessionManager.getSessionName());
               if (existing) {
@@ -268,12 +274,14 @@ enum NamerExtension {
             void (async () => {
               try {
                 const title = await generate(prompt.slice(0, PROMPT_BUDGET), ctx);
-                if (title) report(title);
+                if (title) report(title, sessionId, epoch);
               } catch {
                 // Swallow.
               }
             })();
           });
+
+          pi.on("session_shutdown", () => { sessionID = ""; generation++; });
 
           // A /name in this very session retitles the agent immediately, for free.
           pi.on("session_info_changed", (event) => {
@@ -288,12 +296,13 @@ enum NamerExtension {
             const prompt = (event.prompt ?? "").trim();
             if (!prompt) return;
             done = true;
+            const origin = sessionID, epoch = generation;
 
             // Detached on purpose: naming must never delay the agent's first turn.
             void (async () => {
               try {
                 const title = await generate(prompt.slice(0, PROMPT_BUDGET), ctx);
-                if (title) report(title);
+                if (title) report(title, origin, epoch);
               } catch {
                 // Swallow.
               }

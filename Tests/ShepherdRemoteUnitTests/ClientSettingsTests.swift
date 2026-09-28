@@ -14,6 +14,9 @@ final class FakeSettingsClient: SettingsClient, @unchecked Sendable {
     private var suggestionsSnapshot: SuggestionsSnapshot
     private var log: [String] = []
     var refusesChanges = false
+    var beforeInstructions: (@Sendable (RemoteInstructionsRequest) async throws -> Void)?
+    var beforeHostSettings: (@Sendable () async -> Void)?
+    var beforeSuggestions: (@Sendable () async -> Void)?
     /// Saved versions a restore can put back (their entries are in the files' history).
     var revisions: [InstructionRevision] = []
 
@@ -33,7 +36,8 @@ final class FakeSettingsClient: SettingsClient, @unchecked Sendable {
     }
 
     func hostSettings(_ request: RemoteHostSettingsRequest) async throws -> HostSettings {
-        try lock.withLock {
+        await beforeHostSettings?()
+        return try lock.withLock {
             log.append("settings.\(request)")
             if case .change(let change) = request {
                 if refusesChanges { throw RemoteHostClientError.rejected(code: "settings_failed", message: "The host said no.") }
@@ -44,7 +48,8 @@ final class FakeSettingsClient: SettingsClient, @unchecked Sendable {
     }
 
     func instructions(_ request: RemoteInstructionsRequest) async throws -> InstructionsSnapshot {
-        lock.withLock {
+        try await beforeInstructions?(request)
+        return lock.withLock {
             switch request {
             case .fetch:
                 log.append("instructions.fetch")
@@ -60,7 +65,8 @@ final class FakeSettingsClient: SettingsClient, @unchecked Sendable {
     }
 
     func suggestions(_ request: RemoteSuggestionsRequest) async throws -> SuggestionsSnapshot {
-        lock.withLock {
+        await beforeSuggestions?()
+        return lock.withLock {
             log.append("suggestions.\(String(describing: request).prefix { $0 != "(" })")
             switch request {
             case .fetch:
@@ -90,6 +96,32 @@ final class FakeSettingsClient: SettingsClient, @unchecked Sendable {
     }
 }
 
+/// Deterministic request boundary: no timers, polling, sockets or UI.
+actor SettingsRequestGate {
+    private var held = false
+    private var waiting: CheckedContinuation<Void, Never>?
+    private var entered: CheckedContinuation<Void, Never>?
+
+    func hold() async {
+        await withCheckedContinuation { continuation in
+            waiting = continuation
+            held = true
+            entered?.resume()
+            entered = nil
+        }
+    }
+
+    func waitUntilHeld() async {
+        if held { return }
+        await withCheckedContinuation { entered = $0 }
+    }
+
+    func release() {
+        waiting?.resume()
+        waiting = nil
+    }
+}
+
 @Suite("Client settings")
 @MainActor
 struct ClientSettingsTests {
@@ -101,6 +133,33 @@ struct ClientSettingsTests {
     }
 
     // MARK: Host settings
+
+    @Test func lateSettingsAndSuggestionReadsCannotRepopulateAForgottenHost() async {
+        let client = FakeSettingsClient()
+        let host = Self.host("gone", client)
+        let settings = ClientHostSettings(), suggestions = ClientSuggestions()
+        let settingsGate = SettingsRequestGate(), suggestionsGate = SettingsRequestGate()
+        client.beforeHostSettings = { await settingsGate.hold() }
+        client.beforeSuggestions = { await suggestionsGate.hold() }
+        let readingSettings = Task { await settings.refresh(host) }
+        let readingSuggestions = Task { await suggestions.refresh([host]) }
+        await settingsGate.waitUntilHeld()
+        await suggestionsGate.waitUntilHeld()
+        settings.forget(host: host.id)
+        suggestions.forget(host: host.id)
+        await settingsGate.release()
+        await suggestionsGate.release()
+        await readingSettings.value
+        await readingSuggestions.value
+        #expect(settings.state(of: host) == .offline)
+        #expect(suggestions.hosts([host]).isEmpty)
+        client.beforeHostSettings = nil
+        client.beforeSuggestions = nil
+        let count = client.requests.count
+        await settings.refresh(host)
+        await suggestions.refresh([host])
+        #expect(client.requests.count == count)
+    }
 
     @Test func aHostsSettingsSayWhetherTheyCanBeShown() async {
         let model = ClientHostSettings()
@@ -173,6 +232,217 @@ struct ClientSettingsTests {
         await model.refresh(hosts)
         #expect(third.saved.agents == "- a\n- b\n")
         #expect(model.chip(for: hosts[2], file: .agents, in: hosts).tone == .done)
+    }
+
+    @Test func deferredInstructionsKeepTheirSavedContentWhenOnlyRecipientsReconnect() async {
+        let defaults = ScratchDefaults()
+        let a = UUID(), b = UUID(), c = UUID()
+        let source = FakeSettingsClient(files: InstructionsSnapshot(agents: "old", appendSystem: "saved rules", directory: "~/i"))
+        let hosts = [Self.host("A", nil, id: a), Self.host("B", source, id: b), Self.host("C", nil, id: c)]
+        let model = ClientInstructions(defaults: defaults, origin: "iPad")
+        await model.refresh(hosts)
+        model.setText("saved", file: .agents, in: hosts)
+        await model.save(.agents, in: hosts)
+
+        let first = FakeSettingsClient(files: InstructionsSnapshot(agents: "stale A", appendSystem: "stale rules A", directory: "~/i"))
+        let third = FakeSettingsClient(files: InstructionsSnapshot(agents: "stale C", appendSystem: "stale rules C", directory: "~/i"))
+        let reconnected = [Self.host("A", first, id: a), Self.host("B", nil, id: b), Self.host("C", third, id: c)]
+        let relaunched = ClientInstructions(defaults: defaults, origin: "iPad")
+        await relaunched.refresh(reconnected)
+        #expect(first.saved.agents == "saved" && first.saved.appendSystem == "saved rules")
+        #expect(third.saved.agents == "saved" && third.saved.appendSystem == "saved rules")
+        #expect(relaunched.text(.agents, in: reconnected) == "saved")
+        let offline = Self.host("A", nil, id: a)
+        #expect(relaunched.chip(for: offline, file: .agents, in: [offline]).word == "offline")
+    }
+
+    @Test func aPartialInstructionSyncStaysOwedUntilBothFilesAreAcknowledged() async {
+        let defaults = ScratchDefaults()
+        let source = FakeSettingsClient(files: InstructionsSnapshot(agents: "old", appendSystem: "rules", directory: "~/i"))
+        let target = FakeSettingsClient()
+        target.beforeInstructions = { request in
+            if case .save(.appendSystem, _, _, _) = request { throw RemoteHostClientError.timeout }
+        }
+        let hosts = [Self.host("source", source), Self.host("target", target)]
+        let model = ClientInstructions(defaults: defaults, origin: "iPhone")
+        await model.refresh(hosts)
+        model.setText("new", file: .agents, in: hosts)
+        await model.save(.agents, in: hosts)
+        #expect(target.saved.agents == "new" && target.saved.appendSystem.isEmpty)
+        let offline = Self.host("target", nil, id: hosts[1].id)
+        let relaunched = ClientInstructions(defaults: defaults, origin: "iPhone")
+        #expect(relaunched.chip(for: offline, file: .agents, in: [offline]).word == "offline · will sync")
+        target.beforeInstructions = nil
+        await relaunched.refresh([hosts[1]])
+        #expect(target.saved.appendSystem == "rules")
+        #expect(relaunched.chip(for: offline, file: .agents, in: [offline]).word == "offline")
+    }
+
+    @Test func legacyInstructionMarkersNeverCopyAnOwedRecipientsStaleFiles() async {
+        let defaults = ScratchDefaults()
+        let a = UUID(), b = UUID()
+        defaults.set([a.uuidString, b.uuidString], forKey: "shepherd.ios.instructions.pendingSync")
+        let first = FakeSettingsClient(files: InstructionsSnapshot(agents: "A", directory: "~/i"))
+        let second = FakeSettingsClient(files: InstructionsSnapshot(agents: "B", directory: "~/i"))
+        let hosts = [Self.host("A", first, id: a), Self.host("B", second, id: b)]
+        let model = ClientInstructions(defaults: defaults, origin: "iPhone")
+        await model.refresh(hosts)
+        #expect(first.requests == ["instructions.fetch"] && second.requests == ["instructions.fetch"])
+        #expect(model.problem != nil)
+        let offline = Self.host("A", nil, id: a)
+        #expect(model.chip(for: offline, file: .agents, in: [offline]).word == "offline · will sync")
+    }
+
+    @Test(arguments: [false, true], ["newer edit", "saved"])
+    func instructionWritesKeepEditsMadeWhileAwaitingTheirReply(restore: Bool, newer: String) async {
+        let old = InstructionRevision(file: .agents, savedAt: 1, summary: "old", content: "restored")
+        let client = FakeSettingsClient(files: InstructionsSnapshot(agents: "saved", directory: "~/i"))
+        client.revisions = [old]
+        let hosts = [Self.host("host", client)]
+        let model = ClientInstructions(defaults: ScratchDefaults(), origin: "iPhone")
+        await model.refresh(hosts)
+        model.setText("submitted", file: .agents, in: hosts)
+        let gate = SettingsRequestGate()
+        client.beforeInstructions = { request in
+            if case .fetch = request { return }
+            await gate.hold()
+        }
+        let writing = Task {
+            if restore { await model.restore(old.entry, in: hosts) }
+            else { await model.save(.agents, in: hosts) }
+        }
+        await gate.waitUntilHeld()
+        model.setText(newer, file: .agents, in: hosts)
+        await gate.release()
+        await writing.value
+        #expect(client.saved.agents == (restore ? "restored" : "submitted"))
+        #expect(model.text(.agents, in: hosts) == newer)
+        #expect(model.isEdited(.agents, in: hosts))
+    }
+
+    @Test(arguments: [false, true], [false, true])
+    func anInstructionWriteKeepsTheScopeChosenBeforeAwait(restore: Bool, sameEverywhere: Bool) async {
+        let revision = InstructionRevision(file: .agents, savedAt: 1, summary: "old", content: "restored")
+        let first = FakeSettingsClient(files: InstructionsSnapshot(agents: "A", directory: "~/i"))
+        first.revisions = [revision]
+        let second = FakeSettingsClient(files: InstructionsSnapshot(agents: "B", directory: "~/i"))
+        let hosts = [Self.host("A", first), Self.host("B", second)]
+        let model = ClientInstructions(defaults: ScratchDefaults(), origin: "iPad")
+        await model.refresh(hosts)
+        model.sameEverywhere = sameEverywhere
+        model.setText("submitted", file: .agents, in: hosts)
+        let gate = SettingsRequestGate()
+        first.beforeInstructions = { _ in await gate.hold() }
+        let writing = Task {
+            if restore { await model.restore(revision.entry, in: hosts) }
+            else { await model.save(.agents, in: hosts) }
+        }
+        await gate.waitUntilHeld()
+        model.sameEverywhere.toggle()
+        await gate.release()
+        await writing.value
+        #expect(first.saved.agents == (restore ? "restored" : "submitted"))
+        #expect(second.saved.agents == (sameEverywhere ? first.saved.agents : "B"))
+    }
+
+    @Test func explicitInstructionSelectionsKeepEachWindowsDraftAndSaveTarget() async {
+        let first = FakeSettingsClient(files: InstructionsSnapshot(agents: "A", directory: "~/i"))
+        let second = FakeSettingsClient(files: InstructionsSnapshot(agents: "B", directory: "~/i"))
+        let hosts = [Self.host("A", first), Self.host("B", second)]
+        let model = ClientInstructions(defaults: ScratchDefaults(), origin: "iPad")
+        await model.refresh(hosts)
+        model.sameEverywhere = false
+        model.setText("draft A", file: .agents, in: hosts, selectedHost: hosts[0].id)
+        model.setText("draft B", file: .agents, in: hosts, selectedHost: hosts[1].id)
+        await model.save(.agents, in: hosts, selectedHost: hosts[0].id)
+        #expect(first.saved.agents == "draft A" && second.saved.agents == "B")
+        #expect(model.text(.agents, in: hosts, selectedHost: hosts[1].id) == "draft B")
+        #expect(model.isEdited(.agents, in: hosts, selectedHost: hosts[1].id))
+    }
+
+    @Test func forgettingInstructionsDuringASaveDropsOnlyThatRecipientsPendingCopy() async {
+        let defaults = ScratchDefaults()
+        let source = FakeSettingsClient()
+        let gone = UUID(), kept = UUID()
+        let hosts = [Self.host("source", source), Self.host("gone", nil, id: gone), Self.host("kept", nil, id: kept)]
+        let model = ClientInstructions(defaults: defaults, origin: "iPad")
+        await model.refresh(hosts)
+        let gate = SettingsRequestGate()
+        source.beforeInstructions = { request in if case .save = request { await gate.hold() } }
+        model.setText("intended", file: .agents, in: hosts)
+        let save = Task { await model.save(.agents, in: hosts) }
+        await gate.waitUntilHeld()
+        model.forget(host: gone)
+        await gate.release()
+        await save.value
+        let restored = ClientInstructions(defaults: defaults, origin: "iPad")
+        #expect(restored.chip(for: hosts[1], file: .agents, in: hosts).word == "offline")
+        #expect(restored.chip(for: hosts[2], file: .agents, in: hosts).word == "offline · will sync")
+        let target = FakeSettingsClient()
+        await restored.refresh([Self.host("kept", target, id: kept)])
+        #expect(target.saved.agents == "intended")
+    }
+
+    @Test func forgettingADeliveryStopsBeforeItsSecondInstructionFile() async {
+        let defaults = ScratchDefaults()
+        let source = FakeSettingsClient(files: InstructionsSnapshot(agents: "old", appendSystem: "rules", directory: "~/i"))
+        let target = FakeSettingsClient()
+        let hosts = [Self.host("source", source), Self.host("gone", target), Self.host("kept", nil)]
+        let model = ClientInstructions(defaults: defaults, origin: "iPad")
+        await model.refresh(hosts)
+        let gate = SettingsRequestGate()
+        target.beforeInstructions = { request in if case .save(.agents, _, _, _) = request { await gate.hold() } }
+        model.setText("new", file: .agents, in: hosts)
+        let saving = Task { await model.save(.agents, in: hosts) }
+        await gate.waitUntilHeld()
+        model.forget(host: hosts[1].id)
+        await gate.release()
+        await saving.value
+        #expect(target.saved.agents == "new") // Already sent; Forget is not a rollback.
+        #expect(target.saved.appendSystem.isEmpty) // Never send the unattempted suffix.
+        let restored = ClientInstructions(defaults: defaults, origin: "iPad")
+        let gone = Self.host("gone", nil, id: hosts[1].id)
+        #expect(restored.chip(for: gone, file: .agents, in: [gone]).word == "offline")
+        #expect(restored.chip(for: hosts[2], file: .agents, in: hosts).word == "offline · will sync")
+    }
+
+    @Test func explicitForgetPrunesOnlyItsPersistedInstructionObligation() async {
+        let defaults = ScratchDefaults()
+        let source = FakeSettingsClient()
+        let hosts = [Self.host("source", source), Self.host("gone", nil), Self.host("kept", nil)]
+        let model = ClientInstructions(defaults: defaults, origin: "iPad")
+        await model.refresh(hosts)
+        model.setText("intended", file: .agents, in: hosts)
+        await model.save(.agents, in: hosts)
+        let beforeOpeningSettings = ClientInstructions(defaults: defaults, origin: "iPad")
+        beforeOpeningSettings.forget(host: hosts[1].id)
+        let restored = ClientInstructions(defaults: defaults, origin: "iPad")
+        #expect(restored.chip(for: hosts[1], file: .agents, in: hosts).word == "offline")
+        #expect(restored.chip(for: hosts[2], file: .agents, in: hosts).word == "offline · will sync")
+    }
+
+    @Test func forgottenInstructionRepliesCannotRestoreFilesOrDrafts() async {
+        let client = FakeSettingsClient(files: InstructionsSnapshot(agents: "old", directory: "~/i"))
+        let host = Self.host("gone", client)
+        let model = ClientInstructions(defaults: ScratchDefaults(), origin: "iPad")
+        await model.refresh([host])
+        model.sameEverywhere = false
+        model.setText("submitted", file: .agents, in: [host])
+        let gate = SettingsRequestGate()
+        client.beforeInstructions = { _ in await gate.hold() }
+        let save = Task { await model.save(.agents, in: [host]) }
+        await gate.waitUntilHeld()
+        model.forget(host: host.id)
+        await gate.release()
+        await save.value
+        #expect(model.files(of: host) == .offline)
+        #expect(client.requests.filter { $0.hasPrefix("instructions.save") }.count == 1)
+        #expect(!model.isEdited(.agents, in: [host]))
+        #expect(model.problem == nil)
+        client.beforeInstructions = nil
+        let count = client.requests.count
+        await model.refresh([host])
+        #expect(client.requests.count == count)
     }
 
     @Test func perHostEditsTheChosenHostAlone() async {

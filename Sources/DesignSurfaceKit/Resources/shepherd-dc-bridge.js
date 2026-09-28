@@ -236,7 +236,7 @@
     var gone = page.querySelectorAll('script, x-dc, style[data-dc-runtime], link[rel~="modulepreload"], link[rel~="preload"], ' +
       'link[rel~="import"], iframe, frame, frameset, object, embed, portal, base, meta[http-equiv]');
     for (var j = 0; j < gone.length; j++) if (gone[j].parentNode) gone[j].parentNode.removeChild(gone[j]);
-    var all = page.querySelectorAll('*');
+    var all = [page].concat(Array.prototype.slice.call(page.querySelectorAll('*')));
     for (var k = 0; k < all.length; k++) {
       var element = all[k];
       for (var a = element.attributes.length - 1; a >= 0; a--) {

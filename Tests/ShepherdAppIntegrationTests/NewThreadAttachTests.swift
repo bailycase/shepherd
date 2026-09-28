@@ -62,6 +62,26 @@ struct NewThreadAttachTests {
         #expect(message.blocks.filter { $0.kind == .unsupportedImage }.count == 2, "pi received both images in its first message")
     }
 
+    @Test func creatingAThreadConsumesOnlyItsSubmittedDraft() async throws {
+        try StubPi.installAsEngine()
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        let vm = try await app.start(with: ShepherdState(spaces: [space]))
+        vm.openNewThread()
+        let draft = vm.newThread
+        draft.prompt = "tools:0 First task"
+        Self.attach(draft)
+        draft.send(vm)
+        // send() captured its inputs; mutate the next draft before its Task can complete.
+        draft.prompt = "Next task"
+        draft.attachments.add([("next.png", ImageAttachment(name: "next.png", image: Self.png))])
+        try await eventuallyOnMain("the first creation to finish") { !draft.starting }
+        #expect(draft.error == nil)
+        #expect(draft.prompt == "Next task")
+        #expect(draft.attachments.items.map(\.name) == ["next.png"])
+    }
+
     @Test func aNewThreadOnAHostSendsItsImagesWithTheOpeningPrompt() async throws {
         try StubPi.installAsEngine()
         let local = try AppHarness(), remote = try RemoteHostHarness()

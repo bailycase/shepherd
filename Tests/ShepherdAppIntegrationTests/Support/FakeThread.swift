@@ -35,7 +35,8 @@ final class FakeThread {
                                  branch: AgentBranchLabel(kind: .worktree, branch: "pi/thread", changedFiles: 2),
                                  togglePane: {}, showChanges: {}, rename: {})
                 }
-                ThreadView(store: store, active: visibility.active, isFocused: visibility.focused, request: request, commandKey: "fake")
+                ThreadView(store: store, active: visibility.active, isFocused: visibility.focused, request: request, commandKey: "fake",
+                           listModels: { .empty })
             }
             // As the workspace hides a layout it keeps mounted.
             .opacity(visibility.active ? 1 : 0)
