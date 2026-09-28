@@ -9,7 +9,7 @@ import ShepherdRemote
 extension FixtureCatalog {
     static var context: [FixtureScreen] {
         let preview = FixtureData.ref(FixtureData.preview)
-        let open: @MainActor (MobileApp) async -> Void = { _ in ComposerStates.shared.state(for: preview).showingContext = true }
+        let open: @MainActor (MobileApp) async -> Void = { app in app.navigator.composerPresentation.state(for: preview).showingContext = true }
         return [
             // The ring at 68% (amber) beside Send, the details closed.
             FixtureScreen(name: "context-ring", hosts: ThreadFixtures.hosts(preview: ContextFixtures.details(tokens: 136_000)),

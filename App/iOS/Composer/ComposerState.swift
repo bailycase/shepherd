@@ -12,7 +12,7 @@ struct ComposerAttachment: Identifiable {
 
 /// What only the composer knows about one thread, beside its `NativeThreadStore` (which holds
 /// the draft and the host's queue): attachments, the Up next rows with their Undo places, the
-/// open editor, and the slash matches. Kept per agent for the app's lifetime (`ComposerStates`),
+/// slash matches. Kept per agent for the app's lifetime (`ComposerStates`),
 /// so a thread shown again keeps its attachments. Rows and matches are derived here once per
 /// change, never while drawing.
 @MainActor
@@ -24,11 +24,6 @@ final class ComposerState {
     private(set) var rows: [NativeQueueStackRow] = []
     /// The queued messages (not steering), in the order they go: Steer all and Clear.
     private(set) var queuedIDs: [UUID] = []
-    /// A queued message open in the editor sheet, and the editor's text.
-    var editing: NativeQueuedMessage?
-    var editText = ""
-    /// The model picker sheet is open.
-    var choosingModel = false
     /// The host's model catalog, once asked: whether the thread's model takes a thinking level.
     private(set) var models: ModelListing?
     /// The commands a "/…" draft matches.
@@ -40,10 +35,6 @@ final class ComposerState {
     var answeringRun: String?
     /// pi's question folded on iPad (Hide the question): only that one stays folded.
     var questionHiding = NativeQuestionHiding()
-    /// The context ring's details are open (a sheet).
-    var showingContext = false
-    /// What the context details asked the thread to bring into view (Largest, Show summary).
-    private(set) var findRequest: ThreadFindRequest?
     @ObservationIgnored private var undo: [NativeQueueUndo] = []
     @ObservationIgnored private var queue: [NativeQueuedMessage] = []
     @ObservationIgnored private var undoTasks: [String: Task<Void, Never>] = [:]
@@ -51,8 +42,19 @@ final class ComposerState {
     /// How long a deleted message's Undo row stays.
     static let undoWindow: Duration = .seconds(5)
 
-    /// Asks the thread to bring `entryID` into view.
-    func find(_ entryID: String) { findRequest = ThreadFindRequest(entryID: entryID) }
+    @ObservationIgnored private var forgotten = false
+
+    func forget() {
+        forgotten = true
+        clearAttachments()
+        for task in undoTasks.values { task.cancel() }
+        undoTasks = [:]
+        undo = []
+        queue = []
+        models = nil
+        matches = nil
+        rebuild()
+    }
 
     // MARK: Attachments
 
@@ -75,6 +77,7 @@ final class ComposerState {
                     return (image, UIImage(data: image.data)?.preparingThumbnail(of: thumbnailPixels))
                 }
             }.value
+            guard !forgotten else { return }
             switch prepared {
             case .success(let (image, thumbnail)):
                 // Another attach may have filled the message meanwhile.
@@ -158,7 +161,7 @@ final class ComposerState {
 
     /// Asks the host's catalog (once per connection, `ComposerStates`) for the thinking chip.
     func loadModels(host: MobileHost?) async {
-        guard let host, let listing = await ComposerStates.shared.listing(for: host) else { return }
+        guard !forgotten, let host, let listing = await ComposerStates.shared.listing(for: host), !forgotten else { return }
         if listing != models { models = listing }
     }
 
@@ -177,12 +180,21 @@ final class ComposerStates {
     private var states: [AgentRef: ComposerState] = [:]
     /// Each host's model catalog (`listModels`), asked once per connection.
     private var models: [UUID: (session: UUID?, listing: ModelListing)] = [:]
+    private var forgottenHosts: Set<UUID> = []
 
     func state(for ref: AgentRef) -> ComposerState {
+        if forgottenHosts.contains(ref.host) { return ComposerState() }
         if let state = states[ref] { return state }
         let state = ComposerState()
         states[ref] = state
         return state
+    }
+
+    func forget(host: UUID) {
+        forgottenHosts.insert(host)
+        for (ref, state) in states where ref.host == host { state.forget() }
+        states = states.filter { $0.key.host != host }
+        models[host] = nil
     }
 
     func models(host: UUID, session: UUID?) -> ModelListing? {
@@ -191,6 +203,7 @@ final class ComposerStates {
     }
 
     func setModels(_ listing: ModelListing, host: UUID, session: UUID?) {
+        guard !forgottenHosts.contains(host) else { return }
         models[host] = (session, listing)
     }
 
@@ -200,6 +213,7 @@ final class ComposerStates {
         if let cached = models(host: host.id, session: host.session) { return cached }
         let session = host.session
         guard let client = host.connectedClient, let listing = try? await client.listModels() else { return nil }
+        guard host.session == session, host.connectedClient === client else { return nil }
         setModels(listing, host: host.id, session: session)
         return listing
     }

@@ -110,14 +110,14 @@ struct WorktreesScreen: View {
 }
 
 /// Settings ▸ Extensions (the Mac's Settings ▸ Pi): the extensions Shepherd bundles into pi on a
-/// host, the ones its pi loads itself, and the daily updates.
+/// host and the ones its pi loads itself. The engine updates with Shepherd.
 struct PiExtensionsScreen: View {
     @Environment(MobileHosts.self) private var hosts
 
     var body: some View {
         let store = SettingsStore.of(hosts)
         HostSettingsPage(store: store, page: .pi,
-                         explanation: "What the agent loads on a host: the extensions Shepherd bundles, the ones installed there, and their updates.") { settings, host in
+                         explanation: "What the agent loads on a host: the extensions Shepherd bundles and the ones installed there.") { settings, host in
             let post: (HostSettingChange) -> Void = { store.hostSettings.post($0, on: host) }
             SettingsSection("Bundled with Shepherd") {
                 NWListCard {
@@ -147,14 +147,7 @@ struct PiExtensionsScreen: View {
                 }
             }
             SettingsSection("Updates") {
-                NWListCard {
-                    SettingsSwitchRow("Update the agent daily", note: "Runs `pi update` once a day.", isOn: settings.updatePiDaily) {
-                        post(.updatePiDaily($0))
-                    }
-                    SettingsSwitchRow("Update extensions daily", note: "Runs `pi update --extensions` once a day.",
-                                      isOn: settings.updateExtensionsDaily) { post(.updateExtensionsDaily($0)) }
-                }
-                SettingsFootnote(["Updating never restarts running threads.", HostSettingsPresentation.agentVersion(settings).map { "\(host.name) runs \($0)." }]
+                SettingsFootnote(["The agent engine and bundled extensions update with Shepherd on the host.", HostSettingsPresentation.agentVersion(settings).map { "\(host.name) runs \($0)." }]
                     .compactMap { $0 }.joined(separator: " "))
             }
         }
@@ -171,9 +164,10 @@ private struct HostSettingsPage<Content: View>: View {
     let explanation: String
     @ViewBuilder let content: (HostSettings, SettingsHost) -> Content
     @Environment(\.settingsColumn) private var inColumn
+    @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
-        let host = store.settingsHost
+        let host = store.settingsHost(chosenHost: navigator.settingsSelection.chosenHost)
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
                 Text(explanation)
@@ -225,14 +219,16 @@ private struct HostSettingsPage<Content: View>: View {
 /// Which host the page changes, when there are several.
 private struct HostChooser: View {
     let store: SettingsStore
+    @Environment(MobileNavigator.self) private var navigator
+    private var host: SettingsHost? { store.settingsHost(chosenHost: navigator.settingsSelection.chosenHost) }
 
     var body: some View {
         NWListCard {
             SettingsControlRow("Host") {
                 Menu {
                     ForEach(store.hosts) { host in
-                        Button { store.chosenHost = host.id } label: {
-                            if host.id == store.settingsHost?.id {
+                        Button { navigator.settingsSelection.chosenHost = host.id } label: {
+                            if host.id == self.host?.id {
                                 Label(Self.title(host), systemImage: "checkmark")
                             } else {
                                 Text(Self.title(host))
@@ -240,7 +236,7 @@ private struct HostChooser: View {
                         }
                     }
                 } label: {
-                    SettingsMenuLabel(store.settingsHost?.name ?? "None", mono: true)
+                    SettingsMenuLabel(host?.name ?? "None", mono: true)
                 }
                 .accessibilityLabel("Host")
             }

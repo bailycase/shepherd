@@ -48,8 +48,9 @@ temporary directory, then builds and runs three programs:
 - **`ThreadStoreCheck`:** `NativeThreadStore`. It covers revisions, merging history with live
   entries, stale sessions, acceptance, drafts, unknown outcomes with no automatic resend,
   questions, abort, and stop and reconnect.
-- **`RemoteConnectCheck`:** checks that cancelling or disconnecting while a socket is still
-  opening never sends `hello`.
+- **`RemoteConnectCheck`:** cancellation/disconnect must finish while the socket-open gate is
+  still held; a deadline must also release its waiter. A late returned descriptor closes without
+  sending `hello`.
 
 Real Keychain behavior is not tested here. Pure logic (host records and entries, backoff) has
 unit tests in `ShepherdRemoteUnitTests`.
@@ -133,7 +134,8 @@ system restores from an earlier run are closed before a screen starts.
 review and navigation models against gated in-memory request closures (the fixture host still
 refuses mutations). It checks atomic prompt/image creation and retained images on rejection,
 completion ownership for replaced sheets, same-revision diff option invalidation and stale file
-replies, and route/restoration preservation across compact and regular width. Its
+replies, route/restoration preservation across compact and regular width, independent Settings,
+composer and Commit presentation in two windows, and release of unmounted per-host stores. Its
 `FIXTURE CHECK ok|FAILED client-state` lines are the assertions, not the screenshot.
 
 **The Changes pane's screens.** `review`, `diff`, `review-comment`, `review-base`, `review-pr`,

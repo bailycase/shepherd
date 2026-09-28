@@ -84,17 +84,19 @@ private struct SettingsList: View {
 /// `bgSelected`, beside that page. The page names the bar and puts its actions there.
 private struct SettingsSplit: View {
     let store: SettingsStore
+    @Environment(MobileNavigator.self) private var navigator
+    private var selection: SettingsSelection { navigator.settingsSelection }
 
     var body: some View {
         HStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: MobileLayout.settingsListRowSpacing) {
                     ForEach(SettingsPage.allCases, id: \.self) { page in
-                        SettingsListItem(page: page, selected: store.page == page) { store.page = page }
+                        SettingsListItem(page: page, selected: selection.page == page) { selection.page = page }
                     }
                 }
                 .padding(MobileLayout.settingsListInset)
-                AboutLine(agent: store.listFootVersion)
+                AboutLine(agent: store.listFootVersion(page: selection.page, chosenHost: selection.chosenHost))
                     .padding(.horizontal, MobileLayout.settingsListInset + NW.Space.l)
                     .padding(.vertical, NW.Space.l)
             }
@@ -102,10 +104,10 @@ private struct SettingsSplit: View {
             .frame(width: MobileLayout.settingsListWidth)
             .background(Color.nw.bgWindow)
             NWHairline(.vertical)
-            SettingsPageView(page: store.page)
+            SettingsPageView(page: selection.page)
                 .environment(\.settingsColumn, true)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .id(store.page)
+                .id(selection.page)
         }
         .background(Color.nw.bgWindow)
     }
@@ -164,7 +166,7 @@ struct SettingsPageView: View {
 extension SettingsStore {
     /// Opens another page: in place beside the iPad's list, else on its own.
     func open(_ page: SettingsPage, inColumn: Bool, navigator: MobileNavigator) {
-        if inColumn { self.page = page } else { navigator.open(.settings(page.route)) }
+        if inColumn { navigator.settingsSelection.page = page } else { navigator.open(.settings(page.route)) }
     }
 }
 

@@ -12,8 +12,16 @@ final class ReviewStores {
     static let shared = ReviewStores()
 
     @ObservationIgnored private var stores: [AgentRef: ReviewStore] = [:]
+    @ObservationIgnored private var forgottenHosts: Set<UUID> = []
+
+    func forget(host: UUID) {
+        forgottenHosts.insert(host)
+        for (ref, store) in stores where ref.host == host { store.forget() }
+        stores = stores.filter { $0.key.host != host }
+    }
 
     func store(for ref: AgentRef) -> ReviewStore {
+        if forgottenHosts.contains(ref.host) { return ReviewStore(ref: ref) }
         if let store = stores[ref] { return store }
         let store = ReviewStore(ref: ref)
         stores[ref] = store
@@ -168,6 +176,21 @@ final class ReviewStore {
         self.ref = ref
         self.request = request
         finalize = FinalizeStore(ref: ref)
+    }
+
+    func forget() {
+        hosts = nil
+        loadID = UUID()
+        resetFiles()
+        diffCache = [:]
+        unifiedCache = [:]
+        splitCache = [:]
+        wantedFiles = []
+        comments = []
+        entries = []
+        list = nil
+        overview = nil
+        clearSelection()
     }
 
     // MARK: Loading
@@ -466,6 +489,7 @@ final class ReviewStore {
         do {
             let reply = try await query(.changesFile(revision: key.revision, path: file.path, oldPath: file.oldPath, options: key.options))
             guard case .changesFile(let diff) = reply else { throw RemoteReviewError.unexpectedReply }
+            guard hosts != nil else { return }
             diffCache[key] = diff
             guard isCurrent() else { return }
             setDiff(diff, for: file.id)

@@ -83,6 +83,8 @@ final class WorktreeOperations {
     func finish(_ ref: AgentRef) {
         running[ref] = nil
     }
+
+    func forget(host: UUID) { running = running.filter { $0.key.host != host } }
 }
 
 extension MobileNavigator {

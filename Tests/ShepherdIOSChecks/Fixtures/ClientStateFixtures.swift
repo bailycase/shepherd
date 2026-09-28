@@ -22,8 +22,44 @@ enum ClientStateChecks {
 
     static func run(_ app: MobileApp) async {
         navigation()
+        sceneOwnershipAndForget(app)
         await creation(app)
         await review(app)
+    }
+
+    static func sceneOwnershipAndForget(_ app: MobileApp) {
+        let a = MobileNavigator(), b = MobileNavigator()
+        let ref = FixtureData.ref(FixtureData.preview)
+        a.settingsSelection.chosenHost = ref.host
+        a.settingsSelection.page = .instructions
+        a.composerPresentation.state(for: ref).choosingModel = true
+        a.composerPresentation.state(for: ref).showingContext = true
+        a.commitPopover = ref
+        check(b.settingsSelection.chosenHost == nil && b.settingsSelection.page == .appearance,
+              "Settings host and page belong to their window")
+        check(!b.composerPresentation.state(for: ref).choosingModel && !b.composerPresentation.state(for: ref).showingContext,
+              "composer sheets open in one window only")
+        b.commitPopover = nil
+        check(a.commitPopover == ref, "closing another window's commit does not close this one")
+        a.forget(host: ref.host)
+        check(a.settingsSelection.chosenHost == nil && a.commitPopover == nil
+              && !a.composerPresentation.state(for: ref).showingContext, "forget clears scene-local host state")
+
+        let forgotten = AgentRef(host: UUID(), agent: AgentID(rawValue: "forgotten"))
+        let kept = AgentRef(host: UUID(), agent: AgentID(rawValue: "kept"))
+        weak var composer = ComposerStates.shared.state(for: forgotten)
+        weak var review = ReviewStores.shared.store(for: forgotten)
+        weak var commit = CommitStores.shared.store(for: forgotten, hosts: app.hosts)
+        let keptComposer = ComposerStates.shared.state(for: kept)
+        let keptReview = ReviewStores.shared.store(for: kept)
+        ComposerStates.shared.forget(host: forgotten.host)
+        ReviewStores.shared.forget(host: forgotten.host)
+        CommitStores.shared.forget(host: forgotten.host)
+        check(composer == nil && review == nil && commit == nil, "forget releases unmounted per-host stores")
+        check(ComposerStates.shared.state(for: kept) === keptComposer && ReviewStores.shared.store(for: kept) === keptReview,
+              "forget keeps other hosts' drafts and reviews")
+        ComposerStates.shared.forget(host: kept.host)
+        ReviewStores.shared.forget(host: kept.host)
     }
 
     static func navigation() {

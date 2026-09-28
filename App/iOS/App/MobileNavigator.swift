@@ -42,6 +42,11 @@ final class MobileNavigator {
     /// mid-draft (`PadShell`).
     @ObservationIgnored var refocusComposer: AgentRef?
 
+    /// Window-local presentation. Operation/data stores remain shared across windows.
+    let settingsSelection = SettingsSelection()
+    let composerPresentation = ComposerPresentations()
+    var commitPopover: AgentRef?
+
     /// A route shown modally over everything.
     var presented: PresentedRoute?
 
@@ -115,6 +120,9 @@ final class MobileNavigator {
 
     /// Closes every screen of a forgotten host.
     func forget(host: UUID) {
+        if settingsSelection.chosenHost == host { settingsSelection.chosenHost = nil }
+        composerPresentation.forget(host: host)
+        if commitPopover?.host == host { commitPopover = nil }
         homePath.removeAll { $0.host == host }
         settingsPath.removeAll { $0.host == host }
         padPath.removeAll { $0.host == host }
