@@ -173,6 +173,89 @@ struct DesignReferenceFlowTests {
         #expect(element.contains("Pay now") && !element.contains("Pay $24"), "the version picked, not the design now")
     }
 
+    @Test(arguments: ["props", "tokens", "frame"])
+    func aPinnedRenderingKeepsPropsTokensFrameAndUnknownIndexKeys(change: String) async throws {
+        let w = try await workspace()
+        defer { w.app.stop() }
+        let path = DesignPath("Hero.dc.html")!
+        let source = Self.hero.replacingOccurrences(of: "Pay now", with: "{{ caption }}")
+            .replacingOccurrences(of: "renderVals() { return {}; }", with: "renderVals() { return { caption: this.props.caption || 'Default' }; }")
+        _ = try await w.app.server.writeDesignBoard(w.design.id, path: path, source: source)
+        _ = try await w.app.server.updateDesignIndex(w.design.id, patch: DesignIndex.tweakPatch(path, ["caption": .string("Old caption")]))
+        _ = try await w.app.server.updateDesignIndex(w.design.id, patch: .object(["unknownPinMetadata": .object(["kept": .bool(true)])]))
+        let picked = try await w.vm.prepareDesignReference(try reference(w))
+        let oldRevision = try #require(picked.reference.revision)
+        let sha = try await w.app.server.designBoard(w.design.id, path: path).sha256
+        switch change {
+        case "props":
+            _ = try await w.app.server.updateDesignIndex(w.design.id, patch: DesignIndex.tweakPatch(path, ["caption": .string("New caption")]))
+        case "frame":
+            _ = try await w.app.server.updateDesignIndex(w.design.id, patch: .object([
+                "boards": .object([path.rawValue: .object(["w": .number(600), "title": .string("Renamed")])]),
+                "unknownPinMetadata": .null]))
+        default:
+            var changedTokens = Self.tokens
+            if case .object(var fields) = changedTokens {
+                fields["colors"] = .array([.object(["name": .string("--accent"), "value": .string("#ff0000")])])
+                changedTokens = .object(fields)
+            }
+            _ = try await w.app.server.writeDesignSystem(.init(namespace: "acme-web", tokens: changedTokens, install: true), for: w.design.id)
+        }
+        #expect(try await w.app.server.designBoard(w.design.id, path: path).sha256 == sha, "board text never changed after pinning")
+        guard case .updatedSince = await w.app.server.designReferenceFreshness(picked.reference) else {
+            Issue.record("props/CSS/frame-only changes must be stale"); return
+        }
+        let kept = try #require(try await w.app.server.designs.pinnedRender(w.design.id, revision: oldRevision, boards: [path]))
+        #expect(kept.files.index.extra["unknownPinMetadata"] == .object(["kept": .bool(true)]))
+        let (record, folder, _) = try await sent(w, [picked.reference])
+        #expect(record.revision == oldRevision && record.width == 400)
+        let page = try String(contentsOf: folder.appendingPathComponent("Hero.html"), encoding: .utf8)
+        #expect(page.contains("Old caption") && !page.contains("New caption"))
+        #expect(page.contains("#4f46e5") && !page.contains("#ff0000"))
+        let png = try #require(NSBitmapImageRep(data: try Data(contentsOf: folder.appendingPathComponent("Hero@2x.png"))))
+        #expect(png.pixelsWide == 800 && png.pixelsHigh == 600)
+        let note = try String(contentsOf: folder.appendingPathComponent("Hero-tokens.md"), encoding: .utf8)
+        #expect(note.contains("#4f46e5") && !note.contains("#ff0000"))
+    }
+
+    @Test func aWholeDesignPinStillDrawsABoardRemovedFromTheLiveCanvas() async throws {
+        let w = try await workspace()
+        defer { w.app.stop() }
+        let second = DesignPath("Second.dc.html")!
+        _ = try await w.app.server.writeDesignBoard(w.design.id, path: second, source: Self.hero.replacingOccurrences(of: "Pay now", with: "Second board"))
+        _ = try await w.app.server.updateDesignIndex(w.design.id, patch: .object(["boards": .object([
+            second.rawValue: .object(["x": .number(480), "y": .number(0), "w": .number(400), "h": .number(300)])])]))
+        let whole = DesignReference(designID: w.design.id, board: nil)!
+        let picked = try await w.vm.prepareDesignReference(whole)
+        _ = try await w.app.server.updateDesignIndex(w.design.id, patch: .object(["boards": .object([second.rawValue: .null])]))
+        let (record, folder, _) = try await sent(w, [picked.reference])
+        #expect(record.boards == 2 && record.boardCount == 2)
+        let id = try #require(record.payloadID)
+        let payload = try #require(await w.app.server.designReferencePayload(agentID: w.thread.agent.id, payloadID: id))
+        let removed = try #require(payload.payload.boards?.first { $0.board == second })
+        let html = try #require(removed.html)
+        #expect(try String(contentsOf: folder.appendingPathComponent(html.name), encoding: .utf8).contains("Second board"))
+        #expect(removed.picture?.pixelWidth == 800)
+    }
+
+    @Test func captureUsesResolvedInputsEvenWhenTheLiveBoardChangesBeforeDrawing() async throws {
+        let w = try await workspace()
+        defer { w.app.stop() }
+        let handler = try #require(w.app.server.onDesignReferenceCapture)
+        w.app.server.onDesignReferenceCapture = { request, respond in
+            Task { @MainActor in
+                do {
+                    _ = try await w.app.server.writeDesignBoard(w.design.id, path: DesignPath("Hero.dc.html")!,
+                        source: Self.hero.replacingOccurrences(of: "Pay now", with: "Too late"))
+                    handler(request, respond)
+                } catch { respond(.failure(DesignReferenceError("test_write", "\(error)"))) }
+            }
+        }
+        let (_, folder, _) = try await sent(w, [try reference(w)])
+        let page = try String(contentsOf: folder.appendingPathComponent("Hero.html"), encoding: .utf8)
+        #expect(page.contains("Pay now") && !page.contains("Too late"))
+    }
+
     /// "Send vN": the chip in the composer takes the design's version now.
     @Test func sendingTheLatestVersionPutsItInTheComposer() async throws {
         let w = try await workspace()

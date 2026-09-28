@@ -145,7 +145,9 @@ extension ShepherdViewModel {
                 }
                 Task { @MainActor in
                     do {
-                        let files = try await self.server.designExportFiles(request.reference.designID, boards: request.boards.map(\.path))
+                        guard let files = request.files else {
+                            throw DesignReferenceError("version_gone", "The pinned rendering inputs are no longer kept. Pick the piece again.")
+                        }
                         respond(.success(try await self.designRendering.capture(request, files: files)))
                     } catch let error as DesignReferenceError {
                         respond(.failure(error))

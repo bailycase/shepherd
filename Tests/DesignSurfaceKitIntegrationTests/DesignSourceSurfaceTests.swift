@@ -1,6 +1,7 @@
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 import ShepherdTestSupport
 import Testing
 import WebKit
@@ -31,11 +32,56 @@ private final class SourcedFiles: DesignFileSource, @unchecked Sendable {
     }
 }
 
+private final class TweakedRemoteTransport: RemoteDesignTransport, @unchecked Sendable {
+    let id = DesignID()
+    let path = DesignPath("Main.dc.html")!
+    let requested = Locked<[String]>([])
+    let board = Data("""
+        <html><head><script src="./support.js"></script></head><body>
+        <x-dc><div id="value" style="width:400px;height:300px">Pinned rows {{ rows }}</div></x-dc>
+        <script type="text/x-dc" data-dc-script data-props='{"rows":{"editor":"int","default":4},"$preview":{"width":400,"height":300}}'>
+        class Component extends DCLogic { renderVals() { return { rows: this.props.rows }; } }
+        </script></body></html>
+        """.utf8)
+
+    func design(_ request: RemoteDesignRequest) async throws -> RemoteDesignResult {
+        let sha = RemoteDesignCache.sha256(board)
+        switch request {
+        case .index:
+            var index = DesignIndex(title: "Tweaked", boards: [path: .init(x: 0, y: 0, w: 400, h: 300)], order: [path])
+            index = try index.merging(DesignIndex.tweakPatch(path, ["rows": .number(7)]))
+            return .index(.init(snapshot: .init(designID: id, revision: 3, index: index, boards: [path: sha]),
+                                files: [.init(path: path.rawValue, sha256: sha, size: board.count)]))
+        case .boards(_, let paths, _):
+            requested.withValue { $0 += paths }
+            return .files(.init(designID: id, revision: 3, changed: paths.contains(path.rawValue) ? [.init(path: path.rawValue, sha256: sha, size: board.count, data: board)] : [],
+                                unchanged: [], missing: paths.filter { $0 != path.rawValue }))
+        default: throw RemoteHostClientError.rejected(code: "unexpected", message: "Unexpected request")
+        }
+    }
+}
+
 /// The same canvas renders a remote design: a board, the board it imports, a stylesheet and an
 /// upload all come from the file source, and the runtime is the device's own.
 @Suite(.mainActorExclusive)
 @MainActor
 struct DesignSourceSurfaceTests {
+    @Test(arguments: [false, true])
+    func freshRemoteViewsReadPersistedTweaksWithoutFetchingCanvasAsABoard(syncFirst: Bool) async throws {
+        let transport = TweakedRemoteTransport()
+        let source = RemoteDesignSource(key: .init(host: UUID(), design: transport.id), cache: RemoteDesignCache()) { transport }
+        if syncFirst { try await source.sync() }
+        let surface = DesignSurface(designID: transport.id, source: source, network: .none)
+        for _ in 0..<2 {
+            let view = DesignBoardView(surface: surface, board: transport.path, size: CGSize(width: 400, height: 300))
+            try await view.load()
+            let text = try await view.webView.callAsyncJavaScript("return document.getElementById('value').textContent",
+                arguments: [:], in: nil, contentWorld: .page) as? String
+            #expect(text == "Pinned rows 7")
+        }
+        #expect(!transport.requested.current.contains("canvas.json"))
+    }
+
     @Test func aBoardRendersFromAFileSource() async throws {
         var files: [String: Data] = [:]
         for name in ["Main.dc.html", "Card.dc.html"] {

@@ -293,6 +293,13 @@ public final class RemoteDesignSource: DesignFileSource, @unchecked Sendable {
     // MARK: DesignFileSource
 
     public func projectFile(_ path: String) async -> Data? {
+        if path == "canvas.json" {
+            if let index { return try? index.snapshot.index.encoded() }
+            guard let transport = transport(),
+                  case .index(let fetched) = try? await transport.design(.index(designID: key.design)) else { return nil }
+            remember(fetched)
+            return try? fetched.snapshot.index.encoded()
+        }
         if let data = cache.file(key, path: path) { return data }
         guard let transport = transport(),
               case .files(let reply) = try? await transport.design(.boards(designID: key.design, paths: [path], knownShas: [:])),

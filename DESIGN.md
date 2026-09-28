@@ -8507,7 +8507,9 @@ or in a design's own chat. Choices the boards leave open, and where the build de
   popup button's key equivalents would answer ⌘↩ anywhere in the window.
 - **The right-click menu** has no Delete: the canvas deletes no board yet.
 - **A pinned version no longer kept** is refused (`version_gone`) with its reason; no board draws
-  it.
+  it. This includes old source-only pins without retained rendering inputs. A retained pin draws
+  its original props, frame, token styles and board set, including a board since removed. “Updated
+  since” includes changes to these inputs, not just changes to the board's source.
 - **The note's card** opens beside its pin (a choice the boards leave open).
 
 These departures are the user's call, 2026-09-27: references to another host's designs come

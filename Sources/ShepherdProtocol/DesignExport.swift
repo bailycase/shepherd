@@ -267,7 +267,7 @@ public enum DesignExportTokens {
 }
 
 /// What an export of some boards reads from its design (`DesignStore.exportFiles`).
-public struct DesignExportFiles: Sendable {
+public struct DesignExportFiles: Sendable, DesignFileSource {
     public struct Asset: Hashable, Sendable {
         /// Its file name in `assets/`: `<id>.<ext>`.
         public var name: String
@@ -311,6 +311,16 @@ public struct DesignExportFiles: Sendable {
     public var support: [String: Data]
     /// The uploads the members name, by id.
     public var assets: [String: Asset]
+
+    public func projectFile(_ path: String) async -> Data? {
+        if path == "canvas.json" { return try? index.encoded() }
+        if let board = DesignPath(path), let source = sources[board] { return Data(source.utf8) }
+        return support[path]
+    }
+
+    public func blob(_ id: String) async -> (name: String, data: Data)? {
+        assets[id].map { ($0.name, $0.data) }
+    }
 
     public init(index: DesignIndex, boards: [DesignPath], members: [DesignPath], sources: [DesignPath: String],
                 support: [String: Data] = [:], assets: [String: Asset] = [:]) {
