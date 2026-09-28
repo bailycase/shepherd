@@ -199,7 +199,7 @@ final class PiSignInSession: Identifiable {
     private(set) var authURL: URL?
     /// The code the user pastes (paste flow).
     var code = ""
-    var keyMode: KeyMode = .paste
+    var keyMode: KeyMode = .paste { didSet { if keyMode != oldValue { scheduleCheck() } } }
     var key = "" { didSet { if key != oldValue { scheduleCheck() } } }
     var variable = "" { didSet { if variable != oldValue { scheduleCheck() } } }
     private(set) var keyCheck: KeyCheck = .idle
@@ -431,11 +431,12 @@ final class PiSignInSession: Identifiable {
     func setKeyMode(_ mode: KeyMode) {
         guard mode != keyMode else { return }
         keyMode = mode
-        scheduleCheck()
     }
 
     private func scheduleCheck() {
         checking?.cancel()
+        checkCount += 1
+        let id = "c\(checkCount)"
         // A preview's sheet has no pi to ask.
         guard store != nil else { return }
         guard flow == .key, let input = keyInput else {
@@ -447,9 +448,8 @@ final class PiSignInSession: Identifiable {
         checking = Task { [weak self] in
             try? await Task.sleep(for: delay)
             guard let self, !Task.isCancelled else { return }
-            self.checkCount += 1
             self.keyCheck = .checking
-            self.bridge?.send(.check(id: "c\(self.checkCount)", provider: self.provider, key: input))
+            self.bridge?.send(.check(id: id, provider: self.provider, key: input))
         }
     }
 

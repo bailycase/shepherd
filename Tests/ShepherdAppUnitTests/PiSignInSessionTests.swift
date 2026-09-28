@@ -124,6 +124,23 @@ struct PiSignInSessionTests {
         #expect(session.keyCheck.allowsSave, "a provider that can't be reached lets the key be saved")
     }
 
+    @Test(arguments: ["edit", "clear", "mode"])
+    func aReplyForThePreviousKeyCannotEnableSaveDuringDebounce(change: String) {
+        let (session, _, _) = Self.session("deepseek", key: true)
+        defer { session.end() }
+        session.handle(.prompt(PiSignInPrompt(id: "p1", kind: .secret, message: "Key")))
+        // No suspension here: the new key's debounced request cannot have been dispatched.
+        switch change {
+        case "mode": session.setKeyMode(.variable)
+        case "clear": session.key = "old"; session.key = ""
+        default: session.key = "new-unchecked-key"
+        }
+        session.handle(.checked(id: "c0", .works(models: ["fixture"])))
+        #expect(!session.keyCheck.allowsSave)
+        session.saveKey()
+        #expect(session.phase == .key)
+    }
+
     @Test(arguments: [
         (PiSignInSession.KeyMode.paste, " sk-abc ", "", PiKeyInput.literal("sk-abc")),
         (.variable, "", "$DEEPSEEK_API_KEY", .variable("DEEPSEEK_API_KEY")),
