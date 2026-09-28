@@ -1424,8 +1424,9 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
 - **Following:** the thread follows the tail only while the reader is within 80pt of the bottom
   (`NativeScrollFollower`). Only a live scroll gesture or a wheel tick detaches it; content
   growth, the composer resizing, and history swaps never do. A following view whose offset
-  overshoots the content returns to its tail even if layout and offset arrive separately;
-  fitting content's normal empty space is not overscroll. While a gesture is live, layout
+  overshoots the content returns to its tail on an offset-only reading after native size
+  anchoring has run. Intermediate layout readings, the native top-margin allowance, and
+  fitting content's normal empty space do not trigger overscroll recovery. While a gesture is live, layout
   changes never move the view either: a drag up measures the rows it reveals, and landing on
   the tail then would pull the thread out from under the finger. "↓ Jump to latest"
   (`NWJumpToLatest`, a `bgRaised` capsule above the composer) appears while detached if the
