@@ -28,8 +28,8 @@ public struct YourPi: Equatable, Sendable {
         var folders: [URL] = []
         if let sessionDirectory { folders.append(sessionDirectory) }
         let project = URL(fileURLWithPath: cwd).appendingPathComponent(".pi/settings.json")
-        if let data = try? Data(contentsOf: project), data.count < 1 << 20,
-           let settings = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        if let data = try? YourPiFiles.read(project), data.count < 1 << 20,
+           let settings = try? YourPiFiles.object(data, file: "settings.json"),
            let dir = settings["sessionDir"] as? String, !dir.trimmingCharacters(in: .whitespaces).isEmpty {
             let expanded = (dir as NSString).expandingTildeInPath
             folders.append(expanded.hasPrefix("/") ? URL(fileURLWithPath: expanded, isDirectory: true)
@@ -207,8 +207,8 @@ public final class YourPiLocator: @unchecked Sendable {
         }
         var sessionFolder = path(sessions, relativeTo: home)
         if sessionFolder == nil,
-           let data = try? Data(contentsOf: agent.appendingPathComponent("settings.json")), data.count < 1 << 20,
-           let settings = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+           let data = try? YourPiFiles.read(agent.appendingPathComponent("settings.json")), data.count < 1 << 20,
+           let settings = try? YourPiFiles.object(data, file: "settings.json") {
             sessionFolder = path(settings["sessionDir"] as? String, relativeTo: agent.path)
         }
         return Answer(yourPi: YourPi(agentDirectory: agent, sessionDirectory: sessionFolder,
