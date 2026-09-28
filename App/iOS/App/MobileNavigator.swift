@@ -48,10 +48,13 @@ final class MobileNavigator {
     /// The thread on screen, for highlighting its row.
     var selectedThread: AgentRef? {
         switch layout {
-        case .pad: return padSelection
+        case .pad:
+            if case .thread(let ref)? = padPath.last { return ref }
+            if let route = padPath.last { return route.thread }
+            return padSelection
         case .phone:
             if case .thread(let ref)? = currentPhonePath.last { return ref }
-            return nil
+            return currentPhonePath.last?.thread
         }
     }
 
@@ -122,21 +125,34 @@ final class MobileNavigator {
         if presented?.route.host == host { presented = nil }
     }
 
-    /// The layout changed (a window resized across the size classes): carry the thread on
-    /// screen across, so rotating or resizing never loses the place.
+    /// Carry the active stack across size classes, not an old selection from the other layout.
     func adopt(_ layout: Layout) {
         guard layout != self.layout else { return }
-        let thread = selectedThread
-        self.layout = layout
         switch layout {
         case .pad:
-            padSelection = thread ?? padSelection
-            padPath = []
-        case .phone:
-            if let thread = padSelection, homePath.last != .thread(thread) {
-                tab = .home
-                homePath = [.thread(thread)]
+            let path = currentPhonePath
+            padSelection = nil
+            if tab == .settings {
+                padPath = [.settings(.root)] + path
+            } else if case .thread(let ref)? = path.first {
+                padSelection = ref
+                padPath = Array(path.dropFirst())
+            } else {
+                padPath = path
             }
+        case .phone:
+            let path = padSelection.map { [MobileRoute.thread($0)] } ?? []
+            if case .settings? = padPath.last {
+                tab = .settings
+                settingsPath = path + padPath
+                if settingsPath.first == .settings(.root) { settingsPath.removeFirst() }
+            } else {
+                tab = .home
+                homePath = path + padPath
+            }
+        }
+        self.layout = layout
+        if layout == .phone {
             // The palette is the iPad's; a compact window gets search, pushed like the phone's.
             if case .search(.palette(let query))? = presented?.route {
                 dismissPresented()

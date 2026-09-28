@@ -129,6 +129,13 @@ and `windows-sent` draw two windows side by side as Split View does, and `window
 real second window, which the simulator's full-screen mode shows over the first. Windows the
 system restores from an earlier run are closed before a screen starts.
 
+**Client state regressions.** `client-state-regressions` exercises the actual New thread,
+review and navigation models against gated in-memory request closures (the fixture host still
+refuses mutations). It checks atomic prompt/image creation and retained images on rejection,
+completion ownership for replaced sheets, same-revision diff option invalidation and stale file
+replies, and route/restoration preservation across compact and regular width. Its
+`FIXTURE CHECK ok|FAILED client-state` lines are the assertions, not the screenshot.
+
 **The Changes pane's screens.** `review`, `diff`, `review-comment`, `review-base`, `review-pr`,
 `review-empty`, `review-error` (MobileChanges, MobileDiff) and `changes-pad`, `changes-pad-full`,
 `changes-pad-commit`, `changes-pad-base`, `changes-pad-turn`, `changes-pad-collapsed` (iPadReview,

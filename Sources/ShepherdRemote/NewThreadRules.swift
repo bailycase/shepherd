@@ -34,8 +34,8 @@ public struct NewThreadHostInput: Equatable, Sendable {
         capabilities.isSuperset(of: [RemoteProtocol.creationOptionsCapability, RemoteProtocol.worktreeActionsCapability])
     }
 
-    /// Images go with the first send, which needs native threads v2.
-    public var supportsImages: Bool { capabilities.contains(RemoteProtocol.nativeThreadV2Capability) }
+    /// The host must accept images atomically with creation, not in a later first send.
+    public var supportsImages: Bool { capabilities.contains(RemoteProtocol.createAgentImagesCapability) }
 }
 
 /// A host in the Host list (Where it runs) and the iPad's Run on popover.
@@ -314,7 +314,7 @@ public enum NewThreadBlocker: Equatable, Sendable {
     }
 }
 
-/// The createAgent request, and the first send when images go with it.
+/// The createAgent request; attachments accompany its opening prompt.
 public struct NewThreadCreation: Equatable, Sendable {
     public var spaceID: SpaceID
     public var cwd: String?
@@ -325,8 +325,7 @@ public struct NewThreadCreation: Equatable, Sendable {
     public var worktreeBranch: String?
     public var worktreeBase: String?
     public var worktreeFetchFirst: Bool?
-    /// With images, the prompt goes with them as the first send instead: createAgent takes no
-    /// images.
+    /// Kept for source compatibility. Creation now always carries the opening prompt.
     public var firstSend: String?
 }
 
@@ -357,17 +356,16 @@ public enum NewThreadRules {
         let model = draft.defaults.model.trimmingCharacters(in: .whitespaces)
         let prompt = draft.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let worktree = draft.usesWorktree
-        let images = draft.attachments > 0
         return NewThreadCreation(
             spaceID: space.id,
             cwd: draft.cwd,
             model: model.isEmpty ? nil : model,
             thinking: draft.defaults.thinking,
-            initialPrompt: images || prompt.isEmpty ? nil : prompt,
+            initialPrompt: prompt.isEmpty ? nil : prompt,
             worktreeBranch: worktree ? draft.branch.trimmingCharacters(in: .whitespaces) : nil,
             worktreeBase: worktree ? draft.base.base : nil,
             worktreeFetchFirst: worktree ? draft.base.fetchFirst : nil,
-            firstSend: images ? prompt : nil
+            firstSend: nil
         )
     }
 

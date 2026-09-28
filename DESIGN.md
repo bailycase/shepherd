@@ -5427,7 +5427,10 @@ follows the Mac's rules (Thread) with the phone's measures below.
     Branch and Base fields (the base as the host resolved it) and Fetch origin first.
 - **States:** an older host says what it lacks ("Update Shepherd on <host> to start threads in a new
   worktree."); a failed start shows a `failed` `NWBanner` "Couldn't start the thread" with Try again
-  or Resolve; images ride on the first send.
+  or Resolve. Images and the prompt go in the same creation request; a host without image
+  creation support, or an image exceeding the encoded frame limit, leaves the form intact.
+  A completed start opens its thread only if its original sheet is still presented; cancelling
+  or replacing that sheet leaves the created thread in Recents without changing the current screen.
 
 ### iPhone: Up next and questions
 
@@ -5962,7 +5965,9 @@ selected thread, or the Overview when none is. Other screens push over the detai
   (iPadPortraitLaunch, drawn by the user's decision of 25 Sep 2026); a tap on the dim only closes
   it, as iPadOS overlays do, and Show sidebar brings it back. The thread's header gains Show sidebar
   (`sidebar.left`, a 44pt circle) at its leading end. Rotating keeps the selection, the pushed
-  screens and the composer's focus.
+  screens and the composer's focus. Crossing compact and regular width keeps the active route
+  stack too (review, subagents, terminals and Settings included), never an old thread selection
+  from the other layout. Settings keeps its root and returns to the Settings tab at compact width.
 - **Top bar** (56pt, 14pt leading and 8pt trailing inset): Search (⌘K), which opens the palette,
   and Hide sidebar, trailing, as 36pt circles with 16pt `textSecondary` glyphs. The board has no
   title. The app's bar is the system's, with no title as the board: Search, and the split view's
@@ -6279,7 +6284,9 @@ than clip (Known gaps).
   capsule, 12 `textSecondary`), Commit… (secondary, 28pt, the commit glyph), then 36pt icons:
   Refresh, Collapse all files (Expand all once every file is folded), the split toggle (its
   glyph is the mode it switches to), and Diff options (•••: Word diffs, Hide whitespace changes,
-  Load full files, then Copy git apply command and Copy as patch).
+  Load full files, then Copy git apply command and Copy as patch). Changing a host-side diff
+  option reloads the displayed hunks even when the compared trees did not change; a late reply
+  for an older option or scope never replaces them.
 - **Compare row** (38pt on `bgBase`, 12pt inset): the head in mono 12 `textSecondary`, →, the
   base in mono 12 `textPrimary` with a chevron (Branch only: the base picker, a popover), and
   "merge base 3f2a91c" (or a turn's `after “…”`) in mono 11 `textTertiary` trailing.
