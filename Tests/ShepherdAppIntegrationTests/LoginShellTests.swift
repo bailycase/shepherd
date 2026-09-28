@@ -17,7 +17,7 @@ struct LoginShellTests {
         let marker = "# /pi/bin/pi\n"
         let startup = await LoginShell.run(marker + "pwd -P", timeout: 10)
         try #require(startup.status == 0 && startup.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "/")
-        let expected = repo.resolvingSymlinksInPath().path
+        let expected = try git(["rev-parse", "--show-toplevel"], in: repo).trimmingCharacters(in: .whitespacesAndNewlines)
         let result = await LoginShell.run(marker + """
             git rev-parse --show-toplevel
             [ "$(pwd -P)" = \(shellQuoted(expected)) ] || exit 3
