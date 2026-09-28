@@ -104,7 +104,7 @@ struct NewDesignPage: View {
             .focused($composing)
             .frame(minHeight: AppLayout.newDesignFieldMinHeight, alignment: .topLeading)
             .onKeyPress(.return, phases: .down) { press in
-                if press.modifiers.contains(.shift) { draft.brief += "\n"; return .handled }
+                if press.modifiers.contains(.shift) { return .ignored }
                 draft.send(vm)
                 return .handled
             }

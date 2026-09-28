@@ -2042,7 +2042,10 @@ working directory in or under the composer.
 (pi reads it once its current tool calls finish, before its next step). ⌘↩
 (`alternateSend`, rebindable) always does the other one, ahead of any key equivalent in the
 window (the review pane's ⌘⏎), and only while the composer or one of its queued messages has
-focus. ⇧↩ inserts a newline; while pi is idle ↩ and ⌘↩ both send. Attachments ride along with a
+focus. ⇧↩ inserts a newline at the caret, replacing selected text and leaving the caret after
+it; this native editing behavior also applies to New thread, New design, subagent replies,
+queued-message editing and inline review comments. It never sends or saves. While pi is idle
+↩ and ⌘↩ both send. Attachments ride along with a
 queued or steered message.
 
 **Send menu** (`NWSendMenu`): right-clicking Send, or holding it for

@@ -628,7 +628,7 @@ struct Composer: View {
             .autocorrectionDisabled()
             .focused($composing)
             .onKeyPress(.return, phases: .down) { press in
-                if press.modifiers.contains(.shift) { store.draft += "\n"; return .handled }
+                if press.modifiers.contains(.shift) { return .ignored }
                 if let login = loginQuery {
                     let matches = loginMatches
                     openLogin(SlashLogin.Command(verb: login.verb,
