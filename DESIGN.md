@@ -8595,7 +8595,10 @@ data-props by their section, not DZTweak's per-element ones (Bars, Labels). Slid
 so the least that is honest: the tab with nothing selected (its header says to select an
 element), a tweak that couldn't be written (the header's note says so), a data-props text field,
 and a design without tokens for a role (its note says values snap to Shepherd's scale). Tweak
-(the board action or the tab) edits the selected element directly.
+(the board action or the tab) edits the selected element directly. A released gesture keeps that
+selection and scope even if the viewer selects something else while it saves. Undo and Redo
+refuse later changes to the same style or prop rather than overwrite them; a Redo requested while
+Undo is still saving waits for it.
 
 - **On the canvas**, the element (`NWSelectionRing`, built with Select) wears a 1.5pt `running`
   ring (on NWDesignTool over a `runningTint` fill, which Shepherd draws), 8pt square handles on its corners (white, a 1.5pt
@@ -8686,7 +8689,8 @@ opens ticked; past eight boards the rows scroll; Attach to a thread is a menu of
 (most recently active first); while an export is written the sheet dims and its primary button
 reads "Exporting…"; the scrim takes clicks and does nothing (Cancel, close or Escape put the sheet
 away); a failure goes to the app's error dialog. What each format writes is docs/designs.md ›
-Export and import.
+Export and import. Replacing an existing export stages the complete new output on its volume;
+a failed replacement reports the error and never deletes the previous export as a fallback.
 
 Export (the header's button) opens a sheet over the design, with the boards
 selected on the canvas already ticked.
@@ -8783,7 +8787,8 @@ iPhone and iPad none of it.
     `textTertiary`. Buttons: Choose another… and OK (primary) when it wasn't a project; OK alone for
     too large or links outside; Cancel import and **Import the other 11** for unreadable boards, the
     one case with a choice. Not drawn, built plainly in the same anatomy: one file over 16 MB ("hero.mp4
-    is 40 MB. Shepherd imports files up to 16 MB. …"), a name a design can't hold, too many files.
+    is 40 MB. Shepherd imports files up to 16 MB. …"), a name a design can't hold, too many files,
+    or unsafe canvas geometry (imported board sizes must be 40–8000).
   - **ImportAgainDialog** (the tray, `square.and.arrow.down`): "“Checkout funnel” is already in
     Designs", "You imported **Checkout funnel** on Sep 20. Import it again as a separate copy, or open
     the one you have. The two don’t affect each other.", "New copy: **Checkout funnel 2** · 12 boards
