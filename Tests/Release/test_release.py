@@ -11,6 +11,7 @@ import io
 import json
 import os
 import plistlib
+from pathlib import Path
 import re
 import shutil
 import subprocess
@@ -305,6 +306,20 @@ class FeedTests(unittest.TestCase):
             with open(os.path.join(directory, "appcast.xml"), encoding="utf-8") as f:
                 xml = f.read()
             self.assertEqual(xml.count(f"download/nightly-{STAMP}/Shepherd-Nightly63-6"), 2)
+
+    def test_invalid_later_feed_leaves_all_existing_feeds_unchanged(self):
+        with tempfile.TemporaryDirectory() as root:
+            casts, pages = Path(root) / "casts", Path(root) / "pages"
+            pages.mkdir()
+            for index, spec in enumerate(release.FEEDS):
+                source = casts / spec.dir
+                source.mkdir(parents=True)
+                (source / "appcast.xml").write_text(feed(item("25")) if index == 0 else "not xml")
+                (pages / spec.file).write_text("existing " + spec.file)
+            before = {p.name: p.read_bytes() for p in pages.iterdir()}
+            with self.assertRaises(release.ElementTree.ParseError):
+                release.publish(str(casts), str(pages))
+            self.assertEqual({p.name: p.read_bytes() for p in pages.iterdir()}, before)
 
     def test_publish_writes_every_feed_and_the_legacy_aliases(self):
         with tempfile.TemporaryDirectory() as root:
@@ -743,9 +758,19 @@ class ContractTests(unittest.TestCase):
         # publish is what marks each item Apple silicon only; nothing else may write a feed.
         step = self.read(".github", "workflows", "release.yml").split("      - name: Update appcasts\n", 1)[1]
         step = step.split("\n  # ", 1)[0]
-        self.assertIn("< <(python3 scripts/release.py publish casts pages)", step)
+        self.assertIn('python3 scripts/release.py publish casts pages > "$RUNNER_TEMP/published-feeds.txt"', step)
         self.assertIn('git add "${written[@]}"', step)
+        self.assertNotIn("git commit -m \"appcast: $TAG\" || exit 0", step)
         self.assertNotIn("cp casts", step)
+        # Execute the workflow's producer line with a failing stand-in. Its status must
+        # stop publication, not disappear inside a process substitution.
+        producer = next(line.strip() for line in step.splitlines() if 'scripts/release.py publish casts pages >' in line)
+        with tempfile.TemporaryDirectory() as directory:
+            script = 'set -euo pipefail\npython3() { return 23; }\n' + producer + '\nprintf SHOULD_NOT_REACH\n'
+            result = subprocess.run(["bash", "-c", script], env={**os.environ, "RUNNER_TEMP": directory},
+                                    text=True, capture_output=True, timeout=5)
+            self.assertEqual(result.returncode, 23)
+            self.assertNotIn("SHOULD_NOT_REACH", result.stdout)
 
     def test_the_shipped_sparkle_honours_the_hardware_requirement(self):
         # sparkle:hardwareRequirements arrived in Sparkle 2.9.0; an older client would ignore it
