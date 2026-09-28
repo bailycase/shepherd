@@ -10,6 +10,8 @@ struct AgentComponentTests {
     @Test(arguments: [
         (0.0, "0s", "0s"), (48.9, "48s", "48s"), (60, "1m", "1m 00s"), (242, "4m", "4m 02s"),
         (2241, "37m", "37m 21s"), (3600, "1h", "1h 00m"), (3720, "1h", "1h 02m"), (-5, "0s", "0s"),
+        (14.7, "14s", "14s"), (59.9, "59s", "59s"), (62, "1m", "1m 02s"),
+        (3599, "59m", "59m 59s"), (86_399, "23h", "23h 59m"), (86_400, "1d", "24h 00m"),
     ])
     func durationsReadAsTheBoardsWriteThem(seconds: Double, short: String, long: String) {
         #expect(NWDuration.text(seconds, .short) == short)
@@ -19,7 +21,7 @@ struct AgentComponentTests {
     /// Short text changes every second for a minute, then on whole minutes (then hours) counted
     /// from the start, never from when the view appeared.
     @Test(arguments: [
-        (0.0, 1.0), (12.4, 13), (59.5, 60), (60, 120), (61.2, 120), (3599, 3600), (3600, 7200), (-3, 1),
+        (0.0, 1.0), (12.4, 13), (59.5, 60), (60, 120), (61.2, 120), (3599, 3600), (3600, 7200), (90_000, 172_800), (-3, 1),
     ])
     func shortTicksLandWhereTheTextChanges(elapsed: Double, next: Double) {
         let start = Date(timeIntervalSince1970: 1_000)

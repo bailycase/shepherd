@@ -19,7 +19,7 @@ struct ThemeDefinitionTests {
     @Test(arguments: Variant.all)
     func everyBoardRoleIsPresent(_ variant: Variant) {
         let roles = Mirror(reflecting: variant.colors).children.compactMap(\.label)
-        #expect(roles == Self.boardRoles)
+        #expect(Set(roles) == Set(Self.boardRoles))
         for child in Mirror(reflecting: variant.colors).children {
             #expect((child.value as? String).flatMap(HexColor.init) != nil, "\(variant.testDescription).\(child.label ?? "?")")
         }

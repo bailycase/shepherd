@@ -28,13 +28,18 @@ struct DesignCanvasFidelityCheck {
         let surface = DesignSurface(designID: DesignID(rawValue: "canvas"), folder: folder, network: .googleFonts)
         var report: [String] = []
         var failed = 0
+        var visited = 0
+        var skipped = 0
+        var differentSize = 0
         for path in index.order {
             guard let board = index.boards[path] else { continue }
             // A canvas copied without every board lists files it doesn't hold: nothing to draw.
             guard FileManager.default.fileExists(atPath: folder.appendingPathComponent("project/" + path.rawValue).path) else {
+                skipped += 1
                 report.append("\(path.rawValue): no file")
                 continue
             }
+            visited += 1
             let size = CGSize(width: board.w, height: board.h)
             let view = DesignBoardView(surface: surface, board: path, size: size)
             var problems: [DesignBoardProblem] = []
@@ -42,7 +47,7 @@ struct DesignCanvasFidelityCheck {
             do {
                 let drew = try await view.load()
                 var line = "\(path.rawValue): canvas \(Int(size.width))×\(Int(size.height)), drew \(Int(drew.width))×\(Int(drew.height))"
-                if drew != size { line += " (differs)" }
+                if drew != size { differentSize += 1; line += " (differs)" }
                 for problem in problems { line += "\n    \(problem)" }
                 report.append(line)
                 if !problems.isEmpty { failed += 1 }
@@ -55,9 +60,11 @@ struct DesignCanvasFidelityCheck {
                 report.append("\(path.rawValue): did not boot: \(error)")
             }
         }
+        report.append("Visited \(visited), skipped \(skipped), different size \(differentSize), failed \(failed)")
         let text = report.joined(separator: "\n")
         print(text)
         if let output { try Data(text.utf8).write(to: output.appendingPathComponent("report.txt")) }
+        #expect(visited > 0, "the enabled diagnostic must exercise at least one board")
         #expect(failed == 0, "\(failed) boards failed or reported problems")
     }
 
