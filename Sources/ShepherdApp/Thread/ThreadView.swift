@@ -556,12 +556,12 @@ final class ComposerInset {
     var height: CGFloat = 120
 }
 
-/// Insets the thread's scroll view by the composer's height.
+/// Reserves the floating composer and the transcript's breathing room above it.
 struct ComposerInsetPadding: ViewModifier {
     let inset: ComposerInset
 
     func body(content: Content) -> some View {
-        content.safeAreaPadding(.bottom, inset.height)
+        content.safeAreaPadding(.bottom, inset.height + AppLayout.composerTranscriptGap)
     }
 }
 

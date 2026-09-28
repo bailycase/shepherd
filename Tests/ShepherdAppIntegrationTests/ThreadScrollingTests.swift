@@ -223,6 +223,8 @@ struct ThreadScrollingTests {
         }
         let geometry = try #require(measured)
         let probe = ThreadView.probe(geometry)
+        #expect(geometry.contentInsets.bottom == inset.height + AppLayout.composerTranscriptGap,
+                "the transcript reserves the composer plus its separate breathing room")
         #expect(abs(probe.distance) < 2,
                 "tail distance \(probe.distance); content \(geometry.contentSize), offset \(geometry.contentOffset), container \(geometry.containerSize), insets \(geometry.contentInsets), visible \(geometry.visibleRect)")
     }
@@ -281,9 +283,9 @@ struct ThreadScrollingTests {
         try await thread.waitUntilReady()
 
         thread.store.draft = (1...5).map { "line \($0)" }.joined(separator: "\n")
-        try await eventuallyOnMain("the tail to stay pinned above a taller composer") { thread.distanceFromBottom < 2 }
+        try await eventuallyOnMain("the tail to stay pinned above a taller composer") { abs(thread.distanceFromBottom) < 2 }
         thread.store.draft = ""
-        try await eventuallyOnMain("the tail to stay pinned above a shorter composer") { thread.distanceFromBottom < 2 }
+        try await eventuallyOnMain("the tail to stay pinned above a shorter composer") { abs(thread.distanceFromBottom) < 2 }
         #expect(!thread.showsJumpPill)
     }
 
@@ -315,6 +317,29 @@ struct ThreadScrollingTests {
         await thread.publish(persisted)
         #expect(thread.store.pending.isEmpty)
         try await eventuallyOnMain("the tail to stay pinned once pi persists the prompt") { thread.isPinned }
+    }
+
+    @Test func sendingAMultilineDraftWithAnAttachmentKeepsTextVisibleAfterTheComposerCollapses() async throws {
+        let thread = ThreadHarness(messages: 24)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        let restingInset = thread.scrollView.contentInsets.bottom
+        thread.store.draft = (1...8).map { "Draft line \($0)" }.joined(separator: "\n")
+        thread.store.attach(files: [NativeAttachedFile(name: "notes.txt", path: "/fixture/notes.txt")])
+        try await eventuallyOnMain("the multiline attachment composer to expand") {
+            thread.window.layout()
+            return thread.scrollView.contentInsets.bottom > restingInset + 60
+        }
+        try await thread.settle()
+        await thread.store.send()
+        try await eventuallyOnMain("the sent composer to collapse") {
+            thread.window.layout()
+            return thread.store.draft.isEmpty && thread.store.attachedFiles.isEmpty
+                && abs(thread.scrollView.contentInsets.bottom - restingInset) < 2
+        }
+        try await thread.settle()
+        #expect(thread.isPinned, "send landed past the transcript: \(thread.distanceFromBottom)")
+        #expect(try thread.position(of: "Draft line 8") != nil, "the sent message must remain on screen")
     }
 
     /// The server's bounded history window can be replaced by a much shorter one; the pinned

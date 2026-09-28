@@ -1423,7 +1423,10 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   draw 4pt, see Known gaps).
 - **Following:** the thread follows the tail only while the reader is within 80pt of the bottom
   (`NativeScrollFollower`). Only a live scroll gesture or a wheel tick detaches it; content
-  growth, the composer resizing, and history swaps never do. While a gesture is live, layout
+  growth, the composer resizing, and history swaps never do. A following view whose offset
+  overshoots the content returns to its tail on an offset-only reading after native size
+  anchoring has run. Intermediate layout readings, the native top-margin allowance, and
+  fitting content's normal empty space do not trigger overscroll recovery. While a gesture is live, layout
   changes never move the view either: a drag up measures the rows it reveals, and landing on
   the tail then would pull the thread out from under the finger. "↓ Jump to latest"
   (`NWJumpToLatest`, a `bgRaised` capsule above the composer) appears while detached if the
@@ -1435,7 +1438,9 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   scrolling away or jumping to another turn before that deferred landing cancels it. A follow-up
   that waits in Up next leaves the reader's place alone, then and when it goes: its delivery is
   new output like any other. The composer floats over the scroll view, which is inset by the
-  composer's measured height, so the thread always ends at its last turn.
+  composer's measured height plus 24pt of transcript breathing room (`composerTranscriptGap`),
+  in running and idle states alike. The extra space stays outside the composer card and preserves
+  the same gap while the reply streams or the composer grows.
 - **Turn jumps:** ⌥⌘↑ and ⌥⌘↓ move between user turns (the target lands at the top); stepping
   past the last returns to the tail.
 - **History:** on Mac, iPhone and iPad, reaching the top of loaded history automatically fetches

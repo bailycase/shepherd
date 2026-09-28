@@ -217,12 +217,12 @@ final class QuestionThread {
         try await eventuallyOnMain("the dock to go") { self.window.layout(); return self.keyMonitor == nil }
     }
 
-    /// The thread's bottom inset (the composer's height), once it holds still.
+    /// The composer's height without the transcript gap, once it holds still.
     func settledInset() async throws -> CGFloat {
         var last = CGFloat.nan, still = 0
         try await eventuallyOnMain("the composer to settle", poll: .milliseconds(20)) {
             window.layout()
-            let inset = ListPerf.scrollView(in: window)?.contentInsets.bottom ?? .nan
+            let inset = (ListPerf.scrollView(in: window)?.contentInsets.bottom ?? .nan) - AppLayout.composerTranscriptGap
             still = inset == last ? still + 1 : 0
             last = inset
             return still >= 5
