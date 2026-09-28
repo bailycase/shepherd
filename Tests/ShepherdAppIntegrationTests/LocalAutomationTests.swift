@@ -116,6 +116,35 @@ struct LocalAutomationTests {
         #expect(Set(app.server.state.agents.map(\.id)) == [fixture.other.agent.id, new])
     }
 
+    @Test(arguments: [false, true])
+    func stoppingDuringRunCreationNeverLeavesAnOrphan(delete: Bool) async throws {
+        try StubPi.installAsEngine()
+        let app = try AppHarness()
+        defer { app.stop() }
+        let fixture = try await Self.settledRun(app)
+        let vm = fixture.vm
+        let prior = app.server.onStateChanged
+        var stopped = false
+        app.server.onStateChanged = { state in
+            prior?(state)
+            let created = state.agents.contains { $0.id != fixture.run.agent.id && $0.id != fixture.other.agent.id }
+            guard created, !stopped else { return }
+            stopped = true
+            if delete { vm.deleteAutomation(fixture.automation.id) }
+            else { vm.stopAutomation(fixture.automation.id) }
+        }
+        try await vm.startAutomation(fixture.automation.id)
+        try await eventuallyOnMain("cancelled automation creation to remove its run") {
+            stopped && !vm.startingAutomations.contains(fixture.automation.id)
+                && app.server.state.agents.allSatisfy { $0.id == fixture.other.agent.id }
+        }
+        if delete {
+            try await eventuallyOnMain("automation deletion to persist") { app.server.state.automations.isEmpty }
+        } else {
+            #expect(app.server.state.automations.first?.agentID == nil)
+        }
+    }
+
     /// A visible space's agent beside an automation whose run has settled (done).
     private static func settledRun(_ app: AppHarness) async throws
         -> (vm: ShepherdViewModel, space: Space, runs: Space, other: AgentFixture, run: AgentFixture, automation: Automation) {
