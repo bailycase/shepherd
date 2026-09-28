@@ -56,9 +56,10 @@ struct DesignSystemFlowTests {
                                             "specimen": .string("components/Button.html")])]),
         ]),
         files: ["README.md": .string("# acme-web\n\nRead from dashboard-web.\n"),
+                "components/button.css": .string(".specimen-button { display: block; width: 160px; height: 48px; border: 0; background: #ff0000; color: #ffffff; }"),
                 "components/Button.html": .string(
-                    "<span style=\"display: inline-flex; padding: 0 14px; height: 34px; align-items: center; border-radius: 8px; "
-                        + "background: var(--accent); color: #fff;\">Export CSV</span>\n")],
+                    "<helmet><link rel=\"stylesheet\" href=\"./button.css\"></helmet>"
+                        + "<button class=\"specimen-button\">Sample</button>\n")],
         sources: ["web/static/tokens.css"])
 
     /// Every file of the working tree (not `.git`, whose index git may refresh on a read), by path.
@@ -147,6 +148,10 @@ struct DesignSystemFlowTests {
         try await eventuallyOnMain("the Button specimen to render", timeout: .seconds(60)) { specimens.image("acme-web", 0) != nil }
         let image = try #require(specimens.image("acme-web", 0))
         #expect(CGFloat(image.width) >= DesignSpecimenBoard.size.width)
+        let bitmap = NSBitmapImageRep(cgImage: image)
+        let sample = try #require(bitmap.colorAt(x: image.width / 2, y: image.height / 3)?.usingColorSpace(.sRGB))
+        #expect(sample.redComponent > 0.9 && sample.greenComponent < 0.25 && sample.blueComponent < 0.1,
+                "the nested specimen must load its own relative component stylesheet: \(sample), image \(image.width)x\(image.height)")
 
         // The Designs page's card and More ▸ Design systems open the build's page.
         let card = try #require(vm.designsPage.systems.first { $0.id == .system("acme-web") })

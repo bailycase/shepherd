@@ -473,10 +473,14 @@ claude.ai is still checked against).
     the spacing and radius steps, components, and the designs drawn in it.
 - **Specimens.** A component's `specimen` file is drawn by the board renderer, never as SwiftUI:
   the page reads the system's files (`SessionServer.designSystemContents`), wraps each specimen
-  in a board of the tile's size on the system's background with its `tokens.css` linked
-  (`DesignSpecimenBoard`), and renders it off screen from those files held in memory
+  in a board of the tile's size beside the specimen file, on the system's background with its
+  root `tokens.css` linked (`DesignSpecimenBoard`). Relative links therefore resolve from the
+  specimen's own directory. It renders off screen from those files held in memory
   (`DesignSurface(designID:files:)`, `DesignSpecimens`), again only when the system's revision
   moves. A specimen over 64 KB, or none, leaves its tile empty. Nothing is written to disk.
+  Specimens are HTML fragments, not application source components: include component styling
+  inline or link a system-local stylesheet through `<helmet>`. Tokens declare variables only;
+  source paths do not import TSX, utility CSS, providers, or application build dependencies.
 - **The Designs page's systems** (NavDesigns): the systems built here by title, the builds still
   reading their project ("dashboard-web · building"), then the built-ins, in lazy rows of three
   ending in "Build one from a repo". A card has four of the system's colors (its accent, text,
@@ -615,7 +619,7 @@ board's own world, where a board can only affect itself.
 - **Live reload.** `replaceSource` keeps the document. The same logic keeps its state, and new
   logic takes over the old state. Logic that doesn't compile is refused, and the board keeps
   what it showed.
-- **`booted`** comes once imports, fonts and images have settled, or after three seconds.
+- **`booted`** comes once imports, hoisted stylesheets, fonts and images have settled, or after three seconds.
 - **Snapshots** are `boardSize` from the top left, at the view's backing scale (1× offscreen).
 - **Export.** `staticPage()` answers the board as a standalone page (the bridge's `staticPage`, in
   its own world); `printLayout()` its height, its lines of text and its images and drawings, and

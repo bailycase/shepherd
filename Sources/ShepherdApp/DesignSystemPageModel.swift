@@ -252,9 +252,12 @@ enum DesignSpecimenBoard {
     static let maxSpecimenBytes = 64 * 1024
 
     /// Where the board for component `index` sits among the system's files.
-    static func path(_ index: Int) -> String { "_specimen-\(index).dc.html" }
+    static func path(_ index: Int, beside specimen: String) -> String {
+        let directory = (specimen as NSString).deletingLastPathComponent
+        return directory.isEmpty ? "_specimen-\(index).dc.html" : "\(directory)/_specimen-\(index).dc.html"
+    }
 
-    static func source(specimen: String, title: String, stylesheet: Bool, background: String?) -> String {
+    static func source(specimen: String, title: String, stylesheet: Bool, background: String?, stylesheetPath: String = "tokens.css") -> String {
         let fill = background.flatMap(DesignSystemPresentation.hex).map { "background: \($0); " } ?? ""
         return """
             <!doctype html>
@@ -263,7 +266,7 @@ enum DesignSpecimenBoard {
             <meta charset="utf-8">
             <title>\(escaped(title))</title>
             <script src="./support.js"></script>
-            \(stylesheet ? "<link rel=\"stylesheet\" href=\"tokens.css\">\n" : "")</head>
+            \(stylesheet ? "<link rel=\"stylesheet\" href=\"\(stylesheetPath)\">\n" : "")</head>
             <body>
             <x-dc>
             <helmet><style>body{margin:0}</style></helmet>
@@ -287,7 +290,11 @@ enum DesignSpecimenBoard {
         for (index, component) in tokens.components.enumerated() {
             guard let file = component.specimen, let data = files[file], data.count <= maxSpecimenBytes,
                   let text = String(data: data, encoding: .utf8) else { continue }
-            boards[index] = (path(index), source(specimen: text, title: component.name, stylesheet: stylesheet, background: background))
+            let path = path(index, beside: file)
+            guard DesignPath(path) != nil else { continue }
+            let prefix = String(repeating: "../", count: file.split(separator: "/").count - 1)
+            boards[index] = (path, source(specimen: text, title: component.name, stylesheet: stylesheet,
+                                         background: background, stylesheetPath: prefix + DesignSystemFile.stylesheet))
         }
         return boards
     }
