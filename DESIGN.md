@@ -2169,7 +2169,9 @@ rules (QuestionStates › Rules):
   shows the question. They are the dock's while its thread has the keyboard
   (`QuestionKeyMonitor`), from its own fields too (where numbers type and ⇧↩ breaks a line),
   never with ⌘, ⌃ or ⌥ held (⌘1–9 still select agents), and never from another text field (the
-  palette's search, a terminal).
+  palette's search, a terminal). Settings, the component gallery, and the command palette
+  suspend workspace keyboard ownership, including hidden question shortcuts; closing them
+  restores the previously focused pane.
 - **Stopping** (⌘., Agent ▸ Stop) is how a question is refused: it cancels the questions pi is
   waiting on (their asker gets pi's cancelled answer), then stops the turn. The thread records
   each as not answered.

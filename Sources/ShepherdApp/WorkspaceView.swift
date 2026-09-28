@@ -181,7 +181,7 @@ struct AgentLayoutModel: Equatable {
             terminals = vm.terminalPanels
             designs = Dictionary(vm.state.designs.map { ($0.id, $0.buildsSystem) }, uniquingKeysWith: { first, _ in first })
             self.visibleTabID = visibleTabID
-            focusedPaneID = vm.focusedPaneID
+            focusedPaneID = vm.showSettings || vm.showComponentGallery || vm.showCommandPalette ? nil : vm.focusedPaneID
             agentsByTab = Dictionary(vm.state.agents.map { ($0.tabID, $0) }, uniquingKeysWith: { first, _ in first })
             runs = vm.subagentInspector.runByAgent
             panes = vm.subagentInspector
@@ -1040,7 +1040,8 @@ private struct RemotePaneLeafView: View {
             : terminal.map { .terminal($0.id) } ?? .starting
         ZStack {
             if let agent {
-                RemoteAgentThreadPane(vm: vm, ref: ref, agentName: agent.name, isFocused: vm.remoteFocusedPaneID == leaf.id)
+                RemoteAgentThreadPane(vm: vm, ref: ref, agentName: agent.name,
+                                      isFocused: !vm.showSettings && !vm.showComponentGallery && !vm.showCommandPalette && vm.remoteFocusedPaneID == leaf.id)
             } else if let target = reviewTarget {
                 if let review {
                     ReviewPane(session: review, actions: vm.reviewActions(for: review, remote: true), chrome: .header)
@@ -1051,7 +1052,8 @@ private struct RemotePaneLeafView: View {
                         .nwTransition(.content)
                 }
             } else if let terminal {
-                RemoteTerminalPane(pane: terminal.pane, isFocused: vm.remoteFocusedPaneID == leaf.id,
+                RemoteTerminalPane(pane: terminal.pane,
+                                   isFocused: !vm.showSettings && !vm.showComponentGallery && !vm.showCommandPalette && vm.remoteFocusedPaneID == leaf.id,
                                    addToMessage: hasThread ? { [vm, ref] in vm.addTerminalSelection($0, to: .remote(ref)) } : nil)
                     .id(terminal.id)
                     .onDisappear { vm.remoteHosts.closePane(connection: connection, sessionID: terminal.id) }
