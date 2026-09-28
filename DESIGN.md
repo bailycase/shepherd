@@ -863,7 +863,9 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
   is at most 820pt (prose 640, bubbles 600), and the composer is exactly as wide as the column
   (Thread). Pane dividers between split terminals are 1pt `lineStrong` (TerminalPane), tinted
   `focusDivider` where they border the focused pane; dragging one
-  keeps each side at least 160pt (`splitPaneMinSpan`), between 15% and 85%.
+  keeps each side at least 160pt (`splitPaneMinSpan`), between 15% and 85%. VoiceOver exposes
+  each divider as Terminal column split or Terminal row split, with a percentage value and
+  adjustable five-percentage-point steps clamped by the same limits.
 - **Switching agents flips visibility; it never remounts.** Every mounted layout stays in the
   view tree, each in a hosting view of its own, and hidden ones are hidden views. This is what
   makes switching instant.
