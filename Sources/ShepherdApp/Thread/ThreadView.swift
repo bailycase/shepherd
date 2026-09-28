@@ -66,7 +66,6 @@ struct ThreadView: View {
     @State private var follower = NativeScrollFollower()
     @State private var historyPaging = NativeHistoryPaging()
     @State private var historyAnchor = ThreadHistoryAnchor()
-    @State private var visibleTurn: String?
     /// What the context details ask the thread to find (Largest, Show summary). A stable object,
     /// not a closure, so the composer is not redrawn with every render of the thread.
     @State private var finder = ThreadFinder()
@@ -159,7 +158,6 @@ struct ThreadView: View {
                 .modifier(ComposerInsetPadding(inset: composerInset))
                 // A margin rather than padding so scrollTo(.top) keeps the 28pt above a turn.
                 .contentMargins(.top, AppLayout.threadTop, for: .scrollContent)
-                .scrollPosition(id: $visibleTurn, anchor: .top)
                 .onChange(of: rows.first?.id) { _, first in
                     historyAnchor.prepended(firstID: first, session: store.sessionKey, active: active) { id in
                         proxy.scrollTo(id, anchor: .top)
