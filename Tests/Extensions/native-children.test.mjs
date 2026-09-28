@@ -426,6 +426,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     const leaseDir = path.join(askDir, "writer"); fs.mkdirSync(leaseDir);
     fs.writeFileSync(path.join(leaseDir, "owner.json"), JSON.stringify({pid:process.pid,token:"fixture"}));
     await assert.rejects(fleet.runtime.send(ask.id, "lease must reject", "steer"), /Child session already has a live writer/);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(leaseDir, "owner.json"))), { pid: process.pid, token: "fixture" });
     fs.writeFileSync(path.join(askDir, "control", "steer-requests", "lease.json"), JSON.stringify({ message: "lease must reject" }));
     await until(() => askStatus().controlRequestID === "lease" && askStatus().controlNotice === "control failed: Child session already has a live writer");
     fs.rmSync(leaseDir,{recursive:true});
@@ -577,12 +578,22 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     } finally { actual.stdin.end(); await until(() => actual.exitCode !== null || actual.signalCode !== null).catch(() => actual.kill("SIGKILL")); }
     fs.mkdirSync(path.join(dir, ".pi", "agents"), { recursive: true });
     const profilePath = path.join(dir, ".pi", "agents", "minimal.md");
-    fs.writeFileSync(profilePath, '---\nname: minimal\ndescription: minimal profile\nmodel: inherit\n---\nPROFILE_MARKER\n');
+    const explicitExtension = path.join(dir, "explicit-extension.ts");
+    fs.writeFileSync(explicitExtension, "export default function() {}\n");
+    fs.writeFileSync(profilePath, `---\nname: minimal\ndescription: minimal profile\nmodel: inherit\nextensions: ${explicitExtension}\n---\nPROFILE_MARKER\n`);
     h.activeTools.push("pane_open");
     const minimal = await h.call("start", { task: "minimal profile test", agent: "minimal", mission: false });
     await h.call("wait", { ids: [minimal.id], timeoutSeconds: 30 });
     assert.equal(minimal.missionId, undefined);
     assert.deepEqual(minimal.tools, ["read", "bash", "edit", "write"]);
+    fs.unlinkSync(explicitExtension);
+    await assert.rejects(h.call("resume", { id: minimal.id, message: "missing explicit extension" }), /ENOENT/);
+    assert.equal((await h.call("result", { id: minimal.id })).state, "failed");
+    fs.writeFileSync(explicitExtension, "export default function() {}\n");
+    await h.call("resume", { id: minimal.id, message: "retry restored extension" });
+    const retried = (await h.call("wait", { ids: [minimal.id], timeoutSeconds: 30 }))[0];
+    assert.equal(retried.state, "complete");
+    assert.match(retried.output, /reply:retry restored extension/);
     h.activeTools.splice(h.activeTools.indexOf("pane_open"), 1);
     fs.writeFileSync(profilePath, '---\nname: minimal\ndescription: minimal profile\nmodel: fixture:high\nthinking: low\ntools: read\ndefaultContext: fresh\n---\nPROFILE_MARKER\n');
     const custom = await h.call("start", { task: "profile precedence", agent: "minimal", thinking: "off", mission: false });
