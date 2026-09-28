@@ -514,12 +514,6 @@ class EntitlementsTests(unittest.TestCase):
 
 
 class SignAppTests(unittest.TestCase):
-    def test_sign_app_takes_the_engine_entitlements_and_finds_node_addons(self):
-        script = read("scripts", "sign-app.sh")
-        self.assertIn("<entitlements.plist> [<engine.entitlements>]", script)
-        self.assertIn("-name '*.node'", script)
-        self.assertIn('sign-engine.sh"', script)
-
     @unittest.skipUnless(sys.platform == "darwin" and all(shutil.which(t) for t in ("codesign", "lipo", "cc")),
                          "needs macOS with codesign, lipo and a compiler")
     def test_node_is_signed_with_the_engine_entitlements(self):
@@ -535,6 +529,10 @@ class SignAppTests(unittest.TestCase):
             env = {**os.environ, "TMPDIR": scratch}
             for name in ("MacOS/Shepherd", "Helpers/node"):
                 subprocess.run(["cc", "-arch", "arm64", "-o", os.path.join(app, "Contents", name), source], check=True, env=env)
+            addon = os.path.join(app, "Contents", "Resources", "pi-engine", "fixture.node")
+            subprocess.run(["cc", "-arch", "arm64", "-bundle", "-o", addon, source], check=True, env=env)
+            subprocess.run(["codesign", "--remove-signature", addon], check=True, capture_output=True, env=env)
+            os.chmod(addon, 0o644)  # npm archives need not preserve the executable bit.
             sign = [os.path.join(ROOT, "scripts", "sign-app.sh"), app, "-", os.path.join(ROOT, "App", "Shepherd.entitlements")]
 
             refused = subprocess.run(sign, capture_output=True, text=True, env=env)
@@ -548,6 +546,10 @@ class SignAppTests(unittest.TestCase):
             main = subprocess.run(["codesign", "-d", "--entitlements", "-", "--xml",
                                    os.path.join(app, "Contents", "MacOS", "Shepherd")], capture_output=True).stdout
             self.assertNotIn(b"allow-jit", main, "the app never gets the engine's entitlements")
+            subprocess.run(["codesign", "--verify", "--strict", addon], check=True, capture_output=True, env=env)
+            addon_entitlements = subprocess.run(["codesign", "-d", "--entitlements", "-", "--xml", addon],
+                                                capture_output=True, check=True, env=env).stdout
+            self.assertNotIn(b"allow-jit", addon_entitlements, "native addons do not inherit node's JIT entitlement")
 
 
 class ReleaseWorkflowTests(unittest.TestCase):
