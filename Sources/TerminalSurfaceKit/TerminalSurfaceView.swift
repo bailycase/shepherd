@@ -21,11 +21,8 @@ public struct TerminalSurfaceView: View {
 
     public var body: some View {
         GhosttyTerminal.TerminalSurfaceView(context: model.viewState)
-            // File/image drops are handled by TerminalDropOverlayView, a
-            // window-level AppKit overlay (see TerminalDropOverlay.swift).
-            // SwiftUI .onDrop cannot work with permanently mounted hidden
-            // panes: drag routing ignores opacity and allowsHitTesting, and
-            // a rejected drag never falls through to a sibling.
+            // File/image drops register on the native surface itself; AppKit owns drag
+            // lifetime and occlusion, with no window overlay to intercept ordinary clicks.
             // Focus is driven through AppKit, not SwiftUI. See
             // TerminalFocusBridge — both SwiftUI focus approaches were tried
             // and measured to not work here.

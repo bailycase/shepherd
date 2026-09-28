@@ -3182,6 +3182,11 @@ before building it (as iOS: iPad › Side pane says).
 
 ### Terminal panes
 
+File and image drags route through the native terminal surface, not a window-wide input overlay.
+Ordinary clicks never depend on leftover drag pasteboard contents. Covered and hidden terminals
+must not receive a drop intended for foreground UI; resolving a drag does not enumerate hidden
+agent layouts.
+
 A terminal pane is a real PTY: libghostty on the Mac (`AppTerminalView`, through
 `TerminalHost.swift`), SwiftTerm on iOS (`TerminalSurface`). Each one is a real shell and nothing in
 it is pi's (TerminalStates: "Each tab is a real shell; nothing here is the agent’s"). The chrome never
@@ -3368,7 +3373,10 @@ splits.
   Every chord resolves through `KeybindingsStore`, shows in the Pane menu ("Show or Hide Terminal",
   "Maximize or Restore Terminal", and New Terminal without one) and in the strip's tooltips, and is
   unbound in Ghostty (`appOwnedChords`) so a focused terminal never eats it. ⌥⌘←/→ move among the
-  panes on screen. Plain Space belongs to the terminal while its surface is first responder,
+  panes on screen. A terminal becoming AppKit's first responder also selects its owning pane,
+  including right-click and selection-drag acquisition: Close, Split and Kill act on the terminal
+  receiving keyboard input, not the last pane whose SwiftUI tap gesture completed.
+  Plain Space belongs to the terminal while its surface is first responder,
   before AppKit or SwiftUI can use it to activate a control. It follows the terminal's normal
   text-input path, including input-method composition; unfocused terminals leave it alone.
   A canvas's window-wide Space-to-pan handler ignores hidden layouts and text-input clients,

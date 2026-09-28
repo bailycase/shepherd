@@ -45,6 +45,28 @@ struct TerminalFirstResponderTests {
         #expect(TerminalSurfaceModel.model(for: left) === panes.left && TerminalSurfaceModel.model(for: right) === panes.right)
     }
 
+    @Test func nativeResponderAcquisitionReportsTheOwningPaneWithoutATapGesture() async throws {
+        let panes = Panes()
+        defer { panes.window.close() }
+        var owner = "none"
+        var acquisitions = 0
+        panes.left.onFocusAcquired = { owner = "left"; acquisitions += 1 }
+        panes.right.onFocusAcquired = { owner = "right"; acquisitions += 1 }
+        panes.show(leftFocused: false, rightFocused: false)
+        try await eventuallyOnMain("both surfaces mount") { panes.surface(of: panes.left) != nil && panes.surface(of: panes.right) != nil }
+        let left = try #require(panes.surface(of: panes.left)), right = try #require(panes.surface(of: panes.right))
+
+        #expect(panes.window.window.makeFirstResponder(left))
+        #expect(owner == "left")
+        #expect(panes.window.window.makeFirstResponder(right))
+        #expect(owner == "right")
+        let before = acquisitions
+        #expect(panes.window.window.makeFirstResponder(right))
+        #expect(acquisitions == before)
+        panes.window.window.makeFirstResponder(nil)
+        #expect(owner == "right", "resignation never claims another pane")
+    }
+
     @Test func theFocusedPaneTakesTheKeyboardAndFocusFollowsTheFlag() async throws {
         let panes = Panes()
         defer { panes.window.close() }
