@@ -3851,7 +3851,8 @@ nothing here changes your pi."
   - Fixed, not recordable: Select agent 1–9, "Sidebar order; hold ⌘ to see the numbers." (⌘ 1–9) ·
     Settings (⌘ ,) · Confirm / cancel in sheets (⏎ esc).
   - Under the last group, trailing: Reset all shortcuts, a secondary button, disabled while nothing
-    is changed.
+    is changed. An individual Reset checks for conflicts just like a new assignment. If another
+    action now uses that default, the row shows the existing conflict message and keeps its chord.
 - **Every rebindable action is listed**, in the menu bar's groups: the app adds Delete agent ⇧⌘W to
   Agents, a Thread group (Stop agent, Model picker, Previous turn, Next turn, Inspect subagent),
   While the agent is working (QueueStates' Keyboard card, in its order: ↩ and ⌘↩ named for what they do
