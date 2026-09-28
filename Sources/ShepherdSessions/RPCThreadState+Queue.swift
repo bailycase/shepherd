@@ -24,6 +24,18 @@ extension RPCThreadState {
     /// The queue's text in one snapshot; a send past it is refused.
     static let queueTextLimit = 64 * 1024
     static let queueItemLimit = 32
+    // Leave room in the snapshot for the active turn and history, even when JSON escapes text.
+    static let queueEncodedLimit = 96 * 1024
+
+    private func admitsQueue(_ candidate: [QueueItem]) -> Bool {
+        candidate.count <= Self.queueItemLimit
+            && candidate.reduce(0, { $0 + $1.entry.text.utf8.count }) <= Self.queueTextLimit
+            && Self.bytes(NativeQueue(items: candidate.map(\.entry), mode: effectiveMode)) <= Self.queueEncodedLimit
+    }
+
+    private var queueFull: NativeThreadResult {
+        .failure(code: "queue_full", message: "The queue is full. Send it or clear some of it first.")
+    }
     /// A hold (an editor open on an item) lapses after this unless renewed, so a client that
     /// went away cannot keep the queue from going.
     static let holdLease: TimeInterval = 120
@@ -110,15 +122,11 @@ extension RPCThreadState {
                      completion: completion)
             return
         }
-        guard items.count < Self.queueItemLimit,
-              items.reduce(0, { $0 + $1.entry.text.utf8.count }) + text.utf8.count <= Self.queueTextLimit else {
-            completion(.failure(code: "queue_full", message: "The queue is full. Send it or clear some of it first."))
-            return
-        }
         let item = QueueItem(
             entry: NativeQueuedMessage(id: id, text: text, images: images.map { NativeQueuedImage(mimeType: $0.mimeType, name: $0.name) },
                                        sentAt: Date().timeIntervalSince1970 * 1000),
             images: images, goesAlone: alone, context: context, designPayloads: designPayloads)
+        guard admitsQueue(items + [item]) else { completion(queueFull); return }
         items.append(item)
         // Only a running pi can take a steer: one of our prompts still on its way has not
         // started a run, so the message goes first after it instead.
@@ -146,7 +154,10 @@ extension RPCThreadState {
                 completion(.failure(code: "invalid", message: "A queued message needs text up to 16 KiB."))
                 return
             }
-            guard NativeQueueRules.edit(id, text: text, in: &items) else { completion(missing); return }
+            var candidate = items
+            guard NativeQueueRules.edit(id, text: text, in: &candidate) else { completion(missing); return }
+            guard admitsQueue(candidate) else { completion(queueFull); return }
+            items = candidate
             if let index = items.firstIndex(where: { $0.entry.id == id }) { items[index].holdUntil = nil }
             completion(accepted)
             drainIfReady()
@@ -159,11 +170,15 @@ extension RPCThreadState {
             remember(NativeQueueRules.remove(items.filter { $0.entry.state == .queued }.map(\.entry.id), from: &items))
             completion(accepted)
         case .restore(let ids, let index):
-            let restoring = ids.compactMap { id in deleted.first { $0.item.entry.id == id }?.item }
+            var seen = Set<UUID>()
+            let restoring = ids.filter { seen.insert($0).inserted }.compactMap { id in deleted.first { $0.item.entry.id == id }?.item }
             guard !restoring.isEmpty else { completion(missing); return }
-            deleted.removeAll { entry in ids.contains(entry.item.entry.id) }
+            var candidate = items
             NativeQueueRules.insert(restoring.map { var item = $0; item.entry.held = false; item.holdUntil = nil; return item },
-                                    atQueuedIndex: index, into: &items)
+                                    atQueuedIndex: index, into: &candidate)
+            guard admitsQueue(candidate) else { completion(queueFull); return }
+            items = candidate
+            deleted.removeAll { entry in ids.contains(entry.item.entry.id) }
             completion(accepted)
             drainIfReady()
         case .move(let id, let index):
