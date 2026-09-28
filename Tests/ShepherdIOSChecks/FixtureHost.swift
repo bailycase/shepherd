@@ -117,7 +117,7 @@ final class FixtureHost: @unchecked Sendable {
     private func mutation(_ kind: String) {
         note(kind)
         print("FIXTURE MUTATION \(data.name) \(kind)")
-        fflush(stdout)
+        FixtureCheck.fail("\(data.name) requested mutation \(kind)")
     }
 
     private func answer(_ request: RemoteRequest) -> [RemoteReply] {

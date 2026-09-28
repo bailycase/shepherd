@@ -28,7 +28,7 @@ enum ClientStateChecks {
     }
 
     static func check(_ condition: Bool, _ name: String) {
-        print("FIXTURE CHECK \(condition ? "ok" : "FAILED") client-state: \(name)")
+        FixtureCheck.report("FIXTURE CHECK \(condition ? "ok" : "FAILED") client-state: \(name)")
     }
 
     static func run(_ app: MobileApp) async {

@@ -5,6 +5,20 @@ build=$(mktemp -d /tmp/shepherd-ios-check.XXXXXX)
 trap 'rm -rf "$build"' EXIT
 sdk=$(xcrun --sdk macosx --show-sdk-path)
 flags=(-sdk "$sdk" -target "$(uname -m)-apple-macos26.0" -swift-version 5 -I "$build" -L "$build")
+xcrun swiftc "${flags[@]}" -parse-as-library Tests/ShepherdIOSChecks/Fixtures/FixtureCheck.swift \
+    Tests/ShepherdIOSChecks/FixtureReadinessCheck.swift -o "$build/readiness-check"
+"$build/readiness-check" success | grep -q '^FIXTURE READY readiness-check$'
+for failure in timeout failed-check cancelled; do
+    if "$build/readiness-check" "$failure" > "$build/readiness.log" 2>&1; then
+        echo "FAIL: readiness $failure succeeded"; exit 1
+    fi
+    grep -q '^FIXTURE FAILED .*snapshot\|^FIXTURE FAILED .*proposal pins' "$build/readiness.log"
+    if grep -q '^FIXTURE READY' "$build/readiness.log"; then
+        echo "FAIL: readiness $failure emitted READY"; exit 1
+    fi
+done
+echo 'PASS: fixture readiness failures exit without READY'
+
 for module in ShepherdCore ShepherdProtocol ShepherdRemote; do
     links=()
     if [[ "$module" != ShepherdCore ]]; then links+=(-lShepherdCore); fi

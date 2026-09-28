@@ -102,11 +102,9 @@ final class FixtureWindows {
     }
 
     /// Waits up to `seconds` for `condition`.
-    static func wait(seconds: Double, until condition: () -> Bool) async {
-        let deadline = Date().addingTimeInterval(seconds)
-        while !condition(), Date() < deadline {
-            try? await Task.sleep(for: .milliseconds(50))
-        }
+    static func wait(_ name: String = "fixture readiness", seconds: Double,
+                     file: StaticString = #fileID, line: UInt = #line, until condition: () -> Bool) async {
+        await FixtureCheck.wait("\(name) at \(file):\(line)", seconds: seconds, until: condition)
     }
 }
 
@@ -165,8 +163,7 @@ final class FixtureRunner {
                 return host
             }
         } catch {
-            failure = String(describing: error)
-            return
+            FixtureCheck.fail("Starting fixture hosts: \(error)")
         }
         // A fresh preferences domain per launch, removed first so nothing carries over.
         let suite = "shepherd.ios.fixture"
@@ -187,28 +184,30 @@ final class FixtureRunner {
     func run() async {
         guard let app, let screen, !started else { return }
         started = true
-        await wait(seconds: 5) { FixtureWindows.shared.primary != nil }
+        await FixtureWindows.wait("primary window", seconds: 5) { FixtureWindows.shared.primary != nil }
         FixtureWindows.shared.closeOthers()
-        await wait(seconds: 5) { UIApplication.shared.openSessions.count <= 1 }
+        await FixtureWindows.wait("restored windows closed", seconds: 5) { UIApplication.shared.openSessions.count <= 1 }
         app.hosts.setForeground(true)
         if environment["FIXTURE_ORIENTATION"] == "landscape" {
-            await wait(seconds: 5) { UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive } }
+            await FixtureWindows.wait("foreground scene", seconds: 5) { UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive } }
             if let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first {
                 scene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeRight)) { error in
                     print("FIXTURE ORIENTATION \(error.localizedDescription)")
                 }
-                await wait(seconds: 5) { scene.effectiveGeometry.interfaceOrientation.isLandscape }
+                await FixtureWindows.wait("landscape orientation", seconds: 5) { scene.effectiveGeometry.interfaceOrientation.isLandscape }
             }
         }
         let online = Set(screen.hosts.filter { $0.online && !$0.refusesToken }.map(\.id))
-        await wait(seconds: 10) { app.hosts.hosts.allSatisfy { !online.contains($0.id) || $0.phase.isConnected } }
+        await FixtureWindows.wait("expected online hosts connected", seconds: 10) {
+            online.allSatisfy { app.hosts.host($0)?.phase.isConnected == true }
+        }
         app.navigator.tab = screen.tab
         for route in screen.routes { app.navigator.open(route) }
         if let presented = screen.presented { app.navigator.present(presented) }
         if environment["FIXTURE_SIDEBAR"] == "shown" { app.navigator.padColumns = .all }
-        if let ref = app.navigator.selectedThread {
+        if let ref = app.navigator.selectedThread, online.contains(ref.host) {
             let store = app.threads.store(for: ref)
-            await wait(seconds: 10) { store.snapshot != nil }
+            await FixtureWindows.wait("selected thread snapshot", seconds: 10) { store.snapshot != nil }
         }
         await screen.prepare?(app)
         try? await Task.sleep(for: .seconds(2))
@@ -219,10 +218,4 @@ final class FixtureRunner {
         fflush(stdout)
     }
 
-    private func wait(seconds: Double, until condition: () -> Bool) async {
-        let deadline = Date().addingTimeInterval(seconds)
-        while !condition(), Date() < deadline {
-            try? await Task.sleep(for: .milliseconds(50))
-        }
-    }
 }

@@ -95,9 +95,7 @@ extension FixtureCatalog {
             FixtureScreen(name: "composer-plain-model", hosts: ThreadFixtures.plainModel(ThreadFixtures.hosts()), routes: [.thread(preview)],
                           prepare: { app in
                               app.threads.store(for: preview).draft = "Match the spacing in this screenshot"
-                              for _ in 0..<100 where ComposerStates.shared.state(for: preview).models == nil {
-                                  try? await Task.sleep(for: .milliseconds(50))
-                              }
+                              await FixtureWindows.wait("composer model catalog", seconds: 5) { ComposerStates.shared.state(for: preview).models != nil }
                           }),
             // A tap on the composer: the field keeps focus while the keyboard comes up, and on an
             // iPad in portrait the sidebar stays an overlay, hidden (iPadPortrait).
@@ -482,14 +480,14 @@ enum FollowFixture {
     @MainActor private static func checkFocus(_ app: MobileApp, keyboard: KeyboardFrame) {
         let field = composerField()
         let focused = field?.isFirstResponder == true
-        print("FIXTURE CHECK \(focused ? "ok" : "FAILED"): the composer keeps focus")
+        FixtureCheck.report("FIXTURE CHECK \(focused ? "ok" : "FAILED"): the composer keeps focus")
         if focused, let field, let top = keyboard.top {
             let bottom = field.convert(field.bounds, to: nil).maxY
-            print("FIXTURE CHECK \(bottom <= top ? "ok" : "FAILED"): the field sits above the keyboard (\(Int(top - bottom))pt)")
+            FixtureCheck.report("FIXTURE CHECK \(bottom <= top ? "ok" : "FAILED"): the field sits above the keyboard (\(Int(top - bottom))pt)")
         }
         if UIDevice.current.userInterfaceIdiom == .pad, let window = field?.window, window.bounds.height > window.bounds.width {
             let holds = app.navigator.padSidebarOverlays && app.navigator.padColumns == .detailOnly
-            print("FIXTURE CHECK \(holds ? "ok" : "FAILED"): the portrait sidebar stays a hidden overlay")
+            FixtureCheck.report("FIXTURE CHECK \(holds ? "ok" : "FAILED"): the portrait sidebar stays a hidden overlay")
         }
     }
 
@@ -541,7 +539,7 @@ enum FollowFixture {
     @MainActor static func jump(_ app: MobileApp) async {
         let store = app.threads.store(for: FixtureData.ref(FixtureData.preview))
         try? await Task.sleep(for: .seconds(1))
-        guard let scroll = threadScrollView() else { return print("FIXTURE CHECK FAILED: no thread scroll view") }
+        guard let scroll = threadScrollView() else { return FixtureCheck.report("FIXTURE CHECK FAILED: no thread scroll view") }
         let pan = scroll.panGestureRecognizer
         pan.state = .began
         for step in 1...12 {
@@ -563,9 +561,9 @@ enum FollowFixture {
     /// above the end of the content, with the composer's inset counted. At the tail it is the
     /// thread's bottom padding (the gutter under the bottom marker a scroll lands on).
     @MainActor private static func check(_ what: String, _ holds: (CGFloat) -> Bool) {
-        guard let scroll = threadScrollView() else { return print("FIXTURE CHECK FAILED: no thread scroll view") }
+        guard let scroll = threadScrollView() else { return FixtureCheck.report("FIXTURE CHECK FAILED: no thread scroll view") }
         let distance = scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.contentOffset.y - scroll.bounds.height
-        print("FIXTURE CHECK \(holds(distance) ? "ok" : "FAILED"): \(what) (\(Int(distance.rounded()))pt above the tail)")
+        FixtureCheck.report("FIXTURE CHECK \(holds(distance) ? "ok" : "FAILED"): \(what) (\(Int(distance.rounded()))pt above the tail)")
     }
 
     /// Puts the caret in the composer's field, so the software keyboard (when the simulator

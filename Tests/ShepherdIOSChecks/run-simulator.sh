@@ -121,10 +121,11 @@ for screen in "${screens[@]}"; do
             xcrun simctl launch --console --terminate-running-process "$device" com.shepherd.ios-fixture >"$log" 2>&1 &
         console=$!
         for _ in $(seq 1 300); do
-            grep -q "^FIXTURE \(READY\|FAILED\)" "$log" 2>/dev/null && break
+            grep -q "^FIXTURE \(READY\|FAILED\|CHECK FAILED\|MUTATION\)" "$log" 2>/dev/null && break
             sleep 0.2
         done
-        if grep -q "^FIXTURE READY" "$log" 2>/dev/null; then
+        if grep -q "^FIXTURE READY $screen$" "$log" 2>/dev/null &&
+           ! grep -q "^FIXTURE \(FAILED\|CHECK FAILED\|MUTATION\)" "$log" 2>/dev/null; then
             xcrun simctl io "$device" screenshot "$shot" >/dev/null 2>&1
             # The framebuffer stays portrait; turn a landscape shot the way it is seen.
             [[ "$orientation" == landscape ]] && sips -r 270 "$shot" >/dev/null
