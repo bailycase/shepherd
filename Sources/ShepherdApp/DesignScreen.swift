@@ -35,8 +35,8 @@ struct DesignLayoutView: View {
 
 /// The canvas: the design's boards and notes, the tool, the zoom, the selection ringed over the
 /// boards, and the comments' pins. The Comment tool's click on an element opens the editor beside
-/// it; a pin opens its thread. The board actions float over the board picked whole, and "Ask for
-/// another direction" follows the last board. A presented board (Present, Play) covers it all.
+/// it; a pin opens its thread. The board actions float over the board picked whole.
+/// A presented board (Present, Play) covers it all.
 struct DesignCanvasPane: View {
     @Bindable var screen: DesignScreenModel
     /// This Mac's view model, for the references' toast; nil for another host's design.
@@ -51,7 +51,6 @@ struct DesignCanvasPane: View {
                        selection: screen.selectionRings, hover: screen.hoverRing,
                        pins: screen.pins, openPin: { screen.openThread($0) }, popoverAnchor: screen.popoverAnchor,
                        notes: screen.notes, actions: actions,
-                       anotherDirection: screen.canAsk ? { screen.askForAnotherDirection() } : nil,
                        move: { screen.move($0) },
                        contextMenu: referencing ? { [designName] pick in
                            await screen.contextMenu(for: pick, designName: designName, keys: KeybindingsStore.shared)
