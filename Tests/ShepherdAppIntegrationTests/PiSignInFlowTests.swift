@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdSessions
@@ -29,14 +30,14 @@ struct PiSignInFlowTests {
         }
 
         /// The store the app uses, on the fake SDK.
-        @MainActor func store() throws -> PiAuthStore {
+        @MainActor func store(sdk: String = FakePiSDK.path) throws -> PiAuthStore {
             let node = try #require(MCPAgentHarness.node)
             let script = try PiSignInScript.install(in: dir)
             var environment = ProcessInfo.processInfo.environment
             environment["FAKE_PI_CONTROL"] = control.path
             let files = pi.files
             let store = PiAuthStore(pi: pi, bridge: {
-                PiSignInBridge(line: PiLaunch.signInBridge(node: .executable(node.path), script: script.path, sdk: FakePiSDK.path, home: files),
+                PiSignInBridge(line: PiLaunch.signInBridge(node: .executable(node.path), script: script.path, sdk: sdk, home: files),
                                environment: environment)
             })
             store.openURL = { _ in }
@@ -99,6 +100,55 @@ struct PiSignInFlowTests {
         try await eventuallyOnMain("the agent to leave Needs you") { vm.notSignedIn[id] == nil }
         #expect(auth.needed.isEmpty)
         #expect((try setup.stored()["anthropic"] as? [String: Any])?["type"] as? String == "oauth")
+    }
+
+    @Test func anOldSuccessfulKeyCheckNeverEnablesSaveWhileTheReplacementIsUnchecked() async throws {
+        let setup = try Setup()
+        defer { setup.remove() }
+        let sdk = setup.dir.appendingPathComponent("gated-sdk.mjs")
+        let imported = String(decoding: try JSONEncoder().encode(URL(fileURLWithPath: FakePiSDK.path).absoluteString), as: UTF8.self)
+        try """
+        import { ModelRuntime as Base } from \(imported);
+        import * as fs from 'node:fs';
+        import * as path from 'node:path';
+        export class ModelRuntime extends Base {
+          static async create(options) { return new ModelRuntime(options); }
+          async completeSimple(model, context, options) {
+            if (options.apiKey === 'sk-fake-good-key-0001') {
+              fs.writeFileSync(path.join(process.env.FAKE_PI_CONTROL, 'checking'), '');
+              while (!fs.existsSync(path.join(process.env.FAKE_PI_CONTROL, 'release'))) await new Promise(r => setTimeout(r, 10));
+            }
+            return super.completeSimple(model, context, options);
+          }
+        }
+        """.write(to: sdk, atomically: true, encoding: .utf8)
+        let auth = try setup.store(sdk: sdk.path)
+        let session = PiSignInSession(provider: "deepseek", subscription: nil, origin: .settings, store: auth)
+        defer { session.end() }
+        session.checkDelay = .zero
+        session.start()
+        session.key = FakePiSDK.goodKey
+        try await eventuallyOnMain("the old key check to reach the gated provider") {
+            FileManager.default.fileExists(atPath: setup.control.appendingPathComponent("checking").path)
+        }
+        session.checkDelay = .milliseconds(600)
+        session.key = "replacement-invalid-key"
+        let allowed = Locked(false)
+        Self.watchKeyChecks(session, allowed: allowed)
+        try Data().write(to: setup.control.appendingPathComponent("release"))
+        try await eventuallyOnMain("the replacement key's check to be refused") {
+            if case .rejected = session.keyCheck { return true }; return false
+        }
+        #expect(!allowed.current, "the old success must never enable Save during the new key's debounce")
+        session.saveKey()
+        #expect(session.phase == .key)
+        #expect(try setup.stored().isEmpty)
+    }
+
+    private static func watchKeyChecks(_ session: PiSignInSession, allowed: Locked<Bool>) {
+        withObservationTracking { if session.keyCheck.allowsSave { allowed.withValue { $0 = true } } } onChange: {
+            Task { @MainActor in watchKeyChecks(session, allowed: allowed) }
+        }
     }
 
     @Test func signingOutRemovesOnlyThatProvidersCredentialFromShepherdsPi() async throws {
