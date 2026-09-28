@@ -139,6 +139,8 @@ public final class DesignTweakModel {
     @ObservationIgnored private var pendingPreview: [DesignPath: [Int: [String: String?]]]?
     @ObservationIgnored private var pendingProps: (path: DesignPath, json: String)?
     @ObservationIgnored private var loadSerial = 0
+    /// A local edit finishes its snapshot/rebuild before the next reads a base revision.
+    @ObservationIgnored private var committing: Task<Void, Never>?
 
     public init(designID: DesignID, io: DesignTweakIO, host: (any DesignTweakPreviews)?) {
         self.designID = designID
@@ -323,7 +325,11 @@ public final class DesignTweakModel {
             return
         }
         let scope = scope
-        Task { await commit(changes, target: target, scope: scope, name: "Tweak") }
+        let previous = committing
+        committing = Task {
+            await previous?.value
+            await commit(changes, target: target, scope: scope, name: "Tweak")
+        }
     }
 
     // MARK: Previews
@@ -482,7 +488,11 @@ public final class DesignTweakModel {
             presentation.groups = presentation.groups.map { DesignTweakGroup(title: $0.title, rows: $0.rows.map(showingDrag)) }
             return
         }
-        Task { await commitProps(target.board, [name: accepted], name: "Tweak") }
+        let previous = committing
+        committing = Task {
+            await previous?.value
+            await commitProps(target.board, [name: accepted], name: "Tweak")
+        }
     }
 
     /// An enum prop's option, by the title its picker shows: the value as data-props wrote it.
@@ -543,9 +553,9 @@ public final class DesignTweakModel {
 
     /// What Reset puts back for the target: its elements' values from before this session's
     /// changes (in scope), and its board's props.
-    private func resetChanges(_ target: DesignTweakTarget) -> (styles: [DesignPath: [Int: [String: String?]]], props: [String: JSONValue?]) {
+    private func resetChanges(_ target: DesignTweakTarget, targets: [DesignPath: [Int]]? = nil) -> (styles: [DesignPath: [Int: [String: String?]]], props: [String: JSONValue?]) {
         var styles: [DesignPath: [Int: [String: String?]]] = [:]
-        for (path, tids) in scopeTargets(target) {
+        for (path, tids) in targets ?? scopeTargets(target) {
             for tid in tids {
                 if let values = originals[path]?[tid], !values.isEmpty { styles[path, default: [:]][tid] = values }
             }
@@ -556,9 +566,13 @@ public final class DesignTweakModel {
     /// Reset (DZTweak's footer): puts back what this session changed on the target.
     public func reset() {
         guard let target else { return }
-        let (styles, props) = resetChanges(target)
         let scope = scope
-        Task {
+        let targets = scopeTargets(target)
+        let previous = committing
+        committing = Task {
+            await previous?.value
+            // Include edits queued before Reset, but never follow a later selection/scope.
+            let (styles, props) = resetChanges(target, targets: targets)
             if !styles.isEmpty { await commit(styles, target: target, scope: scope, name: "Reset", isReset: true) }
             if !props.isEmpty {
                 await commitProps(target.board, props, name: "Reset")
