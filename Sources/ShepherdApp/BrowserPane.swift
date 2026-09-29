@@ -61,7 +61,7 @@ struct BrowserPane: View {
                                       if session.open(address: address) { addressFocused = false }
                                   },
                                   cancel: { addressFocused = false })
-                .help(vm.keybindings.display(.focusAddressBar))
+                .nwHelp("Search or enter a URL", shortcut: vm.keybindings.display(.focusAddressBar))
         }
     }
 
