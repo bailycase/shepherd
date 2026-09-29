@@ -167,6 +167,9 @@ struct ChangesTurnTests {
         _ = try await pi.snapshot("pending send while baseline is held") { $0.provisional.contains { $0.status == "pending" && $0.blocks.first?.text == "tools:0 capture failure" } }
         #expect(pi.stdin("prompt").isEmpty)
         let file = repo.url.appendingPathComponent("a.txt")
+        // Git can reuse a clean index entry without opening the working file. Change its
+        // size first so capture must read it, regardless of filesystem timestamp granularity.
+        try repo.write("a.txt", "changed and unreadable during baseline capture\n")
         try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: file.path)
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path) }
         try #require(!FileManager.default.isReadableFile(atPath: file.path))
