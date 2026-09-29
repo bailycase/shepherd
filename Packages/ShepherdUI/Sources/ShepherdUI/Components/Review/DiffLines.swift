@@ -34,6 +34,8 @@ public enum NWDiffLineKind: Sendable, Hashable {
 public enum NWDiffMetrics {
     public static let barWidth: CGFloat = 3
     public static let numberWidth: CGFloat = 34
+    public static let commentButtonSize: CGFloat = 18
+    public static let commentSlotWidth: CGFloat = commentButtonSize + 2 * NW.Space.s
     public static let signWidth: CGFloat = 16
     /// Where the unified code column starts.
     public static let codeLeading: CGFloat = barWidth + numberWidth * 2 + signWidth
@@ -186,18 +188,9 @@ public struct NWDiffLine: View {
 
     public var body: some View {
         let _ = NWRenderProbe.tick("diff.line")
-        let nw = Color.nw
-        HStack(spacing: 0) {
-            NWDiffGutterBar(kind: line.kind)
-            NWDiffNumber(value: line.oldNumber)
-            NWDiffNumber(value: line.newNumber)
-            Text(line.kind.sign)
-                .font(.nw(.code))
-                .foregroundStyle(line.kind == .added ? nw.done : nw.failed)
-                .frame(width: NWDiffMetrics.signWidth, alignment: .leading)
-            NWDiffCode(line: line)
-            NWDiffCommentSlot(hovering: hovering, onComment: onComment)
-        }
+        NWDiffLineDrawing(line: line, side: nil, reservesComment: onComment != nil)
+        .overlay(alignment: .trailing) { NWDiffCommentSlot(hovering: hovering, onComment: onComment) }
+        .help(line.source)
         .frame(height: NWDiffMetrics.lineHeight)
         .background(NWDiffLineBackground.color(line.kind, hovering: hovering && onComment != nil))
         .contentShape(Rectangle())
@@ -211,7 +204,7 @@ public struct NWDiffLine: View {
         }
     }
 
-    static let commentButtonSize: CGFloat = 18
+    static let commentButtonSize = NWDiffMetrics.commentButtonSize
 }
 
 /// One side of a split row (ChangesSplit): the gutter bar, the side's number, and the code; a
@@ -232,12 +225,9 @@ public struct NWSplitDiffSide: View {
 
     public var body: some View {
         if let line {
-            HStack(spacing: 0) {
-                NWDiffGutterBar(kind: line.kind)
-                NWDiffNumber(value: side == .old ? line.oldNumber : line.newNumber)
-                NWDiffCode(line: line)
-                NWDiffCommentSlot(hovering: hovering, onComment: onComment)
-            }
+            NWDiffLineDrawing(line: line, side: side, reservesComment: onComment != nil)
+            .overlay(alignment: .trailing) { NWDiffCommentSlot(hovering: hovering, onComment: onComment) }
+            .help(line.source)
             .frame(maxWidth: .infinity, minHeight: NWDiffMetrics.lineHeight, maxHeight: NWDiffMetrics.lineHeight)
             .background(NWDiffLineBackground.color(line.kind, hovering: hovering && onComment != nil))
             .contentShape(Rectangle())
@@ -281,32 +271,46 @@ public struct NWSplitDiffLine: View {
     }
 }
 
-/// A changed line's 3pt bar (Gutter bar): `done` for an addition, `failed` for a removal, so a
-/// change reads even where its tint is faint.
-private struct NWDiffGutterBar: View {
-    let kind: NWDiffLineKind
+/// The fixed-height line is one drawing rather than several independently measured Text
+/// views. Interaction and accessibility remain on its containing row.
+private struct NWDiffLineDrawing: View {
+    let line: NWDiffLineContent
+    let side: NWSplitDiffSide.Side?
+    let reservesComment: Bool
 
     var body: some View {
         let nw = Color.nw
-        (kind == .added ? nw.done : kind == .removed ? nw.failed : Color.clear)
-            .frame(width: NWDiffMetrics.barWidth)
-    }
-}
-
-/// The code, clipped at the edge (never wrapped or ellipsized), its full line on hover.
-private struct NWDiffCode: View {
-    let line: NWDiffLineContent
-
-    var body: some View {
-        Text(line.text)
-            .font(.nw(.code))
-            .foregroundStyle(Color.nw.textPrimary)
-            .lineLimit(1)
-            .fixedSize(horizontal: true, vertical: false)
-            // Takes what the row leaves, however long the line: its width never pushes the row.
-            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-            .clipped()
-            .help(line.source)
+        Canvas { context, size in
+            let bar = NWDiffMetrics.barWidth
+            let number = NWDiffMetrics.numberWidth
+            let numbers = side.map { [$0 == .old ? line.oldNumber : line.newNumber] } ?? [line.oldNumber, line.newNumber]
+            let signX = bar + number * CGFloat(numbers.count)
+            let codeX = signX + (side == nil ? NWDiffMetrics.signWidth : 0)
+            if line.kind != .context {
+                context.fill(Path(CGRect(x: 0, y: 0, width: bar, height: size.height)), with: .color(line.kind == .added ? nw.done : nw.failed))
+            }
+            for (index, value) in numbers.enumerated() {
+                if let value {
+                    let text = context.resolve(Text(String(value)).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary))
+                    let width = text.measure(in: CGSize(width: .infinity, height: size.height)).width
+                    let scale = max(0.6, min(1, (number - NW.Space.m) / max(1, width)))
+                    var gutter = context
+                    gutter.translateBy(x: bar + number * CGFloat(index + 1) - NW.Space.m, y: size.height / 2)
+                    gutter.scaleBy(x: scale, y: scale)
+                    gutter.draw(text, at: .zero, anchor: .trailing)
+                }
+            }
+            if side == nil {
+                context.draw(Text(line.kind.sign).font(.nw(.code)).foregroundStyle(line.kind == .added ? nw.done : nw.failed),
+                             at: CGPoint(x: signX, y: size.height / 2), anchor: .leading)
+            }
+            let slot = reservesComment ? NWDiffMetrics.commentSlotWidth : 0
+            context.clip(to: Path(CGRect(x: codeX, y: 0, width: max(0, size.width - codeX - slot), height: size.height)))
+            context.draw(Text(line.text).font(.nw(.code)).foregroundStyle(nw.textPrimary),
+                         at: CGPoint(x: codeX, y: size.height / 2), anchor: .leading)
+        }
+        .frame(minWidth: 0, maxWidth: .infinity)
+        .clipped()
     }
 }
 
@@ -379,23 +383,6 @@ private struct NWDiffCommentButton: View {
             .onTapGesture(perform: action)
             .accessibilityHidden(true)
             .help("Comment on this line")
-    }
-}
-
-/// A right-aligned line number in its 34pt gutter: mono 10.5, tertiary. Five digits, or four at
-/// a large text size, shrink to fit rather than truncate.
-private struct NWDiffNumber: View {
-    let value: Int?
-
-    var body: some View {
-        Text(value.map(String.init) ?? "")
-            .font(.nwMono(10.5))
-            .monospacedDigit()
-            .foregroundStyle(.nw.textTertiary)
-            .lineLimit(1)
-            .minimumScaleFactor(0.6)
-            .padding(.trailing, NW.Space.m)
-            .frame(width: NWDiffMetrics.numberWidth, alignment: .trailing)
     }
 }
 
