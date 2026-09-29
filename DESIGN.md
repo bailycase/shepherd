@@ -2701,6 +2701,12 @@ the components' values, and `Thread/Subagents.swift` lays out the tray. State al
   footer counts to an unrelated reply. Loading their spawn turn restores their records there.
   Both lines open the first run in the
   inspector, whose ‹ › browse the rest; the footer's "3 subagents" does the same.
+- **Background coordination stays out of chat.** Routine child progress updates its record,
+  not a new parent turn. Questions and unread completion can wake an idle parent; results that
+  arrive while it works are batched into one continuation at its settlement boundary. Reading
+  a result or receiving it through Wait consumes its pending notification. A question does not
+  also generate a completion wake. Stop prevents late results from restarting the parent.
+  The native tray remains the progress display; no receipt-only assistant response is requested.
 - **Not built yet: a queued message addressed to a subagent** (SubagentsQueue, SubagentTray ›
   DockStack: a queued row's "worker" tag). The queue carries no recipient, and no board draws how
   one is chosen.

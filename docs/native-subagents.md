@@ -131,12 +131,16 @@ settings produce diagnostics and are not imported. This is not full pi-subagents
 | `shepherd_workflow` | Runs a script (below). |
 | `shepherd_mission` | Manages mission records (below). |
 
-**Questions.** Children use `shepherd_parent_message` for progress or questions. For a question
+**Questions and results.** Routine `shepherd_parent_message` progress updates only the child
+record, without waking the parent or appending a chat message. For a question
 the child sets `needsReply` (and optionally `short`, 1–3 words its parent's Needs you row shows,
-like "retention?"), finishes its turn, and waits for an explicit continuation. Completion
-and messages wake the parent, except a completion a `shepherd_child_wait` returns: the parent
-already has that result, so it gets no second turn on it (a wait cancelled before it answers
-hands the completion back). Delivery is not durable, and not exactly-once across a crash.
+like "retention?"), finishes its turn, and waits for an explicit continuation. Questions notify
+once, without a second completion wake. Unread completion wakes an idle parent; while the parent
+works, pending results are combined at `agent_before_settle` into one continuation, not separate
+follow-up turns. Explicit result reads and completed waits consume their pending notices; a
+cancelled wait hands its completion back. Notifications are hidden coordination messages, not
+user requests, and tell the parent not to acknowledge receipt. Stop/error settlement suppresses
+automatic wake until the parent starts again. Delivery is not durable or exactly-once across a crash.
 
 **Context.** Fresh context is the default unless a profile or setting chooses fork. Fork copies
 the selected branch up to the last complete tool batch, using a separate `SessionManager`. It
@@ -197,7 +201,8 @@ each run has a deadline of at most 30 minutes (`timeoutSeconds` can lower it).
 
 **Cancellation** closes admission, terminates the evaluator, waits for in-flight starts, and stops
 only the children that workflow owns. Child completions inside a workflow do not start their own
-parent turns; the workflow sends one completion notification. Workflows never restart or replay
+parent turns; an asynchronous workflow sends one completion through the same batched delivery.
+A synchronous workflow's returned result is its delivery, with no extra wake. Workflows never restart or replay
 on reload.
 
 **Execution boundary.** The script runs in a VM context inside a dedicated Node Worker. Only
