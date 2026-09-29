@@ -45,12 +45,16 @@ public func nativeRunPhase(_ run: ChildRun) -> NativeRunPhase {
 
 // MARK: Names and tags
 
-/// A run's name and role tag. A native child's label is "role: task", so it is named by its
-/// role and no tag repeats it; a workflow lane is named by its key and tagged with its role.
+/// A native child's "role: task" label leads with a bounded task sentence, with its role
+/// secondary. Explicit workflow lane names and older role-only labels stay as reported.
 public func nativeRunNames(_ run: ChildRun) -> (name: String, role: String?) {
     guard let role = run.role, !role.isEmpty else { return (run.label, nil) }
-    if run.label == role || run.label.hasPrefix("\(role): ") { return (role, nil) }
-    return (run.label, role)
+    if run.childIndex == nil, run.label.hasPrefix("\(role): ") {
+        let task = run.task?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let name = nativeFirstSentence(task.isEmpty ? String(run.label.dropFirst(role.count + 2)) : task)
+        return name.isEmpty ? (role, nil) : (name, name == role ? nil : role)
+    }
+    return (run.label, run.label == role ? nil : role)
 }
 
 /// "claude-sonnet" from "anthropic/claude-sonnet".
@@ -324,10 +328,10 @@ public func nativeRunGroupStatus(_ runs: [ChildRun]) -> String? {
     return parts.joined(separator: " · ")
 }
 
-/// The run header's mono line: a live run's model, thinking, turns and tokens; a finished run's
-/// model and turns, then "done 11:02" (the accent, in the state's color).
+/// The run header's mono line: its secondary role, then a live run's model, thinking, turns
+/// and tokens; a finished run's model and turns, then "done 11:02" in the state's color.
 public func nativeRunInspectorMeta(_ run: ChildRun, timeZone: TimeZone = .current) -> (meta: String, accent: String?) {
-    var parts: [String] = []
+    var parts = [nativeRunNames(run).role].compactMap { $0 }
     if let model = run.model { parts.append(nativeModelTag(model)) }
     if !run.isTerminal, let thinking = run.thinking, thinking != "off" { parts.append("thinking \(thinking)") }
     if let turns = run.turns { parts.append(nativeCount(turns, "turn")) }

@@ -2643,7 +2643,7 @@ the components' values, and `Thread/Subagents.swift` lays out the tray. State al
 - **A row** (`NWSubagentTrayRow`; 36pt minimum, 12pt leading, 6pt trailing, items 9pt apart, a
   hairline above): the state in a 13pt slot (a 7pt `NWStatusDot`, glowing while it needs you; a
   `done` checkmark or a `failed` cross once finished), the name in `.nwMono(12, .semibold)` in a
-  72pt column, then what it is doing in `.nwSans(12.5)`, truncated at the tail, then its diff
+  72pt column for legacy role-only rows, then what it is doing in `.nwSans(12.5)`, truncated at the tail, then its diff
   stat (`NWDiffStat`, Geist Mono 11) and its time (`NWElapsedText`, Geist Mono 11 `textTertiary`),
   then a 24pt trailing slot. Per state:
   - **Running:** its call in flight in the present tense in `textSecondary`, then what it acts on
@@ -2704,12 +2704,22 @@ the components' values, and `Thread/Subagents.swift` lays out the tray. State al
   footer counts to an unrelated reply. Loading their spawn turn restores their records there.
   Both lines open the first run in the
   inspector, whose ‹ › browse the rest; the footer's "3 subagents" does the same.
+- **Task names distinguish children.** Native `role: task` runs lead with a normalized first
+  sentence capped at 72 characters, with the full task in GOAL. Task-bearing tray rows give
+  the name a full-width line above role and activity. Explicit workflow lane names and legacy
+  labels stay intact. Results, questions and controls use run identity, never the label.
 - **Background coordination stays out of chat.** Routine child progress updates its record,
   not a new parent turn. Questions and unread completion can wake an idle parent; results that
   arrive while it works are batched into one continuation at its settlement boundary. Reading
   a result or receiving it through Wait consumes its pending notification. A question does not
   also generate a completion wake. Stop prevents late results from restarting the parent.
   The native tray remains the progress display; no receipt-only assistant response is requested.
+  Report-only child/workflow results add context without starting a parent turn; continue mode
+  resumes dependent work. Live children alone do not make the parent busy. An accepted user
+  message interrupts child/workflow waits, ending that tool wait without cancelling children,
+  so the host can deliver the user's next turn. User input takes priority over result-only
+  continuation at the settlement boundary. Questions expose attempt-specific IDs for stale-answer
+  refusal; delivery remains best-effort, not a durable exactly-once mailbox.
 - **Not built yet: a queued message addressed to a subagent** (SubagentsQueue, SubagentTray ›
   DockStack: a queued row's "worker" tag). The queue carries no recipient, and no board draws how
   one is chosen.

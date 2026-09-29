@@ -46,7 +46,7 @@ struct SubagentTrayTests {
         var live = Self.run("w", role: "worker", startedAt: 1_000)
         live.files = [ChildFileChange(path: "A.swift", added: 20, removed: 3), ChildFileChange(path: "B.swift", added: 11, removed: 1)]
         let row = nativeTrayRow(live)
-        #expect(row.name == "worker" && row.added == 31 && row.removed == 4)
+        #expect(row.name == "task" && row.role == "worker" && row.added == 31 && row.removed == 4)
         #expect(row.since == 1_000 && row.until == nil)
         var done = Self.run("t", state: "complete", startedAt: 1_000, endedAt: 241_000)
         done.summary = "Added 6 presentation tests · 14 pass."
@@ -65,7 +65,7 @@ struct SubagentTrayTests {
         let row = nativeTrayRow(run)
         #expect(row.line == .asks("Rename the new token names, or replace the old ones everywhere?"))
         #expect(row.since == 5_000)
-        #expect(row.accessibilityLabel == "reviewer, Needs you, asks: Rename the new token names, or replace the old ones everywhere?")
+        #expect(row.accessibilityLabel == "task, reviewer, Needs you, asks: Rename the new token names, or replace the old ones everywhere?")
     }
 
     @Test(arguments: [("exit 1 · context limit reached after 41 turns", "context limit reached after 41 turns"),
@@ -79,6 +79,35 @@ struct SubagentTrayTests {
     @Test func waitingRowsSayWhy() {
         #expect(nativeTrayRow(Self.run("q", state: "queued")).line == .waiting("Waiting to start"))
         #expect(nativeTrayRow(Self.run("p", paused: true)).line == .waiting("Paused before its next model request"))
+    }
+
+    @Test func identicalTaskLabelsKeepEachResultAndQuestionBoundToItsRun() throws {
+        var first = Self.run("first", state: "complete", role: "worker", endedAt: 10)
+        first.summary = "Fixed the Mac client."
+        var second = Self.run("second", state: "complete", role: "worker", startedAt: 1, endedAt: 20)
+        second.summary = "Fixed the phone client."
+        let tray = NativeSubagentTray([second, first])
+        #expect(tray.rows.map(\.name) == ["task", "task"])
+        #expect(tray.rows.map(\.id) == ["first", "second"])
+        #expect(tray.rows.map(\.runID) == ["first", "second"])
+        #expect(tray.rows.map(\.line) == [.result("Fixed the Mac client"), .result("Fixed the phone client")])
+        #expect([first, second].map(nativeRunSummary).map(\.result) == ["Fixed the Mac client.", "Fixed the phone client."])
+        second.needsAttention = true
+        second.question = ChildQuestion(text: "Ship it?")
+        #expect(try #require(nativeSubagentQuestionPrompt(second)).id == "second")
+    }
+
+    @Test func workflowRowsKeepTheirLaneIdentityWhenTheRunIDIsShared() {
+        var first = Self.run("workflow", role: "worker")
+        first.childIndex = 0
+        first.label = "frontend"
+        var second = first
+        second.childIndex = 1
+        second.label = "backend"
+        let rows = NativeSubagentTray([second, first]).rows
+        #expect(rows.map(\.id) == ["workflow#0", "workflow#1"])
+        #expect(rows.map(\.runID) == ["workflow", "workflow"])
+        #expect(rows.map(\.name) == ["frontend", "backend"])
     }
 
     // MARK: Order and header
@@ -156,7 +185,7 @@ struct SubagentTrayTests {
         var tests = Self.run("t", state: "complete", role: "tests", startedAt: 41 * 60_000, endedAt: 45 * 60_000)
         tests.result = ChildResultSummary(files: 2, added: 96, removed: 3, tools: 1, tokens: 1)
         let record = try #require(NativeSubagentRecord([tests, reviewer, worker]))
-        #expect(record.started == NativeSubagentRecordLine(title: "Started 3 subagents", meta: "worker · reviewer · tests"))
+        #expect(record.started == NativeSubagentRecordLine(title: "Started 3 subagents", meta: "task · task · task"))
         #expect(record.finished == NativeSubagentRecordLine(title: "3 subagents finished", meta: "45m · 7 files · +318 −64"))
         #expect(record.firstRunID == "w")
         #expect(record.finishedAt == 45 * 60_000.0)
@@ -177,12 +206,12 @@ struct SubagentTrayTests {
         var run = Self.run("r", role: "reviewer", needsAttention: true)
         run.question = ChildQuestion(text: "Rename or replace?", options: ["Replace everywhere", "Rename new ones"])
         let prompt = try #require(nativeSubagentQuestionPrompt(run))
-        #expect(prompt.asker == .subagent("reviewer") && prompt.question == "Rename or replace?")
+        #expect(prompt.asker == .subagent("task") && prompt.question == "Rename or replace?")
         #expect(prompt.options.map(\.title) == ["Replace everywhere", "Rename new ones"])
         #expect(prompt.takesNote && prompt.otherNumber == 3 && prompt.showsAnswer)
         run.question = ChildQuestion(text: "Which base?")
         let reply = try #require(nativeSubagentQuestionPrompt(run))
-        #expect(reply.kind == .open && reply.placeholder == "Reply to reviewer…")
+        #expect(reply.kind == .open && reply.placeholder == "Reply to task…")
         run.question = nil
         run.attentionText = nil
         #expect(try #require(nativeSubagentQuestionPrompt(run)).question == "Waiting on your answer")

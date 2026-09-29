@@ -59,7 +59,7 @@ enum SubagentValues {
         case .result(let text): .result(text)
         case .failed(let reason): .failed(reason)
         }
-        return NWSubagentTrayRun(id: row.id, name: row.name, state: AgentState(row.phase), line: line, added: row.added,
+        return NWSubagentTrayRun(id: row.id, name: row.name, role: row.role, state: AgentState(row.phase), line: line, added: row.added,
                                  removed: row.removed, since: date(row.since), until: date(row.until),
                                  accessibilityLabel: row.accessibilityLabel)
     }

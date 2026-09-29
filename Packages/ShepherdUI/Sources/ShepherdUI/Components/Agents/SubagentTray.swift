@@ -92,6 +92,7 @@ public struct NWSubagentTrayRun: Equatable, Identifiable, Sendable {
 
     public var id: String
     public var name: String
+    public var role: String?
     public var state: AgentState
     public var line: Line
     public var added: Int?
@@ -101,10 +102,11 @@ public struct NWSubagentTrayRun: Equatable, Identifiable, Sendable {
     public var until: Date?
     public var accessibilityLabel: String
 
-    public init(id: String, name: String, state: AgentState, line: Line, added: Int? = nil, removed: Int? = nil,
+    public init(id: String, name: String, role: String? = nil, state: AgentState, line: Line, added: Int? = nil, removed: Int? = nil,
                 since: Date? = nil, until: Date? = nil, accessibilityLabel: String? = nil) {
         self.id = id
         self.name = name
+        self.role = role
         self.state = state
         self.line = line
         self.added = added
@@ -291,10 +293,25 @@ public struct NWSubagentTrayRow: View {
         let asks = run.state == .attention
         HStack(spacing: m.rowSpacing) {
             stateMark(m)
-            Text(run.name).font(.nwMono(m.nameSize, .semibold)).foregroundStyle(nw.textPrimary)
-                .lineLimit(1).truncationMode(.tail)
-                .frame(width: m.nameWidth, alignment: .leading)
-            line(m).frame(maxWidth: .infinity, alignment: .leading)
+            if let role = run.role {
+                VStack(alignment: .leading, spacing: NW.Space.xxs) {
+                    Text(run.name).font(.nwMono(m.nameSize, .semibold)).foregroundStyle(nw.textPrimary)
+                        .lineLimit(1).truncationMode(.tail)
+                        .help(run.name)
+                    HStack(spacing: NW.Space.s) {
+                        Text(role).font(.nwMono(m.subjectSize)).foregroundStyle(nw.textTertiary)
+                            .lineLimit(1)
+                        line(m)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, NW.Space.xs)
+            } else {
+                Text(run.name).font(.nwMono(m.nameSize, .semibold)).foregroundStyle(nw.textPrimary)
+                    .lineLimit(1).truncationMode(.tail)
+                    .frame(width: m.nameWidth, alignment: .leading)
+                line(m).frame(maxWidth: .infinity, alignment: .leading)
+            }
             HStack(spacing: NW.Space.m) {
                 if m.showsDiff, let added = run.added, let removed = run.removed {
                     NWDiffStat(added: added, removed: removed, font: .nwMono(11))
