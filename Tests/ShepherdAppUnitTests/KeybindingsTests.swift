@@ -18,6 +18,7 @@ struct KeybindingsTests {
         (.toggleSidebar, "⇧⌘S"), (.toggleRightPane, "⇧⌘B"), (.modelPicker, "⇧⌘M"),
         (.stopAgent, "⌘."), (.previousTurn, "⌥⌘↑"), (.nextTurn, "⌥⌘↓"), (.inspectSubagent, "⌘I"),
         (.alternateSend, "⌘↩"), (.importDesign, "⇧⌘I"), (.implementInThread, "⌘↩"), (.copyDesignReference, "⇧⌘C"),
+        (.focusAddressBar, "⌘L"), (.selectElement, "⇧⌘C"),
     ])
     func defaultsMatchTheDesignTable(action: ShortcutAction, display: String) {
         let keys = KeybindingsStore(store: Fixture.defaults())
@@ -49,6 +50,20 @@ struct KeybindingsTests {
         #expect(keys.assign(KeyChord(key: "e", command: true, shift: true), to: .copyDesignReference) == nil)
         #expect(keys.validate(KeyChord(key: "e", command: true, shift: true), for: .implementInThread) == .conflict(.copyDesignReference))
         #expect(keys.customGhosttyUnbinds.isEmpty, "a canvas chord never reaches a terminal")
+    }
+
+    /// The Browser's ⇧⌘C (Select an element) and the canvas's (Copy reference) never meet: a
+    /// design's layout has no Browser. The Browser sits beside the composer, so those two can't
+    /// share a chord, and a rebound Browser chord is unbound in a terminal beside it.
+    @Test func theBrowsersChordsAreScopedApartFromTheCanvas() {
+        let keys = KeybindingsStore(store: Fixture.defaults())
+        #expect(ShortcutAction.selectElement.scope == .browser && ShortcutAction.focusAddressBar.scope == .browser)
+        #expect(!ShortcutAction.selectElement.sharesScope(with: .copyDesignReference))
+        #expect(ShortcutAction.selectElement.sharesScope(with: .alternateSend))
+        #expect(keys.validate(ShortcutAction.alternateSend.defaultChord, for: .focusAddressBar) == .conflict(.alternateSend))
+        #expect(keys.validate(ShortcutAction.toggleRightPane.defaultChord, for: .selectElement) == .conflict(.toggleRightPane))
+        #expect(keys.assign(KeyChord(key: "e", command: true, shift: true), to: .selectElement) == nil)
+        #expect(keys.customGhosttyUnbinds == ["shift+cmd+e"])
     }
 
     @Test func defaultsNeedNoCustomGhosttyUnbinds() {
