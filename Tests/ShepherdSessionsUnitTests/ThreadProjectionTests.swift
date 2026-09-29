@@ -103,6 +103,32 @@ struct ThreadProjectionTests {
         #expect(RPCThreadState.prompt("/compact please", context: fence) == fence + "/compact please")
     }
 
+    /// A user message that starts with a browser elements fence shows its words, with the
+    /// elements (without their markup) for its chips; after design references too. A message of
+    /// elements alone shows no words. Any other role keeps the fence as text.
+    @Test func aUserMessagesBrowserElementsBecomeChips() throws {
+        let element = BrowserElement(page: "http://localhost:5173/", selector: "button.pay", label: "button.pay", width: 240, height: 44,
+                                     html: "<button>Pay</button>")
+        let fence = try #require(BrowserElementFence.fenced([element]))
+        let mine = RPCThreadState.project(entryID: "user:1", message: RPCMessage(role: "user", content: [.text(fence + "Wider")]))
+        #expect(mine.blocks.map(\.text) == ["Wider"])
+        #expect(mine.browserElements == [element.withoutHTML])
+        let alone = RPCThreadState.project(entryID: "user:2", message: RPCMessage(role: "user", content: [.text(fence + BrowserElementFence.humanLine(count: 1))]))
+        #expect(alone.blocks.map(\.text) == [""] && alone.browserElements?.count == 1)
+
+        let copy = UUID().uuidString
+        let record = DesignReferenceRecord(ref: "shepherd-design-ref://local/d1/A.dc.html@4", design: "Checkout", payload: copy)
+        let context = try #require(RPCThreadState.sendContext(nil, references: [record], elements: [element]))
+        let both = RPCThreadState.project(entryID: "user:3", message: RPCMessage(role: "user", content: [.text(context + "Build it")]),
+                                          sentReferences: [copy])
+        #expect(both.blocks.map(\.text) == ["Build it"])
+        #expect(both.designReferences?.count == 1 && both.browserElements == [element.withoutHTML])
+
+        let quoted = RPCThreadState.project(entryID: "a:1", message: RPCMessage(role: "assistant", content: [.text(fence + "x")]))
+        #expect(quoted.browserElements == nil && quoted.blocks.first?.text == fence + "x")
+        #expect(RPCThreadState.prompt("/compact", context: fence) == fence + "/compact", "the fence goes first, so words stay words")
+    }
+
     /// A send carrying references and a view record puts only the references' fence ahead, so the
     /// thread still shows just the words.
     @Test func aSendWithReferencesCarriesOnlyTheirFence() throws {

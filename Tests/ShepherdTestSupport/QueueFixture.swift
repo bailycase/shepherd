@@ -37,14 +37,15 @@ public final class QueueFixture {
         switch request {
         case .snapshot:
             return .snapshot(value: snapshot)
-        case .send(_, _, let operation, let text, let delivery, let images, _, _):
+        case .send(_, _, let operation, let text, let delivery, let images, _, _, let elements):
             sends.append((text, delivery))
             if snapshot.running {
                 var items = queue
                 items.append(NativeQueuedMessage(id: operation, text: text,
                                                  images: (images ?? []).map { NativeQueuedImage(mimeType: $0.mimeType, name: $0.name) },
                                                  sentAt: Date().timeIntervalSince1970 * 1000,
-                                                 state: delivery == .steer ? .steering : .queued))
+                                                 state: delivery == .steer ? .steering : .queued,
+                                                 elements: (elements ?? []).map(\.withoutHTML)))
                 NativeQueueRules.normalize(&items)
                 change(items)
             }

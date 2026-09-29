@@ -111,7 +111,8 @@ extension RPCThreadState {
     /// keeps a queued message from being joined with others (`QueueItem.goesAlone`). `context`
     /// is a fenced design view record that goes to pi ahead of the message (`QueueItem.context`).
     func send(id: UUID, text: String, delivery: NativeThreadDelivery, images: [NativeImage], alone: Bool = false,
-              context: String? = nil, designPayloads: [UUID] = [], completion: @escaping (NativeThreadResult) -> Void) {
+              context: String? = nil, designPayloads: [UUID] = [], elements: [BrowserElement] = [],
+              completion: @escaping (NativeThreadResult) -> Void) {
         // From here the copies are pi's (a prompt) or wait in the queue, which withholds them.
         sendingDesignPayloads.subtract(designPayloads)
         guard piBusy else {
@@ -124,7 +125,7 @@ extension RPCThreadState {
         }
         let item = QueueItem(
             entry: NativeQueuedMessage(id: id, text: text, images: images.map { NativeQueuedImage(mimeType: $0.mimeType, name: $0.name) },
-                                       sentAt: Date().timeIntervalSince1970 * 1000),
+                                       sentAt: Date().timeIntervalSince1970 * 1000, elements: elements),
             images: images, goesAlone: alone, context: context, designPayloads: designPayloads)
         guard admitsQueue(items + [item]) else { completion(queueFull); return }
         items.append(item)
@@ -410,7 +411,7 @@ extension RPCThreadState {
     /// always goes first, so words that start with "/" stay words.
     static func prompt(_ text: String, context: String?) -> String {
         guard let context, !text.hasPrefix("/") || DesignCommentFence.opens(context) || DesignMarkupFence.opens(context)
-            || DesignReferenceFence.opens(context) else { return text }
+            || DesignReferenceFence.opens(context) || BrowserElementFence.opens(context) else { return text }
         return context + text
     }
 
