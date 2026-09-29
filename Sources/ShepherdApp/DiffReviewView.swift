@@ -670,6 +670,9 @@ private struct DiffFileSection: View, Equatable {
             // Where the file's rows start: a fold eases only while the file sits in its place.
             Color.clear.frame(height: 0)
                 .onGeometryChange(for: CGFloat.self) { $0.frame(in: .scrollView).minY } action: { model.noteRowsTop($0, of: file.id) }
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { if layout == .split { updateHorizontalLimits($0) } }
+                .onChange(of: file) { _, _ in if layout == .split { updateHorizontalLimits(model.width) } }
+                .onChange(of: ThemeStore.shared.textScale) { _, _ in if layout == .split { updateHorizontalLimits(model.width) } }
             if !isFolded {
                 // A comment on the whole file sits under its header.
                 if let note = notes[ReviewSession.fileLineID] {
@@ -684,9 +687,6 @@ private struct DiffFileSection: View, Equatable {
                 .environment(\.splitDiffScroll, layout == .split ? horizontalScroll : nil)
                 if layout == .split {
                     NWSplitDiffScrollbars(horizontalScroll)
-                        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { updateHorizontalLimits($0) }
-                        .onChange(of: file) { _, _ in updateHorizontalLimits(model.width) }
-                        .onChange(of: ThemeStore.shared.textScale) { _, _ in updateHorizontalLimits(model.width) }
                 }
             }
         } header: {

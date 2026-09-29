@@ -373,12 +373,16 @@ final class ReviewPaneModel {
         return value
     }
 
-    func scrollSplitCode(at point: CGPoint, delta: CGFloat, viewportWidth: CGFloat) {
+    @discardableResult
+    func scrollSplitCode(at point: CGPoint, delta: CGFloat, viewportWidth: CGFloat) -> Bool {
+        let liveFiles = Set(session.files.map(\.id))
         guard layout == .split,
-              let file = rowsTops.filter({ $0.value <= point.y }).max(by: { $0.value < $1.value }),
-              !isFolded(file.key), let scroll = splitScrolls[file.key] else { return }
+              let file = rowsTops.filter({ liveFiles.contains($0.key) && $0.value <= point.y }).max(by: { $0.value < $1.value }),
+              !isFolded(file.key), let scroll = splitScrolls[file.key] else { return false }
         let old = point.x < viewportWidth / 2
-        scroll.move(to: (old ? scroll.oldOffset : scroll.newOffset) - delta, old: old)
+        let previous = old ? scroll.oldOffset : scroll.newOffset
+        scroll.move(to: previous - delta, old: old)
+        return previous != (old ? scroll.oldOffset : scroll.newOffset)
     }
     /// Where each file's rows start in the diff's visible area, while its section is loaded, and
     /// the height of a file header: a file sits in its place when its rows start below its

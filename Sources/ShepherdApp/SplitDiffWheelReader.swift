@@ -26,8 +26,7 @@ struct SplitDiffWheelReader: NSViewRepresentable {
                       abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) else { return event }
                 let point = self.convert(event.locationInWindow, from: nil)
                 guard self.visibleRect.contains(point) else { return event }
-                self.model.scrollSplitCode(at: point, delta: event.scrollingDeltaX, viewportWidth: self.bounds.width)
-                return nil
+                return self.model.scrollSplitCode(at: point, delta: event.scrollingDeltaX, viewportWidth: self.bounds.width) ? nil : event
             }
         }
         func stop() { if let monitor { NSEvent.removeMonitor(monitor) }; monitor = nil }
