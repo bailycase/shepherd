@@ -78,6 +78,24 @@ struct DiffDrawingTests {
         #expect(position.oldOffset == position.oldLimit - 40)
     }
 
+    @Test func longSplitFilesCanScrollBeforeTheirFooterIsVisible() async throws {
+        let lines = (0..<500).map { "+" + String(repeating: "long_column_", count: 30) + String($0) }.joined(separator: "\n")
+        let file = try #require(DiffFile.parse("diff --git a/long.txt b/long.txt\n--- /dev/null\n+++ b/long.txt\n@@ -0,0 +1,500 @@\n\(lines)\n").first)
+        let model = ListFixtures.reviewModel([file])
+        model.session.layoutChoice = .split
+        let window = OffscreenWindow(size: CGSize(width: 600, height: 400), dark: false, ReviewPaneContent(model: model))
+        defer { window.close() }
+        let position = model.splitScroll(for: file.id)
+        try await eventuallyOnMain("the visible beginning to establish horizontal limits") {
+            window.layout()
+            return position.newLimit > 1000
+        }
+        let scroll = try #require(ListPerf.scrollView(in: window))
+        #expect(scroll.contentView.bounds.maxY < scroll.documentView!.bounds.height - 1000)
+        model.scrollSplitCode(at: CGPoint(x: 450, y: 150), delta: -100, viewportWidth: 600)
+        #expect(position.newOffset == 100 && position.oldOffset == 0)
+    }
+
     @Test(arguments: [false, true])
     func syntaxAndWordHighlightsDrawInsideTheCodeColumn(split: Bool) throws {
         var text = AttributedString(String(repeating: "Highlighted words ", count: 30))
