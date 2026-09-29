@@ -672,9 +672,6 @@ private struct DiffFileSection: View, Equatable {
             // Where the file's rows start: a fold eases only while the file sits in its place.
             Color.clear.frame(height: 0)
                 .onGeometryChange(for: CGFloat.self) { $0.frame(in: .scrollView).minY } action: { model.noteRowsTop($0, of: file.id) }
-                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { if layout == .split { updateHorizontalLimits($0) } }
-                .onChange(of: file) { _, _ in if layout == .split { updateHorizontalLimits(model.width) } }
-                .onChange(of: ThemeStore.shared.textScale) { _, _ in if layout == .split { updateHorizontalLimits(model.width) } }
             if !isFolded {
                 // A comment on the whole file sits under its header.
                 if let note = notes[ReviewSession.fileLineID] {
@@ -714,7 +711,13 @@ private struct DiffFileSection: View, Equatable {
                         NSPasteboard.general.setString(file.displayPath, forType: .string)
                     }
                 }
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { model.noteHeaderHeight($0) }
+                .onGeometryChange(for: CGSize.self) { $0.size } action: {
+                    model.noteHeaderHeight($0.height)
+                    if layout == .split { updateHorizontalLimits($0.width) }
+                }
+                .onChange(of: layout) { _, layout in if layout == .split { updateHorizontalLimits(model.width) } }
+                .onChange(of: file) { _, _ in if layout == .split { updateHorizontalLimits(model.width) } }
+                .onChange(of: ThemeStore.shared.textScale) { _, _ in if layout == .split { updateHorizontalLimits(model.width) } }
         }
     }
 
