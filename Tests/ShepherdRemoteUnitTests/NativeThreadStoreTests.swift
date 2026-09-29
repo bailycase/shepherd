@@ -680,6 +680,45 @@ struct NativeThreadStoreTests {
         #expect(await store.send(text: "x", references: [NativeAttachedReference(reference: piece, label: "A")]) == false)
     }
 
+    /// Elements picked in the Browser wait beside the draft (each once per page and selector,
+    /// five at most), go with the send, and leave with it; alone they send a line so the
+    /// message isn't empty, which the echo leaves out beside its chips.
+    @Test func attachedElementsGoWithTheSend() async throws {
+        let (store, host, task) = await started(F.snapshot(actions: ["send", "browserElements"], messages: [hi]))
+        defer { task.cancel() }
+        let pay = BrowserElement(page: "http://localhost:5173/", selector: "button.pay", label: "button.pay", width: 240, height: 44, html: "<b/>")
+        #expect(store.attach(element: pay))
+        #expect(store.attach(element: pay), "picking it again replaces it")
+        #expect(store.attachedElements.count == 1 && store.hasDraft)
+        for index in 0..<4 {
+            #expect(store.attach(element: BrowserElement(page: "p", selector: "#e\(index)", label: "div", width: 1, height: 1)))
+        }
+        #expect(!store.attach(element: BrowserElement(page: "p", selector: "#sixth", label: "div", width: 1, height: 1)), "five at most")
+        for element in store.attachedElements.dropFirst() { store.detachElement(element.id) }
+
+        host.acceptAll()
+        await store.send()
+        guard case .send(_, _, _, let text, _, _, _, _, let elements) = try #require(host.actions.first) else {
+            Issue.record("expected a send"); return
+        }
+        #expect(text == BrowserElementFence.humanLine(count: 1))
+        #expect(elements == [pay])
+        #expect(store.attachedElements.isEmpty)
+        let echo = try #require(store.pending.last)
+        #expect(echo.blocks.map(\.text) == [""] && echo.browserElements == [pay.withoutHTML])
+    }
+
+    @Test func aHostThatTakesNoElementsIsSentNone() async throws {
+        let (store, host, task) = await started(F.snapshot(actions: ["send"], messages: [hi]))
+        defer { task.cancel() }
+        host.acceptAll()
+        store.attach(element: BrowserElement(page: "p", selector: "a", label: "a", width: 1, height: 1))
+        store.draft = "Wider"
+        await store.send()
+        #expect(host.actions.isEmpty && store.draft == "Wider" && store.attachedElements.count == 1)
+        #expect(store.notice == "This thread's host doesn't take page elements.")
+    }
+
     @Test func aReferencesMessageListsTheLineThenTheFiles() {
         let file = NativeAttachedFile(name: "a.html", path: "/a.html")
         #expect(NativeAttachedFile.message("", files: [], references: 2) == "2 design references attached.")
