@@ -164,6 +164,18 @@ test("a release newer than the catalog borrows its family's latest capabilities,
   }
 });
 
+test("a key a request header can't carry fails with its cause before any request", async (t) => {
+  for (const key of ["sk-smart\u2019quote", "sk-ellipsis\u2026"]) {
+    const f = fixture(t, { ...base, apiKey: key });
+    const wire = capture();
+    const message = await f.provider.streamSimple(f.models[0], context, { fetch: wire.fetch }).result();
+    assert.equal(message.stopReason, "error");
+    assert.match(message.errorMessage, /can't carry/);
+    assert.equal(message.errorMessage.includes(key), false, "the key never appears in the error");
+    assert.equal(wire.calls.length, 0);
+  }
+});
+
 test("literal keys ignore interpolation, commands, stored auth and request overrides", async (t) => {
   for (const key of ["$HOME", "${TOKEN}", "!touch should-never-run", "$!literal", "plain-key"]) {
     const f = fixture(t, { ...base, apiKey: key });
