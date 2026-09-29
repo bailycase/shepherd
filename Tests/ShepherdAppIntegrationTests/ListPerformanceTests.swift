@@ -477,6 +477,47 @@ struct ListPerformanceTests {
         #expect(counts["design.comment", default: 0] < 300)
     }
 
+    // MARK: Browser console
+
+    private static let consoleSize = CGSize(width: 600, height: NWBrowserMetrics.consoleBarHeight + NWBrowserMetrics.consoleListHeight)
+    private static var consoleRowsOnScreen: Int { Int(NWBrowserMetrics.consoleListHeight / NWBrowserMetrics.consoleRowHeight) + 1 }
+
+    /// A console holding its most lines (a chatty dev server), in its drawer.
+    private func openConsole() -> (BrowserConsoleLog, OffscreenWindow) {
+        let log = BrowserConsoleLog()
+        for index in 0..<BrowserConsoleLog.maxLines {
+            log.append(index % 25 == 0 ? .warning : .log, "[vite] hmr update /src/components/Row\(index).tsx")
+        }
+        let window = OffscreenWindow(size: Self.consoleSize, dark: true, BrowserConsoleDrawer(console: log, open: true, toggle: {}))
+        ListPerf.settle(window)
+        return (log, window)
+    }
+
+    @Test func openingTheConsoleBuildsOnlyTheLinesOnScreen() {
+        var window: OffscreenWindow!
+        let counts = ListPerf.counting {
+            window = openConsole().1
+        }
+        defer { window.close() }
+        #expect(counts["browser.consoleRow", default: 0] > 0)
+        #expect(counts["browser.consoleRow", default: 0] <= 2 * Self.consoleRowsOnScreen, "\(counts)")
+    }
+
+    /// A line arriving (the log at its cap, so one leaves the top too) builds the new line and
+    /// the one it pushes into view, never the lines already there.
+    @Test func aConsoleLineArrivingBuildsOnlyItsRow() {
+        let (log, window) = openConsole()
+        defer { window.close() }
+        let counts = ListPerf.counting {
+            for index in 0..<5 {
+                log.append(.log, "[vite] page reload \(index)")
+                ListPerf.settle(window)
+            }
+        }
+        #expect(counts["browser.consoleRow", default: 0] > 0)
+        #expect(counts["browser.consoleRow", default: 0] <= 5 * 2, "\(counts)")
+    }
+
     // MARK: Thread
 
     /// A long thread streaming its reply builds only the rows on screen for each chunk, however
