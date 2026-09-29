@@ -67,9 +67,8 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
 
     /// The fleet: every top-level agent thread, for agent_send targeting.
     case listAgents(id: Int, agentID: AgentID)
-    /// Type a framed message into another agent's pi prompt. Queued by pi
-    /// naturally when the target is mid-turn.
-    case sendToAgent(id: Int, agentID: AgentID, targetAgentID: AgentID, text: String)
+    /// Send framed context only (`report`) or start/queue work (`task`, the legacy default).
+    case sendToAgent(id: Int, agentID: AgentID, targetAgentID: AgentID, text: String, delivery: AgentMessageDelivery = .task)
     /// Spawn a new top-level agent thread with an opening prompt.
     case spawnAgent(id: Int, agentID: AgentID, cwd: String, prompt: String)
 
@@ -161,7 +160,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case type, id, agentID, status, name, piSessionID, sessionID, children
         case paneID, axis, cwd, relativeTo, command, text, submit, reference
         case title, body
-        case prompt, enabled, start, automationID, targetAgentID, request, requestID, result
+        case prompt, enabled, start, automationID, targetAgentID, request, requestID, result, delivery
         case error
         case line, reason, file
         case designID, path, source, baseRevision, changes, commentID
@@ -286,7 +285,8 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                 id: try c.decode(Int.self, forKey: .id),
                 agentID: try c.decode(AgentID.self, forKey: .agentID),
                 targetAgentID: try c.decode(AgentID.self, forKey: .targetAgentID),
-                text: try c.decode(String.self, forKey: .text)
+                text: try c.decode(String.self, forKey: .text),
+                delivery: try c.decodeIfPresent(AgentMessageDelivery.self, forKey: .delivery) ?? .task
             )
         case .spawnAgent:
             self = .spawnAgent(
@@ -524,8 +524,9 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(Kind.listAgents, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(agentID, forKey: .agentID)
-        case .sendToAgent(let id, let agentID, let targetAgentID, let text):
+        case .sendToAgent(let id, let agentID, let targetAgentID, let text, let delivery):
             try c.encode(Kind.sendToAgent, forKey: .type)
+            if delivery != .task { try c.encode(delivery, forKey: .delivery) }
             try c.encode(id, forKey: .id)
             try c.encode(agentID, forKey: .agentID)
             try c.encode(targetAgentID, forKey: .targetAgentID)
@@ -660,6 +661,9 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         }
     }
 }
+
+/// Reports add context without asking pi to run; tasks preserve the original follow-up behavior.
+public enum AgentMessageDelivery: String, Codable, Hashable, Sendable { case task, report }
 
 /// Operations served by a live pi extension through its public context API.
 public struct AgentCoordinationRequest: Codable, Hashable, Sendable {
@@ -960,6 +964,8 @@ public struct PaneInfo: Codable, Hashable, Sendable {
 
 /// App → extension replies, correlated by request `id`.
 public enum ExtensionReply: Codable, Hashable, Sendable {
+    /// Accepted host-queued user input: stop waiting in the parent, without stopping children.
+    case parentInput
     /// Sent on a `helloChildren` connection; answered by `ExtensionMessage.childCommandResult`.
     /// `mode` (steer/followUp) applies to `message`.
     case childCommand(id: Int, runID: String, action: ChildCommandAction, text: String?, mode: NativeThreadDelivery?)
@@ -977,7 +983,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     case agents(id: Int, agents: [AgentPeerInfo])
     /// Unsolicited push on a helloAgent-registered connection: a peer-thread
     /// message for this agent. `id` is always 0 (no request to correlate).
-    case message(id: Int, text: String)
+    case message(id: Int, text: String, delivery: AgentMessageDelivery = .task)
     /// What became of a `suggestInstruction` line.
     case suggestion(id: Int, outcome: SuggestionOutcome)
 
@@ -1017,7 +1023,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case requestID, targetAgentID, request, result
-        case type, id, code, message, panes, pane, paneID, lines, automations, agents, text
+        case type, id, code, message, panes, pane, paneID, lines, automations, agents, text, delivery
         case runID, action, mode
         case outcome
         case snapshot, board
@@ -1029,7 +1035,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     }
 
     private enum Kind: String, Codable {
-        case childCommand, agentRequest, agentResult
+        case parentInput, childCommand, agentRequest, agentResult
         case ok, error, panes, paneOpened, paneContent, reviewResult, automations, agents, message
         case suggestion
         case design, designBoard, designWritten, designComments, designComment
@@ -1041,6 +1047,8 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         switch try c.decode(Kind.self, forKey: .type) {
+        case .parentInput:
+            self = .parentInput
         case .childCommand:
             self = .childCommand(
                 id: try c.decode(Int.self, forKey: .id),
@@ -1103,7 +1111,8 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case .message:
             self = .message(
                 id: try c.decodeIfPresent(Int.self, forKey: .id) ?? 0,
-                text: try c.decode(String.self, forKey: .text)
+                text: try c.decode(String.self, forKey: .text),
+                delivery: try c.decodeIfPresent(AgentMessageDelivery.self, forKey: .delivery) ?? .task
             )
         case .suggestion:
             self = .suggestion(
@@ -1176,6 +1185,8 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         switch self {
+        case .parentInput:
+            try c.encode(Kind.parentInput, forKey: .type)
         case .childCommand(let id, let runID, let action, let text, let mode):
             try c.encode(Kind.childCommand, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -1226,8 +1237,9 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             try c.encode(Kind.agents, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(agents, forKey: .agents)
-        case .message(let id, let text):
+        case .message(let id, let text, let delivery):
             try c.encode(Kind.message, forKey: .type)
+            if delivery != .task { try c.encode(delivery, forKey: .delivery) }
             try c.encode(id, forKey: .id)
             try c.encode(text, forKey: .text)
         case .suggestion(let id, let outcome):

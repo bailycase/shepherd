@@ -885,6 +885,19 @@ struct NativeThreadStoreTests {
         #expect(store.tray != nil, "a session change resets the remembered turn boundary")
     }
 
+    @Test func backgroundChildrenLeaveTheIdleParentAvailableForUserChat() async {
+        let (store, host, task) = await started(F.snapshot(running: false, subagents: [F.run("background")]))
+        defer { task.cancel() }
+        #expect(store.hasLiveSubagents)
+        #expect(!store.running && !store.busy)
+        host.acceptAll()
+        store.draft = "a new question"
+        await store.send()
+        #expect(store.sentCount == 1 && !store.lastSendQueued)
+        #expect(store.hasLiveSubagents, "sending to the parent does not cancel its children")
+        #expect(store.pending.last?.blocks.first?.text == "a new question")
+    }
+
     @Test func stopAllAbortsTheTurnThenCancelsEveryLiveSubagent() async {
         let runs = [F.run("live1"), F.run("done", state: "complete"), F.run("live2", state: "queued")]
         let (store, host, task) = await started(F.snapshot(subagents: runs))

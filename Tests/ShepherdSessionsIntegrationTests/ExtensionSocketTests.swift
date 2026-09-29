@@ -252,19 +252,23 @@ struct ExtensionSocketTests {
         try await eventually("the notify callback") { received.current == ["\(agentID.rawValue)|CI passed|PR #42 is green"] }
     }
 
-    @Test func pushedMessagesReachOnlyARegisteredConnection() async throws {
+    @Test(arguments: [AgentMessageDelivery.task, .report])
+    func pushedMessagesReachOnlyARegisteredConnection(delivery: AgentMessageDelivery) async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let target = AgentID()
-        #expect(!h.server.pushMessage(toAgent: target, text: "nobody home"))
+        #expect(!h.server.pushMessage(toAgent: target, text: "nobody home", delivery: delivery))
 
         let client = try ExtensionClient(path: h.socketPath)
         try client.send(.helloAgent(agentID: target))
-        try await eventually("the registration") { h.server.pushMessage(toAgent: target, text: "[from: tester] ping") }
-        #expect(try await client.reply() == .message(id: 0, text: "[from: tester] ping"))
+        try await eventually("the registration") { h.server.pushMessage(toAgent: target, text: "[from: tester] ping", delivery: delivery) }
+        #expect(try await client.reply() == .message(id: 0, text: "[from: tester] ping", delivery: delivery))
+        #expect(!h.server.pushMessage(toAgent: target, text: String(repeating: "x", count: NDJSON.maxPayloadBytes), delivery: delivery))
+        #expect(h.server.pushMessage(toAgent: target, text: "still connected", delivery: delivery))
+        #expect(try await client.reply() == .message(id: 0, text: "still connected", delivery: delivery))
 
         client.closeConnection()
-        try await eventually("the registration to lapse") { !h.server.pushMessage(toAgent: target, text: "gone?") }
+        try await eventually("the registration to lapse") { !h.server.pushMessage(toAgent: target, text: "gone?", delivery: delivery) }
     }
 
     /// One children control channel per agent: a newer helloChildren replaces the old connection.
@@ -430,7 +434,8 @@ struct ExtensionSocketTests {
         #expect(!reached.current)
     }
 
-    @Test func agentPeerRequestsRoute() async throws {
+    @Test(arguments: [AgentMessageDelivery.task, .report])
+    func agentPeerRequestsRoute(delivery: AgentMessageDelivery) async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let peer = AgentPeerInfo(id: AgentID(rawValue: "a2"), name: "worker", status: "working", cwd: "/tmp", isSelf: false)
@@ -444,13 +449,13 @@ struct ExtensionSocketTests {
 
         try client.send(.listAgents(id: 1, agentID: sender))
         #expect(try await client.reply() == .agents(id: 1, agents: [peer]))
-        try client.send(.sendToAgent(id: 2, agentID: sender, targetAgentID: target, text: "CI is green"))
+        try client.send(.sendToAgent(id: 2, agentID: sender, targetAgentID: target, text: "CI is green", delivery: delivery))
         #expect(try await client.reply() == .ok(id: 2))
         try client.send(.spawnAgent(id: 3, agentID: sender, cwd: "/tmp/repo", prompt: "do the thing"))
         #expect(try await client.reply() == .ok(id: 3))
         #expect(seen.current == [
             .list(agentID: sender),
-            .send(agentID: sender, targetAgentID: target, text: "CI is green"),
+            .send(agentID: sender, targetAgentID: target, text: "CI is green", delivery: delivery),
             .spawn(agentID: sender, cwd: "/tmp/repo", prompt: "do the thing"),
         ])
     }

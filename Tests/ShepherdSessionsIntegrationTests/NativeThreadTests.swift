@@ -644,6 +644,25 @@ struct NativeThreadTests {
 
     // MARK: - Subagents
 
+    @Test func anAcceptedMessageSignalsTheBackgroundWaitWithoutCancellingChildren() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        let idle = try await pi.ready()
+        _ = try await pi.send("slow", from: idle)
+        let running = try await pi.snapshot("the parent turn to start") { $0.running }
+        let children = try ExtensionClient(path: h.socketPath)
+        try children.send(.helloChildren(agentID: pi.agent.id))
+        let child = ChildRun(runID: "background", label: "scout: inspect", state: "running")
+        try children.send(.setAgentChildren(agentID: pi.agent.id, children: [child]))
+        _ = try await pi.snapshot("the child connection to register") { $0.subagents == [child] }
+        #expect(try await pi.send("a new user question", from: running).failureCode == nil)
+        #expect(try await children.reply() == .parentInput)
+        let after = try await pi.snapshot("the new message to wait in the host queue") { $0.queue?.items.count == 1 }
+        #expect(after.subagents == [child], "yielding a wait must not cancel background work")
+        #expect(after.queue?.items.first?.text == "a new user question")
+    }
+
     /// The children extension publishes run cards; card actions go back to it as childCommand
     /// frames and are accepted only when it answers. The parent pi never sees them.
     @Test func subagentCardsAndTheirCommandsGoThroughTheChildrenExtension() async throws {

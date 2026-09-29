@@ -41,6 +41,7 @@ enum PanesExtension {
           automations?: AutomationInfo[];
           agents?: AgentPeerInfo[];
           text?: string;
+          delivery?: "task" | "report";
           requestID?: string;
           targetAgentID?: string;
           request?: { operation: string; text?: string; after?: string; limit?: number };
@@ -176,11 +177,14 @@ enum PanesExtension {
                         }
                         try { s.write(JSON.stringify({ type: "agentResponse", agentID, requestID: reply.requestID, result }) + "\n"); } catch {}
                       } else if (reply.type === "message" && typeof reply.text === "string") {
-                        // Unsolicited peer-thread message: inject as a real user
-                        // message. followUp queues politely mid-turn; triggerTurn
-                        // wakes an idle agent.
                         try {
-                          pi.sendUserMessage(reply.text, { deliverAs: "followUp" });
+                          if (reply.delivery === "report") {
+                            // Pi defers this safely past in-flight tool results, without another turn.
+                            pi.sendMessage({ customType: "shepherd-peer-report", content: reply.text, display: false },
+                              { triggerTurn: false });
+                          } else if (reply.delivery === undefined || reply.delivery === "task") {
+                            pi.sendUserMessage(reply.text, { deliverAs: "followUp" });
+                          }
                         } catch {
                           // Never let delivery break the session.
                         }
@@ -429,19 +433,21 @@ enum PanesExtension {
             name: "agent_send",
             label: "Message Agent Thread",
             description:
-              "Send a message to another agent thread's prompt, exactly as if the user typed it " +
-              "there (queued if that agent is mid-turn). The message arrives framed with your " +
-              "name. Send information or requests — do not converse: never reply to a mere " +
-              "acknowledgment, and treat incoming [from: …] messages as FYI unless they ask for " +
-              "action.",
+              "Send a framed message to another agent thread. Use delivery report for results or FYI: " +
+              "hidden context only, never wakes an idle agent or queues another turn. Use delivery task " +
+              "(default) to request work: starts an idle agent or queues a follow-up while busy. " +
+              "Never reply to a mere acknowledgment. Dispatch is not confirmation of acceptance or consumption.",
             promptSnippet: "Message another Shepherd agent thread",
             parameters: Type.Object({
               agentID: Type.String({ description: "Target agent id from agent_list" }),
               text: Type.String({ description: "The message to deliver" }),
+              delivery: Type.Optional(Type.Union([Type.Literal("task"), Type.Literal("report")],
+                { description: "task (default): start/queue work; report: context only, no new turn" })),
             }),
             async execute(_toolCallId, params) {
-              await request({ type: "sendToAgent", targetAgentID: params.agentID, text: params.text });
-              return text(`follow-up dispatch requested for agent ${params.agentID}; acceptance and consumption are not confirmed`);
+              const delivery = params.delivery ?? "task";
+              await request({ type: "sendToAgent", targetAgentID: params.agentID, text: params.text, delivery });
+              return text(`${delivery} dispatch requested for agent ${params.agentID}; acceptance and consumption are not confirmed`);
             },
           });
 
@@ -537,7 +543,7 @@ enum PanesExtension {
             description:
               "Start a new top-level agent thread in Shepherd with an opening prompt, visible in " +
               "the sidebar like any user-created agent. Returns the new agent's id — use " +
-              "agent_send to follow up, and ask it to agent_send you back when it should report. " +
+              "agent_send to follow up, and ask it to agent_send with delivery report when it should report. " +
               "For self-contained work that should not outlive your thread, prefer your own " +
               "subagents instead.",
             promptSnippet: "Spawn a new Shepherd agent thread",
@@ -563,7 +569,7 @@ enum PanesExtension {
               "notify tool then stop when a condition is met. The watch agent does the watching " +
               "itself — its prompt must never instruct it to create further automations. Enabled " +
               "automations restart when Shepherd relaunches. Set replyToCreator to ask the watch " +
-              "agent to send its final result back to your thread using agent_send, as well as notify.",
+              "agent to send its final result back to your thread using agent_send with delivery report, as well as notify.",
             promptSnippet: "Create a Shepherd automation (a saved watch task)",
             parameters: Type.Object({
               name: Type.String({ description: "Short sidebar title, e.g. 'pr-watch #4821'" }),
@@ -582,7 +588,7 @@ enum PanesExtension {
                 type: "createAutomation",
                 name: params.name,
                 prompt: params.replyToCreator
-                  ? `${params.prompt}\n\nCompletion report: Before stopping, on success, failure, or a blocked watch, call agent_send with agentID ${JSON.stringify(agentID)} and a concise result including relevant links. This is the creator thread, not an agent to find by name. Also call notify. If the creator no longer exists or delivery fails, include that in the notification and stop; do not retry indefinitely or send to another thread. This requests dispatch, not confirmation that the creator read it.`
+                  ? `${params.prompt}\n\nCompletion report: Before stopping, on success, failure, or a blocked watch, call agent_send with agentID ${JSON.stringify(agentID)}, delivery "report", and a concise result including relevant links. This is the creator thread, not an agent to find by name. Also call notify. If the creator no longer exists or delivery fails, include that in the notification and stop; do not retry indefinitely or send to another thread. This requests dispatch, not confirmation that the creator read it.`
                   : params.prompt,
                 cwd: params.cwd,
                 enabled: params.enabled !== false,
