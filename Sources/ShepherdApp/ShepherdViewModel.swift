@@ -412,6 +412,8 @@ final class ShepherdViewModel {
     let menuState = MenuState()
     /// Which native subagent an agent's workspace is inspecting (the side panel).
     let subagentInspector = RightPaneState()
+    /// Each local thread's Browser page (`BrowserHost.swift`).
+    let browsers: BrowserSessions
     /// Each layout's terminal panel under its thread (`TerminalPanels`).
     let terminalPanels = TerminalPanels()
     /// System notifications when an unwatched agent finishes, fails, or asks, or a subagent asks.
@@ -482,8 +484,10 @@ final class ShepherdViewModel {
         mcp: MCPStore? = nil,
         welcomesYourPi: Bool = false,
         yourPi: YourPiModel? = nil,
-        piAuth: PiAuthStore? = nil
+        piAuth: PiAuthStore? = nil,
+        browserData: BrowserDataStores = .ephemeral
     ) {
+        self.browsers = BrowserSessions(dataStores: browserData)
         self.state = ShepherdState()
         self.server = server
         self.hostPRDescriptionGenerator = WorktreePRDescriptionGenerator(pi: server.pi)
@@ -972,6 +976,7 @@ final class ShepherdViewModel {
         let runs = server.openAutomationRuns
         if runs != openAutomationRuns { openAutomationRuns = runs }
         threadStores.prune(live: Set(state.agents.map(\.id)))
+        browsers.prune(live: Set(state.agents.map(\.id)))
         mcp.retainReports(of: Set(state.agents.map(\.id)))
         notifyLocalQuestions()
         checkouts?.sync(agents: state.agents.map(\.id))

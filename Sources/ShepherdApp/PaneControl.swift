@@ -141,6 +141,12 @@ extension ShepherdViewModel {
         }
     }
 
+    /// Runs `command` in a new terminal pane of `agentID`'s layout (the Browser's Start), by the
+    /// same rules as an agent's `pane_open`.
+    func openTerminalPane(for agentID: AgentID, cwd: String, command: String, respond: @escaping (PaneOutcome) -> Void) {
+        handle(.open(agentID: agentID, axis: .vertical, cwd: cwd, relativeTo: nil, command: command), activate: false, respond: respond)
+    }
+
     // MARK: Helpers
 
     private func paneInfos(in tab: Tab, agent: Agent) -> [PaneInfo] {
