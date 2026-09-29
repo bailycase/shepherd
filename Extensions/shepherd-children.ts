@@ -184,7 +184,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     }
     pi.registerTool({
       name: "shepherd_parent_message", label: "message parent",
-      description: "Send a bounded progress message or question to your parent. For a question, set needsReply and finish this turn; the parent can continue your session with an answer.",
+      description: "Update your child record with progress without interrupting the parent. For a blocking question, set needsReply and finish this turn; the parent is notified and can resume with an answer. Your final answer is delivered automatically; do not also send it here.",
       parameters: Type.Object({ message: textSchema, needsReply: Type.Optional(Type.Boolean()), options: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 200 }), { maxItems: 6 })),
         short: Type.Optional(Type.String({ description: "For a question: what you need in 1-3 words, shown beside your parent's thread in Shepherd's sidebar while you wait (e.g. \"retention?\", \"approve plan\")." })) }),
       async execute(_id, params) { return result({ shepherdParentMessage: params.message, needsReply: params.needsReply === true, options: params.needsReply === true ? params.options : undefined, short: params.needsReply === true ? shortReason(params.short) : undefined }); },
@@ -296,11 +296,43 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     }
     publish();
   }
+  let parentWorking = false, parentInterrupted = false;
+  const pendingNotices = new Map();
+  let noticeTimer;
+  function flushIdleNotices() {
+    noticeTimer = undefined;
+    if (!active || parentWorking || parentInterrupted || sessionContext?.isIdle?.() === false || !pendingNotices.size) return;
+    const content = [...pendingNotices.values()].join("\n\n");
+    pendingNotices.clear();
+    try { pi.sendMessage(noticeMessage(content), { triggerTurn: true, deliverAs: "followUp" }); }
+    catch { /* Results remain retrievable by id. */ }
+  }
+  const noticeMessage = (content) => ({ customType: "shepherd-child", content,
+    display: false, details: { backgroundReport: true } });
   function notify(run, message) {
     if (!current(run) || run.workflowId) return;
-    try { pi.sendMessage({ customType: "shepherd-child", content: `Child ${run.id} (${run.role}): ${clip(message)}`, display: true },
-      { triggerTurn: true, deliverAs: "followUp" }); } catch { /* Result remains retrievable by id. */ }
+    const content = `Child ${run.id} (${run.role}): ${clip(message)}\nUse this result to continue the task. Do not acknowledge receipt or repeat it unless it changes the user's outcome.`;
+    enqueueNotice(run.id, content);
   }
+  function enqueueNotice(id, content) {
+    pendingNotices.set(id, content);
+    if (!noticeTimer) { noticeTimer = setTimeout(flushIdleNotices, 0); noticeTimer.unref(); }
+  }
+  pi.on("agent_start", () => { parentWorking = true; parentInterrupted = false; });
+  pi.on("agent_settled", () => {
+    parentWorking = false;
+    // A notice can arrive after the final actionable boundary but before settled.
+    if (pendingNotices.size && !noticeTimer) { noticeTimer = setTimeout(flushIdleNotices, 0); noticeTimer.unref(); }
+  });
+  // The actionable boundary batches unread results into one continuation, not one queued
+  // follow-up turn per child. Explicit result/wait reads remove their pending notices.
+  pi.on("agent_before_settle", (event) => {
+    if (event.outcome !== "completed") { parentInterrupted = true; return; }
+    if (!pendingNotices.size) return;
+    const content = [...pendingNotices.values()].join("\n\n");
+    pendingNotices.clear();
+    return { entries: [...event.entries, { type: "custom_message", ...noticeMessage(content) }], continue: true };
+  });
   // Run id -> the shepherd_child_wait calls watching it. A completion inside a wait is that
   // wait's result: a notice as well would wake the parent for a second turn on it.
   const waiters = new Map();
@@ -366,6 +398,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     run.proc = undefined;
     save(run); run.resolveClosed();
     const notice = `${run.state}\n${run.error || run.output || "No text result"}\nSession: ${run.sessionFile}`;
+    if (run.state === "complete" && run.needsReply && run.questionNotified) return;
     if (waiters.get(run.id)) run.heldNotice = notice; else notify(run, notice);
   }
   function receive(run, event) {
@@ -402,7 +435,10 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
           run.output = clip(details.shepherdParentMessage);
           run.questionText = run.needsReply ? clip(run.output, 600) : undefined;
           run.questionShort = run.needsReply ? shortReason(details.short) : undefined;
-          notify(run, `${run.needsReply ? "Needs reply: " : ""}${run.output}`);
+          if (run.needsReply) {
+            run.questionNotified = true;
+            notify(run, `Needs reply: ${run.output}`);
+          }
         }
       }
       save(run);
@@ -440,6 +476,8 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     run.pending = new Map(); run.exited = false; run.cancelled = false; run.settled = false;
     run.paused = false;
     run.stopping = undefined; run.output = ""; run.error = undefined; run.stderr = ""; run.lastStop = undefined; run.availableTools = undefined;
+    pendingNotices.delete(run.id);
+    run.questionNotified = false;
     run.needsReply = false; run.questionOptions = undefined; run.questionText = undefined; run.questionShort = undefined; run.exitCode = undefined; run.endedAt = undefined; run.startedAt = Date.now(); run.state = "running";
     run.toolArgs = new Map(); run.files ??= new Map();
     run.closed = new Promise((resolve) => { run.resolveClosed = resolve; });
@@ -593,6 +631,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   }
   pi.on("session_start", (_event, ctx) => {
     owner = ctx.sessionManager.getSessionId(); active = true; sessionContext = ctx;
+    parentWorking = false; parentInterrupted = false; pendingNotices.clear(); clearTimeout(noticeTimer); noticeTimer = undefined;
     connectControl();
     missions = missionStore(path.join(path.dirname(root), "shepherd-native"), ctx.cwd);
     fs.mkdirSync(root, { recursive: true, mode: 0o700 });
@@ -639,7 +678,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     registerCommands();
   });
   pi.on("session_shutdown", async () => {
-    active = false; syncTick(); clearTimeout(controlRetry);
+    active = false; pendingNotices.clear(); parentWorking = false; clearTimeout(noticeTimer); noticeTimer = undefined; syncTick(); clearTimeout(controlRetry);
     const socket = control; control = undefined; socket?.destroy();
     for (const workflow of workflows.values()) workflow.controller.abort();
     await Promise.all([...workflows.values()].map((w) => w.done));
@@ -708,7 +747,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
           const sm = SessionManager.inMemory(cwd);
           fs.writeFileSync(run.sessionFile, JSON.stringify(sm.getHeader()) + "\n", { mode: 0o600 });
         }
-        fs.writeFileSync(path.join(dir, "prompt.md"), `You are a Shepherd child, not the parent. ${profile.prompt}\nWork only on the delegated task. No nested helpers, workflows, schedules, or worktree management. Use shepherd_parent_message for progress or questions. For a question set needsReply and finish your turn. Your parent can resume with an answer.\n`, { mode: 0o600 });
+        fs.writeFileSync(path.join(dir, "prompt.md"), `You are a Shepherd child, not the parent. ${profile.prompt}\nWork only on the delegated task. No nested helpers, workflows, schedules, or worktree management. Routine progress stays in your child record; do not send a separate completion message, your final answer is delivered automatically. Use shepherd_parent_message for a question that blocks work, set needsReply and finish your turn. Your parent can resume with an answer.\n`, { mode: 0o600 });
         const { dir: _dir, output: _output, files: _files, ...descriptor } = run;
         pi.appendEntry("shepherd-child", descriptor);
         return await launch(run, params.task, signal);
@@ -717,14 +756,17 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   pi.registerTool({ name: "shepherd_child_agents", label: "child agents", description: "List effective agent profiles, sources and unsupported-field diagnostics. Reads user files and trusted project files without changing them.",
     parameters: Type.Object({}), async execute(_id, _p, _s, _u, ctx) { return result({ defaults, ...discoverChildAgents(ctx, defaults.scope) }); } });
   pi.registerTool({ name: "shepherd_child_start", label: "start child", parameters: startSchema,
-    description: "Start an owned background Pi helper. Use shepherd_child_agents for discovered profiles. Explicit call overrides profile, then Shepherd defaults, then parent model/thinking. Fresh or fork context; tools intersect the parent allowlist. Cwd is not a sandbox. Completion wakes the parent unless shepherd_child_wait returns it. Default creates a mission; mission:false opts out. No nested delegation or automatic worktrees.",
+    description: "Start an owned background Pi helper. Use shepherd_child_agents for discovered profiles. Explicit call overrides profile, then Shepherd defaults, then parent model/thinking. Fresh or fork context; tools intersect the parent allowlist. Cwd is not a sandbox. Progress stays in the child record. Unread completion wakes an idle parent or joins one batched continuation while working; result/wait reads consume pending notices. Default creates a mission; mission:false opts out. No nested delegation or automatic worktrees.",
     async execute(id, p, signal, _update, ctx) { return result(await start(p, signal, ctx, undefined, id)); } });
   pi.registerTool({ name: "shepherd_child_message", label: "message child", description: "Message a running child. Acceptance is not completion. Steer runs after current tools; followUp waits for the turn to end.",
     parameters: Type.Object({ id: idSchema, message: textSchema, mode: Type.Optional(StringEnum(["steer", "followUp"])) }),
     async execute(_id, p) { return result(await send(get(p.id), p.message, p.mode)); } });
   pi.registerTool({ name: "shepherd_child_result", label: "child results", description: "Read one child result or list this parent's retained children. Output is capped at 16 KiB per result and may be truncated; full conversation is in sessionFile. No live work survives parent shutdown.",
     parameters: Type.Object({ id: Type.Optional(idSchema) }),
-    async execute(_id, p) { return result(p.id ? summary(get(p.id)) : [...runs.values()].map((r) => ({ id: r.id, role: r.role, state: r.state, task: clip(r.task, 160) }))); } });
+    async execute(_id, p) {
+      if (p.id) pendingNotices.delete(p.id);
+      return result(p.id ? summary(get(p.id)) : [...runs.values()].map((r) => ({ id: r.id, role: r.role, state: r.state, task: clip(r.task, 160) })));
+    } });
   pi.registerTool({ name: "shepherd_child_wait", label: "wait for children", description: "Wait for any or all selected children to exit, up to 60 seconds. Timeout or cancelling this wait does not stop the children. Returns bounded results for up to 16 ids.",
     parameters: Type.Object({ ids: Type.Array(idSchema, { minItems: 1, maxItems: 16 }), all: Type.Optional(Type.Boolean()), timeoutSeconds: Type.Optional(Type.Number({ minimum: 0, maximum: 60 })) }),
     async execute(_id, p, signal) {
@@ -746,13 +788,13 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
           const left = waiters.get(r.id) - 1;
           if (left > 0) waiters.set(r.id, left); else waiters.delete(r.id);
           // This wait's result carries a completion it saw; a cancelled wait hands it back.
-          if (answered) r.heldNotice = undefined;
+          if (answered) { r.heldNotice = undefined; pendingNotices.delete(r.id); }
           else if (left <= 0 && r.heldNotice) { const notice = r.heldNotice; r.heldNotice = undefined; notify(r, notice); }
         }
       }
     } });
   pi.registerTool({ name: "shepherd_child_cancel", label: "cancel child", description: "Clear queued work, abort, and terminate an owned child. Returns only after its process exits. Session history remains available for explicit continuation.",
-    parameters: Type.Object({ id: idSchema }), async execute(_id, p) { const run = get(p.id); await stop(run); return result(summary(run)); } });
+    parameters: Type.Object({ id: idSchema }), async execute(_id, p) { const run = get(p.id); await stop(run); pendingNotices.delete(run.id); return result(summary(run)); } });
   pi.registerTool({ name: "shepherd_child_resume", label: "continue child", description: "Continue a completed, failed, or stopped child session with a new task or answer. Keeps its role, model, cwd, and history. Rejects concurrent writers and missing transcripts. Does not replay interrupted work automatically.",
     parameters: Type.Object({ id: idSchema, message: textSchema }), async execute(_id, p, signal, _update, ctx) {
       return result(await resume(get(p.id), p.message, signal, ctx));
@@ -836,6 +878,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
           const deadline = Date.now() + Math.min(p.timeoutSeconds ?? 30, 60) * 1000;
           while (w.state === "running" && Date.now() < deadline) { signal?.throwIfAborted(); await new Promise((r) => setTimeout(r, 50)); }
         }
+        pendingNotices.delete(w.id);
         return result(workflowSummary(w));
       }
       if (!p.workflowScript) throw Error("workflowScript is required");
@@ -919,7 +962,8 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
             m.workflow = { id: w.id, state: w.state, error: w.error };
           }); } catch (error) { w.missionWarning = clip(error.message); }
           if (active && owner === w.owner && onSlashComplete) { if (p.async !== false) onSlashComplete(workflowSummary(w)); }
-          else if (active && owner === w.owner) try { pi.sendMessage({ customType: "shepherd-workflow", content: `Workflow ${w.id}: ${w.state}\n${w.error || clip(JSON.stringify(w.output))}`, display: true }, { triggerTurn: true, deliverAs: "followUp" }); } catch {}
+          else if (active && owner === w.owner && p.async !== false) enqueueNotice(w.id,
+            `Workflow ${w.id}: ${w.state}\n${w.error || clip(JSON.stringify(w.output))}\nUse this result to continue the task; do not acknowledge receipt.`);
         }
       })();
       if (p.async === false) {

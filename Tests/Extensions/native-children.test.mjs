@@ -96,7 +96,9 @@ function fixtureServer() {
       res.write(`data: ${JSON.stringify({ id: "fixture", object: "chat.completion.chunk", created: 1, model: "fixture", choices: [{ index: 0, delta, finish_reason: null }] })}\n\n`);
       res.end(`data: ${JSON.stringify({ id: "fixture", object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: finish }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })}\n\ndata: [DONE]\n\n`);
     };
-    if (last.role === "user" && text.includes("SHELL:")) {
+    if (last.role === "user" && text === "BOUNDARY_PARENT") {
+      say({ tool_calls: [{ index: 0, id: "boundary-child", type: "function", function: { name: "shepherd_child_start", arguments: JSON.stringify({ task: "BOUNDARY_RESULT", role: "scout", mission: false }) } }] }, "tool_calls");
+    } else if (last.role === "user" && text.includes("SHELL:")) {
       const command = text.slice(text.indexOf("SHELL:") + 6);
       say({ tool_calls: [{ index: 0, id: "shell-call", type: "function", function: { name: "bash", arguments: JSON.stringify({ command }) } }] }, "tool_calls");
     } else if (last.role === "user" && text.includes("WRITE_THEN_EDIT:")) {
@@ -105,10 +107,12 @@ function fixtureServer() {
         { index: 0, id: "write-call", type: "function", function: { name: "write", arguments: JSON.stringify({ path: file, content: "one\ntwo\n" }) } },
         { index: 1, id: "edit-call", type: "function", function: { name: "edit", arguments: JSON.stringify({ path: file, oldText: "two", newText: "two\nthree\nfour" }) } },
       ] }, "tool_calls");
+    } else if (last.role === "user" && text.includes("PROGRESS_PARENT")) {
+      say({ tool_calls: [{ index: 0, id: "progress-call", type: "function", function: { name: "shepherd_parent_message", arguments: JSON.stringify({ message: "Routine progress" }) } }] }, "tool_calls");
     } else if (last.role === "user" && text.includes("ASK_PARENT")) {
       say({ tool_calls: [{ index: 0, id: "parent-call", type: "function", function: { name: "shepherd_parent_message", arguments: JSON.stringify({ message: "Need a decision", needsReply: true, options: ["Replace everywhere", "Rename new ones"], short: " token\n names? " }) } }] }, "tool_calls");
     } else {
-      if (text.includes("SLOW")) await sleep(700);
+      if (text.includes("SLOW") || last.role === "tool" && text.includes("BOUNDARY_RESULT")) await sleep(700);
       say({ content: last.role === "tool" ? "tool finished" : `reply:${text}` }, text.includes("TOKEN_LIMIT") ? "length" : "stop");
     }
   });
@@ -354,9 +358,40 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     const late = await h.call("start", { task: "SLOW cancelled late", role: "scout" });
     const lateState = () => h.projections.at(-1).children.find((c) => c.runID === late.id)?.state;
     await assert.rejects(h.call("wait", { ids: [late.id], timeoutSeconds: 30 }, { throwIfAborted() { if (lateState() === "complete") throw Error("cancelled"); } }), /cancelled/);
-    assert.equal(h.messages.length, 3);
+    await until(() => h.messages.length === 3);
     assert(h.messages[2].message.content.startsWith(`Child ${late.id} (scout): complete`));
     h.messages.length = 0;
+    // Routine progress is record-only; while working, completed results form one boundary
+    // continuation, and reading a result explicitly consumes its pending notice.
+    h.events.get("agent_start")();
+    const progress = await h.call("start", { task: "PROGRESS_PARENT", role: "scout" });
+    const other = await h.call("start", { task: "SLOW second result", role: "scout" });
+    const stateOf = (id) => h.projections.at(-1).children.find((c) => c.runID === id)?.state;
+    await until(() => stateOf(progress.id) === "complete" && stateOf(other.id) === "complete");
+    assert.equal(h.messages.length, 0, "progress and completions must not queue parent follow-up turns while working");
+    const consumed = await h.call("result", { id: other.id });
+    assert.equal(consumed.state, "complete");
+    const boundary = h.events.get("agent_before_settle")({ entries: [], outcome: "completed" });
+    assert.equal(boundary.continue, true);
+    assert.equal(boundary.entries.length, 1);
+    assert.equal(boundary.entries[0].display, false);
+    assert(boundary.entries[0].content.includes(progress.id));
+    assert(!boundary.entries[0].content.includes(other.id));
+    assert(!boundary.entries[0].content.includes("Routine progress"), "final result replaces routine progress");
+    assert.equal(h.events.get("agent_before_settle")({ entries: [], outcome: "completed" }), undefined);
+    h.events.get("agent_settled")();
+    // A user Stop is not permission for a background completion to start another turn.
+    h.events.get("agent_start")();
+    const stoppedParent = await h.call("start", { task: "SLOW result after parent stop", role: "scout" });
+    assert.equal(h.events.get("agent_before_settle")({ entries: [], outcome: "aborted" }), undefined);
+    h.events.get("agent_settled")();
+    await until(() => stateOf(stoppedParent.id) === "complete");
+    await sleep(20); // Let the idle notification timer run; it must respect the abort.
+    assert.equal(h.messages.length, 0);
+    h.events.get("agent_start")();
+    await h.call("result", { id: stoppedParent.id });
+    assert.equal(h.events.get("agent_before_settle")({ entries: [], outcome: "completed" }), undefined);
+    h.events.get("agent_settled")();
     const firstFile = pair[0].sessionFile;
     await h.call("resume", { id: pair[0].id, message: "continued" });
     await assert.rejects(h.call("resume", { id: pair[0].id, message: "double writer" }), /already active/);
@@ -371,7 +406,11 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     assert.match(failedCard.exitReason, /^Incomplete answer/); assert.equal(failedCard.result, undefined); assert.equal(failedCard.summary, undefined);
     const ask = await h.call("start", { task: "ASK_PARENT", role: "scout" });
     const asked = (await h.call("wait", { ids: [ask.id], timeoutSeconds: 30 }))[0];
-    assert(asked.needsReply); assert(h.messages.some((m) => m.message.content.includes("Needs reply")));
+    assert(asked.needsReply);
+    await until(() => h.messages.some((m) => m.message.content.includes(ask.id)));
+    const questionNotices = h.messages.filter((m) => m.message.content.includes(ask.id));
+    assert.equal(questionNotices.length, 1, "a blocking question must not also send a completion wake");
+    assert(questionNotices[0].message.content.includes("Needs reply"));
     const askCard = h.projections.at(-1).children.find((c) => c.runID === ask.id);
     assert.deepEqual(askCard.question, { text: "Need a decision", options: ["Replace everywhere", "Rename new ones"], short: "token names?" });
     assert.equal(askCard.lastActivity.tool, "shepherd_parent_message"); assert.equal(askCard.toolCalls, 1);
@@ -547,7 +586,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     } finally { try { process.kill(-ownerProc.pid, "SIGKILL"); } catch {} }
     // Exercise the real parent's runtime replacement, not just the harness hook.
     const driver = path.join(dir, "parent-driver.ts");
-    fs.writeFileSync(driver, `import children from ${JSON.stringify(source)};\nexport default function(pi) { const tools = new Map(); children(new Proxy(pi, { get(target, key) { if (key === 'registerTool') return (tool) => { tools.set(tool.name, tool); target.registerTool(tool); }; return target[key]; } }));\npi.registerCommand('run', {description:'foreign run collision',handler:async()=>{}});\npi.registerCommand('fixture-start', { description:'fixture', handler: async (args, ctx) => { const data = await tools.get('shepherd_child_start').execute('fixture', { task: args, role:'worker' }, undefined, undefined, ctx); ctx.ui.notify(JSON.stringify(data.details)); } });\npi.registerCommand('fixture-reload', { description:'fixture reload', handler: async (_args, ctx) => { await ctx.reload(); } });\n}`);
+    fs.writeFileSync(driver, `import children from ${JSON.stringify(source)};\nexport default function(pi) { const tools = new Map(); children(new Proxy(pi, { get(target, key) { if (key === 'registerTool') return (tool) => { tools.set(tool.name, tool); target.registerTool(tool); }; return target[key]; } }));\npi.on('agent_before_settle', (event,ctx) => { if(event.entries.some(e=>e.customType==='shepherd-child')) ctx.ui.notify('fixture-child-boundary'); });\npi.registerCommand('run', {description:'foreign run collision',handler:async()=>{}});\npi.registerCommand('fixture-start', { description:'fixture', handler: async (args, ctx) => { const data = await tools.get('shepherd_child_start').execute('fixture', { task: args, role:'worker' }, undefined, undefined, ctx); ctx.ui.notify(JSON.stringify(data.details)); } });\npi.registerCommand('fixture-reload', { description:'fixture reload', handler: async (_args, ctx) => { await ctx.reload(); } });\n}`);
     const actual = spawn(process.execPath, [path.join(pkg, "dist/cli.js"), "--mode", "rpc", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve", "-e", driver, "--session", path.join(dir, "actual-parent.jsonl"), "--model", "fixture/fixture"],
       { cwd: dir, env: process.env, stdio: ["pipe", "pipe", "pipe"] });
     const actualEvents = [], actualErrors = [];
@@ -577,6 +616,20 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
       await until(() => !live(reloadPID));
       const messagesAfter = await rpc("get_messages");
       assert(!messagesAfter.messages.some((m) => m.customType === "shepherd-child"));
+      const prior = requests.length;
+      await rpc("prompt", { message: "BOUNDARY_PARENT" });
+      await until(async () => {
+        const state = await rpc("get_state");
+        const messages = (await rpc("get_messages")).messages;
+        return !state.isStreaming && messages.some((m) => m.customType === "shepherd-child" && JSON.stringify(m.content).includes("BOUNDARY_RESULT"));
+      }, 30000);
+      const delivered = (await rpc("get_messages")).messages.filter((m) => m.customType === "shepherd-child");
+      assert.equal(delivered.length, 1, "real Pi boundary delivers unread completion once");
+      assert.equal(delivered[0].display, false);
+      assert(actualEvents.some((e) => e.type === "extension_ui_request" && e.message === "fixture-child-boundary"),
+        "completion must use the real actionable boundary while the parent works");
+      assert(requests.slice(prior).some((r) => JSON.stringify(r.messages.at(-1)).includes("Use this result to continue")),
+        "the provider receives the result continuation, not just a saved record");
     } finally { actual.stdin.end(); await until(() => actual.exitCode !== null || actual.signalCode !== null).catch(() => actual.kill("SIGKILL")); }
     fs.mkdirSync(path.join(dir, ".pi", "agents"), { recursive: true });
     const profilePath = path.join(dir, ".pi", "agents", "minimal.md");
