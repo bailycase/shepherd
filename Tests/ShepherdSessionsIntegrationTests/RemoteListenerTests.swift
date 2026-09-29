@@ -22,6 +22,18 @@ struct RemoteListenerTests {
         #expect(try await client.next() == .helloOk(id: 7, protocolVersion: RemoteProtocol.version, capabilities: offered))
     }
 
+    @Test(arguments: ["127.0.0.1", "localhost"])
+    func aSystemHostNameConnectsAndFetchesTheWorkspace(host: String) async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let space = Fixture.space()
+        try await r.host.seed(ShepherdState(spaces: [space]))
+        let client = RemoteHostClient()
+        defer { client.disconnect() }
+        let state = try await client.connect(host: host, port: r.port, token: r.token, clientName: "test")
+        #expect(state.spaces == [space])
+    }
+
     @Test func stateFetchReturnsTheHostsWorkspace() async throws {
         let r = try RemoteHost()
         defer { r.stop() }

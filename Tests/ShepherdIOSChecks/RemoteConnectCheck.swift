@@ -56,7 +56,7 @@ struct RemoteConnectCheck {
         do { _ = try await timed.value; fatalError("open exceeded its deadline") }
         catch RemoteHostClientError.timeout {} // The opener stays blocked until after the timeout.
         release.signal()
-        // Exercise the production nonblocking fd handoff and native async resolver locally.
+        // Exercise the production nonblocking fd handoff and system resolver locally.
         let listener = socket(AF_INET, SOCK_STREAM, 0)
         precondition(listener >= 0)
         defer { close(listener) }
@@ -82,6 +82,6 @@ struct RemoteConnectCheck {
             close(accepted)
             close(fd)
         }
-        print("PASS: pending-open cancellation/deadline, late fd disposal, numeric and async DNS loopback establishment")
+        print("PASS: pending-open cancellation/deadline, late fd disposal, numeric and system DNS loopback establishment")
     }
 }
