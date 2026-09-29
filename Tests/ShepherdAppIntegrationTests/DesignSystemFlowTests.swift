@@ -56,10 +56,11 @@ struct DesignSystemFlowTests {
                                             "specimen": .string("components/Button.html")])]),
         ]),
         files: ["README.md": .string("# acme-web\n\nRead from dashboard-web.\n"),
-                "components/button.css": .string(".specimen-button { display: block; width: 160px; height: 48px; border: 0; background: #ff0000; color: #ffffff; }"),
+                "components/button.css": .string(".specimen-theme .specimen-button { display: block; width: 160px; height: 48px; border: 0; background: #ff0000; color: #ffffff; }"),
                 "components/Button.html": .string(
-                    "<helmet><link rel=\"stylesheet\" href=\"./button.css\"></helmet>"
-                        + "<button class=\"specimen-button\">Sample</button>\n")],
+                    "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\">"
+                        + "<link rel=\"stylesheet\" href=\"./button.css\">"
+                        + "<body class=\"specimen-theme\"><button class=\"specimen-button\">Sample</button></body></html>")],
         sources: ["web/static/tokens.css"])
 
     /// Every file of the working tree (not `.git`, whose index git may refresh on a read), by path.
