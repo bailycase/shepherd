@@ -22,8 +22,11 @@ path with `-e` and pins `SHEPHERD_CLIPROXYAPI_CONFIG`, including for `--no-exten
 and drafts. The extension is inert without configuration. It registers the distinct provider
 `cliproxyapi`, so an imported `cpa` provider and its credentials remain untouched. Native provider
 authentication uses the saved key literally, never as an environment reference or shell command.
-The extension reads pi's bundled model metadata without fetching another catalog. Unknown models
-use conservative text-only defaults. Known proxy compatibility rules cover DeepSeek's role and
+The extension reads pi's bundled model metadata without fetching another catalog. A model newer
+than that catalog (`gpt-6.1-sol` beside a known `gpt-6-sol`) takes the capabilities and thinking
+levels of its owner's nearest earlier version of the same family, where a family is the name with
+its version numbers set aside and a release date is never a version. It keeps its own name. Other
+unknown models use conservative text-only defaults. Known proxy compatibility rules cover DeepSeek's role and
 reasoning fields and Responses tool schemas. Only session-mode instances watch the local config;
 updates wait until idle and never redirect an in-flight turn. The model catalog's fingerprint
 includes the connection file. Configuration and credentials never travel to remote clients.
