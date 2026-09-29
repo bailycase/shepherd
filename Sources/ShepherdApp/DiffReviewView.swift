@@ -572,13 +572,13 @@ private struct ReviewDiffList: View, Equatable {
         let listed = Dictionary((session.list?.files ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let contentWidth = model.scrollContentWidth(textScale: ThemeStore.shared.textScale)
         ScrollViewReader { proxy in
-            ScrollView([.horizontal, .vertical]) {
+            ScrollView(model.layout == .split ? .vertical : [.horizontal, .vertical]) {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                     ForEach(session.files) { file in
                         let folded = model.isFolded(file.id)
                         DiffFileSection(
                             model: model, file: file, status: listed[file.id]?.nwStatus ?? file.reviewStatus,
-                            rows: folded ? [] : model.rows(for: file),
+                            rows: folded ? [] : model.rows(for: file), layout: model.layout,
                             comments: session.commentsByFile[file.id] ?? [:],
                             editingLine: model.editing?.fileID == file.id ? model.editing?.lineID : nil,
                             isFolded: folded, isViewed: session.viewed.contains(file.id),
@@ -591,6 +591,7 @@ private struct ReviewDiffList: View, Equatable {
                 // sections' offsets under pinned headers mid-scroll opens and closes blank gaps.
                 .nwAnimation(.disclosure, value: model.disclosures)
             }
+            .background { SplitDiffWheelReader(model: model) }
             .modifier(ReviewScrollFollower(model: model, session: session, proxy: proxy))
         }
         .task(id: session.files) { await model.highlightFiles(style: .theme) }
@@ -647,6 +648,8 @@ private struct DiffFileSection: View, Equatable {
     let file: DiffFile
     let status: NWFileStatus
     let rows: [NWChangesRow]
+    let layout: ChangesLayout
+    private var horizontalScroll: NWSplitDiffScroll { model.splitScroll(for: file.id) }
     let comments: [Int: ReviewComment]
     let editingLine: Int?
     let isFolded: Bool
@@ -656,7 +659,7 @@ private struct DiffFileSection: View, Equatable {
     var commentFocused: FocusState<Bool>.Binding
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.model === rhs.model && lhs.file == rhs.file && lhs.status == rhs.status && lhs.rows == rhs.rows && lhs.comments == rhs.comments
+        lhs.model === rhs.model && lhs.file == rhs.file && lhs.status == rhs.status && lhs.rows == rhs.rows && lhs.layout == rhs.layout && lhs.comments == rhs.comments
             && lhs.editingLine == rhs.editingLine && lhs.isFolded == rhs.isFolded && lhs.isViewed == rhs.isViewed
             && lhs.canRevert == rhs.canRevert && lhs.canOpen == rhs.canOpen
     }
@@ -677,6 +680,13 @@ private struct DiffFileSection: View, Equatable {
                 NWDiffView(rows, notes: notes, onComment: file.isBinary ? nil : { model.startComment(fileID: file.id, lineID: $0.key) },
                            onReveal: { model.reveal($0, $1, in: file.id) }) { line, note in
                     annotation(line, note)
+                }
+                .environment(\.splitDiffScroll, layout == .split ? horizontalScroll : nil)
+                if layout == .split {
+                    NWSplitDiffScrollbars(horizontalScroll)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { updateHorizontalLimits($0) }
+                        .onChange(of: file) { _, _ in updateHorizontalLimits(model.width) }
+                        .onChange(of: ThemeStore.shared.textScale) { _, _ in updateHorizontalLimits(model.width) }
                 }
             }
         } header: {
@@ -704,6 +714,12 @@ private struct DiffFileSection: View, Equatable {
                 }
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { model.noteHeaderHeight($0) }
         }
+    }
+
+    private func updateHorizontalLimits(_ width: CGFloat) {
+        let widths = model.splitLineWidths(file, textScale: ThemeStore.shared.textScale)
+        horizontalScroll.resize(oldWidth: widths.old, newWidth: widths.new,
+                                viewport: max(0, (width - 1) / 2 - NWDiffMetrics.splitCodeLeading - NWDiffMetrics.commentSlotWidth))
     }
 
     /// What shows under each line: its comment, or the editor on the line being commented.
