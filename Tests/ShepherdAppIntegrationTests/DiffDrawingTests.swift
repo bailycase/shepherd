@@ -9,12 +9,11 @@ import ShepherdTestSupport
 @Suite("Diff line drawing", .mainActorExclusive)
 @MainActor
 struct DiffDrawingTests {
-    @Test(arguments: [false, true])
-    func longLinesCanBeReachedByHorizontalScrolling(split: Bool) async throws {
+    @Test func longUnifiedLinesCanBeReachedByHorizontalScrolling() async throws {
         let source = String(repeating: "long_identifier_", count: 35) + "VISIBLE_END"
         let files = DiffFile.parse("diff --git a/sample.txt b/sample.txt\n--- a/sample.txt\n+++ b/sample.txt\n@@ -1 +1 @@\n-old\n+\(source)\n")
         let model = ListFixtures.reviewModel(files)
-        model.session.layoutChoice = split ? .split : .unified
+        model.session.layoutChoice = .unified
         let window = OffscreenWindow(size: CGSize(width: 600, height: 400), dark: false,
                                      ReviewPaneContent(model: model))
         defer { window.close() }
@@ -33,6 +32,50 @@ struct DiffDrawingTests {
         #expect(clip.bounds.minX > 1000)
         #expect(abs(clip.bounds.maxX - scroll.documentView!.bounds.width) < 2,
                 "the trailing source must be reachable, not just present in a tooltip")
+    }
+
+    @Test func splitColumnsScrollIndependentlyWithoutMovingTheirBoundaries() async throws {
+        let source = String(repeating: "long_identifier_", count: 35)
+        let files = DiffFile.parse("diff --git a/sample.txt b/sample.txt\n--- a/sample.txt\n+++ b/sample.txt\n@@ -1 +1 @@\n-\(source)OLD_END\n+\(source)NEW_END\n")
+        let model = ListFixtures.reviewModel(files)
+        model.session.layoutChoice = .split
+        let window = OffscreenWindow(size: CGSize(width: 600, height: 400), dark: false, ReviewPaneContent(model: model))
+        defer { window.close() }
+        let file = try #require(files.first)
+        let position = model.splitScroll(for: file.id)
+        try await eventuallyOnMain("both split code columns to measure their extents") {
+            window.layout()
+            return position.oldLimit > 1000 && position.newLimit > 1000
+        }
+        let scroll = try #require(ListPerf.scrollView(in: window))
+        #expect(scroll.documentView!.bounds.width <= scroll.contentView.bounds.width + 1)
+        let right = CGRect(x: 301, y: 0, width: 290, height: 400)
+        let left = CGRect(x: 40, y: 0, width: 250, height: 400)
+        let before = FrameTimer.capture(window, right)
+        let leftBefore = FrameTimer.capture(window, left)
+        func controls(_ view: NSView) -> [NSScroller] {
+            (view is NSScroller ? [view as! NSScroller] : []) + view.subviews.flatMap(controls)
+        }
+        let horizontal = controls(window.host).filter { $0.accessibilityLabel() == "Scroll old code horizontally" }
+        let control = try #require(horizontal.first)
+        #expect(control.bounds.width > control.bounds.height && control.isEnabled)
+        control.doubleValue = 1
+        _ = control.sendAction(control.action, to: control.target)
+        window.layout()
+        #expect(position.oldOffset > 1000 && position.newOffset == 0)
+        #expect(FrameTimer.capture(window, left) != leftBefore, "old code must visibly move")
+        #expect(FrameTimer.capture(window, right) == before, "scrolling old code leaves the new column unchanged")
+        position.move(to: position.newLimit, old: false)
+        window.layout()
+        #expect(position.oldOffset == position.oldLimit && position.newOffset == position.newLimit)
+        #expect(scroll.contentView.bounds.minX == 0, "the pane and its divider never pan sideways")
+        model.noteRowsTop(150, of: file.id)
+        model.scrollSplitCode(at: CGPoint(x: 100, y: 175), delta: 40, viewportWidth: 600)
+        #expect(position.oldOffset == position.oldLimit - 40)
+        #expect(position.newOffset == position.newLimit)
+        model.scrollSplitCode(at: CGPoint(x: 450, y: 175), delta: 60, viewportWidth: 600)
+        #expect(position.newOffset == position.newLimit - 60)
+        #expect(position.oldOffset == position.oldLimit - 40)
     }
 
     @Test(arguments: [false, true])
