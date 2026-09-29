@@ -178,13 +178,16 @@ struct TestIsolationTests {
         defer { free(real) }
         let decoy = TestProcess.piDecoyDirectory.path
         #expect(agent.lines == [
-            String(cString: real), "--mode", "rpc", "--session-dir", home.sessionDirectory(forCwd: cwd.path).path, "--session-id", "s-1",
+            String(cString: real), "-e", home.directory.appendingPathComponent("shepherd-cliproxyapi.ts").path,
+            "--mode", "rpc", "--session-dir", home.sessionDirectory(forCwd: cwd.path).path, "--session-id", "s-1",
             "-e", "/e.ts",
             "PI_CODING_AGENT_DIR=\(home.directory.path)", "PI_PACKAGE_DIR=unset", "PI_OFFLINE=1", "NODE_OPTIONS=unset", "JITI_ALIAS=unset",
             "PI_EXPERIMENTAL=unset", "_SHEPHERD_STASH_NODE_OPTIONS=--require=\(decoy)/node-options.cjs",
         ])
 
         let catalog = try run(PiLaunch.listModels(home: home), cwd: cwd)
-        #expect(catalog.lines.prefix(2) == [PiHome.canonical(home.directory.path), "--list-models"])
+        #expect(catalog.status == 0)
+        #expect(catalog.lines.prefix(4) == [PiHome.canonical(home.directory.path), "-e",
+                                          home.directory.appendingPathComponent("shepherd-cliproxyapi.ts").path, "--list-models"])
     }
 }
