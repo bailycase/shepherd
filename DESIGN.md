@@ -2943,7 +2943,9 @@ send the review.
   new code columns scroll independently inside their fixed half-width containers. Horizontal
   wheel input affects the column under the pointer; each side also has its own native scrollbar
   below the file. Numbers, center divider, headers and comments stay fixed. One shared vertical
-  scroll keeps old/new pairs aligned. Source widths are cached per file and text scale. Removals sit on `failedTint` and additions on
+  scroll keeps old/new pairs aligned. The split content and headers fit that scroll view's
+  viewport, excluding the vertical scrollbar when the Mac is set to show scrollbars Always.
+  Source widths are cached per file and text scale. Removals sit on `failedTint` and additions on
   `doneTint`; with Word diffs on, a paired line's changed words take a second layer of the same
   tint (`DiffWords`, computed with the syntax colors once per file off the main thread).
 - **Folds** (FoldRow, `NWDiffFoldRow`, 26pt on `bgSunken` between hairlines): unchanged lines

@@ -9,6 +9,37 @@ import ShepherdTestSupport
 @Suite("Diff line drawing", .mainActorExclusive)
 @MainActor
 struct DiffDrawingTests {
+    // Scrollbar preferences are process-wide. A legacy vertical scroller reserves width;
+    // feeding the outer pane's width back into its content made the window grow until AppKit trapped.
+    @Test(arguments: ["Always", "WhenScrolling"])
+    func splitDiffFitsItsViewportWithEitherScrollbarStyle(scrollBars: String) async {
+        await #expect(processExitsWith: .success) { [scrollBars = scrollBars as String] in
+            await recordingErrors {
+                var arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+                arguments["AppleShowScrollBars"] = scrollBars
+                UserDefaults.standard.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
+                try await MainActor.run {
+                    #expect(NSScroller.preferredScrollerStyle == (scrollBars == "Always" ? .legacy : .overlay))
+                    let model = ListFixtures.reviewModel(ListFixtures.realisticReview())
+                    model.session.layoutChoice = .split
+                    let window = OffscreenWindow(size: CGSize(width: 1040, height: 800), dark: true,
+                                                 ReviewPaneContent(model: model))
+                    defer { window.close() }
+                    for width: CGFloat in [1040, 900, 1200] {
+                        window.window.setContentSize(CGSize(width: width, height: 800))
+                        ListPerf.settle(window)
+                        let scroll = try #require(ListPerf.scrollView(in: window, trailing: true))
+                        #expect(abs(window.host.bounds.width - width) < 1)
+                        #expect(scroll.documentView!.bounds.width <= scroll.contentView.bounds.width + 1)
+                        #expect(ListPerf.scroll(window, scroll, step: 400, steps: 5).distance > 0)
+                        #expect(abs(window.host.bounds.width - width) < 1)
+                        #expect(scroll.contentView.bounds.minX == 0)
+                    }
+                }
+            }
+        }
+    }
+
     @Test func longUnifiedLinesCanBeReachedByHorizontalScrolling() async throws {
         let source = String(repeating: "long_identifier_", count: 35) + "VISIBLE_END"
         let files = DiffFile.parse("diff --git a/sample.txt b/sample.txt\n--- a/sample.txt\n+++ b/sample.txt\n@@ -1 +1 @@\n-old\n+\(source)\n")

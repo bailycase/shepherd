@@ -586,7 +586,9 @@ private struct ReviewDiffList: View, Equatable {
                         )
                     }
                 }
-                .frame(width: contentWidth, alignment: .leading)
+                // A vertical-only scroll view proposes its viewport minus any legacy scrollbar.
+                // Forcing the outer pane's width here feeds that scrollbar's width back into layout.
+                .frame(width: model.layout == .split ? nil : contentWidth, alignment: .leading)
                 // A reload of the same scope (after a Revert, a refresh) lands at once: easing the
                 // sections' offsets under pinned headers mid-scroll opens and closes blank gaps.
                 .nwAnimation(.disclosure, value: model.disclosures)
@@ -697,7 +699,7 @@ private struct DiffFileSection: View, Equatable {
                              comment: { model.startFileComment(file.id) },
                              open: canOpen ? { model.actions.open?(file) } : nil, isPinned: pinned)
             }
-                .frame(width: model.width, alignment: .leading)
+                .frame(width: layout == .split ? nil : model.width, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
                 .onTapGesture { model.point(at: file.id) }
