@@ -1,7 +1,6 @@
 import Darwin
 import Dispatch
 import Foundation
-import dnssd
 
 /// Owns only establishment. DNS, pending sockets and the waiter share one deadline and can be
 /// cancelled before a descriptor is handed to the client's established-stream transport.
@@ -9,13 +8,10 @@ final class RemoteSocketOpen: @unchecked Sendable {
     private let queue = DispatchQueue(label: "shepherd.remote.open")
     private var continuation: CheckedContinuation<Int32, Error>?
     private var finished = false
-    private var resolver: DNSServiceRef?
     private var sockets: [Int32: DispatchSourceWrite] = [:]
     private var addresses: Set<Data> = []
     private var timer: DispatchSourceTimer?
     private var port: UInt16 = 0
-    private var host = ""
-    private var numeric = false
     private var lastError: Error = RemoteHostClientError.timeout
 
     func open(host: String, port: UInt16, timeout: TimeInterval = 10,
@@ -25,7 +21,6 @@ final class RemoteSocketOpen: @unchecked Sendable {
                 guard !self.finished else { continuation.resume(throwing: CancellationError()); return }
                 self.continuation = continuation
                 self.port = port
-                self.host = host
                 let timer = DispatchSource.makeTimerSource(queue: self.queue)
                 timer.schedule(deadline: .now() + timeout)
                 timer.setEventHandler { [weak self] in
@@ -53,35 +48,37 @@ final class RemoteSocketOpen: @unchecked Sendable {
     }
 
     private func resolve(_ host: String) {
-        // Numeric addresses, including scoped IPv6, need no resolver or DNS timeout.
-        var hints = addrinfo(ai_flags: AI_NUMERICHOST, ai_family: AF_UNSPEC, ai_socktype: SOCK_STREAM,
-                             ai_protocol: IPPROTO_TCP, ai_addrlen: 0, ai_canonname: nil, ai_addr: nil, ai_next: nil)
-        var result: UnsafeMutablePointer<addrinfo>?
-        if getaddrinfo(host, String(port), &hints, &result) == 0, let result {
-            numeric = true
-            defer { freeaddrinfo(result) }
-            var next: UnsafeMutablePointer<addrinfo>? = result
-            while let value = next, !finished {
-                connect(value.pointee.ai_addr)
-                next = value.pointee.ai_next
+        let port = port
+        // Use the system host lookup, including hosts-file and private DNS names. It can
+        // block, so the connection's deadline and cancellation stay on our own queue.
+        DispatchQueue.global(qos: .userInitiated).async {
+            var hints = addrinfo(ai_flags: 0, ai_family: AF_UNSPEC, ai_socktype: SOCK_STREAM,
+                                 ai_protocol: IPPROTO_TCP, ai_addrlen: 0, ai_canonname: nil, ai_addr: nil, ai_next: nil)
+            var result: UnsafeMutablePointer<addrinfo>?
+            let error = getaddrinfo(host, String(port), &hints, &result)
+            var resolved: [Data] = []
+            if let result {
+                defer { freeaddrinfo(result) }
+                var next: UnsafeMutablePointer<addrinfo>? = result
+                while let value = next {
+                    if let address = value.pointee.ai_addr {
+                        resolved.append(Data(bytes: address, count: Int(value.pointee.ai_addrlen)))
+                    }
+                    next = value.pointee.ai_next
+                }
             }
-            if !finished, sockets.isEmpty { finish(.failure(lastError)) }
-            return
-        }
-        let error = DNSServiceGetAddrInfo(&resolver, 0, 0, 0, host, { _, flags, _, error, _, address, _, context in
-            guard let context else { return }
-            let owner = Unmanaged<RemoteSocketOpen>.fromOpaque(context).takeUnretainedValue()
-            guard !owner.finished else { return }
-            if error == kDNSServiceErr_NoError, flags & UInt32(kDNSServiceFlagsAdd) != 0, let address {
-                owner.connect(address)
-            } else if error != kDNSServiceErr_NoError {
-                owner.lastError = RemoteHostClientError.resolveFailed(host: owner.host)
+            let addresses = resolved
+            self.queue.async {
+                guard !self.finished else { return }
+                guard error == 0, !addresses.isEmpty else {
+                    self.finish(.failure(RemoteHostClientError.resolveFailed(host: host)))
+                    return
+                }
+                for address in addresses where !self.finished {
+                    address.withUnsafeBytes { self.connect($0.bindMemory(to: sockaddr.self).baseAddress!) }
+                }
+                if !self.finished, self.sockets.isEmpty { self.finish(.failure(self.lastError)) }
             }
-        }, Unmanaged.passUnretained(self).toOpaque())
-        guard error == kDNSServiceErr_NoError, let resolver,
-              DNSServiceSetDispatchQueue(resolver, queue) == kDNSServiceErr_NoError else {
-            finish(.failure(RemoteHostClientError.resolveFailed(host: host)))
-            return
         }
     }
 
@@ -131,7 +128,7 @@ final class RemoteSocketOpen: @unchecked Sendable {
             }
             self.lastError = RemoteHostClientError.system(call: "connect", errno: error)
             self.sockets.removeValue(forKey: fd)?.cancel()
-            if self.numeric, self.sockets.isEmpty { self.finish(.failure(self.lastError)) }
+            if self.sockets.isEmpty { self.finish(.failure(self.lastError)) }
         }
         sockets[fd] = source
         source.activate()
@@ -143,7 +140,6 @@ final class RemoteSocketOpen: @unchecked Sendable {
             return
         }
         finished = true
-        if let resolver { DNSServiceRefDeallocate(resolver); self.resolver = nil }
         timer?.cancel()
         timer = nil
         for source in sockets.values { source.cancel() }
