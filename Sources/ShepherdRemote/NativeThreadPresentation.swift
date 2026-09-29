@@ -273,23 +273,34 @@ public struct NativeUserBubble: Equatable, Identifiable, Sendable {
     /// a client that draws them as chips takes `DesignReferenceFence.humanLine` off `text`; one
     /// that doesn't shows the line.
     public var references: [DesignReferenceRecord] = []
+    /// The page elements it carries (`NativeThreadMessage.browserElements`), drawn as chips; a
+    /// message of elements alone has no words (`BrowserElementFence.humanLine` comes off).
+    public var elements: [BrowserElement] = []
 }
 
 public func nativeUserBubbles(_ message: NativeThreadMessage) -> [NativeUserBubble] {
     let pending = message.status == "pending" || message.status == "queued"
     let references = message.designReferences ?? []
+    let elements = message.browserElements ?? []
+    func words(_ text: String) -> String {
+        !elements.isEmpty && text == BrowserElementFence.humanLine(count: elements.count) ? "" : text
+    }
     if let parts = message.origin?.parts, !parts.isEmpty {
-        // The references go with the part that says so, else the last.
+        // The references go with the part that says so, else the last; elements go with the last
+        // (a message carrying them is delivered alone).
         let line = DesignReferenceFence.humanLine(count: references.count)
         let carrier = references.isEmpty ? nil : parts.lastIndex { $0.text.hasSuffix(line) } ?? parts.count - 1
         return parts.enumerated().map { index, part in
-            NativeUserBubble(id: "\(message.entryID)/\(index)", text: part.text, sentAt: part.sentAt, images: part.images, pending: pending,
-                             references: index == carrier ? references : [])
+            let last = index == parts.count - 1
+            return NativeUserBubble(id: "\(message.entryID)/\(index)", text: last ? words(part.text) : part.text, sentAt: part.sentAt,
+                                    images: part.images, pending: pending, references: index == carrier ? references : [],
+                                    elements: last ? elements : [])
         }
     }
     let text = message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n")
-    return [NativeUserBubble(id: message.entryID, text: text, sentAt: message.timestamp,
-                             images: message.blocks.count { $0.kind == .unsupportedImage }, pending: pending, references: references)]
+    return [NativeUserBubble(id: message.entryID, text: words(text), sentAt: message.timestamp,
+                             images: message.blocks.count { $0.kind == .unsupportedImage }, pending: pending, references: references,
+                             elements: elements)]
 }
 
 /// Turns keep their identity while pi persists them: a user turn is its first message (or the

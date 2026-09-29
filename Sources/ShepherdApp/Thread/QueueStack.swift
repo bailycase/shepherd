@@ -231,13 +231,16 @@ final class QueueStackState {
 
     /// A message's chips: its images' names, with the thumbnails this Mac has (decoded once).
     private func attachments(_ message: NativeQueuedMessage) -> [NWQueueAttachment] {
-        guard !message.images.isEmpty else { return [] }
+        let elements = message.elements.enumerated().map { index, element in
+            NWQueueAttachment(id: "\(message.id.uuidString)/element/\(index)", name: element.label, isElement: true)
+        }
+        guard !message.images.isEmpty else { return elements }
         let decoded = thumbnails[message.id] ?? {
             let value = images(message.id).map { image in NSImage(data: image.data).map { Image(nsImage: $0) } }
             thumbnails[message.id] = value
             return value
         }()
-        return message.images.enumerated().map { index, image in
+        return elements + message.images.enumerated().map { index, image in
             NWQueueAttachment(id: "\(message.id.uuidString)/\(index)", name: image.name ?? "Image",
                               thumbnail: decoded.indices.contains(index) ? decoded[index] : nil)
         }
