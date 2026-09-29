@@ -478,8 +478,10 @@ claude.ai is still checked against).
   specimen's own directory. It renders off screen from those files held in memory
   (`DesignSurface(designID:files:)`, `DesignSpecimens`), again only when the system's revision
   moves. A specimen over 64 KB, or none, leaves its tile empty. Nothing is written to disk.
-  Specimens are HTML fragments, not application source components: include component styling
-  inline or link a system-local stylesheet through `<helmet>`. Tokens declare variables only;
+  Specimens may be HTML fragments or complete HTML documents. Complete documents keep their
+  head resources and html/body attributes, including theme classes, while their body content
+  enters the board. Fragments can link system-local stylesheets through `<helmet>`. Neither
+  form compiles application source components. Tokens declare variables only;
   source paths do not import TSX, utility CSS, providers, or application build dependencies.
 - **The Designs page's systems** (NavDesigns): the systems built here by title, the builds still
   reading their project ("dashboard-web · building"), then the built-ins, in lazy rows of three

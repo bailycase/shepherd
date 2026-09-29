@@ -259,20 +259,22 @@ enum DesignSpecimenBoard {
 
     static func source(specimen: String, title: String, stylesheet: Bool, background: String?, stylesheetPath: String = "tokens.css") -> String {
         let fill = background.flatMap(DesignSystemPresentation.hex).map { "background: \($0); " } ?? ""
+        let document = DesignSpecimenDocument(specimen)
         return """
             <!doctype html>
-            <html lang="en">
+            \(document?.html ?? "<html lang=\"en\">")
             <head>
             <meta charset="utf-8">
             <title>\(escaped(title))</title>
             <script src="./support.js"></script>
-            \(stylesheet ? "<link rel=\"stylesheet\" href=\"\(stylesheetPath)\">\n" : "")</head>
-            <body>
+            \(stylesheet ? "<link rel=\"stylesheet\" href=\"\(stylesheetPath)\">\n" : "")
+            \(document?.head ?? "")</head>
+            \(document?.body ?? "<body>")
             <x-dc>
             <helmet><style>body{margin:0}</style></helmet>
             <div style="width: \(Int(size.width))px; height: \(Int(size.height))px; box-sizing: border-box; display: flex; \
             align-items: center; justify-content: center; gap: 8px; overflow: hidden; \(fill)">
-            \(specimen)
+            \(document?.content ?? specimen)
             </div>
             </x-dc>
             </body>

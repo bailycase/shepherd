@@ -101,7 +101,8 @@ canvas under `ds/<namespace>/`, and `design_check` checks every board against it
      (for a component, its template's file, and a `specimen` file holding a small HTML sample of
      it) — the files it needs (`README.md` saying how to consume it, `components/<Name>.html`
      specimens), and `sources`: the stylesheets its tokens came from, so the viewer can re-sync
-     it later. Specimens are self-contained HTML fragments, not raw application components.
+     it later. Specimens are self-contained HTML fragments or complete HTML documents, not raw
+     application components. Full documents keep head resources and html/body theme attributes.
      Include the component's actual styles inline or link a saved system-local CSS file with
      `<helmet><link rel="stylesheet" href="./component.css"></helmet>`; paths resolve beside
      the specimen. `tokens.css` supplies variables, not component classes. Do not assume TSX,
