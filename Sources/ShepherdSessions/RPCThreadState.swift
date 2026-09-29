@@ -370,6 +370,7 @@ final class RPCThreadState {
             stopRequested = false
             settleAwaitingSteers = false
             doneHeld = false
+            if !items.isEmpty { onUserInputWhileRunning?() }
         case .agentEnd:
             refreshMessages()
             refreshState()
@@ -590,6 +591,9 @@ final class RPCThreadState {
         return designContext?.valid?.fenced()
     }
 
+    /// An accepted new user send during a running turn. Idempotent operation replay never fires it.
+    var onUserInputWhileRunning: (() -> Void)?
+
     private func perform(_ request: NativeThreadRequest, operationID: UUID, olderClient: Bool, completion: @escaping (NativeThreadResult) -> Void) {
         let accepted = NativeThreadResult.accepted(operationID: operationID)
         let settle: (Result<RPCResponse, RPCError>) -> Void = { result in
@@ -610,10 +614,14 @@ final class RPCThreadState {
             // A record that breaks the grammar is dropped whole; the message still goes. Design
             // references reach here only as the server read them (`SessionServer.nativeThread`).
             let context = Self.sendContext(designContext, references: designReferences)
+            let interruptsBackgroundWait = running && delivery == .followUp
             send(id: operationID, text: text, delivery: delivery, images: images,
                  // A message with references goes to pi on its own: joined, its fence would give way.
                  alone: olderClient || !(designReferences ?? []).isEmpty, context: context,
-                 designPayloads: (designReferences ?? []).compactMap(\.payloadID), completion: completion)
+                 designPayloads: (designReferences ?? []).compactMap(\.payloadID)) { [weak self] result in
+                if interruptsBackgroundWait, case .accepted = result { self?.onUserInputWhileRunning?() }
+                completion(result)
+            }
         case .abort:
             // Stopping refuses what pi is waiting on: a question has no Dismiss, and a turn
             // waiting on an answer would not stop.

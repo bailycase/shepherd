@@ -186,6 +186,35 @@ struct AgentsPreviewTests {
         }
     }
 
+    @Test func taskNamedSubagentTray() async throws {
+        let runs = [
+            ChildRun(runID: "mac", label: "worker: Fix the Mac composer", state: "running", role: "worker",
+                     lastActivity: ChildActivity(kind: ChildActivity.runningKind, tool: "edit", preview: "Composer.swift", at: Self.nowMs)),
+            ChildRun(runID: "phone", label: "worker: Fix the phone composer", state: "complete", role: "worker",
+                     summary: "Kept drafts while switching threads."),
+            ChildRun(runID: "long", label: "reviewer: Review the changes", state: "running", needsAttention: true, role: "reviewer",
+                     question: ChildQuestion(text: "Keep the existing names?"),
+                     task: "Review the composer and subagent presentation across narrow and wide layouts.\nCheck both appearances."),
+            ChildRun(runID: "workflow", childIndex: 0, label: "frontend", state: "queued", role: "worker", task: "Keep the lane name."),
+        ]
+        let tray = NativeSubagentTray(runs)
+        try await Preview.render("subagent-task-labels", size: CGSize(width: 1200, height: 620)) {
+            HStack(alignment: .top, spacing: NW.Space.xxl) {
+                Sheet(title: "Task names · Mac", note: "Two workers stay distinguishable; roles remain secondary.", width: nil) {
+                    Self.dock(Self.tray(tray))
+                }
+                Sheet(title: "Task names · iPhone", note: "Long tasks truncate, workflow lane names stay intact.", width: 400) {
+                    NWDockStack(size: .phone, showsTray: true, showsQueue: false) {
+                        Self.tray(tray, size: .phone)
+                    } queue: { EmptyView() }
+                }
+            }
+            .padding(NW.Space.xxl)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(Color.nw.bgWindow)
+        }
+    }
+
     // MARK: In a thread
 
     /// Subagents: the turn spawned three, the tray shows them above the composer (the worker's

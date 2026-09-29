@@ -2388,14 +2388,14 @@ public final class SessionServer: @unchecked Sendable {
         case .listAgents(let id, let agentID):
             guard !refusesDesignPeer(id: id, sender: agentID, client: client) else { return }
             routeAgentPeerRequest(.list(agentID: agentID), requestID: id, client: client)
-        case .sendToAgent(let id, let agentID, let targetAgentID, let text):
+        case .sendToAgent(let id, let agentID, let targetAgentID, let text, let delivery):
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 reply(.error(id: id, code: "invalid", message: "text is required"), to: client)
                 return
             }
             guard !refusesDesignPeer(id: id, sender: agentID, target: targetAgentID, client: client) else { return }
             routeAgentPeerRequest(
-                .send(agentID: agentID, targetAgentID: targetAgentID, text: text),
+                .send(agentID: agentID, targetAgentID: targetAgentID, text: text, delivery: delivery),
                 requestID: id,
                 client: client
             )
@@ -2895,14 +2895,15 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Push a peer-thread message to an agent's registered extension
     /// connection. Returns false when the agent has no live registered
-    /// connection (extension not loaded or not yet connected).
-    public func pushMessage(toAgent agentID: AgentID, text: String) -> Bool {
+    /// connection (extension not loaded or not yet connected), or dispatch fails.
+    /// Success means queued on the socket, not accepted or consumed by pi.
+    public func pushMessage(toAgent agentID: AgentID, text: String, delivery: AgentMessageDelivery = .task) -> Bool {
         queue.sync {
-            guard let client = clients.values.first(where: { $0.agentID == agentID }) else {
-                return false
-            }
-            reply(.message(id: 0, text: text), to: client)
-            return true
+            guard let client = clients.values.first(where: { $0.agentID == agentID }),
+                  let payload = try? NDJSON.encode(ExtensionReply.message(id: 0, text: text, delivery: delivery)),
+                  payload.count - 1 <= NDJSON.maxPayloadBytes else { return false }
+            enqueuePayload(payload, to: client)
+            return clients[client.fd] === client
         }
     }
 
@@ -3036,6 +3037,7 @@ public final class SessionServer: @unchecked Sendable {
 
     private func replyID(_ message: ExtensionReply) -> Int {
         switch message {
+        case .parentInput: return 0
         case .childCommand(let id, _, _, _, _), .ok(let id),
              .error(let id, _, _),
              .panes(let id, _),
@@ -3044,7 +3046,7 @@ public final class SessionServer: @unchecked Sendable {
              .reviewResult(let id, _),
              .automations(let id, _),
              .agents(let id, _),
-             .message(let id, _),
+             .message(let id, _, _),
              .agentRequest(let id, _, _, _),
              .agentResult(let id, _),
              .suggestion(let id, _),
@@ -4470,6 +4472,12 @@ public final class SessionServer: @unchecked Sendable {
             session.beforeOffQueueDecode = beforeOffQueueDecode
             let thread = RPCThreadState(session: session, queue: sessionQueue, originStore: originStore)
             thread.defaultQueueMode = defaultQueueMode
+            thread.onUserInputWhileRunning = { [weak serverWeak] in
+                guard let server = serverWeak, let agentID = server.agentID(forSession: sid),
+                      let children = server.clients.values.first(where: { $0.childrenAgentID == agentID }) else { return }
+                // Host-queued input has not reached pi's input hook. Yield its child wait now.
+                server.reply(.parentInput, to: children)
+            }
             // pi's compaction settings, as this pi reads them: Shepherd's pi home (the launcher
             // pins it, whatever the environment says) and the project's own. Read, never written.
             let piDirectory = pi.home

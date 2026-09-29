@@ -32,13 +32,37 @@ struct SubagentRunsTests {
     // MARK: Names
 
     @Test(arguments: [
-        ("worker: restyle", "worker", "worker", nil), ("worker", "worker", "worker", nil),
+        ("worker: restyle", "worker", "restyle", "worker"), ("worker", "worker", "worker", nil),
+        ("worker:  \n  Fix\t token names. Then test.", "worker", "Fix token names.", "worker"),
+        ("worker: \n ", "worker", "worker", nil),
         ("frontend", "worker", "frontend", "worker"), ("scout", nil, "scout", nil),
+        ("worker: legacy label", nil, "worker: legacy label", nil),
     ] as [(String, String?, String, String?)])
-    func aNativeChildIsNamedByItsRoleAndALaneByItsKey(label: String, role: String?, name: String, tag: String?) {
+    func aNativeChildIsNamedByItsTaskAndALaneByItsKey(label: String, role: String?, name: String, tag: String?) {
         let names = nativeRunNames(Self.run("r", label: label, role: role))
         #expect(names.name == name)
         #expect(names.role == tag)
+    }
+
+    @Test func aTaskNameIsBoundedWithoutLosingTheGoalOrSplittingCharacters() {
+        var run = Self.run("r", label: "worker: clipped label", role: "worker")
+        run.task = String(repeating: "👩🏽‍💻", count: 80) + "\nKeep the entire goal."
+        let summary = nativeRunSummary(run)
+        #expect(summary.name == String(repeating: "👩🏽‍💻", count: 71) + "…")
+        #expect(summary.role == "worker")
+        #expect(summary.goal == run.task)
+        run.task = " \n "
+        #expect(nativeRunNames(run).name == "clipped label")
+    }
+
+    @Test func anExplicitWorkflowLaneKeepsItsNameInsteadOfItsTask() {
+        var lane = Self.run("workflow", label: "worker: frontend", role: "worker")
+        lane.childIndex = 2
+        lane.task = "Implement the frontend."
+        #expect(nativeRunNames(lane).name == "worker: frontend")
+        #expect(nativeRunNames(lane).role == "worker")
+        lane.label = "frontend"
+        #expect(nativeRunNames(lane).name == "frontend")
     }
 
     // MARK: Summaries
@@ -52,8 +76,8 @@ struct SubagentRunsTests {
         run.tokens = 922_000
         run.lastActivity = ChildActivity(tool: "edit", preview: "Sources/ShepherdRemote/NativeThreadPresentation.swift", at: Self.start)
         let summary = nativeRunSummary(run)
-        #expect(summary.name == "worker")
-        #expect(summary.tags == "background · fable-5-1")
+        #expect(summary.name == "restyle")
+        #expect(summary.tags == "worker · background · fable-5-1")
         #expect(summary.phase == .running)
         #expect(summary.step == "step 1 of 3")
         #expect(summary.progress == 0.34)

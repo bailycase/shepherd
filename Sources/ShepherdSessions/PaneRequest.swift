@@ -164,13 +164,13 @@ public enum AutomationOutcome: Hashable, Sendable {
 /// requests — it owns agent lifecycle and pi input.
 public enum AgentPeerRequest: Hashable, Sendable {
     case list(agentID: AgentID)
-    case send(agentID: AgentID, targetAgentID: AgentID, text: String)
+    case send(agentID: AgentID, targetAgentID: AgentID, text: String, delivery: AgentMessageDelivery = .task)
     case spawn(agentID: AgentID, cwd: String, prompt: String)
     case delete(agentID: AgentID, targetAgentID: AgentID, requestID: String)
 
     public var agentID: AgentID {
         switch self {
-        case .list(let agentID), .send(let agentID, _, _), .spawn(let agentID, _, _), .delete(let agentID, _, _):
+        case .list(let agentID), .send(let agentID, _, _, _), .spawn(let agentID, _, _), .delete(let agentID, _, _):
             return agentID
         }
     }
