@@ -23,7 +23,7 @@ final class RPCThreadState {
     static let widgetAggregateBytes = 32 * 1024
     static let operationTableSize = 256
     static let supportedActions = ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents", "queue", "compact", "designContext",
-                                   "designReferences"]
+                                   "designReferences", "browserElements"]
     /// pi answers `compact` only once the summary is written, which takes as long as a reply.
     static let compactTimeout: TimeInterval = 600
     /// Bytes of a child session file the transcript reader will scan (tail); older is unreachable.
@@ -522,7 +522,7 @@ final class RPCThreadState {
                 return
             }
             completion(Self.transcript(runID: runID, file: file, beforeEntryID: beforeEntryID))
-        case .send(let expectedSessionID, let generation, let operationID, _, _, _, _, _),
+        case .send(let expectedSessionID, let generation, let operationID, _, _, _, _, _, _),
              .abort(let expectedSessionID, let generation, let operationID),
              .answer(let expectedSessionID, let generation, let operationID, _, _),
              .setModel(let expectedSessionID, let generation, let operationID, _),
@@ -586,9 +586,13 @@ final class RPCThreadState {
     /// References go only to an ordinary thread and a view record only to a design's chat, so one
     /// send never carries both; if one did, the view record is dropped, since every display
     /// surface takes off only the one fence a message starts with.
-    static func sendContext(_ designContext: NativeDesignContext?, references: [DesignReferenceRecord]?) -> String? {
-        if let references, let fence = DesignReferenceFence.fenced(references) { return fence }
-        return designContext?.valid?.fenced()
+    /// A browser elements fence follows the design one, so a message's words come last.
+    static func sendContext(_ designContext: NativeDesignContext?, references: [DesignReferenceRecord]?,
+                            elements: [BrowserElement]? = nil) -> String? {
+        let design = references.flatMap { DesignReferenceFence.fenced($0) } ?? designContext?.valid?.fenced()
+        let browser = elements.flatMap { BrowserElementFence.fenced($0) }
+        guard design != nil || browser != nil else { return nil }
+        return (design ?? "") + (browser ?? "")
     }
 
     /// An accepted new user send during a running turn. Idempotent operation replay never fires it.
@@ -600,8 +604,9 @@ final class RPCThreadState {
             completion(Self.dispatchFailure(result) ?? accepted)
         }
         switch request {
-        case .send(_, _, _, let text, let delivery, let images, let designContext, let designReferences):
+        case .send(_, _, _, let text, let delivery, let images, let designContext, let designReferences, let browserElements):
             let images = images ?? []
+            let elements = Array((browserElements ?? []).prefix(BrowserElement.maxPerMessage)).map(\.clamped)
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !images.isEmpty,
                   text.utf8.count <= Self.textLimit else {
                 completion(.failure(code: "invalid", message: "Send requires text or images, with text up to 16 KiB."))
@@ -613,12 +618,14 @@ final class RPCThreadState {
             }
             // A record that breaks the grammar is dropped whole; the message still goes. Design
             // references reach here only as the server read them (`SessionServer.nativeThread`).
-            let context = Self.sendContext(designContext, references: designReferences)
+            let context = Self.sendContext(designContext, references: designReferences, elements: elements)
             let interruptsBackgroundWait = running && delivery == .followUp
             send(id: operationID, text: text, delivery: delivery, images: images,
-                 // A message with references goes to pi on its own: joined, its fence would give way.
-                 alone: olderClient || !(designReferences ?? []).isEmpty, context: context,
-                 designPayloads: (designReferences ?? []).compactMap(\.payloadID)) { [weak self] result in
+                 // A message with references or elements goes to pi on its own: joined, its fence
+                 // would give way.
+                 alone: olderClient || !(designReferences ?? []).isEmpty || !elements.isEmpty, context: context,
+                 designPayloads: (designReferences ?? []).compactMap(\.payloadID),
+                 elements: elements.map(\.withoutHTML)) { [weak self] result in
                 if interruptsBackgroundWait, case .accepted = result { self?.onUserInputWhileRunning?() }
                 completion(result)
             }
@@ -1772,11 +1779,16 @@ final class RPCThreadState {
                     // Pencil markup: the chat draws what the agent read.
                     result.origin = .designMarkup(strokes: markup.markup.strokes.count, notes: markup.markup.noteCount)
                 }
-                var shown = fenced ? DesignViewRecord.strippingFence(from: text, references: false) : text
+                var shown = fenced ? DesignViewRecord.strippingFence(from: text, references: false, elements: false) : text
                 if fenced, let sentReferences, let parsed = DesignReferenceFence.parse(text),
                    let ids = DesignReferenceFence.payloadIDs(parsed.records), Set(ids).isSubset(of: sentReferences) {
                     shown = String(parsed.text)
                     result.designReferences = parsed.records.map(\.withoutFiles)
+                }
+                // Elements picked in the Browser: the thread draws their chips.
+                if fenced, let parsed = BrowserElementFence.parse(shown) {
+                    shown = BrowserElementFence.stripping(shown)
+                    result.browserElements = parsed.elements.map(\.withoutHTML)
                 }
                 fenced = false
                 result.blocks.append(NativeThreadBlock(kind: .text, text: clip(shown)))

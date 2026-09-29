@@ -26,6 +26,39 @@ struct QueueTests {
 
     // MARK: - Delivery
 
+    /// An element picked in the Browser rides the queue: the queue shows it without its markup,
+    /// the message goes to pi on its own with the element fenced ahead of its words, and the
+    /// thread shows the words with the element as a chip.
+    @Test func aQueuedMessageKeepsItsBrowserElementsAndGoesAloneWithTheirFence() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        let running = try await startRun(pi)
+        let element = BrowserElement(page: "http://localhost:5173/checkout", selector: "main > button.pay", label: "button.pay",
+                                     source: "src/Checkout.tsx:88", width: 240, height: 44, html: "<button class=\"pay\">Pay</button>")
+        let plain = UUID(), picked = UUID()
+        _ = try await pi.send("tools:0 first", operationID: plain, from: running)
+        #expect(try await pi.request(.send(expectedSessionID: running.piSessionID, generation: running.generation, operationID: picked,
+                                           text: "tools:0 wider", delivery: .followUp, browserElements: [element])) == .accepted(operationID: picked))
+        let queued = try await pi.snapshot("both in the queue") { $0.queue?.items.count == 2 }
+        #expect(queued.queue?.items.last?.elements == [element.withoutHTML])
+        #expect(queued.queue?.items.last?.text == "tools:0 wider")
+
+        pi.finishTool(1)
+        let done = try await pi.snapshot("both delivered and settled") { s in
+            !s.running && s.queue?.items.isEmpty == true && s.messages.contains { $0.operationID == picked }
+                && s.messages.last?.role == "assistant"
+        }
+        let sent = prompts(pi)
+        #expect(sent.contains("tools:0 first"), "the plain message went on its own")
+        let fenced = try #require(sent.last)
+        let parsed = try #require(BrowserElementFence.parse(fenced))
+        #expect(parsed.elements == [element.clamped] && parsed.text == "tools:0 wider", "the element with its markup, then the words")
+        let delivered = try #require(done.messages.first { $0.operationID == picked })
+        #expect(delivered.browserElements == [element.withoutHTML])
+        #expect(delivered.blocks.map(\.text) == ["tools:0 wider"])
+    }
+
     /// The reported bug's other half: a follow-up is not pi's until pi settles, and then it
     /// joins the thread where pi read it, with where it came from.
     @Test func aFollowUpWaitsOnTheHostAndGoesWhenPiSettles() async throws {

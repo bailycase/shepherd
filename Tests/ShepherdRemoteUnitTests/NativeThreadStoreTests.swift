@@ -38,7 +38,7 @@ final class FakeHost {
     func acceptAll() {
         action = { request in
             switch request {
-            case .send(_, _, let id, _, _, _, _, _), .abort(_, _, let id), .answer(_, _, let id, _, _),
+            case .send(_, _, let id, _, _, _, _, _, _), .abort(_, _, let id), .answer(_, _, let id, _, _),
                  .setModel(_, _, let id, _), .setThinking(_, _, let id, _), .subagentCommand(_, _, let id, _, _, _, _),
                  .queue(_, _, let id, _):
                 return .accepted(operationID: id)
@@ -484,7 +484,7 @@ struct NativeThreadStoreTests {
         await store.refresh()
         await sending.value
 
-        guard case .send(let session, _, _, let text, _, _, _, _) = try #require(host.actions.first) else { Issue.record("expected a send"); return }
+        guard case .send(let session, _, _, let text, _, _, _, _, _) = try #require(host.actions.first) else { Issue.record("expected a send"); return }
         #expect(session == "s" && text == "do the thing" && host.actions.count == 1)
         #expect(store.draft.isEmpty && store.sentCount == 1 && !store.busy && store.notice == nil)
     }
@@ -506,7 +506,7 @@ struct NativeThreadStoreTests {
         await sending.value
 
         let texts = host.actions.compactMap { action -> String? in
-            if case .send(_, _, _, let text, _, _, _, _) = action { return text } else { return nil }
+            if case .send(_, _, _, let text, _, _, _, _, _) = action { return text } else { return nil }
         }
         #expect(texts == (sent.map { [$0] } ?? []))
         #expect(store.draft == (sent == nil ? edited : "") && !store.busy)
@@ -566,7 +566,7 @@ struct NativeThreadStoreTests {
         store.draft = "do the thing"
         await store.send()
         #expect(store.draft == "do the thing" && store.pending.isEmpty && store.notice == "not yet")
-        guard case .send(let session, let generation, _, let text, let delivery, let images, _, _) = try #require(host.actions.first) else {
+        guard case .send(let session, let generation, _, let text, let delivery, let images, _, _, _) = try #require(host.actions.first) else {
             Issue.record("expected a send"); return
         }
         #expect(session == "s" && generation == "g" && text == "do the thing" && delivery == .followUp && images == nil)
@@ -587,7 +587,7 @@ struct NativeThreadStoreTests {
         store.designContext = { record }
         store.draft = "make it taller"
         await store.send()
-        guard case .send(_, _, _, let text, _, _, let context, _) = try #require(host.actions.first) else { Issue.record("expected a send"); return }
+        guard case .send(_, _, _, let text, _, _, let context, _, _) = try #require(host.actions.first) else { Issue.record("expected a send"); return }
         #expect(text == "make it taller")
         #expect(context == (carried ? NativeDesignContext(record) : nil))
     }
@@ -608,7 +608,7 @@ struct NativeThreadStoreTests {
         store.draft = "Build this"
         await store.send()
         #expect(store.attachedFiles == files && store.draft == "Build this")
-        guard case .send(_, _, _, let text, _, _, _, _) = try #require(host.actions.last) else { Issue.record("expected a send"); return }
+        guard case .send(_, _, _, let text, _, _, _, _, _) = try #require(host.actions.last) else { Issue.record("expected a send"); return }
         #expect(text == "Build this\n\nAttached files:\n- /drops/d1/A.html\n- /drops/d1/tokens.css")
 
         host.acceptAll()
@@ -652,7 +652,7 @@ struct NativeThreadStoreTests {
         host.acceptAll()
         store.draft = "Build this"
         await store.send()
-        guard case .send(_, _, _, let text, _, _, _, let references) = try #require(host.actions.first) else {
+        guard case .send(_, _, _, let text, _, _, _, let references, _) = try #require(host.actions.first) else {
             Issue.record("expected a send"); return
         }
         #expect(text == "Build this\n\n1 design reference attached.")
@@ -661,7 +661,7 @@ struct NativeThreadStoreTests {
 
         let direct = await store.send(text: "Now the phone", references: [NativeAttachedReference(reference: piece, label: "x")])
         #expect(direct)
-        guard case .send(_, _, _, let second, _, _, _, let carried) = try #require(host.actions.last) else {
+        guard case .send(_, _, _, let second, _, _, _, let carried, _) = try #require(host.actions.last) else {
             Issue.record("expected a send"); return
         }
         #expect(second == "Now the phone\n\n1 design reference attached." && carried?.map(\.ref) == [piece.string])
@@ -703,7 +703,7 @@ struct NativeThreadStoreTests {
         host.acceptAll()
         store.draft = "do the thing"
         await store.send()
-        guard case .send(_, _, let operation, _, _, _, _, _) = try #require(host.actions.first) else { Issue.record("expected a send"); return }
+        guard case .send(_, _, let operation, _, _, _, _, _, _) = try #require(host.actions.first) else { Issue.record("expected a send"); return }
         #expect(store.draft.isEmpty && store.sentCount == 1 && store.notice == nil)
         let echo = try #require(store.pending.first)
         #expect(echo.entryID == "pending:\(operation.uuidString)" && echo.role == "user" && echo.status == "pending")
@@ -818,7 +818,7 @@ struct NativeThreadStoreTests {
         store.delivery = .steer
         store.draft = "focus"
         await store.send()
-        guard case .send(_, _, _, _, let delivery, _, _, _) = try #require(host.actions.first) else { Issue.record("expected a send"); return }
+        guard case .send(_, _, _, _, let delivery, _, _, _, _) = try #require(host.actions.first) else { Issue.record("expected a send"); return }
         #expect(delivery == .steer)
     }
 

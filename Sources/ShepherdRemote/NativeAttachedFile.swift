@@ -20,13 +20,28 @@ public struct NativeAttachedFile: Identifiable, Hashable, Sendable {
     /// The message that goes: the words, the line saying how many design references go with it
     /// (their records reach pi fenced ahead of the message, never in it), then the attached
     /// files' paths.
-    public static func message(_ text: String, files: [NativeAttachedFile], references: Int = 0) -> String {
-        guard !files.isEmpty || references > 0 else { return text }
+    /// Browser elements add no line of their own, except to a message with nothing else in it
+    /// (`BrowserElementFence.humanLine`), so it isn't empty.
+    public static func message(_ text: String, files: [NativeAttachedFile], references: Int = 0, elements: Int = 0) -> String {
+        guard !files.isEmpty || references > 0 || elements > 0 else { return text }
         let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
         var parts = words.isEmpty ? [] : [text]
         if references > 0 { parts.append(DesignReferenceFence.humanLine(count: references)) }
         if !files.isEmpty { parts.append((["Attached files:"] + files.map { "- \($0.path)" }).joined(separator: "\n")) }
+        if parts.isEmpty, elements > 0 { parts.append(BrowserElementFence.humanLine(count: elements)) }
         return parts.joined(separator: "\n\n")
+    }
+}
+
+/// An element picked in the thread's Browser, waiting in the composer beside the draft
+/// (DESIGN.md › Side pane › Browser): its chip, and the element the host fences for pi.
+public struct NativeAttachedElement: Identifiable, Hashable, Sendable {
+    public let id: UUID
+    public let element: BrowserElement
+
+    public init(id: UUID = UUID(), element: BrowserElement) {
+        self.id = id
+        self.element = element
     }
 }
 

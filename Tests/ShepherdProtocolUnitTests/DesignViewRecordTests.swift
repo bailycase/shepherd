@@ -189,7 +189,7 @@ struct DesignViewRecordTests {
     func aMalformedRecordDecodesAsNoneAndTheSendStillDecodes(_ field: String) throws {
         let json = #"{"send":{"expectedSessionID":"s","generation":"g","operationID":"00000000-0000-0000-0000-000000000001","text":"t","delivery":"followUp","# + field + "}}"
         let request = try Wire.decode(NativeThreadRequest.self, json)
-        guard case .send(_, _, _, let text, _, _, let context, _) = request else { Issue.record("not a send"); return }
+        guard case .send(_, _, _, let text, _, _, let context, _, _) = request else { Issue.record("not a send"); return }
         #expect(text == "t")
         #expect(context?.record == nil && context?.valid == nil)
     }

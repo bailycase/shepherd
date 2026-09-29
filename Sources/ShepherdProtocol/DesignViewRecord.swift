@@ -162,7 +162,14 @@ extension DesignViewRecord {
     /// The thread keeps a references fence unless the user sent the message there
     /// (`RPCThreadState`); the palette's search and notifications take it off.
     /// Text that doesn't start with exactly such a fence comes back unchanged.
-    public static func strippingFence(from message: String, references: Bool = true) -> String {
+    /// A browser elements fence (`BrowserElementFence`) after any of them comes off too, unless
+    /// `elements` is false (the thread reads it for its chips).
+    public static func strippingFence(from message: String, references: Bool = true, elements: Bool = true) -> String {
+        let stripped = strippingDesignFence(from: message, references: references)
+        return elements ? BrowserElementFence.stripping(stripped) : stripped
+    }
+
+    private static func strippingDesignFence(from message: String, references: Bool) -> String {
         if let comment = DesignCommentFence.parse(message) { return String(comment.text) }
         if let markup = DesignMarkupFence.parse(message) { return String(markup.text) }
         if references, let parsed = DesignReferenceFence.parse(message) { return String(parsed.text) }
