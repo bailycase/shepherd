@@ -244,6 +244,29 @@ struct QueueTests {
         #expect(done.messages.first { $0.operationID == back }?.origin?.parts?.map(\.id) == [back])
     }
 
+    @Test func takingBackASteerPreservesIdenticalMessagesWithDifferentImages() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        let running = try await startRun(pi)
+        let back = UUID(), first = UUID(), second = UUID()
+        _ = try await pi.send("tools:0 wait", delivery: .steer, operationID: back, from: running)
+        for (id, byte) in [(first, UInt8(1)), (second, UInt8(2))] {
+            let image = NativeImage(mimeType: "image/png", data: Data([byte]), name: "image.png")
+            _ = try await pi.send("tools:0 look", delivery: .steer, images: [image], operationID: id, from: running)
+        }
+        #expect(try await pi.queue(.unsteer(id: back), from: running).failureCode == nil)
+        _ = try await pi.waitForStdin("prompt", count: 6)
+        let restored = pi.stdin("prompt").suffix(2).compactMap { ($0["images"] as? [[String: Any]])?.first?["data"] as? String }
+        #expect(restored == [Data([1]).base64EncodedString(), Data([2]).base64EncodedString()])
+        pi.finishTool(1)
+        let done = try await pi.snapshot("both identical steers to land and the queue to drain") { s in
+            !s.running && s.queue?.items.isEmpty == true && s.messages.contains { $0.operationID == back }
+        }
+        #expect(done.messages.first { $0.operationID == first }?.origin == .steered)
+        #expect(done.messages.first { $0.operationID == second }?.origin == .steered)
+    }
+
     /// pi reads a steer when its tool batch ends: a Back to the queue whose `clear_queue` arrives
     /// just after that finds nothing to take back, so it is refused, and the message lands where
     /// pi read it, steered, without being sent again.
