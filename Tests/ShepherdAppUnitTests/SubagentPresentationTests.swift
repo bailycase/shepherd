@@ -39,7 +39,7 @@ struct SubagentPresentationTests {
     }
 
     @Test(arguments: [
-        ("worker: restyle the thread", "worker", "worker", nil as String?),
+        ("worker: restyle the thread", "worker", "restyle the thread", "worker" as String?),
         ("worker", "worker", "worker", nil),
         ("desktop", "worker", "desktop", "worker"),
         ("lane-3", nil, "lane-3", nil),
@@ -68,6 +68,8 @@ struct SubagentPresentationTests {
         #expect(summary.cells == [.running, .attention, .done])
         #expect(summary.tally == [.init("1 needs you", state: .attention), .init("1 running", state: .running), .init("1 done")])
         #expect(rows.map(\.state) == [.running, .attention, .done])
+        #expect(rows.map(\.name) == ["restyle", "restyle", "restyle"])
+        #expect(rows.map(\.role) == ["worker", "worker", "worker"])
     }
 
     /// A row's figure counts live from its start, and is its duration once finished.
@@ -110,7 +112,7 @@ struct SubagentPresentationTests {
         run.turns = 78
         run.tokens = 922_000
         let (meta, accent) = SubagentPresentation.inspectorMeta(run)
-        #expect(meta == "claude-fable-5-1 · thinking high · 78 turns · 922k tok")
+        #expect(meta == "worker · claude-fable-5-1 · thinking high · 78 turns · 922k tok")
         #expect(accent == nil)
     }
 
@@ -120,7 +122,7 @@ struct SubagentPresentationTests {
         run.thinking = "high"
         run.turns = 11
         let (meta, accent) = SubagentPresentation.inspectorMeta(run, timeZone: TimeZone(identifier: "UTC")!)
-        #expect(meta == "claude-sonnet · 11 turns")
+        #expect(meta == "worker · claude-sonnet · 11 turns")
         #expect(accent == "done 11:02")
         run.state = "stopped"
         #expect(SubagentPresentation.inspectorMeta(run, timeZone: TimeZone(identifier: "UTC")!).accent == "stopped 11:02")

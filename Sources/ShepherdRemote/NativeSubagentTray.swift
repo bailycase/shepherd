@@ -29,6 +29,7 @@ public struct NativeTrayRow: Equatable, Sendable, Identifiable {
     public var id: String
     public var runID: String
     public var name: String
+    public var role: String?
     public var phase: NativeRunPhase
     public var line: Line
     /// Its combined diff so far, when it has one.
@@ -47,7 +48,7 @@ public struct NativeTrayRow: Equatable, Sendable, Identifiable {
         case .waiting(let text), .result(let text), .failed(let text): text
         case .asks(let question): "asks: " + question
         }
-        return [name, nativeRunPhaseLabel(phase), words].filter { !$0.isEmpty }.joined(separator: ", ")
+        return [name, role, nativeRunPhaseLabel(phase), words].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
     }
 }
 
@@ -157,7 +158,8 @@ public func nativeTrayRow(_ run: ChildRun) -> NativeTrayRow {
     let added = run.result?.added ?? run.files.map { $0.reduce(0) { $0 + $1.added } }
     let removed = run.result?.removed ?? run.files.map { $0.reduce(0) { $0 + $1.removed } }
     let hasDiff = (added ?? 0) + (removed ?? 0) > 0
-    return NativeTrayRow(id: run.id, runID: run.runID, name: nativeRunNames(run).name, phase: phase, line: line,
+    let names = nativeRunNames(run)
+    return NativeTrayRow(id: run.id, runID: run.runID, name: names.name, role: names.role, phase: phase, line: line,
                          added: hasDiff ? added ?? 0 : nil, removed: hasDiff ? removed ?? 0 : nil,
                          since: until == nil ? since : run.startedAt, until: until)
 }

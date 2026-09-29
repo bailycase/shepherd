@@ -50,6 +50,7 @@ struct ExtensionMessageTests {
         .requestReview(id: 9, agentID: agent, cwd: "/tmp/repo", reference: "master..HEAD"),
         .listAgents(id: 16, agentID: agent),
         .sendToAgent(id: 17, agentID: agent, targetAgentID: AgentID(rawValue: "a2"), text: "CI is green"),
+        .sendToAgent(id: 17, agentID: agent, targetAgentID: AgentID(rawValue: "a2"), text: "CI is green", delivery: .report),
         .spawnAgent(id: 18, agentID: agent, cwd: "/tmp/repo", prompt: "Fix the tests."),
         .coordinateAgent(id: 19, agentID: agent, targetAgentID: AgentID(rawValue: "a2"),
                          request: AgentCoordinationRequest(operation: .read, limit: 10, after: "entry-1")),
@@ -252,14 +253,14 @@ struct ExtensionReplyTests {
 
     static func caseName(_ reply: ExtensionReply) -> String {
         switch reply {
-        case .childCommand, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .automations,
+        case .parentInput, .childCommand, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .automations,
              .agents, .message, .agentRequest, .agentResult, .suggestion, .design, .designBoard, .designWritten,
              .designComments, .designComment, .designSystems, .designSystem, .designSystemWritten, .designProposals,
              .designReference, .designNote, .mcpCredentials:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 25
+    static let caseCount = 26
     static let system = DesignSystemSummary(
         info: DesignSystemInfo(namespace: "acme-web", title: "acme-web", revision: 3, createdAt: 1_000, updatedAt: 2_000,
                                syncedAt: 2_000, ownerDesignID: DesignID(rawValue: "d1"), spaceID: SpaceID(rawValue: "s1"),
@@ -287,6 +288,7 @@ struct ExtensionReplyTests {
     )
 
     static let samples: [ExtensionReply] = [
+        .parentInput,
         .childCommand(id: 1, runID: "native-1", action: .message, text: "Replace everywhere", mode: .steer),
         .ok(id: 1),
         .error(id: 2, code: "no_such_pane", message: "pane is not in this agent's layout"),
@@ -303,6 +305,7 @@ struct ExtensionReplyTests {
             AgentPeerInfo(id: AgentID(), name: "me", status: "idle", cwd: "/tmp", isSelf: true),
         ]),
         .message(id: 0, text: "[from: worker] done"),
+        .message(id: 0, text: "[from: worker] done", delivery: .report),
         .agentRequest(id: 0, requestID: "server-token", targetAgentID: AgentID(rawValue: "a2"),
                       request: AgentCoordinationRequest(operation: .steer, text: "[from: worker] change course")),
         .agentResult(id: 19, result: AgentCoordinationResult(text: "request cancelled", code: "cancelled")),
@@ -417,6 +420,23 @@ struct ExtensionReplyTests {
         #expect(result["revision"] as? Int == 5 && result["changed"] as? Bool == true && result["created"] as? Bool == false)
         #expect(result["warnings"] as? [String] == ["global_key_handler"])
         #expect(result["boardCount"] as? Int == 2)
+    }
+
+    @Test func parentInputHasNoPayload() throws {
+        #expect(try Wire.decode(ExtensionReply.self, #"{"type":"parentInput"}"#) == .parentInput)
+        #expect(try Wire.object(ExtensionReply.parentInput) as NSDictionary == ["type": "parentInput"] as NSDictionary)
+    }
+
+    @Test func peerReportsCarryDeliveryAndTasksKeepTheLegacyWireShape() throws {
+        let report = ExtensionMessage.sendToAgent(id: 3, agentID: AgentID(rawValue: "a1"), targetAgentID: AgentID(rawValue: "a2"), text: "done", delivery: .report)
+        #expect(try Wire.decode(ExtensionMessage.self, #"{"type":"sendToAgent","id":3,"agentID":"a1","targetAgentID":"a2","text":"done","delivery":"report"}"#) == report)
+        #expect(try Wire.object(report)["delivery"] as? String == "report")
+        #expect(try Wire.object(ExtensionReply.message(id: 0, text: "done", delivery: .report))["delivery"] as? String == "report")
+        #expect(try Wire.object(ExtensionReply.message(id: 0, text: "done"))["delivery"] == nil)
+        #expect(try Wire.decode(ExtensionReply.self, #"{"type":"message","text":"done","delivery":"report"}"#) == .message(id: 0, text: "done", delivery: .report))
+        #expect(throws: (any Error).self) {
+            try Wire.decode(ExtensionMessage.self, #"{"type":"sendToAgent","id":3,"agentID":"a1","targetAgentID":"a2","text":"done","delivery":"unknown"}"#)
+        }
     }
 
     @Test func aPushedMessageWithoutAnIDDecodesAsIDZero() throws {

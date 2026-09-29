@@ -96,7 +96,9 @@ function fixtureServer() {
       res.write(`data: ${JSON.stringify({ id: "fixture", object: "chat.completion.chunk", created: 1, model: "fixture", choices: [{ index: 0, delta, finish_reason: null }] })}\n\n`);
       res.end(`data: ${JSON.stringify({ id: "fixture", object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: finish }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })}\n\ndata: [DONE]\n\n`);
     };
-    if (last.role === "user" && text === "BOUNDARY_PARENT") {
+    if (last.role === "user" && text === "WAIT_PARENT") {
+      say({ tool_calls: [{ index: 0, id: "parent-wait", type: "function", function: { name: "fixture_wait", arguments: "{}" } }] }, "tool_calls");
+    } else if (last.role === "user" && text === "BOUNDARY_PARENT") {
       say({ tool_calls: [{ index: 0, id: "boundary-child", type: "function", function: { name: "shepherd_child_start", arguments: JSON.stringify({ task: "BOUNDARY_RESULT", role: "scout", mission: false }) } }] }, "tool_calls");
     } else if (last.role === "user" && text.includes("SHELL:")) {
       const command = text.slice(text.indexOf("SHELL:") + 6);
@@ -134,7 +136,9 @@ async function harness(dir, entries = [], timers) {
   const activeTools = ["read", "grep", "find", "ls", "bash", "edit", "write"];
   const pi = { registerCommand(name, command) { commands.set(name, command); }, registerEntryRenderer() {},
     getCommands: () => [...commands.keys()].map((name) => ({ name })), getAllTools: () => [...tools.values()],
-    registerTool(tool) { tools.set(tool.name, tool); }, on(name, handler) { events.set(name, handler); },
+    registerTool(tool) { tools.set(tool.name, tool); }, on(name, handler) {
+      events.set(name, name === "agent_start" ? (...args) => { events.get("before_agent_start")?.(); return handler(...args); } : handler);
+    },
     events: { on(name, fn) { bus.set(name, fn); return () => bus.delete(name); }, emit(name, data) { projections.push(data); bus.get(name)?.(data); } },
     getActiveTools: () => activeTools, appendEntry: (customType, data) => entries.push({ type: "custom", customType, data }),
     sendMessage: (message, options) => messages.push({ message, options }) };
@@ -392,6 +396,38 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     await h.call("result", { id: stoppedParent.id });
     assert.equal(h.events.get("agent_before_settle")({ entries: [], outcome: "completed" }), undefined);
     h.events.get("agent_settled")();
+    // Reports reach context without waking an idle parent; user input ends a wait without
+    // cancelling the still-running child or asking the model for a receipt-only reply.
+    const reportOnly = await h.call("start", { task: "SLOW quiet report", role: "scout", delivery: "report" });
+    await until(() => h.messages.some((m) => m.message.content.includes(reportOnly.id)));
+    assert.equal(h.messages.find((m) => m.message.content.includes(reportOnly.id)).options.triggerTurn, false);
+    const background = await h.call("start", { task: "SLOW background during chat", role: "scout" });
+    h.events.get("agent_start")();
+    const waiting = h.tools.get("shepherd_child_wait").execute("wait", { ids: [background.id], timeoutSeconds: 60 }, undefined, undefined, h.ctx);
+    control.sockets.at(-1).write(JSON.stringify({ type: "parentInput" }) + "\n");
+    const yielded = await waiting;
+    assert.equal(yielded.terminate, true);
+    assert.equal(yielded.details[0].waitInterrupted, "user_input");
+    assert.equal(yielded.details[0].state, "running");
+    h.events.get("agent_settled")();
+    h.events.get("agent_start")();
+    await h.call("wait", { ids: [background.id], timeoutSeconds: 30 });
+    h.events.get("agent_settled")();
+    h.events.get("agent_start")();
+    const workflowWait = h.tools.get("shepherd_workflow").execute("workflow", { async: false, mission: false,
+      workflowScript: 'return runs.run("background", {agent:"scout", task:"SLOW workflow during chat"});' }, undefined, undefined, h.ctx);
+    h.events.get("input")({ text: "user followup", source: "rpc", streamingBehavior: "followUp" });
+    const yieldedWorkflow = await workflowWait;
+    assert.equal(yieldedWorkflow.terminate, true);
+    assert.equal(yieldedWorkflow.details.waitInterrupted, "user_input");
+    assert.equal(yieldedWorkflow.details.state, "running");
+    // Pi can consume direct steering without a new agent_start. Once the user message
+    // lands, later waits must work rather than stay permanently interrupted.
+    h.events.get("message_end")({ message: { role: "user", content: "user followup" } });
+    const completedWorkflow = await h.tool("shepherd_workflow", { action: "wait", id: yieldedWorkflow.details.id, timeoutSeconds: 30 });
+    assert.equal(completedWorkflow.waitInterrupted, undefined);
+    assert.equal(completedWorkflow.state, "complete");
+    h.events.get("agent_settled")();
     const firstFile = pair[0].sessionFile;
     await h.call("resume", { id: pair[0].id, message: "continued" });
     await assert.rejects(h.call("resume", { id: pair[0].id, message: "double writer" }), /already active/);
@@ -407,7 +443,10 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     const ask = await h.call("start", { task: "ASK_PARENT", role: "scout" });
     const asked = (await h.call("wait", { ids: [ask.id], timeoutSeconds: 30 }))[0];
     assert(asked.needsReply);
+    assert.equal(typeof asked.questionID, "string");
+    await assert.rejects(h.call("resume", { id: ask.id, message: "stale answer", questionID: "old-attempt/question" }), /question changed/);
     await until(() => h.messages.some((m) => m.message.content.includes(ask.id)));
+    assert.equal((await h.call("result", { id: ask.id })).questionID, asked.questionID);
     const questionNotices = h.messages.filter((m) => m.message.content.includes(ask.id));
     assert.equal(questionNotices.length, 1, "a blocking question must not also send a completion wake");
     assert(questionNotices[0].message.content.includes("Needs reply"));
@@ -452,7 +491,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     assert(fs.readFileSync(asked.sessionFile, "utf8").includes("inspector answer"));
     assert.equal((await h.call("result", {id: ask.id})).needsReply, false);
     // Resume saves running state before Pi acknowledges the new prompt.
-    fs.writeFileSync(path.join(askDir, "control", "steer-requests", "second-answer.json"), JSON.stringify({ message: "second inspector answer" }));
+    fs.writeFileSync(path.join(askDir, "control", "steer-requests", "second-answer.json"), JSON.stringify({ message: "SLOW second inspector answer" }));
     await until(() => askStatus().state === "running");
     assert.equal(askStatus().controlRequestID, "answer", "launch must not publish the new request ID with the previous acceptance");
     await until(() => askStatus().controlRequestID === "second-answer" && askStatus().controlNotice === "reply accepted or queued");
@@ -461,7 +500,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     // What the user sent (a card, the inspector, the fleet view) is recorded beside the session;
     // what the parent sent through its tools is not.
     const userSent = (file) => fs.readFileSync(path.join(path.dirname(file), "user-messages.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
-    assert.deepEqual(userSent(asked.sessionFile).map((r) => r.text), ["card answer", "inspector answer", "second inspector answer"]);
+    assert.deepEqual(userSent(asked.sessionFile).map((r) => r.text), ["card answer", "inspector answer", "SLOW second inspector answer"]);
     assert(userSent(asked.sessionFile).every((r) => Number.isFinite(r.at)));
     assert.deepEqual(userSent(firstFile).map((r) => r.text), ["fleet answer"], "the parent's resume is not the user's");
     const leaseDir = path.join(askDir, "writer"); fs.mkdirSync(leaseDir);
@@ -586,7 +625,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     } finally { try { process.kill(-ownerProc.pid, "SIGKILL"); } catch {} }
     // Exercise the real parent's runtime replacement, not just the harness hook.
     const driver = path.join(dir, "parent-driver.ts");
-    fs.writeFileSync(driver, `import children from ${JSON.stringify(source)};\nexport default function(pi) { const tools = new Map(); children(new Proxy(pi, { get(target, key) { if (key === 'registerTool') return (tool) => { tools.set(tool.name, tool); target.registerTool(tool); }; return target[key]; } }));\npi.on('agent_before_settle', (event,ctx) => { if(event.entries.some(e=>e.customType==='shepherd-child')) ctx.ui.notify('fixture-child-boundary'); });\npi.registerCommand('run', {description:'foreign run collision',handler:async()=>{}});\npi.registerCommand('fixture-start', { description:'fixture', handler: async (args, ctx) => { const data = await tools.get('shepherd_child_start').execute('fixture', { task: args, role:'worker' }, undefined, undefined, ctx); ctx.ui.notify(JSON.stringify(data.details)); } });\npi.registerCommand('fixture-reload', { description:'fixture reload', handler: async (_args, ctx) => { await ctx.reload(); } });\n}`);
+    fs.writeFileSync(driver, `import children from ${JSON.stringify(source)};\nexport default function(pi) { const tools = new Map(); let lastChild; children(new Proxy(pi, { get(target, key) { if (key === 'registerTool') return (tool) => { tools.set(tool.name, tool); target.registerTool(tool); }; return target[key]; } }));\npi.on('agent_before_settle', (event,ctx) => { if(event.entries.some(e=>e.customType==='shepherd-child')) ctx.ui.notify('fixture-child-boundary'); });\npi.registerCommand('run', {description:'foreign run collision',handler:async()=>{}});\npi.registerCommand('fixture-start', { description:'fixture', handler: async (args, ctx) => { const data = await tools.get('shepherd_child_start').execute('fixture', { task: args, role:'worker' }, undefined, undefined, ctx); lastChild = data.details.id; ctx.ui.notify(JSON.stringify(data.details)); } });\npi.registerTool({name:'fixture_wait',label:'wait',description:'test wait',parameters:{type:'object',properties:{}},execute:async(id,p,signal,u,ctx)=>tools.get('shepherd_child_wait').execute(id,{ids:[lastChild],timeoutSeconds:60},signal,u,ctx)});\npi.registerCommand('fixture-reload', { description:'fixture reload', handler: async (_args, ctx) => { await ctx.reload(); } });\n}`);
     const actual = spawn(process.execPath, [path.join(pkg, "dist/cli.js"), "--mode", "rpc", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve", "-e", driver, "--session", path.join(dir, "actual-parent.jsonl"), "--model", "fixture/fixture"],
       { cwd: dir, env: process.env, stdio: ["pipe", "pipe", "pipe"] });
     const actualEvents = [], actualErrors = [];
@@ -630,6 +669,19 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
         "completion must use the real actionable boundary while the parent works");
       assert(requests.slice(prior).some((r) => JSON.stringify(r.messages.at(-1)).includes("Use this result to continue")),
         "the provider receives the result continuation, not just a saved record");
+      await rpc("prompt", { message: `/fixture-start SHELL:sleep 30 >/dev/null 2>&1 & echo $! > '${dir}/chat-child'; wait` });
+      await until(() => fs.existsSync(path.join(dir, "chat-child")));
+      const chatChild = Number(fs.readFileSync(path.join(dir, "chat-child")));
+      const eventsBeforeWait = actualEvents.length;
+      await rpc("prompt", { message: "WAIT_PARENT" });
+      await until(() => actualEvents.slice(eventsBeforeWait).some((e) => e.type === "tool_execution_start" && e.toolName === "fixture_wait"));
+      control.sockets.at(-1).write(JSON.stringify({ type: "parentInput" }) + "\n");
+      await until(() => actualEvents.slice(eventsBeforeWait).some((e) => e.type === "agent_settled"));
+      assert(live(chatChild), "yielding the real parent wait leaves its child alive");
+      await rpc("prompt", { message: "USER_CHAT_WHILE_CHILD_RUNS" });
+      await until(() => actualEvents.slice(eventsBeforeWait).filter((e) => e.type === "agent_settled").length >= 2);
+      assert(live(chatChild), "the parent can answer a new user while its child is still running");
+      assert(requests.some((r) => JSON.stringify(r.messages.at(-1)).includes("USER_CHAT_WHILE_CHILD_RUNS")));
     } finally { actual.stdin.end(); await until(() => actual.exitCode !== null || actual.signalCode !== null).catch(() => actual.kill("SIGKILL")); }
     fs.mkdirSync(path.join(dir, ".pi", "agents"), { recursive: true });
     const profilePath = path.join(dir, ".pi", "agents", "minimal.md");

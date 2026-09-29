@@ -142,6 +142,19 @@ cancelled wait hands its completion back. Notifications are hidden coordination 
 user requests, and tell the parent not to acknowledge receipt. Stop/error settlement suppresses
 automatic wake until the parent starts again. Delivery is not durable or exactly-once across a crash.
 
+`delivery: "report"` on a child or workflow stores its completion as hidden context without
+starting a parent turn. `"continue"` is the compatible default for dependent work. Blocking
+questions can notify in either mode. Results include an attempt ID and, while asking, a
+`questionID`; pass that ID to message/resume when answering to reject an obsolete question.
+
+An accepted queued user send while the parent works sends `parentInput` on its registered children
+connection. That ends a child/workflow wait with `waitInterrupted: "user_input"` and the Pi
+terminate-tool result, without cancelling any child. This host signal is necessary because
+host-queued user messages have not yet reached Pi's ordinary input event. Direct Pi streaming
+input also ends waits, with its interruption cleared when that user message is consumed. The user turn can then drain normally; background results do not force
+a continuation ahead of waiting user input. An unrelated long-running tool is not forcibly
+cancelled by this signal.
+
 **Context.** Fresh context is the default unless a profile or setting chooses fork. Fork copies
 the selected branch up to the last complete tool batch, using a separate `SessionManager`. It
 leaves out in-flight tool calls and never branches the parent's live session.

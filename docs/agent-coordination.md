@@ -15,8 +15,13 @@ decisions), `PeerDeleteDialog` in `AppDialogs.swift`, and `ShepherdViewModel+Rev
 ## The tools
 
 - **`agent_list`**: every top-level thread, with its status and directory.
-- **`agent_send`**: a message the target receives as a follow-up (`deliverAs: "followUp"`),
-  prefixed `[from: <sender name>]`. It wakes an idle agent.
+- **`agent_send`**: a message prefixed `[from: <sender name>]`, with optional `delivery`:
+  - `task` (default, including older callers): a user follow-up (`deliverAs: "followUp"`).
+    Starts an idle agent or queues another turn while busy. Use it to request work.
+  - `report`: hidden custom context (`shepherd-peer-report`, `display: false`,
+    `triggerTurn: false`). Never starts an idle agent or queues another turn. While busy, pi
+    appends it at the next safe turn boundary, after in-flight tool results. Use it for results
+    or FYI; it is not a user message and is omitted by `agent_read`.
 - **`agent_spawn`**: a new agent in a directory with an opening prompt. It never takes the
   user's selection.
 - **`agent_read`**: finalized visible messages on the target's current pi branch, read live
@@ -43,7 +48,9 @@ decisions), `PeerDeleteDialog` in `AppDialogs.swift`, and `ShepherdViewModel+Rev
 - **`review_diff`**: readies the agent's review in its side pane's Changes tab (below).
 
 `agent_send`, `agent_steer`, and `agent_interrupt` report that dispatch was requested, never
-that the target accepted or acted on it.
+that the target accepted or acted on it. A missing connection, oversized message or failed
+socket dispatch is a failure, not a delivery claim. Pi's extension `sendMessage` API is
+fire-and-forget: a report's dispatch is not an acknowledgment that pi stored or read it.
 
 ## How a live request travels
 
@@ -114,13 +121,14 @@ once; the user's review arrives later as a message.
 ## Automation completion reports
 
 `automation_create(replyToCreator: true, …)` appends instructions to the saved watch prompt
-asking it to call `agent_send` with the creating agent's exact ID when it succeeds, fails, or
+asking it to call `agent_send` with `delivery: "report"` and the creating agent's exact ID when it succeeds, fails, or
 is blocked, as well as `notify`. Automation agents already have `agent_send`; they cannot
 create further automations. The default remains notification-only unless the prompt asks
 otherwise.
 
 This is an instruction to the watch agent, not a guaranteed completion callback. Dispatch
-queues a follow-up if the creator is busy. The saved target survives a restart, but a deleted
+adds context without waking the creator; while busy it waits for pi's safe boundary, not a
+follow-up turn. The saved target survives a restart, but a deleted
 creator cannot receive it: the watcher reports the delivery failure in its notification and
 stops rather than choosing a different thread. Editing the automation's prompt replaces
 these instructions too, so retain them if completion reporting is still wanted.
@@ -130,7 +138,7 @@ these instructions too, so retain them if completion reporting is still wanted.
 ```bash
 PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" \
   node --test Tests/Extensions/agent-coordination.test.mjs   # the recipient side and the tools
-swift test --filter ExtensionMessageTests                    # wire shapes
+swift test --filter 'ExtensionMessageTests|ExtensionReplyTests|ExtensionSocketTests' # wire shapes and peer routing
 swift test --filter AgentCoordinationTests                   # server relaying and tokens
 swift test --filter 'AgentPeerDeletionTests|ReviewFlowTests' # the dialog and review_diff
 ```

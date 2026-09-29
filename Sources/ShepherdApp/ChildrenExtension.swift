@@ -247,8 +247,9 @@ enum ChildrenExtension {
             return run.sessionID;
           };
           const summary = (run) => ({ id: run.id, role: run.role, state: run.state, task: run.task, startedAt: run.startedAt, endedAt: run.endedAt, currentTool: run.currentTool, latestTool: run.latestTool, model: run.model, cwd: run.cwd,
-            workflowId: run.workflowId, settled: run.settled, missionId: run.missionId, missionWarning: run.missionWarning, thinking: run.thinking, context: run.context, tools: run.tools, sessionFile: run.sessionFile, output: run.output, error: run.error, needsReply: run.needsReply, stopReason: run.lastStop, omittedInFlight: run.omittedInFlight,
-            turns: run.turns, toolCalls: run.toolCalls, tokens: run.tokens, contextPercent: run.contextPercent, files: fileChanges(run), added: run.added, removed: run.removed, lastActivity: run.lastActivity, questionOptions: run.questionOptions, questionText: run.questionText, questionShort: run.questionShort, exitCode: run.exitCode, toolCallID: run.toolCallID, stepIndex: run.stepIndex });
+            workflowId: run.workflowId, delivery: run.delivery ?? "continue", settled: run.settled, missionId: run.missionId, missionWarning: run.missionWarning, thinking: run.thinking, context: run.context, tools: run.tools, sessionFile: run.sessionFile, output: run.output, error: run.error, needsReply: run.needsReply, stopReason: run.lastStop, omittedInFlight: run.omittedInFlight,
+            turns: run.turns, toolCalls: run.toolCalls, tokens: run.tokens, contextPercent: run.contextPercent, files: fileChanges(run), added: run.added, removed: run.removed, lastActivity: run.lastActivity, questionOptions: run.questionOptions, questionText: run.questionText, questionShort: run.questionShort,
+            attempt: run.attempt, questionID: run.questionID, exitCode: run.exitCode, toolCallID: run.toolCallID, stepIndex: run.stepIndex });
           // Card projection for the native thread (DESIGN.md › Subagents). Every field
           // past asyncDir is optional on the Swift side; undefined keys vanish in JSON.stringify.
           function card(run) {
@@ -323,28 +324,36 @@ enum ChildrenExtension {
             }
             publish();
           }
-          let parentWorking = false, parentInterrupted = false;
+          let parentWorking = false, parentInterrupted = false, parentInputVersion = 0, userInputWaiting = false;
+          let directInputWaiting = false;
+          function parentInput() { parentInputVersion += 1; userInputWaiting = true; }
+          pi.on("input", (event) => {
+            if (event.streamingBehavior) { parentInputVersion += 1; directInputWaiting = true; }
+          });
+          pi.on("message_end", (event) => { if (event.message?.role === "user") directInputWaiting = false; });
           const pendingNotices = new Map();
           let noticeTimer;
           function flushIdleNotices() {
             noticeTimer = undefined;
             if (!active || parentWorking || parentInterrupted || sessionContext?.isIdle?.() === false || !pendingNotices.size) return;
-            const content = [...pendingNotices.values()].join("\n\n");
+            const notices = [...pendingNotices.values()];
+            const content = notices.map((n) => n.content).join("\n\n");
             pendingNotices.clear();
-            try { pi.sendMessage(noticeMessage(content), { triggerTurn: true, deliverAs: "followUp" }); }
+            try { pi.sendMessage(noticeMessage(content), { triggerTurn: !userInputWaiting && !directInputWaiting && notices.some((n) => n.wake), deliverAs: "followUp" }); }
             catch { /* Results remain retrievable by id. */ }
           }
           const noticeMessage = (content) => ({ customType: "shepherd-child", content,
             display: false, details: { backgroundReport: true } });
           function notify(run, message) {
             if (!current(run) || run.workflowId) return;
-            const content = `Child ${run.id} (${run.role}): ${clip(message)}\nUse this result to continue the task. Do not acknowledge receipt or repeat it unless it changes the user's outcome.`;
-            enqueueNotice(run.id, content);
+            const content = `Child ${run.id} (${run.role}): ${clip(message)}\nAttempt: ${run.attempt ?? "unknown"}${run.questionID ? `\nQuestion: ${run.questionID}` : ""}\nUse this result to continue the task. Do not acknowledge receipt or repeat it unless it changes the user's outcome.`;
+            enqueueNotice(run.id, content, run.needsReply || run.delivery !== "report");
           }
-          function enqueueNotice(id, content) {
-            pendingNotices.set(id, content);
+          function enqueueNotice(id, content, wake = true) {
+            pendingNotices.set(id, { content, wake });
             if (!noticeTimer) { noticeTimer = setTimeout(flushIdleNotices, 0); noticeTimer.unref(); }
           }
+          pi.on("before_agent_start", () => { userInputWaiting = false; directInputWaiting = false; });
           pi.on("agent_start", () => { parentWorking = true; parentInterrupted = false; });
           pi.on("agent_settled", () => {
             parentWorking = false;
@@ -356,9 +365,11 @@ enum ChildrenExtension {
           pi.on("agent_before_settle", (event) => {
             if (event.outcome !== "completed") { parentInterrupted = true; return; }
             if (!pendingNotices.size) return;
-            const content = [...pendingNotices.values()].join("\n\n");
+            const notices = [...pendingNotices.values()];
+            const content = notices.map((n) => n.content).join("\n\n");
             pendingNotices.clear();
-            return { entries: [...event.entries, { type: "custom_message", ...noticeMessage(content) }], continue: true };
+            return { entries: [...event.entries, { type: "custom_message", ...noticeMessage(content) }],
+              continue: event.continue || (!userInputWaiting && !directInputWaiting && notices.some((n) => n.wake)) };
           });
           // Run id -> the shepherd_child_wait calls watching it. A completion inside a wait is that
           // wait's result: a notice as well would wake the parent for a second turn on it.
@@ -458,6 +469,7 @@ enum ChildrenExtension {
                 const details = event.result?.details;
                 if (typeof details?.shepherdParentMessage === "string") {
                   run.needsReply = details.needsReply === true;
+                  run.questionID = run.needsReply ? `${run.attempt}/${event.toolCallId}` : undefined;
                   run.questionOptions = run.needsReply && Array.isArray(details.options) ? details.options.filter((o) => typeof o === "string").slice(0, 6) : undefined;
                   run.output = clip(details.shepherdParentMessage);
                   run.questionText = run.needsReply ? clip(run.output, 600) : undefined;
@@ -504,7 +516,7 @@ enum ChildrenExtension {
             run.paused = false;
             run.stopping = undefined; run.output = ""; run.error = undefined; run.stderr = ""; run.lastStop = undefined; run.availableTools = undefined;
             pendingNotices.delete(run.id);
-            run.questionNotified = false;
+            run.questionNotified = false; run.attempt = randomUUID(); run.questionID = undefined;
             run.needsReply = false; run.questionOptions = undefined; run.questionText = undefined; run.questionShort = undefined; run.exitCode = undefined; run.endedAt = undefined; run.startedAt = Date.now(); run.state = "running";
             run.toolArgs = new Map(); run.files ??= new Map();
             run.closed = new Promise((resolve) => { run.resolveClosed = resolve; });
@@ -577,7 +589,13 @@ enum ChildrenExtension {
           function capacity() { if ([...runs.values()].filter((r) => r.state === "running" || r.state === "queued").length >= defaults.concurrency) throw new Error(`${defaults.concurrency === 4 ? "Four" : defaults.concurrency} children are already active; wait or cancel first`); }
           async function send(run, message, mode = "steer") {
             if (!run.proc || run.exited || run.cancelled || run.settled) throw new Error("Child is not accepting messages; use shepherd_child_resume after it exits");
+            const question = run.questionID;
             await command(run, "prompt", { message, streamingBehavior: mode });
+            if (question && run.questionID === question) {
+              run.needsReply = false; run.questionID = undefined; run.questionText = undefined;
+              run.questionShort = undefined; run.questionOptions = undefined;
+              pendingNotices.delete(run.id); save(run);
+            }
             return { id: run.id, delivery: "accepted or queued", mode };
           }
           async function controls(run) {
@@ -643,6 +661,7 @@ enum ChildrenExtension {
               control = s; s.unref();
               s.on("connect", () => { try { s.write(JSON.stringify({ type: "helloChildren", agentID: process.env.SHEPHERD_AGENT_ID }) + "\n"); } catch { s.destroy(); } });
               s.on("data", jsonLines((frame) => {
+                if (frame?.type === "parentInput") { parentInput(); return; }
                 if (frame?.type !== "childCommand" || !Number.isSafeInteger(frame.id)) return;
                 childCommand(frame).then(() => undefined, (error) => clip(error.message, 500)).then((error) => {
                   if (control === s) { try { s.write(JSON.stringify({ type: "childCommandResult", id: frame.id, error }) + "\n"); } catch {} }
@@ -658,7 +677,7 @@ enum ChildrenExtension {
           }
           pi.on("session_start", (_event, ctx) => {
             owner = ctx.sessionManager.getSessionId(); active = true; sessionContext = ctx;
-            parentWorking = false; parentInterrupted = false; pendingNotices.clear(); clearTimeout(noticeTimer); noticeTimer = undefined;
+            parentWorking = false; parentInterrupted = false; userInputWaiting = false; directInputWaiting = false; parentInputVersion += 1; pendingNotices.clear(); clearTimeout(noticeTimer); noticeTimer = undefined;
             connectControl();
             missions = missionStore(path.join(path.dirname(root), "shepherd-native"), ctx.cwd);
             fs.mkdirSync(root, { recursive: true, mode: 0o700 });
@@ -687,7 +706,7 @@ enum ChildrenExtension {
                 runs.set(data.id, { ...data, dir, sessionFile: path.join(dir, "session.jsonl"), output: clip(status.output), error: status.error,
                   needsReply: status.needsReply === true, lastStop: status.stopReason,
                   turns: status.turns, toolCalls: status.toolCalls, tokens: status.tokens, contextPercent: status.contextPercent, added: status.added, removed: status.removed,
-                  files: new Map((Array.isArray(status.files) ? status.files : []).map((f) => typeof f === "string" ? [f, { added: 0, removed: 0 }] : [f.path, { added: f.added ?? 0, removed: f.removed ?? 0 }])), lastActivity: status.lastActivity?.kind === "running" ? { ...status.lastActivity, kind: "tool" } : status.lastActivity, questionOptions: status.questionOptions, questionText: status.questionText, questionShort: shortReason(status.questionShort), exitCode: status.exitCode,
+                  files: new Map((Array.isArray(status.files) ? status.files : []).map((f) => typeof f === "string" ? [f, { added: 0, removed: 0 }] : [f.path, { added: f.added ?? 0, removed: f.removed ?? 0 }])), lastActivity: status.lastActivity?.kind === "running" ? { ...status.lastActivity, kind: "tool" } : status.lastActivity, questionOptions: status.questionOptions, questionText: status.questionText, questionShort: shortReason(status.questionShort), attempt: status.attempt, questionID: status.questionID, exitCode: status.exitCode,
                   tools: Array.isArray(status.tools) ? data.tools.filter((name) => status.tools.includes(name)) : data.tools,
                   missionId: status.missionId ?? data.missionId,
                   state: ["complete", "failed", "stopped"].includes(status.state) ? status.state : "stopped", startedAt: status.startedAt ?? data.startedAt, endedAt: status.endedAt, latestTool: status.latestTool });
@@ -713,7 +732,8 @@ enum ChildrenExtension {
           });
 
           const missionSchema = Type.Object({ title: textSchema, objective: Type.Optional(textSchema) }, { additionalProperties: false });
-          const startSchema = Type.Object({ task: textSchema, role: Type.Optional(idSchema), agent: Type.Optional(idSchema), context: Type.Optional(StringEnum(["fresh", "fork"])),
+          const startSchema = Type.Object({ task: textSchema,
+            delivery: Type.Optional(StringEnum(["report", "continue"], { description: "report stores the result without starting a parent turn; continue resumes the parent to finish dependent work (default). Blocking questions may notify in either mode." })), role: Type.Optional(idSchema), agent: Type.Optional(idSchema), context: Type.Optional(StringEnum(["fresh", "fork"])),
             cwd: Type.Optional(Type.String({ maxLength: 4096 })), model: Type.Optional(Type.String({ maxLength: 256 })),
             thinking: Type.Optional(StringEnum(thinkingLevels)), missionId: Type.Optional(idSchema), mission: Type.Optional(Type.Union([Type.Boolean(), missionSchema])) }, { additionalProperties: false });
           function checked(schema, params) { return validateToolArguments({ name: "shepherd", parameters: schema }, { id: "check", name: "shepherd", arguments: params }); }
@@ -762,7 +782,7 @@ enum ChildrenExtension {
               const id = `native-${randomUUID()}`, dir = path.join(root, id);
               fs.mkdirSync(path.join(dir, "control", "steer-requests"), { recursive: true, mode: 0o700 });
               const run = { id, dir, owner, role, model, cwd, thinking: params.thinking ?? resolved.thinkingLevel ?? profile.thinking ?? defaults.thinking ?? ctx.thinkingLevel ?? "off", task: params.task,
-                context: params.context ?? profile.context ?? defaults.context,
+                context: params.context ?? profile.context ?? defaults.context, delivery: params.delivery ?? "continue",
                 requiresProjectTrust: profile.requiresProjectTrust || (targetContext.isProjectTrusted() && (profile.inheritSkills || profile.skills?.length)), profileSource: profile.source, systemPromptMode: profile.systemPromptMode, inheritProjectContext: profile.inheritProjectContext,
                 extensions: profile.extensions ?? [], skills: childSkills(profile, targetContext), workflowId, ...missionFor(params, params.task),
                 tools: requestedTools.filter((name) => pi.getActiveTools().includes(name)), state: "queued", startedAt: Date.now(), sessionFile: path.join(dir, "session.jsonl"), output: "",
@@ -783,31 +803,40 @@ enum ChildrenExtension {
           pi.registerTool({ name: "shepherd_child_agents", label: "child agents", description: "List effective agent profiles, sources and unsupported-field diagnostics. Reads user files and trusted project files without changing them.",
             parameters: Type.Object({}), async execute(_id, _p, _s, _u, ctx) { return result({ defaults, ...discoverChildAgents(ctx, defaults.scope) }); } });
           pi.registerTool({ name: "shepherd_child_start", label: "start child", parameters: startSchema,
-            description: "Start an owned background Pi helper. Use shepherd_child_agents for discovered profiles. Explicit call overrides profile, then Shepherd defaults, then parent model/thinking. Fresh or fork context; tools intersect the parent allowlist. Cwd is not a sandbox. Progress stays in the child record. Unread completion wakes an idle parent or joins one batched continuation while working; result/wait reads consume pending notices. Default creates a mission; mission:false opts out. No nested delegation or automatic worktrees.",
+            description: "Start an owned background Pi helper. Use shepherd_child_agents for discovered profiles. Explicit call overrides profile, then Shepherd defaults, then parent model/thinking. Fresh or fork context; tools intersect the parent allowlist. Cwd is not a sandbox. Progress stays in the child record. delivery:report stores completion without waking the parent, so the user can keep chatting; delivery:continue resumes dependent work. Result/wait reads consume pending notices. Default creates a mission; mission:false opts out. No nested delegation or automatic worktrees.",
             async execute(id, p, signal, _update, ctx) { return result(await start(p, signal, ctx, undefined, id)); } });
           pi.registerTool({ name: "shepherd_child_message", label: "message child", description: "Message a running child. Acceptance is not completion. Steer runs after current tools; followUp waits for the turn to end.",
-            parameters: Type.Object({ id: idSchema, message: textSchema, mode: Type.Optional(StringEnum(["steer", "followUp"])) }),
-            async execute(_id, p) { return result(await send(get(p.id), p.message, p.mode)); } });
+            parameters: Type.Object({ id: idSchema, message: textSchema, mode: Type.Optional(StringEnum(["steer", "followUp"])),
+              questionID: Type.Optional(Type.String({ description: "Question identity returned by child_result. Rejects an answer to an obsolete question or attempt." })) }),
+            async execute(_id, p) {
+              const run = get(p.id);
+              if (p.questionID && (!run.needsReply || p.questionID !== run.questionID)) throw Error("Child question changed; read its current result before answering");
+              return result(await send(run, p.message, p.mode));
+            } });
           pi.registerTool({ name: "shepherd_child_result", label: "child results", description: "Read one child result or list this parent's retained children. Output is capped at 16 KiB per result and may be truncated; full conversation is in sessionFile. No live work survives parent shutdown.",
             parameters: Type.Object({ id: Type.Optional(idSchema) }),
             async execute(_id, p) {
               if (p.id) pendingNotices.delete(p.id);
               return result(p.id ? summary(get(p.id)) : [...runs.values()].map((r) => ({ id: r.id, role: r.role, state: r.state, task: clip(r.task, 160) })));
             } });
-          pi.registerTool({ name: "shepherd_child_wait", label: "wait for children", description: "Wait for any or all selected children to exit, up to 60 seconds. Timeout or cancelling this wait does not stop the children. Returns bounded results for up to 16 ids.",
+          pi.registerTool({ name: "shepherd_child_wait", label: "wait for children", description: "Wait for selected children, up to 60 seconds. New user input ends the wait immediately without stopping children; waitInterrupted names this outcome. Timeout or cancellation also leaves children running. Returns bounded results for up to 16 ids.",
             parameters: Type.Object({ ids: Type.Array(idSchema, { minItems: 1, maxItems: 16 }), all: Type.Optional(Type.Boolean()), timeoutSeconds: Type.Optional(Type.Number({ minimum: 0, maximum: 60 })) }),
             async execute(_id, p, signal) {
               const selected = p.ids.map(get), watched = [...new Set(selected)], deadline = Date.now() + (p.timeoutSeconds ?? 30) * 1000;
+              const inputVersion = parentInputVersion;
               for (const r of watched) waiters.set(r.id, (waiters.get(r.id) ?? 0) + 1);
               let answered = false;
               try {
                 while (Date.now() < deadline) {
                   signal?.throwIfAborted();
+                  if (userInputWaiting || directInputWaiting || parentInputVersion !== inputVersion) break;
                   const done = selected.map((r) => !["running", "queued"].includes(r.state));
                   if (p.all ? done.every(Boolean) : done.some(Boolean)) break;
                   await new Promise((r) => setTimeout(r, 100));
                 }
-                const value = result(selected.map((r) => ({ ...summary(r), output: clip(r.output, 4096) })));
+                const interrupted = userInputWaiting || directInputWaiting || parentInputVersion !== inputVersion;
+                const value = { ...result(selected.map((r) => ({ ...summary(r), output: clip(r.output, 4096),
+                  ...(interrupted ? { waitInterrupted: "user_input" } : {}) }))), ...(interrupted ? { terminate: true } : {}) };
                 answered = true;
                 return value;
               } finally {
@@ -823,8 +852,10 @@ enum ChildrenExtension {
           pi.registerTool({ name: "shepherd_child_cancel", label: "cancel child", description: "Clear queued work, abort, and terminate an owned child. Returns only after its process exits. Session history remains available for explicit continuation.",
             parameters: Type.Object({ id: idSchema }), async execute(_id, p) { const run = get(p.id); await stop(run); pendingNotices.delete(run.id); return result(summary(run)); } });
           pi.registerTool({ name: "shepherd_child_resume", label: "continue child", description: "Continue a completed, failed, or stopped child session with a new task or answer. Keeps its role, model, cwd, and history. Rejects concurrent writers and missing transcripts. Does not replay interrupted work automatically.",
-            parameters: Type.Object({ id: idSchema, message: textSchema }), async execute(_id, p, signal, _update, ctx) {
-              return result(await resume(get(p.id), p.message, signal, ctx));
+            parameters: Type.Object({ id: idSchema, message: textSchema, questionID: Type.Optional(Type.String({ description: "Question identity returned by child_result; refuses stale answers." })) }), async execute(_id, p, signal, _update, ctx) {
+              const run = get(p.id);
+              if (p.questionID && (!run.needsReply || p.questionID !== run.questionID)) throw Error("Child question changed; read its current result before answering");
+              return result(await resume(run, p.message, signal, ctx));
             } });
           async function resume(run, message, signal, ctx) {
             if (!active) throw Error("No active parent session");
@@ -885,14 +916,14 @@ enum ChildrenExtension {
               return result(record);
             } });
 
-          const workflowSchema = Type.Object({ action: Type.Optional(StringEnum(["start", "status", "cancel", "wait"])), id: Type.Optional(idSchema),
+          const workflowSchema = Type.Object({ delivery: Type.Optional(StringEnum(["report", "continue"])), action: Type.Optional(StringEnum(["start", "status", "cancel", "wait"])), id: Type.Optional(idSchema),
             workflowScript: Type.Optional(Type.String({ minLength: 1, maxLength: 32768 })), task: Type.Optional(textSchema),
             async: Type.Optional(Type.Boolean()), timeoutSeconds: Type.Optional(Type.Number({ minimum: 0.1, maximum: 1800 })),
             missionId: Type.Optional(idSchema), mission: Type.Optional(Type.Union([Type.Boolean(), missionSchema])) }, { additionalProperties: false });
           const workflowSummary = (w) => ({ id: w.id, state: w.state, output: w.output, error: w.error, missionId: w.missionId, missionWarning: w.missionWarning,
             children: [...w.keys].map(([key, run]) => ({ key, id: run.id, state: run.state })) });
           pi.registerTool({ name: "shepherd_workflow", label: "workflow", parameters: workflowSchema,
-            description: "Start a background JavaScript statement body with runs.run(key,{agent,task,...}), runs.all([{key,agent,task,...}]), runs.steer(key,message,{mode}), runs.status(key), runs.cancel(key). Await or return calls. Use ordinary sequencing/branching; no imports, process or filesystem API. This is restricted execution, NOT an OS sandbox. Children retain their normal tools. Default 30-minute deadline and enclosing mission; mission:false disables persistence and state.get/set. async:false waits. status/wait/cancel target this parent's workflow id. No automatic retries, worktrees or scheduling.",
+            description: "Start a background JavaScript statement body with runs.run(key,{agent,task,...}), runs.all([{key,agent,task,...}]), runs.steer(key,message,{mode}), runs.status(key), runs.cancel(key). Await or return calls. Use ordinary sequencing/branching; no imports, process or filesystem API. This is restricted execution, NOT an OS sandbox. Children retain their normal tools. Default 30-minute deadline and enclosing mission; mission:false disables persistence and state.get/set. delivery:report records completion without waking the parent; continue resumes dependent work. async:false waits; new user input interrupts action:wait without stopping children. status/wait/cancel target this parent's workflow id. No automatic retries, worktrees or scheduling.",
             async execute(id, params, signal, _update, ctx) { return runWorkflow(params, signal, ctx, undefined, id); } });
           async function runWorkflow(params, signal, ctx, onSlashComplete, toolCallID) {
               const p = checked(workflowSchema, params), action = p.action ?? "start";
@@ -903,7 +934,14 @@ enum ChildrenExtension {
                 if (action === "cancel") { w.controller.abort(); await w.done; }
                 if (action === "wait") {
                   const deadline = Date.now() + Math.min(p.timeoutSeconds ?? 30, 60) * 1000;
-                  while (w.state === "running" && Date.now() < deadline) { signal?.throwIfAborted(); await new Promise((r) => setTimeout(r, 50)); }
+                  const inputVersion = parentInputVersion;
+                  while (w.state === "running" && Date.now() < deadline) {
+                    signal?.throwIfAborted();
+                    if (userInputWaiting || directInputWaiting || parentInputVersion !== inputVersion) {
+                      return { ...result({ ...workflowSummary(w), waitInterrupted: "user_input" }), terminate: true };
+                    }
+                    await new Promise((r) => setTimeout(r, 50));
+                  }
                 }
                 pendingNotices.delete(w.id);
                 return result(workflowSummary(w));
@@ -988,14 +1026,24 @@ enum ChildrenExtension {
                     if (!["complete", "cancelled"].includes(m.status)) m.status = w.state === "complete" ? "waiting" : "needs_decision";
                     m.workflow = { id: w.id, state: w.state, error: w.error };
                   }); } catch (error) { w.missionWarning = clip(error.message); }
-                  if (active && owner === w.owner && onSlashComplete) { if (p.async !== false) onSlashComplete(workflowSummary(w)); }
-                  else if (active && owner === w.owner && p.async !== false) enqueueNotice(w.id,
-                    `Workflow ${w.id}: ${w.state}\n${w.error || clip(JSON.stringify(w.output))}\nUse this result to continue the task; do not acknowledge receipt.`);
+                  if (active && owner === w.owner && onSlashComplete) { if (w.async) onSlashComplete(workflowSummary(w)); }
+                  else if (active && owner === w.owner && w.async) enqueueNotice(w.id,
+                    `Workflow ${w.id}: ${w.state}\n${w.error || clip(JSON.stringify(w.output))}\nUse this result to continue the task; do not acknowledge receipt.`, p.delivery !== "report");
                 }
               })();
               if (p.async === false) {
                 const abort = () => w.controller.abort(); signal?.addEventListener("abort", abort, { once: true });
-                try { if (signal?.aborted) abort(); await w.done; } finally { signal?.removeEventListener("abort", abort); }
+                try {
+                  if (signal?.aborted) abort();
+                  const inputVersion = parentInputVersion;
+                  while (!w.cleaned) {
+                    if (userInputWaiting || directInputWaiting || parentInputVersion !== inputVersion) {
+                      w.async = true;
+                      return { ...result({ ...workflowSummary(w), waitInterrupted: "user_input" }), terminate: true };
+                    }
+                    await Promise.race([w.done, new Promise((resolve) => setTimeout(resolve, 50))]);
+                  }
+                } finally { signal?.removeEventListener("abort", abort); }
               }
               return result(workflowSummary(w));
           }

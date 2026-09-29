@@ -43,7 +43,7 @@ extension ShepherdViewModel {
         case .list:
             respond(.agents(Self.peerInfos(in: state, sender: sender.id)))
 
-        case .send(_, let targetAgentID, let text):
+        case .send(_, let targetAgentID, let text, let delivery):
             guard targetAgentID != sender.id else {
                 respond(.failed(code: "self_send", message: "an agent cannot message itself"))
                 return
@@ -56,14 +56,12 @@ extension ShepherdViewModel {
                 respond(.failed(code: "not_a_thread", message: "\(target.name) draws a design; it is not a thread"))
                 return
             }
-            // Delivered through the target's panes extension, which injects
-            // it with pi.sendUserMessage — a real queued message, not
-            // keystrokes typed into the composer.
+            // The target's panes extension adds report-only context or sends a user task.
             let framed = "[from: \(sender.name)] \(text)"
-            if server.pushMessage(toAgent: target.id, text: framed) {
+            if server.pushMessage(toAgent: target.id, text: framed, delivery: delivery) {
                 respond(.ok)
             } else {
-                respond(.failed(code: "not_running", message: "\(target.name) has no live pi session"))
+                respond(.failed(code: "not_running", message: "\(target.name) has no live panes connection, or message dispatch failed"))
             }
             return
 

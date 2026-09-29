@@ -53,7 +53,7 @@ enum SubagentPresentation {
         case .result(let text): .result(text)
         case .failed(let reason): .failed(reason)
         }
-        return NWSubagentTrayRun(id: row.id, name: row.name, state: state(row.phase), line: line, added: row.added, removed: row.removed,
+        return NWSubagentTrayRun(id: row.id, name: row.name, role: row.role, state: state(row.phase), line: line, added: row.added, removed: row.removed,
                                  since: row.since.map(date), until: row.until.map(date), accessibilityLabel: row.accessibilityLabel)
     }
 
@@ -61,28 +61,16 @@ enum SubagentPresentation {
         Date(timeIntervalSince1970: milliseconds / 1000)
     }
 
-    /// A run's name and role tag. A native child's label is "role: task", so it is named by
-    /// its role and no tag repeats it; a workflow lane is named by its key and tagged with its
-    /// role.
+    /// Shared task names and secondary roles, with explicit workflow lane names kept.
     static func names(_ run: ChildRun) -> (name: String, role: String?) {
-        guard let role = run.role, !role.isEmpty else { return (run.label, nil) }
-        if run.label == role || run.label.hasPrefix("\(role): ") { return (role, nil) }
-        return (run.label, role)
+        nativeRunNames(run)
     }
 
     // MARK: Inspector
 
-    /// The header's mono line and its state-colored accent: a live run's model, thinking,
-    /// turns and tokens; a finished run's model and turns, then "done 11:02".
+    /// The shared secondary role and metadata, ending with a finished run's state-colored time.
     static func inspectorMeta(_ run: ChildRun, timeZone: TimeZone = .current) -> (meta: String, accent: String?) {
-        var parts: [String] = []
-        if let model = run.model { parts.append(modelTag(model)) }
-        if !run.isTerminal, let thinking = run.thinking, thinking != "off" { parts.append("thinking \(thinking)") }
-        if let turns = run.turns { parts.append(plural(turns, "turn")) }
-        if !run.isTerminal, let tokens = run.tokens { parts.append("\(nativeCompactTokens(tokens)) tok") }
-        guard run.isTerminal else { return (parts.joined(separator: " · "), nil) }
-        let word = run.state == "complete" ? "done" : run.state
-        return (parts.joined(separator: " · "), run.endedAt.map { "\(word) \(nativeClockText($0, meridiem: false, timeZone: timeZone))" } ?? word)
+        nativeRunInspectorMeta(run, timeZone: timeZone)
     }
 
     /// "step 1 / 1 · 62%" beside a live run's goal.
