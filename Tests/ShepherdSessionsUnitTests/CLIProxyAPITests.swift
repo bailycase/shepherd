@@ -19,6 +19,14 @@ import Testing
         #expect(throws: CLIProxyAPIStore.Failure.self) { try CLIProxyAPIStore.baseURL(input) }
     }
 
+    @Test(arguments: [
+        ("sk-plain_KEY.123", true), ("sk-smart\u{2019}quote", false), ("sk-ellipsis\u{2026}", false),
+        ("sk-nbsp\u{00A0}x", false), ("sk-space x", true), ("", false), ("sk-tab\tx", false)
+    ])
+    func onlyKeysARequestHeaderCanCarryAreAccepted(key: String, sendable: Bool) {
+        #expect(CLIProxyAPIStore.sendable(key) == sendable)
+    }
+
     @Test func discoveryPreservesRouteIdentityAndRejectsAnEmptyOrBrokenCatalog() throws {
         let data = Data(#"{"data":[{"id":"~anthropic/claude-sonnet","owned_by":"anthropic"},{"id":"gpt-model"},{"id":"gpt-model"}]}"#.utf8)
         let models = try CLIProxyAPIStore.models(data)

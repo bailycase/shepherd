@@ -22,6 +22,10 @@ path with `-e` and pins `SHEPHERD_CLIPROXYAPI_CONFIG`, including for `--no-exten
 and drafts. The extension is inert without configuration. It registers the distinct provider
 `cliproxyapi`, so an imported `cpa` provider and its credentials remain untouched. Native provider
 authentication uses the saved key literally, never as an environment reference or shell command.
+Connect accepts only a key of printable ASCII, the characters a request header can carry: a
+proxy's model list may not check keys, so discovery alone can't catch a pasted curly quote or
+ellipsis, and pi's fetch would fail every request with only "Connection error." A key saved before
+this check gets its cause in the turn's error instead.
 The extension reads pi's bundled model metadata without fetching another catalog. A model newer
 than that catalog (`gpt-6.1-sol` beside a known `gpt-6-sol`) takes the capabilities and thinking
 levels of its owner's nearest earlier version of the same family, where a family is the name with

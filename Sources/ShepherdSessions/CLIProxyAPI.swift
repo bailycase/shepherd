@@ -75,8 +75,10 @@ public actor CLIProxyAPIStore {
         let url = try Self.baseURL(server)
         var key = key.trimmingCharacters(in: .whitespacesAndNewlines)
         if key.isEmpty, let previous = try load(), previous.baseURL == url.absoluteString { key = previous.apiKey }
-        guard !key.isEmpty, !key.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
-            throw Failure("Enter the API key for this server.")
+        guard !key.isEmpty else { throw Failure("Enter the API key for this server.") }
+        guard Self.sendable(key) else {
+            // The proxy's model list may not check keys, so a key pi can't send passes discovery.
+            throw Failure("This key has a character a request can't carry, often a curly quote or \u{2026} from pasting. Paste the plain key.")
         }
         var request = URLRequest(url: url.appendingPathComponent("models"))
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -130,6 +132,12 @@ public actor CLIProxyAPIStore {
         try ready()
         if FileManager.default.fileExists(atPath: file.path) { try FileManager.default.removeItem(at: file) }
         pi.catalog.invalidate()
+    }
+
+    /// Whether pi can send `key` in an Authorization header: printable ASCII only. Node's fetch
+    /// throws before connecting on anything else, which pi reports as a connection error.
+    nonisolated static func sendable(_ key: String) -> Bool {
+        !key.isEmpty && key.unicodeScalars.allSatisfy { (0x20...0x7E).contains($0.value) }
     }
 
     public nonisolated static func baseURL(_ server: String) throws -> URL {

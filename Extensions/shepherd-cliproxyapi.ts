@@ -152,6 +152,11 @@ export default function (pi: ExtensionAPI) {
       if (!snapshot) throw new Error("CLIProxyAPI is disabled or its settings are unavailable.");
       if (!current) throw new Error("This CLIProxyAPI model is no longer available. Choose another model.");
       const key = snapshot.apiKey;
+      // fetch throws on a header byte above 0xFF before connecting, and pi would only say
+      // "Connection error." A pasted curly quote or ellipsis is the usual cause.
+      if (!/^[\x20-\x7e]+$/.test(key)) {
+        throw new Error("The CLIProxyAPI key in Shepherd's settings has a character a request can't carry, often a curly quote or ellipsis from pasting. Reconnect in Settings ▸ Pi ▸ Sign-in with the plain key.");
+      }
       const redact = (text: string) => {
         for (const secret of new Set([key, encodeURIComponent(key), JSON.stringify(key).slice(1, -1)])) {
           if (secret) text = text.split(secret).join("[redacted]");
