@@ -2932,8 +2932,10 @@ send the review.
   pairs line for line with the additions after it, and the longer side's extra lines face filler
   hatched in `lineSubtle` diagonals 7pt apart (`NWDiffHatch`), so rows line up.
 - **Unified** (ChangesUnified, `NWDiffLine`): the gutter bar, the old and new numbers, a 16pt sign
-  (+ `done`, a true minus `failed`) and the code. Lines are 21pt (× density), clipped at the pane's
-  edge with the full line on hover, never wrapped. Removals sit on `failedTint` and additions on
+  (+ `done`, a true minus `failed`) and the code. Lines are 21pt (× density), never wrapped.
+  The diff scrolls horizontally as well as vertically to expose long lines. Both split columns
+  use the same measured width, so old/new pairs stay aligned; full-line hover text remains.
+  Width is measured once per changed diff and text scale, not per scroll step. Removals sit on `failedTint` and additions on
   `doneTint`; with Word diffs on, a paired line's changed words take a second layer of the same
   tint (`DiffWords`, computed with the syntax colors once per file off the main thread).
 - **Folds** (FoldRow, `NWDiffFoldRow`, 26pt on `bgSunken` between hairlines): unchanged lines

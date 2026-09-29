@@ -1,5 +1,7 @@
 import AppKit
 import ShepherdUI
+import ShepherdProtocol
+@testable import ShepherdApp
 import SwiftUI
 import Testing
 import ShepherdTestSupport
@@ -7,6 +9,32 @@ import ShepherdTestSupport
 @Suite("Diff line drawing", .mainActorExclusive)
 @MainActor
 struct DiffDrawingTests {
+    @Test(arguments: [false, true])
+    func longLinesCanBeReachedByHorizontalScrolling(split: Bool) async throws {
+        let source = String(repeating: "long_identifier_", count: 35) + "VISIBLE_END"
+        let files = DiffFile.parse("diff --git a/sample.txt b/sample.txt\n--- a/sample.txt\n+++ b/sample.txt\n@@ -1 +1 @@\n-old\n+\(source)\n")
+        let model = ListFixtures.reviewModel(files)
+        model.session.layoutChoice = split ? .split : .unified
+        let window = OffscreenWindow(size: CGSize(width: 600, height: 400), dark: false,
+                                     ReviewPaneContent(model: model))
+        defer { window.close() }
+        try await eventuallyOnMain("the diff to expose its horizontal extent") {
+            window.layout()
+            guard let scroll = ListPerf.scrollView(in: window) else { return false }
+            return (scroll.documentView?.bounds.width ?? 0) > scroll.contentView.bounds.width + 1000
+        }
+        let scroll = try #require(ListPerf.scrollView(in: window))
+        let clip = scroll.contentView
+        let end = clip.constrainBoundsRect(NSRect(x: scroll.documentView!.bounds.width, y: clip.bounds.minY,
+                                                  width: clip.bounds.width, height: clip.bounds.height)).origin
+        clip.scroll(to: end)
+        scroll.reflectScrolledClipView(clip)
+        window.layout()
+        #expect(clip.bounds.minX > 1000)
+        #expect(abs(clip.bounds.maxX - scroll.documentView!.bounds.width) < 2,
+                "the trailing source must be reachable, not just present in a tooltip")
+    }
+
     @Test(arguments: [false, true])
     func syntaxAndWordHighlightsDrawInsideTheCodeColumn(split: Bool) throws {
         var text = AttributedString(String(repeating: "Highlighted words ", count: 30))
