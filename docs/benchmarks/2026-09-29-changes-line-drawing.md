@@ -25,7 +25,10 @@ The drawing test uses explicit sRGB colors to verify glyph colors, word backgrou
 for unified/split rows. System semantic `.blue` is not pure RGB blue, so the initial test's
 pure-blue pixel threshold was invalid; production drawing required no manual background layer.
 
-These are single-machine comparative measurements, not guaranteed frame rates. Offscreen clip
+A follow-up adds horizontal scrolling with equal split-column widths, measured once per diff
+revision/text scale using CoreText. Repeating the same report with it enabled measured
+10.56/10.15ms downward/upward fast-scroll CPU and 3.67/2.74ms docked/floating draw CPU. It did
+not reverse the rendering improvement. These are single-machine comparative measurements, not guaranteed frame rates. Offscreen clip
 scrolling does not exercise a real pointer repeatedly hovering lines, and window capture is a
 CPU drawing proxy, not a GPU/render-server trace. Existing hover/comment, row-count and motion
 checks remain in place. Real-use scrolling may still have costs outside this renderer change.

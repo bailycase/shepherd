@@ -570,8 +570,9 @@ private struct ReviewDiffList: View, Equatable {
         let canRevert = model.actions.revert != nil && (session.engine == nil ? !session.isPRMode : session.scope == .uncommitted)
         let canOpen = model.actions.open != nil
         let listed = Dictionary((session.list?.files ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let contentWidth = model.scrollContentWidth(textScale: ThemeStore.shared.textScale)
         ScrollViewReader { proxy in
-            ScrollView {
+            ScrollView([.horizontal, .vertical]) {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                     ForEach(session.files) { file in
                         let folded = model.isFolded(file.id)
@@ -585,6 +586,7 @@ private struct ReviewDiffList: View, Equatable {
                         )
                     }
                 }
+                .frame(width: contentWidth, alignment: .leading)
                 // A reload of the same scope (after a Revert, a refresh) lands at once: easing the
                 // sections' offsets under pinned headers mid-scroll opens and closes blank gaps.
                 .nwAnimation(.disclosure, value: model.disclosures)
@@ -685,6 +687,8 @@ private struct DiffFileSection: View, Equatable {
                              comment: { model.startFileComment(file.id) },
                              open: canOpen ? { model.actions.open?(file) } : nil, isPinned: pinned)
             }
+                .frame(width: model.width, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
                 .onTapGesture { model.point(at: file.id) }
                 .contextMenu {

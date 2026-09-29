@@ -34,6 +34,8 @@ public enum NWDiffLineKind: Sendable, Hashable {
 public enum NWDiffMetrics {
     public static let barWidth: CGFloat = 3
     public static let numberWidth: CGFloat = 34
+    public static let commentButtonSize: CGFloat = 18
+    public static let commentSlotWidth: CGFloat = commentButtonSize + 2 * NW.Space.s
     public static let signWidth: CGFloat = 16
     /// Where the unified code column starts.
     public static let codeLeading: CGFloat = barWidth + numberWidth * 2 + signWidth
@@ -202,7 +204,7 @@ public struct NWDiffLine: View {
         }
     }
 
-    static let commentButtonSize: CGFloat = 18
+    static let commentButtonSize = NWDiffMetrics.commentButtonSize
 }
 
 /// One side of a split row (ChangesSplit): the gutter bar, the side's number, and the code; a
@@ -302,7 +304,7 @@ private struct NWDiffLineDrawing: View {
                 context.draw(Text(line.kind.sign).font(.nw(.code)).foregroundStyle(line.kind == .added ? nw.done : nw.failed),
                              at: CGPoint(x: signX, y: size.height / 2), anchor: .leading)
             }
-            let slot = reservesComment ? NWDiffLine.commentButtonSize + 2 * NW.Space.s : 0
+            let slot = reservesComment ? NWDiffMetrics.commentSlotWidth : 0
             context.clip(to: Path(CGRect(x: codeX, y: 0, width: max(0, size.width - codeX - slot), height: size.height)))
             context.draw(Text(line.text).font(.nw(.code)).foregroundStyle(nw.textPrimary),
                          at: CGPoint(x: codeX, y: size.height / 2), anchor: .leading)
