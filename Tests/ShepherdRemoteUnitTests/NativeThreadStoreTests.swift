@@ -898,7 +898,7 @@ struct NativeThreadStoreTests {
         #expect(store.pending.last?.blocks.first?.text == "a new question")
     }
 
-    @Test func stopAllCancelsEveryLiveSubagentThenAbortsTheTurn() async {
+    @Test func stopAllAbortsTheTurnThenCancelsEveryLiveSubagent() async {
         let runs = [F.run("live1"), F.run("done", state: "complete"), F.run("live2", state: "queued")]
         let (store, host, task) = await started(F.snapshot(subagents: runs))
         defer { task.cancel() }
@@ -911,7 +911,43 @@ struct NativeThreadStoreTests {
             default: return "other"
             }
         }
-        #expect(sent == ["cancel live1", "cancel live2", "abort"])
+        #expect(sent == ["abort", "cancel live1", "cancel live2"])
+    }
+
+    @Test func stopAllDoesNotDependOnIntermediateRefreshes() async {
+        let (store, host, task) = await started(F.snapshot(subagents: [F.run("live1"), F.run("live2")]))
+        defer { task.cancel() }
+        host.acceptAll()
+        let accept = host.action
+        host.action = { request in
+            host.starting = true
+            return try accept(request)
+        }
+        await store.abortAll()
+        #expect(host.actions.count == 3)
+        #expect(host.actions.contains { if case .abort = $0 { true } else { false } })
+    }
+
+    @Test func stopAllKeepsEveryRequestInTheOriginalSessionAndPreservesFailures() async {
+        let (store, host, task) = await started(F.snapshot(subagents: [F.run("live")]))
+        defer { task.cancel() }
+        host.acceptAll()
+        let accept = host.action
+        host.action = { request in
+            host.snapshot = F.snapshot(session: "replacement", generation: "new", revision: 2)
+            if case .abort = request { return .failure(code: "dispatch_failed", message: "Stop failed") }
+            return try accept(request)
+        }
+        await store.abortAll()
+        #expect(host.actions.count == 2)
+        for request in host.actions {
+            switch request {
+            case .abort(let session, let generation, _), .subagentCommand(let session, let generation, _, _, _, _, _):
+                #expect(session == "s" && generation == "g")
+            default: Issue.record("unexpected action")
+            }
+        }
+        #expect(store.notice == "Stop failed", "a successful child cancellation must not hide the parent failure")
     }
 
     @Test func subagentCommandsNeedTheSubagentsAction() async {
