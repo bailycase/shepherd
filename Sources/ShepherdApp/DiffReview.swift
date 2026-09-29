@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import CoreText
 import ShepherdUI
 import ShepherdCore
 import ShepherdProtocol
@@ -359,7 +361,8 @@ final class ReviewPaneModel {
     @ObservationIgnored private(set) var movedByKey = false
     @ObservationIgnored private var keyFocusRequest: UUID?
     @ObservationIgnored private var rowCache: [String: CachedRows] = [:]
-    @ObservationIgnored private var width: CGFloat = 0
+    private(set) var width: CGFloat = 0
+    @ObservationIgnored private var measuredCodeWidth: (version: Int, scale: CGFloat, width: CGFloat)?
     /// Where each file's rows start in the diff's visible area, while its section is loaded, and
     /// the height of a file header: a file sits in its place when its rows start below its
     /// header, and has scrolled up under its pinned header when they start above.
@@ -401,7 +404,7 @@ final class ReviewPaneModel {
 
     /// The pane's width changed: split at 900pt and up, unless the reader chose.
     func noteWidth(_ width: CGFloat) {
-        self.width = width
+        if self.width != width { self.width = width }
         updateLayout()
     }
 
@@ -440,6 +443,26 @@ final class ReviewPaneModel {
         rowCache[file.id] = CachedRows(file: file, version: version, layout: layout, revealed: revealed, truncated: truncated,
                                        wordDiffs: words, highlight: highlight, rows: rows)
         return rows
+    }
+
+    /// Measure once per diff and text scale, never on scroll. Both split columns use the
+    /// same width, so paired lines stay aligned while the whole diff scrolls horizontally.
+    func scrollContentWidth(textScale: CGFloat) -> CGFloat {
+        if measuredCodeWidth?.version != session.filesVersion || measuredCodeWidth?.scale != textScale {
+            let font = NSFont(name: "GeistMono-Regular", size: NWTextStyle.code.size * textScale)
+                ?? .monospacedSystemFont(ofSize: NWTextStyle.code.size * textScale, weight: .regular)
+            let widest = session.files.lazy.flatMap(\.hunks).flatMap(\.lines).reduce(CGFloat.zero) {
+                let text = NSAttributedString(string: $1.text, attributes: [.font: font])
+                return max($0, CGFloat(CTLineGetTypographicBounds(CTLineCreateWithAttributedString(text), nil, nil, nil)))
+            }
+            measuredCodeWidth = (session.filesVersion, textScale, ceil(widest))
+        }
+        let code = measuredCodeWidth?.width ?? 0
+        let commentSlot = NWDiffMetrics.commentSlotWidth
+        let content = layout == .split
+            ? 2 * (NWDiffMetrics.splitCodeLeading + code + commentSlot) + 1
+            : NWDiffMetrics.codeLeading + code + commentSlot
+        return max(width, content)
     }
 
     /// Colors and word diffs for every file without them for its current content, one file at a
