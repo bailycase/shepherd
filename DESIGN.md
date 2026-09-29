@@ -2952,9 +2952,13 @@ send the review.
   hatched in `lineSubtle` diagonals 7pt apart (`NWDiffHatch`), so rows line up.
 - **Unified** (ChangesUnified, `NWDiffLine`): the gutter bar, the old and new numbers, a 16pt sign
   (+ `done`, a true minus `failed`) and the code. Lines are 21pt (× density), never wrapped.
-  The diff scrolls horizontally as well as vertically to expose long lines. Both split columns
-  use the same measured width, so old/new pairs stay aligned; full-line hover text remains.
-  Width is measured once per changed diff and text scale, not per scroll step. Removals sit on `failedTint` and additions on
+  Unified diffs scroll horizontally to expose long lines. In split view, each file's old and
+  new code columns scroll independently inside their fixed half-width containers. Horizontal
+  wheel input affects the column under the pointer; each side also has its own native scrollbar
+  below the file. Numbers, center divider, headers and comments stay fixed. One shared vertical
+  scroll keeps old/new pairs aligned. The split content and headers fit that scroll view's
+  viewport, excluding the vertical scrollbar when the Mac is set to show scrollbars Always.
+  Source widths are cached per file and text scale. Removals sit on `failedTint` and additions on
   `doneTint`; with Word diffs on, a paired line's changed words take a second layer of the same
   tint (`DiffWords`, computed with the syntax colors once per file off the main thread).
 - **Folds** (FoldRow, `NWDiffFoldRow`, 26pt on `bgSunken` between hairlines): unchanged lines
