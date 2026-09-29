@@ -30,6 +30,7 @@ struct DiffDrawingTests {
                         ListPerf.settle(window)
                         let scroll = try #require(ListPerf.scrollView(in: window, trailing: true))
                         #expect(abs(window.host.bounds.width - width) < 1)
+                        #expect(abs(window.host.bounds.height - 800) < 1)
                         #expect(scroll.documentView!.bounds.width <= scroll.contentView.bounds.width + 1)
                         #expect(ListPerf.scroll(window, scroll, step: 400, steps: 5).distance > 0)
                         #expect(abs(window.host.bounds.width - width) < 1)
@@ -122,6 +123,13 @@ struct DiffDrawingTests {
             return position.newLimit > 1000
         }
         let scroll = try #require(ListPerf.scrollView(in: window))
+        // The initial file-focus request can arrive after the first geometry observation.
+        // Establish the beginning explicitly before asserting that the footer is offscreen.
+        try await eventuallyOnMain("the long diff viewport to remain at its beginning") {
+            ListPerf.jump(window, scroll, toEnd: false)
+            return scroll.contentView.bounds.minY < 1 && scroll.contentView.bounds.height <= 400
+                && scroll.contentView.bounds.maxY < scroll.documentView!.bounds.height - 1000
+        }
         #expect(scroll.contentView.bounds.maxY < scroll.documentView!.bounds.height - 1000)
         model.scrollSplitCode(at: CGPoint(x: 450, y: 150), delta: -100, viewportWidth: 600)
         #expect(position.newOffset == 100 && position.oldOffset == 0)
