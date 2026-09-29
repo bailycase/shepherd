@@ -8,6 +8,52 @@ This is the "Bundled pi, isolated home" plan's phases 3 to 7: the switch, the im
 user's pi, the first launch's sheet, the user's extensions, opt-in, and native sign-in. Open in
 terminal (8) comes later.
 
+## Optional CLIProxyAPI
+
+Settings ▸ Pi ▸ Sign-in connects to an existing CLIProxyAPI server with its address and API key.
+`CLIProxyAPIStore` checks its `/models` endpoint on Connect and Refresh, with bounded responses,
+timeouts and no redirects. A failed check leaves the previous connection unchanged.
+`shepherd-cliproxyapi.json` in Shepherd's pi home holds the enabled flag, URL, literal key and last
+successful model list together, written atomically with mode 0600. It is not part of imports.
+Turn off keeps the connection; Forget removes it. Neither changes the external server.
+
+`PiHome.install` installs `shepherd-cliproxyapi.ts` beside that file. The launcher supplies its
+path with `-e` and pins `SHEPHERD_CLIPROXYAPI_CONFIG`, including for `--no-extensions` children
+and drafts. The extension is inert without configuration. It registers the distinct provider
+`cliproxyapi`, so an imported `cpa` provider and its credentials remain untouched. Native provider
+authentication uses the saved key literally, never as an environment reference or shell command.
+The extension reads pi's bundled model metadata without fetching another catalog. Unknown models
+use conservative text-only defaults. Known proxy compatibility rules cover DeepSeek's role and
+reasoning fields and Responses tool schemas. Only session-mode instances watch the local config;
+updates wait until idle and never redirect an in-flight turn. The model catalog's fingerprint
+includes the connection file. Configuration and credentials never travel to remote clients.
+
+### Moving from an imported pi provider
+
+There is no automatic migration of `pi-cliproxyapi-provider`. Both providers can coexist while
+you verify the new connection. Existing `cpa/...` sessions keep their original provider until
+you explicitly select a model under `cliproxyapi`.
+
+1. In Settings ▸ Pi ▸ Sign-in ▸ CLIProxyAPI, enter your existing proxy address and API key,
+   then Connect. Verify a new thread using a `cliproxyapi` model before retiring the old setup.
+2. Change Settings ▸ Agents' default model and any explicit native-subagent default, agent
+   profile, workflow or environment override using `cpa/...`. Switch the model in existing
+   threads you plan to keep before disabling their old provider. Conversation history stays.
+3. In Settings ▸ Pi ▸ From your pi ▸ Extensions, turn off `pi-cliproxyapi-provider`. This removes
+   it from subsequent launches; existing processes keep loaded extension code until `/reload`
+   or an app relaunch. Finish active work before relaunching.
+4. The disabled extension's copied files and old `cpa` credential can remain without powering
+   the new provider. Settings currently disables imported extensions, rather than deleting their
+   copied files. Removing the package from your terminal pi alone does not remove Shepherd's
+   independent copy. Nothing in this cutover requires deleting the terminal's configuration.
+
+The old package can read `~/.pi/agent/pi-cliproxyapi-provider/config.json` and `~/.cache` even
+when its code runs from Shepherd's imported copy. The managed provider reads neither. It also
+does not import that package's aliases, per-model overrides, custom headers or environment
+settings. A custom model alias that pi's bundled catalog cannot identify receives conservative
+metadata; verify those models before switching. Don't disable the old provider first: restored
+old `cpa` sessions follow pi's existing fallback rules, not the new provider's fallback guard.
+
 ## The home
 
 Shepherd's pi home is `<support directory>/pi`, always: `~/Library/Application Support/Shepherd/pi`,

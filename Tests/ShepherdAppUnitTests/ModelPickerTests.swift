@@ -42,6 +42,12 @@ struct ModelPickerTests {
 
     /// A recent model the catalog lacks (another host's, or one pi dropped) shows only without a
     /// query; a query filters Recent like everything else.
+    @Test func disabledManagedProxyModelsDoNotReturnThroughRecents() {
+        let list = Self.catalog.list(query: "", recent: ["cliproxyapi/removed", "openai/gpt-5"], current: nil)
+        #expect(!list.options.contains { $0.id == "cliproxyapi/removed" })
+        #expect(list.options.first?.id == "openai/gpt-5")
+    }
+
     @Test func recentModelsFollowTheQuery() {
         let recent = ["gone/model-x", "openai/gpt-5"]
         #expect(Self.catalog.list(query: "", recent: recent, current: nil).options.prefix(2).map(\.id) == recent)

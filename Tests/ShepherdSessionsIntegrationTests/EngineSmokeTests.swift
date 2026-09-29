@@ -93,6 +93,44 @@ struct EngineSmokeTests {
         #expect(after?["deepseek"] == nil)
     }
 
+    @Test func managedProxyLoadsInIsolatedSessionsAndRefreshesWithoutRestarting() async throws {
+        let engine = try #require(EngineSmoke.engine)
+        let scratch = try makeScratchDirectory("engine-cpa")
+        let files = FileManager.default
+        let home = PiHome(directory: scratch.appendingPathComponent("pi"), engine: .bundled(engine), userHome: scratch.path)
+        try home.install()
+        let path = home.directory.appendingPathComponent(CLIProxyAPIStore.fileName)
+        var connection = CLIProxyAPIStore.Connection(enabled: true, baseURL: "http://127.0.0.1:9/v1", apiKey: "!literal-$KEY",
+            models: [.init(id: "fixture-model", owned_by: nil)], updatedAt: 1)
+        try PiHome.write(JSONEncoder().encode(connection), to: path, mode: 0o600)
+        let pi = try RPCProcess(executable: home.launcher.path,
+            arguments: ["--mode", "rpc", "--no-session", "--no-extensions", "--model", "cliproxyapi/fixture-model"],
+            directory: scratch, environment: ["HOME": scratch.path, "TMPDIR": scratch.path + "/", "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"])
+        defer { pi.stop() }
+        let state = try await pi.request(["type": "get_state"])
+        #expect(state["success"] as? Bool == true, "\(pi.errors)")
+        let model = (state["data"] as? [String: Any])?["model"] as? [String: Any]
+        #expect(model?["provider"] as? String == "cliproxyapi")
+        connection.models.append(.init(id: "second-model", owned_by: nil))
+        connection.updatedAt = 2
+        try PiHome.write(JSONEncoder().encode(connection), to: path, mode: 0o600)
+        try await eventually("the existing runtime to adopt the new catalog") {
+            let listing = try await pi.request(["type": "get_available_models"])
+            let models = (listing["data"] as? [String: Any])?["models"] as? [[String: Any]] ?? []
+            return models.contains { $0["provider"] as? String == "cliproxyapi" && $0["id"] as? String == "second-model" }
+        }
+        connection.enabled = false
+        try PiHome.write(JSONEncoder().encode(connection), to: path, mode: 0o600)
+        try await eventually("disabled proxy models to leave the existing runtime") {
+            let listing = try await pi.request(["type": "get_available_models"])
+            let models = (listing["data"] as? [String: Any])?["models"] as? [[String: Any]] ?? []
+            return !models.contains { $0["provider"] as? String == "cliproxyapi" }
+        }
+        #expect(!pi.errors.contains("!literal-$KEY"))
+        _ = try await pi.finish()
+        #expect(!files.fileExists(atPath: scratch.appendingPathComponent(".pi").path))
+    }
+
     /// Ad-hoc builds (the Dev scheme, CI's unsigned releases) run node without the hardened
     /// runtime. A Developer ID build turns it on, and V8 then needs the engine's entitlements:
     /// this signs a scratch copy the way `scripts/sign-app.sh` does, with the runtime, and runs it.

@@ -279,7 +279,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .pi: ["Shepherd's pi", "Name agents automatically", "Panes and agent tools", "Diff review tool", "Native subagents",
                    "Subagent display", "MCP servers", "Concurrency"]
         case .piSignIn: ["Re-import from your pi", "Subscriptions", "Anthropic", "OpenAI Codex", "GitHub Copilot", "xAI", "Kimi", "Radius",
-                         "API keys", "Add an API key", "Custom providers"]
+                         "API keys", "Add an API key", "CLIProxyAPI", "Custom providers"]
         case .piFromYourPi: ["Source", "Last brought over", "Re-import all", "Logins", "Custom providers", "Default model", "Trusted folders",
                              "Instructions", "Skills", "Prompts", "Themes", "Extensions"]
         case .instructions: ["Same on every host", "AGENTS.md", "APPEND_SYSTEM.md", "History"]
@@ -311,6 +311,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                                            "sign out", "expired"],
                          "API keys": ["api key", "key", "environment", "variable", "auth.json", "sign out"],
                          "Add an API key": ["groq", "mistral", "openrouter", "deepseek"],
+                         "CLIProxyAPI": ["cpa", "proxy", "server", "connection", "refresh models"],
                          "Custom providers": ["models.json", "ollama", "gateway"],
                          "Re-import from your pi": ["import", "copy", "your pi"]]
         case .piFromYourPi: ["Source": ["~/.pi/agent", "terminal pi", "your pi"], "Re-import all": ["import", "re-import", "copy"],

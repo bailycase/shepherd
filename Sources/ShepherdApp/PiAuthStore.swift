@@ -28,6 +28,7 @@ final class PiAuthStore {
     /// Sign-ins changed (a sign-in, a sign-out): Settings reads both sides again.
     @ObservationIgnored var onChanged: (() -> Void)?
     @ObservationIgnored let pi: PiSetup
+    let proxy: CLIProxyAPIModel
     @ObservationIgnored let bridge: @MainActor () throws -> PiSignInBridge
     @ObservationIgnored var openURL: (URL) -> Void = { NSWorkspace.shared.open($0) }
     @ObservationIgnored var copy: (String) -> Void = { text in
@@ -37,6 +38,7 @@ final class PiAuthStore {
 
     init(pi: PiSetup, bridge: (@MainActor () throws -> PiSignInBridge)? = nil) {
         self.pi = pi
+        proxy = CLIProxyAPIModel(pi: pi)
         self.bridge = bridge ?? { try PiAuthStore.appBridge(pi) }
     }
 

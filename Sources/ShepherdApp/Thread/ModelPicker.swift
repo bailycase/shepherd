@@ -64,6 +64,7 @@ struct ModelCatalog: Sendable {
         var sections: [NWModelSection] = []
         let recentOptions = recent.compactMap { id -> NWModelOption? in
             if let model = model(id) { return q.isEmpty || model.key.contains(q) ? option(model) : nil }
+            guard !id.hasPrefix(CLIProxyAPIStore.provider + "/") else { return nil }
             return q.isEmpty
                 ? NWModelOption(id: id, title: nativeModelShortName(id), subtitle: subtitle(id, catalog: nil), isCurrent: id == current)
                 : nil
@@ -82,18 +83,14 @@ struct ModelCatalog: Sendable {
 
     // MARK: This Mac's catalog
 
-    /// Each pi catalog's derived catalog, and the derivation in flight, by the catalog's identity
-    /// (the source is kept with its result, so an identity is never reused).
-    @MainActor private static var local: [ObjectIdentifier: (source: PiModelCatalog, catalog: ModelCatalog)] = [:]
+    /// Coalesce simultaneous loads; PiModelCatalog owns persistence and invalidation. Keeping
+    /// another permanent cache here would hide sign-ins and managed connection changes.
     @MainActor private static var loadingLocal: [ObjectIdentifier: Task<ModelCatalog, Never>] = [:]
 
-    /// `pi --list-models` on this Mac (`source`, a `PiSetup`'s catalog), asked once per catalog
-    /// however many threads want it at once (every mounted composer does as the app opens), and
-    /// derived off the main actor. A failed ask is not kept, so the next one tries again.
+    /// Read the fingerprinted catalog and derive picker rows off the main actor.
     @MainActor
     static func loadLocal(from source: PiModelCatalog) async -> ModelCatalog {
         let key = ObjectIdentifier(source)
-        if let cached = local[key] { return cached.catalog }
         let task = loadingLocal[key] ?? Task.detached(priority: .utility) {
             let entries = source.entries()
             return ModelCatalog(entries, levels: ModelListing(entries: entries, defaultModel: nil,
@@ -102,7 +99,6 @@ struct ModelCatalog: Sendable {
         loadingLocal[key] = task
         let catalog = await task.value
         loadingLocal[key] = nil
-        if !catalog.isEmpty { local[key] = (source, catalog) }
         return catalog
     }
 

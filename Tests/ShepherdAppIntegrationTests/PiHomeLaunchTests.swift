@@ -36,7 +36,7 @@ struct PiHomeLaunchTests {
         #expect(launch.cwd == PiSessionFile.realPath(app.dir.path), "the startup files' cd / never moved pi")
         let sessionDir = try #require(launch.argv.firstIndex(of: "--session-dir").map { launch.argv[$0 + 1] })
         #expect(sessionDir == home.sessionDirectory(forCwd: app.dir.path).path)
-        #expect(launch.argv.starts(with: ["--mode", "rpc"]) && launch.argv.contains("--model"))
+        #expect(launch.argv.starts(with: ["-e", home.directory.appendingPathComponent("shepherd-cliproxyapi.ts").path, "--mode", "rpc"]) && launch.argv.contains("--model"))
 
         // Every pin wins over the decoys, which pi never sees; they wait for its shell commands.
         for (key, value) in home.pins where key != "PI_PACKAGE_DIR" { #expect(launch.env[key] == value, "\(key)") }
