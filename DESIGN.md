@@ -2048,9 +2048,12 @@ metrics (the boards draw the Design tool's composers at their own scale).
 
 With more than one live subagent, Stop asks first (`StopAllDialog`): Stop only the agent, or
 Stop all. Stop (the button, ⌘., or Esc in the composer) takes back what pi was about to read
-before it aborts, so a steering message returns to the queue, and the queue then waits
-(paused) until a new message, Send now, or a steer. There is no status text, key hint, or
-working directory in or under the composer.
+before it aborts, so a steering message returns to the queue. The host pauses the queue as
+soon as Stop arrives, so a turn finishing during the stop cannot start the next message.
+It waits until a new message, Send now, or a steer. Stop all stops the parent first, then
+cancels its live subagents in the same session, without depending on a refresh between actions.
+A failure stays visible even if a later cancellation succeeds. There is no status text, key
+hint, or working directory in or under the composer.
 
 **Sending while pi works.** ↩ does what Settings ▸ Agents ▸ Return while pi is working says:
 **Queue** (the default; the message waits in Up next and goes when pi settles) or **Steer**

@@ -496,9 +496,11 @@ extension RPCThreadState {
     /// Everything `clear_queue` returned goes back to pi in order: this host's steering items
     /// are steered again, anything else pi had queued (an extension's) is re-sent as it was.
     private func restorePiQueue(steering: [String], followUp: [String]) {
+        var remaining = items.filter { $0.entry.state == .steering }
         for text in steering {
-            if let item = items.first(where: { $0.entry.state == .steering && ($0.piText ?? $0.promptText) == text }) {
-                let id = item.entry.id
+            if let index = remaining.firstIndex(where: { ($0.piText ?? $0.promptText) == text }) {
+                // Equal text can carry different images; restore each item exactly once.
+                let id = remaining.remove(at: index).entry.id
                 if let index = items.firstIndex(where: { $0.entry.id == id }) { items[index].piText = nil }
                 steerDispatch(id) { _ in }
             } else {
@@ -560,14 +562,13 @@ extension RPCThreadState {
 
     func stop(_ done: @escaping (Result<RPCResponse, RPCError>) -> Void) {
         stopRequested = true
+        // A settle or a released editor can arrive before clear_queue answers.
+        paused = true
+        queueNotice = nil
         cancelPreparingPrompts()
         clearPiQueue { [weak self] steering, followUp, _ in
             guard let self else { return }
             self.reclaim(steering: steering, followUp: followUp)
-            if !self.items.isEmpty {
-                self.paused = true
-                self.queueNotice = nil
-            }
             self.commit()
             self.session.request(.abort, completion: done)
         }

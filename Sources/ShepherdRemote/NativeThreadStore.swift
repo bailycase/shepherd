@@ -1263,9 +1263,38 @@ public final class NativeThreadStore {
 
     /// Stop the parent's turn and every live subagent (the composer's "⌘. stop all").
     public func abortAll() async {
-        let live = subagents.filter { !$0.isTerminal }.map(\.runID)
-        for runID in live { await subagentCommand(runID: runID, action: .cancel) }
-        await abort()
+        guard supports("abort"), let request, let current = snapshot else { return }
+        let run = epoch
+        let live = supports("subagents") ? subagents.filter { !$0.isTerminal }.map(\.runID) : []
+        let stop = UUID()
+        var actions: [(UUID, NativeThreadRequest)] = [(stop, .abort(
+            expectedSessionID: current.piSessionID, generation: current.generation, operationID: stop))]
+        for runID in live {
+            let id = UUID()
+            actions.append((id, .subagentCommand(expectedSessionID: current.piSessionID, generation: current.generation,
+                                                operationID: id, runID: runID, action: .cancel)))
+        }
+        busy = true
+        notice = nil
+        var failure: String?
+        // One Stop uses one session and transport, even if a refresh or tab switch intervenes.
+        // Stop the parent first so child completion cannot start another parent turn.
+        for (id, action) in actions {
+            do {
+                switch try await request(action) {
+                case .accepted(let accepted) where accepted == id: break
+                case .failure(_, let message): failure = failure ?? message
+                default: failure = failure ?? "Action outcome unknown. Refresh and check the thread before trying again. Nothing will be resent automatically."
+                }
+            } catch {
+                failure = failure ?? String(describing: error)
+            }
+        }
+        guard epoch == run else { return }
+        busy = false
+        ready = false
+        await refresh(fresh: true)
+        if epoch == run { notice = failure }
     }
 
     public func answer(dialogID: String, sessionID: String, generation: String, answer: NativeDialogAnswer) async {
