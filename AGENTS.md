@@ -420,7 +420,7 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
 - **Core:** the status transition table, `PaneNode` operations, and state validation.
 - **Migration:** terminal-era `runtime` keys, global shells and space shells dropped at startup,
   and review leaves.
-- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all seventeen files, and
+- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all eighteen files, and
   the design skill's two files).
 - **Themes:** every theme variant complete, and the WCAG contrast rules met.
 - **App logic:** keybindings (defaults, validation, stored overrides for removed actions
@@ -951,7 +951,7 @@ the same change.
 - A new `SessionServer` mutation needs an integration test.
 - New persisted fields decode with defaults, so older `state.json` files keep loading.
 
-**Embedded extensions have one canonical copy.** The seventeen files in `Extensions/` are canonical,
+**Embedded extensions have one canonical copy.** The eighteen files in `Extensions/` are canonical,
 and so is the design skill in `Extensions/design-skill/`.
 pi loads the copies that the eleven `Sources/ShepherdApp/*Extension.swift` files write to the
 support directory from embedded string literals. `installedPath()` rewrites an installed copy
@@ -962,9 +962,15 @@ children-config, children-ui, workflow, and missions, and installs `InspectExten
 `shepherd-mcp.ts` and `shepherd-mcp-client.mjs`, installed side by side. The sign-in bridge,
 `shepherd-sign-in.mjs`, isn't an extension: `PiSignInScript` (ShepherdSessions' `PiSignIn.swift`)
 carries it and installs it beside them, and the app runs it on the engine's node.
+`CLIProxyAPIExtension` in ShepherdSessions embeds `shepherd-cliproxyapi.ts`; `PiHome.install`
+writes it directly in the pi home and the launcher explicitly loads it, including for isolated
+children and drafts. It is inert until Settings ▸ Pi ▸ Sign-in connects a server. Its atomic,
+private connection file is `shepherd-cliproxyapi.json`, named by `SHEPHERD_CLIPROXYAPI_CONFIG`.
+The managed provider is `cliproxyapi`, separate from imported `cpa` providers. No proxy process
+is installed or managed, and credentials never leave the host. See docs/pi-home.md.
 
 - Edit a `.ts`/`.mjs` file (or a design skill file) and its literal in the same change, with
-  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all seventeen pairs
+  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all eighteen pairs
   and the skill's two files.
 - Extensions stay dependency-free and inert without their environment variables.
 - They must never throw into pi or keep the process alive (unref'd sockets and timers).

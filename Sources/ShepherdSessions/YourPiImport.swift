@@ -279,7 +279,7 @@ public struct YourPiSurvey: Equatable, Sendable {
         for model in models {
             guard let slash = model.firstIndex(of: "/"), slash != model.startIndex else { continue }
             let provider = String(model[..<slash])
-            guard PiProviders.names[provider] != nil, !PiProviders.ambient.contains(provider),
+            guard PiProviders.names[provider] != nil || provider == CLIProxyAPIStore.provider, !PiProviders.ambient.contains(provider),
                   !shepherdCustomProviders.contains(provider), !missing.contains(provider) else { continue }
             let login = logins.first { $0.provider == provider }
             if login?.shepherd == nil, login?.environment.isEmpty ?? true { missing.append(provider) }
@@ -934,6 +934,9 @@ public struct YourPiImport: Sendable {
         }
         survey.shepherdCustomProviders = (try? YourPiFiles.read(models)).flatMap { $0 }.flatMap { try? YourPiFiles.customProviders($0) } ?? []
         survey.customProviderDetails = (try? YourPiFiles.read(models)).flatMap { $0 }.flatMap { try? PiCustomProvider.parse($0) } ?? []
+        if CLIProxyAPIStore.configured(in: home), !survey.shepherdCustomProviders.contains(CLIProxyAPIStore.provider) {
+            survey.shepherdCustomProviders.append(CLIProxyAPIStore.provider)
+        }
         let ownSettings = (try? YourPiFiles.read(home.settings)).flatMap { $0 }.flatMap { try? YourPiFiles.object($0, file: "settings.json") }
         survey.shepherdDefaultModel = YourPiFiles.defaultModel(ownSettings)
         if let theirs = survey.defaultModel {
