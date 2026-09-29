@@ -753,6 +753,10 @@ runs, 2,000 folders).
   as they scroll in, from rows and colors derived once per file (highlighted off the main thread
   on the Mac and on iOS, landing in one change). A row compares its line and its note (a comment,
   or the editor), so a comment opening or landing redraws its line, not the 50 on screen. A
+  fixed-height code line draws its gutter, numbers, sign and attributed code in one Canvas,
+  rather than measuring separate text views for each part on every incoming row. Syntax colors,
+  changed-word backgrounds, clipped long lines, scaled line numbers and full-line help remain;
+  the row still owns accessibility labels, Comment actions and double-click handling. A
   hovered line's `+` is an image, not a `Button` (two AppKit views each, and a resting pointer
   hovers a new line every step). The right pane casts its shadow from its fill, and only while it
   floats: on its content, Core Animation redrew the shadow from the scrolling diff every step.
