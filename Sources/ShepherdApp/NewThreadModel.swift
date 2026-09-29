@@ -250,6 +250,26 @@ final class NewThreadState {
         }
     }
 
+    /// Opening the picker rechecks its host's catalog without replacing the draft or defaults.
+    func refreshModels(_ vm: ShepherdViewModel) async {
+        let place = place
+        let loaded: ModelCatalog
+        let listing: ModelListing
+        if let host = place?.host {
+            guard let remote = try? await vm.remoteHosts.listModels(hostID: host) else { return }
+            listing = remote
+            let all = vm.remoteHosts.connections.first { $0.id == host }?.supportsAllThinkingLevels ?? false
+            loaded = await ModelCatalog.derive(listing, hostTakesAllLevels: all)
+        } else {
+            let server = vm.server
+            listing = await Task.detached(priority: .utility) { server.modelListing() }.value
+            loaded = await ModelCatalog.loadLocal(from: server.pi.catalog)
+        }
+        guard self.place == place else { return }
+        self.listing = listing
+        catalog = loaded
+    }
+
     /// Why Send is unavailable; nil when it can send.
     func blocker(_ vm: ShepherdViewModel) -> String? {
         if starting { return "Starting…" }
