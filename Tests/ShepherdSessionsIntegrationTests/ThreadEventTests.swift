@@ -76,6 +76,27 @@ struct ThreadEventTests {
         }
     }
 
+    @Test func stopPausesTheQueueBeforePiCanSettle() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        let s = try await t.ready()
+        let queued = UUID()
+        let abort = NativeThreadRequest.abort(expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID())
+        let stopped: NativeThreadSnapshot? = await withCheckedContinuation { continuation in
+            t.queue.async {
+                t.state.handle(.agentStart)
+                t.state.send(id: queued, text: "tools:0 must wait", delivery: .followUp, images: []) { _ in }
+                t.state.handle(abort) { _ in }
+                // pi settles before the outstanding clear_queue response reaches the host.
+                t.state.handle(.agentSettled)
+                t.state.handle(.snapshot()) { continuation.resume(returning: $0.snapshotValue) }
+            }
+        }
+        #expect(stopped?.queue?.paused == true)
+        #expect(stopped?.queue?.items.map(\.id) == [queued])
+        #expect(stopped?.provisional.isEmpty == true, "Stop must not dispatch the next turn")
+    }
+
     // MARK: - Bootstrap and revisions
 
     @Test func theBootstrapProjectsPisStateHistoryStatsAndCommands() async throws {

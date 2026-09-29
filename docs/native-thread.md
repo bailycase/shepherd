@@ -332,12 +332,17 @@ one prompt at a time.
 - **Back to the queue** (`unsteer`): `clear_queue`; the item returns to the head of the queue
   if pi still held it, and everything else pi returned is handed back in order. If pi already
   read it, even just before the clear arrived, the request is refused (`queue_item_unavailable`)
-  and the message lands where pi read it.
-- **Stop** (`abort`): `clear_queue` first, then `abort` (pi's recipe; `abort` alone delivers a
+  and the message lands where pi read it. Identical texts are matched one item at a time, so
+  restoring two steers keeps each one's images rather than resending the first item's twice.
+- **Stop** (`abort`): the host pauses its queue immediately, before any asynchronous reply can
+  let a settling turn drain it. Then `clear_queue`, followed by `abort` (pi's recipe; `abort` alone delivers a
   queued steer into the aborted turn and keeps follow-ups for a later run). Steering items pi
   still held return to the head, anything else pi had queued joins the queue, and the queue
   pauses. A turn that ends in a provider error pauses it too, and says so (`notice`); a
   stopped run does not, although pi ends a run stopped mid-tool-call with an error reply.
+  Stop all dispatches the parent's abort before cancelling the live children. It captures one
+  session and transport for the whole operation, refreshes only afterward, and preserves the
+  first failure, so a failed refresh cannot silently skip the parent or another child.
 - **Settle:** prompts pi accepted but never started as a message (an extension command, an
   input handler that took it) drop their pending rows; so does a prompt pi answered while idle
   (checked with `get_state`). A steer pi queued after its last look at its queue is stranded
