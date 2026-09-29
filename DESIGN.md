@@ -8720,7 +8720,9 @@ design system chip, the Designs page, or More ▸ Design systems, and keeps the 
     and 10pt under it the name in 12.5 semibold and its template trailing in mono 10.5
     `textTertiary` ("partials/button.html"). Button, Chip, KPI tile, Card, Nav bar, Input.
     A specimen renders from its own directory so linked component styles and assets resolve
-    correctly. Its HTML must include the component styling; token variables alone do not
+    correctly. Complete HTML documents preserve their head resources and html/body theme
+    attributes; fragments use the default shell. Its HTML must include the component styling;
+    token variables alone do not
     reproduce application components.
   - Each section's title ("Colors", "Type", "Components") is a `.nwSectionLabel()`, 6pt above
     its content.
