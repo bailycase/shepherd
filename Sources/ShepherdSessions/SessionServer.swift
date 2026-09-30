@@ -288,6 +288,12 @@ public final class SessionServer: @unchecked Sendable {
     /// the completion has not come after `SessionServer.defaultBrowserDeadline`, and drops an
     /// answer whose connection has gone. With no handler the answer is `unavailable`.
     public var onBrowserRequest: ((AgentID, BrowserRequest, @escaping (BrowserOutcome) -> Void) -> Void)?
+    /// Whether the process at the other end of an extension connection may register as an agent's
+    /// browser (`helloBrowser`): given the agent and the peer's process id. Left `nil`, only the
+    /// pi process this server spawned for that agent may, so a process the agent started (its bash
+    /// tool) cannot drive another thread's page by naming it. Tests that speak as the extension
+    /// from their own process set this to allow it. Read on the server queue.
+    public var browserPeerCheck: ((AgentID, pid_t) -> Bool)?
     /// The user sent a thread a message (its composer, on this Mac or a remote client: not a
     /// peer's `agent_send`, an automation's prompt or a design comment). The agent gets the browser
     /// back if the user had taken it over. Delivered on the main actor.
@@ -2410,6 +2416,9 @@ public final class SessionServer: @unchecked Sendable {
             // already someone else's registers nothing, and its requests are refused.
             guard let agent = store.state.agents.first(where: { $0.id == agentID }), agent.designID == nil,
                   client.agentID == nil, client.childrenAgentID == nil, client.browserAgentID == nil else { return }
+            // Only the agent's own pi process registers, and a refusal leaves the agent's real
+            // connection alone: the check comes before the one it would replace.
+            guard browserPeerMayRegister(as: agentID, client: client) else { return }
             for previous in Array(clients.values) where previous !== client && previous.browserAgentID == agentID {
                 disconnect(previous)
             }
@@ -5140,6 +5149,31 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// Server queue: the RPC thread state behind an agent's pane, if it is an RPC agent.
+    /// The process on the other end of a connected Unix socket, as the kernel recorded it when
+    /// the peer connected (`LOCAL_PEERPID`); nil when it cannot be read.
+    static func peerProcessID(of fd: Int32) -> pid_t? {
+        var pid: pid_t = 0
+        var size = socklen_t(MemoryLayout<pid_t>.size)
+        guard getsockopt(fd, SOL_LOCAL, LOCAL_PEERPID, &pid, &size) == 0, pid > 0 else { return nil }
+        return pid
+    }
+
+    /// The pi process of the agent's thread while it runs.
+    private func piProcessID(forAgent agentID: AgentID) -> pid_t? {
+        guard let session = rpcThread(forAgent: agentID)?.session, session.isAlive else { return nil }
+        return session.processIdentifier
+    }
+
+    private func browserPeerMayRegister(as agentID: AgentID, client: ExtensionConnection) -> Bool {
+        guard let peer = Self.peerProcessID(of: client.fd) else {
+            ShepherdLog.warning("browser registration for agent \(agentID) refused: the peer's process could not be read")
+            return false
+        }
+        let allowed = browserPeerCheck.map { $0(agentID, peer) } ?? (piProcessID(forAgent: agentID) == peer)
+        if !allowed { ShepherdLog.warning("browser registration for agent \(agentID) refused: process \(peer) is not its pi") }
+        return allowed
+    }
+
     private func rpcThread(forAgent agentID: AgentID) -> RPCThreadState? {
         guard let agent = store.state.agents.first(where: { $0.id == agentID }),
               let tab = store.state.tabs.first(where: { $0.id == agent.tabID }),
