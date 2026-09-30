@@ -130,9 +130,6 @@ And the rules that follow from them:
 | The branch chip's chevron (Main, QuestionAsk and the other thread boards); no board draws what it opens | A menu: Show Changes, Copy Branch Name, and for a local agent Copy Path and Show in Finder; the tooltip has the branch, the count and the full path | A chevron must open something (honest affordances); these are what the chip is about |
 | The iPad boards name the host on the chip in iPadTerminal ("build-01") but not in iPadThread | The host shows when more than one host is set up | On iPad every agent runs on another host; the name only tells hosts apart |
 | Review: the side-pane button filled `bgSelected` (with a `lineStrong` ring) while the pane is open | `lanternTint` with a `lanternText` glyph, ringless, like every toolbar toggle | NWNavigation and the Controls board: a toggle is lit in lantern while its pane is open |
-| Queue & steer: Steer "lands after the tool call the agent is running now; the rest of that step is skipped", and "Skipped the rest of that step · N planned edits" in the thread | Steering "lands once the agent’s current tool calls finish, before its next step", and no Skipped line | pi 0.87.1 runs every call in a batch before it reads a steer: nothing is skipped, so nothing may say so (honest affordances) |
-| Queue & steer: ↩ queues by default, Steer now is the steer, and the Send menu and Settings offer two choices | ↩ steers at the next step by default, Steer now (⌘↩, the row action, Steer all now) stops the agent and sends at once, and the Send menu offers three choices (Wait for the turn to end, Steer at the next step, Steer now); Settings ▸ Agents names the first two | The user's call, 2026-09-30: "Queueing a message should set it up to steer next turn, then Steer now should make it steer / interrupt if possible". The boards were not updated; their Send menu, Settings row and Steer now wording predate it |
-| Queue & steer: Steer now's glyph is `arrow.turn.down.right` | Unchanged for Steer now; "Steer at the next step" in the Send menu wears `arrow.right.to.line` | The menu now has a third row, and two rows must not share a glyph; the Steering row keeps the board's still `arrow.turn.down.right` |
 | Queue & steer: the stack and composer at radius 10, rows and fields at 7, chips at 5, the Send menu at 10 | 8 (the composer's), 6, 4, and the popover's 12 | The radius scale |
 | Queue & steer: 5px gaps (the Steering pill, "Steered", "From the queue", a compact chip); 1px lines outside each 40px row, the 32px header and the card | 6 in the pill, 4 elsewhere; lines drawn inside, so three rows make a 152pt stack (the board's 157) | The space scale's 4pt steps; every card and list in the app draws its lines inside (`nwBorder`, `NWHairline` overlays) |
 | Queue & steer: a custom 280pt QueueOptions popover; tooltips with keycaps | The native ••• menu (`NWOptionsMenu`); system tooltips (`.nwHelp`) | As every other ••• and tooltip in the app |
@@ -167,7 +164,7 @@ And the rules that follow from them:
 | ModelPicker: ⌘M opens the model picker (the ⌘M hint in its search field) | **⇧⌘M**, the hint the search field shows (from `KeybindingsStore`), and the palette's Choose model… row and the menu bar | ⌘M is the system Minimize chord |
 | ModelPicker: each row's second line describes the model ("Faster, cheaper", "Fastest") | Model rows' second line lists the model's thinking levels instead of the board's notes ("Off · Minimal · Low · Medium · High", or "No thinking"), on the Mac and in the iOS picker | The user's decision, 2026-09-25 (pi has no model descriptions) |
 | LiveText, ContextCompacted: live "› Thinking…" wears the disclosure's chevron | No chevron on a row with nothing to open: live "Thinking…", a thought the model kept back, a `<details>` with nothing inside, an activity or subagent record line with nothing behind it. Its place stays, so every label sits where a chevron's row puts it and nothing moves when a row becomes one that opens; such a row is not a button and offers VoiceOver no expand | The user's decision, 2026-09-25: "also for the thinking and blocks in such, if there is nothing to expand / show like when the model is thinking, dont show the carat". Patched copies of LiveText and ContextCompacted, their live chevrons left out, go to the canvas |
-| NWComposer and Running: while pi runs, the placeholder "Queue a follow-up — sent when the turn ends" | The idle placeholder stays ("Follow up, or / for commands…"), as QueueSteer and QuestionAnswered draw it beside Stop | Dropped with the queue and steer redesign: ↩ queues or steers per Settings ▸ Agents, so "sent when the turn ends" would be wrong under Steer |
+| Running: while pi runs, the placeholder "Queue a follow-up — sent when the turn ends" | The idle placeholder stays ("Follow up, or / for commands…"), as NWComposer, QueueSteer and QuestionAnswered draw it beside Stop | Dropped with the queue and steer redesign: ↩ steers at the next step by default, so "sent when the turn ends" would be wrong. The Running board still draws it (canvas v125 updated the others) |
 | Terminal: ⌃\` shows the panel, ⌃⇧\` opens a tab, ⌘K clears, ⇧⌘[ ] switch tabs | **⌘J** shows or hides it; ⌘D opens a tab (+ opens the new terminal menu); no clear or tab-switch chord | Every rebindable chord needs ⌘, ⌘K is the palette, and a tab is one click away |
 | Terminal: the terminal on `bgBase` (Mac and iPad panels) | On `bgWindow`, the theme's terminal background | Terminal panes keep one surface everywhere |
 | TerminalTab · states: an exited tab stays, its output kept ("exited with an error; the output stays") | On the Mac a shell that exits closes its pane, so its tab goes at once; iOS shows the exited state until the host closes it | A process that exits on its own closes its pane (AGENTS.md › Sessions and views are separate) |
@@ -187,7 +184,6 @@ And the rules that follow from them:
 | PaneStates › BrowserPane · the agent is using it: the card's leading glyph in `textSecondary`; the card says "Agent is clicking through checkout" for a click | The glyph in `running`, as DESIGN.md's card has always read (the user's decision, 2026-09-30); the card shows for every browser tool, with a phrase derived from the action when the agent gave no note | The board draws one click; a read or a screenshot is the agent using the page too, and Take over is how the user stops it |
 | PaneStates › BrowserPane · the agent is using it: "Click anywhere or Take over to get the page back" | A click or key in the page (a trusted event) or Take over; control returns with the user's next message to the thread | The user's decision, 2026-09-30 (docs/browser.md) |
 | PaneBrowser: the thread's line "Opened the checkout in Browser · localhost:5173/checkout" | "Opened localhost:5173/checkout in Browser", the globe, the address in the label | The user's decision, 2026-09-30: the address names the page; the tool call carries no title |
-| SettingsPi: six bundled-extension rows | A seventh, Browser tools, after MCP servers | The user's decision, 2026-09-30 |
 | NWThread: inline code on `bgSunken` with a 1px `lineSubtle` line, radius 4, 1×5 padding | Prose draws it in mono 12 on a `lineSubtle` fill, with no line or padding. `NWInlineCode` draws the board's form where a view holds the code (only the Component Gallery today) | A run inside `Text` cannot carry a border or padding |
 | NWThread: a follow-up typed while pi works is a dashed bubble in the thread ("queued · sends when the turn ends", Edit, Send now) | It never enters the thread early: it waits in Up next above the composer and joins the thread where pi reads it | The Queue & steer boards replaced it; the host holds one queue that every viewer sees and edits |
 | Settings boards: hexes outside the palette (`#22262a`, `#1b1e21`, `#c1c5cb`, `#767c85`, `#23272c`, `#f58a86`, `#6fd49a`) | The nearest roles (`lineSubtle`, `textSecondary`, `textTertiary`, `bgSelected`, `failed`, `done`) | The roles are the contract; a new color is a theme role |
@@ -2009,7 +2005,7 @@ it (the palette's New agent with options…, New space on <host>…, and "PR #24
   `textOnFailed` on `failed`). While pi works with a draft, Stop steps aside **outlined** (a
   `lineStrong` hairline, no fill, `bgHover` under the pointer, the square in `failed`) and Send
   takes the corner, 6pt apart; filled Stop ⇄ outlined Stop + Send cross-fades (`content`).
-  Tooltips: "Send (↩)", or while pi works "Queue (↩) · Steer now (⌘↩)"; "Stop the agent's turn"
+  Tooltips: "Send (↩)", or while pi works "Steer at the next step (↩) · Steer now (⌘↩)"; "Stop the agent's turn"
   ("Stop the agent and its subagents" while subagents are live). While a question waits, the
   question dock takes the whole card's place (below).
 
@@ -2033,9 +2029,9 @@ metrics (the boards draw the Design tool's composers at their own scale).
 - **Idle:** Send. The placeholder is "Follow up, or / for commands…" ("Follow up…" when pi
   reports no commands), or "Describe the task, or / for commands…" on a fresh agent.
 - **Running:** Stop (⌘.) while the field is empty; with a draft, Stop outlined and Send. The
-  field keeps the idle placeholder (NWComposer's "Queue a follow-up — sent when the turn ends" is
-  a departure; see the table). Send's tooltip names both ways, the Return setting's first:
-  "Queue (↩) · Steer now (⌘↩)".
+  field keeps the idle placeholder (the Running board's "Queue a follow-up — sent when the turn ends"
+  is a departure; see the table). Send's tooltip names both ways, the Return setting's first:
+  "Steer at the next step (↩) · Steer now (⌘↩)" (or "Wait for the turn to end (↩)" under that setting).
 - **Accepting:** a spinner ("Waiting for the agent") takes the button's place.
 - **Starting:** Send is offered from the first frame, before pi has answered anything. A
   message sent while pi boots waits behind the spinner, still in the field, and goes once pi
@@ -3913,8 +3909,8 @@ automated step of the worktree flows can be turned off here.
     Off doesn't stop them running." (the board says "in the sidebar"; subagents have no sidebar
     rows, see Subagents)
   - Browser tools, "Let agents open pages in their thread's Browser, read and click through them,
-    and take screenshots.", after MCP servers: a seventh row, which the SettingsPi board (six)
-    does not draw (the user's decision, 2026-09-30). On by default; a remote client changes it as
+    and take screenshots.", after MCP servers: a seventh row, which the SettingsPi board draws
+    (the user's decision, 2026-09-30; canvas v125). On by default; a remote client changes it as
     any bundled extension (`bundled` id `browser`); a running agent follows a change at its next
     start. A design's agent never gets the tools, whatever the row says (docs/browser.md).
   - Design references, "Let a thread read the design pieces you hand it with `design_get`. Only a
