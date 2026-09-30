@@ -43,7 +43,7 @@ Shepherd Nightly, or wherever `SHEPHERD_SUPPORT_DIR` points).
   process opened it: for every message that names an agent, the app checks that the process on
   the other end (the pid the kernel recorded when it connected) is the `pi` it started for that
   agent. A process an agent starts, such as its bash tool, can read `SHEPHERD_SOCKET` and the
-  other agents' ids, and is refused for status, names, panes, messages to peers, review,
+  other agents' ids, and is refused for status, names, terminals, messages to peers, review,
   design and MCP requests and the browser, and cannot displace the real connection.
 - **What is not covered.** The automation requests name no agent, so any process running as the
   same macOS user that can reach the socket can list, create, edit, start and stop automations.
@@ -69,7 +69,7 @@ Settings ▸ Remote ▸ Serve this Mac ▸ Listener.
   trusted network is the transport boundary. **Never expose the listener to the internet.** The
   token only keeps other devices on that trusted network honest.
 - **A token grants everything your user can do on the host.** A client can:
-  - type into terminal panes
+  - type into terminals
   - create agents that run pi with your credentials
   - send agents instructions
   - list host directories
@@ -116,5 +116,5 @@ Settings ▸ Remote ▸ Serve this Mac ▸ Listener.
   a key only masked (its prefix and last four). Its launcher sets aside your shell's `PI_*`, `JITI_*` and `NODE_*`
   variables for pi itself and gives them back to an agent's shell commands. Extensions load
   through per-session `-e` flags, and Shepherd's pi loads no pi packages. It does not edit your
-  shell startup files; terminal panes get theirs from Shepherd's support directory, and `pi` in a
-  pane is your own.
+  shell startup files; terminals get theirs from Shepherd's support directory, and `pi` in a
+  terminal is your own.
