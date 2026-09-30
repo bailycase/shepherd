@@ -26,6 +26,21 @@
            to the file `browser-self-1.reply` in the cwd), a child process does the same
            (`browser-child.reply`), then it waits for the file `browser-go` and asks again on its
            first connection (`browser-self-2.reply`).
+  "speak <label> <mine> <other> <socket>" the extension socket's traffic for two agents (`mine`,
+           `other`), from this process and from a process it starts (as an agent's bash tool would):
+           the panes hello, a status, a notify and three requests each, and the children hello. What
+           each request was answered goes to `speak-<label>.json` in the cwd: {"own": {"self": {
+           "listPanes": <reply line>, ...}, "other": ...}, "child": ...}. Its notifies are titled
+           "<who>-as-<self|other>", and its status is "working" only from this process as `mine`
+           ("blocked" otherwise). Then it waits for the file `speak-<label>-go` and writes
+           `speak-<label>-after.json`: the next line its panes connection as `mine` read (a push),
+           and whether its children connection as `mine` is still open.
+  $STUB_PI_SPEAK "<label> <mine> <other> <socket>" with $STUB_PI_SPEAK_GATE (a file in the cwd):
+           the same, from this process only, as soon as the gate file exists, even before the
+           pi serves (an extension that connects while the app is still binding the pi to its pane).
+           A pi launched the way the app launches it reads `stub-pi-startup.json` instead:
+           {"speak": {"label": "app", "other": "<agent id>", "gate": "speak-gate", "socket": "<path>"}},
+           speaking as $SHEPHERD_AGENT_ID.
   "widgets"      emits setStatus/setWidget/notify/setTitle (with ANSI colour)
   "widgets-clear" clears the status and widget from "widgets"
   "select" emits a select extension_ui_request (no timeout) and waits
@@ -709,6 +724,106 @@ def browser_peer_turn(agent, path):
     emit({"type": "agent_settled"})
 
 
+# The extension traffic of `who` ("own": this process, "child": a process it starts) on the extension
+# socket, for two agents: the panes extension's hello, a status, a notify and three requests
+# (listPanes, listAgents, coordinateAgent), each answered line read, and the children extension's
+# hello. Also run as a child's script (SPEAK_CHILD), so it stands alone.
+SPEAK_SOURCE = r"""
+import json, socket
+
+def speak(path, who, mine, other, keep=None):
+    result = {}
+    for label, agent in (("self", mine), ("other", other)):
+        cell = result[label] = {}
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(15)
+        s.connect(path)
+        lines = s.makefile("rb")
+        def send(message, s=s):
+            s.sendall((json.dumps(message) + "\n").encode())
+        send({"type": "helloAgent", "agentID": agent})
+        send({"type": "setAgentStatus", "agentID": agent, "status": "working" if who == "own" and label == "self" else "blocked"})
+        send({"type": "notify", "agentID": agent, "title": who + "-as-" + label, "body": ""})
+        requests = [
+            {"type": "listPanes", "agentID": agent},
+            {"type": "listAgents", "agentID": agent},
+            {"type": "coordinateAgent", "agentID": agent, "targetAgentID": other if label == "self" else mine,
+             "request": {"operation": "status"}},
+        ]
+        for n, request in enumerate(requests, 1):
+            send(dict(request, id=n))
+            try:
+                cell[request["type"]] = lines.readline().decode()
+            except OSError as e:
+                cell[request["type"]] = "stub-error: " + str(e)
+        children = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        children.settimeout(15)
+        children.connect(path)
+        children.sendall((json.dumps({"type": "helloChildren", "agentID": agent}) + "\n").encode())
+        if keep is not None and label == "self":
+            keep.update(panes=s, lines=lines, children=children)
+    return result
+"""
+
+SPEAK_CHILD = SPEAK_SOURCE + r"""
+import os, sys
+path, mine, other, out = sys.argv[1:5]
+with open(out + ".tmp", "w") as f:
+    json.dump(speak(path, "child", mine, other), f)
+os.replace(out + ".tmp", out)
+"""
+
+
+def speak_turn(label, mine, other, path, with_child=True):
+    import subprocess
+    namespace = {}
+    exec(SPEAK_SOURCE, namespace)
+    kept = {}
+    result = {"own": namespace["speak"](path, "own", mine, other, kept)}
+    if with_child:
+        child_out = os.path.join(os.getcwd(), f"speak-{label}-child.json")
+        subprocess.run([sys.executable, "-c", SPEAK_CHILD, path, mine, other, child_out], timeout=60)
+        with open(child_out) as f:
+            result["child"] = json.load(f)
+    write_atomic(f"speak-{label}.json", json.dumps(result).encode())
+    if not with_child:
+        return
+    # Nothing the child said displaced the real connections: a push still reaches this process's
+    # panes connection, and its children connection is still open.
+    wait_for_file(f"speak-{label}-go")
+    after = {"push": None, "children": "open"}
+    kept["panes"].settimeout(5)
+    try:
+        after["push"] = kept["lines"].readline().decode() or None
+    except OSError:
+        pass
+    kept["children"].settimeout(0.5)
+    try:
+        if kept["children"].recv(1) == b"":
+            after["children"] = "closed"
+    except OSError:
+        pass
+    write_atomic(f"speak-{label}-after.json", json.dumps(after).encode())
+
+
+def speak_at_start():
+    # A pi that speaks as soon as the test opens its gate, before it serves: an extension connects
+    # while the app is still binding the pi to its pane. "<label> <mine> <other> <socket>".
+    label, mine, other, path = os.environ["STUB_PI_SPEAK"].split(" ", 3)
+    wait_for_file(os.environ["STUB_PI_SPEAK_GATE"], timeout=60.0)
+    speak_turn(label, mine, other, path, with_child=False)
+
+
+def speak_from_config(config):
+    # A pi launched the way the app launches it gets no test env: `stub-pi-startup.json` says
+    # {"speak": {"label": "app", "other": "<agent id>", "gate": "speak-gate", "socket": "<path>"}}. The
+    # agent it speaks for is the one the app launched it for ($SHEPHERD_AGENT_ID); the socket is
+    # $SHEPHERD_SOCKET unless the file names another (a test server's is not the app's).
+    wait_for_file(config.get("gate", "speak-gate"), timeout=60.0)
+    speak_turn(config.get("label", "start"), os.environ.get("SHEPHERD_AGENT_ID", ""), config["other"],
+               config.get("socket") or os.environ.get("SHEPHERD_SOCKET", ""), with_child=False)
+
+
 def ui(method, **fields):
     emit({"type": "extension_ui_request", "id": f"ui-{method}", "method": method, **fields})
 
@@ -763,6 +878,8 @@ def startup():
             config = json.load(f)
     except (OSError, ValueError):
         config = {}
+    if isinstance(config.get("speak"), dict) and not os.environ.get("STUB_PI_SPEAK"):
+        threading.Thread(target=speak_from_config, args=(config["speak"],), daemon=True).start()
     delay = os.environ.get("STUB_PI_STARTUP_DELAY") or config.get("delay")
     gate = os.environ.get("STUB_PI_STARTUP_GATE") or config.get("gate")
     code = os.environ.get("STUB_PI_STARTUP_EXIT") or config.get("exit")
@@ -798,6 +915,8 @@ def signed_in():
 
 
 record_launch()
+if os.environ.get("STUB_PI_SPEAK"):
+    threading.Thread(target=speak_at_start, daemon=True).start()
 startup()
 
 pending_ui = None
@@ -1042,6 +1161,9 @@ for raw in sys.stdin.buffer:
         elif message.startswith("browser-peer "):
             _, browser_agent, browser_socket = message.split(" ", 2)
             threading.Thread(target=browser_peer_turn, args=(browser_agent, browser_socket), daemon=True).start()
+        elif message.startswith("speak "):
+            _, speak_label, speak_mine, speak_other, speak_socket = message.split(" ", 4)
+            threading.Thread(target=speak_turn, args=(speak_label, speak_mine, speak_other, speak_socket), daemon=True).start()
         elif message == "widgets-clear":
             ui("setStatus", statusKey="build")
             ui("setWidget", widgetKey="w")

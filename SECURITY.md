@@ -39,11 +39,17 @@ directory (by default `~/Library/Application Support/Shepherd`, or `Shepherd Nig
 Shepherd Nightly, or wherever `SHEPHERD_SUPPORT_DIR` points).
 
 - The support directory is created mode `0700`, and the socket is `0600`.
-- The socket has **no authentication**. Any process running as the same macOS user that can
-  reach it can speak as a known agent. That means reporting status, requesting panes, typing
-  into that agent's terminal panes, messaging other agents, and managing automations.
-- It is same-user IPC, not a security boundary. Keep `SHEPHERD_SUPPORT_DIR` private and under
-  your own control.
+- The socket has **no token**. Instead, a connection speaks only for the agent whose `pi`
+  process opened it: for every message that names an agent, the app checks that the process on
+  the other end (the pid the kernel recorded when it connected) is the `pi` it started for that
+  agent. A process an agent starts, such as its bash tool, can read `SHEPHERD_SOCKET` and the
+  other agents' ids, and is refused for status, names, panes, messages to peers, review,
+  design and MCP requests and the browser, and cannot displace the real connection.
+- **What is not covered.** The automation requests name no agent, so any process running as the
+  same macOS user that can reach the socket can list, create, edit, start and stop automations.
+  A same-user process that takes over an agent's own `pi` (a debugger, injection) is that agent.
+  This is same-user IPC, not a sandbox. Keep `SHEPHERD_SUPPORT_DIR` private and under your own
+  control.
 - `state.json`, the installed extensions, and native subagent artifacts live in the same
   directory.
 

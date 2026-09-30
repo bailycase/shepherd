@@ -39,8 +39,13 @@ final class RPCSession: @unchecked Sendable {
     let command: [String]
     private(set) var isAlive = true
     /// The pi process this session spawned: the launcher and the shell in front of it `exec`, so
-    /// it is the one that runs the agent's extensions (`SessionServer.helloBrowser` binds to it).
+    /// it is the one that runs the agent's extensions (an extension connection speaks for its
+    /// agent only from this pid: `SessionServer.isPiProcess`).
     var processIdentifier: pid_t { childPID }
+    /// The agent this pi was launched for: the app names it in the child's environment
+    /// (`SHEPHERD_AGENT_ID`), and the server knows the pi speaks for it before any pane holds it
+    /// (`SessionServer.isPiProcess`).
+    let launchAgentID: AgentID?
     private(set) var exitCode: Int32?
 
     /// Every stdout record that is not a `response` (unknown types included).
@@ -129,6 +134,7 @@ final class RPCSession: @unchecked Sendable {
         self.id = id
         self.queue = queue
         self.cwd = params.cwd
+        self.launchAgentID = params.env?["SHEPHERD_AGENT_ID"].map { AgentID(rawValue: $0) }
         guard !params.command.isEmpty else { throw SpawnError(message: "rpc session needs a command") }
         let argv = params.command
         self.command = argv

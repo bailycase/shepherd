@@ -35,7 +35,17 @@ public final class ScratchServer: @unchecked Sendable {
                                trash: { url in try ScratchServer.moveToTrash(url, trash: trash) })
         let broadcasts = broadcasts
         server.onStateChanged = { state in broadcasts.withValue { $0.append(state) } }
+        // A test's raw `ExtensionClient` is not an agent's pi, so it may speak as any agent here.
+        // The real rule (a connection speaks only for the agent whose pi opened it) is under test
+        // where a test asks for it with `useRealPeerCheck()`.
+        server.extensionPeerCheck = { _, _ in true }
         try server.start()
+    }
+
+    /// Serves extension messages only from the pi process the server started for the agent they
+    /// name (`SessionServer.extensionPeerCheck` left `nil`): what the app runs.
+    public func useRealPeerCheck() {
+        server.extensionPeerCheck = nil
     }
 
     /// Where an Undo on this server moves the files a turn created.
