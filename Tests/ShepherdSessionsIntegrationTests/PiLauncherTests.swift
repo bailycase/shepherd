@@ -82,6 +82,42 @@ struct PiLauncherTests {
         #expect(lines.contains("_SHEPHERD_STASH_PI_CODING_AGENT_DIR=/their/pi") && lines.contains("_SHEPHERD_STASH_PI_OFFLINE=0"))
     }
 
+    /// With no user CA and a non-empty keychain export in the home, pi sees `NODE_EXTRA_CA_CERTS`
+    /// set to it, and an agent's shell commands get back none, never Shepherd's fallback. An
+    /// empty or missing export file sets nothing.
+    @Test func theLauncherFallsBackToTheHomesKeychainExportWhenTheUserSetNone() throws {
+        let dir = try makeScratchDirectory("ca-fallback")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let home = try Self.home(in: dir)
+        try Data("fixture pem\n".utf8).write(to: home.keychainCertificatesFile)
+
+        var withoutUserCA = Self.userEnvironment
+        withoutUserCA["NODE_EXTRA_CA_CERTS"] = nil
+        let launched = try Self.run(home.launcher.path, [], environment: withoutUserCA)
+        #expect(launched.status == 0, "\(launched.err)")
+        let lines = Set(launched.out)
+        #expect(lines.contains("NODE_EXTRA_CA_CERTS=\(home.keychainCertificatesFile.path)"))
+        #expect(!lines.contains { $0.hasPrefix("_SHEPHERD_STASH_NODE_EXTRA_CA_CERTS=") }, "the user set none, so nothing was stashed")
+
+        // An agent's shell commands get back exactly what the user had: none, never the fallback.
+        var piEnvironment = ["PATH": "/usr/bin:/bin", "HOME": NSHomeDirectory()]
+        for line in launched.out where !line.hasPrefix("arg=") {
+            let parts = line.split(separator: "=", maxSplits: 1).map(String.init)
+            if parts.count == 2 { piEnvironment[parts[0]] = parts[1] }
+        }
+        let command = home.shellCommandPrefix + "\n" + #"printf '%s\n' "${NODE_EXTRA_CA_CERTS-unset}""#
+        let restored = try Self.run("/bin/zsh", ["-c", command], environment: piEnvironment)
+        #expect(restored.status == 0, "\(restored.err)")
+        #expect(restored.out == ["unset"])
+
+        try FileManager.default.removeItem(at: home.keychainCertificatesFile)
+        let withoutFile = try Self.run(home.launcher.path, [], environment: withoutUserCA)
+        #expect(!withoutFile.out.contains { $0.hasPrefix("NODE_EXTRA_CA_CERTS=") })
+        try Data().write(to: home.keychainCertificatesFile)
+        let withEmptyFile = try Self.run(home.launcher.path, [], environment: withoutUserCA)
+        #expect(!withEmptyFile.out.contains { $0.hasPrefix("NODE_EXTRA_CA_CERTS=") })
+    }
+
     /// `restore-env.sh`, as the bash tool sources it before a command: the pins go, and what
     /// the launcher set aside comes back as it was, spaces and quotes included, in bash and zsh.
     @Test(arguments: ["/bin/bash", "/bin/zsh"])
@@ -267,6 +303,7 @@ struct PiLauncherTests {
     @Test func theMCPProbeDropsTheStartupFilesPiAndNodeSettings() throws {
         let dir = try makeScratchDirectory("probe-env")
         defer { try? FileManager.default.removeItem(at: dir) }
+        let home = try Self.home(in: dir)
         let node = dir.appendingPathComponent("node")
         try """
             #!/bin/sh
@@ -280,10 +317,43 @@ struct PiLauncherTests {
         environment["NODE_EXTRA_CA_CERTS"] = "/their/ca.pem"
         environment["OPENSSL_CONF"] = "/their/openssl.cnf"
 
-        let line = PiLaunch.mcpProbe(engine: engine, client: "/c.mjs")
+        let line = PiLaunch.mcpProbe(engine: engine, home: home, client: "/c.mjs")
         let run = try Self.run(line.argv[0], Array(line.argv.dropFirst()), environment: environment)
 
         #expect(run.status == 0, "\(run.err)")
         #expect(run.out == ["arg=/c.mjs", "arg=probe", "NODE_EXTRA_CA_CERTS=/their/ca.pem"])
+    }
+
+    /// Same fallback the launcher uses (below): with no user CA and a non-empty keychain export
+    /// in the home, the MCP probe sees `NODE_EXTRA_CA_CERTS` set to it; the user's own wins when
+    /// they set one, and an empty or missing file sets nothing.
+    @Test func theMCPProbeFallsBackToTheHomesKeychainExport() throws {
+        let dir = try makeScratchDirectory("probe-ca")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let home = try Self.home(in: dir)
+        try Data("fixture pem\n".utf8).write(to: home.keychainCertificatesFile)
+        let node = dir.appendingPathComponent("node")
+        try """
+            #!/bin/sh
+            env | grep -E '^NODE_EXTRA_CA_CERTS=' | sort
+
+            """.write(to: node, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: node.path)
+        let engine = PiEngine(command: ["/nonexistent/pi"], packageDirectory: nil, version: nil, node: .executable(node.path))
+
+        let line = PiLaunch.mcpProbe(engine: engine, home: home, client: "/c.mjs")
+        var withoutUserCA = ProcessInfo.processInfo.environment
+        withoutUserCA["NODE_EXTRA_CA_CERTS"] = nil
+        let fallback = try Self.run(line.argv[0], Array(line.argv.dropFirst()), environment: withoutUserCA)
+        #expect(fallback.out == ["NODE_EXTRA_CA_CERTS=\(home.keychainCertificatesFile.path)"])
+
+        var withUserCA = withoutUserCA
+        withUserCA["NODE_EXTRA_CA_CERTS"] = "/their/ca.pem"
+        let theirs = try Self.run(line.argv[0], Array(line.argv.dropFirst()), environment: withUserCA)
+        #expect(theirs.out == ["NODE_EXTRA_CA_CERTS=/their/ca.pem"])
+
+        try FileManager.default.removeItem(at: home.keychainCertificatesFile)
+        let empty = try Self.run(line.argv[0], Array(line.argv.dropFirst()), environment: withoutUserCA)
+        #expect(empty.out.isEmpty)
     }
 }
