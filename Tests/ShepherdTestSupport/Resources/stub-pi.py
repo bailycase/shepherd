@@ -10,6 +10,16 @@
   "slow"   a streaming turn that pauses twice (mid-deltas, mid-tool) until the
            files `continue-1` / `continue-2` appear in the cwd
   "stream" a reply of 40 text deltas 2 ms apart, as a model streams one
+  "toolcall" the model writing a tool call's arguments slowly (a big `write`): a line of text,
+           then toolcall_start, toolcall_delta fragments of the arguments' JSON text (each the
+           next few characters, not the text so far), toolcall_end, the reply's message_end,
+           tool_execution_start, the call's end and a closing reply. It pauses until the files
+           `continue-1` (the path half written), `continue-2` (the path known, the content
+           streaming) and `continue-3` (the call running) appear in the cwd. An abort at any
+           pause ends it as pi ends a stopped request: toolcall_end with the arguments parsed so
+           far, an `aborted` message_end that still carries the call, no tool_execution_start,
+           then agent_end and agent_settled. Its events are the shapes pi 0.87.1 sends
+           (Tests/Extensions/tool-call-stream.test.mjs pins them against the real thing).
   "widgets"      emits setStatus/setWidget/notify/setTitle (with ANSI colour)
   "widgets-clear" clears the status and widget from "widgets"
   "select" emits a select extension_ui_request (no timeout) and waits
@@ -68,7 +78,14 @@ pi's queues, as pi 0.87.1 behaves (docs/rpc-commands.md, and transcripts of the 
     the abort response. Follow-ups stay queued (pi does not clear its queue on abort).
   - `clear_queue` empties both queues, emits an empty `queue_update`, and answers with their
     text. A steer with "raced" in it stays queued and unreported, as when pi reads a steer
-    (its tool batch ended) just before a `clear_queue` arrives: it still lands.
+    (its tool batch ended) just before a `clear_queue` arrives: it still lands. While the file
+    `clear-gate` exists in the cwd, the answer waits for the file `clear-go` (a `clear_queue` on
+    its way while the run ends).
+  - The file `refuse-abort` in the cwd makes `abort` fail ("refused by the stub").
+  - "compact-hold" in a "tools:N" run's first prompt makes the run compact after its last reply:
+    compaction_start (threshold), then it waits for the file `compact-done` (or an abort), then
+    compaction_end. As in pi, a prompt that is not a command is refused meanwhile ("Cannot submit
+    a prompt while compaction is in progress...").
   - Idle, a prompt with a streamingBehavior is a plain prompt.
 $STUB_PI_MESSAGES_FILE, when set, loads the history from that file at start and saves it
 after every "tools:N" run, like pi resuming its session file.
@@ -373,6 +390,7 @@ def paced_turn(prompt, deltas=40, interval=0.002):
 
 
 QUEUE_LOCK = threading.Lock()
+COMPACTING = threading.Event()
 steering = []   # (text, images, timestamp)
 follow_up = []
 RUN = {"active": False, "thread": None, "abort": threading.Event()}
@@ -494,6 +512,13 @@ def agent_run(first):
         if not pending:
             break
         emit({"type": "turn_start"})
+    if not aborted and "compact-hold" in text_of(new[0]):
+        emit({"type": "compaction_start", "reason": "threshold"})
+        COMPACTING.set()
+        gate("compact-done")
+        COMPACTING.clear()
+        emit({"type": "compaction_end", "reason": "threshold", "aborted": RUN["abort"].is_set(), "willRetry": False,
+              "errorMessage": None if RUN["abort"].is_set() else "Compaction failed: stub"})
     if not aborted and "hold-settle" in text_of(new[0]):
         gate("settle")
     MESSAGES.extend(new)
@@ -501,6 +526,73 @@ def agent_run(first):
     if messages_file:
         with open(messages_file, "w") as f:
             json.dump(MESSAGES, f)
+    emit({"type": "agent_end", "messages": new, "willRetry": False})
+    RUN["active"] = False
+    emit({"type": "agent_settled"})
+
+
+def toolcall_turn(prompt):
+    """The model writing a `write` call's arguments slowly, pausing for the test to look at the
+    thread (see "toolcall" above). RUN["active"] makes an abort stop it, as it stops a run."""
+    words = "Writing the file."
+    user = user_message(prompt, [], now_ms())
+    call = {"type": "toolCall", "id": "call_write1", "name": "write"}
+    complete = {"path": "src/big.txt", "content": "line one\nline two\nline three"}
+    emit({"type": "agent_start"})
+    emit({"type": "turn_start"})
+    emit({"type": "message_start", "message": user})
+    emit({"type": "message_end", "message": user})
+    emit({"type": "message_start", "message": {"role": "assistant", "content": [], "timestamp": now_ms()}})
+    update({"type": "text_start", "contentIndex": 0})
+    update({"type": "text_delta", "contentIndex": 0, "delta": words})
+    update({"type": "text_end", "contentIndex": 0, "content": words})
+    update({"type": "toolcall_start", "contentIndex": 1, "id": call["id"], "toolName": "write"})
+    # An OpenAI-style provider opens the call with an empty fragment.
+    update({"type": "toolcall_delta", "contentIndex": 1, "delta": ""})
+    for fragment in ['{"pa', 'th":"src/']:
+        update({"type": "toolcall_delta", "contentIndex": 1, "delta": fragment})
+    parsed = {"path": "src/"}
+    gate("continue-1")
+    if not RUN["abort"].is_set():
+        for fragment in ['big.txt","con', 'tent":"line one\\nline ']:
+            update({"type": "toolcall_delta", "contentIndex": 1, "delta": fragment})
+        parsed = {"path": "src/big.txt", "content": "line one\nline "}
+        gate("continue-2")
+    reply = {"role": "assistant", "content": [{"type": "text", "text": words}], "timestamp": now_ms()}
+    new = [user]
+    if RUN["abort"].is_set():
+        # What pi parsed of the arguments so far rides toolcall_end, and the aborted message.
+        partial = dict(call, arguments=parsed)
+        update({"type": "toolcall_end", "contentIndex": 1, "toolCall": partial})
+        stopped = dict(reply, content=reply["content"] + [partial], stopReason="aborted", errorMessage="Request was aborted")
+        emit({"type": "message_end", "message": stopped})
+        emit({"type": "turn_end", "message": stopped, "toolResults": []})
+        new.append(stopped)
+    else:
+        update({"type": "toolcall_delta", "contentIndex": 1, "delta": 'two\\nline three"}'})
+        made = dict(call, arguments=complete)
+        update({"type": "toolcall_end", "contentIndex": 1, "toolCall": made})
+        ask = dict(reply, content=reply["content"] + [made], stopReason="toolUse")
+        emit({"type": "message_end", "message": ask})
+        emit({"type": "tool_execution_start", "toolCallId": call["id"], "toolName": "write", "args": complete})
+        gate("continue-3")
+        output = "Successfully wrote to src/big.txt"
+        emit({"type": "tool_execution_end", "toolCallId": call["id"], "toolName": "write",
+              "result": {"content": [{"type": "text", "text": output}]}, "isError": False})
+        result = {"role": "toolResult", "toolCallId": call["id"], "toolName": "write",
+                  "content": [{"type": "text", "text": output}], "isError": False, "timestamp": now_ms()}
+        emit({"type": "message_start", "message": result})
+        emit({"type": "message_end", "message": result})
+        emit({"type": "turn_end", "message": ask, "toolResults": [result]})
+        closing = {"role": "assistant", "content": [{"type": "text", "text": "Wrote it."}], "stopReason": "stop",
+                   "timestamp": now_ms()}
+        emit({"type": "turn_start"})
+        emit({"type": "message_start", "message": dict(closing, content=[])})
+        emit({"type": "message_end", "message": closing})
+        emit({"type": "turn_end", "message": closing, "toolResults": []})
+        new += [ask, result, closing]
+    MESSAGES.extend(new)
+    STATE["messageCount"] = len(MESSAGES)
     emit({"type": "agent_end", "messages": new, "willRetry": False})
     RUN["active"] = False
     emit({"type": "agent_settled"})
@@ -728,6 +820,8 @@ for raw in sys.stdin.buffer:
     elif t == "set_thinking_level":
         STATE["thinkingLevel"] = cmd.get("level")
         respond(cmd, t)
+    elif t == "abort" and os.path.exists("refuse-abort"):
+        respond(cmd, t, success=False, error="refused by the stub")
     elif t == "abort":
         if RUN["active"]:
             RUN["abort"].set()
@@ -740,6 +834,8 @@ for raw in sys.stdin.buffer:
             emit({"type": "agent_end", "messages": [], "willRetry": False})
             emit({"type": "agent_settled"})
     elif t == "clear_queue":
+        if os.path.exists("clear-gate"):
+            wait_for_file("clear-go")
         with QUEUE_LOCK:
             raced = [item for item in steering if "raced" in item[0]]
             cleared = {"steering": [t for t, _, _ in steering if "raced" not in t], "followUp": [t for t, _, _ in follow_up]}
@@ -777,6 +873,10 @@ for raw in sys.stdin.buffer:
         if "refuse" in message:
             respond(cmd, t, success=False, error="refused by the stub")
             continue
+        if COMPACTING.is_set() and not message.startswith("/"):
+            respond(cmd, t, success=False,
+                    error="Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry.")
+            continue
         if streaming:
             behavior = cmd.get("streamingBehavior")
             if behavior not in ("steer", "followUp"):
@@ -809,6 +909,12 @@ for raw in sys.stdin.buffer:
             RUN["active"] = True
             respond(cmd, t)
             RUN["thread"] = threading.Thread(target=agent_run, args=((message, cmd.get("images") or [], now_ms()),), daemon=True)
+            RUN["thread"].start()
+            continue
+        if message == "toolcall":
+            RUN["active"] = True
+            respond(cmd, t)
+            RUN["thread"] = threading.Thread(target=toolcall_turn, args=(message,), daemon=True)
             RUN["thread"].start()
             continue
         respond(cmd, t)

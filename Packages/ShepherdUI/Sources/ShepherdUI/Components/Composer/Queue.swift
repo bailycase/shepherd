@@ -325,6 +325,8 @@ public struct NWQueueRowActions {
     public var steer: (() -> Void)?
     public var steerLabel: String
     public var steerShortcut: String?
+    /// What the action does, for its tooltip and VoiceOver ("Stop the agent and send this now").
+    public var steerHelp: String?
     /// Opens the editor (the pencil, or a click on the text).
     public var edit: (() -> Void)?
     public var delete: (() -> Void)?
@@ -332,11 +334,12 @@ public struct NWQueueRowActions {
     /// A steering row's Back to the queue.
     public var back: (() -> Void)?
 
-    public init(steer: (() -> Void)? = nil, steerLabel: String = "Steer now", steerShortcut: String? = nil,
+    public init(steer: (() -> Void)? = nil, steerLabel: String = "Steer now", steerShortcut: String? = nil, steerHelp: String? = nil,
                 edit: (() -> Void)? = nil, delete: (() -> Void)? = nil, deleteShortcut: String? = nil, back: (() -> Void)? = nil) {
         self.steer = steer
         self.steerLabel = steerLabel
         self.steerShortcut = steerShortcut
+        self.steerHelp = steerHelp
         self.edit = edit
         self.delete = delete
         self.deleteShortcut = deleteShortcut
@@ -441,7 +444,9 @@ public struct NWQueueRow: View {
                 } else {
                     HStack(spacing: NW.Space.xxs) {
                         if active && !lifted {
-                            if let steer = actions.steer { iconButton("arrow.turn.down.right", actions.steerLabel, shortcut: actions.steerShortcut, action: steer) }
+                            if let steer = actions.steer {
+                                iconButton("arrow.turn.down.right", actions.steerLabel, help: actions.steerHelp, shortcut: actions.steerShortcut, action: steer)
+                            }
                             if let edit = actions.edit { iconButton("pencil", "Edit", action: edit) }
                             if let delete = actions.delete { iconButton("trash", "Delete", shortcut: actions.deleteShortcut, action: delete) }
                         }
@@ -517,11 +522,14 @@ public struct NWQueueRow: View {
         }
     }
 
-    private func iconButton(_ symbol: String, _ label: String, shortcut: String? = nil, action: @escaping () -> Void) -> some View {
+    /// `help` is what the tooltip says when the name alone would not tell ("Steer now" stops the agent).
+    private func iconButton(_ symbol: String, _ label: String, help: String? = nil, shortcut: String? = nil,
+                            action: @escaping () -> Void) -> some View {
         Button(action: action) { Image(systemName: symbol) }
             .buttonStyle(.nwIcon(size: NWQueueMetrics.actionSize))
-            .nwHelp(label, shortcut: shortcut)
+            .nwHelp(help ?? label, shortcut: shortcut)
             .accessibilityLabel(label)
+            .accessibilityHint(help ?? "")
     }
 }
 
@@ -682,10 +690,10 @@ public struct NWSendOption: Identifiable, Equatable, Sendable {
     public var title: String
     public var detail: String
     public var glyph: Glyph
-    /// Its keys, as the store displays them ("↩", "⌘↩").
-    public var shortcut: String
+    /// Its keys, as the store displays them ("↩", "⌘↩"); nil for a row no key sends.
+    public var shortcut: String?
 
-    public init(id: String, title: String, detail: String, glyph: Glyph, shortcut: String) {
+    public init(id: String, title: String, detail: String, glyph: Glyph, shortcut: String? = nil) {
         self.id = id
         self.title = title
         self.detail = detail
@@ -695,7 +703,8 @@ public struct NWSendOption: Identifiable, Equatable, Sendable {
 }
 
 /// The choice at send time (Queue & steer boards · SendMenu), opened by right-clicking or holding
-/// Send while pi works: Queue and Steer now, each with what it does and its keys. 268pt on the
+/// Send while pi works: wait for the turn to end, steer at the next step, or steer now, each with
+/// what it does and its keys (a row no key sends wears none). 268pt on the
 /// popover surface; ↑↓ move, ↩ chooses, Esc closes. Nothing about the choice is written under
 /// the composer.
 public struct NWSendMenu: View {
@@ -736,7 +745,7 @@ public struct NWSendMenu: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    NWKeycap(option.shortcut).padding(.top, NWQueueMetrics.sendMenuTitleInset)
+                    if let shortcut = option.shortcut { NWKeycap(shortcut).padding(.top, NWQueueMetrics.sendMenuTitleInset) }
                 }
                 .accessibilityLabel("\(option.title), \(option.detail)")
             }

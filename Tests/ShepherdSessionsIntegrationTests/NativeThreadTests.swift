@@ -55,7 +55,7 @@ struct NativeThreadTests {
         #expect(partial.revision > idle.revision)
 
         pi.release(1)
-        let tooling = try await pi.snapshot("the running tool") { $0.provisional.contains { $0.toolCallID == "call_abc123" } }
+        let tooling = try await pi.snapshot("the running tool") { $0.provisional.contains { $0.toolCallID == "call_abc123" && $0.status == "running" } }
         #expect(tooling.provisional.first?.status == "toolUse")
         let tool = try #require(tooling.provisional.first { $0.toolCallID == "call_abc123" })
         #expect(tool.status == "running" && tool.argumentsText == #"{"command":"ls"}"#)

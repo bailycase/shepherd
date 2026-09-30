@@ -303,7 +303,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                            "Group by host": ["hosts", "machines"], "Keep idle threads": ["archive", "idle"]]
         case .terminal: ["Font family": ["ghostty", "monospace"], "Shell": ["zsh", "bash", "fish"]]
         case .agents: ["Default model": ["claude", "gpt", "provider"], "Default thinking level": ["reasoning", "effort"],
-                       "Return while the agent is working": ["steer", "queue", "enter", "follow-up"],
+                       "Return while the agent is working": ["steer", "queue", "enter", "follow-up", "next step", "wait", "interrupt"],
                        "When a turn ends, send the queue": ["queue", "follow-up", "one per turn", "all at once"]]
         case .worktrees: ["Base branch": ["git", "origin"], "Merge PR automatically": ["github", "pull request"]]
         case .pi: ["Native subagents": ["children", "workflows"], "Shepherd's pi": ["version", "engine", "home", "folder"]]

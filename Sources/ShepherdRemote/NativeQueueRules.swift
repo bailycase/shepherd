@@ -144,6 +144,28 @@ public enum NativeQueueRules {
         return moved.map(\.entry.id)
     }
 
+    /// Interrupting sends these first: queued items move to the head of the queue, in the order
+    /// given (behind any steering items, which pi still holds until the host takes them back).
+    /// Returns the ids that were queued.
+    @discardableResult
+    public static func interrupt<T: NativeQueueEntry>(_ ids: [UUID], in items: inout [T]) -> [UUID] {
+        var chosen: [UUID] = []
+        for id in ids where !chosen.contains(id) {
+            guard move(id, toQueuedIndex: chosen.count, in: &items) else { continue }
+            if let index = items.firstIndex(where: { $0.entry.id == id }) { items[index].entry.held = false }
+            chosen.append(id)
+        }
+        return chosen
+    }
+
+    /// The delivery a message actually gets. pi runs a command (`/…`) only at the start of a
+    /// message it starts, never one it reads mid-run, so a message that begins with "/" waits
+    /// for the turn to end whatever the Return setting says: an explicit `interrupt` is fine,
+    /// since the message then starts the next turn.
+    public static func delivery(_ preferred: NativeThreadDelivery, forText text: String) -> NativeThreadDelivery {
+        preferred == .steer && text.hasPrefix("/") ? .followUp : preferred
+    }
+
     /// A steering item goes back to the head of the queue.
     @discardableResult
     public static func unsteer<T: NativeQueueEntry>(_ id: UUID, in items: inout [T]) -> Bool {
