@@ -829,6 +829,33 @@ public final class SessionServer: @unchecked Sendable {
         return Set(state.tabs.filter { $0.inspectorFor == nil && ($0.spaceID == nil || !agentTabs.contains($0.id)) }.map(\.id))
     }
 
+    /// The pane an agent's own pi runs in, for a layout that holds its thread: the agent's
+    /// recorded pane, else the layout's leaf that names the agent.
+    private static func threadPane(of tab: Tab, in state: ShepherdState) -> PaneID? {
+        let agent = state.agents.first { $0.tabID == tab.id }
+        if let paneID = agent?.paneID, tab.layout.contains(paneID) { return paneID }
+        return tab.layout.leaves.first { $0.agentID != nil }?.id
+    }
+
+    /// Whether a saved layout still has a tab of several terminals, split beside its thread, as
+    /// builds from before terminals were tabs only made with Split right and Split down.
+    static func hasSplitTerminals(in state: ShepherdState) -> Bool {
+        state.tabs.contains { tab in
+            tab.inspectorFor == nil && threadPane(of: tab, in: state)
+                .map { tab.layout.hasSplitTerminals(besideThread: $0) } == true
+        }
+    }
+
+    /// Flattens every such layout into one tab per terminal, oldest first, each keeping its
+    /// session, folder and title, and the thread first (`PaneNode.flatteningTerminals`).
+    static func flattenSplitTerminals(_ state: inout ShepherdState) {
+        for index in state.tabs.indices {
+            let tab = state.tabs[index]
+            guard tab.inspectorFor == nil, let thread = threadPane(of: tab, in: state) else { continue }
+            state.tabs[index].layout = tab.layout.flatteningTerminals(besideThread: thread)
+        }
+    }
+
     /// Automation run agents from the previous app run: every agent in the reserved hidden
     /// space (runs only ever live there) plus any agent an automation still points at. Runs are
     /// ephemeral; enabled automations start fresh ones after adoption. Keeping the old agents
@@ -935,12 +962,13 @@ public final class SessionServer: @unchecked Sendable {
             tab.layout.leaves.contains { $0.isReview == true }
         }
         let staleRuns = store.state.automations.contains { $0.agentID != nil }
+        let splitTerminals = Self.hasSplitTerminals(in: store.state)
         let shellTabs = Self.shellTabIDs(in: store.state)
         let runAgents = Self.automationRunAgentIDs(in: store.state)
         let staleDesigns = Self.designsNeedReconciling(in: store.state, missing: missingDesigns, removedAgents: runAgents)
             || Self.designAgentsNeedSettling(in: store.state, missing: missingDesigns)
-        if !stale.isEmpty || deadInspectors || deadReviews || staleRuns || !shellTabs.isEmpty || !runAgents.isEmpty
-            || staleDesigns {
+        if !stale.isEmpty || deadInspectors || deadReviews || splitTerminals || staleRuns || !shellTabs.isEmpty
+            || !runAgents.isEmpty || staleDesigns {
             do {
                 try store.update { state in
                     for id in stale {
@@ -970,6 +998,9 @@ public final class SessionServer: @unchecked Sendable {
                         }
                         state.tabs[i].layout = layout
                     }
+                    // Terminals are tabs only: a layout that split them beside the thread
+                    // becomes one tab each, keeping every terminal's folder and title.
+                    Self.flattenSplitTerminals(&state)
                     // Automation runs died with the previous app run; enabled
                     // ones restart through the GUI after adoption. Their agents and layouts go.
                     let runTabs = Set(state.agents.filter { runAgents.contains($0.id) }.map(\.tabID))
@@ -1216,7 +1247,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         guard let tab = store.state.tabs.first(where: { $0.id == agent.tabID }),
               let paneID = agent.paneID, let leaf = tab.layout.leaf(withID: paneID) else {
-            unavailable("The agent has no thread pane.")
+            unavailable("The agent has no thread.")
             return
         }
         // A pi that stopped before it served: its agent waits, and says why (or that Retry is
@@ -1242,7 +1273,7 @@ public final class SessionServer: @unchecked Sendable {
             return
         }
         guard let thread = session.thread else {
-            unavailable("The agent is not running in its pane.")
+            unavailable("The agent is not running a thread.")
             return
         }
         if !thread.turnChangesSet { thread.setTurnChanges(changes.turns(agentID: agentID)) }
@@ -1714,12 +1745,11 @@ public final class SessionServer: @unchecked Sendable {
             )
         case .closePane(let id, let agentID, let paneID):
             remotePaneRequest(id: id, request: .close(agentID: agentID, paneID: paneID), client: client)
-        case .resizePaneSplit(let id, let agentID, let split, let ratio):
-            remotePaneRequest(
-                id: id,
-                request: .resizeSplit(agentID: agentID, split: split, ratio: ratio),
-                client: client
-            )
+        case .resizePaneSplit(let id, _, _, _):
+            // Only a client from before terminals were tabs only sends this, for a divider its own
+            // view drew. Terminals have no splits; the request is answered like any this host does
+            // not serve, and the connection stays.
+            send(.error(id: id, code: "unsupported", message: "Terminals are tabs and have no splits to resize."), to: client)
         case .listDir(let id, let path):
             remoteListDir(id: id, path: path, client: client)
         case .listModels(let id):
@@ -1823,7 +1853,7 @@ public final class SessionServer: @unchecked Sendable {
 
     private func remotePaneRequest(id: Int, request: PaneRequest, client: ExtensionConnection) {
         guard let handler = onRemotePaneRequest else {
-            send(.error(id: id, code: "unsupported", message: "host cannot mutate panes"), to: client)
+            send(.error(id: id, code: "unsupported", message: "host cannot mutate terminals"), to: client)
             return
         }
         hopToMain { [weak self] in
@@ -1839,7 +1869,7 @@ public final class SessionServer: @unchecked Sendable {
                     case .failed(let code, let message):
                         self.send(.error(id: id, code: code, message: message), to: client)
                     case .panes, .content:
-                        self.send(.error(id: id, code: "protocol", message: "unexpected pane reply"), to: client)
+                        self.send(.error(id: id, code: "protocol", message: "unexpected terminal reply"), to: client)
                     }
                 }
             }
@@ -3045,7 +3075,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         let target = clients.values.first { !$0.isRemote && $0.agentID == targetAgentID }
         guard request.operation == .delete || target != nil else {
-            reply(.error(id: id, code: "not_running", message: "target has no live panes extension"), to: client)
+            reply(.error(id: id, code: "not_running", message: "target has no live Shepherd extension connection"), to: client)
             return
         }
         let token = UUID().uuidString
@@ -3165,7 +3195,7 @@ public final class SessionServer: @unchecked Sendable {
     /// The GUI owns layouts, so the server only correlates the request id.
     private func routePaneRequest(_ request: PaneRequest, requestID: Int, client: ExtensionConnection) {
         guard let handler = onPaneRequest else {
-            reply(.error(id: requestID, code: "unsupported", message: "pane control unavailable"), to: client)
+            reply(.error(id: requestID, code: "unsupported", message: "terminal control unavailable"), to: client)
             return
         }
         hopToMain { [weak self, weak client] in

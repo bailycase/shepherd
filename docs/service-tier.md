@@ -79,7 +79,7 @@ time).
 **Subagents** (native children) are other pi processes that the children extension starts
 without any `SHEPHERD_` variable, so they run on Standard whatever their parent's tier is. The
 extension is loaded only into an agent's own pi (`StatusExtension.command`); drafts, the catalog
-and terminal panes (which blank the variable) never see it.
+and terminals (which blank the variable) never see it.
 
 ## pi's `before_provider_request`
 

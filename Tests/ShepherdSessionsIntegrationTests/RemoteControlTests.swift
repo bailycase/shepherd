@@ -10,13 +10,14 @@ import ShepherdTestSupport
 /// agent creation and actions, host directories, uploads, and the native thread over TCP.
 @Suite("Remote control", .integrationTimeLimit)
 struct RemoteControlTests {
-    // MARK: - Pane control
+    // MARK: - Terminal control
 
-    @Test func paneRequestsRouteThroughTheHostHandler() async throws {
+    /// A client from before terminals were tabs only asks to split beside a pane, in an axis: the
+    /// wire still says so, and the host's handler gets the request as it came (it opens a tab).
+    @Test func terminalRequestsRouteThroughTheHostHandler() async throws {
         let r = try RemoteHost()
         defer { r.stop() }
         let (agentID, anchor, opened) = (AgentID(), PaneID(), PaneID())
-        let split = PaneNode.split(axis: .vertical, ratio: 0.5, first: .leaf(LeafPane(id: anchor, cwd: "/tmp")), second: .leaf(LeafPane(id: opened, cwd: "/tmp")))
         let seen = Locked<[PaneRequest]>([])
         r.server.onRemotePaneRequest = { request, respond in
             seen.withValue { $0.append(request) }
@@ -30,28 +31,55 @@ struct RemoteControlTests {
         defer { client.disconnect() }
 
         #expect(try await client.openPane(agentID: agentID, relativeTo: anchor, axis: .vertical) == opened)
-        try await client.resizePaneSplit(agentID: agentID, split: split, ratio: 0.7)
+        #expect(try await client.openPane(agentID: agentID, relativeTo: anchor, axis: .horizontal) == opened)
         try await client.closePane(agentID: agentID, paneID: opened)
         #expect(seen.current == [
             .open(agentID: agentID, axis: .vertical, cwd: nil, relativeTo: anchor, command: nil),
-            .resizeSplit(agentID: agentID, split: split, ratio: 0.7),
+            .open(agentID: agentID, axis: .horizontal, cwd: nil, relativeTo: anchor, command: nil),
             .close(agentID: agentID, paneID: opened),
         ])
     }
 
-    @Test func paneRequestsFailCleanlyWithoutAHandlerOrWithAWrongOutcome() async throws {
+    /// An older client's divider drag: terminals have no splits, so the host answers it as it
+    /// answers what it does not serve, never reaches its handler, and keeps the connection.
+    @Test func anOlderClientsSplitResizeIsAnsweredUnsupportedAndNeverReachesTheHandler() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let seen = Locked<[PaneRequest]>([])
+        r.server.onRemotePaneRequest = { request, respond in
+            seen.withValue { $0.append(request) }
+            respond(.ok)
+        }
+        let agentID = AgentID()
+        let split = PaneNode.split(axis: .vertical, ratio: 0.5, first: .leaf(LeafPane(cwd: "/tmp")), second: .leaf(LeafPane(cwd: "/tmp")))
+        let client = try await r.typed()
+        defer { client.disconnect() }
+
+        do {
+            try await client.resizePaneSplit(agentID: agentID, split: split, ratio: 0.7)
+            Issue.record("the resize was accepted")
+        } catch RemoteHostClientError.rejected(let code, let message) {
+            #expect(code == "unsupported")
+            #expect(message == "Terminals are tabs and have no splits to resize.")
+        }
+        let closing = PaneID()
+        try await client.closePane(agentID: agentID, paneID: closing)
+        #expect(seen.current == [.close(agentID: agentID, paneID: closing)], "only the close reached the handler, on the same connection")
+    }
+
+    @Test func terminalRequestsFailCleanlyWithoutAHandlerOrWithAWrongOutcome() async throws {
         let r = try RemoteHost()
         defer { r.stop() }
         let client = try await r.raw()
         try client.send(.closePane(id: 3, agentID: AgentID(), paneID: PaneID()))
-        #expect(try await client.next() == .error(id: 3, code: "unsupported", message: "host cannot mutate panes"))
+        #expect(try await client.next() == .error(id: 3, code: "unsupported", message: "host cannot mutate terminals"))
 
         r.server.onRemotePaneRequest = { _, respond in respond(.panes([])) }
         try client.send(.closePane(id: 4, agentID: AgentID(), paneID: PaneID()))
-        #expect(try await client.next() == .error(id: 4, code: "protocol", message: "unexpected pane reply"))
-        r.server.onRemotePaneRequest = { _, respond in respond(.failed(code: "not_closable", message: "last pane")) }
+        #expect(try await client.next() == .error(id: 4, code: "protocol", message: "unexpected terminal reply"))
+        r.server.onRemotePaneRequest = { _, respond in respond(.failed(code: "not_closable", message: "the layout's only terminal cannot be closed")) }
         try client.send(.closePane(id: 5, agentID: AgentID(), paneID: PaneID()))
-        #expect(try await client.next() == .error(id: 5, code: "not_closable", message: "last pane"))
+        #expect(try await client.next() == .error(id: 5, code: "not_closable", message: "the layout's only terminal cannot be closed"))
     }
 
     // MARK: - Spaces and directories

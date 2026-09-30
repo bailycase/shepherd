@@ -4,7 +4,7 @@ import ShepherdUI
 
 // MARK: Terminal
 
-/// Settings ▸ Terminal: the terminal panes opened beside a thread (⌘D, or by an agent).
+/// Settings ▸ Terminal: the terminals opened under a thread (⌘D, or by an agent).
 /// Agents are native threads and never use these.
 struct TerminalSettings: View {
     var vm: ShepherdViewModel
@@ -14,7 +14,7 @@ struct TerminalSettings: View {
     @State private var shells: [String] = []
 
     var body: some View {
-        SettingsPage(title: "Terminal", explanation: "Terminal panes beside a thread: their font and which shell they run.") {
+        SettingsPage(title: "Terminal", explanation: "Terminals under a thread: their font and which shell they run.") {
             SettingsGroup(title: "Font", footnote: "Font changes apply to open terminals in place; running processes are untouched.") {
                 SettingsRow(title: "Font family",
                             subtitle: "Fixed-pitch families installed on this Mac. Ghostty falls back if a family can't be loaded.") {
@@ -39,7 +39,7 @@ struct TerminalSettings: View {
                     FontPreview(family: TerminalFontCatalog.resolved(settings.terminalFontFamily), size: settings.terminalFontSize)
                 }
             }
-            SettingsGroup(title: "Shell", footnote: "A new shell applies to panes opened afterwards.") {
+            SettingsGroup(title: "Shell", footnote: "A new shell applies to terminals opened afterwards.") {
                 SettingsRow(title: "Shell", subtitle: Self.shellSubtitle(keys)) {
                     NWPopupMenu(settings.shellPath, mono: true, minWidth: AppLayout.settingsPopupWidth) {
                         ForEach(shells, id: \.self) { shell in
@@ -54,9 +54,9 @@ struct TerminalSettings: View {
         .task(id: settings.shellPath) { shells = AppSettings.knownShells(including: settings.shellPath) }
     }
 
-    /// Names the split chord as it is bound now, so a rebind never leaves the copy wrong.
+    /// Names the New Terminal chord as it is bound now, so a rebind never leaves the copy wrong.
     static func shellSubtitle(_ keys: KeybindingsStore) -> String {
-        "Used by \(keys.display(.splitVertical)) splits and the panes an agent opens."
+        "Used by \(keys.display(.newTerminal)) and the terminals an agent opens."
     }
 }
 

@@ -106,7 +106,7 @@ struct WorkspaceNavigationTests {
         #expect(vm.state.agents.count == 1, "nothing starts until you send")
     }
 
-    @Test func returningToAnAgentRestoresThePaneLastFocusedInItsLayout() async throws {
+    @Test func returningToAnAgentRestoresTheTerminalLastFocusedInItsLayout() async throws {
         let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
@@ -116,7 +116,7 @@ struct WorkspaceNavigationTests {
 
         vm.selectAgent(first.agent.id)
         #expect(vm.focusedPaneID == first.piPane.id)
-        vm.focusAdjacentPane(1)
+        vm.focusedPaneID = first.auxiliary[0].id
         #expect(vm.focusedPaneID == first.auxiliary[0].id)
         vm.selectAgent(second.agent.id)
         #expect(vm.focusedPaneID == second.piPane.id)

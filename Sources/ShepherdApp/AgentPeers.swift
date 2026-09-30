@@ -61,7 +61,7 @@ extension ShepherdViewModel {
             if server.pushMessage(toAgent: target.id, text: framed, delivery: delivery) {
                 respond(.ok)
             } else {
-                respond(.failed(code: "not_running", message: "\(target.name) has no live panes connection, or message dispatch failed"))
+                respond(.failed(code: "not_running", message: "\(target.name) has no live Shepherd connection, or message dispatch failed"))
             }
             return
 

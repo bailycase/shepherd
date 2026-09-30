@@ -372,7 +372,7 @@ final class ShepherdViewModel {
         finalizeRequest = FinalizeRequest(agent: agent, space: space)
     }
 
-    /// The setup wizard's gh-authentication step: a terminal pane beside the agent's thread
+    /// The setup wizard's gh-authentication step: a terminal tab under the agent's thread
     /// running `gh auth login`, because the login flow is interactive by design.
     func openGhLogin(besideAgent agentID: AgentID) {
         guard let agent = state.agents.first(where: { $0.id == agentID }) else { return }
@@ -380,8 +380,8 @@ final class ShepherdViewModel {
         openTerminalPane(besideAgent: agent, running: "gh auth login")
     }
     @ObservationIgnored private var childSweepTimer: Timer?
-    /// Focus is recorded per layout on every change (clicks, ⌥⌘←/→, splits),
-    /// so returning to an agent restores the pane you were last working in.
+    /// Focus is recorded per layout on every change (clicks, tab switches, new terminals),
+    /// so returning to an agent restores the terminal (or thread) you were last working in.
     var focusedPaneID: PaneID? {
         didSet {
             guard let paneID = focusedPaneID, paneID != oldValue else { return }

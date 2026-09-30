@@ -277,7 +277,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .agents: ["Default model", "Default thinking level", "Speed for new threads", "Return while the agent is working",
                        "When a turn ends, send the queue"]
         case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically"]
-        case .pi: ["Shepherd's pi", "Name agents automatically", "Panes and agent tools", "Diff review tool", "Native subagents",
+        case .pi: ["Shepherd's pi", "Name agents automatically", "Terminals and agent tools", "Diff review tool", "Native subagents",
                    "Subagent display", "MCP servers", "Browser tools", "Concurrency"]
         case .piSignIn: ["Re-import from your pi", "Subscriptions", "Anthropic", "OpenAI Codex", "GitHub Copilot", "xAI", "Kimi", "Radius",
                          "API keys", "Add an API key", "CLIProxyAPI", "Custom providers"]

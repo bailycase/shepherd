@@ -3,32 +3,39 @@ import ShepherdUI
 import ShepherdCore
 import ShepherdRemote
 
-/// iPhone: a thread's terminal panes full screen, from the thread's options. The tab strip on
-/// top (+ opens another beside the thread, as on iPad), the selected tab's panes, and the key row
-/// while a pane has the keyboard.
+/// iPhone: a thread's terminals full screen, from the thread's options. The tab strip on top (+
+/// opens another under the thread, as on iPad), the selected tab's terminal, and the key row
+/// while it has the keyboard. With no terminal yet the screen opens one.
 struct TerminalScreen: View {
     let ref: AgentRef
     @Environment(MobileHosts.self) private var hosts
     @State private var closing: TerminalPanelTab?
+    /// The first terminal was asked for, once: closing it later never opens another by itself.
+    @State private var askedForFirst = false
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dismiss) private var dismiss
 
     private struct ActivityKey: Equatable {
         var session: UUID?
         var active: Bool
     }
 
+    /// When to ask for a first terminal: once the host is connected and takes terminal requests.
+    private struct FirstTerminalKey: Equatable {
+        var connected: Bool
+        var canChange: Bool
+    }
+
     var body: some View {
         let terminals = MobileTerminals.shared
         let model = TerminalModel.resolve(ref, hosts: hosts, terminals: terminals, onScreen: true)
         let selected = model.selected
-        let focusedPane = selected.map { TerminalPanel.focusedPane(in: $0, focused: model.panel.focusedPane) }
-        let focusedSession = selected?.panes.first { $0.id == focusedPane }?.sessionID
-            .map { terminals.session(host: ref.host, id: $0) }
+        let focusedSession = selected?.leaf.sessionID.map { terminals.session(host: ref.host, id: $0) }
         VStack(spacing: 0) {
             NWTerminalTabBar(model.items, selection: selected?.id.rawValue, select: { id in
                 if let tab = model.tab(for: id) { terminals.choose(tab, in: ref) }
-            }, close: model.canChangePanes && model.connected ? { id in closing = model.tab(for: id) } : nil,
-               newTab: model.canChangePanes && model.connected ? { newTab(model) } : nil) {
+            }, close: model.canChangeTerminals && model.connected ? { id in closing = model.tab(for: id) } : nil,
+               newTab: model.canChangeTerminals && model.connected ? { newTab(model) } : nil) {
                 EmptyView()
             }
             if let problem = terminals.problems[ref] {
@@ -39,17 +46,20 @@ struct TerminalScreen: View {
             }
             ZStack {
                 if let selected {
-                    TerminalNodeView(ref: ref, node: selected.node, focusedPane: selected.panes.count > 1 ? focusedPane : nil)
+                    TerminalPaneView(ref: ref, pane: selected.leaf)
                         .id(selected.id)
                 } else {
                     VStack(spacing: NW.Space.m) {
-                        Text(model.connected ? "No terminals in this thread yet." : "\(model.hostName) is offline.")
-                            .font(.nw(.ui))
-                            .foregroundStyle(Color.nw.textSecondary)
-                        if model.canChangePanes, model.connected {
-                            Button("New Terminal") { newTab(model) }
-                                .buttonStyle(.nw(.secondary))
-                                .nwTouchTarget(height: NW.Height.controlM)
+                        if !model.connected {
+                            Text("\(model.hostName) is offline.")
+                                .font(.nw(.ui))
+                                .foregroundStyle(Color.nw.textSecondary)
+                        } else if !model.canChangeTerminals {
+                            Text("Update Shepherd on \(model.hostName) to open terminals here.")
+                                .font(.nw(.ui))
+                                .foregroundStyle(Color.nw.textSecondary)
+                        } else {
+                            NWTerminalNotice("starting session…")
                         }
                     }
                     .multilineTextAlignment(.center)
@@ -71,6 +81,15 @@ struct TerminalScreen: View {
             guard scenePhase == .active, let client = hosts.host(ref.host)?.connectedClient else { return }
             await terminals.watchActivity(ref, client: client)
         }
+        .task(id: FirstTerminalKey(connected: model.connected, canChange: model.canChangeTerminals)) {
+            guard model.connected, model.canChangeTerminals, model.tabs.isEmpty, !askedForFirst else { return }
+            askedForFirst = true
+            newTab(model)
+        }
+        // The screen closes with its last terminal, as the iPad's panel does.
+        .onChange(of: model.tabs.count) { before, after in
+            if TerminalPanel.closesWithLastTerminal(before: before, after: after) { dismiss() }
+        }
         .toolbar(.hidden, for: .tabBar)
         .navigationTitle("Terminal")
         .navigationBarTitleDisplayMode(.inline)
@@ -80,8 +99,7 @@ struct TerminalScreen: View {
             if let tab = closing {
                 Button("Close Terminal", role: .destructive) {
                     guard let client = hosts.host(ref.host)?.connectedClient else { return }
-                    let panes = TerminalPanel.panesToClose(tab, thread: model.thread)
-                    Task { await terminals.close(ref, panes: panes, client: client) }
+                    Task { await terminals.close(ref, terminal: tab.id, client: client) }
                 }
             }
             Button("Cancel", role: .cancel) {}

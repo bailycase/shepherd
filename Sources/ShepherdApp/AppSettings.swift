@@ -285,8 +285,8 @@ final class AppSettings {
          "SHEPHERD_CHILD_SCOPE": childScope]
     }
 
-    /// Shell for panes that are not an agent's pi process (⌘D splits, space
-    /// workspaces, panes an agent opens for itself).
+    /// Shell for terminals, which are not an agent's pi process (⌘D, and the
+    /// terminals an agent opens for itself).
     var shellPath: String {
         didSet { store.set(shellPath, forKey: Key.shellPath) }
     }

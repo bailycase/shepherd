@@ -90,7 +90,7 @@ Settings ▸ Pi ▸ Bundled extensions has a **Browser tools** row, on by defaul
 board draws six, DESIGN.md › Settings). A remote client changes it as any bundled extension
 (`HostSettingsMapping.bundled`, id `browser`). Running agents keep their extensions until they
 restart. With it on, `StatusExtension.command` adds the extension with `-e` and sets
-`SHEPHERD_EXT_BROWSER` to its installed path; terminal panes blank the variable.
+`SHEPHERD_EXT_BROWSER` to its installed path; terminals blank the variable.
 
 ## What the agent reads
 
@@ -534,8 +534,8 @@ is answered by id, so a slow connect never times out the connection.
   default; when it goes off the connected clients that read capability changes are told, and every open
   tunnel is closed). The same capability covers `RemoteAgentQuery.devServers` (the thread's folder on the
   host, read off the server's queue) and `RemoteAgentAction.openTerminal`, which Start uses to run the
-  script in a new terminal pane on the host; the host runs it only in the thread's folder or one inside
-  it (`startCommandForRemote`), by the rules of an agent's `pane_open`.
+  script in a new terminal on the host; the host runs it only in the thread's folder or one inside
+  it (`startCommandForRemote`), by the rules of an agent's `terminal_open`.
 
 ### What the iPad reuses
 

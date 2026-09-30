@@ -20,9 +20,9 @@ struct AdvancedSettings: View {
     var body: some View {
         SettingsPage(title: "Advanced", explanation: "Files, resets and app updates. Quitting Shepherd stops every agent.") {
             SettingsGroup(title: "Files") {
-                PathRow(title: "Workspace state", subtitle: "Spaces, agents and pane layouts restored on relaunch.",
+                PathRow(title: "Workspace state", subtitle: "Spaces, agents and terminals restored on relaunch.",
                         url: ShepherdPaths.stateURL())
-                PathRow(title: "Extension socket", subtitle: "Where each agent process reports status and pane requests.",
+                PathRow(title: "Extension socket", subtitle: "Where each agent process reports status and terminal requests.",
                         url: ShepherdPaths.socketURL())
             }
             SettingsGroup(title: "Updates") {
@@ -103,7 +103,7 @@ struct ResetSettingsDialog: View {
     var body: some View {
         DialogSheet(
             title: "Reset settings to defaults?",
-            subtitle: "Your spaces, agents and pane layouts are not affected.",
+            subtitle: "Your spaces, agents and terminals are not affected.",
             actions: [
                 DialogAction("Cancel", kind: .cancel, action: cancel),
                 DialogAction("Reset", kind: .destructive, action: reset),

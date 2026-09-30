@@ -1,8 +1,8 @@
 import Foundation
 import ShepherdProtocol
 
-/// Installs the per-session pi extension that lets an agent drive its own
-/// Shepherd panes: open, run, read, focus, close.
+/// Installs the per-session pi extension that lets an agent drive its own Shepherd
+/// terminals (open, run, read, focus, close), message other threads and manage automations.
 enum PanesExtension {
     static func installedPath() throws -> String {
         let directory = ShepherdPaths.supportDirectory()
@@ -18,10 +18,11 @@ enum PanesExtension {
     /// Extensions/shepherd-panes.ts is canonical; keep this byte-identical.
     static let extensionSource = #"""
         // @ts-nocheck -- loaded by pi/jiti; this project intentionally has no Node TS workspace.
-        // Shepherd panes extension: lets an agent drive its own workspace — open panes
-        // beside itself, run commands in them, read what they printed, and close them.
-        // The agent's own pi pane is off limits (it cannot close or type into itself).
-        // Inert unless Shepherd's env is present.
+        // Shepherd's terminal and agent tools: lets an agent drive its own workspace — open terminals
+        // under its thread, run commands in them, read what they printed, and close them — and reach
+        // other agent threads and automations. The agent's own thread is not a terminal: it is never
+        // listed, and nothing here can type into it or close it. Wire fields keep their older names
+        // (panes, paneID). Inert unless Shepherd's env is present.
         import * as net from "node:net";
         import { randomUUID } from "node:crypto";
         import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -34,8 +35,8 @@ enum PanesExtension {
           id: number;
           code?: string;
           message?: string;
-          panes?: PaneInfo[];
-          pane?: PaneInfo;
+          panes?: TerminalInfo[];
+          pane?: TerminalInfo;
           paneID?: string;
           lines?: string[];
           automations?: AutomationInfo[];
@@ -65,7 +66,7 @@ enum PanesExtension {
           agentStatus?: string;
         }
 
-        interface PaneInfo {
+        interface TerminalInfo {
           id: string;
           cwd: string;
           isAgentPane: boolean;
@@ -257,90 +258,79 @@ enum PanesExtension {
             return { content: [{ type: "text" as const, text: body }] };
           }
 
-          function describe(pane: PaneInfo): string {
+          function describe(terminal: TerminalInfo): string {
             const tags = [
-              pane.isAgentPane ? "your pi pane" : undefined,
-              pane.isFocused ? "focused" : undefined,
-              pane.isAlive ? undefined : "no process",
+              terminal.isFocused ? "focused" : undefined,
+              terminal.isAlive ? undefined : "no process",
             ].filter(Boolean);
-            return `${pane.id}  ${pane.cwd}${tags.length > 0 ? `  [${tags.join(", ")}]` : ""}`;
+            return `${terminal.id}  ${terminal.cwd}${tags.length > 0 ? `  [${tags.join(", ")}]` : ""}`;
           }
 
-          // ---- tools ---------------------------------------------------------------
+          // ---- terminal tools ------------------------------------------------------
+          // A terminal is a tab under the agent's thread, named by an opaque terminal id. The thread
+          // itself is never one: it is left out of the list, and Shepherd refuses it everywhere else.
 
           pi.registerTool({
-            name: "pane_list",
-            label: "List Panes",
+            name: "terminal_list",
+            label: "List Terminals",
             description:
-              "List the panes in your Shepherd workspace: each pane's id, working directory, and whether " +
-              "it is your own pi pane, focused, or has a running process.",
-            promptSnippet: "List the terminal panes in your Shepherd workspace",
+              "List the terminals under your Shepherd thread: each terminal's id, working directory, and " +
+              "whether it is focused or has a running process.",
+            promptSnippet: "List the terminals under your Shepherd thread",
             parameters: Type.Object({}),
             async execute() {
               const reply = await request({ type: "listPanes" });
-              const panes = reply.panes ?? [];
-              return text(panes.length === 0 ? "no panes" : panes.map(describe).join("\n"));
+              const terminals = (reply.panes ?? []).filter((terminal) => !terminal.isAgentPane);
+              return text(terminals.length === 0 ? "no terminals" : terminals.map(describe).join("\n"));
             },
           });
 
           pi.registerTool({
-            name: "pane_open",
-            label: "Open Pane",
+            name: "terminal_open",
+            label: "Open Terminal",
             description:
-              "Open a new terminal pane in your Shepherd workspace without changing the user's focus, " +
-              "splitting your own pane by default, and optionally run a command in it. Returns the new " +
-              "pane's id for pane_run, pane_read, pane_focus, and pane_close.",
-            promptSnippet: "Open a terminal pane beside you and optionally run a command in it",
+              "Open a new terminal under your Shepherd thread, as a tab of its own, without changing the " +
+              "user's focus, and optionally run a command in it. Returns the new terminal's id for " +
+              "terminal_run, terminal_read, terminal_focus, and terminal_close.",
+            promptSnippet: "Open a terminal under you and optionally run a command in it",
             promptGuidelines: [
-              "Use pane_open for long-running processes the user should see — dev servers, log tails, " +
+              "Use terminal_open for long-running processes the user should see — dev servers, log tails, " +
               "test watchers — and use bash for one-off commands whose output you just need to read.",
             ],
             parameters: Type.Object({
               command: Type.Optional(
-                Type.String({ description: "Shell command to run in the new pane once it starts" }),
-              ),
-              axis: Type.Optional(
-                Type.String({
-                  description:
-                    "'vertical' splits side by side (default), 'horizontal' stacks the new pane below",
-                }),
+                Type.String({ description: "Shell command to run in the new terminal once it starts" }),
               ),
               cwd: Type.Optional(
-                Type.String({ description: "Working directory; defaults to the split pane's directory" }),
-              ),
-              relativeTo: Type.Optional(
-                Type.String({ description: "Pane id to split; defaults to your own pi pane" }),
+                Type.String({ description: "Working directory; defaults to your thread's directory" }),
               ),
             }),
             async execute(_toolCallId, params) {
               const reply = await request({
                 type: "openPane",
-                axis: params.axis === "horizontal" ? "horizontal" : "vertical",
                 cwd: params.cwd,
-                relativeTo: params.relativeTo,
                 command: params.command,
               });
-              const pane = reply.pane;
-              if (!pane) return text("pane opened");
+              const terminal = reply.pane;
+              if (!terminal) return text("terminal opened");
               return text(
-                `opened pane ${pane.id} in ${pane.cwd}` +
+                `opened terminal ${terminal.id} in ${terminal.cwd}` +
                 (params.command ? `\nrunning: ${params.command}` : "") +
-                (pane.isAlive ? "" : "\nwarning: the pane has no running process yet"),
+                (terminal.isAlive ? "" : "\nwarning: the terminal has no running process yet"),
               );
             },
           });
 
           pi.registerTool({
-            name: "pane_run",
-            label: "Run in Pane",
+            name: "terminal_run",
+            label: "Run in Terminal",
             description:
-              "Type text into one of your panes. By default it is submitted as a command (newline " +
-              "appended); pass submit:false to type without running, e.g. to answer a prompt. You " +
-              "cannot type into your own pi pane.",
-            promptSnippet: "Type a command into one of your Shepherd panes",
+              "Type text into one of your terminals. By default it is submitted as a command (newline " +
+              "appended); pass submit:false to type without running, e.g. to answer a prompt.",
+            promptSnippet: "Type a command into one of your Shepherd terminals",
             parameters: Type.Object({
-              paneID: Type.String({ description: "Pane id from pane_open or pane_list" }),
-              text: Type.String({ description: "Text to type into the pane" }),
+              terminalID: Type.String({ description: "Terminal id from terminal_open or terminal_list" }),
+              text: Type.String({ description: "Text to type into the terminal" }),
               submit: Type.Optional(
                 Type.Boolean({ description: "Append a newline so the text runs (default true)" }),
               ),
@@ -348,65 +338,67 @@ enum PanesExtension {
             async execute(_toolCallId, params) {
               await request({
                 type: "sendPaneInput",
-                paneID: params.paneID,
+                paneID: params.terminalID,
                 text: params.text,
                 submit: params.submit !== false,
               });
-              return text(`sent to pane ${params.paneID}`);
+              return text(`sent to terminal ${params.terminalID}`);
             },
           });
 
           pi.registerTool({
-            name: "pane_read",
-            label: "Read Pane",
+            name: "terminal_read",
+            label: "Read Terminal",
             description:
-              "Read what is currently on a pane's screen, as plain text lines. This is the visible " +
+              "Read what is currently on a terminal's screen, as plain text lines. This is the visible " +
               "screen rather than full scrollback, so read soon after running something.",
-            promptSnippet: "Read the current screen of one of your Shepherd panes",
+            promptSnippet: "Read the current screen of one of your Shepherd terminals",
             parameters: Type.Object({
-              paneID: Type.String({ description: "Pane id from pane_open or pane_list" }),
+              terminalID: Type.String({ description: "Terminal id from terminal_open or terminal_list" }),
             }),
             async execute(_toolCallId, params) {
-              const reply = await request({ type: "readPane", paneID: params.paneID });
+              const reply = await request({ type: "readPane", paneID: params.terminalID });
               const lines = reply.lines ?? [];
-              return text(lines.length === 0 ? "(pane is empty)" : lines.join("\n"));
+              return text(lines.length === 0 ? "(terminal is empty)" : lines.join("\n"));
             },
           });
 
           pi.registerTool({
-            name: "pane_focus",
-            label: "Focus Pane",
-            description: "Focus a pane in the Shepherd window, moving the user's keyboard there.",
-            promptSnippet: "Focus one of your Shepherd panes for the user",
+            name: "terminal_focus",
+            label: "Focus Terminal",
+            description:
+              "Show a terminal in the Shepherd window and move the user's keyboard there.",
+            promptSnippet: "Focus one of your Shepherd terminals for the user",
             promptGuidelines: [
-              "Use pane_focus sparingly: it moves the user's keyboard focus away from what they were doing.",
+              "Use terminal_focus sparingly: it moves the user's keyboard focus away from what they were doing.",
             ],
             parameters: Type.Object({
-              paneID: Type.String({ description: "Pane id from pane_open or pane_list" }),
+              terminalID: Type.String({ description: "Terminal id from terminal_open or terminal_list" }),
             }),
             async execute(_toolCallId, params) {
-              await request({ type: "focusPane", paneID: params.paneID });
-              return text(`focused pane ${params.paneID}`);
+              await request({ type: "focusPane", paneID: params.terminalID });
+              return text(`focused terminal ${params.terminalID}`);
             },
           });
 
           pi.registerTool({
-            name: "pane_close",
-            label: "Close Pane",
+            name: "terminal_close",
+            label: "Close Terminal",
             description:
-              "Close a pane you opened, terminating its process. You cannot close your own pi pane.",
-            promptSnippet: "Close one of the Shepherd panes you opened",
+              "Close one of your terminals, terminating its process. Closing the last one hides the " +
+              "terminal area.",
+            promptSnippet: "Close one of the Shepherd terminals you opened",
             parameters: Type.Object({
-              paneID: Type.String({ description: "Pane id from pane_open or pane_list" }),
+              terminalID: Type.String({ description: "Terminal id from terminal_open or terminal_list" }),
             }),
             async execute(_toolCallId, params) {
-              await request({ type: "closePane", paneID: params.paneID });
-              return text(`closed pane ${params.paneID}`);
+              await request({ type: "closePane", paneID: params.terminalID });
+              return text(`closed terminal ${params.terminalID}`);
             },
           });
 
           // A watch agent must do the watching itself — never breed further
-          // watchers. Automation agents get panes + notify but no automation_* tools.
+          // watchers. Automation agents get the terminal tools + notify but no automation_* tools.
           const isAutomationAgent = process.env.SHEPHERD_AUTOMATION === "1";
 
           // ---- peer threads --------------------------------------------------------
@@ -710,7 +702,7 @@ enum PanesExtension {
           });
 
           // Connect eagerly so pushes can reach this agent before it ever uses a
-          // pane tool. Failures are fine — request() reconnects on demand.
+          // Shepherd tool. Failures are fine — request() reconnects on demand.
           for (const event of ["session_start", "session_switch", "session_fork", "session_tree"]) {
             pi.on(event, (_event, ctx) => {
               liveContext = ctx;

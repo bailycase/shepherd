@@ -10,6 +10,9 @@ struct TerminalPanelTests {
     private static func split(_ first: PaneNode, _ second: PaneNode, _ axis: SplitAxis = .horizontal) -> PaneNode {
         .split(axis: axis, ratio: 0.5, first: first, second: second)
     }
+    private static func tab(_ id: PaneID = PaneID(), session: SessionID? = nil) -> TerminalPanelTab {
+        TerminalPanelTab(leaf: LeafPane(id: id, sessionID: session, cwd: "~"))
+    }
 
     @Test(arguments: [(1, 0, true), (3, 0, true), (0, 0, false), (2, 1, false), (0, 1, false)])
     func thePanelClosesWithItsLastTerminal(before: Int, after: Int, closes: Bool) {
@@ -17,30 +20,31 @@ struct TerminalPanelTests {
     }
 
     /// Picking a tab whose news equals the last tab's still marks it seen: the mark names the tab
-    /// and its sessions, not just how far their news has got.
+    /// and its session, not just how far its news has got.
     @Test func theSeenMarkChangesWithTheTabEvenWhenItsNewsMatches() {
         let firstSession = SessionID(), secondSession = SessionID()
-        let first = LeafPane(sessionID: firstSession, cwd: "~"), second = LeafPane(sessionID: secondSession, cwd: "~")
-        func row(_ pane: LeafPane, _ session: SessionID, news: UInt64) -> RemoteTerminalActivity {
-            RemoteTerminalActivity(paneID: pane.id, sessionID: session, process: "zsh", command: nil,
+        let first = Self.tab(session: firstSession), second = Self.tab(session: secondSession)
+        func row(_ tab: TerminalPanelTab, _ session: SessionID, news: UInt64) -> RemoteTerminalActivity {
+            RemoteTerminalActivity(paneID: tab.id, sessionID: session, process: "zsh", command: nil,
                                    outputSequence: news + 3, newsSequence: news)
         }
         let activity = [first.id: row(first, firstSession, news: 6), second.id: row(second, secondSession, news: 6)]
-        let a = TerminalPanel.seenMark(selected: TerminalPanelTab(node: .leaf(first)), onScreen: true, activity: activity)
-        let b = TerminalPanel.seenMark(selected: TerminalPanelTab(node: .leaf(second)), onScreen: true, activity: activity)
+        let a = TerminalPanel.seenMark(selected: first, onScreen: true, activity: activity)
+        let b = TerminalPanel.seenMark(selected: second, onScreen: true, activity: activity)
         #expect(a.news == b.news && a != b)
         #expect(b.sessions == [secondSession] && b.news == [6])
     }
 
     @Test func nothingIsMarkedSeenOffScreen() {
         let session = SessionID()
-        let pane = LeafPane(sessionID: session, cwd: "~")
-        let tab = TerminalPanelTab(node: .leaf(pane))
-        let activity = [pane.id: RemoteTerminalActivity(paneID: pane.id, sessionID: session, process: "zsh", command: nil,
-                                                        outputSequence: 4, newsSequence: 2)]
+        let tab = Self.tab(session: session)
+        let activity = [tab.id: RemoteTerminalActivity(paneID: tab.id, sessionID: session, process: "zsh", command: nil,
+                                                       outputSequence: 4, newsSequence: 2)]
         #expect(TerminalPanel.seenMark(selected: tab, onScreen: true, activity: activity).sessions == [session])
         #expect(TerminalPanel.seenMark(selected: tab, onScreen: false, activity: activity) == TerminalSeenMark())
         #expect(TerminalPanel.seenMark(selected: nil, onScreen: true, activity: [:]) == TerminalSeenMark())
+        #expect(TerminalPanel.seenMark(selected: Self.tab(), onScreen: true, activity: [:]) == TerminalSeenMark(),
+                "a terminal with no session yet has nothing to mark")
     }
 
     @Test func aLayoutOfOnlyTheThreadHasNoTabs() {
@@ -48,88 +52,90 @@ struct TerminalPanelTests {
         #expect(TerminalPanel.tabs(in: Self.leaf(thread), thread: thread).isEmpty)
     }
 
-    @Test func panesSplitOffTheThreadAreTabsOldestFirst() {
+    @Test func terminalsOpenedBesideTheThreadAreTabsOldestFirst() {
         let thread = PaneID(), first = PaneID(), second = PaneID(), third = PaneID()
-        // + three times: each new pane splits the thread, so it sits closest to it.
+        // + three times: each new terminal splits the thread, so it sits closest to it.
         var layout = Self.leaf(thread)
         for pane in [first, second, third] {
             layout = layout.splitting(pane: thread, axis: .horizontal, newPane: LeafPane(id: pane, cwd: "~"))!
         }
-        #expect(TerminalPanel.tabs(in: layout, thread: thread).map(\.id) == [first, second, third])
-    }
-
-    @Test func aPaneSplitInsideATabStaysInThatTabWithItsSplit() {
-        let thread = PaneID(), shell = PaneID(), beside = PaneID()
-        let layout = Self.split(Self.leaf(thread), Self.split(Self.leaf(shell), Self.leaf(beside), .vertical), .vertical)
         let tabs = TerminalPanel.tabs(in: layout, thread: thread)
-        #expect(tabs.map(\.id) == [shell])
-        #expect(tabs.first?.panes.map(\.id) == [shell, beside])
-        #expect(tabs.first?.node == Self.split(Self.leaf(shell), Self.leaf(beside), .vertical))
+        #expect(tabs.map(\.id) == [first, second, third])
+        #expect(tabs.map(\.leaf.id) == [first, second, third])
     }
 
-    @Test func panesBeforeTheThreadAreTabsToo() {
+    /// An older host's layout, as a current client receives it from that host: the tab split right
+    /// shows as a tab for each of its terminals, in order, and there is no split to draw.
+    @Test func aTabAnOlderHostSplitShowsAsATabForEachTerminal() {
+        let thread = PaneID(), shell = PaneID(), beside = PaneID(), below = PaneID(), later = PaneID()
+        let firstTab = Self.split(Self.leaf(shell), Self.split(Self.leaf(beside), Self.leaf(below), .horizontal), .vertical)
+        let layout = Self.split(Self.split(Self.leaf(thread), Self.leaf(later)), firstTab)
+        let tabs = TerminalPanel.tabs(in: layout, thread: thread)
+        #expect(tabs.map(\.id) == [shell, beside, below, later])
+    }
+
+    @Test func terminalsBeforeTheThreadAreTabsToo() {
         let thread = PaneID(), before = PaneID(), after = PaneID()
         let layout = Self.split(Self.leaf(before), Self.split(Self.leaf(thread), Self.leaf(after)), .vertical)
         #expect(TerminalPanel.tabs(in: layout, thread: thread).map(\.id) == [before, after])
     }
 
     @Test(arguments: [nil, PaneID()] as [PaneID?])
-    func aLayoutWithoutItsThreadIsOneTab(thread: PaneID?) {
+    func aLayoutWithoutItsThreadHasATabForEachLeaf(thread: PaneID?) {
         let a = PaneID(), b = PaneID()
         let layout = Self.split(Self.leaf(a), Self.leaf(b))
-        let tabs = TerminalPanel.tabs(in: layout, thread: thread)
-        #expect(tabs.count == 1)
-        #expect(tabs.first?.panes.map(\.id) == [a, b])
+        #expect(TerminalPanel.tabs(in: layout, thread: thread).map(\.id) == [a, b])
     }
 
-    @Test func theChosenTabWinsWhileItExistsThenTheRememberedPanesThenFocusThenTheNewest() {
-        let a = TerminalPanelTab(node: Self.leaf(PaneID()))
-        let second = PaneID()
-        let b = TerminalPanelTab(node: Self.split(Self.leaf(PaneID()), Self.leaf(second)))
-        let c = TerminalPanelTab(node: Self.leaf(PaneID()))
+    @Test func theChosenTabWinsWhileItExistsThenFocusThenTheNewest() {
+        let a = Self.tab(), b = Self.tab(), c = Self.tab()
         let tabs = [a, b, c]
         #expect(TerminalPanel.selected(tabs, chosen: a.id, focused: c.id) == a)
-        #expect(TerminalPanel.selected(tabs, chosen: PaneID(), remembering: [second], focused: c.id) == b)
         #expect(TerminalPanel.selected(tabs, chosen: PaneID(), focused: b.id) == b)
         #expect(TerminalPanel.selected(tabs, chosen: nil, focused: nil) == c)
         #expect(TerminalPanel.selected([], chosen: a.id) == nil)
     }
 
-    @Test func newTabsSplitTheThreadAndSplitsGoBesideTheFocusedPane() {
+    @Test func nextAndPreviousWrapRoundTheTabs() {
+        let a = Self.tab(), b = Self.tab(), c = Self.tab()
+        let tabs = [a, b, c]
+        #expect(TerminalPanel.adjacent(to: a, in: tabs, delta: 1) == b)
+        #expect(TerminalPanel.adjacent(to: c, in: tabs, delta: 1) == a)
+        #expect(TerminalPanel.adjacent(to: a, in: tabs, delta: -1) == c)
+        #expect(TerminalPanel.adjacent(to: b, in: tabs, delta: -1) == a)
+        #expect(TerminalPanel.adjacent(to: nil, in: tabs, delta: 1) == a, "with none selected, next is the first")
+        #expect(TerminalPanel.adjacent(to: nil, in: tabs, delta: -1) == c)
+    }
+
+    @Test func thereIsNowhereToGoWithFewerThanTwoTabs() {
+        let only = Self.tab()
+        #expect(TerminalPanel.adjacent(to: only, in: [only], delta: 1) == nil)
+        #expect(TerminalPanel.adjacent(to: nil, in: [], delta: -1) == nil)
+    }
+
+    @Test func aNewTabAsksForAnotherBesideTheThreadAnAnOlderHostSplitsIt() {
         let thread = PaneID(), a = PaneID(), b = PaneID()
         let layout = Self.split(Self.leaf(thread), Self.split(Self.leaf(a), Self.leaf(b)))
         #expect(TerminalPanel.newTabAnchor(in: layout, thread: thread) == (thread, .horizontal))
         #expect(TerminalPanel.newTabAnchor(in: layout, thread: nil) == (b, .vertical))
-        let tab = TerminalPanel.tabs(in: layout, thread: thread)[0]
-        #expect(TerminalPanel.splitAnchor(in: tab, focused: a) == a)
-        #expect(TerminalPanel.splitAnchor(in: tab, focused: thread) == b)
-        #expect(TerminalPanel.focusedPane(in: tab, focused: b) == b)
-        #expect(TerminalPanel.focusedPane(in: tab, focused: nil) == a)
     }
 
-    @Test func closingATabSaysWhichTabAndHowManyShellsStop() {
-        let thread = PaneID(), a = PaneID(), b = PaneID(), c = PaneID(), d = PaneID()
-        let layout = Self.split(Self.split(Self.split(Self.leaf(thread), Self.leaf(a)),
-                                           Self.split(Self.leaf(b), Self.split(Self.leaf(c), Self.leaf(d), .vertical), .vertical)),
-                                .leaf(LeafPane(id: PaneID(), cwd: "~", isReview: true)))
+    @Test func closingATabSaysWhichTabAndThatItsShellStops() {
+        let thread = PaneID(), a = PaneID(), b = PaneID()
+        let review = LeafPane(id: PaneID(), cwd: "~", isReview: true)
+        let layout = Self.split(Self.split(Self.split(Self.leaf(thread), Self.leaf(a)), Self.leaf(b)), .leaf(review))
         let tabs = TerminalPanel.tabs(in: layout, thread: thread)
         #expect(tabs.count == 3)
         let titles = ["review", "zsh", "zsh"]
         func confirmation(_ index: Int) -> [String] {
-            let asked = TerminalCloseConfirmation(tabs[index], in: tabs, titles: titles, thread: thread, host: "QA Mac")
+            let asked = TerminalCloseConfirmation(tabs[index], in: tabs, titles: titles, host: "QA Mac")
             return [asked.title, asked.message]
         }
         #expect(confirmation(0) == ["Close review?", "It closes on QA Mac."])
-        #expect(confirmation(1) == ["Close zsh (tab 2)?", "Its 3 shells on QA Mac stop."])
+        #expect(confirmation(1) == ["Close zsh (tab 2)?", "Its shell on QA Mac stops."])
         #expect(confirmation(2) == ["Close zsh (tab 3)?", "Its shell on QA Mac stops."])
-        #expect(TerminalCloseConfirmation(tabs[2], in: tabs, titles: ["review", "make", "zsh"], thread: thread, host: "QA Mac").title
+        #expect(TerminalCloseConfirmation(tabs[2], in: tabs, titles: ["review", "make", "zsh"], host: "QA Mac").title
             == "Close zsh?")
-    }
-
-    @Test func closingATabNeverClosesTheThread() {
-        let thread = PaneID(), a = PaneID(), b = PaneID()
-        let tab = TerminalPanelTab(node: Self.split(Self.leaf(a), Self.split(Self.leaf(thread), Self.leaf(b))))
-        #expect(TerminalPanel.panesToClose(tab, thread: thread) == [a, b])
     }
 }
 
