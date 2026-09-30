@@ -114,6 +114,43 @@ struct QueueRulesTests {
         #expect(!NativeQueueRules.unsteer(Self.b.id, in: &items))
     }
 
+    /// Interrupting sends the chosen messages first, in the order given, behind steering items
+    /// (pi still holds those until the host takes them back), and releases an editor's hold.
+    @Test func interruptingMovesTheChosenToTheHeadInTheOrderGiven() {
+        var items = [Self.steering, Self.a, Self.b, Self.c]
+        NativeQueueRules.hold(Self.c.id, true, in: &items)
+        #expect(NativeQueueRules.interrupt([Self.c.id, Self.b.id], in: &items) == [Self.c.id, Self.b.id])
+        #expect(items.map(\.text) == ["s", "c", "b", "a"])
+        #expect(items.map(\.state) == [.steering, .queued, .queued, .queued])
+        #expect(!items[1].held, "an open editor doesn't keep it back")
+    }
+
+    @Test func interruptingIgnoresSteeringMissingAndRepeatedIds() {
+        var items = [Self.steering, Self.a, Self.b]
+        let missing = UUID()
+        #expect(NativeQueueRules.interrupt([Self.steering.id, missing, Self.b.id, Self.b.id], in: &items) == [Self.b.id])
+        #expect(items.map(\.text) == ["s", "b", "a"])
+        #expect(NativeQueueRules.interrupt([], in: &items).isEmpty && items.map(\.text) == ["s", "b", "a"])
+    }
+
+    /// A steer never carries a message that begins with "/": pi runs a command only at the start
+    /// of a message it starts, so it waits for the turn to end. Waiting stays waiting, and an
+    /// interrupt is the message starting the next turn, so a command is fine there.
+    @Test(arguments: [
+        (NativeThreadDelivery.steer, "fix the tests", NativeThreadDelivery.steer),
+        (.steer, "/fix-tests now", .followUp),
+        (.steer, "/", .followUp),
+        (.steer, " /not a command", .steer),
+        (.steer, "look at /etc", .steer),
+        (.followUp, "/fix-tests", .followUp),
+        (.followUp, "plain", .followUp),
+        (.interrupt, "/compact", .interrupt),
+        (.interrupt, "plain", .interrupt),
+    ])
+    func aCommandNeverSteers(requested: NativeThreadDelivery, text: String, delivery: NativeThreadDelivery) {
+        #expect(NativeQueueRules.delivery(requested, forText: text) == delivery)
+    }
+
     @Test func normalizingPutsSteeringFirstKeepingOrder() {
         var items = [Self.a, Self.steering, Self.b, Self.item("t", 8, state: .steering)]
         NativeQueueRules.normalize(&items)
