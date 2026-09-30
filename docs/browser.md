@@ -356,8 +356,12 @@ at all, but (a)'s result is only established on 27.
   Conversely, while a page holds 5173, a server the user starts on this Mac's 5173 cannot bind it.
 - **The listener is this Mac's loopback port**, so any program or page on this Mac reaches the
   host's port through it while it is held, as with `ssh -L`. It reaches only that host, only for that
-  thread, only through the authenticated connection. Each thread's cookies, storage and cache stay in
-  its own data store (`RemoteBrowserTests.twoRemotePagesShareNoCookies`).
+  thread, only through the authenticated connection: a port never forwards anywhere else, and a
+  page's navigation to a port another owner holds is refused before it goes. Each thread's cookies,
+  storage and cache stay in its own data store (`RemoteBrowserTests.twoRemotePagesShareNoCookies`).
+  **What it cannot do** is tell which page made a connection: a page of another thread that
+  requests a held port itself from script (a hard-coded `localhost:5173`) reaches the holder's host,
+  as any program here would, because on one shared loopback a port can be one thing.
 - **Only ports a page named are held**: the port of a URL it was opened on, of a link it followed to
   another loopback port (forwarded, or refused, before it navigates), and of a dev server Start ran. A
   page that calls another `localhost` port from script (an API on `:3001`) gets nothing there, since
@@ -394,7 +398,8 @@ is answered by id, so a slow connect never times out the connection.
 - **Caps and time.** 64 tunnels per client and 256 per host (`too_many`); a tunnel that carries no
   bytes and no keepalive for 5 minutes is closed by the host (`idle`); one that cannot reach its port in
   10 s is closed (`timeout`); and every tunnel of a connection ends with it. **The viewer sends a
-  keepalive every 60 s for a tunnel whose local socket is still open**, because a page's idle
+  keepalive every 60 s for a tunnel whose local socket is still sending** (one it has finished with,
+  which a target that never closes would otherwise hold up, is left to the idle rule), because a page's idle
   WebSocket (Vite's hot reload) is silent for hours, and a host that closed it would make Vite's
   client reload the page every five minutes. The idle rule therefore reaps a tunnel nobody speaks for,
   not a page holding a socket.

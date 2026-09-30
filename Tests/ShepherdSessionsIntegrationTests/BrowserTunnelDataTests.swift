@@ -233,6 +233,33 @@ struct BrowserTunnelDataTests {
         #expect(await late.readToEnd(timeout: 10).isEmpty)
     }
 
+    /// What keeps a page's idle WebSocket (Vite's hot reload) open: the viewer says the tunnel is still
+    /// wanted while its socket is, so the host's idle rule never reaps it, and reaps one the viewer
+    /// has finished with when the target never closes.
+    @Test func aKeepaliveHoldsAnIdleTunnelOpenUntilItsPageIsDone() async throws {
+        let host = try await TunnelHost()
+        defer { host.stop() }
+        var limits = host.server.browserTunnelLimits
+        limits.idle = 0.5
+        host.server.browserTunnelLimits = limits
+        let open = Locked(0)
+        let deaf = try LoopbackServer.deaf(open: open)
+        defer { deaf.stop() }
+        let client = try await host.client()
+        defer { client.disconnect() }
+        client.tunnels.keepaliveSeconds = 0.15
+
+        let peer = try TunnelPeer(hub: client.tunnels, agent: host.agent, port: deaf.port)
+        try await eventually("the host's socket") { open.current == 1 }
+        // Well past the idle time with nothing said but the keepalives.
+        try await Task.sleep(for: .seconds(1.6))
+        #expect(host.server.browserTunnelCount == 1 && open.current == 1, "an idle socket the page still holds stays open")
+        // The page is done sending, and the deaf target never closes: the keepalives stop and the
+        // host's idle rule takes the tunnel.
+        peer.finish()
+        try await eventually("the host to reap the tunnel", timeout: .seconds(10)) { host.server.browserTunnelCount == 0 && open.current == 0 }
+    }
+
     @Test func aProbeSaysWhetherAPortAnswers() async throws {
         let host = try await TunnelHost()
         defer { host.stop() }

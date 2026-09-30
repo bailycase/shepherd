@@ -199,7 +199,9 @@ public final class BrowserTunnelHub: @unchecked Sendable {
         timer.schedule(deadline: .now() + interval, repeating: interval)
         timer.setEventHandler { [weak self] in
             guard let self else { return }
-            for tunnel in self.tunnels.values where tunnel.endpoint != nil { self.send(.keepalive(tunnel: tunnel.id)) }
+            // Only for a tunnel whose local socket is still sending: one it has finished with is left to
+            // the host's idle rule, so a target that never closes cannot keep it up for good.
+            for tunnel in self.tunnels.values where tunnel.endpoint?.isReadFinished == false { self.send(.keepalive(tunnel: tunnel.id)) }
         }
         keepalive = timer
         timer.activate()

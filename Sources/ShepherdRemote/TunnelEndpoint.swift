@@ -39,6 +39,8 @@ public final class TunnelEndpoint {
     public private(set) var lastActivity = DispatchTime.now()
     /// Bytes waiting to be written to the socket.
     public private(set) var pendingBytes = 0
+    /// The socket has sent everything it will (EOF): nothing more will be read from it.
+    public var isReadFinished: Bool { readEOF }
 
     private let queue: DispatchQueue
     private var fd: Int32
