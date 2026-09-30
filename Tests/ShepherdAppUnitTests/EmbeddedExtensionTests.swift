@@ -31,6 +31,7 @@ struct EmbeddedExtensionTests {
         "shepherd-design-refs.ts": DesignReferencesExtension.extensionSource,
         "shepherd-mcp.ts": MCPExtension.extensionSource,
         "shepherd-mcp-client.mjs": MCPExtension.clientSource,
+        "shepherd-browser.ts": BrowserExtension.extensionSource,
         // Not an extension: Settings ▸ Pi ▸ Sign-in runs it with node to sign Shepherd's pi in.
         "shepherd-sign-in.mjs": PiSignInScript.source,
         // Not an extension: Settings ▸ Skills runs it with node to ask pi for its skills.
