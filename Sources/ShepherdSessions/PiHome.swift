@@ -168,6 +168,7 @@ public struct PiHome: Equatable, Sendable {
             throw PiHomeError("\(bin) leads outside Shepherd's pi home, so Shepherd won't write its launcher there")
         }
         _ = try CLIProxyAPIExtension.install(in: self)
+        try ServiceTierExtension.install(in: self)
         try Self.write(Data(Self.markerText.utf8), to: marker, mode: 0o644)
         try Self.write(Data(restoreEnvScript.utf8), to: restoreEnv, mode: 0o644)
         try Self.write(Data(launcherScript.utf8), to: launcher, mode: 0o755)

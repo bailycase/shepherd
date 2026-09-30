@@ -8,6 +8,16 @@ This is the "Bundled pi, isolated home" plan's phases 3 to 7: the switch, the im
 user's pi, the first launch's sheet, the user's extensions, opt-in, and native sign-in. Open in
 terminal (8) comes later.
 
+## Service tiers
+
+`PiHome.install` also writes `shepherd-service-tier.ts`, which an agent's own pi (not the
+launcher, so never a draft or a native child) loads with `-e`. The host keeps
+`service-tier/<agent id>.json` (`{"tier":"fast"}`, mode 0600) for each agent in the home and
+names it in `SHEPHERD_EXT_SERVICE_TIER`; the extension reads it on every provider request and
+adds `service_tier` for the providers that take it (docs/service-tier.md). The file goes with its
+agent. It reads the managed provider's `owned_by` from `shepherd-cliproxyapi.json` through the
+launcher's `SHEPHERD_CLIPROXYAPI_CONFIG`, and never its key.
+
 ## Optional CLIProxyAPI
 
 Settings ▸ Pi ▸ Sign-in connects to an existing CLIProxyAPI server with its address and API key.

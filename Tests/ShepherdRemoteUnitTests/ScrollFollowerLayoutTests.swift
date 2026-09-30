@@ -18,6 +18,8 @@ struct ScrollFollowerLayoutTests {
         var start = NativeScrollFollower()
         var new: NativeScrollProbe
         var gesture = false
+        /// The scroll view keeps the tail itself too (iOS); false for the Mac thread, which follows by scrolling alone.
+        var nativeAnchor = true
         var sticky: Bool
         var repins: Bool
         var unseen = false
@@ -38,19 +40,30 @@ struct ScrollFollowerLayoutTests {
              new: probe(offset: 1120), sticky: true, repins: false),
         Case(testDescription: "detached, growth is left where it is and is not output by itself",
              start: NativeScrollFollower(sticky: false), new: probe(content: 2400, offset: 1120), sticky: false, repins: false),
-        Case(testDescription: "history shrinking lets native size anchoring settle first",
+        Case(testDescription: "with a native anchor (iOS), history shrinking lets it settle first",
              new: probe(content: 1000), sticky: true, repins: false),
-        Case(testDescription: "a composer collapse lets native size anchoring settle first",
+        Case(testDescription: "with a native anchor (iOS), a composer collapse lets it settle first",
              new: probe(container: 620, inset: 20), sticky: true, repins: false),
         Case(testDescription: "a layout change that leaves it at the tail needs no scroll",
              new: probe(content: 2002, offset: 1422), sticky: true, repins: false),
+        // Without a native anchor nothing else moves the offset, so a reading past the end is final.
+        Case(testDescription: "history shrinking under a view that scrolls alone lands on the tail at once",
+             new: probe(content: 1000), nativeAnchor: false, sticky: true, repins: true),
+        Case(testDescription: "a composer collapse under a view that scrolls alone lands on the tail at once",
+             new: probe(container: 620, inset: 20), nativeAnchor: false, sticky: true, repins: true),
+        Case(testDescription: "rows settling shorter by a few points leave a view that scrolls alone where it is",
+             new: probe(content: 1990), nativeAnchor: false, sticky: true, repins: false),
+        Case(testDescription: "content that fits, changing, is not overscroll for a view that scrolls alone",
+             start: NativeScrollFollower(), new: probe(content: 300, offset: -60), nativeAnchor: false, sticky: true, repins: false),
+        Case(testDescription: "a view that scrolls alone leaves a finger's place alone while layout shrinks under it",
+             new: probe(content: 1000), gesture: true, nativeAnchor: false, sticky: true, repins: false),
     ]
 
     @Test(arguments: cases)
     func layoutAndGestures(_ c: Case) {
         var follower = c.start
         let old = c.start.sticky ? Self.tail : Self.probe(offset: 1120)
-        let repins = follower.observe(from: old, to: c.new, gesture: c.gesture)
+        let repins = follower.observe(from: old, to: c.new, gesture: c.gesture, nativeAnchor: c.nativeAnchor)
         #expect(repins == c.repins)
         #expect(follower.sticky == c.sticky)
         #expect(follower.unseen == c.unseen)
