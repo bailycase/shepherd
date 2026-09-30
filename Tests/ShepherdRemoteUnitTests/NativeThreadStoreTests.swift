@@ -1233,6 +1233,53 @@ struct NativeThreadStoreTests {
         #expect(reply.presentation?.items.count == 2)
     }
 
+    /// Retry is on the latest turn only: retrying an older one would drop every turn after it.
+    /// A reply waiting on a later message, and one still streaming, offer none.
+    @Test(arguments: [
+        ([F.user("one", id: "u1"), F.assistant("A", id: "a1"), F.user("two", id: "u2"), F.assistant("B", id: "a2")], false,
+         [false, false, false, true], "u2"),
+        ([F.user("one", id: "u1"), F.assistant("A", id: "a1"), F.user("two", id: "u2")], false, [false, false, false], nil),
+        ([F.user("one", id: "u1"), F.assistant("A", id: "a1"), F.user("two", id: "u2"), F.assistant("B", id: "a2")], true,
+         [false, false, false, false], nil),
+        ([F.user("one", id: "u1"), F.user("more", id: "u1b"), F.assistant("A", status: "error", id: "a1")], false,
+         [false, true], "u1b"),
+        ([F.assistant("A", id: "a0")], false, [false], nil),
+    ] as [([NativeThreadMessage], Bool, [Bool], String?)])
+    func onlyTheLatestReplyOffersRetry(messages: [NativeThreadMessage], running: Bool, offers: [Bool], entry: String?) async {
+        let live = running ? [F.assistant("streaming", status: "streaming", id: "live")] : []
+        let (store, _, task) = await started(F.snapshot(running: running, messages: messages, provisional: live))
+        defer { task.cancel() }
+        #expect(store.rows.map(\.offersRetry) == offers)
+        #expect(store.rows.last { !$0.isUser }?.retryEntryID == entry)
+    }
+
+    /// Retry retries in place on a host that can; elsewhere it sends the turn's prompt again.
+    @Test(arguments: [true, false])
+    func retryGoesInPlaceWhereTheHostCanElseSendsThePromptAgain(inPlace: Bool) async throws {
+        let actions = ["send", "abort"] + (inPlace ? ["retry"] : [])
+        let (store, host, task) = await started(F.snapshot(actions: actions, messages: [F.user("fix it", id: "u"),
+                                                                                       F.assistant("", status: "error", id: "a")]))
+        defer { task.cancel() }
+        host.action = { request in
+            switch request {
+            case .retry(_, _, let id, _), .send(_, _, let id, _, _, _, _, _): .accepted(operationID: id)
+            default: .failure(code: "x", message: "unexpected")
+            }
+        }
+        let row = try #require(store.rows.last)
+        #expect(store.canRetry(row, running: false) && !store.canRetry(row, running: true))
+        await store.retry(row)
+        let action = try #require(host.actions.first)
+        if inPlace {
+            guard case .retry(let session, let generation, _, let entryID) = action else { Issue.record("expected retry"); return }
+            #expect(session == "s" && generation == "g" && entryID == "u")
+        } else {
+            guard case .send(_, _, _, let text, .followUp, _, _, _) = action else { Issue.record("expected send"); return }
+            #expect(text == "fix it")
+        }
+        #expect(host.actions.count == 1)
+    }
+
     @Test func onlyTheLastReplyIsLiveWhileTheAgentRuns() async {
         let (store, _, task) = await started(F.snapshot(running: true, messages: [F.user(id: "u1"), hi, F.user(id: "u2")],
                                                         provisional: [F.assistant("streaming", id: "live")]))

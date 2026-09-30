@@ -698,7 +698,8 @@ Packages/
                        Diagnostics/  NWRenderProbe (row-body counts for tests; debug only)
                        Its unit tests live in the root package (Tests/ShepherdUIUnitTests).
 Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free):
-  shepherd-status.ts      status + active pi session       shepherd-namer.ts   agent titles
+  shepherd-status.ts      status + active pi session, Retry (/shepherd-retry; docs/native-thread.md › Retry)
+  shepherd-namer.ts       agent titles
   shepherd-panes.ts       pane_*, agent_* (list/send/spawn/read/steer/interrupt/wait/delete),
                           automation_*, notify; see docs/agent-coordination.md
   shepherd-review.ts      review_diff (readies the side pane's Changes tab)

@@ -34,9 +34,12 @@ async function until(what, fn, timeout = 30000) {
 // A stand-in for pi's extension API: the handlers the extension registers and the tools it sees.
 function fakePi(tools) {
   const handlers = new Map();
+  const commands = new Map();
   return {
     handlers,
+    commands,
     on(event, handler) { handlers.set(event, [...(handlers.get(event) ?? []), handler]); return () => {}; },
+    registerCommand(name, options) { commands.set(name, options); },
     getAllTools: () => tools.map(({ name, parameters }) => ({ name, parameters })),
     async fire(event, payload = {}) {
       for (const handler of handlers.get(event) ?? []) await handler(payload, { sessionManager: { getSessionId: () => "s" } });
@@ -100,6 +103,7 @@ test("outside Shepherd the extension is inert and touches no tool", async () => 
   const pi = fakePi([ask]);
   await withEnvironment({ SHEPHERD_AGENT_ID: "", SHEPHERD_SOCKET: "" }, () => install(pi));
   assert.equal(pi.handlers.size, 0);
+  assert.equal(pi.commands.size, 0, "no Retry command outside Shepherd");
   assert.equal(ask.parameters.properties.short, undefined);
 });
 
