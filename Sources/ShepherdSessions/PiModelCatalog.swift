@@ -77,7 +77,7 @@ public final class PiModelCatalog: @unchecked Sendable {
 
     /// The modification dates of what the catalog depends on in the home (-1 while missing).
     private func fingerprint() -> [Double] {
-        ["auth.json", "models.json", "settings.json"].map { name in
+        ["auth.json", "models.json", "settings.json", CLIProxyAPIStore.fileName].map { name in
             var info = stat()
             guard stat(files.directory.appendingPathComponent(name).path, &info) == 0 else { return -1 }
             return Double(info.st_mtimespec.tv_sec) + Double(info.st_mtimespec.tv_nsec) / 1e9

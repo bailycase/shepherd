@@ -14,6 +14,7 @@ struct EmbeddedExtensionTests {
 
     /// Every embedded literal paired with its canonical file.
     private static let embedded: [String: String] = [
+        "shepherd-cliproxyapi.ts": CLIProxyAPIExtension.source,
         "shepherd-status.ts": StatusExtension.extensionSource,
         "shepherd-namer.ts": NamerExtension.extensionSource,
         "shepherd-panes.ts": PanesExtension.extensionSource,

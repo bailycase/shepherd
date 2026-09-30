@@ -16,7 +16,7 @@ struct PiLauncherTests {
             try """
                 #!/bin/sh
                 printf 'arg=%s\\n' "$@"
-                env | grep -E '^(PI_|JITI_|NODE_|OPENSSL_CONF|_SHEPHERD_STASH_)' | sort
+                env | grep -E '^(PI_|JITI_|NODE_|OPENSSL_CONF|_SHEPHERD_STASH_|SHEPHERD_CLIPROXYAPI_CONFIG=)' | sort
 
                 """.write(to: engine, atomically: true, encoding: .utf8)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: engine.path)
@@ -67,7 +67,8 @@ struct PiLauncherTests {
 
         #expect(result.status == 0, "\(result.err)")
         let lines = Set(result.out)
-        #expect(result.out.prefix(3) == ["arg=--mode", "arg=rpc", "arg=it's"])
+        #expect(result.out.prefix(5) == ["arg=-e", "arg=\(home.directory.path)/shepherd-cliproxyapi.ts", "arg=--mode", "arg=rpc", "arg=it's"])
+        #expect(lines.contains("SHEPHERD_CLIPROXYAPI_CONFIG=\(home.directory.path)/shepherd-cliproxyapi.json"))
         #expect(Set(lines.filter { $0.hasPrefix("PI_") }) == [
             "PI_CODING_AGENT_DIR=\(home.directory.path)", "PI_PACKAGE_DIR=/engine/package",
             "PI_OFFLINE=1", "PI_SKIP_VERSION_CHECK=1", "PI_TELEMETRY=0",
@@ -143,7 +144,7 @@ struct PiLauncherTests {
         environment["PI_PACKAGE_DIR"] = "/their/package"
         let result = try Self.run(home.launcher.path, ["--version"], environment: environment)
         #expect(result.status == 0, "\(result.err)")
-        #expect(result.out.first == "arg=--version")
+        #expect(result.out.prefix(3) == ["arg=-e", "arg=\(home.directory.path)/shepherd-cliproxyapi.ts", "arg=--version"])
         #expect(!result.out.contains { $0.hasPrefix("PI_PACKAGE_DIR=") })
         #expect(result.out.contains("_SHEPHERD_STASH_PI_PACKAGE_DIR=/their/package"))
     }
@@ -161,7 +162,7 @@ struct PiLauncherTests {
         let result = try Self.run(home.launcher.path, ["--mode", "rpc"], environment: ["PATH": "/usr/bin:/bin"])
         if scriptExists {
             #expect(result.status == 0, "\(result.err)")
-            #expect(result.out == ["engine=--mode", "engine=rpc"])
+            #expect(result.out == ["engine=-e", "engine=\(home.directory.path)/shepherd-cliproxyapi.ts", "engine=--mode", "engine=rpc"])
         } else {
             #expect(result.status == 127)
             #expect(result.out.isEmpty)

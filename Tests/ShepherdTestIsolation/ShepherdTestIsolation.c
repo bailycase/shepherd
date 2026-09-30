@@ -85,7 +85,7 @@ static void refuse(const char *bin, const char *command) {
 /// Inherited variables to clear before tests start, matched by prefix.
 static const char *const agentVariables[] = {
     "SHEPHERD_AGENT_ID=", "SHEPHERD_SOCKET=", "SHEPHERD_EXT_", "SHEPHERD_NATIVE_CHILDREN=", "SHEPHERD_CHILD_",
-    "SHEPHERD_NEEDS_NAME=", "SHEPHERD_AUTOMATION=", "SHEPHERD_MODEL=", "SHEPHERD_PI_THEME_",
+    "SHEPHERD_NEEDS_NAME=", "SHEPHERD_AUTOMATION=", "SHEPHERD_MODEL=", "SHEPHERD_PI_THEME_", "SHEPHERD_CLIPROXYAPI_CONFIG=",
     "SHEPHERD_INSTRUCTIONS_DIR=", "SHEPHERD_SUGGEST_FILES=", "SHEPHERD_PI_EXECUTABLE=", "SHEPHERD_DESIGN_REFS=",
     // Git's repository selection, config injection, tracing and external helpers must never
     // escape the scratch process. Install our own config paths after clearing inherited GIT_*.

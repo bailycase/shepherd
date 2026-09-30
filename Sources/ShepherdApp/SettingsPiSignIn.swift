@@ -35,6 +35,7 @@ struct PiSignInSettings: View {
                     }
                     AddKeyRow(providers: page.addable) { auth.signIn($0, key: true) }
                 }
+                CLIProxyAPISettings(model: auth.proxy, auth: auth).id(CLIProxyAPIStore.provider)
                 if !page.customProviders.isEmpty {
                     SettingsGroup(title: "Custom providers",
                                   trailing: (yourPi.pi.home.appendingPathComponent("models.json").path as NSString).abbreviatingWithTildeInPath) {

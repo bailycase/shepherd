@@ -363,6 +363,27 @@ final class ReviewPaneModel {
     @ObservationIgnored private var rowCache: [String: CachedRows] = [:]
     private(set) var width: CGFloat = 0
     @ObservationIgnored private var measuredCodeWidth: (version: Int, scale: CGFloat, width: CGFloat)?
+    @ObservationIgnored private var splitScrolls: [String: NWSplitDiffScroll] = [:]
+    @ObservationIgnored private var splitWidths: [String: (file: DiffFile, scale: CGFloat, old: CGFloat, new: CGFloat)] = [:]
+
+    func splitScroll(for fileID: String) -> NWSplitDiffScroll {
+        if let value = splitScrolls[fileID] { return value }
+        let value = NWSplitDiffScroll()
+        splitScrolls[fileID] = value
+        return value
+    }
+
+    @discardableResult
+    func scrollSplitCode(at point: CGPoint, delta: CGFloat, viewportWidth: CGFloat) -> Bool {
+        let liveFiles = Set(session.files.map(\.id))
+        guard layout == .split,
+              let file = rowsTops.filter({ liveFiles.contains($0.key) && $0.value <= point.y }).max(by: { $0.value < $1.value }),
+              !isFolded(file.key), let scroll = splitScrolls[file.key] else { return false }
+        let old = point.x < viewportWidth / 2
+        let previous = old ? scroll.oldOffset : scroll.newOffset
+        scroll.move(to: previous - delta, old: old)
+        return previous != (old ? scroll.oldOffset : scroll.newOffset)
+    }
     /// Where each file's rows start in the diff's visible area, while its section is loaded, and
     /// the height of a file header: a file sits in its place when its rows start below its
     /// header, and has scrolled up under its pinned header when they start above.
@@ -448,6 +469,7 @@ final class ReviewPaneModel {
     /// Measure once per diff and text scale, never on scroll. Both split columns use the
     /// same width, so paired lines stay aligned while the whole diff scrolls horizontally.
     func scrollContentWidth(textScale: CGFloat) -> CGFloat {
+        if layout == .split { return width }
         if measuredCodeWidth?.version != session.filesVersion || measuredCodeWidth?.scale != textScale {
             let font = NSFont(name: "GeistMono-Regular", size: NWTextStyle.code.size * textScale)
                 ?? .monospacedSystemFont(ofSize: NWTextStyle.code.size * textScale, weight: .regular)
@@ -463,6 +485,21 @@ final class ReviewPaneModel {
             ? 2 * (NWDiffMetrics.splitCodeLeading + code + commentSlot) + 1
             : NWDiffMetrics.codeLeading + code + commentSlot
         return max(width, content)
+    }
+
+    func splitLineWidths(_ file: DiffFile, textScale: CGFloat) -> (old: CGFloat, new: CGFloat) {
+        if let cached = splitWidths[file.id], cached.scale == textScale, cached.file == file { return (cached.old, cached.new) }
+        let font = NSFont(name: "GeistMono-Regular", size: NWTextStyle.code.size * textScale)
+            ?? .monospacedSystemFont(ofSize: NWTextStyle.code.size * textScale, weight: .regular)
+        var old: CGFloat = 0, new: CGFloat = 0
+        for line in file.hunks.flatMap(\.lines) {
+            let text = NSAttributedString(string: line.text, attributes: [.font: font])
+            let width = ceil(CGFloat(CTLineGetTypographicBounds(CTLineCreateWithAttributedString(text), nil, nil, nil)))
+            if line.kind != .added { old = max(old, width) }
+            if line.kind != .removed { new = max(new, width) }
+        }
+        splitWidths[file.id] = (file, textScale, old, new)
+        return (old, new)
     }
 
     /// Colors and word diffs for every file without them for its current content, one file at a

@@ -218,6 +218,10 @@ struct NewThreadPage: View {
         picker = ModelPickerState(catalog: draft.catalog, recent: RecentModels.load().map(\.id),
                                   current: draft.model.isEmpty ? nil : draft.model)
         menu = .models
+        Task {
+            await draft.refreshModels(vm)
+            if let catalog = draft.catalog { picker?.update(catalog) }
+        }
     }
 }
 

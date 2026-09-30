@@ -575,6 +575,24 @@ struct SettingsPreviewTests {
         }
     }
 
+    @Test func settingsCLIProxyAPI() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let snapshots: [(String, CLIProxyAPIStore.Snapshot?)] = [
+            ("off", nil),
+            ("connected", .init(enabled: true, baseURL: "https://proxy.example.com/v1", modelCount: 24, updatedAt: Date(timeIntervalSince1970: 1_790_000_000)))
+        ]
+        for (name, snapshot) in snapshots {
+            let model = CLIProxyAPIModel(preview: snapshot)
+            try await Preview.render("settings-cliproxyapi-\(name)", size: CGSize(width: 820, height: 600)) {
+                CLIProxyAPISettings(model: model, auth: workspace.vm.piAuth)
+                    .padding(NW.Space.xxl)
+                    .frame(width: 820, height: 600, alignment: .top)
+                    .background(Color.nw.bgWindow)
+            }
+        }
+    }
+
     /// The sign-in sheet in each of its flows and states (SignInBrowser, SignInDevice, SignInPaste,
     /// SignInKey, SignInPortBusy, and PiAuthStates' done and failed).
     @Test func signInSheet() async throws {

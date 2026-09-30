@@ -9,12 +9,43 @@ import ShepherdTestSupport
 @Suite("Diff line drawing", .mainActorExclusive)
 @MainActor
 struct DiffDrawingTests {
-    @Test(arguments: [false, true])
-    func longLinesCanBeReachedByHorizontalScrolling(split: Bool) async throws {
+    // Scrollbar preferences are process-wide. A legacy vertical scroller reserves width;
+    // feeding the outer pane's width back into its content made the window grow until AppKit trapped.
+    @Test(arguments: ["Always", "WhenScrolling"])
+    func splitDiffFitsItsViewportWithEitherScrollbarStyle(scrollBars: String) async {
+        await #expect(processExitsWith: .success) { [scrollBars = scrollBars as String] in
+            await recordingErrors {
+                var arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+                arguments["AppleShowScrollBars"] = scrollBars
+                UserDefaults.standard.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
+                try await MainActor.run {
+                    #expect(NSScroller.preferredScrollerStyle == (scrollBars == "Always" ? .legacy : .overlay))
+                    let model = ListFixtures.reviewModel(ListFixtures.realisticReview())
+                    model.session.layoutChoice = .split
+                    let window = OffscreenWindow(size: CGSize(width: 1040, height: 800), dark: true,
+                                                 ReviewPaneContent(model: model))
+                    defer { window.close() }
+                    for width: CGFloat in [1040, 900, 1200] {
+                        window.window.setContentSize(CGSize(width: width, height: 800))
+                        ListPerf.settle(window)
+                        let scroll = try #require(ListPerf.scrollView(in: window, trailing: true))
+                        #expect(abs(window.host.bounds.width - width) < 1)
+                        #expect(abs(window.host.bounds.height - 800) < 1)
+                        #expect(scroll.documentView!.bounds.width <= scroll.contentView.bounds.width + 1)
+                        #expect(ListPerf.scroll(window, scroll, step: 400, steps: 5).distance > 0)
+                        #expect(abs(window.host.bounds.width - width) < 1)
+                        #expect(scroll.contentView.bounds.minX == 0)
+                    }
+                }
+            }
+        }
+    }
+
+    @Test func longUnifiedLinesCanBeReachedByHorizontalScrolling() async throws {
         let source = String(repeating: "long_identifier_", count: 35) + "VISIBLE_END"
         let files = DiffFile.parse("diff --git a/sample.txt b/sample.txt\n--- a/sample.txt\n+++ b/sample.txt\n@@ -1 +1 @@\n-old\n+\(source)\n")
         let model = ListFixtures.reviewModel(files)
-        model.session.layoutChoice = split ? .split : .unified
+        model.session.layoutChoice = .unified
         let window = OffscreenWindow(size: CGSize(width: 600, height: 400), dark: false,
                                      ReviewPaneContent(model: model))
         defer { window.close() }
@@ -33,6 +64,75 @@ struct DiffDrawingTests {
         #expect(clip.bounds.minX > 1000)
         #expect(abs(clip.bounds.maxX - scroll.documentView!.bounds.width) < 2,
                 "the trailing source must be reachable, not just present in a tooltip")
+    }
+
+    @Test func splitColumnsScrollIndependentlyWithoutMovingTheirBoundaries() async throws {
+        let source = String(repeating: "long_identifier_", count: 35)
+        let files = DiffFile.parse("diff --git a/sample.txt b/sample.txt\n--- a/sample.txt\n+++ b/sample.txt\n@@ -1 +1 @@\n-\(source)OLD_END\n+\(source)NEW_END\n")
+        let model = ListFixtures.reviewModel(files)
+        model.session.layoutChoice = .split
+        let window = OffscreenWindow(size: CGSize(width: 600, height: 400), dark: false, ReviewPaneContent(model: model))
+        defer { window.close() }
+        let file = try #require(files.first)
+        let position = model.splitScroll(for: file.id)
+        try await eventuallyOnMain("both split code columns to measure their extents") {
+            window.layout()
+            return position.oldLimit > 1000 && position.newLimit > 1000
+        }
+        let scroll = try #require(ListPerf.scrollView(in: window))
+        #expect(scroll.documentView!.bounds.width <= scroll.contentView.bounds.width + 1)
+        let right = CGRect(x: 301, y: 0, width: 290, height: 400)
+        let left = CGRect(x: 40, y: 0, width: 250, height: 400)
+        let before = FrameTimer.capture(window, right)
+        let leftBefore = FrameTimer.capture(window, left)
+        func controls(_ view: NSView) -> [NSScroller] {
+            (view is NSScroller ? [view as! NSScroller] : []) + view.subviews.flatMap(controls)
+        }
+        let horizontal = controls(window.host).filter { $0.accessibilityLabel() == "Scroll old code horizontally" }
+        let control = try #require(horizontal.first)
+        #expect(control.bounds.width > control.bounds.height && control.isEnabled)
+        control.doubleValue = 1
+        _ = control.sendAction(control.action, to: control.target)
+        window.layout()
+        #expect(position.oldOffset > 1000 && position.newOffset == 0)
+        #expect(FrameTimer.capture(window, left) != leftBefore, "old code must visibly move")
+        #expect(FrameTimer.capture(window, right) == before, "scrolling old code leaves the new column unchanged")
+        position.move(to: position.newLimit, old: false)
+        window.layout()
+        #expect(position.oldOffset == position.oldLimit && position.newOffset == position.newLimit)
+        #expect(scroll.contentView.bounds.minX == 0, "the pane and its divider never pan sideways")
+        model.noteRowsTop(150, of: file.id)
+        model.scrollSplitCode(at: CGPoint(x: 100, y: 175), delta: 40, viewportWidth: 600)
+        #expect(position.oldOffset == position.oldLimit - 40)
+        #expect(position.newOffset == position.newLimit)
+        model.scrollSplitCode(at: CGPoint(x: 450, y: 175), delta: 60, viewportWidth: 600)
+        #expect(position.newOffset == position.newLimit - 60)
+        #expect(position.oldOffset == position.oldLimit - 40)
+    }
+
+    @Test func longSplitFilesCanScrollBeforeTheirFooterIsVisible() async throws {
+        let lines = (0..<500).map { "+" + String(repeating: "long_column_", count: 30) + String($0) }.joined(separator: "\n")
+        let file = try #require(DiffFile.parse("diff --git a/long.txt b/long.txt\n--- /dev/null\n+++ b/long.txt\n@@ -0,0 +1,500 @@\n\(lines)\n").first)
+        let model = ListFixtures.reviewModel([file])
+        model.session.layoutChoice = .split
+        let window = OffscreenWindow(size: CGSize(width: 600, height: 400), dark: false, ReviewPaneContent(model: model))
+        defer { window.close() }
+        let position = model.splitScroll(for: file.id)
+        try await eventuallyOnMain("the visible beginning to establish horizontal limits") {
+            window.layout()
+            return position.newLimit > 1000
+        }
+        let scroll = try #require(ListPerf.scrollView(in: window))
+        // The initial file-focus request can arrive after the first geometry observation.
+        // Establish the beginning explicitly before asserting that the footer is offscreen.
+        try await eventuallyOnMain("the long diff viewport to remain at its beginning") {
+            ListPerf.jump(window, scroll, toEnd: false)
+            return scroll.contentView.bounds.minY < 1 && scroll.contentView.bounds.height <= 400
+                && scroll.contentView.bounds.maxY < scroll.documentView!.bounds.height - 1000
+        }
+        #expect(scroll.contentView.bounds.maxY < scroll.documentView!.bounds.height - 1000)
+        model.scrollSplitCode(at: CGPoint(x: 450, y: 150), delta: -100, viewportWidth: 600)
+        #expect(position.newOffset == 100 && position.oldOffset == 0)
     }
 
     @Test(arguments: [false, true])
