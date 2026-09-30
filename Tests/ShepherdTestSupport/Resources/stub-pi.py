@@ -143,7 +143,8 @@ extension: <the error's message>`, and pi exits 1, as it does in every mode. The
 lists the extensions settings.json names.
 A pi launched the way the app launches it gets no test env, so `stub-pi-startup.json` in the
 cwd ({"delay": 1.5, "gate": "release-pi", "newSession": true, "exit": 1, "stderr": "...",
-"requireAuth": true}) sets the same.
+"requireAuth": true, "model": {"provider": "openai", "id": "gpt-6-luna", "api": "openai-responses"}})
+sets the same.
 
 Every stdin line is appended to $STUB_PI_LOG when set, so tests can assert
 on what the client actually wrote.
@@ -906,6 +907,9 @@ def startup():
             config = json.load(f)
     except (OSError, ValueError):
         config = {}
+    # "model": fields of the starting model, as $STUB_PI_MODEL (for a pi launched the way the app does).
+    if isinstance(config.get("model"), dict):
+        STATE["model"] = dict(STATE["model"], **config["model"])
     if isinstance(config.get("speak"), dict) and not os.environ.get("STUB_PI_SPEAK"):
         threading.Thread(target=speak_from_config, args=(config["speak"],), daemon=True).start()
     delay = os.environ.get("STUB_PI_STARTUP_DELAY") or config.get("delay")
