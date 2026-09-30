@@ -1,7 +1,7 @@
 # Contributing to Shepherd
 
 Shepherd is an opinionated macOS app for supervising coding agents: native agent threads, with
-real terminals only as panes beside a thread. Changes should keep it focused on that. For a large
+real terminals only as tabs under a thread. Changes should keep it focused on that. For a large
 feature or behavior change, open an issue before writing the implementation.
 
 ## Read first
@@ -84,7 +84,7 @@ Use Conventional Commit subjects, one logical change per commit:
 
 ```text
 feat: add remote host filtering
-fix: preserve pane focus after switching
+fix: preserve terminal focus after switching
 docs: explain the release channels
 refactor: simplify session adoption
 test: cover stale-session answers

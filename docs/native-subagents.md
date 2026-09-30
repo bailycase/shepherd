@@ -97,7 +97,7 @@ the same choice.
 | `package` | Namespaces the name as `package.name`. |
 | `aliases` / `alias` | Comma-separated or a YAML list. Exact names win; an ambiguous alias fails. |
 | `model`, `thinking` | Pi model resolution and thinking levels. `thinking: false` means off. |
-| `tools` | Intersected with the parent's active allowlist. Omitted means pi's normal built-in tools, not the parent's pane or automation tools. Empty or `false` means no ordinary tools. |
+| `tools` | Intersected with the parent's active allowlist. Omitted means pi's normal built-in tools, not the parent's terminal or automation tools. Empty or `false` means no ordinary tools. |
 | `systemPromptMode` | `append` or `replace`. Custom profiles default to replace. |
 | `inheritProjectContext` | Controls normal AGENTS.md/CLAUDE.md discovery. Custom profiles default to false. |
 | `defaultContext` / `context` | `fresh` or `fork`. |
@@ -421,7 +421,7 @@ failed, and finished.
 | Esc or Ctrl+C | Close the overlay; the children keep running |
 
 `shepherd-inspect.mjs` holds the overlay's view helpers. Shepherd installs it beside the children
-extension but never launches it. You can still run it by hand in a terminal pane to watch one
+extension but never launches it. You can still run it by hand in a terminal to watch one
 run:
 
 ```sh

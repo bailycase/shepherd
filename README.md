@@ -33,8 +33,8 @@ coherent over covering every use case.
   - messages sent while a turn runs steer in at the agent's next step, or wait in a queue above
     the composer, where each can be steered in, edited, reordered, or deleted; Steer now stops the
     agent and sends at once
-- **Terminal panes beside a thread.** Split a real terminal next to an agent with ⌘D, or let the
-  agent open, run, read, and close its own panes. Terminals render with
+- **Terminals under a thread.** Open a real terminal under an agent with ⌘D or ⌘J, as tabs, or
+  let the agent open, run, read, and close its own. Terminals render with
   [libghostty](https://ghostty.org).
 - **Subagents.** The bundled native subagent runtime lets an agent start child agents and script
   workflows. Runs appear as live cards in the thread and open in an inspector docked beside it;
@@ -55,7 +55,7 @@ coherent over covering every use case.
 - **Keyboard-first.** A command palette (⌘K) with transcript search across all your agents,
   plus rebindable shortcuts.
 - **Night Watch.** Shepherd's design system, in light and dark, set in Geist and Geist Mono, and
-  also applied to terminal panes. Pi run by hand keeps its own theme.
+  also applied to terminals. Pi run by hand keeps its own theme.
 
 Nothing runs in the background without the app. Quit Shepherd and every agent stops. Relaunch it
 and the workspace comes back, with each agent resumed in its pi session.
@@ -134,7 +134,7 @@ herdr workspaces and pi sessions.
 A connected Mac can:
 
 - create, rename, reorder, and delete agents on the host
-- open terminal panes
+- open terminals
 - inspect subagents
 - search transcripts
 - review diffs
@@ -150,12 +150,12 @@ internet. See [SECURITY.md](SECURITY.md).
 The iPhone and iPad client in `App/iOS` is distributed through internal TestFlight builds.
 See [docs/ios](docs/ios/README.md) for its current scope and validation.
 
-## pi in terminal panes
+## pi in terminals
 
-Terminal panes run your configured login shell without wrapping `pi` or injecting a theme.
+Terminals run your configured login shell without wrapping `pi` or injecting a theme.
 pi uses its own theme and settings. Shepherd never edits your shell rc files or pi settings.
 
-pi started by hand in a pane has no Shepherd agent identity, so the agent tools (panes, review,
+pi started by hand in a terminal has no Shepherd agent identity, so the agent tools (terminals, review,
 automations, peers) and status, naming, and subagent reporting are unavailable there. Use a
 Shepherd agent when you want those.
 

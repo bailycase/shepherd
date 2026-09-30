@@ -563,7 +563,7 @@ struct WorktreeSetupChecklist: View {
             }
         case .ghAuth:
             HStack(spacing: NW.Space.m) {
-                remedyText("Sign in with GitHub in a terminal pane beside the thread, then come back.")
+                remedyText("Sign in with GitHub in a terminal under the thread, then come back.")
                 SheetLinkButton(label: "Open a terminal for gh login…", action: openLoginShell)
             }
         }

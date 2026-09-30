@@ -13,25 +13,25 @@ extension ShepherdViewModel {
         init(_ description: String) { self.description = description }
     }
 
-    /// A terminal pane of `agentID`'s layout: never its thread, never another agent's.
+    /// A terminal of `agentID`'s layout: never its thread, never another agent's.
     private func terminalLeaf(_ paneID: PaneID, of agentID: AgentID) throws -> (tab: Tab, leaf: LeafPane) {
         guard let agent = state.agents.first(where: { $0.id == agentID }),
               let tab = state.tabs.first(where: { $0.id == agent.tabID }),
               let leaf = tab.layout.leaf(withID: paneID) else {
             throw TerminalControlError("That terminal is not in this agent's layout.")
         }
-        guard leaf.agentID == nil, leaf.id != agent.paneID else { throw TerminalControlError("That pane is the agent's thread.") }
+        guard leaf.agentID == nil, leaf.id != agent.paneID else { throw TerminalControlError("That is the agent's thread, not a terminal.") }
         return (tab, leaf)
     }
 
-    /// Names a tab (its first pane); a blank name goes back to what it runs.
+    /// Names a tab (its terminal); a blank name goes back to what it runs.
     func renameTerminalPane(_ paneID: PaneID, of agentID: AgentID, to title: String?) throws {
         let (tab, _) = try terminalLeaf(paneID, of: agentID)
         let name = title?.trimmingCharacters(in: .whitespacesAndNewlines)
         setLayout(tab.layout.updatingLeaf(paneID) { $0.title = name?.isEmpty == false ? name : nil }, forTab: tab.id)
     }
 
-    /// Kills the command running in a pane, leaving its shell.
+    /// Kills the command running in a terminal, leaving its shell.
     func killTerminalProcess(_ paneID: PaneID, of agentID: AgentID) async throws {
         let (_, leaf) = try terminalLeaf(paneID, of: agentID)
         guard let session = leaf.sessionID, await server.killForegroundCommand(sessionID: session) else {
@@ -50,7 +50,7 @@ extension ShepherdViewModel {
     /// Rename tab: asks for the name (`terminalRenameTarget`).
     func renameTerminalTab(_ tab: TerminalPanelTab, target: TerminalTarget) {
         guard terminalControlAvailable(target) else { NSSound.beep(); return }
-        let current = TerminalPanels.title(row: terminalPanels.activity[target.key]?[tab.id], pane: tab.panes.first)
+        let current = TerminalPanels.title(row: terminalPanels.activity[target.key]?[tab.id], pane: tab.leaf)
         terminalRenameTarget = TerminalRenameTarget(paneID: tab.id, remote: target.remote, agentID: agentID(of: target),
                                                     name: current)
     }
@@ -69,26 +69,24 @@ extension ShepherdViewModel {
         catch { remoteActionError = String(describing: error) }
     }
 
-    /// Kill process: the command running in the tab's focused pane.
+    /// Kill process: the command running in the tab's terminal.
     func killTerminalProcess(in tab: TerminalPanelTab, target: TerminalTarget) {
-        let pane = TerminalPanel.focusedPane(in: tab, focused: target.focused)
         if let remote = target.remote {
             Task {
-                do { try await remoteHosts.agentAction(remote, action: .killTerminalProcess(paneID: pane)) }
+                do { try await remoteHosts.agentAction(remote, action: .killTerminalProcess(paneID: tab.id)) }
                 catch { NSSound.beep() }
             }
             return
         }
         guard let agentID = agentID(of: target) else { return }
         Task {
-            do { try await killTerminalProcess(pane, of: agentID) } catch { NSSound.beep() }
+            do { try await killTerminalProcess(tab.id, of: agentID) } catch { NSSound.beep() }
         }
     }
 
-    /// Whether the tab's focused pane runs a command Kill process could end.
+    /// Whether the tab's terminal runs a command Kill process could end.
     func terminalTabIsRunning(_ tab: TerminalPanelTab, target: TerminalTarget) -> Bool {
-        let pane = TerminalPanel.focusedPane(in: tab, focused: target.focused)
-        return terminalPanels.activity[target.key]?[pane]?.isRunning == true
+        terminalPanels.activity[target.key]?[tab.id]?.isRunning == true
     }
 
     /// Where a new tab opens, for the menu: "<space> on <host>" ("payments on build-01").
@@ -134,7 +132,7 @@ extension ShepherdViewModel {
     }
 }
 
-/// A terminal tab being renamed: its first pane, and whose layout it is in.
+/// A terminal tab being renamed: its terminal, and whose layout it is in.
 struct TerminalRenameTarget: Identifiable, Equatable {
     let paneID: PaneID
     let remote: RemoteAgentRef?

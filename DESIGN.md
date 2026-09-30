@@ -45,10 +45,10 @@ agents at once?"
   workplace chip. A space has no view of its own, and the sidebar does not group by it.
 - **Remote hosts:** another Mac serving its agents joins the same sidebar lists (its threads
   wear its name as a tag), with the same rows and the same thread.
-- **Terminals** exist only as panes of an agent's layout, shown in the terminal panel under its
-  thread: the user opens one with ⌘D or the panel's +, or an agent opens one with its `pane_*`
-  tools. There are no global shells, no space shell workspaces, no agent rendered as a terminal,
-  and no Terminal/Native switch.
+- **Terminals** exist only as tabs of an agent's terminal panel, one terminal per tab, shown under
+  its thread: the user opens one with ⌘D, ⌘J (when the thread has none) or the panel's +, or an
+  agent opens one with its `terminal_*` tools. There are no splits, no global shells, no space
+  shell workspaces, no agent rendered as a terminal, and no Terminal/Native switch.
 - **Words:** an agent's conversation is its *thread*, made of *turns* (yours and the agent's)
   and *messages* (Main, Running: "Copy response", "Retry turn").
 - **The agent, not pi:** copy calls the process it supervises "the agent" or "Agent" ("Agent is
@@ -126,7 +126,7 @@ And the rules that follow from them:
 | `NWStatusDot` pulsing with a SwiftUI `.animation(….repeatForever())` started in `onAppear` (NWSwift) | The glow and the spinner are Core Animation layers started at a shared clock's phase (`NWLayerGlowDot`, `NWLayerSpinner`), same look and timing | A SwiftUI-driven spinner redrew its window every display frame (Motion, Performance) |
 | Running sidebar rows draw a sparkline | Running rows show elapsed time; `NWSparkline` exists but nothing uses it | Nothing records an agent's tool calls per minute |
 | The thread toolbar's status pill beside the title ("Running · 0:31", "Needs you", "Idle"; NWNavigation) | No pill: the breadcrumb, then the branch chip | The thread, the composer and the sidebar row already say what the agent is doing (Principle 5; `NWThreadToolbar` has no status slot) |
-| NWNavigation's toolbar: a subagents and a review toggle; TerminalSplit, TerminalPane, TerminalStates and iPadTerminal: a terminal toggle beside the side-pane button; Main: no side-pane button while the pane is closed; Subagents, SubagentsDone: no header buttons while a subagent is inspected | One side-pane button and the options menu, always there; no terminal, subagents or review toggle anywhere in the header or the pane's chrome. The terminal is ⌘J, the Pane menu and the palette (iPad and iPhone: the thread's options menu); subagents are the tray, ⌘I and the palette; the review is the side pane's Changes tab | The user's decisions (2026-09-25): "theres a single button in the top of the header to toggle the right sidebar", and "the terminal is only a toggle that pops it up from the bottom, no buttons or anything, it has nothing to do with the sidebar". Patched copies of the four terminal boards, without the header button, go to the canvas |
+| NWNavigation's toolbar: a subagents and a review toggle; TerminalSplit, TerminalPane, TerminalStates and iPadTerminal: a terminal toggle beside the side-pane button; Main: no side-pane button while the pane is closed; Subagents, SubagentsDone: no header buttons while a subagent is inspected | One side-pane button and the options menu, always there; no terminal, subagents or review toggle anywhere in the header or the pane's chrome. The terminal is ⌘J, the Terminal menu and the palette (iPad and iPhone: the thread's options menu); subagents are the tray, ⌘I and the palette; the review is the side pane's Changes tab | The user's decisions (2026-09-25): "theres a single button in the top of the header to toggle the right sidebar", and "the terminal is only a toggle that pops it up from the bottom, no buttons or anything, it has nothing to do with the sidebar". Patched copies of the four terminal boards, without the header button, go to the canvas |
 | The branch chip's chevron (Main, QuestionAsk and the other thread boards); no board draws what it opens | A menu: Show Changes, Copy Branch Name, and for a local agent Copy Path and Show in Finder; the tooltip has the branch, the count and the full path | A chevron must open something (honest affordances); these are what the chip is about |
 | The iPad boards name the host on the chip in iPadTerminal ("build-01") but not in iPadThread | The host shows when more than one host is set up | On iPad every agent runs on another host; the name only tells hosts apart |
 | Review: the side-pane button filled `bgSelected` (with a `lineStrong` ring) while the pane is open | `lanternTint` with a `lanternText` glyph, ringless, like every toolbar toggle | NWNavigation and the Controls board: a toggle is lit in lantern while its pane is open |
@@ -145,14 +145,14 @@ And the rules that follow from them:
 | Sidebar — Projects: mission rows ("Ship native UI v2") and New mission in <project> in the project menu | No mission rows and no New Mission | Missions are deferred and hidden (the user's decision, 2026-09-26) |
 | SettingsAppearanceProjects: Keep idle threads, "Then they move to Archive."; SidebarTree: idle threads "wait in Archive and ⌘K" | "Then they leave the sidebar; ⌘K still finds them." Nothing else is drawn for them | There is no Archive destination yet (honest affordances); ⌘K lists every thread |
 | DesignCardMenu, DesignRecentsMenu, DesignToolbarMenu, SystemCardMenu, SystemBuiltIn: drawn popovers in sentence case ("Delete design…", "Show design system"), a built-in's Delete off with its reason under it | Native menus in title case ("Delete Design…", "Show Design System", "Duplicate as a New System"), the reason as the item's subtitle; the Recents row keeps no blue outline while its menu is open | Every menu in the app is native and title-cased; SwiftUI's context menu reports no open state to draw the outline by |
-| ImportFileMenu: File ▸ New Design ⇧⌘D, New Mission ⇧⌘M, Import Claude Design Project… ⇧⌘I, Export… ⌘E | Only Import Claude Design Project… (⇧⌘I, rebindable) | ⇧⌘D splits a pane and ⇧⌘M opens the model picker; Missions are deferred; a design's Export is its header's |
+| ImportFileMenu: File ▸ New Design ⇧⌘D, New Mission ⇧⌘M, Import Claude Design Project… ⇧⌘I, Export… ⌘E | Only Import Claude Design Project… (⇧⌘I, rebindable) | ⇧⌘D was the terminal's split chord and is unbound now, ⇧⌘M opens the model picker; Missions are deferred; a design's Export is its header's |
 | NWProjectMenu: a drawn popover with glyphs, in sentence case ("Copy path", "Collapse all", "Hide from sidebar") | A native menu (the project's context menu, and ··· on hover) in title case: New Thread in <project>, Reveal in Finder, Open in Terminal, Copy Path, Collapse All, Hide from Sidebar | Every menu in the app is native and title-cased (the thread rows' menus) |
 | SidebarProjectsHosts: nothing on the host sections' headers | Hidden projects come back from the + beside Projects, which only the ungrouped tree has (and File ▸ New Space… adds one either way) | The board draws no + on a host section |
 | Sidebar (Main, Running, NavNewThread, NavAutomations, NavHosts, NWNavigation): Needs you, then Recents, no way to keep a thread at the top | A **Pinned** section between them in the Activity sidebar (Sidebar › Pinned), its Pin and Unpin in the row menu, Thread options and ⌘K, no chord, no drag to reorder, nothing on the iPhone or iPad or in the project tree. The canvas gains SidebarPinned (the sidebar with Needs you, Pinned and Recents, and the three menus) | The user's request (2026-09-30): "pin threads at the top in a different labeled list". No board drew it, so every choice under Sidebar › Pinned is the agent's proposal for the user to settle, and the board is added to the canvas with the section |
 | NWAgents, NWSwift: `NWInboxItem`, mission control's inbox item with a leading rule in the state's color | Not built. The Mac has no inbox: its Needs you is the sidebar's list (Sidebar); iPhone and iPad list Needs you as `NWAttentionCard`s (MobileInbox, iPadInbox), with no leading rule and no missions | Out of scope for this pass |
 | Controls: `.nwHelp` draws a 24pt popover-styled tip after 600ms of hover, the chord as keycaps | The system tooltip, with the chord appended as text ("Review changes  ⇧⌘B") | As every other tooltip in the app (see the Queue & steer row) |
 | Controls: `.pickerStyle(.nwSegmented)`, `.pickerStyle(.nwPopup)`, `Stepper(…).nwStyle()`, `Slider(…).tint(.nw.lantern)` | Views: `NWSegmentedPicker`, `NWPopupMenu` (a native `Menu` with an `NWPopupLabel`), `NWStepper`, `NWValueSlider` (its value in mono beside it) | SwiftUI has no public custom picker, stepper, or slider style; each represents itself to accessibility as the native control |
-| Controls: keycaps in menus and the palette only | Also Settings ▸ Keyboard, search fields (the board's own ⌘F), the sidebar's New thread (as NWNavigation draws it), and empty states (the terminal panel's New Terminal); never under the composer still holds | Those places teach a chord; Components records the rule |
+| Controls: keycaps in menus and the palette only | Also Settings ▸ Keyboard, search fields (the board's own ⌘F) and the sidebar's New thread (as NWNavigation draws it); never under the composer still holds | Those places teach a chord; Components records the rule |
 | Status & feedback: no modal alerts for agent events | One: an agent asking to delete another opens `PeerDeleteDialog` | Only the user deletes an agent, by a click (AGENTS.md › Agents never delete each other on their own) |
 | NavAutomations: When and Next columns, Scheduled and On an event tabs, a schedule or trigger per automation ("Every day · 02:00"), a run's outcome ("passed", "1 PR failed CI"), a "mission" kind, and Repos | The table without When and Next and with no tabs; the run's word and time ("finished · 6h ago"), every run starting a thread, and Folder in place of Repos (Automations page) | The user's decision, 2026-09-25 ("Build both, with what we have (Recommended)"): "Automations = table + detail with name, host, last run, prompt, runs, Run now (no schedules, triggers or next-run column)". Automations have no schedule or trigger, and a run's result is its thread |
 | NavHosts: daemon hosts ("Shepherd daemon · Linux"), Load, worktree disk use, Open in Finder, Open terminal and Logs, and missions in the explainer | This Mac and each remote host with Running, Worktrees (a count), Repos and Address, or Waiting, Last seen and Address while unreachable; Retry and Remove (Hosts page) | The user's decision, 2026-09-25 ("Build both, with what we have (Recommended)"): "Hosts = This Mac and each remote host's card with status, address, threads, Retry, Remove, Add host". Shepherd has no daemon, and nothing measures load or disk use |
@@ -167,9 +167,11 @@ And the rules that follow from them:
 | ModelPicker: each row's second line describes the model ("Faster, cheaper", "Fastest") | Model rows' second line lists the model's thinking levels instead of the board's notes ("Off · Minimal · Low · Medium · High", or "No thinking"), on the Mac and in the iOS picker | The user's decision, 2026-09-25 (pi has no model descriptions) |
 | LiveText, ContextCompacted: live "› Thinking…" wears the disclosure's chevron | No chevron on a row with nothing to open: live "Thinking…", a thought the model kept back, a `<details>` with nothing inside, an activity or subagent record line with nothing behind it. Its place stays, so every label sits where a chevron's row puts it and nothing moves when a row becomes one that opens; such a row is not a button and offers VoiceOver no expand | The user's decision, 2026-09-25: "also for the thinking and blocks in such, if there is nothing to expand / show like when the model is thinking, dont show the carat". Patched copies of LiveText and ContextCompacted, their live chevrons left out, go to the canvas |
 | Running: while pi runs, the placeholder "Queue a follow-up — sent when the turn ends" | The idle placeholder stays ("Follow up, or / for commands…"), as NWComposer, QueueSteer and QuestionAnswered draw it beside Stop | Dropped with the queue and steer redesign: ↩ steers at the next step by default, so "sent when the turn ends" would be wrong. The Running board still draws it (canvas v125 updated the others) |
-| Terminal: ⌃\` shows the panel, ⌃⇧\` opens a tab, ⌘K clears, ⇧⌘[ ] switch tabs | **⌘J** shows or hides it; ⌘D opens a tab (+ opens the new terminal menu); no clear or tab-switch chord | Every rebindable chord needs ⌘, ⌘K is the palette, and a tab is one click away |
-| Terminal: the terminal on `bgBase` (Mac and iPad panels) | On `bgWindow`, the theme's terminal background | Terminal panes keep one surface everywhere |
-| TerminalTab · states: an exited tab stays, its output kept ("exited with an error; the output stays") | On the Mac a shell that exits closes its pane, so its tab goes at once; iOS shows the exited state until the host closes it | A process that exits on its own closes its pane (AGENTS.md › Sessions and views are separate) |
+| Terminal: ⌃\` shows the panel, ⌃⇧\` opens a tab, ⌘D splits right, ⌘K clears, ⇧⌘[ ] switch tabs | **⌘J** shows or hides it; ⌘D is New Terminal, a new tab (+ opens the new terminal menu); ⇧⌘] and ⇧⌘[ switch tabs as the board draws; no clear chord and no split chord | Every rebindable chord needs ⌘, ⌘K is the palette, and splits are removed (below) |
+| Terminal: the terminal on `bgBase` (Mac and iPad panels) | On `bgWindow`, the theme's terminal background | Terminals keep one surface everywhere |
+| TerminalSplit, TerminalPane, TerminalStates, iPadTerminal, Keyboard: a tab split into several panes (the strip's Split right, a Split right row in the new terminal menu, ⌘D and ⇧⌘D splitting, ⌥⌘←/→ among the panes, a 26pt header on every pane, "N panes" on a tab, 1pt dividers between panes, the divider's "Terminal column split" VoiceOver label) | Tabs only, one terminal each: no Split right or down, no divider or header between terminals, no count on a tab. ⌘D is New Terminal, ⌘W Close Terminal, ⇧⌘] and ⇧⌘[ Next and Previous Terminal. The menu is the Terminal menu, the agent's tools are `terminal_*` (no aliases), and a saved layout with a split tab becomes one tab per terminal at startup | The user's decision, 2026-09-30: "we want to remove this concept of 'panes' instead it should just be the terminal, when I open a term with cmd+j if one isn't open, don't show this 'press cmd+d', just open a terminal by default, and remove the multiwindowing in there, only support tabs in the terminal area, and rename the tools to 'read_terminal' or w.e, no more panes." The tools are `terminal_*`; the decisions beyond that (⌘D is New Terminal, Next and Previous Terminal on ⇧⌘] and ⇧⌘[, old layouts flatten) are the agent's and are for the user to confirm. The canvas gets patched copies of the terminal boards without Split right or the pane drawings |
+| Terminal: no board draws ⌘J with no terminal; the app's own empty state said "No terminals in this thread yet." with New Terminal beside its keycap | ⌘J (and the Terminal menu's and the palette's Show Terminal, and on iOS the thread's options menu) opens a terminal when the thread has none and shows the panel on it; maximize with none does nothing. There is never an empty panel | The user's decision, 2026-09-30 (the row above): "when I open a term with cmd+j if one isn't open, don't show this 'press cmd+d', just open a terminal by default" |
+| TerminalTab · states: an exited tab stays, its output kept ("exited with an error; the output stays") | On the Mac a shell that exits closes its terminal, so its tab goes at once; iOS shows the exited state until the host closes it | A process that exits on its own closes its tab (AGENTS.md › Sessions and views are separate) |
 | TerminalStates: "Any command line from the agent can be opened in a new tab, typed out but not run" (Run in terminal at the trailing end of a finished command's activity line) | No Run in terminal: an activity line, and its calls' context menus, offer nothing of the terminal's, on the Mac and in the iOS client | Removed 2026-09-26 at the user's request: no use in agent threads ("they need to be removed for stuff showing up in agent threads, theres no use") |
 | iPadTerminal: the key row reads esc, tab, ctrl, ⌥, ↑ ↓ ← →, `\|`, `~`, `/` | esc, tab, ctrl, ⌥, `\|`, `~`, `/`, `-`, then the arrows | A row that wraps in two on a phone keeps the arrows together (`TerminalKey`); `-` for flags |
 | Earlier boards, no longer on the canvas: a compose button beside the window controls and a "Jump to…" field above the sidebar tree | Neither comes back. The Search (⌘K) and Hide sidebar buttons today's boards draw there are the spec (Sidebar › Top bar) | ⌘N and the New thread destination start a thread, and the palette is a button, not a field |
@@ -255,7 +257,6 @@ Additions the boards don't have:
   row, its Edit host form, each failed host's reason, and the listener's "Serving on port N" line,
   Shepherd Nightly's named Nightly channel, and Instructions' History popover, Sync now for a host
   that drifted, and the reasons a machine's files can't be shown (with Try again).
-- **The terminal panel's empty state** ("No terminals in this thread yet." and New Terminal).
 - **Thread additions** no board draws (Thread; Composer, questions, and menus): "↓ Jump to
   latest" while detached from the tail; turn jumps (⌥⌘↑ ⌥⌘↓); automatic older history and the
   degraded-state notices; quiet starting and resuming ("Starting…" only when pi is slow, history
@@ -325,7 +326,7 @@ ThemeVariant    { colors:   ThemeColors     // the Night Watch roles below (#RRG
   bundle: Geist Regular, Medium, SemiBold, and Bold, each with its italic, and Geist Mono
   Regular, Medium, SemiBold, and Bold. They are registered for the process at launch on the Mac
   and iOS (`NWFonts.register()`), with no Info.plist entry (see departures). PostScript names
-  are `Geist-<Weight>` and `GeistMono-<Weight>`. Terminal panes keep their own font setting.
+  are `Geist-<Weight>` and `GeistMono-<Weight>`. Terminals keep their own font setting.
 
 ### Roles (`ThemeColors`, read as `Color.nw.<role>`)
 
@@ -339,7 +340,7 @@ board's, plus where the app also uses the role.
 | Group | Role | Dark | Light | Use |
 | --- | --- | --- | --- | --- |
 | Surfaces | `bgBase` | `#0a0b0c` | `#f2f2f0` | Sidebar, window chrome, Settings nav, the review's file strip |
-| | `bgWindow` | `#0d0e10` | `#fbfbfa` | Thread, toolbar, panes, terminal panes, dialogs |
+| | `bgWindow` | `#0d0e10` | `#fbfbfa` | Thread, toolbar, panes, terminals, dialogs |
 | | `bgRaised` | `#15171a` | `#ffffff` | Cards, the composer, menus, fields |
 | | `bgSunken` | `#111316` | `#f5f5f3` | Code, tool output, card headers, the segmented track |
 | | `bgBubble` | `#1a1d21` | `#efefec` | User messages |
@@ -371,7 +372,8 @@ board's, plus where the app also uses the role.
 **Derived colors** live on `NWPalette`, not in the theme:
 
 - `focusRing`: running at 60% (dark) / 50% (light)
-- `focusDivider`: running at 34% in both appearances, for a pane divider beside the focused pane
+- `focusDivider`: running at 34% in both appearances, for a divider beside a focused pane (no view
+  draws it now that terminals are tabs)
 - `popoverShadow`: `.nwPopover()`'s shadow color: black at 55% (dark), `#141414` at 12% (light)
 - `scrim`: black at 30% in both appearances, behind the command palette
 - `textOnFailed`: white, for labels on a `failed` fill
@@ -382,7 +384,7 @@ board's, plus where the app also uses the role.
   (dark · light). The labels on them reach 4.5:1, except white on the dark pressed dangerFill
   (4.23), as the board draws it
 
-**The terminal palette is derived from the roles.** Terminal panes sit on `bgWindow` with
+**The terminal palette is derived from the roles.** Terminals sit on `bgWindow` with
 `textPrimary` text, a `textPrimary` block cursor, and a selection on `running` at 13%
 (TerminalSplit, TerminalPane; the app draws a lantern cursor and a running selection at 18% dark,
 28% light, see Known gaps); each variant carries its own 16-color ANSI palette (the light one
@@ -558,7 +560,7 @@ output, counts, times), both bundled (NWFoundations). Sizes are points:
   subagent inspector's transcript uses `small`.
 - The terminal font (family and size) is its own setting in Settings ▸ Terminal and never
   follows the chrome's text scale. The boards set the terminal in Geist Mono 12 at a 1.6 line
-  height (Terminal panes); the app's default is SF Mono 12.5 today (Known gaps).
+  height (Terminal); the app's default is SF Mono 12.5 today (Known gaps).
 
 ## Space, radius, height, elevation
 
@@ -576,7 +578,7 @@ output, counts, times), both bundled (NWFoundations). Sizes are points:
 - **Hairlines** are 1px, not 1pt: `NWHairline`, `.nwBorder(_:radius:)`, and
   `.nwBorder(_:in:dash:)` (any shape, optionally dashed) use `NW.hairline(displayScale)`. Every
   border of a control, field, pill, keycap, banner, card, or bubble draws through them. Three
-  kinds of line stay in points: the layout's dividers (pane splits and the edges of the docked
+  kinds of line stay in points: the layout's dividers (the edges of the docked
   sidebar and side pane, 1pt, because the window's arithmetic counts them), the checkbox's
   1.5pt border (the Controls board draws it heavier than its 1px lines), and the strokes of
   status dots and glyphs.
@@ -878,11 +880,7 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
   handle centred on it (`resizeHandleWidth`). There is no tab bar and no status line. An agent's
   layout is its thread with its terminal panel under it (Terminal panel, below). The thread column
   is at most 820pt (prose 640, bubbles 600), and the composer is exactly as wide as the column
-  (Thread). Pane dividers between split terminals are 1pt `lineStrong` (TerminalPane), tinted
-  `focusDivider` where they border the focused pane; dragging one
-  keeps each side at least 160pt (`splitPaneMinSpan`), between 15% and 85%. VoiceOver exposes
-  each divider as Terminal column split or Terminal row split, with a percentage value and
-  adjustable five-percentage-point steps clamped by the same limits.
+  (Thread).
 - **Switching agents flips visibility; it never remounts.** Every mounted layout stays in the
   view tree, each in a hosting view of its own, and hidden ones are hidden views. This is what
   makes switching instant.
@@ -2325,7 +2323,7 @@ rules (QuestionStates › Rules):
   never with ⌘, ⌃ or ⌥ held (⌘1–9 still select agents), and never from another text field (the
   palette's search, a terminal). Settings, the component gallery, and the command palette
   suspend workspace keyboard ownership, including hidden question shortcuts; closing them
-  restores the previously focused pane.
+  restores the previously focused thread or terminal.
 - **Stopping** (⌘., Agent ▸ Stop) is how a question is refused: it cancels the questions pi is
   waiting on (their asker gets pi's cancelled answer), then stops the turn. The thread records
   each as not answered.
@@ -2908,7 +2906,7 @@ will use (Missions are not built; see "Where Shepherd departs from the boards").
 One pane per window beside the agent's layout (`RightPaneSplit` around the whole layout in
 `AgentLayoutView`, its tabs in `SidePaneView`; PaneStates, the Changes boards, Subagents, SubagentsDone). It
 sits at the workspace's trailing edge beside the thread and its terminal panel, at its full
-height, and the dock rule measures the main column, never the thread's own pane. Its sizes and
+height, and the dock rule measures the main column, never the thread alone. Its sizes and
 adaptive rule are in "Window and adaptive layout" above. It shows only the tabs Shepherd has:
 **Changes**, the Changes pane, and **Browser** (Side pane: Browser, below) for a local thread and
 for a remote thread whose host carries Browser tunnels (an older host: Changes alone). Artifacts and Files are
@@ -3271,12 +3269,12 @@ Changes alone.
     six), read off the main thread. The command follows the lockfile beside it, else the
     repository's: pnpm, yarn or bun (`bun run`), else npm (`npm run dev`, `npm start`). A remote
     thread's are read on its host, in the thread's folder there (`RemoteAgentQuery.devServers`).
-  - **Start** runs the command in a new terminal pane of the thread's layout, the same path an
-    agent's `pane_open` takes (`PaneControl`), so the terminal panel opens on it. When the script's
+  - **Start** runs the command in a new terminal of the thread's layout, the same path an
+    agent's `terminal_open` takes (`PaneControl`), so the terminal panel opens on it. When the script's
     port is known (its `--port`, `-p` or `PORT=`, else its tool's default: Vite 5173 and its
     preview 4173, Next, Nuxt, Remix and create-react-app 3000, Astro 4321, Angular 4200,
     Storybook 6006, webpack 8080, …), the page opens by itself once that port answers, tried every
-    half second for 90 seconds. On a remote thread the command runs in a new terminal pane on the
+    half second for 90 seconds. On a remote thread the command runs in a new terminal on the
     host (`RemoteAgentAction.openTerminal`), in the folder the script was found in, and the port is
     forwarded here and tried through the tunnel.
 - **Viewport** (`NWViewportMenu`, a 220pt popover 4pt under the toolbar, its trailing edge under
@@ -3512,26 +3510,28 @@ before building it (as iOS: iPad › Side pane says).
   `s`) and Use the agent’s (ghost `s`). Your unsaved edits are never overwritten; Keep mine saves over
   pi's change and tells pi in the thread.
 
-### Terminal panes
+### Terminal
 
 File and image drags route through the native terminal surface, not a window-wide input overlay.
 Ordinary clicks never depend on leftover drag pasteboard contents. Covered and hidden terminals
 must not receive a drop intended for foreground UI; resolving a drag does not enumerate hidden
 agent layouts.
 
-A terminal pane is a real PTY: libghostty on the Mac (`AppTerminalView`, through
+A terminal is a real PTY: libghostty on the Mac (`AppTerminalView`, through
 `TerminalHost.swift`), SwiftTerm on iOS (`TerminalSurface`). Each one is a real shell and nothing in
 it is pi's (TerminalStates: "Each tab is a real shell; nothing here is the agent’s"). The chrome never
-parses or restyles terminal output, and the thread pane itself never has a terminal.
+parses or restyles terminal output, and the thread itself is never a terminal. There is only the
+terminal: the area that holds them shows tabs, one terminal each, and never a split or a grid of
+them (the user's decision, 2026-09-30; see the departures).
 
 - **Surface:** the theme's terminal colors (`TerminalColors`), on `bgWindow` (the boards draw
   `bgBase`; see the departures). The grid sits 14pt from the sides and 10pt from the top and bottom
   (TerminalSplit; `NWTerminalMetrics.contentPadding`), 16pt and 10pt on iPad (iPadTerminal).
 - **Type:** the boards set the terminal in Geist Mono with a 1.6 line height: 12pt on the Mac
-  (TerminalSplit; the narrower split panes of TerminalPane draw 11.5pt) and 13pt on iPad (the `code`
-  size there). On the Mac the family and size are Settings ▸ Terminal's and never follow the
-  chrome's text scale. On iOS the terminal follows Dynamic Type up to 20pt
-  (`MobileLayout.terminalMaximumFontSize`).
+  (TerminalSplit; TerminalPane's 11.5pt for its narrower split terminals is not built, as nothing
+  splits) and 13pt on iPad (the `code` size there). On the Mac the family and size are Settings ▸
+  Terminal's and never follow the chrome's text scale. On iOS the terminal follows Dynamic Type up
+  to 20pt (`MobileLayout.terminalMaximumFontSize`).
 - **Cursor and selection:** a 7×14pt block cursor in `textPrimary` (TerminalSplit), and selected
   lines on `running` at 13% (TerminalPane).
 - **Output colors are the shell's**, through the 16-color ANSI palette. On the boards a prompt reads
@@ -3544,10 +3544,10 @@ parses or restyles terminal output, and the thread pane itself never has a termi
   terminal's own padding on iOS (`NWTerminalNotice`). They cross-fade (`.content`) and the surface
   under them never moves: "starting session…" over the surface until it is live, "session exited
   (n)" (or "session exited"), "session unavailable · <reason>", "remote host removed", and "review
-  unavailable". A remote agent's pane on the Mac reads "attaching…", "remote session unavailable ·
-  <reason>" and "remote session exited (n)". iOS adds "attaching…", "host offline · reattaches when
-  it is back", "open in another window" (a screen shows in one iPad window at a time), "review open
-  on <host>", and " · retrying" after a refused attach.
+  unavailable". A remote agent's terminal on the Mac reads "attaching…", "remote session
+  unavailable · <reason>" and "remote session exited (n)". iOS adds "attaching…", "host offline ·
+  reattaches when it is back", "open in another window" (a screen shows in one iPad window at a
+  time), "review open on <host>", and " · retrying" after a refused attach.
 - **Size never animates:** a terminal takes its new size once (`.nwInstant()`; see Motion), and a
   hidden one keeps its grid (Terminal panel › Nothing remounts).
 
@@ -3555,22 +3555,26 @@ parses or restyles terminal output, and the thread pane itself never has a termi
 
 A real terminal under the thread, one keystroke away (TerminalSplit, TerminalPane and TerminalStates
 boards; `TerminalPanelGeometry`, `TerminalPanels`, `TerminalPanelViews.swift`; the iPad's in iOS ›
-Terminal). An agent's terminal panes live in a panel under its thread and composer, across the
+Terminal). An agent's terminals live in a panel under its thread and composer, across the
 layout's whole width, and a docked side pane keeps its full height beside both (TerminalStates ›
-Panel: "The side pane keeps its full height"; TerminalPane). A new terminal opens in the thread's
-folder (its worktree) on the thread's host, so it sees what pi sees. The panel is a view of the
-agent's layout, which stays the one `PaneNode` tree the server persists and agents drive: each
-largest subtree without the thread is a tab, oldest first (`TerminalPanel.tabs`), drawn with its own
-splits.
+Panel: "The side pane keeps its full height"; TerminalPane). The panel holds tabs only, one
+terminal per tab: nothing splits a terminal, and there is no other arrangement. A new terminal
+opens in the thread's folder (its worktree) on the thread's host, so it sees what pi sees. The
+panel is a view of the agent's layout, which stays the one `PaneNode` tree the server persists and
+agents drive: the thread, with every terminal a leaf beside it, a tab each, oldest first
+(`PaneNode.terminals(besideThread:)`, `TerminalPanel.tabs`). A saved layout that still has a tab of
+several terminals (made by builds that could split them) is flattened into one tab per terminal
+when the host starts (`SessionServer.flattenSplitTerminals`), keeping each one's session, folder and
+title; a client of an older host that has not done so draws such a tab as one tab per terminal.
 
 - **Strip** (`NWTerminalTabBar`; TerminalSplit): 38pt (`NWTerminalMetrics.tabBarHeight`) on
   `bgWindow`, with a 1px `lineStrong` hairline on top and a `lineSubtle` one under it, 8pt side
   padding and 2pt gaps. From the leading edge: the tabs, then + ("New terminal"), a spacer, then
-  Split right (`rectangle.split.2x1`, only while a tab is selected), Maximize or Restore
-  (`arrow.up.left.and.arrow.down.right`, `arrow.down.right.and.arrow.up.left`), and Hide terminal
-  (`xmark`). They are 24pt circular `.nwIcon` buttons with 14pt glyphs in `textSecondary`, with
-  tooltips (`.nwHelp`); Split right, Maximize or Restore and Hide terminal carry their chords. The
-  tabs and + scroll sideways when they outgrow the strip; the trailing controls never scroll.
+  Maximize or Restore (`arrow.up.left.and.arrow.down.right`, `arrow.down.right.and.arrow.up.left`)
+  and Hide terminal (`xmark`). They are 24pt circular `.nwIcon` buttons with 14pt glyphs in
+  `textSecondary`, with tooltips (`.nwHelp`); Maximize or Restore and Hide terminal carry their
+  chords. The tabs and + scroll sideways when they outgrow the strip; the trailing controls never
+  scroll. The board's Split right button is not built.
 - **A tab** (`NWTerminalTabView`): 26pt tall, radius 6 (`NW.Radius.s`), 8pt side padding, 7pt
   between its parts: the terminal glyph (`terminal`, 12pt), the title in Geist Mono 11.5 (semibold
   and `textPrimary` when selected, medium and `textSecondary` otherwise), then the selected tab's
@@ -3578,12 +3582,11 @@ splits.
   clear, with a `textTertiary` glyph and `bgHover` under the pointer. Only the selected tab shows
   its close (`xmark`, 9pt, `textTertiary`; tooltip "Close terminal"). A remote tab names its host
   while selected, after its title: `desktopcomputer` at 10pt and the host's name at 10.5pt, both
-  `textTertiary`, 3pt apart ("zsh  build-01"). A tab split into several panes also shows how many,
-  in `micro` `textTertiary` (the app's; the boards show none).
+  `textTertiary`, 3pt apart ("zsh  build-01").
 - **Tab states** (`NWTerminalTab.Activity`; TerminalTab · states: "Remote tabs name their host.
   Running and exited tabs say so without opening them"):
-  - **Idle:** the program at its prompt names the tab ("zsh"), else the folder the pane started in,
-    else "Terminal".
+  - **Idle:** the program at its prompt names the tab ("zsh"), else the folder the terminal
+    started in, else "Terminal".
   - **Running:** the running command names the tab ("make dev", at most 40 characters), and an 11pt
     `running` spinner (`NWSpinnerStyle`) takes the glyph's place.
   - **New output while you were away:** a 6pt `running` dot after the title, for output printed
@@ -3591,42 +3594,43 @@ splits.
     dev").
   - **Exited:** the tab stays and so does its output ("exited with an error; the output stays"); a
     process that failed turns the glyph into a 10pt `failed` ✕ (stroke 2). On the Mac a shell that
-    exits closes its pane, so its tab goes at once (see the departures); on iOS a tab shows it
+    exits closes its terminal, so its tab goes at once (see the departures); on iOS a tab shows it
     exited (`.exited(failed:)`) until the host closes it.
 
   A resize is not news: a shell or TUI redraws on SIGWINCH (a window resize, maximize or restore, a
-  hidden panel's panes following the geometry, a remote viewer leaving), so the host counts no
+  hidden panel's terminals following the geometry, a remote viewer leaving), so the host counts no
   output for a second after it gives a PTY a size (`TerminalNews`, carried as
   `RemoteTerminalActivity.newsSequence`; an older host's every read counts). Showing a tab marks it
-  seen whenever the tab, its panes, or their news change (`TerminalSeenMark`), so picking a tab
+  seen whenever the tab or its news changes (`TerminalSeenMark`), so picking a tab
   whose output matches the last one's still clears its dot. What each terminal runs comes from
   `SessionServer.terminalActivity` (a remote agent's host answers `RemoteAgentQuery.terminals`),
   polled every 2 s while the layout is on screen; an older host leaves plain tabs named for the
   folder.
-- **Actions:** + opens the new terminal menu, whose first row opens a new tab (a pane split off the
-  thread). Split right (⌘D in a terminal)
-  splits the tab's focused pane to the right, and ⇧⌘D splits it down; ⌘D or ⇧⌘D on the thread opens
-  a new tab. Closing a tab closes all its panes (as ⌘W closes one), never the thread's, and the Mac
-  doesn't ask first. A new pane starts in its neighbor's folder; a remote agent's go through its
-  host's pane requests, and a failed one beeps. A terminal you open (+, Split right, ⌘D or ⇧⌘D)
-  takes the keyboard. A terminal that appears any other way (an agent's `pane_open`, another device)
-  opens the panel on its tab and leaves the keyboard where it was.
-- **Show and hide:** ⌘J, the Pane menu (Show or Hide Terminal), or the palette's terminal
+- **Actions:** + opens the new terminal menu, whose first row opens a new tab. ⌘D is New Terminal,
+  from the thread or from a terminal: a new tab in the thread's folder, never a split. Closing a
+  tab closes its terminal (as ⌘W does, Close Terminal), never the thread's, and the Mac doesn't ask
+  first. A remote agent's terminals go through its host's requests, and a failed one beeps and shows
+  nothing. A terminal you open (+, ⌘D, or ⌘J with none) takes the keyboard. A terminal that appears
+  any other way (an agent's `terminal_open`, another device) opens the panel on its tab and leaves
+  the keyboard where it was. ⇧⌘] and ⇧⌘[ go to the next and the previous tab, wrapping, while the
+  panel shows; an agent's `terminal_focus` shows the panel on that tab.
+- **Show and hide:** ⌘J, the Terminal menu (Show or Hide Terminal), or the palette's terminal
   commands, while a thread with a layout is on screen. The panel slides up from the bottom and is
   only a toggle: there is no terminal button in the thread's header or anywhere in the side pane's
   chrome, and it has nothing to do with the side pane (the user's decision, 2026-09-25: "the
   terminal is only a toggle that pops it up from the bottom, no buttons or anything, it has nothing
   to do with the sidebar"; the TerminalSplit, TerminalPane, TerminalStates and iPadTerminal boards'
-  header button is a departure, and patched copies without it go to the canvas). On iPad and
-  iPhone, with no ⌘J without a keyboard, the thread's options menu shows it (iOS › Terminal).
+  header button is a departure, and patched copies without it go to the canvas). With no terminal in
+  the thread, ⌘J opens one (in the thread's folder, on the thread's host), shows the panel on it and
+  gives it the keyboard; the Terminal menu's and the palette's Show Terminal do the same, and a
+  remote agent's is requested from its host, where a failure beeps and shows nothing. There is no
+  empty state and never an empty panel (departures). On iPad and iPhone, with no ⌘J without a
+  keyboard, the thread's options menu shows it, and with none it opens one too (iOS › Terminal).
   Showing gives the keyboard to the selected tab; hiding gives it back to the thread. A tab that
   printed while the panel was hidden keeps its `running` dot for when it shows (Tab states). A
   layout seen for the first time with terminals shows its panel. The panel closes with its last
-  terminal, however it goes (its tab closed, the agent's `pane_close`, its shell exiting), and the
-  thread takes the layout again.
-- **Empty** (the app's; no board): ⌘J with no terminals shows the strip over "No terminals in this
-  thread yet." (`ui`, `textSecondary`) and New Terminal (secondary) beside the new-terminal chord as
-  a keycap, centered on `bgWindow`.
+  terminal, however it goes (its tab closed, the agent's `terminal_close`, its shell exiting), and
+  the thread takes the layout again.
 - **Height:** 330pt by default (`NWTerminalMetrics.panelHeight`), persisted app-wide
   (`shepherd.terminalPanelHeight`). The panel's top edge is the divider (Divider: "Drag the top
   edge. It snaps at a third, half and two-thirds; double-click resets to 330pt"): a 9pt hit area
@@ -3636,7 +3640,8 @@ splits.
   steps. While it is dragged, the edge draws as a 3pt `lantern` line across the top of the strip
   (Divider).
 - **Maximized** (⇧⌘↩, or the strip's Maximize): the panel takes the layout and the thread folds away
-  at its size, still mounted (its draft, scroll and stream stay). Restore (the same button, or ⇧⌘↩)
+  at its size, still mounted (its draft, scroll and stream stay). With no terminal there is nothing
+  to maximize, and the shortcut only beeps. Restore (the same button, or ⇧⌘↩)
   brings it and its composer back, and so does hiding the panel. The divider doesn't drag while
   maximized. The folded thread keeps one line above the strip (`NWTerminalFoldedThread`;
   TerminalPanel · maximized: "The thread folds to one line. Its composer comes back when you
@@ -3645,26 +3650,18 @@ splits.
   `NWStatusPill` ("Idle"), and at the trailing end a 24pt "Show the thread" icon button
   (`chevron.down`, `textSecondary`, its tooltip with ⇧⌘↩) that restores. Only a maximized layout
   reads its agent's state, so a status report reruns no other layout.
-- **Nothing remounts:** every pane is placed whether it shows or not (a hidden tab or panel keeps
-  its size, so its grid never changes), hidden ones are `opacity(0)` and stop rendering. ⌥⌘←/→
-  move only among the panes on screen. A remote agent's panel mounts only its shown panes, so a
-  hidden remote terminal is detached and never counts toward the host's smallest-viewer size.
-- **A layout with no thread** (a host's utility terminal) keeps the plain split tree.
-- **Split panes** (TerminalPane): a tab's panes sit side by side (Split right) or stacked, with 1pt
-  `lineStrong` dividers. In a tab of more than one pane, each pane has a 26pt header
-  (`NWTerminalPaneHeader`) on the terminal's surface with a `lineSubtle` hairline under it, 10pt
-  side padding and 6pt gaps: the 11pt terminal glyph, the pane's running command or program in
-  Geist Mono 11 (the tab's title rule, per pane), and at the trailing end a remote pane's host
-  (`desktopcomputer` at 10pt and the host's name, 3pt apart; a pane on this Mac names none, as its
-  tab doesn't). The focused pane's glyph, title and host name are `textPrimary` (its host glyph
-  stays `textTertiary`); the others' header is `textTertiary`. Clicking a header focuses its pane.
-  The header takes its height from the pane, so every pane of a tab keeps its grid whether its tab
-  shows or not. A tab of one pane has no header (TerminalSplit): the tab names it.
-- **Send output to the agent** (TerminalPane; TerminalStates: "anything you select can go to the
+- **Nothing remounts:** every terminal is placed whether it shows or not (a hidden tab or panel keeps
+  its size, so its grid never changes), hidden ones are `opacity(0)` and stop rendering. A remote
+  agent's panel mounts only its shown terminal, so a hidden remote terminal is detached and never
+  counts toward the host's smallest-viewer size.
+- **A layout with no thread** (a host's utility terminal) has no panel: it draws one terminal per
+  leaf of its layout, with no strip.
+- **Send output to the agent** (TerminalPane, drawn there on a split terminal and here on the
+  tab's one terminal; TerminalStates: "anything you select can go to the
   agent"). Selecting text in a terminal of a thread's layout shows a floating bar beside the
   selection (`NWTerminalSelectionBar`, `TerminalSelectionOverlay`): `bgRaised` with a 1px
   `lineStrong` border, radius 9, 4pt padding and 4pt gaps, and the popover's shadow, hanging 4pt
-  under the selection's last line at the pane's trailing edge, 8pt in (over its first line where
+  under the selection's last line at the terminal's trailing edge, 8pt in (over its first line where
   there is no room below). It holds **Add to message** (primary, 24pt: a `lantern` fill, a 13pt
   `plus` and the label in 12pt semibold `textOnLantern`), which adds the selection to the thread's
   composer as a code block after what is typed there and gives the thread the keyboard, and
@@ -3683,16 +3680,15 @@ splits.
   - "New terminal in the worktree", detail "<space> on <host>" ("payments on This Mac"; `terminal`),
     with the new-terminal chord (⌘D): "New tabs start in the thread's worktree on its host, so the
     terminal sees what the agent sees."
-  - For the tab (right-clicked, else the selected one): "Split right" (`rectangle.split.2x1`, ⌘D),
-    which splits that tab's focused pane; "Rename tab" (`pencil`), which asks for the name in a
-    rename sheet (a blank name goes back to naming the tab after what it runs; the name rides on
-    the tab's first pane, `LeafPane.title`, so it persists and every viewer sees it); and "Kill
-    process" (`xmark`), which kills the command running in the tab's focused pane with its whole
+  - For the tab (right-clicked, else the selected one): "Rename tab" (`pencil`), which asks for the
+    name in a rename sheet (a blank name goes back to naming the tab after what it runs; the name
+    rides on the terminal's leaf, `LeafPane.title`, so it persists and every viewer sees it); and
+    "Kill process" (`xmark`), which kills the command running in the tab's terminal with its whole
     process group (SIGKILL) and leaves its shell, disabled while the shell sits at its prompt. On a
     host's agent Rename tab and Kill process go through the host (`terminal.control.v1`) and are
-    disabled against an older host.
+    disabled against an older host. The board's Split right row is not built.
   - **Not built:** "New terminal on This Mac" (for a remote thread): a remote agent's layout is its
-    host's, so a pane of this Mac has no place in it (see Known gaps).
+    host's, so a terminal of this Mac has no place in it (see Known gaps).
 - **No Run in terminal** (a departure from TerminalStates: "Any command line from the agent can
   be opened in a new tab, typed out but not run"). Removed 2026-09-26 at the user's request: no
   use in agent threads. A finished command's activity line and its call rows' context menus
@@ -3700,14 +3696,18 @@ splits.
 - **Keys** (Keyboard: "Shown in menus and tooltips"). The board's are Show or hide the terminal ⌃\`,
   New terminal ⌃⇧\`, Split right ⌘D, Maximize or restore ⇧⌘↩, Close the tab ⌘W, Clear ⌘K, and Next
   or previous tab ⇧⌘[ and ⇧⌘]. Shepherd's (see the departures and Keyboard): ⌘J shows or hides the
-  panel, ⌘D (⇧⌘D) on the thread opens a tab (+ opens the new terminal menu), ⌘D splits right and ⇧⌘D splits down in a terminal,
-  ⇧⌘↩ maximizes or restores, and ⌘W closes the focused pane; there is no clear or tab-switch chord.
-  Every chord resolves through `KeybindingsStore`, shows in the Pane menu ("Show or Hide Terminal",
-  "Maximize or Restore Terminal", and New Terminal without one) and in the strip's tooltips, and is
-  unbound in Ghostty (`appOwnedChords`) so a focused terminal never eats it. ⌥⌘←/→ move among the
-  panes on screen. A terminal becoming AppKit's first responder also selects its owning pane,
-  including right-click and selection-drag acquisition: Close, Split and Kill act on the terminal
-  receiving keyboard input, not the last pane whose SwiftUI tap gesture completed.
+  panel (opening a terminal when there is none), ⌘D is New Terminal (a new tab, from the thread or
+  from a terminal; + opens the new terminal menu), ⇧⌘↩ maximizes or restores, ⌘W is Close Terminal
+  (the focused terminal's tab; never the thread), and ⇧⌘] and ⇧⌘[ are Next Terminal and Previous
+  Terminal; there is no clear chord and no split chord. Every chord resolves through
+  `KeybindingsStore`, shows in the Terminal menu ("New Terminal", "Show or Hide Terminal", "Maximize
+  or Restore Terminal", "Next Terminal", "Previous Terminal"; File holds "Close Terminal") and in the
+  strip's tooltips, and is unbound in Ghostty (`appOwnedChords`) so a focused terminal never eats
+  it. ⇧⌘D and ⌥⌘←/→ are bound to nothing; they stay in `appOwnedChords` only because Ghostty's own
+  split and goto bindings are silent no-ops in embedded libghostty that would swallow them. A
+  terminal becoming AppKit's first responder also selects its tab, including right-click and
+  selection-drag acquisition: Close and Kill act on the terminal receiving keyboard input, not the
+  last tab whose SwiftUI tap gesture completed.
   Plain Space belongs to the terminal while its surface is first responder,
   before AppKit or SwiftUI can use it to activate a control. It follows the terminal's normal
   text-input path, including input-method composition; unfocused terminals leave it alone.
@@ -3747,9 +3747,10 @@ surface: every destination and command in it is also in the sidebar or the menus
     listed only while the thread's model offers a service tier, and it switches the tier as the
     Speed menu would, with no menu), Review diff ("working tree · 4 files", the checkout's changed files as the branch chip counts
     them; ⇧⌘B, the side pane's chord), Review PR changes ("PR #24" once the agent's review has
-    found its pull request), and the Pane menu's terminal commands while a
-    thread with a layout is on screen: Show or Hide terminal (⌘J), New terminal (⌘D, shown while the
-    thread has the keyboard), and Maximize or Restore terminal (⇧⌘↩), named for what they will do.
+    found its pull request), and the Terminal menu's commands while a
+    thread with a layout is on screen: Show or Hide terminal (⌘J; with none it opens one), New
+    terminal (⌘D), and Maximize or Restore terminal (⇧⌘↩, offered only while the thread has a
+    terminal), named for what they will do.
   - **Subagents:** each live or recent run: its label, "<parent> · running 37m" ("needs you",
     "done", "failed"; a remote run's parent adds " · <host>"), and `arrow.turn.down.right` in its
     run's state color.
@@ -3930,7 +3931,7 @@ The pages, in nav order. Each names its board; the strings in quotes are the boa
 
 #### Terminal
 
-No board draws this page; the nav lists it. "Terminal panes beside a thread: their font and which
+No board draws this page; the nav lists it. "Terminals under a thread: their font and which
 shell they run."
 
 - **Font** (footnote "Font changes apply to open terminals in place; running processes are
@@ -3939,8 +3940,8 @@ shell they run."
   configured family that is missing stays listed); Font size, a slider in points ("12.5 pt"), 9–24
   in 0.5pt steps; Preview, "Updates as you change the family and size.", a 320pt card on `bgWindow`
   (radius `s`) with four shell lines in the chosen font and the theme's terminal colors.
-- **Shell** (footnote "A new shell applies to panes opened afterwards."): Shell, "Used by ⌘D splits
-  and the panes an agent opens." (the chord read from `KeybindingsStore`), a popup of known shells
+- **Shell** (footnote "A new shell applies to terminals opened afterwards."): Shell, "Used by ⌘D
+  and the terminals an agent opens." (the chord read from `KeybindingsStore`), a popup of known shells
   by path, in mono.
 
 #### Agents (SettingsAgents, with QueueStates' settings card)
@@ -4017,8 +4018,9 @@ automated step of the worktree flows can be turned off here.
   tracking are always on."), switches, all on by default:
   - Name agents automatically, "Titles each new agent from its first prompt using the cheapest
     authed model. A rename you type is always final."
-  - Panes and agent tools, "Let agents control panes, message or spawn agents, manage automations
-    and send notifications."
+  - Terminals and agent tools, "Let agents open and drive terminals, message or spawn agents,
+    manage automations and send notifications." (the stored key `shepherd.pi.extension.panes`
+    and the extension's id, `panes`, keep their names)
   - Diff review tool, "Let agents open the review pane with `review_diff`."
   - Native subagents, "Shepherd helpers, agent files, scripted workflows and durable missions. Needs
     pi 0.85.1+. Children stop with their parent." Turning it off hides the next group, which
@@ -4253,8 +4255,10 @@ nothing here changes your pi."
     agent… ⌘R · Next agent · Previous agent · Command palette. The board shows Next agent, Previous
     agent, and Command palette rebound (⌘J, ⌘K, ⌘P) with Reset beside them; their defaults are ⌘↓,
     ⌘↑, and ⌘K.
-  - Panes: Split vertically ⌘D · Split horizontally ⇧⌘D · Close pane ⌘W · Focus next pane ⌥⌘→ ·
-    Focus previous pane ⌥⌘←.
+  - Terminal (the board calls it Panes and draws Split vertically ⌘D · Split horizontally ⇧⌘D ·
+    Close pane ⌘W · Focus next pane ⌥⌘→ · Focus previous pane ⌥⌘←; terminals are tabs only, so the
+    app's group reads New terminal ⌘D · Close terminal ⌘W · Next terminal ⇧⌘] · Previous terminal
+    ⇧⌘[, and a stored override of the removed Split horizontally is ignored; see the departures).
   - Fixed, not recordable: Select agent 1–9, "Sidebar order; hold ⌘ to see the numbers." (⌘ 1–9) ·
     Settings (⌘ ,) · Confirm / cancel in sheets (⏎ esc).
   - Under the last group, trailing: Reset all shortcuts, a secondary button, disabled while nothing
@@ -4266,7 +4270,7 @@ nothing here changes your pi."
   under the Return setting, "Send, queued" or "Send and steer now"; Edit the last queued message ↑;
   Move the focused message ⌥↑↓; Delete the focused message ⌫; Steer the focused message ⌘↩; Stop the
   agent Esc; only ⌘↩ records), a Window group (Show or hide the sidebar, the side pane), and Show or hide
-  terminal ⌘J and Maximize or restore terminal ⇧⌘↩ in Panes. Its Fixed group (agents ⌘1–9, the side
+  terminal ⌘J and Maximize or restore terminal ⇧⌘↩ in Terminal. Its Fixed group (agents ⌘1–9, the side
   pane's Changes ⌃1, Settings, sheets) has the footnote "Changes apply immediately, everywhere a
   shortcut is shown."
 
@@ -4274,8 +4278,8 @@ nothing here changes your pi."
 
 "Files, resets and app updates. Quitting Shepherd stops every agent."
 
-- **Files:** Workspace state, "Spaces, agents and pane layouts restored on relaunch.", and Extension
-  socket, "Where each agent process reports status and pane requests.": `PathRow`s, the file's name in
+- **Files:** Workspace state, "Spaces, agents and terminals restored on relaunch.", and Extension
+  socket, "Where each agent process reports status and terminal requests.": `PathRow`s, the file's name in
   mono `textSecondary` (`state.json`, `shepherd.sock`; the full path as its tooltip) and Reveal,
   which selects it in Finder.
 - **Updates:** Check for updates automatically, a switch; Update channel, "Stable: tagged releases.
@@ -4289,7 +4293,7 @@ nothing here changes your pi."
   preferences. Spaces, agents, layouts and Remote are untouched." (the board: "Restores appearance,
   font, agent and keyboard preferences. Spaces, agents and layouts are untouched."; see the
   departures): Reset… (danger) opens `ResetSettingsDialog` ("Reset settings to defaults?", "Your
-  spaces, agents and pane layouts are not affected.", Cancel and a destructive Reset). Remote's
+  spaces, agents and terminals are not affected.", Cancel and a destructive Reset). Remote's
   hosts and its listener stay as they are (`AppSettings.Key.resettable`).
 
 #### Wide pages: Instructions, Skills, MCP servers and Experiments
@@ -4831,7 +4835,7 @@ dialog. There is no `.alert`, `confirmationDialog`, or `NSAlert` in the app:
 - A failed agent action (`ActionErrorDialog`): "Agent action failed", the error selectable, and
   OK (primary)
 - Reset settings (`ResetSettingsDialog`): "Reset settings to defaults?", "Your spaces, agents and
-  pane layouts are not affected.", Cancel and a destructive Reset
+  terminals are not affected.", Cancel and a destructive Reset
 - Quitting while agents are working or waiting on you (`QuitDialog`), because quitting stops
   them mid-turn: "Quit and stop every working agent?" ("Quit and stop the working agent?" for
   one), and "<n> agents are still working. Their conversations stay on disk and reopen on next
@@ -5250,8 +5254,8 @@ trail, top-aligned, 6pt apart, as small (24pt) buttons. Default icons:
   card offers Open replay and Re-run.
 - **A host reconnecting** (running, `point.topleft.down.to.point.bottomright.curvepath`):
   "<host> reconnecting", "Last seen 3h ago. Remote agents resume when it's back.", and **Retry
-  now** (secondary), in the pane of a remote agent whose host went away (`HostAwayBanner`, at the
-  top of the pane, as wide as the thread). It shows while Shepherd retries a host that was
+  now** (secondary), in the thread of a remote agent whose host went away (`HostAwayBanner`, at the
+  top of its layout, as wide as the thread). It shows while Shepherd retries a host that was
   connected earlier this launch (`lastSeen`, never persisted), through every try and wait, and
   its age moves on by itself; Retry now reconnects at once, skipping the backoff. A host that
   never connected this launch keeps "connecting to <host>…", and a failure that won't retry (a
@@ -5262,7 +5266,7 @@ trail, top-aligned, 6pt apart, as small (24pt) buttons. Default icons:
   built.
 
 The app's banners today: the composer's "Lost connection to the agent process." (failed, with
-Reconnect) and its Can't start banners (failed, with Retry) and a failed attachment, a remote agent's pane while its host reconnects, dialogs' `DialogBanner`s, the commit sheet's, the review's load
+Reconnect) and its Can't start banners (failed, with Retry) and a failed attachment, a remote agent's thread while its host reconnects, dialogs' `DialogBanner`s, the commit sheet's, the review's load
 error, and the Nightly notice (idle); on iOS, a screen's own failure (commit, review, terminal, New
 thread, Automations).
 
@@ -5290,7 +5294,7 @@ thread, Automations).
   apart, the bars at 70%, 52%, 64%, and 40% of the width. The block pulses between 55% and full
   opacity over 1.4s (`shimmer`), static under Reduce Motion and while hidden (`nwMotionPaused`),
   and reads "Loading" to VoiceOver. The directory picker shows it while a host's first listing is
-  on its way (the footer says "Loading…"); a remote agent's pane keeps its own placeholder and
+  on its way (the footer says "Loading…"); a remote agent's thread keeps its own placeholder and
   banner (A host reconnecting, above).
 
 ## Keyboard
@@ -5323,9 +5327,9 @@ in UserDefaults under `shepherd.keybindings`).
 | ⌘R · ⇧⌘W | Rename agent · delete agent |
 | ⌘K | Command palette |
 | ⌘↓ · ⌘↑ | Next · previous agent in the sidebar (Needs you, Pinned, then Recents; organized by project, the open projects' threads) |
-| ⌘D · ⇧⌘D · ⌘W | Split vertically · horizontally · close pane |
-| ⌥⌘→ · ⌥⌘← | Focus next · previous pane |
-| ⌘J · ⇧⌘↩ | Show or hide the terminal panel · maximize or restore it |
+| ⌘D · ⌘W | New terminal (a new tab) · close terminal |
+| ⇧⌘] · ⇧⌘[ | Next · previous terminal (tab), wrapping while the panel shows |
+| ⌘J · ⇧⌘↩ | Show or hide the terminal panel, opening a terminal when there is none · maximize or restore it |
 | ⇧⌘S · ⇧⌘B | Show or hide the sidebar · the side pane |
 | ⇧⌘M | Model picker |
 | ⌘. | Stop the agent |
@@ -5394,8 +5398,8 @@ The Changes pane's keys are listed with the pane (Side pane › Changes).
   panes, sheets, overlays, and expanding or arriving rows cross-fade in place (120ms); rolling
   digits and symbol swaps cross-fade; pops, turn jumps, and scroll-to animations are dropped.
   Hover and content fades are unchanged.
-- **Menu bar:** every pane and agent action exists in the menu bar, with its shortcut where it
-  has one (File, View, Pane, Space, Agent, Machines, Appearance), so every action is reachable
+- **Menu bar:** every terminal and agent action exists in the menu bar, with its shortcut where
+  it has one (File, View, Terminal, Space, Agent, Machines, Appearance), so every action is reachable
   from the keyboard (NWSwift).
 - **Text size:** the Mac's type doesn't follow Dynamic Type; it scales with Settings ▸
   Appearance ▸ Text size (85–130%). On iOS every style follows Dynamic Type (`relativeTo:`), and
@@ -5432,7 +5436,7 @@ below collects the rest, and the places those sentences point here.
   - A comment's author: the boards draw the initial "B"; the touch clients say "You".
 - **Thread and terminal** (NWThread, TerminalSplit, TerminalPane, TerminalStates against the app):
   - The new terminal menu has no "New terminal on This Mac" for a remote thread (TerminalStates):
-    a pane of this Mac cannot join a layout its host owns. Waiting on the user's call.
+    a terminal of this Mac cannot join a layout its host owns. Waiting on the user's call.
   - Consecutive activity lines sit 6pt apart (`AppLayout.activitySpacing`), as NWThread draws
     them; ToolRows and Running draw 4pt.
   - The terminal font defaults to SF Mono 12.5 (`AppSettings`); the boards set Geist Mono 12 at
@@ -5513,7 +5517,7 @@ components first), with these differences for touch:
 - **App measures** come from `MobileLayout` (`App/iOS/Support`), as the Mac's come from
   `AppLayout`.
 - **Terminal** (iPadTerminal board; `App/iOS/Terminal`, `NWTerminalTabBar`, `NWTerminalKeyRow`; the
-  terminal itself as in Terminal panes):
+  terminal itself as in Terminal):
   - **iPad:** the Mac's panel under the thread and composer, across the thread's width
     (`.threadTerminal(_:)`), 340pt tall by default (`shepherd.ios.terminalHeight`), sliding up from
     the bottom edge (`.pane`). Its strip is 46pt with 32pt tabs and 34pt icon buttons hit at 44
@@ -5522,8 +5526,10 @@ components first), with these differences for touch:
     snapping and clamping as on the Mac, adjustable with VoiceOver, and hidden while maximized. The
     strip and key row stop growing at xxxLarge.
   - **Toggle:** the thread's options menu: Show Terminal or Hide Terminal on iPad (iPhone:
-    Terminal), absent while the host is offline. There is no header button; iPadTerminal's is a
-    departure (Terminal panel › Show and hide).
+    Terminal), absent while the host is offline. With no terminal in the thread it opens one (the
+    panel shows on it once the host has made it; a failure gives a haptic with no panel up, and the
+    panel's banner while it is). There is no header button; iPadTerminal's is a departure
+    (Terminal panel › Show and hide).
   - **Key row** (`NWTerminalKeyRow`), while a terminal has the keyboard, under it and over the
     software keyboard: `bgWindow` with a `lineSubtle` hairline on top, 8pt top and bottom padding
     and 12pt sides, keys 6pt apart (the board adds 26pt under the row for the home indicator). Keys:
@@ -5535,9 +5541,10 @@ components first), with these differences for touch:
     into two rows of six equal keys (the arrows together in the second), and only where two rows
     don't fit either does it scroll, with its scroll bar showing. A hardware keyboard types
     directly.
-  - **iPhone** (no board): the options menu's Terminal opens the panes full screen ("Terminal" as
-    the inline title, the tab bar hidden) with the same tabs and +, without Split right, Maximize or
-    Hide, and the same key row.
+  - **iPhone** (no board): the options menu's Terminal opens the terminals full screen
+    ("Terminal" as the inline title, the tab bar hidden) with the same tabs and +, without
+    Maximize or Hide, and the same key row. It opens a terminal as it appears when there is none,
+    and goes back with its last terminal.
   - **The terminal** (iPadTerminal): Geist Mono 13 at 1.6 line height, 10×16 inset, the prompt's
     user in `done`, its path in `running`, its branch in `lanternText` and `$` in `textTertiary`,
     output in `textSecondary`. The app sets `.code` (13) and follows Dynamic Type up to 20pt
@@ -5548,13 +5555,13 @@ components first), with these differences for touch:
     2)?" when another tab shares its title), its message says what stops ("Its shell on <host>
     stops.", "Its 3 shells on <host> stop.", "It closes on <host>."), then Close Terminal
     (destructive) and Cancel.
-  - **States:** "No terminals in this thread yet." with New Terminal (secondary); "<host> is
-    offline."; "Update Shepherd on <host> to open terminals here." for a host without
-    `pane.control.v1`, which shows its terminals but offers no +, split or close. A failed pane
-    request shows a `failed` `NWBanner` under the strip with Dismiss ("Couldn't open a terminal: …"
-    or "Couldn't close the terminal: …", "Update Shepherd on the host to open a terminal here." (or
-    "…to close the terminal here."), "An agent's own pane can't be closed.", "A layout always keeps
-    its last pane."). In a split tab the focused pane is outlined 1pt in `focusDivider`.
+  - **States:** "<host> is offline."; "Update Shepherd on <host> to open terminals here." for a
+    host without `pane.control.v1`, which shows its terminals but offers no + or close; there is
+    no empty state. A failed terminal request shows a `failed` `NWBanner` under the strip with
+    Dismiss ("Couldn't open a terminal: …" or "Couldn't close the terminal: …", "Update Shepherd on
+    the host to open a terminal here." (or "…to close the terminal here."), "An agent's own thread
+    can't be closed."). A host from before terminals were tabs only may still hold a split tab,
+    which the panel draws as one tab per terminal.
   - As on the Mac, the iPad panel closes with its last terminal while the host is connected, and tab
     dots follow the host's news, so a tab leaving the screen (its viewer detaching, the PTY taking
     the Mac's size again) leaves no dot.
@@ -7430,8 +7437,8 @@ every connected host's (`ShepherdViewModel+Notifications.swift` decides when;
 - **Frontmost:** banners show while Shepherd is in front, for the threads you aren't watching.
 - **Permission** is asked the first time Shepherd has something to post (alerts and sound), never at
   launch. Notifications are turned on and off in System Settings ▸ Notifications; Shepherd has no
-  toggle of its own. Only the `notify` tool has a switch: Settings ▸ Pi's bundled panes extension
-  ("…manage automations and send notifications") carries it.
+  toggle of its own. Only the `notify` tool has a switch: Settings ▸ Pi's Terminals and agent tools
+  (the bundled `panes` extension; "…manage automations and send notifications") carries it.
 - **Not yet as the catalog says:** a remote thread's turn finishing or failing posts nothing (the
   host's state doesn't say whether a turn failed, so its end can't be worded); Automation failed and
   Automation passed post as the run's Turn failed and Turn finished; and the NotifMac items under Mac,
@@ -7487,7 +7494,8 @@ height (48pt, or 56pt with a second line: the title at 15pt, the line under it a
   preview setting of its own.
 
 On the Mac, Shepherd has no notification settings page today and no board draws one; only the
-panes extension's switch in Settings ▸ Pi governs the `notify` tool (On the Mac today).
+Terminals and agent tools switch (the `panes` extension) in Settings ▸ Pi governs the `notify`
+tool (On the Mac today).
 
 ### Live Activities
 
@@ -9431,7 +9439,10 @@ What the board draws:
     and the inspector
   - the review pane, and its Commit… sheet in every state
   - the palette, the toolbar, the sidebar at each row density, and the window at its minimum
-  - the terminal panel: two tabs under the thread, the first split, and maximized
+  - the terminal panel: two tabs under the thread (`app-window-terminal-panel`), a running tab
+    (`app-window-terminal-running`), maximized (`app-window-terminal-maximized`), the new terminal
+    menu (`app-window-terminal-menu`), and its parts on their own (`terminal-parts`: the folded
+    thread, the selection bar, the tab menu and the drag line)
   - every Settings page, sheet, and dialog
   - the empty states
 
@@ -9541,9 +9552,9 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | QuestionPick | Composer, questions, and menus › Questions | Built |
 | QuestionAnswered | Composer, questions, and menus › Questions (The record) | Built |
 | QuestionStates | Composer, questions, and menus › Questions; Keyboard | Partial |
-| TerminalSplit | Terminal panes; Terminal panel (no header button: departures) | Built |
-| TerminalPane | Terminal panes; Terminal panel (Split panes, Send output to the agent; no header button: departures) | Built |
-| TerminalStates | Terminal panel (tab states, maximized, divider, new terminal menu; no header toggle or Run in terminal: departures) | Partial |
+| TerminalSplit | Terminal; Terminal panel (tabs only, no Split right or header button: departures) | Built |
+| TerminalPane | Terminal; Terminal panel (Send output to the agent, on a tab's one terminal; no split drawing, pane headers or header button: departures) | Partial |
+| TerminalStates | Terminal panel (tab states, maximized, divider, new terminal menu without Split right; no header toggle, Run in terminal or empty state, ⌘J opens a terminal: departures) | Partial |
 | ThreadError | Thread › Errors (the card, folded); Status language | Built |
 | ThreadErrorDetails | Thread › Errors (Details) | Built |
 
@@ -9618,7 +9629,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | iPadPaneBrowser | iOS: iPad › Side pane | Not built yet |
 | iPadPaneArtifacts | iOS: iPad › Side pane | Not built yet |
 | iPadPaneFiles | iOS: iPad › Side pane | Not built yet |
-| iPadTerminal | iOS (Terminal); Terminal panes (the options menu shows it: departures) | Partial |
+| iPadTerminal | iOS (Terminal); Terminal (tabs only, no Split right; the options menu shows it and opens a terminal when there is none: departures) | Partial |
 
 **Notifications**
 

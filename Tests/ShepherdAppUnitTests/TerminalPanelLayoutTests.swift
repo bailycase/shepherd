@@ -9,20 +9,19 @@ import Testing
 @testable import ShepherdApp
 
 /// The Mac's thread-and-panel layout: the thread on top, the panel's strip and the selected tab
-/// under it, every pane placed whether it shows or not.
+/// under it, every terminal placed whether it shows or not.
 @Suite("Terminal panel geometry")
 struct TerminalPanelGeometryTests {
     private let thread = LeafPane(cwd: "/tmp/repo", agentID: AgentID())
     private let shell = LeafPane(cwd: "/tmp/repo")
-    private let logs = LeafPane(cwd: "/tmp/repo")
     private let psql = LeafPane(cwd: "/tmp/repo")
     private let size = CGSize(width: 1000, height: 900)
 
-    /// + twice from the thread (shell, then psql), then Split right in the shell's tab (logs).
+    /// + twice from the thread: a tab each, the shell first and the newer psql nearer the thread.
     private var layout: PaneNode {
         .split(axis: .horizontal, ratio: 0.5,
                first: .split(axis: .horizontal, ratio: 0.5, first: .leaf(thread), second: .leaf(psql)),
-               second: .split(axis: .vertical, ratio: 0.5, first: .leaf(shell), second: .leaf(logs)))
+               second: .leaf(shell))
     }
 
     private func geometry(selected: PaneID? = nil, shown: Bool = true, maximized: Bool = false,
@@ -37,33 +36,28 @@ struct TerminalPanelGeometryTests {
         try #require(geometry.leaves.first { $0.pane.id == pane.id })
     }
 
-    @Test func theThreadSitsOverThePanelWhoseSelectedTabShowsItsSplits() throws {
+    @Test func theThreadSitsOverThePanelWhoseSelectedTabShowsItsTerminal() throws {
         let g = geometry()
         #expect(g.thread == CGRect(x: 0, y: 0, width: 1000, height: 570))
         #expect(g.tabBar == CGRect(x: 0, y: 570, width: 1000, height: NWTerminalMetrics.tabBarHeight))
         let top = 570 + NWTerminalMetrics.tabBarHeight
         #expect(g.content == CGRect(x: 0, y: top, width: 1000, height: 900 - top))
         #expect(g.tabs.map(\.id) == [shell.id, psql.id])
-        let shellLeaf = try leaf(shell, g), logsLeaf = try leaf(logs, g)
-        #expect(shellLeaf.shown && logsLeaf.shown)
-        // A tab of two panes heads each one; its terminal starts under the header.
-        #expect(shellLeaf.header == CGRect(x: 0, y: top, width: shellLeaf.rect.width, height: NWTerminalMetrics.paneHeaderHeight))
-        #expect(shellLeaf.rect.minY == top + NWTerminalMetrics.paneHeaderHeight && logsLeaf.rect.minX > shellLeaf.rect.maxX)
-        #expect(g.separators.count == 1 && g.separators[0].rect.minY == top)
+        // One terminal a tab: it fills the panel's content, with no header and no divider.
+        let shellLeaf = try leaf(shell, g)
+        #expect(shellLeaf.shown && shellLeaf.rect == g.content)
         #expect(try leaf(psql, g).shown == false)
         #expect(try leaf(thread, g).shown)
+        #expect(g.leaves.count == 3)
     }
 
-    @Test func anotherTabsPanesKeepTheirPlaceOffScreen() throws {
+    @Test func anotherTabsTerminalKeepsItsPlaceOffScreen() throws {
         let g = geometry(selected: psql.id)
         #expect(try leaf(psql, g).shown)
-        #expect(try !leaf(shell, g).shown && !leaf(logs, g).shown)
-        // A hidden tab keeps its place, so its grid never changes on a switch; a tab of one pane
-        // has no header (the tab names it).
-        #expect(try leaf(psql, g).header == nil && leaf(shell, g).header != nil)
-        #expect(try leaf(psql, g).rect.height == leaf(shell, g).rect.height + NWTerminalMetrics.paneHeaderHeight)
+        #expect(try !leaf(shell, g).shown)
+        // A hidden tab keeps its place, so its grid never changes on a switch.
+        #expect(try leaf(shell, g).rect == leaf(psql, g).rect)
         #expect(try leaf(shell, g).rect == leaf(shell, geometry()).rect)
-        #expect(g.separators.isEmpty)
     }
 
     @Test func aHiddenPanelGivesTheThreadTheLayoutAndKeepsTheTerminalsSized() throws {
@@ -120,8 +114,8 @@ struct TerminalPanelsTests {
         #expect(panels.reconcile(key, layout: grown, thread: thread.id) == nil)
     }
 
-    /// However the last terminal goes (its tab closed, the agent closed its pane, its shell
-    /// exited), the panel goes with it; ⌘J on no terminals still shows the empty state.
+    /// However the last terminal goes (its tab closed, the agent closed its terminal, its shell
+    /// exited), the panel goes with it, and a panel is never left showing with no terminal.
     @Test func thePanelClosesWithItsLastTerminal() {
         let panels = TerminalPanels(defaults: ScratchDefaults())
         let layout = PaneNode.split(axis: .vertical, ratio: 0.5, first: .leaf(thread), second: .leaf(shell))
@@ -129,9 +123,9 @@ struct TerminalPanelsTests {
         panels.update(key) { $0.maximized = true }
         panels.reconcile(key, layout: .leaf(thread), thread: thread.id)
         #expect(!panels.panel(key).shown && !panels.panel(key).maximized)
-        panels.update(key) { $0.shown = true }
+        panels.update(key) { $0.shown = true; $0.maximized = true }
         panels.reconcile(key, layout: .leaf(thread), thread: thread.id)
-        #expect(panels.panel(key).shown)
+        #expect(!panels.panel(key).shown && !panels.panel(key).maximized, "no empty panel, however it came to show")
     }
 
     /// A tab's dot follows the host's news, not every read of output: a resize's redraw moves
@@ -163,7 +157,7 @@ struct TerminalPanelsTests {
     @Test func outputOffScreenIsNewsUntilItsTabShows() throws {
         let panels = TerminalPanels(defaults: ScratchDefaults())
         let session = try #require(shell.sessionID)
-        let tab = TerminalPanelTab(node: .leaf(shell))
+        let tab = TerminalPanelTab(leaf: shell)
         func row(_ sequence: UInt64, command: String? = nil) -> RemoteTerminalActivity {
             RemoteTerminalActivity(paneID: shell.id, sessionID: session, process: "zsh", command: command, outputSequence: sequence)
         }
@@ -180,7 +174,6 @@ struct TerminalPanelsTests {
         let items = panels.items(key, tabs: [tab], selected: nil, onScreen: false, host: "build-01")
         #expect(items.map(\.activity) == [.running] && items.map(\.title) == ["make dev"] && items.map(\.host) == ["build-01"])
     }
-
     @Test(arguments: [
         (String?("make dev"), String?("make"), "/tmp/repo", "make dev"),
         (nil, "zsh", "/tmp/repo", "zsh"),

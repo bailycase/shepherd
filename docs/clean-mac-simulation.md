@@ -91,7 +91,7 @@ git remote add origin https://github.com/<you>/definitely-private-nonexistent.gi
 ### 5. Relaunch the Dev build
 
 Each process captures the login-shell environment when it spawns. Quit and relaunch
-`Shepherd (Dev)` after changing shims, so the probes and new terminal panes see the simulated
+`Shepherd (Dev)` after changing shims, so the probes and new terminals see the simulated
 machine.
 
 ## What the setup checks must show
@@ -104,7 +104,7 @@ Open the worktree agent's context menu and choose **Finalize Worktree…**:
 | Git identity | "git user.name / user.email are not set" | Name and email fields, then Apply | Fill both and apply. The row re-checks and shows `name · email` |
 | Origin reachable | git's last stderr line that isn't its closing advice, or "origin remote missing or unreachable" | Text asking for a pushable `origin` | Run `git remote add origin <real repo>` in the scratch repo, then Re-run checks. The row passes |
 | GitHub CLI | "GitHub CLI not installed" (Tier B only) | `brew install gh` with Copy | Copy puts the command on the clipboard |
-| GitHub CLI signed in | "not authenticated — run gh auth login" | "Open a terminal for gh login…" | Closes the sheet and opens a terminal pane beside the agent's thread with `gh auth login` typed in. Finish the login (the real `gh` must resolve), reopen Finalize, then Re-run checks. The row passes |
+| GitHub CLI signed in | "not authenticated — run gh auth login" | "Open a terminal for gh login…" | Closes the sheet and opens a terminal under the agent's thread with `gh auth login` typed in. Finish the login (the real `gh` must resolve), reopen Finalize, then Re-run checks. The row passes |
 
 Then run the verification pass. With everything repaired, "Re-run checks" moves every row
 through checking to passing. It shows "All set — ready to finalize" and enables **Continue**.

@@ -2,106 +2,72 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 
-/// One tab of an agent's terminal panel: a stretch of its layout with no thread in it, drawn
-/// with its own splits. Identified by its first pane, which a split inside the tab keeps.
+/// One tab of an agent's terminal panel: one terminal, identified by its own id.
 public struct TerminalPanelTab: Equatable, Sendable, Identifiable {
     public let id: PaneID
-    /// The tab's panes as the host lays them out.
-    public let node: PaneNode
+    public let leaf: LeafPane
 
-    public init(node: PaneNode) {
-        self.node = node
-        id = node.firstLeaf.id
+    public init(leaf: LeafPane) {
+        self.leaf = leaf
+        id = leaf.id
     }
-
-    public var panes: [LeafPane] { node.leaves }
-
-    public func contains(_ pane: PaneID) -> Bool { node.contains(pane) }
 }
 
 /// The terminal panel under a thread (TerminalSplit, TerminalStates, iPadTerminal boards) is a
-/// view of the agent's layout, which stays the host's: the thread is one pane, and every other
-/// pane belongs to a tab. The host's pane requests are the only way to change it: + splits the
-/// thread (a new tab), Split right splits a pane inside the tab, and Close closes a pane.
+/// view of the agent's layout, which stays the host's: the thread is one leaf, and every other
+/// leaf is a terminal with a tab of its own. The host's requests are the only way to change it:
+/// + asks for a new terminal and Close closes one.
 public enum TerminalPanel {
-    /// The tabs of `layout` whose thread is `thread`: each largest subtree without the thread,
-    /// oldest first. Every such subtree hangs beside the path from the root to the thread, and a
-    /// pane split off the thread lands closest to it, so the shallowest subtree is the oldest.
-    /// A layout with no thread (a host's utility terminal) is one tab.
+    /// The tabs of `layout` whose thread is `thread`: one per terminal, oldest first
+    /// (`PaneNode.terminals(besideThread:)`). A host that has not flattened its layouts yet may
+    /// still hold several terminals split in one tab, which read as a tab each. A layout with no
+    /// thread (a host's utility terminal) has one tab per leaf.
     public static func tabs(in layout: PaneNode, thread: PaneID?) -> [TerminalPanelTab] {
-        guard let thread, layout.contains(thread) else { return [TerminalPanelTab(node: layout)] }
-        var tabs: [TerminalPanelTab] = []
-        var node = layout
-        while case .split(_, _, let first, let second) = node {
-            if first.contains(thread) {
-                tabs.append(TerminalPanelTab(node: second))
-                node = first
-            } else {
-                tabs.append(TerminalPanelTab(node: first))
-                node = second
-            }
-        }
-        return tabs
+        let leaves = thread.map { layout.contains($0) ? layout.terminals(besideThread: $0) : layout.leaves } ?? layout.leaves
+        return leaves.map { TerminalPanelTab(leaf: $0) }
     }
 
-    /// The tab on screen: the one chosen while it exists, else the one holding the focused pane,
-    /// else the newest. A tab whose first pane closed keeps its place through its other panes
-    /// (`remembering`).
-    public static func selected(_ tabs: [TerminalPanelTab], chosen: PaneID?, remembering panes: [PaneID] = [],
-                                focused: PaneID? = nil) -> TerminalPanelTab? {
+    /// The tab on screen: the one chosen while it exists, else the one holding the focused
+    /// terminal, else the newest.
+    public static func selected(_ tabs: [TerminalPanelTab], chosen: PaneID?, focused: PaneID? = nil) -> TerminalPanelTab? {
         if let chosen, let tab = tabs.first(where: { $0.id == chosen }) { return tab }
-        if let tab = tabs.first(where: { tab in panes.contains { tab.contains($0) } }) { return tab }
-        if let focused, let tab = tabs.first(where: { $0.contains(focused) }) { return tab }
+        if let focused, let tab = tabs.first(where: { $0.id == focused }) { return tab }
         return tabs.last
     }
 
-    /// Where + opens a pane: beside the thread, so it becomes a tab of its own; with no thread,
-    /// beside the layout's last pane.
+    /// The tab `delta` places from the selected one, wrapping at the ends; nil with fewer than
+    /// two tabs (there is nowhere to go).
+    public static func adjacent(to selected: TerminalPanelTab?, in tabs: [TerminalPanelTab], delta: Int) -> TerminalPanelTab? {
+        guard tabs.count > 1 else { return nil }
+        let current = selected.flatMap { selected in tabs.firstIndex { $0.id == selected.id } } ?? (delta > 0 ? tabs.count - 1 : 0)
+        return tabs[(current + delta + tabs.count) % tabs.count]
+    }
+
+    /// What the wire's open-terminal request names: the thread, which a host from before terminals
+    /// were tabs only splits below itself to make the new tab and a current host ignores (it
+    /// opens a tab whatever it is told); with no thread, the layout's last leaf.
     public static func newTabAnchor(in layout: PaneNode, thread: PaneID?) -> (pane: PaneID, axis: SplitAxis) {
         if let thread, layout.contains(thread) { return (thread, .horizontal) }
         return (layout.leaves.last?.id ?? layout.firstLeaf.id, .vertical)
     }
 
-    /// Where Split right (or down) opens a pane: beside the tab's focused pane, else its last.
-    public static func splitAnchor(in tab: TerminalPanelTab, focused: PaneID?) -> PaneID {
-        if let focused, tab.contains(focused) { return focused }
-        return tab.panes.last?.id ?? tab.id
-    }
-
-    /// The pane a tab's keyboard goes to: the focused one while it is in the tab, else its first.
-    public static func focusedPane(in tab: TerminalPanelTab, focused: PaneID?) -> PaneID {
-        if let focused, tab.contains(focused) { return focused }
-        return tab.id
-    }
-
-    /// What closing a tab closes: every pane in it, the focused one last so the tab stays put
-    /// while the others go. Never the thread's pane, and never the layout's last pane (the host
-    /// refuses both; a tab always leaves the thread behind).
-    public static func panesToClose(_ tab: TerminalPanelTab, thread: PaneID?) -> [PaneID] {
-        tab.panes.map(\.id).filter { $0 != thread }
-    }
-
     /// The panel closes with its last terminal, however it went (its tab closed, the agent
-    /// closed its pane, its shell exited): true when a layout that had tabs has none left. A
-    /// panel shown with no terminals (⌘J, the toggle) keeps its empty state.
+    /// closed its terminal, its shell exited): true when a layout that had tabs has none left.
     public static func closesWithLastTerminal(before: Int, after: Int) -> Bool {
         before > 0 && after == 0
     }
 
     /// What is on screen to be marked seen: nothing while the panel is off screen, else the
-    /// selected tab, its sessions, and how far each has news (`RemoteTerminalActivity.news`).
+    /// selected tab's session, and how far it has news (`RemoteTerminalActivity.news`).
     public static func seenMark(selected: TerminalPanelTab?, onScreen: Bool,
                                 activity: [PaneID: RemoteTerminalActivity]) -> TerminalSeenMark {
-        guard onScreen, let selected else { return TerminalSeenMark() }
-        let panes = selected.panes.filter { $0.sessionID != nil }
-        return TerminalSeenMark(tab: selected.id, sessions: panes.compactMap(\.sessionID),
-                                news: panes.map { activity[$0.id]?.news })
+        guard onScreen, let selected, let session = selected.leaf.sessionID else { return TerminalSeenMark() }
+        return TerminalSeenMark(tab: selected.id, sessions: [session], news: [activity[selected.id]?.news])
     }
 }
 
-/// The selected tab's output while it is on screen. A client marks its sessions seen whenever
-/// this changes: a tab picked (even one whose news matches the last tab's), a pane joining it,
-/// or its news moving.
+/// The selected tab's output while it is on screen. A client marks its session seen whenever
+/// this changes: a tab picked (even one whose news matches the last tab's), or its news moving.
 public struct TerminalSeenMark: Equatable, Sendable {
     public var tab: PaneID?
     public var sessions: [SessionID]
@@ -114,15 +80,15 @@ public struct TerminalSeenMark: Equatable, Sendable {
     }
 }
 
-/// What closing a tab asks first on iOS (iPad panel, iPhone screen): which tab, and how many
-/// shells stop on the host. A title another tab shares ("zsh" in every tab at its prompt) adds
-/// the tab's place, and a split tab counts every shell it closes.
+/// What closing a tab asks first on iOS (iPad panel, iPhone screen): which tab, and the shell
+/// that stops on the host. A title another tab shares ("zsh" in every tab at its prompt) adds
+/// the tab's place.
 public struct TerminalCloseConfirmation: Equatable, Sendable {
     public let title: String
     public let message: String
 
     /// `titles` are the tabs' titles in the strip's order, one per tab of `tabs`.
-    public init(_ tab: TerminalPanelTab, in tabs: [TerminalPanelTab], titles: [String], thread: PaneID?, host: String) {
+    public init(_ tab: TerminalPanelTab, in tabs: [TerminalPanelTab], titles: [String], host: String) {
         let index = tabs.firstIndex { $0.id == tab.id }
         let name = index.flatMap { titles.indices.contains($0) ? titles[$0] : nil } ?? "terminal"
         if let index, titles.filter({ $0 == name }).count > 1 {
@@ -130,13 +96,7 @@ public struct TerminalCloseConfirmation: Equatable, Sendable {
         } else {
             title = "Close \(name)?"
         }
-        let closing = Set(TerminalPanel.panesToClose(tab, thread: thread))
-        let shells = tab.panes.filter { closing.contains($0.id) && $0.isReview != true }.count
-        message = switch shells {
-        case 0: "It closes on \(host)."
-        case 1: "Its shell on \(host) stops."
-        default: "Its \(shells) shells on \(host) stop."
-        }
+        message = tab.leaf.isReview == true ? "It closes on \(host)." : "Its shell on \(host) stops."
     }
 }
 

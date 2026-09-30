@@ -566,14 +566,17 @@ extension TerminalConfiguration {
     /// rest of ghostty's bindings stay untouched.
     private static let appOwnedChords = [
         // ⌘N new agent · ⌘⇧T agent options · ⌘⇧N new space · ⌘W close
-        // pane · ⌘⇧W delete agent · ⌘D/⌘⇧D split.
+        // terminal · ⌘⇧W delete agent · ⌘D new terminal.
         "cmd+n", "shift+cmd+t", "shift+cmd+n", "cmd+w", "shift+cmd+w",
-        "cmd+d", "shift+cmd+d", "cmd+r",
-        // ⇧⌘]/[ have no app binding, but ghostty's next_tab/previous_tab
-        // defaults are no-ops in embedded libghostty — unbinding keeps them
-        // from being silently swallowed.
+        "cmd+d", "cmd+r",
+        // ⇧⌘]/[ are Next and Previous Terminal; ghostty's next_tab/previous_tab
+        // defaults are no-ops in embedded libghostty, so unbinding them is what lets the
+        // chords reach the app's menu rather than be silently swallowed.
         "shift+cmd+right_bracket", "shift+cmd+left_bracket",
-        "alt+cmd+left", "alt+cmd+right",
+        // Terminals are tabs only, so ⇧⌘D and ⌥⌘←/→ (the old split down and pane focus)
+        // have no app binding now. Ghostty's split defaults for them are no-ops in
+        // embedded libghostty that would swallow the keys, so they stay unbound.
+        "shift+cmd+d", "alt+cmd+left", "alt+cmd+right",
         // ⌘↑/↓: previous/next agent in sidebar order. ⌥⌘↑/↓: turn jumps.
         "cmd+up", "cmd+down", "alt+cmd+up", "alt+cmd+down",
         // ⇧⌘S sidebar · ⇧⌘B side pane · ⇧⌘M model picker · ⌘. stop · ⌘I inspect.

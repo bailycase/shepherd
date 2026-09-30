@@ -149,7 +149,7 @@ the only writer, through named mutations:
 | `createDesign(_:)` | Makes the folder with a new canvas.json (`createdOnFiles` stamped, the name as `title`), then the record. No space changes; a build's `sourceSpaceID` must exist. A refused record removes the folder again |
 | `renameDesign(_:to:)` | Renames the record and the canvas `title` |
 | `deleteDesign(_:undoable:)` | Takes the record and the agents that drew it out of the workspace at once (their layouts too, and their processes stopped), sets the folder aside (`.deleted-<id>`), and holds all of it for `designUndoWindow` (10 s); then the folder goes. Answers a `DesignDeletion` (the name and the undo deadline). With `undoable` false (a system build that Delete design system stops) it is gone at once |
-| `undoDesignDeletion(_:)` | Within the window: waits out the stopped processes, puts the folder back, and restores the record, the agents and their layouts where they stood in their lists, each layout on fresh pane ids with no session (so a late exit of the old process touches nothing, and the app starts a fresh pi resuming the agent's session). Refused once the window has closed |
+| `undoDesignDeletion(_:)` | Within the window: waits out the stopped processes, puts the folder back, and restores the record, the agents and their layouts where they stood in their lists, each layout on fresh `PaneID`s with no session (so a late exit of the old process touches nothing, and the app starts a fresh pi resuming the agent's session). Refused once the window has closed |
 | `duplicateDesign(_:)` | A new design with a new id named "<name> copy" (then "copy 2", …): a copy of the original's canvas (titled so), boards, project files, installed systems and uploads, drawn in the same system, links left behind. Its versions, comments and agent stay with the original |
 | `removeDesignFromRecents(_:)` | Records `recentsHiddenAt`: the design leaves the sidebar's Recents until it next changes (`Design.inRecents`) |
 | `prepareDesignImport(from:progress:)`, `finishDesignImport(_:name:skippingUnreadable:)`, `cancelDesignImport(_:)` | Import, in two halves (Import, below) |
@@ -321,7 +321,7 @@ gets `shepherd-design.ts`, the design skill, the design facts in its prompt,
 `SHEPHERD_DESIGN_ID` and `SHEPHERD_DESIGN_SKILL_DIR`. A thread with no design never gets any of
 them, whether the experiment is on or off. The rule holds in both directions:
 
-- **Peers.** A design agent launches without the panes extension, so it has no `pane_*`,
+- **Peers.** A design agent launches without the panes extension, so it has no `terminal_*`,
   `agent_*`, `automation_*` or `notify` tools. The server also refuses `listAgents`,
   `sendToAgent`, `spawnAgent` and `coordinateAgent` from it or aimed at it, with `not_a_thread`,
   so an older installed copy of the extension can't get around the rule. agent_list leaves it
