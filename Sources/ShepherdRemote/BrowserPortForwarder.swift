@@ -69,10 +69,13 @@ public final class BrowserPortForwarder: @unchecked Sendable {
         case invalid(port: Int)
         /// Something else went wrong binding it.
         case failed(port: Int, errno: Int32)
+        /// The page already holds as many ports as an agent on the host may have it forward.
+        case tooMany(port: Int, limit: Int)
 
         public var port: Int {
             switch self {
-            case .inUse(let port), .forwardedFor(let port, _), .privileged(let port), .invalid(let port), .failed(let port, _): port
+            case .inUse(let port), .forwardedFor(let port, _), .privileged(let port), .invalid(let port), .failed(let port, _),
+                 .tooMany(let port, _): port
             }
         }
 
@@ -89,6 +92,22 @@ public final class BrowserPortForwarder: @unchecked Sendable {
                 "\(port) is not a port."
             case .failed(let port, let code):
                 "Port \(port) can’t be forwarded from \(hostName): \(String(cString: strerror(code)))."
+            case .tooMany(let port, let limit):
+                "\(hostName)’s port \(port) can’t be forwarded: this page already holds \(limit) ports for the agent on \(hostName)."
+            }
+        }
+
+        /// What an agent on the host reads when its `browser_open` names a port that can't be
+        /// forwarded: the Mac showing the page is not named, and nothing says what holds the port.
+        public var agentMessage: String {
+            switch self {
+            case .invalid(let port):
+                "\(port) is not a port."
+            case .tooMany(_, let limit):
+                "The browser already has \(limit) of this host's ports open. Use one of those, or ask the user to open more."
+            default:
+                "Port \(port) can't be opened in the browser right now: it isn't available from the Mac showing this page. "
+                    + "Ask the user to free it, or use another port."
             }
         }
     }

@@ -291,8 +291,10 @@ struct BrowserEvents: Equatable {
     var navigations = 0
     var dialogs: [String] = []
     var downloads: [String] = []
+    /// Navigations a host's agent was kept from (BrowserHostDrive.swift), in words.
+    var blocked: [String] = []
 
-    var isEmpty: Bool { consoleErrors == 0 && navigations == 0 && dialogs.isEmpty && downloads.isEmpty }
+    var isEmpty: Bool { consoleErrors == 0 && navigations == 0 && dialogs.isEmpty && downloads.isEmpty && blocked.isEmpty }
 }
 
 enum BrowserReport {
@@ -321,6 +323,7 @@ enum BrowserReport {
         for dialog in events.dialogs.prefix(maxDialogsListed) { lines.append("A dialog appeared: \(dialog)") }
         if events.dialogs.count > maxDialogsListed { lines.append("and \(events.dialogs.count - maxDialogsListed) more dialogs.") }
         for download in events.downloads.prefix(maxDialogsListed) { lines.append("A download was blocked: \(download)") }
+        if let blocked = events.blocked.first { lines.append("A navigation was blocked: \(blocked)") }
         var counts: [String] = []
         if events.consoleErrors > 0 { counts.append("\(events.consoleErrors) new console error\(events.consoleErrors == 1 ? "" : "s")") }
         if events.navigations > 0 { counts.append("\(events.navigations) navigation\(events.navigations == 1 ? "" : "s")") }

@@ -180,8 +180,10 @@ And the rules that follow from them:
 | PaneStates' ⋯ menu (`SidePaneOptions`): Split below, Open pane in its own window ⇧⌘O, Reset width, then Show tabs with a check per tab | Changes' own items (Maximize Pane, Expand All Files, Collapse All Files, Copy Review as Text), then Reset Width | With Changes the only tab, a split has nothing to show below it, Show tabs nothing to hide, and a window of its own would break the one-window rule and host the review a second time: none is offered until it works (never a dead item) |
 | PaneStates, the Changes boards, PaneBrowser, PaneArtifacts, PaneFiles: four tabs, Changes, Browser, Artifacts and Files | Changes and Browser (a remote thread: Changes, and the Browser where its host carries tunnels) | Only what Shepherd has (the user's decision, 2026-09-25: "dont show browser, artifacts, files, etc, only show the things we have"); the others join when they are built |
 | PaneStates, PaneBrowser: the host chip "build-01" beside a `localhost:5173/checkout` page | The host's name for a remote thread's page while it is on the host's loopback (`localhost`, `127.0.0.1`, `[::1]`, or nothing open); "This Mac" for a local thread and for a remote thread's page on the web | The chip names the machine a page's traffic goes to |
-| PaneStates › BrowserPane · nothing open: "The agent opens pages here when it starts a dev server" | The same words on a remote thread, where a page the agent opens is on the host's screen, not in this tab | The user's board words; the viewer's tab is its own page until agents drive a remote thread's page from the viewer's Mac, a later change (docs/browser.md › Remote) |
-| PaneStates › SidePaneTabs · the agent opened a tab: the dot and its tip | None on a remote thread | The page pi opened is the host's, which this tab does not show; a review pi opens on a host is likewise the host's view state |
+| PaneStates › BrowserPane · nothing open: "The agent opens pages here when it starts a dev server" | The same words on a remote thread. On a host that offers `browser.drive.v1` they are true (the agent drives this tab's page); on an older host the agent drives the host's own page, which this tab does not show | The user's board words (docs/browser.md › Remote) |
+| PaneStates › SidePaneTabs · the agent opened a tab: the dot and its tip | The same on a remote thread whose host offers `browser.drive.v1`: a page the agent opens in the host's own browser marks the tab; none on an older host. A viewer that owns the agent's browser sees the page open in its own tab | The host tells the thread's viewers; a review pi opens on a host stays the host's view state |
+| PaneStates › BrowserPane · the agent is using it, on a remote thread | The same ring, pointer and card over the viewer's own page, through a claim the tab on screen makes (docs/browser.md › Remote). When another Mac claims the agent's browser, a notice card says "Another Mac is showing this thread’s browser to the agent now. Show this tab again to take it back." | The app's words; the board draws one thread, one viewer |
+| PaneBrowser: any address the page may open | A page an agent on a remote host drives opens only that host's own `localhost`, `127.0.0.1` and `[::1]` ports and public addresses: a private or reserved address, this Mac's own loopback under another spelling, one of its own addresses, a local-network name and a name that resolves to one are refused, in a redirect, an iframe and a script's navigation too, and the page open on this Mac's own network is never read back. The address field is the user's and is not bound | A host's agent is another machine's hands on this Mac's web view, which must not become a window into this Mac's network (docs/browser.md › Remote; SECURITY.md) |
 | PaneBrowser: nothing draws a page that cannot load | A notice card under the toolbar (`NWBrowserNotice`) when a forwarded port is in use on this Mac or held by another thread's page; nothing loads | A `localhost` page that reached the wrong machine's server would be worse than none; the words are the app's |
 | PaneStates › viewport: Throttle to 3G under Dark appearance | Left out | WebKit has no public throttle, and the tunnel turned out to be a loopback listener, not the local proxy the user's decision (2026-09-29) waited for (WebKit sends loopback past every proxy: docs/browser.md › The spike); a listener could pace a remote thread's page but not a local one, still to decide |
 | PaneBrowser: the element's popover drawn in the page beside it | A native popover over the page, beside the element (else left of it, else under it), following it as the page scrolls; only the outline and tag are drawn in the page | Its buttons are Shepherd's controls, and the page can't reach or restyle them |
@@ -3341,7 +3343,10 @@ Changes alone.
   wide, a popover with padding 4: a row of 4×6 with a 12pt `textSecondary` globe, "Agent opened"
   and the page in Geist Mono 12 (`localhost:5173/checkout`, the host, port, path and query as the
   address field shows them), and its age in `textTertiary` ("10s", "2m", "1h", counting up). It
-  moves left when the strip is too narrow for it.
+  moves left when the strip is too narrow for it. On a remote thread whose host offers
+  `browser.drive.v1` the same dot and tip mark the viewer's tab for a page the agent opened in the
+  host's own browser (no Mac owned it), and for one it opened through this Mac's claim while the tab
+  was out of sight.
 - **Remote threads** (docs/browser.md › Remote): the tab shows when the host lists
   `browser.tunnel.v1`. The page is a web view on this Mac whose URL stays `localhost:5173/checkout`;
   its traffic to the host's loopback ports goes to the host through the authenticated connection
@@ -3351,16 +3356,23 @@ Changes alone.
   listens on, one below 1024 or one another thread's page holds is refused, nothing loads, and a
   notice card (`NWBrowserNotice`: a 12pt `lanternText` glyph, the reason in `ui`, a close button;
   `bgRaised`, radius 12, a `lantern` line, 12pt from the pane's sides) says why. A port a page names is
-  held until the thread or its host goes away. **The agent's page and this one are different pages**
-  until agents drive a remote thread's page from the viewer's Mac: nothing the agent opens on the host
-  shows here, and the dot and the tip stay off (a review pi opens on a host is likewise the host's view
-  state).
-- **Not built yet:** Throttle to 3G (see the departures), agents driving a remote thread's page from
-  the viewer's Mac, and Split below and the pane's own window (below).
+  held until the thread or its host goes away. **The agent drives this page**, on a host that offers
+  `browser.drive.v1` (the agent is using it, below): the tab on screen claims the agent's browser on the
+  host, and the agent's tools run on this Mac's page, with the ring, the pointer, the card and Take
+  over; the claim is let go 30 seconds after the tab is out of sight, and another Mac that claims the
+  browser takes it (this tab's notice card says so, and showing the tab again takes it back). A tab
+  with nothing open opens the page the agent left on the host (cookies are not carried over), and a
+  page the agent opens on the host while no Mac owns its browser marks the Browser tab with the dot
+  and its tip, like a local thread's, never opening the pane by itself. A host's agent may open only
+  that host's own loopback ports and public addresses here, never this Mac's network (docs/browser.md
+  › Remote). On an older host the agent drives the host's own page, which this tab does not show, and
+  the dot and the tip stay off (a review pi opens on a host is likewise the host's view state).
+- **Not built yet:** Throttle to 3G (see the departures), and Split below and the pane's own window
+  (below).
 - **The agent is using it** (`NWAgentRing`, `NWAgentPointer`, `NWAgentCard`, `NWBrowserAgentOverlay`
   in ShepherdUI `Components/Browser/BrowserAgent.swift`; PaneStates › BrowserPane · the agent is
   using it; docs/browser.md): the agent drives the same page you see, through its `browser_*` tools
-  (only a local thread's, only on its own page). While a tool runs, and for four seconds after the
+  (on its own thread's page; on a remote thread, the page this Mac shows, through a claim). While a tool runs, and for four seconds after the
   last (a run of tools keeps it up), the pane draws over the page, natively and never in it:
   - a 2pt `running` ring inset the page area (above the console drawer, below the toolbar), and
     an 18pt `running` pointer glyph (the board's arrow, a white edge) at the last click's or
@@ -4215,6 +4227,15 @@ nothing here changes your pi."
     docs/browser.md › Remote). It adds no privilege beyond what a token already grants (a client can
     type into this Mac's terminals), it is capped (64 tunnels per client, 256 in all) and closed when
     idle, and every one ends when the client disconnects. There is no switch for it yet.
+  - What a token opens, the other way: a connected client that shows a thread's Browser tab can
+    **own that agent's browser** on this Mac (`browser.drive.v1`): this Mac then hands the agent's
+    browser tools to that client instead of its own page, and the client's answers become the tools'
+    results. One client owns an agent's browser at a time (the last to claim), at most 32 agents per
+    client, and it ends with the client's connection or 30 seconds after its tab is out of sight. It
+    adds no privilege beyond what a token already grants (a client can already message the agent), and
+    it lets this Mac's agent act on the client's web view, which the client confines to this Mac's
+    own loopback ports and public addresses (docs/browser.md › Remote; SECURITY.md). There is no
+    switch for it yet either.
 
 #### Keyboard (SettingsKeyboard)
 
@@ -9504,11 +9525,11 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | NavDesigns | Designs page; Design tool › Designs | Built (Mac, behind the Design tool experiment; systems as names only) |
 | NavAutomations | Automations page; Sidebar (no When, Next or tabs: departures) | Built |
 | NavHosts | Hosts page; Sidebar; Settings › Remote (no daemon, Load or disk use: departures) | Built |
-| PaneBrowser | Side pane: Browser | Partial (local threads: the page, toolbar, viewport, Select an element, composer chip, console, the agent using it and its thread lines; remote threads: the same page through the tunnel, its host chip and Start on the host, not the agent driving it; not Throttle to 3G) |
+| PaneBrowser | Side pane: Browser | Partial (local threads: the page, toolbar, viewport, Select an element, composer chip, console, the agent using it and its thread lines; remote threads: the same page through the tunnel, its host chip and Start on the host, and the agent on the host driving it, with the card, Take over, the dot and its tip; not Throttle to 3G) |
 | PaneArtifacts | Side pane (Artifacts) | Not built yet |
 | PaneArtifactEdit | Side pane (Artifacts › Editing in place) | Not built yet |
 | PaneFiles | Side pane (Files) | Not built yet |
-| PaneStates | Side pane (tabs, dot, narrow, ⋯, button); Side pane: Browser; Side pane: Artifacts, Files | Partial (Browser: nothing open, viewport, the agent using it and the tab's tip built; a remote thread's Browser tab built without the dot) |
+| PaneStates | Side pane (tabs, dot, narrow, ⋯, button); Side pane: Browser; Side pane: Artifacts, Files | Partial (Browser: nothing open, viewport, the agent using it and the tab's tip built, on a remote thread too) |
 | ContextDetails | Composer, questions, and menus › Context meter | Built |
 | ContextFull | Composer, questions, and menus › Context meter | Built |
 | ContextCompacted | Composer, questions, and menus › Context meter; Thread › Compactions | Built |
