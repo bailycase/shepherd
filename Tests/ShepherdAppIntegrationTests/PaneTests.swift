@@ -213,6 +213,7 @@ struct PaneControlTests {
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
         let key = TerminalPanelKey(host: nil, tab: agent.tab.id)
         vm.selectAgent(agent.agent.id)
+        #expect(vm.terminalTarget?.tabs.count == 1, "the panel has seen the terminal that was already there")
 
         let box = SendableReply()
         let request = Task { box.reply = try await app.extensionRequest(.openPane(

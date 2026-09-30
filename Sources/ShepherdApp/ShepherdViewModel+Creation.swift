@@ -230,9 +230,9 @@ extension ShepherdViewModel {
         let cwd = (config.workingDirectory as NSString).expandingTildeInPath
         let name = config.initialName ?? Self.provisionalName(for: config.initialPrompt)
         let agentID = AgentID()
-        // A new agent is exactly its pi pane. Extra panes are the agent's to
-        // open (see the panes extension) or the user's via ⌘D — starting
-        // split put an idle shell in front of every new agent.
+        // A new agent is exactly its thread. Terminals are the agent's to
+        // open (see the panes extension) or the user's via ⌘D or ⌘J — starting
+        // with one put an idle shell in front of every new agent.
         let primary = LeafPane(cwd: cwd, agentID: agentID)
         let order = (state.tabs.filter { $0.spaceID == space.id }.map(\.order).max() ?? -1) + 1
         let tab = Tab(

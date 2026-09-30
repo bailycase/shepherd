@@ -1224,7 +1224,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         guard let tab = store.state.tabs.first(where: { $0.id == agent.tabID }),
               let paneID = agent.paneID, let leaf = tab.layout.leaf(withID: paneID) else {
-            unavailable("The agent has no thread pane.")
+            unavailable("The agent has no thread.")
             return
         }
         // A pi that stopped before it served: its agent waits, and says why (or that Retry is
@@ -1250,7 +1250,7 @@ public final class SessionServer: @unchecked Sendable {
             return
         }
         guard let thread = session.thread else {
-            unavailable("The agent is not running in its pane.")
+            unavailable("The agent is not running a thread.")
             return
         }
         if !thread.turnChangesSet { thread.setTurnChanges(changes.turns(agentID: agentID)) }

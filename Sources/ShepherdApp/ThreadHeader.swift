@@ -9,7 +9,7 @@ import ShepherdRemote
 /// then the one side-pane button and the options menu (Refresh Thread, Rename…, Pin). Everything comes in as values, compared by
 /// value (closures by presence), so the workspace header rerunning for a status report or a
 /// selection elsewhere leaves it alone (`.equatable()`). The terminal panel has no button here:
-/// ⌘J, the Pane menu and the palette show it.
+/// ⌘J, the Terminal menu and the palette show it.
 struct ThreadHeader: View, Equatable {
     static func == (a: ThreadHeader, b: ThreadHeader) -> Bool {
         a.store === b.store && a.project == b.project && a.title == b.title && a.leadingInset == b.leadingInset

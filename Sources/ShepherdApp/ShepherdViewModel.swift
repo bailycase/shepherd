@@ -380,8 +380,8 @@ final class ShepherdViewModel {
         openTerminalPane(besideAgent: agent, running: "gh auth login")
     }
     @ObservationIgnored private var childSweepTimer: Timer?
-    /// Focus is recorded per layout on every change (clicks, ⌥⌘←/→, splits),
-    /// so returning to an agent restores the pane you were last working in.
+    /// Focus is recorded per layout on every change (clicks, tab switches, new terminals),
+    /// so returning to an agent restores the terminal (or thread) you were last working in.
     var focusedPaneID: PaneID? {
         didSet {
             guard let paneID = focusedPaneID, paneID != oldValue else { return }
