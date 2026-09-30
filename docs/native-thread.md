@@ -368,6 +368,42 @@ one prompt at a time.
   app kills pi on quit (asking first while agents work), and on relaunch every agent resumes
   idle, so a restored queue could only come back paused against a run that no longer exists.
 
+## Retry
+
+Retry (a turn's footer, its error card, a Turn failed banner) retries the latest turn in place
+(`NativeThreadRequest.retry`, `retry` in `supportedActions`, remotely `native.retry.v1`). pi's
+session is a tree, but RPC has no command to move in it, and `fork` would start a new session
+(clearing the agent's final name). So the status extension, which every agent loads, registers
+`/shepherd-retry <ms>`, and the host sends it as a prompt (`RPCThreadState+Retry.swift`).
+
+- **The command** runs in pi with the command context: idle only, it finds the user message pi
+  stamped at `<ms>` on the active branch (the last such), `navigateTree`s to it without a
+  summary (pi moves the leaf to the message's parent), and sends the message's content again,
+  text and images (`pi.sendUserMessage`). The failed turn stays in the session file, off the
+  active branch; the model sees the prompt once. Anything else is a `notify` and no change. It
+  never throws into pi, and the host leaves it out of the composer's commands.
+- **The host** takes it only while pi is idle (`busy` otherwise; never queued or steered) and
+  only for the latest turn's message: `entryID` in history with no later user message but ones
+  steered into its turn (`not_latest`). One sent just as pi settled waits for the Changes
+  engine's capture of that turn, then goes through `beforePrompt` like a send. Until pi's run
+  starts, the command is a dispatch, so the queue holds.
+- **The projection:** pi reports no event for the move. The host drops the message and
+  everything after it from history as it sends the command (the old bubble and its error card
+  go at once), and reads `get_messages` again when pi answers the prompt. pi answers only after
+  the command ran (before the resent turn's `agent_start`), so that history is the active
+  branch; the resent message joins as any user `message_start` does, with a new `user:<ms>` id,
+  and the reply streams in the old one's place. The session and generation stay, so clients
+  keep the thread (no remount), and the refresh is the ordinary one (`historyVersion`, one
+  revision), so the data-path budgets hold. If pi refused the command, the same refresh brings
+  the turn back.
+- **Clients:** `NativeThreadRow.retryEntryID` is set on the latest reply only, once it has
+  finished (`offersRetry`); `NativeThreadStore.retry` sends `retry`, or, from a host without it
+  (a snapshot without `retry`; `RemoteHostClient` strips it from a host without
+  `native.retry.v1`), sends the prompt again as before.
+- **Tests:** `RetryTests` and `RetryStoreTests` (the stub answers `/shepherd-retry` as pi does,
+  and its `flaky` turn fails once), and `Tests/Extensions/retry.test.mjs` against pi's real
+  runtime.
+
 ## Context and compaction
 
 What fills the model's context window rides the snapshot as `context` (`NativeThreadContext`,
@@ -640,7 +676,7 @@ components ([DESIGN.md](../DESIGN.md) specifies their look):
 - **`ThreadView`:** the scroll view, tail following, turn jumps (⌥⌘↑/↓), notices, and the empty
   thread.
 - **`ThreadTurns`:** the user bubble, the agent turn (its parts, then the changes card and the
-  footer with copy and retry), and, between tools, the live "Thinking…" (DESIGN.md › Thread ›
+  footer with copy and retry, the latest turn only; see Retry), and, between tools, the live "Thinking…" (DESIGN.md › Thread ›
   Live text). A turn tracks the pointer over it
   (`MessageHover`): its time and footer show only while it is hovered.
 - **`ThreadTools`:** activity lines, their calls, and the sheet for a call's full output or raw
