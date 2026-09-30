@@ -288,8 +288,9 @@ lifecycle owner. Split them only if ordering rules stay visible in one place.
 ## Extensions and the extension socket
 
 The bundled pi extensions report to the app over `shepherd.sock` in the support directory. The
-directory is mode `0700` and the socket `0600`. The socket is same-user IPC, not an
-authentication boundary ([SECURITY.md](SECURITY.md)).
+directory is mode `0700` and the socket `0600`. The socket is same-user IPC with no token: what
+keeps one agent from acting as another is which process is on the other end (**Who a connection
+speaks for**, below; [SECURITY.md](SECURITY.md)).
 
 - **`shepherd-status.ts`:** agent status and the active pi session.
 - **`shepherd-namer.ts`:** proposes a title.
@@ -308,9 +309,9 @@ authentication boundary ([SECURITY.md](SECURITY.md)).
 - **`shepherd-subagents.ts`:** publishes subagent runs with `setAgentChildren`.
 - **`shepherd-children.ts`:** opens a `helloChildren` control connection for subagent commands.
 - **`shepherd-browser.ts`:** the `browser_*` tools, on the thread's own Browser page. It sends
-  `helloBrowser` first on every connect, which binds the connection to its agent (accepted only
-  from the pid of the pi process the server spawned for that agent, `browserPeerCheck`); the server
-  serves a `browser` request only on the connection registered as the agent it names
+  `helloBrowser` first on every connect, which binds the connection to its agent (like every
+  message that names an agent, accepted only from the pi the server started for it, `extensionPeerCheck`);
+  the server serves a `browser` request only on the connection registered as the agent it names
   (`routeBrowserRequest`, with a 120 s deadline), the app answers through `onBrowserRequest`, and
   `browserResult` carries text and, for a screenshot, an image. Loaded only for a thread
   (`TerminalSessionStore.wantsBrowser`, `SHEPHERD_EXT_BROWSER`), never a design's agent or a
@@ -342,6 +343,81 @@ authentication boundary ([SECURITY.md](SECURITY.md)).
 The server owns PTYs but not layouts, so pane requests from an agent (and from remote clients,
 through `onRemotePaneRequest`) are forwarded to the GUI and answered with a `PaneOutcome`.
 
+### Who a connection speaks for
+
+**An extension-socket connection speaks only for the agent whose pi process opened it.** The
+socket is reachable by anything an agent runs (its bash tool inherits `SHEPHERD_SOCKET`, and
+`agent_list` names the other agents), so an `agentID` inside a message proves nothing. Every
+message that names an agent as its *actor* is served only when the connection's process is the
+pi this server started for that agent. Remote TCP connections are a different door: they
+authenticate with the token and never reach this path.
+
+- **The process.** `SessionServer` reads the peer's pid off each accepted Unix-socket fd once,
+  when it accepts it (`getsockopt(fd, SOL_LOCAL, LOCAL_PEERPID)`, what the kernel recorded when
+  the peer connected; `ExtensionConnection.peerPID`). It cannot be read once a peer that has
+  fully closed is gone (`ENOTCONN`, measured), which is why it is read at accept and not per
+  message. The extensions run inside pi and pi's node is one process (the login shell, the
+  launcher and node each `exec`), so the pid is the one the app spawned
+  (`RPCSession.processIdentifier`; `EngineSmokeTests.anExtensionInPiConnectsFromTheProcessTheAppStarted`
+  runs it against the real engine, and `ExtensionIdentityFlowTests` through the app's own launch).
+  A one-shot sender (the namer, the subagents extension) writes and half-closes with
+  `socket.end`, which leaves the fd open until the server closes it, so its pid is still there.
+  A pid that could not be read speaks for no agent.
+- **Which pi.** Per message, `SessionServer.isPiProcess(_:ofAgent:)` looks the agent up in the
+  current state: the live RPC session bound to its thread pane, so a pi that restarted (Retry)
+  is followed and one that exited or was replaced speaks for no one. One exception, for one
+  reason: an extension connects within a moment of its pi starting, and the app binds the pi to
+  the pane (`updatePaneSession`) a few main-actor hops after it spawns it, so a pi that no
+  pane holds yet speaks for the agent it was launched for (`SHEPHERD_AGENT_ID`, which the app
+  sets on every agent's pi, kept as `RPCSession.launchAgentID`) and for no other.
+- **What is checked.** `ExtensionMessage.speaksFor` says whose voice a message is (an exhaustive
+  switch: a new message must say), and `SessionServer.handleLine` asks before it reads
+  anything else in the message. So a refused `helloAgent`, `helloChildren` or `helloBrowser`
+  registers nothing and displaces no one. A refused **request** (it carries an `id`,
+  `ExtensionMessage.replyID`) is answered with an error, `wrong_process` (`not_registered` for a
+  `browser` request), and does nothing; a refused message nobody answers is dropped. The first
+  refusal on a connection is logged.
+- **A target is not an actor.** `sendToAgent` and `coordinateAgent` name a target as well; the
+  check is on the sender (`agentID`), and the existing rules on the target stand.
+- **One seam.** `SessionServer.extensionPeerCheck` replaces the question in tests (given the
+  agent and the peer's pid); left `nil` it is the real one. `ScratchServer` installs a permissive
+  one, because a raw `ExtensionClient` is not an agent's pi, and `useRealPeerCheck()` turns it
+  off; `ExtensionIdentityTests` and `BrowserRelayTests` run the real one against stub pis.
+
+| Messages | From | Refused as |
+| --- | --- | --- |
+| `setAgentStatus`, `setAgentSession`, `setAgentName`, `setAgentChildren`, `notify`, `mcpReport`, `agentResponse`, `cancelAgentRequest` | status, namer, subagents, panes, mcp | dropped |
+| `helloAgent`, `helloChildren`, `helloBrowser` | panes, children, browser | dropped; registers nothing, displaces no one |
+| `listPanes`, `openPane`, `closePane`, `focusPane`, `sendPaneInput`, `readPane` | panes | `wrong_process` |
+| `listAgents`, `sendToAgent`, `spawnAgent`, `coordinateAgent` (read, steer, interrupt, status, delete) | panes | `wrong_process` |
+| `requestReview` | review | `wrong_process` |
+| `suggestInstruction` | instructions | `wrong_process` |
+| `designRead`, `designWriteBoard`, `designUpdateIndex`, `designComments`, `designCommentReply`, `designSystemRead`, `designSystemWrite`, `designProposeComments` | design | `wrong_process` |
+| `designGet`, `designNote` | design-refs | `wrong_process` |
+| `mcpCredentials` | mcp | `wrong_process` (it answers with secrets) |
+| `browser` | browser | `not_registered` |
+| `createAutomation`, `listAutomations`, `updateAutomation`, `deleteAutomation`, `startAutomation`, `stopAutomation` | panes (`automation_*`) | **not covered**: they name no agent (any pi session may send them), so any process that reaches the socket is served |
+| `childCommandResult` | children | not covered, and not needed: accepted only from the connection the command went to |
+
+**Legitimate speakers.** Every bundled extension runs inside pi and connects from pi's own pid;
+none starts a separate process that connects. Native subagents are separate pi processes, but
+a child's environment has no `SHEPHERD_AGENT_ID` or `SHEPHERD_SOCKET` (every inherited
+`SHEPHERD_*` is removed, so none of Shepherd's extensions would connect) and it loads only the
+bridge and the user's own extensions (`--no-extensions`, `SHEPHERD_CHILD`); the children
+extension talks to its own parent over `helloChildren`, from the parent's pid. A design's agent, an automation's run, an agent that
+`/new` moved to another session (same process), one restarted by Retry (a new pi, bound to the
+pane) and one the app starts for a relaunch are all ordinary agents with their own pi. A pi
+run by hand in a terminal pane has `SHEPHERD_SOCKET` blanked and speaks for no one. A process
+that is not an agent's pi is not let in by loosening the rule: give it a message that names no
+agent, or extend `isPiProcess` with how it proves itself, and list it here.
+
+**Limits.** A same-user process that could take pi's own identity (attach a debugger to it,
+inject into it) is beyond this: the shipped engine's node has the hardened runtime, and Shepherd
+adds no sandbox ([SECURITY.md](SECURITY.md)). A connection's pid is fixed when it is accepted; a
+pid the kernel later gives to a different process could only matter to a connection that
+outlived the process that opened it, which needs a descendant that inherited the socket (node's
+sockets are close-on-exec, and the bash tool's children get only their standard streams).
+
 **Framing.** Frames are newline-delimited JSON capped at 1 MiB. Each client has ordered, bounded,
 nonblocking replies. A framing or size violation disconnects the client; a frame that fails to
 decode is logged and ignored.
@@ -352,9 +428,13 @@ the matching `*Extension.swift` writes to the support directory from an embedded
 **Adding an extension message:**
 
 1. Add the case to `ExtensionMessage` or `ExtensionReply`, including every Codable arm.
-2. Handle it in `SessionServer.handleLine` and the app handler it routes to.
-3. Add a round-trip row and a server behavior test.
-4. Update the canonical extension and its embedded literal together
+2. For an `ExtensionMessage`, say whose voice it is: its line in `speaksFor` (the agent it acts
+   as, or `nil` only if it names no agent) and in `replyID` (the `id` a refusal is addressed to).
+   `handleLine` then refuses it from any process but that agent's pi; see **Who a connection
+   speaks for**.
+3. Handle it in `SessionServer.handleLine` and the app handler it routes to.
+4. Add a round-trip row and a server behavior test.
+5. Update the canonical extension and its embedded literal together
    (`scripts/sync-embedded-extension.py`).
 
 ## Remote

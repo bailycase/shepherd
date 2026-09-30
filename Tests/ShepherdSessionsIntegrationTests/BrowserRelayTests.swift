@@ -14,12 +14,12 @@ struct BrowserRelayTests {
     private let click = BrowserRequest.click(ref: "e1", double: false, note: nil)
 
     /// A server that lets this test process speak as an agent's browser extension. The real check
-    /// binds a registration to the agent's own pi process (`onlyTheAgentsOwnPi…`, below), which
-    /// a raw client in the test process is not.
+    /// binds a connection to the agent's own pi process (`onlyTheAgentsOwnPi…`, below), which a
+    /// raw client in the test process is not.
     private func scratch() throws -> ScratchServer {
         let h = try ScratchServer.fresh()
         let own = getpid()
-        h.server.browserPeerCheck = { _, peer in peer == own }
+        h.server.extensionPeerCheck = { _, peer in peer == own }
         return h
     }
 
@@ -127,6 +127,7 @@ struct BrowserRelayTests {
     /// naming an agent from a socket is not enough to drive that agent's page.
     @Test func aProcessThatIsNotTheAgentsPiRegistersNothing() async throws {
         let h = try ScratchServer.fresh()
+        h.useRealPeerCheck()
         defer { h.stop() }
         let (a, _, _) = try await workspace(h)
         let app = App()
@@ -138,17 +139,18 @@ struct BrowserRelayTests {
         #expect(app.asked.current.isEmpty)
     }
 
-    /// The check is asked with the agent and the client's own pid, and a refusal leaves the
-    /// connection already registered where it is (a refused hello must not disconnect the holder).
+    /// The check is asked with the agent and the client's own pid for every message, and a refusal
+    /// leaves the connection already registered where it is (a refused hello must not disconnect
+    /// the holder, and registers nothing even when the impostor's requests would be allowed).
     @Test func aRefusedRegistrationLeavesTheCurrentConnectionInPlace() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let (a, _, _) = try await workspace(h)
         let app = App()
         answering(h, app, with: .text("ok"))
-        let asked = Locked<[(AgentID, pid_t)]>([])
+        let asked = Locked<[(AgentID, pid_t?)]>([])
         let allowed = Locked(true)
-        h.server.browserPeerCheck = { agent, peer in
+        h.server.extensionPeerCheck = { agent, peer in
             asked.withValue { $0.append((agent, peer)) }
             return allowed.current
         }
@@ -156,14 +158,16 @@ struct BrowserRelayTests {
         try register(holder, as: a.id)
         try holder.send(.browser(id: 1, agentID: a.id, request: click))
         #expect(try await holder.reply() == .browserResult(id: 1, text: "ok", image: nil))
-        #expect(asked.current.count == 1 && asked.current[0].0 == a.id && asked.current[0].1 == getpid())
+        #expect(asked.current.count == 2, "the hello and the request")
+        #expect(asked.current.allSatisfy { $0.0 == a.id && $0.1 == getpid() })
 
         allowed.withValue { $0 = false }
         let impostor = try ExtensionClient(path: h.socketPath)
         try register(impostor, as: a.id)
+        try await eventually("the hello to be asked about") { asked.current.count == 3 }
+        allowed.withValue { $0 = true }
         try impostor.send(.browser(id: 1, agentID: a.id, request: click))
         guard case .error(1, "not_registered", _) = try await impostor.reply() else { Issue.record("the impostor was served"); return }
-        #expect(asked.current.count == 2)
 
         try holder.send(.browser(id: 2, agentID: a.id, request: click))
         #expect(try await holder.reply() == .browserResult(id: 2, text: "ok", image: nil), "the holder was not displaced")
@@ -175,6 +179,7 @@ struct BrowserRelayTests {
     /// displace its connection.
     @Test func onlyTheAgentsOwnPiRegistersAndOthersCannotDisplaceIt() async throws {
         let h = try ScratchServer.fresh()
+        h.useRealPeerCheck()
         defer { h.stop() }
         let pi = try await PiAgent.launch(on: h)
         let app = App()
