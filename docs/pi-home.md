@@ -21,12 +21,12 @@ Turn off keeps the connection; Forget removes it. Neither changes the external s
 path with `-e` and pins `SHEPHERD_CLIPROXYAPI_CONFIG` for every pi it starts: agents, the model
 catalog and drafts. Native helpers (subagents; [native-subagents.md](native-subagents.md)) are
 not started through the launcher, so `shepherd-children.ts` does the same for them
-(`managedProvider`, `childLaunch`): it passes `-e <home>/shepherd-cliproxyapi.ts` and sets
-`SHEPHERD_CLIPROXYAPI_CONFIG` to `<home>/shepherd-cliproxyapi.json` after it has dropped every
-other `SHEPHERD_*` variable, and only while the parent's home (`PI_CODING_AGENT_DIR`, which the
-launcher pins) holds both files. A helper can therefore run on a `cliproxyapi/<id>` model; with no
-connection it is launched exactly as before, and a `cliproxyapi/…` model it can't see is refused
-with the providers it does have. The extension is inert without configuration. It registers the distinct provider
+(`managedProvider`, `childLaunch`): from the parent's pinned `SHEPHERD_CLIPROXYAPI_CONFIG` it passes
+`-e <home>/shepherd-cliproxyapi.ts` (the extension beside the connection file) and keeps that one
+variable after it has dropped every other `SHEPHERD_*` variable, and only while both files exist. A
+helper can therefore run on a `cliproxyapi/<id>` model; with no connection it is launched exactly as
+before, and a `cliproxyapi/…` model it can't see is refused with the providers it does have. The
+extension is inert without configuration. It registers the distinct provider
 `cliproxyapi`, so an imported `cpa` provider and its credentials remain untouched. Native provider
 authentication uses the saved key literally, never as an environment reference or shell command.
 Connect accepts only a key of printable ASCII, the characters a request header can carry: a

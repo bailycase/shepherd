@@ -85,10 +85,10 @@ test("bash operations preserve cwd/env/output, timeouts and abort kill normal de
 });
 
 function fixtureServer() {
-  const requests = [];
+  const requests = [], authorizations = [];
   const server = http.createServer(async (req, res) => {
     let raw = ""; for await (const chunk of req) raw += chunk;
-    const body = JSON.parse(raw); requests.push(body);
+    const body = JSON.parse(raw); requests.push(body); authorizations.push(req.headers.authorization);
     const messages = body.messages, last = messages.at(-1);
     const text = typeof last.content === "string" ? last.content : (last.content ?? []).map((p) => p.text ?? "").join("\n");
     const say = (delta, finish = "stop") => {
@@ -118,7 +118,7 @@ function fixtureServer() {
       say({ content: last.role === "tool" ? "tool finished" : `reply:${text}` }, text.includes("TOKEN_LIMIT") ? "length" : "stop");
     }
   });
-  return { server, requests };
+  return { server, requests, authorizations };
 }
 
 // The extension's control tick, observed: which intervals it holds right now.
@@ -246,12 +246,74 @@ test("an unchanged native children list is not republished", async () => {
   }
 });
 
+test("managed CLIProxyAPI reaches native starts, resumes and workflow children without parent controls", { timeout: 30000 }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-managed-child-"));
+  const saved = { ...process.env };
+  const { server, requests, authorizations } = fixtureServer();
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  let h;
+  try {
+    process.env.HOME = dir; delete process.env.PI_SUBAGENT_EXTRA_AGENT_DIRS;
+    process.env.PI_CODING_AGENT_DIR = path.join(dir, "pi");
+    process.env.PI_OFFLINE = "1";
+    process.env.SHEPHERD_NATIVE_CHILDREN = "1"; process.env.SHEPHERD_AGENT_ID = "fixture";
+    process.env.SHEPHERD_SOCKET = path.join(dir, "absent.sock"); process.env.SHEPHERD_EXT_CHILDREN = source;
+    fs.mkdirSync(process.env.PI_CODING_AGENT_DIR);
+    // PiHome installs this provider outside user extension discovery and passes its config path.
+    process.env.SHEPHERD_CLIPROXYAPI_CONFIG = path.join(process.env.PI_CODING_AGENT_DIR, "shepherd-cliproxyapi.json");
+    fs.writeFileSync(process.env.SHEPHERD_CLIPROXYAPI_CONFIG, JSON.stringify({ enabled: true,
+      baseURL: `http://127.0.0.1:${server.address().port}/v1`, apiKey: "local-fixture-not-secret", updatedAt: 1,
+      models: [{ id: "managed-fixture" }] }));
+    const provider = path.join(process.env.PI_CODING_AGENT_DIR, "shepherd-cliproxyapi.ts");
+    fs.copyFileSync(path.join(root, "Extensions/shepherd-cliproxyapi.ts"), provider);
+    const guard = path.join(dir, "child-isolation.ts");
+    fs.writeFileSync(guard, `export default function() {
+      if (!process.env.SHEPHERD_CLIPROXYAPI_CONFIG) throw Error("managed provider config missing");
+      for (const name of ["SHEPHERD_AGENT_ID", "SHEPHERD_SOCKET", "SHEPHERD_NATIVE_CHILDREN", "SHEPHERD_EXT_CHILDREN"])
+        if (process.env[name]) throw Error("parent control leaked: " + name);
+    }`);
+    fs.mkdirSync(path.join(dir, ".pi", "agents"), { recursive: true });
+    fs.writeFileSync(path.join(dir, ".pi", "agents", "managed.md"),
+      `---\nname: managed\ndescription: managed child\ntools: read\nextensions: ${guard}\n---\nRead only.\n`);
+    fs.mkdirSync(path.join(dir, ".pi", "extensions"));
+    fs.writeFileSync(path.join(dir, ".pi", "extensions", "poison.ts"), 'throw Error("ambient project extension loaded")');
+    h = await harness(dir);
+    h.ctx.model = { provider: "cliproxyapi", id: "managed-fixture" };
+    h.ctx.modelRegistry.getAll = () => [h.ctx.model];
+    const child = await h.call("start", { task: "managed start", agent: "managed", mission: false });
+    const done = (await h.call("wait", { ids: [child.id], all: true, timeoutSeconds: 10 }))[0];
+    assert.equal(done.state, "complete", done.error);
+    assert.equal(done.model, "cliproxyapi/managed-fixture");
+    assert.match(done.output, /reply:managed start/);
+    await h.call("resume", { id: child.id, message: "managed resume" });
+    const resumed = (await h.call("wait", { ids: [child.id], all: true, timeoutSeconds: 10 }))[0];
+    assert.equal(resumed.state, "complete", resumed.error);
+    assert.match(resumed.output, /reply:managed resume/);
+    const workflow = await h.tool("shepherd_workflow", { async: false, mission: false,
+      workflowScript: 'return runs.run("managed", {agent:"managed", task:"managed workflow"});' });
+    assert.equal(workflow.state, "complete", workflow.error);
+    assert.equal(workflow.output.state, "complete");
+    assert.match(workflow.output.output, /reply:managed workflow/);
+    assert.equal(requests.length, 3);
+    assert.deepEqual(authorizations, Array(3).fill("Bearer local-fixture-not-secret"));
+    assert(requests.every((r) => r.model === "managed-fixture"), "never fall back to another provider");
+    assert(requests.every((r) => (r.tools ?? []).every((t) => ["read", "shepherd_parent_message"].includes(t.function.name))));
+  } finally {
+    await h?.shutdown();
+    await new Promise((r) => server.close(r));
+    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
+    Object.assign(process.env, saved);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, result, cancellation, continuation, inspector and late callbacks", { timeout: 120000 }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-native-"));
   const { server, requests } = fixtureServer();
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   const saved = { ...process.env };
   process.env.HOME = dir; delete process.env.PI_SUBAGENT_EXTRA_AGENT_DIRS;
+  delete process.env.SHEPHERD_CLIPROXYAPI_CONFIG;
   process.env.PI_CODING_AGENT_DIR = path.join(dir, "config");
   process.env.PI_OFFLINE = "1";
   process.env.SHEPHERD_NATIVE_CHILDREN = "1"; process.env.SHEPHERD_AGENT_ID = "fixture";
@@ -591,7 +653,12 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     const priorCatalog = h.ctx.modelRegistry.getAll;
     h.ctx.modelRegistry.getAll = () => [...priorCatalog(), { provider: "parent-only", id: "unavailable" }, { provider: "fixture", id: "parent-only-model" }];
     const beforeUnsupported = requests.length;
-    await assert.rejects(h.call("start", { task: "must not run", model: "parent-only/unavailable", role: "scout" }));
+    await assert.rejects(h.call("start", { task: "must not run", model: "parent-only/unavailable", role: "scout" }),
+      /Model "parent-only\/unavailable" not found/);
+    const unavailable = await h.call("result", { id: (await h.call("result", {})).at(-1).id });
+    assert.equal(unavailable.state, "failed");
+    assert.equal(unavailable.exitCode, 1);
+    assert.match(unavailable.error, /Model "parent-only\/unavailable" not found/);
     assert.equal(requests.length, beforeUnsupported);
     await assert.rejects(h.call("start", { task: "must not run", model: "fixture/parent-only-model", role: "scout" }), /unavailable in isolated Pi/);
     assert.equal(requests.length, beforeUnsupported);
@@ -843,6 +910,7 @@ test("the global instructions copied into Shepherd's pi home reach a child that 
   try {
     process.env.HOME = dir; delete process.env.PI_SUBAGENT_EXTRA_AGENT_DIRS;
     process.env.PI_CODING_AGENT_DIR = path.join(dir, "config");
+    delete process.env.SHEPHERD_CLIPROXYAPI_CONFIG;
     process.env.PI_OFFLINE = "1";
     process.env.SHEPHERD_NATIVE_CHILDREN = "1"; process.env.SHEPHERD_AGENT_ID = "fixture";
     process.env.SHEPHERD_SOCKET = path.join(dir, "shepherd.sock"); process.env.SHEPHERD_EXT_CHILDREN = source;

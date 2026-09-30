@@ -180,13 +180,14 @@ enum ChildrenExtension {
         const idSchema = Type.String({ minLength: 1, maxLength: 80 });
 
         // The managed CLIProxyAPI provider (docs/pi-home.md) is loaded by Shepherd's launcher, `<home>/bin/pi`,
-        // which passes `-e <home>/shepherd-cliproxyapi.ts` and pins `SHEPHERD_CLIPROXYAPI_CONFIG`. A helper
-        // isn't started through the launcher, so it gets both here: only while the parent's home holds the
-        // extension and a connection file (the launcher pins the home as PI_CODING_AGENT_DIR).
+        // which passes `-e <home>/shepherd-cliproxyapi.ts` and pins `SHEPHERD_CLIPROXYAPI_CONFIG`, the
+        // connection file beside it. A helper isn't started through the launcher, so it gets both here from the
+        // parent's pinned path, and only while both files exist: with no connection it is launched as it
+        // always was, and a launch never fails on a missing extension file.
         export function managedProvider(env = process.env) {
-          const home = env.PI_CODING_AGENT_DIR;
-          if (!home || !path.isAbsolute(home)) return undefined;
-          const extension = path.join(home, "shepherd-cliproxyapi.ts"), config = path.join(home, "shepherd-cliproxyapi.json");
+          const config = env.SHEPHERD_CLIPROXYAPI_CONFIG;
+          if (!config || !path.isAbsolute(config)) return undefined;
+          const extension = path.join(path.dirname(config), "shepherd-cliproxyapi.ts");
           try { return fs.statSync(extension).isFile() && fs.statSync(config).isFile() ? { extension, config } : undefined; }
           catch { return undefined; }
         }
@@ -244,14 +245,13 @@ enum ChildrenExtension {
             + "Pass one of them as agent (role is an alias); shepherd_child_agents lists each with its source.";
         }
 
-        // A helper whose pi exited before it answered get_state: what it printed, and for a model it could
-        // not find, which providers a helper loads (the parent had one the helper doesn't).
-        export function childExitMessage(model, stderr) {
-          const text = String(stderr ?? "").trim();
-          if (!text) return "The helper's Pi exited before it was ready, and printed nothing.";
-          const missing = /Model ".*" not found/.test(text);
-          return `The helper's Pi exited before it was ready: ${clip(text, 800)}`
-            + (missing ? ` ${model} resolves in this Pi, so its provider is one the helper doesn't load: a helper loads Shepherd's managed provider, the user's enabled extensions and a profile's own extensions, not a project's or another CLI-only one.` : "");
+        // A helper whose pi died before it served says why on stderr (finish() returns that to the pending
+        // command). When it refused a `--model` the parent could resolve, this says what that means: the helper
+        // doesn't load that provider.
+        export function missingProviderHint(model, message) {
+          return /Model ".*" not found/.test(String(message ?? ""))
+            ? ` ${model} resolves in this Pi, so its provider is one the helper doesn't load: a helper loads Shepherd's managed provider, the user's enabled extensions and a profile's own extensions, not a project's or another CLI-only one.`
+            : "";
         }
 
         const THINKING_SUFFIX = /:(off|minimal|low|medium|high|xhigh|max)$/;
@@ -663,14 +663,14 @@ enum ChildrenExtension {
             run.exited = true;
             abortRelays(run);
             clearTimeout(run.drainTimer);
-            for (const pending of run.pending.values()) { clearTimeout(pending.timer); pending.reject(new Error("Child exited")); }
-            run.pending.clear();
             run.exitCode = code ?? undefined;
             if (run.cancelled) run.state = "stopped";
             else if (!run.settled || run.error || (code !== 0 && code !== null) || signal) {
               run.state = "failed";
               run.error ||= `Child exited before clean settlement (${signal ?? code}): ${run.stderr}`;
             } else run.state = "complete";
+            for (const pending of run.pending.values()) { clearTimeout(pending.timer); pending.reject(new Error(run.error || "Child exited")); }
+            run.pending.clear();
             run.endedAt = Date.now(); run.currentTool = undefined; run.paused = false;
             if (run.lastActivity?.kind === "running") run.lastActivity = { ...run.lastActivity, kind: "tool" };
             releaseWriter(run);
@@ -827,8 +827,8 @@ enum ChildrenExtension {
               if (!current(run) || signal?.aborted) throw new Error("Parent session ended or dispatch cancelled");
               await command(run, "prompt", { message });
             } catch (error) {
-              // A helper that dies before it serves (pi refuses a `--model` its providers don't list) says why on stderr.
-              if (error.message === "Child exited") error = new Error(childExitMessage(run.model, run.stderr));
+              const hint = missingProviderHint(run.model, error.message);
+              if (hint) error = new Error(error.message.trimEnd() + hint);
               await stop(run, clip(error.message)); throw error;
             }
             finally { signal?.removeEventListener("abort", abort); }

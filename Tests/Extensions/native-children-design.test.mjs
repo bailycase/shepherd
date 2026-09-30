@@ -107,7 +107,7 @@ function startParent({ dir, home, socketPath, design }) {
   const events = [];
   const env = { ...process.env, HOME: dir, PI_CODING_AGENT_DIR: home, PI_OFFLINE: "1", SHEPHERD_AGENT_ID: "designer-1", SHEPHERD_SOCKET: socketPath,
     SHEPHERD_NATIVE_CHILDREN: "1", SHEPHERD_EXT_CHILDREN: childrenSource };
-  delete env.SHEPHERD_CHILD; delete env.SHEPHERD_DESIGN_ID; delete env.PI_SUBAGENT_EXTRA_AGENT_DIRS;
+  delete env.SHEPHERD_CHILD; delete env.SHEPHERD_DESIGN_ID; delete env.PI_SUBAGENT_EXTRA_AGENT_DIRS; delete env.SHEPHERD_CLIPROXYAPI_CONFIG;
   if (design) env.SHEPHERD_DESIGN_ID = "d1";
   const extensions = design ? ["-e", designSource, "-e", childrenSource] : ["-e", childrenSource];
   const proc = spawn(process.execPath, [path.join(pkg, "dist/bundle/cli.js"), "--mode", "rpc", "--no-extensions", "--no-skills", "--no-prompt-templates",
@@ -266,7 +266,7 @@ test("a parent that draws no design refuses a profile's design tools before anyt
   fs.mkdirSync(path.join(home, "agents"));
   fs.writeFileSync(path.join(home, "agents", "design-editor.md"), PROFILE);
   await withEnv({ HOME: dir, PI_CODING_AGENT_DIR: home, PI_OFFLINE: "1", SHEPHERD_NATIVE_CHILDREN: "1", SHEPHERD_AGENT_ID: "plain", SHEPHERD_SOCKET: path.join(dir, "s"),
-    SHEPHERD_EXT_CHILDREN: childrenSource, SHEPHERD_DESIGN_ID: undefined }, async () => {
+    SHEPHERD_EXT_CHILDREN: childrenSource, SHEPHERD_DESIGN_ID: undefined, SHEPHERD_CLIPROXYAPI_CONFIG: undefined }, async () => {
     const h = await harness(dir, { models: [{ provider: "fixture", id: "fixture" }, { provider: "fixture", id: "helper" }], extra: { activeTools: ["design_read", "board_edit", "design_check"] } });
     try {
       await assert.rejects(h.call("start", { agent: "design-editor", task: "x", mission: false }),
