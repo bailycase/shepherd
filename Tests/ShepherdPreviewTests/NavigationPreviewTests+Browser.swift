@@ -42,8 +42,8 @@ extension PreviewTests {
         let session = BrowserSession(agentID: AgentID(), dataStores: .ephemeral)
         let root = URL(fileURLWithPath: "/repo")
         session.devServers = [
-            DevServer(script: "dev", command: "pnpm dev", packageName: "acme-web", directory: root, manifest: "package.json", port: 5173),
-            DevServer(script: "preview", command: "pnpm preview", packageName: "acme-web", directory: root, manifest: "package.json", port: 4173),
+            DevServer(script: "dev", command: "pnpm dev", packageName: "acme-web", directory: root.path, manifest: "package.json", port: 5173),
+            DevServer(script: "preview", command: "pnpm preview", packageName: "acme-web", directory: root.path, manifest: "package.json", port: 4173),
         ]
         let store = NativeThreadStore()
         try await Preview.render("browser-empty", size: Self.paneSize) {

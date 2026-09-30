@@ -86,6 +86,7 @@ enum RemoteSamples {
         .changesPatch(revision: revision, options: ChangesOptions()),
         .changesUndoTurn(turnID: op),
         .changesRedoTurn(turnID: op),
+        .devServers,
     ]
 
     static let revision = ChangesRevision(old: "3f2a91c0", new: "4b825dc6")
@@ -155,6 +156,10 @@ enum RemoteSamples {
         .changesPatch(text: "diff --git a/a b/a\n", truncated: false),
         .changesTurn(turn),
         .changesTurn(ChangesTurn(id: op, startedAt: 1, state: .unavailable, reason: "Shepherd quit before this turn ended.")),
+        .devServers([DevServer(script: "dev", command: "pnpm dev", packageName: "acme-web", directory: "/host/repo", manifest: "package.json", port: 5173),
+                     DevServer(script: "start", command: "npm start", packageName: nil, directory: "/host/repo/apps/api",
+                               manifest: "apps/api/package.json", port: nil)]),
+        .devServers([]),
     ]
 
     static let automation = AutomationID(rawValue: "automation")
@@ -281,11 +286,12 @@ struct RemoteRequestTests {
         switch request {
         case .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
              .closePane, .resizePaneSplit, .listDir, .listModels, .addSpace, .createAgent, .upload,
-             .creationOptions, .agentQuery, .agentAction, .automation, .instructions, .suggestions, .hostSettings, .skills, .design:
+             .creationOptions, .agentQuery, .agentAction, .automation, .instructions, .suggestions, .hostSettings, .skills, .design,
+             .tunnel:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 25
+    static let caseCount = 26
 
     static let samples: [RemoteRequest] = [
         .nativeThread(id: 80, agentID: S.agent, request: .snapshot(expectedSessionID: "s", beforeEntryID: "m:3", afterRevision: 9)),
@@ -317,6 +323,7 @@ struct RemoteRequestTests {
         .hostSettings(id: 27, request: .change(.bundledExtension(id: "review", on: true))),
         .skills(id: 29, request: .install(repo: "anthropics/skills", paths: ["skills/pdf"], commit: nil, invocation: nil)),
         .design(id: 31, request: .boards(designID: RemoteDesignSamples.design, paths: nil, knownShas: [:])),
+        .tunnel(.open(tunnel: 7, agentID: S.agent, port: 5173)),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -351,7 +358,8 @@ struct RemoteRequestTests {
 
     @Test(arguments: [RemoteAgentAction.rename(name: "x"), .deleteKeepingWorktree, .reorder(target: AgentID(rawValue: "b")),
                       .renameTerminal(paneID: PaneID(rawValue: "p"), title: "logs"), .renameTerminal(paneID: PaneID(rawValue: "p"), title: nil),
-                      .killTerminalProcess(paneID: PaneID(rawValue: "p"))])
+                      .killTerminalProcess(paneID: PaneID(rawValue: "p")),
+                      .openTerminal(cwd: "/host/repo/apps/web", command: "pnpm dev")])
     func everyAgentActionRoundTrips(_ action: RemoteAgentAction) throws {
         #expect(try Wire.roundTrip(RemoteRequest.agentAction(id: 1, agentID: S.agent, action: action))
             == .agentAction(id: 1, agentID: S.agent, action: action))
@@ -463,11 +471,11 @@ struct RemoteReplyTests {
         case .nativeThread, .uploadResult, .creationOptions, .helloOk, .agentResult, .ok, .paneOpened, .error,
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
              .agentCreated, .automationResult, .instructions, .suggestions, .hostSettings, .skills, .design, .designChanged,
-             .capabilitiesChanged:
+             .capabilitiesChanged, .tunnel:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 25
+    static let caseCount = 26
 
     static let samples: [RemoteReply] = [
         .nativeThread(id: 80, result: .accepted(operationID: S.op)),
@@ -499,6 +507,7 @@ struct RemoteReplyTests {
         .design(id: 32, result: .ok),
         .designChanged(designID: RemoteDesignSamples.design, revision: 8, commentsRevision: 2),
         .capabilitiesChanged(capabilities: [RemoteProtocol.designsCapability]),
+        .tunnel(.data(tunnel: 7, bytes: Data("HTTP/1.1 200 OK\r\n\r\n".utf8))),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -735,7 +744,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.terminalControlCapability,
             RemoteProtocol.designContextCapability,
             RemoteProtocol.nativeRetryCapability,
-            RemoteProtocol.nativeInterruptCapability,
+            RemoteProtocol.nativeInterruptCapability, RemoteProtocol.browserTunnelCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,
         ]
@@ -764,6 +773,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.hostSettingsCapability == "hostSettings.v1")
         #expect(RemoteProtocol.skillsCapability == "skills.v1")
         #expect(RemoteProtocol.piSkillsCapability == "skills.pi.v1")
+        #expect(RemoteProtocol.browserTunnelCapability == "browser.tunnel.v1")
         #expect(RemoteProtocol.designContextCapability == "design.context.v1")
         #expect(RemoteProtocol.nativeRetryCapability == "native.retry.v1")
         #expect(RemoteProtocol.nativeInterruptCapability == "native.interrupt.v1")

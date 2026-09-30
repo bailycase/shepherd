@@ -126,6 +126,9 @@ public final class SessionServer: @unchecked Sendable {
         var pendingReplyOffset = 0
         var queuedReplyBytes = 0
         var upload: RemoteFileUpload?
+        /// The Browser tunnels this remote client has open (`RemoteProtocol.browserTunnelCapability`),
+        /// made when it opens its first.
+        var tunnels: BrowserTunnelSession?
         /// The designs this remote client shows (`RemoteDesignRequest.watch`): it is pushed
         /// `designChanged` for these.
         var watchedDesigns: Set<DesignID> = []
@@ -584,13 +587,40 @@ public final class SessionServer: @unchecked Sendable {
     var advertisedCapabilities = RemoteProtocol.capabilities
     /// The host's Design tool experiment is on: it serves `designs.v1`. Server queue.
     private var designsServed = false
+    /// Browser tunnels (docs/browser.md › Remote): the limits and the count across every client.
+    private let tunnelHost = BrowserTunnelHost()
+    /// The host carries Browser tunnels for remote clients now (`browser.tunnel.v1`). Server queue.
+    private var tunnelsServed = true
+    /// Tests only: the tunnel limits (per client and per host, idle and connect times, the backlog
+    /// that pauses reads). Set before a client connects.
+    var browserTunnelLimits: BrowserTunnelHost.Limits {
+        get { queue.sync { tunnelHost.limits } }
+        set { queue.sync { tunnelHost.limits = newValue } }
+    }
+    /// Tunnels open across every client (tests).
+    var browserTunnelCount: Int { queue.sync { tunnelHost.count } }
 
     /// What this host tells a remote client it can do now: `designs.v1` (and Pencil markup and
     /// Delete with it) only while it serves designs. Server queue.
     private var offeredCapabilities: [String] {
         let designs = advertisedCapabilities.contains(RemoteProtocol.designsCapability)
-        return designsServed && designs ? advertisedCapabilities : advertisedCapabilities.filter {
-            !RemoteProtocol.designCapabilities.contains($0)
+        return advertisedCapabilities.filter {
+            (designsServed && designs || !RemoteProtocol.designCapabilities.contains($0))
+                && (tunnelsServed || $0 != RemoteProtocol.browserTunnelCapability)
+        }
+    }
+
+    /// Carries Browser tunnels for remote clients (`browser.tunnel.v1`) while `served`. Connected
+    /// clients that read it are told what the host offers now, and every tunnel is closed when it
+    /// goes off. On unless something turns it off (nothing does yet: docs/browser.md › Remote).
+    public func setBrowserTunnelsServed(_ served: Bool) {
+        queue.async {
+            guard self.tunnelsServed != served else { return }
+            self.tunnelsServed = served
+            let readers = self.clients.values.filter { $0.isRemote && $0.authenticated && $0.knowsDesigns }
+            if !served { for client in self.clients.values { client.tunnels?.endAll(code: BrowserTunnelCode.unsupported) } }
+            guard let payload = try? NDJSON.encode(RemoteReply.capabilitiesChanged(capabilities: self.offeredCapabilities)) else { return }
+            for client in readers { self.enqueuePayload(payload, to: client) }
         }
     }
     /// Which agent's own pane runs each session, for the store version it was built from.
@@ -1500,6 +1530,10 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             send(.agentResult(id: id, result: .terminals(terminals)), to: client)
+        case .tunnel(let frame):
+            remoteTunnel(frame, client: client)
+        case .agentQuery(let id, let agentID, .devServers):
+            remoteDevServers(id: id, agentID: agentID, client: client)
         case .agentQuery(let id, let agentID, let query) where query.isChanges:
             // The server owns the engine: answered here, without the GUI, off the queue.
             guard store.state.agents.contains(where: { $0.id == agentID }) else {
@@ -1549,6 +1583,11 @@ public final class SessionServer: @unchecked Sendable {
         case .agentAction(let id, let agentID, let action):
             guard store.state.agents.contains(where: { $0.id == agentID }) else {
                 send(.error(id: id, code: "no_such_agent", message: "Agent no longer exists on the host."), to: client)
+                return
+            }
+            // An action of a capability this host does not offer (an older host would not know it).
+            if action.capability == RemoteProtocol.browserTunnelCapability, !offeredCapabilities.contains(action.capability) {
+                send(.error(id: id, code: "unsupported", message: "This host does not take this action."), to: client)
                 return
             }
             guard let handler = onRemoteAgentAction else {
@@ -1674,6 +1713,65 @@ public final class SessionServer: @unchecked Sendable {
                 ),
                 client: client
             )
+        }
+    }
+
+    // MARK: - Browser tunnels (server queue)
+
+    /// One frame of a tunnel from a remote client. A client that did not say it reads tunnel
+    /// replies, or a host that has them off, refuses the open and ignores the rest.
+    private func remoteTunnel(_ frame: BrowserTunnelFrame, client: ExtensionConnection) {
+        guard tunnelsServed, offeredCapabilities.contains(RemoteProtocol.browserTunnelCapability),
+              client.clientCapabilities.contains(RemoteProtocol.browserTunnelCapability) else {
+            if case .open(let id, _, _) = frame {
+                send(.tunnel(.close(tunnel: id, code: BrowserTunnelCode.unsupported)), to: client)
+            }
+            return
+        }
+        let session: BrowserTunnelSession
+        if let existing = client.tunnels {
+            session = existing
+        } else {
+            session = BrowserTunnelSession(host: tunnelHost, queue: queue, emit: { [weak self, weak client] frame in
+                guard let self, let client else { return }
+                self.send(.tunnel(frame), to: client)
+            }, backlog: { [weak client] in client?.queuedReplyBytes ?? 0 })
+            client.tunnels = session
+        }
+        session.handle(frame) { [weak self, weak client] agentID in
+            guard let self, let client else { return false }
+            return self.tunnelMayServe(agentID, client: client)
+        }
+    }
+
+    /// Whether a tunnel may be opened for `agentID` by this client: the agent exists here, and is
+    /// one the client is shown (a design's agent only to a client that sees designs).
+    private func tunnelMayServe(_ agentID: AgentID, client: ExtensionConnection) -> Bool {
+        guard let agent = store.state.agents.first(where: { $0.id == agentID }) else { return false }
+        return agent.designID == nil || seesDesigns(client)
+    }
+
+    /// The dev servers the agent's folder offers (`RemoteAgentQuery.devServers`), read off the
+    /// server's queue.
+    private func remoteDevServers(id: Int, agentID: AgentID, client: ExtensionConnection) {
+        guard tunnelsServed, offeredCapabilities.contains(RemoteProtocol.browserTunnelCapability) else {
+            send(.error(id: id, code: "unsupported", message: "This host does not carry Browser tunnels."), to: client)
+            return
+        }
+        guard tunnelMayServe(agentID, client: client), let agent = store.state.agents.first(where: { $0.id == agentID }) else {
+            send(.error(id: id, code: "no_such_agent", message: "Agent no longer exists on the host."), to: client)
+            return
+        }
+        // The folder the thread runs in, as the app reads it (`agentCwd`): its layout's first pane.
+        let folder = ((store.state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd
+                        ?? store.state.spaces.first { $0.id == agent.spaceID }?.path ?? NSHomeDirectory()) as NSString)
+            .expandingTildeInPath
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let servers = DevServerDiscovery.find(in: URL(fileURLWithPath: folder, isDirectory: true))
+            self?.queue.async {
+                guard let self, self.clients[client.fd] === client else { return }
+                self.send(.agentResult(id: id, result: .devServers(servers)), to: client)
+            }
         }
     }
 
@@ -2353,6 +2451,8 @@ public final class SessionServer: @unchecked Sendable {
             finishAgentRequest(token, result: .init(text: "agent connection closed", code: "disconnected"))
         }
         client.upload = nil
+        client.tunnels?.closeAll()
+        client.tunnels = nil
         for (id, pending) in childCommandPending where pending.client === client {
             childCommandPending.removeValue(forKey: id)?.completion("Children extension disconnected. Refresh before acting.")
         }
@@ -3209,6 +3309,8 @@ public final class SessionServer: @unchecked Sendable {
             if result < 0, errno == EINTR { continue }
             if result < 0, errno == EAGAIN || errno == EWOULDBLOCK {
                 armReplyWriter(for: client)
+                // Tunnel reads that were held for this queue go on once it is low again.
+                if client.tunnels?.isPaused == true { client.tunnels?.backlogDidDrain() }
                 return
             }
 
@@ -3219,6 +3321,7 @@ public final class SessionServer: @unchecked Sendable {
 
         client.writeSource?.cancel()
         client.writeSource = nil
+        if client.tunnels?.isPaused == true { client.tunnels?.backlogDidDrain() }
         if client.closeAfterFlush {
             disconnect(client)
         }
