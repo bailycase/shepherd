@@ -467,6 +467,7 @@ struct Composer: View {
         switch command {
         case .modelPicker: openModels()
         case .thinkingMenu: toggleThinking()
+        case .speedMenu: toggleSpeed()
         case .previousTurn, .nextTurn, .inspectSubagent: break
         }
     }
