@@ -9,7 +9,8 @@ import ShepherdRemote
 /// `SidePaneView` and its ⌃ digit following its place.
 enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
     case changes
-    /// A local thread's Browser (PaneBrowser); remote threads wait for the tunnel.
+    /// A thread's Browser (PaneBrowser): a local thread's, or a remote one's whose host carries
+    /// tunnels (`browser.tunnel.v1`).
     case browser
 
     var title: String {
@@ -26,9 +27,10 @@ enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
         }
     }
 
-    /// The tabs a thread's pane shows: a remote thread has no Browser yet.
-    static func tabs(remote: Bool) -> [SidePaneTab] {
-        remote ? [.changes] : allCases
+    /// The tabs a thread's pane shows: Changes, and the Browser where the thread has one (a remote
+    /// thread's host that carries no tunnels has none).
+    static func tabs(browser: Bool) -> [SidePaneTab] {
+        browser ? allCases : [.changes]
     }
 
     /// Its fixed chord: ⌃1 for the first tab, and so on (⌃1–4 are the pane's).
@@ -102,7 +104,7 @@ extension ShepherdViewModel {
     /// and its dot clears: you are looking at it.
     func showSidePane(_ owner: SidePaneOwner, tab: SidePaneTab? = nil) {
         let panes = subagentInspector
-        if let tab, !SidePaneTab.tabs(remote: owner.isRemote).contains(tab) {
+        if let tab, !sidePaneTabs(for: owner).contains(tab) {
             NSSound.beep()
             return
         }
@@ -176,6 +178,15 @@ extension ShepherdViewModel {
             }
         case .remote(let target):
             if remoteReviews[target] == nil { openRemoteReview(target, pullRequest: false) }
+        }
+    }
+
+    /// The tabs `owner`'s pane shows: a remote thread has the Browser only while its host carries
+    /// tunnels (an older host has none, as before).
+    func sidePaneTabs(for owner: SidePaneOwner) -> [SidePaneTab] {
+        switch owner {
+        case .local: SidePaneTab.tabs(browser: true)
+        case .remote(let ref): SidePaneTab.tabs(browser: remoteHosts.connections.first { $0.id == ref.hostID }?.supportsBrowser == true)
         }
     }
 

@@ -605,9 +605,11 @@ final class ShepherdViewModel {
         self.remoteHosts.onProjectionChanged = { [weak self] in
             guard let self else { return }
             self.notifyRemote()
-            self.remoteThreadStores.prune(live: Set(self.remoteHosts.connections.flatMap { connection in
+            let liveRemote = Set(self.remoteHosts.connections.flatMap { connection in
                 connection.state.agents.map { RemoteAgentRef(hostID: connection.id, agentID: $0.id) }
-            }))
+            })
+            self.remoteThreadStores.prune(live: liveRemote)
+            self.browsers.prune(liveRemote: liveRemote)
             self.pruneRemoteDesigns()
             self.pruneSidebarPins()
             for (target, review) in self.remoteReviews where review.hostReviewPane {
@@ -688,6 +690,7 @@ final class ShepherdViewModel {
                     case .deleteKeepingWorktree: try await self.deleteAgentPersisted(agentID)
                     case .renameTerminal(let paneID, let title): try self.renameTerminalPane(paneID, of: agentID, to: title)
                     case .killTerminalProcess(let paneID): try await self.killTerminalProcess(paneID, of: agentID)
+                    case .openTerminal(let cwd, let command): try await self.startCommandForRemote(agentID, cwd: cwd, command: command)
                     }
                     completion(.success(()))
                 } catch {

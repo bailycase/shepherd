@@ -10,8 +10,10 @@ struct SidePaneTests {
     @Test func theStripShowsOnlyTheTabsShepherdHas() {
         #expect(SidePaneTab.allCases == [.changes, .browser], "Artifacts and Files are not built, so they have no tab")
         #expect(SidePaneTabs.items(news: [], changedFiles: nil).map(\.title) == ["Changes", "Browser"])
-        #expect(SidePaneTabs.items(news: [], changedFiles: nil, remote: true).map(\.title) == ["Changes"],
-                "a remote thread's Browser waits for the tunnel")
+        #expect(SidePaneTabs.items(news: [], changedFiles: nil, browser: false).map(\.title) == ["Changes"],
+                "a remote thread on a host with no tunnels (an older one) has no Browser, as before")
+        #expect(SidePaneTab.tabs(browser: true) == [.changes, .browser])
+        #expect(SidePaneTab.tabs(browser: false) == [.changes])
     }
 
     @Test func theBrowserIsGlobeOnControlTwoAndCarriesPisDot() throws {

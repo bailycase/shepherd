@@ -26,9 +26,17 @@ struct BrowserPane: View {
                     empty
                 }
                 if session.menuOpen { viewportMenu }
+                // A remote page's port that can't be forwarded here: why nothing loaded.
+                if let notice = session.notice {
+                    NWBrowserNotice(message: notice.message, dismiss: { session.dismissNotice() })
+                        .padding(NW.Space.l)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .nwTransition(.overlay, edge: .top)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .nwAnimation(.overlay, value: session.menuOpen)
+            .nwAnimation(.overlay, value: session.notice)
             if session.hasPage {
                 BrowserConsoleDrawer(console: session.console, open: session.consoleOpen) { session.consoleOpen.toggle() }
             }
@@ -36,7 +44,8 @@ struct BrowserPane: View {
         .background {
             BrowserKeys(active: active, focusAddress: { session.focusAddress() }, select: { session.toggleSelecting() })
         }
-        .onAppear { vm.loadDevServers(session) }
+        // A remote thread's dev servers come from its host, so they are asked for again when it connects.
+        .task(id: session.remote?.isConnected) { vm.loadDevServers(session) }
         .onChange(of: session.addressFocusRequests) { _, _ in
             session.menuOpen = false
             addressFocused = true
@@ -55,7 +64,7 @@ struct BrowserPane: View {
             back: { session.goBack() }, forward: { session.goForward() }, reload: { session.reload() },
             select: { session.toggleSelecting() }, viewport: { session.menuOpen.toggle() },
             openExternally: { vm.openInDefaultBrowser(session) })) {
-            NWBrowserAddressField(host: display?.host, path: display?.path, hostChip: "This Mac", text: $address,
+            NWBrowserAddressField(host: display?.host, path: display?.path, hostChip: session.hostChip, text: $address,
                                   isFocused: $addressFocused,
                                   submit: {
                                       if session.open(address: address) { addressFocused = false }
@@ -68,7 +77,7 @@ struct BrowserPane: View {
     private var empty: some View {
         let servers = session.devServers ?? []
         return NWBrowserEmpty(message: BrowserEmptyWords.message(waiting: session.waitingFor),
-                              servers: servers.map(\.item), openShortcut: vm.keybindings.display(.focusAddressBar),
+                              servers: servers.map { $0.item(startTitle: session.startTitle) }, openShortcut: vm.keybindings.display(.focusAddressBar),
                               start: { item in
                                   guard let server = servers.first(where: { $0.id == item.id }) else { return }
                                   vm.startDevServer(server, in: session)

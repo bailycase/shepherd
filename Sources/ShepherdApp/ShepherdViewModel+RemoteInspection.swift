@@ -73,6 +73,10 @@ extension ShepherdViewModel {
                     case .terminals:
                         // The server answers it itself; a handler call is only ever a fallback.
                         result = .terminals(await self.server.terminalActivity(agentID: agentID))
+                    case .devServers:
+                        // Likewise: the server reads the folder itself.
+                        let root = URL(fileURLWithPath: cwd, isDirectory: true)
+                        result = .devServers(await Task.detached { DevServerDiscovery.find(in: root) }.value)
                     }
                     completion(.success(result))
                 } catch { completion(.failure(RemoteCreateAgentError(String(describing: error)))) }
