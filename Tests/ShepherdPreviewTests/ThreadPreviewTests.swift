@@ -79,6 +79,19 @@ struct ThreadPreviewTests {
         try await render("thread-activity-running", ActivityThreads.running(.call))
     }
 
+    /// LiveText's "A tool is running", from the moment the model names the call: it writes a file
+    /// whose arguments are still streaming (the thread that used to end in a static paragraph).
+    /// The reply's words above are finished, and the call's line is the live one, "Writing" and
+    /// the file it has named shimmering beside its clock, with no output yet.
+    @Test func threadActivityWriting() async throws {
+        try await render("thread-activity-writing", ActivityThreads.running(.writing))
+    }
+
+    /// The same moment before the model has said which file: the verb alone, shimmering.
+    @Test func threadActivityWritingBare() async throws {
+        try await render("thread-activity-writing-bare", ActivityThreads.running(.writingBare))
+    }
+
     /// The model thinking at the tail: "Thinking…" shimmering, the thread's one live line, with
     /// no chevron.
     @Test func threadActivityThinking() async throws {
@@ -894,7 +907,7 @@ enum ActivityThreads {
     }
 
     /// What the Running board's turn is doing at its tail (LiveText's moments).
-    enum Tail { case call, thinking, between }
+    enum Tail { case call, thinking, between, writing, writingBare }
 
     /// The Running board: the previous turn, the new prompt, a commit, and at the tail a live
     /// push, live thinking, or nothing yet (pi between tools).
@@ -920,6 +933,16 @@ enum ActivityThreads {
             provisional.append(tool("p1", "bash", ["command": "git push origin main"],
                                     output: "Enumerating objects: 14, done.\nCounting objects: 100% (14/14), done.\nWriting objects: 100% (8/8), 2.31 KiB | 2.31 MiB/s\nremote: Resolving deltas: 0% (0/5)",
                                     start: now - 3_000, end: nil, status: "running"))
+        case .writing, .writingBare:
+            // The reply is still streaming as far as the host says; the call it moved on to is
+            // the row after it (RPCThreadState.streamToolCall). The host keeps only the fields
+            // the line names, so a file the model has named is the whole of its arguments.
+            provisional.append(assistant("provisional:assistant:9", "Now the regression test for the tool rows, in one new file.",
+                                         at: now - 16_000, status: "streaming"))
+            var call = tool("p2", "write", ["path": "Tests/ShepherdAppTests/ToolPreviewTests.swift"],
+                            start: now - 12_000, end: nil, status: "streaming")
+            if tail == .writingBare { call.argumentsText = nil }
+            provisional.append(call)
         }
         return snapshot(messages, provisional: provisional, running: true)
     }
