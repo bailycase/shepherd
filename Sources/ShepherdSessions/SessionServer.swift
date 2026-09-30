@@ -316,6 +316,11 @@ public final class SessionServer: @unchecked Sendable {
     /// user pressed Stop, or pi exited). The app stops the ones that have not started. Delivered
     /// on the main actor.
     public var onBrowserAbandoned: ((AgentID) -> Void)?
+    /// A remote viewer claimed an agent's browser (`RemoteRequest.browserClaim`): the address the
+    /// host's own page for that agent holds, for the viewer to open through its tunnel (nil when it
+    /// has none; only `http` and `https` ever reach the viewer). Called on the main actor; the claim
+    /// is answered with it.
+    public var onBrowserPageURL: ((AgentID) -> String?)?
     /// A server's state or tool list, from one agent's MCP extension (Settings ▸ MCP servers).
     /// Delivered on the main actor in the order the reports arrived.
     public var onMCPReport: ((AgentID, MCPServerReport) -> Void)?
@@ -493,6 +498,21 @@ public final class SessionServer: @unchecked Sendable {
     /// How long the app has to answer a browser request (server queue).
     private var browserDeadline: TimeInterval = SessionServer.defaultBrowserDeadline
     public static let defaultBrowserDeadline: TimeInterval = 120
+    /// Which remote viewer (by connection) owns each agent's browser (docs/browser.md › Remote ›
+    /// The agent drives the page you see). Server queue.
+    private var browserOwners = BrowserDriveOwners<Int32>()
+    /// Browser requests handed to an owning viewer and not answered yet, by token. The viewer's
+    /// answer, the deadline, the viewer leaving and the asking connection closing each take the
+    /// entry, so a request is answered at most once.
+    private var driveRequests: [Int: DriveRequest] = [:]
+    private var nextDriveToken = 0
+
+    private struct DriveRequest {
+        let asker: ExtensionConnection
+        let requestID: Int
+        let agentID: AgentID
+        let ownerFD: Int32
+    }
 
     /// One child process per session, on a PTY (terminal panes) or on
     /// pipes (`pi --mode rpc`). Terminal-only paths take `pty` and treat nil as
@@ -619,7 +639,7 @@ public final class SessionServer: @unchecked Sendable {
         let designs = advertisedCapabilities.contains(RemoteProtocol.designsCapability)
         return advertisedCapabilities.filter {
             (designsServed && designs || !RemoteProtocol.designCapabilities.contains($0))
-                && (tunnelsServed || $0 != RemoteProtocol.browserTunnelCapability)
+                && (tunnelsServed || ($0 != RemoteProtocol.browserTunnelCapability && $0 != RemoteProtocol.browserDriveCapability))
         }
     }
 
@@ -631,7 +651,10 @@ public final class SessionServer: @unchecked Sendable {
             guard self.tunnelsServed != served else { return }
             self.tunnelsServed = served
             let readers = self.clients.values.filter { $0.isRemote && $0.authenticated && $0.knowsDesigns }
-            if !served { for client in self.clients.values { client.tunnels?.endAll(code: BrowserTunnelCode.unsupported) } }
+            if !served {
+                for client in self.clients.values { client.tunnels?.endAll(code: BrowserTunnelCode.unsupported) }
+                self.endAllBrowserOwnerships(reason: BrowserDriveEnd.unsupported)
+            }
             guard let payload = try? NDJSON.encode(RemoteReply.capabilitiesChanged(capabilities: self.offeredCapabilities)) else { return }
             for client in readers { self.enqueuePayload(payload, to: client) }
         }
@@ -1241,7 +1264,10 @@ public final class SessionServer: @unchecked Sendable {
         // or refused send changes nothing).
         let isSend: Bool = { if case .send = request { return true } else { return false } }()
         thread.handle(request, olderClient: olderClient) { [weak self] result in
-            if isSend, case .accepted = result { self?.hopToMain { [weak self] in self?.onUserMessage?(agentID) } }
+            if isSend, case .accepted = result {
+                self?.hopToMain { [weak self] in self?.onUserMessage?(agentID) }
+                self?.pushToBrowserOwner(agentID, .handBack(agentID: agentID))
+            }
             completion(.result(result))
         }
     }
@@ -1546,6 +1572,12 @@ public final class SessionServer: @unchecked Sendable {
             send(.agentResult(id: id, result: .terminals(terminals)), to: client)
         case .tunnel(let frame):
             remoteTunnel(frame, client: client)
+        case .browserClaim(let id, let agentID):
+            remoteBrowserClaim(id: id, agentID: agentID, client: client)
+        case .browserRelease(let agentID):
+            remoteBrowserRelease(agentID, client: client)
+        case .browserAnswer(let token, let outcome):
+            remoteBrowserAnswer(token: token, outcome: outcome, client: client)
         case .agentQuery(let id, let agentID, .devServers):
             remoteDevServers(id: id, agentID: agentID, client: client)
         case .agentQuery(let id, let agentID, let query) where query.isChanges:
@@ -2468,6 +2500,7 @@ public final class SessionServer: @unchecked Sendable {
         client.upload = nil
         client.tunnels?.closeAll()
         client.tunnels = nil
+        browserDriveConnectionClosed(client)
         for (id, pending) in childCommandPending where pending.client === client {
             childCommandPending.removeValue(forKey: id)?.completion("Children extension disconnected. Refresh before acting.")
         }
@@ -3182,6 +3215,8 @@ public final class SessionServer: @unchecked Sendable {
             reply(.error(id: requestID, code: "not_a_thread", message: "A design's agent has no browser."), to: client)
             return
         }
+        // A viewer that shows the agent's page owns it: the request runs there, not on the host's own.
+        if routeBrowserRequestToOwner(request, agentID: registered, requestID: requestID, client: client) { return }
         guard let handler = onBrowserRequest else {
             reply(.error(id: requestID, code: "unavailable", message: "The browser is unavailable here."), to: client)
             return
@@ -3205,6 +3240,169 @@ public final class SessionServer: @unchecked Sendable {
             }
         }
     }
+
+    // MARK: - Browser drive (server queue)
+
+    /// This host lets viewers own agents' browsers now (`browser.drive.v1`, which goes with tunnels).
+    private var browserDriveOffered: Bool { offeredCapabilities.contains(RemoteProtocol.browserDriveCapability) }
+
+    /// A viewer claims an agent's browser: the most recent claim wins. Only a client that listed the
+    /// capability, for an agent that exists here and has a browser (a thread, never a design's).
+    private func remoteBrowserClaim(id: Int, agentID: AgentID, client: ExtensionConnection) {
+        guard browserDriveOffered, client.clientCapabilities.contains(RemoteProtocol.browserDriveCapability) else {
+            send(.error(id: id, code: "unsupported", message: "This host does not hand its browser to a viewer."), to: client)
+            return
+        }
+        guard let agent = store.state.agents.first(where: { $0.id == agentID }), agent.designID == nil else {
+            send(.error(id: id, code: "no_such_agent", message: "Agent no longer exists on the host."), to: client)
+            return
+        }
+        switch browserOwners.claim(agentID, by: client.fd) {
+        case .tooMany:
+            send(.error(id: id, code: "too_many", message: "This client owns as many browsers as it may."), to: client)
+            return
+        case .owned(let previous?):
+            // The last to claim wins: the one before is told, and what it was asked dies with it.
+            failDriveRequests(ownerFD: previous, agent: agentID)
+            if let loser = clients[previous] { send(.browserDrive(.ended(agentID: agentID, reason: BrowserDriveEnd.superseded)), to: loser) }
+        case .owned(nil), .unchanged:
+            break
+        }
+        // The host's own page for the agent is the app's: its address comes back from the main
+        // actor, and the claim stands unless another viewer took it meanwhile.
+        guard let handler = onBrowserPageURL else {
+            send(.browserClaimed(id: id, url: nil), to: client)
+            return
+        }
+        hopToMain { [weak self] in
+            let url = BrowserDriveURL.offered(handler(agentID))
+            self?.queue.async {
+                guard let self, self.clients[client.fd] === client else { return }
+                guard self.browserOwners.owner(of: agentID) == client.fd else {
+                    self.send(.error(id: id, code: BrowserDriveEnd.superseded, message: "Another viewer has this browser now."), to: client)
+                    return
+                }
+                self.send(.browserClaimed(id: id, url: url), to: client)
+            }
+        }
+    }
+
+    /// A viewer gives an agent's browser back. One that does not own it changes nothing.
+    private func remoteBrowserRelease(_ agentID: AgentID, client: ExtensionConnection) {
+        guard browserOwners.release(agentID, by: client.fd) else { return }
+        failDriveRequests(ownerFD: client.fd, agent: agentID)
+    }
+
+    /// The owner's answer to a request it was handed: only for a request that is still waiting and
+    /// that this viewer was handed, and cut to what the agent may be given.
+    private func remoteBrowserAnswer(token: Int, outcome: BrowserOutcome, client: ExtensionConnection) {
+        guard let pending = driveRequests[token], pending.ownerFD == client.fd else { return }
+        driveRequests.removeValue(forKey: token)
+        reply(outcome.fromViewer.reply(id: pending.requestID), to: pending.asker)
+    }
+
+    /// Hands a request to the viewer that owns the agent's browser. False when none does, and the
+    /// host's own page answers. The agent's 120 s deadline holds: a viewer that does not answer in
+    /// time ends the request, loses the browser, and is told.
+    private func routeBrowserRequestToOwner(_ request: BrowserRequest, agentID: AgentID, requestID: Int, client: ExtensionConnection) -> Bool {
+        guard let ownerFD = browserOwners.owner(of: agentID) else { return false }
+        guard browserDriveOffered, let owner = clients[ownerFD], owner.authenticated,
+              owner.clientCapabilities.contains(RemoteProtocol.browserDriveCapability) else {
+            browserOwners.drop(agent: agentID)
+            return false
+        }
+        nextDriveToken += 1
+        let token = nextDriveToken
+        driveRequests[token] = DriveRequest(asker: client, requestID: requestID, agentID: agentID, ownerFD: ownerFD)
+        queue.asyncAfter(deadline: .now() + browserDeadline) { [weak self] in
+            guard let self, let pending = self.driveRequests.removeValue(forKey: token) else { return }
+            self.reply(.error(id: pending.requestID, code: "timeout", message: "The viewer showing the page did not answer in time."),
+                       to: pending.asker)
+            // A viewer that cannot answer is not the agent's hands: the host's page has it back.
+            guard self.browserOwners.owner(of: pending.agentID) == pending.ownerFD else { return }
+            self.browserOwners.drop(agent: pending.agentID)
+            self.failDriveRequests(ownerFD: pending.ownerFD, agent: pending.agentID)
+            if let owner = self.clients[pending.ownerFD] {
+                self.send(.browserDrive(.ended(agentID: pending.agentID, reason: BrowserDriveEnd.unresponsive)), to: owner)
+            }
+        }
+        send(.browserDrive(.request(token: token, agentID: agentID, request: request)), to: owner)
+        return true
+    }
+
+    /// Ends what is waiting on `ownerFD` (for one agent, or all): each asker is told the viewer is
+    /// gone, and the agent's next call reaches whoever owns the browser then.
+    private func failDriveRequests(ownerFD: Int32, agent: AgentID? = nil) {
+        for (token, pending) in driveRequests where pending.ownerFD == ownerFD && (agent == nil || pending.agentID == agent) {
+            driveRequests.removeValue(forKey: token)
+            reply(.error(id: pending.requestID, code: BrowserDriveCode.viewerGone,
+                         message: "The Mac that was showing this page went away, so the browser is back on this host's own page. "
+                             + "Call the tool again."), to: pending.asker)
+        }
+    }
+
+    /// A connection closed: what it asked on the agent's behalf is given up, and what it owned as a
+    /// viewer is let go.
+    private func browserDriveConnectionClosed(_ client: ExtensionConnection) {
+        // The agent's connection went (Stop, or pi exited): the viewer must not run what it queued.
+        var abandoned: [AgentID] = []
+        for (token, pending) in driveRequests where pending.asker === client {
+            driveRequests.removeValue(forKey: token)
+            if !abandoned.contains(pending.agentID) { abandoned.append(pending.agentID) }
+        }
+        for agentID in abandoned { pushToBrowserOwner(agentID, .abandoned(agentID: agentID)) }
+        guard client.isRemote else { return }
+        _ = browserOwners.drop(viewer: client.fd)
+        failDriveRequests(ownerFD: client.fd)
+    }
+
+    /// Tells the viewer that owns `agentID`'s browser, if there is one.
+    private func pushToBrowserOwner(_ agentID: AgentID, _ push: BrowserDrivePush) {
+        queue.async { [self] in
+            guard let ownerFD = browserOwners.owner(of: agentID), let owner = clients[ownerFD] else { return }
+            send(.browserDrive(push), to: owner)
+        }
+    }
+
+    /// An agent that is gone takes its owner with it.
+    private func pruneBrowserOwners(_ state: ShepherdState) {
+        let live = Set(state.agents.filter { $0.designID == nil }.map(\.id))
+        for agentID in browserOwners.agents where !live.contains(agentID) {
+            guard let ownerFD = browserOwners.owner(of: agentID) else { continue }
+            browserOwners.drop(agent: agentID)
+            failDriveRequests(ownerFD: ownerFD, agent: agentID)
+            if let owner = clients[ownerFD] { send(.browserDrive(.ended(agentID: agentID, reason: BrowserDriveEnd.agentGone)), to: owner) }
+        }
+    }
+
+    /// Every viewer lets go (the host stopped serving browsers to viewers).
+    private func endAllBrowserOwnerships(reason: String) {
+        for agentID in browserOwners.agents {
+            guard let ownerFD = browserOwners.owner(of: agentID) else { continue }
+            browserOwners.drop(agent: agentID)
+            failDriveRequests(ownerFD: ownerFD, agent: agentID)
+            if let owner = clients[ownerFD] { send(.browserDrive(.ended(agentID: agentID, reason: reason)), to: owner) }
+        }
+    }
+
+    /// The agent opened `url` in the host's own page while no viewer owned its browser: the
+    /// viewers that read it mark the thread's Browser tab, as the host does for a thread of its own
+    /// (`BrowserDrivePush.opened`). A page that is not on the web, or a thread a viewer owns, says
+    /// nothing. Any thread.
+    public func announceBrowserPageOpened(agentID: AgentID, url: String) {
+        guard let offered = BrowserDriveURL.offered(url) else { return }
+        queue.async { [self] in
+            guard browserDriveOffered, browserOwners.owner(of: agentID) == nil,
+                  store.state.agents.contains(where: { $0.id == agentID && $0.designID == nil }) else { return }
+            for client in clients.values where client.isRemote && client.authenticated
+                && client.clientCapabilities.contains(RemoteProtocol.browserDriveCapability) {
+                send(.browserDrive(.opened(agentID: agentID, url: offered)), to: client)
+            }
+        }
+    }
+
+    /// The viewer connection that owns an agent's browser, for tests.
+    func browserOwnerFD(of agentID: AgentID) -> Int32? { queue.sync { browserOwners.owner(of: agentID) } }
 
     /// Test seam: how long the app has to answer a browser request.
     public func setBrowserDeadline(_ seconds: TimeInterval) {
@@ -3515,6 +3713,7 @@ public final class SessionServer: @unchecked Sendable {
         broadcastRemoteState(state)
         hopToMain { [weak self] in self?.onStateChanged?(state) }
         announceServableThreads()
+        if !browserOwners.isEmpty { pruneBrowserOwners(state) }
     }
 
     /// Server queue: every thread shows its agent's tier (`Agent.serviceTier`). A thread commits

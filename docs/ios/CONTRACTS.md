@@ -174,6 +174,23 @@ them except the navigator, which is each window's own ([Windows](#windows-ipad))
   from `host.connectedClient?.tunnels` while the host is connected and emptied when it drops.
   `BrowserTunnelTarget.port(of:)` says which URLs a tunnel serves. The forwarder is a listener on the
   device's loopback, which iOS suspends with the app (not measured here: nothing runs it on iOS yet).
+- **The agent driving the page** (`browser.drive.v1`, offered with the tunnel; docs/browser.md ›
+  Remote). The iPad's Browser tab reuses the wire and every rule but the web view:
+  `host.connectedClient?.drivesBrowser` says the host offers it (both capabilities),
+  `browserClaim(agentID:)` claims the agent's browser (answering the address the host's own page holds,
+  to open through the tunnel only when `BrowserViewerPolicy.verdict(for:)` allows it, and only with
+  nothing open), `browserRelease(agentID:)` lets it go, and `onBrowserDrive` (main queue) delivers
+  `BrowserDrivePush`: `.request(token, agentID, request)` to run on the tab's web view and answer
+  with `browserAnswer(token:outcome:)`, `.ended`, `.abandoned`, `.handBack` and `.opened` (mark the
+  tab). `BrowserDriveClaimant` is the state machine for when to claim (the tab shows on a live
+  connection) and let go (30 s out of sight, a dropped connection); give it the tab's and the
+  connection's events and send what it says to. A request must be answered (`viewer_gone` when the
+  tab cannot run it) and must run under the same rules as the Mac's: an acting tool is refused
+  while the user has taken over, and **every address goes through `BrowserViewerPolicy`**: the
+  request's own (`browser_open`), every navigation it causes (redirects, history steps, iframes,
+  script), and the page open now, before anything of it is read back. A host's agent on the iPad's
+  web view must never reach the iPad's own network (`verdict(for:)`, `subframeVerdict(for:)`,
+  `pageVerdict(for:)`; the resolver and the device's own addresses are injectable).
 - Run a thread's store through `threads.viewers(for: ref).run(connection: host.session) { … }`,
   never `store.run` from a screen: the same thread can be on screen in two windows, and a
   second `store.run` ends the first. A view on the connection the loop already runs over joins

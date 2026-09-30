@@ -554,7 +554,10 @@ Sources/
                        read before it is unpacked, links out of it, the import's failures and
                        progress) and DesignLifecycle (a deletion's undo window, the names of copies),
                        BrowserTunnel (the tunnel's frames, credit and chunking arithmetic, and which
-                       URLs a tunnel serves) and DevServers (a folder's package.json dev servers).
+                       URLs a tunnel serves), BrowserDrive (an agent on a host driving the page a
+                       viewer shows: BrowserDrivePush, BrowserOutcome's coding, the host's
+                       BrowserDriveOwners claim rules) and DevServers (a folder's package.json dev
+                       servers).
   ShepherdRemote/      RemoteHostClient, NativeThreadStore (@Observable), NativeThreadPresentation,
                        NativeTurnPresentation (a turn's items), NativeMarkdown (the prose
                        parser: tables, lists, images, details, footnotes), NativeActivity
@@ -581,8 +584,10 @@ Sources/
                        and the design_get calls one "Looked at…" line joins), TunnelEndpoint (one end of
                        a Browser tunnel: a socket and both directions' flow control), BrowserTunnelHub
                        (a connection's tunnels, `RemoteHostClient.tunnels`), BrowserPortForwarder (which
-                       ports of a remote thread's host are forwarded on this Mac, one owner each), ShepherdLog.
-                       Shared with the iOS client.
+                       ports of a remote thread's host are forwarded on this Mac, one owner each),
+                       BrowserDriveClaimant (when a viewer claims and lets go of an agent's browser)
+                       and BrowserViewerPolicy (where a host's agent may take a viewer's page),
+                       ShepherdLog. Shared with the iOS client.
   ShepherdPTYSpawn/    The PTY child side (fork → exec) in C: no Swift runs between the two.
   ShepherdSessions/    SessionServer (state, sessions, extension socket, remote listener),
                        RPCSession, RPCThreadState (+Queue: the queue of messages sent while pi
@@ -590,7 +595,8 @@ Sources/
                        session), StreamingToolArguments (the fields a tool call being written
                        names, read from pi's argument fragments), BrowserTunnelHost (the host's side
                        of Browser tunnels: loopback connects, caps, idle, one session per remote
-                       client), AutomationRunLog (each automation's runs), PTYSession,
+                       client; the drive's claims and routing are in SessionServer: a viewer that
+                       owns an agent's browser is handed its requests), AutomationRunLog (each automation's runs), PTYSession,
                        SessionScreen (SwiftTerm), StateStore,
                        PaneRequest (pane/review/automation requests + outcomes), RemoteFileUpload,
                        PiEngine (which pi runs; BundledPiEngine, the one the app ships),
@@ -649,12 +655,16 @@ Sources/
       address, viewports, dev servers, script messages, the console log), BrowserScripts (the
       page's scripts), ShepherdViewModel+Browser (Start, Add to message, Copy selector, a remote
       viewer's Start on this host), BrowserRemote (a remote thread's page: its host, the ports it
-      forwards, the host's dev servers and Start; docs/browser.md › Remote).
+      forwards, the host's dev servers and Start, and its claim on the agent's browser; docs/browser.md
+      › Remote).
       The agent's tools on it (docs/browser.md): BrowserAgentRules (pure: the URL policy, take over,
       the card's words, results, keys, the screenshot clamp), BrowserAgentScript (read, click, type
       in Shepherd's content world), BrowserDriver (each tool against the page; no WebKit),
       ShepherdViewModel+BrowserAgent (serves the server's requests, the tab's dot), BrowserExtension
-      (the embedded shepherd-browser.ts)
+      (the embedded shepherd-browser.ts). A remote thread's agent drives the viewer's page the same
+      way: BrowserHostDrive (BrowserOrigin and BrowserHostGuard: what a host's agent may open, read and
+      act on, enforced again in BrowserHost's navigation policy) and ShepherdViewModel+BrowserDrive
+      (the host's pushes: requests to run, the end of a claim, the hand-back, the dot)
     AppLayout (+Navigation, +Thread, +Agents, +Settings, +Pages, +Designs; ShellLayout's adaptive
       rules live in +Navigation), AgentStateMapping (app lifecycles → AgentState)
     ShepherdViewModel(+Navigation, +Creation, +Workspace, +Spaces, +Palette, +Shell,
@@ -997,6 +1007,25 @@ variables are blanked, as are pi's `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSI
     and reads stop while a connection's write queue is backed up. The same capability covers
     `RemoteAgentQuery.devServers` (the thread's folder on the host) and `RemoteAgentAction.openTerminal`
     (Start on the host). docs/browser.md › Remote
+  - `browserClaim`, `browserRelease`, `browserAnswer`, `browserClaimed` and `browserDrive`
+    (`browser.drive.v1`, offered with the tunnel, and only to a client that lists it in `hello`): the
+    agent on the host drives the page the viewer shows. A viewer with the thread's Browser tab on
+    screen **claims** the agent's browser (`browserClaim`, answered `browserClaimed` with the address
+    the host's own page holds, `http`/`https` only); the host keeps one owner per agent (the last to
+    claim wins, at most 32 agents per viewer, only for a thread the client sees, never a design's
+    agent) and, while one owns it, `SessionServer.routeBrowserRequest` pushes the agent's
+    `BrowserRequest` to it (`BrowserDrivePush.request` with a token) instead of asking its own page,
+    and completes the extension's request with the owner's `browserAnswer` (cut to the reply caps;
+    an answer from anyone else is ignored). A request ends `viewer_gone` when its owner leaves, is
+    superseded or releases, and `timeout` (the 120 s deadline, after which the owner loses the
+    browser) when it never answers; the next call reaches the host's own page or the next owner. The
+    host also pushes `abandoned` (Stop), `ended` (superseded, unresponsive, agent gone), `handBack`
+    (the user's next message, from any client) and `opened` (the agent opened a page in the host's
+    own browser: the viewer's tab takes the dot). The viewer runs a request with the local driver,
+    bound by `BrowserViewerPolicy`: only the host's own loopback ports and public addresses (docs/
+    browser.md › Remote › What a host's agent can make this Mac do; SECURITY.md). A claim ends with
+    the viewer's tab out of sight for 30 s, its connection, or a newer claim. A client or host without
+    the capability keeps PR 3a's two pages.
 
   Capabilities gate newer features. The client falls back (raw bracketed paste) or refuses (pane
   control) against older hosts. A host answers an authenticated request it cannot decode (a kind
