@@ -1323,8 +1323,8 @@ enum DesignExtension {
           - The result is checked as a whole board write is, so the same rules hold: keep the
             `support.js` head line, and the root's size equal to `$preview`. A result that breaks one is
             refused whole.
-          - Several boards change with one `board_edit` each. Do not `board_edit` a board you are about
-            to `board_write`.
+          - A change to several boards is one `board_edit` per board. Do not `board_edit` a board you
+            are about to `board_write`.
         - **An element lives on several boards.** When asked to change a card, a label or a button,
           change it on every board that holds it (each direction and each size), and say which boards
           you changed.
