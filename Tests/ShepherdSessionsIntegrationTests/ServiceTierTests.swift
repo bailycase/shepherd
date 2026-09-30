@@ -192,6 +192,38 @@ struct ServiceTierTests {
         #expect(other.serviceTiers == [], "now owned by antigravity")
     }
 
+    // MARK: A remote client
+
+    /// Another Mac's client, through the host's TCP listener and the store its composer uses: the
+    /// host advertises the capability, the snapshot carries the tier, and the change lands on the
+    /// host (its state, its file, what every client sees).
+    @Test @MainActor func aRemoteClientSetsTheTierOverTCP() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let (pi, _, _) = try await Self.agent(on: r.host)
+        _ = try await pi.ready()
+        let client = try await r.typed()
+        defer { client.disconnect() }
+        #expect(client.capabilities.contains(RemoteProtocol.nativeServiceTierCapability))
+
+        let store = NativeThreadStore()
+        let agentID = pi.agent.id
+        let task = Task { await store.run(request: { try await client.nativeThread(agentID: agentID, request: $0) }) }
+        defer { task.cancel() }
+        try await eventuallyOnMain("the remote thread to offer a speed") { store.ready && store.offersServiceTier }
+        #expect(store.serviceTiers == [.standard, .fast] && store.serviceTier == .standard)
+
+        await store.setServiceTier(.fast)
+        try await eventuallyOnMain("the remote thread to say Fast") { store.serviceTier == .fast }
+        #expect(r.server.state.agents.first?.serviceTier == .fast)
+        #expect(ServiceTierFile.read(for: agentID, in: r.server.pi.files) == .fast)
+        #expect(try Self.persistedTier(r.host) == "fast")
+
+        await store.toggleServiceTier()
+        try await eventuallyOnMain("the remote thread to say Standard") { store.serviceTier == .standard }
+        #expect(ServiceTierFile.read(for: agentID, in: r.server.pi.files) == .standard)
+    }
+
     // MARK: Relaunch, Retry, and an agent with no pi
 
     @Test func aRelaunchedAgentsPiGetsItsTierBackEvenIfTheFileIsGone() async throws {
