@@ -243,6 +243,8 @@ header's side-pane button shows "Agent opened a page in Browser".
   reads; not the text of an iframe.
 - A `beforeunload` dialog is dismissed like a `confirm`, which cancels the navigation that raised it
   (WebKit only raises one after the user has interacted with the page).
+- `browser_screenshot` of a ref scrolls the element into view, which it still does while the user has
+  taken over (a screenshot is an observation); the user's page moves.
 - Registration is not authenticated (Isolation).
 
 ## Remote
