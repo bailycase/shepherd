@@ -320,6 +320,24 @@ struct AgentLaunchCommandTests {
         #expect(plain.env["SHEPHERD_DESIGN_ID"] == nil && plain.env["SHEPHERD_DESIGN_SKILL_DIR"] == nil)
     }
 
+    /// A design agent's helpers use its design tools through it (docs/designs.md › Helpers): the
+    /// children extension reads them from the design extension's registry, so both load into the
+    /// agent's one pi, the children with their variables and the design with its own.
+    @Test func aDesignsAgentLoadsTheChildrenAndTheDesignToolsIntoOnePi() {
+        let launch = try! StatusExtension.command(
+            home: Self.home, cwd: "/tmp/project",
+            agentID: AgentID(rawValue: "agent-id"), piSessionID: "current-session",
+            socketPath: "/tmp/shepherd.sock", extensionPath: "/tmp/status.ts",
+            panesExtensionPath: nil, reviewExtensionPath: nil, subagentsExtensionPath: "/tmp/subagents.ts",
+            childrenExtensionPath: "/tmp/children.ts", childEnvironment: ["SHEPHERD_CHILD_CONCURRENCY": "3"],
+            design: ("/tmp/design.ts", DesignID(rawValue: "d1"), "/tmp/support/design-skill"),
+            model: nil, thinking: nil
+        )
+        #expect(launch.argv[3].contains(" -e '/tmp/children.ts'") && launch.argv[3].contains(" -e '/tmp/design.ts'"))
+        #expect(launch.env["SHEPHERD_NATIVE_CHILDREN"] == "1" && launch.env["SHEPHERD_EXT_CHILDREN"] == "/tmp/children.ts")
+        #expect(launch.env["SHEPHERD_DESIGN_ID"] == "d1" && launch.env["SHEPHERD_CHILD_CONCURRENCY"] == "3")
+    }
+
     /// design_get's extension loads for a thread with the setting on, saying whether the thread
     /// already holds a reference (it registers the tool at once) or not (only once one arrives);
     /// a design's agent never gets it, even when asked to.
