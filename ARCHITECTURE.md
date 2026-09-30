@@ -406,7 +406,10 @@ none starts a separate process that connects. Native subagents are separate pi p
 a child's environment has no `SHEPHERD_AGENT_ID` or `SHEPHERD_SOCKET` (every inherited
 `SHEPHERD_*` is removed, so none of Shepherd's extensions would connect) and it loads only the
 bridge and the user's own extensions (`--no-extensions`, `SHEPHERD_CHILD`); the children
-extension talks to its own parent over `helloChildren`, from the parent's pid. A design's agent, an automation's run, an agent that
+extension talks to its own parent over `helloChildren`, from the parent's pid. A design agent's
+helpers use its design tools without connecting: the helper's proxy sends the call up its stdout
+to the parent, whose design extension makes the request on its own connection with its own agent id
+(docs/designs.md › Helpers), so the rule is not loosened. A design's agent, an automation's run, an agent that
 `/new` moved to another session (same process), one restarted by Retry (a new pi, bound to the
 pane) and one the app starts for a relaunch are all ordinary agents with their own pi. A pi
 run by hand in a terminal pane has `SHEPHERD_SOCKET` blanked and speaks for no one. A process

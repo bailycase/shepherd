@@ -261,6 +261,58 @@ that folder.
   reads "Checked against acme-web · 0 off-system values" (`.checked`). Board names follow the
   skill's files: `A.dc.html` reads "A", `A-phone.dc.html` "A · phone".
 
+### Helpers
+
+A design agent can start native subagents ("helpers", [native-subagents.md](native-subagents.md))
+to change boards in parallel. A helper is a pi of its own with every `SHEPHERD_*` variable stripped,
+so it has no agent id, socket or design, and since the extension socket serves a message only on a
+connection the agent's own pi opened (ARCHITECTURE.md › Extensions and the extension socket), a separate process could not
+speak for the design anyway. The agent's pi can, so its design tools are relayed to the helpers
+through it:
+
+- **The mechanism.** `shepherd-design.ts` publishes its tools in a process-wide registry
+  (`globalThis[Symbol.for("shepherd.design.relay.v1")]`: the design's id, whether the session is
+  live, and each relayed tool as registered with pi) while it is active, which only a design agent's
+  is, and withdraws it at `session_shutdown`. `shepherd-children.ts`, loaded into the same pi,
+  reads it. For a helper whose profile lists some of those tools in `tools:`, the helper's bridge
+  (the children extension again, run as `SHEPHERD_CHILD`) registers a proxy for each from the schemas
+  the parent passes in `SHEPHERD_CHILD_RELAY`, so they count as the helper's own tools: the
+  startup check of the tools a profile asked for passes, and `tools:` narrows them as it does any tool.
+- **A call.** The proxy sends one `input` request up the channel a helper already has to its parent
+  (its RPC stdout, answered on its stdin, which the children extension used to refuse as unsupported
+  human interaction), titled `shepherd-relay:v1:<id>` and carrying `{tool, params}`. The parent checks
+  it, runs the design extension's own `execute` for that tool in its own process, with the helper's
+  signal, and answers with the result or the error in Shepherd's own words (a `stale_revision`
+  reads "the design changed since revision 4 (it is at 6); read it again and redo the change"). So
+  every design message Shepherd sees comes from the agent's own connection and agent id, through the
+  same handlers and checks as its own calls. `baseRevision` and the store's serial queue behave as
+  always: helpers writing different boards never conflict, and each `board_edit` applies to the
+  board's text as it is when it lands.
+- **Which tools.** `design_read`, `design_check`, `system_read` and `comment_list` only read.
+  `board_write`, `board_edit` and `canvas_update` are the point of it: the store serializes them. `system_write`
+  is relayed under the agent's own identity, so the rule that only the design that built a
+  system changes it holds exactly as for the agent. `comment_reply` and `markup_propose` are never
+  relayed: they are the agent's voice toward the viewer (it answers a comment once every helper is
+  done and says what changed where), and a markup proposal belongs to one turn of the agent's.
+- **Only the listed ones, only this design.** The parent holds the allowlist (the profile's
+  design tools, narrowed by the parent's own active tools) and refuses any other tool, a call over
+  1 MiB either way (the socket's frame cap; a board is at most 900,000 bytes), a ninth call in
+  flight from one helper, and a session that no longer draws a design. The proxies carry no design
+  id, so a helper can name no other design. A profile that lists a design tool for a parent that
+  draws no design, or one of the two that are never relayed, fails at `shepherd_child_start`, saying
+  why, before anything launches.
+- **Cancellation.** The design extension's tools stop waiting when the signal they are given aborts
+  (the request already sent still reaches Shepherd, and a write may land, but its reply is dropped).
+  A helper whose tool call is aborted tells its parent which call to drop (`shepherdRelayCancel`),
+  and the parent drops every call of a helper that is stopped or exits, even one killed outright.
+  `shepherd_child_result` shows `relaying`, the calls in flight.
+- **The profile.** `tools: read, design_read, board_edit, design_check` is a design helper's line
+  (add `bash`, `edit` and `write` only for work outside the design). It needs no `extensions:` line
+  for the design extension: a profile that still lists `shepherd-design.ts` loads it into the helper
+  as it always did, inert without its environment, and the relayed tools are the ones that work. A
+  helper gets no skill unless its profile names one, so the parent's task carries the board rules it
+  needs, and the design agent's prompt says so.
+
 ### Design agents and ordinary threads
 
 An agent draws a design while its `designID` names one in the workspace

@@ -106,7 +106,8 @@ the same choice.
 - **Unknown fields fail the profile**, rather than silently weakening it. This includes runner,
   permissions, budgets, fallback models, memory, timeouts, and recursion policies.
 - **`tools: inherit` is rejected.**
-- **Custom tools:** a requested custom tool without an explicit extension fails. Startup checks
+- **Custom tools:** a requested custom tool without an explicit extension fails (a design
+  agent's design tools are the exception: see Child processes). Startup checks
   that every permitted tool is actually registered.
 - **Tool enforcement:** tools are intersected with the parent allowlist at startup and before
   each prompt, and disallowed calls are blocked. Nested delegation tools stay forbidden.
@@ -174,6 +175,16 @@ session and model variables stripped. They get `--no-skills --no-prompt-template
   filter, the only one that survives), so a `cliproxyapi/<id>` model works in a child exactly as
   in its parent. It is the only provider a child gets beyond pi's own, the user's enabled
   extensions and a profile's `extensions`. With no connection a child is launched as it always was.
+- **A design agent's design tools.** A helper has none of its parent's identity, so it can't call
+  the design tools itself. A profile of a helper started by a design agent may list them in `tools:`
+  (`design_read`, `design_check`, `system_read`, `comment_list`, `board_write`, `board_edit`,
+  `canvas_update`, `system_write`; not `comment_reply` or `markup_propose`): the parent runs each
+  call through its own design extension, on its own connection, and returns the result or error to
+  the helper. Nothing else is relayed, nothing to a parent that draws no design, and a profile
+  that lists them for one fails at the start, saying why. It needs no `extensions:` line; if one
+  names `shepherd-design.ts` it loads inert, as it always did. The mechanism, limits and
+  cancellation are in [designs.md](designs.md#helpers). A typical line:
+  `tools: read, design_read, board_edit, design_check`.
 - **No per-agent settings.** A child gets none of what Shepherd sets for its parent through
   `SHEPHERD_*` variables or its own extensions, such as a model's service tier: it runs with pi's
   defaults for its model.

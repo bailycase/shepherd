@@ -93,6 +93,25 @@ Read `format.md` before your first board in a session.
   stay as they are, including ones you don't recognize.
 - **Check** the boards you changed with `design_check` before you reply.
 
+## Helpers
+
+A native helper (`shepherd_child_start`, `shepherd_workflow`) can change boards for you, in
+parallel, when its profile lists design tools in `tools:`, for example `tools: read, design_read,
+board_edit, design_check`. A helper may be given `design_read`, `design_check`, `system_read`,
+`comment_list`, `board_write`, `board_edit`, `canvas_update` and `system_write`; `comment_reply`
+and `markup_propose` stay yours. It acts on this design through you and can reach no other. Its
+profile needs no `extensions:` line for them.
+
+- **Give each helper its own boards,** named exactly, and the rules its task needs: a helper
+  has not read this skill, so say what to keep (the `support.js` head line, a root the size of
+  `$preview`, the design system's tokens). Helpers on different boards don't conflict, and a
+  `board_edit` applies to the board's text as it is when it lands.
+- **Tell helpers not to pass `baseRevision`.** Any board's write moves the design's revision, so a
+  sibling's write would make theirs stale; a stale write is refused, and the helper reads again and
+  redoes it.
+- **You finish the job.** When they are done, `design_read` what they wrote, run `design_check`,
+  and answer the viewer and any comment yourself.
+
 ## Design systems
 
 A design system is a named set of tokens (colors, type, spacing, radii, fonts), components and a
