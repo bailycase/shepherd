@@ -29,6 +29,12 @@ struct BrowserPortForwarderTests {
             let fd = socket(family, SOCK_STREAM, 0)
             guard fd >= 0 else { return nil }
             defer { close(fd) }
+            // A write to a connection the forwarder already reset must not kill the test process.
+            var noSigpipe: Int32 = 1
+            _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigpipe, socklen_t(MemoryLayout<Int32>.size))
+            // A reply that never comes ends the attempt instead of the test.
+            var timeout = timeval(tv_sec: 10, tv_usec: 0)
+            _ = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
             let status: Int32
             if family == AF_INET {
                 var address = sockaddr_in()
@@ -51,6 +57,8 @@ struct BrowserPortForwarderTests {
             var buffer = [UInt8](repeating: 0, count: 16 * 1024)
             while true {
                 let n = read(fd, &buffer, buffer.count)
+                // A signal that interrupts the read is not the end of the reply (under load it happens).
+                if n < 0, errno == EINTR { continue }
                 if n <= 0 { break }
                 data.append(buffer, count: n)
             }
@@ -78,8 +86,10 @@ struct BrowserPortForwarderTests {
 
         #expect(forwarder.claim(port: local, hostPort: Int(dev.port), owner: owner, slot: slot(client), agent: host.agent) == nil)
         #expect(forwarder.ports(of: owner) == [local])
-        #expect(await get("/hello", host: "127.0.0.1", port: UInt16(local)) == "hello from the host")
-        #expect(await get("/hello", host: "::1", port: UInt16(local)) == "hello from the host")
+        let first = await get("/hello", host: "127.0.0.1", port: UInt16(local))
+        #expect(first == "hello from the host", "got \(String(describing: first)); the dev server saw \(dev.requests.current)")
+        let second = await get("/hello", host: "::1", port: UInt16(local))
+        #expect(second == "hello from the host", "got \(String(describing: second)); the dev server saw \(dev.requests.current)")
         // `localhost`, as a page names it, resolves to either.
         let (data, _) = try await URLSession(configuration: .ephemeral).data(from: URL(string: "http://localhost:\(local)/hello")!)
         #expect(String(decoding: data, as: UTF8.self) == "hello from the host")
@@ -149,9 +159,10 @@ struct BrowserPortForwarderTests {
         let port = Int(try unusedLoopbackPort())
         defer { forwarder.release(owner) }
 
-        for _ in 0..<3 {
+        for round in 0..<3 {
             #expect(forwarder.claim(port: port, hostPort: Int(dev.port), owner: owner, slot: slot(client), agent: host.agent) == nil)
-            #expect(await get("/hello", host: "127.0.0.1", port: UInt16(port)) == "hello from the host")
+            let reply = await get("/hello", host: "127.0.0.1", port: UInt16(port))
+            #expect(reply == "hello from the host", "round \(round) got \(String(describing: reply)); the dev server saw \(dev.requests.current)")
             forwarder.release(owner)
         }
     }

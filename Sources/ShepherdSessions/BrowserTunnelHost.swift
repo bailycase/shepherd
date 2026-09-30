@@ -318,15 +318,19 @@ final class LoopbackConnector {
         _ = fcntl(socketFD, F_SETFD, FD_CLOEXEC)
         var one: Int32 = 1
         _ = setsockopt(socketFD, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
-        let status: Int32
+        // The result and the errno it left, read at once (nothing runs between them).
+        let result: (status: Int32, error: Int32)
         if family == AF_INET {
             var address = sockaddr_in()
             address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
             address.sin_family = sa_family_t(AF_INET)
             address.sin_port = port.bigEndian
             address.sin_addr = in_addr(s_addr: UInt32(0x7f00_0001).bigEndian)
-            status = withUnsafePointer(to: &address) {
-                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(socketFD, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+            result = withUnsafePointer(to: &address) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    let status = connect(socketFD, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                    return (status, errno)
+                }
             }
         } else {
             var address = sockaddr_in6()
@@ -334,15 +338,19 @@ final class LoopbackConnector {
             address.sin6_family = sa_family_t(AF_INET6)
             address.sin6_port = port.bigEndian
             address.sin6_addr = in6addr_loopback
-            status = withUnsafePointer(to: &address) {
-                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(socketFD, $0, socklen_t(MemoryLayout<sockaddr_in6>.size)) }
+            result = withUnsafePointer(to: &address) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    let status = connect(socketFD, $0, socklen_t(MemoryLayout<sockaddr_in6>.size))
+                    return (status, errno)
+                }
             }
         }
-        if status == 0 {
+        if result.status == 0 {
             finish(.success(socketFD))
             return
         }
-        guard errno == EINPROGRESS else {
+        // A connect interrupted by a signal goes on in the background, as one in progress does.
+        guard result.error == EINPROGRESS || result.error == EINTR else {
             Darwin.close(socketFD)
             tryNext()
             return

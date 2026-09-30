@@ -273,15 +273,17 @@ struct RemoteBrowserTests {
         #expect(old.vm.sidePaneTabs(for: .local(AgentID())) == [.changes, .browser])
     }
 
+    /// Each page holds a port and has its web view (made, not loaded: what this checks is what goes
+    /// with a thread, not a page in flight).
     @Test func removingAThreadOrItsHostTakesItsPageAndItsPortsWithIt() async throws {
         let (s, refs) = try await setup(threads: 2)
         defer { s.stop() }
-        let dev = try DevServerFixture()
-        defer { dev.stop() }
         let a = s.session(refs[0]), b = s.session(refs[1])
-        let portA = try map(a, to: dev.port), portB = try map(b, to: dev.port)
-        a.load(try url(portA, "/hello"))
-        b.load(try url(portB, "/hello"))
+        let portA = try unusedPort(), portB = try unusedPort()
+        #expect(a.remote?.forward(try url(portA, "/hello")) == nil)
+        #expect(b.remote?.forward(try url(portB, "/hello")) == nil)
+        a.prepareWebView()
+        b.prepareWebView()
         let ownerA = try #require(a.remote).owner, ownerB = try #require(b.remote).owner
         #expect(s.vm.browsers.ports.ports(of: ownerA) == [Int(portA)])
 

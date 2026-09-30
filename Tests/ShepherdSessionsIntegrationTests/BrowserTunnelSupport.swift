@@ -112,6 +112,8 @@ final class TunnelPeer: @unchecked Sendable {
                 var pfd = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
                 guard poll(&pfd, 1, 100) > 0 else { continue }
                 let n = Darwin.read(fd, &buffer, min(buffer.count, limit - data.count))
+                // A signal that interrupts the read is not the end of the tunnel.
+                if n < 0, errno == EINTR { continue }
                 if n <= 0 { break }
                 data.append(buffer, count: n)
             }

@@ -68,7 +68,11 @@ public final class LoopbackServer: @unchecked Sendable {
         Thread.detachNewThread { [self] in
             while true {
                 let client = accept(fd, nil, nil)
-                if client < 0 { return }
+                if client < 0 {
+                    // A signal (or a connection reset before it was accepted) is not the end of the server.
+                    if errno == EINTR || errno == ECONNABORTED { continue }
+                    return
+                }
                 var noSigpipe: Int32 = 1
                 _ = setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &noSigpipe, socklen_t(MemoryLayout<Int32>.size))
                 lock.lock()
@@ -98,12 +102,22 @@ public final class LoopbackServer: @unchecked Sendable {
 
     // MARK: Helpers for handlers
 
+    /// A syscall again while a signal interrupts it (under load a blocked `read` is interrupted now
+    /// and then, and a fixture that took that for the peer hanging up dropped a live connection).
+    static func retrying(_ call: () -> Int) -> Int {
+        while true {
+            let n = call()
+            if n < 0, errno == EINTR { continue }
+            return n
+        }
+    }
+
     /// Reads exactly `count` bytes, or nil at EOF.
     public static func readExactly(_ fd: Int32, _ count: Int) -> Data? {
         var data = Data(capacity: count)
         var buffer = [UInt8](repeating: 0, count: min(max(count, 1), 64 * 1024))
         while data.count < count {
-            let n = read(fd, &buffer, min(buffer.count, count - data.count))
+            let n = LoopbackServer.retrying { read(fd, &buffer, min(buffer.count, count - data.count)) }
             if n <= 0 { return nil }
             data.append(buffer, count: n)
         }
@@ -115,7 +129,7 @@ public final class LoopbackServer: @unchecked Sendable {
     public static func writeAll(_ fd: Int32, _ data: Data) -> Bool {
         var offset = 0
         while offset < data.count {
-            let n = data.withUnsafeBytes { write(fd, $0.baseAddress! + offset, data.count - offset) }
+            let n = retrying { data.withUnsafeBytes { write(fd, $0.baseAddress! + offset, data.count - offset) } }
             if n <= 0 { return false }
             offset += n
         }
@@ -128,7 +142,7 @@ public final class LoopbackServer: @unchecked Sendable {
         var buffer = [UInt8](repeating: 0, count: 16 * 1024)
         let terminator = Data("\r\n\r\n".utf8)
         while data.range(of: terminator) == nil {
-            let n = read(fd, &buffer, buffer.count)
+            let n = retrying { read(fd, &buffer, buffer.count) }
             if n <= 0 { return nil }
             data.append(buffer, count: n)
             if data.count > 256 * 1024 { return nil }
@@ -224,7 +238,7 @@ public final class DevServerFixture: @unchecked Sendable {
         func fill(_ count: Int) -> Data? {
             while pending.count < count {
                 var buffer = [UInt8](repeating: 0, count: 64 * 1024)
-                let n = read(fd, &buffer, buffer.count)
+                let n = LoopbackServer.retrying { read(fd, &buffer, buffer.count) }
                 if n <= 0 { return nil }
                 pending.append(buffer, count: n)
             }
@@ -275,7 +289,7 @@ extension LoopbackServer {
             defer { close(fd) }
             var buffer = [UInt8](repeating: 0, count: 64 * 1024)
             while true {
-                let n = read(fd, &buffer, buffer.count)
+                let n = retrying { read(fd, &buffer, buffer.count) }
                 if n <= 0 { return }
                 if !writeAll(fd, Data(buffer[0..<n])) { return }
             }
