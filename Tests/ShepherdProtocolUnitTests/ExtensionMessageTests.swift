@@ -20,13 +20,13 @@ struct ExtensionMessageTests {
              .sendPaneInput, .readPane, .requestReview, .listAgents, .sendToAgent, .spawnAgent,
              .coordinateAgent, .agentResponse, .cancelAgentRequest, .createAutomation, .listAutomations,
              .updateAutomation, .deleteAutomation, .startAutomation, .stopAutomation, .suggestInstruction,
-             .designRead, .designWriteBoard, .designUpdateIndex, .designComments, .designCommentReply,
+             .designRead, .designWriteBoard, .designEditBoard, .designUpdateIndex, .designComments, .designCommentReply,
              .designSystemRead, .designSystemWrite, .designProposeComments, .designGet, .designNote, .mcpCredentials, .mcpReport,
              .helloBrowser, .browser:
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 42
+    static let caseCount = 43
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
@@ -69,6 +69,10 @@ struct ExtensionMessageTests {
         .designRead(id: 21, agentID: agent, designID: design, path: "flows/A-phone.dc.html"),
         .designWriteBoard(id: 22, agentID: agent, designID: design, path: "A.dc.html",
                           source: "<!doctype html>\n<x-dc><div style=\"width: 390px\">“Hi” · 👋</div></x-dc>\n", baseRevision: 7),
+        .designEditBoard(id: 34, agentID: agent, designID: design, path: "A.dc.html", edits: [
+            DesignBoardEdit(find: "Pay now", replace: "Pay “now” · 👋"),
+            DesignBoardEdit(find: "--accent: #4f46e5;", replace: "--accent: #4338ca;", all: true),
+        ], baseRevision: 7),
         .designUpdateIndex(id: 23, agentID: agent, designID: design, changes: .object([
             "title": .string("Checkout funnel"),
             "boards": .object(["A.dc.html": .object(["x": .number(0), "y": .number(0), "w": .number(1280), "h": .number(800)]),
@@ -236,6 +240,14 @@ struct ExtensionMessageTests {
          .designWriteBoard(id: 3, agentID: agent, designID: design, path: "A.dc.html", source: "<x-dc></x-dc>", baseRevision: nil)),
         (#"{"type":"designWriteBoard","path":"A.dc.html","source":"s","baseRevision":4,"id":4,"agentID":"a1","designID":"d1"}"#,
          .designWriteBoard(id: 4, agentID: agent, designID: design, path: "A.dc.html", source: "s", baseRevision: 4)),
+        // board_edit omits `all` unless it is true.
+        (#"{"type":"designEditBoard","path":"A.dc.html","edits":[{"find":"Pay","replace":"Buy"},{"find":"a","replace":"b","all":true}],"id":12,"agentID":"a1","designID":"d1"}"#,
+         .designEditBoard(id: 12, agentID: agent, designID: design, path: "A.dc.html",
+                          edits: [DesignBoardEdit(find: "Pay", replace: "Buy"), DesignBoardEdit(find: "a", replace: "b", all: true)],
+                          baseRevision: nil)),
+        (#"{"type":"designEditBoard","path":"A.dc.html","edits":[{"find":"x","replace":"","all":false}],"baseRevision":3,"id":13,"agentID":"a1","designID":"d1"}"#,
+         .designEditBoard(id: 13, agentID: agent, designID: design, path: "A.dc.html", edits: [DesignBoardEdit(find: "x", replace: "")],
+                          baseRevision: 3)),
         (#"{"type":"designUpdateIndex","changes":{"boards":{"C.dc.html":null}},"baseRevision":6,"id":5,"agentID":"a1","designID":"d1"}"#,
          .designUpdateIndex(id: 5, agentID: agent, designID: design, changes: .object(["boards": .object(["C.dc.html": .null])]),
                             baseRevision: 6)),
@@ -334,13 +346,13 @@ struct ExtensionReplyTests {
     static func caseName(_ reply: ExtensionReply) -> String {
         switch reply {
         case .parentInput, .childCommand, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .automations,
-             .agents, .message, .agentRequest, .agentResult, .suggestion, .design, .designBoard, .designWritten,
+             .agents, .message, .agentRequest, .agentResult, .suggestion, .design, .designBoard, .designWritten, .designEdited,
              .designComments, .designComment, .designSystems, .designSystem, .designSystemWritten, .designProposals,
              .designReference, .designNote, .mcpCredentials, .browserResult:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 27
+    static let caseCount = 28
     static let system = DesignSystemSummary(
         info: DesignSystemInfo(namespace: "acme-web", title: "acme-web", revision: 3, createdAt: 1_000, updatedAt: 2_000,
                                syncedAt: 2_000, ownerDesignID: DesignID(rawValue: "d1"), spaceID: SpaceID(rawValue: "s1"),
@@ -394,6 +406,9 @@ struct ExtensionReplyTests {
         .designBoard(id: 22, board: DesignBoardSource(path: board, source: "<!doctype html>\n<x-dc>Hi</x-dc>\n", sha256: "5e1f", revision: 4)),
         .designWritten(id: 23, result: DesignWriteResult(revision: 5, changed: true, sha256: "9c0d", created: true,
                                                           warnings: [.innerHTML, .missingPreview], title: "Checkout funnel", boardCount: 1)),
+        .designEdited(id: 36, result: DesignWriteResult(revision: 6, changed: true, sha256: "4b1e", created: false,
+                                                        warnings: [.globalKeyHandler], title: "Checkout funnel", boardCount: 2),
+                      replaced: [1, 4]),
         .designComments(id: 24, comments: DesignComments(revision: 3, comments: [
             comment, DesignComment(number: 2, board: DesignPath("flows/Cart.dc.html")!, tid: 2, path: [0, 1], text: "Bigger total",
                                    createdAt: 3, resolvedAt: 4, detached: true),
@@ -503,6 +518,17 @@ struct ExtensionReplyTests {
         #expect(result["revision"] as? Int == 5 && result["changed"] as? Bool == true && result["created"] as? Bool == false)
         #expect(result["warnings"] as? [String] == ["global_key_handler"])
         #expect(result["boardCount"] as? Int == 2)
+    }
+
+    /// What `board_edit` reads: the write as `board_write` reads it, and how many matches each edit replaced.
+    @Test func boardEditRepliesCarryTheShapeTheExtensionReads() throws {
+        let edited = try Wire.object(ExtensionReply.designEdited(id: 3, result: DesignWriteResult(
+            revision: 5, changed: true, sha256: "9c0d", created: false, warnings: [.innerHTML], title: nil, boardCount: 2), replaced: [1, 3]))
+        #expect(edited["type"] as? String == "designEdited" && edited["id"] as? Int == 3)
+        #expect(edited["replaced"] as? [Int] == [1, 3])
+        let result = try #require(edited["result"] as? [String: Any])
+        #expect(result["revision"] as? Int == 5 && result["changed"] as? Bool == true && result["created"] as? Bool == false)
+        #expect(result["warnings"] as? [String] == ["inner_html"] && result["sha256"] as? String == "9c0d")
     }
 
     @Test func parentInputHasNoPayload() throws {

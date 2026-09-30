@@ -110,6 +110,12 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// `board_write`: one board's whole source, when the design is still at `baseRevision` (nil:
     /// whatever it is at). Answered with `designWritten`.
     case designWriteBoard(id: Int, agentID: AgentID, designID: DesignID, path: String, source: String, baseRevision: UInt64?)
+    /// `board_edit`: find-and-replace edits applied in order to the board's current text on the
+    /// host (`DesignBoardEdits`), then written as `designWriteBoard` writes, when the design is
+    /// still at `baseRevision` (nil: whatever it is at). An edit that matches nothing, or
+    /// several times without `all`, fails the call and changes nothing. Answered with
+    /// `designEdited`.
+    case designEditBoard(id: Int, agentID: AgentID, designID: DesignID, path: String, edits: [DesignBoardEdit], baseRevision: UInt64?)
     /// `canvas_update`: a JSON merge patch for the design's canvas.json (`DesignIndex.merging`).
     /// Answered with `designWritten`.
     case designUpdateIndex(id: Int, agentID: AgentID, designID: DesignID, changes: JSONValue, baseRevision: UInt64?)
@@ -175,7 +181,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case prompt, enabled, start, automationID, targetAgentID, request, requestID, result, delivery
         case error
         case line, reason, file
-        case designID, path, source, baseRevision, changes, commentID
+        case designID, path, source, baseRevision, changes, commentID, edits
         case namespace, system
         case call, proposals
         case what
@@ -190,7 +196,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case startAutomation, stopAutomation
         case listAgents, sendToAgent, spawnAgent, coordinateAgent, agentResponse, cancelAgentRequest
         case suggestInstruction
-        case designRead, designWriteBoard, designUpdateIndex, designComments, designCommentReply
+        case designRead, designWriteBoard, designEditBoard, designUpdateIndex, designComments, designCommentReply
         case designSystemRead, designSystemWrite, designProposeComments
         case designGet, designNote
         case mcpCredentials, mcpReport
@@ -375,6 +381,15 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                 designID: try c.decode(DesignID.self, forKey: .designID),
                 path: try c.decode(String.self, forKey: .path),
                 source: try c.decode(String.self, forKey: .source),
+                baseRevision: try c.decodeIfPresent(UInt64.self, forKey: .baseRevision)
+            )
+        case .designEditBoard:
+            self = .designEditBoard(
+                id: try c.decode(Int.self, forKey: .id),
+                agentID: try c.decode(AgentID.self, forKey: .agentID),
+                designID: try c.decode(DesignID.self, forKey: .designID),
+                path: try c.decode(String.self, forKey: .path),
+                edits: try c.decode([DesignBoardEdit].self, forKey: .edits),
                 baseRevision: try c.decodeIfPresent(UInt64.self, forKey: .baseRevision)
             )
         case .designUpdateIndex:
@@ -617,6 +632,14 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(designID, forKey: .designID)
             try c.encode(path, forKey: .path)
             try c.encode(source, forKey: .source)
+            try c.encodeIfPresent(baseRevision, forKey: .baseRevision)
+        case .designEditBoard(let id, let agentID, let designID, let path, let edits, let baseRevision):
+            try c.encode(Kind.designEditBoard, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(designID, forKey: .designID)
+            try c.encode(path, forKey: .path)
+            try c.encode(edits, forKey: .edits)
             try c.encodeIfPresent(baseRevision, forKey: .baseRevision)
         case .designUpdateIndex(let id, let agentID, let designID, let changes, let baseRevision):
             try c.encode(Kind.designUpdateIndex, forKey: .type)
@@ -1030,6 +1053,9 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     case designBoard(id: Int, board: DesignBoardSource)
     /// What a `designWriteBoard` or `designUpdateIndex` left behind.
     case designWritten(id: Int, result: DesignWriteResult)
+    /// What a `designEditBoard` left behind: the write as `designWritten` reports it, and how
+    /// many matches each edit replaced, in order.
+    case designEdited(id: Int, result: DesignWriteResult, replaced: [Int])
     /// A `designComments`: every comment of the design, open and resolved, with their revision.
     case designComments(id: Int, comments: DesignComments)
     /// A `designCommentReply`: the comment with the reply under it.
@@ -1057,7 +1083,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case type, id, code, message, panes, pane, paneID, lines, automations, agents, text, delivery
         case runID, action, mode
         case outcome
-        case snapshot, board
+        case snapshot, board, replaced
         case comments, comment
         case listing, system
         case proposals
@@ -1070,7 +1096,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case parentInput, childCommand, agentRequest, agentResult
         case ok, error, panes, paneOpened, paneContent, reviewResult, automations, agents, message
         case suggestion
-        case design, designBoard, designWritten, designComments, designComment
+        case design, designBoard, designWritten, designEdited, designComments, designComment
         case designSystems, designSystem, designSystemWritten, designProposals
         case designReference, designNote
         case mcpCredentials
@@ -1166,6 +1192,12 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             self = .designWritten(
                 id: try c.decode(Int.self, forKey: .id),
                 result: try c.decode(DesignWriteResult.self, forKey: .result)
+            )
+        case .designEdited:
+            self = .designEdited(
+                id: try c.decode(Int.self, forKey: .id),
+                result: try c.decode(DesignWriteResult.self, forKey: .result),
+                replaced: try c.decode([Int].self, forKey: .replaced)
             )
         case .designComments:
             self = .designComments(
@@ -1297,6 +1329,11 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             try c.encode(Kind.designWritten, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(result, forKey: .result)
+        case .designEdited(let id, let result, let replaced):
+            try c.encode(Kind.designEdited, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(result, forKey: .result)
+            try c.encode(replaced, forKey: .replaced)
         case .designComments(let id, let comments):
             try c.encode(Kind.designComments, forKey: .type)
             try c.encode(id, forKey: .id)
