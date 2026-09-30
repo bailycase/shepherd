@@ -41,6 +41,13 @@ enum BrowserScripts {
         post('error', [String(event.message || 'Error') + where]);
       });
       window.addEventListener('unhandledrejection', (event) => post('error', ['Unhandled rejection: ' + format(event.reason)]));
+      // A script, stylesheet or image that failed to load: resource errors do not bubble.
+      window.addEventListener('error', (event) => {
+        const target = event.target;
+        if (!target || target === window || target.nodeType !== 1) return;
+        const source = target.currentSrc || target.src || target.href;
+        if (source) post('error', ['Failed to load ' + target.localName + ' ' + String(source).slice(0, 300)]);
+      }, true);
       // The picker asks where an element came from: a React dev build keeps its JSX location on
       // the element's fiber. The answer goes back as an attribute, which every world sees.
       document.addEventListener('shepherd:source', (event) => {

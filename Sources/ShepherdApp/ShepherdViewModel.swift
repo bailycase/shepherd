@@ -650,6 +650,8 @@ final class ShepherdViewModel {
         installAutomationControl()
         // Agents can see, message, and spawn peer threads.
         installAgentPeerControl()
+        // Agents drive their thread's Browser page.
+        installBrowserAgentControl()
         // Host role: bind the remote listener at VM creation, not from a
         // window's .task — a restored-minimized or slow-to-render window
         // must not leave a host Mac unreachable. The TCP listener is

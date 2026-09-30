@@ -150,7 +150,18 @@ private struct BrowserPageArea: View {
                         }
                         .nwTransition(.overlay, edge: .leading)
                 }
+                // The agent is using the page: the ring, its pointer and the card. Native and over
+                // the page, never in it; only the card takes clicks.
+                if let agent = session.agentOverlay {
+                    NWBrowserAgentOverlay(
+                        note: agent.note,
+                        pointer: agent.pointer.map { CGPoint(x: origin.x + $0.x * layout.zoom, y: origin.y + $0.y * layout.zoom) },
+                        takeOver: { vm.takeOverBrowser(session) })
+                        .frame(width: geo.size.width, height: geo.size.height)
+                        .nwTransition(.overlay)
+                }
             }
+            .nwAnimation(.overlay, value: session.agentOverlay != nil)
             .onChange(of: layout.zoom, initial: true) { _, zoom in session.apply(zoom: zoom) }
         }
         .clipped()
