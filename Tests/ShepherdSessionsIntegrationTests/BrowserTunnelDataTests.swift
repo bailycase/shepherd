@@ -159,10 +159,15 @@ struct BrowserTunnelDataTests {
         let first = await peer.read(10_000)
         #expect(first.count == 10_000)
         var settled = 0
-        try await eventually("the sender to stop") {
+        var lastWrite = ContinuousClock.now
+        // Two equal 10 ms polls can catch a frame still in flight, not a blocked sender.
+        try await eventually("the sender to stop for half a second") {
             let now = written.current
-            defer { settled = now }
-            return now == settled && now > 0
+            if now != settled {
+                settled = now
+                lastWrite = .now
+            }
+            return now > 0 && ContinuousClock.now - lastWrite >= .milliseconds(500)
         }
         try await Task.sleep(for: .milliseconds(500))
         let stalled = written.current
