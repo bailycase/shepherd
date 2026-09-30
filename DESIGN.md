@@ -179,9 +179,12 @@ And the rules that follow from them:
 | Subagents, MobileSubagent: the transcript's live call "Building swift build --target ShepherdRemote 11s" with the output's tail | The live line with its verb, command and clock ("Building swift build --target ShepherdRemote 11s"), with no output lines | A run's session file holds only finished calls, and the run reports its call in flight but not its output |
 | PaneStates widths: the thread keeps 520pt, 760pt default for Files, ⇧⌘O pops the pane into a window | 380pt minimum and 600 default as drawn, at most half the column, and the layout keeps 400 (double-clicking the divider takes it to half); no pop-out | The Navigation board's 400pt thread (`RightPaneSplit`); Files is not built; one window (Window and adaptive layout) |
 | PaneStates' ⋯ menu (`SidePaneOptions`): Split below, Open pane in its own window ⇧⌘O, Reset width, then Show tabs with a check per tab | Changes' own items (Maximize Pane, Expand All Files, Collapse All Files, Copy Review as Text), then Reset Width | With Changes the only tab, a split has nothing to show below it, Show tabs nothing to hide, and a window of its own would break the one-window rule and host the review a second time: none is offered until it works (never a dead item) |
-| PaneStates, the Changes boards, PaneBrowser, PaneArtifacts, PaneFiles: four tabs, Changes, Browser, Artifacts and Files | Changes and Browser (a remote thread: Changes alone) | Only what Shepherd has (the user's decision, 2026-09-25: "dont show browser, artifacts, files, etc, only show the things we have"); the others join when they are built, and a remote thread's Browser when the tunnel reaches its host |
-| PaneStates, PaneBrowser: the host chip "build-01" for a remote host | "This Mac" | Local threads only; a remote thread's Browser waits for the tunnel |
-| PaneStates › viewport: Throttle to 3G under Dark appearance | Left out | WebKit has no public throttle; it will come through the tunnel's local proxy (the user's decision, 2026-09-29) |
+| PaneStates, the Changes boards, PaneBrowser, PaneArtifacts, PaneFiles: four tabs, Changes, Browser, Artifacts and Files | Changes and Browser (a remote thread: Changes, and the Browser where its host carries tunnels) | Only what Shepherd has (the user's decision, 2026-09-25: "dont show browser, artifacts, files, etc, only show the things we have"); the others join when they are built |
+| PaneStates, PaneBrowser: the host chip "build-01" beside a `localhost:5173/checkout` page | The host's name for a remote thread's page while it is on the host's loopback (`localhost`, `127.0.0.1`, `[::1]`, or nothing open); "This Mac" for a local thread and for a remote thread's page on the web | The chip names the machine a page's traffic goes to |
+| PaneStates › BrowserPane · nothing open: "The agent opens pages here when it starts a dev server" | The same words on a remote thread, where a page the agent opens is on the host's screen, not in this tab | The user's board words; the viewer's tab is its own page until agents drive a remote thread's page from the viewer's Mac, a later change (docs/browser.md › Remote) |
+| PaneStates › SidePaneTabs · the agent opened a tab: the dot and its tip | None on a remote thread | The page pi opened is the host's, which this tab does not show; a review pi opens on a host is likewise the host's view state |
+| PaneBrowser: nothing draws a page that cannot load | A notice card under the toolbar (`NWBrowserNotice`) when a forwarded port is in use on this Mac or held by another thread's page; nothing loads | A `localhost` page that reached the wrong machine's server would be worse than none; the words are the app's |
+| PaneStates › viewport: Throttle to 3G under Dark appearance | Left out | WebKit has no public throttle, and the tunnel turned out to be a loopback listener, not the local proxy the user's decision (2026-09-29) waited for (WebKit sends loopback past every proxy: docs/browser.md › The spike); a listener could pace a remote thread's page but not a local one, still to decide |
 | PaneBrowser: the element's popover drawn in the page beside it | A native popover over the page, beside the element (else left of it, else under it), following it as the page scrolls; only the outline and tag are drawn in the page | Its buttons are Shepherd's controls, and the page can't reach or restyle them |
 | PaneBrowser: Hide console (the board draws no hidden state) | The bar stays, with Show console (a chevron up) | The console must be reachable again from where it was |
 | PaneStates › BrowserPane · the agent is using it: the card's leading glyph in `textSecondary`; the card says "Agent is clicking through checkout" for a click | The glyph in `running`, as DESIGN.md's card has always read (the user's decision, 2026-09-30); the card shows for every browser tool, with a phrase derived from the action when the agent gave no note | The board draws one click; a read or a screenshot is the agent using the page too, and Take over is how the user stops it |
@@ -2830,8 +2833,8 @@ One pane per window beside the agent's layout (`RightPaneSplit` around the whole
 sits at the workspace's trailing edge beside the thread and its terminal panel, at its full
 height, and the dock rule measures the main column, never the thread's own pane. Its sizes and
 adaptive rule are in "Window and adaptive layout" above. It shows only the tabs Shepherd has:
-**Changes**, the Changes pane, and **Browser** (Side pane: Browser, below) for a local thread; a
-remote thread's pane has Changes alone until the Browser reaches hosts. Artifacts and Files are
+**Changes**, the Changes pane, and **Browser** (Side pane: Browser, below) for a local thread and
+for a remote thread whose host carries Browser tunnels (an older host: Changes alone). Artifacts and Files are
 specified below and are not built, so they have no tab and no placeholder (the user's decision,
 2026-09-25: "dont show browser, artifacts, files, etc, only show the things we have"); each joins
 `SidePaneTab` when it is. A tray row, a record line, and the footer's "3 subagents" open the
@@ -2840,7 +2843,7 @@ inspector; the tray's Steer opens it with its Steer field focused.
 - **Showing and hiding:** ⇧⌘B, the header's side-pane button, or View › Show Side Pane / Hide Side
   Pane. Showing opens the pane on its tab (Changes starts the review); hiding also closes an
   inspected subagent, and discards the review like a cancel. ⌃1 (View › Changes) shows Changes in
-  front of an inspected subagent, and ⌃2 (View › Browser) the Browser (a remote thread beeps);
+  front of an inspected subagent, and ⌃2 (View › Browser) the Browser (a remote thread on a host without tunnels beeps);
   they are fixed, like ⌘1–9, and ⌃3–⌃4 wait for the other tabs.
   Review Changes (a sidebar row's menu), the palette's Review diff, the chip's Show Changes, a
   thread's "review ›" link and the inspector's file links show Changes too.
@@ -3147,9 +3150,9 @@ review.
 **Browser** (PaneBrowser, PaneStates › Browser; `BrowserPane.swift`, the page in
 `BrowserHost.swift` (the only app file that imports WebKit), its rules in `BrowserModel.swift`, the
 page's scripts in `BrowserScripts.swift`; parts in ShepherdUI `Components/Browser/Browser.swift`):
-a local thread's own web page, beside it. The Browser tab (`globe`, ⌃2) follows Changes. Remote
-threads have no Browser tab yet: it will reach a thread's host through Shepherd's tunnel, which
-forwards the port (not built yet).
+a thread's own web page, beside it. The Browser tab (`globe`, ⌃2) follows Changes. A remote thread
+has it too, when its host carries Browser tunnels (Remote threads, below); an older host shows
+Changes alone.
 
 - **One page per thread:** a WebKit view made the first time the thread opens something, in a
   website data store of its own keyed on the agent, so it shares cookies, storage and caches with
@@ -3159,7 +3162,8 @@ forwards the port (not built yet).
   store per thread instead, so cookies don't survive a relaunch there (`BrowserHost.swift`). The
   view belongs to the thread, not the pane: hiding the pane, another tab, another thread on screen
   or a parked layout only take it out of
-  the window (the visibility-flip rule), so the page never reloads.
+  the window (the visibility-flip rule), so the page never reloads. A remote thread's page is made
+  here too, in a store keyed on its host and agent, so it is never a local thread's.
 - **Toolbar** (`NWBrowserToolbar`), 44pt, 8pt side padding, a hairline beneath: Back, Forward and
   Reload (28pt `nwIcon`; one that can't act is at 40%; Reload is Stop loading, an ×, while the page
   loads), 6pt, the address field, 6pt, then Select an element, Viewport size and Open in your
@@ -3170,8 +3174,9 @@ forwards the port (not built yet).
   line: a 12pt `textTertiary` globe, the URL in Geist Mono 12 (the host with its port in
   `textPrimary`, the path, query and fragment in `textSecondary`; the scheme left out for http and
   https, a lone "/" left out), truncating, and a 20pt capsule host chip on `bgRaised` with a
-  `lineSubtle` line (a 10pt display glyph, "This Mac" in Geist 11 `textSecondary`). Empty, it
-  reads "Search or enter a URL" in `textTertiary`. ⌘L or a click edits the whole URL; ↩ opens, Esc
+  `lineSubtle` line (a 10pt display glyph, "This Mac" in Geist 11 `textSecondary`; a remote thread's
+  page at a `localhost`, `127.0.0.1` or `[::1]` address, or nothing open, says the host's name,
+  "build-01"). Empty, it reads "Search or enter a URL" in `textTertiary`. ⌘L or a click edits the whole URL; ↩ opens, Esc
   gives up. It takes a URL with a scheme; a host with a port or a path (loopback, a private IPv4
   address, `.local`, `.test` and `.localhost` names go over http, others over https); ":5173" for a
   port on this Mac; anything else is a search (Google).
@@ -3183,18 +3188,20 @@ forwards the port (not built yet).
   a card per dev server (`NWDevServerCard`: `bgRaised`, `lineSubtle`, radius 8, padding 10×12; a
   12pt terminal glyph, "pnpm dev" in Geist Mono 12 over "from package.json · acme-web" in Geist 11
   `textTertiary`, and "Start on This Mac", secondary `s` with a play glyph ("Start on build-01"
-  for a remote host, local threads only), and an "Open a URL" row the same way with the ⌘L
-  keycaps.
+  on a remote thread), and an "Open a URL" row the same way with the ⌘L keycaps.
   - **Dev servers** (`DevServerDiscovery`): the `dev`, `start`, `serve` and `preview` scripts, in
     that order, of the thread's folder's package.json and then each `apps/*/package.json` (at most
     six), read off the main thread. The command follows the lockfile beside it, else the
-    repository's: pnpm, yarn or bun (`bun run`), else npm (`npm run dev`, `npm start`).
+    repository's: pnpm, yarn or bun (`bun run`), else npm (`npm run dev`, `npm start`). A remote
+    thread's are read on its host, in the thread's folder there (`RemoteAgentQuery.devServers`).
   - **Start** runs the command in a new terminal pane of the thread's layout, the same path an
     agent's `pane_open` takes (`PaneControl`), so the terminal panel opens on it. When the script's
     port is known (its `--port`, `-p` or `PORT=`, else its tool's default: Vite 5173 and its
     preview 4173, Next, Nuxt, Remix and create-react-app 3000, Astro 4321, Angular 4200,
     Storybook 6006, webpack 8080, …), the page opens by itself once that port answers, tried every
-    half second for 90 seconds.
+    half second for 90 seconds. On a remote thread the command runs in a new terminal pane on the
+    host (`RemoteAgentAction.openTerminal`), in the folder the script was found in, and the port is
+    forwarded here and tried through the tunnel.
 - **Viewport** (`NWViewportMenu`, a 220pt popover 4pt under the toolbar, its trailing edge under
   the button): Fit the pane (the default), iPhone 16 · 393, iPad mini · 744, Laptop · 1280 (the
   check leading, widths trailing in Geist Mono 11 `textTertiary`), a divider, and Dark appearance
@@ -3260,9 +3267,21 @@ forwards the port (not built yet).
   and the page in Geist Mono 12 (`localhost:5173/checkout`, the host, port, path and query as the
   address field shows them), and its age in `textTertiary` ("10s", "2m", "1h", counting up). It
   moves left when the strip is too narrow for it.
-- **Not built yet:** remote threads and a host chip naming the host, Throttle to 3G (it waits for
-  the tunnel's local proxy, the user's decision, 2026-09-29), and Split below and the pane's own
-  window (below).
+- **Remote threads** (docs/browser.md › Remote): the tab shows when the host lists
+  `browser.tunnel.v1`. The page is a web view on this Mac whose URL stays `localhost:5173/checkout`;
+  its traffic to the host's loopback ports goes to the host through the authenticated connection
+  (WebKit sends loopback past every proxy, so this Mac listens on the port itself). Everything on
+  the local tab works as it does there: the picker, the console drawer, the viewport, Add to message
+  and the composer's chip, ⌃2, ⌘L and ⇧⌘C. A port on this Mac has one owner: a port another program
+  listens on, one below 1024 or one another thread's page holds is refused, nothing loads, and a
+  notice card (`NWBrowserNotice`: a 12pt `lanternText` glyph, the reason in `ui`, a close button;
+  `bgRaised`, radius 12, a `lantern` line, 12pt from the pane's sides) says why. A port a page names is
+  held until the thread or its host goes away. **The agent's page and this one are different pages**
+  until agents drive a remote thread's page from the viewer's Mac: nothing the agent opens on the host
+  shows here, and the dot and the tip stay off (a review pi opens on a host is likewise the host's view
+  state).
+- **Not built yet:** Throttle to 3G (see the departures), agents driving a remote thread's page from
+  the viewer's Mac, and Split below and the pane's own window (below).
 - **The agent is using it** (`NWAgentRing`, `NWAgentPointer`, `NWAgentCard`, `NWBrowserAgentOverlay`
   in ShepherdUI `Components/Browser/BrowserAgent.swift`; PaneStates › BrowserPane · the agent is
   using it; docs/browser.md): the agent drives the same page you see, through its `browser_*` tools
@@ -4107,6 +4126,12 @@ nothing here changes your pi."
   - Token, "Paste this into the other Mac's Token field. To revoke every client, delete the file and
     turn the listener off and on." (the board: "Delete the file to revoke every client."; see the
     departures): a `PathRow` for `remote-token` with Reveal.
+  - What a token opens, for the Browser: a connected client can ask this Mac to carry a connection
+    to one of its own **loopback** ports (`127.0.0.1` or `::1`, never another address) for a thread
+    it sees, so its page there reaches a dev server here (Side pane: Browser › Remote threads;
+    docs/browser.md › Remote). It adds no privilege beyond what a token already grants (a client can
+    type into this Mac's terminals), it is capped (64 tunnels per client, 256 in all) and closed when
+    idle, and every one ends when the client disconnects. There is no switch for it yet.
 
 #### Keyboard (SettingsKeyboard)
 
@@ -9392,11 +9417,11 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | NavDesigns | Designs page; Design tool › Designs | Built (Mac, behind the Design tool experiment; systems as names only) |
 | NavAutomations | Automations page; Sidebar (no When, Next or tabs: departures) | Built |
 | NavHosts | Hosts page; Sidebar; Settings › Remote (no daemon, Load or disk use: departures) | Built |
-| PaneBrowser | Side pane: Browser | Partial (local threads: the page, toolbar, viewport, Select an element, composer chip, console, the agent using it and its thread lines; not remote threads or Throttle to 3G) |
+| PaneBrowser | Side pane: Browser | Partial (local threads: the page, toolbar, viewport, Select an element, composer chip, console, the agent using it and its thread lines; remote threads: the same page through the tunnel, its host chip and Start on the host, not the agent driving it; not Throttle to 3G) |
 | PaneArtifacts | Side pane (Artifacts) | Not built yet |
 | PaneArtifactEdit | Side pane (Artifacts › Editing in place) | Not built yet |
 | PaneFiles | Side pane (Files) | Not built yet |
-| PaneStates | Side pane (tabs, dot, narrow, ⋯, button); Side pane: Browser; Side pane: Artifacts, Files | Partial (Browser: nothing open, viewport, the agent using it and the tab's tip built) |
+| PaneStates | Side pane (tabs, dot, narrow, ⋯, button); Side pane: Browser; Side pane: Artifacts, Files | Partial (Browser: nothing open, viewport, the agent using it and the tab's tip built; a remote thread's Browser tab built without the dot) |
 | ContextDetails | Composer, questions, and menus › Context meter | Built |
 | ContextFull | Composer, questions, and menus › Context meter | Built |
 | ContextCompacted | Composer, questions, and menus › Context meter; Thread › Compactions | Built |
