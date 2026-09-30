@@ -3098,10 +3098,13 @@ threads have no Browser tab yet: it will reach a thread's host through Shepherd'
 forwards the port (not built yet).
 
 - **One page per thread:** a WebKit view made the first time the thread opens something, in a
-  website data store of its own (`WKWebsiteDataStore(forIdentifier:)`, keyed on the agent), so it
-  shares cookies, storage and caches with nothing else, and keeps them across relaunches. Deleting
-  the agent closes the page and removes its store. The view belongs to the thread, not the pane:
-  hiding the pane, another tab, another thread on screen or a parked layout only take it out of
+  website data store of its own keyed on the agent, so it shares cookies, storage and caches with
+  nothing else. On macOS 27 and later that store is identified (`WKWebsiteDataStore(forIdentifier:)`)
+  and keeps them across relaunches; deleting the agent closes the page and removes its store. On
+  macOS 26, where an identified store crashed CI's test process, it falls back to a non-persistent
+  store per thread instead, so cookies don't survive a relaunch there (`BrowserHost.swift`). The
+  view belongs to the thread, not the pane: hiding the pane, another tab, another thread on screen
+  or a parked layout only take it out of
   the window (the visibility-flip rule), so the page never reloads.
 - **Toolbar** (`NWBrowserToolbar`), 44pt, 8pt side padding, a hairline beneath: Back, Forward and
   Reload (28pt `nwIcon`; one that can't act is at 40%; Reload is Stop loading, an ×, while the page

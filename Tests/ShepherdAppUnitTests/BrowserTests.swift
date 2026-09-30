@@ -261,6 +261,16 @@ struct BrowserTests {
         #expect(abs(placed.x - origin.x) < 0.001 && abs(placed.y - origin.y) < 0.001, "\(placed)")
     }
 
+    // MARK: Data stores
+
+    @Test(arguments: [
+        (26, 0, false), (26, 1, false), (26, 9, false), (27, 0, true), (27, 3, true), (28, 0, true),
+    ] as [(Int, Int, Bool)])
+    func identifiedStoresWaitForMacOS27(_ major: Int, _ minor: Int, _ identified: Bool) {
+        #expect(BrowserDataStores.usesIdentifiedStores(osVersion: OperatingSystemVersion(majorVersion: major, minorVersion: minor,
+                                                                                          patchVersion: 0)) == identified)
+    }
+
     // MARK: Nothing open
 
     @Test func nothingOpenSaysWhatItWaitsFor() {
