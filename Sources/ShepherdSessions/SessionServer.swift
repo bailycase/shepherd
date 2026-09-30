@@ -410,6 +410,8 @@ public final class SessionServer: @unchecked Sendable {
     private let modelCatalog: ModelCatalog
     /// Which pi this server's agents run, and its home (`PiSetup`).
     public let pi: PiSetup
+    /// Which tiers each thread's model offers (`ServiceTierSupport`, and CLIProxyAPI's owners).
+    private let serviceTierOffers: ServiceTierOffers
     /// Where each delivered message came from, per pi session (support directory).
     private let originStore: ThreadOriginStore
     /// How each automation's runs went (support directory), for remote clients.
@@ -672,6 +674,7 @@ public final class SessionServer: @unchecked Sendable {
         self.socketPath = socketPath
         self.store = StateStore(url: stateURL, readOnly: true)
         self.pi = pi
+        self.serviceTierOffers = ServiceTierOffers(home: pi.files)
         self.modelCatalog = modelCatalog ?? SessionServer.piModelCatalog(pi)
         self.originStore = ThreadOriginStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("thread-origins", isDirectory: true))
         self.runLog = AutomationRunLog(url: stateURL.deletingLastPathComponent().appendingPathComponent("automation-runs.json"))
@@ -3502,13 +3505,68 @@ public final class SessionServer: @unchecked Sendable {
         }
         let state = store.state
         runLog.record(from: before, to: state)
-        // An agent that goes takes the copies of design references it was sent.
+        // An agent that goes takes the copies of design references it was sent, and its tier file.
         if before.agents.count != state.agents.count || before.agents.map(\.id) != state.agents.map(\.id) {
-            designReferencePayloads.removeAgents(Set(before.agents.map(\.id)).subtracting(state.agents.map(\.id)))
+            let gone = Set(before.agents.map(\.id)).subtracting(state.agents.map(\.id))
+            designReferencePayloads.removeAgents(gone)
+            for agentID in gone { ServiceTierFile.remove(for: agentID, in: pi.files) }
         }
+        syncServiceTiers(state)
         broadcastRemoteState(state)
         hopToMain { [weak self] in self?.onStateChanged?(state) }
         announceServableThreads()
+    }
+
+    /// Server queue: every thread shows its agent's tier (`Agent.serviceTier`). A thread commits
+    /// only when its own changed, so this costs nothing on the mutations that don't touch it.
+    private func syncServiceTiers(_ state: ShepherdState) {
+        guard !sessions.isEmpty else { return }
+        let tiers = Dictionary(state.agents.map { ($0.id, $0.serviceTier) }, uniquingKeysWith: { first, _ in first })
+        for (sessionID, session) in sessions {
+            guard let thread = session.thread, let agentID = agentID(forSession: sessionID), let tier = tiers[agentID] else { continue }
+            thread.serviceTier = tier
+        }
+    }
+
+    /// Changes an agent's service tier (the composer's Speed control, and a remote client's
+    /// `setServiceTier`): persisted, written to the file its pi reads on every request (so the
+    /// next model call of a running agent carries it), and shown on every client's thread.
+    public func setServiceTier(_ tier: ServiceTier, for agentID: AgentID) async throws {
+        try await enqueue { try self.applyServiceTier(tier, to: agentID) }
+    }
+
+    /// Server queue. The file goes first, so a change that can't be kept leaves nothing half
+    /// done, and a state that can't be saved puts the file back.
+    func applyServiceTier(_ tier: ServiceTier, to agentID: AgentID) throws {
+        guard let index = store.state.agents.firstIndex(where: { $0.id == agentID }) else { throw SessionServerError.noSuchAgent(agentID) }
+        let previous = store.state.agents[index].serviceTier
+        guard previous != tier else { return }
+        do {
+            try ServiceTierFile.write(tier, for: agentID, in: pi.files)
+        } catch {
+            throw SessionServerError.persistFailed("the speed file: \(error)")
+        }
+        do {
+            try mutateState { $0.agents[index].serviceTier = tier }
+        } catch {
+            try? ServiceTierFile.write(previous, for: agentID, in: pi.files)
+            throw error
+        }
+        ShepherdLog.info("agent \(agentID) speed \(tier.rawValue)")
+    }
+
+    /// Before an agent's pi starts: its tier file says what its agent's tier is, from a new
+    /// agent's first turn to a relaunch or a Retry. A pi the app didn't start for an agent (no
+    /// variable naming the file) gets none.
+    private func writeServiceTierFile(forLaunch params: CreateSessionParams) {
+        guard params.runtime == .rpc, let raw = params.env?["SHEPHERD_AGENT_ID"], params.env?[ServiceTierExtension.environmentKey] != nil else { return }
+        let agentID = AgentID(rawValue: raw)
+        let tier = store.state.agents.first(where: { $0.id == agentID })?.serviceTier ?? .standard
+        do {
+            try ServiceTierFile.write(tier, for: agentID, in: pi.files)
+        } catch {
+            ShepherdLog.warning("couldn't write agent \(agentID)'s speed file: \(error)")
+        }
     }
 
     /// Server queue: tell the app about every serving thread whose agent is now bound to it.
@@ -4713,6 +4771,7 @@ public final class SessionServer: @unchecked Sendable {
         if params.runtime == .rpc {
             let sessionQueue = DispatchQueue(label: "shepherd.rpc", target: queue)
             let session: RPCSession
+            writeServiceTierFile(forLaunch: params)
             do {
                 session = try RPCSession(params: params, queue: sessionQueue)
             } catch {
@@ -4722,6 +4781,17 @@ public final class SessionServer: @unchecked Sendable {
             session.beforeOffQueueDecode = beforeOffQueueDecode
             let thread = RPCThreadState(session: session, queue: sessionQueue, originStore: originStore)
             thread.defaultQueueMode = defaultQueueMode
+            let offers = serviceTierOffers
+            thread.serviceTierOffer = { offers.tiers(for: $0) }
+            thread.applyServiceTier = { [weak serverWeak] tier, done in
+                guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { done("The agent is gone."); return }
+                do {
+                    try server.applyServiceTier(tier, to: agentID)
+                    done(nil)
+                } catch {
+                    done("Couldn't change the speed: \(error)")
+                }
+            }
             thread.onUserInputWhileRunning = { [weak serverWeak] in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid),
                       let children = server.clients.values.first(where: { $0.childrenAgentID == agentID }) else { return }

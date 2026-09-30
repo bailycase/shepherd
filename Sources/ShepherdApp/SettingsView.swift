@@ -274,7 +274,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: ["Theme", "Mode", "Organize by", "Group by host", "Keep idle threads", "Sidebar rows", "Density", "Text size",
                            "Sidebar width"]
         case .terminal: ["Font family", "Font size", "Shell"]
-        case .agents: ["Default model", "Default thinking level", "Return while the agent is working", "When a turn ends, send the queue"]
+        case .agents: ["Default model", "Default thinking level", "Speed for new threads", "Return while the agent is working",
+                       "When a turn ends, send the queue"]
         case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically"]
         case .pi: ["Shepherd's pi", "Name agents automatically", "Panes and agent tools", "Diff review tool", "Native subagents",
                    "Subagent display", "MCP servers", "Browser tools", "Concurrency"]
@@ -303,6 +304,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                            "Group by host": ["hosts", "machines"], "Keep idle threads": ["archive", "idle"]]
         case .terminal: ["Font family": ["ghostty", "monospace"], "Shell": ["zsh", "bash", "fish"]]
         case .agents: ["Default model": ["claude", "gpt", "provider"], "Default thinking level": ["reasoning", "effort"],
+                       "Speed for new threads": ["fast", "fast mode", "priority", "service tier", "codex", "openai", "standard"],
                        "Return while the agent is working": ["steer", "queue", "enter", "follow-up", "next step", "wait", "interrupt"],
                        "When a turn ends, send the queue": ["queue", "follow-up", "one per turn", "all at once"]]
         case .worktrees: ["Base branch": ["git", "origin"], "Merge PR automatically": ["github", "pull request"]]

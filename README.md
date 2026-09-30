@@ -170,6 +170,8 @@ Shepherd agent when you want those.
 - [docs/native-thread.md](docs/native-thread.md): how an agent's `pi --mode rpc` process
   becomes its thread.
 - [docs/native-subagents.md](docs/native-subagents.md): the bundled subagent runtime.
+- [docs/service-tier.md](docs/service-tier.md): the Speed control (Fast mode): which models offer
+  a service tier, and how a thread's choice reaches its next model call.
 - [docs/worktrees.md](docs/worktrees.md): worktree creation, finalize, and delete.
 - [docs/browser.md](docs/browser.md): the tools an agent uses on its thread's Browser, and how
   each thread's page stays its own.

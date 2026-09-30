@@ -110,6 +110,39 @@ struct PreviewTests {
         }
     }
 
+    /// The thread on a model that offers a service tier: the Speed chip beside Thinking, and with
+    /// `open` the speed menu above the card (ComposerSpeed board).
+    private func speedThread(tier: ServiceTier, open: Bool = false) async throws {
+        var snapshot = Threads.idle
+        snapshot.model = "openai/gpt-6-luna"
+        snapshot.supportedActions.append("setServiceTier")
+        snapshot.serviceTier = tier.rawValue
+        snapshot.serviceTiers = ["standard", "fast"]
+        let fixture = ThreadFixture(snapshot)
+        defer { fixture.store.stop() }
+        final class Opened { var at: Date? }
+        let opened = Opened()
+        let name = open ? "composer-speed-menu-\(tier.rawValue)" : "composer-speed-\(tier.rawValue)"
+        try await Preview.render(name, size: CGSize(width: 1000, height: open ? 820 : 760), ready: {
+            guard fixture.store.ready else { return false }
+            guard open else { return true }
+            // The menu grows from the card: open it, then capture it at rest.
+            if opened.at == nil {
+                opened.at = Date()
+                fixture.commands.send(.speedMenu, to: "preview")
+            }
+            return Date().timeIntervalSince(opened.at ?? Date()) > ThreadPreviewTests.motionAtRest
+        }) {
+            let _ = opened.at = nil
+            fixture.thread(listModels: { ModelCatalog([PiModelCatalog.Entry(id: "openai/gpt-6-luna", context: "400K", reasoning: true)]) })
+        }
+    }
+
+    @Test func composerSpeedStandard() async throws { try await speedThread(tier: .standard) }
+    @Test func composerSpeedFast() async throws { try await speedThread(tier: .fast) }
+    @Test func composerSpeedMenuStandard() async throws { try await speedThread(tier: .standard, open: true) }
+    @Test func composerSpeedMenuFast() async throws { try await speedThread(tier: .fast, open: true) }
+
     /// The picker with legacy scroll bars (a mouse attached, or "Show scroll bars: Always"):
     /// a long catalog scrolls under the search row, the scroller inside the popover's edge.
     @Test func composerModelPickerLegacyScrollers() async throws {

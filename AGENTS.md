@@ -446,7 +446,7 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
 - **Core:** the status transition table, `PaneNode` operations, and state validation.
 - **Migration:** terminal-era `runtime` keys, global shells and space shells dropped at startup,
   and review leaves.
-- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all nineteen files, and
+- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all twenty files, and
   the design skill's two files).
 - **Themes:** every theme variant complete, and the WCAG contrast rules met.
 - **App logic:** keybindings (defaults, validation, stored overrides for removed actions
@@ -781,6 +781,9 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
                           browser_scroll, browser_wait, browser_screenshot, browser_console,
                           browser_eval, browser_back, browser_forward and browser_reload, on the
                           thread's own Browser page only; see docs/browser.md
+  shepherd-service-tier.ts  adds service_tier to the agent's own provider requests while its thread
+                          is on Fast (the Speed control), from the agent's tier file; see
+                          docs/service-tier.md
 Tests/
   <Module>UnitTests/, *IntegrationTests/, ShepherdPreviewTests/   the tiers above
   ShepherdTestIsolation/  C, run when a test bundle loads: scratch root, PATH, ZDOTDIR
@@ -939,7 +942,9 @@ variables are blanked, as are pi's `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSI
   - native thread requests, with the context and Compact now behind `native.context.v1`, Retry
     in place behind `native.retry.v1`, and Steer now (a message that stops pi and goes at once,
     `interrupt` in `supportedActions`, sent as a steer to a host without it) behind
-    `native.interrupt.v1`
+    `native.interrupt.v1`, and an agent's service tier (`setServiceTier`, the snapshot's
+    `serviceTier` and `serviceTiers`; no Speed control from a host without it) behind
+    `native.serviceTier.v1`
   - attach, detach, input, resize, and acknowledged paste
   - pane open, close, and split resize
   - `listDir`, `listModels`, `addSpace`, and `createAgent` with `creationOptions` (and the
@@ -1031,7 +1036,7 @@ the same change.
 - A new `SessionServer` mutation needs an integration test.
 - New persisted fields decode with defaults, so older `state.json` files keep loading.
 
-**Embedded extensions have one canonical copy.** The nineteen files in `Extensions/` are canonical,
+**Embedded extensions have one canonical copy.** The twenty files in `Extensions/` are canonical,
 and so is the design skill in `Extensions/design-skill/`.
 pi loads the copies that the twelve `Sources/ShepherdApp/*Extension.swift` files write to the
 support directory from embedded string literals. `installedPath()` rewrites an installed copy
@@ -1049,9 +1054,14 @@ children and drafts. It is inert until Settings ▸ Pi ▸ Sign-in connects a se
 private connection file is `shepherd-cliproxyapi.json`, named by `SHEPHERD_CLIPROXYAPI_CONFIG`.
 The managed provider is `cliproxyapi`, separate from imported `cpa` providers. No proxy process
 is installed or managed, and credentials never leave the host. See docs/pi-home.md.
+`ServiceTierExtension` (ShepherdSessions) embeds `shepherd-service-tier.ts`, the Speed control's
+half in pi: `PiHome.install` writes it, and an agent's own pi (only) loads it with
+`SHEPHERD_EXT_SERVICE_TIER` naming the agent's tier file under the pi home's `service-tier/`,
+which the host keeps current and pi reads on every provider request (docs/service-tier.md). Its
+support table is `ServiceTierSupport`'s, and the two are tested against one JSON table.
 
 - Edit a `.ts`/`.mjs` file (or a design skill file) and its literal in the same change, with
-  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all nineteen pairs
+  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all twenty pairs
   and the skill's two files.
 - Extensions stay dependency-free and inert without their environment variables.
 - They must never throw into pi or keep the process alive (unref'd sockets and timers).
