@@ -38,6 +38,8 @@ public enum NWBrowserMetrics {
     public static let consoleListHeight: CGFloat = 136
     public static let consoleGap: CGFloat = 14
     public static let consoleToggle: CGFloat = 24
+    /// A notice's first line, so its glyph sits on it.
+    public static let noticeLine: CGFloat = 18
 }
 
 /// The element glyph: a dashed square with a pointer.
@@ -237,6 +239,47 @@ public struct NWBrowserHostChip: View {
         .fixedSize()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("On \(host)")
+    }
+}
+
+/// What stops a page, floating under the toolbar (a remote thread's port that can't be forwarded
+/// because something else on this Mac uses it): a 12pt `lanternText` glyph, the words in `ui` (up to
+/// three lines) and a close button. The card is `bgRaised`, radius 12, a `lantern` line and the
+/// popover's shadow, 12pt from the pane's sides, as the agent's card is. No board draws it: the
+/// words come from the app.
+public struct NWBrowserNotice: View {
+    let message: String
+    let dismiss: () -> Void
+
+    public init(message: String, dismiss: @escaping () -> Void) {
+        self.message = message
+        self.dismiss = dismiss
+    }
+
+    public var body: some View {
+        let nw = Color.nw
+        HStack(alignment: .top, spacing: NWBrowserAgentMetrics.cardGap) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: NWBrowserAgentMetrics.cardGlyph))
+                .foregroundStyle(nw.lanternText)
+                .frame(height: NWBrowserMetrics.noticeLine)
+                .accessibilityHidden(true)
+            Text(message)
+                .font(.nw(.ui, weight: .regular))
+                .foregroundStyle(nw.textPrimary)
+                .lineLimit(3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(action: dismiss) { Image(systemName: "xmark") }
+                .buttonStyle(.nwIcon(size: NWBrowserMetrics.consoleToggle))
+                .nwHelp("Dismiss")
+                .accessibilityLabel("Dismiss")
+        }
+        .padding(.leading, NWBrowserAgentMetrics.cardLeading)
+        .padding([.vertical, .trailing], NWBrowserAgentMetrics.cardOther)
+        .nwPopover(radius: NW.Radius.l, line: nw.lantern)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(message)
     }
 }
 
