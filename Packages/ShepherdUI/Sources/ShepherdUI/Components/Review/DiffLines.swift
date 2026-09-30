@@ -277,9 +277,11 @@ private struct NWDiffLineDrawing: View {
     let line: NWDiffLineContent
     let side: NWSplitDiffSide.Side?
     let reservesComment: Bool
+    @Environment(\.splitDiffScroll) private var horizontalScroll
 
     var body: some View {
         let nw = Color.nw
+        let offset = side.map { $0 == .old ? horizontalScroll?.oldOffset ?? 0 : horizontalScroll?.newOffset ?? 0 } ?? 0
         Canvas { context, size in
             let bar = NWDiffMetrics.barWidth
             let number = NWDiffMetrics.numberWidth
@@ -307,7 +309,7 @@ private struct NWDiffLineDrawing: View {
             let slot = reservesComment ? NWDiffMetrics.commentSlotWidth : 0
             context.clip(to: Path(CGRect(x: codeX, y: 0, width: max(0, size.width - codeX - slot), height: size.height)))
             context.draw(Text(line.text).font(.nw(.code)).foregroundStyle(nw.textPrimary),
-                         at: CGPoint(x: codeX, y: size.height / 2), anchor: .leading)
+                         at: CGPoint(x: codeX - offset, y: size.height / 2), anchor: .leading)
         }
         .frame(minWidth: 0, maxWidth: .infinity)
         .clipped()

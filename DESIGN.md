@@ -2971,9 +2971,13 @@ send the review.
   hatched in `lineSubtle` diagonals 7pt apart (`NWDiffHatch`), so rows line up.
 - **Unified** (ChangesUnified, `NWDiffLine`): the gutter bar, the old and new numbers, a 16pt sign
   (+ `done`, a true minus `failed`) and the code. Lines are 21pt (× density), never wrapped.
-  The diff scrolls horizontally as well as vertically to expose long lines. Both split columns
-  use the same measured width, so old/new pairs stay aligned; full-line hover text remains.
-  Width is measured once per changed diff and text scale, not per scroll step. Removals sit on `failedTint` and additions on
+  Unified diffs scroll horizontally to expose long lines. In split view, each file's old and
+  new code columns scroll independently inside their fixed half-width containers. Horizontal
+  wheel input affects the column under the pointer; each side also has its own native scrollbar
+  below the file. Numbers, center divider, headers and comments stay fixed. One shared vertical
+  scroll keeps old/new pairs aligned. The split content and headers fit that scroll view's
+  viewport, excluding the vertical scrollbar when the Mac is set to show scrollbars Always.
+  Source widths are cached per file and text scale. Removals sit on `failedTint` and additions on
   `doneTint`; with Word diffs on, a paired line's changed words take a second layer of the same
   tint (`DiffWords`, computed with the syntax colors once per file off the main thread).
 - **Folds** (FoldRow, `NWDiffFoldRow`, 26pt on `bgSunken` between hairlines): unchanged lines
@@ -3898,6 +3902,27 @@ pi of yours). Everything here is Shepherd's pi's alone (its home's `auth.json` a
     copy with theirs by a digest taken at the copy (never the values).
 - **The page never waits on a network**: rows come from the two files, read off the main thread
   when the page opens and again after every sign-in, sign-out or Re-import.
+
+#### Optional CLIProxyAPI connection
+
+Settings ▸ Pi ▸ Sign-in has a CLIProxyAPI group between API keys and Custom providers.
+It is off until the user connects. The existing Settings rows hold Server address and a secure
+API key field, followed by Connect. A bare hostname uses HTTPS; an explicit HTTP address is
+allowed for a trusted network. A root address uses `/v1`; an explicit path is kept.
+
+Connect checks `/models` before saving. A successful connection shows the number of models and
+when discovery last succeeded, with Save connection, Refresh models, Turn off and Forget.
+An empty key keeps the saved key only for the same address. Discovery failures appear inline
+and keep the last successful connection and catalog. Redirects are refused rather than forwarding
+the key. HTTP is unencrypted, which the address row explains. Forget asks for confirmation and
+removes the saved address, key and catalog. Turn off retains them without exposing models.
+
+Shepherd owns this connection in its private pi home. Nothing installs or runs a proxy, copies
+credentials from the terminal, or changes the user's `cpa` provider. Managed models use the
+separate `cliproxyapi` provider. A bundled provider extension also loads in children and drafts;
+it is inert without configuration. Existing agents adopt changes at an idle boundary, without
+interrupting an active turn. An old selected model is not silently sent to a disabled connection.
+Host setup is local to the Mac running the agents; remote model pickers use the host's catalog.
 
 #### Pi ▸ From your pi (SettingsPiFromPi, SettingsPiExtensions)
 

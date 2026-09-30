@@ -834,7 +834,9 @@ struct Composer: View {
                                   currentLevels: store.snapshot?.thinkingLevels)
         dismissCommands()
         menu = .models
-        if catalog?.isEmpty != false { Task { await loadModels() } }
+        // The shared catalog caches unchanged files. Re-read on opening so connections added
+        // in Settings appear in an already-mounted thread, and disabled ones disappear.
+        Task { await loadModels() }
     }
 
     private func toggleThinking() {
@@ -853,6 +855,7 @@ struct Composer: View {
     private func loadModels() async {
         // Without a host's listing, this Mac's: the app's pi (the composition root's setup).
         let loaded = if let listModels { await listModels() } else { await ModelCatalog.loadLocal(from: PiSetup.app.catalog) }
+        guard catalog?.models != loaded.models else { return }
         catalog = loaded
         picker?.update(loaded)
     }
