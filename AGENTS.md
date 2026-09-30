@@ -14,8 +14,9 @@ agents.
   with SwiftTerm. There are no global shells and no space shell workspaces.
 - **Spaces** are projects: the folders threads start in. The default Activity sidebar has no
   tree; the optional Projects style groups threads in a project tree. Activity lists
-  destinations (New thread, Automations, More ▸ Hosts and Extensions), then Needs you and Recents
-  (every agent, local and remote, most recently active first). The New thread page's workplace
+  destinations (New thread, Automations, More ▸ Hosts and Extensions), then Needs you, Pinned
+  (the threads the user pinned, per Mac) and Recents (every other agent, local and remote, most
+  recently active first). The New thread page's workplace
   chip lists each host's spaces, flat. With no agent on screen, the main column shows New thread.
 - **Lifetime:** there is no daemon. Sessions live and die with the app. On relaunch the workspace
   (spaces, agents, pane layouts) restores from `state.json`, every agent resumes its pi session
@@ -328,7 +329,8 @@ a model: the home's one provider points at a closed port and no prompt is sent.
 
 - `NWRenderProbe` (ShepherdUI, debug builds only) counts row bodies while a test records:
   `let _ = NWRenderProbe.tick("sidebar.row")` at the top of a row's `body`. It also counts
-  derivation passes that must not scale with a change (`sidebar.spaceScan`, `sidebar.spaceForest`).
+  derivation passes that must not scale with a change (`sidebar.spaceScan`, `sidebar.spaceForest`),
+  and a sidebar section header's body (`sidebar.header`).
 - `ListPerformanceTests` pins each long list's budget as a count of rows built or redrawn
   (opening, scrolling, a highlight or a selection moving, one row changing, a reply streaming).
   Counts hold on a slow or busy runner; timing budgets do not, so don't add those. Two thread
@@ -449,7 +451,8 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
 - **Themes:** every theme variant complete, and the WCAG contrast rules met.
 - **App logic:** keybindings (defaults, validation, stored overrides for removed actions
   ignored), palette and settings search, workspace selection and parking, sidebar ordering and
-  reveal, review rows and diff parsing, `PiSessionFile` paths, and child runs.
+  reveal, pinned threads (their order, persistence and pruning, Needs you winning, the digits),
+  review rows and diff parsing, `PiSessionFile` paths, and child runs.
 - **Updates and editions:** each channel's feed and Sparkle tag, the channels each app offers,
   the launch migration of every stored channel (`UpdateChannelStore`: rc and nightly to Beta,
   the nightly notice armed once), the support directory and listener port per edition, and the
@@ -632,7 +635,9 @@ Sources/
                        (shepherd-dc-bridge.js), and React 18.3.1 UMD (MIT, pinned).
   ShepherdApp/         The Mac app:
     ShepherdApp.swift (the Window scene, AppDelegate), RootView (+ WorkspaceHeaderView),
-      SidebarView (+ SidebarModel: destinations, Needs you, Recents, footer; SidebarProjectsView and
+      SidebarView (+ SidebarModel: destinations, Needs you, Pinned, Recents, footer; SidebarPins:
+      the pinned threads, ordered, kept and pruned, as plain values, and ShepherdViewModel+SidebarPins:
+      Pin, Unpin and where they are offered; SidebarProjectsView and
       SidebarProjectsModel: the tree organized by project), NewThreadPage (+
       NewThreadModel), ThreadHeader, WorkspaceView, WorkspaceSelection (+ MainDestination),
       RightPaneSplit and SidePane (the side pane and its tabs), CheckoutMonitor (each agent's
@@ -1106,8 +1111,8 @@ are `@MainActor @Observable` classes, owned with `@State` and bound with `@Binda
 **Keybindings resolve through the store.** Menus, palette keycaps, Settings ▸ Keyboard, and the
 Ghostty unbind list all read `KeybindingsStore`, and hardcoding a chord in a view is a bug.
 
-- A rebound chord must include ⌘. ⌘1–9 (the first nine Recents rows), ⌘,, and the plain ⌘
-  system and terminal chords are reserved.
+- A rebound chord must include ⌘. ⌘1–9 (the first nine rows of Pinned, then Recents), ⌘,, and the
+  plain ⌘ system and terminal chords are reserved.
 - A focused Ghostty surface eats any key equivalent it has a binding for, so every chord the app
   chrome uses must be unbound in `appOwnedChords` (`TerminalSurfaceModel.swift`). Rebindable
   chords flow in through the store; the fixed ones are listed there. Leave Ghostty's copy and

@@ -162,8 +162,11 @@ it sits in a borderless off-screen window (`parkOffscreen`), so it still lays ou
 card, ring and pointer are `BrowserSession.agentOverlay`; Take over sets `userHasControl`, and the
 server's `onUserMessage` (a user's `send`) hands the page back.
 
-**Sidebar.** `SidebarDerivation` (`SidebarModel.swift`) derives Needs you and Recents from This
-Mac's state and each host's, once per change (`sidebarLists`). Recents are ordered by
+**Sidebar.** `SidebarDerivation` (`SidebarModel.swift`) derives Needs you, Pinned and Recents from
+This Mac's state and each host's and the pins, once per change (`sidebarLists`). The pins
+(`SidebarPins`, view state of this Mac in the sidebar's own preferences, keyed by a thread's host and
+agent id) never reach `state.json` or another device; a pinned thread that needs you stays in Needs
+you. Recents are ordered by
 `Agent.lastActiveAt`, which the host sets when a turn starts or ends or a message is sent; Needs you
 reads `Agent.waitingOn`, the question the agent's thread asks, and `Agent.waitingReason`, the
 agent's word or two for it: the `short` argument the status extension adds to asking tools, which
@@ -490,7 +493,7 @@ control) against an older host. Output frames are chunked at 256 KiB to stay und
   with exponential backoff capped at 30 s, except after a refused token or another protocol
   version, which wait for Edit or Reconnect (`RemoteHostFailure`, shared with the iOS client).
   A failed handshake is reported only by what `connect` throws. Remote hosts are not part of `ShepherdState`; their
-  agents join This Mac's in the sidebar's Needs you and Recents (tagged with the host's name), and
+  agents join This Mac's in the sidebar's Needs you, Pinned and Recents (tagged with the host's name), and
   use the same thread views.
 - **Reviews** an agent opens on the host are the host's view state. Remote viewers open their own
   (⇧⌘B).

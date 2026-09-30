@@ -141,6 +141,119 @@ struct ListPerformanceTests {
         #expect(rows["sidebar.lists", default: 0] == 0, "a selection derives nothing: \(rows)")
     }
 
+    // MARK: Sidebar with pinned threads
+
+    /// The fleet in an off-screen sidebar with `pinned` of its threads pinned, settled. The
+    /// pinned threads are the fleet's middle and last, so none of them starts out on top.
+    private func openPinnedSidebar(_ app: AppHarness, pinned count: Int) async throws -> (ShepherdViewModel, OffscreenWindow) {
+        var fleet = ListFixtures.fleet(in: app.dir)
+        for index in fleet.agents.indices where fleet.agents[index].status == .blocked {
+            fleet.agents[index].status = .idle
+        }
+        let vm = try await app.start(with: fleet)
+        let recents = vm.sidebarLists.recents
+        for row in recents[(recents.count / 2)...].prefix(count) { vm.pinThread(row.id) }
+        let window = OffscreenWindow(size: Self.sidebarSize, dark: true, SidebarView(vm: vm))
+        ListPerf.settle(window)
+        return (vm, window)
+    }
+
+    @Test func openingTheSidebarWithPinnedThreadsBuildsOnlyTheRowsOnScreen() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        var fleet = ListFixtures.fleet(in: app.dir)
+        for index in fleet.agents.indices where fleet.agents[index].status == .blocked {
+            fleet.agents[index].status = .idle
+        }
+        let vm = try await app.start(with: fleet)
+        let recents = vm.sidebarLists.recents
+        for row in recents[(recents.count / 2)...].prefix(12) { vm.pinThread(row.id) }
+        #expect(vm.sidebarLists.pinned.count == 12)
+
+        var window: OffscreenWindow!
+        let rows = ListPerf.counting {
+            window = OffscreenWindow(size: Self.sidebarSize, dark: true, SidebarView(vm: vm))
+            ListPerf.settle(window)
+        }
+        defer { window.close() }
+        #expect(rows["sidebar.row", default: 0] > 0, "\(rows)")
+        #expect(rows["sidebar.row", default: 0] <= 2 * Self.sidebarRowsOnScreen, "\(rows)")
+        #expect(rows["sidebar.header", default: 0] <= 2, "Pinned and Recents: \(rows)")
+        #expect(rows["sidebar.lists", default: 0] <= 1, "one derivation for the whole list: \(rows)")
+    }
+
+    /// Pinning redraws the row that moves and the headers that change, not the rows it shifts:
+    /// the first pin brings the Pinned header in, a later one only its row.
+    @Test func pinningAThreadRedrawsOnlyTheRowThatMovesAndTheHeaders() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, window) = try await openPinnedSidebar(app, pinned: 0)
+        defer { window.close() }
+        let shown = Array(vm.sidebarLists.recents.prefix(Self.sidebarRowsOnScreen / 2))
+        try #require(shown.count >= 4)
+
+        let first = ListPerf.counting { ListPerf.time(window) { vm.pinThread(shown[1].id) } }
+        #expect(vm.sidebarLists.pinned.map(\.id) == [shown[1].id])
+        #expect(first["sidebar.row", default: 0] <= 4, "\(first)")
+        #expect((1...2).contains(first["sidebar.header", default: 0]), "the Pinned header arrives: \(first)")
+        #expect(first["sidebar.destination", default: 0] == 0, "\(first)")
+        #expect(first["sidebar.lists", default: 0] <= 1, "\(first)")
+
+        let second = ListPerf.counting { ListPerf.time(window) { vm.pinThread(shown[3].id) } }
+        #expect(vm.sidebarLists.pinned.count == 2)
+        #expect(second["sidebar.row", default: 0] <= 4, "\(second)")
+        #expect(second["sidebar.header", default: 0] == 0, "no header changed: \(second)")
+        #expect(second["sidebar.lists", default: 0] <= 1, "\(second)")
+    }
+
+    @Test func unpinningAThreadRedrawsOnlyTheRowThatMovesAndTheHeaders() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, window) = try await openPinnedSidebar(app, pinned: 2)
+        defer { window.close() }
+        let pinned = vm.sidebarLists.pinned
+        try #require(pinned.count == 2)
+
+        let one = ListPerf.counting { ListPerf.time(window) { vm.unpinThread(pinned[0].id) } }
+        #expect(vm.sidebarLists.pinned.map(\.id) == [pinned[1].id])
+        #expect(one["sidebar.row", default: 0] <= 4, "\(one)")
+        #expect(one["sidebar.header", default: 0] == 0, "\(one)")
+        #expect(one["sidebar.lists", default: 0] <= 1, "\(one)")
+
+        let last = ListPerf.counting { ListPerf.time(window) { vm.unpinThread(pinned[1].id) } }
+        #expect(vm.sidebarLists.pinned.isEmpty)
+        #expect(last["sidebar.row", default: 0] <= 4, "\(last)")
+        #expect(last["sidebar.header", default: 0] <= 2, "the Pinned header goes: \(last)")
+        #expect(last["sidebar.destination", default: 0] == 0, "\(last)")
+    }
+
+    /// A status report on a pinned thread redraws its row and nothing else: the pins hold their
+    /// order, and no header changes.
+    @Test func aStatusReportOnAPinnedThreadRedrawsOnlyItsRow() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, window) = try await openPinnedSidebar(app, pinned: 6)
+        defer { window.close() }
+        let shown = vm.sidebarLists.pinned.prefix(6)
+        try #require(shown.count == 6)
+        let order = vm.sidebarLists.pinned.map(\.id)
+        let indices = try shown.map { row in try #require(vm.state.agents.firstIndex { $0.id == row.id.agentID }) }
+
+        let rows = ListPerf.counting {
+            for index in indices {
+                var next = vm.state
+                next.agents[index].status = next.agents[index].status == .working ? .done : .working
+                ListPerf.time(window) { vm.adopt(next) }
+            }
+        }
+        #expect(vm.sidebarLists.pinned.map(\.id) == order)
+        #expect(rows["sidebar.row", default: 0] > 0, "\(rows)")
+        #expect(rows["sidebar.row", default: 0] <= shown.count * 2, "\(rows)")
+        #expect(rows["sidebar.header", default: 0] == 0, "\(rows)")
+        #expect(rows["sidebar.destination", default: 0] == 0, "\(rows)")
+        #expect(rows["sidebar.lists", default: 0] <= shown.count, "\(rows)")
+    }
+
     // MARK: Sidebar organized by project
 
     /// The fleet in an off-screen sidebar organized by project, settled.

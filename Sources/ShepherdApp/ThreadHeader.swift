@@ -6,7 +6,7 @@ import ShepherdRemote
 
 /// The thread toolbar (`NWThreadToolbar`; Main, Review, QuestionAsk boards) for the agent on
 /// screen: "space / title", the branch chip (where the agent works and the files changed there),
-/// then the one side-pane button and the options menu. Everything comes in as values, compared by
+/// then the one side-pane button and the options menu (Refresh Thread, Rename…, Pin). Everything comes in as values, compared by
 /// value (closures by presence), so the workspace header rerunning for a status report or a
 /// selection elsewhere leaves it alone (`.equatable()`). The terminal panel has no button here:
 /// ⌘J, the Pane menu and the palette show it.
@@ -16,7 +16,7 @@ struct ThreadHeader: View, Equatable {
             && (a.showSidebar == nil) == (b.showSidebar == nil) && a.branch == b.branch && a.directory == b.directory
             && a.paneOpen == b.paneOpen && a.paneNews == b.paneNews && a.paneShortcut == b.paneShortcut
             && (a.togglePane == nil) == (b.togglePane == nil) && (a.showChanges == nil) == (b.showChanges == nil)
-            && (a.rename == nil) == (b.rename == nil)
+            && (a.rename == nil) == (b.rename == nil) && a.pinned == b.pinned && (a.togglePin == nil) == (b.togglePin == nil)
     }
 
     var store: NativeThreadStore
@@ -36,6 +36,10 @@ struct ThreadHeader: View, Equatable {
     /// The chip's Show Changes.
     var showChanges: (() -> Void)?
     var rename: (() -> Void)?
+    /// Whether the thread is pinned, and Pin or Unpin; nil for a thread that can't be pinned (an
+    /// automation's run, or the project tree on screen).
+    var pinned: Bool?
+    var togglePin: (() -> Void)?
 
     var body: some View {
         let _ = NWRenderProbe.tick("thread.header")
@@ -49,9 +53,12 @@ struct ThreadHeader: View, Equatable {
             }
             NWOptionsMenu("Thread options") {
                 Button("Refresh Thread") { Task { await store.refresh(fresh: true) } }
+                if rename != nil || togglePin != nil { Divider() }
                 if let rename {
-                    Divider()
                     Button("Rename…", action: rename)
+                }
+                if let pinned, let togglePin {
+                    Button(PinWords.menuTitle(pinned: pinned), systemImage: PinWords.symbol(pinned: pinned), action: togglePin)
                 }
             }
         }
