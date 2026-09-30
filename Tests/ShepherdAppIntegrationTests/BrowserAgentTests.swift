@@ -546,6 +546,51 @@ struct BrowserAgentTests {
         #expect(server.requested.current.filter { $0 == "/checkout" }.count == 1)
     }
 
+    /// The parked window is never seen or offered: it cannot become key or main, whatever a page
+    /// or an agent's action does; it is not in the Window menu, Mission Control or the ⌘` cycle;
+    /// and accessibility clients see neither it nor the page inside it. (The AX tree itself was
+    /// read in a real accessory app: docs/browser.md › The window a page waits in. A test process
+    /// is no GUI app, so this pins the properties that produce those results.)
+    @Test func theParkedWindowNeverTakesFocusAndIsNotOfferedToTheUserOrAccessibility() async throws {
+        let (session, server) = try await start()
+        defer { server.stop(); session.close() }
+        try await opened(session, server, "/checkout")
+        let parked = try #require(session.webView?.window as? BrowserParkWindow, "the parked window is a BrowserParkWindow")
+
+        #expect(!parked.canBecomeKey && !parked.canBecomeMain, "it can never become key or main")
+        #expect(parked.isExcludedFromWindowsMenu, "not in the Window menu")
+        #expect(parked.collectionBehavior.contains(.transient), "hidden from Mission Control")
+        #expect(parked.collectionBehavior.contains(.ignoresCycle), "not in the window cycle")
+        #expect(!parked.collectionBehavior.contains(.stationary) && !parked.collectionBehavior.contains(.managed),
+                "stationary would show it in Mission Control, and AppKit allows only one of the three")
+        #expect(parked.ignoresMouseEvents && parked.styleMask == .borderless && parked.level == .normal)
+        #expect(!parked.isAccessibilityElement() && parked.isAccessibilityHidden(), "not an accessibility window")
+        let content = try #require(parked.contentView as? BrowserParkContent)
+        #expect(!content.isAccessibilityElement() && content.isAccessibilityHidden() && (content.accessibilityChildren() ?? []).isEmpty,
+                "nothing inside it is offered to accessibility")
+        #expect(session.webView?.isAccessibilityHidden() == false, "the page is not hidden itself, so the pane's copy stays readable")
+
+        // A page that focuses itself, opens a dialog or a window, and the agent's actions, take no
+        // focus and activate nothing.
+        let activeBefore = NSApp.isActive
+        let keyBefore = NSApp.keyWindow
+        let mainBefore = NSApp.mainWindow
+        _ = try text(await session.perform(.eval(
+            expression: "window.focus(); document.querySelector('input').focus(); alert('hi'); window.open('about:blank'); 1", note: nil)))
+        _ = await session.perform(.screenshot(ref: nil))
+        _ = await session.perform(.reload(note: nil))
+        #expect(NSApp.isActive == activeBefore, "the app was not activated")
+        #expect(NSApp.keyWindow === keyBefore && NSApp.mainWindow === mainBefore, "no window became key or main")
+        #expect(!parked.isKeyWindow && !parked.isMainWindow)
+        #expect(session.webView?.window === parked, "and the page is still parked, ordered back")
+
+        // In the pane the page is readable again.
+        let pane = OffscreenWindow(size: CGSize(width: 700, height: 500), BrowserPageView(session: session).frame(width: 700, height: 500))
+        defer { pane.close() }
+        try await eventuallyOnMain("the pane to hold the page") { session.webView?.window === pane.window }
+        #expect(session.webView?.isAccessibilityHidden() == false)
+    }
+
     // MARK: Screenshots
 
     @Test func aScreenshotIsAClampedNotBlankJPEG() async throws {
