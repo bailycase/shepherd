@@ -287,11 +287,11 @@ struct RemoteRequestTests {
         case .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
              .closePane, .resizePaneSplit, .listDir, .listModels, .addSpace, .createAgent, .upload,
              .creationOptions, .agentQuery, .agentAction, .automation, .instructions, .suggestions, .hostSettings, .skills, .design,
-             .tunnel:
+             .tunnel, .browserClaim, .browserRelease, .browserAnswer:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 26
+    static let caseCount = 29
 
     static let samples: [RemoteRequest] = [
         .nativeThread(id: 80, agentID: S.agent, request: .snapshot(expectedSessionID: "s", beforeEntryID: "m:3", afterRevision: 9)),
@@ -324,6 +324,11 @@ struct RemoteRequestTests {
         .skills(id: 29, request: .install(repo: "anthropics/skills", paths: ["skills/pdf"], commit: nil, invocation: nil)),
         .design(id: 31, request: .boards(designID: RemoteDesignSamples.design, paths: nil, knownShas: [:])),
         .tunnel(.open(tunnel: 7, agentID: S.agent, port: 5173)),
+        .browserClaim(id: 33, agentID: S.agent),
+        .browserRelease(agentID: S.agent),
+        .browserAnswer(requestToken: 12, outcome: .text("Clicked button \"Pay\".")),
+        .browserAnswer(requestToken: 13, outcome: .result(text: "Screenshot.", image: BrowserImage(data: "/9j/4AAQ", mimeType: "image/jpeg"))),
+        .browserAnswer(requestToken: 14, outcome: .failure(code: "refused_url", message: "That address is on your network.")),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -471,11 +476,11 @@ struct RemoteReplyTests {
         case .nativeThread, .uploadResult, .creationOptions, .helloOk, .agentResult, .ok, .paneOpened, .error,
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
              .agentCreated, .automationResult, .instructions, .suggestions, .hostSettings, .skills, .design, .designChanged,
-             .capabilitiesChanged, .tunnel:
+             .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 26
+    static let caseCount = 28
 
     static let samples: [RemoteReply] = [
         .nativeThread(id: 80, result: .accepted(operationID: S.op)),
@@ -508,6 +513,10 @@ struct RemoteReplyTests {
         .designChanged(designID: RemoteDesignSamples.design, revision: 8, commentsRevision: 2),
         .capabilitiesChanged(capabilities: [RemoteProtocol.designsCapability]),
         .tunnel(.data(tunnel: 7, bytes: Data("HTTP/1.1 200 OK\r\n\r\n".utf8))),
+        .browserClaimed(id: 33, url: "http://localhost:5173/checkout"),
+        .browserClaimed(id: 34, url: nil),
+        .browserDrive(.request(token: 12, agentID: S.agent, request: .click(ref: "e4", double: false, note: "paying"))),
+        .browserDrive(.opened(agentID: S.agent, url: "http://localhost:5173/checkout")),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -744,7 +753,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.terminalControlCapability,
             RemoteProtocol.designContextCapability,
             RemoteProtocol.nativeRetryCapability,
-            RemoteProtocol.nativeInterruptCapability, RemoteProtocol.browserTunnelCapability,
+            RemoteProtocol.nativeInterruptCapability, RemoteProtocol.browserTunnelCapability, RemoteProtocol.browserDriveCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,
         ]
@@ -774,6 +783,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.skillsCapability == "skills.v1")
         #expect(RemoteProtocol.piSkillsCapability == "skills.pi.v1")
         #expect(RemoteProtocol.browserTunnelCapability == "browser.tunnel.v1")
+        #expect(RemoteProtocol.browserDriveCapability == "browser.drive.v1")
         #expect(RemoteProtocol.designContextCapability == "design.context.v1")
         #expect(RemoteProtocol.nativeRetryCapability == "native.retry.v1")
         #expect(RemoteProtocol.nativeInterruptCapability == "native.interrupt.v1")
