@@ -111,7 +111,7 @@ dialogs (said in full, once), blocked downloads, and counts of new console error
 that happened between calls. A failure is the reply's `error` with a `code`
 (`taken_over`, `no_page`, `stale_ref`, `no_such_ref`, `disabled`, `hidden`, `covered`,
 `refused_url`, `timeout`, `navigation_failed`, `script_error`, `invalid`, `not_found`,
-`cancelled`, `unavailable`, …) and a message written for the agent. A failure that quotes the
+`cancelled`, `unavailable`, `viewer_gone` (Remote), …) and a message written for the agent. A failure that quotes the
 page (an element's name, what a script threw) starts with the same untrusted-content notice.
 
 ### The snapshot
