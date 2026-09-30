@@ -28,7 +28,9 @@ public enum RemoteProtocol {
     /// And it reads a host's pushed design changes and capability changes (`designsCapability`).
     /// And it reads the tunnel frames a host pushes back (`browserTunnelCapability`), which a host
     /// sends only for a client that lists it.
-    public static let clientCapabilities = [nativeQueueCapability, thinkingLevelsCapability, designsCapability, browserTunnelCapability]
+    /// And it runs an agent's browser tools on its own page when the host asks
+    /// (`browserDriveCapability`), which a host asks only of a client that lists it.
+    public static let clientCapabilities = [nativeQueueCapability, thinkingLevelsCapability, designsCapability, browserTunnelCapability, browserDriveCapability]
     public static let version = 1
     /// A host's final reply to a `hello` whose token it refused; it closes the connection after.
     public static let unauthorizedCode = "unauthorized"
@@ -105,7 +107,7 @@ public enum RemoteProtocol {
     /// offers (`NativeThreadSnapshot.serviceTier`, `serviceTiers`). An older host has neither, and
     /// a client draws no Speed control there.
     public static let nativeServiceTierCapability = "native.serviceTier.v1"
-    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, designContextCapability, designsCapability, designMarkupCapability, designDeleteCapability, nativeRetryCapability, nativeInterruptCapability, browserTunnelCapability, nativeServiceTierCapability]
+    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, designContextCapability, designsCapability, designMarkupCapability, designDeleteCapability, nativeRetryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -487,6 +489,17 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     /// One message of a Browser tunnel (`RemoteProtocol.browserTunnelCapability`). Nothing answers it
     /// by id: the host's frames come back as `RemoteReply.tunnel`.
     case tunnel(BrowserTunnelFrame)
+    /// Claim `agentID`'s browser for this viewer (`RemoteProtocol.browserDriveCapability`): while it
+    /// owns it, the host runs the agent's browser tools on this viewer's page. Answered
+    /// `browserClaimed`, or an error (`no_such_agent`, `too_many`, `unsupported`). The most recent
+    /// claim wins.
+    case browserClaim(id: Int, agentID: AgentID)
+    /// Give `agentID`'s browser back to the host. Nothing answers it; a viewer that does not own the
+    /// agent's browser is ignored.
+    case browserRelease(agentID: AgentID)
+    /// The owner's answer to a `BrowserDrivePush.request` carrying `requestToken`. Nothing answers it;
+    /// an answer that is not the owner's, or for a request that is over, is ignored.
+    case browserAnswer(requestToken: Int, outcome: BrowserOutcome)
 
     private enum CodingKeys: String, CodingKey {
         case request, frame
@@ -495,6 +508,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case path, spaceID, cwd, model, thinking, initialPrompt, worktreeBranch
         case text, submit, agentID, paneID, axis, relativeTo, split, ratio, action, query, fetchFirst, worktreeBase, worktreeFetchFirst
         case automationID, initialImages
+        case requestToken, outcome
     }
 
     private enum Kind: String, Codable {
@@ -506,6 +520,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case instructions, suggestions, hostSettings, skills
         case design
         case tunnel
+        case browserClaim, browserRelease, browserAnswer
     }
 
     public init(from decoder: Decoder) throws {
@@ -515,6 +530,12 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             self = .nativeThread(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID), request: try c.decode(NativeThreadRequest.self, forKey: .request))
         case .tunnel:
             self = .tunnel(try c.decode(BrowserTunnelFrame.self, forKey: .frame))
+        case .browserClaim:
+            self = .browserClaim(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID))
+        case .browserRelease:
+            self = .browserRelease(agentID: try c.decode(AgentID.self, forKey: .agentID))
+        case .browserAnswer:
+            self = .browserAnswer(requestToken: try c.decode(Int.self, forKey: .requestToken), outcome: try c.decode(BrowserOutcome.self, forKey: .outcome))
         case .design:
             self = .design(id: try c.decode(Int.self, forKey: .id), request: try c.decode(RemoteDesignRequest.self, forKey: .request))
         case .automation:
@@ -698,6 +719,17 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case .tunnel(let frame):
             try c.encode(Kind.tunnel, forKey: .type)
             try c.encode(frame, forKey: .frame)
+        case .browserClaim(let id, let agentID):
+            try c.encode(Kind.browserClaim, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+        case .browserRelease(let agentID):
+            try c.encode(Kind.browserRelease, forKey: .type)
+            try c.encode(agentID, forKey: .agentID)
+        case .browserAnswer(let requestToken, let outcome):
+            try c.encode(Kind.browserAnswer, forKey: .type)
+            try c.encode(requestToken, forKey: .requestToken)
+            try c.encode(outcome, forKey: .outcome)
         case .stateFetch(let id):
             try c.encode(Kind.stateFetch, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -825,6 +857,13 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     case capabilitiesChanged(capabilities: [String])
     /// One message of a Browser tunnel, to the client that opened it (`RemoteRequest.tunnel`).
     case tunnel(BrowserTunnelFrame)
+    /// The claim `RemoteRequest.browserClaim` made stands: this viewer owns the agent's browser. `url`
+    /// is the page the host's own browser holds for the agent, for the viewer to open through its
+    /// tunnel (`http` or `https` only; nil when the host's has none). Cookies are not carried over.
+    case browserClaimed(id: Int, url: String?)
+    /// A viewer's part in an agent's browser (`BrowserDrivePush`), pushed only to a client that lists
+    /// `RemoteProtocol.browserDriveCapability`.
+    case browserDrive(BrowserDrivePush)
 
     private enum CodingKeys: String, CodingKey {
         case result, frame
@@ -833,6 +872,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case path, parent, dirs, models, defaultModel, withoutThinking, thinkingLevels, attachment, options
         case snapshot, settings
         case designID, revision, commentsRevision
+        case url, push
     }
 
     private enum Kind: String, Codable {
@@ -843,6 +883,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case instructions, suggestions, hostSettings, skills
         case design, designChanged, capabilitiesChanged
         case tunnel
+        case browserClaimed, browserDrive
     }
 
     public init(from decoder: Decoder) throws {
@@ -852,6 +893,10 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             self = .nativeThread(id: try c.decode(Int.self, forKey: .id), result: try c.decode(NativeThreadResult.self, forKey: .result))
         case .tunnel:
             self = .tunnel(try c.decode(BrowserTunnelFrame.self, forKey: .frame))
+        case .browserClaimed:
+            self = .browserClaimed(id: try c.decode(Int.self, forKey: .id), url: try c.decodeIfPresent(String.self, forKey: .url))
+        case .browserDrive:
+            self = .browserDrive(try c.decode(BrowserDrivePush.self, forKey: .push))
         case .design:
             self = .design(id: try c.decode(Int.self, forKey: .id), result: try c.decode(RemoteDesignResult.self, forKey: .result))
         case .designChanged:
@@ -1019,6 +1064,13 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case .tunnel(let frame):
             try c.encode(Kind.tunnel, forKey: .type)
             try c.encode(frame, forKey: .frame)
+        case .browserClaimed(let id, let url):
+            try c.encode(Kind.browserClaimed, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encodeIfPresent(url, forKey: .url)
+        case .browserDrive(let push):
+            try c.encode(Kind.browserDrive, forKey: .type)
+            try c.encode(push, forKey: .push)
         case .ok(let id):
             try c.encode(Kind.ok, forKey: .type)
             try c.encode(id, forKey: .id)

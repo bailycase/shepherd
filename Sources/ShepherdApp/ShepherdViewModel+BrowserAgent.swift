@@ -39,7 +39,12 @@ extension ShepherdViewModel {
         let session = browsers.session(for: agentID)
         Task { @MainActor [weak self] in
             let outcome = await session.perform(request)
-            if case .open = request, case .result = outcome, let url = session.url { self?.agentOpenedPage(session, url) }
+            if case .open = request, case .result = outcome, let url = session.url {
+                self?.agentOpenedPage(session, url)
+                // The thread's viewers on other Macs mark its Browser tab too (nobody owns the agent's
+                // browser here, or the request would not have come to this page).
+                self?.server.announceBrowserPageOpened(agentID: agentID, url: url.absoluteString)
+            }
             respond(outcome)
         }
     }
@@ -48,7 +53,7 @@ extension ShepherdViewModel {
     /// a brief line under it, and the header's button the same while the pane is out of sight.
     func agentOpenedPage(_ session: BrowserSession, _ url: URL) {
         session.noteAgentOpened(url)
-        let owner = SidePaneOwner.local(session.agentID)
+        let owner = session.remote.map { SidePaneOwner.remote($0.ref) } ?? SidePaneOwner.local(session.agentID)
         let panes = subagentInspector
         let showing = sidePaneOwner == owner && panes.open.contains(owner) && panes.run(for: owner) == nil
             && panes.tab(for: owner) == .browser

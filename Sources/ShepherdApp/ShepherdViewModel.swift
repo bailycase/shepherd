@@ -612,6 +612,7 @@ final class ShepherdViewModel {
             })
             self.remoteThreadStores.prune(live: liveRemote)
             self.browsers.prune(liveRemote: liveRemote)
+            self.syncRemoteBrowserDrive()
             self.pruneRemoteDesigns()
             self.pruneSidebarPins()
             for (target, review) in self.remoteReviews where review.hostReviewPane {
@@ -665,6 +666,7 @@ final class ShepherdViewModel {
         installAgentPeerControl()
         // Agents drive their thread's Browser page.
         installBrowserAgentControl()
+        installRemoteBrowserDrive()
         // Host role: bind the remote listener at VM creation, not from a
         // window's .task — a restored-minimized or slow-to-render window
         // must not leave a host Mac unreachable. The TCP listener is
