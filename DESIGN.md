@@ -1650,8 +1650,10 @@ the turn has finished, the changes card and the footer end it. A running turn ha
   in `textSecondary`) that appears on hover or
   keyboard focus and turns into a check with a pop for 1.5s after a copy. Code in mono 12 at 1.6
   with 10×12 padding, in the Syntax roles (`synKeyword`, `synType`, `synString`, `synComment`, …),
-  scrolling sideways only when its longest line does not fit, never wrapped. Tree-sitter colors it
-  off the main actor in the block's task (Swift, Python, Go, Rust, JavaScript, TypeScript/TSX, C,
+  scrolling sideways only when its longest line does not fit, never wrapped. On the Mac, one
+  selectable AppKit text field draws the code and its syntax attributes, avoiding SwiftUI's
+  per-run text resolution while a reply grows. Text scale, appearance and Copy stay the same.
+  Tree-sitter colors it off the main actor in the block's task (Swift, Python, Go, Rust, JavaScript, TypeScript/TSX, C,
   C++, shell, Ruby, JSON); the first frame is plain, results are cached, and a block that grows
   while streaming keeps its last colors until the new ones are ready.
 - **Thinking** (`NWThinking`): the thinking in one stretch of work (between prose blocks) folds
