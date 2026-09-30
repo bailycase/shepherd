@@ -1196,7 +1196,8 @@ public final class SessionServer: @unchecked Sendable {
         case .pause: .pause
         case .continue: .continue
         }
-        reply(.childCommand(id: correlation, runID: runID, action: childAction, text: text, mode: mode), to: client)
+        // A child has steer and follow-up; stopping it is its own action (cancel).
+        reply(.childCommand(id: correlation, runID: runID, action: childAction, text: text, mode: mode == .interrupt ? .steer : mode), to: client)
         queue.asyncAfter(deadline: .now() + 15) { [weak self] in
             self?.childCommandPending.removeValue(forKey: correlation)?.completion("Subagent command timed out. Refresh before acting; do not automatically retry.")
         }

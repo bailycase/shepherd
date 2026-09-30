@@ -67,6 +67,9 @@ struct NativeThreadWireTests {
                 selection: [.init(id: DesignElementID("A.dc.html#5:1/1/0")!, kind: .text, label: "Checkout funnel")]))),
         .send(expectedSessionID: "s", generation: "g", operationID: op, text: "wider", delivery: .followUp,
               browserElements: [element, BrowserElement(page: "http://localhost:5173/", selector: "#promo", label: "input#promo", width: 320, height: 36)]),
+        .send(expectedSessionID: "s", generation: "g", operationID: op, text: "stop that, do this", delivery: .interrupt),
+        .send(expectedSessionID: "s", generation: "g", operationID: op, text: "look at this instead", delivery: .interrupt,
+              images: [NativeImage(mimeType: "image/png", data: Data([1, 2]), name: "shot.png")]),
     ] + queueActions.map { .queue(expectedSessionID: "s", generation: "g", operationID: op, action: $0) }
 
     static let element = BrowserElement(page: "http://localhost:5173/checkout", selector: "main > form > button.pay", label: "button.pay",
@@ -86,6 +89,8 @@ struct NativeThreadWireTests {
         .setMode(mode: .oneAtATime),
         .setMode(mode: nil),
         .sendNow(ids: [op]),
+        .interrupt(ids: [op]),
+        .interrupt(ids: [op, UUID(uuidString: "00000000-0000-0000-0000-000000000002")!]),
     ]
 
     @Test(arguments: requests)
@@ -345,6 +350,7 @@ struct NativeThreadWireTests {
     @Test func wireEnumSpellingsAreStable() {
         #expect(NativeThreadDelivery.followUp.rawValue == "followUp")
         #expect(NativeThreadDelivery.steer.rawValue == "steer")
+        #expect(NativeThreadDelivery.interrupt.rawValue == "interrupt")
         #expect(NativeThreadBlock.Kind.unsupportedImage.rawValue == "unsupportedImage")
         #expect(NativeSubagentAction.continue.rawValue == "continue")
     }

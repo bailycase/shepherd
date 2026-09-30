@@ -98,6 +98,8 @@ struct RemoteHostClientTests {
         (.queue(expectedSessionID: "s", generation: "g", operationID: UUID(), action: .clear), RemoteProtocol.nativeQueueCapability),
         (.setThinking(expectedSessionID: "s", generation: "g", operationID: UUID(), level: "high"), RemoteProtocol.nativeThreadV2Capability),
         (.retry(expectedSessionID: "s", generation: "g", operationID: UUID(), entryID: "user:1"), RemoteProtocol.nativeRetryCapability),
+        (.send(expectedSessionID: "s", generation: "g", operationID: UUID(), text: "t", delivery: .interrupt), RemoteProtocol.nativeInterruptCapability),
+        (.queue(expectedSessionID: "s", generation: "g", operationID: UUID(), action: .interrupt(ids: [UUID()])), RemoteProtocol.nativeInterruptCapability),
     ])
     func newerRequestsNeedTheirCapability(_ request: NativeThreadRequest, capability: String) {
         let all = Set(RemoteProtocol.capabilities)
@@ -118,6 +120,21 @@ struct RemoteHostClientTests {
         #expect(RemoteHostClient.incoming(.snapshot(value: snapshot), capabilities: older).actions == ["send"])
         let accepted = NativeThreadResult.accepted(operationID: UUID())
         #expect(RemoteHostClient.incoming(accepted, capabilities: older) == accepted)
+    }
+
+    /// A host without `native.interrupt.v1` never offers Steer now as an interrupt, whatever its
+    /// snapshot lists, so the thread steers there (`NativeThreadStore.resolvedDelivery`). Its
+    /// other capabilities leave the list alone.
+    @Test func interruptIsOfferedOnlyByAHostThatStopsPiForAMessage() {
+        let snapshot = NativeThreadSnapshot(piSessionID: "s", generation: "g", revision: 1, running: true,
+                                            supportedActions: ["send", "retry", "interrupt", "queue"], dialogsSupported: true, dialogs: [],
+                                            messages: [], provisional: [], clipped: false)
+        let all = Set(RemoteProtocol.capabilities)
+        #expect(RemoteHostClient.incoming(.snapshot(value: snapshot), capabilities: all).actions == ["send", "retry", "interrupt", "queue"])
+        let older = all.subtracting([RemoteProtocol.nativeInterruptCapability])
+        #expect(RemoteHostClient.incoming(.snapshot(value: snapshot), capabilities: older).actions == ["send", "retry", "queue"])
+        let oldest = older.subtracting([RemoteProtocol.nativeRetryCapability])
+        #expect(RemoteHostClient.incoming(.snapshot(value: snapshot), capabilities: oldest).actions == ["send", "queue"])
     }
 
     /// A send's design record goes only to a host that takes one; the message goes either way.

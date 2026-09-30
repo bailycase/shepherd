@@ -10,8 +10,9 @@ import ShepherdSessions
 /// above it, the `NWComposer` card with the field (or a pending question) and one row of
 /// controls: attach · / commands · model · thinking · Send or Stop. Menus float over the thread
 /// above the card, so opening one never moves the thread or changes the composer's height.
-/// Messages sent while pi works wait in "Up next" above the card (`QueueStackView`); ↩ queues
-/// or steers per Settings, ⌘↩ does the other, and the Send menu offers both. Running subagents
+/// Messages sent while pi works wait in "Up next" above the card (`QueueStackView`) or steer in at
+/// pi's next step: ↩ does what Settings says, ⌘↩ always steers now (stops pi and sends), and the
+/// Send menu offers all three (`NativeSendChoice`). Running subagents
 /// share that card, above Up next (`ComposerDock`), and a subagent's question answered from its
 /// row takes the composer's place until it is answered or hidden.
 struct Composer: View {
@@ -793,8 +794,8 @@ struct Composer: View {
         store.hasLiveSubagents ? "Stop the agent and its subagents" : "Stop the agent's turn"
     }
 
-    /// "Send (↩)", or while pi works "Queue (↩) · Steer now (⌘↩)" in the order the Return
-    /// setting gives them.
+    /// "Send (↩)", or while pi works "Steer at the next step (↩) · Steer now (⌘↩)": the Return
+    /// setting's way, then the alternate's.
     private func sendHelp(working: Bool) -> String {
         let keys = KeybindingsStore.shared
         guard working else { return "Send (\(keys.sendDisplay))" }
@@ -802,9 +803,9 @@ struct Composer: View {
         return "\(primary) (\(keys.sendDisplay)) · \(alternate) (\(keys.display(.alternateSend)))"
     }
 
-    /// The Return setting's way first.
+    /// The Return setting's way first, then what the alternate send always does.
     static func sendTitles(_ setting: ReturnWhileWorking) -> (primary: String, alternate: String) {
-        setting == .steer ? ("Steer now", "Queue") : ("Queue", "Steer now")
+        (setting.title, NativeSendChoice.now.title)
     }
 
     private func stop() {
@@ -1001,7 +1002,7 @@ struct Composer: View {
         room >= AppLayout.menuGap + NWQueueMetrics.sendMenuWidth + AppLayout.menuMargin
     }
 
-    /// Queue and Steer now, beside the card or above it (`sendMenuBeside`), growing from the
+    /// The three ways to send, beside the card or above it (`sendMenuBeside`), growing from the
     /// corner nearest Send; the Return setting's row leads the highlight and wears ↩.
     @ViewBuilder private func sendMenu(beside: Bool) -> some View {
         ZStack(alignment: beside ? .bottomLeading : .bottomTrailing) {
@@ -1009,10 +1010,10 @@ struct Composer: View {
                 let setting = AppSettings.shared.returnWhileWorking
                 let keys = KeybindingsStore.shared
                 let options = Self.sendOptions(setting, send: keys.sendDisplay, alternate: keys.display(.alternateSend))
-                NWSendMenu(options: options, highlighted: setting == .steer ? 1 : 0) { option in
+                NWSendMenu(options: options, highlighted: options.firstIndex { $0.id == setting.choice.id } ?? 0) { option in
                     menu = nil
                     composing = true
-                    sendDraft(delivery: option.id == "steer" ? .steer : .followUp)
+                    sendDraft(delivery: (NativeSendChoice(rawValue: option.id) ?? .wait).delivery)
                 } onClose: {
                     menu = nil
                     composing = true
@@ -1029,15 +1030,21 @@ struct Composer: View {
         .nwAnimation(.overlay, value: menu == .send)
     }
 
-    /// Queue, then Steer now; ↩ on the Return setting's, the alternate chord on the other.
+    /// Wait for the turn to end, Steer at the next step, then Steer now: ↩ on the Return
+    /// setting's row, the alternate chord on Steer now, and no keys on the remaining one.
     static func sendOptions(_ setting: ReturnWhileWorking, send: String, alternate: String) -> [NWSendOption] {
-        let steers = setting == .steer
-        return [
-            NWSendOption(id: "queue", title: "Queue", detail: "Goes when the agent finishes this turn.", glyph: .queue,
-                         shortcut: steers ? alternate : send),
-            NWSendOption(id: "steer", title: "Steer now", detail: "Lands once the agent’s current tool calls finish, before its next step.",
-                         glyph: .symbol("arrow.turn.down.right"), shortcut: steers ? send : alternate),
-        ]
+        NativeSendChoice.allCases.map { choice in
+            NWSendOption(id: choice.id, title: choice.title, detail: choice.detail, glyph: glyph(choice),
+                         shortcut: choice == .now ? alternate : choice == setting.choice ? send : nil)
+        }
+    }
+
+    private static func glyph(_ choice: NativeSendChoice) -> NWSendOption.Glyph {
+        switch choice {
+        case .wait: .queue
+        case .nextStep: .symbol("arrow.right.to.line")
+        case .now: .symbol("arrow.turn.down.right")
+        }
     }
 
     /// Dropped or pasted images become attachments through the same resize rules as terminal
@@ -1423,10 +1430,10 @@ enum ComposerEscape: Equatable {
 enum ComposerSendKey {
     case primary, alternate
 
-    /// How the message goes while pi works: ↩ follows the Return setting, ⌘↩ does the other.
+    /// How the message goes while pi works: ↩ follows the Return setting, ⌘↩ always steers now.
     /// (While pi is idle either one sends it now.)
     func delivery(_ setting: ReturnWhileWorking) -> NativeThreadDelivery {
-        (self == .primary) == (setting == .steer) ? .steer : .followUp
+        self == .primary ? setting.choice.delivery : NativeSendChoice.now.delivery
     }
 }
 

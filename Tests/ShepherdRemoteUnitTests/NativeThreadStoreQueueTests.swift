@@ -19,13 +19,17 @@ struct NativeThreadStoreQueueTests {
     static let a = item("a", 1), b = item("b", 2)
 
     private func snapshot(revision: UInt64 = 1, running: Bool = true, items: [NativeQueuedMessage] = [],
-                          provisional: [NativeThreadMessage] = []) -> NativeThreadSnapshot {
-        F.snapshot(revision: revision, running: running, actions: Self.actions, messages: [hi], provisional: provisional,
+                          provisional: [NativeThreadMessage] = [], actions: [String] = NativeThreadStoreQueueTests.actions) -> NativeThreadSnapshot {
+        F.snapshot(revision: revision, running: running, actions: actions, messages: [hi], provisional: provisional,
                    queue: NativeQueue(items: items, mode: .all))
     }
 
-    private func started(running: Bool = true, items: [NativeQueuedMessage] = []) async -> (NativeThreadStore, FakeHost, Task<Void, Never>) {
-        let host = FakeHost(snapshot(running: running, items: items))
+    /// A host that stops pi for a message lists `interrupt`.
+    static let interruptingActions = actions + ["interrupt"]
+
+    private func started(running: Bool = true, items: [NativeQueuedMessage] = [],
+                         actions: [String] = NativeThreadStoreQueueTests.actions) async -> (NativeThreadStore, FakeHost, Task<Void, Never>) {
+        let host = FakeHost(snapshot(running: running, items: items, actions: actions))
         let store = manualStore()
         let task = await start(store, host)
         return (store, host, task)
@@ -40,6 +44,16 @@ struct NativeThreadStoreQueueTests {
         var seen: [[String]] = []
         host.onRequest = { request in
             if case .snapshot = request { seen.append(store.queue.map(\.text)) }
+        }
+        return { seen }
+    }
+
+    /// The same, with the state each message showed in.
+    private func queueWithStatesSeenAtEachPull(_ store: NativeThreadStore, _ host: FakeHost)
+        -> () -> [[(text: String, state: NativeQueuedMessage.State)]] {
+        var seen: [[(text: String, state: NativeQueuedMessage.State)]] = []
+        host.onRequest = { request in
+            if case .snapshot = request { seen.append(store.queue.map { ($0.text, $0.state) }) }
         }
         return { seen }
     }
@@ -103,6 +117,93 @@ struct NativeThreadStoreQueueTests {
         guard case .send(_, _, _, _, let delivery, _, _, _, _) = try #require(host.actions.first) else { Issue.record("expected a send"); return }
         #expect(delivery == .steer)
         #expect(seen() == [["turn left", "a"]])
+    }
+
+    // MARK: Steering now
+
+    /// Steer now from the composer: a host that stops pi for a message gets `interrupt`, and the
+    /// message is first in Up next (not a Steering row) until the host answers.
+    @Test func aSteerNowSendIsAnInterruptAndWaitsFirstInUpNext() async throws {
+        let (store, host, task) = await started(items: [Self.a], actions: Self.interruptingActions)
+        defer { task.cancel() }
+        let seen = queueWithStatesSeenAtEachPull(store, host)
+        host.acceptAll()
+        store.draft = "stop, do this"
+        #expect(store.hostInterrupts)
+        await store.send(delivery: .interrupt)
+        guard case .send(_, _, _, _, let delivery, _, _, _, _) = try #require(host.actions.first) else { Issue.record("expected a send"); return }
+        #expect(delivery == .interrupt)
+        #expect(seen().map { $0.map(\.text) } == [["stop, do this", "a"]])
+        #expect(seen().map { $0.map(\.state) } == [[.queued, .queued]], "the host has not handed anything to pi yet")
+        #expect(store.lastSendQueued == false, "a send that goes in now brings the reader to the tail")
+    }
+
+    /// A host without `interrupt` only steers: the same key still sends, and lands as a steer.
+    @Test func aHostThatCannotInterruptGetsASteer() async throws {
+        let (store, host, task) = await started(items: [Self.a])
+        defer { task.cancel() }
+        let seen = queueWithStatesSeenAtEachPull(store, host)
+        host.acceptAll()
+        store.draft = "stop, do this"
+        #expect(!store.hostInterrupts)
+        await store.send(delivery: .interrupt)
+        guard case .send(_, _, _, _, let delivery, _, _, _, _) = try #require(host.actions.first) else { Issue.record("expected a send"); return }
+        #expect(delivery == .steer, "the fallback is a plain steer, never an unsupported request")
+        #expect(seen().map { $0.map(\.text) } == [["stop, do this", "a"]])
+        #expect(seen().map { $0.map(\.state) } == [[.steering, .queued]])
+    }
+
+    /// A message that begins with "/" never steers: at a host that cannot interrupt, Steer now
+    /// waits for the turn to end instead; a host that can takes it as the next turn.
+    @Test(arguments: [
+        (["send", "queue"], "/fix-tests now", NativeThreadDelivery.interrupt, NativeThreadDelivery.followUp),
+        (["send", "queue", "interrupt"], "/fix-tests now", .interrupt, .interrupt),
+        (["send", "queue"], "/fix-tests now", .steer, .followUp),
+        (["send", "queue", "interrupt"], "/fix-tests now", .steer, .followUp),
+        (["send", "queue"], "fix the tests", .steer, .steer),
+        (["send", "queue"], "/fix-tests now", .followUp, .followUp),
+    ] as [([String], String, NativeThreadDelivery, NativeThreadDelivery)])
+    func theDeliveryASendGetsFollowsTheHostAndTheMessage(actions: [String], text: String, asked: NativeThreadDelivery,
+                                                          sent: NativeThreadDelivery) async throws {
+        let (store, host, task) = await started(actions: actions)
+        defer { task.cancel() }
+        host.acceptAll()
+        store.draft = text
+        await store.send(delivery: asked)
+        guard case .send(_, _, _, _, let delivery, _, _, _, _) = try #require(host.actions.first) else { Issue.record("expected a send"); return }
+        #expect(delivery == sent)
+        #expect(store.resolvedDelivery(asked, text: text) == sent)
+    }
+
+    /// Steer now on queued messages: interrupt where the host stops pi, else the steer of before.
+    @Test func steerNowOnQueuedMessagesInterruptsWhereTheHostCanAndSteersWhereItCannot() async throws {
+        let (store, host, task) = await started(items: [Self.a, Self.b], actions: Self.interruptingActions)
+        defer { task.cancel() }
+        let seen = queueWithStatesSeenAtEachPull(store, host)
+        host.acceptAll()
+        await store.interruptQueued([Self.b.id])
+        #expect(queueActions(host) == [.interrupt(ids: [Self.b.id])])
+        #expect(seen().first?.map(\.text) == ["b", "a"], "first in Up next, still queued")
+        #expect(seen().first?.map(\.state) == [.queued, .queued])
+
+        let (older, olderHost, olderTask) = await started(items: [Self.a, Self.b])
+        defer { olderTask.cancel() }
+        let olderSeen = queueWithStatesSeenAtEachPull(older, olderHost)
+        olderHost.acceptAll()
+        await older.interruptQueued([Self.b.id])
+        #expect(queueActions(olderHost) == [.steer(ids: [Self.b.id])], "an older host is asked for what it knows")
+        #expect(olderSeen().first?.map(\.state) == [.steering, .queued])
+    }
+
+    /// While pi is idle, Steer now on a queued message is a plain send.
+    @Test func steerNowOnAQueuedMessageWhilePiIsIdleSendsItAtOnce() async throws {
+        let (store, host, task) = await started(running: false, items: [Self.a, Self.b], actions: Self.interruptingActions)
+        defer { task.cancel() }
+        let seen = queueSeenAtEachPull(store, host)
+        host.acceptAll()
+        await store.interruptQueued([Self.a.id])
+        #expect(queueActions(host) == [.interrupt(ids: [Self.a.id])])
+        #expect(seen().first == ["b"], "it leaves the queue for the thread")
     }
 
     @Test func imagesQueuedStayWithTheClientThatSentThem() async throws {

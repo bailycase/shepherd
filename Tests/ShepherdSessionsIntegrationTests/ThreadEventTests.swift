@@ -110,7 +110,7 @@ struct ThreadEventTests {
         #expect(!s.running)
         #expect(s.runtime == "rpc" && s.dialogsSupported)
         #expect(s.supportedActions == ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents", "queue", "compact", "designContext",
-                                      "designReferences", "browserElements", "retry"])
+                                      "designReferences", "browserElements", "retry", "interrupt"])
         #expect(s.queue == NativeQueue(mode: .all), "an empty queue says the host holds one")
         #expect(s.messages.map(\.entryID) == ["user:1733234567890", "assistant:1733234567891"])
         #expect(s.messages.first?.blocks == [NativeThreadBlock(kind: .text, text: "Hello!")])

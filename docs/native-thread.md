@@ -272,7 +272,7 @@ events come out on stdout, one record per LF.
     `outcome_unknown`, never reported as a refusal: pi may still run it.
   - `supportedActions` lists what clients may offer: `send`, `abort`, `answer`, `setModel`,
     `setThinking`, `sendImages`, `subagents`, `queue`, `compact`, `designContext`,
-    `designReferences`.
+    `designReferences`, `browserElements`, `retry`, `interrupt`.
 - **Design context:** a design agent's chat sends what its design screen showed with each
   message (`send`'s `designContext`, a `DesignViewRecord`; docs/designs.md › The view record).
   - The host checks it against the grammar. A record that breaks it, or doesn't decode as one
@@ -322,9 +322,15 @@ one prompt at a time.
 - **Send** (`send`): while pi is idle (`running` false and no prompt of ours on its way) the
   message goes to pi at once as a prompt, with `streamingBehavior: followUp` so a pi that has
   just started a run of its own queues it rather than refusing it (idle, pi treats it as a
-  plain prompt). While pi works, a follow-up is appended to the queue and answered at once; a
-  steer is handed to pi (below). The queued item's id is the send's operation id. A send also
-  resumes a paused queue. At most 32 items and 64 KiB of text wait (`queue_full`).
+  plain prompt). While pi works there are three deliveries (`NativeThreadDelivery`, and
+  `NativeSendChoice` names them for the clients): a `followUp` is appended to the queue and
+  answered at once; a `steer` is handed to pi (below); an `interrupt` stops pi first (Steer now,
+  below). Which one ↩ uses is the client's setting (Settings ▸ Agents ▸ Return while the agent is
+  working; steering unless the user chose waiting), and a client never steers a message that
+  begins with "/" (`NativeQueueRules.delivery(_:forText:)`): pi runs a command only at the start of
+  a message it starts, so it waits for the turn to end. The queued item's id is the send's
+  operation id. A send also resumes a paused queue. At most 32 items and 64 KiB of text wait
+  (`queue_full`).
 - **Delivery:** when pi settles (`agent_settled`) and the queue is not paused, not held, and no
   question is pending, the queue goes as one prompt:
   - **One per turn** (`oneAtATime`): the head.
@@ -352,7 +358,16 @@ one prompt at a time.
   `origin: .steered`, after the tool calls pi was running. pi runs every call of a batch and
   reads steering only after the whole batch (it has not skipped calls since 0.58.4), so there
   is no "skipped" work to show. A steer to a pi whose run has not started yet (a prompt of
-  ours still on its way) waits at the head of the queue instead.
+  ours still on its way) waits at the head of the queue instead, and so does one sent while pi
+  compacts (pi refuses a prompt then: "Cannot submit a prompt while compaction is in progress")
+  or while an interrupt is stopping it (the steer would be delivered into the run it aborts);
+  such a message goes first after whatever is ahead of it.
+  - **Several steers land one at a time.** pi's `steeringMode` is `one-at-a-time` unless the
+    user's pi settings say otherwise: each steer arrives at its own step boundary, in the order
+    sent, with a model call between, all in the run they were sent to
+    (`Tests/Extensions/steer-interrupt.test.mjs`). Shepherd never sends `set_steering_mode`.
+  - **A steer racing the end of the run** is the Settle rule below: what pi still holds when
+    it settles is taken back and sent as the next turn, joined as any queued messages are.
 - **Back to the queue** (`unsteer`): `clear_queue`; the item returns to the head of the queue
   if pi still held it, and everything else pi returned is handed back in order. If pi already
   read it, even just before the clear arrived, the request is refused (`queue_item_unavailable`)
@@ -367,6 +382,40 @@ one prompt at a time.
   Stop all dispatches the parent's abort before cancelling the live children. It captures one
   session and transport for the whole operation, refreshes only afterward, and preserves the
   first failure, so a failed refresh cannot silently skip the parent or another child.
+- **Steer now** (`send` with `interrupt`, or `queue` `interrupt(ids:)`, listed as `interrupt` in
+  `supportedActions` and, remotely, `native.interrupt.v1`; `RPCThreadState+Interrupt.swift`): pi
+  stops what it is doing, as Stop does, and the message goes at once as the next turn in the same
+  session; the rest of the queue follows that turn. While pi is idle it is a plain send. While it
+  works:
+  1. The message moves to the head of the queue (`interrupting` remembers it) and the answer to the
+     client is `accepted` at once, so a fresh message shows first in Up next. Questions pi waits on
+     are refused, as Stop does, and `stopRequested` makes the run's ending read as stopped (the
+     call it killed, the error reply pi ends a killed run with) and never as a failure that
+     pauses the queue. Unlike Stop, the queue does not pause.
+  2. `clear_queue` takes back the steers pi still holds; they return to the queue behind the
+     interrupting messages, so the abort cannot deliver them into the run it ends.
+  3. `abort`. Checked against real pi 0.87.1: pi emits `agent_end` and `agent_settled`, and
+     answers the abort only after them. A running `bash` is killed, a tool call that was still
+     streaming in never starts, and the run's last reply is aborted (an empty error reply
+     "This operation was aborted" after a killed tool call). The aborted reply stays in the
+     session and the thread, but pi does not send it to the model on the next request.
+  4. Once the settle has been seen (with the turn's capture, as any settle) **and** the abort has
+     been answered, the interrupting messages go as one prompt (`drainIfReady`, ahead of the
+     queue's own rules: an editor open on another message does not hold them). Nothing is written to
+     pi before its answer: a prompt that reaches pi while it is still aborting is queued behind
+     the run and does not run until a later one. They start the next turn as an ordinary user
+     message (`origin` nil; "From the queue · n" only for a message that was queued, or several
+     joined); the stopped turn ends in its quiet "Stopped" note.
+  - **The abort is only issued to the run the interrupt began in.** If the run ends on its own
+    while `clear_queue` is on its way, the settle sends the messages and no abort follows, so
+    it can never end the turn they open. Nothing is lost or sent twice either way.
+  - **Falls back to a plain steer** (`InterruptPlan`, tested) while pi compacts (an abort would
+    end the compaction, and pi refuses a prompt meanwhile: the message waits first in the
+    queue), while a prompt of ours is on its way (no run to stop), and when pi refuses the abort
+    (the message is steered in and the run is not read as stopped). Each is logged. A client
+    whose host does not list `interrupt` sends a steer instead (`NativeThreadStore.
+    resolvedDelivery`, `interruptQueued`); a second Steer now while pi is stopping goes with
+    the first, and Stop during one wins (the messages stay queued and the queue waits).
 - **Settle:** prompts pi accepted but never started as a message (an extension command, an
   input handler that took it) drop their pending rows; so does a prompt pi answered while idle
   (checked with `get_state`). A steer pi queued after its last look at its queue is stranded
@@ -503,8 +552,11 @@ transport differs.
   `RemoteHostClient` rejects larger image sends before sending.
 - **Remote capabilities:** remote model, thinking, and image requests need the host's
   `native.thread.v2` capability, `queue` requests its `native.queue.v1`, and `compact` its
-  `native.context.v1`, which also says the host sends `context` (`RemoteHostClient` refuses them
-  against an older host with `update_required`, `RemoteHostClient.missingCapability`).
+  `native.context.v1`, which also says the host sends `context`; a send with `interrupt` and the
+  queue's `interrupt` need `native.interrupt.v1` (`RemoteHostClient` refuses them against an
+  older host with `update_required`, `RemoteHostClient.missingCapability`). A snapshot lists
+  `retry` and `interrupt` only from a host with the matching capability
+  (`RemoteHostClient.incoming`), so a client falls back to a prompt again and a steer.
 - **Models:** `listModels` answers the host's catalog as "provider/id", its default in the same
   form, and `withoutThinking`, the models that take no thinking level (`ModelListing`). A host
   from before that field sends none, and clients then keep the thinking control for every model.
@@ -745,9 +797,20 @@ requests sent to its host.
   For example, `LargeHistoryTests` loads a 6 MiB history. A "tools:N" prompt runs a pi-like
   agent loop with pi 0.87.1's queues (steering read after each tool batch, follow-ups when the
   run would stop, `queue_update`, `clear_queue`, abort keeping follow-ups, and a stranded steer
-  with "hold-settle"); `QueueTests` drive the host's queue against it. Its startup options
+  with "hold-settle", and a compaction after the last reply with "compact-hold", during which it
+  refuses prompts as pi does); `QueueTests` and `InterruptTests` (Steer now, its fallbacks and
+  its races: the files `refuse-abort`, and `clear-gate` with `clear-go`, hold or refuse the
+  abort and the `clear_queue` answer) drive the host's queue against it. Its startup options
   (`STUB_PI_STARTUP_DELAY`, `_GATE`, `_EXIT`, or `stub-pi-startup.json` in its cwd for a pi the
   app launches) hold or fail pi's boot, as `ThreadStartupTests` and `AgentStartupTests` do.
+- **Real pi (`node --test Tests/Extensions/*.test.mjs`, with `PI_PACKAGE_DIR` set):**
+  `steer-interrupt.test.mjs` proves the recipe Steer now relies on against pi 0.87.1 itself,
+  with a local fake provider: a steer lands after the tool batch and before the next model call
+  (several land one at a time), `clear_queue` then `abort` then a plain `prompt` yields the new
+  message exactly once, `agent_settled` comes before the abort's answer, a killed `bash` is gone,
+  an unfinished tool call never starts, an abort at idle changes nothing, a prompt written right
+  behind an abort can be queued and not run (so the host waits for the answer), and pi refuses a
+  prompt during a manual compaction.
 - **Previews:** `ShepherdPreviewTests` render thread states offscreen in light and dark into
   `$SHEPHERD_PREVIEW_DIR`.
 - **Live model:** the opt-in run is gated on `SHEPHERD_LIVE_MODEL`.
