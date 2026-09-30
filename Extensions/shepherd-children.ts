@@ -195,6 +195,65 @@ export function childLaunch({ run, bridge, inherited = [], parentEnv = process.e
   return { args, env };
 }
 
+// ---- Errors that say what to do ----
+
+const nameTokens = (name) => new Set(String(name).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
+const within = (a, b) => [...a].every((token) => b.has(token));
+
+// A role or profile that isn't one thing: every name that would work, and the nearest to what was passed.
+export function unknownAgentMessage(name, agents, matches = []) {
+  if (matches.length > 1) {
+    return `Ambiguous agent "${name}": it names ${matches.map((a) => `${a.name} (${a.source}${a.filePath ? `, ${a.filePath}` : ""})`).join(" and ")}. Pass one profile's full name.`;
+  }
+  const roles = agents.filter((a) => a.source === "bundled").map((a) => a.name);
+  const profiles = agents.filter((a) => a.source !== "bundled").map((a) => a.name);
+  const wanted = nameTokens(name);
+  const close = agents.map((a) => a.name).filter((other) => { const tokens = nameTokens(other); return within(wanted, tokens) || within(tokens, wanted); }).slice(0, 3);
+  return `Unknown agent "${name}". Roles: ${roles.join(", ") || "none (Shepherd's bundled roles are disabled)"}. `
+    + `Profiles: ${profiles.join(", ") || "none discovered"}. `
+    + (close.length ? `Did you mean ${close.join(" or ")}? ` : "")
+    + "Pass one of them as agent (role is an alias); shepherd_child_agents lists each with its source.";
+}
+
+// A helper whose pi exited before it answered get_state: what it printed, and for a model it could
+// not find, which providers a helper loads (the parent had one the helper doesn't).
+export function childExitMessage(model, stderr) {
+  const text = String(stderr ?? "").trim();
+  if (!text) return "The helper's Pi exited before it was ready, and printed nothing.";
+  const missing = /Model ".*" not found/.test(text);
+  return `The helper's Pi exited before it was ready: ${clip(text, 800)}`
+    + (missing ? ` ${model} resolves in this Pi, so its provider is one the helper doesn't load: a helper loads Shepherd's managed provider, the user's enabled extensions and a profile's own extensions, not a project's or another CLI-only one.` : "");
+}
+
+const THINKING_SUFFIX = /:(off|minimal|low|medium|high|xhigh|max)$/;
+
+// A model the Pi that would run it can't see: which provider prefixes it does have, where the same
+// id does exist, and (for the old `cpa` provider) what replaced it. `models` is that Pi's catalog.
+export function modelNotFound(requested, models, { origin, where = "this Pi" } = {}) {
+  const named = String(requested).replace(THINKING_SUFFIX, "");
+  const providers = [...new Set(models.map((model) => model.provider))].sort();
+  const slash = named.indexOf("/");
+  const provider = slash > 0 ? named.slice(0, slash) : undefined, id = slash > 0 ? named.slice(slash + 1) : named;
+  const shown = providers.length > 24 ? `${providers.slice(0, 24).join(", ")} and ${providers.length - 24} more` : providers.join(", ") || "none";
+  const said = (problem) => origin ? `${origin} names ${requested}, but ${problem}.` : `${problem[0].toUpperCase()}${problem.slice(1)}.`;
+  const parts = [];
+  if (provider && !providers.includes(provider)) {
+    parts.push(said(`provider "${provider}" isn't loaded in ${where}`));
+    const elsewhere = models.filter((model) => model.id === id).map((model) => `${model.provider}/${model.id}`).slice(0, 3);
+    if (elsewhere.length) parts.push(`Did you mean ${elsewhere.join(" or ")}?`);
+    if (provider === "cpa") parts.push("\"cpa\" was the provider of the old pi-cliproxyapi-provider package, which Shepherd's pi doesn't load; its managed provider is \"cliproxyapi\" (Settings ▸ Pi ▸ Sign-in).");
+  } else if (provider) {
+    const first = id.toLowerCase().split(/[^a-z0-9]+/)[0] ?? "";
+    const similar = models.filter((model) => model.provider === provider && first && model.id.toLowerCase().includes(first)).map((model) => model.id).slice(0, 5);
+    parts.push(said(`provider "${provider}" has no model "${id}" in ${where}`));
+    if (similar.length) parts.push(`Its models that look like it: ${similar.join(", ")}.`);
+  } else {
+    parts.push(said(`no provider of ${where} lists "${requested}"; name a model as provider/id`));
+  }
+  parts.push(`Providers ${where} has: ${shown}.`);
+  return parts.join(" ");
+}
+
 // `timers` lets tests observe the control tick; pi passes only `pi`.
 export default function shepherdChildren(pi, timers = { setInterval, clearInterval }) {
   if (process.env.SHEPHERD_CHILD === "1") {
@@ -579,11 +638,16 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       if (missingTools.length) throw Error(`Tools unavailable in child Pi: ${missingTools.join(", ")}. Supply their explicit local extension providers.`);
       if (!state?.model || `${state.model.provider}/${state.model.id}` !== run.model
         || !catalog?.models?.some((model) => `${model.provider}/${model.id}` === run.model)) {
-        throw new Error(`Model ${run.model} is unavailable in isolated Pi. Check the model id and enabled Pi user extensions; project or CLI-only providers require an explicit profile extension.`);
+        // The parent could resolve it; the helper's own Pi can't. Its catalog is what names the providers it has.
+        throw new Error(`Model ${run.model} is unavailable in isolated Pi. ${modelNotFound(run.model, catalog?.models ?? [], { where: "the helper's Pi" })} Check the model id and enabled Pi user extensions; project or CLI-only providers require an explicit profile extension.`);
       }
       if (!current(run) || signal?.aborted) throw new Error("Parent session ended or dispatch cancelled");
       await command(run, "prompt", { message });
-    } catch (error) { await stop(run, clip(error.message)); throw error; }
+    } catch (error) {
+      // A helper that dies before it serves (pi refuses a `--model` its providers don't list) says why on stderr.
+      if (error.message === "Child exited") error = new Error(childExitMessage(run.model, run.stderr));
+      await stop(run, clip(error.message)); throw error;
+    }
     finally { signal?.removeEventListener("abort", abort); }
     return summary(run);
   }
@@ -753,7 +817,15 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     const requestedModel = explicit ?? profile.model ?? defaults.model ?? "inherit";
     const resolved = requestedModel === "inherit" ? { model: ctx.model } : resolveCliModel({ cliModel: requestedModel,
       modelRuntime: { getModels: () => ctx.modelRegistry.getAll(), hasConfiguredAuth: (provider) => ctx.modelRegistry.getAll().some((m) => m.provider === provider && ctx.modelRegistry.hasConfiguredAuth?.(m)) } });
-    if (resolved.error || !resolved.model) throw Error(resolved.error || "Select a model in the parent first");
+    if (requestedModel === "inherit" && !resolved.model) throw Error("Select a model in the parent first");
+    // Pi takes an id a known provider doesn't list as a custom model (and says so in `warning`), but a
+    // helper's catalog never holds it, so it would fail after launching: refuse it here, once, saying who
+    // named the model and what is loaded instead.
+    const listed = resolved.model && ctx.modelRegistry.getAll().some((m) => m.provider === resolved.model.provider && m.id === resolved.model.id);
+    if (requestedModel !== "inherit" && (resolved.error || !resolved.model || !listed)) {
+      const origin = explicit ? "The model argument" : profile.model ? `Agent profile ${profile.name}` : "Shepherd's native-subagent model default";
+      throw Error(modelNotFound(requestedModel, ctx.modelRegistry.getAll(), { origin, where: "this Pi" }));
+    }
     return resolved;
   }
   async function start(params, signal, ctx, workflowId, toolCallID, stepIndex) {
@@ -762,7 +834,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       if (!supported) throw new Error("Shepherd native children require Pi 0.85.1 or newer");
       signal?.throwIfAborted(); capacity();
       if (runs.size >= MAX_RUNS) throw new Error("64 retained children reached; start a new parent session");
-      if (params.agent && params.role) throw Error("Use agent or role, not both");
+      if (params.agent && params.role) throw Error("Pass either an agent profile or a role, not both: agent and role name the same thing (role is an alias for agent). Use agent for a profile from shepherd_child_agents, or role for one of the bundled roles (scout, reviewer, planner, worker).");
       const cwd = fs.realpathSync(path.resolve(ctx.cwd, params.cwd ?? "."));
       if (!fs.statSync(cwd).isDirectory()) throw new Error("Child cwd must be a directory");
       const targetContext = childTargetContext(ctx, cwd);
@@ -770,7 +842,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       const name = params.agent ?? params.role ?? "worker";
       const exact = catalog.agents.filter((a) => a.name === name);
       const matches = exact.length ? exact : catalog.agents.filter((a) => a.aliases?.includes(name));
-      if (matches.length !== 1) throw Error(`Unknown or ambiguous agent: ${name}; use shepherd_child_agents`);
+      if (matches.length !== 1) throw Error(unknownAgentMessage(name, catalog.agents, matches));
       const profile = matches[0], role = profile.name;
       if (profile.error || profile.disabled) throw Error(profile.error || `Agent ${role} is disabled`);
       if (profile.tools === "inherit") throw Error("tools: inherit requires ambient extensions, which native children do not inherit. Omit tools for Pi builtins or list tools and explicit extension files.");

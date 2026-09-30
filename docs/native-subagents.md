@@ -177,6 +177,13 @@ session and model variables stripped. They get `--no-skills --no-prompt-template
 - **No per-agent settings.** A child gets none of what Shepherd sets for its parent through
   `SHEPHERD_*` variables or its own extensions, such as a model's service tier: it runs with pi's
   defaults for its model.
+- **Errors say what to do.** An `agent` and a `role` together fail ("pass either an agent profile
+  or a role"). An unknown name lists the roles and the discovered profiles, and the nearest. A model
+  that no provider of the parent's pi lists fails at the start, naming who asked for it (the call,
+  a profile or the default), the providers that are loaded and, when the same id exists under
+  another provider, `provider/id` to use instead (a `cpa/…` model whose id is under `cliproxyapi`
+  reads `cliproxyapi/<id>`). A child that dies before it serves gives pi's own stderr, and one that
+  starts without the model in its catalog names the providers it does have.
 
 **Artifacts.** Each child gets `<support dir>/children/native-<uuid>/`, holding the transcript,
 prompt, status, inspector controls, what the user sent it (`user-messages.jsonl`), and a writer
