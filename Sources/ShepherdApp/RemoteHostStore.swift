@@ -171,6 +171,9 @@ final class RemoteHostStore {
     /// A design a host serves changed (one on screen here): its files' revision, its comments',
     /// or both.
     @ObservationIgnored var onDesignChanged: ((UUID, DesignID, UInt64?, UInt64?) -> Void)?
+    /// A host said something about an agent's browser (`BrowserDrivePush`): the host, the client
+    /// that heard it (an answer goes back on it) and the push.
+    @ObservationIgnored var onBrowserDrive: ((UUID, RemoteHostClient, BrowserDrivePush) -> Void)?
     /// Every host's design files, by hash (in memory).
     let designCache = RemoteDesignCache()
     private(set) var connections: [Connection] = [] { didSet { onProjectionChanged?() } }
@@ -338,6 +341,10 @@ final class RemoteHostStore {
         client.onDesignChanged = { [weak connection] design, revision, comments in
             guard let connection, connection.client.map(ObjectIdentifier.init) == clientID else { return }
             connection.designs.changed(design, revision: revision, commentsRevision: comments)
+        }
+        client.onBrowserDrive = { [weak self, weak connection, weak client] push in
+            guard let self, let connection, let client, connection.client === client else { return }
+            self.onBrowserDrive?(connection.id, client, push)
         }
         client.onCapabilitiesChanged = { [weak self, weak connection, weak client] capabilities in
             guard let connection, let client, connection.client === client, connection.phase == .connected else { return }

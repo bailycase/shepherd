@@ -100,6 +100,7 @@ struct RemoteHostClientTests {
         (.retry(expectedSessionID: "s", generation: "g", operationID: UUID(), entryID: "user:1"), RemoteProtocol.nativeRetryCapability),
         (.send(expectedSessionID: "s", generation: "g", operationID: UUID(), text: "t", delivery: .interrupt), RemoteProtocol.nativeInterruptCapability),
         (.queue(expectedSessionID: "s", generation: "g", operationID: UUID(), action: .interrupt(ids: [UUID()])), RemoteProtocol.nativeInterruptCapability),
+        (.setServiceTier(expectedSessionID: "s", generation: "g", operationID: UUID(), tier: "fast"), RemoteProtocol.nativeServiceTierCapability),
     ])
     func newerRequestsNeedTheirCapability(_ request: NativeThreadRequest, capability: String) {
         let all = Set(RemoteProtocol.capabilities)
@@ -120,6 +121,20 @@ struct RemoteHostClientTests {
         #expect(RemoteHostClient.incoming(.snapshot(value: snapshot), capabilities: older).actions == ["send"])
         let accepted = NativeThreadResult.accepted(operationID: UUID())
         #expect(RemoteHostClient.incoming(accepted, capabilities: older) == accepted)
+    }
+
+    /// A host without `native.serviceTier.v1` never offers a Speed control, whatever its snapshot
+    /// lists; its other capabilities leave the list alone.
+    @Test func aSpeedControlIsOfferedOnlyByAHostThatKeepsTheTier() {
+        let snapshot = NativeThreadSnapshot(piSessionID: "s", generation: "g", revision: 1, running: false,
+                                            supportedActions: ["send", "setServiceTier", "retry"], dialogsSupported: true, dialogs: [],
+                                            messages: [], provisional: [], clipped: false, serviceTier: "fast", serviceTiers: ["standard", "fast"])
+        let all = Set(RemoteProtocol.capabilities)
+        #expect(RemoteHostClient.incoming(.snapshot(value: snapshot), capabilities: all).actions == ["send", "setServiceTier", "retry"])
+        let older = all.subtracting([RemoteProtocol.nativeServiceTierCapability])
+        #expect(RemoteHostClient.incoming(.snapshot(value: snapshot), capabilities: older).actions == ["send", "retry"])
+        #expect(RemoteHostClient.missingCapability(.setServiceTier(expectedSessionID: "s", generation: "g", operationID: UUID(), tier: "fast"),
+                                                   capabilities: older) != nil)
     }
 
     /// A host without `native.interrupt.v1` never offers Steer now as an interrupt, whatever its

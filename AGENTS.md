@@ -446,7 +446,7 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
 - **Core:** the status transition table, `PaneNode` operations, and state validation.
 - **Migration:** terminal-era `runtime` keys, global shells and space shells dropped at startup,
   and review leaves.
-- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all nineteen files, and
+- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all twenty files, and
   the design skill's two files).
 - **Themes:** every theme variant complete, and the WCAG contrast rules met.
 - **App logic:** keybindings (defaults, validation, stored overrides for removed actions
@@ -554,7 +554,10 @@ Sources/
                        read before it is unpacked, links out of it, the import's failures and
                        progress) and DesignLifecycle (a deletion's undo window, the names of copies),
                        BrowserTunnel (the tunnel's frames, credit and chunking arithmetic, and which
-                       URLs a tunnel serves) and DevServers (a folder's package.json dev servers).
+                       URLs a tunnel serves), BrowserDrive (an agent on a host driving the page a
+                       viewer shows: BrowserDrivePush, BrowserOutcome's coding, the host's
+                       BrowserDriveOwners claim rules) and DevServers (a folder's package.json dev
+                       servers).
   ShepherdRemote/      RemoteHostClient, NativeThreadStore (@Observable), NativeThreadPresentation,
                        NativeTurnPresentation (a turn's items), NativeMarkdown (the prose
                        parser: tables, lists, images, details, footnotes), NativeActivity
@@ -581,8 +584,10 @@ Sources/
                        and the design_get calls one "Looked at…" line joins), TunnelEndpoint (one end of
                        a Browser tunnel: a socket and both directions' flow control), BrowserTunnelHub
                        (a connection's tunnels, `RemoteHostClient.tunnels`), BrowserPortForwarder (which
-                       ports of a remote thread's host are forwarded on this Mac, one owner each), ShepherdLog.
-                       Shared with the iOS client.
+                       ports of a remote thread's host are forwarded on this Mac, one owner each),
+                       BrowserDriveClaimant (when a viewer claims and lets go of an agent's browser)
+                       and BrowserViewerPolicy (where a host's agent may take a viewer's page),
+                       ShepherdLog. Shared with the iOS client.
   ShepherdPTYSpawn/    The PTY child side (fork → exec) in C: no Swift runs between the two.
   ShepherdSessions/    SessionServer (state, sessions, extension socket, remote listener),
                        RPCSession, RPCThreadState (+Queue: the queue of messages sent while pi
@@ -590,7 +595,8 @@ Sources/
                        session), StreamingToolArguments (the fields a tool call being written
                        names, read from pi's argument fragments), BrowserTunnelHost (the host's side
                        of Browser tunnels: loopback connects, caps, idle, one session per remote
-                       client), AutomationRunLog (each automation's runs), PTYSession,
+                       client; the drive's claims and routing are in SessionServer: a viewer that
+                       owns an agent's browser is handed its requests), AutomationRunLog (each automation's runs), PTYSession,
                        SessionScreen (SwiftTerm), StateStore,
                        PaneRequest (pane/review/automation requests + outcomes), RemoteFileUpload,
                        PiEngine (which pi runs; BundledPiEngine, the one the app ships),
@@ -649,12 +655,16 @@ Sources/
       address, viewports, dev servers, script messages, the console log), BrowserScripts (the
       page's scripts), ShepherdViewModel+Browser (Start, Add to message, Copy selector, a remote
       viewer's Start on this host), BrowserRemote (a remote thread's page: its host, the ports it
-      forwards, the host's dev servers and Start; docs/browser.md › Remote).
+      forwards, the host's dev servers and Start, and its claim on the agent's browser; docs/browser.md
+      › Remote).
       The agent's tools on it (docs/browser.md): BrowserAgentRules (pure: the URL policy, take over,
       the card's words, results, keys, the screenshot clamp), BrowserAgentScript (read, click, type
       in Shepherd's content world), BrowserDriver (each tool against the page; no WebKit),
       ShepherdViewModel+BrowserAgent (serves the server's requests, the tab's dot), BrowserExtension
-      (the embedded shepherd-browser.ts)
+      (the embedded shepherd-browser.ts). A remote thread's agent drives the viewer's page the same
+      way: BrowserHostDrive (BrowserOrigin and BrowserHostGuard: what a host's agent may open, read and
+      act on, enforced again in BrowserHost's navigation policy) and ShepherdViewModel+BrowserDrive
+      (the host's pushes: requests to run, the end of a claim, the hand-back, the dot)
     AppLayout (+Navigation, +Thread, +Agents, +Settings, +Pages, +Designs; ShellLayout's adaptive
       rules live in +Navigation), AgentStateMapping (app lifecycles → AgentState)
     ShepherdViewModel(+Navigation, +Creation, +Workspace, +Spaces, +Palette, +Shell,
@@ -766,10 +776,11 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
   shepherd-instructions.ts  Settings ▸ Instructions' AGENTS.md and APPEND_SYSTEM.md, added to
                           every session Shepherd starts (never ~/.pi/agent); suggest_instruction
                           (Settings ▸ Experiments ▸ Suggested instructions)
-  shepherd-design.ts      the design agent's design_read, board_write, canvas_update,
+  shepherd-design.ts      the design agent's design_read, board_write, board_edit, canvas_update,
                           design_check, comment_list, comment_reply, system_read and
                           system_write; hands pi the design skill
-                          (design-skill/: SKILL.md, format.md); see docs/designs.md
+                          (design-skill/: SKILL.md, format.md); relays its tools to the agent's
+                          native helpers through the children extension; see docs/designs.md
   shepherd-design-refs.ts an ordinary thread's design_get and design_note, registered only once the
                           thread holds a design reference; see docs/designs.md › Design references
   shepherd-mcp.ts         the mcp tool (search, describe, call) and direct <server>_<tool> tools
@@ -780,6 +791,9 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
                           browser_scroll, browser_wait, browser_screenshot, browser_console,
                           browser_eval, browser_back, browser_forward and browser_reload, on the
                           thread's own Browser page only; see docs/browser.md
+  shepherd-service-tier.ts  adds service_tier to the agent's own provider requests while its thread
+                          is on Fast (the Speed control), from the agent's tier file; see
+                          docs/service-tier.md
 Tests/
   <Module>UnitTests/, *IntegrationTests/, ShepherdPreviewTests/   the tiers above
   ShepherdTestIsolation/  C, run when a test bundle loads: scratch root, PATH, ZDOTDIR
@@ -938,7 +952,9 @@ variables are blanked, as are pi's `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSI
   - native thread requests, with the context and Compact now behind `native.context.v1`, Retry
     in place behind `native.retry.v1`, and Steer now (a message that stops pi and goes at once,
     `interrupt` in `supportedActions`, sent as a steer to a host without it) behind
-    `native.interrupt.v1`
+    `native.interrupt.v1`, and an agent's service tier (`setServiceTier`, the snapshot's
+    `serviceTier` and `serviceTiers`; no Speed control from a host without it) behind
+    `native.serviceTier.v1`
   - attach, detach, input, resize, and acknowledged paste
   - pane open, close, and split resize
   - `listDir`, `listModels`, `addSpace`, and `createAgent` with `creationOptions` (and the
@@ -991,6 +1007,25 @@ variables are blanked, as are pi's `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSI
     and reads stop while a connection's write queue is backed up. The same capability covers
     `RemoteAgentQuery.devServers` (the thread's folder on the host) and `RemoteAgentAction.openTerminal`
     (Start on the host). docs/browser.md › Remote
+  - `browserClaim`, `browserRelease`, `browserAnswer`, `browserClaimed` and `browserDrive`
+    (`browser.drive.v1`, offered with the tunnel, and only to a client that lists it in `hello`): the
+    agent on the host drives the page the viewer shows. A viewer with the thread's Browser tab on
+    screen **claims** the agent's browser (`browserClaim`, answered `browserClaimed` with the address
+    the host's own page holds, `http`/`https` only); the host keeps one owner per agent (the last to
+    claim wins, at most 32 agents per viewer, only for a thread the client sees, never a design's
+    agent) and, while one owns it, `SessionServer.routeBrowserRequest` pushes the agent's
+    `BrowserRequest` to it (`BrowserDrivePush.request` with a token) instead of asking its own page,
+    and completes the extension's request with the owner's `browserAnswer` (cut to the reply caps;
+    an answer from anyone else is ignored). A request ends `viewer_gone` when its owner leaves, is
+    superseded or releases, and `timeout` (the 120 s deadline, after which the owner loses the
+    browser) when it never answers; the next call reaches the host's own page or the next owner. The
+    host also pushes `abandoned` (Stop), `ended` (superseded, unresponsive, agent gone), `handBack`
+    (the user's next message, from any client) and `opened` (the agent opened a page in the host's
+    own browser: the viewer's tab takes the dot). The viewer runs a request with the local driver,
+    bound by `BrowserViewerPolicy`: only the host's own loopback ports and public addresses (docs/
+    browser.md › Remote › What a host's agent can make this Mac do; SECURITY.md). A claim ends with
+    the viewer's tab out of sight for 30 s, its connection, or a newer claim. A client or host without
+    the capability keeps PR 3a's two pages.
 
   Capabilities gate newer features. The client falls back (raw bracketed paste) or refuses (pane
   control) against older hosts. A host answers an authenticated request it cannot decode (a kind
@@ -1030,7 +1065,7 @@ the same change.
 - A new `SessionServer` mutation needs an integration test.
 - New persisted fields decode with defaults, so older `state.json` files keep loading.
 
-**Embedded extensions have one canonical copy.** The nineteen files in `Extensions/` are canonical,
+**Embedded extensions have one canonical copy.** The twenty files in `Extensions/` are canonical,
 and so is the design skill in `Extensions/design-skill/`.
 pi loads the copies that the twelve `Sources/ShepherdApp/*Extension.swift` files write to the
 support directory from embedded string literals. `installedPath()` rewrites an installed copy
@@ -1048,9 +1083,14 @@ children and drafts. It is inert until Settings ▸ Pi ▸ Sign-in connects a se
 private connection file is `shepherd-cliproxyapi.json`, named by `SHEPHERD_CLIPROXYAPI_CONFIG`.
 The managed provider is `cliproxyapi`, separate from imported `cpa` providers. No proxy process
 is installed or managed, and credentials never leave the host. See docs/pi-home.md.
+`ServiceTierExtension` (ShepherdSessions) embeds `shepherd-service-tier.ts`, the Speed control's
+half in pi: `PiHome.install` writes it, and an agent's own pi (only) loads it with
+`SHEPHERD_EXT_SERVICE_TIER` naming the agent's tier file under the pi home's `service-tier/`,
+which the host keeps current and pi reads on every provider request (docs/service-tier.md). Its
+support table is `ServiceTierSupport`'s, and the two are tested against one JSON table.
 
 - Edit a `.ts`/`.mjs` file (or a design skill file) and its literal in the same change, with
-  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all nineteen pairs
+  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all twenty pairs
   and the skill's two files.
 - Extensions stay dependency-free and inert without their environment variables.
 - They must never throw into pi or keep the process alive (unref'd sockets and timers).

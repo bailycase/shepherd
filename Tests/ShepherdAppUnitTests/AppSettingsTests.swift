@@ -15,6 +15,7 @@ struct AppSettingsTests {
         #expect(settings.terminalFontSize == 12.5)
         #expect(settings.defaultModel.isEmpty)
         #expect(settings.defaultThinking == .medium)
+        #expect(settings.defaultServiceTier == .standard, "new threads start on Standard")
         #expect(settings.autoNameAgents)
         #expect(settings.piPanesExtension && settings.piReviewExtension && settings.piDesignReferences)
         #expect(settings.piSubagentsExtension && settings.piNativeSubagents)
@@ -97,6 +98,7 @@ struct AppSettingsTests {
         settings.terminalFontSize = 15
         settings.defaultModel = "anthropic/claude-sonnet-4"
         settings.defaultThinking = .high
+        settings.defaultServiceTier = .fast
         settings.autoNameAgents = false
         settings.piPanesExtension = false
         settings.piReviewExtension = false
@@ -121,6 +123,7 @@ struct AppSettingsTests {
         let reloaded = AppSettings(store: store)
         #expect(reloaded.terminalFontFamily == "Menlo" && reloaded.terminalFontSize == 15)
         #expect(reloaded.defaultModel == "anthropic/claude-sonnet-4" && reloaded.defaultThinking == .high)
+        #expect(reloaded.defaultServiceTier == .fast)
         #expect(!reloaded.autoNameAgents)
         #expect(!reloaded.piPanesExtension && !reloaded.piReviewExtension && !reloaded.piDesignReferences)
         #expect(!reloaded.piSubagentsExtension && !reloaded.piNativeSubagents)
@@ -155,6 +158,7 @@ struct AppSettingsTests {
     @Test func unknownStoredChoicesFallBackToDefaults() {
         let store = Fixture.defaults()
         store.set("gigantic", forKey: AppSettings.Key.defaultThinking)
+        store.set("ultrafast", forKey: AppSettings.Key.defaultServiceTier)
         store.set("sideways", forKey: AppSettings.Key.worktreeBaseMode)
         store.set("octopus", forKey: AppSettings.Key.worktreeMergeMethod)
         store.set("invalid", forKey: AppSettings.Key.childContext)
@@ -163,6 +167,7 @@ struct AppSettingsTests {
 
         let settings = AppSettings(store: store)
         #expect(settings.defaultThinking == .medium)
+        #expect(settings.defaultServiceTier == .standard, "a tier from a newer build reads as Standard")
         #expect(settings.worktreeBaseMode == .fresh && settings.worktreeMergeMethod == .squash)
         #expect(settings.childContext == "fresh" && settings.childScope == "both" && settings.childThinking.isEmpty)
     }
@@ -177,6 +182,7 @@ struct AppSettingsTests {
         let settings = AppSettings(store: store)
         settings.terminalFontSize = 20
         settings.defaultModel = "openai/gpt-5"
+        settings.defaultServiceTier = .fast
         settings.autoNameAgents = false
         settings.uiDensity = 1.3
         settings.uiTextScale = 1.2
@@ -187,6 +193,7 @@ struct AppSettingsTests {
         settings.resetToDefaults()
 
         #expect(settings.terminalFontSize == 12.5 && settings.defaultModel.isEmpty && settings.autoNameAgents)
+        #expect(settings.defaultServiceTier == .standard)
         #expect(settings.uiDensity == 1 && settings.uiTextScale == 1)
         #expect(settings.sidebarWidth == AppSettings.defaultSidebarWidth)
         #expect(!settings.worktreeAutoMergePR && settings.childConcurrency == 4)

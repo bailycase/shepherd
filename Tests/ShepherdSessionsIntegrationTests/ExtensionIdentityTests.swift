@@ -203,8 +203,10 @@ struct ExtensionIdentityTests {
             .designNote(id: 23, agentID: victim, reference: "shepherd-design-ref://local/d1@1", text: "note"),
             .mcpCredentials(id: 24, agentID: victim, server: "linear", reason: .unauthorized, challenge: nil),
             .browser(id: 25, agentID: victim, request: .reload(note: nil)),
+            .designEditBoard(id: 26, agentID: victim, designID: design, path: "A.dc.html",
+                             edits: [DesignBoardEdit(find: "a", replace: "b")], baseRevision: nil),
         ]
-        // Every kind of message that names an agent as its actor (35 of the protocol's 42; the other
+        // Every kind of message that names an agent as its actor (36 of the protocol's 43; the other
         // seven name none) is in one of the two lists.
         func kind(_ message: ExtensionMessage) throws -> String {
             let object = try JSONSerialization.jsonObject(with: NDJSON.encode(message)) as? [String: Any]
@@ -212,7 +214,7 @@ struct ExtensionIdentityTests {
         }
         #expect((quiet + requests).allSatisfy { $0.speaksFor == victim })
         #expect(requests.allSatisfy { $0.replyID != nil } && quiet.allSatisfy { $0.replyID == nil })
-        #expect(Set(try (quiet + requests).map(kind)).count == 35)
+        #expect(Set(try (quiet + requests).map(kind)).count == 36)
 
         let client = try ExtensionClient(path: h.socketPath)
         for message in quiet + requests { try client.send(message) }
