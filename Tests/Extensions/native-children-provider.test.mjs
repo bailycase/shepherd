@@ -1,13 +1,14 @@
-// A native helper gets the managed CLIProxyAPI provider from its parent's home, and says what to do when a
-// role, profile or model can't be used. Real pi processes against a local fake provider: no model call.
+// What a native helper is launched with (the exact `-e` and `SHEPHERD_*`, the managed CLIProxyAPI provider among
+// them) and what it says when a role, profile or model can't be used. Real pi processes against a local fake
+// provider: no model call. A real helper on the managed provider is in native-children.test.mjs.
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { children, childrenSource, harness, installManagedProvider, modelEntry, providerServer, scratchHome, tempDir, until, withEnv } from "./fixtures/children-harness.mjs";
+import { children, childrenSource, harness, installManagedProvider, providerServer, scratchHome, tempDir, withEnv } from "./fixtures/children-harness.mjs";
 
 const PARENT = (dir, home) => ({
-  HOME: dir, PI_CODING_AGENT_DIR: home, PI_OFFLINE: "1", PI_SUBAGENT_EXTRA_AGENT_DIRS: undefined,
+  HOME: dir, PI_CODING_AGENT_DIR: home, PI_OFFLINE: "1", PI_SUBAGENT_EXTRA_AGENT_DIRS: undefined, SHEPHERD_CLIPROXYAPI_CONFIG: undefined,
   SHEPHERD_NATIVE_CHILDREN: "1", SHEPHERD_AGENT_ID: "fixture", SHEPHERD_SOCKET: path.join(dir, "shepherd.sock"), SHEPHERD_EXT_CHILDREN: childrenSource,
 });
 const put = (file, text) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text); };
@@ -30,7 +31,7 @@ test("a helper from a home with a connection gets the managed provider and only 
       NODE_EXTRA_CA_CERTS: "/certs/keychain-certificates.pem", _SHEPHERD_STASH_NAMES: "NODE_OPTIONS", _SHEPHERD_STASH_NODE_OPTIONS: "--require /user/hook.js",
       SHEPHERD_AGENT_ID: "parent-agent", SHEPHERD_SOCKET: "/run/shepherd.sock", SHEPHERD_DESIGN_ID: "d1", SHEPHERD_EXT_PANES: "/ext/panes.ts",
       SHEPHERD_EXT_CHILDREN: bridge, SHEPHERD_NATIVE_CHILDREN: "1", SHEPHERD_MODEL: "parent/model", SHEPHERD_CHILD_CONCURRENCY: "4",
-      SHEPHERD_CLIPROXYAPI_CONFIG: "/elsewhere/config.json",
+      SHEPHERD_CLIPROXYAPI_CONFIG: path.join(home, "shepherd-cliproxyapi.json"),
     };
     const launch = children.childLaunch({ run: run(dir), bridge, inherited: [userExtension, path.join(home, "shepherd-cliproxyapi.ts")], parentEnv });
 
@@ -41,7 +42,7 @@ test("a helper from a home with a connection gets the managed provider and only 
     const shepherd = Object.keys(launch.env).filter((key) => key.startsWith("SHEPHERD_")).sort();
     assert.deepEqual(shepherd, ["SHEPHERD_CHILD", "SHEPHERD_CHILD_TOOLS", "SHEPHERD_CLIPROXYAPI_CONFIG"],
       "no agent id, socket, design, extension path, model or default reaches a helper");
-    assert.equal(launch.env.SHEPHERD_CLIPROXYAPI_CONFIG, path.join(home, "shepherd-cliproxyapi.json"), "the home's own file, set after the filter");
+    assert.equal(launch.env.SHEPHERD_CLIPROXYAPI_CONFIG, path.join(home, "shepherd-cliproxyapi.json"), "the parent's pinned file, kept past the filter");
     assert.equal(launch.env.SHEPHERD_CHILD, "1");
     assert.deepEqual(JSON.parse(launch.env.SHEPHERD_CHILD_TOOLS), ["read", "grep", "shepherd_parent_message"]);
 
@@ -81,40 +82,14 @@ test("without a connection file, a helper is launched exactly as before", () => 
     launch = children.childLaunch({ run: run(dir), bridge, parentEnv });
     assert.deepEqual(launch.args, expected([]));
     assert.equal(launch.env.SHEPHERD_CLIPROXYAPI_CONFIG, undefined, "the parent's own pin is filtered like every SHEPHERD_*");
-    // No home, or a relative one, names no file.
+    // No pin, a relative one, or one into a folder that isn't there names no file.
     assert.equal(children.managedProvider({}), undefined);
-    assert.equal(children.managedProvider({ PI_CODING_AGENT_DIR: "relative/home" }), undefined);
+    assert.equal(children.managedProvider({ SHEPHERD_CLIPROXYAPI_CONFIG: "relative/shepherd-cliproxyapi.json" }), undefined);
+    assert.equal(children.managedProvider({ SHEPHERD_CLIPROXYAPI_CONFIG: path.join(dir, "gone", "shepherd-cliproxyapi.json") }), undefined);
+    // Both files: it is the provider.
+    put(path.join(home, "shepherd-cliproxyapi.ts"), "");
+    assert.deepEqual(children.managedProvider(parentEnv), { extension: path.join(home, "shepherd-cliproxyapi.ts"), config: path.join(home, "shepherd-cliproxyapi.json") });
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-// ---- A: a real helper on the managed provider ----
-
-test("a helper started on a cliproxyapi model registers the provider, reaches the proxy with its key, and completes", { timeout: 120000 }, async () => {
-  const dir = tempDir("managed");
-  const proxy = providerServer(() => ({ text: "proxy answered" }));
-  const port = await proxy.listen();
-  try {
-    const home = scratchHome(dir);
-    installManagedProvider(home, { baseURL: `http://127.0.0.1:${port}/v1`, models: ["fixture-model"], apiKey: "proxy-key-1" });
-    await withEnv(PARENT(dir, home), async () => {
-      // The parent holds the provider too (Shepherd's launcher loaded it), so its registry lists the model.
-      const h = await harness(dir, { models: [{ provider: "cliproxyapi", id: "fixture-model" }] });
-      try {
-        const started = await h.call("start", { task: "hello proxy", role: "scout", model: "cliproxyapi/fixture-model", mission: false });
-        const [done] = await h.call("wait", { ids: [started.id], all: true, timeoutSeconds: 60 });
-        assert.equal(done.state, "complete", JSON.stringify(done));
-        assert.match(done.output, /proxy answered/);
-        assert.equal(done.model, "cliproxyapi/fixture-model");
-        const sent = proxy.requests.filter((request) => request.url === "/v1/chat/completions");
-        assert(sent.length > 0, "the helper's request reached the proxy");
-        assert.equal(sent[0].body.model, "fixture-model");
-        assert.equal(sent[0].headers.authorization, "Bearer proxy-key-1", "with the key the connection file holds");
-        // The helper's environment carried no key and no host variable: the file is all it read.
-        const childEnv = fs.readFileSync(path.join(path.dirname(done.sessionFile), "status.json"), "utf8");
-        assert(!childEnv.includes("proxy-key-1"));
-      } finally { await h.shutdown(); }
-    });
-  } finally { await proxy.close(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("a helper whose home has no connection exits on a cliproxyapi model, and the message carries why", { timeout: 120000 }, async () => {
@@ -129,7 +104,7 @@ test("a helper whose home has no connection exits on a cliproxyapi model, and th
       const h = await harness(dir, { models: [{ provider: "fixture", id: "fixture" }, { provider: "cliproxyapi", id: "fixture-model" }] });
       try {
         await assert.rejects(h.call("start", { task: "x", role: "scout", model: "cliproxyapi/fixture-model", mission: false }), (error) => {
-          assert.match(error.message, /^The helper's Pi exited before it was ready: Error: Model "cliproxyapi\/fixture-model" not found\./);
+          assert.match(error.message, /^Child exited before clean settlement \(1\): Error: Model "cliproxyapi\/fixture-model" not found\./);
           assert.match(error.message, /cliproxyapi\/fixture-model resolves in this Pi, so its provider is one the helper doesn't load/);
           return true;
         });

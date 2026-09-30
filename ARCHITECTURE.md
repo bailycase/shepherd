@@ -406,10 +406,11 @@ authenticate with the token and never reach this path.
 
 **Legitimate speakers.** Every bundled extension runs inside pi and connects from pi's own pid;
 none starts a separate process that connects. Native subagents are separate pi processes, but
-a child's environment has no `SHEPHERD_AGENT_ID` or `SHEPHERD_SOCKET` (every inherited
-`SHEPHERD_*` is removed, so none of Shepherd's extensions would connect) and it loads only the
-bridge and the user's own extensions (`--no-extensions`, `SHEPHERD_CHILD`); the children
-extension talks to its own parent over `helloChildren`, from the parent's pid. A design agent's
+a child's environment has no `SHEPHERD_AGENT_ID` or `SHEPHERD_SOCKET`: inherited `SHEPHERD_*`
+variables are removed except `SHEPHERD_CLIPROXYAPI_CONFIG`, the managed provider's config path.
+It explicitly loads the bridge, that managed provider and the user's enabled extensions under
+`--no-extensions`, with `SHEPHERD_CHILD` set. None connects as the parent; the children extension
+talks to its own parent over `helloChildren`, from the parent's pid. A design agent's
 helpers use its design tools without connecting: the helper's proxy sends the call up its stdout
 to the parent, whose design extension makes the request on its own connection with its own agent id
 (docs/designs.md › Helpers), so the rule is not loosened. A design's agent, an automation's run, an agent that
