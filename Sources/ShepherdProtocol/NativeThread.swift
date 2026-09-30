@@ -38,6 +38,10 @@ public enum NativeThreadRequest: Codable, Hashable, Sendable {
     /// by `retry` in `supportedActions` and, remotely, `native.retry.v1`; a client without them
     /// sends the prompt again.
     case retry(expectedSessionID: String, generation: String, operationID: UUID, entryID: String)
+    /// How fast this agent asks its provider to answer from its next model call on: `tier` is a
+    /// raw `ServiceTier` the snapshot's `serviceTiers` lists ("standard", "fast"). Gated by
+    /// `setServiceTier` in `supportedActions` and, remotely, `native.serviceTier.v1`.
+    case setServiceTier(expectedSessionID: String, generation: String, operationID: UUID, tier: String)
 
     public var images: [NativeImage] {
         if case .send(_, _, _, _, _, let images, _, _, _) = self { return images ?? [] }
@@ -510,6 +514,12 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
     /// start). The host keeps the agent and answers with only this until pi starts again: no
     /// history, no actions. nil otherwise, and from older hosts.
     public var startProblem: NativeStartProblem?
+    /// The agent's service tier, "standard" or "fast" (`ServiceTier`'s raw values; a tier this
+    /// client doesn't know is ignored). nil from older hosts (`native.serviceTier.v1`).
+    public var serviceTier: String?
+    /// The tiers the current model offers, Standard first; empty when it offers none, and the
+    /// composer then shows no Speed control. nil from older hosts.
+    public var serviceTiers: [String]?
 
     public var isRPC: Bool { runtime == "rpc" }
 
@@ -520,7 +530,7 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         provisional: [NativeThreadMessage], clipped: Bool, runtime: String? = nil, stats: NativeThreadStats? = nil,
         commands: [NativeCommand]? = nil, subagents: [NativeSubagent]? = nil, queue: NativeQueue? = nil,
         context: NativeThreadContext? = nil, turnChanges: [ChangesTurn]? = nil, retry: NativeThreadRetry? = nil,
-        startProblem: NativeStartProblem? = nil
+        startProblem: NativeStartProblem? = nil, serviceTier: String? = nil, serviceTiers: [String]? = nil
     ) {
         self.piSessionID = piSessionID
         self.generation = generation
@@ -546,6 +556,8 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         self.turnChanges = turnChanges
         self.retry = retry
         self.startProblem = startProblem
+        self.serviceTier = serviceTier
+        self.serviceTiers = serviceTiers
     }
 }
 

@@ -326,7 +326,7 @@ struct ThreadView: View {
 
     private func handle(_ command: ThreadCommandCenter.Command, proxy: ScrollViewProxy) {
         switch command {
-        case .modelPicker, .thinkingMenu:
+        case .modelPicker, .thinkingMenu, .speedMenu:
             // The composer's own: it watches the command center itself, so the menu opens with
             // one redraw of the composer and none of the thread.
             break

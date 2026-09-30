@@ -164,6 +164,11 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     /// The design references handed to this agent's thread (`DesignGrant`): what its design_get
     /// may read. Persisted; decodes empty from older state files. A design's agent holds none.
     public var designGrants: [DesignGrant]
+    /// How fast this thread asks its provider to answer (the composer's Speed control). Persisted,
+    /// and applied to the agent's next model call whenever it changes; a model that offers no
+    /// tier ignores it (`ServiceTierSupport`). Decodes `.standard` from older state files, and is
+    /// written only when it isn't.
+    public var serviceTier: ServiceTier
 
     public init(
         id: AgentID = AgentID(),
@@ -184,7 +189,8 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         waitingReason: String? = nil,
         checkout: AgentCheckout? = nil,
         designID: DesignID? = nil,
-        designGrants: [DesignGrant] = []
+        designGrants: [DesignGrant] = [],
+        serviceTier: ServiceTier = .standard
     ) {
         self.id = id
         self.name = name
@@ -205,6 +211,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         self.checkout = checkout
         self.designID = designID
         self.designGrants = designGrants
+        self.serviceTier = serviceTier
     }
 
     /// The pi session to launch this agent with. Falls back to the agent's id,
@@ -216,7 +223,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     private enum CodingKeys: String, CodingKey {
         case id, name, spaceID, tabID, paneID, status, model, thinkingLevel, nameIsFinal
         case piSessionID, worktreeBranch, worktreeBase, worktreePath, lastActiveAt, waitingOn, waitingReason, checkout, designID, runtime
-        case designGrants
+        case designGrants, serviceTier
     }
 
     public init(from decoder: Decoder) throws {
@@ -250,6 +257,9 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         designID = try c.decodeIfPresent(DesignID.self, forKey: .designID)
         // Absent before design references.
         designGrants = try c.decodeIfPresent([DesignGrant].self, forKey: .designGrants) ?? []
+        // Absent before service tiers; a tier this build does not know (a newer build's) reads
+        // as Standard, which sends nothing.
+        serviceTier = ((try? c.decodeIfPresent(ServiceTier.self, forKey: .serviceTier)) ?? nil) ?? .standard
         // `runtime` is ignored: agents from the terminal era ("terminal") relaunch over RPC in
         // the same pi session, which is the whole migration.
     }
@@ -275,6 +285,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(checkout, forKey: .checkout)
         try c.encodeIfPresent(designID, forKey: .designID)
         if !designGrants.isEmpty { try c.encode(designGrants, forKey: .designGrants) }
+        if serviceTier != .standard { try c.encode(serviceTier, forKey: .serviceTier) }
         // Older remote clients default a missing runtime to terminal and would try to attach a
         // PTY that does not exist.
         try c.encode(SessionRuntime.rpc, forKey: .runtime)
