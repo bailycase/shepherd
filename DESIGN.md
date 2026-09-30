@@ -147,6 +147,7 @@ And the rules that follow from them:
 | ImportFileMenu: File ▸ New Design ⇧⌘D, New Mission ⇧⌘M, Import Claude Design Project… ⇧⌘I, Export… ⌘E | Only Import Claude Design Project… (⇧⌘I, rebindable) | ⇧⌘D splits a pane and ⇧⌘M opens the model picker; Missions are deferred; a design's Export is its header's |
 | NWProjectMenu: a drawn popover with glyphs, in sentence case ("Copy path", "Collapse all", "Hide from sidebar") | A native menu (the project's context menu, and ··· on hover) in title case: New Thread in <project>, Reveal in Finder, Open in Terminal, Copy Path, Collapse All, Hide from Sidebar | Every menu in the app is native and title-cased (the thread rows' menus) |
 | SidebarProjectsHosts: nothing on the host sections' headers | Hidden projects come back from the + beside Projects, which only the ungrouped tree has (and File ▸ New Space… adds one either way) | The board draws no + on a host section |
+| Sidebar (Main, Running, NavNewThread, NavAutomations, NavHosts, NWNavigation): Needs you, then Recents, no way to keep a thread at the top | A **Pinned** section between them in the Activity sidebar (Sidebar › Pinned), its Pin and Unpin in the row menu, Thread options and ⌘K, no chord, no drag to reorder, nothing on the iPhone or iPad or in the project tree. The canvas gains SidebarPinned (the sidebar with Needs you, Pinned and Recents, and the three menus) | The user's request (2026-09-30): "pin threads at the top in a different labeled list". No board drew it, so every choice under Sidebar › Pinned is the agent's proposal for the user to settle, and the board is added to the canvas with the section |
 | NWAgents, NWSwift: `NWInboxItem`, mission control's inbox item with a leading rule in the state's color | Not built. The Mac has no inbox: its Needs you is the sidebar's list (Sidebar); iPhone and iPad list Needs you as `NWAttentionCard`s (MobileInbox, iPadInbox), with no leading rule and no missions | Out of scope for this pass |
 | Controls: `.nwHelp` draws a 24pt popover-styled tip after 600ms of hover, the chord as keycaps | The system tooltip, with the chord appended as text ("Review changes  ⇧⌘B") | As every other tooltip in the app (see the Queue & steer row) |
 | Controls: `.pickerStyle(.nwSegmented)`, `.pickerStyle(.nwPopup)`, `Stepper(…).nwStyle()`, `Slider(…).tint(.nw.lantern)` | Views: `NWSegmentedPicker`, `NWPopupMenu` (a native `Menu` with an `NWPopupLabel`), `NWStepper`, `NWValueSlider` (its value in mono beside it) | SwiftUI has no public custom picker, stepper, or slider style; each represents itself to accessibility as the native control |
@@ -727,7 +728,7 @@ against a large fixture (300 agents in 40 spaces, 1,000 palette results, a 2,000
 300-file review, and a highlighted 40-file review beside a thread, a 500-turn thread, 200 subagent
 runs, 2,000 folders).
 
-- **Anything that can outgrow a screen is lazy.** The sidebar's Needs you and Recents, the palette's
+- **Anything that can outgrow a screen is lazy.** The sidebar's Needs you, Pinned and Recents, the palette's
   results, the thread and the inspector's transcript, the review's diff and file strip, an open
   subagent tray, and the directory and model lists are `LazyVStack`s or `LazyHStack`s with stable
   ids. Eager stacks
@@ -921,9 +922,10 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
 `Components/Navigation/Sidebar.swift`): the sidebar every Mac board draws (NWNavigation, and the
 sidebars of Main, Running, NavNewThread, NavAutomations and NavHosts). 232pt on `bgBase` by
 default, and it keeps its width when the side pane opens. Top to bottom: the top bar, the
-destinations, Needs you, Recents, and the footer. Settings ▸ Appearance ▸ Organize by (or View ▸
-Organize Sidebar By) swaps Needs you and Recents for a project tree (Organized by project, below);
-Activity is the default. Each part follows Settings ▸ Appearance ▸ Sidebar
+destinations, Needs you, Pinned (only while something is pinned), Recents, and the footer.
+Settings ▸ Appearance ▸ Organize by (or View ▸ Organize Sidebar By) swaps Needs you, Pinned and
+Recents for a project tree (Organized by project, below; it draws no pins); Activity is the
+default. Each part follows Settings ▸ Appearance ▸ Sidebar
 rows: Standard values are given first and Compact in parentheses; the boards draw no Comfortable
 sample, so it takes Standard's spacing at its 36pt rows.
 
@@ -974,13 +976,48 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
 - **Not signed in:** an agent on this Mac whose pi can't start because it isn't signed in
   (Thread › Not signed in) is in Needs you too, with the glowing lantern dot and "sign in" as its
   reason (`NWSidebarRow(agent) · .notSignedIn`), until it starts again.
-- **Recents** (`NWSidebarSection(.recents)`): every other agent, on this Mac and every connected
-  host, automation runs included, in one list, most recently active first. The header is "Recents"
+- **Pinned** (`NWSidebarSection(.pinned)`; SidebarPinned, which the canvas gains with this
+  section: no board drew it, see the departures): the threads the user pinned, between Needs you
+  and Recents, in the order they were pinned (oldest pin first). There is no Pinned section while
+  nothing is pinned, and its header is the others' own: "Pinned" in Geist 11.5 medium
+  `textTertiary`, spaced like Recents, with no count. Its rows are Recents' rows, for a thread on
+  this Mac or on a connected host alike (state dot, host tag, elapsed time and the rest, the
+  selected row in `bgSelected`); a pinned row wears no glyph of its own, since the header says it,
+  and VoiceOver adds ", pinned" to its label. The user's decisions for it, 2026-09-30 (the request
+  was "pin threads at the top in a different labeled list", and no board drew one):
+  - **One place each:** a thread shows once. A pinned thread that waits on you is in Needs you
+    (attention wins, and its menu still says Unpin) and returns to its place in Pinned once it is
+    answered; Recents never repeats a pinned thread. A pinned thread on a host that dropped stays
+    in Pinned as the host last sent it, dimmed and without Needs you, as in Recents; one on a host
+    not reached since launch is absent until it connects.
+  - **What is pinned:** threads on This Mac and on connected hosts. An automation's run is not
+    (the next run replaces its agent), and a design is not (it lists under Designs).
+  - **How:** Pin and Unpin in the row's context menu, the thread options menu and ⌘K (below).
+    They have no chord. There is no drag to reorder: the rows keep the order they were pinned in,
+    and unpinning then pinning a thread again moves it last (a drag would need machinery of its
+    own, as the project tree's does).
+  - **Kept** per Mac, as view state beside the project tree's closed projects
+    (`shepherd.sidebar.pinned` in the app's preferences, by a thread's host and agent id, so a
+    pinned remote thread works): not in state.json, never sent to another device, and not reset by
+    Reset settings. The iPhone and iPad do not show pins, and the project tree keeps them without
+    drawing them (no Pinned section, and no Pin in its menus). A pin goes when its thread is
+    deleted or its host is removed, never before the workspace has loaded or for a host that
+    hasn't connected this launch.
+  - **Launch and Continue** read the most recently active thread, pinned or not: a launch shows
+    the thread that needs you, else the one most recently active (as before), and the New thread
+    page's Continue card is the most recent running thread.
+  - **Performance:** the lists derive once per change (`SidebarDerivation.lists` takes the pins
+    with the source); a pin change redraws only the rows that move and the headers that appear or
+    go, and a status report on a pinned thread only its row (`ListPerformanceTests`).
+- **Recents** (`NWSidebarSection(.recents)`): every other agent (one not pinned, or waiting on
+  you), on this Mac and every connected host, automation runs included, in one list, most
+  recently active first. The header is "Recents"
   in Geist 11.5 medium `textTertiary`, spaced like Needs you, and the rows are the same. The leading
   slot is the thread's state dot (running blue, done green, failed red for a turn that ended in an
   error, hollow while idle) or an automation run's `bolt` in `textTertiary`. The selected row is
   `bgSelected` with its title in semibold. The trailing slot holds, in priority order:
-  1. the ⌘-digit hint on the first nine rows while ⌘ is held ("⌘3", micro `textTertiary`)
+  1. the ⌘-digit hint on the first nine rows of Pinned and Recents while ⌘ is held ("⌘3", micro
+     `textTertiary`)
   2. a remote agent's host as a tag: mono 10 `textTertiary`, padded 4pt at the sides, in a 1pt
      `lineSubtle` border at radius 4 ("horizon"). Threads on this Mac carry no tag.
   3. "waiting" in mono 10 `textTertiary`, with a `clock` glyph in `textSecondary` in the leading
@@ -1005,8 +1042,8 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   and `waitingReason` are live state on `Agent`, broadcast to remote clients like a status;
   `waitingOn` and `waitingReason` are never written to state.json. At launch the most recently
   active agent on this Mac shows.
-- **Hosts:** a connected host's agents join both lists, tagged. A host that drops keeps its threads
-  in Recents as it last sent them (NavHosts' `horizon` rows), dimmed (`NWListMetrics.dimmedOpacity`,
+- **Hosts:** a connected host's agents join the lists (Needs you, Pinned and Recents), tagged. A
+  host that drops keeps its threads in Recents (or Pinned) as it last sent them (NavHosts' `horizon` rows), dimmed (`NWListMetrics.dimmedOpacity`,
   as on the iPad), never in Needs you since nothing there can be answered, and with a menu that
   says "Host Offline"; opening one shows the host's connection state. A host not reached since
   launch lists nothing. More ▸ Hosts says how many are offline, and the Hosts page carries their
@@ -1025,11 +1062,14 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   below 720 and keeps its width while the side pane is open.
 - **Interaction:** list rows are tap views with button traits and accessibility actions, and
   destinations are buttons. Hovering never moves or resizes anything. ⌘1–9 select the first nine
-  Recents rows, ⌘↑/↓ walk Needs you then Recents and wrap, and keyboard selection scrolls the row
+  rows of Pinned and then Recents in the order they are drawn (Needs you takes no digit, so
+  Pinned's rows take ⌘1 and on; a pinned thread that waits on you is in Needs you and has none),
+  ⌘↑/↓ walk Needs you, Pinned, then Recents and wrap, and keyboard selection scrolls the row
   into view. Picking a row leaves a page for that thread.
 - **Context menus** keep every action an agent had:
   - This Mac's threads (NWComposer's agent menu, with today's items between its separators):
-    Rename… with its keys (⌘R), Fork from Here (`arrow.branch`) and Copy Transcript
+    Rename… with its keys (⌘R), Pin or Unpin (`pin`, `pin.slash`, named for what it does now),
+    Fork from Here (`arrow.branch`) and Copy Transcript
     (`doc.on.doc`); Review Changes and Open in Finder; then Finalize Worktree… and Delete
     Worktree Agent… for a worktree agent, or Delete Agent. Fork from Here copies the agent's pi
     session, as it stands, into a new session and starts "<name> (fork)" beside it in the same
@@ -1042,8 +1082,12 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   - This Mac's automation runs: Stop while the run is live (a run whose pi is still starting
     included; `AutomationRun.isLive`), else Run Now, then Delete Automation. Run Now replaces a done
     run once the new run exists; a refused Run Now shows `ActionErrorDialog`.
-  - Remote threads: Rename…, Finalize Worktree… (worktree agents), Review Uncommitted Changes,
-    Review PR Changes, and Delete Agent or Delete Worktree Agent…, while the host is connected.
+  - Remote threads: Rename…, Pin or Unpin, Finalize Worktree… (worktree agents), Review
+    Uncommitted Changes, Review PR Changes, and Delete Agent or Delete Worktree Agent…, while the
+    host is connected. A pin is this Mac's own, so while the host is offline the menu keeps Pin or
+    Unpin above Host Offline.
+  - Pin and Unpin are offered on a thread's row in Needs you, Pinned and Recents (Activity only),
+    never on an automation's run, a design, or a row of the project tree.
 - **Motion:** rows arriving, leaving and moving up animate `.list` (keyed on the rows' ids, never
   the rows), and More's rows disclose (`.disclosure`). Selecting a row changes no row's place, so
   it lands at once. A status report or a settled name changes only its row, in place (`.content`),
@@ -1157,7 +1201,9 @@ SidebarTree, SidebarProjects and SidebarProjectsHosts. Mac only: the iPad and iP
     see the departures). While pi has opened something the tab strip can't show (the pane is
     closed, or a subagent is inspected over it), it takes an 8pt `running` dot at its top
     trailing corner, ringed 2pt in `bgWindow` (`NWToggleBadge`), and its tip (Side pane).
-  - the options menu (`NWOptionsMenu`, "Thread options"): Refresh Thread, then Rename… after a divider.
+  - the options menu (`NWOptionsMenu`, "Thread options"): Refresh Thread, then Rename… and Pin or
+    Unpin (`pin`, `pin.slash`; the sidebar row menu's item) after a divider. Pin is offered where
+    the Activity sidebar shows pins, never for an automation's run or in the project tree.
 - **Where the count comes from** (`Agent.checkout`, live state the host broadcasts, so a remote
   viewer's chip matches): the host reads each local agent's checkout with one `git
   --no-optional-locks status --porcelain=v2 --branch -z --untracked-files=all` off the main thread
@@ -3630,7 +3676,9 @@ surface: every destination and command in it is also in the sidebar or the menus
     New space on <host>… ("remote", one per connected host), Hide or Show sidebar (⇧⌘S), Settings…
     (⌘,), and Check remote worktree operation (its host) while one is pending. **Not built yet:**
     New mission… (NWComposer; it waits for Missions).
-  - **This thread** (the agent on screen): Rename ("<title>", ⌘R), Choose model… ("<model>", ⇧⌘M),
+  - **This thread** (the agent on screen): Rename ("<title>", ⌘R), Pin thread or Unpin thread
+    (`pin`, `pin.slash`; named for what it does now, no chord; only for a thread the sidebar can pin:
+    not an automation's run, and not in the project tree), Choose model… ("<model>", ⇧⌘M),
     Review diff ("working tree · 4 files", the checkout's changed files as the branch chip counts
     them; ⇧⌘B, the side pane's chord), Review PR changes ("PR #24" once the agent's review has
     found its pull request), and the Pane menu's terminal commands while a
@@ -5189,7 +5237,7 @@ in UserDefaults under `shepherd.keybindings`).
 | ⌘N · ⇧⌘T · ⇧⌘N | New thread (the page) · new agent with options… · new space… |
 | ⌘R · ⇧⌘W | Rename agent · delete agent |
 | ⌘K | Command palette |
-| ⌘↓ · ⌘↑ | Next · previous agent in the sidebar (Needs you, then Recents; organized by project, the open projects' threads) |
+| ⌘↓ · ⌘↑ | Next · previous agent in the sidebar (Needs you, Pinned, then Recents; organized by project, the open projects' threads) |
 | ⌘D · ⇧⌘D · ⌘W | Split vertically · horizontally · close pane |
 | ⌥⌘→ · ⌥⌘← | Focus next · previous pane |
 | ⌘J · ⇧⌘↩ | Show or hide the terminal panel · maximize or restore it |
@@ -5203,8 +5251,9 @@ in UserDefaults under `shepherd.keybindings`).
 
 Fixed chords:
 
-- ⌘1–9 select the first nine Recents rows (organized by project, the first nine threads of the
-  open projects; hold ⌘ to see them). With the project tree focused, ← closes a project and →
+- ⌘1–9 select the first nine rows of Pinned, then Recents, in the order they are drawn (organized
+  by project, the first nine threads of the open projects; hold ⌘ to see them). Pin and Unpin
+  have no chord: they are in the row and thread menus and ⌘K. With the project tree focused, ← closes a project and →
   opens it; ⌥-click opens or closes every project. ⌃⇧1–9 jumped between the tree's
   machine sections and went with them: a focused terminal keeps them now.
 - ⌃1 shows the side pane's Changes tab (View › Changes) and ⌃2 its Browser (View › Browser); ⌃3–⌃4
