@@ -21,6 +21,8 @@ struct SidePaneView: View {
     var body: some View {
         VStack(spacing: 0) {
             SidePaneTabBar(vm: vm, owner: owner, tab: tab, news: news, review: review, maximized: maximized)
+                // The tab's brief tip hangs below the strip, over the tab's page.
+                .zIndex(1)
             ZStack {
                 switch tab {
                 case .changes:
@@ -54,9 +56,15 @@ private struct SidePaneTabBar: View {
     let review: ReviewSession?
     let maximized: Bool
 
+    /// What pi last opened in this thread's Browser, for the tab's brief tip.
+    private var browserTip: NWSidePaneTabTip? {
+        guard case .local(let agentID) = owner else { return nil }
+        return SidePaneTabs.tip(opened: vm.browsers.existing(agentID)?.openedByAgent)
+    }
+
     var body: some View {
         NWSidePaneTabs(SidePaneTabs.items(news: news, changedFiles: review.flatMap { $0.isLoading ? nil : $0.files.count },
-                                          remote: owner.isRemote),
+                                          remote: owner.isRemote, browserTip: browserTip),
                        selection: tab.rawValue,
                        select: { id in SidePaneTab(rawValue: id).map { vm.showSidePane(owner, tab: $0) } },
                        closeShortcut: vm.keybindings.display(.toggleRightPane),
@@ -76,14 +84,21 @@ private struct SidePaneTabBar: View {
 
 /// The strip's tabs, from what each one holds.
 enum SidePaneTabs {
-    static func items(news: Set<SidePaneTab>, changedFiles: Int?, remote: Bool = false) -> [NWSidePaneTab] {
+    /// `browserTip` is what pi last opened in the Browser: the brief line under its tab while it is news.
+    static func items(news: Set<SidePaneTab>, changedFiles: Int?, remote: Bool = false, browserTip: NWSidePaneTabTip? = nil) -> [NWSidePaneTab] {
         SidePaneTab.tabs(remote: remote).map { tab in
             let count: Int? = switch tab {
             case .changes: changedFiles
             case .browser: nil
             }
             return NWSidePaneTab(id: tab.rawValue, title: tab.title, systemImage: tab.systemImage, count: count,
-                                 news: news.contains(tab), shortcut: tab.shortcutDisplay)
+                                 news: news.contains(tab), shortcut: tab.shortcutDisplay, tip: tab == .browser ? browserTip : nil)
         }
+    }
+
+    /// "localhost:5173/checkout": the page pi opened, as the address field shows it.
+    static func tip(opened: (url: URL, at: Date)?) -> NWSidePaneTabTip? {
+        guard let opened, let shown = BrowserAddress.display(opened.url) else { return nil }
+        return NWSidePaneTabTip(text: shown.host + shown.path, openedAt: opened.at)
     }
 }

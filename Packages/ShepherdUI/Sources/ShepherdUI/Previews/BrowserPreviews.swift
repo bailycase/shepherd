@@ -60,3 +60,48 @@ private struct AddressPreview: View {
         }
     }
 }
+
+#Preview("Browser — the agent is using it") {
+    NWPreviewBoth {
+        // A page stands in behind the ring, pointer and card.
+        ZStack(alignment: .topLeading) {
+            Color.white
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Checkout").font(.system(size: 22, weight: .bold)).foregroundStyle(.black)
+                Text("Promo code FALL24 applied").font(.system(size: 13)).foregroundStyle(.gray)
+                Text("Pay $148.00").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                    .frame(width: 240, height: 44).background(Color.indigo, in: RoundedRectangle(cornerRadius: 8))
+            }
+            .padding(28)
+            .padding(.top, 44)
+            NWBrowserAgentOverlay(note: "clicking through checkout", pointer: CGPoint(x: 176, y: 214), takeOver: {})
+        }
+        .frame(width: 440, height: 340)
+        .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+    }
+}
+
+#Preview("Browser — the agent's card, long note") {
+    NWPreviewBoth {
+        VStack(alignment: .leading, spacing: NW.Space.l) {
+            NWAgentCard(note: "clicking through checkout", takeOver: {})
+            NWAgentCard(note: "typing in “Card number” and checking that every field on the page took its value", takeOver: {})
+        }
+        .frame(width: 420)
+    }
+}
+
+#Preview("Side pane — the agent opened a tab") {
+    NWPreviewBoth {
+        VStack(alignment: .leading, spacing: NW.Space.l) {
+            NWSidePaneTabs([NWSidePaneTab(id: "changes", title: "Changes", systemImage: "plus.forwardslash.minus", count: 2, shortcut: "⌃1"),
+                            NWSidePaneTab(id: "browser", title: "Browser", systemImage: "globe", news: true, shortcut: "⌃2",
+                                          tip: NWSidePaneTabTip(text: "localhost:5173/checkout", openedAt: Date().addingTimeInterval(-10)))],
+                           selection: "changes", select: { _ in }, close: {}) {
+                Button("Reset Width") {}
+            }
+            NWPaneTabTip(NWSidePaneTabTip(text: "localhost:5173/checkout", openedAt: Date().addingTimeInterval(-10)))
+        }
+        .frame(width: 460, height: 130, alignment: .topLeading)
+    }
+}

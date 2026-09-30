@@ -281,6 +281,9 @@ public struct NativeActivityCall: Equatable, Sendable, Identifiable {
         /// A thread's design_get on a design piece it was sent: consecutive reads of one piece
         /// join ("Looked at Checkout funnel dashboard › A · Funnel first · picture · html").
         case lookedAt
+        /// An agent's `browser_*` tools on its thread's Browser page ("Opened localhost:5173 in
+        /// Browser", "Clicked “Pay $148.00”"); consecutive calls of one tool merge.
+        case browser
         /// Any other tool; consecutive calls of the same tool merge.
         case other
     }
@@ -559,6 +562,26 @@ extension NativeActivityCall {
             kind = .other
             label = "to parent"
             detail = string("message") ?? firstLine
+        case _ where NativeBrowserActivity.isBrowserTool(name):
+            kind = .browser
+            label = NativeBrowserActivity.action(name)
+            let named = NativeBrowserActivity.subject(fromResult: output)
+            switch name {
+            case "browser_open":
+                detail = string("url").flatMap(NativeBrowserActivity.address) ?? firstLine
+            case "browser_press":
+                detail = string("key") ?? firstLine
+            case "browser_scroll":
+                detail = string("direction") ?? named.map { "to “\($0)”" } ?? ""
+            case "browser_wait":
+                detail = string("text") ?? ""
+            case "browser_read":
+                detail = string("selector") ?? ""
+            case "browser_click", "browser_type":
+                detail = named ?? ""
+            default:
+                detail = ""
+            }
         default:
             kind = .other
             detail = ["command", "path", "query", "url", "pattern"].compactMap(string).first ?? firstLine
@@ -617,7 +640,7 @@ public func nativeActivityBursts(_ calls: [NativeActivityCall]) -> [NativeActivi
     var groups: [[NativeActivityCall]] = []
     for call in calls {
         if call.state == .done, !call.stopped, let last = groups.last?.last, last.state == .done, !last.stopped, last.kind == call.kind,
-           call.kind != .other || last.name == call.name, call.kind != .lookedAt || last.designRef == call.designRef {
+           (call.kind != .other && call.kind != .browser) || last.name == call.name, call.kind != .lookedAt || last.designRef == call.designRef {
             groups[groups.count - 1].append(call)
         } else {
             groups.append([call])
@@ -684,6 +707,7 @@ private func progressiveLabel(_ call: NativeActivityCall) -> String {
     case .drew: return call.name == "canvas_update" ? "Arranging the canvas" : "Drawing"
     case .checked: return "Checking the boards"
     case .lookedAt: return "Looking at a design"
+    case .browser: return NativeBrowserActivity.running(tool: call.name, subject: call.detail.isEmpty ? nil : call.detail)
     case .other: return "Running \(call.label)"
     }
 }
@@ -709,6 +733,7 @@ private func failedLabel(_ call: NativeActivityCall) -> String {
     case .drew: return call.name == "canvas_update" ? "Canvas update failed" : "Board write failed"
     case .checked: return "Check failed"
     case .lookedAt: return "Couldn’t read the design"
+    case .browser: return NativeBrowserActivity.failed(tool: call.name)
     case .other: return "\(call.label) failed"
     }
 }
@@ -735,6 +760,7 @@ private func stoppedLabel(_ call: NativeActivityCall) -> String {
     case .drew: return call.name == "canvas_update" ? "Canvas update stopped" : "Drawing stopped"
     case .checked: return "Check stopped"
     case .lookedAt: return "Design read stopped"
+    case .browser: return NativeBrowserActivity.stopped(tool: call.name)
     case .other: return "\(call.label) stopped"
     }
 }
@@ -781,6 +807,11 @@ private func doneWords(_ calls: [NativeActivityCall]) -> (String, [String]) {
         return ("Checked against \(system)", [nativeCount(total, "off-system value")])
     case .lookedAt:
         return ("Looked at a design", [nativeDesignAspects(calls).map(nativeDesignAspectWord).joined(separator: " · ")])
+    case .browser:
+        guard calls.count > 1 else {
+            return (NativeBrowserActivity.done(tool: first.name, subject: first.detail.isEmpty ? nil : first.detail), [duration].compactMap { $0 })
+        }
+        return (NativeBrowserActivity.merged(tool: first.name, count: calls.count), [duration].compactMap { $0 })
     case .other:
         let label = calls.count == 1 ? "Used \(first.label)" : "Used \(first.label) \(calls.count) times"
         return (label, (calls.count == 1 ? [first.detail] : []) + [duration].compactMap { $0 })

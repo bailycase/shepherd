@@ -45,12 +45,14 @@ stand-in), never a `pi` looked up on PATH ([pi-home.md](pi-home.md)).
   with `-e`. Nothing is installed into a pi home. The status extension is always loaded; the
   rest follow Settings ▸ Pi ▸ Bundled extensions: "Panes and agent tools", "Diff review tool",
   "Subagent display", "Native subagents", "Name agents automatically" (the namer, and only
-  for agents whose name is not final), and "Design references" (design_get and design_note, for
-  agents that draw no design, while Settings ▸ Experiments ▸ Design tool is on;
-  `SHEPHERD_DESIGN_REFS`).
+  for agents whose name is not final), "Browser tools" (the `browser_*` tools on the thread's own
+  Browser page, for agents that draw no design; docs/browser.md), and "Design references"
+  (design_get and design_note, for agents that draw no design, while Settings ▸ Experiments ▸
+  Design tool is on; `SHEPHERD_DESIGN_REFS`).
 - **Environment:**
   - Always: `SHEPHERD_AGENT_ID`, `SHEPHERD_SOCKET`, `SHEPHERD_EXT_STATUS`.
   - With the panes extension: `SHEPHERD_EXT_PANES`.
+  - With the browser extension: `SHEPHERD_EXT_BROWSER`.
   - With native subagents: `SHEPHERD_NATIVE_CHILDREN=1`, `SHEPHERD_EXT_CHILDREN`, and the
     `SHEPHERD_CHILD_*` defaults.
   - `SHEPHERD_NEEDS_NAME=1` for an agent whose name is not final.

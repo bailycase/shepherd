@@ -24,7 +24,7 @@ struct HostSettingsMappingTests {
         #expect(settings.defaultThinking == .high)
         #expect(settings.worktreeBase == .head)
         #expect(settings.mergePRAutomatically && settings.mergeMethod == .rebase)
-        #expect(settings.bundledExtensions.map(\.id) == ["namer", "panes", "review", "nativeSubagents", "subagents", "mcp"])
+        #expect(settings.bundledExtensions.map(\.id) == ["namer", "panes", "review", "nativeSubagents", "subagents", "mcp", "browser"])
         #expect(settings.bundledExtensions.first { $0.id == "review" }?.on == false)
         #expect(settings.bundledExtensions.first { $0.id == "review" }?.name == "Diff review tool")
         // pi's own default reads as none.
@@ -55,6 +55,8 @@ struct HostSettingsMappingTests {
         #expect(!app.piPanesExtension)
         HostSettingsMapping.apply(.bundledExtension(id: "namer", on: false), to: app)
         #expect(!app.autoNameAgents)
+        HostSettingsMapping.apply(.bundledExtension(id: "browser", on: false), to: app)
+        #expect(!app.piBrowserExtension, "a remote client can switch Browser tools")
         // An extension the Mac doesn't bundle changes nothing.
         let before = HostSettingsMapping.settings(from: app, shepherdVersion: nil, piVersion: nil)
         HostSettingsMapping.apply(.bundledExtension(id: "missiles", on: true), to: app)

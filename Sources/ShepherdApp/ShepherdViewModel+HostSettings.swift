@@ -44,6 +44,7 @@ enum HostSettingsMapping {
         ("nativeSubagents", "Native subagents", \.piNativeSubagents),
         ("subagents", "Subagent display", \.piSubagentsExtension),
         ("mcp", "MCP servers", \.piMCPExtension),
+        ("browser", "Browser tools", \.piBrowserExtension),
     ]
 
     static func settings(from app: AppSettings, shepherdVersion: String?, piVersion: String?) -> HostSettings {

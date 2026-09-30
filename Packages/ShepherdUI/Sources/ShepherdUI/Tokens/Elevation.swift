@@ -9,8 +9,8 @@ extension View {
 
     /// Floating surface (menus, the palette, popovers, tooltips, toasts): raised fill, a 1px
     /// strong line, and the system's only shadow.
-    public func nwPopover(radius: CGFloat = NW.Radius.l) -> some View {
-        modifier(NWPopoverModifier(radius: radius))
+    public func nwPopover(radius: CGFloat = NW.Radius.l, line: Color? = nil) -> some View {
+        modifier(NWPopoverModifier(radius: radius, line: line))
     }
 
     /// The popover's shadow, borrowed by a pane while it floats over the window (the overlaid
@@ -135,12 +135,13 @@ enum NWPinnedShadow {
 private struct NWPopoverModifier: ViewModifier {
     static let shadowRadius: CGFloat = 16
     let radius: CGFloat
+    let line: Color?
 
     func body(content: Content) -> some View {
         content
             .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: radius))
             .clipShape(RoundedRectangle(cornerRadius: radius))
-            .nwBorder(.nw.lineStrong, radius: radius)
+            .nwBorder(line ?? .nw.lineStrong, radius: radius)
             .shadow(color: .nw.popoverShadow, radius: Self.shadowRadius, y: 12)
     }
 }
