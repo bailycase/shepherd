@@ -17,10 +17,11 @@ private let started = Date().addingTimeInterval(-41 * 60)
                         NWSidebarSection(.needsYou(count: 2))
                         NWSidebarRow("Checkout funnel events", state: .attention, accessory: .reason("retention?"))
                         NWSidebarRow("Nightly triage", leading: .glyph("bolt", attention: true), accessory: .reason("approve plan"))
-                        NWSidebarSection(.recents)
+                        NWSidebarSection(.pinned)
                         NWSidebarRow("Investigate SwiftUI live preview", state: .running, selected: true,
                                      accessory: .elapsed(since: started))
                         NWSidebarRow("Fix remote subagent deletion", state: .idle, accessory: .tag("horizon"))
+                        NWSidebarSection(.recents)
                         NWSidebarRow("Merge PR #24 after CI", leading: .glyph("bolt", attention: false), accessory: .text("done"))
                         NWSidebarRow("Fix terminal output buffer", state: .done)
                         NWSidebarRow("Fix remote nightly", state: .failed, accessory: .tag("horizon"))
@@ -29,7 +30,7 @@ private let started = Date().addingTimeInterval(-41 * 60)
                 } footer: {
                     NWSidebarFooter(name: "Baily", detail: "This Mac · build-01") {}
                 }
-                .frame(width: 232, height: 560)
+                .frame(width: 232, height: 600)
                 .nwBorder(.nw.lineSubtle, radius: NW.Radius.m)
                 .nwDensity(density)
             }
