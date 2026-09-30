@@ -735,7 +735,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.terminalControlCapability,
             RemoteProtocol.designContextCapability,
             RemoteProtocol.nativeRetryCapability,
-            RemoteProtocol.nativeInterruptCapability,
+            RemoteProtocol.nativeInterruptCapability, RemoteProtocol.nativeServiceTierCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,
         ]
@@ -767,6 +767,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.designContextCapability == "design.context.v1")
         #expect(RemoteProtocol.nativeRetryCapability == "native.retry.v1")
         #expect(RemoteProtocol.nativeInterruptCapability == "native.interrupt.v1")
+        #expect(RemoteProtocol.nativeServiceTierCapability == "native.serviceTier.v1")
         #expect(RemoteProtocol.designsCapability == "designs.v1")
         #expect(RemoteProtocol.designMarkupCapability == "design.markup.v1")
         #expect(RemoteProtocol.designDeleteCapability == "design.delete.v1")

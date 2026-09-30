@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import ShepherdCore
 import ShepherdProtocol
 
 /// Which pi session a thread shows: a new session or a new generation of it is a different
@@ -162,6 +163,11 @@ public final class NativeThreadStore {
     /// The levels the thinking menu offers: pi's for the current model, or
     /// `NativeThinkingLevel.fallback` from a host that does not say.
     public private(set) var thinkingLevels: [NativeThinkingLevel] = NativeThinkingLevel.fallback { didSet { chromeVersion &+= 1 } }
+    /// The agent's service tier (the Speed control); Standard from a host that does not say.
+    public private(set) var serviceTier: ServiceTier = .standard { didSet { chromeVersion &+= 1 } }
+    /// The tiers the current model offers, Standard first: empty when it offers none, and from a
+    /// host that does not say. A tier this client does not know is left out.
+    public private(set) var serviceTiers: [ServiceTier] = [] { didSet { chromeVersion &+= 1 } }
     public private(set) var stats: NativeThreadStats?
     /// The ring beside Send; nil from a host that reports no context (no ring). It changes
     /// only when the usage does, so the ring redraws alone and never with a streamed chunk.
@@ -555,6 +561,10 @@ public final class NativeThreadStore {
         if value?.thinking != thinking { thinking = value?.thinking }
         let levels = NativeThinkingLevel.levels(value?.thinkingLevels)
         if levels != thinkingLevels { thinkingLevels = levels }
+        let tier = value?.serviceTier.flatMap(ServiceTier.init(rawValue:)) ?? .standard
+        if tier != serviceTier { serviceTier = tier }
+        let tiers = (value?.serviceTiers ?? []).compactMap(ServiceTier.init(rawValue:))
+        if tiers != serviceTiers { serviceTiers = tiers }
         if value?.stats != stats { stats = value?.stats }
         let actions = Set(value?.supportedActions ?? [])
         if actions != supportedActions { supportedActions = actions }
@@ -1321,6 +1331,22 @@ public final class NativeThreadStore {
         let operation = UUID()
         await perform(.setThinking(expectedSessionID: current.piSessionID, generation: current.generation,
                                    operationID: operation, level: level), operation: operation, current: current)
+    }
+
+    /// Whether the composer draws its Speed control: the host keeps each agent's tier
+    /// (`setServiceTier` in `supportedActions`, remotely `native.serviceTier.v1`) and the current
+    /// model offers one besides Standard.
+    public var offersServiceTier: Bool {
+        supportedActions.contains("setServiceTier") && serviceTiers.count > 1
+    }
+
+    /// Standard or Fast, from the agent's next model call on, running or not. Gated by
+    /// `setServiceTier` in `supportedActions`, and the model must offer the tier.
+    public func setServiceTier(_ tier: ServiceTier) async {
+        guard supports("setServiceTier"), serviceTiers.contains(tier), let current = snapshot, serviceTier != tier else { return }
+        let operation = UUID()
+        await perform(.setServiceTier(expectedSessionID: current.piSessionID, generation: current.generation,
+                                      operationID: operation, tier: tier.rawValue), operation: operation, current: current)
     }
 
     /// Card and inspector actions on one subagent run. Gated by `subagents` in `supportedActions`.
