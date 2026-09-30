@@ -25,7 +25,9 @@ Edit the boards you are given, and nothing else.
 async function shepherd(dir) {
   const socketPath = path.join(dir, "s");
   const frames = [], sockets = [], held = [];
-  let revision = 4;
+  // What a read answers never moves, so parallel helpers read the same thing whichever edits landed first.
+  const revision = 4;
+  let edits = 0;
   const server = net.createServer((socket) => {
     const connection = sockets.push(socket);
     const lines = children.jsonLines((frame) => {
@@ -37,8 +39,8 @@ async function shepherd(dir) {
         reply({ type: "designBoard", board: { path: frame.path, source: BOARD, sha256: "aa", revision } });
       } else if (frame.type === "designEditBoard") {
         if (frame.edits.some((edit) => edit.find === "HOLD")) { held.push({ frame, reply }); return; }
-        revision += 1;
-        reply({ type: "designEdited", result: { revision, changed: true, created: false, warnings: [], boardCount: 3 }, replaced: frame.edits.map(() => 1) });
+        edits += 1;
+        reply({ type: "designEdited", result: { revision: revision + edits, changed: true, created: false, warnings: [], boardCount: 3 }, replaced: frame.edits.map(() => 1) });
       }
     }, () => socket.destroy());
     socket.on("data", lines);
@@ -70,25 +72,18 @@ function script(dir) {
         if (steps.length === 1) return { toolCalls: [{ name: "shepherd_child_wait", args: { ids: ids(results), all: true, timeoutSeconds: 60 } }] };
         return { text: "round finished" };
       }
-      if (text === "HOLD") {
-        if (steps.length === 0) return { toolCalls: [start("HOLD board C.dc.html")] };
-        const [id] = ids(results.slice(0, 1));
-        if (steps.length === 1) return { toolCalls: [{ name: "shepherd_child_wait", args: { ids: [id], timeoutSeconds: 1 } }] };
-        if (steps.length === 2) return { toolCalls: [{ name: "shepherd_child_result", args: { id } }] };
-        if (steps.length === 3) return { toolCalls: [{ name: "shepherd_child_cancel", args: { id } }] };
-        if (steps.length === 4) return { toolCalls: [{ name: "shepherd_child_result", args: { id } }] };
-        return { text: "hold finished" };
+      // The scenarios below start a helper whose design call Shepherd holds, then act on it a prompt at a time, so
+      // the test (not a timer) says when the helper's call is in flight.
+      const held = /native-[0-9a-f-]{36}/.exec(JSON.stringify(body.messages))?.[0];
+      if (text === "HOLD") return steps.length === 0 ? { toolCalls: [start("HOLD board C.dc.html")] } : { text: "started" };
+      if (text === "RESULT") return steps.length === 0 ? { toolCalls: [{ name: "shepherd_child_result", args: { id: held } }] } : { text: "read" };
+      if (text === "CANCEL") {
+        if (steps.length === 0) return { toolCalls: [{ name: "shepherd_child_cancel", args: { id: held } }] };
+        return steps.length === 1 ? { toolCalls: [{ name: "shepherd_child_result", args: { id: held } }] } : { text: "cancelled" };
       }
-      if (text === "KILL") {
-        if (steps.length === 0) return { toolCalls: [start("HOLD board C.dc.html")] };
-        const [id] = ids(results.slice(0, 1));
-        if (steps.length === 1) return { toolCalls: [{ name: "shepherd_child_wait", args: { ids: [id], timeoutSeconds: 1 } }] };
-        if (steps.length === 2) return { toolCalls: [{ name: "shepherd_child_result", args: { id } }] };
-        return { text: "holding" };
-      }
-      if (text === "CHECK") {
-        const id = /native-[0-9a-f-]{36}/.exec(JSON.stringify(body.messages))?.[0];
-        return steps.length === 0 ? { toolCalls: [{ name: "shepherd_child_result", args: { id } }] } : { text: "checked" };
+      if (text === "FINISHED") {
+        if (steps.length === 0) return { toolCalls: [{ name: "shepherd_child_wait", args: { ids: [held], timeoutSeconds: 30 } }] };
+        return steps.length === 1 ? { toolCalls: [{ name: "shepherd_child_result", args: { id: held } }] } : { text: "finished" };
       }
       return { text: "nothing to do" };
     }
@@ -211,9 +206,11 @@ test("stopping a helper cancels the design call it has in flight, and the parent
   const parent = startParent({ dir, home, socketPath: host.socketPath, design: true });
   try {
     await parent.prompt("HOLD");
-    assert.equal(host.held.length, 1, "Shepherd was asked to edit C, and never answered");
-    assert.equal(host.held[0].frame.path, "C.dc.html");
+    await until(() => host.held.length === 1);
+    assert.equal(host.held[0].frame.path, "C.dc.html", "Shepherd was asked to edit C, and never answered");
     assert.equal(host.held[0].frame.agentID, "designer-1");
+    await parent.prompt("RESULT");
+    await parent.prompt("CANCEL");
     const results = toolMessages(provider.requests, "parent").map((content) => { try { return JSON.parse(content); } catch { return undefined; } }).filter(Boolean);
     const summaries = results.filter((result) => result.task === "HOLD board C.dc.html");
     const live = summaries.filter((result) => result.state === "running").at(-1);
@@ -244,13 +241,13 @@ test("a helper killed outright takes the design call it had in flight with it", 
   fs.writeFileSync(path.join(home, "agents", "design-editor.md"), PROFILE);
   const parent = startParent({ dir, home, socketPath: host.socketPath, design: true });
   try {
-    await parent.prompt("KILL");
-    assert.equal(host.held.length, 1, "the helper's edit of C is with Shepherd");
+    await parent.prompt("HOLD");
+    await until(() => host.held.length === 1);
     // SIGKILL leaves the helper no chance to say it cancelled: only the parent noticing it is gone drops the call.
     const [run] = fs.readdirSync(path.join(dir, "children")).filter((name) => name.startsWith("native-"));
     const { pid } = JSON.parse(fs.readFileSync(path.join(dir, "children", run, "writer", "owner.json"), "utf8"));
     process.kill(pid, "SIGKILL");
-    await parent.prompt("CHECK");
+    await parent.prompt("FINISHED");
     const checked = toolMessages(provider.requests, "parent").map((content) => { try { return JSON.parse(content); } catch { return undefined; } })
       .filter((result) => result?.task === "HOLD board C.dc.html").at(-1);
     assert.equal(checked.state, "failed", JSON.stringify(checked));
