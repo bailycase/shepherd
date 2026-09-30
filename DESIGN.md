@@ -182,6 +182,10 @@ And the rules that follow from them:
 | PaneStates › viewport: Throttle to 3G under Dark appearance | Left out | WebKit has no public throttle; it will come through the tunnel's local proxy (the user's decision, 2026-09-29) |
 | PaneBrowser: the element's popover drawn in the page beside it | A native popover over the page, beside the element (else left of it, else under it), following it as the page scrolls; only the outline and tag are drawn in the page | Its buttons are Shepherd's controls, and the page can't reach or restyle them |
 | PaneBrowser: Hide console (the board draws no hidden state) | The bar stays, with Show console (a chevron up) | The console must be reachable again from where it was |
+| PaneStates › BrowserPane · the agent is using it: the card's leading glyph in `textSecondary`; the card says "Agent is clicking through checkout" for a click | The glyph in `running`, as DESIGN.md's card has always read (the user's decision, 2026-09-30); the card shows for every browser tool, with a phrase derived from the action when the agent gave no note | The board draws one click; a read or a screenshot is the agent using the page too, and Take over is how the user stops it |
+| PaneStates › BrowserPane · the agent is using it: "Click anywhere or Take over to get the page back" | A click or key in the page (a trusted event) or Take over; control returns with the user's next message to the thread | The user's decision, 2026-09-30 (docs/browser.md) |
+| PaneBrowser: the thread's line "Opened the checkout in Browser · localhost:5173/checkout" | "Opened localhost:5173/checkout in Browser", the globe, the address in the label | The user's decision, 2026-09-30: the address names the page; the tool call carries no title |
+| SettingsPi: six bundled-extension rows | A seventh, Browser tools, after MCP servers | The user's decision, 2026-09-30 |
 | NWThread: inline code on `bgSunken` with a 1px `lineSubtle` line, radius 4, 1×5 padding | Prose draws it in mono 12 on a `lineSubtle` fill, with no line or padding. `NWInlineCode` draws the board's form where a view holds the code (only the Component Gallery today) | A run inside `Text` cannot carry a border or padding |
 | NWThread: a follow-up typed while pi works is a dashed bubble in the thread ("queued · sends when the turn ends", Edit, Send now) | It never enters the thread early: it waits in Up next above the composer and joins the thread where pi reads it | The Queue & steer boards replaced it; the host holds one queue that every viewer sees and edits |
 | Settings boards: hexes outside the palette (`#22262a`, `#1b1e21`, `#c1c5cb`, `#767c85`, `#23272c`, `#f58a86`, `#6fd49a`) | The nearest roles (`lineSubtle`, `textSecondary`, `textTertiary`, `bgSelected`, `failed`, `done`) | The roles are the contract; a new color is a theme role |
@@ -3201,18 +3205,53 @@ forwards the port (not built yet).
   keyboard in the window; both are in `appOwnedChords`, so a focused terminal lets them through.
   The design canvas's ⇧⌘C (Copy reference) never meets this one: a design's layout has no Browser.
 - **The tab's dot** ("Agent opened a page in Browser" under the header's button) is for pages pi
-  opens; nothing opens one yet.
-- **Not built yet:** the agent using it (below), its activity lines in the thread, remote threads
-  and a host chip naming the host, Throttle to 3G (it waits for the tunnel's local proxy, the
-  user's decision, 2026-09-29), and Split below and the pane's own window (below).
-- **The agent is using it** (not built yet): the agent drives the same page you see. A 2pt
-  `running` ring insets the page, a pointer glyph (18pt, `running`) shows where pi points, and a
-  floating card 12pt from the pane's sides under the toolbar (`bgRaised`, radius 12, a `running`
-  line, the popover shadow; padding 8, 12 on the leading side) says "Agent is clicking through
-  checkout" (`ui`, a 12pt `running` glyph) with Take over (secondary `s`, with a glyph). Click
-  anywhere or Take over to get the page back; pi carries on in the thread.
-- **In the thread** (not built yet), pi's browser work reads as activity lines: "Started the dev
-  server · pnpm dev · :5173 on build-01", "Opened the checkout in Browser · localhost:5173/checkout".
+  opens (`browser_open`). Nothing opens the pane by itself: the Browser tab takes a 6pt `running`
+  dot and, with the pane closed or on another tab, the header's side-pane button takes its 8pt
+  one, each with a brief tip under it for four seconds (and again while hovered). The button's is
+  the sentence, "Agent opened a page in Browser", with the pane's chord. The tab's
+  (`NWPaneTabTip`, PaneStates › SidePaneTabs · the agent opened a tab) hangs under the tab, 300pt
+  wide, a popover with padding 4: a row of 4×6 with a 12pt `textSecondary` globe, "Agent opened"
+  and the page in Geist Mono 12 (`localhost:5173/checkout`, the host, port, path and query as the
+  address field shows them), and its age in `textTertiary` ("10s", "2m", "1h", counting up). It
+  moves left when the strip is too narrow for it.
+- **Not built yet:** remote threads and a host chip naming the host, Throttle to 3G (it waits for
+  the tunnel's local proxy, the user's decision, 2026-09-29), and Split below and the pane's own
+  window (below).
+- **The agent is using it** (`NWAgentRing`, `NWAgentPointer`, `NWAgentCard`, `NWBrowserAgentOverlay`
+  in ShepherdUI `Components/Browser/BrowserAgent.swift`; PaneStates › BrowserPane · the agent is
+  using it; docs/browser.md): the agent drives the same page you see, through its `browser_*` tools
+  (only a local thread's, only on its own page). While a tool runs, and for four seconds after the
+  last (a run of tools keeps it up), the pane draws over the page, natively and never in it:
+  - a 2pt `running` ring inset the page area (above the console drawer, below the toolbar), and
+    an 18pt `running` pointer glyph (the board's arrow, a white edge) at the last click's or
+    typing's target, following the page's zoom;
+  - a floating card 12pt from the pane's sides and under the toolbar (`bgRaised`, radius 12, a
+    1px `running` line, the popover shadow; padding 8, 12 on the leading side, 10pt between): a
+    12pt `running` glyph, "Agent is clicking through checkout" (`ui`, one line, truncating) and
+    **Take over** (secondary `s`, with a hand glyph).
+  - The words are the tool's optional `note` ("clicking through checkout"), else derived from the
+    action and its target: `clicking “Pay $148.00”`, `double-clicking …`, `typing in “Email”`,
+    `pressing Enter`, `scrolling down`, `opening localhost:5173`, `reading the page`, `waiting for
+    “Order placed”`, `taking a screenshot`, `running a script`, `going back`. Every tool shows the
+    card (the board draws the click only); a note is cut at 60 characters.
+  - **Take over:** the card's button, or the user's own click or key in the page while the card is
+    up (a trusted event: the agent's dispatched events are not). The ring, pointer and card go, and
+    the agent's clicks, typing, keys, scrolling, navigation and scripts are refused
+    (`taken_over`, "The user took over the browser. Wait for their next message before acting on
+    it; browser_read, browser_screenshot and browser_console still work.") until the user sends
+    that thread another message; reading, waiting, screenshots and the console still work and
+    show no card. Only the card takes clicks: the rest of the overlay lets the page have them.
+  - The page keeps running when nothing shows it (a hidden pane, another tab or thread): it moves
+    into an off-screen window and never reloads.
+- **In the thread**, pi's browser work reads as activity lines with the globe (NWActivityLine
+  `.browser`): "Opened localhost:5173/checkout in Browser", "Read the page", "Clicked “Pay
+  $148.00”", "Typed in “Email”" (never what was typed), "Pressed Enter", "Scrolled down",
+  "Waited for “Order placed”", "Took a screenshot", "Read the console", "Ran a script in the page",
+  "Went back", "Reloaded the page". A failed call is "Browser click failed" with the reason, a
+  stopped one "Browser click stopped", and consecutive calls of one tool are one line ("Clicked 3
+  elements", "Read the page 4 times"). A screenshot's image is not drawn in the thread, as an MCP
+  tool's images are not (the result's text says what it took). "Started the dev server · pnpm dev ·
+  :5173 on build-01" is still to come.
 
 ### Side pane: Artifacts, Files (not built yet)
 
@@ -3822,6 +3861,11 @@ automated step of the worktree flows can be turned off here.
   - Subagent display, "Show subagent runs in their agent's thread, the inspector and the palette.
     Off doesn't stop them running." (the board says "in the sidebar"; subagents have no sidebar
     rows, see Subagents)
+  - Browser tools, "Let agents open pages in their thread's Browser, read and click through them,
+    and take screenshots.", after MCP servers: a seventh row, which the SettingsPi board (six)
+    does not draw (the user's decision, 2026-09-30). On by default; a remote client changes it as
+    any bundled extension (`bundled` id `browser`); a running agent follows a change at its next
+    start. A design's agent never gets the tools, whatever the row says (docs/browser.md).
   - Design references, "Let a thread read the design pieces you hand it with `design_get`. Only a
     thread you sent one to gets the tool.", shown only while Settings ▸ Experiments ▸ Design tool
     is on (not drawn; it follows the rows above). With the Design tool off no thread loads it,
@@ -9293,11 +9337,11 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | NavDesigns | Designs page; Design tool › Designs | Built (Mac, behind the Design tool experiment; systems as names only) |
 | NavAutomations | Automations page; Sidebar (no When, Next or tabs: departures) | Built |
 | NavHosts | Hosts page; Sidebar; Settings › Remote (no daemon, Load or disk use: departures) | Built |
-| PaneBrowser | Side pane: Browser | Partial (local threads: the page, toolbar, viewport, Select an element, composer chip and console; not the agent using it, remote threads or Throttle to 3G) |
+| PaneBrowser | Side pane: Browser | Partial (local threads: the page, toolbar, viewport, Select an element, composer chip, console, the agent using it and its thread lines; not remote threads or Throttle to 3G) |
 | PaneArtifacts | Side pane (Artifacts) | Not built yet |
 | PaneArtifactEdit | Side pane (Artifacts › Editing in place) | Not built yet |
 | PaneFiles | Side pane (Files) | Not built yet |
-| PaneStates | Side pane (tabs, dot, narrow, ⋯, button); Side pane: Browser; Side pane: Artifacts, Files | Partial (Browser: nothing open and viewport built, the agent using it not) |
+| PaneStates | Side pane (tabs, dot, narrow, ⋯, button); Side pane: Browser; Side pane: Artifacts, Files | Partial (Browser: nothing open, viewport, the agent using it and the tab's tip built) |
 | ContextDetails | Composer, questions, and menus › Context meter | Built |
 | ContextFull | Composer, questions, and menus › Context meter | Built |
 | ContextCompacted | Composer, questions, and menus › Context meter; Thread › Compactions | Built |
