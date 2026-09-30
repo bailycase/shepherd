@@ -68,6 +68,7 @@ final class AppSettings {
         static let terminalFontSize = "shepherd.terminal.fontSize"
         static let defaultModel = "shepherd.agent.defaultModel"
         static let defaultThinking = "shepherd.agent.defaultThinking"
+        static let defaultServiceTier = "shepherd.agent.defaultServiceTier"
         static let autoNameAgents = "shepherd.agent.autoName"
         static let skillsInSlashMenu = "shepherd.skills.slashMenu"
         static let mcpOpenSignInPages = "shepherd.mcp.openSignInPages"
@@ -109,7 +110,7 @@ final class AppSettings {
 
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
-            defaultThinking, autoNameAgents, returnWhileWorking, queueDelivery, shellPath,
+            defaultThinking, defaultServiceTier, autoNameAgents, returnWhileWorking, queueDelivery, shellPath,
             piPanesExtension, piReviewExtension, piSubagentsExtension, piNativeSubagents,
             piMCPExtension, piBrowserExtension, piDesignReferences,
             childConcurrency, childModel, childThinking, childContext, childScope,
@@ -133,6 +134,7 @@ final class AppSettings {
         static let terminalFontFamily = "SF Mono"
         static let terminalFontSize: Double = 12.5
         static let thinking: ThinkingLevel = .medium
+        static let serviceTier: ServiceTier = .standard
         static let autoNameAgents = true
         static let skillsInSlashMenu = true
         /// Steers at pi's next step. Only a choice the user made is stored, so an unset one takes this.
@@ -165,6 +167,12 @@ final class AppSettings {
 
     var defaultThinking: ThinkingLevel {
         didSet { store.set(defaultThinking.rawValue, forKey: Key.defaultThinking) }
+    }
+
+    /// The speed a new thread starts on (Settings ▸ Agents ▸ Speed for new threads); each thread
+    /// keeps its own after that, and one whose model offers no tier ignores it.
+    var defaultServiceTier: ServiceTier {
+        didSet { store.set(defaultServiceTier.rawValue, forKey: Key.defaultServiceTier) }
     }
 
     /// Off means agents keep their provisional name (the truncated opening
@@ -423,6 +431,8 @@ final class AppSettings {
         defaultModel = store.string(forKey: Key.defaultModel) ?? ""
         defaultThinking = store.string(forKey: Key.defaultThinking)
             .flatMap(ThinkingLevel.init(rawValue:)) ?? Defaults.thinking
+        defaultServiceTier = store.string(forKey: Key.defaultServiceTier)
+            .flatMap(ServiceTier.init(rawValue:)) ?? Defaults.serviceTier
         autoNameAgents = store.object(forKey: Key.autoNameAgents) as? Bool ?? Defaults.autoNameAgents
         skillsInSlashMenu = store.object(forKey: Key.skillsInSlashMenu) as? Bool ?? Defaults.skillsInSlashMenu
         // The directory now uses Shepherd's public API; discard the retired credential.
@@ -518,6 +528,7 @@ final class AppSettings {
         terminalFontSize = Defaults.terminalFontSize
         defaultModel = ""
         defaultThinking = Defaults.thinking
+        defaultServiceTier = Defaults.serviceTier
         autoNameAgents = Defaults.autoNameAgents
         skillsInSlashMenu = Defaults.skillsInSlashMenu
         mcpOpenSignInPages = false

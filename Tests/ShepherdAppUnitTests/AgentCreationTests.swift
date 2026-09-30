@@ -215,9 +215,10 @@ struct AgentLaunchCommandTests {
     @Test func aBareAgentIsJustPiOverRPCWithTheStatusExtension() throws {
         let bare = command()
         #expect(bare.argv == (try PiLaunch.agent(home: Self.home, cwd: "/tmp/project", sessionID: "current-session", model: nil, thinking: nil,
-                                                 extensions: ["/tmp/status.ts"])).argv)
+                                                 extensions: ["/tmp/status.ts", "/tmp/support/pi/shepherd-service-tier.ts"])).argv)
         #expect(bare.env == [
             "SHEPHERD_AGENT_ID": "agent-id", "SHEPHERD_SOCKET": "/tmp/shepherd.sock", "SHEPHERD_EXT_STATUS": "/tmp/status.ts",
+            "SHEPHERD_EXT_SERVICE_TIER": "/tmp/support/pi/service-tier/agent-id.json",
         ])
     }
 
@@ -278,7 +279,7 @@ struct AgentLaunchCommandTests {
             instructions: ("/tmp/instructions.ts", "/tmp/support/instructions"),
             model: nil, thinking: nil
         )
-        #expect(launch.argv[3].hasSuffix(" -e '/tmp/status.ts' -e '/tmp/instructions.ts' -e '/tmp/panes.ts'"))
+        #expect(launch.argv[3].hasSuffix(" -e '/tmp/status.ts' -e '/tmp/support/pi/shepherd-service-tier.ts' -e '/tmp/instructions.ts' -e '/tmp/panes.ts'"))
         #expect(launch.env["SHEPHERD_INSTRUCTIONS_DIR"] == "/tmp/support/instructions")
         #expect(launch.env["SHEPHERD_SUGGEST_FILES"] == nil)
         #expect(command().env["SHEPHERD_INSTRUCTIONS_DIR"] == nil)
@@ -385,6 +386,22 @@ struct AgentLaunchCommandTests {
                 "a design's agent has no Browser")
     }
 
+    /// Every agent's pi loads the service tier extension (even a design's) with the agent's own
+    /// tier file named; a pi run by hand in a terminal pane gets neither.
+    @Test func everyAgentLoadsTheServiceTierExtensionWithItsOwnFile() {
+        for design in [nil, DesignID()] as [DesignID?] {
+            let launch = try! StatusExtension.command(
+                home: Self.home, cwd: "/tmp/project", agentID: AgentID(rawValue: "0F2A-agent"), piSessionID: "s",
+                socketPath: "/tmp/shepherd.sock", extensionPath: "/tmp/status.ts",
+                panesExtensionPath: nil, reviewExtensionPath: nil, subagentsExtensionPath: nil,
+                design: design.map { (extensionPath: "/tmp/design.ts", designID: $0, skillDirectory: "/tmp/skill") },
+                model: nil, thinking: nil)
+            #expect(launch.argv[3].contains(" -e '/tmp/support/pi/shepherd-service-tier.ts'"))
+            #expect(launch.env["SHEPHERD_EXT_SERVICE_TIER"] == "/tmp/support/pi/service-tier/0F2A-agent.json")
+        }
+        #expect(ShellIntegration.command(shell: ["/bin/zsh"]).env["SHEPHERD_EXT_SERVICE_TIER"] == "")
+    }
+
     /// A terminal pane's shell blanks the variable, so a pi run by hand there loads no browser tools.
     @Test func aTerminalPaneBlanksTheBrowserVariable() {
         #expect(ShellIntegration.command(shell: ["/bin/zsh"]).env["SHEPHERD_EXT_BROWSER"] == "")
@@ -426,7 +443,7 @@ struct AgentLaunchCommandTests {
         )
         let sessions = Self.home.sessionDirectory(forCwd: "/tmp/project").path
         #expect(launch.argv[3] == #"cd -- '/tmp/project' && exec '/tmp/support/pi/bin/pi' --mode rpc --session-dir '"# + sessions
-            + #"' --session-id 'it'"'"'s' -e '/tmp/a b.ts'"#)
+            + #"' --session-id 'it'"'"'s' -e '/tmp/a b.ts' -e '/tmp/support/pi/shepherd-service-tier.ts'"#)
     }
 
     /// `/new` and `/resume` move pi to another session; relaunch follows the agent there.

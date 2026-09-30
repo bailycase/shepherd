@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import ShepherdCore
 import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
@@ -96,6 +97,38 @@ struct ThinkingChip: View {
         }
         .disabled(!enabled)
         .accessibilityLabel("Thinking, \(title)")
+    }
+}
+
+/// The speed chip: a menu of the tiers the host offers the thread's model (Standard, Fast), each
+/// with what it does, checked at the current one; the bolt fills in `lantern` for a raised tier.
+/// At the compact size (a design's chat) it shows the value without "Speed".
+struct SpeedChip: View {
+    let tier: ServiceTier
+    let tiers: [ServiceTier]
+    let enabled: Bool
+    let choose: (ServiceTier) -> Void
+    @Environment(\.nwComposerSize) private var size
+
+    var body: some View {
+        Menu {
+            Picker("Speed", selection: Binding(get: { tier }, set: choose)) {
+                ForEach(tiers, id: \.self) { option in
+                    Text("\(option.title) · \(option.summary)").tag(option)
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            HStack(spacing: NW.Space.s) {
+                Image(systemName: tier == .standard ? "bolt" : "bolt.fill")
+                    .foregroundStyle(tier == .standard ? Color.nw.textSecondary : Color.nw.lantern)
+                if size.showsChipWords() { Text("Speed") }
+                Text(tier.title).fontWeight(.medium).foregroundStyle(Color.nw.textPrimary)
+                NWChipChevron()
+            }
+        }
+        .disabled(!enabled)
+        .accessibilityLabel("Speed: \(tier.title)")
     }
 }
 

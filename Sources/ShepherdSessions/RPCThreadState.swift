@@ -23,7 +23,7 @@ final class RPCThreadState {
     static let widgetAggregateBytes = 32 * 1024
     static let operationTableSize = 256
     static let supportedActions = ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents", "queue", "compact", "designContext",
-                                   "designReferences", "browserElements", "retry", "interrupt"]
+                                   "designReferences", "browserElements", "retry", "interrupt", "setServiceTier"]
     /// pi answers `compact` only once the summary is written, which takes as long as a reply.
     static let compactTimeout: TimeInterval = 600
     /// Bytes of a child session file the transcript reader will scan (tail); older is unreachable.
@@ -107,6 +107,20 @@ final class RPCThreadState {
     /// The levels pi offers `model` (`get_available_thinking_levels`); nil until pi answers, or
     /// from a pi without the command.
     private(set) var thinkingLevels: [String]?
+    /// The agent's service tier as the host keeps it (`Agent.serviceTier`): the server sets it
+    /// whenever its state changes, and the snapshot shows it beside `serviceTiers`.
+    var serviceTier: ServiceTier = .standard {
+        didSet { if serviceTier != oldValue { commit() } }
+    }
+    /// The tiers `model` offers (`ServiceTierSupport`), Standard first, none when it takes no tier:
+    /// worked out from what pi's `get_state` says the model is, so it follows every model change.
+    private(set) var serviceTiers: [ServiceTier] = []
+    /// Installed by SessionServer: the tiers a model offers, which also knows a CLIProxyAPI model's
+    /// owner (from a cached read of its connection file).
+    var serviceTierOffer: (ServiceTierModel) -> [ServiceTier] = { ServiceTierSupport.tiers(for: $0) }
+    /// Installed by SessionServer: changes the agent's tier (persisted, its file written, every
+    /// client told), answering nil or why it couldn't.
+    var applyServiceTier: ((ServiceTier, @escaping (String?) -> Void) -> Void)?
     private(set) var stats: NativeThreadStats?
     /// pi's `autoCompactionEnabled` (get_state).
     private(set) var autoCompaction: Bool?
@@ -565,7 +579,8 @@ final class RPCThreadState {
              .subagentCommand(let expectedSessionID, let generation, let operationID, _, _, _, _),
              .queue(let expectedSessionID, let generation, let operationID, _),
              .compact(let expectedSessionID, let generation, let operationID, _),
-             .retry(let expectedSessionID, let generation, let operationID, _):
+             .retry(let expectedSessionID, let generation, let operationID, _),
+             .setServiceTier(let expectedSessionID, let generation, let operationID, _):
             guard expectedSessionID == piSessionID, generation == self.generation else {
                 completion(.failure(code: "stale_session", message: "Refresh the thread before acting."))
                 return
@@ -694,6 +709,25 @@ final class RPCThreadState {
             session.request(.setThinkingLevel(level: level)) { [weak self] result in
                 settle(result)
                 self?.refreshState()
+            }
+        case .setServiceTier(_, _, _, let raw):
+            guard let tier = ServiceTier(rawValue: raw) else {
+                completion(.failure(code: "invalid", message: "Speed must be one of "
+                    + ServiceTier.allCases.map(\.rawValue).joined(separator: ", ") + "."))
+                return
+            }
+            // The model decides what is offered: a tier it lacks would change nothing, and saying so
+            // beats a Speed control that lies.
+            guard serviceTiers.contains(tier) else {
+                completion(.failure(code: "unsupported", message: "This model has no \(tier.title) speed."))
+                return
+            }
+            guard let applyServiceTier else {
+                completion(.failure(code: "dispatch_failed", message: "The host can't change this agent's speed."))
+                return
+            }
+            applyServiceTier(tier) { error in
+                completion(error.map { .failure(code: "dispatch_failed", message: $0) } ?? accepted)
             }
         case .answer(_, _, _, let dialogID, let answer):
             guard let index = dialogs.firstIndex(where: { $0.id == dialogID }), dialogs[index].unavailable == nil else {
@@ -868,8 +902,10 @@ final class RPCThreadState {
             }
             if let m = data["model"], let provider = m["provider"]?.stringValue, let id = m["id"]?.stringValue {
                 self.model = "\(provider)/\(id)"
+                self.serviceTiers = self.serviceTierOffer(ServiceTierModel(provider: provider, id: id, api: m["api"]?.stringValue))
             } else {
                 self.model = nil
+                self.serviceTiers = []
             }
             self.thinking = data["thinkingLevel"]?.stringValue
             self.autoCompaction = data["autoCompactionEnabled"]?.boolValue
@@ -1502,6 +1538,8 @@ final class RPCThreadState {
         hasher.combine(model)
         hasher.combine(thinking)
         hasher.combine(thinkingLevels)
+        hasher.combine(serviceTier)
+        hasher.combine(serviceTiers)
         hasher.combine(piSessionID)
         hasher.combine(stats)
         hasher.combine(context)
@@ -1572,7 +1610,8 @@ final class RPCThreadState {
             dialogs: [], widgets: widgets.map(\.value), messages: [], provisional: [],
             clipped: projectionClipped || dialogs.contains { $0.unavailable == "payload-limit" },
             runtime: "rpc", stats: stats, commands: commands, subagents: subagents, context: context,
-            turnChanges: turnChanges, retry: retry
+            turnChanges: turnChanges, retry: retry,
+            serviceTier: serviceTier.rawValue, serviceTiers: serviceTiers.map(\.rawValue)
         )
         // The rest encodes without the queue, which adds `,"queue":` and its cached size.
         let queue = queueValue

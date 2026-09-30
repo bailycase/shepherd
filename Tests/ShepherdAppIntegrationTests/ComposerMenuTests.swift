@@ -16,7 +16,7 @@ import Testing
 @MainActor
 struct ComposerMenuTests {
     enum Menu: String, CaseIterable, CustomTestStringConvertible {
-        case slash, models, thinking
+        case slash, models, thinking, speed
 
         var testDescription: String { rawValue }
 
@@ -28,6 +28,7 @@ struct ComposerMenuTests {
             case .slash: return NWComposerMetrics.menuHeaderHeight + CGFloat(NWComposerMetrics.menuMaxRows) * NWComposerMetrics.slashRowHeight + padding
             case .models: return NWComposerMetrics.modelSearchHeight + 2 * NW.Space.xs + NWComposerMetrics.modelPickerMaxHeight
             case .thinking: return NWComposerMetrics.menuHeaderHeight + 4 * NWComposerMetrics.menuRowHeight + padding
+            case .speed: return NWComposerMetrics.menuHeaderHeight + 2 * NWComposerMetrics.speedMenuRowHeight + padding
             }
         }
 
@@ -36,6 +37,7 @@ struct ComposerMenuTests {
             case .slash: .infinity
             case .models: NWComposerMetrics.modelPickerWidth
             case .thinking: NWComposerMetrics.thinkingMenuWidth
+            case .speed: NWComposerMetrics.speedMenuWidth
             }
         }
 
@@ -44,6 +46,7 @@ struct ComposerMenuTests {
             case .slash: thread.openSlashMenu()
             case .models: thread.openModelPicker()
             case .thinking: thread.commands.send(.thinkingMenu, to: ComposerThread.key)
+            case .speed: thread.openSpeedMenu()
             }
         }
     }
@@ -59,7 +62,7 @@ struct ComposerMenuTests {
 
     @Test(arguments: Menu.allCases, sizes)
     func openingAMenuLeavesTheThreadAndTheComposerWhereTheyWere(_ menu: Menu, size: CGSize) async throws {
-        let thread = ComposerThread(size: size)
+        let thread = ComposerThread(size: size, speed: menu == .speed)
         defer { thread.close() }
         try await thread.waitUntilReady()
         let inset = thread.composerInset, offset = thread.threadOffset
@@ -83,6 +86,22 @@ struct ComposerMenuTests {
         let solid = try #require(Pixels.bounds(differing: before, after, rows: 0..<band, by: Self.edge))
         #expect(abs(solid.minX - thread.columnLeading) <= 2, "starts at the card's leading edge: \(solid)")
         #expect(abs(solid.maxY - (thread.cardTop - AppLayout.menuGap)) <= 2, "ends 8pt above the card: \(solid)")
+    }
+
+    /// The Speed chip draws in the control row only when the host offers a tier for the model:
+    /// the same thread on the same model, with and without the host's tiers, differs in the row
+    /// beside Thinking and nowhere else.
+    @Test func theSpeedChipShowsOnlyForAModelThatOffersATier() async throws {
+        let plain = ComposerThread(model: "openai/gpt-6-luna"), tiered = ComposerThread(speed: true)
+        defer { plain.close(); tiered.close() }
+        try await plain.waitUntilReady()
+        try await tiered.waitUntilReady()
+        #expect(plain.composerInset == tiered.composerInset, "the chip sits in the row the composer already has")
+        let card = CGRect(x: 0, y: plain.cardTop, width: plain.size.width, height: plain.size.height - plain.cardTop)
+        let withoutChip = FrameTimer.capture(plain.window, card)
+        let withChip = FrameTimer.capture(tiered.window, card)
+        let changed = try #require(Pixels.bounds(differing: withoutChip, withChip, rows: 0..<Int(card.height), by: 0.05), "the row draws a chip")
+        #expect(changed.minX > plain.columnLeading, "inside the card's row, past its own edge: \(changed)")
     }
 
     /// The composer takes the keyboard while its thread is the focused pane (the window is never
@@ -231,9 +250,9 @@ struct ComposerMenuTests {
     /// A click outside the menu and the card closes it (and still lands where it was aimed); a
     /// click in the menu, or in the card (a chip toggles its own menu), leaves it open. The
     /// clicks are handed to the composer's watcher directly: nothing is posted to the window.
-    @Test(arguments: [Menu.models, .slash, .thinking])
+    @Test(arguments: [Menu.models, .slash, .thinking, .speed])
     func aClickOutsideTheMenuClosesIt(_ menu: Menu) async throws {
-        let thread = ComposerThread()
+        let thread = ComposerThread(speed: menu == .speed)
         defer { thread.close() }
         try await thread.waitUntilReady()
         // The thread above the card: typing "/" changes the field too.

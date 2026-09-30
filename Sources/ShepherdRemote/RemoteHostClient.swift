@@ -437,6 +437,8 @@ public final class RemoteHostClient: @unchecked Sendable {
             capabilities.contains(RemoteProtocol.nativeContextCapability) ? nil : "Update Shepherd on the host to compact the context."
         case .retry:
             capabilities.contains(RemoteProtocol.nativeRetryCapability) ? nil : "Update Shepherd on the host to retry a turn in place."
+        case .setServiceTier:
+            capabilities.contains(RemoteProtocol.nativeServiceTierCapability) ? nil : "Update Shepherd on the host to change its speed."
         case .send where !request.images.isEmpty:
             capabilities.contains(RemoteProtocol.nativeThreadV2Capability) ? nil : "Update Shepherd on the host to send images."
         default:
@@ -453,11 +455,13 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// The result as this client acts on it: a snapshot lists `retry` only from a host that
     /// retries in place (`native.retry.v1`), so the thread sends the prompt again anywhere else,
     /// and `interrupt` only from one that stops pi for a message (`native.interrupt.v1`), so the
-    /// thread steers there.
+    /// thread steers there; `setServiceTier` only from one that keeps each agent's tier
+    /// (`native.serviceTier.v1`), so the composer draws no Speed control anywhere else.
     static func incoming(_ result: NativeThreadResult, capabilities: Set<String>) -> NativeThreadResult {
         guard case .snapshot(var value) = result else { return result }
         let before = value.supportedActions
-        for (capability, action) in [(RemoteProtocol.nativeRetryCapability, "retry"), (RemoteProtocol.nativeInterruptCapability, "interrupt")]
+        for (capability, action) in [(RemoteProtocol.nativeRetryCapability, "retry"), (RemoteProtocol.nativeInterruptCapability, "interrupt"),
+                                     (RemoteProtocol.nativeServiceTierCapability, "setServiceTier")]
         where !capabilities.contains(capability) {
             value.supportedActions.removeAll { $0 == action }
         }
