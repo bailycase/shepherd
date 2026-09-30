@@ -2,9 +2,10 @@
 
 A pi agent can use the Browser tab of its own thread: open a page, read it, click and type in it,
 take a screenshot, read its console and run a script in it. The page is the one the user sees in
-the side pane (DESIGN.md › Side pane: Browser); the agent and the user share it. This file is how
-that works and where its limits are. The Mac tab itself (one page per thread, the toolbar, Select an
-element, the console drawer) is DESIGN.md's.
+the side pane (DESIGN.md › Side pane: Browser); the agent and the user share it. On a thread hosted
+on another Mac the page is the **viewer's** (Remote, below): the agent on the host drives the page
+the viewer sees. This file is how that works and where its limits are. The Mac tab itself (one page
+per thread, the toolbar, Select an element, the console drawer) is DESIGN.md's.
 
 ## The tools
 
@@ -73,6 +74,10 @@ A tool acts on **its own thread's page and nothing else**, and its arguments can
   `BrowserAgentFlowTests` check it.
 - The server answers a request the app does not answer in 120 s with `timeout`, and drops the
   answer of a request whose connection has gone (`BrowserRelayTests`).
+- On a remote thread the same rule holds across machines: a request is handed only to the viewer that
+  owns **that agent's** browser (`BrowserDriveOwners`), which runs it only on the page it claimed
+  for that agent and only on the connection it claimed on (`BrowserRemote.drives(for:)`); a viewer
+  answers only a token the host issued it, and no other viewer's answer counts (Remote).
 - **Stop.** A cancelled tool call closes the extension's connection (there is no cancel frame; the
   next call registers again). The server tells the app (`onBrowserAbandoned`, also after a
   timeout), and requests the agent had queued behind a long one never run
@@ -259,7 +264,7 @@ header's side-pane button shows "Agent opened a page in Browser".
 - **Control returns when the user sends that thread another message**: a `send` in the composer,
   on this Mac or from a remote client (`SessionServer.onUserMessage`, fired where a native thread
   `send` reaches the agent). It is not a peer's `agent_send`, an automation's prompt or a design
-  comment.
+  comment. On a remote thread the host tells the viewer that owns the browser (Remote).
 
 ## Limits
 
@@ -310,18 +315,132 @@ authenticated remote connection: **a forwarded port on this Mac, bridged to a tu
 the console drawer, the viewport, Add to message and the composer chip work on that page as they do
 on a local one, and ⌃2, ⌘L and ⇧⌘C are the same.
 
-### The two pages, until the next change
+### The agent drives the page you see
 
-**The agent's page and the viewer's page are different pages.** An agent on a remote host still
-drives the host's own page (its tools talk to the host's server, whose app owns that page on its own
-screen), and a viewer on another Mac cannot see it or take it over yet. The viewer's tab is a second
-page of the same thread, in a store of its own, that reaches the same dev server. So the empty
-state's "The agent opens pages here when it starts a dev server" is only half true on a remote
-thread: **a page the agent opens does not appear in this tab**, and neither does the dot or the tip
-"Agent opened …" (like a review the agent opens on a host, which is that host's view state; a viewer
-opens its own with ⇧⌘B). "Ports on remote hosts are forwarded for you" is true: open the same address
-here and the page is the host's dev server. Agents driving a remote thread's page from the viewer's
-Mac is a later change, and takes the dot and the tip with it.
+With `browser.drive.v1` (offered by a host that also offers the tunnel; a client lists it too) the
+agent on the host drives **this page**, the one the viewer watches. The tools are the same thirteen,
+run by the same driver a local thread's agent has (`BrowserSession.perform`), so the ring, the
+pointer, the card with **Take over**, the taken-over refusals and the hand-back all happen on the
+viewer's page. The agent does not know the difference.
+
+**Ownership.** A viewer with the thread's Browser tab on screen *claims* the agent's browser
+(`RemoteRequest.browserClaim`, answered `browserClaimed`). The host keeps at most one owner per agent
+(`BrowserDriveOwners`): the most recent claim wins, and the viewer it took the browser from is told
+(`BrowserDrivePush.ended(superseded)`; it shows a notice and claims again only when its tab is shown
+again). Only an authenticated client that listed the capability, for an agent that exists on the host
+and has a browser (a thread, never a design's agent), may claim, and one viewer owns at most 32. A
+claim ends when:
+
+- the tab has been out of sight for 30 seconds (another tab, the pane closed, another thread on
+  screen; a quick look elsewhere keeps it: `BrowserDriveClaimant`, which the Mac and the iPad share),
+  or the page goes with its thread;
+- the viewer's connection drops (a tab still on screen claims again on the next connection);
+- another viewer claims it, the agent is deleted, or the host stops serving browsers to viewers;
+- the viewer does not answer a request within the 120 s deadline: the agent gets `timeout`, the
+  viewer is told (`unresponsive`) and the host's own page has the browser back.
+
+**Routing.** `SessionServer.routeBrowserRequest` checks who the extension is exactly as before, and
+then: with an owner, it pushes `BrowserDrivePush.request(token, agent, request)` to it and completes
+the extension's request with the owner's `RemoteRequest.browserAnswer(token, outcome)`; with none, the
+host's own page answers (nothing differs from PR 2). A request is answered at most once: by the owner
+it was sent to (another viewer's answer, a repeated one and one for a token nobody issued are
+ignored), or it ends with `viewer_gone` when that owner leaves, is superseded or lets go ("The Mac
+that was showing this page went away, so the browser is back on this host's own page. Call the tool
+again."), or with `timeout`. The next call then reaches whoever owns the browser. The host cuts an
+answer to what the agent may be given: text at 64 KB, an image of a type the model takes
+(`image/jpeg` or `image/png`) and at most 400 KB of base64, and a failure's code to one short word.
+A cancelled tool call (Stop) closes the extension's connection, and the owner is told (`abandoned`)
+so requests it had queued do not run.
+
+**Adopting the page.** A claim is answered with the address the host's own page for that agent holds
+(`browserClaimed(url)`: `http` or `https` only, at most 2 KB). A tab with **nothing open** opens it
+through the tunnel, when this Mac may open it (the address policy below), so opening the tab lands
+where the agent left off. A tab that already has a page keeps it: a claim replaces nothing the user
+opened. **Cookies and storage are not carried over**: this Mac's store is its own, so a page that
+needs a login shows its login page here.
+
+**Hand back.** Take over works as on a local thread (the card's button, or the user's own click or
+key in the page while the card is up). Control returns when the user sends the thread another
+message: the host's `send` path, for this Mac's composer or any client's, pushes `handBack` to the
+owner as it tells its own page (`onUserMessage`). It is not a peer's `agent_send`, an automation's
+prompt or a design comment. A fresh claim also starts with the agent having the page, because a
+message sent while this Mac held no claim is one it never heard.
+
+**The dot.** When the agent opens a page in the host's own browser (no viewer owns it), the host
+tells every viewer that reads the capability (`BrowserDrivePush.opened`), and each marks the thread's
+Browser tab with the same dot and tip as a local thread's ("Agent opened localhost:5173/checkout"),
+never opening the pane by itself. A viewer that owns the browser sees the page open in its own tab,
+and marks the tab the same way while it is out of sight.
+
+**Older peers.**
+
+| Viewer | Host | What happens |
+| --- | --- | --- |
+| drive | drive | The above. |
+| drive | tunnel, no drive | The viewer has the Browser tab and a page of its own (PR 3a). It claims nothing, the agent drives the host's own page, and no dot or tip reaches it. |
+| no drive | drive | The host takes no claim from it (`unsupported`) and pushes it nothing it cannot decode: the same as the row above. |
+| any | no tunnel | No tab, as before. |
+
+The client checks `RemoteHostClient.drivesBrowser` (both capabilities) before it sends a claim, so an
+older host never hears one.
+
+### What a host's agent can make this Mac do
+
+The page an agent drives here renders on **this Mac**, so a host's agent is, in effect, a remote user
+of a web view that shares this Mac's network. It is bounded by what a web page can do, plus a policy
+on where the page may go (`BrowserViewerPolicy`, in ShepherdRemote so the iPad shares it):
+
+- **It may open** `http` and `https` addresses whose host is the thread's own loopback (`localhost`,
+  `127.0.0.1`, `::1`, which the forwarded ports carry to the host) or a **public** address.
+- **It may not open, and is told so plainly** (`refused_url`: "That address is on the network of the
+  Mac showing this page, not this host's, so the browser won't open it. Use localhost for a port on
+  this host, or a public address."): a private address (RFC 1918, link-local, which includes the
+  cloud metadata address, carrier-grade NAT, unique-local, the documentation and reserved blocks,
+  multicast), `.local`, single-label and other local-network names (`.lan`, `.internal`, `.corp`, …);
+  this Mac's own loopback under any spelling the forwarder does not carry (`127.0.0.2`, `0.0.0.0`,
+  `::`, `[::ffff:127.0.0.1]`, `localhost.`, `foo.localhost`, `2130706433`, `0x7f.1`: a URL's numeric
+  forms are read the way WebKit reads them); one of this Mac's own interface addresses; and **a
+  hostname that resolves to any of those** (every answer of the system resolver is checked, and an
+  answer is kept for 30 s). A scheme other than `http`, `https` and `about:blank` is refused as before.
+- **A port this Mac's own program holds** is refused (`BrowserPortForwarder`, as for the user), and
+  the agent is told only that the port "can't be opened in the browser right now", not what holds
+  it. An agent may have **eight** of the host's ports forwarded for one page (each holds a listening
+  socket here); the ninth is refused.
+- **Every navigation the agent causes is checked again on this Mac**, in the navigation policy
+  (`BrowserHost.swift`), while one of its requests is in flight and for three seconds after (a
+  script's own navigation starts a beat after the script returns): the main frame, **each redirect**
+  (a public page that sends the browser to `192.168.1.1` is stopped at the second hop, and the
+  request ends with `refused_url` instead of waiting out its 30 s), a history step, and **an
+  iframe's** navigation (the rest of the page loads, and the result says "A navigation was blocked:
+  …"). The check reads the address WebKit itself reports, not the one the agent typed, so a spelling
+  that Foundation and WebKit read differently cannot slip through. What the user types in the
+  address field is theirs and is let through.
+- **The page open now is judged too.** Every request but `browser_open` acts on or reads the page
+  that is open, so when that page is on this Mac's network (an address the user typed, a `file:`
+  page) the request is refused (`refused_url`) and **nothing of the page, its text, title or
+  address, goes to the agent**. After a request, if the page ended up somewhere the agent may not be
+  shown, its result is replaced by the same refusal.
+- **`browser_eval` and the rest act on the page only**, with the page's own privileges, as on a
+  local thread: a script cannot read another origin's responses.
+
+What this does **not** stop, said plainly:
+
+- **A public page is a web page.** The agent can open a public site and run a script in it, so this
+  Mac's web view can make the requests any web page can: blind requests to this Mac's network (an
+  image, a `fetch` with `no-cors`, a form post), and the page's own subresources and WebSockets
+  anywhere. It cannot read a cross-origin response, which is the same-origin policy's job, but it can
+  send. WebKit's navigation delegate sees navigations, not subresources, so they are not checked
+  (a content-rule list could block literal private addresses for subresources; none is built).
+- **DNS rebinding.** A name is resolved when it is checked and again by WebKit when it connects, so
+  a name whose answer changes between the two is not caught by the check.
+- **A host can learn whether a loopback port above 1023 is in use on this Mac**, by whether
+  `browser_open` of it is refused. The agent is told only that the port is unavailable, never what
+  holds it.
+- **The agent can click and type in the page you watch** (that is the feature, and the ring and the
+  card say so; Take over stops it), and read what it shows, including a page you signed in to in this
+  tab: its website data is this Mac's, per thread and host, and empty until something signs in.
+
+SECURITY.md has the same boundary in its own words.
 
 ### The spike: how a page on this Mac reaches a port on the host
 
@@ -427,6 +546,18 @@ are in ShepherdRemote, which iOS builds. Only the page (`BrowserSession`, `Brows
 is Mac. The iPad needs a web view, a `BrowserPortForwarder` claim per page URL as
 `BrowserRemote.forward` does, and a slot filled from `MobileHost.connectedClient?.tunnels`.
 
+For the agent driving its page (`browser.drive.v1`) the wire and every rule except the web view are
+shared too: `BrowserDrivePush`, `BrowserOutcome`'s coding and `BrowserDriveOwners` (the host's claim
+rules) are in ShepherdProtocol; `BrowserDriveClaimant` (when a viewer claims and lets go, from its
+tab and its connection, with the clock handed in) and `BrowserViewerPolicy` (where a host's agent may
+take the page) are in ShepherdRemote; and `RemoteHostClient` has `drivesBrowser`, `browserClaim`,
+`browserRelease`, `browserAnswer` and `onBrowserDrive` (main queue). The iPad's part is what the Mac's
+is: tell the claimant when its Browser tab shows and hides, send what it says to send, run each
+`BrowserDrivePush.request` on its web view with the driver's rules (refuse an acting tool while the
+user has taken over, refuse anything the policy refuses, including every navigation and the page
+open now, and answer every request, `viewer_gone` when it cannot), apply `handBack` and `ended`, and
+mark the tab for `opened`. Nothing else needs a change; the host cannot tell the two apart.
+
 ## Tests
 
 - `BrowserAgentTests` (ShepherdAppIntegrationTests): a real web view, parked off screen, on pages a
@@ -461,3 +592,28 @@ is Mac. The iPad needs a web view, a `BrowserPortForwarder` claim per page URL a
   cookie, a port in use is refused and nothing loads, Start waits for the port, the tab appears only on
   a host that lists the capability, and the page, its ports and its data store go with the thread or
   its host). Previews: `browserRemoteEmpty`, `browserRemotePage`, `browserRemoteWaitingAndRefused`.
+- The agent driving a remote thread's page: `BrowserDriveTests` (ShepherdProtocolUnitTests: every push
+  and outcome round-trips, what a viewer's answer may carry, which address a host offers, and the
+  ownership rules: claim, supersede, release, disconnect, the cap), `RemoteMessageTests` (every new
+  request and reply in the round-trip tables, the capability string),
+  `BrowserViewerPolicyTests` (ShepherdRemoteUnitTests: the address policy as a table, with the
+  resolver injected: public, private and reserved ranges, IPv4 and IPv6, every numeric spelling of the
+  viewer's own loopback, names, names that resolve privately, the viewer's own addresses, schemes,
+  iframes, the page open now, the cache, WebKit's reading of a host), `BrowserDriveClaimantTests`
+  (when a viewer claims and lets go, with the clock handed in), `BrowserHostGuardTests`
+  (ShepherdAppUnitTests: what a host's agent may open, read and act on),
+  `BrowserDriveHostTests` (ShepherdSessionsIntegrationTests: raw viewers and a raw extension against a
+  real host: a request routed to the claiming viewer and its answer returned, no owner and the host's
+  own page, a viewer that leaves mid-request, a viewer that never answers, supersede, release, answers
+  only from the owner, an answer cut to what the agent may be given, a viewer that cannot see the
+  agent, an older client or host, the cap, the adopted address, the dot, the hand-back, the agent
+  giving up, the agent deleted, the host stopping), `RemoteBrowserDriveTests`
+  (ShepherdAppIntegrationTests: a real off-screen web view on the viewer runs open, read, click, type,
+  screenshot, console and back through the tunnel against a local dev server with the ring and card
+  in the session and the host's own page never made; Take over refusing acting tools and handing back
+  on the user's next message; the dot; adopting the host's page; supersede between two viewers; a
+  viewer that leaves; the grace; a reconnect; an older host), and `RemoteBrowserDrivePolicyTests`
+  (the refusals end to end: a private address, every scheme, a hostname resolving to this Mac's own
+  loopback, a port this Mac's program holds, the cap on ports, a redirect, an iframe and a script's
+  navigation to a private address, a page the user opened on their own network never read back).
+  Previews: `browserRemoteAgentIsUsingIt`, `browserRemoteAgentOpenedATab`, `browserRemoteSuperseded`.
