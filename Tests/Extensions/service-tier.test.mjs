@@ -292,8 +292,11 @@ test("the managed CLIProxyAPI provider: Fast reaches an OpenAI model's body and 
 
 test("CLIProxyAPI models the table leaves out get nothing: another owner, and a chat-completions route", { timeout: 180000 }, async (t) => {
   const models = [{ id: "gpt-6-sol", owned_by: "openai" }, { id: "claude-opus-5", owned_by: "anthropic" },
-    { id: "gpt-oss-120b-medium", owned_by: "antigravity" }, { id: "gpt-not-in-pis-catalog-9", owned_by: "openai" }];
-  for (const [id, path] of [["claude-opus-5", "/v1/chat/completions"], ["gpt-oss-120b-medium", "/v1/chat/completions"], ["gpt-not-in-pis-catalog-9", "/v1/chat/completions"]]) {
+    { id: "gpt-oss-120b-medium", owned_by: "antigravity" }, { id: "gpt-not-in-pis-catalog-9", owned_by: "openai" },
+    // Another owner's model that pi's catalog knows on the Responses API: only its owner keeps it out.
+    { id: "muse-spark-1.2", owned_by: "Meta" }];
+  for (const [id, path] of [["claude-opus-5", "/v1/chat/completions"], ["gpt-oss-120b-medium", "/v1/chat/completions"],
+    ["gpt-not-in-pis-catalog-9", "/v1/chat/completions"], ["muse-spark-1.2", "/v1/responses"]]) {
     const fake = await startProvider();
     const pi = await startPi(t, { providers: {}, model: `cliproxyapi/${id}`, tier: "fast", proxy: proxy(fake.port, models) });
     try {
