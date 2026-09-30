@@ -234,6 +234,11 @@ public enum NativeQueueAction: Codable, Hashable, Sendable {
     /// Hand these to pi now, in order, to read after its current tool calls. While pi is idle
     /// this is `sendNow`.
     case steer(ids: [UUID])
+    /// Stop whatever pi is doing, as Stop does, and send these at once as the next turn, in
+    /// order; the rest of the queue follows after it. While pi is idle this is `sendNow`. Gated
+    /// by `interrupt` in `supportedActions` and, remotely, `native.interrupt.v1`; a client
+    /// without them sends `steer`.
+    case interrupt(ids: [UUID])
     /// Take a steering item back before pi reads it; it returns to the head of the queue.
     case unsteer(id: UUID)
     /// Delete every queued item (steering items stay).
@@ -397,7 +402,17 @@ public struct NativeCommand: Codable, Hashable, Sendable {
     }
 }
 
-public enum NativeThreadDelivery: String, Codable, Hashable, Sendable { case followUp, steer }
+/// How a message sent while pi works reaches it. While pi is idle every one is a plain send.
+public enum NativeThreadDelivery: String, Codable, Hashable, Sendable, CaseIterable {
+    /// It waits in the queue and goes when the turn ends.
+    case followUp
+    /// pi reads it once its current tool calls finish, before its next step.
+    case steer
+    /// pi stops what it is doing, as Stop does, and the message goes at once as the next turn
+    /// in the same session. Gated by `interrupt` in `supportedActions` and, remotely,
+    /// `native.interrupt.v1`; a client sends `steer` to a host without them.
+    case interrupt
+}
 
 /// Card and inspector actions on a subagent run. Pause and continue suspend and resume a run
 /// that is still in progress.

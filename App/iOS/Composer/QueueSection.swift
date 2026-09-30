@@ -64,7 +64,7 @@ struct QueueSection: View {
         let store = store
         let state = state
         return QueueRowActions(
-            steer: { id in Task { await store.running ? store.steerQueued([id]) : store.sendQueuedNow([id]) } },
+            steer: { id in Task { await store.running ? store.interruptQueued([id]) : store.sendQueuedNow([id]) } },
             back: { id in Task { await store.unsteer(id) } },
             edit: { id in
                 guard let message = state.message(id), state.beginQueueEdit(message, presentation: presentation) else { return }
@@ -87,7 +87,7 @@ struct QueueSection: View {
         let queued = state.queuedIDs
         if !queued.isEmpty {
             Button(running ? "Steer all now" : "Send all now", systemImage: "arrow.turn.down.right") {
-                Task { await running ? store.steerQueued(queued) : store.sendQueuedNow(queued) }
+                Task { await running ? store.interruptQueued(queued) : store.sendQueuedNow(queued) }
             }
         }
         if store.queueMode != nil || store.supports("queue") {

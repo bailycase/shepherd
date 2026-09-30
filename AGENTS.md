@@ -560,7 +560,8 @@ Sources/
   ShepherdSessions/    SessionServer (state, sessions, extension socket, remote listener),
                        RPCSession, RPCThreadState (+Queue: the queue of messages sent while pi
                        works; +Context: what fills the context, compactions), ThreadOriginStore (where delivered messages came from, kept per pi
-                       session), AutomationRunLog (each automation's runs), PTYSession,
+                       session), StreamingToolArguments (the fields a tool call being written
+                       names, read from pi's argument fragments), AutomationRunLog (each automation's runs), PTYSession,
                        SessionScreen (SwiftTerm), StateStore,
                        PaneRequest (pane/review/automation requests + outcomes), RemoteFileUpload,
                        PiEngine (which pi runs; BundledPiEngine, the one the app ships),
@@ -899,7 +900,10 @@ variables are blanked, as are pi's `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSI
   or trusted network is the transport boundary. Never describe the listener as internet-safe.
 - **Protocol** (NDJSON, `RemoteMessage.swift`):
   - state fetch and pushed `stateChanged`
-  - native thread requests, with the context and Compact now behind `native.context.v1`
+  - native thread requests, with the context and Compact now behind `native.context.v1`, Retry
+    in place behind `native.retry.v1`, and Steer now (a message that stops pi and goes at once,
+    `interrupt` in `supportedActions`, sent as a steer to a host without it) behind
+    `native.interrupt.v1`
   - attach, detach, input, resize, and acknowledged paste
   - pane open, close, and split resize
   - `listDir`, `listModels`, `addSpace`, and `createAgent` with `creationOptions` (and the

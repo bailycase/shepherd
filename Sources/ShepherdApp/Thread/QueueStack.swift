@@ -294,13 +294,15 @@ final class QueueStackState {
         Task.immediate { await store.holdQueued(id, false) }
     }
 
-    /// Steer now while pi works; while it is idle (a paused queue) the message goes now.
+    /// Steer now while pi works: the host stops pi and sends these at once (the messages are
+    /// first in the queue until it has), or, from a host that can't, steers them in. While pi is
+    /// idle (a paused queue) the messages go now.
     func steer(_ ids: [UUID], running: Bool, store: NativeThreadStore) {
         guard !ids.isEmpty else { return }
         if running {
-            NativeQueueRules.steer(ids, in: &queue)
+            if store.hostInterrupts { NativeQueueRules.interrupt(ids, in: &queue) } else { NativeQueueRules.steer(ids, in: &queue) }
             derive()
-            Task.immediate { await store.steerQueued(ids) }
+            Task.immediate { await store.interruptQueued(ids) }
         } else {
             queue.removeAll { ids.contains($0.id) }
             derive()
@@ -652,6 +654,7 @@ struct QueueRowView: View, Equatable {
                     steer: id.map { id in { actions.steer(id) } },
                     steerLabel: running ? "Steer now" : "Send now",
                     steerShortcut: steerShortcut,
+                    steerHelp: running ? NativeSendChoice.steerNowHelp : "Send this now",
                     edit: id.map { id in { actions.edit(id) } },
                     delete: id.map { id in { actions.delete(id) } },
                     deleteShortcut: deleteShortcut,
@@ -698,6 +701,8 @@ private struct QueueOptions: View {
             Label(running ? "Steer all now" : "Send all now", systemImage: running ? "arrow.turn.down.right" : "arrow.up")
         }
         .disabled(!hasQueued)
+        .help(running ? NativeSendChoice.steerAllNowHelp : "Send these now, in order")
+        .accessibilityHint(running ? NativeSendChoice.steerAllNowHelp : "Send these now, in order")
         Divider()
         Section("When the turn ends, send") {
             Picker("When the turn ends, send", selection: Binding(get: { mode }, set: setMode)) {

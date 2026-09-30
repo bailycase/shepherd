@@ -46,6 +46,7 @@ public final class QueueFixture {
                                                  sentAt: Date().timeIntervalSince1970 * 1000,
                                                  state: delivery == .steer ? .steering : .queued,
                                                  elements: (elements ?? []).map(\.withoutHTML)))
+                if delivery == .interrupt { NativeQueueRules.interrupt([operation], in: &items) }
                 NativeQueueRules.normalize(&items)
                 change(items)
             }
@@ -77,6 +78,9 @@ public final class QueueFixture {
         case .move(let id, let index): NativeQueueRules.move(id, toQueuedIndex: index, in: &items)
         case .steer(let ids):
             if snapshot.running { NativeQueueRules.steer(ids, in: &items) } else { items.removeAll { ids.contains($0.id) } }
+        case .interrupt(let ids):
+            // The host stops pi and sends them: until it has, they are first in the queue.
+            if snapshot.running { NativeQueueRules.interrupt(ids, in: &items) } else { items.removeAll { ids.contains($0.id) } }
         case .unsteer(let id): NativeQueueRules.unsteer(id, in: &items)
         case .hold(let id, let held): NativeQueueRules.hold(id, held, in: &items)
         case .setMode(let chosen): mode = chosen ?? .all

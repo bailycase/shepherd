@@ -15,8 +15,9 @@ import ShepherdRemote
 /// - **A design's chat on iPad** (iPadDesign): the same card at the compact size, with no "/"
 ///   (typing / still opens the commands), the model's short name and the thinking level alone.
 ///
-/// Send queues the message while pi works (it goes when pi settles); hold it to Steer now, which
-/// pi reads once its current tool calls finish. Stop lives in the thread's header. The context
+/// Send steers the message in while pi works (pi reads it once its current tool calls finish,
+/// before its next step); hold it for the other two ways (`NativeSendChoice`): wait for the turn
+/// to end, or steer now, which stops pi and sends at once. Stop lives in the thread's header. The context
 /// ring sits just before Send on both (ContextIdeas › A); a tap opens its details as a sheet.
 struct ThreadComposer: View {
     let ref: AgentRef
@@ -265,27 +266,39 @@ struct ThreadComposer: View {
         store.supportedActions.contains("sendImages")
     }
 
-    /// Send: queues while pi works, sends at once while it is idle. Held while pi works, it
-    /// offers Steer now.
+    /// Send: steers at the next step while pi works (a message that begins with "/" waits for the
+    /// turn to end instead), sends at once while it is idle. Held while pi works, it offers all
+    /// three ways to send.
     private func sendButton(store: NativeThreadStore, state: ComposerState, live: Bool) -> some View {
         let hasDraft = !store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let enabled = live && store.acceptsSend && hasDraft && !store.busy
         let running = store.running
-        return NWComposerActionButton(.send, enabled: enabled) { Self.send(.followUp, store: store, state: state) }
+        return NWComposerActionButton(.send, enabled: enabled) { Self.send(NativeSendChoice.nextStep.delivery, store: store, state: state) }
             .keyboardShortcut(.return, modifiers: .command)
             .contextMenu {
                 if running, enabled {
-                    Button("Queue", systemImage: "text.line.first.and.arrowtriangle.forward") { Self.send(.followUp, store: store, state: state) }
-                    Button("Steer now", systemImage: "arrow.turn.down.right") { Self.send(.steer, store: store, state: state) }
+                    ForEach(NativeSendChoice.allCases) { choice in
+                        Button(choice.title, systemImage: Self.symbol(choice)) { Self.send(choice.delivery, store: store, state: state) }
+                    }
                 }
             }
-            .accessibilityLabel(running ? "Queue message" : "Send")
-            .accessibilityHint(running ? "Goes when the agent finishes this turn" : "")
+            .accessibilityLabel(running ? NativeSendChoice.nextStep.title : "Send")
+            .accessibilityHint(running ? NativeSendChoice.nextStep.detail : "")
             .accessibilityActions {
                 if running, enabled {
-                    Button("Steer now") { Self.send(.steer, store: store, state: state) }
+                    ForEach(NativeSendChoice.allCases.filter { $0 != .nextStep }) { choice in
+                        Button(choice.title) { Self.send(choice.delivery, store: store, state: state) }
+                    }
                 }
             }
+    }
+
+    private static func symbol(_ choice: NativeSendChoice) -> String {
+        switch choice {
+        case .wait: "text.line.first.and.arrowtriangle.forward"
+        case .nextStep: "arrow.right.to.line"
+        case .now: "arrow.turn.down.right"
+        }
     }
 
     @MainActor @discardableResult
