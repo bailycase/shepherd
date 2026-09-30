@@ -178,8 +178,7 @@ And the rules that follow from them:
 | PaneStates widths: the thread keeps 520pt, 760pt default for Files, ⇧⌘O pops the pane into a window | 380pt minimum and 600 default as drawn, at most half the column, and the layout keeps 400 (double-clicking the divider takes it to half); no pop-out | The Navigation board's 400pt thread (`RightPaneSplit`); Files is not built; one window (Window and adaptive layout) |
 | PaneStates' ⋯ menu (`SidePaneOptions`): Split below, Open pane in its own window ⇧⌘O, Reset width, then Show tabs with a check per tab | Changes' own items (Maximize Pane, Expand All Files, Collapse All Files, Copy Review as Text), then Reset Width | With Changes the only tab, a split has nothing to show below it, Show tabs nothing to hide, and a window of its own would break the one-window rule and host the review a second time: none is offered until it works (never a dead item) |
 | PaneStates, the Changes boards, PaneBrowser, PaneArtifacts, PaneFiles: four tabs, Changes, Browser, Artifacts and Files | Changes and Browser (a remote thread: Changes alone) | Only what Shepherd has (the user's decision, 2026-09-25: "dont show browser, artifacts, files, etc, only show the things we have"); the others join when they are built, and a remote thread's Browser when the tunnel reaches its host |
-| PaneStates › BrowserPane · nothing open: "The agent opens pages here when it starts a dev server. Ports on remote hosts are forwarded for you." | "Start a dev server from this repository, or open a URL. Pages you open stay with this thread." ("Open a URL to see it here. …" when the repository offers no dev server) | Neither sentence is true yet: agents don't drive the Browser and no port is forwarded. The board's words come back when they are |
-| PaneStates, PaneBrowser: Start on build-01; the host chip "build-01" | "Start"; "This Mac" | Local threads only; a remote thread's Browser waits for the tunnel |
+| PaneStates, PaneBrowser: the host chip "build-01" for a remote host | "This Mac" | Local threads only; a remote thread's Browser waits for the tunnel |
 | PaneStates › viewport: Throttle to 3G under Dark appearance | Left out | WebKit has no public throttle; it will come through the tunnel's local proxy (the user's decision, 2026-09-29) |
 | PaneBrowser: the element's popover drawn in the page beside it | A native popover over the page, beside the element (else left of it, else under it), following it as the page scrolls; only the outline and tag are drawn in the page | Its buttons are Shepherd's controls, and the page can't reach or restyle them |
 | PaneBrowser: Hide console (the board draws no hidden state) | The bar stays, with Show console (a chevron up) | The console must be reachable again from where it was |
@@ -3121,13 +3120,14 @@ forwards the port (not built yet).
   port on this Mac; anything else is a search (DuckDuckGo).
 - **Nothing open** (`NWBrowserEmpty`): centered, 14pt apart: a 44pt `bgSelected` circle with a
   20pt `textSecondary` globe, "No page open" (Geist 14 semibold), and a line (`ui` `textSecondary`,
-  at most 330pt, centered): "Start a dev server from this repository, or open a URL. Pages you
-  open stay with this thread." ("Open a URL to see it here. …" when the repository offers none;
-  "Waiting for localhost:5173 to answer. Its page opens here when it does." after Start). Then,
-  at most 400pt wide and 8pt apart, a card per dev server (`NWDevServerCard`: `bgRaised`,
-  `lineSubtle`, radius 8, padding 10×12; a 12pt terminal glyph, "pnpm dev" in Geist Mono 12 over
-  "from package.json · acme-web" in Geist 11 `textTertiary`, and Start, secondary `s` with a play
-  glyph), and an "Open a URL" row the same way with the ⌘L keycaps.
+  at most 330pt, centered), the board's words exactly: "The agent opens pages here when it starts
+  a dev server. Ports on remote hosts are forwarded for you." ("Waiting for localhost:5173 to
+  answer. Its page opens here when it does." after Start). Then, at most 400pt wide and 8pt apart,
+  a card per dev server (`NWDevServerCard`: `bgRaised`, `lineSubtle`, radius 8, padding 10×12; a
+  12pt terminal glyph, "pnpm dev" in Geist Mono 12 over "from package.json · acme-web" in Geist 11
+  `textTertiary`, and "Start on This Mac", secondary `s` with a play glyph ("Start on build-01"
+  for a remote host, local threads only), and an "Open a URL" row the same way with the ⌘L
+  keycaps.
   - **Dev servers** (`DevServerDiscovery`): the `dev`, `start`, `serve` and `preview` scripts, in
     that order, of the thread's folder's package.json and then each `apps/*/package.json` (at most
     six), read off the main thread. The command follows the lockfile beside it, else the
