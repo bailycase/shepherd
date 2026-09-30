@@ -170,6 +170,8 @@ Shepherd agent when you want those.
   becomes its thread.
 - [docs/native-subagents.md](docs/native-subagents.md): the bundled subagent runtime.
 - [docs/worktrees.md](docs/worktrees.md): worktree creation, finalize, and delete.
+- [docs/browser.md](docs/browser.md): the tools an agent uses on its thread's Browser, and how
+  each thread's page stays its own.
 - [docs/agent-coordination.md](docs/agent-coordination.md): the tools agents use on each other
   and on the review pane.
 - [docs/clean-mac-simulation.md](docs/clean-mac-simulation.md): testing the finalize setup
