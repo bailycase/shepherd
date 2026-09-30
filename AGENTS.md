@@ -194,8 +194,14 @@ Tests come in tiers, and the switch is `--filter` on target names.
 
 - `ScratchServer`: a real `SessionServer` on scratch paths that records every broadcast state.
   A remote `listModels` gets a fixed stand-in catalog, never pi's (`SessionServer(modelCatalog:)`).
+  It lets a raw `ExtensionClient` speak as any agent (`extensionPeerCheck`, which a real server
+  leaves `nil`: a connection speaks only for the agent whose pi opened it); a test of the rule
+  itself calls `useRealPeerCheck()` and runs stub pis (`ExtensionIdentityTests`).
 - `StubPi.command`: runs `Resources/stub-pi.py`, a scripted `pi --mode rpc` driven by prompt
   keywords (`ask`, `select`, `hang`, `die`, `big`, `slow`, `widgets`, `fill`, `newsession`, …).
+  `speak` (and `STUB_PI_SPEAK`, or `speak` in `stub-pi-startup.json`) has it talk on the
+  extension socket as an agent, from its own process and from one it starts, and write what
+  each request was answered.
   `STUB_PI_LOG` records what it received, and `STUB_PI_HISTORY_BYTES` seeds a long history.
   `STUB_PI_STARTUP_DELAY`/`_GATE`/`_EXIT` hold or fail its boot, `_STDERR` is what it says
   before that exit, `_NEW_SESSION` prints pi's warning that it found no session for its
@@ -210,7 +216,8 @@ Tests come in tiers, and the switch is `--filter` on target names.
   throws `CommandFailure` with git's stderr.
 - `makeScratchDirectory()`: a `mkdtemp` directory inside the process's scratch root, short
   because `sun_path` caps socket paths at 104 bytes.
-- `ExtensionClient`: a raw extension-socket client.
+- `ExtensionClient`: a raw extension-socket client, which is the test process and so not any
+  agent's pi.
 - `LoopbackServer` and `DevServerFixture`: a server on the loopback and an ephemeral port standing in
   for a host's dev server in tunnel tests (HTTP GET and a POST of any size with its SHA-256, a
   WebSocket echo, an echo, a firehose, one that never reads), IPv4 or IPv6, or on a chosen address
@@ -424,6 +431,13 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   built-in; a ZIP's table of contents checked before unpacking (zip slip, links, sizes), a ZIP
   and a folder importing, every failure leaving nothing, and importing again making a copy.
 - **Server:** every `SessionServer` state mutation.
+- **Extension identity:** the real check against stub pis (`ExtensionIdentityTests`, and
+  `ExtensionIdentityFlowTests` through the app's own launch): a pi's own process is served for
+  its agent, a process it starts is refused and displaces no connection, this process claiming
+  another agent is refused for every kind of message, a replaced pi speaks no more, a pi no pane
+  holds yet speaks for the agent it was launched for; each message's `speaksFor` and `replyID`
+  against its wire form (`ExtensionMessageTests`). Check the check has teeth by making it allow
+  everything: these tests must fail.
 - **Changes:** every scope on a scratch repository, the proof that reading changes leaves the
   index, HEAD, refs, the stash, `.git` and every file alone, and Undo, Redo and the refusal on a
   turn the stub pi made.
@@ -500,7 +514,8 @@ Sources/
                        (binary split tree; LeafPane carries sessionID/cwd/agentID), AgentStatus +
                        canTransition, ThinkingLevel, SessionRuntime, StateValidation, Reorder.
                        No deps.
-  ShepherdProtocol/    ExtensionMessage/ExtensionReply (+ ChildRun, PaneInfo, …), RemoteMessage
+  ShepherdProtocol/    ExtensionMessage/ExtensionReply (+ ChildRun, PaneInfo, …; and
+                       ExtensionMessage+Speaker: whose voice each message is), RemoteMessage
                        (RemoteRequest/RemoteReply, RemoteProtocol version + capabilities),
                        NativeThread (requests, results, NativeThreadSnapshot), NativeThreadContext
                        (the context and compactions), RPCWire (pi's
@@ -845,7 +860,8 @@ the host holds (never pi's own, whose modes write the user's pi settings) and go
 settles, or are steered in; a user message joins the thread only when pi starts it
 (docs/native-thread.md › The queue).
 
-**Status reporting.** The status extension reports `setAgentStatus` fire-and-forget:
+**Status reporting.** The status extension reports `setAgentStatus` fire-and-forget (the server
+takes it only from that agent's own pi; a report from any other process is dropped):
 
 | pi event | Status |
 | --- | --- |
@@ -878,7 +894,8 @@ variables are blanked, as are pi's `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSI
   The Automations sidebar section is their only surface on the host. Remote clients change them
   through the same handler (`RemoteRequest.automation`, below), after the server checks what it
   can (the automation exists; a new or edited one has a name, a prompt and a directory on the
-  host).
+  host). The extension-socket automation messages name no agent, so they are the one thing on
+  that socket any process that reaches it may send (`ExtensionMessage.speaksFor` is `nil`).
 - **Run now** (`startAutomation`) follows `AutomationRun.isLive`: a run whose agent works, asks,
   or has not settled a turn yet refuses ("already running"), and so does a second start while
   one is starting. A settled run is replaced once the new run exists: the automation moves to
@@ -1001,8 +1018,9 @@ remote clients. Change them deliberately, and update every consumer and the roun
 the same change.
 
 - A new extension message needs the enum case, its `Kind` and `CodingKeys` entries, both
-  init/encode arms, and a row in the protocol round-trip table. Replies are the same
-  (`ExtensionReply`).
+  init/encode arms, a row in the protocol round-trip table, and its lines in `speaksFor` (the
+  agent it acts as, `nil` only when it names none) and `replyID`: the server serves it only from
+  that agent's own pi. Replies are the same (`ExtensionReply`), without the last part.
 - Remote messages follow the same rules.
 - A new `SessionServer` mutation needs an integration test.
 - New persisted fields decode with defaults, so older `state.json` files keep loading.
@@ -1172,11 +1190,24 @@ are load-bearing:
 - It can never close or type into the pane running its own pi process.
 - The last pane in a layout cannot be closed.
 
+**An extension-socket connection speaks only for the agent whose pi process opened it**
+(ARCHITECTURE.md › Extensions and the extension socket › Who a connection speaks for). The socket
+has no token and an agent's bash tool can read `SHEPHERD_SOCKET` and `agent_list`, so an
+`agentID` in a message proves nothing. The server reads the peer's pid off each accepted fd once
+(`LOCAL_PEERPID`, `ExtensionConnection.peerPID`; it cannot be read after a peer that closed has
+gone) and, for every message that names an agent as its actor (`ExtensionMessage.speaksFor`),
+serves it only when the agent's live pi has that pid (`SessionServer.isPiProcess`, looked up per
+message, so a restarted pi is followed; a pi that no pane holds yet counts for the agent it was
+launched for). Anything else is answered `wrong_process` (a request) or dropped, changes
+nothing, and a refused `helloAgent`, `helloChildren` or `helloBrowser` neither registers nor
+displaces the real holder. One seam, `SessionServer.extensionPeerCheck`, replaces the question in
+tests. The messages that name no agent (the automation requests) are not covered. A new
+extension message says whose voice it is (`speaksFor`); never serve one before that check, and
+never widen the rule for a process that is not an agent's pi without listing it in ARCHITECTURE.md.
+
 **Browser tools act only on their own thread's page** ([docs/browser.md](docs/browser.md)). No tool
-names an agent: `helloBrowser` binds the extension's connection to its agent, but only from the
-pid of the pi process the server spawned for that agent (`LOCAL_PEERPID`; a process the agent
-started, or anything else, registers nothing and cannot displace the real connection; `helloAgent`
-and `helloChildren` still take the connection's word), and `SessionServer.routeBrowserRequest`
+names an agent: `helloBrowser` binds the extension's connection to its agent (from the agent's own
+pi, by the rule above), and `SessionServer.routeBrowserRequest`
 serves a request only on the connection registered as the agent it names (a design's agent
 registers nothing). The page's parked window (`BrowserParkWindow`) can never be key or main and is
 not offered to Mission Control, the window lists or accessibility. Native subagents load no browser tools. The

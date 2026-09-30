@@ -42,12 +42,12 @@ struct BrowserAgentFlowTests {
     private struct FlowError: Error { let message: String; init(_ message: String) { self.message = message } }
 
     /// The tools are driven from this process, as the extension drives them from pi's: the server
-    /// binds a registration to the agent's own pi process, so this process is allowed explicitly
+    /// binds a connection to the agent's own pi process, so this process is allowed explicitly
     /// (`BrowserRelayTests` checks the real rule).
     private func harness() throws -> AppHarness {
         let app = try AppHarness()
         let own = getpid()
-        app.server.browserPeerCheck = { _, peer in peer == own }
+        app.server.extensionPeerCheck = { _, peer in peer == own }
         return app
     }
 
