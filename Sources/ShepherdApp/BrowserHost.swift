@@ -31,19 +31,31 @@ enum BrowserDataStores: Sendable {
                            bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]))
     }
 
+    /// `WKWebsiteDataStore(forIdentifier:)` crashed CI's macOS 26 test process (SIGSEGV), and
+    /// nobody has confirmed it's safe there in the app either, so `.persistent` falls back to a
+    /// non-persistent store per thread on macOS 26 and keeps identified, on-disk stores from
+    /// macOS 27. A pure function of the version so it can be unit-tested without the OS.
+    static func usesIdentifiedStores(osVersion: OperatingSystemVersion) -> Bool {
+        osVersion.majorVersion >= 27
+    }
+
     @MainActor
     func store(for agent: AgentID) -> WKWebsiteDataStore {
         switch self {
-        case .persistent: WKWebsiteDataStore(forIdentifier: Self.identifier(for: agent))
+        case .persistent:
+            Self.usesIdentifiedStores(osVersion: ProcessInfo.processInfo.operatingSystemVersion)
+                ? WKWebsiteDataStore(forIdentifier: Self.identifier(for: agent))
+                : .nonPersistent()
         case .ephemeral: .nonPersistent()
         }
     }
 
-    /// Removes `agent`'s store from disk (nothing for ephemeral stores). WebKit refuses while a
-    /// web view it made is still going away, so a refusal tries again a few times.
+    /// Removes `agent`'s store from disk (nothing for ephemeral stores, or for `.persistent` on
+    /// macOS 26, where it never touched disk). WebKit refuses while a web view it made is still
+    /// going away, so a refusal tries again a few times.
     @MainActor
     func remove(for agent: AgentID) {
-        guard self == .persistent else { return }
+        guard self == .persistent, Self.usesIdentifiedStores(osVersion: ProcessInfo.processInfo.operatingSystemVersion) else { return }
         Self.remove(Self.identifier(for: agent), tries: 10)
     }
 
