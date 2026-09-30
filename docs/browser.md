@@ -302,12 +302,130 @@ header's side-pane button shows "Agent opened a page in Browser".
 
 ## Remote
 
-An agent hosted on another Mac works: its extension talks to that Mac's server, whose app drives the
-page on its own screen, and the tools answer as they do locally. A viewer on another Mac **cannot
-see that page or take it over yet** (the Browser tab stays Mac-local, and a remote thread's pane has
-Changes alone) until the tunnel of the next change forwards ports. The Browser tools switch is
-changeable from a remote client. On the host, the user sees the ring and card, can take over, and
-hands back with a message to the thread from any client.
+A thread hosted on another Mac has a Browser tab too, when its host lists `browser.tunnel.v1` (an
+older host: no tab, as before). **The page renders in this Mac's own web view**, in a website data
+store of its own keyed on the host and the agent, and its URL stays `localhost:5173/checkout`. Its
+traffic to `localhost:<port>` is carried to `127.0.0.1:<port>` on the thread's host over the
+authenticated remote connection: **a forwarded port on this Mac, bridged to a tunnel.** The picker,
+the console drawer, the viewport, Add to message and the composer chip work on that page as they do
+on a local one, and ⌃2, ⌘L and ⇧⌘C are the same.
+
+### The two pages, until the next change
+
+**The agent's page and the viewer's page are different pages.** An agent on a remote host still
+drives the host's own page (its tools talk to the host's server, whose app owns that page on its own
+screen), and a viewer on another Mac cannot see it or take it over yet. The viewer's tab is a second
+page of the same thread, in a store of its own, that reaches the same dev server. So the empty
+state's "The agent opens pages here when it starts a dev server" is only half true on a remote
+thread: **a page the agent opens does not appear in this tab**, and neither does the dot or the tip
+"Agent opened …" (like a review the agent opens on a host, which is that host's view state; a viewer
+opens its own with ⇧⌘B). "Ports on remote hosts are forwarded for you" is true: open the same address
+here and the page is the host's dev server. Agents driving a remote thread's page from the viewer's
+Mac is a later change, and takes the dot and the tip with it.
+
+### The spike: how a page on this Mac reaches a port on the host
+
+The page must keep a `localhost:5173` URL, so something on this Mac has to answer on `localhost:5173`
+and hand its bytes to the host. Two ways were measured (macOS 27.0, a real `WKWebView` in a scratch
+process against a Node server on `127.0.0.1` and `::1`, its page fetching a subresource and opening a
+WebSocket, every request logged by a CONNECT proxy on this Mac):
+
+- **(a) `WKWebsiteDataStore.proxyConfigurations` with an HTTP CONNECT proxy** (`ProxyConfiguration(
+  httpCONNECTProxy:)`), a proxy per thread's data store. **It does not work for the case that
+  matters.** `localhost`, `127.0.0.1`, `[::1]` and `localhost.` **are never sent to the proxy**: 0
+  connections reached it, in a non-persistent store and in an identified one
+  (`WKWebsiteDataStore(forIdentifier:)`), whatever the configuration said (`matchDomains` set to the
+  loopback names, `excludedDomains` emptied, `allowFailover` off, a SOCKS5 proxy instead of CONNECT).
+  The loopback is exempt from every proxy. A name that is *not* the loopback (`foo.localhost`)
+  went through it, both plain requests and the WebSocket; but a page at `foo.localhost:5173` is a
+  different origin, whose `Host` and CORS a dev server sees, and a page's own `localhost:3001` API
+  calls would go straight to this Mac's loopback anyway. Not the same page, so not an option.
+- **(b) A listener on this Mac's loopback at the same port number**, URL unchanged. It is what a page
+  at `localhost:5173` reaches, and it works for HTTP, subresources and WebSockets alike, because it
+  bridges raw bytes and parses nothing. **This is the mechanism.**
+
+Not measured: macOS 26 (nothing in this environment runs it); the data-store rules there are the
+same (`BrowserDataStores`: an in-memory store per thread), and (b) does not depend on the data store
+at all, but (a)'s result is only established on 27.
+
+### What (b) costs, said plainly
+
+- **A port has one owner.** `localhost:5173` on this Mac can be one thing. `BrowserPortForwarder`
+  refuses a claim with the reason, and the page **does not load** (or it would show this Mac's own
+  server as the host's), when: another program on this Mac already listens on it (found by
+  connecting to both loopback addresses first, so an IPv6-only Vite and a wildcard listener count);
+  another thread's page holds it ("already forwarded from build-02"); or it is below 1024. The pane
+  says so under the toolbar (`NWBrowserNotice`, until dismissed or the next load).
+  Conversely, while a page holds 5173, a server the user starts on this Mac's 5173 cannot bind it.
+- **The listener is this Mac's loopback port**, so any program or page on this Mac reaches the
+  host's port through it while it is held, as with `ssh -L`. It reaches only that host, only for that
+  thread, only through the authenticated connection: a port never forwards anywhere else, and a
+  page's navigation to a port another owner holds is refused before it goes. Each thread's cookies,
+  storage and cache stay in its own data store (`RemoteBrowserTests.twoRemotePagesShareNoCookies`).
+  **What it cannot do** is tell which page made a connection: a page of another thread that
+  requests a held port itself from script (a hard-coded `localhost:5173`) reaches the holder's host,
+  as any program here would, because on one shared loopback a port can be one thing.
+- **Only ports a page named are held**: the port of a URL it was opened on, of a link it followed to
+  another loopback port (forwarded, or refused, before it navigates), and of a dev server Start ran. A
+  page that calls another `localhost` port from script (an API on `:3001`) gets nothing there, since
+  nothing tells this Mac about it: open that address once here to forward it.
+- **A held port stays held** until the thread or its host goes away (or the app quits): closing the
+  page does not release it yet.
+- A connection made to a held port while the connection to the host is down, or over the tunnel cap,
+  is reset at once: the page shows an ordinary load error, and works again when the host is back.
+
+### The tunnel
+
+`RemoteRequest.tunnel(BrowserTunnelFrame)` and `RemoteReply.tunnel` (`BrowserTunnel.swift`) carry
+`open(tunnel, agentID, port)`, `opened`, `data`, `credit`, `finish` (a half close), `close(tunnel,
+code)` and `keepalive`, multiplexed by a number the client picks, on the one NDJSON connection. Nothing
+is answered by id, so a slow connect never times out the connection.
+
+- **Loopback only, and why.** The host connects to `127.0.0.1` and, if nothing answers, `::1` on the
+  port named, never another address, so a client (or a page in its web view) cannot use a host as a
+  proxy to its LAN, a metadata service or the internet. (A Vite bound to `localhost` often listens on
+  `::1` alone.) It is opened only for an agent that exists on the host and that this client is shown (a
+  design's agent only to a client that sees designs), and only for a client that listed the capability
+  in its `hello`.
+- **Flow control, per tunnel and per direction.** A sender may have sent at most 256 KiB the other end
+  has not yet said it took (`credit`), and "took" means written to the socket it feeds, so a page or a
+  dev server that stops reading holds its sender at zero credit and nothing piles up on the way. A
+  peer that sends past its credit, or a frame over 48 KiB, breaks the protocol and loses the tunnel.
+  Data frames carry at most 48 KiB, about 64 KiB of base64: a tunnel never makes another request on the
+  connection wait behind a megabyte.
+- **The connection is protected too.** The server closes a client whose write queue passes 2 MiB, so a
+  host stops reading its targets while 1 MiB waits there and starts again below 256 KiB (a client stops
+  reading local sockets the same way against its own write queue). Forty tunnels of a firehose to a
+  client that reads nothing hold at the queue's cap and the connection lives
+  (`aClientThatReadsNothingIsNotDroppedForItsTunnels`).
+- **Caps and time.** 64 tunnels per client and 256 per host (`too_many`); a tunnel that carries no
+  bytes and no keepalive for 5 minutes is closed by the host (`idle`); one that cannot reach its port in
+  10 s is closed (`timeout`); and every tunnel of a connection ends with it. **The viewer sends a
+  keepalive every 60 s for a tunnel whose local socket is still sending** (one it has finished with,
+  which a target that never closes would otherwise hold up, is left to the idle rule), because a page's idle
+  WebSocket (Vite's hot reload) is silent for hours, and a host that closed it would make Vite's
+  client reload the page every five minutes. The idle rule therefore reaps a tunnel nobody speaks for,
+  not a page holding a socket.
+- **Off the server queue.** Every socket is nonblocking on the server's queue, like the others:
+  connects finish on a write source, reads and writes are paced by credit, and nothing waits.
+- **Reconnects.** A dropped connection ends every tunnel of it and resets the pages' connections
+  (`RemoteHostClient.tunnels.connectionLost`); the next connection to a forwarded port opens a new
+  tunnel on the new connection.
+- **The host lists `browser.tunnel.v1` only while it can serve it** (`setBrowserTunnelsServed`, on by
+  default; when it goes off the connected clients that read capability changes are told, and every open
+  tunnel is closed). The same capability covers `RemoteAgentQuery.devServers` (the thread's folder on the
+  host, read off the server's queue) and `RemoteAgentAction.openTerminal`, which Start uses to run the
+  script in a new terminal pane on the host; the host runs it only in the thread's folder or one inside
+  it (`startCommandForRemote`), by the rules of an agent's `pane_open`.
+
+### What the iPad reuses
+
+`BrowserTunnelFrame` and the flow arithmetic (`BrowserTunnelCredit`, `BrowserTunnelReceipt`,
+`BrowserTunnelChunks`, `BrowserTunnelTarget`) are in ShepherdProtocol; `TunnelEndpoint`,
+`BrowserTunnelHub` (`RemoteHostClient.tunnels`), `BrowserPortForwarder` and its `BrowserTunnelHubSlot`
+are in ShepherdRemote, which iOS builds. Only the page (`BrowserSession`, `BrowserRemote`, the pane)
+is Mac. The iPad needs a web view, a `BrowserPortForwarder` claim per page URL as
+`BrowserRemote.forward` does, and a slot filled from `MobileHost.connectedClient?.tunnels`.
 
 ## Tests
 
@@ -326,3 +444,20 @@ hands back with a message to the thread from any client.
 - `BrowserAgentRulesTests`, `BrowserRequestTests`, `BrowserActivityTests`,
   `BrowserAgentComponentTests`, `ExtensionMessageTests`: the pure rules and the wire.
 - `Tests/Extensions/browser.test.mjs`: the extension's tools, framing and failures.
+- The remote Browser: `BrowserTunnelTests` (ShepherdProtocolUnitTests: the frames, the credit and
+  receipt arithmetic, chunking, which URLs a tunnel serves, the dev-server wire),
+  `BrowserTunnelHubTests` (ShepherdRemoteUnitTests: the hub over a fake connection),
+  `BrowserTunnelDataTests` (ShepherdSessionsIntegrationTests: a real host, client and hub against a
+  local server on an ephemeral port, standing in for the dev server: a GET, a POST of several
+  megabytes, a large response, a WebSocket, forty concurrent tunnels, an IPv6-only server, a half
+  close, a viewer that stops reading, a client that reads nothing, a dropped connection, probes),
+  `BrowserTunnelHostTests` (refusals: a port nothing listens on, a server on the host's LAN address, an
+  unknown agent, a design's agent, a port out of range, an id in use, bytes past the credit; the
+  caps, the idle rule and its keepalive; cleanup on a dropped connection; an older host, an older
+  client, the switch; the dev-server query and Start), `BrowserPortForwarderTests` (claims, conflicts
+  with an IPv4, IPv6 and wildcard listener, one owner, release, reclaim after use, no connection),
+  and `RemoteBrowserTests` (ShepherdAppIntegrationTests: a real off-screen web view on a remote thread's
+  session loads a page and fetches its subresource through the tunnel, two threads' pages share no
+  cookie, a port in use is refused and nothing loads, Start waits for the port, the tab appears only on
+  a host that lists the capability, and the page, its ports and its data store go with the thread or
+  its host). Previews: `browserRemoteEmpty`, `browserRemotePage`, `browserRemoteWaitingAndRefused`.

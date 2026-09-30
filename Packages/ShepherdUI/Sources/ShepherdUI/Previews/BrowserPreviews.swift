@@ -26,6 +26,31 @@ private struct AddressPreview: View {
     }
 }
 
+#Preview("Browser — a remote host") {
+    NWPreviewBoth {
+        VStack(spacing: NW.Space.l) {
+            NWBrowserToolbar(state: NWBrowserToolbarState(canGoBack: true, canReload: true, canOpenExternally: true), actions: .init()) {
+                RemoteAddressPreview(host: "localhost:5173", path: "/checkout")
+            }
+            NWBrowserNotice(message: "Port 5173 is in use on this Mac, so build-01’s 5173 can’t be forwarded. Stop what is using it and try again.",
+                            dismiss: {})
+                .padding(.horizontal, NW.Space.l)
+        }
+        .frame(width: 600)
+    }
+}
+
+private struct RemoteAddressPreview: View {
+    let host: String?
+    let path: String?
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        NWBrowserAddressField(host: host, path: path, hostChip: "build-01", text: $text, isFocused: $focused, submit: {})
+    }
+}
+
 #Preview("Browser — nothing open") {
     NWPreviewBoth {
         NWBrowserEmpty(message: "Start a dev server from this repository, or open a URL. Pages you open stay with this thread.",

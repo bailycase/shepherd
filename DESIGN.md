@@ -148,6 +148,7 @@ And the rules that follow from them:
 | ImportFileMenu: File ▸ New Design ⇧⌘D, New Mission ⇧⌘M, Import Claude Design Project… ⇧⌘I, Export… ⌘E | Only Import Claude Design Project… (⇧⌘I, rebindable) | ⇧⌘D splits a pane and ⇧⌘M opens the model picker; Missions are deferred; a design's Export is its header's |
 | NWProjectMenu: a drawn popover with glyphs, in sentence case ("Copy path", "Collapse all", "Hide from sidebar") | A native menu (the project's context menu, and ··· on hover) in title case: New Thread in <project>, Reveal in Finder, Open in Terminal, Copy Path, Collapse All, Hide from Sidebar | Every menu in the app is native and title-cased (the thread rows' menus) |
 | SidebarProjectsHosts: nothing on the host sections' headers | Hidden projects come back from the + beside Projects, which only the ungrouped tree has (and File ▸ New Space… adds one either way) | The board draws no + on a host section |
+| Sidebar (Main, Running, NavNewThread, NavAutomations, NavHosts, NWNavigation): Needs you, then Recents, no way to keep a thread at the top | A **Pinned** section between them in the Activity sidebar (Sidebar › Pinned), its Pin and Unpin in the row menu, Thread options and ⌘K, no chord, no drag to reorder, nothing on the iPhone or iPad or in the project tree. The canvas gains SidebarPinned (the sidebar with Needs you, Pinned and Recents, and the three menus) | The user's request (2026-09-30): "pin threads at the top in a different labeled list". No board drew it, so every choice under Sidebar › Pinned is the agent's proposal for the user to settle, and the board is added to the canvas with the section |
 | NWAgents, NWSwift: `NWInboxItem`, mission control's inbox item with a leading rule in the state's color | Not built. The Mac has no inbox: its Needs you is the sidebar's list (Sidebar); iPhone and iPad list Needs you as `NWAttentionCard`s (MobileInbox, iPadInbox), with no leading rule and no missions | Out of scope for this pass |
 | Controls: `.nwHelp` draws a 24pt popover-styled tip after 600ms of hover, the chord as keycaps | The system tooltip, with the chord appended as text ("Review changes  ⇧⌘B") | As every other tooltip in the app (see the Queue & steer row) |
 | Controls: `.pickerStyle(.nwSegmented)`, `.pickerStyle(.nwPopup)`, `Stepper(…).nwStyle()`, `Slider(…).tint(.nw.lantern)` | Views: `NWSegmentedPicker`, `NWPopupMenu` (a native `Menu` with an `NWPopupLabel`), `NWStepper`, `NWValueSlider` (its value in mono beside it) | SwiftUI has no public custom picker, stepper, or slider style; each represents itself to accessibility as the native control |
@@ -177,9 +178,12 @@ And the rules that follow from them:
 | Subagents, MobileSubagent: the transcript's live call "Building swift build --target ShepherdRemote 11s" with the output's tail | The live line with its verb, command and clock ("Building swift build --target ShepherdRemote 11s"), with no output lines | A run's session file holds only finished calls, and the run reports its call in flight but not its output |
 | PaneStates widths: the thread keeps 520pt, 760pt default for Files, ⇧⌘O pops the pane into a window | 380pt minimum and 600 default as drawn, at most half the column, and the layout keeps 400 (double-clicking the divider takes it to half); no pop-out | The Navigation board's 400pt thread (`RightPaneSplit`); Files is not built; one window (Window and adaptive layout) |
 | PaneStates' ⋯ menu (`SidePaneOptions`): Split below, Open pane in its own window ⇧⌘O, Reset width, then Show tabs with a check per tab | Changes' own items (Maximize Pane, Expand All Files, Collapse All Files, Copy Review as Text), then Reset Width | With Changes the only tab, a split has nothing to show below it, Show tabs nothing to hide, and a window of its own would break the one-window rule and host the review a second time: none is offered until it works (never a dead item) |
-| PaneStates, the Changes boards, PaneBrowser, PaneArtifacts, PaneFiles: four tabs, Changes, Browser, Artifacts and Files | Changes and Browser (a remote thread: Changes alone) | Only what Shepherd has (the user's decision, 2026-09-25: "dont show browser, artifacts, files, etc, only show the things we have"); the others join when they are built, and a remote thread's Browser when the tunnel reaches its host |
-| PaneStates, PaneBrowser: the host chip "build-01" for a remote host | "This Mac" | Local threads only; a remote thread's Browser waits for the tunnel |
-| PaneStates › viewport: Throttle to 3G under Dark appearance | Left out | WebKit has no public throttle; it will come through the tunnel's local proxy (the user's decision, 2026-09-29) |
+| PaneStates, the Changes boards, PaneBrowser, PaneArtifacts, PaneFiles: four tabs, Changes, Browser, Artifacts and Files | Changes and Browser (a remote thread: Changes, and the Browser where its host carries tunnels) | Only what Shepherd has (the user's decision, 2026-09-25: "dont show browser, artifacts, files, etc, only show the things we have"); the others join when they are built |
+| PaneStates, PaneBrowser: the host chip "build-01" beside a `localhost:5173/checkout` page | The host's name for a remote thread's page while it is on the host's loopback (`localhost`, `127.0.0.1`, `[::1]`, or nothing open); "This Mac" for a local thread and for a remote thread's page on the web | The chip names the machine a page's traffic goes to |
+| PaneStates › BrowserPane · nothing open: "The agent opens pages here when it starts a dev server" | The same words on a remote thread, where a page the agent opens is on the host's screen, not in this tab | The user's board words; the viewer's tab is its own page until agents drive a remote thread's page from the viewer's Mac, a later change (docs/browser.md › Remote) |
+| PaneStates › SidePaneTabs · the agent opened a tab: the dot and its tip | None on a remote thread | The page pi opened is the host's, which this tab does not show; a review pi opens on a host is likewise the host's view state |
+| PaneBrowser: nothing draws a page that cannot load | A notice card under the toolbar (`NWBrowserNotice`) when a forwarded port is in use on this Mac or held by another thread's page; nothing loads | A `localhost` page that reached the wrong machine's server would be worse than none; the words are the app's |
+| PaneStates › viewport: Throttle to 3G under Dark appearance | Left out | WebKit has no public throttle, and the tunnel turned out to be a loopback listener, not the local proxy the user's decision (2026-09-29) waited for (WebKit sends loopback past every proxy: docs/browser.md › The spike); a listener could pace a remote thread's page but not a local one, still to decide |
 | PaneBrowser: the element's popover drawn in the page beside it | A native popover over the page, beside the element (else left of it, else under it), following it as the page scrolls; only the outline and tag are drawn in the page | Its buttons are Shepherd's controls, and the page can't reach or restyle them |
 | PaneBrowser: Hide console (the board draws no hidden state) | The bar stays, with Show console (a chevron up) | The console must be reachable again from where it was |
 | PaneStates › BrowserPane · the agent is using it: the card's leading glyph in `textSecondary`; the card says "Agent is clicking through checkout" for a click | The glyph in `running`, as DESIGN.md's card has always read (the user's decision, 2026-09-30); the card shows for every browser tool, with a phrase derived from the action when the agent gave no note | The board draws one click; a read or a screenshot is the agent using the page too, and Take over is how the user stops it |
@@ -728,7 +732,7 @@ against a large fixture (300 agents in 40 spaces, 1,000 palette results, a 2,000
 300-file review, and a highlighted 40-file review beside a thread, a 500-turn thread, 200 subagent
 runs, 2,000 folders).
 
-- **Anything that can outgrow a screen is lazy.** The sidebar's Needs you and Recents, the palette's
+- **Anything that can outgrow a screen is lazy.** The sidebar's Needs you, Pinned and Recents, the palette's
   results, the thread and the inspector's transcript, the review's diff and file strip, an open
   subagent tray, and the directory and model lists are `LazyVStack`s or `LazyHStack`s with stable
   ids. Eager stacks
@@ -922,9 +926,10 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
 `Components/Navigation/Sidebar.swift`): the sidebar every Mac board draws (NWNavigation, and the
 sidebars of Main, Running, NavNewThread, NavAutomations and NavHosts). 232pt on `bgBase` by
 default, and it keeps its width when the side pane opens. Top to bottom: the top bar, the
-destinations, Needs you, Recents, and the footer. Settings ▸ Appearance ▸ Organize by (or View ▸
-Organize Sidebar By) swaps Needs you and Recents for a project tree (Organized by project, below);
-Activity is the default. Each part follows Settings ▸ Appearance ▸ Sidebar
+destinations, Needs you, Pinned (only while something is pinned), Recents, and the footer.
+Settings ▸ Appearance ▸ Organize by (or View ▸ Organize Sidebar By) swaps Needs you, Pinned and
+Recents for a project tree (Organized by project, below; it draws no pins); Activity is the
+default. Each part follows Settings ▸ Appearance ▸ Sidebar
 rows: Standard values are given first and Compact in parentheses; the boards draw no Comfortable
 sample, so it takes Standard's spacing at its 36pt rows.
 
@@ -975,13 +980,48 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
 - **Not signed in:** an agent on this Mac whose pi can't start because it isn't signed in
   (Thread › Not signed in) is in Needs you too, with the glowing lantern dot and "sign in" as its
   reason (`NWSidebarRow(agent) · .notSignedIn`), until it starts again.
-- **Recents** (`NWSidebarSection(.recents)`): every other agent, on this Mac and every connected
-  host, automation runs included, in one list, most recently active first. The header is "Recents"
+- **Pinned** (`NWSidebarSection(.pinned)`; SidebarPinned, which the canvas gains with this
+  section: no board drew it, see the departures): the threads the user pinned, between Needs you
+  and Recents, in the order they were pinned (oldest pin first). There is no Pinned section while
+  nothing is pinned, and its header is the others' own: "Pinned" in Geist 11.5 medium
+  `textTertiary`, spaced like Recents, with no count. Its rows are Recents' rows, for a thread on
+  this Mac or on a connected host alike (state dot, host tag, elapsed time and the rest, the
+  selected row in `bgSelected`); a pinned row wears no glyph of its own, since the header says it,
+  and VoiceOver adds ", pinned" to its label. The user's decisions for it, 2026-09-30 (the request
+  was "pin threads at the top in a different labeled list", and no board drew one):
+  - **One place each:** a thread shows once. A pinned thread that waits on you is in Needs you
+    (attention wins, and its menu still says Unpin) and returns to its place in Pinned once it is
+    answered; Recents never repeats a pinned thread. A pinned thread on a host that dropped stays
+    in Pinned as the host last sent it, dimmed and without Needs you, as in Recents; one on a host
+    not reached since launch is absent until it connects.
+  - **What is pinned:** threads on This Mac and on connected hosts. An automation's run is not
+    (the next run replaces its agent), and a design is not (it lists under Designs).
+  - **How:** Pin and Unpin in the row's context menu, the thread options menu and ⌘K (below).
+    They have no chord. There is no drag to reorder: the rows keep the order they were pinned in,
+    and unpinning then pinning a thread again moves it last (a drag would need machinery of its
+    own, as the project tree's does).
+  - **Kept** per Mac, as view state beside the project tree's closed projects
+    (`shepherd.sidebar.pinned` in the app's preferences, by a thread's host and agent id, so a
+    pinned remote thread works): not in state.json, never sent to another device, and not reset by
+    Reset settings. The iPhone and iPad do not show pins, and the project tree keeps them without
+    drawing them (no Pinned section, and no Pin in its menus). A pin goes when its thread is
+    deleted or its host is removed, never before the workspace has loaded or for a host that
+    hasn't connected this launch.
+  - **Launch and Continue** read the most recently active thread, pinned or not: a launch shows
+    the thread that needs you, else the one most recently active (as before), and the New thread
+    page's Continue card is the most recent running thread.
+  - **Performance:** the lists derive once per change (`SidebarDerivation.lists` takes the pins
+    with the source); a pin change redraws only the rows that move and the headers that appear or
+    go, and a status report on a pinned thread only its row (`ListPerformanceTests`).
+- **Recents** (`NWSidebarSection(.recents)`): every other agent (one not pinned, or waiting on
+  you), on this Mac and every connected host, automation runs included, in one list, most
+  recently active first. The header is "Recents"
   in Geist 11.5 medium `textTertiary`, spaced like Needs you, and the rows are the same. The leading
   slot is the thread's state dot (running blue, done green, failed red for a turn that ended in an
   error, hollow while idle) or an automation run's `bolt` in `textTertiary`. The selected row is
   `bgSelected` with its title in semibold. The trailing slot holds, in priority order:
-  1. the ⌘-digit hint on the first nine rows while ⌘ is held ("⌘3", micro `textTertiary`)
+  1. the ⌘-digit hint on the first nine rows of Pinned and Recents while ⌘ is held ("⌘3", micro
+     `textTertiary`)
   2. a remote agent's host as a tag: mono 10 `textTertiary`, padded 4pt at the sides, in a 1pt
      `lineSubtle` border at radius 4 ("horizon"). Threads on this Mac carry no tag.
   3. "waiting" in mono 10 `textTertiary`, with a `clock` glyph in `textSecondary` in the leading
@@ -1006,8 +1046,8 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   and `waitingReason` are live state on `Agent`, broadcast to remote clients like a status;
   `waitingOn` and `waitingReason` are never written to state.json. At launch the most recently
   active agent on this Mac shows.
-- **Hosts:** a connected host's agents join both lists, tagged. A host that drops keeps its threads
-  in Recents as it last sent them (NavHosts' `horizon` rows), dimmed (`NWListMetrics.dimmedOpacity`,
+- **Hosts:** a connected host's agents join the lists (Needs you, Pinned and Recents), tagged. A
+  host that drops keeps its threads in Recents (or Pinned) as it last sent them (NavHosts' `horizon` rows), dimmed (`NWListMetrics.dimmedOpacity`,
   as on the iPad), never in Needs you since nothing there can be answered, and with a menu that
   says "Host Offline"; opening one shows the host's connection state. A host not reached since
   launch lists nothing. More ▸ Hosts says how many are offline, and the Hosts page carries their
@@ -1026,11 +1066,14 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   below 720 and keeps its width while the side pane is open.
 - **Interaction:** list rows are tap views with button traits and accessibility actions, and
   destinations are buttons. Hovering never moves or resizes anything. ⌘1–9 select the first nine
-  Recents rows, ⌘↑/↓ walk Needs you then Recents and wrap, and keyboard selection scrolls the row
+  rows of Pinned and then Recents in the order they are drawn (Needs you takes no digit, so
+  Pinned's rows take ⌘1 and on; a pinned thread that waits on you is in Needs you and has none),
+  ⌘↑/↓ walk Needs you, Pinned, then Recents and wrap, and keyboard selection scrolls the row
   into view. Picking a row leaves a page for that thread.
 - **Context menus** keep every action an agent had:
   - This Mac's threads (NWComposer's agent menu, with today's items between its separators):
-    Rename… with its keys (⌘R), Fork from Here (`arrow.branch`) and Copy Transcript
+    Rename… with its keys (⌘R), Pin or Unpin (`pin`, `pin.slash`, named for what it does now),
+    Fork from Here (`arrow.branch`) and Copy Transcript
     (`doc.on.doc`); Review Changes and Open in Finder; then Finalize Worktree… and Delete
     Worktree Agent… for a worktree agent, or Delete Agent. Fork from Here copies the agent's pi
     session, as it stands, into a new session and starts "<name> (fork)" beside it in the same
@@ -1043,8 +1086,12 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   - This Mac's automation runs: Stop while the run is live (a run whose pi is still starting
     included; `AutomationRun.isLive`), else Run Now, then Delete Automation. Run Now replaces a done
     run once the new run exists; a refused Run Now shows `ActionErrorDialog`.
-  - Remote threads: Rename…, Finalize Worktree… (worktree agents), Review Uncommitted Changes,
-    Review PR Changes, and Delete Agent or Delete Worktree Agent…, while the host is connected.
+  - Remote threads: Rename…, Pin or Unpin, Finalize Worktree… (worktree agents), Review
+    Uncommitted Changes, Review PR Changes, and Delete Agent or Delete Worktree Agent…, while the
+    host is connected. A pin is this Mac's own, so while the host is offline the menu keeps Pin or
+    Unpin above Host Offline.
+  - Pin and Unpin are offered on a thread's row in Needs you, Pinned and Recents (Activity only),
+    never on an automation's run, a design, or a row of the project tree.
 - **Motion:** rows arriving, leaving and moving up animate `.list` (keyed on the rows' ids, never
   the rows), and More's rows disclose (`.disclosure`). Selecting a row changes no row's place, so
   it lands at once. A status report or a settled name changes only its row, in place (`.content`),
@@ -1158,7 +1205,9 @@ SidebarTree, SidebarProjects and SidebarProjectsHosts. Mac only: the iPad and iP
     see the departures). While pi has opened something the tab strip can't show (the pane is
     closed, or a subagent is inspected over it), it takes an 8pt `running` dot at its top
     trailing corner, ringed 2pt in `bgWindow` (`NWToggleBadge`), and its tip (Side pane).
-  - the options menu (`NWOptionsMenu`, "Thread options"): Refresh Thread, then Rename… after a divider.
+  - the options menu (`NWOptionsMenu`, "Thread options"): Refresh Thread, then Rename… and Pin or
+    Unpin (`pin`, `pin.slash`; the sidebar row menu's item) after a divider. Pin is offered where
+    the Activity sidebar shows pins, never for an automation's run or in the project tree.
 - **Where the count comes from** (`Agent.checkout`, live state the host broadcasts, so a remote
   viewer's chip matches): the host reads each local agent's checkout with one `git
   --no-optional-locks status --porcelain=v2 --branch -z --untracked-files=all` off the main thread
@@ -2848,8 +2897,8 @@ One pane per window beside the agent's layout (`RightPaneSplit` around the whole
 sits at the workspace's trailing edge beside the thread and its terminal panel, at its full
 height, and the dock rule measures the main column, never the thread's own pane. Its sizes and
 adaptive rule are in "Window and adaptive layout" above. It shows only the tabs Shepherd has:
-**Changes**, the Changes pane, and **Browser** (Side pane: Browser, below) for a local thread; a
-remote thread's pane has Changes alone until the Browser reaches hosts. Artifacts and Files are
+**Changes**, the Changes pane, and **Browser** (Side pane: Browser, below) for a local thread and
+for a remote thread whose host carries Browser tunnels (an older host: Changes alone). Artifacts and Files are
 specified below and are not built, so they have no tab and no placeholder (the user's decision,
 2026-09-25: "dont show browser, artifacts, files, etc, only show the things we have"); each joins
 `SidePaneTab` when it is. A tray row, a record line, and the footer's "3 subagents" open the
@@ -2858,7 +2907,7 @@ inspector; the tray's Steer opens it with its Steer field focused.
 - **Showing and hiding:** ⇧⌘B, the header's side-pane button, or View › Show Side Pane / Hide Side
   Pane. Showing opens the pane on its tab (Changes starts the review); hiding also closes an
   inspected subagent, and discards the review like a cancel. ⌃1 (View › Changes) shows Changes in
-  front of an inspected subagent, and ⌃2 (View › Browser) the Browser (a remote thread beeps);
+  front of an inspected subagent, and ⌃2 (View › Browser) the Browser (a remote thread on a host without tunnels beeps);
   they are fixed, like ⌘1–9, and ⌃3–⌃4 wait for the other tabs.
   Review Changes (a sidebar row's menu), the palette's Review diff, the chip's Show Changes, a
   thread's "review ›" link and the inspector's file links show Changes too.
@@ -3165,9 +3214,9 @@ review.
 **Browser** (PaneBrowser, PaneStates › Browser; `BrowserPane.swift`, the page in
 `BrowserHost.swift` (the only app file that imports WebKit), its rules in `BrowserModel.swift`, the
 page's scripts in `BrowserScripts.swift`; parts in ShepherdUI `Components/Browser/Browser.swift`):
-a local thread's own web page, beside it. The Browser tab (`globe`, ⌃2) follows Changes. Remote
-threads have no Browser tab yet: it will reach a thread's host through Shepherd's tunnel, which
-forwards the port (not built yet).
+a thread's own web page, beside it. The Browser tab (`globe`, ⌃2) follows Changes. A remote thread
+has it too, when its host carries Browser tunnels (Remote threads, below); an older host shows
+Changes alone.
 
 - **One page per thread:** a WebKit view made the first time the thread opens something, in a
   website data store of its own keyed on the agent, so it shares cookies, storage and caches with
@@ -3177,7 +3226,8 @@ forwards the port (not built yet).
   store per thread instead, so cookies don't survive a relaunch there (`BrowserHost.swift`). The
   view belongs to the thread, not the pane: hiding the pane, another tab, another thread on screen
   or a parked layout only take it out of
-  the window (the visibility-flip rule), so the page never reloads.
+  the window (the visibility-flip rule), so the page never reloads. A remote thread's page is made
+  here too, in a store keyed on its host and agent, so it is never a local thread's.
 - **Toolbar** (`NWBrowserToolbar`), 44pt, 8pt side padding, a hairline beneath: Back, Forward and
   Reload (28pt `nwIcon`; one that can't act is at 40%; Reload is Stop loading, an ×, while the page
   loads), 6pt, the address field, 6pt, then Select an element, Viewport size and Open in your
@@ -3188,8 +3238,9 @@ forwards the port (not built yet).
   line: a 12pt `textTertiary` globe, the URL in Geist Mono 12 (the host with its port in
   `textPrimary`, the path, query and fragment in `textSecondary`; the scheme left out for http and
   https, a lone "/" left out), truncating, and a 20pt capsule host chip on `bgRaised` with a
-  `lineSubtle` line (a 10pt display glyph, "This Mac" in Geist 11 `textSecondary`). Empty, it
-  reads "Search or enter a URL" in `textTertiary`. ⌘L or a click edits the whole URL; ↩ opens, Esc
+  `lineSubtle` line (a 10pt display glyph, "This Mac" in Geist 11 `textSecondary`; a remote thread's
+  page at a `localhost`, `127.0.0.1` or `[::1]` address, or nothing open, says the host's name,
+  "build-01"). Empty, it reads "Search or enter a URL" in `textTertiary`. ⌘L or a click edits the whole URL; ↩ opens, Esc
   gives up. It takes a URL with a scheme; a host with a port or a path (loopback, a private IPv4
   address, `.local`, `.test` and `.localhost` names go over http, others over https); ":5173" for a
   port on this Mac; anything else is a search (Google).
@@ -3201,18 +3252,20 @@ forwards the port (not built yet).
   a card per dev server (`NWDevServerCard`: `bgRaised`, `lineSubtle`, radius 8, padding 10×12; a
   12pt terminal glyph, "pnpm dev" in Geist Mono 12 over "from package.json · acme-web" in Geist 11
   `textTertiary`, and "Start on This Mac", secondary `s` with a play glyph ("Start on build-01"
-  for a remote host, local threads only), and an "Open a URL" row the same way with the ⌘L
-  keycaps.
+  on a remote thread), and an "Open a URL" row the same way with the ⌘L keycaps.
   - **Dev servers** (`DevServerDiscovery`): the `dev`, `start`, `serve` and `preview` scripts, in
     that order, of the thread's folder's package.json and then each `apps/*/package.json` (at most
     six), read off the main thread. The command follows the lockfile beside it, else the
-    repository's: pnpm, yarn or bun (`bun run`), else npm (`npm run dev`, `npm start`).
+    repository's: pnpm, yarn or bun (`bun run`), else npm (`npm run dev`, `npm start`). A remote
+    thread's are read on its host, in the thread's folder there (`RemoteAgentQuery.devServers`).
   - **Start** runs the command in a new terminal pane of the thread's layout, the same path an
     agent's `pane_open` takes (`PaneControl`), so the terminal panel opens on it. When the script's
     port is known (its `--port`, `-p` or `PORT=`, else its tool's default: Vite 5173 and its
     preview 4173, Next, Nuxt, Remix and create-react-app 3000, Astro 4321, Angular 4200,
     Storybook 6006, webpack 8080, …), the page opens by itself once that port answers, tried every
-    half second for 90 seconds.
+    half second for 90 seconds. On a remote thread the command runs in a new terminal pane on the
+    host (`RemoteAgentAction.openTerminal`), in the folder the script was found in, and the port is
+    forwarded here and tried through the tunnel.
 - **Viewport** (`NWViewportMenu`, a 220pt popover 4pt under the toolbar, its trailing edge under
   the button): Fit the pane (the default), iPhone 16 · 393, iPad mini · 744, Laptop · 1280 (the
   check leading, widths trailing in Geist Mono 11 `textTertiary`), a divider, and Dark appearance
@@ -3278,9 +3331,21 @@ forwards the port (not built yet).
   and the page in Geist Mono 12 (`localhost:5173/checkout`, the host, port, path and query as the
   address field shows them), and its age in `textTertiary` ("10s", "2m", "1h", counting up). It
   moves left when the strip is too narrow for it.
-- **Not built yet:** remote threads and a host chip naming the host, Throttle to 3G (it waits for
-  the tunnel's local proxy, the user's decision, 2026-09-29), and Split below and the pane's own
-  window (below).
+- **Remote threads** (docs/browser.md › Remote): the tab shows when the host lists
+  `browser.tunnel.v1`. The page is a web view on this Mac whose URL stays `localhost:5173/checkout`;
+  its traffic to the host's loopback ports goes to the host through the authenticated connection
+  (WebKit sends loopback past every proxy, so this Mac listens on the port itself). Everything on
+  the local tab works as it does there: the picker, the console drawer, the viewport, Add to message
+  and the composer's chip, ⌃2, ⌘L and ⇧⌘C. A port on this Mac has one owner: a port another program
+  listens on, one below 1024 or one another thread's page holds is refused, nothing loads, and a
+  notice card (`NWBrowserNotice`: a 12pt `lanternText` glyph, the reason in `ui`, a close button;
+  `bgRaised`, radius 12, a `lantern` line, 12pt from the pane's sides) says why. A port a page names is
+  held until the thread or its host goes away. **The agent's page and this one are different pages**
+  until agents drive a remote thread's page from the viewer's Mac: nothing the agent opens on the host
+  shows here, and the dot and the tip stay off (a review pi opens on a host is likewise the host's view
+  state).
+- **Not built yet:** Throttle to 3G (see the departures), agents driving a remote thread's page from
+  the viewer's Mac, and Split below and the pane's own window (below).
 - **The agent is using it** (`NWAgentRing`, `NWAgentPointer`, `NWAgentCard`, `NWBrowserAgentOverlay`
   in ShepherdUI `Components/Browser/BrowserAgent.swift`; PaneStates › BrowserPane · the agent is
   using it; docs/browser.md): the agent drives the same page you see, through its `browser_*` tools
@@ -3652,7 +3717,9 @@ surface: every destination and command in it is also in the sidebar or the menus
     New space on <host>… ("remote", one per connected host), Hide or Show sidebar (⇧⌘S), Settings…
     (⌘,), and Check remote worktree operation (its host) while one is pending. **Not built yet:**
     New mission… (NWComposer; it waits for Missions).
-  - **This thread** (the agent on screen): Rename ("<title>", ⌘R), Choose model… ("<model>", ⇧⌘M),
+  - **This thread** (the agent on screen): Rename ("<title>", ⌘R), Pin thread or Unpin thread
+    (`pin`, `pin.slash`; named for what it does now, no chord; only for a thread the sidebar can pin:
+    not an automation's run, and not in the project tree), Choose model… ("<model>", ⇧⌘M),
     Toggle fast mode ("Switch this thread between Standard and Fast", a `bolt`; ComposerSpeed;
     listed only while the thread's model offers a service tier, and it switches the tier as the
     Speed menu would, with no menu), Review diff ("working tree · 4 files", the checkout's changed files as the branch chip counts
@@ -4131,6 +4198,12 @@ nothing here changes your pi."
   - Token, "Paste this into the other Mac's Token field. To revoke every client, delete the file and
     turn the listener off and on." (the board: "Delete the file to revoke every client."; see the
     departures): a `PathRow` for `remote-token` with Reveal.
+  - What a token opens, for the Browser: a connected client can ask this Mac to carry a connection
+    to one of its own **loopback** ports (`127.0.0.1` or `::1`, never another address) for a thread
+    it sees, so its page there reaches a dev server here (Side pane: Browser › Remote threads;
+    docs/browser.md › Remote). It adds no privilege beyond what a token already grants (a client can
+    type into this Mac's terminals), it is capped (64 tunnels per client, 256 in all) and closed when
+    idle, and every one ends when the client disconnects. There is no switch for it yet.
 
 #### Keyboard (SettingsKeyboard)
 
@@ -5217,7 +5290,7 @@ in UserDefaults under `shepherd.keybindings`).
 | ⌘N · ⇧⌘T · ⇧⌘N | New thread (the page) · new agent with options… · new space… |
 | ⌘R · ⇧⌘W | Rename agent · delete agent |
 | ⌘K | Command palette |
-| ⌘↓ · ⌘↑ | Next · previous agent in the sidebar (Needs you, then Recents; organized by project, the open projects' threads) |
+| ⌘↓ · ⌘↑ | Next · previous agent in the sidebar (Needs you, Pinned, then Recents; organized by project, the open projects' threads) |
 | ⌘D · ⇧⌘D · ⌘W | Split vertically · horizontally · close pane |
 | ⌥⌘→ · ⌥⌘← | Focus next · previous pane |
 | ⌘J · ⇧⌘↩ | Show or hide the terminal panel · maximize or restore it |
@@ -5231,8 +5304,9 @@ in UserDefaults under `shepherd.keybindings`).
 
 Fixed chords:
 
-- ⌘1–9 select the first nine Recents rows (organized by project, the first nine threads of the
-  open projects; hold ⌘ to see them). With the project tree focused, ← closes a project and →
+- ⌘1–9 select the first nine rows of Pinned, then Recents, in the order they are drawn (organized
+  by project, the first nine threads of the open projects; hold ⌘ to see them). Pin and Unpin
+  have no chord: they are in the row and thread menus and ⌘K. With the project tree focused, ← closes a project and →
   opens it; ⌥-click opens or closes every project. ⌃⇧1–9 jumped between the tree's
   machine sections and went with them: a focused terminal keeps them now.
 - ⌃1 shows the side pane's Changes tab (View › Changes) and ⌃2 its Browser (View › Browser); ⌃3–⌃4
@@ -9418,11 +9492,11 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | NavDesigns | Designs page; Design tool › Designs | Built (Mac, behind the Design tool experiment; systems as names only) |
 | NavAutomations | Automations page; Sidebar (no When, Next or tabs: departures) | Built |
 | NavHosts | Hosts page; Sidebar; Settings › Remote (no daemon, Load or disk use: departures) | Built |
-| PaneBrowser | Side pane: Browser | Partial (local threads: the page, toolbar, viewport, Select an element, composer chip, console, the agent using it and its thread lines; not remote threads or Throttle to 3G) |
+| PaneBrowser | Side pane: Browser | Partial (local threads: the page, toolbar, viewport, Select an element, composer chip, console, the agent using it and its thread lines; remote threads: the same page through the tunnel, its host chip and Start on the host, not the agent driving it; not Throttle to 3G) |
 | PaneArtifacts | Side pane (Artifacts) | Not built yet |
 | PaneArtifactEdit | Side pane (Artifacts › Editing in place) | Not built yet |
 | PaneFiles | Side pane (Files) | Not built yet |
-| PaneStates | Side pane (tabs, dot, narrow, ⋯, button); Side pane: Browser; Side pane: Artifacts, Files | Partial (Browser: nothing open, viewport, the agent using it and the tab's tip built) |
+| PaneStates | Side pane (tabs, dot, narrow, ⋯, button); Side pane: Browser; Side pane: Artifacts, Files | Partial (Browser: nothing open, viewport, the agent using it and the tab's tip built; a remote thread's Browser tab built without the dot) |
 | ContextDetails | Composer, questions, and menus › Context meter | Built |
 | ContextFull | Composer, questions, and menus › Context meter | Built |
 | ContextCompacted | Composer, questions, and menus › Context meter; Thread › Compactions | Built |

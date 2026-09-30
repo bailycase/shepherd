@@ -76,6 +76,8 @@ public final class RemoteHostClient: @unchecked Sendable {
     private var lineBuffer = LineBuffer()
     private var pendingWrites: [Data] = []
     private var pendingWriteOffset = 0
+    /// Bytes not yet written: what `pendingWrites` holds, less the offset into the first.
+    private var pendingWriteBytes = 0
     private var nextRequestID = 1
     private var pendingReplies: [Int: CheckedContinuation<RemoteReply, Error>] = [:]
     private var disconnectNotified = false
@@ -102,11 +104,21 @@ public final class RemoteHostClient: @unchecked Sendable {
     private static let requestTimeout: TimeInterval = 10
     private static let maxQueuedWriteBytes = 8 * 1024 * 1024
 
-    public init() { socketOpen = nil }
+    /// This connection's Browser tunnels (`RemoteProtocol.browserTunnelCapability`): opened on
+    /// demand for a viewer's web view, ended with the connection. Runs on this client's queue.
+    public let tunnels: BrowserTunnelHub
+
+    public init() {
+        socketOpen = nil
+        tunnels = BrowserTunnelHub(queue: queue)
+        tunnels.link = self
+    }
 
     // Allows the pending-open lifecycle to be checked without relying on DNS timing.
     init(socketOpen: @escaping @Sendable (String, UInt16) throws -> Int32) {
         self.socketOpen = socketOpen
+        tunnels = BrowserTunnelHub(queue: queue)
+        tunnels.link = self
     }
 
     deinit {
@@ -506,6 +518,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case .deleteKeepingWorktree, .worktreeInfo, .deleteWorktree, .finalizeWorktree, .worktreeStatus: RemoteProtocol.worktreeActionsCapability
         case .commitInfo, .commitMessage, .commit: RemoteProtocol.reviewCommitCapability
         case .terminals: RemoteProtocol.terminalActivityCapability
+        case .devServers: RemoteProtocol.browserTunnelCapability
         case .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch, .changesUndoTurn, .changesRedoTurn:
             RemoteProtocol.changesCapability
         default: RemoteProtocol.agentInspectionCapability
@@ -530,6 +543,29 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
         throw RemoteHostClientError.outcomeUnknown(message: "Unexpected agent inspection reply. Check operation status before retrying.")
     }
+
+    /// The dev servers the agent's folder on the host offers (`browserTunnelCapability`).
+    public func devServers(agentID: AgentID) async throws -> [DevServer] {
+        guard capabilities.contains(RemoteProtocol.browserTunnelCapability) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: Self.tunnelsRefusal)
+        }
+        guard case .devServers(let servers) = try await agentQuery(agentID: agentID, query: .devServers) else {
+            throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected devServers reply")
+        }
+        return servers
+    }
+
+    /// Runs `command` in a new terminal pane of the agent's layout on the host, in `cwd`
+    /// (`browserTunnelCapability`): the Browser's "Start on build-01".
+    public func openTerminal(agentID: AgentID, cwd: String, command: String) async throws {
+        guard capabilities.contains(RemoteProtocol.browserTunnelCapability) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: Self.tunnelsRefusal)
+        }
+        try await agentAction(agentID: agentID, action: .openTerminal(cwd: cwd, command: command))
+    }
+
+    /// Why a host without `browserTunnelCapability` has no Browser for a remote viewer.
+    public static let tunnelsRefusal = "Update Shepherd on the host to use its Browser from here."
 
     public func agentAction(agentID: AgentID, action: RemoteAgentAction) async throws {
         guard capabilities.contains(RemoteProtocol.agentActionsCapability), capabilities.contains(action.capability) else {
@@ -793,11 +829,12 @@ public final class RemoteHostClient: @unchecked Sendable {
             ShepherdLog.error("could not encode remote request: \(error)")
             return
         }
-        guard pendingWrites.reduce(0, { $0 + $1.count }) + payload.count <= Self.maxQueuedWriteBytes else {
+        guard pendingWriteBytes + payload.count <= Self.maxQueuedWriteBytes else {
             teardown(reason: "write queue overflow")
             return
         }
         pendingWrites.append(payload)
+        pendingWriteBytes += payload.count
         drainWrites()
     }
 
@@ -817,6 +854,7 @@ public final class RemoteHostClient: @unchecked Sendable {
             }
             if result > 0 {
                 pendingWriteOffset += result
+                pendingWriteBytes -= result
                 if pendingWriteOffset == payload.count {
                     pendingWrites.removeFirst()
                     pendingWriteOffset = 0
@@ -826,6 +864,8 @@ public final class RemoteHostClient: @unchecked Sendable {
             if result < 0, errno == EINTR { continue }
             if result < 0, errno == EAGAIN || errno == EWOULDBLOCK {
                 armWriter()
+                // Tunnel sockets held for this queue are read again once it is low.
+                if pendingWriteBytes <= BrowserTunnelLimits.resumeBacklogBytes { tunnels.backlogDidDrain() }
                 return
             }
             teardown(reason: "write failed: errno \(errno)")
@@ -833,6 +873,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
         writeSource?.cancel()
         writeSource = nil
+        tunnels.backlogDidDrain()
     }
 
     private func armWriter() {
@@ -913,6 +954,8 @@ public final class RemoteHostClient: @unchecked Sendable {
             push(.exited(sessionID, code))
         case .designChanged(let designID, let revision, let commentsRevision):
             push(.designChanged(designID, revision, commentsRevision))
+        case .tunnel(let frame):
+            tunnels.receive(frame)
         case .capabilitiesChanged(let list):
             capabilities = Set(list)
             push(.capabilities(Set(list)))
@@ -970,6 +1013,10 @@ public final class RemoteHostClient: @unchecked Sendable {
         fd = -1
         pendingWrites.removeAll()
         pendingWriteOffset = 0
+        pendingWriteBytes = 0
+        // Every tunnel of the connection ends with it: the pages see a reset, and the next
+        // connection to a forwarded port opens a new tunnel on the next connection.
+        tunnels.connectionLost()
         // Undelivered pushes die with the connection; the owner drops its
         // view state on disconnect and re-snapshots on reconnect.
         pendingEvents.removeAll()
@@ -987,4 +1034,16 @@ public final class RemoteHostClient: @unchecked Sendable {
     private func hopToMain(_ body: @escaping () -> Void) {
         DispatchQueue.main.async(execute: body)
     }
+}
+
+// MARK: - Browser tunnels
+
+extension RemoteHostClient: BrowserTunnelLink {
+    public func sendTunnel(_ frame: BrowserTunnelFrame) {
+        sendRequest(.tunnel(frame))
+    }
+
+    public var tunnelBacklogBytes: Int { pendingWriteBytes }
+
+    public var tunnelsAvailable: Bool { fd >= 0 && capabilities.contains(RemoteProtocol.browserTunnelCapability) }
 }

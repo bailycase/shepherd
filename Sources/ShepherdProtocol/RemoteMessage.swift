@@ -26,7 +26,9 @@ public enum RemoteProtocol {
     /// It also decodes every thinking level pi has (`thinkingLevelsCapability`); a host sends an
     /// older client's state and creation options with each level clamped to `ThinkingLevel.legacy`.
     /// And it reads a host's pushed design changes and capability changes (`designsCapability`).
-    public static let clientCapabilities = [nativeQueueCapability, thinkingLevelsCapability, designsCapability]
+    /// And it reads the tunnel frames a host pushes back (`browserTunnelCapability`), which a host
+    /// sends only for a client that lists it.
+    public static let clientCapabilities = [nativeQueueCapability, thinkingLevelsCapability, designsCapability, browserTunnelCapability]
     public static let version = 1
     /// A host's final reply to a `hello` whose token it refused; it closes the connection after.
     public static let unauthorizedCode = "unauthorized"
@@ -103,7 +105,7 @@ public enum RemoteProtocol {
     /// offers (`NativeThreadSnapshot.serviceTier`, `serviceTiers`). An older host has neither, and
     /// a client draws no Speed control there.
     public static let nativeServiceTierCapability = "native.serviceTier.v1"
-    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, designContextCapability, designsCapability, designMarkupCapability, designDeleteCapability, nativeRetryCapability, nativeInterruptCapability, nativeServiceTierCapability]
+    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, designContextCapability, designsCapability, designMarkupCapability, designDeleteCapability, nativeRetryCapability, nativeInterruptCapability, browserTunnelCapability, nativeServiceTierCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -205,12 +207,18 @@ public enum RemoteAgentAction: Codable, Hashable, Sendable {
     /// Kills the command running in a terminal pane (its foreground process group), never the
     /// shell at its prompt.
     case killTerminalProcess(paneID: PaneID)
+    /// Runs `command` in a new terminal pane of the agent's layout, in `cwd` (the thread's folder or
+    /// one inside it): the Browser's "Start on build-01" (`browserTunnelCapability`). A host that
+    /// does not know the action refuses the request, and one that lacks the capability would not
+    /// know it, so a client checks first.
+    case openTerminal(cwd: String, command: String)
 
     /// The capability a host must advertise before the action is sent to it.
     public var capability: String {
         switch self {
         case .rename, .deleteKeepingWorktree, .reorder: RemoteProtocol.agentActionsCapability
         case .renameTerminal, .killTerminalProcess: RemoteProtocol.terminalControlCapability
+        case .openTerminal: RemoteProtocol.browserTunnelCapability
         }
     }
 }
@@ -363,6 +371,9 @@ public enum RemoteAgentQuery: Codable, Hashable, Sendable {
     /// Undo a turn's edits in the agent's working tree; Redo puts them back.
     case changesUndoTurn(turnID: UUID)
     case changesRedoTurn(turnID: UUID)
+    /// The dev servers the agent's folder on the host offers (`DevServerDiscovery`): the Browser's
+    /// Nothing open (`browserTunnelCapability`). Answered by the host's server itself.
+    case devServers
 
     /// Answered by the host's server itself, without the GUI.
     public var isChanges: Bool {
@@ -397,6 +408,8 @@ public enum RemoteAgentResult: Codable, Hashable, Sendable {
     case changesPatch(text: String, truncated: Bool)
     /// The turn after an Undo or a Redo.
     case changesTurn(ChangesTurn)
+    /// The dev servers the agent's folder on the host offers (`RemoteAgentQuery.devServers`).
+    case devServers([DevServer])
 }
 
 /// Client → host. The first message on a connection must be a successful
@@ -471,9 +484,12 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     case skills(id: Int, request: RemoteSkillsRequest)
     /// Read or change the host's designs (`RemoteProtocol.designsCapability`).
     case design(id: Int, request: RemoteDesignRequest)
+    /// One message of a Browser tunnel (`RemoteProtocol.browserTunnelCapability`). Nothing answers it
+    /// by id: the host's frames come back as `RemoteReply.tunnel`.
+    case tunnel(BrowserTunnelFrame)
 
     private enum CodingKeys: String, CodingKey {
-        case request
+        case request, frame
         case type, id, token, clientName, protocolVersion, capabilities
         case sessionID, cols, rows, data, viewportGeneration
         case path, spaceID, cwd, model, thinking, initialPrompt, worktreeBranch
@@ -489,6 +505,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case automation
         case instructions, suggestions, hostSettings, skills
         case design
+        case tunnel
     }
 
     public init(from decoder: Decoder) throws {
@@ -496,6 +513,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         switch try c.decode(Kind.self, forKey: .type) {
         case .nativeThread:
             self = .nativeThread(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID), request: try c.decode(NativeThreadRequest.self, forKey: .request))
+        case .tunnel:
+            self = .tunnel(try c.decode(BrowserTunnelFrame.self, forKey: .frame))
         case .design:
             self = .design(id: try c.decode(Int.self, forKey: .id), request: try c.decode(RemoteDesignRequest.self, forKey: .request))
         case .automation:
@@ -676,6 +695,9 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(Kind.design, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(request, forKey: .request)
+        case .tunnel(let frame):
+            try c.encode(Kind.tunnel, forKey: .type)
+            try c.encode(frame, forKey: .frame)
         case .stateFetch(let id):
             try c.encode(Kind.stateFetch, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -801,9 +823,11 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     /// Pushed to a client that lists `designsCapability` when what the host offers changes (its
     /// Design tool experiment turned on or off): the whole list, as `helloOk` gave it.
     case capabilitiesChanged(capabilities: [String])
+    /// One message of a Browser tunnel, to the client that opened it (`RemoteRequest.tunnel`).
+    case tunnel(BrowserTunnelFrame)
 
     private enum CodingKeys: String, CodingKey {
-        case result
+        case result, frame
         case type, id, protocolVersion, capabilities, code, message, state
         case sessionID, data, exitCode, spaceID, agentID, paneID
         case path, parent, dirs, models, defaultModel, withoutThinking, thinkingLevels, attachment, options
@@ -818,6 +842,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case automationResult
         case instructions, suggestions, hostSettings, skills
         case design, designChanged, capabilitiesChanged
+        case tunnel
     }
 
     public init(from decoder: Decoder) throws {
@@ -825,6 +850,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         switch try c.decode(Kind.self, forKey: .type) {
         case .nativeThread:
             self = .nativeThread(id: try c.decode(Int.self, forKey: .id), result: try c.decode(NativeThreadResult.self, forKey: .result))
+        case .tunnel:
+            self = .tunnel(try c.decode(BrowserTunnelFrame.self, forKey: .frame))
         case .design:
             self = .design(id: try c.decode(Int.self, forKey: .id), result: try c.decode(RemoteDesignResult.self, forKey: .result))
         case .designChanged:
@@ -989,6 +1016,9 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case .capabilitiesChanged(let capabilities):
             try c.encode(Kind.capabilitiesChanged, forKey: .type)
             try c.encode(capabilities, forKey: .capabilities)
+        case .tunnel(let frame):
+            try c.encode(Kind.tunnel, forKey: .type)
+            try c.encode(frame, forKey: .frame)
         case .ok(let id):
             try c.encode(Kind.ok, forKey: .type)
             try c.encode(id, forKey: .id)
