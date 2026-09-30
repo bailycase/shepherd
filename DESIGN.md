@@ -3143,7 +3143,7 @@ forwards the port (not built yet).
   the button): Fit the pane (the default), iPhone 16 · 393, iPad mini · 744, Laptop · 1280 (the
   check leading, widths trailing in Geist Mono 11 `textTertiary`), a divider, and Dark appearance
   (the page's `prefers-color-scheme`; off is light, whatever Shepherd's appearance). A chosen width
-  centers the page on `bgSunken` in a frame 12pt in from the pane's sides and top, with 14pt top
+  centers the page on `bgSunken` in a frame 14pt in from the pane's sides and top, with 14pt top
   corners and a `lineStrong` line. A width wider than that room lays the page out at the chosen
   width and shrinks it to fit (the page's zoom), so its media queries see the width. The selection
   and the console keep working. A click outside or Esc closes the menu.

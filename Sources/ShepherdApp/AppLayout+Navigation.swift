@@ -69,9 +69,9 @@ extension AppLayout {
     /// Under 480 the tab strip drops its labels (`NWSidePaneMetrics.labelsMinWidth`).
     static let paneMinWidth: CGFloat = 380
     static let paneMaxFraction: CGFloat = 0.5
-    /// The Browser (PaneStates › viewport): a chosen width's frame sits this far in from the
-    /// pane's sides and top, on `bgSunken`.
-    static let browserFrameMargin: CGFloat = 12
+    /// The Browser (PaneStates › viewport): a chosen width's frame sits this far from the pane's
+    /// top, on `bgSunken` (PaneStates' 280pt-wide framed device: `padding: 14px 0 0 0`).
+    static let browserFrameMargin: CGFloat = 14
     /// A picked element's popover sits this far from the element and the page's edges.
     static let browserPopoverGap: CGFloat = 12
     /// The viewport menu hangs this far under the toolbar, its trailing edge under the Viewport
