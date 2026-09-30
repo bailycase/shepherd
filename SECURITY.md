@@ -81,6 +81,49 @@ Settings ▸ Remote ▸ Serve this Mac ▸ Listener.
   read when the listener starts, so deleting the file alone does not disconnect anyone.
 - **Bind errors** appear in Settings ▸ Remote rather than being ignored.
 
+### The Browser over the remote connection
+
+A thread's Browser tab works across Macs ([browser.md](docs/browser.md#remote)), in two directions.
+Both ride the authenticated connection (no TLS, so the same VPN or trusted network as everything
+above) and neither has a switch yet.
+
+- **A client reaching the host's ports.** A connected client can ask the host to carry a connection
+  to one of the host's own **loopback** ports (`127.0.0.1`, then `::1`, never another address, so the
+  host is not a proxy to its LAN, a metadata service or the internet), for a thread the client sees.
+  It is capped (64 tunnels per client, 256 per host) and closed when idle. A token already lets a
+  client type into the host's terminals, so this adds no privilege. On the viewing Mac the page's
+  traffic to `localhost:<port>` goes through a listener on that Mac's own loopback at the same
+  port: any program or page on the viewing Mac can reach the host's port through it while it is
+  held, as with `ssh -L`.
+- **A host's agent acting on the client's web view.** A client that shows a remote thread's Browser
+  tab can own that thread's agent's browser, and then the host's agent drives a web view **on the
+  client's Mac** (`browser.drive.v1`): it opens pages, reads them, clicks, types and runs script in
+  them. What that lets a host (or anything that can make its agent say something, such as a page
+  the agent reads) do to the client's Mac:
+  - **It can** load the thread's host's own `localhost` ports (through the tunnel) and **public**
+    addresses, and act on those pages as a person at a browser would, including pages the user signed
+    in to in that tab. A public page it opens is an ordinary web page: it can send requests from the
+    client's Mac to the client's own network, as any website can (blind requests; it cannot read the
+    answers of another origin), and this is not blocked.
+  - **It cannot** make the client open, read or act on a private, link-local, carrier-grade NAT,
+    unique-local or reserved address, the client's own loopback or interface addresses, a
+    local-network name, a hostname that resolves to any of those, or any scheme but `http`, `https`
+    and `about:blank`. The client checks the address of the request, every redirect, every history
+    step, every iframe and a script's own navigation, and a page it is on that is not allowed (an
+    address or `file:` page the user opened) is never read back, not its text, title or address.
+    The user's own address field is unbound. Only the host's own loopback ports, at most eight per
+    page, are ever forwarded for an agent, and a port another program on the client already uses is
+    refused.
+  - **It cannot** drive a page the user has not left in front of it: ownership lasts while the tab is
+    on screen and 30 seconds after, ends with the connection, is held by the most recent viewer to
+    claim it, and the user's own click in the page, or Take over, stops the agent's actions until
+    their next message. The ring and card are drawn over the page whenever the agent acts.
+  - **Known gaps.** A name is resolved when it is checked and again when WebKit connects, so DNS
+    rebinding is not caught by the check; subresource requests of a public page are not checked
+    (WebKit's navigation policy does not see them); and a host can learn whether a loopback port is
+    in use on the client's Mac by whether it may be forwarded. Do not connect a client Mac to a host
+    you do not trust with the pages you open in that tab.
+
 ### Stored credentials on clients
 
 - **macOS client:** host configurations, *including their tokens*, are stored as JSON in

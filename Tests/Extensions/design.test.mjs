@@ -141,7 +141,7 @@ test("without its design, socket or agent the extension registers nothing", () =
 test("a design's agent gets the design and comment tools", async () => {
   await withDesign(() => null, async (pi) => {
     assert.deepEqual([...pi.tools.keys()].sort(),
-      ["board_write", "canvas_update", "comment_list", "comment_reply", "design_check", "design_read", "markup_propose",
+      ["board_edit", "board_write", "canvas_update", "comment_list", "comment_reply", "design_check", "design_read", "markup_propose",
         "system_read", "system_write"]);
   });
 });
@@ -171,7 +171,8 @@ test("every run's prompt names the design, its boards and the tools-only rule", 
     assert.match(added, /"Checkout funnel"/);
     assert.match(added, /- A\.dc\.html "A · Funnel first" · 1280×800 at \(0, 0\)/);
     assert.match(added, /- B\.dc\.html \(no frame on the canvas yet\)/);
-    assert.match(added, /change it only with board_write and canvas_update/);
+    assert.match(added, /change it only with board_edit, board_write and canvas_update/);
+    assert.match(added, /board_edit for a small change to a board/);
     assert.match(added, /skill-dir\/SKILL\.md/);
   }, { skillDirectory: "/support/skill-dir" });
 });
@@ -259,6 +260,66 @@ test("board_write sends the whole board and reads back what Shepherd did", async
     assert.equal(firstLine(await tool.execute("t3", { path: "A.dc.html", source })), "A.dc.html is unchanged · revision 6");
     assert.equal(frames[1].baseRevision, undefined, "no base, no key");
     await assert.rejects(tool.execute("t4", { path: "A.dc.html", source, baseRevision: 1 }), /changed since revision 1 \(stale_revision\)/);
+  });
+});
+
+test("board_edit sends its edits, names no key it wasn't given, and reads back what Shepherd did", async () => {
+  const results = [
+    { result: { revision: 5, changed: true, created: false, warnings: ["inner_html"], boardCount: 1 }, replaced: [1, 3] },
+    { result: { revision: 5, changed: false, created: false, warnings: [], boardCount: 1 }, replaced: [1] },
+  ];
+  let next = 0;
+  const answer = (frame) => {
+    if (frame.type !== "designEditBoard") return null;
+    if (frame.baseRevision === 1) return { type: "error", code: "stale_revision", message: "the design changed since revision 1 (it is at 5); read it again and redo the change" };
+    if (frame.edits.some((edit) => edit.find === "<p>gone</p>")) {
+      return { type: "error", code: "edit_not_found", message: 'edit 2 of 2: find matched nothing: "<p>gone</p>". Copy find from design_read exactly (in A.dc.html; nothing was changed)' };
+    }
+    return { type: "designEdited", ...results[next++] };
+  };
+  await withDesign(answer, async (pi, frames) => {
+    const tool = pi.tools.get("board_edit");
+    const edits = [{ find: "Pay now", replace: "Buy" }, { find: "#4f46e5", replace: "#4338ca", all: true }];
+    const done = await tool.execute("t1", { path: "A.dc.html", edits, baseRevision: 4 });
+    assert.deepEqual(frames[0], { type: "designEditBoard", path: "A.dc.html", edits, baseRevision: 4, id: frames[0].id, agentID: "a1", designID: "d1" });
+    const lines = done.content[0].text.split("\n");
+    assert.equal(lines[0], "Edited A.dc.html · 2 edits (matches replaced: 1, 3) · revision 5");
+    assert.match(lines[1], /^Warning: innerHTML/);
+    assert.deepEqual(done.details, { revision: 5, replaced: [1, 3] });
+
+    // `all` goes on the wire only when it is true, and no base means no key.
+    const unchanged = await tool.execute("t2", { path: "A.dc.html", edits: [{ find: "a", replace: "a", all: false }] });
+    assert.deepEqual(frames[1].edits, [{ find: "a", replace: "a" }]);
+    assert.equal(frames[1].baseRevision, undefined);
+    assert.equal(firstLine(unchanged), "A.dc.html is unchanged · revision 5 (the edits left its text as it was)");
+
+    // Shepherd's refusals come through as the tool's failure, with its words and its code.
+    await assert.rejects(tool.execute("t3", { path: "A.dc.html", edits, baseRevision: 1 }), /\(it is at 5\); read it again.*\(stale_revision\)/);
+    await assert.rejects(tool.execute("t4", { path: "A.dc.html", edits: [{ find: "x", replace: "y" }, { find: "<p>gone</p>", replace: "z" }] }),
+      /edit 2 of 2: find matched nothing.*nothing was changed.*\(edit_not_found\)/);
+    const before = frames.length;
+    await assert.rejects(tool.execute("t5", { path: "A.dc.html", edits: [] }), /at least one edit.*invalid_edit/);
+    assert.equal(frames.length, before, "no edits, nothing sent");
+  });
+});
+
+test("board_edit's parameters take one to sixty-four edits, each with a find", async () => {
+  await withDesign(() => null, async (pi) => {
+    const schema = pi.tools.get("board_edit").parameters;
+    assert.deepEqual(schema.required.sort(), ["edits", "path"]);
+    assert.equal(schema.properties.edits.minItems, 1);
+    assert.equal(schema.properties.edits.maxItems, 64);
+    assert.deepEqual(schema.properties.edits.items.required.sort(), ["find", "replace"]);
+    assert.equal(schema.properties.edits.items.properties.find.minLength, 1);
+    assert.match(pi.tools.get("board_edit").description, /board_write/);
+  });
+});
+
+test("an edit request too big for Shepherd's frame is refused before it is sent", async () => {
+  await withDesign(() => ({ type: "ok" }), async (pi, frames) => {
+    await assert.rejects(pi.tools.get("board_edit").execute("t1", { path: "A.dc.html", edits: [{ find: "a", replace: "\n".repeat(600_000) }, { find: "b", replace: "\n".repeat(600_000) }] }),
+      /frame_too_large/);
+    assert.equal(frames.length, 0);
   });
 });
 

@@ -57,6 +57,10 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// What the host offers changed while connected (its Design tool turned on or off);
     /// `capabilities` already holds the new list. Main queue.
     public var onCapabilitiesChanged: ((Set<String>) -> Void)?
+    /// What the host says about an agent's browser (`BrowserDrivePush`): a request to run on this
+    /// client's page, the agent's queue given up, this client's claim ended, the user's message
+    /// that hands the page back, or a page the agent opened on the host. Main queue, in order.
+    public var onBrowserDrive: ((BrowserDrivePush) -> Void)?
     /// What the host offers. Written on the client's queue (at hello, and when the host pushes a
     /// change) and read from any thread, so it sits behind a lock.
     public private(set) var capabilities: Set<String> {
@@ -97,6 +101,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case exited(SessionID, Int32?)
         case designChanged(DesignID, UInt64?, UInt64?)
         case capabilities(Set<String>)
+        case browserDrive(BrowserDrivePush)
     }
     private var pendingEvents: [PushedEvent] = []
     private var deliveryInFlight = false
@@ -432,6 +437,8 @@ public final class RemoteHostClient: @unchecked Sendable {
             capabilities.contains(RemoteProtocol.nativeContextCapability) ? nil : "Update Shepherd on the host to compact the context."
         case .retry:
             capabilities.contains(RemoteProtocol.nativeRetryCapability) ? nil : "Update Shepherd on the host to retry a turn in place."
+        case .setServiceTier:
+            capabilities.contains(RemoteProtocol.nativeServiceTierCapability) ? nil : "Update Shepherd on the host to change its speed."
         case .send where !request.images.isEmpty:
             capabilities.contains(RemoteProtocol.nativeThreadV2Capability) ? nil : "Update Shepherd on the host to send images."
         default:
@@ -448,11 +455,13 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// The result as this client acts on it: a snapshot lists `retry` only from a host that
     /// retries in place (`native.retry.v1`), so the thread sends the prompt again anywhere else,
     /// and `interrupt` only from one that stops pi for a message (`native.interrupt.v1`), so the
-    /// thread steers there.
+    /// thread steers there; `setServiceTier` only from one that keeps each agent's tier
+    /// (`native.serviceTier.v1`), so the composer draws no Speed control anywhere else.
     static func incoming(_ result: NativeThreadResult, capabilities: Set<String>) -> NativeThreadResult {
         guard case .snapshot(var value) = result else { return result }
         let before = value.supportedActions
-        for (capability, action) in [(RemoteProtocol.nativeRetryCapability, "retry"), (RemoteProtocol.nativeInterruptCapability, "interrupt")]
+        for (capability, action) in [(RemoteProtocol.nativeRetryCapability, "retry"), (RemoteProtocol.nativeInterruptCapability, "interrupt"),
+                                     (RemoteProtocol.nativeServiceTierCapability, "setServiceTier")]
         where !capabilities.contains(capability) {
             value.supportedActions.removeAll { $0 == action }
         }
@@ -562,6 +571,46 @@ public final class RemoteHostClient: @unchecked Sendable {
 
     /// Why a host without `browserTunnelCapability` has no Browser for a remote viewer.
     public static let tunnelsRefusal = "Update Shepherd on the host to use its Browser from here."
+
+    /// The host runs an agent's browser tools on this client's page when it claims them
+    /// (`browserDriveCapability`, which goes with the tunnel the page loads through).
+    public var drivesBrowser: Bool {
+        let offered = capabilities
+        return offered.contains(RemoteProtocol.browserDriveCapability) && offered.contains(RemoteProtocol.browserTunnelCapability)
+    }
+
+    /// Claims `agentID`'s browser: the host runs the agent's browser tools on this client's page
+    /// from now on (most recent claim wins), until `browserRelease`, a newer claim elsewhere, or the
+    /// connection ends. Answers the address the host's own page for the agent holds, `http` or
+    /// `https`, for this client to open through its tunnel (nil when it has none). Throws
+    /// `update_required` on a host that does not offer it, and the host's own refusal otherwise
+    /// (`no_such_agent`, `too_many`, `superseded`).
+    public func browserClaim(agentID: AgentID) async throws -> String? {
+        guard drivesBrowser else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: Self.driveRefusal)
+        }
+        let reply = try await request(timeout: 30) { .browserClaim(id: $0, agentID: agentID) }
+        switch reply {
+        case .browserClaimed(_, let url): return url
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected claim reply")
+        }
+    }
+
+    /// Gives `agentID`'s browser back to the host. Nothing answers it.
+    public func browserRelease(agentID: AgentID) {
+        guard capabilities.contains(RemoteProtocol.browserDriveCapability) else { return }
+        queue.async { self.sendRequest(.browserRelease(agentID: agentID)) }
+    }
+
+    /// Answers a `BrowserDrivePush.request`. Nothing answers it.
+    public func browserAnswer(token: Int, outcome: BrowserOutcome) {
+        guard capabilities.contains(RemoteProtocol.browserDriveCapability) else { return }
+        queue.async { self.sendRequest(.browserAnswer(requestToken: token, outcome: outcome)) }
+    }
+
+    /// Why a host without `browserDriveCapability` leaves its agent on its own page.
+    public static let driveRefusal = "Update Shepherd on the host so its agent can use the page shown here."
 
     public func agentAction(agentID: AgentID, action: RemoteAgentAction) async throws {
         guard capabilities.contains(RemoteProtocol.agentActionsCapability), capabilities.contains(action.capability) else {
@@ -933,7 +982,8 @@ public final class RemoteHostClient: @unchecked Sendable {
              .state(let id, _), .attached(let id, _),
              .dirListing(let id, _, _, _), .models(let id, _, _, _, _),
              .spaceAdded(let id, _), .agentCreated(let id, _), .automationResult(let id, _), .instructions(let id, _),
-             .suggestions(let id, _), .hostSettings(let id, _), .skills(let id, _), .design(let id, _):
+             .suggestions(let id, _), .hostSettings(let id, _), .skills(let id, _), .design(let id, _),
+             .browserClaimed(let id, _):
             resumePending(id: id, with: reply)
         case .error(let id, _, _):
             resumePending(id: id, with: reply)
@@ -952,6 +1002,8 @@ public final class RemoteHostClient: @unchecked Sendable {
             push(.designChanged(designID, revision, commentsRevision))
         case .tunnel(let frame):
             tunnels.receive(frame)
+        case .browserDrive(let push):
+            self.push(.browserDrive(push))
         case .capabilitiesChanged(let list):
             capabilities = Set(list)
             push(.capabilities(Set(list)))
@@ -979,6 +1031,7 @@ public final class RemoteHostClient: @unchecked Sendable {
                 case .exited(let sessionID, let code): self.onSessionExited?(sessionID, code)
                 case .designChanged(let designID, let revision, let comments): self.onDesignChanged?(designID, revision, comments)
                 case .capabilities(let capabilities): self.onCapabilitiesChanged?(capabilities)
+                case .browserDrive(let push): self.onBrowserDrive?(push)
                 }
             }
             self.queue.async { [weak self] in

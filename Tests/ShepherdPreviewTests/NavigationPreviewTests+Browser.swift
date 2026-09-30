@@ -129,6 +129,59 @@ extension PreviewTests {
         }
     }
 
+    /// The agent on the host driving a remote thread's page (docs/browser.md › Remote › The agent drives
+    /// the page you see): the same ring, pointer and card with Take over over the viewer's own page,
+    /// with the host's name in the address field. The page is a web view a capture can't draw.
+    @Test func browserRemoteAgentIsUsingIt() async throws {
+        let workspace = try PreviewWorkspace()
+        let session = try remoteBrowser()
+        session.load(try #require(URL(string: "http://localhost:5173/checkout")))
+        session.consoleOpen = false
+        final class Pointed { var done = false }
+        let pointed = Pointed()
+        try await Preview.render("browser-remote-agent-using-it", size: Self.paneSize, ready: {
+            guard !session.isLoading else { return false }
+            if !pointed.done {
+                pointed.done = true
+                session.agentBegan(note: "clicking through checkout")
+                session.agentPointed(at: CGPoint(x: 316, y: 380))
+                return false
+            }
+            return session.agentOverlay?.pointer != nil
+        }) {
+            browserPane(workspace, session, store: NativeThreadStore())
+        }
+    }
+
+    /// The agent opened a page on the host while the viewer's Browser tab was out of sight (PaneStates
+    /// › SidePaneTabs · the agent opened a tab, on a remote thread): the tab's dot and its brief tip.
+    @Test func browserRemoteAgentOpenedATab() async throws {
+        let session = try remoteBrowser()
+        session.noteAgentOpened(try #require(URL(string: "http://localhost:5173/checkout")))
+        let tip = try #require(SidePaneTabs.tip(opened: session.openedByAgent))
+        try await Preview.render("browser-remote-agent-opened-tab", size: CGSize(width: 600, height: 150)) {
+            VStack(spacing: 0) {
+                NWSidePaneTabs(SidePaneTabs.items(news: [.browser], changedFiles: 2, browserTip: tip), selection: SidePaneTab.changes.rawValue,
+                               select: { _ in }, closeShortcut: "⇧⌘B", close: {}) {
+                    Button("Reset Width") {}
+                }
+                Spacer(minLength: 0)
+            }
+            .background(Color.nw.bgWindow)
+        }
+    }
+
+    /// Another Mac claimed the agent's browser after this one: the notice under the toolbar says so.
+    @Test func browserRemoteSuperseded() async throws {
+        let workspace = try PreviewWorkspace()
+        let session = try remoteBrowser()
+        session.devServers = []
+        session.notice = BrowserNotice(message: BrowserRemote.supersededMessage)
+        try await Preview.render("browser-remote-superseded", size: Self.paneSize) {
+            browserPane(workspace, session, store: NativeThreadStore())
+        }
+    }
+
     /// A page open at iPhone 16's width in its frame, an element picked (the outline and tag
     /// are the page's; the popover is Shepherd's), and the console with a warning and an error.
     @Test func browserPage() async throws {

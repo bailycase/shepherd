@@ -14,6 +14,10 @@ public enum DesignStoreError: Error, Hashable, Sendable, CustomStringConvertible
     /// The write named `base`, but the design has moved on to `current`: read it again.
     case stale(base: UInt64, current: UInt64)
     case refused(DesignBoardCheck.Refusal)
+    /// A `board_edit` that changed nothing: which edit, and why.
+    case editFailed(DesignPath, DesignBoardEdits.Failure)
+    /// The text a `board_edit` made fails the checks every board write passes.
+    case editRefused(DesignPath, DesignBoardCheck.Refusal)
     case nameTaken(DesignPath, by: DesignPath)
     case tooManyFiles
     case invalidIndex([String])
@@ -37,7 +41,8 @@ public enum DesignStoreError: Error, Hashable, Sendable, CustomStringConvertible
         case .invalidPath: return "invalid_path"
         case .noSuchBoard: return "no_such_board"
         case .stale: return "stale_revision"
-        case .refused(let refusal): return refusal.code
+        case .refused(let refusal), .editRefused(_, let refusal): return refusal.code
+        case .editFailed(_, let failure): return failure.code
         case .nameTaken: return "name_taken"
         case .tooManyFiles: return "too_many_files"
         case .invalidIndex: return "invalid_index"
@@ -62,6 +67,9 @@ public enum DesignStoreError: Error, Hashable, Sendable, CustomStringConvertible
         case .stale(let base, let current):
             return "the design changed since revision \(base) (it is at \(current)); read it again and redo the change"
         case .refused(let refusal): return refusal.description
+        case .editFailed(let path, let failure): return "\(failure) (in \(path); nothing was changed)"
+        case .editRefused(let path, let refusal):
+            return "the edited \(path) can't be written: \(refusal.description). Nothing was changed."
         case .nameTaken(let path, let other): return "\(path) and \(other) share the name \(path.stem)"
         case .tooManyFiles: return "a design holds at most \(DesignStore.maxFiles) files"
         case .invalidIndex(let problems): return "canvas.json: " + problems.joined(separator: "; ")
@@ -298,6 +306,38 @@ public final class DesignStore: @unchecked Sendable {
             result.sha256 = written.shas[path]
             result.created = written.created.contains(path)
             return result
+        }
+    }
+
+    /// Applies `board_edit`'s edits (`DesignBoardEdits`) to the board's text as the file holds it
+    /// now, and writes the result as `writeBoard` does: the same checks, the same kept version,
+    /// one revision. Reading, editing and writing are one turn of this queue, so no other write
+    /// can land between them, and two edits of one board each apply to what the other left. The
+    /// revision is compared first (`stale_revision`); a failed edit, or a result the checks
+    /// refuse, changes nothing.
+    func editBoard(_ id: DesignID, path: DesignPath, edits: [DesignBoardEdit], baseRevision: UInt64?) async throws -> DesignBoardEdited {
+        try await run {
+            var design = try self.load(id)
+            try Self.compare(baseRevision, design.revision)
+            let files = try self.files(of: id, &design)
+            guard files[path] != nil else { throw DesignStoreError.noSuchBoard(path) }
+            let data: Data
+            do { data = try Data(contentsOf: self.fileURL(id, path)) } catch { throw DesignStoreError.noSuchBoard(path) }
+            let applied: DesignBoardEdits.Applied
+            switch Result(catching: { () throws(DesignBoardEdits.Failure) in
+                try DesignBoardEdits.apply(edits, to: String(decoding: data, as: UTF8.self))
+            }) {
+            case .success(let edited): applied = edited
+            case .failure(let failure): throw DesignStoreError.editFailed(path, failure)
+            }
+            let written: Written
+            do { written = try self.writeOnQueue(id, [path: applied.source], baseRevision: baseRevision) } catch DesignStoreError.refused(let refusal) {
+                throw DesignStoreError.editRefused(path, refusal)
+            }
+            var result = written.result
+            result.sha256 = written.shas[path]
+            result.created = false
+            return DesignBoardEdited(result: result, replaced: applied.replaced)
         }
     }
 

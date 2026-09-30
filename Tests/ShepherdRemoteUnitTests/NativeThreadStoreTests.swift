@@ -39,7 +39,7 @@ final class FakeHost {
         action = { request in
             switch request {
             case .send(_, _, let id, _, _, _, _, _, _), .abort(_, _, let id), .answer(_, _, let id, _, _),
-                 .setModel(_, _, let id, _), .setThinking(_, _, let id, _), .subagentCommand(_, _, let id, _, _, _, _),
+                 .setModel(_, _, let id, _), .setThinking(_, _, let id, _), .setServiceTier(_, _, let id, _), .subagentCommand(_, _, let id, _, _, _, _),
                  .queue(_, _, let id, _):
                 return .accepted(operationID: id)
             default:
@@ -885,6 +885,78 @@ struct NativeThreadStoreTests {
         guard host.actions.count == 2, case .setModel(_, _, _, let model) = host.actions[0],
               case .setThinking(_, _, _, let level) = host.actions[1] else { Issue.record("\(host.actions)"); return }
         #expect(model == "p/other" && level == "high")
+    }
+
+    // MARK: Speed
+
+    /// The Speed control follows the host: its action, and a model that offers a tier besides
+    /// Standard. A host that says nothing (an older one) and a model that offers none draw none.
+    @Test(arguments: [
+        (["send", "setServiceTier"], ["standard", "fast"] as [String]?, true),
+        (["send", "setServiceTier"], ["standard"] as [String]?, false),
+        (["send", "setServiceTier"], [] as [String]?, false),
+        (["send", "setServiceTier"], nil as [String]?, false),
+        (["send"], ["standard", "fast"] as [String]?, false),
+    ])
+    func theSpeedControlNeedsTheHostsActionAndAModelThatOffersMore(actions: [String], tiers: [String]?, shown: Bool) async {
+        let (store, _, task) = await started(F.snapshot(actions: actions, serviceTier: tiers == nil ? nil : "standard", serviceTiers: tiers))
+        defer { task.cancel() }
+        #expect(store.offersServiceTier == shown)
+    }
+
+    @Test func theTierComesFromTheSnapshotAndATierThisClientDoesNotKnowIsLeftOut() async {
+        let (store, _, task) = await started(F.snapshot(actions: ["send", "setServiceTier"], serviceTier: "fast",
+                                                        serviceTiers: ["standard", "fast", "ultra"]))
+        defer { task.cancel() }
+        #expect(store.serviceTier == .fast)
+        #expect(store.serviceTiers == [.standard, .fast])
+        let (older, _, olderTask) = await started(F.snapshot())
+        defer { olderTask.cancel() }
+        #expect(older.serviceTier == .standard && older.serviceTiers.isEmpty)
+    }
+
+    @Test func aSpeedChangeGoesToTheHostOnlyForAnOfferedTierThatDiffers() async {
+        let (store, host, task) = await started(F.snapshot(actions: ["send", "setServiceTier"], serviceTier: "standard",
+                                                           serviceTiers: ["standard", "fast"]))
+        defer { task.cancel() }
+        host.acceptAll()
+        await store.setServiceTier(.standard)
+        #expect(host.actions.isEmpty, "the current tier is no change")
+        await store.setServiceTier(.fast)
+        guard case .setServiceTier(let session, let generation, _, let tier)? = host.actions.first, host.actions.count == 1 else {
+            Issue.record("\(host.actions)"); return
+        }
+        #expect(session == "s" && generation == "g" && tier == "fast")
+    }
+
+    @Test func toggleFastModeAsksForTheOtherTierEachTime() async {
+        let (store, host, task) = await started(F.snapshot(actions: ["send", "setServiceTier"], serviceTier: "standard",
+                                                           serviceTiers: ["standard", "fast"]))
+        defer { task.cancel() }
+        host.acceptAll()
+        await store.toggleServiceTier()
+        host.snapshot = F.snapshot(revision: 2, actions: ["send", "setServiceTier"], serviceTier: "fast", serviceTiers: ["standard", "fast"])
+        await store.refresh()
+        #expect(store.serviceTier == .fast)
+        await store.toggleServiceTier()
+        let tiers = host.actions.compactMap { request -> String? in
+            if case .setServiceTier(_, _, _, let tier) = request { return tier }
+            return nil
+        }
+        #expect(tiers == ["fast", "standard"])
+    }
+
+    @Test func aModelWithoutTiersAndAnOlderHostNeverGetASpeedRequest() async {
+        let (none, noneHost, noneTask) = await started(F.snapshot(actions: ["send", "setServiceTier"], serviceTier: "standard", serviceTiers: []))
+        defer { noneTask.cancel() }
+        noneHost.acceptAll()
+        await none.setServiceTier(.fast)
+        #expect(noneHost.actions.isEmpty)
+        let (older, olderHost, olderTask) = await started(F.snapshot(actions: ["send"], serviceTier: "standard", serviceTiers: ["standard", "fast"]))
+        defer { olderTask.cancel() }
+        olderHost.acceptAll()
+        await older.setServiceTier(.fast)
+        #expect(olderHost.actions.isEmpty)
     }
 
     @Test func answersGoOnlyToAnAvailableDialogOfTheCurrentSession() async {
