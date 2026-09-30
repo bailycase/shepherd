@@ -63,8 +63,9 @@ final class ShepherdViewModel {
     var destination: MainDestination?
     /// The sidebar's More is open, showing Hosts and Extensions. Ephemeral.
     var moreOpen = false
-    /// Needs you and Recents, derived once per change of what they read (`SidebarSource`).
-    @ObservationIgnored var sidebarListsCache: (source: SidebarSource, lists: SidebarLists)?
+    /// Needs you, Pinned and Recents, derived once per change of what they read (`SidebarSource`
+    /// and the pins).
+    @ObservationIgnored var sidebarListsCache: (source: SidebarSource, pins: SidebarPins, lists: SidebarLists)?
     /// The project tree, derived once per change of what it reads (`SidebarSource`, and
     /// `SidebarTreeOptions` from Settings ▸ Appearance ▸ Sidebar).
     @ObservationIgnored var sidebarTreeCache: (source: SidebarSource, options: SidebarTreeOptions, tree: SidebarTree)?
@@ -186,6 +187,12 @@ final class ShepherdViewModel {
         didSet { sidebarDefaults.set(collapsedProjects.sorted(), forKey: Self.collapsedProjectsKey) }
     }
     static let collapsedProjectsKey = "shepherd.sidebar.collapsedProjects"
+    /// The threads pinned at the top of the Activity sidebar (Sidebar › Pinned), oldest pin first.
+    /// Persisted beside the other sidebar choices; changed only by `pinThread`, `unpinThread`
+    /// and `pruneSidebarPins` (ShepherdViewModel+SidebarPins).
+    var sidebarPins = SidebarPins() {
+        didSet { sidebarPins.save(to: sidebarDefaults) }
+    }
     /// The window is too narrow to dock the sidebar (`ShellLayout.sidebar`), so ⇧⌘S overlays
     /// it instead. Written by the window as it resizes; ephemeral.
     var sidebarAutoHidden = false
@@ -262,7 +269,7 @@ final class ShepherdViewModel {
     var waitingForImport: Set<AgentID> = []
     @ObservationIgnored private(set) var restoredAt = Date()
     /// The workspace has been adopted at least once.
-    @ObservationIgnored private var didAdopt = false
+    @ObservationIgnored private(set) var didAdopt = false
     /// The server Settings ▸ MCP servers opens with its row open (a search hit named it).
     @ObservationIgnored var mcpOpenServer: String?
     /// This Mac's daily look for newer skills (`startSkillChecks`).
@@ -521,6 +528,7 @@ final class ShepherdViewModel {
         // footer) stay in older preferences and are no longer read.
         sidebarHidden = sidebarDefaults.bool(forKey: "shepherd.sidebarHidden")
         collapsedProjects = Set(sidebarDefaults.stringArray(forKey: Self.collapsedProjectsKey) ?? [])
+        sidebarPins = SidebarPins(defaults: sidebarDefaults)
 
         sessions.onStateChanged = { [weak self] serverState in
             self?.adopt(serverState)
@@ -601,6 +609,7 @@ final class ShepherdViewModel {
                 connection.state.agents.map { RemoteAgentRef(hostID: connection.id, agentID: $0.id) }
             }))
             self.pruneRemoteDesigns()
+            self.pruneSidebarPins()
             for (target, review) in self.remoteReviews where review.hostReviewPane {
                 guard let connection = self.remoteHosts.connections.first(where: { $0.id == target.hostID }),
                       connection.phase == .connected,
@@ -996,6 +1005,7 @@ final class ShepherdViewModel {
             if waitingForImport != all { waitingForImport = all }
         }
         didAdopt = true
+        pruneSidebarPins()
         // First adoption of the restored workspace: stand the enabled
         // automation watches back up (their agents died with the last run), once the first
         // launch's welcome step is over.
@@ -1016,7 +1026,7 @@ final class ShepherdViewModel {
         // agents at all, the New thread page shows. A page the user opened stays.
         if selectedAgent == nil, destination == nil, selectedRemoteAgent == nil {
             let live = Set(state.agents.map(\.id))
-            if let next = selectionHistory.last(where: live.contains) ?? localRecentsOrder.first,
+            if let next = selectionHistory.last(where: live.contains) ?? launchAgentID,
                let agent = state.agents.first(where: { $0.id == next }) {
                 selectedAgentID = agent.id
                 selectedSpaceID = agent.spaceID
