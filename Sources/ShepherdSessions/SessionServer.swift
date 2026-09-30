@@ -2686,6 +2686,12 @@ public final class SessionServer: @unchecked Sendable {
                 let result = try await server.writeDesignBoard(designID, path: path, source: source, baseRevision: baseRevision)
                 return .designWritten(id: id, result: result)
             }
+        case .designEditBoard(let id, let agentID, let designID, let path, let edits, let baseRevision):
+            designRequest(id: id, agentID: agentID, designID: designID, path: path, client: client) { server, path in
+                guard let path else { throw DesignStoreError.invalidPath("", .empty) }
+                let edited = try await server.editDesignBoard(designID, path: path, edits: edits, baseRevision: baseRevision)
+                return .designEdited(id: id, result: edited.result, replaced: edited.replaced)
+            }
         case .designUpdateIndex(let id, let agentID, let designID, let changes, let baseRevision):
             designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client) { server, _ in
                 let result = try await server.updateDesignIndex(designID, patch: changes, baseRevision: baseRevision)
@@ -3482,6 +3488,7 @@ public final class SessionServer: @unchecked Sendable {
              .design(let id, _),
              .designBoard(let id, _),
              .designWritten(let id, _),
+             .designEdited(let id, _, _),
              .designComments(let id, _),
              .designComment(let id, _),
              .designSystems(let id, _),
@@ -4422,6 +4429,17 @@ public final class SessionServer: @unchecked Sendable {
         let result = try await designs.writeBoard(designID, path: path, source: source, baseRevision: baseRevision)
         try await enqueue { try self.commitDesignWrite(designID, result) }
         return result
+    }
+
+    /// Applies a `board_edit`'s edits to the board's current text on the design store's queue
+    /// and writes the result as `writeDesignBoard` does (`DesignStore.editBoard`): the same
+    /// checks, kept version, revision and one broadcast.
+    public func editDesignBoard(_ designID: DesignID, path: DesignPath, edits: [DesignBoardEdit],
+                                baseRevision: UInt64? = nil) async throws -> DesignBoardEdited {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        let edited = try await designs.editBoard(designID, path: path, edits: edits, baseRevision: baseRevision)
+        try await enqueue { try self.commitDesignWrite(designID, edited.result) }
+        return edited
     }
 
     /// Writes several boards' whole sources as one change: one revision, one broadcast (a tweak

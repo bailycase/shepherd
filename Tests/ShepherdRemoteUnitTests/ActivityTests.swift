@@ -247,6 +247,11 @@ struct ActivityTests {
         call("board_write", ["path": path, "source": "<x-dc></x-dc>"], output: "\(created ? "Drew" : "Updated") \(path) · revision 3")
     }
 
+    private func boardEdit(_ path: String, changed: Bool = true) -> NativeActivityCall {
+        call("board_edit", ["path": path, "edits": [["find": "a", "replace": "b"]]],
+             output: changed ? "Edited \(path) · 1 edit (matches replaced: 1) · revision 4" : "\(path) is unchanged · revision 3 (the edits left its text as it was)")
+    }
+
     private func canvasUpdate() -> NativeActivityCall {
         call("canvas_update", ["changes": ["title": "Funnel"]], output: "Updated the canvas · revision 7 · 4 boards")
     }
@@ -275,6 +280,21 @@ struct ActivityTests {
         #expect(bursts[0].isBoardUpdate, "an update wears the edit glyph")
         let many = nativeActivityBursts(["A", "B", "C", "D"].map { boardWrite("\($0).dc.html", created: false) })
         #expect(many.map(\.label) == ["Updated 4 boards"])
+    }
+
+    @Test func editingBoardsInPlaceReadsAsAnUpdateOfThoseBoards() {
+        let bursts = nativeActivityBursts([boardEdit("A.dc.html"), boardEdit("A-phone.dc.html"), boardEdit("A.dc.html")])
+        #expect(bursts.map(\.label) == ["Updated A and A · phone"])
+        #expect(bursts[0].isBoardUpdate, "an edit wears the edit glyph, as a rewrite does")
+        #expect(bursts[0].calls.map(\.stat) == ["edited", "edited", "edited"])
+        let mixed = nativeActivityBursts([boardEdit("A.dc.html"), boardWrite("B.dc.html", created: true)])
+        #expect(mixed.map(\.label) == ["Drew 1 board and updated A"])
+        let same = nativeActivityBursts([boardEdit("A.dc.html", changed: false)])
+        #expect(same.map(\.label) == ["Updated A"] && same[0].calls.map(\.stat) == ["unchanged"])
+        let running = nativeActivityBursts([call("board_edit", ["path": "A.dc.html"], status: "running")])
+        #expect(running.map(\.label) == ["Drawing"] && running.map(\.meta) == ["A.dc.html"])
+        let failed = nativeActivityBursts([call("board_edit", ["path": "A.dc.html"], output: "edit 2 of 2: find matched nothing (edit_not_found)", error: true)])
+        #expect(failed.map(\.label) == ["Board edit failed"])
     }
 
     @Test func aBurstThatDrawsAndUpdatesSaysBoth() {

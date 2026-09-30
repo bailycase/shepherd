@@ -94,11 +94,11 @@ struct DesignLifecycleWordsTests {
     /// "Drawing 2 boards": the distinct boards the agent writes in the turn it is on, since the
     /// viewer's last message.
     @Test func theBoardsBeingDrawnAreThoseOfTheTurnUnderWay() {
-        func write(_ path: String, _ id: String) -> NativeThreadMessage {
-            NativeThreadMessage(entryID: id, role: "toolResult", blocks: [], toolName: "board_write", argumentsText: #"{"path":"\#(path)"}"#)
+        func write(_ path: String, _ id: String, tool: String = "board_write") -> NativeThreadMessage {
+            NativeThreadMessage(entryID: id, role: "toolResult", blocks: [], toolName: tool, argumentsText: #"{"path":"\#(path)"}"#)
         }
         let messages = [write("A.dc.html", "1"), NativeThreadMessage(entryID: "u", role: "user", blocks: []),
-                        write("B.dc.html", "2"), write("C.dc.html", "3"), write("B.dc.html", "4"),
+                        write("B.dc.html", "2"), write("C.dc.html", "3", tool: "board_edit"), write("B.dc.html", "4", tool: "board_edit"),
                         NativeThreadMessage(entryID: "r", role: "toolResult", blocks: [], toolName: "design_read", argumentsText: "{}")]
         #expect(designBoardsDrawing(messages) == 2)
         #expect(designBoardsDrawing([]) == 0)

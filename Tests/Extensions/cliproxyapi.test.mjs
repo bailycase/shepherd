@@ -304,8 +304,10 @@ test("a session notices creation and atomic replacement, and malformed updates f
   fs.writeFileSync(path.join(f.dir, "next"), JSON.stringify(base));
   fs.renameSync(path.join(f.dir, "next"), f.configPath);
   await Promise.race([registered, new Promise((_, reject) => {
+    // Not unref'd: the watcher is (persistent: false), so on a busy machine nothing else keeps the loop alive
+    // for the poll that sees the rename, and the runner ends the test "event loop already resolved".
     const timer = setTimeout(() => reject(Error("watchFile did not publish")), 5000);
-    timer.unref(); t.after(() => clearTimeout(timer));
+    t.after(() => clearTimeout(timer));
   })]);
   const old = f.models[0];
   f.write('{"enabled":true,"apiKey":"secret-do-not-log');
