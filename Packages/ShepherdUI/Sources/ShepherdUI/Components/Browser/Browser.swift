@@ -561,19 +561,18 @@ public struct NWConsoleLine: Identifiable, Equatable, Sendable {
 }
 
 /// The console drawer's bar (PaneBrowser): 32pt on `bgBase` under a `lineStrong` line.
-/// "Console", "Network" with its count, the warnings (and errors) in their colors, and Hide
-/// console (Show console while the drawer is closed).
+/// "Console", "Network" with its count, the warnings (the page's own errors show as warnings
+/// too: no board draws a separate count) in `lanternText`, and Hide console (Show console while
+/// the drawer is closed).
 public struct NWConsoleBar: View {
     let network: Int
     let warnings: Int
-    let errors: Int
     let open: Bool
     let toggle: () -> Void
 
-    public init(network: Int, warnings: Int, errors: Int = 0, open: Bool, toggle: @escaping () -> Void) {
+    public init(network: Int, warnings: Int, open: Bool, toggle: @escaping () -> Void) {
         self.network = network
         self.warnings = warnings
-        self.errors = errors
         self.open = open
         self.toggle = toggle
     }
@@ -586,8 +585,13 @@ public struct NWConsoleBar: View {
                 Text("Network").font(.nwSans(12)).foregroundStyle(nw.textSecondary)
                 Text("\(network)").font(.nwMono(10.5)).foregroundStyle(nw.textTertiary).nwContentTransition(.numeric())
             }
-            if errors > 0 { count(errors, "error", color: nw.failed, symbol: "xmark.octagon") }
-            if warnings > 0 { count(warnings, "warning", color: nw.lanternText, symbol: "exclamationmark.triangle") }
+            if warnings > 0 {
+                HStack(spacing: 5) {
+                    Image(systemName: "exclamationmark.triangle").font(.system(size: 12))
+                    Text("\(warnings) warning\(warnings == 1 ? "" : "s")").font(.nwSans(11.5))
+                }
+                .foregroundStyle(nw.lanternText)
+            }
             Spacer(minLength: 0)
             Button(action: toggle) { Image(systemName: open ? "chevron.down" : "chevron.up") }
                 .buttonStyle(.nwIcon(size: NWBrowserMetrics.consoleToggle))
@@ -601,19 +605,11 @@ public struct NWConsoleBar: View {
         .overlay(alignment: .top) { NWHairline(color: nw.lineStrong) }
         .accessibilityElement(children: .contain)
     }
-
-    private func count(_ value: Int, _ noun: String, color: Color, symbol: String) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: symbol).font(.system(size: 12))
-            Text("\(value) \(noun)\(value == 1 ? "" : "s")").font(.nwSans(11.5))
-        }
-        .foregroundStyle(color)
-    }
 }
 
 /// A console line (PaneBrowser): at least 22pt, 14pt sides, Geist Mono 11: the time in
-/// `textTertiary`, the message in `textSecondary`, truncating. A warning sits on `lanternTint`
-/// in `lanternText`; an error on `failedTint` in `failed`.
+/// `textTertiary`, the message in `textSecondary`, truncating. A warning (the page's own errors
+/// included: no board draws them apart) sits on `lanternTint` in `lanternText`.
 public struct NWConsoleRow: View, Equatable {
     let line: NWConsoleLine
 
@@ -625,7 +621,7 @@ public struct NWConsoleRow: View, Equatable {
         HStack(spacing: 10) {
             Text(line.time).foregroundStyle(nw.textTertiary)
             Text(line.text)
-                .foregroundStyle(line.level == .warning ? nw.lanternText : line.level == .error ? nw.failed : nw.textSecondary)
+                .foregroundStyle(line.level == .warning ? nw.lanternText : nw.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 0)
@@ -633,7 +629,7 @@ public struct NWConsoleRow: View, Equatable {
         .font(.nwMono(11))
         .padding(.horizontal, 14)
         .frame(minHeight: NWBrowserMetrics.consoleRowHeight)
-        .background(line.level == .warning ? nw.lanternTint : line.level == .error ? nw.failedTint : .clear)
+        .background(line.level == .warning ? nw.lanternTint : .clear)
         .help(line.text)
     }
 }

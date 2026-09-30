@@ -68,10 +68,6 @@ private struct SidePaneTabBar: View {
                 ReviewOptionItems(session: review, maximized: maximized, toggleMaximized: { vm.toggleSidePaneMaximized(owner) })
                 Divider()
             }
-            if tab == .browser, case .local(let agentID) = owner {
-                BrowserOptionItems(session: vm.browsers.session(for: agentID))
-                Divider()
-            }
             Button("Reset Width") { vm.subagentInspector.width = 0 }
                 .disabled(vm.subagentInspector.width == 0)
         }

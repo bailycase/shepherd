@@ -182,7 +182,6 @@ And the rules that follow from them:
 | PaneStates, PaneBrowser: Start on build-01; the host chip "build-01" | "Start"; "This Mac" | Local threads only; a remote thread's Browser waits for the tunnel |
 | PaneStates › viewport: Throttle to 3G under Dark appearance | Left out | WebKit has no public throttle; it will come through the tunnel's local proxy (the user's decision, 2026-09-29) |
 | PaneBrowser: the element's popover drawn in the page beside it | A native popover over the page, beside the element (else left of it, else under it), following it as the page scrolls; only the outline and tag are drawn in the page | Its buttons are Shepherd's controls, and the page can't reach or restyle them |
-| PaneBrowser's console: warnings and log lines | Errors too: "1 error" in `failed` in the bar, error rows on `failedTint` | The page's errors are the lines that matter most; the board draws none |
 | PaneBrowser: Hide console (the board draws no hidden state) | The bar stays, with Show console (a chevron up) | The console must be reachable again from where it was |
 | NWThread: inline code on `bgSunken` with a 1px `lineSubtle` line, radius 4, 1×5 padding | Prose draws it in mono 12 on a `lineSubtle` fill, with no line or padding. `NWInlineCode` draws the board's form where a view holds the code (only the Component Gallery today) | A run inside `Text` cannot carry a border or padding |
 | NWThread: a follow-up typed while pi works is a dashed bubble in the thread ("queued · sends when the turn ends", Edit, Send now) | It never enters the thread early: it waits in Up next above the composer and joins the thread where pi reads it | The Queue & steer boards replaced it; the host holds one queue that every viewer sees and edits |
@@ -2808,9 +2807,9 @@ inspector; the tray's Steer opens it with its Steer field focused.
   stay.
 - **The ⋯ menu** (`SidePaneOptions`, "Pane options"): the current tab's items (Changes: Maximize
   Pane or Restore the Thread, a divider, Expand All Files, Collapse All Files, a divider, Copy Review
-  as Text; Browser: Hide Console or Show Console, while a page is open), a divider, then Reset Width
-  (disabled at the default). Split below, Open pane in its own window and Show tabs are left out
-  until they can work (see the departures).
+  as Text; Browser offers none of its own: the console's chevron shows or hides it), a divider,
+  then Reset Width (disabled at the default). Split below, Open pane in its own window and Show
+  tabs are left out until they can work (see the departures).
 - **The subagent inspector takes the pane over** (Subagents, SubagentsDone) with its own header
   in place of the strip, whichever path inspects a run (⌘I, a tray row or card, the palette).
   Closing it goes back to the tab underneath when the pane was open, and hides the pane when it
@@ -3179,14 +3178,16 @@ forwards the port (not built yet).
   "1 page element attached.", which the thread leaves out beside the chips.
 - **Console drawer** (`NWConsoleBar`, `NWConsoleRow`), under the page while one is open: a 32pt bar
   on `bgBase` under a `lineStrong` line: "Console" (Geist 12 semibold), "Network" with its count
-  (the document and each resource it loaded; Geist Mono 10.5 `textTertiary`), "1 error" in `failed`
-  and "1 warning" in `lanternText` (Geist 11.5, 12pt glyphs; each only when there is one), and Hide
-  console (24pt; Show console, a chevron up, while hidden; the ⋯ menu has the same). Its rows, a
-  lazy list 136pt tall that opens at its newest line, are at least 22pt with 14pt side padding in
-  Geist Mono 11: the time (24-hour) in `textTertiary`, the message in `textSecondary`, truncating
-  (the whole line is its tooltip). A warning row is `lanternTint` with its text in `lanternText`,
-  an error row `failedTint` in `failed`. It keeps the last 500 lines, and a new document starts it
-  over, counts included.
+  (the document and each resource it loaded; Geist Mono 10.5 `textTertiary`), and "1 warning" in
+  `lanternText` (Geist 11.5, a 12pt glyph, only when there is one). No board draws a separate
+  error count or red rows (the user's decision, 2026-09-29): the page's own errors show as warning
+  rows and count in "N warning(s)" too. Hide console (24pt; Show console, a chevron up, while
+  hidden) collapses the rows and leaves the bar; the ⋯ menu offers nothing of its own for it. Its
+  rows, a lazy list 136pt tall that opens at its newest line, are at least 22pt with 14pt side
+  padding in Geist Mono 11: the time (24-hour) in `textTertiary`, the message in `textSecondary`,
+  truncating (the whole line is its tooltip). A warning row (an error included) is `lanternTint`
+  with its text in `lanternText`. It keeps the last 500 lines, and a new document starts it over,
+  counts included.
 - **Keys:** ⌃2 shows the tab (fixed). ⌘L (the address field) and ⇧⌘C (Select an element) go
   through `KeybindingsStore`, scoped to the Browser while it is on screen, whatever has the
   keyboard in the window; both are in `appOwnedChords`, so a focused terminal lets them through.

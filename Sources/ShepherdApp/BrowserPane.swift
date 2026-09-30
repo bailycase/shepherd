@@ -171,7 +171,7 @@ struct BrowserConsoleDrawer: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            NWConsoleBar(network: console.network, warnings: console.warnings, errors: console.errors, open: open, toggle: toggle)
+            NWConsoleBar(network: console.network, warnings: console.warnings, open: open, toggle: toggle)
             if open {
                 BrowserConsoleLines(lines: console.lines)
                     .frame(height: NWBrowserMetrics.consoleListHeight)
@@ -197,16 +197,6 @@ struct BrowserConsoleLines: View, Equatable {
         }
         .defaultScrollAnchor(.bottom)
         .accessibilityLabel("Console")
-    }
-}
-
-/// The Browser's ⋯ menu items.
-struct BrowserOptionItems: View {
-    let session: BrowserSession
-
-    var body: some View {
-        Button(session.consoleOpen ? "Hide Console" : "Show Console") { session.consoleOpen.toggle() }
-            .disabled(!session.hasPage)
     }
 }
 

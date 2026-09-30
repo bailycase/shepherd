@@ -342,17 +342,17 @@ final class BrowserConsoleLog {
 
     private(set) var lines: [NWConsoleLine] = []
     private(set) var warnings = 0
-    private(set) var errors = 0
     private(set) var network = 0
     @ObservationIgnored private var nextID = 0
 
-
+    /// The page's own errors show as warning rows too: no board draws a separate error count or
+    /// red rows (the user's decision, 2026-09-29).
     func append(_ level: NWConsoleLevel, _ text: String, at date: Date = Date()) {
         nextID += 1
-        lines.append(NWConsoleLine(id: nextID, time: Self.time(date), text: text, level: level))
+        let shown: NWConsoleLevel = level == .error ? .warning : level
+        lines.append(NWConsoleLine(id: nextID, time: Self.time(date), text: text, level: shown))
         if lines.count > Self.maxLines { lines.removeFirst(lines.count - Self.maxLines) }
-        if level == .warning { warnings += 1 }
-        if level == .error { errors += 1 }
+        if shown == .warning { warnings += 1 }
     }
 
     func setNetwork(_ count: Int) {
@@ -363,7 +363,6 @@ final class BrowserConsoleLog {
     func clear() {
         if !lines.isEmpty { lines = [] }
         if warnings != 0 { warnings = 0 }
-        if errors != 0 { errors = 0 }
         if network != 0 { network = 0 }
     }
 

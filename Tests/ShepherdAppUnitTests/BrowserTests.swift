@@ -218,19 +218,27 @@ struct BrowserTests {
         #expect(BrowserScriptMessage(console: ["level": "log"]) == nil)
     }
 
-    @MainActor @Test func theConsoleKeepsItsNewestLinesAndCounts() {
+    /// An error line shows (and counts) as a warning: no board draws a separate error count or
+    /// red rows.
+    @MainActor @Test func theConsoleKeepsItsNewestLinesAndCountsErrorsAsWarnings() {
         let log = BrowserConsoleLog()
         let at = Date(timeIntervalSince1970: 0)
         log.append(.warning, "w", at: at)
         log.append(.error, "e", at: at)
         for index in 0..<BrowserConsoleLog.maxLines { log.append(.log, "\(index)", at: at) }
         #expect(log.lines.count == BrowserConsoleLog.maxLines)
-        #expect(log.lines.first?.text == "0" && log.warnings == 1 && log.errors == 1)
+        #expect(log.lines.first?.text == "0" && log.warnings == 2)
         #expect(Set(log.lines.map(\.id)).count == log.lines.count, "ids stay unique")
         log.setNetwork(24)
         #expect(log.network == 24)
         log.clear()
-        #expect(log.lines.isEmpty && log.warnings == 0 && log.errors == 0 && log.network == 0)
+        #expect(log.lines.isEmpty && log.warnings == 0 && log.network == 0)
+    }
+
+    @MainActor @Test func anErrorLineDrawsAsAWarningRow() {
+        let log = BrowserConsoleLog()
+        log.append(.error, "boom", at: Date(timeIntervalSince1970: 0))
+        #expect(log.lines.map(\.level) == [.warning])
     }
 
     @Test func aTimeReadsOnATwentyFourHourClock() {
