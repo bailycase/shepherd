@@ -59,6 +59,12 @@ struct BrowserPortForwarderTests {
         }.value
     }
 
+    /// A connection the forwarder reset: the page got no bytes, and (when the reset beats the end of
+    /// its connect, on a slow machine) not even a connection.
+    private func isReset(_ reply: String?) -> Bool {
+        reply == nil || reply == ""
+    }
+
     @Test func aClaimedPortReachesTheHostsDevServerOnBothLoopbackAddresses() async throws {
         let host = try await TunnelHost()
         defer { host.stop() }
@@ -169,7 +175,7 @@ struct BrowserPortForwarderTests {
         let port = Int(try unusedLoopbackPort())
         defer { forwarder.release(owner) }
         #expect(forwarder.claim(port: port, hostPort: Int(dev.port), owner: owner, slot: empty, agent: host.agent) == nil)
-        #expect(await get("/hello", host: "127.0.0.1", port: UInt16(port)) == "")
+        #expect(await isReset(get("/hello", host: "127.0.0.1", port: UInt16(port))))
 
         // A host connects (the store fills the slot), then drops, then another connection comes.
         let first = try await host.client()
@@ -177,7 +183,7 @@ struct BrowserPortForwarderTests {
         #expect(await get("/hello", host: "127.0.0.1", port: UInt16(port)) == "hello from the host")
         first.disconnect()
         try await eventually("the first client to be gone") { first.tunnels.openCount == 0 }
-        #expect(await get("/hello", host: "127.0.0.1", port: UInt16(port)) == "", "the dropped connection's hub has nowhere to send")
+        #expect(await isReset(get("/hello", host: "127.0.0.1", port: UInt16(port))), "the dropped connection's hub has nowhere to send")
         let second = try await host.client()
         defer { second.disconnect() }
         empty.hub = second.tunnels
