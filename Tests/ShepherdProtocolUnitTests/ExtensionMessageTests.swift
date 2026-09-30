@@ -125,6 +125,40 @@ struct ExtensionMessageTests {
         #expect(Set(Self.samples.map(Self.caseName)).count == Self.caseCount)
     }
 
+    /// The messages that name no agent at all, so no connection is bound to an agent by sending
+    /// them: the automation requests (any pi session may send them) and the answer to a child
+    /// command (bound to the connection the command went to).
+    static let namesNoAgent: Set<String> = [
+        "childCommandResult", "createAutomation", "listAutomations", "updateAutomation", "deleteAutomation",
+        "startAutomation", "stopAutomation",
+    ]
+    /// Messages that carry an `id` and are never answered with one.
+    static let neverAnswered: Set<String> = ["childCommandResult", "cancelAgentRequest"]
+
+    /// The server serves a message only on a connection opened by the pi of the agent it speaks
+    /// for: that agent is the one the message's wire form names as `agentID`.
+    @Test(arguments: samples)
+    func aMessageSpeaksForTheAgentItNames(_ message: ExtensionMessage) throws {
+        let wire = try Wire.object(message)
+        #expect(message.speaksFor?.rawValue == wire["agentID"] as? String)
+        #expect((message.speaksFor == nil) == Self.namesNoAgent.contains(Self.caseName(message)))
+    }
+
+    @Test(arguments: samples)
+    func aRefusalIsAddressedToTheIdOfTheRequestItAnswers(_ message: ExtensionMessage) throws {
+        let wire = try Wire.object(message)
+        let expected = Self.neverAnswered.contains(Self.caseName(message)) ? nil : wire["id"] as? Int
+        #expect(message.replyID == expected)
+    }
+
+    @Test func aMessageNamingATargetSpeaksForItsSenderNotItsTarget() {
+        let target = AgentID(rawValue: "a2")
+        #expect(ExtensionMessage.sendToAgent(id: 1, agentID: Self.agent, targetAgentID: target, text: "hi").speaksFor == Self.agent)
+        #expect(ExtensionMessage.coordinateAgent(id: 1, agentID: Self.agent, targetAgentID: target,
+                                                 request: AgentCoordinationRequest(operation: .read)).speaksFor == Self.agent)
+        #expect(ExtensionMessage.agentResponse(agentID: target, requestID: "t", result: AgentCoordinationResult(text: "")).speaksFor == target)
+    }
+
     @Test func everyBrowserActionHasARequestSample() {
         #expect(Set(Self.browserRequests.map(\.action)) == Set(BrowserRequest.Action.allCases))
     }
