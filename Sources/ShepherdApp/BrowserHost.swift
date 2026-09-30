@@ -257,7 +257,7 @@ final class BrowserSession {
     static func palette() -> [String: String] {
         let dark = NSApp?.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         let colors = ThemeStore.shared.theme.variant(dark: dark).colors
-        return ["accent": colors.running, "tint": colors.runningTint, "text": colors.textOnLantern]
+        return ["accent": colors.running, "tint": colors.runningTint, "text": colors.textOnRunning]
     }
 
     // MARK: What the page reports

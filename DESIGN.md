@@ -180,7 +180,6 @@ And the rules that follow from them:
 | PaneStates, the Changes boards, PaneBrowser, PaneArtifacts, PaneFiles: four tabs, Changes, Browser, Artifacts and Files | Changes and Browser (a remote thread: Changes alone) | Only what Shepherd has (the user's decision, 2026-09-25: "dont show browser, artifacts, files, etc, only show the things we have"); the others join when they are built, and a remote thread's Browser when the tunnel reaches its host |
 | PaneStates › BrowserPane · nothing open: "The agent opens pages here when it starts a dev server. Ports on remote hosts are forwarded for you." | "Start a dev server from this repository, or open a URL. Pages you open stay with this thread." ("Open a URL to see it here. …" when the repository offers no dev server) | Neither sentence is true yet: agents don't drive the Browser and no port is forwarded. The board's words come back when they are |
 | PaneStates, PaneBrowser: Start on build-01; the host chip "build-01" | "Start"; "This Mac" | Local threads only; a remote thread's Browser waits for the tunnel |
-| PaneBrowser: the element tag's text is white on `running` (DESIGN.md noted it needs a role) | `textOnLantern`, the dark text Night Watch puts on its bright fills | No role exists for text on `running`, and white on `running` fails the text contrast rule |
 | PaneStates › viewport: Throttle to 3G under Dark appearance | Left out | WebKit has no public throttle; it will come through the tunnel's local proxy (the user's decision, 2026-09-29) |
 | PaneBrowser: the element's popover drawn in the page beside it | A native popover over the page, beside the element (else left of it, else under it), following it as the page scrolls; only the outline and tag are drawn in the page | Its buttons are Shepherd's controls, and the page can't reach or restyle them |
 | PaneBrowser's console: warnings and log lines | Errors too: "1 error" in `failed` in the bar, error rows on `failedTint` | The page's errors are the lines that matter most; the board draws none |
@@ -3151,7 +3150,7 @@ forwards the port (not built yet).
 - **Selecting an element** (⇧⌘C, or the button): the element under the pointer takes a 2pt
   `running` outline (radius 10, 4pt outside it, a `runningTint` fill) with a 20pt `running` tag
   above it (below it at the page's top): its label and size ("button.pay 240 × 44", Geist Mono
-  10.5, the size at 75%, the text in `textOnLantern`). Shepherd's script draws them inside the page,
+  10.5, the size at 75%, the text in `textOnRunning`). Shepherd's script draws them inside the page,
   in a closed shadow root, in the theme's colors. While selecting, the page's clicks and presses go
   to the picker, and Esc stops. A click picks: selecting ends, the outline stays, and a popover
   (`NWElementPopover`: 188pt, padding 8, radius 12, the popover's fill and shadow) sits beside the
