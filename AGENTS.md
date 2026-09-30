@@ -557,7 +557,8 @@ Sources/
   ShepherdSessions/    SessionServer (state, sessions, extension socket, remote listener),
                        RPCSession, RPCThreadState (+Queue: the queue of messages sent while pi
                        works; +Context: what fills the context, compactions), ThreadOriginStore (where delivered messages came from, kept per pi
-                       session), AutomationRunLog (each automation's runs), PTYSession,
+                       session), StreamingToolArguments (the fields a tool call being written
+                       names, read from pi's argument fragments), AutomationRunLog (each automation's runs), PTYSession,
                        SessionScreen (SwiftTerm), StateStore,
                        PaneRequest (pane/review/automation requests + outcomes), RemoteFileUpload,
                        PiEngine (which pi runs; BundledPiEngine, the one the app ships),
