@@ -13,9 +13,10 @@ import Testing
 /// from the scroll view's numbers: the failure this guards left the scroll view reporting the
 /// tail (distance 0) while the lazy stack had placed its rows elsewhere and the viewport drew
 /// nothing but the composer. It needed `defaultScrollAnchor(.bottom)` over a stack of estimated
-/// row heights and a window of modest height; it shows on macOS 27 (and in a build for the
-/// macOS 26 SDK running there) in the 900×600 window, while CI's macOS 26 and taller windows
-/// did not show it, so those sizes run everywhere as the control.
+/// row heights and a window of modest height; it showed on macOS 27 (with a build for the macOS
+/// 26 SDK too) in the 900×600 window and not in a tall one, and from 27 the thread sets no
+/// anchor (`ThreadTailAnchor`). Every size runs on every macOS: the tall window is the control
+/// on 27, and macOS 26, which keeps its anchors, is checked the same way.
 ///
 /// Every test runs a real `ThreadView` over a `QueueFixture` host in an off-screen window, the
 /// host changing the way pi's does, and looks at the window after each change.
