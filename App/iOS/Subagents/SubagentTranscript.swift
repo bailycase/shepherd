@@ -270,6 +270,7 @@ struct SubagentActivityLine: View {
         case .drew: burst.isBoardUpdate ? .edit : .drew
         case .checked: .checked
         case .lookedAt: .lookedAtDesign
+        case .browser: .browser
         case .other: .other
         }
     }
