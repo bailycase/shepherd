@@ -55,8 +55,9 @@ struct BrowserWebViewTests {
         let lines = session.console.lines
         #expect(lines.contains { $0.level == .log && $0.text == #"hello {"a":1}"# })
         #expect(lines.contains { $0.level == .warning && $0.text == "careful" })
-        #expect(lines.contains { $0.level == .error && $0.text.contains("boom") })
-        #expect(session.console.warnings == 1 && session.console.errors == 1)
+        // The page's own error shows as a warning row too: no board draws a separate error count.
+        #expect(lines.contains { $0.level == .warning && $0.text.contains("boom") })
+        #expect(session.console.warnings == 2)
         try await eventuallyOnMain("the document counted") { session.console.network >= 1 }
     }
 
