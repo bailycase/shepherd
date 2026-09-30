@@ -389,6 +389,47 @@ struct InterruptTests {
         #expect(done.messages.last { $0.role == "assistant" }?.status != "aborted")
     }
 
+    /// Between the stopped run and the message that follows it the agent is not done (no "Agent
+    /// finished"), although the run's last reply is an error, as pi ends a run it killed: the
+    /// user stopped it, and the queue goes on.
+    @Test func theAgentStaysWorkingBetweenTheStoppedRunAndTheMessage() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let callbacks = Callbacks(h.server)
+        let pi = try await PiAgent.launch(on: h)
+        let status = try ExtensionClient(path: h.socketPath)
+        defer { status.closeConnection() }
+        func agentStatus() -> AgentStatus? { h.server.state.agents.first { $0.id == pi.agent.id }?.status }
+        func reports() -> [AgentStatus] { callbacks.statuses.current.filter { $0.0 == pi.agent.id }.map(\.1) }
+        let running = try await startRun(pi, "tools:2 build")
+        try status.send(.setAgentStatus(agentID: pi.agent.id, status: .working))
+        try await eventually("working") { agentStatus() == .working }
+        // The settled run's capture is held, so the message cannot have gone yet.
+        let release = DispatchSemaphore(value: 0)
+        defer { release.signal() }
+        await withCheckedContinuation { continuation in
+            h.server.changes.captureQueue(pi.agent.id).async { continuation.resume(); release.wait() }
+        }
+        let op = UUID()
+        _ = try await pi.send("tools:0 now", delivery: .interrupt, operationID: op, from: running)
+        let stopped = try await pi.snapshot("the stopped run to settle, the message waiting") { s in
+            !s.running && s.queue?.items.map(\.id) == [op] && s.messages.last { $0.role == "assistant" }?.status == "aborted"
+        }
+        #expect(stopped.queue?.paused == false)
+
+        let seen = reports().count
+        try status.send(.setAgentStatus(agentID: pi.agent.id, status: .done))
+        try status.send(.setAgentStatus(agentID: pi.agent.id, status: .working))
+        try await eventually("the reports to be read") { reports().count > seen }
+        #expect(Array(reports()[seen...]) == [.working], "done was held: the message goes next")
+        #expect(agentStatus() == .working)
+
+        release.signal()
+        _ = try await pi.snapshot("the message to run") { s in !s.running && s.messages.contains { $0.operationID == op } && s.messages.last?.role == "assistant" }
+        try status.send(.setAgentStatus(agentID: pi.agent.id, status: .done))
+        try await eventually("done once the message has been answered") { agentStatus() == .done }
+    }
+
     /// Stop while pi is stopping for a message: Stop wins. The message stays queued, the queue waits.
     @Test func stopDuringSteerNowKeepsTheMessageQueuedAndPausesTheQueue() async throws {
         let h = try ScratchServer.fresh()

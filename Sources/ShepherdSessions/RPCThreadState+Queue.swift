@@ -93,7 +93,9 @@ extension RPCThreadState {
     /// pi settling does not leave the agent idle: a prompt of ours is on its way, or the
     /// queue goes next.
     var continuesAfterSettle: Bool {
-        !dispatches.isEmpty || (!paused && !runFailed && dialogs.isEmpty && session.isAlive && !items.isEmpty
+        // A reply that failed because the user stopped the run (an interrupt, whose queue goes on)
+        // is not a failed turn: the agent is not done between it and the message that follows.
+        !dispatches.isEmpty || (!paused && (!runFailed || stopRequested) && dialogs.isEmpty && session.isAlive && !items.isEmpty
             && !items.contains { $0.entry.held })
     }
 
