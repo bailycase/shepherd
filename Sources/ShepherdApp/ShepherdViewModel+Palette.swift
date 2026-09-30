@@ -60,6 +60,9 @@ extension ShepherdViewModel {
                                          title: "Choose model…", subtitle: visibleThread?.store.model.map(nativeModelShortName),
                                          shortcut: keys.display(.modelPicker), icon: "cpu"))
             }
+            if let store = visibleThread?.store, let speed = Self.fastModePaletteItem(offered: store.offersServiceTier) {
+                items.append(speed)
+            }
             items.append(PaletteItem(id: "action.reviewDiff", kind: .action("reviewDiff"), section: .thisThread,
                                      title: "Review diff", subtitle: Self.reviewDiffContext(changedFiles: agent.checkout?.changedFiles),
                                      shortcut: keys.display(.toggleRightPane), icon: "plus.forwardslash.minus"))
@@ -122,6 +125,20 @@ extension ShepherdViewModel {
                                      icon: "folder"))
         }
         return items
+    }
+
+    /// "Toggle fast mode" for the thread on screen (ComposerSpeed board), listed only while its
+    /// model offers a tier besides Standard; nil otherwise.
+    static func fastModePaletteItem(offered: Bool) -> PaletteItem? {
+        guard offered else { return nil }
+        return PaletteItem(id: "action.fastMode", kind: .action("fastMode"), section: .thisThread, title: "Toggle fast mode",
+                           subtitle: "Switch this thread between Standard and Fast", icon: "bolt")
+    }
+
+    /// Switches the thread on screen between Standard and Fast, as the composer's Speed menu would.
+    func toggleFastMode() {
+        guard let store = visibleThread?.store, store.offersServiceTier, store.supports("setServiceTier") else { NSSound.beep(); return }
+        Task { await store.toggleServiceTier() }
     }
 
     /// The Pane menu's terminal commands, for the thread on screen: Show or Hide, New, and
@@ -251,6 +268,7 @@ extension ShepherdViewModel {
             case "newSpace": addSpaceFromPanel()
             case "rename": renameSelectedAgent()
             case "model": sendThreadCommand(.modelPicker)
+            case "fastMode": toggleFastMode()
             case "toggleSidebar": toggleSidebar()
             case "settings": showSettings = true
             case "reviewDiff": openUserReview()

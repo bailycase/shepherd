@@ -929,6 +929,23 @@ struct NativeThreadStoreTests {
         #expect(session == "s" && generation == "g" && tier == "fast")
     }
 
+    @Test func toggleFastModeAsksForTheOtherTierEachTime() async {
+        let (store, host, task) = await started(F.snapshot(actions: ["send", "setServiceTier"], serviceTier: "standard",
+                                                           serviceTiers: ["standard", "fast"]))
+        defer { task.cancel() }
+        host.acceptAll()
+        await store.toggleServiceTier()
+        host.snapshot = F.snapshot(revision: 2, actions: ["send", "setServiceTier"], serviceTier: "fast", serviceTiers: ["standard", "fast"])
+        await store.refresh()
+        #expect(store.serviceTier == .fast)
+        await store.toggleServiceTier()
+        let tiers = host.actions.compactMap { request -> String? in
+            if case .setServiceTier(_, _, _, let tier) = request { return tier }
+            return nil
+        }
+        #expect(tiers == ["fast", "standard"])
+    }
+
     @Test func aModelWithoutTiersAndAnOlderHostNeverGetASpeedRequest() async {
         let (none, noneHost, noneTask) = await started(F.snapshot(actions: ["send", "setServiceTier"], serviceTier: "standard", serviceTiers: []))
         defer { noneTask.cancel() }

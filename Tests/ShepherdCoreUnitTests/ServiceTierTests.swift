@@ -63,6 +63,18 @@ struct ServiceTierTests {
         #expect(ServiceTier.fast.summary == "Faster responses, billed at a higher rate")
     }
 
+    @Test(arguments: [
+        (ServiceTier.standard, [ServiceTier.standard, .fast], ServiceTier.fast as ServiceTier?),
+        (.fast, [.standard, .fast], .standard),
+        (.standard, [.standard], nil),
+        (.standard, [], nil),
+        (.fast, [], nil),
+        (.fast, [.fast], nil),
+    ])
+    func toggleFastModeSwitchesBetweenStandardAndTheRaisedTierTheModelOffers(current: ServiceTier, offered: [ServiceTier], expected: ServiceTier?) {
+        #expect(ServiceTier.toggled(from: current, offered: offered) == expected)
+    }
+
     // MARK: On the agent
 
     @Test func aStateFileFromBeforeServiceTiersDecodesAsStandard() throws {

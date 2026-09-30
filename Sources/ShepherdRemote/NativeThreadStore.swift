@@ -1349,6 +1349,12 @@ public final class NativeThreadStore {
                                       operationID: operation, tier: tier.rawValue), operation: operation, current: current)
     }
 
+    /// ⌘K's "Toggle fast mode": Standard to the first raised tier the model offers, and back.
+    public func toggleServiceTier() async {
+        guard let next = ServiceTier.toggled(from: serviceTier, offered: serviceTiers) else { return }
+        await setServiceTier(next)
+    }
+
     /// Card and inspector actions on one subagent run. Gated by `subagents` in `supportedActions`.
     public func subagentCommand(runID: String, action: NativeSubagentAction, text: String? = nil, mode: NativeThreadDelivery? = nil) async {
         guard supports("subagents"), let current = snapshot else { return }
