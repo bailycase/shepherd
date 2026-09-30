@@ -112,6 +112,12 @@ $STUB_PI_MESSAGES_FILE, when set, loads the history from that file at start and 
 after every "tools:N" run, like pi resuming its session file.
 
 set_model / set_thinking_level update STATE (unknown provider -> error).
+$STUB_PI_MODEL (a JSON object) overrides fields of the starting model (provider, id, api), and
+$STUB_PI_MODEL_APIS (a JSON object from "provider/id" to its api) names the non-anthropic models
+set_model accepts, each with that api: the model pi's get_state reports is what the host's
+service tier support reads. With $STUB_PI_LOG and $SHEPHERD_EXT_SERVICE_TIER set, the stub logs
+{"type": "stub-service-tier", "when": "start" | "prompt", "message": ..., "content": ...}: what
+the agent's tier file holds at its start and before each prompt, as the extension reads it.
 get_available_thinking_levels answers pi's reasoning set (off, minimal, low, medium, high),
 or $STUB_PI_THINKING_LEVELS: a comma list for every model, or a JSON object from model id to
 its list ("*" for the rest); "unsupported" answers as a pi without the command.
@@ -152,6 +158,25 @@ import time
 out = sys.stdout.buffer
 out_lock = threading.Lock()
 log_path = os.environ.get("STUB_PI_LOG")
+tier_path = os.environ.get("SHEPHERD_EXT_SERVICE_TIER")
+
+
+def log_tier(when, message=None):
+    """Logs what the agent's service tier file holds now, as the real extension would read it
+    before a model call: `{"type": "stub-service-tier", "when": "start" | "prompt", "content": ...}`
+    (content null without a file). Only with $STUB_PI_LOG and $SHEPHERD_EXT_SERVICE_TIER set."""
+    if not (log_path and tier_path):
+        return
+    try:
+        with open(tier_path) as f:
+            content = f.read()
+    except OSError:
+        content = None
+    with open(log_path, "ab") as f:
+        f.write(json.dumps({"type": "stub-service-tier", "when": when, "message": message, "content": content}).encode() + b"\n")
+
+
+log_tier("start")
 
 
 def wait_for_file(name, timeout=30.0):
@@ -180,9 +205,12 @@ def respond(cmd, command, success=True, data=None, error=None):
 
 
 STATE = {
-    "model": {"id": "claude-sonnet-4-20250514", "name": "Claude Sonnet 4", "provider": "anthropic",
-              "api": "anthropic-messages", "reasoning": True, "input": ["text", "image"],
-              "contextWindow": 200000, "maxTokens": 16384},
+    # $STUB_PI_MODEL (a JSON object, e.g. {"provider": "openai", "id": "gpt-6-luna", "api": "openai-responses"})
+    # overrides these fields of the starting model; set_model then takes any provider whose model
+    # the object $STUB_PI_MODEL_APIS ("provider/id" -> api) names, as pi's catalog would.
+    "model": dict({"id": "claude-sonnet-4-20250514", "name": "Claude Sonnet 4", "provider": "anthropic",
+                   "api": "anthropic-messages", "reasoning": True, "input": ["text", "image"],
+                   "contextWindow": 200000, "maxTokens": 16384}, **json.loads(os.environ.get("STUB_PI_MODEL") or "{}")),
     "thinkingLevel": "medium",
     "isStreaming": False,
     "isCompacting": False,
@@ -939,6 +967,8 @@ for raw in sys.stdin.buffer:
     except ValueError as e:
         emit({"type": "response", "command": "parse", "success": False, "error": f"Failed to parse command: {e}"})
         continue
+    if cmd.get("type") == "prompt":
+        log_tier("prompt", cmd.get("message"))
     t = cmd.get("type")
     streaming = RUN["active"] or (turn_thread is not None and turn_thread.is_alive() and not turn_aborted)
     if t == "get_state":
@@ -971,10 +1001,13 @@ for raw in sys.stdin.buffer:
         else:
             respond(cmd, t, data=result)
     elif t == "set_model":
-        if cmd.get("provider") != "anthropic":
-            respond(cmd, t, success=False, error=f"Model not found: {cmd.get('provider')}/{cmd.get('modelId')}")
+        apis = json.loads(os.environ.get("STUB_PI_MODEL_APIS") or "{}")
+        key = f"{cmd.get('provider')}/{cmd.get('modelId')}"
+        if cmd.get("provider") != "anthropic" and key not in apis:
+            respond(cmd, t, success=False, error=f"Model not found: {key}")
         else:
-            STATE["model"] = dict(STATE["model"], id=cmd.get("modelId"), provider=cmd.get("provider"))
+            STATE["model"] = dict(STATE["model"], id=cmd.get("modelId"), provider=cmd.get("provider"),
+                                  api=apis.get(key, STATE["model"].get("api")))
             respond(cmd, t, data=STATE["model"])
     elif t == "get_available_thinking_levels":
         spec = os.environ.get("STUB_PI_THINKING_LEVELS", "off,minimal,low,medium,high")
