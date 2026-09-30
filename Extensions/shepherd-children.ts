@@ -152,6 +152,243 @@ export function childBashOperations() {
 const textSchema = Type.String({ minLength: 1, maxLength: MAX_TEXT });
 const idSchema = Type.String({ minLength: 1, maxLength: 80 });
 
+// The managed CLIProxyAPI provider (docs/pi-home.md) is loaded by Shepherd's launcher, `<home>/bin/pi`,
+// which passes `-e <home>/shepherd-cliproxyapi.ts` and pins `SHEPHERD_CLIPROXYAPI_CONFIG`, the
+// connection file beside it. A helper isn't started through the launcher, so it gets both here from the
+// parent's pinned path, and only while both files exist: with no connection it is launched as it
+// always was, and a launch never fails on a missing extension file.
+export function managedProvider(env = process.env) {
+  const config = env.SHEPHERD_CLIPROXYAPI_CONFIG;
+  if (!config || !path.isAbsolute(config)) return undefined;
+  const extension = path.join(path.dirname(config), "shepherd-cliproxyapi.ts");
+  try { return fs.statSync(extension).isFile() && fs.statSync(config).isFile() ? { extension, config } : undefined; }
+  catch { return undefined; }
+}
+
+// What a helper is started with: its arguments and its environment, built from the parent's.
+// Pure (it reads files only to name them), so a test can pin exactly which `-e` and which
+// SHEPHERD_* variables a helper gets. `inherited` are the user's enabled extensions, `relay` the
+// design tools its bridge proxies to the parent (relaySpecs).
+export function childLaunch({ run, bridge, inherited = [], parentEnv = process.env, relay = [] }) {
+  const env = { ...parentEnv };
+  // A helper is cut off from the host: none of the parent's SHEPHERD_* reaches it (its agent id,
+  // socket and design are the parent's alone), nor the parent's session or model variables.
+  for (const key of Object.keys(env)) if (key.startsWith("SHEPHERD_") || key.startsWith("PI_SUBAGENT") || ["PI_SESSION_ID", "PI_SESSION_FILE", "PI_PROVIDER", "PI_MODEL", "PI_REASONING_LEVEL"].includes(key)) delete env[key];
+  env.SHEPHERD_CHILD = "1"; env.PI_OFFLINE = "1";
+  env.SHEPHERD_CHILD_TOOLS = JSON.stringify([...run.tools, "shepherd_parent_message"]);
+  if (relay.length) env.SHEPHERD_CHILD_RELAY = JSON.stringify(relay);
+  const args = ["--mode", "rpc", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve",
+    "-e", bridge, "--session", run.sessionFile, "--model", run.model, "--thinking", run.thinking,
+    "--tools", [...run.tools, "shepherd_parent_message"].join(","),
+    run.systemPromptMode === "replace" ? "--system-prompt" : "--append-system-prompt", path.join(run.dir, "prompt.md")];
+  if (run.inheritProjectContext === false) args.push("--no-context-files");
+  for (const skill of run.skills ?? []) args.push("--skill", skill);
+  const loaded = new Set([fs.realpathSync(bridge)]);
+  const load = (extension) => {
+    const real = fs.realpathSync(extension);
+    if (loaded.has(real)) return;
+    loaded.add(real); args.push("-e", extension);
+  };
+  // Resolved at each launch, including resume, so Pi resource enable/disable changes apply.
+  // Other providers come from the user's extensions (Pi loads those under --no-extensions when
+  // named); the managed one is Shepherd's own and comes from its home.
+  const managed = managedProvider(parentEnv);
+  if (managed) { load(managed.extension); env.SHEPHERD_CLIPROXYAPI_CONFIG = managed.config; }
+  for (const extension of new Set([...inherited, ...(run.extensions ?? [])])) load(extension);
+  return { args, env };
+}
+
+// ---- Errors that say what to do ----
+
+const nameTokens = (name) => new Set(String(name).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
+const within = (a, b) => [...a].every((token) => b.has(token));
+
+// A role or profile that isn't one thing: every name that would work, and the nearest to what was passed.
+export function unknownAgentMessage(name, agents, matches = []) {
+  if (matches.length > 1) {
+    return `Ambiguous agent "${name}": it names ${matches.map((a) => `${a.name} (${a.source}${a.filePath ? `, ${a.filePath}` : ""})`).join(" and ")}. Pass one profile's full name.`;
+  }
+  const roles = agents.filter((a) => a.source === "bundled").map((a) => a.name);
+  const profiles = agents.filter((a) => a.source !== "bundled").map((a) => a.name);
+  const wanted = nameTokens(name);
+  const close = agents.map((a) => a.name).filter((other) => { const tokens = nameTokens(other); return within(wanted, tokens) || within(tokens, wanted); }).slice(0, 3);
+  return `Unknown agent "${name}". Roles: ${roles.join(", ") || "none (Shepherd's bundled roles are disabled)"}. `
+    + `Profiles: ${profiles.join(", ") || "none discovered"}. `
+    + (close.length ? `Did you mean ${close.join(" or ")}? ` : "")
+    + "Pass one of them as agent (role is an alias); shepherd_child_agents lists each with its source.";
+}
+
+// A helper whose pi died before it served says why on stderr (finish() returns that to the pending
+// command). When it refused a `--model` the parent could resolve, this says what that means: the helper
+// doesn't load that provider.
+export function missingProviderHint(model, message) {
+  return /Model ".*" not found/.test(String(message ?? ""))
+    ? ` ${model} resolves in this Pi, so its provider is one the helper doesn't load: a helper loads Shepherd's managed provider, the user's enabled extensions and a profile's own extensions, not a project's or another CLI-only one.`
+    : "";
+}
+
+const THINKING_SUFFIX = /:(off|minimal|low|medium|high|xhigh|max)$/;
+
+// A model the Pi that would run it can't see: which provider prefixes it does have, where the same
+// id does exist, and (for the old `cpa` provider) what replaced it. `models` is that Pi's catalog.
+export function modelNotFound(requested, models, { origin, where = "this Pi" } = {}) {
+  const named = String(requested).replace(THINKING_SUFFIX, "");
+  const providers = [...new Set(models.map((model) => model.provider))].sort();
+  const slash = named.indexOf("/");
+  const provider = slash > 0 ? named.slice(0, slash) : undefined, id = slash > 0 ? named.slice(slash + 1) : named;
+  const shown = providers.length > 24 ? `${providers.slice(0, 24).join(", ")} and ${providers.length - 24} more` : providers.join(", ") || "none";
+  const said = (problem) => origin ? `${origin} names ${requested}, but ${problem}.` : `${problem[0].toUpperCase()}${problem.slice(1)}.`;
+  const parts = [];
+  if (provider && !providers.includes(provider)) {
+    parts.push(said(`provider "${provider}" isn't loaded in ${where}`));
+    const elsewhere = models.filter((model) => model.id === id).map((model) => `${model.provider}/${model.id}`).slice(0, 3);
+    if (elsewhere.length) parts.push(`Did you mean ${elsewhere.join(" or ")}?`);
+    if (provider === "cpa") parts.push("\"cpa\" was the provider of the old pi-cliproxyapi-provider package, which Shepherd's pi doesn't load; its managed provider is \"cliproxyapi\" (Settings ▸ Pi ▸ Sign-in).");
+  } else if (provider) {
+    const first = id.toLowerCase().split(/[^a-z0-9]+/)[0] ?? "";
+    const similar = models.filter((model) => model.provider === provider && first && model.id.toLowerCase().includes(first)).map((model) => model.id).slice(0, 5);
+    parts.push(said(`provider "${provider}" has no model "${id}" in ${where}`));
+    if (similar.length) parts.push(`Its models that look like it: ${similar.join(", ")}.`);
+  } else {
+    parts.push(said(`no provider of ${where} lists "${requested}"; name a model as provider/id`));
+  }
+  parts.push(`Providers ${where} has: ${shown}.`);
+  return parts.join(" ");
+}
+
+// ---- A design agent's helpers: its design tools, through their parent ----
+//
+// A helper has none of its parent's identity (every SHEPHERD_* variable is stripped), and Shepherd serves
+// a design message only on a connection the design agent's own pi opened, so a helper can't call the
+// design tools itself. The parent's pi can, and this extension runs in it, beside shepherd-design.ts, which
+// publishes its tools on `globalThis[RELAY_KEY]` (only a design agent's pi does, and only the tools in
+// DESIGN_RELAYED). A helper whose profile lists some in `tools:` gets a proxy for each, registered by its
+// bridge; a call goes up the channel a helper already has to its parent (an `input` request on its RPC
+// stdout, answered on its stdin) and runs here, through the design extension's own tool, on its connection.
+// The parent holds the allowlist: a call for a tool the profile didn't list is refused.
+
+const RELAY_KEY = Symbol.for("shepherd.design.relay.v1");
+// The design tools a helper may use. comment_reply and markup_propose are the design agent's own voice
+// toward the viewer (it answers a comment once every helper has finished), so they are never relayed.
+const DESIGN_RELAYED = ["design_read", "design_check", "system_read", "comment_list", "board_write", "board_edit", "canvas_update", "system_write"];
+const DESIGN_TOOLS = [...DESIGN_RELAYED, "comment_reply", "markup_propose"];
+const RELAY_TITLE = "shepherd-relay:v1:";
+// A request or a result: the extension socket's own frame cap, since a board is at most 900,000 bytes.
+const MAX_RELAY_BYTES = 1024 * 1024;
+const MAX_RELAY_CALLS = 8;
+const RELAY_TIMEOUT_MS = 120_000;
+
+// The registry a live design agent's pi published, for its own design; else nothing.
+export function designRelay(env = process.env) {
+  const relay = globalThis[RELAY_KEY];
+  return relay && relay.active?.() === true && typeof relay.designID === "string" && relay.designID === env.SHEPHERD_DESIGN_ID ? relay : undefined;
+}
+
+// Why a profile's design tools can't be given to a helper, or undefined when they can.
+export function designToolsProblem(names, relay) {
+  if (!relay) return `${names.join(", ")}: design tools are relayed only to the helpers of a design agent, and this session draws no design. Drop them from the profile's tools.`;
+  const own = names.filter((name) => !DESIGN_RELAYED.includes(name));
+  if (own.length) return `${own.join(", ")} can't be relayed to a helper: the design agent answers the viewer's comments and proposes their markup itself, once its helpers are done. Relayed: ${DESIGN_RELAYED.join(", ")}.`;
+  const absent = names.filter((name) => !relay.tools.has(name));
+  if (absent.length) return `${absent.join(", ")} isn't available from this design agent's extension.`;
+  return undefined;
+}
+
+// What a helper's bridge registers for each relayed tool: its name and schema, as JSON (no function crosses).
+export function relaySpecs(names, relay) {
+  return names.map((name) => {
+    const tool = relay.tools.get(name);
+    return { name, label: tool.label ?? name, promptSnippet: tool.promptSnippet,
+      description: `${tool.description} (Relayed: your parent draws this design and runs the call for you.)`,
+      parameters: JSON.parse(JSON.stringify(tool.parameters)) };
+  });
+}
+
+// The helper's side of a relayed call: one `input` request to the parent, answered with the tool's result.
+export async function relayedCall(tool, params, signal, ctx) {
+  signal?.throwIfAborted();
+  const callId = randomUUID();
+  const payload = JSON.stringify({ tool, params });
+  if (Buffer.byteLength(payload) > MAX_RELAY_BYTES) throw new Error(`${tool}: the call is larger than the ${MAX_RELAY_BYTES} byte relay limit; send less at once`);
+  if (typeof ctx?.ui?.input !== "function") throw new Error(`${tool}: this helper has no channel to its parent`);
+  const answer = await ctx.ui.input(RELAY_TITLE + callId, payload, { signal, timeout: RELAY_TIMEOUT_MS });
+  if (typeof answer !== "string") {
+    // Cancelled or timed out: tell the parent, which is running the call, to drop it.
+    try { ctx.ui.notify(JSON.stringify({ shepherdRelayCancel: callId }), "info"); } catch { /* The parent drops it when this helper exits. */ }
+    signal?.throwIfAborted();
+    throw new Error(`${tool}: the parent did not answer within ${RELAY_TIMEOUT_MS / 1000} seconds`);
+  }
+  let reply;
+  try { reply = JSON.parse(answer); } catch { throw new Error(`${tool}: the parent's answer was not understood`); }
+  if (!reply?.ok) throw new Error(typeof reply?.error === "string" ? reply.error : `${tool} failed`);
+  return { content: Array.isArray(reply.content) ? reply.content : [], details: reply.details };
+}
+
+function registerRelayTools(pi) {
+  let specs;
+  try { specs = JSON.parse(process.env.SHEPHERD_CHILD_RELAY); } catch { return; }
+  for (const spec of Array.isArray(specs) ? specs : []) {
+    // The helper registers only names the parent may relay, whatever its environment says.
+    if (typeof spec?.name !== "string" || !DESIGN_RELAYED.includes(spec.name) || !spec.parameters || typeof spec.parameters !== "object") continue;
+    pi.registerTool({ name: spec.name, label: String(spec.label ?? spec.name), description: String(spec.description ?? spec.name),
+      promptSnippet: typeof spec.promptSnippet === "string" ? spec.promptSnippet : undefined, parameters: spec.parameters,
+      async execute(_id, params, signal, _update, ctx) { return relayedCall(spec.name, params, signal, ctx); } });
+  }
+}
+
+// The parent's side: serves one relayed call (a helper's `input` request) and answers it on the helper's
+// stdin. `run.relayTools` is what the helper's profile listed, `run.relays` its calls in flight; a call
+// for anything else, past the cap, or once the session draws no design is refused. Never throws.
+export async function serveRelay(run, event, { relay, ctx, answer }) {
+  const reply = (value) => { try { answer(JSON.stringify(value)); } catch { /* The helper is gone. */ } };
+  const fail = (error) => reply({ ok: false, error });
+  run.relays ??= new Map();
+  const callId = String(event.title).slice(RELAY_TITLE.length);
+  if (!/^[\w-]{1,64}$/.test(callId) || run.relays.has(callId)) return fail("invalid or repeated relay call id");
+  const payload = typeof event.placeholder === "string" ? event.placeholder : "";
+  if (Buffer.byteLength(payload) > MAX_RELAY_BYTES) return fail(`the call is larger than the ${MAX_RELAY_BYTES} byte relay limit; send less at once`);
+  let request;
+  try { request = JSON.parse(payload); } catch { return fail("the relayed call is not JSON"); }
+  const name = request?.tool;
+  if (typeof name !== "string" || !(run.relayTools ?? []).includes(name) || !DESIGN_RELAYED.includes(name)) {
+    return fail(`${typeof name === "string" ? name : "that tool"} is not relayed to this helper (its profile's design tools: ${(run.relayTools ?? []).join(", ") || "none"})`);
+  }
+  const tool = relay?.tools.get(name);
+  if (!tool) return fail("this session no longer draws a design, so its design tools can't be relayed");
+  if (run.relays.size >= MAX_RELAY_CALLS) return fail(`${MAX_RELAY_CALLS} design calls are already in flight for this helper; wait for one to finish`);
+  const controller = new AbortController();
+  run.relays.set(callId, controller);
+  try {
+    const params = validateToolArguments({ name, parameters: tool.parameters }, { id: callId, name, arguments: request.params ?? {} });
+    const result = await tool.execute(`relay-${run.id}-${callId}`, params, controller.signal, undefined, ctx);
+    // A cancelled call has no one left to answer.
+    if (controller.signal.aborted) return;
+    const content = (result?.content ?? []).filter((part) => part?.type === "text").map((part) => ({ type: "text", text: String(part.text ?? "") }));
+    const size = content.reduce((total, part) => total + Buffer.byteLength(part.text), 0);
+    if (size > MAX_RELAY_BYTES) return fail(`${name}'s result is ${size} bytes; the relay carries at most ${MAX_RELAY_BYTES}`);
+    reply({ ok: true, content, details: result?.details });
+  } catch (error) {
+    if (!controller.signal.aborted) fail(clip(error?.message ?? String(error), 4000));
+  } finally { run.relays.delete(callId); }
+}
+
+// A helper cancelled a call of its own (its tool call was aborted, or the parent never answered): the
+// notice it sends names the call, and the parent drops it. Anything else is not one, and is ignored.
+export function relayCancel(run, message) {
+  try {
+    const data = JSON.parse(message);
+    if (typeof data?.shepherdRelayCancel !== "string") return false;
+    run.relays?.get(data.shepherdRelayCancel)?.abort();
+    return true;
+  } catch { return false; }
+}
+
+// Drops every call a helper has in flight: it was stopped, it exited, or the session ended.
+function abortRelays(run) {
+  for (const controller of run.relays?.values() ?? []) controller.abort();
+  run.relays?.clear();
+}
+
 // `timers` lets tests observe the control tick; pi passes only `pi`.
 export default function shepherdChildren(pi, timers = { setInterval, clearInterval }) {
   if (process.env.SHEPHERD_CHILD === "1") {
@@ -171,6 +408,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     });
     pi.on("session_shutdown", continueRun);
     pi.registerTool(createBashTool(process.cwd(), { operations: childBashOperations() }));
+    if (process.env.SHEPHERD_CHILD_RELAY) registerRelayTools(pi);
     if (process.env.SHEPHERD_CHILD_TOOLS) {
       const allowed = new Set(JSON.parse(process.env.SHEPHERD_CHILD_TOOLS));
       pi.on("tool_call", (event) => allowed.has(event.toolName) ? undefined : { block: true, reason: "Tool exceeds the parent child allowlist" });
@@ -222,7 +460,8 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   const summary = (run) => ({ id: run.id, role: run.role, state: run.state, task: run.task, startedAt: run.startedAt, endedAt: run.endedAt, currentTool: run.currentTool, latestTool: run.latestTool, model: run.model, cwd: run.cwd,
     workflowId: run.workflowId, delivery: run.delivery ?? "continue", settled: run.settled, missionId: run.missionId, missionWarning: run.missionWarning, thinking: run.thinking, context: run.context, tools: run.tools, sessionFile: run.sessionFile, output: run.output, error: run.error, needsReply: run.needsReply, stopReason: run.lastStop, omittedInFlight: run.omittedInFlight,
     turns: run.turns, toolCalls: run.toolCalls, tokens: run.tokens, contextPercent: run.contextPercent, files: fileChanges(run), added: run.added, removed: run.removed, lastActivity: run.lastActivity, questionOptions: run.questionOptions, questionText: run.questionText, questionShort: run.questionShort,
-    attempt: run.attempt, questionID: run.questionID, exitCode: run.exitCode, toolCallID: run.toolCallID, stepIndex: run.stepIndex });
+    attempt: run.attempt, questionID: run.questionID, exitCode: run.exitCode, toolCallID: run.toolCallID, stepIndex: run.stepIndex,
+    relaying: run.relays?.size || undefined });
   // Card projection for the native thread (DESIGN.md › Subagents). Every field
   // past asyncDir is optional on the Swift side; undefined keys vanish in JSON.stringify.
   function card(run) {
@@ -363,6 +602,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   async function stop(run, reason = "Cancelled") {
     if (run.stopping) return run.stopping;
     if (!run.proc) return;
+    abortRelays(run);
     run.cancelled = true; run.paused = false; run.error = reason; run.state = "running";
     run.stopping = (async () => {
       try { await command(run, "clear_queue", {}, 500); await command(run, "abort", {}, 1000); } catch { /* Escalate below. */ }
@@ -394,6 +634,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   function finish(run, code, signal) {
     if (run.exited) return;
     run.exited = true;
+    abortRelays(run);
     clearTimeout(run.drainTimer);
     run.exitCode = code ?? undefined;
     if (run.cancelled) run.state = "stopped";
@@ -468,6 +709,12 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       save(run);
     } else if (event.type === "extension_ui_request" && event.method === "notify") {
       try { const data = JSON.parse(event.message); if (Array.isArray(data.shepherdChildTools)) run.availableTools = data.shepherdChildTools; } catch {}
+      relayCancel(run, event.message);
+    } else if (event.type === "extension_ui_request" && event.method === "input" && typeof event.title === "string" && event.title.startsWith(RELAY_TITLE)) {
+      // A design tool a helper's profile listed, relayed through this process (see serveRelay).
+      void serveRelay(run, event, { relay: designRelay(), ctx: sessionContext, answer: (value) => {
+        if (run.proc && !run.exited) run.proc.stdin.write(JSON.stringify({ type: "extension_ui_response", id: event.id, value }) + "\n");
+      } });
     } else if (event.type === "extension_ui_request" && ["select", "confirm", "input", "editor"].includes(event.method)) {
       run.proc.stdin.write(JSON.stringify({ type: "extension_ui_response", id: event.id, cancelled: true }) + "\n");
       void stop(run, `Child requested unsupported human interaction: ${clip(event.title, 200)}. Ask through shepherd_parent_message.`);
@@ -493,27 +740,18 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     run.needsReply = false; run.questionOptions = undefined; run.questionText = undefined; run.questionShort = undefined; run.exitCode = undefined; run.endedAt = undefined; run.startedAt = Date.now(); run.state = "running";
     run.toolArgs = new Map(); run.files ??= new Map();
     run.closed = new Promise((resolve) => { run.resolveClosed = resolve; });
-    const env = { ...process.env };
-    for (const key of Object.keys(env)) if (key.startsWith("SHEPHERD_") || key.startsWith("PI_SUBAGENT") || ["PI_SESSION_ID", "PI_SESSION_FILE", "PI_PROVIDER", "PI_MODEL", "PI_REASONING_LEVEL"].includes(key)) delete env[key];
-    env.SHEPHERD_CHILD = "1"; env.PI_OFFLINE = "1";
-    env.SHEPHERD_CHILD_TOOLS = JSON.stringify([...run.tools, "shepherd_parent_message"]);
-    const args = ["--mode", "rpc", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve",
-      "-e", bridge, "--session", run.sessionFile, "--model", run.model, "--thinking", run.thinking,
-      "--tools", [...run.tools, "shepherd_parent_message"].join(","),
-      run.systemPromptMode === "replace" ? "--system-prompt" : "--append-system-prompt", path.join(run.dir, "prompt.md")];
-    if (run.inheritProjectContext === false) args.push("--no-context-files");
-    for (const skill of run.skills ?? []) args.push("--skill", skill);
-    // Direct node launches bypass PiHome's launcher, which explicitly loads the managed provider.
-    const proxyConfig = process.env.SHEPHERD_CLIPROXYAPI_CONFIG;
-    if (proxyConfig) {
-      env.SHEPHERD_CLIPROXYAPI_CONFIG = proxyConfig;
-      inherited.push(path.join(path.dirname(proxyConfig), "shepherd-cliproxyapi.ts"));
+    // A design agent's helper gets a proxy for each design tool its profile listed (the parent's tool
+    // allowlist already narrowed run.tools), and the parent's allowlist for what it may relay.
+    const relayTools = run.tools.filter((name) => DESIGN_RELAYED.includes(name));
+    let relay = [];
+    if (relayTools.length) {
+      const registry = designRelay();
+      const problem = designToolsProblem(relayTools, registry);
+      if (problem) throw new Error(problem);
+      relay = relaySpecs(relayTools, registry);
     }
-    // Resolve at each launch, including resume, so Pi resource enable/disable changes apply.
-    // No provider catalog probes or credential export: Pi loads its own provider extensions.
-    for (const extension of new Set([...inherited, ...(run.extensions ?? [])])) {
-      if (fs.realpathSync(extension) !== fs.realpathSync(bridge)) args.push("-e", extension);
-    }
+    run.relayTools = relayTools; run.relays = new Map();
+    const { args, env } = childLaunch({ run, bridge, inherited, relay });
     // The parent's own engine: the node it runs on and its pi's bundle, never a `pi` from PATH
     // (Shepherd's pi ships both; its launcher pins the rest, which the child inherits).
     const script = path.join(getPackageDir(), "dist", "bundle", "cli.js");
@@ -556,11 +794,16 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       if (missingTools.length) throw Error(`Tools unavailable in child Pi: ${missingTools.join(", ")}. Supply their explicit local extension providers.`);
       if (!state?.model || `${state.model.provider}/${state.model.id}` !== run.model
         || !catalog?.models?.some((model) => `${model.provider}/${model.id}` === run.model)) {
-        throw new Error(`Model ${run.model} is unavailable in isolated Pi. Check the model id and enabled Pi user extensions; project or CLI-only providers require an explicit profile extension.`);
+        // The parent could resolve it; the helper's own Pi can't. Its catalog is what names the providers it has.
+        throw new Error(`Model ${run.model} is unavailable in isolated Pi. ${modelNotFound(run.model, catalog?.models ?? [], { where: "the helper's Pi" })} Check the model id and enabled Pi user extensions; project or CLI-only providers require an explicit profile extension.`);
       }
       if (!current(run) || signal?.aborted) throw new Error("Parent session ended or dispatch cancelled");
       await command(run, "prompt", { message });
-    } catch (error) { await stop(run, clip(error.message)); throw error; }
+    } catch (error) {
+      const hint = missingProviderHint(run.model, error.message);
+      if (hint) error = new Error(error.message.trimEnd() + hint);
+      await stop(run, clip(error.message)); throw error;
+    }
     finally { signal?.removeEventListener("abort", abort); }
     return summary(run);
   }
@@ -730,7 +973,15 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     const requestedModel = explicit ?? profile.model ?? defaults.model ?? "inherit";
     const resolved = requestedModel === "inherit" ? { model: ctx.model } : resolveCliModel({ cliModel: requestedModel,
       modelRuntime: { getModels: () => ctx.modelRegistry.getAll(), hasConfiguredAuth: (provider) => ctx.modelRegistry.getAll().some((m) => m.provider === provider && ctx.modelRegistry.hasConfiguredAuth?.(m)) } });
-    if (resolved.error || !resolved.model) throw Error(resolved.error || "Select a model in the parent first");
+    if (requestedModel === "inherit" && !resolved.model) throw Error("Select a model in the parent first");
+    // Pi takes an id a known provider doesn't list as a custom model (and says so in `warning`), but a
+    // helper's catalog never holds it, so it would fail after launching: refuse it here, once, saying who
+    // named the model and what is loaded instead.
+    const listed = resolved.model && ctx.modelRegistry.getAll().some((m) => m.provider === resolved.model.provider && m.id === resolved.model.id);
+    if (requestedModel !== "inherit" && (resolved.error || !resolved.model || !listed)) {
+      const origin = explicit ? "The model argument" : profile.model ? `Agent profile ${profile.name}` : "Shepherd's native-subagent model default";
+      throw Error(modelNotFound(requestedModel, ctx.modelRegistry.getAll(), { origin, where: "this Pi" }));
+    }
     return resolved;
   }
   async function start(params, signal, ctx, workflowId, toolCallID, stepIndex) {
@@ -739,7 +990,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       if (!supported) throw new Error("Shepherd native children require Pi 0.85.1 or newer");
       signal?.throwIfAborted(); capacity();
       if (runs.size >= MAX_RUNS) throw new Error("64 retained children reached; start a new parent session");
-      if (params.agent && params.role) throw Error("Use agent or role, not both");
+      if (params.agent && params.role) throw Error("Pass either an agent profile or a role, not both: agent and role name the same thing (role is an alias for agent). Use agent for a profile from shepherd_child_agents, or role for one of the bundled roles (scout, reviewer, planner, worker).");
       const cwd = fs.realpathSync(path.resolve(ctx.cwd, params.cwd ?? "."));
       if (!fs.statSync(cwd).isDirectory()) throw new Error("Child cwd must be a directory");
       const targetContext = childTargetContext(ctx, cwd);
@@ -747,12 +998,17 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       const name = params.agent ?? params.role ?? "worker";
       const exact = catalog.agents.filter((a) => a.name === name);
       const matches = exact.length ? exact : catalog.agents.filter((a) => a.aliases?.includes(name));
-      if (matches.length !== 1) throw Error(`Unknown or ambiguous agent: ${name}; use shepherd_child_agents`);
+      if (matches.length !== 1) throw Error(unknownAgentMessage(name, catalog.agents, matches));
       const profile = matches[0], role = profile.name;
       if (profile.error || profile.disabled) throw Error(profile.error || `Agent ${role} is disabled`);
       if (profile.tools === "inherit") throw Error("tools: inherit requires ambient extensions, which native children do not inherit. Omit tools for Pi builtins or list tools and explicit extension files.");
       const requestedTools = profile.tools ?? defaultChildTools(cwd);
-      const unknownTools = requestedTools.filter((name) => !ROLES.worker.tools.includes(name) && name !== "shepherd_parent_message");
+      // A design agent's helpers get its design tools through their parent (see serveRelay); a profile's
+      // `extensions` can't supply them (shepherd-design.ts is inert without the design agent's environment).
+      const designNames = requestedTools.filter((name) => DESIGN_TOOLS.includes(name));
+      const designProblem = designNames.length ? designToolsProblem(designNames, designRelay()) : undefined;
+      if (designProblem) throw Error(designProblem);
+      const unknownTools = requestedTools.filter((name) => !ROLES.worker.tools.includes(name) && name !== "shepherd_parent_message" && !DESIGN_TOOLS.includes(name));
       if (unknownTools.length && !profile.extensions?.length) throw Error(`Unsupported agent tools without explicit extensions: ${unknownTools.join(", ")}`);
       if (requestedTools.some((name) => /^(shepherd_child_|shepherd_workflow|subagent$)/.test(name))) throw Error("Nested delegation tools are unsupported");
       const resolved = resolveModel(profile, ctx, params.model);

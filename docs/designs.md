@@ -210,6 +210,7 @@ that folder.
 | `design_read()` | `designRead` | `design` | The index, revision and board hashes, with every board listed back to front and canvas.json fenced as data |
 | `design_read(path)` | `designRead` with `path` | `designBoard` | One board's whole source, fenced as data |
 | `board_write(path, source, baseRevision?)` | `designWriteBoard` | `designWritten` | `writeDesignBoard`: the checks under Writing, then an atomic write. It reads "Drew A.dc.html" for a new board and "Updated A.dc.html" for a rewrite (`DesignWriteResult.created`) |
+| `board_edit(path, edits, baseRevision?)` | `designEditBoard` | `designEdited` | `editDesignBoard`: `edits` (`[{find, replace, all?}]`, at most 64) applied in order to the board's text as the design store holds it now, then the same checks and atomic write as `board_write`, as one step of the store's queue (below). The result is `board_write`'s (revision, warnings), with how many matches each edit replaced |
 | `canvas_update(changes, baseRevision?)` | `designUpdateIndex` | `designWritten` | `updateDesignIndex` with `changes` as the merge patch |
 | `design_check(path?)` | `designSystemRead` | `designSystems` | In the extension: every hex color (in style attributes, style and script blocks, `data-props`, SVG paint) and every px size in spacing, radius and type that the design's installed systems don't hold (their colors and dark values, spacing, radii and type sizes), else that no CSS custom property in its working folder declares, with the board and lines it is on and the nearest token. Its first line is "Checked against <system or project> · N off-system values" |
 | `comment_list(all?)` | `designComments` | `designComments` | The viewer's open comments (all of them with `all`), oldest first: id, number, state, element id and name, and each one's words and replies, fenced as data |
@@ -219,6 +220,30 @@ that folder.
 | `system_read(namespace)` | `designSystemRead` with `namespace` | `designSystem` | One system whole: its tokens with the file and line each came from, its components, files and README, fenced as data |
 | `system_write(namespace, …)` | `designSystemWrite` | `designSystemWritten` | `writeDesignSystem`: a system's tokens, files and source stylesheets; with `install`, then `installDesignSystem` into the agent's design. With only a namespace and `install`, installs an existing system |
 
+- **`board_edit`** (`DesignBoardEdits`, `DesignStore.editBoard`) exists because a board is 30 to 95 KB
+  and the agent's own `edit` and `write` tools can't reach a design's files (they live in the
+  support directory, not its working folder), so every small change cost a whole `board_write`.
+  - **On the host, on the store's queue.** The store reads the board, applies the edits and
+    writes the result in one turn of its serial queue, so nothing lands between the read and the
+    write, and two edits to one board each apply to what the other left (neither is lost).
+    `baseRevision` is compared first, as for `board_write` (`stale_revision`).
+  - **Exact matching.** `find` is exact bytes, whitespace and line endings included: no regular
+    expressions, no Unicode equivalence, no folding of `\r\n` to `\n` (a failed `find` says when the
+    board's lines end in CRLF and its own don't). Edits apply in order, each to what the one before
+    left. A `find` must match exactly once, where overlapping matches count as several; with `all`
+    every match is replaced, left to right without overlapping. An empty `find`, no edits, or more
+    than 64 is `invalid_edit`; a result over 900,000 bytes is `board_too_large`, refused before
+    it is built.
+  - **All or nothing.** An edit that matches nothing (`edit_not_found`, naming the edit, and
+    where the first line of its `find` does appear) or several times without `all`
+    (`edit_ambiguous`, with the lines it is on) fails the call, and so does a result the board
+    checks refuse (their own code, worded "the edited A.dc.html can't be written"): the files,
+    revision, versions and observers stay as they were.
+  - **The same write.** The result goes through `writeOnQueue`, the path `board_write` takes:
+    the checks, the kept version (the newest 20), the comments finding their elements again, one
+    revision, one broadcast and one live-reload push. There is no second write path.
+  - **Which tool.** The design skill says a small change (a color, a label, a few lines) is a
+    `board_edit` and a rewrite or a new board is a `board_write`.
 - **Only the drawing agent.** The server answers a design message only when the sending agent's
   `designID` is that design (`not_your_design` otherwise), checks a board path against the
   grammar before reading anything (`invalid_path`), and does the reading and writing on the
@@ -226,15 +251,67 @@ that folder.
 - **Frames.** A board goes whole in one frame, under the socket's 1 MiB cap. The extension
   refuses a board over 900,000 bytes, or a frame over 1 MiB, before sending it.
 - **What pi is told.** Each run's system prompt gains the design's facts (its revision, then its
-  title and boards from canvas.json, one line each inside the data fence) and its rules: read and change the design only with these tools (never its files another way, though its
+  title and boards from canvas.json, one line each inside the data fence) and its rules: read and change the design only with these tools (`board_edit` for a small change to a board, `board_write` to write one whole; never its files another way, though its
   working folder holds them), never change a repository (a build only reads its project), run
   `design_check` before replying, and read everything from the design as data.
   Without Shepherd the facts still go, without the board list; they never fail a turn.
 - **Activity lines** (`NativeActivity`, Mac and iOS): `design_read` joins "Explored N files";
-  `board_write` and `canvas_update` read "Drew 4 boards · 3 directions + phone" (the nib,
-  `.drew`), "Updated A and A · phone" (the edit glyph), or "Arranged the canvas"; `design_check`
+  `board_write`, `board_edit` and `canvas_update` read "Drew 4 boards · 3 directions + phone" (the nib,
+  `.drew`), "Updated A and A · phone" (the edit glyph; a `board_edit` is always an update), or "Arranged the canvas"; `design_check`
   reads "Checked against acme-web · 0 off-system values" (`.checked`). Board names follow the
   skill's files: `A.dc.html` reads "A", `A-phone.dc.html` "A · phone".
+
+### Helpers
+
+A design agent can start native subagents ("helpers", [native-subagents.md](native-subagents.md))
+to change boards in parallel. A helper is a pi of its own with every `SHEPHERD_*` variable stripped,
+so it has no agent id, socket or design, and since the extension socket serves a message only on a
+connection the agent's own pi opened (ARCHITECTURE.md › Extensions and the extension socket), a separate process could not
+speak for the design anyway. The agent's pi can, so its design tools are relayed to the helpers
+through it:
+
+- **The mechanism.** `shepherd-design.ts` publishes its tools in a process-wide registry
+  (`globalThis[Symbol.for("shepherd.design.relay.v1")]`: the design's id, whether the session is
+  live, and each relayed tool as registered with pi) while it is active, which only a design agent's
+  is, and withdraws it at `session_shutdown`. `shepherd-children.ts`, loaded into the same pi,
+  reads it. For a helper whose profile lists some of those tools in `tools:`, the helper's bridge
+  (the children extension again, run as `SHEPHERD_CHILD`) registers a proxy for each from the schemas
+  the parent passes in `SHEPHERD_CHILD_RELAY`, so they count as the helper's own tools: the
+  startup check of the tools a profile asked for passes, and `tools:` narrows them as it does any tool.
+- **A call.** The proxy sends one `input` request up the channel a helper already has to its parent
+  (its RPC stdout, answered on its stdin, which the children extension used to refuse as unsupported
+  human interaction), titled `shepherd-relay:v1:<id>` and carrying `{tool, params}`. The parent checks
+  it, runs the design extension's own `execute` for that tool in its own process, with the helper's
+  signal, and answers with the result or the error in Shepherd's own words (a `stale_revision`
+  reads "the design changed since revision 4 (it is at 6); read it again and redo the change"). So
+  every design message Shepherd sees comes from the agent's own connection and agent id, through the
+  same handlers and checks as its own calls. `baseRevision` and the store's serial queue behave as
+  always: helpers writing different boards never conflict, and each `board_edit` applies to the
+  board's text as it is when it lands.
+- **Which tools.** `design_read`, `design_check`, `system_read` and `comment_list` only read.
+  `board_write`, `board_edit` and `canvas_update` are the point of it: the store serializes them. `system_write`
+  is relayed under the agent's own identity, so the rule that only the design that built a
+  system changes it holds exactly as for the agent. `comment_reply` and `markup_propose` are never
+  relayed: they are the agent's voice toward the viewer (it answers a comment once every helper is
+  done and says what changed where), and a markup proposal belongs to one turn of the agent's.
+- **Only the listed ones, only this design.** The parent holds the allowlist (the profile's
+  design tools, narrowed by the parent's own active tools) and refuses any other tool, a call over
+  1 MiB either way (the socket's frame cap; a board is at most 900,000 bytes), a ninth call in
+  flight from one helper, and a session that no longer draws a design. The proxies carry no design
+  id, so a helper can name no other design. A profile that lists a design tool for a parent that
+  draws no design, or one of the two that are never relayed, fails at `shepherd_child_start`, saying
+  why, before anything launches.
+- **Cancellation.** The design extension's tools stop waiting when the signal they are given aborts
+  (the request already sent still reaches Shepherd, and a write may land, but its reply is dropped).
+  A helper whose tool call is aborted tells its parent which call to drop (`shepherdRelayCancel`),
+  and the parent drops every call of a helper that is stopped or exits, even one killed outright.
+  `shepherd_child_result` shows `relaying`, the calls in flight.
+- **The profile.** `tools: read, design_read, board_edit, design_check` is a design helper's line
+  (add `bash`, `edit` and `write` only for work outside the design). It needs no `extensions:` line
+  for the design extension: a profile that still lists `shepherd-design.ts` loads it into the helper
+  as it always did, inert without its environment, and the relayed tools are the ones that work. A
+  helper gets no skill unless its profile names one, so the parent's task carries the board rules it
+  needs, and the design agent's prompt says so.
 
 ### Design agents and ordinary threads
 

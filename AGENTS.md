@@ -772,10 +772,11 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
   shepherd-instructions.ts  Settings ▸ Instructions' AGENTS.md and APPEND_SYSTEM.md, added to
                           every session Shepherd starts (never ~/.pi/agent); suggest_instruction
                           (Settings ▸ Experiments ▸ Suggested instructions)
-  shepherd-design.ts      the design agent's design_read, board_write, canvas_update,
+  shepherd-design.ts      the design agent's design_read, board_write, board_edit, canvas_update,
                           design_check, comment_list, comment_reply, system_read and
                           system_write; hands pi the design skill
-                          (design-skill/: SKILL.md, format.md); see docs/designs.md
+                          (design-skill/: SKILL.md, format.md); relays its tools to the agent's
+                          native helpers through the children extension; see docs/designs.md
   shepherd-design-refs.ts an ordinary thread's design_get and design_note, registered only once the
                           thread holds a design reference; see docs/designs.md › Design references
   shepherd-mcp.ts         the mcp tool (search, describe, call) and direct <server>_<tool> tools
