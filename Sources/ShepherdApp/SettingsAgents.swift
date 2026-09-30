@@ -37,6 +37,11 @@ struct AgentSettings: View {
                     NWSegmentedPicker("Default thinking level", selection: $settings.defaultThinking,
                                       options: ThinkingLevel.allCases.map { ($0, $0.title) })
                 }
+                SettingsRow(title: "Speed for new threads",
+                            subtitle: "New threads start on this speed. Each thread keeps its own after that.") {
+                    NWSegmentedPicker("Speed for new threads", selection: $settings.defaultServiceTier,
+                                      options: ServiceTier.allCases.map { ($0, $0.title) })
+                }
             }
             SettingsGroup(title: "While the agent is working") {
                 ReturnWhileWorkingRow(selection: $settings.returnWhileWorking, keys: keys)

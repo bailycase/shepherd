@@ -41,6 +41,8 @@ struct NewAgentConfig {
     /// The design this agent draws: it launches with the design tools, keeps its name (the
     /// design's), and has no row of its own in Recents.
     var designID: DesignID?
+    /// The speed it starts on; nil takes Settings ▸ Agents ▸ Speed for new threads.
+    var serviceTier: ServiceTier?
 }
 
 struct AgentStartFailure: Error, CustomStringConvertible {
