@@ -301,7 +301,8 @@ test("real Pi RPC: abort kills a running bash", { timeout: 60000 }, async () => 
   await withPi((body, i) => i === 0 ? [{ tool: "bash", command: `${marker}; echo unreachable`, id: "call_long" }] : [{ text: "Fine." }], async (pi) => {
     await pi.request({ type: "prompt", message: "run it" });
     await until("the command to run", () => running().length > 0);
-    assert(pi.events.some((e) => e.type === "tool_execution_start" && e.toolCallId === "call_long"));
+    // ps can see the command before this process has read pi's tool_execution_start from stdout.
+    await until("the tool start", () => pi.events.some((e) => e.type === "tool_execution_start" && e.toolCallId === "call_long"));
 
     const started = Date.now();
     assert.equal((await pi.request({ type: "abort" })).success, true);
