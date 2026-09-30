@@ -3,6 +3,7 @@ import Foundation
 import Testing
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
@@ -74,6 +75,87 @@ struct StartupTests {
         let tabs = h.server.state.tabs
         #expect(tabs.first?.layout == .leaf(kept))
         #expect(tabs.last?.layout == .leaf(LeafPane(id: loneReview.id, cwd: space.path)))
+    }
+
+    /// Terminals are tabs only: a layout an older build split beside the thread (Split right, Split
+    /// down, nested) loads as one tab per terminal, oldest first, each keeping its folder and
+    /// title, with the thread first; the flattened layout is written back.
+    @Test func splitTerminalLayoutsFlattenIntoOneTabEach() async throws {
+        let space = Fixture.space()
+        let built = LeafPane(cwd: "/tmp/demo/api", title: "build")
+        let logs = LeafPane(cwd: "/tmp/demo/logs")
+        let tests = LeafPane(cwd: "/tmp/demo/tests")
+        let watch = LeafPane(cwd: "/tmp/demo/web")
+        let worker = Fixture.agent(in: space)
+        let thread = try #require(worker.tab.layout.leaves.first)
+        // Tab one splits into a column of three (a pane split right, one of those split down);
+        // tab two is a lone terminal opened later.
+        let firstTab = PaneNode.split(axis: .vertical, ratio: 0.5, first: .leaf(built),
+                                      second: .split(axis: .horizontal, ratio: 0.4, first: .leaf(logs), second: .leaf(tests)))
+        let layout = PaneNode.split(axis: .horizontal, ratio: 0.5,
+                                    first: .split(axis: .horizontal, ratio: 0.5, first: .leaf(thread), second: .leaf(watch)),
+                                    second: firstTab)
+        var tab = worker.tab
+        tab.layout = layout
+        let h = try await relaunch(with: ShepherdState(spaces: [space], tabs: [tab], agents: [worker.agent]))
+        defer { h.stop() }
+
+        let flat = try #require(h.server.state.tabs.first?.layout)
+        #expect(flat.terminals(besideThread: thread.id).map(\.id) == [built.id, logs.id, tests.id, watch.id])
+        #expect(!flat.hasSplitTerminals(besideThread: thread.id))
+        #expect(flat.leaf(withID: built.id)?.title == "build")
+        #expect(flat.leaf(withID: logs.id)?.cwd == "/tmp/demo/logs")
+        #expect(flat.firstLeaf.id == thread.id)
+        #expect(h.server.state.agents == [worker.agent])
+        #expect(try h.persisted().tabs.first?.layout == flat, "the flat layout is written back")
+    }
+
+    /// An agent that remote clients drive is migrated the same way, so a client of the relaunched
+    /// host is sent a layout of tabs and never a split.
+    @Test func aRemoteClientOfAMigratedHostIsSentFlatTabs() async throws {
+        let space = Fixture.space()
+        let first = LeafPane(cwd: "/tmp/demo")
+        let second = LeafPane(cwd: "/tmp/demo")
+        let worker = Fixture.agent(in: space)
+        let thread = try #require(worker.tab.layout.leaves.first)
+        var tab = worker.tab
+        // The thread on the far side of the root: a column of two terminals beside it.
+        tab.layout = .split(axis: .vertical, ratio: 0.7,
+                            first: .split(axis: .vertical, ratio: 0.5, first: .leaf(first), second: .leaf(second)),
+                            second: .leaf(thread))
+        let h = try await relaunch(with: ShepherdState(spaces: [space], tabs: [tab], agents: [worker.agent]))
+        defer { h.stop() }
+        let tokenURL = h.dir.appendingPathComponent("remote-token")
+        let port = try h.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+        let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let client = RemoteHostClient()
+        let sent = try await client.connect(host: "127.0.0.1", port: port, token: token, clientName: "typed")
+        defer { client.disconnect() }
+
+        let layout = try #require(sent.tabs.first?.layout)
+        #expect(layout.terminals(besideThread: thread.id).map(\.id) == [first.id, second.id])
+        #expect(!layout.hasSplitTerminals(besideThread: thread.id))
+        #expect(TerminalPanel.tabs(in: layout, thread: thread.id).map(\.id) == [first.id, second.id])
+    }
+
+    /// Layouts of single-terminal tabs, and a thread with no terminals, are left exactly alone.
+    @Test func layoutsOfSingleTerminalTabsAreNotRewritten() async throws {
+        let space = Fixture.space()
+        let worker = Fixture.agent(in: space)
+        let thread = try #require(worker.tab.layout.leaves.first)
+        let terminal = LeafPane(cwd: "/tmp/demo")
+        var tab = worker.tab
+        tab.layout = .split(axis: .horizontal, ratio: 0.7, first: .leaf(thread), second: .leaf(terminal))
+        let first = try ScratchServer.fresh()
+        try await first.server.putState(ShepherdState(spaces: [space], tabs: [tab], agents: [worker.agent]))
+        first.stop(keepFiles: true)
+        let before = try FileManager.default.attributesOfItem(atPath: first.stateURL.path)[.systemFileNumber] as? NSNumber
+
+        let h = try ScratchServer(dir: first.dir)
+        defer { h.stop() }
+        let after = try FileManager.default.attributesOfItem(atPath: h.stateURL.path)[.systemFileNumber] as? NSNumber
+        #expect(before == after)
+        #expect(h.server.state.tabs.first?.layout == tab.layout, "ratio and axis stay as they were")
     }
 
     /// Shells were removed: older files' global shells and space shell workspaces are dropped.
