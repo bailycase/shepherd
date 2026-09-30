@@ -728,7 +728,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     @discardableResult
     public func openPane(agentID: AgentID, relativeTo paneID: PaneID, axis: SplitAxis) async throws -> PaneID {
         guard capabilities.contains(RemoteProtocol.paneControlCapability) else {
-            throw RemoteHostClientError.rejected(code: "unsupported", message: "host needs a newer Shepherd build for remote panes")
+            throw RemoteHostClientError.rejected(code: "unsupported", message: "host needs a newer Shepherd build for remote terminals")
         }
         let reply = try await request { id in
             .openPane(id: id, agentID: agentID, axis: axis, relativeTo: paneID)
@@ -744,7 +744,7 @@ public final class RemoteHostClient: @unchecked Sendable {
 
     public func closePane(agentID: AgentID, paneID: PaneID) async throws {
         guard capabilities.contains(RemoteProtocol.paneControlCapability) else {
-            throw RemoteHostClientError.rejected(code: "unsupported", message: "host needs a newer Shepherd build for remote panes")
+            throw RemoteHostClientError.rejected(code: "unsupported", message: "host needs a newer Shepherd build for remote terminals")
         }
         let reply = try await request { id in .closePane(id: id, agentID: agentID, paneID: paneID) }
         try expectOk(reply)
@@ -752,7 +752,7 @@ public final class RemoteHostClient: @unchecked Sendable {
 
     public func resizePaneSplit(agentID: AgentID, split: PaneNode, ratio: Double) async throws {
         guard capabilities.contains(RemoteProtocol.paneControlCapability) else {
-            throw RemoteHostClientError.rejected(code: "unsupported", message: "host needs a newer Shepherd build for remote panes")
+            throw RemoteHostClientError.rejected(code: "unsupported", message: "host needs a newer Shepherd build for remote terminals")
         }
         let reply = try await request { id in
             .resizePaneSplit(id: id, agentID: agentID, split: split, ratio: ratio)

@@ -384,7 +384,6 @@ struct PaneTreeView: View {
     var vm: ShepherdViewModel
     /// Everything the tree draws; `vm` is for actions.
     let model: AgentLayoutModel
-    @State private var liveRatios: [PaneSplitPath: Double] = [:]
     @State private var liveHeight: CGFloat?
 
     private var tab: Tab { model.tab }
@@ -401,8 +400,8 @@ struct PaneTreeView: View {
     private var key: TerminalPanelKey { TerminalPanelKey(host: nil, tab: tab.id) }
 
     /// The thread on top and its terminal panel under it (TerminalSplit board). Every leaf stays
-    /// a direct child of one ZStack keyed by pane ID, shown or not, so a tab switch, a hide or a
-    /// split never remounts a terminal's surface.
+    /// a direct child of one ZStack keyed by pane ID, shown or not, so a tab switch or a hide
+    /// never remounts a terminal's surface.
     private func panel(thread: AgentLayoutModel.Thread) -> some View {
         let panel = model.terminal
         let target = ShepherdViewModel.TerminalTarget(key: key, layout: tab.layout, thread: thread.paneID, remote: nil,
@@ -410,10 +409,10 @@ struct PaneTreeView: View {
         return GeometryReader { geo in
             let _ = NWRenderProbe.tick("layout.paneTreeGeo")
             let selected = TerminalPanel.selected(TerminalPanel.tabs(in: tab.layout, thread: thread.paneID), chosen: panel.chosenTab,
-                                                  remembering: panel.chosenPanes, focused: model.focusedPaneID)
+                                                  focused: model.focusedPaneID)
             let geometry = terminalPanelGeometry(for: tab.layout, thread: thread.paneID, selected: selected, shown: panel.shown,
                                                  maximized: panel.maximized, height: liveHeight ?? model.terminalHeight,
-                                                 in: geo.size, liveRatios: liveRatios)
+                                                 in: geo.size)
             ZStack(alignment: .topLeading) {
                 ForEach(geometry.leaves, id: \.pane.id) { leaf in
                     PaneLeafView(vm: vm, tab: tab, model: leafModel(leaf.pane, shown: leaf.shown))
@@ -423,17 +422,8 @@ struct PaneTreeView: View {
                         .allowsHitTesting(leaf.shown)
                         .accessibilityHidden(!leaf.shown)
                 }
-                ForEach(geometry.separators) { separator in
-                    PaneSeparatorView(
-                        axis: separator.axis, rect: separator.rect, containerRect: separator.containerRect,
-                        color: separatorColor(for: separator.node), coordinateSpace: containerSpace,
-                        liveRatio: Binding(get: { liveRatios[separator.id] }, set: { liveRatios[separator.id] = $0 }),
-                        onCommit: { vm.commitSplitRatio(tabID: tab.id, split: separator.node, ratio: $0) }
-                    )
-                }
-                TerminalPanelChrome(vm: vm, key: key, geometry: geometry, focused: model.focusedPaneID, host: nil,
-                                    threadTitle: thread.agentName, threadState: model.foldedState ?? .idle,
-                                    focus: { [vm] in vm.focusedPaneID = $0 })
+                TerminalPanelChrome(geometry: geometry, threadTitle: thread.agentName, threadState: model.foldedState ?? .idle,
+                                    restore: { [vm] in vm.toggleTerminalMaximized() })
                 if let bar = geometry.tabBar {
                     TerminalPanelBar(vm: vm, target: target, tabs: geometry.tabs, selected: selected, maximized: panel.maximized,
                                      onScreen: model.isVisible, host: nil)
@@ -447,11 +437,6 @@ struct PaneTreeView: View {
                         }
                         .offset(x: bar.minX, y: bar.minY)
                         .zIndex(2)
-                }
-                if geometry.tabs.isEmpty, let content = geometry.content {
-                    TerminalPanelEmpty(vm: vm, target: target)
-                        .frame(width: content.width, height: content.height)
-                        .offset(x: content.minX, y: content.minY)
                 }
                 if let bar = geometry.tabBar {
                     TerminalMenuLayer(vm: vm, target: target, bar: bar, tabs: geometry.tabs)
@@ -473,38 +458,17 @@ struct PaneTreeView: View {
     private var tree: some View {
         GeometryReader { geo in
             let _ = NWRenderProbe.tick("layout.paneTreeGeo")
-            let geometry = paneTreeGeometry(for: tab.layout, in: geo.size, liveRatios: liveRatios)
+            let geometry = paneTreeGeometry(for: tab.layout, in: geo.size)
             ZStack(alignment: .topLeading) {
                 ForEach(geometry.leaves, id: \.pane.id) { leaf in
                     PaneLeafView(vm: vm, tab: tab, model: leafModel(leaf.pane))
                         .frame(width: leaf.rect.width, height: leaf.rect.height)
                         .offset(x: leaf.rect.minX, y: leaf.rect.minY)
                 }
-
-                ForEach(geometry.separators) { separator in
-                    PaneSeparatorView(
-                        axis: separator.axis,
-                        rect: separator.rect,
-                        containerRect: separator.containerRect,
-                        color: separatorColor(for: separator.node),
-                        coordinateSpace: containerSpace,
-                        liveRatio: Binding(
-                            get: { liveRatios[separator.id] },
-                            set: { liveRatios[separator.id] = $0 }
-                        ),
-                        onCommit: {
-                            vm.commitSplitRatio(tabID: tab.id, split: separator.node, ratio: $0)
-                        }
-                    )
-                }
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
         }
         .coordinateSpace(.named(containerSpace))
-    }
-
-    private func separatorColor(for split: PaneNode) -> Color {
-        paneSeparatorColor(split, focused: model.focusedPaneID)
     }
 
     /// Everything a leaf draws, resolved here so the leaf itself reads nothing observable and
@@ -527,78 +491,6 @@ struct PaneTreeView: View {
             inspectingRunID: thread == nil ? nil : model.inspectingRunID,
             threadAgentID: thread == nil ? model.thread?.agentID : nil
         )
-    }
-}
-
-/// Dividers between terminals are 1pt `lineStrong` (TerminalPane), tinted `focusDivider` where
-/// they border the focused pane.
-@MainActor
-func paneSeparatorColor(_ split: PaneNode, focused: PaneID?) -> Color {
-    guard let focused, case .split(_, _, let first, let second) = split else { return Color.nw.lineStrong }
-    return first.contains(focused) || second.contains(focused) ? Color.nw.focusDivider : Color.nw.lineStrong
-}
-
-struct PaneSeparatorView: View {
-    let axis: SplitAxis
-    let rect: CGRect
-    let containerRect: CGRect
-    let color: Color
-    let coordinateSpace: String
-    @Binding var liveRatio: Double?
-    let onCommit: (Double) -> Void
-
-    var body: some View {
-        color
-            .frame(width: rect.width, height: rect.height)
-            .overlay {
-                Color.clear
-                    .frame(width: axis == .vertical ? AppLayout.resizeHandleWidth : nil,
-                           height: axis == .horizontal ? AppLayout.resizeHandleWidth : nil)
-                    .contentShape(Rectangle())
-                    .pointerStyle(axis == .vertical ? .columnResize : .rowResize)
-                    .gesture(dragGesture)
-            }
-            .offset(x: rect.minX, y: rect.minY)
-            // Focus moving between panes tints the divider (`.hover`); a split, a close, or a
-            // drag moves it at once, like the panes it divides.
-            .animation(nil, value: rect)
-            .nwAnimation(.hover, value: color)
-            .zIndex(1)
-            .accessibilityElement()
-            .accessibilityLabel(axis == .vertical ? "Terminal column split" : "Terminal row split")
-            .accessibilityValue("\(Int(currentRatio * 100)) percent")
-            .accessibilityAdjustableAction { adjust($0) }
-    }
-
-    func adjust(_ direction: AccessibilityAdjustmentDirection) {
-        let span = axis == .vertical ? containerRect.width : containerRect.height
-        let step = direction == .increment ? AppLayout.splitAccessibilityStep : -AppLayout.splitAccessibilityStep
-        onCommit(ShellLayout.splitRatio(position: CGFloat(currentRatio + step) * span, span: span))
-    }
-
-    private var currentRatio: Double {
-        let span = axis == .vertical ? containerRect.width : containerRect.height
-        let position = axis == .vertical ? rect.minX - containerRect.minX : rect.minY - containerRect.minY
-        return liveRatio ?? Double(position / max(1, span - AppLayout.dividerWidth))
-    }
-
-    private var dragGesture: some Gesture {
-        // The root coordinate space does not move with the divider. Subtract
-        // this split's origin to recover the same local position the nested
-        // split view used, without corrupted moving-view translations.
-        DragGesture(minimumDistance: 1, coordinateSpace: .named(coordinateSpace))
-            .onChanged { value in
-                let span = axis == .vertical ? containerRect.width : containerRect.height
-                let origin = axis == .vertical ? containerRect.minX : containerRect.minY
-                let position = (axis == .vertical ? value.location.x : value.location.y) - origin
-                liveRatio = ShellLayout.splitRatio(position: position, span: span)
-            }
-            .onEnded { _ in
-                if let final = liveRatio {
-                    onCommit(final)
-                }
-                liveRatio = nil
-            }
     }
 }
 
@@ -924,7 +816,6 @@ private struct RemotePaneTreeView: View {
     let node: PaneNode
     /// The agent's thread pane; nil for the host's utility terminal, drawn as its own splits.
     var thread: PaneID? = nil
-    @State private var liveRatios: [PaneSplitPath: Double] = [:]
     @State private var liveHeight: CGFloat?
 
     private var containerSpace: String { "remote-split-\(tab.id)" }
@@ -937,7 +828,7 @@ private struct RemotePaneTreeView: View {
         }
     }
 
-    /// The thread with its terminal panel under it, as a local layout has. Only the panes on
+    /// The thread with its terminal panel under it, as a local layout has. Only the terminals on
     /// screen are mounted: a remote terminal attaches while it shows (its grid counts toward the
     /// host's smallest-viewer size), and the host replays it when it comes back.
     private func panel(thread: PaneID) -> some View {
@@ -946,10 +837,10 @@ private struct RemotePaneTreeView: View {
         let target = ShepherdViewModel.TerminalTarget(key: key, layout: node, thread: thread, remote: ref, focused: vm.remoteFocusedPaneID)
         return GeometryReader { geo in
             let selected = TerminalPanel.selected(TerminalPanel.tabs(in: node, thread: thread), chosen: panel.chosenTab,
-                                                  remembering: panel.chosenPanes, focused: vm.remoteFocusedPaneID)
+                                                  focused: vm.remoteFocusedPaneID)
             let geometry = terminalPanelGeometry(for: node, thread: thread, selected: selected, shown: panel.shown,
                                                  maximized: panel.maximized, height: liveHeight ?? vm.terminalPanels.height,
-                                                 in: geo.size, liveRatios: liveRatios)
+                                                 in: geo.size)
             ZStack(alignment: .topLeading) {
                 ForEach(geometry.leaves.filter { $0.shown || $0.pane.id == thread }, id: \.pane.id) { leaf in
                     RemotePaneLeafView(vm: vm, connection: connection, ref: ref, tab: tab, leaf: leaf.pane,
@@ -960,18 +851,10 @@ private struct RemotePaneTreeView: View {
                         .allowsHitTesting(leaf.shown)
                         .accessibilityHidden(!leaf.shown)
                 }
-                ForEach(geometry.separators) { separator in
-                    PaneSeparatorView(
-                        axis: separator.axis, rect: separator.rect, containerRect: separator.containerRect,
-                        color: paneSeparatorColor(separator.node, focused: vm.remoteFocusedPaneID), coordinateSpace: containerSpace,
-                        liveRatio: Binding(get: { liveRatios[separator.id] }, set: { liveRatios[separator.id] = $0 }),
-                        onCommit: { vm.commitRemoteSplitRatio(ref: ref, split: separator.node, ratio: $0) }
-                    )
-                }
                 let agent = connection.state.agents.first { $0.id == ref.agentID }
-                TerminalPanelChrome(vm: vm, key: key, geometry: geometry, focused: vm.remoteFocusedPaneID, host: connection.config.name,
-                                    threadTitle: agent?.name ?? "", threadState: agent.map { AgentState($0.status) } ?? .idle,
-                                    focus: { [vm] in vm.remoteFocusedPaneID = $0 })
+                TerminalPanelChrome(geometry: geometry, threadTitle: agent?.name ?? "",
+                                    threadState: agent.map { AgentState($0.status) } ?? .idle,
+                                    restore: { [vm] in vm.toggleTerminalMaximized() })
                 if let bar = geometry.tabBar {
                     TerminalPanelBar(vm: vm, target: target, tabs: geometry.tabs, selected: selected, maximized: panel.maximized,
                                      onScreen: true, host: connection.config.name)
@@ -985,11 +868,6 @@ private struct RemotePaneTreeView: View {
                         }
                         .offset(x: bar.minX, y: bar.minY)
                         .zIndex(2)
-                }
-                if geometry.tabs.isEmpty, let content = geometry.content {
-                    TerminalPanelEmpty(vm: vm, target: target)
-                        .frame(width: content.width, height: content.height)
-                        .offset(x: content.minX, y: content.minY)
                 }
                 if let bar = geometry.tabBar {
                     TerminalMenuLayer(vm: vm, target: target, bar: bar, tabs: geometry.tabs)
@@ -1008,26 +886,12 @@ private struct RemotePaneTreeView: View {
 
     private var tree: some View {
         GeometryReader { geo in
-            let geometry = paneTreeGeometry(for: node, in: geo.size, liveRatios: liveRatios)
+            let geometry = paneTreeGeometry(for: node, in: geo.size)
             ZStack(alignment: .topLeading) {
                 ForEach(geometry.leaves, id: \.pane.id) { leaf in
                     RemotePaneLeafView(vm: vm, connection: connection, ref: ref, tab: tab, leaf: leaf.pane)
                         .frame(width: leaf.rect.width, height: leaf.rect.height)
                         .offset(x: leaf.rect.minX, y: leaf.rect.minY)
-                }
-                ForEach(geometry.separators) { separator in
-                    PaneSeparatorView(
-                        axis: separator.axis,
-                        rect: separator.rect,
-                        containerRect: separator.containerRect,
-                        color: paneSeparatorColor(separator.node, focused: vm.remoteFocusedPaneID),
-                        coordinateSpace: containerSpace,
-                        liveRatio: Binding(
-                            get: { liveRatios[separator.id] },
-                            set: { liveRatios[separator.id] = $0 }
-                        ),
-                        onCommit: { vm.commitRemoteSplitRatio(ref: ref, split: separator.node, ratio: $0) }
-                    )
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
@@ -1086,7 +950,7 @@ private struct RemotePaneLeafView: View {
                     .onDisappear { vm.remoteHosts.closePane(connection: connection, sessionID: terminal.id) }
                     .transition(.identity)
             } else {
-                PanePlaceholder(text: "starting remote pane…")
+                PanePlaceholder(text: "starting remote terminal…")
                     .nwTransition(.content)
             }
         }

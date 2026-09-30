@@ -372,7 +372,7 @@ final class ShepherdViewModel {
         finalizeRequest = FinalizeRequest(agent: agent, space: space)
     }
 
-    /// The setup wizard's gh-authentication step: a terminal pane beside the agent's thread
+    /// The setup wizard's gh-authentication step: a terminal tab under the agent's thread
     /// running `gh auth login`, because the login flow is interactive by design.
     func openGhLogin(besideAgent agentID: AgentID) {
         guard let agent = state.agents.first(where: { $0.id == agentID }) else { return }

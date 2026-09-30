@@ -318,30 +318,8 @@ extension ShepherdViewModel {
         state.tabs.first { $0.id == id }?.layout
     }
 
-    /// ⌥⌘←/→: move pane focus through the panes on screen in order: the thread, then the
-    /// terminal panel's selected tab (`visiblePanes`).
-    func focusAdjacentPane(_ delta: Int) {
-        if let remote = selectedRemoteAgent, let tab = remoteVisibleTab(remote) {
-            let thread = remoteInspectingAgent == remote ? nil
-                : remoteHosts.connections.first { $0.id == remote.hostID }?.state.agents.first { $0.id == remote.agentID }?.paneID
-            let leaves = visiblePanes(layout: tab.layout, key: TerminalPanelKey(host: remote.hostID, tab: tab.id),
-                                      thread: thread, focused: remoteFocusedPaneID)
-            guard leaves.count > 1 else { return }
-            let currentIndex = leaves.firstIndex { $0 == remoteFocusedPaneID } ?? 0
-            remoteFocusedPaneID = leaves[(currentIndex + delta + leaves.count) % leaves.count]
-            return
-        }
-        guard let tab = activeTab else { return }
-        let thread = selectedAgent.flatMap { $0.tabID == tab.id ? $0.paneID : nil }
-        let leaves = visiblePanes(layout: tab.layout, key: TerminalPanelKey(host: nil, tab: tab.id), thread: thread, focused: focusedPaneID)
-        guard leaves.count > 1 else { return }
-        let currentIndex = leaves.firstIndex { $0 == focusedPaneID } ?? 0
-        let next = (currentIndex + delta + leaves.count) % leaves.count
-        focusedPaneID = leaves[next]
-    }
-
-    /// Focus follows the last pane focused in the active layout, falling back
-    /// to the selected agent's own pane and then the layout's first leaf.
+    /// Focus follows the last terminal (or the thread) focused in the active layout, falling back
+    /// to the selected agent's own thread and then the layout's first leaf.
     func syncFocus() {
         guard let tab = activeTab else {
             focusedPaneID = nil

@@ -6,7 +6,7 @@ import ShepherdProtocol
 import ShepherdRemote
 
 /// The terminal panel's strip (TerminalSplit, TerminalStates boards): the tabs with + for a new
-/// one, then Split right, Maximize or Restore, and Hide. Its top edge is the divider.
+/// one, then Maximize or Restore, and Hide. Its top edge is the divider.
 struct TerminalPanelBar: View {
     var vm: ShepherdViewModel
     let target: ShepherdViewModel.TerminalTarget
@@ -29,11 +29,6 @@ struct TerminalPanelBar: View {
         }, newTab: { vm.newTerminalTab(target) }, newTabHelp: "New terminal", menu: { id, anchor in
             panels.menu = TerminalMenuRequest(key: target.key, tab: id.map { PaneID(rawValue: $0) } ?? selected?.id, anchor: anchor)
         }) {
-            if selected != nil {
-                Button { vm.splitTerminal(target) } label: { Image(systemName: "rectangle.split.2x1") }
-                    .nwHelp("Split right", shortcut: keys.display(.splitVertical))
-                    .accessibilityLabel("Split right")
-            }
             Button { vm.toggleTerminalMaximized() } label: {
                 Image(systemName: maximized ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
             }
@@ -98,51 +93,30 @@ struct TerminalPanelDivider: View {
     }
 }
 
-/// The chrome a panel draws over its panes' places: the thread folded to one line while the
-/// panel is maximized (TerminalStates), and each shown pane's header in a tab of several panes
-/// (TerminalPane), naming what it runs. Its own view, so the activity it reads re-renders it
-/// and not the layout around it.
+/// The chrome a panel draws over its terminals' places: the thread folded to one line while the
+/// panel is maximized (TerminalStates). Its own view, so the thread's state it reads re-renders
+/// it and not the layout around it.
 struct TerminalPanelChrome: View {
-    var vm: ShepherdViewModel
-    let key: TerminalPanelKey
     let geometry: TerminalPanelGeometry
-    let focused: PaneID?
-    /// A remote layout's host, named in each pane's header.
-    let host: String?
     /// The thread's title and state, for its folded line.
     let threadTitle: String
     let threadState: AgentState
-    let focus: (PaneID) -> Void
+    let restore: () -> Void
 
     var body: some View {
-        let rows = vm.terminalPanels.activity[key] ?? [:]
-        ZStack(alignment: .topLeading) {
-            if let fold = geometry.fold {
-                NWTerminalFoldedThread(title: threadTitle, state: threadState,
-                                       restoreShortcut: KeybindingsStore.shared.display(.maximizeTerminal)) { [vm] in
-                    vm.toggleTerminalMaximized()
-                }
+        if let fold = geometry.fold {
+            NWTerminalFoldedThread(title: threadTitle, state: threadState,
+                                   restoreShortcut: KeybindingsStore.shared.display(.maximizeTerminal), restore: restore)
                 .frame(width: fold.width, height: fold.height)
                 .offset(x: fold.minX, y: fold.minY)
-            }
-            ForEach(geometry.leaves.filter { $0.shown && $0.header != nil }, id: \.pane.id) { leaf in
-                if let header = leaf.header {
-                    NWTerminalPaneHeader(title: TerminalPanels.title(row: rows[leaf.pane.id], pane: leaf.pane), host: host,
-                                         isFocused: leaf.pane.id == focused)
-                        .contentShape(Rectangle())
-                        .onTapGesture { focus(leaf.pane.id) }
-                        .frame(width: header.width, height: header.height)
-                        .offset(x: header.minX, y: header.minY)
-                }
-            }
         }
     }
 }
 
-/// The new terminal menu (NewTerminalMenu), hanging under the strip from + or the tab that was
-/// right-clicked: a new tab in the thread's folder, and for the tab, Split right, Rename tab and
-/// Kill process. A click anywhere else or esc closes it. Its own view, so opening it re-renders
-/// only this layer.
+/// The menu on a tab (NewTerminalMenu), hanging under the strip from + or the tab that was
+/// right-clicked: a new terminal in the thread's folder, and for the tab, Rename tab and Kill
+/// process. A click anywhere else or esc closes it. Its own view, so opening it re-renders only
+/// this layer.
 struct TerminalMenuLayer: View {
     var vm: ShepherdViewModel
     let target: ShepherdViewModel.TerminalTarget
@@ -176,16 +150,11 @@ struct TerminalMenuLayer: View {
         let close = { vm.terminalPanels.menu = nil }
         return NWTerminalMenu {
             NWChangesMenuRow("New terminal in the worktree", subtitle: vm.terminalPlace(target), systemImage: "terminal",
-                             trailing: .chord(keys.display(.splitVertical)), tallHeight: NWTerminalMetrics.menuTallRowHeight) {
+                             trailing: .chord(keys.display(.newTerminal)), tallHeight: NWTerminalMetrics.menuTallRowHeight) {
                 close()
                 vm.newTerminalTab(target)
             }
             if let tab {
-                NWChangesMenuRow("Split right", systemImage: "rectangle.split.2x1", trailing: .chord(keys.display(.splitVertical))) {
-                    close()
-                    vm.selectTerminalTab(tab, target: target)
-                    vm.splitTerminal(target)
-                }
                 NWChangesMenuRow("Rename tab", systemImage: "pencil", enabled: control) {
                     close()
                     vm.renameTerminalTab(tab, target: target)
@@ -235,27 +204,6 @@ private struct EscapeCloses: NSViewRepresentable {
         }
 
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
-    }
-}
-
-/// A panel with no terminals yet.
-struct TerminalPanelEmpty: View {
-    var vm: ShepherdViewModel
-    let target: ShepherdViewModel.TerminalTarget
-
-    var body: some View {
-        VStack(spacing: NW.Space.m) {
-            Text("No terminals in this thread yet.")
-                .font(.nw(.ui))
-                .foregroundStyle(Color.nw.textSecondary)
-            HStack(spacing: NW.Space.s) {
-                Button("New Terminal") { vm.newTerminalTab(target) }
-                    .buttonStyle(.nw(.secondary))
-                NWKeycap(KeybindingsStore.shared.display(.splitVertical))
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.nw.bgWindow)
     }
 }
 
