@@ -893,7 +893,7 @@ private struct RemoteAgentLayoutView: View {
         } pane: {
             if let threadPaneID {
                 let store = vm.remoteThreadStores.store(for: ref)
-                RightPaneSlot(showing: inspecting.map { .inspector(runID: $0) } ?? .tab(sideTab ?? .changes, review?.id)) {
+                RightPaneSlot(showing: inspecting.map { .inspector(runID: $0) } ?? .tab(sideTab ?? .changes, sideTab == .browser ? nil : review?.id)) {
                     if let inspecting {
                         SubagentInspector(store: store, runID: inspecting, active: true, close: { [vm] in
                             vm.closeInspector(owner)
