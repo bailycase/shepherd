@@ -806,6 +806,33 @@ public final class SessionServer: @unchecked Sendable {
         return Set(state.tabs.filter { $0.inspectorFor == nil && ($0.spaceID == nil || !agentTabs.contains($0.id)) }.map(\.id))
     }
 
+    /// The pane an agent's own pi runs in, for a layout that holds its thread: the agent's
+    /// recorded pane, else the layout's leaf that names the agent.
+    private static func threadPane(of tab: Tab, in state: ShepherdState) -> PaneID? {
+        let agent = state.agents.first { $0.tabID == tab.id }
+        if let paneID = agent?.paneID, tab.layout.contains(paneID) { return paneID }
+        return tab.layout.leaves.first { $0.agentID != nil }?.id
+    }
+
+    /// Whether a saved layout still has a tab of several terminals, split beside its thread, as
+    /// builds from before terminals were tabs only made with Split right and Split down.
+    static func hasSplitTerminals(in state: ShepherdState) -> Bool {
+        state.tabs.contains { tab in
+            tab.inspectorFor == nil && threadPane(of: tab, in: state)
+                .map { tab.layout.hasSplitTerminals(besideThread: $0) } == true
+        }
+    }
+
+    /// Flattens every such layout into one tab per terminal, oldest first, each keeping its
+    /// session, folder and title, and the thread first (`PaneNode.flatteningTerminals`).
+    static func flattenSplitTerminals(_ state: inout ShepherdState) {
+        for index in state.tabs.indices {
+            let tab = state.tabs[index]
+            guard tab.inspectorFor == nil, let thread = threadPane(of: tab, in: state) else { continue }
+            state.tabs[index].layout = tab.layout.flatteningTerminals(besideThread: thread)
+        }
+    }
+
     /// Automation run agents from the previous app run: every agent in the reserved hidden
     /// space (runs only ever live there) plus any agent an automation still points at. Runs are
     /// ephemeral; enabled automations start fresh ones after adoption. Keeping the old agents
@@ -912,12 +939,13 @@ public final class SessionServer: @unchecked Sendable {
             tab.layout.leaves.contains { $0.isReview == true }
         }
         let staleRuns = store.state.automations.contains { $0.agentID != nil }
+        let splitTerminals = Self.hasSplitTerminals(in: store.state)
         let shellTabs = Self.shellTabIDs(in: store.state)
         let runAgents = Self.automationRunAgentIDs(in: store.state)
         let staleDesigns = Self.designsNeedReconciling(in: store.state, missing: missingDesigns, removedAgents: runAgents)
             || Self.designAgentsNeedSettling(in: store.state, missing: missingDesigns)
-        if !stale.isEmpty || deadInspectors || deadReviews || staleRuns || !shellTabs.isEmpty || !runAgents.isEmpty
-            || staleDesigns {
+        if !stale.isEmpty || deadInspectors || deadReviews || splitTerminals || staleRuns || !shellTabs.isEmpty
+            || !runAgents.isEmpty || staleDesigns {
             do {
                 try store.update { state in
                     for id in stale {
@@ -947,6 +975,9 @@ public final class SessionServer: @unchecked Sendable {
                         }
                         state.tabs[i].layout = layout
                     }
+                    // Terminals are tabs only: a layout that split them beside the thread
+                    // becomes one tab each, keeping every terminal's folder and title.
+                    Self.flattenSplitTerminals(&state)
                     // Automation runs died with the previous app run; enabled
                     // ones restart through the GUI after adoption. Their agents and layouts go.
                     let runTabs = Set(state.agents.filter { runAgents.contains($0.id) }.map(\.tabID))
