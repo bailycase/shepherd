@@ -29,6 +29,13 @@
   "refuse" answers the prompt with success: false (pi refusing it)
   "provider-error" a turn whose reply fails ("529 overloaded"), once the file `fail-turn`
            appears in the cwd
+  "flaky"  a turn like pi's (stamped user message_start/_end, persisted at its end) whose reply
+           fails ("529 overloaded") the first time and answers "Recovered: <text>" after that;
+           "flaky-hold" also waits for the file `flaky-go` before replying
+  "/shepherd-retry <ms>" Shepherd's Retry, as the status extension runs it in pi: pi answers
+           the prompt, then, idle and with a user message stamped <ms> on the branch, drops that
+           message and everything after it from the history and sends it again (a "flaky" turn);
+           otherwise a notify says why and nothing changes
   "tools:N" a run that behaves like pi's agent loop (below)
   "context"      loads a context worth sizing: pi's structured system prompt (sections with an
                  AGENTS.md, tools), a read and a bash call with large results; stats say 42k
@@ -298,6 +305,50 @@ def failed_turn(prompt):
     STATE["messageCount"] = len(MESSAGES)
     emit({"type": "agent_end", "messages": [final], "willRetry": False})
     emit({"type": "agent_settled"})
+
+
+FLAKY = {"failed": False}
+
+
+def flaky_turn(message):
+    """A "flaky" turn: the user message persisted at its message_end, as pi does, then a reply
+    that fails the first time any flaky turn runs."""
+    emit({"type": "agent_start"})
+    emit({"type": "turn_start"})
+    emit({"type": "message_start", "message": message})
+    emit({"type": "message_end", "message": message})
+    MESSAGES.append(message)
+    STATE["messageCount"] = len(MESSAGES)
+    emit({"type": "message_start", "message": {"role": "assistant", "content": []}})
+    text = text_of(message)
+    if "flaky-hold" in text:
+        wait_for_file("flaky-go")
+    if not FLAKY["failed"]:
+        FLAKY["failed"] = True
+        final = {"role": "assistant", "content": [], "stopReason": "error", "errorMessage": "529 overloaded",
+                 "timestamp": now_ms()}
+    else:
+        final = {"role": "assistant", "content": [{"type": "text", "text": f"Recovered: {text}"}], "stopReason": "stop",
+                 "timestamp": now_ms()}
+    emit({"type": "message_end", "message": final})
+    emit({"type": "turn_end", "message": final, "toolResults": []})
+    MESSAGES.append(final)
+    STATE["messageCount"] = len(MESSAGES)
+    emit({"type": "agent_end", "messages": [final], "willRetry": False})
+    emit({"type": "agent_settled"})
+
+
+def retry_command(at):
+    """The status extension's /shepherd-retry: the branch goes back to before the message, which
+    goes again (after pi has answered the prompt, as pi does)."""
+    for index in range(len(MESSAGES) - 1, -1, -1):
+        message = MESSAGES[index]
+        if message.get("role") == "user" and int(message.get("timestamp") or -1) == at:
+            original = message
+            del MESSAGES[index:]
+            STATE["messageCount"] = len(MESSAGES)
+            return original
+    return None
 
 
 def paced_turn(prompt, deltas=40, interval=0.002):
@@ -737,6 +788,23 @@ for raw in sys.stdin.buffer:
             queue_update()
             respond(cmd, t)
             continue
+        if message.startswith("/shepherd-retry"):
+            # pi runs an extension command at once, even while streaming; the command refuses then.
+            respond(cmd, t)
+            try:
+                at = int(message.split(" ", 1)[1])
+            except (IndexError, ValueError):
+                at = None
+            original = None if streaming or at is None else retry_command(at)
+            if original is None:
+                ui("notify", message="That message is no longer in this conversation." if not streaming
+                   else "Retry once the agent has stopped.", notifyType="warning")
+                continue
+            again = dict(original, timestamp=max(now_ms(), original["timestamp"] + 1))
+            turn_aborted = False
+            turn_thread = threading.Thread(target=flaky_turn, args=(again,), daemon=True)
+            turn_thread.start()
+            continue
         if re.search(r"tools:\d+", message):
             RUN["active"] = True
             respond(cmd, t)
@@ -795,6 +863,11 @@ for raw in sys.stdin.buffer:
             turn_thread.start()
         elif message == "stream":
             turn_thread = threading.Thread(target=paced_turn, args=(message,), daemon=True)
+            turn_thread.start()
+        elif message.startswith("flaky"):
+            turn_aborted = False
+            turn_thread = threading.Thread(target=flaky_turn, args=(user_message(message, cmd.get("images") or [], now_ms()),),
+                                           daemon=True)
             turn_thread.start()
         elif message == "provider-error":
             turn_aborted = False

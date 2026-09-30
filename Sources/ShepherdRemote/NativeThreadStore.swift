@@ -24,9 +24,13 @@ public struct NativeThreadRow: Equatable, Identifiable, Sendable {
     public var presentation: NativeTurnPresentation?
     /// True while this reply is the one streaming.
     public var live: Bool
-    /// The opening prompt's text (a reply's Retry) and time (its footer).
+    /// The opening prompt's text (the fallback of a reply's Retry) and time (its footer).
     public var promptText: String?
     public var startedAt: Double?
+    /// The latest reply only: the user message it answers, which Retry sends again in place
+    /// (`NativeThreadStore.retry`). Retrying an older turn would drop every turn after it, so
+    /// the rest have none.
+    public var retryEntryID: String? = nil
     /// The turn the host recorded for this reply (`NativeThreadSnapshot.turnChanges`): its
     /// changes card, with Undo and Redo.
     public var recordedTurn: ChangesTurn? = nil
@@ -48,6 +52,11 @@ public struct NativeThreadRow: Equatable, Identifiable, Sendable {
 
     public var id: String { turn.id }
     public var isUser: Bool { turn.isUser }
+
+    /// The row offers Retry: the latest reply, finished, with a message to send again.
+    public var offersRetry: Bool {
+        !live && retryEntryID != nil && !(promptText ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 }
 
 /// A native thread for one agent: polls the host's snapshots, keeps the optimistic echoes of
@@ -469,12 +478,20 @@ public final class NativeThreadStore {
                                       startedAt: startedAt, recordedTurn: recordedTurn, changes: card)
             row.designComment = opener.flatMap(Self.designComment)
             row.markupProposals = NativeMarkupProposals(turn)
+            if index == turns.count - 1, !isLive, let opener { row.retryEntryID = Self.retryEntryID(opener) }
             rows.append(row)
         }
         if presentationCache.count > kept.count { presentationCache = presentationCache.filter { kept.contains($0.key) } }
         Self.foldRepeatedErrors(&rows)
         if rows != self.rows { self.rows = rows }
         deriveChrome()
+    }
+
+    /// The message Retry sends again for a reply `opener` opened: its last one pi has read.
+    static func retryEntryID(_ opener: NativeTurn) -> String? {
+        opener.messages.last {
+            $0.role == "user" && $0.status == nil && !$0.entryID.hasPrefix("pending:") && !$0.entryID.hasPrefix("provisional:")
+        }?.entryID
     }
 
     /// The comment a user turn carried: its one message's origin.
@@ -1079,7 +1096,28 @@ public final class NativeThreadStore {
         attachedFiles.removeAll { $0.id == id }
     }
 
-    /// Send `text` as a new user message without touching the draft (a turn's Retry).
+    /// Retry is offered while the agent is idle, by a host that retries in place (`retry`) or
+    /// one that takes a send.
+    public func canRetry(_ row: NativeThreadRow, running: Bool) -> Bool {
+        row.offersRetry && !running && (supports("retry") || supports("send"))
+    }
+
+    /// Retry the latest turn (`row.retryEntryID`): in place where the host can (the failed turn
+    /// leaves the thread and pi's context, and the retry streams in its place); elsewhere its
+    /// prompt goes again as a new message.
+    public func retry(_ row: NativeThreadRow) async {
+        guard row.offersRetry, let entryID = row.retryEntryID else { return }
+        guard supports("retry") else {
+            if let text = row.promptText { await send(text: text) }
+            return
+        }
+        guard await readyToAct(), let current = snapshot else { return }
+        let operation = UUID()
+        await perform(.retry(expectedSessionID: current.piSessionID, generation: current.generation, operationID: operation,
+                             entryID: entryID), operation: operation, current: current)
+    }
+
+    /// Send `text` as a new user message without touching the draft (a turn's Retry on an older host).
     public func send(text: String) async {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, await readyToAct(),
               supports("send"), let current = snapshot else { return }

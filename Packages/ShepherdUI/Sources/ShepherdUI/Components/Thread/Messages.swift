@@ -500,7 +500,7 @@ public struct NWTurnFooter: View {
                 Button(action: onRetry) { Image(systemName: "arrow.clockwise").font(.system(size: 12)) }
                     .buttonStyle(.nwIcon(size: NWThreadMetrics.footerButton))
                     .focused($focus, equals: .retry)
-                    .help("Send this turn's prompt again")
+                    .help("Retry this turn")
                     .accessibilityLabel("Retry turn")
                     .nwTransition(.content)
             }

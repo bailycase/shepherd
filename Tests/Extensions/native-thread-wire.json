@@ -556,6 +556,19 @@
   },
   {
     "type": "nativeThread",
+    "id": 27,
+    "agentID": "agent",
+    "request": {
+      "retry": {
+        "expectedSessionID": "session",
+        "generation": "generation",
+        "operationID": "00000000-0000-0000-0000-000000000005",
+        "entryID": "user:1733234570000"
+      }
+    }
+  },
+  {
+    "type": "nativeThread",
     "id": 22,
     "result": {
       "snapshot": {

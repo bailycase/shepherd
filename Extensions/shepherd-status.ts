@@ -3,9 +3,13 @@
 // Inert unless SHEPHERD_AGENT_ID and SHEPHERD_SOCKET are set; every failure is
 // swallowed so this extension can never break or slow the pi session.
 import * as net from "node:net";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 
 type Status = "working" | "blocked" | "idle" | "done";
+
+// Shepherd's Retry runs `/shepherd-retry <ms>`: the user message pi stamped at that
+// millisecond goes again in place of the turn it opened (see retryTurn).
+export const RETRY_COMMAND = "shepherd-retry";
 
 // Tools that wait on the user (e.g. ask_user from the human extension,
 // question-style tools). While one is executing the agent is blocked.
@@ -143,6 +147,44 @@ export default function shepherdStatus(pi: ExtensionAPI) {
     connected = false;
     socket = undefined;
   }
+
+  // Retry: pi's session is a tree, so the leaf moves back to the message's parent (no summary)
+  // and the message goes again as it was, text and images. The failed turn stays in the file
+  // but leaves the active branch, so the model sees the message once. Idle only, and only a
+  // user message on the active branch.
+  async function retryTurn(args: string, ctx: ExtensionCommandContext) {
+    const notify = (text: string) => ctx.ui.notify(text, "warning");
+    if (!ctx.isIdle() || ctx.hasPendingMessages()) return notify("Retry once the agent has stopped.");
+    const at = Number(args.trim());
+    let target: Extract<SessionEntry, { type: "message" }> | undefined;
+    if (args.trim() !== "" && Number.isFinite(at)) {
+      for (const entry of ctx.sessionManager.getBranch()) {
+        if (entry.type !== "message" || entry.message.role !== "user") continue;
+        if (Math.trunc(Number(entry.message.timestamp)) === at) target = entry;
+      }
+    }
+    if (!target || target.message.role !== "user") return notify("That message is no longer in this conversation.");
+    const { content } = target.message;
+    const resend = typeof content === "string"
+      ? content
+      : content.filter((part) => part.type === "text" || part.type === "image");
+    const { cancelled } = await ctx.navigateTree(target.id, { summarize: false });
+    if (cancelled) return;
+    pi.sendUserMessage(resend);
+  }
+
+  pi.registerCommand(RETRY_COMMAND, {
+    description: "Retry the latest turn (Shepherd's Retry)",
+    handler: async (args, ctx) => {
+      try {
+        await retryTurn(args, ctx);
+      } catch (error) {
+        try {
+          ctx.ui.notify(`Couldn't retry: ${error instanceof Error ? error.message : String(error)}`, "warning");
+        } catch {}
+      }
+    },
+  });
 
   pi.on("session_start", (_event, ctx) => {
     stopped = false;

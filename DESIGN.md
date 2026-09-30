@@ -1640,7 +1640,7 @@ the turn has finished, the changes card and the footer end it. A running turn ha
     the trailing edge), the **message** (13 `textSecondary`), the **facts** (2pt more above: the
     status and type as mono 10.5 chips, `NWTag`, then "gpt-5 · OpenAI" and "· Tried 3 times over
     31m" in 12 tertiary), and the **actions** (6pt more above): Retry (secondary `s`, when it
-    ended the turn), Copy (a 26pt icon circle), and "Details ›" (12.5 `textSecondary`) at the
+    ended the latest turn; tooltip "Retry this turn"), Copy (a 26pt icon circle), and "Details ›" (12.5 `textSecondary`) at the
     trailing edge. It rises in like a row (`list`).
   - **Title,** from the status and type: "OpenAI rejected the API key" (401, an authentication
     type), "OpenAI didn’t respond in time" (a timeout, 408, 504), "OpenAI is overloaded" (529,
@@ -1681,7 +1681,8 @@ the turn has finished, the changes card and the footer end it. A running turn ha
     the title at 15/600 and the message at 14; the time joins the facts line ("gpt-5 · OpenAI ·
     5:54 PM"); Retry is secondary `l` (32pt) and Copy a 32pt circle; the folded line is 36pt at
     13.5. Details stacks the facts above the body, 12pt apart, in a 12×14 inset, the body in mono 11.
-  - A turn that ends in an error has no footer: the card carries its Retry and Copy.
+  - A turn that ends in an error has no footer: the card carries its Retry and Copy. An earlier
+    turn's card has no Retry (see Footer).
   - **Not built yet:** a timeout's own sentence and length ("No response after 10 minutes, so the
     request was cancelled. Nothing in the thread was lost.", the "600s" chip): pi's text says only
     "Request timed out.", so the card shows that and the "timeout" chip.
@@ -1706,12 +1707,17 @@ the turn has finished, the changes card and the footer end it. A running turn ha
   - A counting timer is motion enough: the running call's clock ticks beside its shimmer in
     `textTertiary`. Under Reduce Motion the shimmer is plain `textSecondary` text.
 - **Footer** (`NWTurnFooter`), after a finished turn that didn't end in an error: copy (the turn's prose; tooltip "Copy the
-  reply", VoiceOver "Copy response", then a check for 1.5s) and retry (resend the prompt that opened
-  it, only while the agent is idle; tooltip "Send this turn's prompt again", VoiceOver "Retry turn";
-  Main's labels) as 24pt icon buttons 4pt apart, then, 4pt further, "2:44 PM · 3m 12s · 23 tool
+  reply", VoiceOver "Copy response", then a check for 1.5s) and retry (the turn again in its
+  place, only on the latest turn and only while the agent is idle; tooltip "Retry this turn",
+  VoiceOver "Retry turn"; Main's labels) as 24pt icon buttons 4pt apart, then, 4pt further, "2:44 PM · 3m 12s · 23 tool
   calls" in mono 10.5 tertiary (when the prompt was sent, how long the turn took when that was a
   second or more, and the tool calls a reader can count), and "· 3 subagents" as a `running` link to
   the first run. The whole row, link included, shows only while the turn is hovered.
+- **Retry** (the footer's and the error card's) retries the turn in place
+  (docs/native-thread.md › Retry): the prompt and the reply leave the thread, and the prompt goes
+  again as it was, text and images, streaming in their place, so the thread and the model see it
+  once. Only the latest turn offers it, since retrying an earlier one would drop every turn after
+  it. A host from before in-place retry sends the prompt again as a new message instead.
 
 **A turn while pi works** (Running): the turn builds in place as its parts arrive, in the order
 above, each fading in (a failed request rising like a row): "Thought for 2s", prose saying what
@@ -5543,7 +5549,8 @@ follows the Mac's rules (Thread) with the phone's measures below.
   (`turnChanges`); an older host's comes from the turn's edit calls, with no Undo. At the
   accessibility sizes the head stacks and paths take two lines.
 - **Turn footer** (`NWTurnFooter`): at rest, mono 11 `textTertiary`: "2:44 PM · 3m 12s"; the app
-  adds the tool-call count, Copy and Retry, and "n subagents" when the turn spawned runs.
+  adds the tool-call count, Copy and Retry (the latest turn only; Thread › Retry), and "n subagents"
+  when the turn spawned runs.
 - **Composer:** a 1px `lineSubtle` rule, `bgWindow`, 10pt above, 12pt sides, 30pt below. A 44pt
   paperclip (Attach, `textSecondary`; shown only when the host takes images) beside the capsule
   (`NWCapsuleComposer`): at least 44pt, fully rounded, `bgRaised`, 1px `lineStrong` (`textTertiary`
@@ -6261,7 +6268,7 @@ selected thread, or the Overview when none is. Other screens push over the detai
   column width: the 36pt tile, "Edited 5 files" (15/600) over "+200 −8", Undo and Review, then
   "ledger/outbox.go" rows at 14 ("new" before a created file's stat) and "2 more". Its rules are
   the phone's (iPhone: Thread).
-- **Turn footer:** Copy response and Retry turn as 36pt circles with 15pt `textTertiary`
+- **Turn footer:** Copy response and Retry turn (the latest turn only) as 36pt circles with 15pt `textTertiary`
   glyphs, then "2:44 PM · 3m 12s · 6 tool calls" in mono 11 `textTertiary`, and "· 3 subagents"
   as a link when the turn spawned runs. At rest (no hover).
 - **Notices** (caption `textTertiary`, above the turns; the app's, not the boards'): "<host> is
@@ -7172,8 +7179,8 @@ every connected host's (`ShepherdViewModel+Notifications.swift` decides when;
   `waitingOn`, so any dialog, not only a tool named like `ask`). Nothing posts about a thread while
   you watch it, except the `notify` tool, which always posts because the agent asked.
 - **Actions** (the catalog's categories, one per set of actions; macOS shows the first as the
-  banner's button and the rest under **Options**): Retry sends the prompt that opened the failed
-  turn again, once the agent is idle; Review selects the thread and opens its Changes; Retry on a
+  banner's button and the rest under **Options**): Retry retries the failed turn in place, once
+  the agent is idle (Thread › Retry; a host from before that gets the prompt again); Review selects the thread and opens its Changes; Retry on a
   host reconnects at once; an option answers pi's dialog or steers the subagent that asked with the
   option, and Reply… opens a field whose **Send** does the same with the words typed. Answering and
   retrying never bring Shepherd forward; Open and Review do. A question answered meanwhile takes
