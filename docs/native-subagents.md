@@ -448,8 +448,11 @@ PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" \
   fake provider. No model request is made.
 - **Coverage:** discovery, trust and precedence, profile fields and overrides, model and default
   propagation, resume, mission isolation and interruption, workflow sequencing, steering,
-  errors and cancellation, evaluator limits, command-name collisions, the RPC fallbacks, and the
-  inspector's input handling.
+  errors and cancellation, evaluator limits, command-name collisions, the RPC fallbacks, the
+  inspector's input handling, what a child is launched with (the managed provider, which
+  `SHEPHERD_*` survive), the messages for a bad role, profile or model, and a design agent's
+  design tools relayed to real children through a real parent (`native-children-provider`,
+  `design-relay` and `native-children-design` tests).
 - **Real-model smoke test:** opt-in and uses your existing authentication:
   `PI_SMOKE_MODEL=<provider/model> node Tests/Extensions/native-children.smoke.mjs`.
 
