@@ -23,7 +23,7 @@ final class RPCThreadState {
     static let widgetAggregateBytes = 32 * 1024
     static let operationTableSize = 256
     static let supportedActions = ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents", "queue", "compact", "designContext",
-                                   "designReferences", "browserElements", "retry"]
+                                   "designReferences", "browserElements", "retry", "interrupt"]
     /// pi answers `compact` only once the summary is written, which takes as long as a reply.
     static let compactTimeout: TimeInterval = 600
     /// Bytes of a child session file the transcript reader will scan (tail); older is unreachable.
@@ -295,6 +295,13 @@ final class RPCThreadState {
     var settleCapture: UUID?
     var preparingPrompts: [UUID: (NativeThreadResult) -> Void] = [:]
     var sendAfterCapture: [UUID]?
+    /// Messages an interrupt (`NativeThreadDelivery.interrupt`) is stopping pi for, first in the
+    /// queue and sent the moment pi is idle (`RPCThreadState+Interrupt.swift`).
+    var interrupting: [UUID]?
+    /// The interrupt's `abort` is on its way to pi: pi answers it only once the run has settled,
+    /// and the messages wait for that answer (a prompt written before pi finished aborting could
+    /// be queued behind the run it ends and never run).
+    var interruptAbortPending = false
     /// The agent's recorded turns, as the server last set them (`setTurnChanges`).
     private(set) var turnChanges: [ChangesTurn]? { didSet { turnChangesHash = turnChanges.hashValue } }
     private var turnChangesHash = Optional<[ChangesTurn]>.none.hashValue
@@ -1307,7 +1314,7 @@ final class RPCThreadState {
     /// Cancels every question pi waits on that can be answered here (its asker gets pi's
     /// cancelled answer); the next commit drops them from the thread, which records each as
     /// not answered.
-    private func refuseDialogs() {
+    func refuseDialogs() {
         let open = dialogs.filter { $0.unavailable == nil }
         guard !open.isEmpty else { return }
         for dialog in open { session.send(.extensionUIResponse(id: dialog.id, cancelled: true)) }
