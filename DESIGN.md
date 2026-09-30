@@ -1695,9 +1695,13 @@ the turn has finished, the changes card and the footer end it. A running turn ha
   there is no "Working…" row anywhere.
   - A tool is running: its own activity line is the indicator (Activity lines › Live), with
     nothing under it but its output.
-  - Between tools (no call running, no thinking or reply streaming; also before pi's reply has
-    a row): the turn ends in live thinking, "Thinking…" shimmering. When pi's thinking streams
-    it is the same line, and it settles into "Thought for Ns".
+  - A call being written: the line is live from the moment the model names the call, while its
+    arguments stream (a big write takes long), and goes on as the running call when pi starts it
+    (docs/native-thread.md › Events). The words the reply wrote before it are finished, not
+    "being written", so the turn never ends in a static paragraph with nothing moving.
+  - Between tools (no call running or being written, no thinking or reply streaming; also before
+    pi's reply has a row): the turn ends in live thinking, "Thinking…" shimmering. When pi's
+    thinking streams it is the same line, and it settles into "Thought for Ns".
   - Replying: the text being written is the indicator; no line joins it.
   - A running call the subagent record or the tray stands for (`shepherd_child_wait`) still
     counts as moving: the parent waiting on its subagents shows nothing of its own. What moves
@@ -1792,6 +1796,13 @@ tools merge only with the same tool. Consecutive lines form one part of the turn
   sit 4pt beneath, 21pt in (under the label), in mono 11 at 1.6: the older ones `textTertiary`,
   the newest `textSecondary`. When the call ends the live line cross-fades into its finished
   line in place, and the output lines go at once.
+  - **While the model writes the call** the same line is live, unchanged: the verb ("Writing",
+    "Running", "Reading") shimmers beside what the model has named so far, and the clock runs
+    from the call's first word. It is the verb alone until the model has said which file or
+    command, and no output lines sit under it yet. The path or command grows as it streams; the
+    rest of the arguments (a write's whole body) is never drawn or held by the thread. The line
+    goes on as the running call, one clock, in place; if the request is stopped or fails before
+    the call runs, the line leaves and nothing stays behind.
 - **Calls** (expanded, `NWActivityCalls`): an indented list on the rail, 22pt rows in mono 11
   with no gap between them and 10pt between a row's columns: the kind in `textTertiary` in a
   32pt column that widens for a longer name ("read", "edit", "bash", "spawn"), the path

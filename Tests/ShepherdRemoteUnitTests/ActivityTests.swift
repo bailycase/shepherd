@@ -513,12 +513,15 @@ struct TurnPresentationTests {
         ("while a call runs", ["read", "running"], true, false),
         ("while it thinks", ["read", "thinking"], true, false),
         ("while it writes its reply", ["read", "prose"], true, false),
+        ("while it writes a call after its reply", ["read", "prose", "streaming"], true, false),
+        ("while it writes a call after a call", ["read", "streaming"], true, false),
         ("once the turn is over", ["read"], false, false),
     ])
     func theLiveTurnIsBetweenToolsOnlyWhenNothingElseMoves(_ what: String, parts: [String], live: Bool, between: Bool) {
         let messages: [NativeThreadMessage] = parts.enumerated().map { index, part in
             switch part {
             case "running": tool("bash", "b\(index)", status: "running")
+            case "streaming": tool("write", "w\(index)", status: "streaming")
             case "thinking": F.assistant("", thinking: "hm", status: "streaming")
             case "prose": F.assistant("Pushing now.", status: "streaming")
             case "steer": {
@@ -530,6 +533,56 @@ struct TurnPresentationTests {
             }
         }
         #expect(nativeTurnPresentation(messages, live: live).betweenTools == between, "\(what)")
+    }
+
+    /// A reply's words followed by the call the model is writing: the call's line is what moves,
+    /// and the words are finished (a table header waiting for its rule is drawn, not held back).
+    @Test func aCallBeingWrittenIsTheLiveLineAndTheWordsBeforeItAreFinished() {
+        let header = "Writing it now.\n\n| Area | Tools |\n"
+        let writing = F.tool("write", args: #"{"path":"src/big.txt"}"#, status: "streaming", id: "e-w", callID: "w", startedAt: 4_000)
+        let presentation = nativeTurnPresentation([F.assistant(header, status: "streaming"), writing], live: true)
+        #expect(kinds(presentation) == ["prose", "lines:1"] && presentation.changes == nil)
+        #expect(!presentation.betweenTools, "the call is what moves")
+        guard case .prose(_, _, let blocks, let openFence) = presentation.items[0] else { Issue.record("no prose"); return }
+        #expect(blocks.compactMap { if case .paragraph(let text) = $0 { text } else { nil } } == ["Writing it now.", "| Area | Tools |"])
+        #expect(!openFence)
+        guard case .activity(_, let bursts)? = presentation.items.last, let burst = bursts.first else { Issue.record("no live line"); return }
+        #expect(bursts.count == 1 && burst.state == .running)
+        #expect(burst.label == "Writing" && burst.meta == "src/big.txt" && burst.startedAt == 4_000)
+    }
+
+    /// Without a call row yet, a reply still streaming is still being written: the words are the
+    /// one thing moving.
+    @Test func aStreamingReplyWithNoCallAfterItIsStillBeingWritten() {
+        let header = "Here:\n\n| Area | Tools |\n"
+        let presentation = nativeTurnPresentation([F.assistant(header, status: "streaming")], live: true)
+        guard case .prose(_, _, let blocks, _) = presentation.items.first else { Issue.record("no prose"); return }
+        #expect(blocks.compactMap { if case .paragraph(let text) = $0 { text } else { nil } } == ["Here:"], "the pending table header is held back")
+        #expect(!presentation.betweenTools)
+    }
+
+    /// The call's line says what it can: the verb alone until the model has named its path or
+    /// command, then the same words a running call has.
+    @Test(arguments: [
+        ("write", nil, "Writing", ""),
+        ("write", #"{"path":"src/"}"#, "Writing", "src/"),
+        ("edit", #"{"path":"A.swift"}"#, "Editing", "A.swift"),
+        ("read", #"{"path":"Package.swift"}"#, "Reading", "Package.swift"),
+        ("bash", nil, "Running", ""),
+        ("bash", #"{"command":"swift te"}"#, "Running", "swift te"),
+        ("bash", #"{"command":"swift test"}"#, "Running tests", "swift test"),
+        ("grep", #"{"pattern":"TODO"}"#, "Searching", "\"TODO\" in ."),
+    ] as [(String, String?, String, String)])
+    func aCallBeingWrittenReadsAsARunningCall(name: String, args: String?, label: String, meta: String) {
+        let call = F.tool(name, args: args, status: "streaming", id: "e", callID: "c")
+        let running = F.tool(name, args: args, status: "running", id: "e", callID: "c")
+        for message in [call, running] {
+            guard case .activity(_, let bursts)? = nativeTurnPresentation([message], live: true).items.last, let burst = bursts.first else {
+                Issue.record("no live line")
+                return
+            }
+            #expect(burst.state == .running && burst.label == label && burst.meta == meta, "\(message.status ?? "")")
+        }
     }
 
     /// A call the record stands for still runs: the parent waiting on its subagents is not
