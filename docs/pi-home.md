@@ -28,8 +28,15 @@ successful model list together, written atomically with mode 0600. It is not par
 Turn off keeps the connection; Forget removes it. Neither changes the external server.
 
 `PiHome.install` installs `shepherd-cliproxyapi.ts` beside that file. The launcher supplies its
-path with `-e` and pins `SHEPHERD_CLIPROXYAPI_CONFIG`, including for `--no-extensions` children
-and drafts. The extension is inert without configuration. It registers the distinct provider
+path with `-e` and pins `SHEPHERD_CLIPROXYAPI_CONFIG` for every pi it starts: agents, the model
+catalog and drafts. Native helpers (subagents; [native-subagents.md](native-subagents.md)) are
+not started through the launcher, so `shepherd-children.ts` does the same for them
+(`managedProvider`, `childLaunch`): from the parent's pinned `SHEPHERD_CLIPROXYAPI_CONFIG` it passes
+`-e <home>/shepherd-cliproxyapi.ts` (the extension beside the connection file) and keeps that one
+variable after it has dropped every other `SHEPHERD_*` variable, and only while both files exist. A
+helper can therefore run on a `cliproxyapi/<id>` model; with no connection it is launched exactly as
+before, and a `cliproxyapi/…` model it can't see is refused with the providers it does have. The
+extension is inert without configuration. It registers the distinct provider
 `cliproxyapi`, so an imported `cpa` provider and its credentials remain untouched. Native provider
 authentication uses the saved key literally, never as an environment reference or shell command.
 Connect accepts only a key of printable ASCII, the characters a request header can carry: a
@@ -163,7 +170,18 @@ by construction. The builder refuses a session folder that resolves outside the 
 Shepherd sends over RPC names a session file (`RPCCommand`).
 
 Native children run the parent's own engine: `process.execPath` (the engine's node) with the
-package's `dist/bundle/cli.js`, never a `pi` from PATH, and inherit the pins from their parent.
+package's `dist/bundle/cli.js`, never a `pi` from PATH, and inherit the pins from their parent:
+`PI_CODING_AGENT_DIR` (the home: settings, sign-ins, models), `PI_PACKAGE_DIR`,
+`PI_SKIP_VERSION_CHECK`, `PI_TELEMETRY`, and `NODE_EXTRA_CA_CERTS` (the launcher's keychain
+certificates or the user's own, so a private CA works for a helper's requests too); `PI_OFFLINE` is
+set to 1. The `_SHEPHERD_STASH_*` variables pass through as well (their prefix isn't `SHEPHERD_`),
+so a helper's own shell commands get the user's environment back from `restore-env.sh`. Two sets
+are dropped: `PI_SUBAGENT*` (including `PI_SUBAGENTS_TEMP_ROOT`, which only the pi-subagents
+package uses), and every `SHEPHERD_*` variable, so a helper is cut off from the host (its agent id,
+socket and design are the parent's alone). The one exception is the managed provider's file, above.
+What Shepherd sets per agent through its own variables and extensions reaches no helper: a helper
+runs with pi's defaults for its model (a service tier Shepherd sets for an agent, for one, isn't
+applied to its helpers).
 The MCP probe runs on the engine's node too, in a login shell (so the servers it starts find what
 an agent's would), and drops the shell's `PI_*`, `JITI_*`, `NODE_*` and `OPENSSL_CONF` first, as
 the launcher does: a `NODE_OPTIONS` hook of the user's never loads into Shepherd's node.

@@ -184,7 +184,7 @@ beside the thread never narrows what the dock rule measures.
 ## A design on screen
 
 ```text
-agent's board_write / canvas_update → SessionServer → DesignStore (its own queue: check, write, revision)
+agent's board_write / board_edit / canvas_update → SessionServer → DesignStore (its own queue: check, write, revision)
   → commitDesignWrite (server queue: boardCount, lastActiveAt) → onDesignRevision (paced, watched designs)
   → DesignScreenModel.refresh (the snapshot: index, revision, each board's sha)
   → DesignHost.update (only boards whose sha changed)
@@ -327,10 +327,12 @@ speaks for**, below; [SECURITY.md](SECURITY.md)).
   sends `suggestInstruction` and reads back what became of the line; the server keeps it in
   `SuggestionsStore` until the user adds or dismisses it.
 - **`shepherd-design.ts`:** the design agent's tools, loaded only for an agent with a
-  `designID` (`SHEPHERD_DESIGN_ID`). `design_read`, `board_write` and `canvas_update` send
-  `designRead`, `designWriteBoard` and `designUpdateIndex`; the server answers them itself, only
-  for the agent that draws the design, by reading and writing through `DesignStore` off its queue
-  (`design`, `designBoard`, `designWritten`). `design_check` runs in the extension against the
+  `designID` (`SHEPHERD_DESIGN_ID`). `design_read`, `board_write`, `board_edit` and `canvas_update` send
+  `designRead`, `designWriteBoard`, `designEditBoard` and `designUpdateIndex`; the server answers
+  them itself, only for the agent that draws the design, by reading and writing through
+  `DesignStore` off its queue (`design`, `designBoard`, `designWritten`, `designEdited`: a
+  `board_edit` applies its find-and-replace edits to the board's text on that queue and writes
+  the result as a `board_write` does). `design_check` runs in the extension against the
   design's installed systems, else the CSS custom properties in its working folder (the design's
   own folder: a design belongs to no project). It hands pi the design skill through `resources_discover` and
   adds the design's facts to each run's system prompt ([docs/designs.md](docs/designs.md)).
@@ -395,7 +397,7 @@ authenticate with the token and never reach this path.
 | `listAgents`, `sendToAgent`, `spawnAgent`, `coordinateAgent` (read, steer, interrupt, status, delete) | panes | `wrong_process` |
 | `requestReview` | review | `wrong_process` |
 | `suggestInstruction` | instructions | `wrong_process` |
-| `designRead`, `designWriteBoard`, `designUpdateIndex`, `designComments`, `designCommentReply`, `designSystemRead`, `designSystemWrite`, `designProposeComments` | design | `wrong_process` |
+| `designRead`, `designWriteBoard`, `designEditBoard`, `designUpdateIndex`, `designComments`, `designCommentReply`, `designSystemRead`, `designSystemWrite`, `designProposeComments` | design | `wrong_process` |
 | `designGet`, `designNote` | design-refs | `wrong_process` |
 | `mcpCredentials` | mcp | `wrong_process` (it answers with secrets) |
 | `browser` | browser | `not_registered` |
@@ -408,7 +410,10 @@ a child's environment has no `SHEPHERD_AGENT_ID` or `SHEPHERD_SOCKET`: inherited
 variables are removed except `SHEPHERD_CLIPROXYAPI_CONFIG`, the managed provider's config path.
 It explicitly loads the bridge, that managed provider and the user's enabled extensions under
 `--no-extensions`, with `SHEPHERD_CHILD` set. None connects as the parent; the children extension
-talks to its own parent over `helloChildren`, from the parent's pid. A design's agent, an automation's run, an agent that
+talks to its own parent over `helloChildren`, from the parent's pid. A design agent's
+helpers use its design tools without connecting: the helper's proxy sends the call up its stdout
+to the parent, whose design extension makes the request on its own connection with its own agent id
+(docs/designs.md › Helpers), so the rule is not loosened. A design's agent, an automation's run, an agent that
 `/new` moved to another session (same process), one restarted by Retry (a new pi, bound to the
 pane) and one the app starts for a relaunch are all ordinary agents with their own pi. A pi
 run by hand in a terminal pane has `SHEPHERD_SOCKET` blanked and speaks for no one. A process
