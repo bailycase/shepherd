@@ -117,7 +117,9 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
     (`PiHome.keychainCertificatesFile`, private CAs the Mac's keychain trusts — an internal proxy
     or MCP server's root) isn't empty, `NODE_EXTRA_CA_CERTS` pointing at it (the MCP probe and the
     sign-in bridge, which run the engine's node directly, fall back the same way).
-  - With the matching extension on: `SHEPHERD_EXT_PANES`, `SHEPHERD_NATIVE_CHILDREN`,
+  - With the matching extension on: `SHEPHERD_EXT_PANES`, `SHEPHERD_EXT_BROWSER` (the installed
+    `shepherd-browser.ts`, for Settings ▸ Pi ▸ Browser tools; never in a design's agent),
+    `SHEPHERD_NATIVE_CHILDREN`,
     `SHEPHERD_EXT_CHILDREN`, and `SHEPHERD_CHILD_*`; for Settings ▸ Pi ▸ MCP servers,
     `SHEPHERD_EXT_MCP` (the installed `shepherd-mcp.ts`), `SHEPHERD_EXT_MCP_CLIENT` (the installed
     `shepherd-mcp-client.mjs`), `SHEPHERD_EXT_MCP_CONFIG` (the config path the app resolved),
@@ -424,7 +426,7 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
 - **Core:** the status transition table, `PaneNode` operations, and state validation.
 - **Migration:** terminal-era `runtime` keys, global shells and space shells dropped at startup,
   and review leaves.
-- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all eighteen files, and
+- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all nineteen files, and
   the design skill's two files).
 - **Themes:** every theme variant complete, and the WCAG contrast rules met.
 - **App logic:** keybindings (defaults, validation, stored overrides for removed actions
@@ -501,7 +503,8 @@ Sources/
                        JSONL, lenient), Framing (NDJSON, LineBuffer, 1 MiB cap), ShepherdPaths,
                        ShepherdEdition (Shepherd or Shepherd Nightly, from the bundle id),
                        BrowserElement (an element picked in the Browser, and the fence it
-                       reaches pi in),
+                       reaches pi in), BrowserRequest/BrowserOutcome (an agent's browser tools on
+                       the extension socket; docs/browser.md),
                        Instructions (Settings ▸ Instructions' files, history and requests),
                        Suggestions (Settings ▸ Experiments ▸ Suggested instructions),
                        Skills (Settings ▸ Skills: installed skills, repositories, requests),
@@ -612,7 +615,12 @@ Sources/
       import: each thread's page, its data store, BrowserPageView), BrowserPane (the tab: toolbar,
       Nothing open, viewport menu, popover, console drawer, BrowserKeys), BrowserModel (pure: the
       address, viewports, dev servers, script messages, the console log), BrowserScripts (the
-      page's scripts), ShepherdViewModel+Browser (Start, Add to message, Copy selector)
+      page's scripts), ShepherdViewModel+Browser (Start, Add to message, Copy selector).
+      The agent's tools on it (docs/browser.md): BrowserAgentRules (pure: the URL policy, take over,
+      the card's words, results, keys, the screenshot clamp), BrowserAgentScript (read, click, type
+      in Shepherd's content world), BrowserDriver (each tool against the page; no WebKit),
+      ShepherdViewModel+BrowserAgent (serves the server's requests, the tab's dot), BrowserExtension
+      (the embedded shepherd-browser.ts)
     AppLayout (+Navigation, +Thread, +Agents, +Settings, +Pages, +Designs; ShellLayout's adaptive
       rules live in +Navigation), AgentStateMapping (app lifecycles → AgentState)
     ShepherdViewModel(+Navigation, +Creation, +Workspace, +Spaces, +Palette, +Shell,
@@ -697,7 +705,8 @@ Packages/
                                      Agents, Review, Dialogs, Automations, Skills, Browser
                                      (NWBrowserToolbar, NWBrowserAddressField, NWBrowserEmpty,
                                      NWViewportMenu, NWElementPopover, NWElementChip,
-                                     NWConsoleBar, NWConsoleRow), DesignTool
+                                     NWConsoleBar, NWConsoleRow, NWAgentRing, NWAgentPointer,
+                                     NWAgentCard, NWBrowserAgentOverlay, NWPaneTabTip), DesignTool
                                      (NWDesignCanvas, NWBoardFrame, NWCanvasToolbar,
                                      NWDesignCard, NWDesignSystemChip, NWDesignHeader,
                                      NWCommentPin, NWCommentThread, NWCommentCard,
@@ -733,6 +742,10 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
                           over the servers in Settings ▸ MCP servers; credentials from the app
   shepherd-mcp-client.mjs the dependency-free MCP client (stdio, Streamable HTTP, legacy SSE),
                           also run by the app as `node shepherd-mcp-client.mjs probe`
+  shepherd-browser.ts     browser_open, browser_read, browser_click, browser_type, browser_press,
+                          browser_scroll, browser_wait, browser_screenshot, browser_console,
+                          browser_eval, browser_back, browser_forward and browser_reload, on the
+                          thread's own Browser page only; see docs/browser.md
 Tests/
   <Module>UnitTests/, *IntegrationTests/, ShepherdPreviewTests/   the tiers above
   ShepherdTestIsolation/  C, run when a test bundle loads: scratch root, PATH, ZDOTDIR
@@ -966,15 +979,16 @@ the same change.
 - A new `SessionServer` mutation needs an integration test.
 - New persisted fields decode with defaults, so older `state.json` files keep loading.
 
-**Embedded extensions have one canonical copy.** The eighteen files in `Extensions/` are canonical,
+**Embedded extensions have one canonical copy.** The nineteen files in `Extensions/` are canonical,
 and so is the design skill in `Extensions/design-skill/`.
-pi loads the copies that the eleven `Sources/ShepherdApp/*Extension.swift` files write to the
+pi loads the copies that the twelve `Sources/ShepherdApp/*Extension.swift` files write to the
 support directory from embedded string literals. `installedPath()` rewrites an installed copy
 whenever its content differs, so drift ships bugs. `ChildrenExtension.swift` carries children,
 children-config, children-ui, workflow, and missions, and installs `InspectExtension`'s
 `shepherd-inspect.mjs`. `DesignExtension.swift` also writes the design skill's `SKILL.md` and
 `format.md` to the support directory's `design-skill/`. `MCPExtension.swift` carries
-`shepherd-mcp.ts` and `shepherd-mcp-client.mjs`, installed side by side. The sign-in bridge,
+`shepherd-mcp.ts` and `shepherd-mcp-client.mjs`, installed side by side. `BrowserExtension.swift`
+carries `shepherd-browser.ts` (docs/browser.md). The sign-in bridge,
 `shepherd-sign-in.mjs`, isn't an extension: `PiSignInScript` (ShepherdSessions' `PiSignIn.swift`)
 carries it and installs it beside them, and the app runs it on the engine's node.
 `CLIProxyAPIExtension` in ShepherdSessions embeds `shepherd-cliproxyapi.ts`; `PiHome.install`
@@ -985,7 +999,7 @@ The managed provider is `cliproxyapi`, separate from imported `cpa` providers. N
 is installed or managed, and credentials never leave the host. See docs/pi-home.md.
 
 - Edit a `.ts`/`.mjs` file (or a design skill file) and its literal in the same change, with
-  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all eighteen pairs
+  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all nineteen pairs
   and the skill's two files.
 - Extensions stay dependency-free and inert without their environment variables.
 - They must never throw into pi or keep the process alive (unref'd sockets and timers).
@@ -1129,6 +1143,16 @@ are load-bearing:
 - An agent may touch only panes in **its own** layout.
 - It can never close or type into the pane running its own pi process.
 - The last pane in a layout cannot be closed.
+
+**Browser tools act only on their own thread's page** ([docs/browser.md](docs/browser.md)). No tool
+names an agent: `helloBrowser` binds the extension's connection to its agent, and
+`SessionServer.routeBrowserRequest` serves a request only on the connection registered as the
+agent it names (a design's agent registers nothing). Native subagents load no browser tools. The
+page's text is untrusted data: every result starts with a fixed notice saying so. The agent's
+clicks and keys are DOM events (`isTrusted` false), never `NSEvent`s; the user's own click or key
+in the page (trusted) takes the page over, and it comes back with the user's next message to the
+thread (`SessionServer.onUserMessage`), never a peer's `agent_send`. `browser_open` takes `http`,
+`https` and `about:blank` only.
 
 **Agents never delete each other on their own.** `agent_delete` opens `PeerDeleteDialog`; only
 its destructive button approves, by claiming the server's token (`claimAgentDeletion`) before
