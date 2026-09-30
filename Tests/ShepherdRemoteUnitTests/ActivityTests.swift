@@ -678,13 +678,14 @@ struct TurnPresentationTests {
     }
 
     /// Page elements go with the message's bubble (from the queue, its last part, since such a
-    /// message goes alone), and a message of elements alone has no words beside them.
-    @Test func aMessagesElementsGoWithItsBubbleWithoutTheirLine() {
+    /// message goes alone); no board draws them as a chip on a sent bubble, so a message of
+    /// elements alone keeps its human line as its words.
+    @Test func aMessagesElementsGoWithItsBubbleKeepingTheirLine() {
         let element = BrowserElement(page: "http://localhost:5173/", selector: "button.pay", label: "button.pay", width: 240, height: 44)
         let alone = NativeThreadMessage(entryID: "u", role: "user", blocks: [NativeThreadBlock(kind: .text, text: BrowserElementFence.humanLine(count: 1))],
                                         browserElements: [element])
         #expect(nativeUserBubbles(alone).map(\.elements) == [[element]])
-        #expect(nativeUserBubbles(alone).map(\.text) == [""])
+        #expect(nativeUserBubbles(alone).map(\.text) == [BrowserElementFence.humanLine(count: 1)])
         let worded = NativeThreadMessage(entryID: "w", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "Wider")], browserElements: [element])
         #expect(nativeUserBubbles(worded).map(\.text) == ["Wider"])
         let queued = NativeThreadMessage(entryID: "q", role: "user", blocks: [],

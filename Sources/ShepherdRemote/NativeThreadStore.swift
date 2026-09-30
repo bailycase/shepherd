@@ -1364,8 +1364,6 @@ public final class NativeThreadStore {
                     if !files.isEmpty { attachedFiles.removeAll { file in files.contains { $0.id == file.id } } }
                     if !references.isEmpty { attachedReferences.removeAll { sent in references.contains { $0.id == sent.id } } }
                     if !elements.isEmpty { attachedElements.removeAll { sent in elements.contains { $0.id == sent.id } } }
-                    // Beside its chips, a message of elements alone shows no words.
-                    let echoed = !elements.isEmpty && sentText == BrowserElementFence.humanLine(count: elements.count) ? "" : sentText
                     lastSendQueued = queued
                     sentCount += 1
                     if hostQueues && current.running {
@@ -1383,7 +1381,7 @@ public final class NativeThreadStore {
                     } else {
                         let id = "pending:\(operation.uuidString)"
                         pending.append(NativeThreadMessage(entryID: id, role: "user",
-                                                           blocks: [NativeThreadBlock(kind: .text, text: echoed)],
+                                                           blocks: [NativeThreadBlock(kind: .text, text: sentText)],
                                                            status: queued ? "queued" : "pending",
                                                            timestamp: Date().timeIntervalSince1970 * 1000,
                                                            origin: current.running && delivery == .steer ? .steered : nil,

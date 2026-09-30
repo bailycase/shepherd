@@ -1541,8 +1541,9 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   `textSecondary`, 8pt from each edge. In the composer a chip ends with a remove × in
   `textTertiary`; in a sent bubble it has none. Images travel as image payloads; local file
   attachments currently travel as paths in the message (see Composer › Images and files).
-  Elements picked in the Browser show as element chips (`NWElementChip`, no remove) after any
-  design references, the source when known.
+  Design references show as chips after them; an element picked in the Browser rides with the
+  send but draws no chip on the sent bubble (no board draws one there, the user's decision,
+  2026-09-29): only the composer's chip and the queue row's stand for it (Side pane: Browser).
   - **Not built yet.** A sent bubble's chips show each image's thumbnail and file name, as the
     board draws `screenshot.png`. Today they read "Image" behind the file glyph, because the
     thread keeps only how many images a message carried.
@@ -3174,8 +3175,9 @@ forwards the port (not built yet).
   message: the host fences each element ahead of the words as data, never instructions (its page's
   URL, the selector and label, the source when known, its size, and the start of its outer HTML,
   cut at 1,500 bytes), and a message carrying elements goes to pi on its own, never joined in the
-  queue. The thread's bubble shows the elements as chips over the words; elements sent alone send
-  "1 page element attached.", which the thread leaves out beside the chips.
+  queue. No board draws a sent message's elements as a chip, so the sent bubble shows only its
+  words (the user's decision, 2026-09-29): elements sent alone send "1 page element attached.",
+  which the bubble still shows as its text, with nothing standing in for the element.
 - **Console drawer** (`NWConsoleBar`, `NWConsoleRow`), under the page while one is open: a 32pt bar
   on `bgBase` under a `lineStrong` line: "Console" (Geist 12 semibold), "Network" with its count
   (the document and each resource it loaded; Geist Mono 10.5 `textTertiary`), and "1 warning" in
