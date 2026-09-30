@@ -181,8 +181,10 @@ struct BrowserTunnelHostTests {
     @Test func aKeepaliveKeepsATunnelOpen() async throws {
         let host = try await TunnelHost()
         defer { host.stop() }
+        // A generous idle time and a keepalive well inside it: a loaded runner stalling for a second
+        // does not read as silence.
         var limits = host.server.browserTunnelLimits
-        limits.idle = 0.5
+        limits.idle = 1.5
         host.server.browserTunnelLimits = limits
         let deaf = try LoopbackServer.deaf()
         defer { deaf.stop() }
@@ -191,10 +193,10 @@ struct BrowserTunnelHostTests {
 
         #expect(try await client.open(1, agent: host.agent, port: deaf.port) == .opened(tunnel: 1))
         for _ in 0..<12 {
-            try await Task.sleep(for: .milliseconds(150))
+            try await Task.sleep(for: .milliseconds(300))
             try client.sendTunnel(.keepalive(tunnel: 1))
         }
-        #expect(host.server.browserTunnelCount == 1, "1.8 s on, well past the idle time")
+        #expect(host.server.browserTunnelCount == 1, "3.6 s on, well past the idle time")
     }
 
     // MARK: Cleanup
