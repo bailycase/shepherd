@@ -160,6 +160,47 @@ struct SidebarPinnedFlowTests {
         #expect(!vm.canPin(.design(DesignID())))
     }
 
+    /// ⌘K offers Pin thread for the thread on screen, and Unpin thread once it is pinned.
+    @Test func thePaletteOffersPinForTheThreadOnScreenAndRunsIt() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        var (state, agents) = fleet(app, count: 3)
+        state.automations = [Automation(name: "Nightly", prompt: "p", cwd: "/tmp", agentID: agents[2].agent.id)]
+        let vm = try await app.start(with: state)
+        func command() -> PaletteItem? { vm.paletteItems.first { $0.id == "action.pin" } }
+
+        vm.selectAgent(agents[0].agent.id)
+        #expect(command()?.title == "Pin thread")
+        try vm.runPaletteItem(#require(command()))
+        #expect(vm.isPinned(.local(agents[0].agent.id)))
+        #expect(vm.sidebarLists.pinned.map(\.title) == ["agent-0"])
+        #expect(command()?.title == "Unpin thread")
+        try vm.runPaletteItem(#require(command()))
+        #expect(!vm.isPinned(.local(agents[0].agent.id)))
+
+        vm.selectAgent(agents[2].agent.id)
+        #expect(command() == nil, "an automation's run is never pinned")
+        vm.selectAgent(agents[1].agent.id)
+        #expect(command() != nil)
+        vm.openDestination(.automations)
+        #expect(command() == nil, "no thread on screen")
+        vm.selectAgent(agents[1].agent.id)
+        vm.settings.sidebarStyle = .projects
+        #expect(command() == nil, "the project tree draws no Pinned")
+    }
+
+    /// The thread options menu reads the same rule as the palette.
+    @Test func theOnScreenThreadIsPinnableOnlyWhereTheActivitySidebarShowsPins() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (state, agents) = fleet(app, count: 2)
+        let vm = try await app.start(with: state)
+        vm.selectAgent(agents[1].agent.id)
+        #expect(vm.pinTarget == .local(agents[1].agent.id))
+        vm.openDestination(.hosts)
+        #expect(vm.pinTarget == nil)
+    }
+
     /// The project tree draws no Pinned section, so it offers no Pin: not on its rows, not in the
     /// header, not in the palette; the pins stay for the Activity sidebar.
     @Test func theProjectTreeOffersNoPin() async throws {

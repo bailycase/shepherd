@@ -203,6 +203,7 @@ struct SidebarRowMenu: View {
                 // NWComposer's agent menu: Rename… with its keys, Fork and Copy with their glyphs.
                 Button("Rename…") { vm.agentRenameTarget = id }
                     .keyboardShortcut(KeybindingsStore.shared.shortcut(.renameAgent))
+                PinMenuItem(vm: vm, row: row)
                 Button("Fork from Here", systemImage: "arrow.branch") { vm.forkAgent(id) }
                 Button("Copy Transcript", systemImage: "doc.on.doc") { vm.copyAgentTranscript(id) }
                 Divider()
@@ -222,10 +223,30 @@ struct SidebarRowMenu: View {
             DesignMenuItems(menu: vm.designMenu(.local(id), context: .recents)) { vm.performDesignMenu($0, on: .local(id)) }
         case .remote(let ref):
             if row.offline {
-                // Every action goes through the host, which is not connected.
+                // Every action goes through the host, which is not connected; a pin is this
+                // Mac's own, so Unpin stays.
+                if row.pinnable {
+                    PinMenuItem(vm: vm, row: row)
+                    Divider()
+                }
                 Button("Host Offline") {}.disabled(true)
             } else {
                 RemoteRowMenu(vm: vm, row: row, ref: ref)
+            }
+        }
+    }
+}
+
+/// Pin or Unpin, named for what it does now, on a row the Activity lists mark pinnable (never an
+/// automation's run, a design, or a row of the project tree).
+private struct PinMenuItem: View {
+    var vm: ShepherdViewModel
+    let row: SidebarListRow
+
+    var body: some View {
+        if row.pinnable {
+            Button(PinWords.menuTitle(pinned: row.pinned), systemImage: PinWords.symbol(pinned: row.pinned)) {
+                if row.pinned { vm.unpinThread(row.id) } else { vm.pinThread(row.id) }
             }
         }
     }
@@ -239,6 +260,7 @@ private struct RemoteRowMenu: View {
 
     var body: some View {
         Button("Rename…") { vm.remoteRenameTarget = ref }
+        PinMenuItem(vm: vm, row: row)
         Divider()
         if row.worktree {
             Button("Finalize Worktree…") {

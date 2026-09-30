@@ -248,4 +248,38 @@ struct PinPaletteTests {
         #expect(PinWords.symbol(pinned: pinned) == symbol)
         #expect(PinWords.paletteTitle(pinned: pinned) == palette)
     }
+
+    /// One command in This thread, named for the thread's state, with no chord.
+    @Test(arguments: [(false, "Pin thread", "pin"), (true, "Unpin thread", "pin.slash")])
+    func thePaletteOffersOneCommandForAThreadOnScreen(pinned: Bool, title: String, icon: String) throws {
+        let items = ShepherdViewModel.pinPaletteItems(target: .local(AgentID(rawValue: "a")), pinned: pinned)
+        let item = try #require(items.first)
+        #expect(items.count == 1)
+        #expect(item.title == title && item.icon == icon)
+        #expect(item.section == .thisThread && item.kind == .action("togglePin"))
+        #expect(item.shortcut == nil, "no new chord")
+    }
+
+    @Test func thePaletteOffersNothingWithoutAThreadToPin() {
+        #expect(ShepherdViewModel.pinPaletteItems(target: nil, pinned: false).isEmpty)
+        #expect(ShepherdViewModel.pinPaletteItems(target: nil, pinned: true).isEmpty)
+    }
+
+    @Test(arguments: ["pin", "unpin", "pin thr"])
+    func aQueryFindsTheCommand(query: String) {
+        let items = ShepherdViewModel.pinPaletteItems(target: .local(AgentID(rawValue: "a")), pinned: query.hasPrefix("un"))
+        #expect(PaletteSearch.filter(items, query: query, scope: .all).count == 1)
+    }
+
+    /// The thread options menu redraws when the thread is pinned or unpinned, and when Pin stops
+    /// being offered.
+    @Test func theToolbarReadsThePinState() {
+        let store = NativeThreadStore()
+        func header(pinned: Bool?, toggle: Bool) -> ThreadHeader {
+            ThreadHeader(store: store, project: "p", title: "t", pinned: pinned, togglePin: toggle ? {} : nil)
+        }
+        #expect(header(pinned: false, toggle: true) == header(pinned: false, toggle: true))
+        #expect(header(pinned: false, toggle: true) != header(pinned: true, toggle: true))
+        #expect(header(pinned: false, toggle: true) != header(pinned: nil, toggle: false))
+    }
 }
