@@ -104,9 +104,10 @@ struct ThreadProjectionTests {
     }
 
     /// A user message that starts with a browser elements fence shows its words, with the
-    /// elements (without their markup) for its chips; after design references too. A message of
-    /// elements alone shows no words. Any other role keeps the fence as text.
-    @Test func aUserMessagesBrowserElementsBecomeChips() throws {
+    /// elements (without their markup) beside them; after design references too. No board draws
+    /// a sent element as a chip, so a message of elements alone keeps its human line as its
+    /// words. Any other role keeps the fence as text.
+    @Test func aUserMessagesBrowserElementsGoWithTheWords() throws {
         let element = BrowserElement(page: "http://localhost:5173/", selector: "button.pay", label: "button.pay", width: 240, height: 44,
                                      html: "<button>Pay</button>")
         let fence = try #require(BrowserElementFence.fenced([element]))
@@ -114,7 +115,7 @@ struct ThreadProjectionTests {
         #expect(mine.blocks.map(\.text) == ["Wider"])
         #expect(mine.browserElements == [element.withoutHTML])
         let alone = RPCThreadState.project(entryID: "user:2", message: RPCMessage(role: "user", content: [.text(fence + BrowserElementFence.humanLine(count: 1))]))
-        #expect(alone.blocks.map(\.text) == [""] && alone.browserElements?.count == 1)
+        #expect(alone.blocks.map(\.text) == [BrowserElementFence.humanLine(count: 1)] && alone.browserElements?.count == 1)
 
         let copy = UUID().uuidString
         let record = DesignReferenceRecord(ref: "shepherd-design-ref://local/d1/A.dc.html@4", design: "Checkout", payload: copy)

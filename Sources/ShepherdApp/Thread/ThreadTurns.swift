@@ -98,16 +98,11 @@ struct UserTurn: View, Equatable {
                 // entries, and the bubble must stay one view to settle in place (70% → 100%).
                 ForEach(Array(bubbles.enumerated()), id: \.offset) { index, bubble in
                     let last = index == bubbles.count - 1
+                    // No board draws a sent message's page elements as chips (the user's decision,
+                    // 2026-09-29): only the composer's chip and the queue row's stand for them.
                     NWUserBubble(bubble.text, attachments: Array(repeating: "Image", count: bubble.images),
                                  timestamp: bubble.caption, note: last ? note : nil, revealed: hover.hovering) {
                         if !bubble.references.isEmpty { SentReferenceChips(records: bubble.references) }
-                        if !bubble.elements.isEmpty {
-                            NWFlowLayout(spacing: NW.Space.s, lineSpacing: NW.Space.s) {
-                                ForEach(Array(bubble.elements.enumerated()), id: \.offset) { _, element in
-                                    NWElementChip(element.label, source: element.sourceShort).help(element.selector)
-                                }
-                            }
-                        }
                     }
                         .opacity(bubble.pending ? 0.7 : 1)
                         .nwAnimation(.hover, value: bubble.pending)

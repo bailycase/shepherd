@@ -682,7 +682,8 @@ struct NativeThreadStoreTests {
 
     /// Elements picked in the Browser wait beside the draft (each once per page and selector,
     /// five at most), go with the send, and leave with it; alone they send a line so the
-    /// message isn't empty, which the echo leaves out beside its chips.
+    /// message isn't empty, which the echo keeps as its words (no board draws a sent element
+    /// as a chip).
     @Test func attachedElementsGoWithTheSend() async throws {
         let (store, host, task) = await started(F.snapshot(actions: ["send", "browserElements"], messages: [hi]))
         defer { task.cancel() }
@@ -705,7 +706,7 @@ struct NativeThreadStoreTests {
         #expect(elements == [pay])
         #expect(store.attachedElements.isEmpty)
         let echo = try #require(store.pending.last)
-        #expect(echo.blocks.map(\.text) == [""] && echo.browserElements == [pay.withoutHTML])
+        #expect(echo.blocks.map(\.text) == [BrowserElementFence.humanLine(count: 1)] && echo.browserElements == [pay.withoutHTML])
     }
 
     @Test func aHostThatTakesNoElementsIsSentNone() async throws {

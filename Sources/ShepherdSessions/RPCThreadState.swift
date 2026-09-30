@@ -1785,9 +1785,10 @@ final class RPCThreadState {
                     shown = String(parsed.text)
                     result.designReferences = parsed.records.map(\.withoutFiles)
                 }
-                // Elements picked in the Browser: the thread draws their chips.
+                // Elements picked in the Browser: the composer and the queue draw them as chips,
+                // but no board draws one on a sent bubble, so the human line stays as the words.
                 if fenced, let parsed = BrowserElementFence.parse(shown) {
-                    shown = BrowserElementFence.stripping(shown)
+                    shown = String(parsed.text)
                     result.browserElements = parsed.elements.map(\.withoutHTML)
                 }
                 fenced = false

@@ -97,8 +97,9 @@ extension PreviewTests {
         }
     }
 
-    /// Picked elements in the thread (PaneBrowser's composer): one sent with a message, one
-    /// waiting in the queue, and one in the composer beside a draft.
+    /// Picked elements: no board draws one as a chip on a sent bubble (the user's decision,
+    /// 2026-09-29), so a sent message's element goes with it unseen and only its words show; one
+    /// still waits in the queue as a chip, and one sits in the composer beside a draft.
     @Test func browserElementChips() async throws {
         var snapshot = QueueThreads.running
         snapshot.supportedActions.append("browserElements")
