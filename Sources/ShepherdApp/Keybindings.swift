@@ -55,7 +55,7 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .toggleTerminal: return "Show or Hide Terminal"
         case .maximizeTerminal: return "Maximize or Restore Terminal"
         case .importDesign: return "Import Claude Design Project…"
-        case .alternateSend: return "Send the Other Way (Steer or Queue)"
+        case .alternateSend: return "Send and Steer Now"
         case .implementInThread: return "Implement in a Thread…"
         case .copyDesignReference: return "Copy Design Reference"
         case .focusAddressBar: return "Focus Address Bar"
@@ -136,8 +136,8 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
 }
 
 /// Settings ▸ Keyboard's "While the agent is working" rows, in the order of the Queue & steer boards'
-/// Keyboard card: the send keys, then the queue's own. ↩ and the alternate send trade titles
-/// with the Return setting, so each row says what its key does now.
+/// Keyboard card: the send keys, then the queue's own. ↩'s title follows the Return setting, so
+/// the row says what the key does now; the alternate send always steers now.
 enum WhileWorkingKey: Hashable, Identifiable {
     /// ↩ (fixed).
     case send
@@ -154,10 +154,10 @@ enum WhileWorkingKey: Hashable, Identifiable {
 
     func title(_ setting: ReturnWhileWorking) -> String {
         switch self {
-        case .send: setting == .steer ? "Send and steer now" : "Send, queued"
-        case .alternateSend: setting == .steer ? "Send, queued" : "Send and steer now"
+        case .send: setting == .steer ? "Send, steering at the next step" : "Send, waiting for the turn to end"
+        case .alternateSend: "Send and steer now"
         case .fixed(let chord): chord.title
-        case .steerFocused: "Steer the focused message"
+        case .steerFocused: "Steer the focused message now"
         }
     }
 }
