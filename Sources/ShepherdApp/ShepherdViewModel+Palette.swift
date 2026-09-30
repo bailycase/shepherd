@@ -55,6 +55,8 @@ extension ShepherdViewModel {
             items.append(PaletteItem(id: "action.rename", kind: .action("rename"), section: .thisThread,
                                      title: "Rename", subtitle: agent.name, shortcut: keys.display(.renameAgent),
                                      icon: "pencil"))
+            let pinTarget = pinTarget
+            items += Self.pinPaletteItems(target: pinTarget, pinned: pinTarget.map(isPinned) ?? false)
             if visibleThread != nil {
                 items.append(PaletteItem(id: "action.model", kind: .action("model"), section: .thisThread,
                                          title: "Choose model…", subtitle: visibleThread?.store.model.map(nativeModelShortName),
@@ -122,6 +124,14 @@ extension ShepherdViewModel {
                                      icon: "folder"))
         }
         return items
+    }
+
+    /// Pin thread or Unpin thread, named for what it does now, for the thread on screen when it
+    /// can be pinned (`pinTarget`). It has no chord.
+    static func pinPaletteItems(target: SidebarRowID?, pinned: Bool) -> [PaletteItem] {
+        guard target != nil else { return [] }
+        return [PaletteItem(id: "action.pin", kind: .action("togglePin"), section: .thisThread,
+                            title: PinWords.paletteTitle(pinned: pinned), icon: PinWords.symbol(pinned: pinned))]
     }
 
     /// The Pane menu's terminal commands, for the thread on screen: Show or Hide, New, and
@@ -250,6 +260,7 @@ extension ShepherdViewModel {
             case "newAgentOptions": showNewAgentSheet = true
             case "newSpace": addSpaceFromPanel()
             case "rename": renameSelectedAgent()
+            case "togglePin": if let target = pinTarget { togglePin(target) }
             case "model": sendThreadCommand(.modelPicker)
             case "toggleSidebar": toggleSidebar()
             case "settings": showSettings = true
