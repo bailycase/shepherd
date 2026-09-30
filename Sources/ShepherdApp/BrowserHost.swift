@@ -108,6 +108,35 @@ final class BrowserSessions {
 }
 
 
+// MARK: The window a page waits in
+
+/// The window of a page with no pane (`BrowserSession.parkOffscreen`). It is never seen, never
+/// focused and never offered: it cannot become key or main (so a page loading, focusing itself or
+/// opening a dialog takes no focus and never activates the app); it is not in the Window menu; it
+/// is `.transient` (hidden from Mission Control) and `.ignoresCycle` (not in ⌘`); and it is not an
+/// accessibility window (VoiceOver and other clients do not list it or read the agent's page
+/// through it). Measured in a real accessory app, docs/browser.md › The window a page waits in.
+final class BrowserParkWindow: NSWindow {
+    /// `.stationary` would show it in Mission Control ("unaffected by exposé"), and AppKit allows
+    /// at most one of transient, stationary and managed.
+    static let collectionBehavior: NSWindow.CollectionBehavior = [.transient, .ignoresCycle, .fullScreenNone]
+
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+    override func isAccessibilityElement() -> Bool { false }
+    override func isAccessibilityHidden() -> Bool { true }
+}
+
+/// The parked window's content view, which the web view sits in while parked: hidden from
+/// accessibility with everything inside it. (With a plain view the window still shows to
+/// accessibility clients as an empty group; with this one it is not listed at all.)
+final class BrowserParkContent: NSView {
+    override func isAccessibilityElement() -> Bool { false }
+    override func isAccessibilityHidden() -> Bool { true }
+    override func accessibilityChildren() -> [Any]? { [] }
+    override func accessibilityRole() -> NSAccessibility.Role? { .unknown }
+}
+
 // MARK: Session
 
 /// One thread's page: the web view (made when something first opens), what the toolbar shows,
@@ -189,7 +218,7 @@ final class BrowserSession {
     @ObservationIgnored var onUserInput: (() -> Void)?
 
     // Off-screen hosting: a page nobody looks at still lays out and runs.
-    @ObservationIgnored private var parkWindow: NSWindow?
+    @ObservationIgnored private var parkWindow: BrowserParkWindow?
     @ObservationIgnored private(set) var paneSize = CGSize(width: 1024, height: 768)
 
     init(agentID: AgentID, dataStores: BrowserDataStores) {
@@ -420,7 +449,7 @@ final class BrowserSession {
         let window = parkWindow ?? makeParkWindow()
         parkWindow = window
         placeParked(window)
-        let content = window.contentView ?? NSView()
+        let content = window.contentView ?? BrowserParkContent()
         window.contentView = content
         webView.frame = content.bounds
         webView.autoresizingMask = [.width, .height]
@@ -448,10 +477,10 @@ final class BrowserSession {
         placeParked(window)
     }
 
-    private func makeParkWindow() -> NSWindow {
+    private func makeParkWindow() -> BrowserParkWindow {
         _ = NSApplication.shared
-        let window = NSWindow(contentRect: NSRect(origin: BrowserParkPlacement.farAway, size: paneSize),
-                              styleMask: [.borderless], backing: .buffered, defer: false)
+        let window = BrowserParkWindow(contentRect: NSRect(origin: BrowserParkPlacement.farAway, size: paneSize),
+                                       styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.hidesOnDeactivate = false
         window.animationBehavior = .none
@@ -461,9 +490,9 @@ final class BrowserSession {
         window.hasShadow = false
         window.alphaValue = 0.01
         window.isExcludedFromWindowsMenu = true
-        window.collectionBehavior = [.transient, .ignoresCycle, .stationary]
+        window.collectionBehavior = BrowserParkWindow.collectionBehavior
         window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-        window.contentView = NSView(frame: NSRect(origin: .zero, size: paneSize))
+        window.contentView = BrowserParkContent(frame: NSRect(origin: .zero, size: paneSize))
         return window
     }
 

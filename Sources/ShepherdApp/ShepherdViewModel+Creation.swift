@@ -316,7 +316,7 @@ extension ShepherdViewModel {
 
     /// The app's main window, for focus handling.
     private var window: NSWindow? {
-        NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first { $0.isVisible }
+        NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first { $0.isVisible && $0.canBecomeKey }
     }
 
 }
