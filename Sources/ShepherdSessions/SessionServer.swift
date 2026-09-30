@@ -1156,7 +1156,10 @@ public final class SessionServer: @unchecked Sendable {
             completion(.failure(code: "native_limit", message: "Native request limit exceeded."))
             return
         }
-        if case .send = request { noteAgentSend(agentID) }
+        switch request {
+        case .send, .retry: noteAgentSend(agentID)
+        default: break
+        }
         thread.handle(request, olderClient: olderClient) { completion(.result($0)) }
     }
 
