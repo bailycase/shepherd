@@ -679,6 +679,7 @@ final class ShepherdViewModel {
                     case .deleteKeepingWorktree: try await self.deleteAgentPersisted(agentID)
                     case .renameTerminal(let paneID, let title): try self.renameTerminalPane(paneID, of: agentID, to: title)
                     case .killTerminalProcess(let paneID): try await self.killTerminalProcess(paneID, of: agentID)
+                    case .openTerminal(let cwd, let command): try await self.startCommandForRemote(agentID, cwd: cwd, command: command)
                     }
                     completion(.success(()))
                 } catch {

@@ -68,7 +68,7 @@ struct BrowserPane: View {
     private var empty: some View {
         let servers = session.devServers ?? []
         return NWBrowserEmpty(message: BrowserEmptyWords.message(waiting: session.waitingFor),
-                              servers: servers.map(\.item), openShortcut: vm.keybindings.display(.focusAddressBar),
+                              servers: servers.map { $0.item(startTitle: "Start on This Mac") }, openShortcut: vm.keybindings.display(.focusAddressBar),
                               start: { item in
                                   guard let server = servers.first(where: { $0.id == item.id }) else { return }
                                   vm.startDevServer(server, in: session)
