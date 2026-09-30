@@ -78,6 +78,7 @@ rest. Shepherd writes, whenever they differ (`PiHome.install`):
 | `restore-env.sh` | Gives an agent's shell commands back what the launcher set aside |
 | `.shepherd-pi-home` | The marker that names the folder as Shepherd's |
 | `settings.json` | Shepherd's keys only: `shellCommandPrefix` (sourcing `restore-env.sh`), the `skills` filter that turns off `~/.agents/skills` (below), the user's switched-on extensions under `extensions`, and `packages` removed |
+| `keychain-certificates.pem` | Every certificate the Mac's keychain trusts (a private CA for an internal proxy or MCP server), PEM, so Node — which otherwise trusts only its own bundled CAs — can trust it too. Missing, or empty, when the keychain holds none |
 
 pi writes `settings.json` too (the TUI's `/settings`, the first `/login`), so Shepherd changes it
 read-modify-write under pi's own lock (proper-lockfile's `settings.json.lock` folder, taken over
@@ -107,8 +108,12 @@ instructions, skills, prompts, themes, extensions) is a copy in the home (Import
 
 1. sets aside every `PI_*`, `JITI_*`, `NODE_*` and `OPENSSL_CONF` it was started with, as
    `_SHEPHERD_STASH_<name>` (their names in `_SHEPHERD_STASH_NAMES`), and unsets them, putting
-   `NODE_EXTRA_CA_CERTS` back for corporate CAs. The prefix isn't `SHEPHERD_`, which the children
-   extension drops from a child's environment;
+   `NODE_EXTRA_CA_CERTS` back for corporate CAs — else, when the user set none and
+   `keychain-certificates.pem` isn't empty, exporting it as `NODE_EXTRA_CA_CERTS` instead, so pi's
+   requests trust what the Mac's keychain trusts (an internal proxy signed by a private root, say)
+   as Settings' own checks already do. Node reads one `NODE_EXTRA_CA_CERTS` file, so a user's own
+   corporate CA bundle always wins; nothing merges the two. The prefix isn't `SHEPHERD_`, which the
+   children extension drops from a child's environment;
 2. exports the pins: `PI_CODING_AGENT_DIR` (the home), `PI_PACKAGE_DIR` (the engine's package),
    `PI_OFFLINE=1`, `PI_SKIP_VERSION_CHECK=1`, `PI_TELEMETRY=0`, and `PI_SUBAGENTS_TEMP_ROOT`;
 3. refuses `install`, `remove`, `uninstall`, `update` and `config` (exit 2), pointing at
@@ -122,8 +127,13 @@ keys to pi, after the shell's startup files have run, so nothing in them can und
 
 **The bash tool gets the user's environment back.** pi's bash tool runs commands with pi's own
 environment, which would strip an agent's `npm test` of the user's `NODE_OPTIONS`. Shepherd's
-`shellCommandPrefix` sources `restore-env.sh` before every command: it unsets the pins and
-exports each variable the launcher set aside, as it was.
+`shellCommandPrefix` sources `restore-env.sh` before every command: it unsets the pins (and
+`NODE_EXTRA_CA_CERTS`, which the launcher may have set to `keychain-certificates.pem` and isn't
+one of them) and exports each variable the launcher set aside, as it was — so a command sees
+`NODE_EXTRA_CA_CERTS` exactly as the user had it, never Shepherd's keychain export.
+
+The MCP probe and the sign-in bridge (`PiSignIn.swift`) run the engine's node directly, not
+through the launcher, so they carry the same fallback themselves (`PiLaunch.clearedEnvironment`).
 
 Every launch is built by `PiLaunch` (pinned in `PiLaunchTests`):
 

@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import Security
 
 /// Shepherd's own pi home, `<support directory>/pi`: the `PI_CODING_AGENT_DIR` of every pi
 /// Shepherd starts, holding its settings, sign-ins, models, sessions, and `bin/pi`, the launcher
@@ -36,6 +37,11 @@ public struct PiHome: Equatable, Sendable {
     /// Sourced before every command an agent's bash tool runs (`shellCommandPrefix`).
     public var restoreEnv: URL { directory.appendingPathComponent("restore-env.sh") }
     public var settings: URL { directory.appendingPathComponent("settings.json") }
+    /// PEM of every certificate the Mac's keychain trusts (a private CA for an internal proxy or
+    /// MCP server), exported so Node — which trusts only its own bundled CAs — can trust it too
+    /// (`launcherScript`, `PiLaunch.clearedEnvironment`). Missing, or empty, when the keychain
+    /// holds none.
+    public var keychainCertificatesFile: URL { directory.appendingPathComponent("keychain-certificates.pem") }
     public var sessions: URL { directory.appendingPathComponent("sessions", isDirectory: true) }
     /// `<home>/sessions/--<cwd>--`, pi's own name for a project's session folder.
     public func sessionDirectory(forCwd cwd: String) -> URL {
@@ -70,8 +76,10 @@ public struct PiHome: Equatable, Sendable {
 
     /// `bin/pi`. It runs under `zsh -f`, so no startup file runs between it and pi, and in order:
     /// sets aside and unsets the environment's `PI_*`, `JITI_*`, `NODE_*` and `OPENSSL_CONF`
-    /// (putting `NODE_EXTRA_CA_CERTS` back, for corporate CAs), exports the pins, refuses
-    /// `refusedSubcommands`, and execs the engine, or says it's missing and exits 127.
+    /// (putting `NODE_EXTRA_CA_CERTS` back, for corporate CAs, else falling back to
+    /// `keychainCertificatesFile` when the user set none and it isn't empty, so Node trusts the
+    /// private CAs the Mac's keychain trusts), exports the pins, refuses `refusedSubcommands`,
+    /// and execs the engine, or says it's missing and exits 127.
     public var launcherScript: String {
         let q = PiLaunch.quoted
         var script = """
@@ -93,7 +101,11 @@ public struct PiHome: Equatable, Sendable {
               unset $_shepherd_name
             done
             export \(Self.stashNamesKey)="${_shepherd_names[*]}"
-            if (( ${+\(Self.stashPrefix)NODE_EXTRA_CA_CERTS} )); then export NODE_EXTRA_CA_CERTS="$\(Self.stashPrefix)NODE_EXTRA_CA_CERTS"; fi
+            if (( ${+\(Self.stashPrefix)NODE_EXTRA_CA_CERTS} )); then
+              export NODE_EXTRA_CA_CERTS="$\(Self.stashPrefix)NODE_EXTRA_CA_CERTS"
+            elif [[ -s \(q(keychainCertificatesFile.path)) ]]; then
+              export NODE_EXTRA_CA_CERTS=\(q(keychainCertificatesFile.path))
+            fi
             unset _shepherd_name _shepherd_names
 
             """
@@ -117,12 +129,14 @@ public struct PiHome: Equatable, Sendable {
     }
 
     /// `restore-env.sh`, sourced by the bash tool's shell (bash, or zsh) before each command:
-    /// unsets the pins and exports each variable the launcher set aside, as it was.
+    /// unsets the pins (and `NODE_EXTRA_CA_CERTS`, which the launcher may have set to
+    /// `keychainCertificatesFile` and isn't one of the pins) and exports each variable the
+    /// launcher set aside, as it was.
     public var restoreEnvScript: String {
         """
         # Shepherd's pi: gives an agent's shell commands back the pi, jiti and Node variables its
         # launcher (bin/pi) set aside. Shepherd writes this file and rewrites it whenever it differs.
-        unset \(pins.map(\.0).joined(separator: " "))
+        unset \(pins.map(\.0).joined(separator: " ")) NODE_EXTRA_CA_CERTS
         for _shepherd_name in $(printf '%s\\n' "${\(Self.stashNamesKey)-}"); do
           case $_shepherd_name in (''|*[!A-Za-z0-9_]*) continue ;; esac
           eval "export $_shepherd_name=\\"\\${\(Self.stashPrefix)$_shepherd_name}\\""
@@ -157,6 +171,12 @@ public struct PiHome: Equatable, Sendable {
         try Self.write(Data(Self.markerText.utf8), to: marker, mode: 0o644)
         try Self.write(Data(restoreEnvScript.utf8), to: restoreEnv, mode: 0o644)
         try Self.write(Data(launcherScript.utf8), to: launcher, mode: 0o755)
+        let pem = Self.keychainCertificatesPEM(from: Self.keychainCertificates())
+        if pem.isEmpty {
+            try? files.removeItem(at: keychainCertificatesFile)
+        } else {
+            try Self.write(pem, to: keychainCertificatesFile, mode: 0o644)
+        }
         return try PiSettingsFile(url: settings).update { settings in
             var notes: [String] = []
             settings["shellCommandPrefix"] = shellCommandPrefix
@@ -222,6 +242,51 @@ public struct PiHome: Equatable, Sendable {
             let error = String(cString: strerror(errno))
             try? FileManager.default.removeItem(at: temporary)
             throw PiHomeError("Couldn't write \(url.path): \(error)")
+        }
+    }
+
+    // MARK: Keychain certificates
+
+    /// PEM of every non-denied certificate in `certificates`, each `SecCertificateCopyData`
+    /// DER paired with whether its trust settings deny it. A small pure function so a unit test
+    /// can check the PEM shape and the denied-cert filter without touching the keychain.
+    static func keychainCertificatesPEM(from certificates: [(der: Data, denied: Bool)]) -> Data {
+        var text = ""
+        for certificate in certificates where !certificate.denied {
+            let base64 = certificate.der.base64EncodedString(options: [.lineLength64Characters, .endLineWithLineFeed])
+            text += "-----BEGIN CERTIFICATE-----\n\(base64)\n-----END CERTIFICATE-----\n"
+        }
+        return Data(text.utf8)
+    }
+
+    /// Every certificate that carries trust settings in the user or admin domain
+    /// (`SecTrustSettingsCopyCertificates`, the domains a person's own or an admin-pushed private
+    /// root lands in — never `.system`, Apple's own roots, which Node already ships), with
+    /// whether that domain's trust settings deny it (`SecTrustSettingsCopyTrustSettings`).
+    static func keychainCertificates() -> [(der: Data, denied: Bool)] {
+        var found: [(der: Data, denied: Bool)] = []
+        for domain: SecTrustSettingsDomain in [.user, .admin] {
+            var certificatesRef: CFArray?
+            guard SecTrustSettingsCopyCertificates(domain, &certificatesRef) == errSecSuccess,
+                  let certificates = certificatesRef as? [SecCertificate] else { continue }
+            for certificate in certificates {
+                guard let data = SecCertificateCopyData(certificate) as Data? else { continue }
+                found.append((der: data, denied: isDenied(certificate, domain: domain)))
+            }
+        }
+        return found
+    }
+
+    /// Whether `domain`'s trust settings for `certificate` explicitly deny it. An empty or
+    /// missing trust-settings array is Apple's convention for "trust for everything this
+    /// certificate can sign", not a denial.
+    private static func isDenied(_ certificate: SecCertificate, domain: SecTrustSettingsDomain) -> Bool {
+        var settingsRef: CFArray?
+        guard SecTrustSettingsCopyTrustSettings(certificate, domain, &settingsRef) == errSecSuccess,
+              let settings = settingsRef as? [[String: Any]] else { return false }
+        return settings.contains { setting in
+            guard let raw = setting[kSecTrustSettingsResult as String] as? UInt32 else { return false }
+            return SecTrustSettingsResult(rawValue: raw) == .deny
         }
     }
 

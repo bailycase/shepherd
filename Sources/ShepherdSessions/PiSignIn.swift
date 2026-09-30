@@ -243,7 +243,7 @@ extension PiLaunch {
     /// Node settings dropped and Shepherd's pi home pinned, in the home: `$0` is the script, `$1`
     /// pi's SDK (the engine's `dist/bundle/index.js`), `$2` the home.
     public static func signInBridge(node: PiEngine.Program, script: String, sdk: String, home: PiHome) -> Line {
-        Line(script: clearedEnvironment
+        Line(script: clearedEnvironment(home: home)
                 + "export PI_CODING_AGENT_DIR=\(quoted(home.directory.path)) PI_OFFLINE=1 PI_SKIP_VERSION_CHECK=1 PI_TELEMETRY=0; "
                 + "cd -- \(quoted(home.directory.path)) && exec \(word(node)) \"$0\" \"$1\" \"$2\"",
              positional: [script, sdk, home.directory.path])
