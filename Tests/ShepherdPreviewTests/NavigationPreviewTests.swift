@@ -170,6 +170,33 @@ extension PreviewTests {
         }
     }
 
+    /// Pinned (Sidebar › Pinned, SidebarPinned): two pinned threads between Needs you and Recents,
+    /// in the order they were pinned, and a third pinned one that waits on you, which Needs you
+    /// keeps until it is answered.
+    @Test func sidebarPinned() async throws {
+        let (workspace, agents) = try await populatedWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        for index in [4, 2, 1] { vm.pinThread(.local(agents[index].id)) }
+        #expect(vm.sidebarLists.pinned.map(\.title) == ["Fix remote nightly", "Fix remote subagent deletion"])
+        #expect(vm.sidebarLists.needsYou.contains { $0.title == "Dock review pane" && $0.pinned })
+        try await Preview.render("sidebar-pinned", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 760)) {
+            SidebarView(vm: vm)
+        }
+    }
+
+    /// The same sidebar with ⌘ held: Pinned's rows wear the first digits, and Recents' follow.
+    @Test func sidebarPinnedDigits() async throws {
+        let (workspace, agents) = try await populatedWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        for index in [4, 2] { vm.pinThread(.local(agents[index].id)) }
+        vm.showAgentShortcutBadges = true
+        try await Preview.render("sidebar-pinned-digits", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 760)) {
+            SidebarView(vm: vm)
+        }
+    }
+
     /// This Mac's automation runs in Recents: a run whose pi is still starting (it reads running,
     /// never done), a settled run, and one asking (in Needs you, its bolt in lantern).
     @Test func sidebarAutomations() async throws {
