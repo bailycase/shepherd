@@ -168,18 +168,14 @@ struct ThreadView: View {
                     historyAnchor.cancel()
                     loadVisibleHistory()
                 }
-                // The thread keeps its tail by scrolling to it (the follower says when), never
-                // through `defaultScrollAnchor`: a bottom anchor over this lazy stack, whose
-                // unmeasured rows are estimates, could leave the scroll view with a content size
-                // that disagreed with where the rows were placed, and the viewport drew nothing
-                // (the blank thread after a send or a finished turn).
+                .modifier(ThreadTailAnchor(sticky: follower.sticky))
                 .onScrollGeometryChange(for: NativeScrollProbe.self, of: Self.probe) { old, new in
                     // Intent is a wheel tick (350 ms window) or a live drag phase.
                     let gesture = Date() <= wheelIntentUntil || follower.userScrolling
-                    // Nothing else moves the offset, so every reading is the layout's own: growth,
-                    // a shrinking history, the composer resizing and a send's collapsing tray all
-                    // land back on the tail as they arrive.
-                    if follower.observe(from: old, to: new, gesture: gesture, nativeAnchor: false) {
+                    // Where nothing anchors the scroll view, every reading is the layout's own:
+                    // growth, a shrinking history, the composer resizing and a send's collapsing
+                    // tray all land back on the tail as they arrive.
+                    if follower.observe(from: old, to: new, gesture: gesture, nativeAnchor: ThreadTailAnchor.isNative) {
                         proxy.scrollTo(Self.bottomID, anchor: .bottom)
                     }
                 }
@@ -205,8 +201,9 @@ struct ThreadView: View {
                     if !queued {
                         historyAnchor.cancel()
                         jumpedTurn = nil
-                        // Already following, the follower lands the echo and the collapsing tray
-                        // together as their layout arrives, instead of two competing jumps.
+                        // Already following, the thread's anchoring (`ThreadTailAnchor`) or the
+                        // follower lands the echo and the collapsing tray together as their layout
+                        // arrives, instead of two competing jumps.
                         if !wasFollowing {
                             proxy.scrollTo(Self.bottomID, anchor: .bottom)
                         }
@@ -543,6 +540,35 @@ final class ThreadFinder {
     private(set) var request: Request?
 
     func find(_ entryID: String) { request = Request(entryID: entryID) }
+}
+
+/// What keeps a following thread on its tail besides the follower's own scrolling.
+///
+/// From macOS 27 nothing does: a bottom `defaultScrollAnchor` (initial offset and size changes)
+/// over this lazy stack, whose unmeasured rows are estimates, could leave the scroll view with a
+/// content size that disagreed with where the rows were placed, and the viewport drew nothing
+/// (the blank thread after a send or a finished turn; `ThreadBlankScreenTests`). Before 27 the
+/// anchors stay: without the initial one its lazy stack builds every row of a long thread to open
+/// it (`ListPerformanceTests`), and the blank was not seen there.
+struct ThreadTailAnchor: ViewModifier {
+    let sticky: Bool
+
+    /// The scroll view keeps the tail itself, as the follower's `nativeAnchor` says.
+    static var isNative: Bool {
+        if #available(macOS 27, *) { false } else { true }
+    }
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if Self.isNative {
+            content
+                .defaultScrollAnchor(.bottom, for: .initialOffset)
+                // While stuck, growth keeps the tail pinned without any scrollTo; detaching only
+                // ever happens on user scroll intent.
+                .defaultScrollAnchor(sticky ? .bottom : nil, for: .sizeChanges)
+        } else {
+            content
+        }
+    }
 }
 
 /// The floating composer's measured height, observed only by `ComposerInsetPadding`.

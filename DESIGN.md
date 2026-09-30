@@ -1433,16 +1433,19 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   draw 4pt, see Known gaps).
 - **Following:** the thread follows the tail only while the reader is within 80pt of the bottom
   (`NativeScrollFollower`). Only a live scroll gesture or a wheel tick detaches it; content
-  growth, the composer resizing, and history swaps never do. On the Mac the thread follows by
-  scrolling alone: it sets no `defaultScrollAnchor` (neither the initial offset nor size
-  changes), because a bottom anchor over the lazy stack, whose unmeasured rows are estimates,
-  left the scroll view's content size at odds with where the rows were placed and the viewport
-  drew nothing (a blank thread after a send or a finished turn, seen on macOS 27 in a window
-  of modest height). Every reading is then the layout's own: a following view that growth,
+  growth, the composer resizing, and history swaps never do. From macOS 27 the Mac thread
+  follows by scrolling alone: it sets no `defaultScrollAnchor` (neither the initial offset nor
+  size changes), because a bottom anchor over the lazy stack, whose unmeasured rows are
+  estimates, left the scroll view's content size at odds with where the rows were placed and the
+  viewport drew nothing (a blank thread after a send or a finished turn, in a window of modest
+  height; `ThreadTailAnchor`). Before 27 the anchors stay: without the initial one, that lazy
+  stack builds every row of a long thread to open it. Without an anchor every reading is the
+  layout's own: a following view that growth,
   the composer or a settling turn leaves above its tail, or that a shrinking history or the
   composer collapsing leaves past it, returns to it at once. The native top-margin allowance
   and fitting content's normal empty space do not trigger overscroll recovery. (The iOS thread
-  still anchors natively, so it lets the anchor settle a view past the end first.) While a
+  and the Mac thread before 27 anchor natively, so they let the anchor settle a view past the
+  end first.) While a
   gesture is live, layout changes never move the view either: a drag up measures the rows it
   reveals, and landing on the tail then would pull the thread out from under the finger. "↓ Jump to latest"
   (`NWJumpToLatest`, a `bgRaised` capsule above the composer) appears while detached if the

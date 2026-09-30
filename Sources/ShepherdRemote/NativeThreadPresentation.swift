@@ -678,12 +678,13 @@ public struct NativeScrollFollower: Equatable, Sendable {
     /// the tail). The gesture's next reading detaches it, or its end re-sticks it.
     ///
     /// `nativeAnchor` says whether the scroll view also keeps the tail itself
-    /// (`defaultScrollAnchor(.bottom, for: .sizeChanges)`, as the iOS thread does). Its
-    /// adjustments follow the layout in another reading, so a view past the end while the layout
-    /// is still changing is left to it. Without one (the Mac thread, which follows by scrolling
-    /// alone) nothing else moves the offset: a reading past the end is final, whatever changed
-    /// with it (history shrinking, the composer collapsing, a turn settling), and the view lands
-    /// on its tail at once rather than drawing blank space past the last row.
+    /// (`defaultScrollAnchor(.bottom, for: .sizeChanges)`, as the iOS thread does, and the Mac
+    /// thread before macOS 27). Its adjustments follow the layout in another reading, so a view
+    /// past the end while the layout is still changing is left to it. Without one (the Mac thread
+    /// from macOS 27, which follows by scrolling alone) nothing else moves the offset: a reading
+    /// past the end is final, whatever changed with it (history shrinking, the composer
+    /// collapsing, a turn settling), and the view lands on its tail at once rather than drawing
+    /// blank space past the last row.
     public mutating func observe(from old: NativeScrollProbe, to new: NativeScrollProbe, gesture: Bool,
                                  nativeAnchor: Bool = true) -> Bool {
         let layoutChanged = new.layoutDiffers(from: old)
