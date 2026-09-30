@@ -78,7 +78,14 @@ pi's queues, as pi 0.87.1 behaves (docs/rpc-commands.md, and transcripts of the 
     the abort response. Follow-ups stay queued (pi does not clear its queue on abort).
   - `clear_queue` empties both queues, emits an empty `queue_update`, and answers with their
     text. A steer with "raced" in it stays queued and unreported, as when pi reads a steer
-    (its tool batch ended) just before a `clear_queue` arrives: it still lands.
+    (its tool batch ended) just before a `clear_queue` arrives: it still lands. While the file
+    `clear-gate` exists in the cwd, the answer waits for the file `clear-go` (a `clear_queue` on
+    its way while the run ends).
+  - The file `refuse-abort` in the cwd makes `abort` fail ("refused by the stub").
+  - "compact-hold" in a "tools:N" run's first prompt makes the run compact after its last reply:
+    compaction_start (threshold), then it waits for the file `compact-done` (or an abort), then
+    compaction_end. As in pi, a prompt that is not a command is refused meanwhile ("Cannot submit
+    a prompt while compaction is in progress...").
   - Idle, a prompt with a streamingBehavior is a plain prompt.
 $STUB_PI_MESSAGES_FILE, when set, loads the history from that file at start and saves it
 after every "tools:N" run, like pi resuming its session file.
@@ -383,6 +390,7 @@ def paced_turn(prompt, deltas=40, interval=0.002):
 
 
 QUEUE_LOCK = threading.Lock()
+COMPACTING = threading.Event()
 steering = []   # (text, images, timestamp)
 follow_up = []
 RUN = {"active": False, "thread": None, "abort": threading.Event()}
@@ -504,6 +512,13 @@ def agent_run(first):
         if not pending:
             break
         emit({"type": "turn_start"})
+    if not aborted and "compact-hold" in text_of(new[0]):
+        emit({"type": "compaction_start", "reason": "threshold"})
+        COMPACTING.set()
+        gate("compact-done")
+        COMPACTING.clear()
+        emit({"type": "compaction_end", "reason": "threshold", "aborted": RUN["abort"].is_set(), "willRetry": False,
+              "errorMessage": None if RUN["abort"].is_set() else "Compaction failed: stub"})
     if not aborted and "hold-settle" in text_of(new[0]):
         gate("settle")
     MESSAGES.extend(new)
@@ -805,6 +820,8 @@ for raw in sys.stdin.buffer:
     elif t == "set_thinking_level":
         STATE["thinkingLevel"] = cmd.get("level")
         respond(cmd, t)
+    elif t == "abort" and os.path.exists("refuse-abort"):
+        respond(cmd, t, success=False, error="refused by the stub")
     elif t == "abort":
         if RUN["active"]:
             RUN["abort"].set()
@@ -817,6 +834,8 @@ for raw in sys.stdin.buffer:
             emit({"type": "agent_end", "messages": [], "willRetry": False})
             emit({"type": "agent_settled"})
     elif t == "clear_queue":
+        if os.path.exists("clear-gate"):
+            wait_for_file("clear-go")
         with QUEUE_LOCK:
             raced = [item for item in steering if "raced" in item[0]]
             cleared = {"steering": [t for t, _, _ in steering if "raced" not in t], "followUp": [t for t, _, _ in follow_up]}
@@ -853,6 +872,10 @@ for raw in sys.stdin.buffer:
             sys.exit(3)
         if "refuse" in message:
             respond(cmd, t, success=False, error="refused by the stub")
+            continue
+        if COMPACTING.is_set() and not message.startswith("/"):
+            respond(cmd, t, success=False,
+                    error="Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry.")
             continue
         if streaming:
             behavior = cmd.get("streamingBehavior")

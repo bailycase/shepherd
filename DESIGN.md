@@ -130,7 +130,9 @@ And the rules that follow from them:
 | The branch chip's chevron (Main, QuestionAsk and the other thread boards); no board draws what it opens | A menu: Show Changes, Copy Branch Name, and for a local agent Copy Path and Show in Finder; the tooltip has the branch, the count and the full path | A chevron must open something (honest affordances); these are what the chip is about |
 | The iPad boards name the host on the chip in iPadTerminal ("build-01") but not in iPadThread | The host shows when more than one host is set up | On iPad every agent runs on another host; the name only tells hosts apart |
 | Review: the side-pane button filled `bgSelected` (with a `lineStrong` ring) while the pane is open | `lanternTint` with a `lanternText` glyph, ringless, like every toolbar toggle | NWNavigation and the Controls board: a toggle is lit in lantern while its pane is open |
-| Queue & steer: Steer "lands after the tool call the agent is running now; the rest of that step is skipped", and "Skipped the rest of that step · N planned edits" in the thread | "Lands once the agent’s current tool calls finish, before its next step", and no Skipped line | pi 0.87.1 runs every call in a batch before it reads a steer: nothing is skipped, so nothing may say so (honest affordances) |
+| Queue & steer: Steer "lands after the tool call the agent is running now; the rest of that step is skipped", and "Skipped the rest of that step · N planned edits" in the thread | Steering "lands once the agent’s current tool calls finish, before its next step", and no Skipped line | pi 0.87.1 runs every call in a batch before it reads a steer: nothing is skipped, so nothing may say so (honest affordances) |
+| Queue & steer: ↩ queues by default, Steer now is the steer, and the Send menu and Settings offer two choices | ↩ steers at the next step by default, Steer now (⌘↩, the row action, Steer all now) stops the agent and sends at once, and the Send menu offers three choices (Wait for the turn to end, Steer at the next step, Steer now); Settings ▸ Agents names the first two | The user's call, 2026-09-30: "Queueing a message should set it up to steer next turn, then Steer now should make it steer / interrupt if possible". The boards were not updated; their Send menu, Settings row and Steer now wording predate it |
+| Queue & steer: Steer now's glyph is `arrow.turn.down.right` | Unchanged for Steer now; "Steer at the next step" in the Send menu wears `arrow.right.to.line` | The menu now has a third row, and two rows must not share a glyph; the Steering row keeps the board's still `arrow.turn.down.right` |
 | Queue & steer: the stack and composer at radius 10, rows and fields at 7, chips at 5, the Send menu at 10 | 8 (the composer's), 6, 4, and the popover's 12 | The radius scale |
 | Queue & steer: 5px gaps (the Steering pill, "Steered", "From the queue", a compact chip); 1px lines outside each 40px row, the 32px header and the card | 6 in the pill, 4 elsewhere; lines drawn inside, so three rows make a 152pt stack (the board's 157) | The space scale's 4pt steps; every card and list in the app draws its lines inside (`nwBorder`, `NWHairline` overlays) |
 | Queue & steer: a custom 280pt QueueOptions popover; tooltips with keycaps | The native ••• menu (`NWOptionsMenu`); system tooltips (`.nwHelp`) | As every other ••• and tooltip in the app |
@@ -2074,17 +2076,35 @@ With more than one live subagent, Stop asks first (`StopAllDialog`): Stop only t
 Stop all. Stop (the button, ⌘., or Esc in the composer) takes back what pi was about to read
 before it aborts, so a steering message returns to the queue. The host pauses the queue as
 soon as Stop arrives, so a turn finishing during the stop cannot start the next message.
-It waits until a new message, Send now, or a steer. Stop all stops the parent first, then
+It waits until a new message, Send now, or a steer. Stop during a Steer now under way wins: the
+message stays queued and the queue waits. Steer now stops the parent the same way Stop does but
+never pauses the queue. Stop all stops the parent first, then
 cancels its live subagents in the same session, without depending on a refresh between actions.
 A failure stays visible even if a later cancellation succeeds. There is no status text, key
 hint, or working directory in or under the composer.
 
-**Sending while pi works.** ↩ does what Settings ▸ Agents ▸ Return while pi is working says:
-**Queue** (the default; the message waits in Up next and goes when pi settles) or **Steer**
-(pi reads it once its current tool calls finish, before its next step). ⌘↩
-(`alternateSend`, rebindable) always does the other one, ahead of any key equivalent in the
+**Sending while pi works.** There are three ways (`NativeSendChoice`, for every platform), from
+the gentlest:
+
+- **Wait for the turn to end:** the message waits in Up next and goes when pi settles.
+- **Steer at the next step:** pi reads it once its current tool calls finish, before its next
+  step. The message is handed to pi at once and shows as a Steering row until pi reads it.
+- **Steer now:** pi stops what it is doing, as Stop does (a half-written tool call is dropped, a
+  running command is killed), and the message goes at once as the next turn in the same
+  conversation. The stopped turn ends in its quiet "Stopped" note; the message is an ordinary
+  user message that starts the next turn. The rest of the queue carries on after that turn, and
+  the steers pi held come back to it behind the message. While pi is idle it is a plain send.
+
+↩ does what Settings ▸ Agents ▸ Return while pi is working says: **Steer at the next step** (the
+default) or **Wait for the turn to end**. A choice saved before the default moved keeps its
+meaning; only an unset one takes it. A message that begins with "/" never steers (pi runs a
+command only at the start of a message it starts): it waits for the turn to end whatever the
+setting. ⌘↩ (`alternateSend`, rebindable) always steers now, ahead of any key equivalent in the
 window (the review pane's ⌘⏎), and only while the composer or one of its queued messages has
-focus. ⇧↩ inserts a newline at the caret, replacing selected text and leaving the caret after
+focus. Where the host cannot stop pi (an older Shepherd without `native.interrupt.v1`, a
+compaction in progress, a prompt of its own still on its way, or pi refusing the abort) Steer now
+is a plain steer, and a steer pi would refuse (during a compaction) waits first in Up next
+instead. ⇧↩ inserts a newline at the caret, replacing selected text and leaving the caret after
 it; this native editing behavior also applies to New thread, New design, subagent replies,
 queued-message editing and inline review comments. It never sends or saves. While pi is idle
 ↩ and ⌘↩ both send. Attachments ride along with a
@@ -2100,11 +2120,14 @@ corner nearest Send. Nothing about the choice is written under the composer.
 - 268pt on the menus' popover, 6pt padding, rows 2pt apart; each row top-aligned with 8×10
   padding and the `runningTint` highlight: a 14pt glyph in `textSecondary`, the title in Geist
   13 medium with its description in caption tertiary beneath, and its keys as `NWKeycap`s.
-- **Queue** (the queue glyph): "Goes when the agent finishes this turn." **Steer now**
-  (`arrow.turn.down.right`): "Lands once the agent’s current tool calls finish, before its next step."
+- Three rows, from the gentlest. **Wait for the turn to end** (the queue glyph): "Goes when the agent
+  finishes this turn." **Steer at the next step** (`arrow.right.to.line`): "Lands once the agent’s
+  current tool calls finish, before its next step." **Steer now** (`arrow.turn.down.right`): "Stops
+  what the agent is doing and sends this at once."
 - ↩'s cap sits on the Return setting's row, which is highlighted when the menu opens, and ⌘↩'s
-  on the other. ↑↓ move, ↩ chooses, Esc closes, and a click outside closes it. While it is open
-  Send wears a 3pt `lanternTint` ring (`hover`).
+  on Steer now; the remaining row wears none. ↑↓ move, ↩ chooses, Esc closes, and a click outside
+  closes it. While it is open Send wears a 3pt `lanternTint` ring (`hover`). The Send tooltip
+  reads "Steer at the next step (↩) · Steer now (⌘↩)", in the Return setting's order.
 
 **Images and files.** Images attach by dropping anywhere in the thread (history, blank space,
 or composer), pasting, or the paperclip (an image importer). Readable regular files dropped
@@ -2489,9 +2512,11 @@ sizes are `NWQueueMetrics`): a card directly above the composer card, in the sam
 ([native-thread.md](docs/native-thread.md) › The queue; its rules are `NativeQueueRules`, shared by
 the host and every client), so every Mac viewing the agent sees and edits the same one. Nothing in
 it has reached pi, except a Steering row. Each message can be steered in now, edited, reordered, or
-deleted. **Queue** means it waits and goes when pi finishes this turn; **Steer** means pi reads it
-once its current tool calls finish, before its next step (the departures table says why not "after
-the tool call pi is running now").
+deleted. Waiting means it goes when pi finishes this turn; steering means pi reads it once its
+current tool calls finish, before its next step (the departures table says why not "after the tool
+call pi is running now"); **Steer now** stops pi and sends it at once. With the default Return
+setting a message sent while pi works is a Steering row from the start, and the queue holds what
+was sent to wait, and what a "/" or a compaction kept from steering.
 
 - **Placement:** it shows while it has a row to show: a message, or an Undo row (a lone Undo row
   reads "Up next 0"). The card never moves: the stack grows upward, and the thread's inset follows
@@ -2521,7 +2546,11 @@ the tool call pi is running now").
   (`arrow.turn.down.right`; **Send now** while pi is idle), Edit (`pencil`), and Delete (`trash`),
   26pt circular icon buttons (`.nwIcon`: 14pt glyphs in `textSecondary`; under the pointer
   `textPrimary` on `bgHover`, and `bgSelected` while pressed) 2pt apart, with system tooltips
-  naming their keys ("Steer now  ⌘↩", "Delete  ⌫"). Hovered, the row is `bgHover`; with
+  saying what they do and naming their keys ("Stop the agent and send this now  ⌘↩", "Delete  ⌫").
+  Steer now stops pi: until the host has sent the message it stays a queued row, first in the
+  stack (#1), and then it leaves for the thread as an ordinary message that starts the next turn
+  (its "From the queue · 1" only when it was queued to begin with; a message sent with ⌘↩ from
+  the composer never shows the label). The Steering row itself has no Steer now. Hovered, the row is `bgHover`; with
   keyboard focus it is `bgSelected` with the `focusRing` ring drawn inside it (2pt, inset 2pt,
   radius 6), since a ring outside would cover its neighbours.
 - **Attachments** (QueueStates · with attachments) ride along with the message and sit after its
@@ -2582,8 +2611,10 @@ the tool call pi is running now").
   the neighbour's side: the neighbours step aside (`list`), and a 2pt `lantern` drop line
   (`NWDropIndicator(color: .nw.lantern)`, inset 8pt each side) tops the gap. Letting go where it
   began changes nothing. Nothing drops above a Steering row. ⌥↑ ⌥↓ move a focused row one place.
-- **The ••• menu** (QueueStates · QueueOptions; native, `NWOptionsMenu`): Steer all now
-  (`arrow.turn.down.right`; **Send all now** with `arrow.up` while pi is idle), a divider, the
+- **The ••• menu** (QueueStates · QueueOptions; native, `NWOptionsMenu`): Steer all now (stops pi
+  and sends every queued message at once, in order, as one turn; help "Stop the agent and send
+  these now, in order"; `arrow.turn.down.right`; **Send all now** with `arrow.up` while pi is
+  idle), a divider, the
   section "When the turn ends, send" with an inline picker of One message per turn and Everything at
   once (a check on the current one; this agent's choice, else the host's default from Settings), a
   divider, and Clear the queue (`trash`, destructive, leaving its Undo row; Steering rows stay).
@@ -2592,8 +2623,9 @@ the tool call pi is running now").
   starts with "/" goes alone, and one delivery carries at most 4 images and 64 KiB
   (`NativeQueueRules.batchCount`).
 - **Keys** (QueueStates · Keyboard; shown in menus and tooltips and listed under Settings ▸ Keyboard
-  ▸ While the agent is working, never written in or under the composer): ↩ sends queued and ⌘↩ sends and
-  steers now (swapped when the Return setting is Steer; Composer › Sending while pi works); ↑ in an
+  ▸ While the agent is working, never written in or under the composer): ↩ sends the way the Return
+  setting says (steering at the next step by default) and ⌘↩ always sends and steers now
+  (Composer › Sending while pi works); ↑ in an
   empty composer edits the last queued message; ⌥↑ ⌥↓ move the focused message; ⌫ deletes it; ⌘↩
   steers it (sends it now while pi is idle); Esc in the composer stops pi. With keyboard navigation
   on, ⇥ reaches the rows. On a focused row ↑ ↓ move between rows (↓ past the last returns to the
@@ -2601,8 +2633,10 @@ the tool call pi is running now").
   row, else the previous, else the field. On a focused Steering row only ↑ ↓, Esc, and ⇥ do
   anything.
 - **Settings** (QueueStates · Settings › Agents · While the agent is working; see Settings): two rows, each
-  an `NWSegmentedPicker`. "Return while the agent is working", subtitle "⌘↩ always does the other one."
-  (the chord as `KeybindingsStore` shows it): **Queue** (the default) or Steer. "When a turn ends,
+  an `NWSegmentedPicker`. "Return while the agent is working", subtitle "Steering lands once the
+  agent’s current tool calls finish. Waiting holds the message in Up next until the turn ends. ⌘↩
+  always steers now: it stops the agent and sends at once." (the chord as `KeybindingsStore` shows
+  it): **Steer at the next step** (the default) or Wait for the turn to end. "When a turn ends,
   send the queue", subtitle "All at once arrives as one turn, in order.": One per turn or **All at
   once** (the default); it is the host's default for its agents, and each agent's ••• menu overrides
   it. **Not built yet** on iPhone and iPad: the board gives every platform the same two choices, and
@@ -2625,7 +2659,8 @@ the tool call pi is running now").
   with the reason in the header's tooltip.
 - **Accessibility:** the header reads "Up next, 3 messages". A queued row reads "Queued 2 of 3:
   <text>" with the actions Steer now (or Send now), Edit, Delete, Move up, and Move down; a Steering
-  row reads "Steering: <text>, waiting for the agent's current tool calls" with Back to the queue; the
+  row reads "Steering: <text>, waiting for the agent's current tool calls" with Back to the queue; Steer now
+  carries the hint "Stop the agent and send this now"; the
   editor's field is "Edit queued message 2"; an Undo row reads "Deleted: <text>" (or "Cleared 3
   queued messages") with Undo. The glyph, the grip, and the number are hidden from VoiceOver.
 
@@ -3772,11 +3807,16 @@ settings." The chord is read from `KeybindingsStore`, so a rebind never leaves t
     Medium · High · Extra high · Max, default Medium (pi uses the nearest level a model has).
 - **While the agent is working** (the queue's settings; QueueStates' card holds this copy, "Same two
   choices on every platform"):
-  - Return while the agent is working, "Queue waits for the turn to end. Steer lands once the
-    agent’s current tool calls finish. ⌘↩ always does the other one.": Queue · Steer, default Queue.
-    The chord is the store's alternate send. Steer's sentence is Up next's (SettingsAgents' "lands
-    after the tool call the agent is running" is retired with the Queue & steer row of Where
-    Shepherd departs from the boards).
+  - Return while the agent is working, "Steering lands once the agent’s current tool calls
+    finish. Waiting holds the message in Up next until the turn ends. ⌘↩ always steers now: it
+    stops the agent and sends at once.": Steer at the next step · Wait for the turn to end,
+    default Steer at the next step. The chord is the store's alternate send. The stored values
+    are the earlier `steer` and `queue`, so a saved choice keeps its meaning and only an unset
+    one takes the new default (Reset settings clears it). The words are the Send menu's rows
+    (`NativeSendChoice`); the sentence about steering is Up next's (SettingsAgents' "lands after
+    the tool call the agent is running" is retired with the Queue & steer row of Where Shepherd
+    departs from the boards). Searching finds the row by "steer", "queue", "wait", "next step"
+    and "interrupt".
   - When a turn ends, send the queue, "All at once arrives as one turn, in the order you queued
     it.": One per turn · All at once, default All at once. It is the
     host's default for its agents; Up next's ••• menu sets one agent's own.
@@ -4781,7 +4821,7 @@ Components › Status and feedback.
 
 | Lifecycle | `AgentState` | Sidebar | Composer |
 | --- | --- | --- | --- |
-| Agent working | `running` | blue dot; elapsed trailing | Stop (outlined beside Send with a draft); ↩ queues in Up next or steers |
+| Agent working | `running` | blue dot; elapsed trailing | Stop (outlined beside Send with a draft); ↩ steers at the next step or waits in Up next; ⌘↩ steers now |
 | Agent blocked on a question | `attention` | lantern dot, glowing; "ASK" | the question panel in place of the field |
 | A subagent needs you | `attention` | its agent's row: lantern dot, glowing; "ASK" | the card's answers and Reply… |
 | Agent done | `done` | green dot | Send |
@@ -5639,7 +5679,11 @@ follows the Mac's rules (Thread) with the phone's measures below.
 
 MobileSteer, MobileQueue, MobileQueueMenu, MobileQuestion; `Composer/QueueSection.swift`,
 `Composer/QuestionPanel.swift`. The queue's rules are the Mac's (Up next); only its touch form
-differs.
+differs. Send steers at the next step while pi works (a message that begins with "/" waits), and
+holding it offers the Mac's three choices (`NativeSendChoice`): Wait for the turn to end, Steer at
+the next step, Steer now, which stops pi and sends at once where the host can (`native.interrupt.v1`)
+and steers where it cannot. There is no Return setting on iOS. Steer now on a row and Steer all now
+are the same interrupt.
 
 - **Header while it runs:** as at rest (iPhone: Thread › Header), "Running · ⧉
   agent/native-restyle" (MobileSteer, MobileQueue), with Stop trailing; the phone's header shows

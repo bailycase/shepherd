@@ -87,7 +87,7 @@ struct KeybindingsTests {
     /// still leaves a focused terminal its keys.
     @Test func theAlternateSendNeverTakesATerminalsKeys() {
         let keys = KeybindingsStore(store: Fixture.defaults())
-        #expect(ShortcutAction.alternateSend.sentenceTitle == "Send the other way (steer or queue)")
+        #expect(ShortcutAction.alternateSend.sentenceTitle == "Send and steer now")
         #expect(keys.assign(KeyChord(key: "j", command: true, option: true), to: .alternateSend) == nil)
         #expect(keys.display(.alternateSend) == "⌥⌘J")
         #expect(keys.customGhosttyUnbinds.isEmpty)
@@ -107,13 +107,13 @@ struct KeybindingsTests {
     /// Settings ▸ Keyboard's While the agent is working group is the board's Keyboard card, in its
     /// order; ↩ and the alternate send say what they do under the Return setting.
     @Test(arguments: [
-        (ReturnWhileWorking.queue, ["Send, queued", "Send and steer now"]),
-        (.steer, ["Send and steer now", "Send, queued"]),
+        (ReturnWhileWorking.queue, ["Send, waiting for the turn to end", "Send and steer now"]),
+        (.steer, ["Send, steering at the next step", "Send and steer now"]),
     ])
     func whileWorkingKeysFollowTheBoardAndTheReturnSetting(setting: ReturnWhileWorking, sendTitles: [String]) {
         #expect(WhileWorkingKey.all.map { $0.title(setting) } == sendTitles + [
             "Edit the last queued message", "Move the focused message", "Delete the focused message",
-            "Steer the focused message", "Stop the agent",
+            "Steer the focused message now", "Stop the agent",
         ])
     }
 
@@ -128,7 +128,7 @@ struct KeybindingsTests {
         let keys = KeybindingsStore(store: Fixture.defaults())
         #expect(AgentSettings.explanation(keys).contains("⌘N"))
         #expect(TerminalSettings.shellSubtitle(keys).contains("⌘D"))
-        #expect(AgentSettings.returnDescription(keys).hasSuffix("\(keys.display(.alternateSend)) always does the other one."))
+        #expect(AgentSettings.returnDescription(keys).hasSuffix("\(keys.display(.alternateSend)) always steers now: it stops the agent and sends at once."))
 
         #expect(keys.assign(KeyChord(key: "j", command: true, option: true), to: .newAgent) == nil)
         #expect(keys.assign(KeyChord(key: "e", command: true, option: true), to: .splitVertical) == nil)

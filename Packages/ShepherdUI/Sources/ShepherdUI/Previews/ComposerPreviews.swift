@@ -134,10 +134,13 @@ private struct NWPreviewSizedControls: View {
 #Preview("Send menu") {
     NWPreviewBoth {
         NWSendMenu(options: [
-            NWSendOption(id: "queue", title: "Queue", detail: "Goes when the agent finishes this turn.", glyph: .queue, shortcut: "↩"),
-            NWSendOption(id: "steer", title: "Steer now", detail: "Lands once the agent’s current tool calls finish, before its next step.",
+            NWSendOption(id: "wait", title: "Wait for the turn to end", detail: "Goes when the agent finishes this turn.", glyph: .queue),
+            NWSendOption(id: "nextStep", title: "Steer at the next step",
+                         detail: "Lands once the agent’s current tool calls finish, before its next step.",
+                         glyph: .symbol("arrow.right.to.line"), shortcut: "↩"),
+            NWSendOption(id: "now", title: "Steer now", detail: "Stops what the agent is doing and sends this at once.",
                          glyph: .symbol("arrow.turn.down.right"), shortcut: "⌘↩"),
-        ], onChoose: { _ in }, onClose: {})
+        ], highlighted: 1, onChoose: { _ in }, onClose: {})
     }
 }
 

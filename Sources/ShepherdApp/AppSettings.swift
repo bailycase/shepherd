@@ -4,6 +4,7 @@ import SwiftUI
 import ShepherdUI
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 
 /// What a new worktree branches from (Settings ▸ Worktrees).
 enum WorktreeBaseMode: String, CaseIterable {
@@ -20,12 +21,19 @@ enum WorktreeMergeMethod: String, CaseIterable {
 }
 
 /// What ↩ does with a message while pi works (Settings ▸ Agents); the alternate send
-/// (`ShortcutAction.alternateSend`, ⌘↩) always does the other one.
+/// (`ShortcutAction.alternateSend`, ⌘↩) always steers now, whatever this says. The raw values
+/// are what an earlier version stored, so a saved choice keeps its meaning: `queue` waits for the
+/// turn to end, `steer` (the default now) hands the message to pi at its next step.
 enum ReturnWhileWorking: String, CaseIterable {
     /// Into the queue, to go when pi settles.
     case queue
     /// Steered in, for pi to read once its current tool calls finish.
     case steer
+
+    /// The Send menu's way of sending it.
+    var choice: NativeSendChoice { self == .steer ? .nextStep : .wait }
+
+    var title: String { choice.title }
 }
 
 /// User preferences that are not part of the workspace.
@@ -126,7 +134,8 @@ final class AppSettings {
         static let thinking: ThinkingLevel = .medium
         static let autoNameAgents = true
         static let skillsInSlashMenu = true
-        static let returnWhileWorking: ReturnWhileWorking = .queue
+        /// Steers at pi's next step. Only a choice the user made is stored, so an unset one takes this.
+        static let returnWhileWorking: ReturnWhileWorking = .steer
         static let queueDelivery: NativeQueueMode = .all
         static let sidebarStyle: NWSidebarStyle = .activity
         /// Keep idle threads in the project tree for a week.
@@ -187,7 +196,8 @@ final class AppSettings {
         didSet { store.set(mcpSameEverywhere, forKey: Key.mcpSameEverywhere) }
     }
 
-    /// What ↩ does in the composer while pi works: queue the message (the default) or steer it in.
+    /// What ↩ does in the composer while pi works: steer the message in at pi's next step (the
+    /// default) or hold it in Up next until the turn ends.
     var returnWhileWorking: ReturnWhileWorking {
         didSet { store.set(returnWhileWorking.rawValue, forKey: Key.returnWhileWorking) }
     }

@@ -410,6 +410,10 @@ public final class RemoteHostClient: @unchecked Sendable {
         switch request {
         case .setModel, .setThinking:
             capabilities.contains(RemoteProtocol.nativeThreadV2Capability) ? nil : "Update Shepherd on the host to change the model or thinking level."
+        case .queue(_, _, _, .interrupt):
+            capabilities.contains(RemoteProtocol.nativeInterruptCapability) ? nil : "Update Shepherd on the host to steer now."
+        case .send(_, _, _, _, .interrupt, _, _, _, _):
+            capabilities.contains(RemoteProtocol.nativeInterruptCapability) ? nil : "Update Shepherd on the host to steer now."
         case .queue:
             capabilities.contains(RemoteProtocol.nativeQueueCapability) ? nil : "Update Shepherd on the host to change its queue."
         case .compact:
@@ -430,12 +434,17 @@ public final class RemoteHostClient: @unchecked Sendable {
     }
 
     /// The result as this client acts on it: a snapshot lists `retry` only from a host that
-    /// retries in place (`native.retry.v1`), so the thread sends the prompt again anywhere else.
+    /// retries in place (`native.retry.v1`), so the thread sends the prompt again anywhere else,
+    /// and `interrupt` only from one that stops pi for a message (`native.interrupt.v1`), so the
+    /// thread steers there.
     static func incoming(_ result: NativeThreadResult, capabilities: Set<String>) -> NativeThreadResult {
-        guard case .snapshot(var value) = result, !capabilities.contains(RemoteProtocol.nativeRetryCapability),
-              value.supportedActions.contains("retry") else { return result }
-        value.supportedActions.removeAll { $0 == "retry" }
-        return .snapshot(value: value)
+        guard case .snapshot(var value) = result else { return result }
+        let before = value.supportedActions
+        for (capability, action) in [(RemoteProtocol.nativeRetryCapability, "retry"), (RemoteProtocol.nativeInterruptCapability, "interrupt")]
+        where !capabilities.contains(capability) {
+            value.supportedActions.removeAll { $0 == action }
+        }
+        return value.supportedActions == before ? result : .snapshot(value: value)
     }
 
     public func nativeThread(agentID: AgentID, request original: NativeThreadRequest) async throws -> NativeThreadResult {
