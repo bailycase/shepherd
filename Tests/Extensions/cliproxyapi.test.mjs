@@ -141,6 +141,41 @@ test("metadata matches exact routes, canonical owners and unique suffixes withou
   }
 });
 
+test("a release newer than the catalog borrows its family's latest capabilities, never its name", (t) => {
+  const family = (id) => id.replace(/\d+(?:\.\d+)*/g, "#");
+  const numbers = (id) => id.match(/\d+/g).map(Number);
+  const newer = (a, b) => { for (let i = 0; i < Math.max(a.length, b.length); i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0); return false; };
+  const openai = catalog.filter((m) => m.provider === "openai" && /\d/.test(m.id) && !/\d{8}/.test(m.id));
+  const latest = openai.find((m) => m.reasoning && m.thinkingLevelMap &&
+    !openai.some((other) => other !== m && family(other.id) === family(m.id) && !newer(numbers(m.id), numbers(other.id))));
+  assert.ok(latest, "the catalog holds an OpenAI reasoning family");
+  const bumped = latest.id.replace(/(\d+)(?!.*\d)/, (digits) => String(Number(digits) + 50));
+  assert.equal(catalog.some((m) => m.id === bumped), false, "the bumped release is unknown to the catalog");
+  const f = fixture(t, { ...base, models: [{ id: bumped, owned_by: "openai" }, { id: `openai/${bumped}` },
+    { id: bumped.replace(/\d/, "9") + "-20990101", owned_by: "openai" }, { id: "mystery-9", owned_by: "nobody" }] });
+  const [owned, routed, dated, unknown] = f.models;
+  for (const model of [owned, routed]) {
+    assertCapabilities(model, latest);
+    assert.equal(model.name, model.id, "a borrowed sibling lends capabilities, not its name");
+  }
+  for (const model of [dated, unknown]) {
+    assert.equal(model.reasoning, false, "a dated release or an unknown owner borrows nothing");
+    assert.equal(model.thinkingLevelMap, undefined);
+  }
+});
+
+test("a key a request header can't carry fails with its cause before any request", async (t) => {
+  for (const key of ["sk-smart\u2019quote", "sk-ellipsis\u2026"]) {
+    const f = fixture(t, { ...base, apiKey: key });
+    const wire = capture();
+    const message = await f.provider.streamSimple(f.models[0], context, { fetch: wire.fetch }).result();
+    assert.equal(message.stopReason, "error");
+    assert.match(message.errorMessage, /can't carry/);
+    assert.equal(message.errorMessage.includes(key), false, "the key never appears in the error");
+    assert.equal(wire.calls.length, 0);
+  }
+});
+
 test("literal keys ignore interpolation, commands, stored auth and request overrides", async (t) => {
   for (const key of ["$HOME", "${TOKEN}", "!touch should-never-run", "$!literal", "plain-key"]) {
     const f = fixture(t, { ...base, apiKey: key });
