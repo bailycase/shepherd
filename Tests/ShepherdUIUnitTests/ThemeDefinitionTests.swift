@@ -8,7 +8,8 @@ struct ThemeDefinitionTests {
     static let boardRoles = [
         "bgBase", "bgWindow", "bgRaised", "bgSunken", "bgBubble", "bgHover", "bgSelected",
         "lineSubtle", "lineStrong", "textPrimary", "textSecondary", "textTertiary", "textOnLantern",
-        "lantern", "lanternText", "lanternTint", "running", "runningTint", "done", "doneTint", "failed", "failedTint",
+        "lantern", "lanternText", "lanternTint", "running", "runningTint", "textOnRunning",
+        "done", "doneTint", "failed", "failedTint",
     ]
 
     @Test(arguments: Variant.themes)

@@ -102,6 +102,8 @@ public struct ThemeColors: Codable, Hashable, Sendable {
     public var running: String
     /// Running backgrounds (translucent).
     public var runningTint: String
+    /// Text on a `running` fill (the Browser's element tag, the design canvas's selection tag).
+    public var textOnRunning: String
     /// Success, additions.
     public var done: String
     /// Done and added-line backgrounds (translucent).
@@ -117,7 +119,7 @@ public struct ThemeColors: Codable, Hashable, Sendable {
         lineSubtle: String, lineStrong: String,
         textPrimary: String, textSecondary: String, textTertiary: String, textOnLantern: String,
         lantern: String, lanternText: String, lanternTint: String,
-        running: String, runningTint: String,
+        running: String, runningTint: String, textOnRunning: String,
         done: String, doneTint: String,
         failed: String, failedTint: String
     ) {
@@ -139,6 +141,7 @@ public struct ThemeColors: Codable, Hashable, Sendable {
         self.lanternTint = lanternTint
         self.running = running
         self.runningTint = runningTint
+        self.textOnRunning = textOnRunning
         self.done = done
         self.doneTint = doneTint
         self.failed = failed
