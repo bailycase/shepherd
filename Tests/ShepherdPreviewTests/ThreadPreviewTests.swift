@@ -395,6 +395,32 @@ struct ThreadPreviewTests {
         }
     }
 
+    /// Retry is on the latest turn only: the latest failed turn's card offers it, and an earlier
+    /// turn that failed another way shows its card without it.
+    @Test func threadRetryLatestFailed() async throws {
+        let fixture = ThreadFixture(ActivityThreads.failedTwoWays)
+        defer { fixture.store.stop() }
+        fixture.store.hostName = "build-01"
+        try await Preview.render("thread-retry-latest-failed", size: CGSize(width: 1180, height: 900),
+                                 ready: { fixture.store.ready && !fixture.store.rows.isEmpty }) {
+            fixture.thread(title: "Payments metrics and dashboards")
+        }
+    }
+
+    /// Every reply hovered, so each footer shows: only the latest turn's has Retry ("Retry this
+    /// turn"); the older turn's has Copy alone.
+    @Test func threadRetryOlderTurn() async throws {
+        let fixture = ThreadFixture(ActivityThreads.twoTurns)
+        defer { fixture.store.stop() }
+        let store = fixture.store
+        let size = CGSize(width: 1180, height: 620)
+        try await Preview.render("thread-retry-older-turn", size: size, ready: { store.ready && store.rows.count == 4 }) {
+            RetryFootersThread(store: store)
+                .frame(width: size.width, height: size.height)
+                .task { await store.run(request: fixture.request) }
+        }
+    }
+
     /// The Turn errors board: the card, with Details open, folded, and every kind of provider
     /// error, then the retry line.
     @Test func turnErrors() async throws {
@@ -679,6 +705,30 @@ struct ThreadPreviewTests {
 
 /// A thread's turns laid out in its column the way `ThreadView` lays them out, with the pointer
 /// seeded over the last reply.
+/// Every reply hovered, each offering Retry only where the thread would (`NativeThreadStore.canRetry`).
+private struct RetryFootersThread: View {
+    let store: NativeThreadStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppLayout.turnSpacing) {
+            ForEach(store.rows) { row in
+                if row.isUser {
+                    UserTurn(messages: row.turn.messages, caption: nil)
+                } else if let presentation = row.presentation {
+                    AgentTurn(presentation: presentation, live: row.live, startedAt: row.startedAt,
+                              retry: store.canRetry(row, running: false) ? {} : nil, review: { _ in },
+                              hover: MessageHover(hovering: true))
+                }
+            }
+        }
+        .frame(maxWidth: AppLayout.threadMaxWidth)
+        .padding(.horizontal, AppLayout.gutter)
+        .padding(.top, AppLayout.threadTop)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Color.nw.bgWindow)
+    }
+}
+
 private struct HoveredReplyThread: View {
     let store: NativeThreadStore
 
@@ -958,6 +1008,30 @@ enum ActivityThreads {
             failure("f2", authError, at: now - 18_000),
         ]
         return snapshot(messages)
+    }
+
+    /// Two follow-ups that failed different ways: an overload, then the key. Neither folds.
+    static var failedTwoWays: NativeThreadSnapshot {
+        var value = providerError
+        let overloaded = #"529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}"#
+        if let index = value.messages.firstIndex(where: { $0.entryID == "f1" }) {
+            value.messages[index] = failure("f1", overloaded, at: now - 2 * 60_000 - 28_000)
+        }
+        value.supportedActions.append("retry")
+        return value
+    }
+
+    /// Two finished turns on a host that retries in place.
+    static var twoTurns: NativeThreadSnapshot {
+        let t0 = now - 6 * 60_000
+        var value = snapshot([
+            user("u1", "What does the outbox relay do when Kafka is down?", at: t0),
+            assistant("a1", "It keeps rows in `outbox` and retries with backoff; nothing is dropped.", at: t0 + 9_000),
+            user("u2", "Add a metric for how many rows are waiting.", at: now - 60_000),
+            assistant("a2", "Added `outbox_pending_rows`, a gauge the relay sets on every poll.", at: now - 48_000),
+        ])
+        value.supportedActions.append("retry")
+        return value
     }
 
     /// The user stopped a long command: pi failed the call and ended the run with an error reply,

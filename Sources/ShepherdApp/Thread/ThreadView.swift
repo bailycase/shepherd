@@ -319,11 +319,10 @@ struct ThreadView: View {
             inspectedRunID: inspectedRunID)
     }
 
-    /// Retry resends the prompt that opened a turn, once the agent is idle.
+    /// Retry, on the latest turn once the agent is idle: the turn again in its place.
     private func retryAction(_ row: NativeThreadRow, running: Bool) -> (() -> Void)? {
-        guard let text = row.promptText, !running, store.supports("send"),
-              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        return { [store] in Task { await store.send(text: text) } }
+        guard store.canRetry(row, running: running) else { return nil }
+        return { [store] in Task { await store.retry(row) } }
     }
 
     private func handle(_ command: ThreadCommandCenter.Command, proxy: ScrollViewProxy) {
