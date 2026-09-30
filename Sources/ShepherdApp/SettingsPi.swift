@@ -23,9 +23,9 @@ struct PiSettings: View {
                             subtitle: "Titles each new agent from its first prompt using the cheapest authed model. A rename you type is always final.") {
                     SettingsSwitch(label: "Name agents automatically", isOn: $settings.autoNameAgents)
                 }
-                SettingsRow(title: "Panes and agent tools",
-                            subtitle: "Let agents control panes, message or spawn agents, manage automations and send notifications.") {
-                    SettingsSwitch(label: "Panes and agent tools", isOn: $settings.piPanesExtension)
+                SettingsRow(title: "Terminals and agent tools",
+                            subtitle: "Let agents open and drive terminals, message or spawn agents, manage automations and send notifications.") {
+                    SettingsSwitch(label: "Terminals and agent tools", isOn: $settings.piPanesExtension)
                 }
                 SettingsRow(title: "Diff review tool", subtitle: "Let agents open the review pane with `review_diff`.") {
                     SettingsSwitch(label: "Diff review tool", isOn: $settings.piReviewExtension)
