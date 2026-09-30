@@ -1,6 +1,6 @@
 ---
 name: shepherd-design
-description: How to draw and revise a Shepherd design, a canvas of HTML boards (.dc.html) written with design_read, board_write, canvas_update and design_check, in a design system read with system_read and built with system_write. Read it before drawing or changing any board.
+description: How to draw and revise a Shepherd design, a canvas of HTML boards (.dc.html) written with design_read, board_write, board_edit, canvas_update and design_check, in a design system read with system_read and built with system_write. Read it before drawing or changing any board.
 ---
 
 # Drawing a Shepherd design
@@ -15,6 +15,7 @@ your design tools:
 | `design_read()` | canvas.json and the design's revision |
 | `design_read(path)` | one board's whole source |
 | `board_write(path, source, baseRevision?)` | writes one board's whole source |
+| `board_edit(path, edits, baseRevision?)` | changes one board in place with find-and-replace edits |
 | `canvas_update(changes, baseRevision?)` | a JSON merge patch for canvas.json |
 | `design_check(path?)` | colors and sizes the design system (else the stylesheets in your working folder) doesn't name, with their lines |
 | `comment_list(all?)` | the comments the viewer pinned to elements, with their replies |
@@ -63,6 +64,24 @@ Read `format.md` before your first board in a session.
 - **Start from the files, not from memory.** `design_read` each board you will change first:
   someone may have changed it since you wrote it. Change only what was asked; a small request
   stays a small change.
+- **A small change is a `board_edit`, a rewrite is a `board_write`.** `board_edit` sends only
+  what changes: `edits` is a list of `{find, replace}`, applied in order to the board's current
+  text on Shepherd's side. Use it for a color, a label, a size, a spacing or a few lines, which
+  costs a few hundred bytes where `board_write` sends the whole board again. Use `board_write`
+  when you write a new board, or rewrite most of one.
+  - `find` is exact text from `design_read`: whitespace and line breaks included, nothing
+    retyped from memory. It must match once; when a call says it matched several times, add the
+    text around the one you mean (the line before, or the element's opening tag) until it does.
+    `"all": true` replaces every match, which is how a token or a label changes everywhere on a
+    board.
+  - One failing edit fails the call and changes nothing, and the error names the edit and the
+    line it found, so read the board again and send it corrected. Edits that depend on each
+    other go in one call, in order; each one sees what the one before it wrote.
+  - The result is checked as a whole board write is, so the same rules hold: keep the
+    `support.js` head line, and the root's size equal to `$preview`. A result that breaks one is
+    refused whole.
+  - A change to several boards is one `board_edit` per board. Do not `board_edit` a board you
+    are about to `board_write`.
 - **An element lives on several boards.** When asked to change a card, a label or a button,
   change it on every board that holds it (each direction and each size), and say which boards
   you changed.
@@ -73,6 +92,25 @@ Read `format.md` before your first board in a session.
   its `title`, remove it (and its file) with `"boards": {"<path>": null}`. Keys you don't name
   stay as they are, including ones you don't recognize.
 - **Check** the boards you changed with `design_check` before you reply.
+
+## Helpers
+
+A native helper (`shepherd_child_start`, `shepherd_workflow`) can change boards for you, in
+parallel, when its profile lists design tools in `tools:`, for example `tools: read, design_read,
+board_edit, design_check`. A helper may be given `design_read`, `design_check`, `system_read`,
+`comment_list`, `board_write`, `board_edit`, `canvas_update` and `system_write`; `comment_reply`
+and `markup_propose` stay yours. It acts on this design through you and can reach no other. Its
+profile needs no `extensions:` line for them.
+
+- **Give each helper its own boards,** named exactly, and the rules its task needs: a helper
+  has not read this skill, so say what to keep (the `support.js` head line, a root the size of
+  `$preview`, the design system's tokens). Helpers on different boards don't conflict, and a
+  `board_edit` applies to the board's text as it is when it lands.
+- **Tell helpers not to pass `baseRevision`.** Any board's write moves the design's revision, so a
+  sibling's write would make theirs stale; a stale write is refused, and the helper reads again and
+  redoes it.
+- **You finish the job.** When they are done, `design_read` what they wrote, run `design_check`,
+  and answer the viewer and any comment yourself.
 
 ## Design systems
 
