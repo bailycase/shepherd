@@ -2,6 +2,7 @@ import CoreGraphics
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 
 // The agent's browser tools against the thread's own page (docs/browser.md). Every tool is one
 // `BrowserRequest`; `perform` runs them one at a time per page, refuses the ones that act while the
@@ -20,7 +21,7 @@ private enum BrowserStep {
 extension BrowserSession {
     /// Serves `request`, after the requests before it. Never throws: a failure is an outcome. A
     /// request still waiting its turn when the agent gives up (`abandonQueued`) is not run.
-    func perform(_ request: BrowserRequest) async -> BrowserOutcome {
+    func perform(_ request: BrowserRequest, origin: BrowserOrigin = .local) async -> BrowserOutcome {
         let previous = operationTail
         let epoch = operationEpoch
         let work = Task { @MainActor () -> BrowserOutcome in
@@ -28,7 +29,7 @@ extension BrowserSession {
             guard epoch == self.operationEpoch else {
                 return .failure(code: "cancelled", message: "The request was cancelled before it started.")
             }
-            return await self.run(request)
+            return await self.run(request, origin: origin)
         }
         operationTail = Task { _ = await work.value }
         return await work.value
@@ -48,7 +49,7 @@ extension BrowserSession {
 
     // MARK: One request
 
-    private func run(_ request: BrowserRequest) async -> BrowserOutcome {
+    private func run(_ request: BrowserRequest, origin: BrowserOrigin) async -> BrowserOutcome {
         guard presence.permits(request) else {
             return .failure(code: "taken_over", message: BrowserAgentPresence.takenOverMessage)
         }
@@ -58,6 +59,22 @@ extension BrowserSession {
         if case .open = request {} else if webView == nil || url == nil {
             return .failure(code: "no_page", message: "No page is open in this thread's browser. Call browser_open with a URL first.")
         }
+        // An agent on the thread's host drives a page on this Mac: what it may read, act on or open
+        // stays off this Mac's own network (BrowserHostDrive.swift).
+        if case .host(let guardian) = origin {
+            let target = BrowserHostGuard.historyStep(of: request).flatMap { historyTarget($0) }
+            if let refusal = await guardian.refusal(for: request, page: currentURL, historyTarget: target) { return refusal }
+            hostGuard = guardian
+            blockedNavigation = nil
+            blockedFrames = []
+            hostRequestsInFlight += 1
+        }
+        defer {
+            if case .host = origin {
+                hostRequestsInFlight -= 1
+                hostGuardUntil = Date().addingTimeInterval(Self.hostGuardLinger)
+            }
+        }
         var target: BrowserTarget?
         if let ref = BrowserRequestCheck.ref(of: request), webView != nil {
             target = await peek(ref)
@@ -66,7 +83,11 @@ extension BrowserSession {
         defer { agentEnded() }
         let idleNavigations = events.navigations
         let step = await dispatch(request)
-        return finish(step, idleNavigations: idleNavigations)
+        let outcome = finish(step, idleNavigations: idleNavigations)
+        // The page is where it is now: nothing of it (its title, its address, its text) goes to a
+        // host's agent unless it is an address the agent may be shown.
+        if case .host(let guardian) = origin, case .result = outcome, let refusal = await guardian.pageRefusal(currentURL) { return refusal }
+        return outcome
     }
 
     private func finish(_ step: BrowserStep, idleNavigations: Int) -> BrowserOutcome {
@@ -75,7 +96,8 @@ extension BrowserSession {
             return .failure(code: code, message: fromPage ? BrowserReport.notice + "\n" + message : message)
         case .ok(let body, let image):
             let seen = BrowserEvents(consoleErrors: console.errorTotal - reportedErrors, navigations: idleNavigations,
-                                     dialogs: events.dialogs, downloads: events.downloads)
+                                     dialogs: events.dialogs, downloads: events.downloads,
+                                     blocked: (blockedNavigation.map { [$0.message] } ?? []) + blockedFrames)
             events = BrowserEvents()
             reportedErrors = console.errorTotal
             return .result(text: BrowserReport.compose(title: pageTitle, url: pageURLString, body: body, events: seen), image: image)
@@ -111,8 +133,13 @@ extension BrowserSession {
         if let refusal = refusedByTakeOver() { return refusal }
         prepareWebView()
         let serial = navigationSerial
-        loadForAgent(url)
+        guard loadForAgent(url) else {
+            // The page's own host port could not be forwarded here: nothing loaded.
+            return .fail(code: "navigation_failed", message: forwardRefusal?.agentMessage ?? "\(url.absoluteString) could not be opened.")
+        }
         switch await waitForLoad(after: serial, timeout: BrowserLimits.loadSeconds, target: url) {
+        case .blocked(let code, let message):
+            return .fail(code: code, message: message)
         case .timedOut:
             // A page can be usable and still hold a request that never ends: it has a document.
             if let answer = try? await callAgent("info"), let ready = answer["ready"] as? String, ready != "loading" {
@@ -359,6 +386,8 @@ extension BrowserSession {
 
     private enum LoadResult {
         case finished, failed(String), timedOut
+        /// The guard stopped the navigation (a redirect, or the address itself): it never started.
+        case blocked(code: String, message: String)
     }
 
     /// Waits for the navigation that begins after `serial` to finish or fail. A `target` that only
@@ -368,6 +397,7 @@ extension BrowserSession {
         let deadline = ContinuousClock.now + .milliseconds(Int(timeout * 1000))
         let begun = ContinuousClock.now
         while ContinuousClock.now < deadline {
+            if let blocked = blockedNavigation { return .blocked(code: blocked.code, message: blocked.message) }
             if navigationSerial > serial {
                 switch loadState {
                 case .finished: return .finished

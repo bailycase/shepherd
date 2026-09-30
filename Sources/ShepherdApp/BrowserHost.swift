@@ -118,6 +118,10 @@ final class BrowserSessions {
     private var remoteSessions: [RemoteAgentRef: BrowserSession] = [:]
     /// The ports of remote hosts forwarded on this Mac (`BrowserPortForwarder`).
     let ports = BrowserPortForwarder()
+    /// What an agent on a remote thread's host may take a page here to (`BrowserViewerPolicy`).
+    var viewerPolicy = BrowserViewerPolicy()
+    /// How long a remote page's hidden tab keeps its claim on the agent's browser (tests shorten it).
+    var driveGrace = BrowserDriveLimits.hiddenGraceSeconds
 
     init(dataStores: BrowserDataStores) {
         self.dataStores = dataStores
@@ -126,13 +130,20 @@ final class BrowserSessions {
     /// A remote thread's page, made the first time it is asked for.
     func session(for ref: RemoteAgentRef, hosts: RemoteHostStore?) -> BrowserSession {
         if let session = remoteSessions[ref] { return session }
-        let session = BrowserSession(agentID: ref.agentID, dataStores: dataStores,
-                                     remote: BrowserRemote(ref: ref, hosts: hosts, ports: ports))
+        let remote = BrowserRemote(ref: ref, hosts: hosts, ports: ports, policy: viewerPolicy,
+                                   claimant: BrowserDriveClaimant(grace: driveGrace))
+        let session = BrowserSession(agentID: ref.agentID, dataStores: dataStores, remote: remote)
+        remote.session = session
         remoteSessions[ref] = session
         return session
     }
 
     func existing(_ ref: RemoteAgentRef) -> BrowserSession? { remoteSessions[ref] }
+
+    /// Every remote thread's page (its claim follows its connection).
+    func forEachRemoteSession(_ body: (BrowserSession) -> Void) {
+        for session in remoteSessions.values { body(session) }
+    }
 
     /// Remote threads that are gone (deleted on their host, or their host removed here) take their
     /// page, its forwarded ports and its website data with them. A host that is only away keeps its
@@ -280,6 +291,30 @@ final class BrowserSession {
     @ObservationIgnored private var userNavigations: Set<URL> = []
     /// Called when the page tells the app the user's own input reached it while the agent is using it.
     @ObservationIgnored var onUserInput: (() -> Void)?
+    /// An agent on the thread's host is driving this page (`performFromHost`): what it may take the
+    /// page to stays off this Mac's own network, which the navigation policy enforces while one of
+    /// its requests is in flight and for a moment after (a script's own navigation starts a beat
+    /// after the script returns).
+    @ObservationIgnored var hostGuard: BrowserHostGuard?
+    @ObservationIgnored var hostRequestsInFlight = 0
+    @ObservationIgnored var hostGuardUntil = Date.distantPast
+    /// How long the guard outlasts the request that armed it.
+    static let hostGuardLinger: TimeInterval = 3
+    /// A main-frame navigation the guard stopped during the request in flight, and why: the load the
+    /// request waits for never starts, so it ends with this.
+    @ObservationIgnored var blockedNavigation: (url: URL, code: String, message: String)?
+    /// Frames' navigations the guard stopped, in words for the agent's result.
+    @ObservationIgnored var blockedFrames: [String] = []
+    /// Addresses the user typed, which the guard lets through once (their own decision).
+    @ObservationIgnored private var userApproved: Set<URL> = []
+
+    /// The guard while an agent on the host is driving the page.
+    var activeHostGuard: BrowserHostGuard? {
+        guard let hostGuard, hostRequestsInFlight > 0 || Date() < hostGuardUntil else { return nil }
+        return hostGuard
+    }
+    /// Why the last port of the host could not be forwarded, for what an agent is told.
+    @ObservationIgnored private(set) var forwardRefusal: BrowserPortForwarder.Refusal?
 
     // Off-screen hosting: a page nobody looks at still lays out and runs.
     @ObservationIgnored private var parkWindow: BrowserParkWindow?
@@ -307,32 +342,41 @@ final class BrowserSession {
     /// Forwards the host port `url` names for a remote thread's page. False, with the reason in
     /// `notice`, when it can't be: the page must not load then, or it would reach whatever else
     /// answers on this Mac's port.
-    private func forwardPort(of url: URL) -> Bool {
-        guard let remote, let refusal = remote.forward(url) else { return true }
+    fileprivate func forwardPort(of url: URL) -> Bool {
+        // A host's agent may have this Mac forward only a handful of ports (each holds a listener).
+        guard let remote, let refusal = remote.forward(url, limit: activeHostGuard == nil ? nil : BrowserHostGuard.maxForwardedPorts) else {
+            forwardRefusal = nil
+            return true
+        }
+        forwardRefusal = refusal
         notice = BrowserNotice(message: refusal.message(hostName: remote.hostName))
         return false
     }
 
     // MARK: Navigation
 
-    /// Opens `url`, making the web view the first time.
-    func load(_ url: URL) {
+    /// Opens `url`, making the web view the first time. False, with the reason in `notice`, when a
+    /// port of the host could not be forwarded for it: nothing loads then.
+    @discardableResult
+    func load(_ url: URL) -> Bool {
         waitTask?.cancel()
         waitTask = nil
         if waitingFor != nil { waitingFor = nil }
-        guard forwardPort(of: url) else { return }
+        guard forwardPort(of: url) else { return false }
         if notice != nil { notice = nil }
         let view = webView ?? makeWebView()
         if self.url != url { self.url = url }
         // The app's own load of a `file:` (the address field) is let through once; a page's is not.
         if !BrowserURLPolicy.allowsPageNavigation(to: url) { userNavigations.insert(url) }
         view.load(URLRequest(url: url))
+        return true
     }
 
     /// The address field's words: a URL, or a search.
     @discardableResult
     func open(address: String) -> Bool {
         guard let url = BrowserAddress.resolve(address) else { return false }
+        userApproved.insert(url)
         load(url)
         return true
     }
@@ -605,10 +649,38 @@ final class BrowserSession {
 
     /// Loads `url` for the agent: a page is a navigation like any other, but `file:` and the like
     /// were refused before this (`BrowserURLPolicy.agentURL`).
-    func loadForAgent(_ url: URL) {
-        guard BrowserURLPolicy.allowsPageNavigation(to: url), url.scheme?.lowercased() != "blob" else { return }
+    @discardableResult
+    func loadForAgent(_ url: URL) -> Bool {
+        guard BrowserURLPolicy.allowsPageNavigation(to: url), url.scheme?.lowercased() != "blob" else { return false }
         prepareWebView()
-        load(url)
+        return load(url)
+    }
+
+    /// The page's address as the web view has it now.
+    var currentURL: URL? { webView?.url ?? url }
+
+    /// The guard stopped a navigation: it never starts, the console says so, and the request in
+    /// flight reports it instead of waiting for a load that will not come.
+    func blockNavigation(_ url: URL, _ refusal: BrowserViewerRefusal, mainFrame: Bool) {
+        blockNavigation(url, code: "refused_url", mainFrame: mainFrame, message: refusal.message)
+        console.append(.error, "Blocked a navigation to an address on this Mac’s network.")
+    }
+
+    /// A navigation a host's agent caused was cancelled for `message`'s reason. Nothing starts, so a
+    /// request waiting for the load ends with it instead of waiting out its time.
+    func blockNavigation(_ url: URL, code: String, mainFrame: Bool, message: String) {
+        if mainFrame {
+            blockedNavigation = (url, code, message)
+            // The address bar follows the page that is there, not the one that was refused.
+            if self.url != webView?.url { self.url = webView?.url }
+        } else if blockedFrames.count < 3 {
+            blockedFrames.append(message)
+        }
+    }
+
+    /// An address the user typed is theirs to visit: the guard lets it through once.
+    fileprivate func consumeUserApproval(_ url: URL) -> Bool {
+        userApproved.remove(url) != nil
     }
 
     func stepHistory(_ direction: BrowserHistoryStep) {
@@ -716,7 +788,12 @@ final class BrowserSession {
     }
 
     private func sync(_ view: WKWebView) {
-        if let current = view.url, current != url { url = current }
+        if let current = view.url, current != url {
+            url = current
+        } else if view.url == nil, let blocked = blockedNavigation, blocked.url == url {
+            // The web view let go of an address the guard refused: the bar does too.
+            url = nil
+        }
         if canGoBack != view.canGoBack { canGoBack = view.canGoBack }
         if canGoForward != view.canGoForward { canGoForward = view.canGoForward }
         if isLoading != view.isLoading { isLoading = view.isLoading }
@@ -795,25 +872,67 @@ final class BrowserSession {
                     decisionHandler(.cancel)
                     return
                 }
-                guard navigationAction.targetFrame?.isMainFrame ?? true, let url = navigationAction.request.url else {
+                let isMain = navigationAction.targetFrame?.isMainFrame ?? true
+                guard let url = navigationAction.request.url else {
                     decisionHandler(.allow)
                     return
                 }
                 // History (Back, Forward, Reload) replays what an allowed load put there.
                 let replay = navigationAction.navigationType == .reload || navigationAction.navigationType == .backForward
-                if replay || BrowserURLPolicy.allowsPageNavigation(to: url) || session.consumeUserNavigation(url) {
-                    // A remote page going to another port of its host's loopback needs that forwarded
-                    // first; refused, it does not go, rather than reach this Mac's own port.
-                    guard session.forwardPort(of: url) else {
-                        session.console.append(.error, session.notice?.message ?? "That port can’t be forwarded.")
-                        decisionHandler(.cancel)
-                        return
+                // A host's agent is driving this page: where it may go (a redirect and an iframe
+                // included) stays off this Mac's own network. The address is asked of the resolver
+                // when it is a name, so the answer comes back later.
+                if let guardian = session.activeHostGuard, !(isMain && session.consumeUserApproval(url)) {
+                    Task { @MainActor [weak session] in
+                        let verdict = isMain ? await guardian.policy.verdict(for: url) : await guardian.policy.subframeVerdict(for: url)
+                        guard let session else { decisionHandler(.cancel); return }
+                        if case .refused(let refusal) = verdict {
+                            session.blockNavigation(url, refusal, mainFrame: isMain)
+                            decisionHandler(.cancel)
+                        } else if isMain {
+                            self.decideMainFrame(session, url: url, replay: replay, decisionHandler)
+                        } else if case .host = verdict, !session.forwardPort(of: url) {
+                            session.console.append(.error, session.notice?.message ?? "That port can’t be forwarded.")
+                            session.blockNavigation(url, code: "navigation_failed", mainFrame: false,
+                                                    message: session.forwardRefusal?.agentMessage ?? "That port can't be opened in the browser.")
+                            decisionHandler(.cancel)
+                        } else {
+                            decisionHandler(.allow)
+                        }
                     }
-                    decisionHandler(.allow)
-                } else {
-                    session.console.append(.error, "Blocked a navigation to \(url.scheme ?? "that")\(url.scheme == nil ? "" : ":") URL.")
-                    decisionHandler(.cancel)
+                    return
                 }
+                guard isMain else {
+                    decisionHandler(.allow)
+                    return
+                }
+                decideMainFrame(session, url: url, replay: replay, decisionHandler)
+            }
+        }
+
+        @MainActor
+        private func decideMainFrame(_ session: BrowserSession, url: URL, replay: Bool,
+                                     _ decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            if replay || BrowserURLPolicy.allowsPageNavigation(to: url) || session.consumeUserNavigation(url) {
+                // A remote page going to another port of its host's loopback needs that forwarded
+                // first; refused, it does not go, rather than reach this Mac's own port.
+                guard session.forwardPort(of: url) else {
+                    session.console.append(.error, session.notice?.message ?? "That port can’t be forwarded.")
+                    if session.activeHostGuard != nil {
+                        session.blockNavigation(url, code: "navigation_failed", mainFrame: true,
+                                                message: session.forwardRefusal?.agentMessage ?? "That port can't be opened in the browser.")
+                    }
+                    decisionHandler(.cancel)
+                    return
+                }
+                decisionHandler(.allow)
+            } else {
+                session.console.append(.error, "Blocked a navigation to \(url.scheme ?? "that")\(url.scheme == nil ? "" : ":") URL.")
+                if session.activeHostGuard != nil {
+                    session.blockNavigation(url, code: "refused_url", mainFrame: true,
+                                            message: "The page tried to go to a \(url.scheme ?? "that") address, which the browser doesn't open.")
+                }
+                decisionHandler(.cancel)
             }
         }
 

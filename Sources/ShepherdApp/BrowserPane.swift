@@ -46,6 +46,10 @@ struct BrowserPane: View {
         }
         // A remote thread's dev servers come from its host, so they are asked for again when it connects.
         .task(id: session.remote?.isConnected) { vm.loadDevServers(session) }
+        // On a remote thread the tab on screen claims the agent's browser on the host, and lets it go
+        // a while after it goes out of sight (docs/browser.md › Remote).
+        .onAppear { vm.browserPaneAppeared(session) }
+        .onDisappear { vm.browserPaneDisappeared(session) }
         .onChange(of: session.addressFocusRequests) { _, _ in
             session.menuOpen = false
             addressFocused = true
