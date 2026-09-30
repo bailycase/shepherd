@@ -62,6 +62,20 @@ struct EmbeddedExtensionTests {
         #expect(Set(files) == Set(Self.designSkill.keys))
     }
 
+    /// Terminals are tabs: the tools an agent drives them with are `terminal_*`, and the old
+    /// `pane_*` names are gone with no alias (`Tests/Extensions/terminal-tools.test.mjs` runs the
+    /// tools and reads every string an agent is shown about them).
+    @Test func thePanesExtensionRegistersTerminalToolsAndNoPaneTools() throws {
+        let source = PanesExtension.extensionSource
+        let registered = source.matches(of: #/name: "([a-z_]+)",/#).map { String($0.output.1) }
+        for name in ["terminal_list", "terminal_open", "terminal_run", "terminal_read", "terminal_focus", "terminal_close"] {
+            #expect(registered.contains(name), "\(name) is registered")
+        }
+        #expect(!registered.contains { $0.hasPrefix("pane_") }, "no pane_* tool, and no alias for one")
+        #expect(!source.contains("pane_"), "no text names a pane_* tool")
+        #expect(!source.contains("relativeTo") && !source.contains("axis"), "terminal_open names no place to split")
+    }
+
     /// A new file under Extensions/ must get an embedded copy (and a row above).
     @Test func everyCanonicalExtensionHasAnEmbeddedCopy() throws {
         let files = try FileManager.default.contentsOfDirectory(atPath: Self.extensionsDirectory.path)
