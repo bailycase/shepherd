@@ -8,8 +8,12 @@ public enum NativeThreadRequest: Codable, Hashable, Sendable {
     /// `designReferences` are design pieces the user hands an ordinary thread (a client sends each
     /// reference's string alone; the host reads the rest from the design and fences it), gated by
     /// `designReferences` in `supportedActions`, local threads only; absent when nil.
+    /// `browserElements` are elements the user picked in the thread's Browser (the host fences
+    /// them ahead of the message, `BrowserElementFence`), gated by `browserElements` in
+    /// `supportedActions`; absent when nil.
     case send(expectedSessionID: String, generation: String, operationID: UUID, text: String, delivery: NativeThreadDelivery, images: [NativeImage]? = nil,
-              designContext: NativeDesignContext? = nil, designReferences: [DesignReferenceRecord]? = nil)
+              designContext: NativeDesignContext? = nil, designReferences: [DesignReferenceRecord]? = nil,
+              browserElements: [BrowserElement]? = nil)
     case abort(expectedSessionID: String, generation: String, operationID: UUID)
     case answer(expectedSessionID: String, generation: String, operationID: UUID, dialogID: String, answer: NativeDialogAnswer)
     /// v2: `model` is "provider/id". Gated by `setModel` in `supportedActions`.
@@ -36,36 +40,41 @@ public enum NativeThreadRequest: Codable, Hashable, Sendable {
     case retry(expectedSessionID: String, generation: String, operationID: UUID, entryID: String)
 
     public var images: [NativeImage] {
-        if case .send(_, _, _, _, _, let images, _, _) = self { return images ?? [] }
+        if case .send(_, _, _, _, _, let images, _, _, _) = self { return images ?? [] }
         return []
     }
 
     public var designContext: NativeDesignContext? {
-        if case .send(_, _, _, _, _, _, let context, _) = self { return context }
+        if case .send(_, _, _, _, _, _, let context, _, _) = self { return context }
         return nil
     }
 
     public var designReferences: [DesignReferenceRecord]? {
-        if case .send(_, _, _, _, _, _, _, let references) = self { return references }
+        if case .send(_, _, _, _, _, _, _, let references, _) = self { return references }
+        return nil
+    }
+
+    public var browserElements: [BrowserElement]? {
+        if case .send(_, _, _, _, _, _, _, _, let elements) = self { return elements }
         return nil
     }
 
     /// The same request without a design context (for a host that doesn't take one).
     public var droppingDesignContext: NativeThreadRequest {
-        guard case .send(let session, let generation, let operation, let text, let delivery, let images, .some, let references) = self else {
+        guard case .send(let session, let generation, let operation, let text, let delivery, let images, .some, let references, let elements) = self else {
             return self
         }
         return .send(expectedSessionID: session, generation: generation, operationID: operation, text: text, delivery: delivery, images: images,
-                     designReferences: references)
+                     designReferences: references, browserElements: elements)
     }
 
     /// The same send carrying `references` in place of what it carried.
     public func withDesignReferences(_ references: [DesignReferenceRecord]?) -> NativeThreadRequest {
-        guard case .send(let session, let generation, let operation, let text, let delivery, let images, let context, _) = self else {
+        guard case .send(let session, let generation, let operation, let text, let delivery, let images, let context, _, let elements) = self else {
             return self
         }
         return .send(expectedSessionID: session, generation: generation, operationID: operation, text: text, delivery: delivery, images: images,
-                     designContext: context, designReferences: references)
+                     designContext: context, designReferences: references, browserElements: elements)
     }
 }
 
@@ -157,17 +166,33 @@ public struct NativeQueuedMessage: Codable, Hashable, Sendable, Identifiable {
     public var state: State
     /// An editor is open on it somewhere: the queue waits rather than send it mid-edit.
     public var held: Bool
+    /// The browser elements it carries, without their markup (the host keeps the fence).
+    /// Absent from the wire when empty, and from older hosts.
+    public var elements: [BrowserElement]
 
-    public init(id: UUID, text: String, images: [NativeQueuedImage] = [], sentAt: Double, state: State = .queued, held: Bool = false) {
+    public init(id: UUID, text: String, images: [NativeQueuedImage] = [], sentAt: Double, state: State = .queued, held: Bool = false,
+                elements: [BrowserElement] = []) {
         self.id = id
         self.text = text
         self.images = images
         self.sentAt = sentAt
         self.state = state
         self.held = held
+        self.elements = elements
     }
 
-    private enum CodingKeys: String, CodingKey { case id, text, images, sentAt, state, held }
+    private enum CodingKeys: String, CodingKey { case id, text, images, sentAt, state, held, elements }
+
+    public func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(id, forKey: .id)
+        try values.encode(text, forKey: .text)
+        try values.encode(images, forKey: .images)
+        try values.encode(sentAt, forKey: .sentAt)
+        try values.encode(state, forKey: .state)
+        try values.encode(held, forKey: .held)
+        if !elements.isEmpty { try values.encode(elements, forKey: .elements) }
+    }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -177,6 +202,7 @@ public struct NativeQueuedMessage: Codable, Hashable, Sendable, Identifiable {
         sentAt = try values.decodeIfPresent(Double.self, forKey: .sentAt) ?? 0
         state = try values.decodeIfPresent(State.self, forKey: .state) ?? .queued
         held = try values.decodeIfPresent(Bool.self, forKey: .held) ?? false
+        elements = try values.decodeIfPresent([BrowserElement].self, forKey: .elements) ?? []
     }
 }
 
@@ -547,13 +573,16 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
     /// that carries a references fence the user didn't send here (another agent's) has none, and
     /// shows the fence as text. Absent from older hosts.
     public var designReferences: [DesignReferenceRecord]?
+    /// User messages that carried browser elements (`BrowserElementFence`), without their markup:
+    /// the thread draws them as chips, and the fence comes off the words. Absent from older hosts.
+    public var browserElements: [BrowserElement]?
 
     public init(
         entryID: String, role: String, blocks: [NativeThreadBlock], toolName: String? = nil, toolCallID: String? = nil,
         argumentsText: String? = nil, status: String? = nil, isError: Bool? = nil, truncated: Bool = false, timestamp: Double? = nil,
         startedAt: Double? = nil, thinkingSeconds: Double? = nil, origin: NativeMessageOrigin? = nil, operationID: UUID? = nil,
         compaction: NativeCompaction? = nil, question: NativeQuestionRecord? = nil, provider: String? = nil, model: String? = nil,
-        designReferences: [DesignReferenceRecord]? = nil
+        designReferences: [DesignReferenceRecord]? = nil, browserElements: [BrowserElement]? = nil
     ) {
         self.entryID = entryID
         self.role = role
@@ -574,6 +603,7 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
         self.provider = provider
         self.model = model
         self.designReferences = designReferences
+        self.browserElements = browserElements
     }
 }
 

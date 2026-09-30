@@ -23,6 +23,10 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
     /// in a thread… and Copy reference. The canvas holds no composer or terminal, so ⌘↩ here
     /// never meets the composer's alternate send.
     case implementInThread, copyDesignReference
+    /// Scoped to a thread's Browser tab while it shows (PaneStates › Keyboard): the address field
+    /// (⌘L) and Select an element (⇧⌘C). The Browser and a design's canvas never share a screen,
+    /// so ⇧⌘C here never meets the canvas's Copy reference.
+    case focusAddressBar, selectElement
 
     var id: String { rawValue }
 
@@ -54,6 +58,8 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .alternateSend: return "Send the Other Way (Steer or Queue)"
         case .implementInThread: return "Implement in a Thread…"
         case .copyDesignReference: return "Copy Design Reference"
+        case .focusAddressBar: return "Focus Address Bar"
+        case .selectElement: return "Select an Element"
         }
     }
 
@@ -61,15 +67,16 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
     var sentenceTitle: String { title.prefix(1) + title.dropFirst().lowercased() }
 
     /// Where a chord is answered: everywhere in the app, only in the composer (and a focused
-    /// queued message), or only on a design's canvas.
+    /// queued message), only on a design's canvas, or only while a thread's Browser shows.
     enum Scope: Hashable {
-        case app, composer, canvas
+        case app, composer, canvas, browser
     }
 
     var scope: Scope {
         switch self {
         case .alternateSend: .composer
         case .implementInThread, .copyDesignReference: .canvas
+        case .focusAddressBar, .selectElement: .browser
         default: .app
         }
     }
@@ -79,10 +86,16 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
     var isComposerScoped: Bool { scope == .composer }
 
     /// Whether the two can be pressed in the same place, so they can't share a chord: an app-wide
-    /// action meets every other; the composer and the canvas never meet.
+    /// action meets every other; the canvas meets no other scope. The Browser sits beside a
+    /// thread's composer, so those two meet.
     func sharesScope(with other: ShortcutAction) -> Bool {
-        scope == .app || other.scope == .app || scope == other.scope
+        if scope == .app || other.scope == .app || scope == other.scope { return true }
+        return Set([scope, other.scope]) == [.composer, .browser]
     }
+
+    /// A focused terminal must let it through: the app's own chords, and the Browser's, which
+    /// sit beside a thread's terminal panel.
+    var reachesPastTerminals: Bool { scope == .app || scope == .browser }
 
     var defaultChord: KeyChord {
         switch self {
@@ -115,6 +128,9 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         // The boards' ⌘↩ and ⇧⌘C (RefImplementMenu), on the canvas only.
         case .implementInThread: return KeyChord(key: "return", command: true)
         case .copyDesignReference: return KeyChord(key: "c", command: true, shift: true)
+        // PaneStates › Keyboard: ⌘L the address bar, ⇧⌘C select an element.
+        case .focusAddressBar: return KeyChord(key: "l", command: true)
+        case .selectElement: return KeyChord(key: "c", command: true, shift: true)
         }
     }
 }
@@ -492,6 +508,6 @@ final class KeybindingsStore {
     /// a focused terminal lets the rebound shortcut reach the app. Default
     /// chords are already in TerminalSurfaceKit's own unbind list.
     var customGhosttyUnbinds: [String] {
-        overrides.filter { $0.key.scope == .app }.values.map(\.ghosttyChord).sorted()
+        overrides.filter { $0.key.reachesPastTerminals }.values.map(\.ghosttyChord).sorted()
     }
 }

@@ -5,21 +5,30 @@ import ShepherdCore
 import ShepherdRemote
 
 /// A tab of the side pane beside a thread (DESIGN.md › Side pane). Only the tabs Shepherd has
-/// are here; Browser, Artifacts and Files join as cases when they are built, each with its
-/// content in `SidePaneView` and its ⌃ digit following its place.
+/// are here; Artifacts and Files join as cases when they are built, each with its content in
+/// `SidePaneView` and its ⌃ digit following its place.
 enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
     case changes
+    /// A local thread's Browser (PaneBrowser); remote threads wait for the tunnel.
+    case browser
 
     var title: String {
         switch self {
         case .changes: "Changes"
+        case .browser: "Browser"
         }
     }
 
     var systemImage: String {
         switch self {
         case .changes: "plus.forwardslash.minus"
+        case .browser: "globe"
         }
+    }
+
+    /// The tabs a thread's pane shows: a remote thread has no Browser yet.
+    static func tabs(remote: Bool) -> [SidePaneTab] {
+        remote ? [.changes] : allCases
     }
 
     /// Its fixed chord: ⌃1 for the first tab, and so on (⌃1–4 are the pane's).
@@ -30,6 +39,7 @@ enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
     var newsText: String {
         switch self {
         case .changes: "Agent opened a review in Changes"
+        case .browser: "Agent opened a page in Browser"
         }
     }
 }
@@ -38,6 +48,11 @@ enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
 enum SidePaneOwner: Hashable {
     case local(AgentID)
     case remote(RemoteAgentRef)
+
+    var isRemote: Bool {
+        if case .remote = self { return true }
+        return false
+    }
 }
 
 /// The side pane beside a thread (DESIGN.md › Side pane): one pane per window, docked right,
@@ -87,6 +102,10 @@ extension ShepherdViewModel {
     /// and its dot clears: you are looking at it.
     func showSidePane(_ owner: SidePaneOwner, tab: SidePaneTab? = nil) {
         let panes = subagentInspector
+        if let tab, !SidePaneTab.tabs(remote: owner.isRemote).contains(tab) {
+            NSSound.beep()
+            return
+        }
         if let tab {
             if panes.tabs[owner] != tab { panes.tabs[owner] = tab }
             closeInspector(owner)
@@ -96,6 +115,7 @@ extension ShepherdViewModel {
         panes.clearNews(owner, shown)
         switch shown {
         case .changes: ensureReview(owner)
+        case .browser: break
         }
     }
 

@@ -58,7 +58,7 @@ public struct ShepherdMacApp: App {
         themes = ThemeManager.shared
         // Geist and Geist Mono ship in the ShepherdUI bundle; register them before any view draws.
         NWFonts.register()
-        _vm = State(initialValue: ShepherdViewModel(server: .shared, welcomesYourPi: true))
+        _vm = State(initialValue: ShepherdViewModel(server: .shared, welcomesYourPi: true, browserData: .persistent))
     }
 
     public var body: some Scene {

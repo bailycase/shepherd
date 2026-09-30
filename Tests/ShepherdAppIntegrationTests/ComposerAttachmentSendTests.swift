@@ -29,7 +29,7 @@ struct ComposerAttachmentSendTests {
             window.close()
         }
         window.show(ThreadView(store: store, active: true, isFocused: false, request: { request in
-            if case let .send(_, _, id, text, _, images, _, _) = request {
+            if case let .send(_, _, id, text, _, images, _, _, _) = request {
                 #expect(text == "send this image")
                 submitted = images
                 operation = id

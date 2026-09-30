@@ -125,6 +125,9 @@ public final class NativeThreadStore {
     /// Design references waiting beside the draft; they go with the next message the draft sends,
     /// on a host that takes them (`designReferences`).
     public private(set) var attachedReferences: [NativeAttachedReference] = []
+    /// Elements picked in the thread's Browser, waiting beside the draft; they go with the next
+    /// message the draft sends, on a host that takes them (`browserElements`).
+    public private(set) var attachedElements: [NativeAttachedElement] = []
 
     /// History, then the optimistic user echo, then the live (provisional) reply to it. The echo
     /// must precede provisional rows: the reply to a sent message streams below it, and the
@@ -1017,25 +1020,51 @@ public final class NativeThreadStore {
         let typed = draft
         let files = attachedFiles
         let references = attachedReferences
+        let elements = attachedElements
         guard hasDraft || (!images.isEmpty && supports("sendImages")), supports("send"), let current = snapshot else { return false }
         guard references.isEmpty || supports("designReferences") else {
             notice = "This thread's host doesn't take design references."
             return false
         }
-        let text = NativeAttachedFile.message(typed, files: files, references: references.count)
+        guard elements.isEmpty || supports("browserElements") else {
+            notice = "This thread's host doesn't take page elements."
+            return false
+        }
+        let text = NativeAttachedFile.message(typed, files: files, references: references.count, elements: elements.count)
         let operation = UUID()
         let attached: [NativeImage]? = images.isEmpty || !supports("sendImages") ? nil : images
         let context = supports("designContext") ? designContext?().map(NativeDesignContext.init) : nil
         return await perform(.send(expectedSessionID: current.piSessionID, generation: current.generation,
                             operationID: operation, text: text, delivery: delivery, images: attached, designContext: context,
-                            designReferences: references.isEmpty ? nil : references.map(\.record)),
+                            designReferences: references.isEmpty ? nil : references.map(\.record),
+                            browserElements: elements.isEmpty ? nil : elements.map(\.element)),
                       operation: operation, current: current, sentText: text, typed: typed, files: files, references: references,
-                      delivery: delivery, images: attached ?? [])
+                      elements: elements, delivery: delivery, images: attached ?? [])
     }
 
-    /// Whether the draft has something to send: words, attached files, or design references.
+    /// Whether the draft has something to send: words, attached files, design references, or
+    /// page elements.
     public var hasDraft: Bool {
         !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachedFiles.isEmpty || !attachedReferences.isEmpty
+            || !attachedElements.isEmpty
+    }
+
+    /// Adds an element picked in the Browser beside the draft, once per element on its page (a
+    /// second pick replaces it in place), at most `BrowserElement.maxPerMessage`. False when the
+    /// composer already holds that many others.
+    @discardableResult
+    public func attach(element: BrowserElement) -> Bool {
+        if let index = attachedElements.firstIndex(where: { $0.element.page == element.page && $0.element.selector == element.selector }) {
+            attachedElements[index] = NativeAttachedElement(id: attachedElements[index].id, element: element)
+            return true
+        }
+        guard attachedElements.count < BrowserElement.maxPerMessage else { return false }
+        attachedElements.append(NativeAttachedElement(element: element))
+        return true
+    }
+
+    public func detachElement(_ id: UUID) {
+        attachedElements.removeAll { $0.id == id }
     }
 
     /// Adds a design reference beside the draft, once per piece (a later one, "Send vN" among
@@ -1347,6 +1376,7 @@ public final class NativeThreadStore {
     @discardableResult
     private func perform(_ action: NativeThreadRequest, operation: UUID, current: NativeThreadSnapshot, sentText: String? = nil,
                          typed: String? = nil, files: [NativeAttachedFile] = [], references: [NativeAttachedReference] = [],
+                         elements: [NativeAttachedElement] = [],
                          delivery: NativeThreadDelivery = .followUp, images: [NativeImage] = []) async -> Bool {
         guard let request else { return false }
         let run = epoch
@@ -1371,6 +1401,7 @@ public final class NativeThreadStore {
                     if draft == (typed ?? sentText) { draft = "" }
                     if !files.isEmpty { attachedFiles.removeAll { file in files.contains { $0.id == file.id } } }
                     if !references.isEmpty { attachedReferences.removeAll { sent in references.contains { $0.id == sent.id } } }
+                    if !elements.isEmpty { attachedElements.removeAll { sent in elements.contains { $0.id == sent.id } } }
                     lastSendQueued = queued
                     sentCount += 1
                     if hostQueues && current.running {
@@ -1378,7 +1409,8 @@ public final class NativeThreadStore {
                         let item = NativeQueuedMessage(id: operation, text: sentText,
                                                        images: images.map { NativeQueuedImage(mimeType: $0.mimeType, name: $0.name) },
                                                        sentAt: Date().timeIntervalSince1970 * 1000,
-                                                       state: delivery == .steer ? .steering : .queued)
+                                                       state: delivery == .steer ? .steering : .queued,
+                                                       elements: elements.map(\.element.withoutHTML))
                         if !images.isEmpty { sentImages[operation] = images }
                         overlays.append(QueueOverlay(id: operation, accepted: pulls, mode: nil) { items in
                             if !items.contains(where: { $0.id == item.id }) { items.append(item); NativeQueueRules.normalize(&items) }
@@ -1390,7 +1422,8 @@ public final class NativeThreadStore {
                                                            blocks: [NativeThreadBlock(kind: .text, text: sentText)],
                                                            status: queued ? "queued" : "pending",
                                                            timestamp: Date().timeIntervalSince1970 * 1000,
-                                                           origin: current.running && delivery == .steer ? .steered : nil))
+                                                           origin: current.running && delivery == .steer ? .steered : nil,
+                                                           browserElements: elements.isEmpty ? nil : elements.map(\.element.withoutHTML)))
                         if hostQueues { echoAccepted[id] = pulls }
                     }
                     derive()

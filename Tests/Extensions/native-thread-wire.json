@@ -848,5 +848,102 @@
         }
       }
     }
+  },
+  {
+    "type": "nativeThread",
+    "id": 27,
+    "agentID": "agent",
+    "request": {
+      "send": {
+        "expectedSessionID": "session",
+        "generation": "generation",
+        "operationID": "00000000-0000-0000-0000-000000000031",
+        "text": "Make this full width below 480px",
+        "delivery": "followUp",
+        "browserElements": [
+          {
+            "page": "http://localhost:5173/checkout",
+            "selector": "main > form > button.pay",
+            "label": "button.pay",
+            "source": "src/components/Checkout.tsx:88",
+            "width": 240,
+            "height": 44,
+            "html": "<button class=\"pay\">Pay $148.00</button>"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "nativeThread",
+    "id": 28,
+    "result": {
+      "snapshot": {
+        "value": {
+          "piSessionID": "session",
+          "generation": "generation",
+          "revision": 12,
+          "running": true,
+          "supportedActions": [
+            "send",
+            "queue",
+            "browserElements"
+          ],
+          "dialogsSupported": true,
+          "dialogs": [],
+          "messages": [
+            {
+              "entryID": "user:1790281450000",
+              "role": "user",
+              "blocks": [
+                {
+                  "kind": "text",
+                  "text": "Make this full width below 480px"
+                }
+              ],
+              "truncated": false,
+              "timestamp": 1790281450000,
+              "operationID": "00000000-0000-0000-0000-000000000031",
+              "browserElements": [
+                {
+                  "page": "http://localhost:5173/checkout",
+                  "selector": "main > form > button.pay",
+                  "label": "button.pay",
+                  "source": "src/components/Checkout.tsx:88",
+                  "width": 240,
+                  "height": 44
+                }
+              ]
+            }
+          ],
+          "provisional": [],
+          "clipped": false,
+          "runtime": "rpc",
+          "queue": {
+            "items": [
+              {
+                "id": "00000000-0000-0000-0000-000000000032",
+                "text": "and this one",
+                "images": [],
+                "sentAt": 1790281451000,
+                "state": "queued",
+                "held": false,
+                "elements": [
+                  {
+                    "page": "http://localhost:5173/checkout",
+                    "selector": "#promo",
+                    "label": "input#promo",
+                    "width": 320,
+                    "height": 36
+                  }
+                ]
+              }
+            ],
+            "mode": "all",
+            "paused": false
+          }
+        }
+      }
+    }
   }
 ]

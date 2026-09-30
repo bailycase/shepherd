@@ -32,7 +32,7 @@ private final class ThreadHarness {
         window = OffscreenWindow(size: CGSize(width: 900, height: 600), dark: false)
         let request: NativeThreadStore.Request = { [weak self] value in
             guard let self else { return .failure(code: "gone", message: "harness released") }
-            if case .send(_, _, let operation, _, _, _, _, _) = value { return .accepted(operationID: operation) }
+            if case .send(_, _, let operation, _, _, _, _, _, _) = value { return .accepted(operationID: operation) }
             if case .snapshot(_, let before, _) = value, before != nil {
                 self.olderRequests += 1
                 return await withCheckedContinuation { self.olderReply = $0 }
