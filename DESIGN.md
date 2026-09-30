@@ -138,6 +138,7 @@ And the rules that follow from them:
 | Queue & steer: a row's actions take room only while it is hovered | An 82pt slot is always laid out, empty at rest | Details on hover: hovering never re-truncates the text |
 | Queue & steer: message times at rest | On hover (Details on hover) | The thread's rule |
 | Queue & steer: the queue's keys are "shown in menus and tooltips only" | Also listed under Settings ▸ Keyboard ▸ While the agent is working, in the Keyboard card's order | Settings ▸ Keyboard lists every chord the app answers, and ⌘↩ is rebound there; nothing is written in or under the composer |
+| NWComposer draws no service tier: its row ends at Thinking and its palette lists no speed command | A Speed chip and menu after Thinking, ⌘K's Toggle fast mode, and Settings ▸ Agents ▸ Speed for new threads | Shepherd added service tiers (Fast mode for OpenAI and Codex models) after the boards; the new control is built from the composer's own parts (the thinking chip, the Send menu's two-line rows, the thinking default's settings row) and the ComposerSpeed board records it |
 | Background events as in-app toasts (`.nwToast`) | A system notification when a thread finishes a turn, fails one, or asks a question, or one of its subagents asks, or a connected host goes away, while you aren't watching it (`AgentNotifications`; see Notifications and Live Activities) | Reaches you outside the app |
 | Missions: the Missions page, the mission map, evidence review | Not built; specified in full under Missions, each part marked Not built yet | Out of scope for this pass |
 | Sidebar — Projects (SidebarTree, SidebarProjects, SidebarProjectsHosts): designs ("Settings redesign · 6 boards", "Checkout funnel dashboard · 4 boards") in their project's folder, and "Every kind … all live in the project they work on" | Designs are not in the project tree: they stay under the Designs destination and in ⌘K | The user's decision (2026-09-26): designs stand alone outside spaces since #118, so they have no project to sit in |
@@ -1998,6 +1999,14 @@ it (the palette's New agent with options…, New space on <host>…, and "PR #24
   ("Medium") in `textPrimary` medium, and the chevron. It is hidden when the model has no
   reasoning control, as pi's levels for it (only Off), this Mac's catalog, or the host's
   `listModels` says; an unknown model keeps it.
+- the speed chip (ComposerSpeed; `NWComposerSpeedLabel`): a 13pt bolt, "Speed", the tier ("Standard"
+  or "Fast") in `textPrimary` medium, and the chevron. Standard draws an outline `bolt` in
+  `textSecondary`; Fast fills it (`bolt.fill`) in `lantern`. It shows only while the host
+  offers a service tier for the thread's model (the snapshot's `serviceTiers` lists one besides
+  Standard: OpenAI and Codex models, directly or through CLIProxyAPI; never Anthropic, Gemini or
+  any other provider) and from a host that keeps the tier (`setServiceTier` in
+  `supportedActions`, remotely `native.serviceTier.v1`): otherwise there is no chip, not a
+  disabled one. Tooltip "Speed: <tier>"; VoiceOver "Speed: Fast".
 - a spacer, then "Starting…" only while a slow pi keeps the thread waiting (see States),
   then the context ring (Context meter, below) 6pt before the action, a 28pt circle: **Send** (a
   14pt `arrow.up` in `textOnLantern` on `lantern`, at 35% until there is something to send) or
@@ -2020,7 +2029,8 @@ its own.
 of two sizes, `.nwComposerSize(_:)` (`NWComposerSize`). `.regular` is the thread's and New
 design's. `.compact` is for a pane under 520pt, a design's 420pt chat (the canvas's, a system
 build's, a remote design's): the chips never show their words, so "/ commands" is "/" and the
-thinking chip is its level alone (`NWComposerCommandsLabel`, `NWComposerThinkingLabel`). Attach,
+thinking chip is its level alone (`NWComposerCommandsLabel`, `NWComposerThinkingLabel`), and the
+speed chip keeps its bolt and drops "Speed" (`NWComposerSpeedLabel`), so Fast stays readable. Attach,
 the model, the context ring and Send are the same at both sizes, and so are the chips' 26pt
 metrics (the boards draw the Design tool's composers at their own scale).
 
@@ -2405,6 +2415,18 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
   Medium and High. The level in `ui` regular `textPrimary`, its note in Geist 12 `textTertiary`,
   and the check on the current level, trailing. It takes focus with the current level
   highlighted. The chip names the level the same way ("Extra high").
+- **Speed menu** (`NWSpeedMenu`, 280pt; ComposerSpeed): from the speed chip, which also closes it,
+  over the card as the other composer menus are (left-aligned, 8pt above it, never moving the
+  thread). "Speed", then a two-line 40pt row per tier the model offers, the Send menu's
+  anatomy: the title in `ui` regular `textPrimary` (Fast wears a filled bolt in `lantern` before
+  it) over what it does in Geist 12 `textTertiary`, and the check on the current one, trailing.
+  Standard: "Default speed and price". Fast: "Faster responses, billed at a higher rate". ↑↓ move,
+  ↩ chooses, Esc closes; it takes focus with the current tier highlighted. A change applies to the
+  next model call of the running agent (the request already in flight is not changed) and
+  persists with the thread. Fast asks the provider for priority processing, which is billed at a
+  higher rate and which the provider may decline under load: the thread's cost figures follow
+  the tier the provider reports. `ThreadCommandCenter.Command.speedMenu` opens it the way
+  `thinkingMenu` opens Thinking (no chord).
 - **Agent context menu** (NWComposer › Menus: "Native NSMenu in Swift; shown for spec"): a
   native menu (`.contextMenu`), never a custom popover: Rename… with its keys (⌘R), Fork from here
   and Copy transcript (each with its glyph), a separator, Open in Finder, a separator, and Delete
@@ -3631,7 +3653,9 @@ surface: every destination and command in it is also in the sidebar or the menus
     (⌘,), and Check remote worktree operation (its host) while one is pending. **Not built yet:**
     New mission… (NWComposer; it waits for Missions).
   - **This thread** (the agent on screen): Rename ("<title>", ⌘R), Choose model… ("<model>", ⇧⌘M),
-    Review diff ("working tree · 4 files", the checkout's changed files as the branch chip counts
+    Toggle fast mode ("Switch this thread between Standard and Fast", a `bolt`; ComposerSpeed;
+    listed only while the thread's model offers a service tier, and it switches the tier as the
+    Speed menu would, with no menu), Review diff ("working tree · 4 files", the checkout's changed files as the branch chip counts
     them; ⇧⌘B, the side pane's chord), Review PR changes ("PR #24" once the agent's review has
     found its pull request), and the Pane menu's terminal commands while a
     thread with a layout is on screen: Show or Hide terminal (⌘J), New terminal (⌘D, shown while the
@@ -3840,6 +3864,10 @@ settings." The chord is read from `KeybindingsStore`, so a rebind never leaves t
     and the catalog's model ids. The catalog and pi's default load in a task, never in `body`.
   - Default thinking level, "Can be changed per agent from the composer.": Off · Minimal · Low ·
     Medium · High · Extra high · Max, default Medium (pi uses the nearest level a model has).
+  - Speed for new threads, "New threads start on this speed. Each thread keeps its own after
+    that.": Standard · Fast, default Standard (ComposerSpeed, the same row and segmented control as
+    the thinking level). A thread whose model offers no service tier ignores it; a thread a remote
+    client or an automation starts on this Mac takes it too.
 - **While the agent is working** (the queue's settings; QueueStates' card holds this copy, "Same two
   choices on every platform"):
   - Return while the agent is working, "Steering lands once the agent’s current tool calls
@@ -5655,7 +5683,8 @@ follows the Mac's rules (Thread) with the phone's measures below.
   ring sits inside the capsule just before Send (Composer › Context meter › iPad and iPhone); a
   tap opens its details as a sheet. The app adds,
   while the field is in use, a row of "/ commands", model and thinking chips above it (ghost,
-  28pt); no phone board draws it.
+  28pt), and the speed chip after them where the host offers one (a menu of Standard and Fast,
+  each with its line; no phone board draws any of it).
 - **Following:** as in the iOS list above: only a finger's drag detaches; "↓ Jump to latest" sits
   8pt above the composer.
 - **Banners** at the top of the thread, 12 `textTertiary`: "<host> is offline · showing the last
@@ -9339,6 +9368,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | Running | Thread (A turn while pi works); Composer, questions, and menus | Built |
 | SlashMenu | Composer, questions, and menus › Slash menu | Built |
 | ModelPicker | Composer, questions, and menus › Model picker | Built |
+| ComposerSpeed | Composer, questions, and menus › The control row, Speed menu; Command palette; Settings › Agents | Built |
 | CommandPalette | Command palette | Built |
 | ToolRows | Thread › Activity lines | Built |
 | ChangesSplit | Side pane › Changes (toolbar, compare row, strip, file headers, split, comments, send bar) | Built |
