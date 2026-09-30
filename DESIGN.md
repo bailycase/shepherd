@@ -8782,7 +8782,8 @@ are off the tokens). Opening a design fills the main column: the header, then th
       `doc.text`)
     - "Drew 4 boards" · "3 directions + phone" (the nib; `.drew`)
     - "Checked against acme-web" · "0 off-system values" (`checkmark.shield`; `.checked`)
-    - "Updated A and A · phone" · "funnel card · 1 change" (`pencil`, as an edit)
+    - "Updated A and A · phone" · "funnel card · 1 change" (`pencil`, as an edit; a rewrite with
+      `board_write` and a change in place with `board_edit` read alike)
 
     A comment you make on the canvas joins the chat as its `NWCommentCard` (below), and the
     agent's answer sits inside the card under a hairline: its activity line, then its reply

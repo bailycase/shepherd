@@ -397,7 +397,7 @@ authenticate with the token and never reach this path.
 | `listAgents`, `sendToAgent`, `spawnAgent`, `coordinateAgent` (read, steer, interrupt, status, delete) | panes | `wrong_process` |
 | `requestReview` | review | `wrong_process` |
 | `suggestInstruction` | instructions | `wrong_process` |
-| `designRead`, `designWriteBoard`, `designUpdateIndex`, `designComments`, `designCommentReply`, `designSystemRead`, `designSystemWrite`, `designProposeComments` | design | `wrong_process` |
+| `designRead`, `designWriteBoard`, `designEditBoard`, `designUpdateIndex`, `designComments`, `designCommentReply`, `designSystemRead`, `designSystemWrite`, `designProposeComments` | design | `wrong_process` |
 | `designGet`, `designNote` | design-refs | `wrong_process` |
 | `mcpCredentials` | mcp | `wrong_process` (it answers with secrets) |
 | `browser` | browser | `not_registered` |
