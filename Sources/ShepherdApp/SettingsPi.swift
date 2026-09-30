@@ -42,6 +42,10 @@ struct PiSettings: View {
                             subtitle: "Let agents use the servers in Settings ▸ MCP servers through one `mcp` tool.") {
                     SettingsSwitch(label: "MCP servers", isOn: $settings.piMCPExtension)
                 }
+                SettingsRow(title: "Browser tools",
+                            subtitle: "Let agents open pages in their thread's Browser, read and click through them, and take screenshots.") {
+                    SettingsSwitch(label: "Browser tools", isOn: $settings.piBrowserExtension)
+                }
                 if settings.designToolEnabled {
                     SettingsRow(title: "Design references",
                                 subtitle: "Let a thread read the design pieces you hand it with `design_get`. Only a thread you sent one to gets the tool.") {

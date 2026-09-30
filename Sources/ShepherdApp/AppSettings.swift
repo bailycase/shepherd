@@ -72,6 +72,7 @@ final class AppSettings {
         static let piSubagentsExtension = "shepherd.pi.extension.subagents"
         static let piNativeSubagents = "shepherd.pi.extension.nativeSubagents"
         static let piMCPExtension = "shepherd.pi.extension.mcp"
+        static let piBrowserExtension = "shepherd.pi.extension.browser"
         static let piDesignReferences = "shepherd.pi.extension.designReferences"
         static let childConcurrency = "shepherd.pi.children.concurrency"
         static let childModel = "shepherd.pi.children.model"
@@ -102,7 +103,7 @@ final class AppSettings {
             terminalFontFamily, terminalFontSize, defaultModel,
             defaultThinking, autoNameAgents, returnWhileWorking, queueDelivery, shellPath,
             piPanesExtension, piReviewExtension, piSubagentsExtension, piNativeSubagents,
-            piMCPExtension, piDesignReferences,
+            piMCPExtension, piBrowserExtension, piDesignReferences,
             childConcurrency, childModel, childThinking, childContext, childScope,
             uiDensity, uiTextScale, sidebarWidth, sidebarRowDensity,
             sidebarStyle, sidebarGroupByHost, sidebarKeepIdleDays,
@@ -230,6 +231,12 @@ final class AppSettings {
     /// Settings ▸ Pi ▸ Bundled extensions ▸ MCP servers: agents get the `mcp` tool.
     var piMCPExtension: Bool {
         didSet { store.set(piMCPExtension, forKey: Key.piMCPExtension) }
+    }
+
+    /// Settings ▸ Pi ▸ Bundled extensions ▸ Browser tools: agents get the `browser_*` tools on
+    /// their thread's own Browser page (docs/browser.md). A design's agent never does.
+    var piBrowserExtension: Bool {
+        didSet { store.set(piBrowserExtension, forKey: Key.piBrowserExtension) }
     }
 
     var childConcurrency: Int {
@@ -422,6 +429,7 @@ final class AppSettings {
         piSubagentsExtension = store.object(forKey: Key.piSubagentsExtension) as? Bool ?? true
         piNativeSubagents = store.object(forKey: Key.piNativeSubagents) as? Bool ?? true
         piMCPExtension = store.object(forKey: Key.piMCPExtension) as? Bool ?? true
+        piBrowserExtension = store.object(forKey: Key.piBrowserExtension) as? Bool ?? true
         piDesignReferences = store.object(forKey: Key.piDesignReferences) as? Bool ?? true
         childConcurrency = min(16, max(1, store.object(forKey: Key.childConcurrency) as? Int ?? 4))
         childModel = store.string(forKey: Key.childModel) ?? ""
@@ -519,6 +527,7 @@ final class AppSettings {
         piSubagentsExtension = true
         piNativeSubagents = true
         piMCPExtension = true
+        piBrowserExtension = true
         piDesignReferences = true
         childConcurrency = 4
         childModel = ""
