@@ -8,8 +8,19 @@ import Testing
 @Suite("Side pane")
 struct SidePaneTests {
     @Test func theStripShowsOnlyTheTabsShepherdHas() {
-        #expect(SidePaneTab.allCases == [.changes], "Browser, Artifacts and Files are not built, so they have no tab")
-        #expect(SidePaneTabs.items(news: [], changedFiles: nil).map(\.title) == ["Changes"])
+        #expect(SidePaneTab.allCases == [.changes, .browser], "Artifacts and Files are not built, so they have no tab")
+        #expect(SidePaneTabs.items(news: [], changedFiles: nil).map(\.title) == ["Changes", "Browser"])
+        #expect(SidePaneTabs.items(news: [], changedFiles: nil, remote: true).map(\.title) == ["Changes"],
+                "a remote thread's Browser waits for the tunnel")
+    }
+
+    @Test func theBrowserIsGlobeOnControlTwoAndCarriesPisDot() throws {
+        let tab = try #require(SidePaneTabs.items(news: [.browser], changedFiles: 3).last)
+        #expect(tab.id == "browser" && tab.systemImage == "globe" && tab.shortcut == "⌃2")
+        #expect(tab.news && tab.count == nil)
+        #expect(SidePaneTab.button(open: false, inspecting: false, news: [.browser]).news == "Agent opened a page in Browser")
+        #expect(SidePaneTab.button(open: false, inspecting: false, news: [.browser, .changes]).news == "Agent opened a review in Changes",
+                "the first tab's news leads")
     }
 
     @Test(arguments: [(nil, false), (0, false), (4, true)] as [(Int?, Bool)])

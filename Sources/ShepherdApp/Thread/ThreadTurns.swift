@@ -44,6 +44,8 @@ struct UserTurn: View, Equatable {
         var pending: Bool
         /// The design references it carries, drawn as chips above its words.
         var references: [DesignReferenceRecord] = []
+        /// The page elements it carries, as chips beside the references.
+        var elements: [BrowserElement] = []
     }
 
     let bubbles: [Bubble]
@@ -60,7 +62,7 @@ struct UserTurn: View, Equatable {
             Bubble(text: bubble.references.isEmpty ? bubble.text
                        : DesignReferenceFence.withoutHumanLine(bubble.text, count: bubble.references.count),
                    images: bubble.images, caption: bubble.sentAt.map { nativeClockText($0) }, pending: bubble.pending,
-                   references: bubble.references)
+                   references: bubble.references, elements: bubble.elements)
         }, fromQueue: turn.fromQueue, hover: hover)
     }
 
@@ -96,6 +98,8 @@ struct UserTurn: View, Equatable {
                 // entries, and the bubble must stay one view to settle in place (70% → 100%).
                 ForEach(Array(bubbles.enumerated()), id: \.offset) { index, bubble in
                     let last = index == bubbles.count - 1
+                    // No board draws a sent message's page elements as chips (the user's decision,
+                    // 2026-09-29): only the composer's chip and the queue row's stand for them.
                     NWUserBubble(bubble.text, attachments: Array(repeating: "Image", count: bubble.images),
                                  timestamp: bubble.caption, note: last ? note : nil, revealed: hover.hovering) {
                         if !bubble.references.isEmpty { SentReferenceChips(records: bubble.references) }

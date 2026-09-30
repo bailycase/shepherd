@@ -299,20 +299,23 @@ private struct NWQueueHeader<Options: View>: View {
 // MARK: Rows
 
 /// An attachment a queued message carries: its image's name, and its thumbnail where this Mac
-/// has the bytes (another client's show a photo glyph).
+/// has the bytes (another client's show a photo glyph); or an element picked in the Browser, by
+/// its selector (`isElement`).
 public struct NWQueueAttachment: Identifiable, Equatable {
     public var id: String
     public var name: String
     public var thumbnail: Image?
+    public var isElement: Bool
 
-    public init(id: String, name: String, thumbnail: Image? = nil) {
+    public init(id: String, name: String, thumbnail: Image? = nil, isElement: Bool = false) {
         self.id = id
         self.name = name
         self.thumbnail = thumbnail
+        self.isElement = isElement
     }
 
     public static func == (a: Self, b: Self) -> Bool {
-        a.id == b.id && a.name == b.name && (a.thumbnail == nil) == (b.thumbnail == nil)
+        a.id == b.id && a.name == b.name && a.isElement == b.isElement && (a.thumbnail == nil) == (b.thumbnail == nil)
     }
 }
 
@@ -416,7 +419,13 @@ public struct NWQueueRow: View {
             label
             if !attachments.isEmpty {
                 HStack(spacing: NW.Space.xs) {
-                    ForEach(attachments) { NWAttachmentChip($0.name, thumbnail: $0.thumbnail, size: .compact) }
+                    ForEach(attachments) { attachment in
+                        if attachment.isElement {
+                            NWElementChip(attachment.name, size: .compact)
+                        } else {
+                            NWAttachmentChip(attachment.name, thumbnail: attachment.thumbnail, size: .compact)
+                        }
+                    }
                 }
                 .layoutPriority(1)
             }

@@ -500,6 +500,8 @@ Sources/
                        (the context and compactions), RPCWire (pi's
                        JSONL, lenient), Framing (NDJSON, LineBuffer, 1 MiB cap), ShepherdPaths,
                        ShepherdEdition (Shepherd or Shepherd Nightly, from the bundle id),
+                       BrowserElement (an element picked in the Browser, and the fence it
+                       reaches pi in),
                        Instructions (Settings ▸ Instructions' files, history and requests),
                        Suggestions (Settings ▸ Experiments ▸ Suggested instructions),
                        Skills (Settings ▸ Skills: installed skills, repositories, requests),
@@ -606,6 +608,11 @@ Sources/
       RightPaneSplit and SidePane (the side pane and its tabs), CheckoutMonitor (each agent's
       branch and changed files, read off the main thread), AppCommands (menus, MenuState),
       AppDialogs (every sheet)
+    The side pane's Browser (DESIGN.md › Side pane: Browser): BrowserHost (the only WebKit
+      import: each thread's page, its data store, BrowserPageView), BrowserPane (the tab: toolbar,
+      Nothing open, viewport menu, popover, console drawer, BrowserKeys), BrowserModel (pure: the
+      address, viewports, dev servers, script messages, the console log), BrowserScripts (the
+      page's scripts), ShepherdViewModel+Browser (Start, Add to message, Copy selector)
     AppLayout (+Navigation, +Thread, +Agents, +Settings, +Pages, +Designs; ShellLayout's adaptive
       rules live in +Navigation), AgentStateMapping (app lifecycles → AgentState)
     ShepherdViewModel(+Navigation, +Creation, +Workspace, +Spaces, +Palette, +Shell,
@@ -687,7 +694,10 @@ Packages/
                                      AgentState, HexColor
                        Resources/Fonts  Geist and Geist Mono (SIL OFL)
                        Components/   Controls, Status, Containers, Navigation, Thread, Composer,
-                                     Agents, Review, Dialogs, Automations, Skills, DesignTool
+                                     Agents, Review, Dialogs, Automations, Skills, Browser
+                                     (NWBrowserToolbar, NWBrowserAddressField, NWBrowserEmpty,
+                                     NWViewportMenu, NWElementPopover, NWElementChip,
+                                     NWConsoleBar, NWConsoleRow), DesignTool
                                      (NWDesignCanvas, NWBoardFrame, NWCanvasToolbar,
                                      NWDesignCard, NWDesignSystemChip, NWDesignHeader,
                                      NWCommentPin, NWCommentThread, NWCommentCard,

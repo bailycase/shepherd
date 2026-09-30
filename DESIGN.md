@@ -177,7 +177,11 @@ And the rules that follow from them:
 | Subagents, MobileSubagent: the transcript's live call "Building swift build --target ShepherdRemote 11s" with the output's tail | The live line with its verb, command and clock ("Building swift build --target ShepherdRemote 11s"), with no output lines | A run's session file holds only finished calls, and the run reports its call in flight but not its output |
 | PaneStates widths: the thread keeps 520pt, 760pt default for Files, ⇧⌘O pops the pane into a window | 380pt minimum and 600 default as drawn, at most half the column, and the layout keeps 400 (double-clicking the divider takes it to half); no pop-out | The Navigation board's 400pt thread (`RightPaneSplit`); Files is not built; one window (Window and adaptive layout) |
 | PaneStates' ⋯ menu (`SidePaneOptions`): Split below, Open pane in its own window ⇧⌘O, Reset width, then Show tabs with a check per tab | Changes' own items (Maximize Pane, Expand All Files, Collapse All Files, Copy Review as Text), then Reset Width | With Changes the only tab, a split has nothing to show below it, Show tabs nothing to hide, and a window of its own would break the one-window rule and host the review a second time: none is offered until it works (never a dead item) |
-| PaneStates, the Changes boards, PaneBrowser, PaneArtifacts, PaneFiles: four tabs, Changes, Browser, Artifacts and Files | Changes alone | Only what Shepherd has (the user's decision, 2026-09-25: "dont show browser, artifacts, files, etc, only show the things we have"); the others join when they are built |
+| PaneStates, the Changes boards, PaneBrowser, PaneArtifacts, PaneFiles: four tabs, Changes, Browser, Artifacts and Files | Changes and Browser (a remote thread: Changes alone) | Only what Shepherd has (the user's decision, 2026-09-25: "dont show browser, artifacts, files, etc, only show the things we have"); the others join when they are built, and a remote thread's Browser when the tunnel reaches its host |
+| PaneStates, PaneBrowser: the host chip "build-01" for a remote host | "This Mac" | Local threads only; a remote thread's Browser waits for the tunnel |
+| PaneStates › viewport: Throttle to 3G under Dark appearance | Left out | WebKit has no public throttle; it will come through the tunnel's local proxy (the user's decision, 2026-09-29) |
+| PaneBrowser: the element's popover drawn in the page beside it | A native popover over the page, beside the element (else left of it, else under it), following it as the page scrolls; only the outline and tag are drawn in the page | Its buttons are Shepherd's controls, and the page can't reach or restyle them |
+| PaneBrowser: Hide console (the board draws no hidden state) | The bar stays, with Show console (a chevron up) | The console must be reachable again from where it was |
 | NWThread: inline code on `bgSunken` with a 1px `lineSubtle` line, radius 4, 1×5 padding | Prose draws it in mono 12 on a `lineSubtle` fill, with no line or padding. `NWInlineCode` draws the board's form where a view holds the code (only the Component Gallery today) | A run inside `Text` cannot carry a border or padding |
 | NWThread: a follow-up typed while pi works is a dashed bubble in the thread ("queued · sends when the turn ends", Edit, Send now) | It never enters the thread early: it waits in Up next above the composer and joins the thread where pi reads it | The Queue & steer boards replaced it; the host holds one queue that every viewer sees and edits |
 | Settings boards: hexes outside the palette (`#22262a`, `#1b1e21`, `#c1c5cb`, `#767c85`, `#23272c`, `#f58a86`, `#6fd49a`) | The nearest roles (`lineSubtle`, `textSecondary`, `textTertiary`, `bgSelected`, `failed`, `done`) | The roles are the contract; a new color is a theme role |
@@ -1537,6 +1541,9 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   `textSecondary`, 8pt from each edge. In the composer a chip ends with a remove × in
   `textTertiary`; in a sent bubble it has none. Images travel as image payloads; local file
   attachments currently travel as paths in the message (see Composer › Images and files).
+  Design references show as chips after them; an element picked in the Browser rides with the
+  send but draws no chip on the sent bubble (no board draws one there, the user's decision,
+  2026-09-29): only the composer's chip and the queue row's stand for it (Side pane: Browser).
   - **Not built yet.** A sent bubble's chips show each image's thumbnail and file name, as the
     board draws `screenshot.png`. Today they read "Image" behind the file glyph, because the
     thread keeps only how many images a message carried.
@@ -2110,6 +2117,14 @@ that removes it ("Remove <name>" to VoiceOver). Problems show as a `failed` bann
 "At most 4 images per message.", "<name> is not an image Shepherd can attach.", or "<name> is
 over 2 MiB after resizing."
 
+**The element chip** (`NWElementChip`; PaneBrowser's composer): an element picked in the Browser
+(Side pane: Browser) waits in the same row, after any design references: 26pt, padding 0×8,
+radius 6, a `lineStrong` line, a 12pt element glyph (a dashed square with a pointer) in
+`textSecondary`, the label in Geist Mono 12 `textPrimary` ("button.pay"), the source's file and
+line in Geist Mono 10.5 `textTertiary` ("Checkout.tsx:88", only when the page provided one), and a
+9pt remove × in `textTertiary`; its tooltip is the full selector. At most five wait at once, and
+they go with the next message, on a host that takes them (`browserElements`).
+
 **Questions** from pi or an extension (select, confirm, input, editor), and a subagent's opened
 from its row, take the composer's place, never a row in the scrolling thread, so a blocked agent
 is always answerable (QuestionAsk, QuestionPick, QuestionAnswered, QuestionStates). pi stops and
@@ -2502,11 +2517,11 @@ the tool call pi is running now").
   text as compact chips (`NWAttachmentChip(size: .compact)`, 4pt apart): 22pt, a 1px `lineStrong`
   line, radius 4, the name in `.nwSans(11)`, 6pt padding; an image leads with its 16pt thumbnail
   (radius 3, 3pt leading), or an 11pt `photo` glyph where the bytes stayed on another Mac. The
-  chips keep their width and the text truncates first. **Not built yet:** the board says elements
-  from the browser and files ride along too. An element chip (an element picked in the Browser
-  side pane, PaneBrowser) leads with an 11pt element glyph (a dashed square with a pointer) in
-  `textSecondary`, then its selector in `.nwMono(11)`, e.g. "button.pay". The board draws no file
-  chip. Today a queued message carries images only (Composer › Images).
+  chips keep their width and the text truncates first. Elements picked in the Browser ride along
+  too (Side pane: Browser): an element chip (`NWElementChip(size: .compact)`) leads with an 11pt
+  element glyph (a dashed square with a pointer) in `textSecondary`, then its label in
+  `.nwMono(11)`, e.g. "button.pay", before any images. **Not built yet:** files; the board draws
+  no file chip.
 - **A Steering row** (QueueSteer, QueueStates · steering): always first, above the queued rows, in
   the order they were steered, on `runningTint` (hovered or focused too; focus adds the ring): the
   grip's slot stays empty, then the still 14pt steer glyph (`arrow.turn.down.right`) in `running`
@@ -2765,16 +2780,18 @@ One pane per window beside the agent's layout (`RightPaneSplit` around the whole
 sits at the workspace's trailing edge beside the thread and its terminal panel, at its full
 height, and the dock rule measures the main column, never the thread's own pane. Its sizes and
 adaptive rule are in "Window and adaptive layout" above. It shows only the tabs Shepherd has:
-**Changes**, the Changes pane. Browser, Artifacts and Files are specified below and are not built, so
-they have no tab and no placeholder (the user's decision, 2026-09-25: "dont show browser,
-artifacts, files, etc, only show the things we have"); each joins `SidePaneTab` when it is. A tray row, a record
-line, and the footer's "3 subagents" open the inspector; the tray's Steer opens it with its
-Steer field focused.
+**Changes**, the Changes pane, and **Browser** (Side pane: Browser, below) for a local thread; a
+remote thread's pane has Changes alone until the Browser reaches hosts. Artifacts and Files are
+specified below and are not built, so they have no tab and no placeholder (the user's decision,
+2026-09-25: "dont show browser, artifacts, files, etc, only show the things we have"); each joins
+`SidePaneTab` when it is. A tray row, a record line, and the footer's "3 subagents" open the
+inspector; the tray's Steer opens it with its Steer field focused.
 
 - **Showing and hiding:** ⇧⌘B, the header's side-pane button, or View › Show Side Pane / Hide Side
   Pane. Showing opens the pane on its tab (Changes starts the review); hiding also closes an
   inspected subagent, and discards the review like a cancel. ⌃1 (View › Changes) shows Changes in
-  front of an inspected subagent; it is fixed, like ⌘1–9, and ⌃2–⌃4 wait for the other tabs.
+  front of an inspected subagent, and ⌃2 (View › Browser) the Browser (a remote thread beeps);
+  they are fixed, like ⌘1–9, and ⌃3–⌃4 wait for the other tabs.
   Review Changes (a sidebar row's menu), the palette's Review diff, the chip's Show Changes, a
   thread's "review ›" link and the inspector's file links show Changes too.
 - **Nothing opens by itself** (PaneStates): when pi opens something for the pane (today, an
@@ -2796,9 +2813,9 @@ Steer field focused.
   stay.
 - **The ⋯ menu** (`SidePaneOptions`, "Pane options"): the current tab's items (Changes: Maximize
   Pane or Restore the Thread, a divider, Expand All Files, Collapse All Files, a divider, Copy Review
-  as Text), a divider, then Reset Width
-  (disabled at the default). Split below, Open pane in its own window and Show tabs are left out
-  until they can work (see the departures).
+  as Text; Browser offers none of its own: the console's chevron shows or hides it), a divider,
+  then Reset Width (disabled at the default). Split below, Open pane in its own window and Show
+  tabs are left out until they can work (see the departures).
 - **The subagent inspector takes the pane over** (Subagents, SubagentsDone) with its own header
   in place of the strip, whichever path inspects a run (⌘I, a tray row or card, the palette).
   Closing it goes back to the tab underneath when the pane was open, and hides the pane when it
@@ -3075,19 +3092,141 @@ the pull request (and a review from a host without `changes.v1`) loads that diff
 the same chrome, its scope menu offering Uncommitted and Pull request. Hiding the pane discards its
 review.
 
-### Side pane: Browser, Artifacts, Files (not built yet)
+### Side pane: Browser
 
-**Not built yet.** The page boards give the side pane three more tabs beside Changes (PaneStates,
-PaneBrowser, PaneArtifacts, PaneArtifactEdit, PaneFiles). None is shown until it is built. When
+**Browser** (PaneBrowser, PaneStates › Browser; `BrowserPane.swift`, the page in
+`BrowserHost.swift` (the only app file that imports WebKit), its rules in `BrowserModel.swift`, the
+page's scripts in `BrowserScripts.swift`; parts in ShepherdUI `Components/Browser/Browser.swift`):
+a local thread's own web page, beside it. The Browser tab (`globe`, ⌃2) follows Changes. Remote
+threads have no Browser tab yet: it will reach a thread's host through Shepherd's tunnel, which
+forwards the port (not built yet).
+
+- **One page per thread:** a WebKit view made the first time the thread opens something, in a
+  website data store of its own keyed on the agent, so it shares cookies, storage and caches with
+  nothing else. On macOS 27 and later that store is identified (`WKWebsiteDataStore(forIdentifier:)`)
+  and keeps them across relaunches; deleting the agent closes the page and removes its store. On
+  macOS 26, where an identified store crashed CI's test process, it falls back to a non-persistent
+  store per thread instead, so cookies don't survive a relaunch there (`BrowserHost.swift`). The
+  view belongs to the thread, not the pane: hiding the pane, another tab, another thread on screen
+  or a parked layout only take it out of
+  the window (the visibility-flip rule), so the page never reloads.
+- **Toolbar** (`NWBrowserToolbar`), 44pt, 8pt side padding, a hairline beneath: Back, Forward and
+  Reload (28pt `nwIcon`; one that can't act is at 40%; Reload is Stop loading, an ×, while the page
+  loads), 6pt, the address field, 6pt, then Select an element, Viewport size and Open in your
+  browser (28pt `nwIcon`). Select an element, while on, is `lanternTint` with a `lanternText`
+  glyph; the Viewport button is `bgSelected` while its menu is open. Open in your browser hands
+  the URL to the default browser.
+- **Address field** (`NWBrowserAddressField`): a 30pt capsule on `bgSunken` with a `lineSubtle`
+  line: a 12pt `textTertiary` globe, the URL in Geist Mono 12 (the host with its port in
+  `textPrimary`, the path, query and fragment in `textSecondary`; the scheme left out for http and
+  https, a lone "/" left out), truncating, and a 20pt capsule host chip on `bgRaised` with a
+  `lineSubtle` line (a 10pt display glyph, "This Mac" in Geist 11 `textSecondary`). Empty, it
+  reads "Search or enter a URL" in `textTertiary`. ⌘L or a click edits the whole URL; ↩ opens, Esc
+  gives up. It takes a URL with a scheme; a host with a port or a path (loopback, a private IPv4
+  address, `.local`, `.test` and `.localhost` names go over http, others over https); ":5173" for a
+  port on this Mac; anything else is a search (Google).
+- **Nothing open** (`NWBrowserEmpty`): centered, 14pt apart: a 44pt `bgSelected` circle with a
+  20pt `textSecondary` globe, "No page open" (Geist 14 semibold), and a line (`ui` `textSecondary`,
+  at most 330pt, centered), the board's words exactly: "The agent opens pages here when it starts
+  a dev server. Ports on remote hosts are forwarded for you." ("Waiting for localhost:5173 to
+  answer. Its page opens here when it does." after Start). Then, at most 400pt wide and 8pt apart,
+  a card per dev server (`NWDevServerCard`: `bgRaised`, `lineSubtle`, radius 8, padding 10×12; a
+  12pt terminal glyph, "pnpm dev" in Geist Mono 12 over "from package.json · acme-web" in Geist 11
+  `textTertiary`, and "Start on This Mac", secondary `s` with a play glyph ("Start on build-01"
+  for a remote host, local threads only), and an "Open a URL" row the same way with the ⌘L
+  keycaps.
+  - **Dev servers** (`DevServerDiscovery`): the `dev`, `start`, `serve` and `preview` scripts, in
+    that order, of the thread's folder's package.json and then each `apps/*/package.json` (at most
+    six), read off the main thread. The command follows the lockfile beside it, else the
+    repository's: pnpm, yarn or bun (`bun run`), else npm (`npm run dev`, `npm start`).
+  - **Start** runs the command in a new terminal pane of the thread's layout, the same path an
+    agent's `pane_open` takes (`PaneControl`), so the terminal panel opens on it. When the script's
+    port is known (its `--port`, `-p` or `PORT=`, else its tool's default: Vite 5173 and its
+    preview 4173, Next, Nuxt, Remix and create-react-app 3000, Astro 4321, Angular 4200,
+    Storybook 6006, webpack 8080, …), the page opens by itself once that port answers, tried every
+    half second for 90 seconds.
+- **Viewport** (`NWViewportMenu`, a 220pt popover 4pt under the toolbar, its trailing edge under
+  the button): Fit the pane (the default), iPhone 16 · 393, iPad mini · 744, Laptop · 1280 (the
+  check leading, widths trailing in Geist Mono 11 `textTertiary`), a divider, and Dark appearance
+  (the page's `prefers-color-scheme`; off is light, whatever Shepherd's appearance). A chosen width
+  centers the page on `bgSunken` in a frame 14pt in from the pane's sides and top, with 14pt top
+  corners and a `lineStrong` line. A width wider than that room lays the page out at the chosen
+  width and shrinks it to fit (the page's zoom), so its media queries see the width. The selection
+  and the console keep working. A click outside or Esc closes the menu.
+- **Selecting an element** (⇧⌘C, or the button): the element under the pointer takes a 2pt
+  `running` outline (radius 10, 4pt outside it, a `runningTint` fill) with a 20pt `running` tag
+  above it (below it at the page's top): its label and size ("button.pay 240 × 44", Geist Mono
+  10.5, the size at 75%, the text in `textOnRunning`). Shepherd's script draws them inside the page,
+  in a closed shadow root, in the theme's colors. While selecting, the page's clicks and presses go
+  to the picker, and Esc stops. A click picks: selecting ends, the outline stays, and a popover
+  (`NWElementPopover`: 188pt, padding 8, radius 12, the popover's fill and shadow) sits beside the
+  element (to its right, else its left, else under it, inside the page), following it as the page
+  scrolls: the source location ("Checkout.tsx:88", Geist Mono 10.5 `textTertiary`, the file and
+  line only) when the page provides one, Add to message (primary `s`) and Copy selector (ghost
+  `s`). A click elsewhere or Esc dismisses it, and a new document drops it.
+  - **The source** comes from a `data-source` attribute, react-dev-inspector's
+    `data-inspector-relative-path` and `data-inspector-line`, or a React dev build's fiber
+    (`_debugSource`, React 18 and earlier), the nearest one up the tree; otherwise the line is
+    hidden, and the chip shows the label alone (the user's decision, 2026-09-29).
+  - **The selector** is the shortest unique path: an id when it is unique, else the tag with up to
+    two stable classes (and `:nth-of-type` where siblings need it), walking up until it finds one
+    element. The label is the tag with its id or first stable class ("button.pay", "input#promo").
+  - **Scripts:** the picker and the network count run in a content world of Shepherd's own,
+    which the page can't see or call, and post to a handler only that world has. Only the page's
+    own world can read what its `console` says and a React fiber, so a small shim runs there: it
+    wraps `console`, reports errors to a console-only handler, and answers the picker's source
+    question through a DOM attribute it takes off again. A page can at most forge a console line.
+- **Add to message** puts the element in the thread's composer as a chip (Composer, questions,
+  and menus › The element chip), at most five (the same element picked again replaces its chip). It goes to pi with the
+  message: the host fences each element ahead of the words as data, never instructions (its page's
+  URL, the selector and label, the source when known, its size, and the start of its outer HTML,
+  cut at 1,500 bytes), and a message carrying elements goes to pi on its own, never joined in the
+  queue. No board draws a sent message's elements as a chip, so the sent bubble shows only its
+  words (the user's decision, 2026-09-29): elements sent alone send "1 page element attached.",
+  which the bubble still shows as its text, with nothing standing in for the element.
+- **Console drawer** (`NWConsoleBar`, `NWConsoleRow`), under the page while one is open: a 32pt bar
+  on `bgBase` under a `lineStrong` line: "Console" (Geist 12 semibold), "Network" with its count
+  (the document and each resource it loaded; Geist Mono 10.5 `textTertiary`), and "1 warning" in
+  `lanternText` (Geist 11.5, a 12pt glyph, only when there is one). No board draws a separate
+  error count or red rows (the user's decision, 2026-09-29): the page's own errors show as warning
+  rows and count in "N warning(s)" too. Hide console (24pt; Show console, a chevron up, while
+  hidden) collapses the rows and leaves the bar; the ⋯ menu offers nothing of its own for it. Its
+  rows, a lazy list 136pt tall that opens at its newest line, are at least 22pt with 14pt side
+  padding in Geist Mono 11: the time (24-hour) in `textTertiary`, the message in `textSecondary`,
+  truncating (the whole line is its tooltip). A warning row (an error included) is `lanternTint`
+  with its text in `lanternText`. It keeps the last 500 lines, and a new document starts it over,
+  counts included.
+- **Keys:** ⌃2 shows the tab (fixed). ⌘L (the address field) and ⇧⌘C (Select an element) go
+  through `KeybindingsStore`, scoped to the Browser while it is on screen, whatever has the
+  keyboard in the window; both are in `appOwnedChords`, so a focused terminal lets them through.
+  The design canvas's ⇧⌘C (Copy reference) never meets this one: a design's layout has no Browser.
+- **The tab's dot** ("Agent opened a page in Browser" under the header's button) is for pages pi
+  opens; nothing opens one yet.
+- **Not built yet:** the agent using it (below), its activity lines in the thread, remote threads
+  and a host chip naming the host, Throttle to 3G (it waits for the tunnel's local proxy, the
+  user's decision, 2026-09-29), and Split below and the pane's own window (below).
+- **The agent is using it** (not built yet): the agent drives the same page you see. A 2pt
+  `running` ring insets the page, a pointer glyph (18pt, `running`) shows where pi points, and a
+  floating card 12pt from the pane's sides under the toolbar (`bgRaised`, radius 12, a `running`
+  line, the popover shadow; padding 8, 12 on the leading side) says "Agent is clicking through
+  checkout" (`ui`, a 12pt `running` glyph) with Take over (secondary `s`, with a glyph). Click
+  anywhere or Take over to get the page back; pi carries on in the thread.
+- **In the thread** (not built yet), pi's browser work reads as activity lines: "Started the dev
+  server · pnpm dev · :5173 on build-01", "Opened the checkout in Browser · localhost:5173/checkout".
+
+### Side pane: Artifacts, Files (not built yet)
+
+**Not built yet.** The page boards give the side pane two more tabs beside Changes and Browser
+(PaneStates, PaneArtifacts, PaneArtifactEdit, PaneFiles). Neither is shown until it is built. When
 one is, it joins the strip and the ⋯ menu above and follows this section; where the boards leave a
 choice open, it says so. The boards draw these surfaces at radius 10 (9 and 5 for some tiles and
 rows) beside a 52pt toolbar. This section gives their other values as drawn and maps radii onto the
 radius scale (8 for cards, panes and tiles, 6 for rows and controls, 12 for popovers), as the
 departures table records for the page boards.
 
-- **Their tabs** (`SidePaneTabs`, PaneStates): Browser (`globe`), Artifacts (with its count of new
-  artifacts) and Files, after Changes, taking ⌃2–⌃4. A tab the agent opened something in gets the dot and
-  a brief popover under it ("Agent opened localhost:5173/checkout" with the URL in mono and its age in
+- **Their tabs** (`SidePaneTabs`, PaneStates): Artifacts (with its count of new artifacts) and
+  Files, after Browser, taking ⌃3–⌃4. A tab the agent opened something in gets the dot and a brief
+  popover under it ("Agent opened localhost:5173/checkout" with the URL in mono and its age in
   `textTertiary`; Geist 12, a 12pt glyph).
 - **The rest of the ⋯ menu** (`SidePaneOptions`), once there is more than one tab: Split below,
   Open pane in its own window (⇧⌘O), Reset width, a divider, then "Show tabs" with a checkable row
@@ -3100,58 +3239,10 @@ departures table records for the page boards.
   sets half the window; the thread keeps at least 520pt. Each thread remembers its tabs, split and
   width. The pop-out window conflicts with the one-window rule (Window and adaptive layout): decide
   before building it.
-- **Keys**, shown in menus and tooltips, never under the composer: ⌃2–4 switch to these tabs, ⌘L
-  the address bar, ⇧⌘C select an element, ⌘P go to file, ⌘S save a file or artifact, ⇧⌘O pane in
-  its own window. ⌃2–4 are fixed like ⌃1; the rest go through `KeybindingsStore`, and each must be
-  added to `appOwnedChords` so a focused terminal doesn't eat it.
-
-**Browser** (PaneBrowser, PaneStates): a WebKit view per thread. It shares cookies with nothing
-else, and it reaches the thread's host through Shepherd's tunnel, which forwards the port.
-
-- **Toolbar,** 44pt, 8pt side padding, a hairline beneath: Back, Forward and Reload (28pt
-  `nwIcon`; one that can't act is disabled at 40%), 6pt, the address field, 6pt, then Select an
-  element, Viewport size and Open in your browser (28pt `nwIcon`). The address field is a 30pt
-  capsule on `bgSunken` with a `lineSubtle` line: a 12pt `textTertiary` glyph, the URL in Geist
-  Mono 12 (host `textPrimary`, path `textSecondary`), truncating, and a 20pt capsule host chip on
-  `bgRaised` (a 10pt server glyph, the host in Geist 11 `textSecondary`, "build-01"). Empty, it
-  reads "Search or enter a URL" in `textTertiary`. Select an element, while on, is
-  `lanternTint` with a `lanternText` glyph; a menu's button is `bgSelected` while its menu is
-  open.
-- **The agent is using it:** the agent drives the same page you see. A 2pt `running` ring insets the page, a
-  pointer glyph (18pt, `running`) shows where pi points, and a floating card 12pt from the
-  pane's sides under the toolbar (`bgRaised`, radius 12, a `running` line, the popover shadow;
-  padding 8, 12 on the leading side) says "Agent is clicking through checkout" (`ui`, a 12pt
-  `running` glyph) with Take over (secondary `s`, with a glyph). Click anywhere or Take over to
-  get the page back; pi carries on in the thread.
-- **Nothing open:** centered, 14pt apart: a 44pt `bgSelected` circle with a 20pt `textSecondary`
-  glyph, "No page open" (Geist 14 semibold), and "The agent opens pages here when it starts a dev
-  server. Ports on remote hosts are forwarded for you." (`ui` `textSecondary`, at most 330pt,
-  centered). Then cards (`bgRaised`, `lineSubtle`, radius 8, padding 10×12) for the dev servers
-  found in the repo ("pnpm dev" in Geist Mono 12 over "from package.json · acme-web" in Geist 11
-  `textTertiary`, with "Start on build-01", secondary `s`, which runs it on the thread's host),
-  and an "Open a URL" row with the ⌘L keycaps.
-- **Viewport** (a 220pt menu): Fit the pane (checked by default), iPhone 16 · 393, iPad mini ·
-  744, Laptop · 1280 (widths trailing in Geist Mono 11 `textTertiary`), a divider, Dark
-  appearance, Throttle to 3G. A chosen width centers the page on `bgSunken` in a frame with 14pt
-  top corners and a `lineStrong` line; the selection and console keep working.
-- **Selecting an element** (⇧⌘C): the hovered element takes a 2pt `running` outline (radius 10,
-  4pt outside it, a `runningTint` fill) with a 20pt `running` tag above it: the selector and its
-  size ("button.pay 240 × 44", Geist Mono 10.5, the size at 75%; the tag's text color needs a
-  role for text on `running`, which the theme doesn't have yet). A popover beside it (188pt,
-  padding 8, radius 12, `bgRaised`, the popover shadow) shows the source location
-  ("Checkout.tsx:88", Geist Mono 10.5 `textTertiary`), Add to message (primary `s`) and Copy
-  selector (ghost `s`).
-- **In the composer,** an added element is a chip above the field: 26pt, padding 0×8, radius 6,
-  a `lineStrong` line, a 12pt glyph, "button.pay" in Geist Mono 12, "Checkout.tsx:88" in Geist
-  Mono 10.5 `textTertiary`, and a 9pt remove ×. It goes to pi with the message. Mentioning a file
-  from the Files tree puts the same kind of chip there.
-- **Console drawer:** a 32pt bar on `bgBase` under a `lineStrong` line: "Console" (Geist 12
-  semibold), "Network" with its count ("24", Geist Mono 10.5 `textTertiary`), "1 warning" in
-  `lanternText` with a 12pt glyph, and Hide console (24pt). Its rows (at least 22pt, 14pt side
-  padding, Geist Mono 11) show the time in `textTertiary` and the message in `textSecondary`,
-  truncating; a warning row is `lanternTint` with its text in `lanternText`.
-- **In the thread,** pi's browser work reads as activity lines: "Started the dev server · pnpm
-  dev · :5173 on build-01", "Opened the checkout in Browser · localhost:5173/checkout".
+- **Keys**, shown in menus and tooltips, never under the composer: ⌃3–4 switch to these tabs,
+  ⌘P go to file, ⌘S save a file or artifact, ⇧⌘O pane in its own window. ⌃3–4 are fixed like ⌃1;
+  the rest go through `KeybindingsStore`, and each must be added to `appOwnedChords` so a focused
+  terminal doesn't eat it. (The Browser's ⌘L and ⇧⌘C are built: Side pane: Browser.)
 
 **Artifacts** (PaneArtifacts, PaneArtifactEdit, PaneStates): reports, plans, diagrams and images
 pi makes along the way. Each is a file on the thread's host, versioned on every save by you or
@@ -5017,6 +5108,7 @@ in UserDefaults under `shepherd.keybindings`).
 | ⌥⌘↑ · ⌥⌘↓ | Previous · next turn |
 | ⌘I | Inspect subagent |
 | ⌘↩ | Send the other way while pi works (steer ⇄ queue), and steer a focused queued message; composer only, no menu item |
+| ⌘L · ⇧⌘C | The Browser's address field · Select an element; while a thread's Browser is on screen, no menu item |
 
 Fixed chords:
 
@@ -5024,8 +5116,9 @@ Fixed chords:
   open projects; hold ⌘ to see them). With the project tree focused, ← closes a project and →
   opens it; ⌥-click opens or closes every project. ⌃⇧1–9 jumped between the tree's
   machine sections and went with them: a focused terminal keeps them now.
-- ⌃1 shows the side pane's Changes tab (View › Changes); ⌃2–⌃4 wait for its other tabs. Settings ▸
-  Keyboard lists it under Fixed, and Ghostty leaves it to the app (`appOwnedChords`).
+- ⌃1 shows the side pane's Changes tab (View › Changes) and ⌃2 its Browser (View › Browser); ⌃3–⌃4
+  wait for its other tabs. Settings ▸ Keyboard lists them under Fixed, and Ghostty leaves them to
+  the app (`appOwnedChords`).
 - ⌘, opens Settings, and ⌘F searches it.
 - ⏎ confirms and ⎋ cancels in sheets.
 - In the composer, ↩ sends (while pi works, it queues or steers per Settings) and ⇧↩ inserts a
@@ -9200,11 +9293,11 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | NavDesigns | Designs page; Design tool › Designs | Built (Mac, behind the Design tool experiment; systems as names only) |
 | NavAutomations | Automations page; Sidebar (no When, Next or tabs: departures) | Built |
 | NavHosts | Hosts page; Sidebar; Settings › Remote (no daemon, Load or disk use: departures) | Built |
-| PaneBrowser | Side pane (Browser) | Not built yet |
+| PaneBrowser | Side pane: Browser | Partial (local threads: the page, toolbar, viewport, Select an element, composer chip and console; not the agent using it, remote threads or Throttle to 3G) |
 | PaneArtifacts | Side pane (Artifacts) | Not built yet |
 | PaneArtifactEdit | Side pane (Artifacts › Editing in place) | Not built yet |
 | PaneFiles | Side pane (Files) | Not built yet |
-| PaneStates | Side pane (tabs, dot, narrow, ⋯, button); Side pane: Browser, Artifacts, Files | Partial |
+| PaneStates | Side pane (tabs, dot, narrow, ⋯, button); Side pane: Browser; Side pane: Artifacts, Files | Partial (Browser: nothing open and viewport built, the agent using it not) |
 | ContextDetails | Composer, questions, and menus › Context meter | Built |
 | ContextFull | Composer, questions, and menus › Context meter | Built |
 | ContextCompacted | Composer, questions, and menus › Context meter; Thread › Compactions | Built |

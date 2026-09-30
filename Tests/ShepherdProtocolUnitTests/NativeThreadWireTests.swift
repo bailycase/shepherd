@@ -65,7 +65,13 @@ struct NativeThreadWireTests {
               designContext: NativeDesignContext(DesignViewRecord(
                 visibleBoards: ["A.dc.html"], selectedBoards: ["A.dc.html"], selected: [DesignElementID("A.dc.html#5:1/1/0")!],
                 selection: [.init(id: DesignElementID("A.dc.html#5:1/1/0")!, kind: .text, label: "Checkout funnel")]))),
+        .send(expectedSessionID: "s", generation: "g", operationID: op, text: "wider", delivery: .followUp,
+              browserElements: [element, BrowserElement(page: "http://localhost:5173/", selector: "#promo", label: "input#promo", width: 320, height: 36)]),
     ] + queueActions.map { .queue(expectedSessionID: "s", generation: "g", operationID: op, action: $0) }
+
+    static let element = BrowserElement(page: "http://localhost:5173/checkout", selector: "main > form > button.pay", label: "button.pay",
+                                        source: "src/components/Checkout.tsx:88", width: 240, height: 44,
+                                        html: "<button class=\"pay\">Pay $148.00</button>")
 
     /// Every queue action, as a request carries it.
     static let queueActions: [NativeQueueAction] = [
@@ -98,6 +104,13 @@ struct NativeThreadWireTests {
     }
 
     static let results: [NativeThreadResult] = [
+        .snapshot(value: NativeThreadSnapshot(
+            piSessionID: "s", generation: "g", revision: 11, running: true, supportedActions: ["send", "queue", "browserElements"],
+            dialogsSupported: true, dialogs: [],
+            messages: [NativeThreadMessage(entryID: "user:9", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "wider")],
+                                           browserElements: [element.withoutHTML])],
+            provisional: [], clipped: false, runtime: "rpc",
+            queue: NativeQueue(items: [NativeQueuedMessage(id: op, text: "and this", sentAt: 5, elements: [element.withoutHTML])], mode: .all))),
         .accepted(operationID: op),
         .unchanged(piSessionID: "s", generation: "g", revision: 3),
         .failure(code: "stale_session", message: "refresh"),

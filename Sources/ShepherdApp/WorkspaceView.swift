@@ -262,7 +262,8 @@ struct AgentLayoutView: View, Equatable {
                 let agentID = thread.agentID
                 let owner = SidePaneOwner.local(agentID)
                 let store = vm.threadStores.store(for: agentID)
-                RightPaneSlot(showing: inspecting.map { .inspector(runID: $0) } ?? .tab(sideTab ?? .changes, model.review?.id)) {
+                RightPaneSlot(showing: inspecting.map { .inspector(runID: $0) }
+                              ?? .tab(sideTab ?? .changes, sideTab == .browser ? nil : model.review?.id)) {
                     if let inspecting {
                         SubagentInspector(store: store, runID: inspecting, active: model.isVisible, close: { [vm] in
                             vm.closeInspector(owner)
@@ -274,7 +275,7 @@ struct AgentLayoutView: View, Equatable {
                         .nwTransition(.content)
                     } else if let sideTab {
                         SidePaneView(vm: vm, owner: owner, tab: sideTab, news: model.sideNews, review: model.review, store: store,
-                                     maximized: model.sideMaximized)
+                                     maximized: model.sideMaximized, active: model.isVisible)
                             .nwTransition(.content)
                     }
                 }

@@ -47,6 +47,8 @@ struct ThemeContrastTests {
         }
         // The primary button's label.
         pairs.append(Pair(name: "textOnLantern on lantern", text: \.textOnLantern, fill: \.lantern, base: \.bgWindow, minimum: text))
+        // The Browser's element tag and the design canvas's selection tag.
+        pairs.append(Pair(name: "textOnRunning on running", text: \.textOnRunning, fill: \.running, base: \.bgWindow, minimum: text))
         // State dots, glyphs, spinners, and bars on the window.
         for (name, role) in [("lantern", \ThemeColors.lantern), ("running", \.running), ("done", \.done), ("failed", \.failed)] {
             pairs.append(Pair(name: "\(name) mark on bgWindow", text: role, fill: \.bgWindow, base: \.bgWindow, minimum: mark))
@@ -72,6 +74,9 @@ struct ThemeContrastTests {
         "night-watch-light: failed on failedTint over bgRaised": 3.84,
         // Light lantern as a dot or glyph on the window.
         "night-watch-light: lantern mark on bgWindow": 2.27,
+        // The Browser's element tag and the design canvas's selection tag put white on `running`
+        // in mono 10.5, as the board draws it; dark falls short, the board's choice.
+        "night-watch-dark: textOnRunning on running": 2.39,
     ]
 
     @Test(arguments: Variant.all)
@@ -103,13 +108,14 @@ struct ThemeContrastTests {
         #expect(ratio < Self.text)
     }
 
-    /// The design canvas's selection tag puts white on `running` in mono 10.5, as NWDesignTool
-    /// and DZTweak draw it: light reaches 4.5:1; dark falls short (2.39), the board's choice.
+    /// `textOnRunning` on `running`, as the Browser's element tag and the design canvas's
+    /// selection tag draw it in mono 10.5: light reaches 4.5:1; dark falls short (2.39), the
+    /// board's choice (also covered as a `pairs` exception above).
     @Test(arguments: [(false, 4.70), (true, 2.39)])
-    func whiteOnRunningIsADocumentedException(isDark: Bool, measured: Double) {
+    func textOnRunningIsADocumentedExceptionInDark(isDark: Bool, measured: Double) {
         let variant = Variant(theme: .nightWatch, isDark: isDark)
-        let ratio = HexColor("#ffffff")!.contrast(with: variant.color(\.running))
-        #expect(abs(ratio - measured) < 0.01, "white on running is now \(ratio)")
+        let ratio = variant.color(\.textOnRunning).contrast(with: variant.color(\.running))
+        #expect(abs(ratio - measured) < 0.01, "textOnRunning on running is now \(ratio)")
         #expect((ratio >= Self.text) == !isDark)
     }
 

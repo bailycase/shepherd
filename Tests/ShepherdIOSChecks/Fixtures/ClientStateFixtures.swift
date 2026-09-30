@@ -58,7 +58,7 @@ enum ClientStateChecks {
                 await store.run { request in
                     switch request {
                     case .snapshot: return .snapshot(value: snapshot)
-                    case .send(_, _, let id, _, _, let images, _, _):
+                    case .send(_, _, let id, _, _, let images, _, _, _):
                         operation = id
                         submitted = images ?? []
                         return try await gate.wait()

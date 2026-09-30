@@ -31,7 +31,7 @@ DesignSurfaceKit ── Core, Protocol, WebKit (+ React 18.3.1 UMD, a resource)
 
 ShepherdUI (local package, Packages/ShepherdUI) ── nothing
 
-ShepherdApp ── Core, Protocol, Sessions, ShepherdUI, TerminalSurfaceKit, DesignSurfaceKit, Sparkle, SwiftTreeSitter
+ShepherdApp ── Core, Protocol, Sessions, ShepherdUI, TerminalSurfaceKit, DesignSurfaceKit, WebKit (the Browser), Sparkle, SwiftTreeSitter
 Shepherd iOS (Xcode target) ── Core, Protocol, Remote, ShepherdUI, DesignSurfaceKit, SwiftTerm
 ```
 
@@ -58,6 +58,7 @@ Dependencies point inward:
   `ShepherdApp/DesignHost.swift` imports DesignSurfaceKit (on iOS, only
   `App/iOS/Designs/DesignHost.swift` for the iPhone's screens and
   `App/iOS/DesignPad/PadDesignRenderer.swift` for the iPad's).
+- Only `ShepherdApp/BrowserHost.swift` imports WebKit in the app: the side pane's Browser.
 - Only TerminalSurfaceKit imports GhosttyTerminal.
 - DesignSurfaceKit imports neither Sessions nor App: it is handed a design's folder (or a
   design system's files in memory, for its specimens) and serves it read-only.
@@ -127,6 +128,20 @@ SwiftUI's appearance by itself: Ghostty surfaces (a live `setTheme`) and the
 the side pane (`RightPaneSplit`, `SidePaneView`). A destination page (New thread, Automations,
 Hosts; `MainDestination`) covers the whole main column while every mounted layout stays mounted
 and hidden under it, as when switching agents.
+
+**Browser.** Each local thread's page is a `BrowserSession` (`BrowserHost.swift`), held by the
+view model's `BrowserSessions` and made the first time the thread opens something: a `WKWebView`
+in a `WKWebsiteDataStore(forIdentifier:)` keyed on the agent (in memory in tests), removed when
+the agent leaves the state. The session owns the view, and `BrowserPageView` only puts it in the
+pane, so the pane closing, a tab switch or a thread switch never reloads the page. Its scripts
+(`BrowserScripts.swift`): the picker and the network count in Shepherd's own `WKContentWorld`, and
+a console shim in the page's world that also answers the picker's React source question through a
+DOM attribute; each posts to its own handler, parsed by `BrowserScriptMessage`. Console lines live
+in a `BrowserConsoleLog` observed apart from the page's state. Add to message attaches a
+`BrowserElement` to the thread's `NativeThreadStore`; the send carries it (`browserElements`),
+and `RPCThreadState` fences it for pi (`BrowserElementFence`), keeps it on a queued message (which
+goes alone), and projects it back onto the user message as chips. Start runs a dev server through
+`PaneControl`'s pane-open path and waits for its port before opening the page.
 
 **Sidebar.** `SidebarDerivation` (`SidebarModel.swift`) derives Needs you and Recents from This
 Mac's state and each host's, once per change (`sidebarLists`). Recents are ordered by

@@ -584,6 +584,12 @@ struct Composer: View {
                 ComposerReferenceChip(attached: attached, references: references) { store.detachReference(attached.id) }
                     .nwTransition(.list, edge: .leading)
             }
+            // Elements picked in the Browser (PaneBrowser's composer).
+            ForEach(store.attachedElements) { attached in
+                NWElementChip(attached.element.label, source: attached.element.sourceShort) { store.detachElement(attached.id) }
+                    .help(attached.element.selector)
+                    .nwTransition(.list, edge: .leading)
+            }
             ForEach(store.attachedFiles) { file in
                 NWAttachmentChip(file.name, thumbnail: nil) { store.detachFile(file.id) }
                     .help(file.path)
