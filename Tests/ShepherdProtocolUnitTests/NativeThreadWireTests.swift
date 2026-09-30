@@ -59,6 +59,8 @@ struct NativeThreadWireTests {
               images: [NativeImage(mimeType: "image/png", data: Data([1]), name: "checkout.png")]),
         .compact(expectedSessionID: "s", generation: "g", operationID: op),
         .compact(expectedSessionID: "s", generation: "g", operationID: op, instructions: "Keep the preview findings"),
+        .retry(expectedSessionID: "s", generation: "g", operationID: op, entryID: "user:1733234570000"),
+        .retry(expectedSessionID: "s", generation: "g", operationID: op, entryID: "user:1733234570000#1"),
         .send(expectedSessionID: "s", generation: "g", operationID: op, text: "taller", delivery: .followUp,
               designContext: NativeDesignContext(DesignViewRecord(
                 visibleBoards: ["A.dc.html"], selectedBoards: ["A.dc.html"], selected: [DesignElementID("A.dc.html#5:1/1/0")!],

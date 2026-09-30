@@ -97,12 +97,27 @@ struct RemoteHostClientTests {
         (NativeThreadRequest.compact(expectedSessionID: "s", generation: "g", operationID: UUID()), RemoteProtocol.nativeContextCapability),
         (.queue(expectedSessionID: "s", generation: "g", operationID: UUID(), action: .clear), RemoteProtocol.nativeQueueCapability),
         (.setThinking(expectedSessionID: "s", generation: "g", operationID: UUID(), level: "high"), RemoteProtocol.nativeThreadV2Capability),
+        (.retry(expectedSessionID: "s", generation: "g", operationID: UUID(), entryID: "user:1"), RemoteProtocol.nativeRetryCapability),
     ])
     func newerRequestsNeedTheirCapability(_ request: NativeThreadRequest, capability: String) {
         let all = Set(RemoteProtocol.capabilities)
         #expect(RemoteHostClient.missingCapability(request, capabilities: all) == nil)
         #expect(RemoteHostClient.missingCapability(request, capabilities: all.subtracting([capability])) != nil)
         #expect(RemoteHostClient.missingCapability(.snapshot(), capabilities: all.subtracting([capability])) == nil)
+    }
+
+    /// A host without `native.retry.v1` never offers Retry in place, whatever its snapshot lists,
+    /// so the thread sends the prompt again there.
+    @Test func retryIsOfferedOnlyByAHostThatRetriesInPlace() {
+        let snapshot = NativeThreadSnapshot(piSessionID: "s", generation: "g", revision: 1, running: false,
+                                            supportedActions: ["send", "retry"], dialogsSupported: true, dialogs: [],
+                                            messages: [], provisional: [], clipped: false)
+        let all = Set(RemoteProtocol.capabilities)
+        #expect(RemoteHostClient.incoming(.snapshot(value: snapshot), capabilities: all).actions == ["send", "retry"])
+        let older = all.subtracting([RemoteProtocol.nativeRetryCapability])
+        #expect(RemoteHostClient.incoming(.snapshot(value: snapshot), capabilities: older).actions == ["send"])
+        let accepted = NativeThreadResult.accepted(operationID: UUID())
+        #expect(RemoteHostClient.incoming(accepted, capabilities: older) == accepted)
     }
 
     /// A send's design record goes only to a host that takes one; the message goes either way.
@@ -237,4 +252,11 @@ final class Counter: @unchecked Sendable {
     private var count = 0
     var value: Int { lock.withLock { count } }
     func increment() { lock.withLock { count += 1 } }
+}
+
+private extension NativeThreadResult {
+    var actions: [String]? {
+        if case .snapshot(let value) = self { return value.supportedActions }
+        return nil
+    }
 }

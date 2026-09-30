@@ -414,6 +414,8 @@ public final class RemoteHostClient: @unchecked Sendable {
             capabilities.contains(RemoteProtocol.nativeQueueCapability) ? nil : "Update Shepherd on the host to change its queue."
         case .compact:
             capabilities.contains(RemoteProtocol.nativeContextCapability) ? nil : "Update Shepherd on the host to compact the context."
+        case .retry:
+            capabilities.contains(RemoteProtocol.nativeRetryCapability) ? nil : "Update Shepherd on the host to retry a turn in place."
         case .send where !request.images.isEmpty:
             capabilities.contains(RemoteProtocol.nativeThreadV2Capability) ? nil : "Update Shepherd on the host to send images."
         default:
@@ -425,6 +427,15 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// takes one (an older host would drop it anyway); the message goes either way.
     static func outgoing(_ request: NativeThreadRequest, capabilities: Set<String>) -> NativeThreadRequest {
         capabilities.contains(RemoteProtocol.designContextCapability) ? request : request.droppingDesignContext
+    }
+
+    /// The result as this client acts on it: a snapshot lists `retry` only from a host that
+    /// retries in place (`native.retry.v1`), so the thread sends the prompt again anywhere else.
+    static func incoming(_ result: NativeThreadResult, capabilities: Set<String>) -> NativeThreadResult {
+        guard case .snapshot(var value) = result, !capabilities.contains(RemoteProtocol.nativeRetryCapability),
+              value.supportedActions.contains("retry") else { return result }
+        value.supportedActions.removeAll { $0 == "retry" }
+        return .snapshot(value: value)
     }
 
     public func nativeThread(agentID: AgentID, request original: NativeThreadRequest) async throws -> NativeThreadResult {
@@ -458,7 +469,7 @@ public final class RemoteHostClient: @unchecked Sendable {
             if case .failure(let code, let message) = result {
                 return .failure(code: Self.availabilityCode(code, legacyHost: legacy), message: message)
             }
-            return result
+            return Self.incoming(result, capabilities: capabilities)
         }
         if case .error(_, let code, let message) = reply {
             if code == "outcome_unknown" { throw RemoteHostClientError.outcomeUnknown(message: message) }
