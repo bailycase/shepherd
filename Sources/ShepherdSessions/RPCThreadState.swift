@@ -23,7 +23,7 @@ final class RPCThreadState {
     static let widgetAggregateBytes = 32 * 1024
     static let operationTableSize = 256
     static let supportedActions = ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents", "queue", "compact", "designContext",
-                                   "designReferences"]
+                                   "designReferences", "retry"]
     /// pi answers `compact` only once the summary is written, which takes as long as a reply.
     static let compactTimeout: TimeInterval = 600
     /// Bytes of a child session file the transcript reader will scan (tail); older is unreachable.
@@ -246,6 +246,11 @@ final class RPCThreadState {
     // Queue state (RPCThreadState+Queue.swift).
     var items: [QueueItem] = []
     var dispatches: [Dispatch] = []
+    /// A Retry on its way (`RPCThreadState+Retry.swift`): its dispatch, until the run it starts
+    /// does (or pi says it started none).
+    var retryDispatch: UUID?
+    /// What waits for the settled turn's capture to end (a Retry sent just as pi settled).
+    var afterSettleCapture: [() -> Void] = []
     var paused = false
     var queueNotice: String?
     var modeOverride: NativeQueueMode?
@@ -360,6 +365,7 @@ final class RPCThreadState {
     func handle(_ event: RPCEvent) {
         switch event {
         case .agentStart:
+            retryStarted()
             // A compaction that stopped or failed says so until the next run.
             live.removeAll { if case .compaction = $0.kind { $0.value.compaction?.phase != .running } else { false } }
             // A retry's second start is the same turn; the engine tells them apart.
@@ -385,6 +391,7 @@ final class RPCThreadState {
                 captureSettledTurn { [weak self] in
                     guard let self, self.settleCapture == token else { return }
                     self.settleCapture = nil
+                    self.runAfterSettleCapture()
                     self.drainIfReady()
                     self.idleAfterQueue()
                 }
@@ -529,7 +536,8 @@ final class RPCThreadState {
              .setThinking(let expectedSessionID, let generation, let operationID, _),
              .subagentCommand(let expectedSessionID, let generation, let operationID, _, _, _, _),
              .queue(let expectedSessionID, let generation, let operationID, _),
-             .compact(let expectedSessionID, let generation, let operationID, _):
+             .compact(let expectedSessionID, let generation, let operationID, _),
+             .retry(let expectedSessionID, let generation, let operationID, _):
             guard expectedSessionID == piSessionID, generation == self.generation else {
                 completion(.failure(code: "stale_session", message: "Refresh the thread before acting."))
                 return
@@ -694,6 +702,8 @@ final class RPCThreadState {
             }
         case .compact(_, _, _, let instructions):
             compact(instructions: instructions, operationID: operationID, completion: completion)
+        case .retry(_, _, _, let entryID):
+            retryTurn(entryID: entryID, operationID: operationID, completion: completion)
         case .snapshot, .subagentTranscript:
             completion(.failure(code: "invalid", message: "Not an action."))
         }
@@ -990,7 +1000,8 @@ final class RPCThreadState {
         guard let items = value?.arrayValue else { return [] }
         var result: [NativeCommand] = []
         for item in items {
-            guard let name = item["name"]?.stringValue, !name.isEmpty, name.utf8.count <= NativeCommand.maxNameBytes else { continue }
+            guard let name = item["name"]?.stringValue, !name.isEmpty, name.utf8.count <= NativeCommand.maxNameBytes,
+                  name != retryCommand else { continue }
             var description = item["description"]?.stringValue
             if let text = description, text.utf8.count > NativeCommand.maxDescriptionBytes {
                 description = String(decoding: Array(text.utf8.prefix(NativeCommand.maxDescriptionBytes)), as: UTF8.self)
@@ -1097,9 +1108,20 @@ final class RPCThreadState {
         compactingRun = nil
         compactionNotes.removeAll()
         context = nil
+        retryDispatch = nil
         resetQueueForNewSession()
         signature = 0
         bumpRevision()
+        // A Retry waiting on the old session's capture finds its turn gone.
+        runAfterSettleCapture()
+    }
+
+    /// Takes history from `index` on out of what the thread shows, until the next refresh
+    /// brings pi's own (Retry: the turn it retries leaves at once).
+    func dropHistory(from index: Int) {
+        guard history.indices.contains(index) else { return }
+        history.removeSubrange(index...)
+        historyVersion += 1
     }
 
     // MARK: - Live rows
