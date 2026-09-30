@@ -1438,8 +1438,9 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   size changes), because a bottom anchor over the lazy stack, whose unmeasured rows are
   estimates, left the scroll view's content size at odds with where the rows were placed and the
   viewport drew nothing (a blank thread after a send or a finished turn, in a window of modest
-  height; `ThreadTailAnchor`). Before 27 the anchors stay: without the initial one, that lazy
-  stack builds every row of a long thread to open it. Without an anchor every reading is the
+  height; `ThreadTailAnchor`). Before 27 the anchors stay: `scrollTo`, the only way to the tail
+  without them, builds every row of a long thread there, so a short window can still draw blank
+  on macOS 26 (a known issue, `ThreadBlankScreenTests`). Without an anchor every reading is the
   layout's own: a following view that growth,
   the composer or a settling turn leaves above its tail, or that a shrinking history or the
   composer collapsing leaves past it, returns to it at once. The native top-margin allowance
